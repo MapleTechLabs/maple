@@ -20,7 +20,7 @@ const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOStrin
 type Output = typeof ListIntegrationsOutput.Type
 
 /** Providers whose data `list_infra` reads. */
-const PLATFORM_PROVIDERS: ReadonlySet<string> = new Set(["cloudflare", "railway", "planetscale"])
+const PLATFORM_PROVIDERS: ReadonlySet<string> = new Set(["cloudflare", "railway", "planetscale", "vercel"])
 
 /** Where each provider's data is read next, once the integration is known to deliver it. */
 const nextFor = (integration: Output["integrations"][number]): ReadonlyArray<NextCall> => {
@@ -63,6 +63,14 @@ const nextFor = (integration: Output["integrations"][number]): ReadonlyArray<Nex
 					"database CPU, memory, storage and replica lag",
 				),
 			]
+		case "vercel":
+			return [
+				doc.next(
+					"list_infra",
+					{ kind: "vercel_projects" },
+					"Vercel projects' requests, 5xx rate and error logs from the log drain",
+				),
+			]
 		case "chat":
 			return []
 	}
@@ -73,11 +81,11 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "List Integrations",
 		description:
-			"Every third-party integration connected to this Maple organization (GitHub, Cloudflare, Railway, PlanetScale, " +
+			"Every third-party integration connected to this Maple organization (GitHub, Cloudflare, Railway, Vercel, PlanetScale, " +
 			"Prometheus scrape targets, chat workspaces), what Maple data each one feeds, and whether it is working: " +
 			"revoked grants, failing or stale pollers, repositories that do not sync, scrape targets that error. Each " +
 			"provider lists its resources (repositories, zones, Workers, Logpush jobs, Hyperdrive configs, Railway " +
-			"environments, databases, scrape targets) worst first. Answers 'what is connected' and 'why is my Cloudflare / " +
+			"environments, Vercel drains, databases, scrape targets) worst first. Answers 'what is connected' and 'why is my Cloudflare / " +
 			"Railway / PlanetScale data missing'. Read from Maple's own state, so it never calls the providers.",
 		parameters: Schema.Struct({
 			provider: P.optionalOneOf(

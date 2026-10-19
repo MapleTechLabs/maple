@@ -13,6 +13,7 @@ import {
 	PlanetScaleIcon,
 	PrometheusIcon,
 	RailwayIcon,
+	VercelIcon,
 	WarpStreamIcon,
 } from "@/components/icons"
 import { Option, Schema } from "effect"
@@ -30,6 +31,8 @@ import { retainedInternalQuery } from "@/lib/services/common/internal-atom-clien
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { scrapeTargetsListAtom } from "@/lib/services/atoms/scrape-target-atoms"
 import { GCP_CONNECTION_LABEL, gcpConnectionState, gcpScopeLabel, gcpWorstState } from "./gcp-connector-state"
+import { scopeLabel, signalsLabel, vercelHealth, vercelIssues } from "./vercel-model"
+import { vercelStatusAtom } from "./vercel-status"
 
 /**
  * A chat connector's catalog id. The connector half is data from
@@ -44,6 +47,7 @@ export type IntegrationId =
 	| "planetscale"
 	| "gcp"
 	| "railway"
+	| "vercel"
 	| "warpstream"
 	| "hazel"
 	| "github"
@@ -99,6 +103,7 @@ export const HAZEL_ACCENT = "#F46F0F"
 export const CLOUDFLARE_ACCENT = "#F38020"
 export const RAILWAY_ACCENT = "#0B0D0E"
 export const GCP_ACCENT = "#4285F4"
+export const VERCEL_ACCENT = "#000000"
 
 export interface CatalogEntry {
 	readonly id: IntegrationId
@@ -199,6 +204,18 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		accent: RAILWAY_ACCENT,
 		// Railway's mark is near-black — render it in the foreground token, like GitHub.
 		iconClassName: "text-foreground",
+	},
+	{
+		id: "vercel",
+		category: "infrastructure",
+		isNew: true,
+		name: "Vercel",
+		description: "Paste a Vercel token to drain request logs, traces and AI Gateway usage from a team.",
+		icon: VercelIcon,
+		accent: VERCEL_ACCENT,
+		// Vercel's mark is black — render it in the foreground token, like Railway.
+		iconClassName: "text-foreground",
+		docsUrl: docsUrl("vercel"),
 	},
 	{
 		id: "warpstream",
@@ -317,6 +334,17 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
 	const gcpResult = useAtomValue(gcpStatusQuery())
+	const vercelResult = useAtomValue(vercelStatusAtom)
+
+	const vercel: CardStatus | null = Result.builder(vercelResult)
+		.onSuccess((status): CardStatus => {
+			if (!status.connected) return NOT_CONNECTED
+			if (status.authFailed) return { label: "Token rejected", variant: "crit" }
+			if (vercelIssues(status).length > 0) return { label: "Needs attention", variant: "warn" }
+			return { label: status.team?.name ?? "Connected", variant: "ok" }
+		})
+		.onInitial(() => null)
+		.orElse(() => STATUS_UNAVAILABLE)
 
 	const gcp: CardStatus | null = Result.builder(gcpResult)
 		.onSuccess((status): CardStatus => {
@@ -428,6 +456,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		planetscale,
 		gcp,
 		railway,
+		vercel,
 		// WarpStream rides the generic Prometheus pipeline — no own target type.
 		warpstream: { label: "Via Prometheus", variant: "outline" },
 		hazel,
@@ -572,6 +601,30 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
 	const gcpResult = useAtomValue(gcpStatusQuery())
+	const vercelResult = useAtomValue(vercelStatusAtom)
+
+	const vercel: IntegrationOverview = Result.builder(vercelResult)
+		.onSuccess((status): IntegrationOverview => {
+			if (!status.connected) return CONNECT
+			const issues = vercelIssues(status)
+			const health = vercelHealth(status)
+			return {
+				kind: "connected",
+				health,
+				stateLabel:
+					health === "attention" ? "Needs attention" : health === "pending" ? "Syncing" : "Healthy",
+				context: status.team?.name ?? null,
+				stat: `${signalsLabel(status)} · ${scopeLabel(status)}`,
+				lastSyncLabel: syncedLabel(status.lastSuccessAt, "checked"),
+				issue: status.authFailed
+					? "Token rejected"
+					: issues.length > 0
+						? countLabel(issues.length, "drain") + " failing"
+						: null,
+			}
+		})
+		.onInitial(() => null)
+		.orElse(() => UNAVAILABLE)
 
 	const gcp: IntegrationOverview = Result.builder(gcpResult)
 		.onSuccess((status): IntegrationOverview => {
@@ -844,6 +897,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		planetscale,
 		gcp,
 		railway,
+		vercel,
 		// WarpStream rides the generic Prometheus pipeline — always a set-up card.
 		warpstream: SET_UP,
 		hazel,

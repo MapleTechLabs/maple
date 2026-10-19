@@ -143,6 +143,12 @@ describe("value-by-unit dispatch", () => {
 		expect(formatValueByUnit(1_500, "requests_per_sec")).toBe("1.5K/s")
 		expect(formatValueByUnit(3_400, undefined)).toBe("3.4K")
 	})
+
+	it("prints dollars, keeping a fraction of a cent visible", () => {
+		expect(formatValueByUnit(12.5, "usd")).toBe("$12.50")
+		expect(formatValueByUnit(0.0042, "usd")).toBe("$0.0042")
+		expect(formatValueByUnit(0, "usd")).toBe("$0.00")
+	})
 })
 
 describe("bucket helpers normalize warehouse timestamps", () => {

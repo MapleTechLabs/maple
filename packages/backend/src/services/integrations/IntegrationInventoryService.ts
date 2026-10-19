@@ -13,11 +13,10 @@ import {
 	ScrapeTargets,
 	VcsInstallations,
 	VcsRepositories,
+	VercelConnections,
+	VercelProjects,
 } from "@maple/db/tables"
-import {
-	buildIntegrationInventory,
-	type IntegrationInventory,
-} from "@maple/domain/integration-inventory"
+import { buildIntegrationInventory, type IntegrationInventory } from "@maple/domain/integration-inventory"
 import type { OrgId } from "@maple/domain/primitives"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -59,7 +58,13 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 				{
 					oauthConnections: db.run(
 						PG.from(OAuthConnections)
-							.select("provider", "externalAccountName", "externalUserEmail", "revokedAt", "createdAt")
+							.select(
+								"provider",
+								"externalAccountName",
+								"externalUserEmail",
+								"revokedAt",
+								"createdAt",
+							)
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
 					vcsInstallations: db.run(
@@ -121,6 +126,28 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 							)
 							.where(($) => [$.orgId.eq(orgId), $.enabled.eq(true)]),
 					),
+					vercelConnections: db.run(
+						PG.from(VercelConnections)
+							.select(
+								"teamName",
+								"authFailedAt",
+								"logsEnabled",
+								"tracesEnabled",
+								"logDrainState",
+								"traceDrainState",
+								"lastSuccessAt",
+								"lastErrorAt",
+								"lastError",
+								"createdAt",
+							)
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
+					vercelProjects: db.run(
+						PG.from(VercelProjects)
+							.select("projectId")
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
 					planetscaleConnections: db.run(
 						PG.from(PlanetscaleConnections)
 							.select(
@@ -179,8 +206,11 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 				railwayConnection: rows.railwayConnections[0] ?? null,
 				railwayEnvironments: rows.railwayEnvironments.map(({ servicesJson, ...env }) => ({
 					...env,
-					serviceCount: Object.keys(Option.getOrElse(decodeServices(servicesJson), () => ({}))).length,
+					serviceCount: Object.keys(Option.getOrElse(decodeServices(servicesJson), () => ({})))
+						.length,
 				})),
+				vercelConnection: rows.vercelConnections[0] ?? null,
+				vercelProjectCount: rows.vercelProjects.length,
 				planetscaleConnection:
 					planetscale === undefined
 						? null

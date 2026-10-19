@@ -77,6 +77,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/vercel",
+		title: "Vercel integration",
+		description:
+			"Integrations → Vercel not connected, the connect steps, and a connected team healthy, with a broken drain and with a rejected token, over fixtures.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/gcp-infra",
 		title: "Google Cloud infrastructure",
 		description:

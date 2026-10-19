@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
 import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
 import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
+import type { VercelInfraProject } from "@maple/domain/http"
 
 import { gcpFleet } from "../gcp/tabs"
 import type { HostRow } from "../host-table"
@@ -13,6 +14,7 @@ import {
 	summarizePlanetScale,
 	summarizePods,
 	summarizeRailway,
+	summarizeVercel,
 } from "./summaries"
 
 const END = "2026-10-04T12:00:00Z"
@@ -95,6 +97,38 @@ describe("summarizeCloudflare", () => {
 		])
 		expect(findings.map((f) => f.title)).toEqual(["api.acme.dev returning 6.0% 5xx"])
 		expect(findings[0]?.tone).toBe("crit")
+	})
+})
+
+describe("summarizeVercel", () => {
+	const project = (projectName: string, requests: number, requests5xx: number): VercelInfraProject => ({
+		projectId: `prj_${projectName}`,
+		projectName,
+		serviceName: projectName,
+		requests,
+		requests4xx: 0,
+		requests5xx,
+		cacheHits: 0,
+		cacheLookups: 0,
+		errorLogs: 4,
+		lastSeen: END,
+		p50DurationMs: null,
+		p95DurationMs: null,
+	})
+
+	it("flags projects returning 5xx, worst first, skipping ones too quiet to mean anything", () => {
+		const summary = summarizeVercel([
+			project("quiet", 10, 5),
+			project("web", 10_000, 150),
+			project("api", 2_000, 200),
+			project("docs", 5_000, 0),
+		])
+		expect(summary.findings.map((f) => [f.tone, f.title])).toEqual([
+			["crit", "api returning 10.0% 5xx"],
+			["warn", "web returning 1.5% 5xx"],
+		])
+		expect(summary.findings[0]?.target).toEqual({ kind: "vercel", projectId: "prj_api" })
+		expect(summary.headline).toBe("17.0K requests, 2.1% 5xx")
 	})
 })
 

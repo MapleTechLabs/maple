@@ -24,6 +24,7 @@ import {
 	RabbitmqIcon,
 	RedisIcon,
 	ServerIcon,
+	VercelIcon,
 } from "@/components/icons"
 
 const TEMPLATE_ICONS: Record<string, IconComponent> = {
@@ -44,6 +45,7 @@ const TEMPLATE_ICONS: Record<string, IconComponent> = {
 	cloudflare: CloudflareIcon,
 	gcp: GoogleCloudIcon,
 	planetscale: PlanetScaleIcon,
+	vercel: VercelIcon,
 	"host-metrics": ServerIcon,
 	"kubernetes-cluster": KubernetesIcon,
 	"kubernetes-pod": KubernetesIcon,

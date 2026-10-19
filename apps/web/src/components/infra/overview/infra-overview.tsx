@@ -21,6 +21,7 @@ import {
 	PlanetScaleIcon,
 	RailwayIcon,
 	ServerIcon,
+	VercelIcon,
 	type IconComponent,
 } from "@/components/icons"
 import type { NavSurface } from "@/components/dashboard/nav-items"
@@ -34,6 +35,7 @@ import {
 	listHostsResultAtom,
 	podsSummaryResultAtom,
 	railwayServicesResultAtom,
+	vercelProjectsResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 
 import { gcpFleet, gcpWorkloadSearch } from "../gcp/tabs"
@@ -51,6 +53,7 @@ import {
 	summarizePlanetScale,
 	summarizePods,
 	summarizeRailway,
+	summarizeVercel,
 } from "./summaries"
 
 export interface OverviewWindow {
@@ -64,6 +67,7 @@ export const SOURCE_ORDER: ReadonlyArray<SourceId> = [
 	"kubernetes",
 	"cloudflare",
 	"railway",
+	"vercel",
 	"planetscale",
 	"gcp",
 ]
@@ -74,13 +78,14 @@ export const SOURCE_TITLE: Record<SourceId, string> = {
 	kubernetes: "Kubernetes",
 	cloudflare: "Cloudflare",
 	railway: "Railway",
+	vercel: "Vercel",
 	planetscale: "PlanetScale",
 	gcp: "Google Cloud",
 } satisfies Record<SourceId, string>
 
 /**
  * The sidebar's marks, so a source reads the same here as in the nav. Railway,
- * PlanetScale and the server glyph are monochrome and draw in full text ink;
+ * Vercel, PlanetScale and the server glyph are monochrome and draw in full text ink;
  * the sidebar's grey PlanetScale tint read as disabled beside the coloured ones.
  */
 const SOURCE_ICON: Record<SourceId, IconComponent> = {
@@ -89,6 +94,7 @@ const SOURCE_ICON: Record<SourceId, IconComponent> = {
 	kubernetes: KubernetesIcon,
 	cloudflare: CloudflareIcon,
 	railway: RailwayIcon,
+	vercel: VercelIcon,
 	planetscale: PlanetScaleIcon,
 	gcp: GoogleCloudIcon,
 } satisfies Record<SourceId, IconComponent>
@@ -104,6 +110,7 @@ const SOURCE_SURFACES: Record<SourceId, ReadonlyArray<NavSurface>> = {
 	kubernetes: ["k8sPods", "k8sNodes", "k8sWorkloads"],
 	cloudflare: ["cloudflare"],
 	railway: ["railway"],
+	vercel: ["vercel"],
 	planetscale: ["planetscale"],
 	gcp: ["gcp"],
 } satisfies Record<SourceId, ReadonlyArray<NavSurface>>
@@ -160,6 +167,11 @@ function RailwayData({ window, render }: { window: OverviewWindow; render: Rende
 	return render(toState(result, (response) => summarizeRailway(response.services)))
 }
 
+function VercelData({ window, render }: { window: OverviewWindow; render: RenderState }) {
+	const result = useAtomValue(vercelProjectsResultAtom({ data: window }))
+	return render(toState(result, (response) => summarizeVercel(response.projects)))
+}
+
 function PlanetScaleData({ window, render }: { window: OverviewWindow; render: RenderState }) {
 	const result = useAtomValue(getServiceMapPlanetScaleResultAtom({ data: window }))
 	return render(toState(result, (response) => summarizePlanetScale(response.databases)))
@@ -186,6 +198,8 @@ function SourceData({ id, window, render }: { id: SourceId; window: OverviewWind
 			return <CloudflareData window={window} render={render} />
 		case "railway":
 			return <RailwayData window={window} render={render} />
+		case "vercel":
+			return <VercelData window={window} render={render} />
 		case "planetscale":
 			return <PlanetScaleData window={window} render={render} />
 		case "gcp":
@@ -287,6 +301,17 @@ function FindingLink({
 					to="/infra/railway/$serviceId"
 					params={{ serviceId: target.serviceId }}
 					search={{ ...timeSearch, environmentId: target.environmentId }}
+					className={className}
+				>
+					{children}
+				</Link>
+			)
+		case "vercel":
+			return (
+				<Link
+					to="/infra/vercel/$projectId"
+					params={{ projectId: target.projectId }}
+					search={timeSearch}
 					className={className}
 				>
 					{children}
@@ -520,6 +545,12 @@ export function SourceLink({
 		case "railway":
 			return (
 				<Link to="/infra/railway" search={timeSearch} className={className}>
+					{children}
+				</Link>
+			)
+		case "vercel":
+			return (
+				<Link to="/infra/vercel" search={timeSearch} className={className}>
 					{children}
 				</Link>
 			)

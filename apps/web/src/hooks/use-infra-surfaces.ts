@@ -5,6 +5,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { infraPresenceResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import { vercelStatusAtom } from "@/components/integrations/vercel-status"
 
 /**
  * "Is it reporting now?" — an hour is long enough to survive a collector
@@ -25,10 +26,10 @@ const BUCKET_MS = 5 * 60 * 1000
  * Which Infrastructure surfaces this org actually has.
  *
  * Two sources, because the section mixes two kinds of page. The five OTel
- * surfaces come from the warehouse probe. Cloudflare, PlanetScale, Railway and
- * Google Cloud are integration pages — you have them because you connected the
+ * surfaces come from the warehouse probe. Cloudflare, PlanetScale, Railway, Vercel
+ * and Google Cloud are integration pages — you have them because you connected the
  * integration, not because a metric arrived — so they read the same status atoms
- * the integrations hub uses. Only those four are mounted here: this hook lives in
+ * the integrations hub uses. Only those five are mounted here: this hook lives in
  * the sidebar, so every atom it touches is a request on every page.
  *
  * Pass `window` to ask about a specific range instead of the last hour: the
@@ -68,6 +69,7 @@ export function useInfraSurfaces(window?: {
 			reactivityKeys: ["railwayIntegrationStatus"],
 		}),
 	)
+	const vercelResult = useAtomValue(vercelStatusAtom)
 
 	const gcpResult = useAtomValue(
 		retainedQueryV2("gcpIntegration", "status", { reactivityKeys: ["gcpIntegration"] }),
@@ -90,6 +92,9 @@ export function useInfraSurfaces(window?: {
 	const railway = Result.builder(railwayResult)
 		.onSuccess((status) => status.connected)
 		.orElse(() => false)
+	const vercel = Result.builder(vercelResult)
+		.onSuccess((status) => status.connected)
+		.orElse(() => false)
 	// The page reads metrics and the inventory, which a logs-only connection does not collect.
 	const gcp = Result.builder(gcpResult)
 		.onSuccess((status) => status.connectors.some((connector) => connector.metrics_enabled))
@@ -101,7 +106,8 @@ export function useInfraSurfaces(window?: {
 		if (cloudflare) surfaces.add("cloudflare")
 		if (planetscale) surfaces.add("planetscale")
 		if (railway) surfaces.add("railway")
+		if (vercel) surfaces.add("vercel")
 		if (gcp) surfaces.add("gcp")
 		return surfaces
-	}, [telemetry, cloudflare, planetscale, railway, gcp])
+	}, [telemetry, cloudflare, planetscale, railway, vercel, gcp])
 }

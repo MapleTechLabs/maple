@@ -4111,3 +4111,229 @@ SELECT
         ORDER BY weightedSpanCount DESC
         LIMIT 25
         FORMAT JSON
+
+-- builder:vercel-ai-gateway:vercelAiGatewayByModelSQL:default
+SELECT
+          if(traces.SpanAttributes['gen_ai.response.model'] != '', traces.SpanAttributes['gen_ai.response.model'], traces.SpanAttributes['gen_ai.request.model']) AS model,
+          any(traces.SpanAttributes['vercel.ai_gateway.provider']) AS provider,
+          count() AS requests,
+          sum(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total'])) AS costUsd,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.input_tokens'])) AS inputTokens,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.output_tokens'])) AS outputTokens,
+          countIf(traces.StatusCode = 'Error') AS errors,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'ai-gateway'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ParentSpanId = ''
+          AND traces.ResourceAttributes['service.namespace'] = 'vercel'
+        GROUP BY model
+        ORDER BY costUsd DESC, requests DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:vercel-ai-gateway:vercelAiGatewayByProjectSQL:default
+SELECT
+          traces.SpanAttributes['vercel.project.id'] AS projectId,
+          count() AS requests,
+          sum(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total'])) AS costUsd,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.input_tokens'])) AS inputTokens,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.output_tokens'])) AS outputTokens,
+          countIf(traces.StatusCode = 'Error') AS errors
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'ai-gateway'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ParentSpanId = ''
+          AND traces.ResourceAttributes['service.namespace'] = 'vercel'
+        GROUP BY projectId
+        ORDER BY costUsd DESC, requests DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:vercel-ai-gateway:vercelAiGatewaySummarySQL:default
+SELECT
+          count() AS requests,
+          sum(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total'])) AS costUsd,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.input_tokens'])) AS inputTokens,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.output_tokens'])) AS outputTokens,
+          countIf(traces.StatusCode = 'Error') AS errors,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'ai-gateway'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ParentSpanId = ''
+          AND traces.ResourceAttributes['service.namespace'] = 'vercel'
+        FORMAT JSON
+
+-- builder:vercel-ai-gateway:vercelAiGatewaySummarySQL:project
+SELECT
+          count() AS requests,
+          sum(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total'])) AS costUsd,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.input_tokens'])) AS inputTokens,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.output_tokens'])) AS outputTokens,
+          countIf(traces.StatusCode = 'Error') AS errors,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'ai-gateway'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ParentSpanId = ''
+          AND traces.ResourceAttributes['service.namespace'] = 'vercel'
+          AND traces.SpanAttributes['vercel.project.id'] = 'prj_sql_catalog'
+        FORMAT JSON
+
+-- builder:vercel-ai-gateway:vercelAiGatewayTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          count() AS requests,
+          sum(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total'])) AS costUsd,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.input_tokens'])) AS inputTokens,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.output_tokens'])) AS outputTokens,
+          countIf(traces.StatusCode = 'Error') AS errors
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'ai-gateway'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ParentSpanId = ''
+          AND traces.ResourceAttributes['service.namespace'] = 'vercel'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelProjectLatencySQL:default
+SELECT
+          traces.ResourceAttributes['vercel.projectId'] AS projectId,
+          count() AS spans,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ResourceAttributes['vercel.projectId'] != ''
+          AND traces.ParentSpanId = ''
+        GROUP BY projectId
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelProjectRequestsSQL:default
+SELECT
+          logs.ResourceAttributes['vercel.project.id'] AS projectId,
+          any(logs.ResourceAttributes['vercel.project.name']) AS projectName,
+          any(logs.ServiceName) AS serviceName,
+          countIf(logs.LogAttributes['http.request.method'] != '') AS requests,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499)) AS requests4xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599)) AS requests5xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] = 'HIT')) AS cacheHits,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] != '')) AS cacheLookups,
+          countIf(logs.SeverityNumber >= 17) AS errorLogs,
+          max(logs.Timestamp) AS lastSeen
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
+          AND logs.ResourceAttributes['vercel.project.id'] != ''
+        GROUP BY projectId
+        ORDER BY requests DESC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelProjectTopErrorsSQL:default
+SELECT
+          leftUTF8(logs.Body, 200) AS message,
+          count() AS occurrences,
+          any(logs.LogAttributes['vercel.source']) AS source,
+          max(logs.Timestamp) AS lastSeen
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+          AND logs.SeverityNumber >= 17
+        GROUP BY message
+        ORDER BY occurrences DESC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelProjectTopPathsSQL:default
+SELECT
+          logs.LogAttributes['url.path'] AS path,
+          count() AS requests,
+          countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499) AS requests4xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599) AS requests5xx,
+          countIf(logs.LogAttributes['vercel.cache'] = 'HIT') AS cacheHits
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+          AND logs.LogAttributes['http.request.method'] != ''
+        GROUP BY path
+        ORDER BY requests DESC
+        LIMIT 25
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelRequestTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(logs.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          countIf(logs.LogAttributes['http.request.method'] != '') AS requests,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 200 AND 299)) AS requests2xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 300 AND 399)) AS requests3xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499)) AS requests4xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599)) AS requests5xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] = 'HIT')) AS cacheHits,
+          countIf(logs.SeverityNumber >= 17) AS errorLogs
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelRequestTimeseriesSQL:project
+SELECT
+          formatDateTime(toStartOfInterval(logs.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          countIf(logs.LogAttributes['http.request.method'] != '') AS requests,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 200 AND 299)) AS requests2xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 300 AND 399)) AS requests3xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499)) AS requests4xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599)) AS requests5xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] = 'HIT')) AS cacheHits,
+          countIf(logs.SeverityNumber >= 17) AS errorLogs
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON

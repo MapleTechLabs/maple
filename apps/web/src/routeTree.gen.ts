@@ -76,6 +76,7 @@ import { Route as LabReplaysRouteImport } from './routes/lab/replays'
 import { Route as LabServiceMap3dRouteImport } from './routes/lab/service-map-3d'
 import { Route as LabTimeRangeRouteImport } from './routes/lab/time-range'
 import { Route as LabTimelineRouteImport } from './routes/lab/timeline'
+import { Route as LabVercelRouteImport } from './routes/lab/vercel'
 import { Route as LabVerdictRouteImport } from './routes/lab/verdict'
 import { Route as LabWidgetsRouteImport } from './routes/lab/widgets'
 import { Route as LabWorstCaseRouteImport } from './routes/lab/worst-case'
@@ -110,6 +111,8 @@ import { Route as InfraPlanetscaleIndexRouteImport } from './routes/infra/planet
 import { Route as InfraPlanetscaleDbNameRouteImport } from './routes/infra/planetscale/$dbName'
 import { Route as InfraRailwayIndexRouteImport } from './routes/infra/railway/index'
 import { Route as InfraRailwayServiceIdRouteImport } from './routes/infra/railway/$serviceId'
+import { Route as InfraVercelIndexRouteImport } from './routes/infra/vercel/index'
+import { Route as InfraVercelProjectIdRouteImport } from './routes/infra/vercel/$projectId'
 import { Route as LabBenchAgentTranscriptRouteImport } from './routes/lab/bench/agent-transcript'
 import { Route as LabBenchDashboardGridRouteImport } from './routes/lab/bench/dashboard-grid'
 import { Route as LabBenchInfraRouteImport } from './routes/lab/bench/infra'
@@ -465,6 +468,11 @@ const LabTimelineRoute = LabTimelineRouteImport.update({
   path: '/timeline',
   getParentRoute: () => LabRouteRoute,
 } as any)
+const LabVercelRoute = LabVercelRouteImport.update({
+  id: '/vercel',
+  path: '/vercel',
+  getParentRoute: () => LabRouteRoute,
+} as any)
 const LabVerdictRoute = LabVerdictRouteImport.update({
   id: '/verdict',
   path: '/verdict',
@@ -639,6 +647,16 @@ const InfraRailwayServiceIdRoute = InfraRailwayServiceIdRouteImport.update({
   path: '/infra/railway/$serviceId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InfraVercelIndexRoute = InfraVercelIndexRouteImport.update({
+  id: '/infra/vercel/',
+  path: '/infra/vercel/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InfraVercelProjectIdRoute = InfraVercelProjectIdRouteImport.update({
+  id: '/infra/vercel/$projectId',
+  path: '/infra/vercel/$projectId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LabBenchAgentTranscriptRoute = LabBenchAgentTranscriptRouteImport.update({
   id: '/bench/agent-transcript',
   path: '/bench/agent-transcript',
@@ -803,6 +821,7 @@ export interface FileRoutesByFullPath {
   '/lab/service-map-3d': typeof LabServiceMap3dRoute
   '/lab/time-range': typeof LabTimeRangeRoute
   '/lab/timeline': typeof LabTimelineRoute
+  '/lab/vercel': typeof LabVercelRoute
   '/lab/verdict': typeof LabVerdictRoute
   '/lab/widgets': typeof LabWidgetsRoute
   '/lab/worst-case': typeof LabWorstCaseRoute
@@ -838,6 +857,7 @@ export interface FileRoutesByFullPath {
   '/infra/hosts/$hostName': typeof InfraHostsHostNameRoute
   '/infra/planetscale/$dbName': typeof InfraPlanetscaleDbNameRoute
   '/infra/railway/$serviceId': typeof InfraRailwayServiceIdRoute
+  '/infra/vercel/$projectId': typeof InfraVercelProjectIdRoute
   '/lab/bench/agent-transcript': typeof LabBenchAgentTranscriptRoute
   '/lab/bench/dashboard-grid': typeof LabBenchDashboardGridRoute
   '/lab/bench/infra': typeof LabBenchInfraRoute
@@ -855,6 +875,7 @@ export interface FileRoutesByFullPath {
   '/infra/kubernetes/': typeof InfraKubernetesIndexRoute
   '/infra/planetscale/': typeof InfraPlanetscaleIndexRoute
   '/infra/railway/': typeof InfraRailwayIndexRoute
+  '/infra/vercel/': typeof InfraVercelIndexRoute
   '/dashboards/$dashboardId/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
   '/infra/cloudflare/workers/$scriptName': typeof InfraCloudflareWorkersScriptNameRoute
   '/infra/gcp/$service/$name': typeof InfraGcpServiceNameRoute
@@ -924,6 +945,7 @@ export interface FileRoutesByTo {
   '/lab/service-map-3d': typeof LabServiceMap3dRoute
   '/lab/time-range': typeof LabTimeRangeRoute
   '/lab/timeline': typeof LabTimelineRoute
+  '/lab/vercel': typeof LabVercelRoute
   '/lab/verdict': typeof LabVerdictRoute
   '/lab/widgets': typeof LabWidgetsRoute
   '/lab/worst-case': typeof LabWorstCaseRoute
@@ -959,6 +981,7 @@ export interface FileRoutesByTo {
   '/infra/hosts/$hostName': typeof InfraHostsHostNameRoute
   '/infra/planetscale/$dbName': typeof InfraPlanetscaleDbNameRoute
   '/infra/railway/$serviceId': typeof InfraRailwayServiceIdRoute
+  '/infra/vercel/$projectId': typeof InfraVercelProjectIdRoute
   '/lab/bench/agent-transcript': typeof LabBenchAgentTranscriptRoute
   '/lab/bench/dashboard-grid': typeof LabBenchDashboardGridRoute
   '/lab/bench/infra': typeof LabBenchInfraRoute
@@ -976,6 +999,7 @@ export interface FileRoutesByTo {
   '/infra/kubernetes': typeof InfraKubernetesIndexRoute
   '/infra/planetscale': typeof InfraPlanetscaleIndexRoute
   '/infra/railway': typeof InfraRailwayIndexRoute
+  '/infra/vercel': typeof InfraVercelIndexRoute
   '/dashboards/$dashboardId/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
   '/infra/cloudflare/workers/$scriptName': typeof InfraCloudflareWorkersScriptNameRoute
   '/infra/gcp/$service/$name': typeof InfraGcpServiceNameRoute
@@ -1047,6 +1071,7 @@ export interface FileRoutesById {
   '/lab/service-map-3d': typeof LabServiceMap3dRoute
   '/lab/time-range': typeof LabTimeRangeRoute
   '/lab/timeline': typeof LabTimelineRoute
+  '/lab/vercel': typeof LabVercelRoute
   '/lab/verdict': typeof LabVerdictRoute
   '/lab/widgets': typeof LabWidgetsRoute
   '/lab/worst-case': typeof LabWorstCaseRoute
@@ -1082,6 +1107,7 @@ export interface FileRoutesById {
   '/infra/hosts/$hostName': typeof InfraHostsHostNameRoute
   '/infra/planetscale/$dbName': typeof InfraPlanetscaleDbNameRoute
   '/infra/railway/$serviceId': typeof InfraRailwayServiceIdRoute
+  '/infra/vercel/$projectId': typeof InfraVercelProjectIdRoute
   '/lab/bench/agent-transcript': typeof LabBenchAgentTranscriptRoute
   '/lab/bench/dashboard-grid': typeof LabBenchDashboardGridRoute
   '/lab/bench/infra': typeof LabBenchInfraRoute
@@ -1099,6 +1125,7 @@ export interface FileRoutesById {
   '/infra/kubernetes/': typeof InfraKubernetesIndexRoute
   '/infra/planetscale/': typeof InfraPlanetscaleIndexRoute
   '/infra/railway/': typeof InfraRailwayIndexRoute
+  '/infra/vercel/': typeof InfraVercelIndexRoute
   '/dashboards/$dashboardId_/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
   '/infra/cloudflare/workers/$scriptName': typeof InfraCloudflareWorkersScriptNameRoute
   '/infra/gcp/$service/$name': typeof InfraGcpServiceNameRoute
@@ -1171,6 +1198,7 @@ export interface FileRouteTypes {
     | '/lab/service-map-3d'
     | '/lab/time-range'
     | '/lab/timeline'
+    | '/lab/vercel'
     | '/lab/verdict'
     | '/lab/widgets'
     | '/lab/worst-case'
@@ -1206,6 +1234,7 @@ export interface FileRouteTypes {
     | '/infra/hosts/$hostName'
     | '/infra/planetscale/$dbName'
     | '/infra/railway/$serviceId'
+    | '/infra/vercel/$projectId'
     | '/lab/bench/agent-transcript'
     | '/lab/bench/dashboard-grid'
     | '/lab/bench/infra'
@@ -1223,6 +1252,7 @@ export interface FileRouteTypes {
     | '/infra/kubernetes/'
     | '/infra/planetscale/'
     | '/infra/railway/'
+    | '/infra/vercel/'
     | '/dashboards/$dashboardId/widgets/$widgetId'
     | '/infra/cloudflare/workers/$scriptName'
     | '/infra/gcp/$service/$name'
@@ -1292,6 +1322,7 @@ export interface FileRouteTypes {
     | '/lab/service-map-3d'
     | '/lab/time-range'
     | '/lab/timeline'
+    | '/lab/vercel'
     | '/lab/verdict'
     | '/lab/widgets'
     | '/lab/worst-case'
@@ -1327,6 +1358,7 @@ export interface FileRouteTypes {
     | '/infra/hosts/$hostName'
     | '/infra/planetscale/$dbName'
     | '/infra/railway/$serviceId'
+    | '/infra/vercel/$projectId'
     | '/lab/bench/agent-transcript'
     | '/lab/bench/dashboard-grid'
     | '/lab/bench/infra'
@@ -1344,6 +1376,7 @@ export interface FileRouteTypes {
     | '/infra/kubernetes'
     | '/infra/planetscale'
     | '/infra/railway'
+    | '/infra/vercel'
     | '/dashboards/$dashboardId/widgets/$widgetId'
     | '/infra/cloudflare/workers/$scriptName'
     | '/infra/gcp/$service/$name'
@@ -1414,6 +1447,7 @@ export interface FileRouteTypes {
     | '/lab/service-map-3d'
     | '/lab/time-range'
     | '/lab/timeline'
+    | '/lab/vercel'
     | '/lab/verdict'
     | '/lab/widgets'
     | '/lab/worst-case'
@@ -1449,6 +1483,7 @@ export interface FileRouteTypes {
     | '/infra/hosts/$hostName'
     | '/infra/planetscale/$dbName'
     | '/infra/railway/$serviceId'
+    | '/infra/vercel/$projectId'
     | '/lab/bench/agent-transcript'
     | '/lab/bench/dashboard-grid'
     | '/lab/bench/infra'
@@ -1466,6 +1501,7 @@ export interface FileRouteTypes {
     | '/infra/kubernetes/'
     | '/infra/planetscale/'
     | '/infra/railway/'
+    | '/infra/vercel/'
     | '/dashboards/$dashboardId_/widgets/$widgetId'
     | '/infra/cloudflare/workers/$scriptName'
     | '/infra/gcp/$service/$name'
@@ -1542,6 +1578,7 @@ export interface RootRouteChildren {
   InfraHostsHostNameRoute: typeof InfraHostsHostNameRoute
   InfraPlanetscaleDbNameRoute: typeof InfraPlanetscaleDbNameRoute
   InfraRailwayServiceIdRoute: typeof InfraRailwayServiceIdRoute
+  InfraVercelProjectIdRoute: typeof InfraVercelProjectIdRoute
   AgentSessionsToolsIndexRoute: typeof AgentSessionsToolsIndexRoute
   ErrorsIssuesIndexRoute: typeof ErrorsIssuesIndexRoute
   InfraCloudflareIndexRoute: typeof InfraCloudflareIndexRoute
@@ -1551,6 +1588,7 @@ export interface RootRouteChildren {
   InfraKubernetesIndexRoute: typeof InfraKubernetesIndexRoute
   InfraPlanetscaleIndexRoute: typeof InfraPlanetscaleIndexRoute
   InfraRailwayIndexRoute: typeof InfraRailwayIndexRoute
+  InfraVercelIndexRoute: typeof InfraVercelIndexRoute
   DashboardsDashboardIdWidgetsWidgetIdRoute: typeof DashboardsDashboardIdWidgetsWidgetIdRoute
   InfraCloudflareWorkersScriptNameRoute: typeof InfraCloudflareWorkersScriptNameRoute
   InfraGcpServiceNameRoute: typeof InfraGcpServiceNameRoute
@@ -2035,6 +2073,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LabTimelineRouteImport
       parentRoute: typeof LabRouteRoute
     }
+    '/lab/vercel': {
+      id: '/lab/vercel'
+      path: '/vercel'
+      fullPath: '/lab/vercel'
+      preLoaderRoute: typeof LabVercelRouteImport
+      parentRoute: typeof LabRouteRoute
+    }
     '/lab/verdict': {
       id: '/lab/verdict'
       path: '/verdict'
@@ -2273,6 +2318,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InfraRailwayServiceIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/infra/vercel/': {
+      id: '/infra/vercel/'
+      path: '/infra/vercel'
+      fullPath: '/infra/vercel/'
+      preLoaderRoute: typeof InfraVercelIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/infra/vercel/$projectId': {
+      id: '/infra/vercel/$projectId'
+      path: '/infra/vercel/$projectId'
+      fullPath: '/infra/vercel/$projectId'
+      preLoaderRoute: typeof InfraVercelProjectIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/lab/bench/agent-transcript': {
       id: '/lab/bench/agent-transcript'
       path: '/bench/agent-transcript'
@@ -2436,6 +2495,7 @@ interface LabRouteRouteChildren {
   LabServiceMap3dRoute: typeof LabServiceMap3dRoute
   LabTimeRangeRoute: typeof LabTimeRangeRoute
   LabTimelineRoute: typeof LabTimelineRoute
+  LabVercelRoute: typeof LabVercelRoute
   LabVerdictRoute: typeof LabVerdictRoute
   LabWidgetsRoute: typeof LabWidgetsRoute
   LabWorstCaseRoute: typeof LabWorstCaseRoute
@@ -2477,6 +2537,7 @@ const LabRouteRouteChildren: LabRouteRouteChildren = {
   LabServiceMap3dRoute: LabServiceMap3dRoute,
   LabTimeRangeRoute: LabTimeRangeRoute,
   LabTimelineRoute: LabTimelineRoute,
+  LabVercelRoute: LabVercelRoute,
   LabVerdictRoute: LabVerdictRoute,
   LabWidgetsRoute: LabWidgetsRoute,
   LabWorstCaseRoute: LabWorstCaseRoute,
@@ -2558,6 +2619,7 @@ const rootRouteChildren: RootRouteChildren = {
   InfraHostsHostNameRoute: InfraHostsHostNameRoute,
   InfraPlanetscaleDbNameRoute: InfraPlanetscaleDbNameRoute,
   InfraRailwayServiceIdRoute: InfraRailwayServiceIdRoute,
+  InfraVercelProjectIdRoute: InfraVercelProjectIdRoute,
   AgentSessionsToolsIndexRoute: AgentSessionsToolsIndexRoute,
   ErrorsIssuesIndexRoute: ErrorsIssuesIndexRoute,
   InfraCloudflareIndexRoute: InfraCloudflareIndexRoute,
@@ -2567,6 +2629,7 @@ const rootRouteChildren: RootRouteChildren = {
   InfraKubernetesIndexRoute: InfraKubernetesIndexRoute,
   InfraPlanetscaleIndexRoute: InfraPlanetscaleIndexRoute,
   InfraRailwayIndexRoute: InfraRailwayIndexRoute,
+  InfraVercelIndexRoute: InfraVercelIndexRoute,
   DashboardsDashboardIdWidgetsWidgetIdRoute:
     DashboardsDashboardIdWidgetsWidgetIdRoute,
   InfraCloudflareWorkersScriptNameRoute: InfraCloudflareWorkersScriptNameRoute,

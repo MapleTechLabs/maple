@@ -97,6 +97,7 @@ describe("classifyPlatform", () => {
 				}),
 			),
 		).toBe("gcp")
+		expect(classifyPlatform(platformRow({ cloudProvider: "vercel", faasName: "api" }))).toBe("vercel")
 		expect(classifyPlatform(platformRow({ k8sDeploymentName: "api" }))).toBe("kubernetes")
 		expect(classifyPlatform(platformRow({ mapleSdkType: "client" }))).toBe("web")
 	})

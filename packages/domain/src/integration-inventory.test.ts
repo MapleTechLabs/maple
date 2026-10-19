@@ -13,6 +13,8 @@ const empty: IntegrationInventoryInputs = {
 	cloudflareHyperdrives: [],
 	railwayConnection: null,
 	railwayEnvironments: [],
+	vercelConnection: null,
+	vercelProjectCount: 0,
 	planetscaleConnection: null,
 	planetscaleDatabases: [],
 	planetscalePollStates: [],
@@ -51,6 +53,7 @@ describe("buildIntegrationInventory", () => {
 			"github",
 			"cloudflare",
 			"railway",
+			"vercel",
 			"planetscale",
 			"prometheus",
 			"chat",
@@ -135,6 +138,53 @@ describe("buildIntegrationInventory", () => {
 		expect(railway?.problem).toBe(
 			"1 of 1 stale, e.g. environment shop / production: no successful update for 2 h (3 services)",
 		)
+	})
+
+	describe("vercel", () => {
+		const connection = {
+			teamName: "Acme",
+			authFailedAt: null,
+			logsEnabled: true,
+			tracesEnabled: true,
+			logDrainState: { status: "enabled", lastError: null },
+			traceDrainState: { status: "enabled", lastError: null },
+			lastSuccessAt: NOW - MINUTE,
+			lastErrorAt: null,
+			lastError: null,
+			createdAt: NOW - 24 * 60 * MINUTE,
+		}
+
+		it("is healthy with both drains enabled, and counts the team's projects", () => {
+			const vercel = providerOf({ vercelConnection: connection, vercelProjectCount: 3 }, "vercel")
+			expect(vercel?.status).toBe("healthy")
+			expect(vercel?.account).toBe("Acme (3 projects)")
+			expect(vercel?.resources.map((r) => r.name)).toEqual(["logs", "traces"])
+		})
+
+		it("fails on a drain Vercel reports missing, and leaves out a drain that is turned off", () => {
+			const vercel = providerOf(
+				{
+					vercelConnection: {
+						...connection,
+						tracesEnabled: false,
+						logDrainState: { status: "missing", lastError: "Drains need a Pro plan" },
+					},
+				},
+				"vercel",
+			)
+			expect(vercel?.status).toBe("failing")
+			expect(vercel?.resources).toHaveLength(1)
+			expect(vercel?.problem).toBe("1 of 1 failing, e.g. drain logs: Drains need a Pro plan")
+		})
+
+		it("reports a rejected token as disconnected", () => {
+			const vercel = providerOf(
+				{ vercelConnection: { ...connection, authFailedAt: NOW - MINUTE } },
+				"vercel",
+			)
+			expect(vercel?.status).toBe("disconnected")
+			expect(vercel?.problem).toContain("Vercel rejected the access token")
+		})
 	})
 
 	it("lets a revoked grant outrank healthy resources", () => {

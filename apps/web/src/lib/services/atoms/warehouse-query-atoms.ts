@@ -88,6 +88,12 @@ import {
 } from "@/api/warehouse/planetscale-infra"
 import { getRailwayServices, getRailwayServiceTimeseries } from "@/api/warehouse/railway-infra"
 import {
+	getVercelAiGateway,
+	getVercelProjectDetail,
+	getVercelProjects,
+	getVercelRequestTimeseries,
+} from "@/api/warehouse/vercel-infra"
+import {
 	getGcpCloudSqlInstancesOfDatabase,
 	getGcpCloudSqlTopQueries,
 	getGcpCloudSqlTraceSide,
@@ -808,6 +814,22 @@ export const railwayServicesResultAtom = makeQueryAtomFamily(getRailwayServices,
 })
 
 export const railwayServiceTimeseriesResultAtom = makeQueryAtomFamily(getRailwayServiceTimeseries, {
+	staleTime: 15_000,
+})
+
+export const vercelProjectsResultAtom = makeQueryAtomFamily(getVercelProjects, {
+	staleTime: 15_000,
+})
+
+export const vercelRequestTimeseriesResultAtom = makeQueryAtomFamily(getVercelRequestTimeseries, {
+	staleTime: 15_000,
+})
+
+export const vercelProjectDetailResultAtom = makeQueryAtomFamily(getVercelProjectDetail, {
+	staleTime: 15_000,
+})
+
+export const vercelAiGatewayResultAtom = makeQueryAtomFamily(getVercelAiGateway, {
 	staleTime: 15_000,
 })
 

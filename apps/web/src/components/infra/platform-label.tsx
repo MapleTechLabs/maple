@@ -8,6 +8,7 @@ import {
 	LinuxIcon,
 	MicrochipIcon,
 	MicrosoftIcon,
+	VercelIcon,
 	type IconComponent,
 } from "@/components/icons"
 
@@ -35,6 +36,7 @@ const CLOUD = new Map<string, Known>([
 	["aws", { icon: AwsIcon, label: "AWS" }],
 	["gcp", { icon: GoogleCloudIcon, label: "GCP" }],
 	["azure", { icon: AzureIcon, label: "Azure" }],
+	["vercel", { icon: VercelIcon, label: "Vercel" }],
 ])
 
 function resolve(kind: PlatformKind, value: string): Known {

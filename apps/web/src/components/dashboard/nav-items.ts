@@ -21,6 +21,7 @@ import {
 	RocketIcon,
 	ServerIcon,
 	SquareSparkleIcon,
+	VercelIcon,
 } from "@/components/icons"
 import { KUBERNETES_ROOT, KUBERNETES_VIEWS } from "@/components/infra/kubernetes/views"
 import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
@@ -29,8 +30,8 @@ import type { OrganizationFeatureFlags } from "@/lib/organization-feature-flags"
 /**
  * What a nav child needs from the org before it's worth a row. The five OTel
  * surfaces come from the warehouse presence probe; Cloudflare, PlanetScale,
- * Railway and Google Cloud are integration pages, so their gate is whether the
- * integration is connected (for Google Cloud: with metrics switched on).
+ * Railway, Vercel and Google Cloud are integration pages, so their gate is whether
+ * the integration is connected (for Google Cloud: with metrics switched on).
  */
 export type NavSurface =
 	| "hosts"
@@ -41,6 +42,7 @@ export type NavSurface =
 	| "cloudflare"
 	| "planetscale"
 	| "railway"
+	| "vercel"
 	| "gcp"
 
 export interface NavSubItem {
@@ -104,7 +106,7 @@ const overviewItem: NavItem = {
  * connected; the ones it doesn't have are offered on the Overview instead of
  * padded into the nav. Containers folds into Hosts as a view, the way Pods,
  * Nodes and Workloads fold into Kubernetes, and stays typeable in the palette
- * through `views`. The six sources' marks are exactly `NavRow`'s preview cap, which
+ * through `views`. The seven sources' marks are exactly `NavRow`'s preview cap, which
  * leaves the Overview row's own glyph out.
  */
 const infrastructureItem: NavItem = {
@@ -138,12 +140,13 @@ const infrastructureItem: NavItem = {
 			surfaces: ["planetscale"],
 		},
 		{ title: "Railway", href: "/infra/railway", icon: RailwayIcon, surfaces: ["railway"] },
+		{ title: "Vercel", href: "/infra/vercel", icon: VercelIcon, surfaces: ["vercel"] },
 		{ title: "Google Cloud", href: "/infra/gcp", icon: GoogleCloudIcon, surfaces: ["gcp"] },
 	],
 }
 
 /** Most brand glyphs a closed section previews; past this the preview is dropped. */
-export const NAV_PREVIEW_MAX_GLYPHS = 6
+export const NAV_PREVIEW_MAX_GLYPHS = 7
 
 export interface InfraSubItemSplit {
 	/** What the org has, rendered directly under the section. */

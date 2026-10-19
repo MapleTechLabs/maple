@@ -45,6 +45,7 @@ const VENDOR_ICONS: Record<string, IconComponent> = {
 	semantic_kernel: MicrosoftIcon,
 	smolagents: HuggingFaceIcon,
 	spring_ai: SpringIcon,
+	vercel_ai_gateway: VercelIcon,
 	vercel_ai_sdk: VercelIcon,
 } satisfies Record<string, IconComponent>
 

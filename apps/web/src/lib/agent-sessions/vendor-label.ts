@@ -22,6 +22,7 @@ const VENDOR_LABELS: Record<string, string> = {
 	pydantic_ai: "Pydantic AI",
 	smolagents: "smolagents",
 	spring_ai: "Spring AI",
+	vercel_ai_gateway: "Vercel AI Gateway",
 	vercel_ai_sdk: "Vercel AI SDK",
 } satisfies Record<string, string>
 

@@ -1,5 +1,5 @@
 /**
- * The integration changes an agent may make: poll Railway now, and manage plain Prometheus scrape
+ * The integration changes an agent may make: poll Railway or Vercel now, and manage plain Prometheus scrape
  * targets. Both are admin-only, like their HTTP routes. Connecting a provider stays in Settings:
  * it needs an OAuth consent or a pasted token. Scrape credentials stay there too, so no secret
  * passes through a model.
@@ -9,6 +9,7 @@ import {
 	DeleteScrapeTargetOutput,
 	ScrapeTargetMutationOutput,
 	SyncRailwayOutput,
+	SyncVercelOutput,
 } from "@maple/domain/mcp-outputs"
 import { CreateScrapeTargetRequest, UpdateScrapeTargetRequest } from "@maple/domain/http"
 import { ScrapeIntervalSeconds } from "@maple/domain/primitives"
@@ -16,6 +17,7 @@ import { redactUrlSecrets } from "@maple/domain/url-redaction"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
+import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
 import { McpInvalidInputError, McpQueryError, McpUnavailableError, type McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
@@ -143,6 +145,97 @@ const renderTarget = (title: string, target: TargetRow) => ({
 })
 
 export function registerIntegrationWriteTools(server: McpToolRegistrar) {
+	server.define({
+		name: "sync_vercel",
+		title: "Sync Vercel",
+		description:
+			"Sync Vercel now instead of waiting for the next 5-minute tick: refresh the team's deployments, check that Maple's log and trace drains still exist (re-creating a deleted one, re-keying them after an ingest key change), then report each drain's state and each project's latest deployment. Use after fixing a Vercel token or drain, to confirm logs and traces flow again. Admin only.",
+		parameters: Schema.Struct({}),
+		output: SyncVercelOutput,
+		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
+		phrases: ["Syncing Vercel"],
+		handler: Effect.fn("McpTool.syncVercel")(function* () {
+			const tenant = yield* adminOnly("sync_vercel")
+			const vercel = yield* VercelIntegrationService
+			const status = yield* vercel.sync(tenant.orgId).pipe(Effect.mapError(queryError("sync_vercel")))
+			const drain = (
+				enabled: boolean,
+				state: { readonly status: string; readonly lastError: string | null } | null,
+			) =>
+				enabled
+					? { status: state?.status ?? "not created", lastError: state?.lastError ?? null }
+					: null
+			return {
+				connected: status.connected,
+				team: status.team?.name ?? null,
+				authFailed: status.authFailed,
+				lastSyncedAt: iso(status.lastSuccessAt),
+				lastError: status.lastError,
+				logDrain: drain(status.logsEnabled, status.drains.logs),
+				traceDrain: drain(status.tracesEnabled, status.drains.traces),
+				projects: status.projects.map((project) => ({
+					name: project.name,
+					forwarded: project.forwarded,
+					latestDeploymentState: project.latestDeployment?.state ?? null,
+					latestDeploymentAt: iso(project.latestDeployment?.createdAt ?? null),
+				})),
+			}
+		}),
+		render: (output) =>
+			!output.connected
+				? {
+						title: "Sync Vercel",
+						empty: {
+							message:
+								"Vercel is not connected. Connect it with an access token in Settings → Integrations.",
+						},
+						blocks: [],
+					}
+				: {
+						title: `Sync Vercel${output.team === null ? "" : `: ${output.team}`}`,
+						notices: [
+							...(output.authFailed
+								? [
+										"Vercel rejected the stored token, so nothing was synced. Save a new token in Settings → Integrations.",
+									]
+								: []),
+							...[
+								{ label: "Log drain", drain: output.logDrain },
+								{ label: "Trace drain", drain: output.traceDrain },
+							].flatMap(({ label, drain }) =>
+								drain === null || drain.status === "enabled"
+									? []
+									: [
+											`${label} is ${drain.status}${drain.lastError === null ? "" : ` (${drain.lastError})`}: its data is not arriving. Drains need a Pro or Enterprise team; the next sync re-creates a deleted one.`,
+										],
+							),
+						],
+						blocks: [
+							doc.fields([
+								["Last sync", output.lastSyncedAt ?? "never"],
+								["Last error", output.lastError ?? undefined],
+								["Log drain", output.logDrain?.status ?? "off"],
+								["Trace drain", output.traceDrain?.status ?? "off"],
+							]),
+							doc.table(
+								["Project", "Forwarded", "Latest deployment", "Created"],
+								output.projects.map((project) => [
+									project.name,
+									project.forwarded ? "yes" : "no",
+									project.latestDeploymentState ?? "—",
+									project.latestDeploymentAt ?? "—",
+								]),
+							),
+						],
+						next: [
+							doc.next(
+								"list_infra",
+								{ kind: "vercel_projects" },
+								"each project's requests, 5xx rate and error logs from the log drain",
+							),
+						],
+					},
+	})
 	server.define({
 		name: "sync_railway",
 		title: "Sync Railway",

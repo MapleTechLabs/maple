@@ -23,6 +23,7 @@ import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetS
 import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrReviewPostMergeService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
+import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
@@ -53,6 +54,7 @@ export const layerTick = (
 		GcpMetricsService.layer,
 		PlanetScaleService.layer,
 		RailwayMetricsService.layer,
+		VercelIntegrationService.layer,
 		DigestService.layer,
 		WebAnalyticsDigestService.layer,
 		ErrorsService.layer,
@@ -299,6 +301,21 @@ const railwayMetricsTick = makeTick(
 			: undefined,
 )
 
+const vercelTick = makeTick(
+	VercelIntegrationService.use((vercel) => vercel.pollAllOrgs()),
+	"vercel",
+	(result) =>
+		result.orgs > 0
+			? {
+					orgs: result.orgs,
+					deploymentsUpserted: result.deploymentsUpserted,
+					drainsRepaired: result.drainsRepaired,
+					skipped: result.skipped,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
 const prReviewPostMergeTick = makeTick(
 	PrReviewPostMergeService.use((service) => service.runTick()),
 	"pr_review_post_merge",
@@ -327,6 +344,7 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly prReviewPostMerge: Effect.Effect<void, never, R>
 	readonly railwayMetrics: Effect.Effect<void, never, R>
 	readonly serviceMapRollup: Effect.Effect<void, never, R>
+	readonly vercel: Effect.Effect<void, never, R>
 }
 
 /** The program each lane runs; every tick belongs to exactly one lane. */
@@ -344,6 +362,7 @@ const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect
 		Match.when("planetscale", () => ticks.planetScale),
 		Match.when("railway_metrics", () => ticks.railwayMetrics),
 		Match.when("pr_review_post_merge", () => ticks.prReviewPostMerge),
+		Match.when("vercel", () => ticks.vercel),
 		Match.when("digest", () => ticks.digest),
 		Match.when("service_map_rollup", () => ticks.serviceMapRollup),
 		Match.exhaustive,
@@ -395,6 +414,7 @@ type ScheduledServices =
 	| PrReviewPostMergeService
 	| RailwayMetricsService
 	| ServiceMapRollupService
+	| VercelIntegrationService
 
 export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	alert: alertTick,
@@ -409,6 +429,7 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	prReviewPostMerge: prReviewPostMergeTick,
 	railwayMetrics: railwayMetricsTick,
 	serviceMapRollup: serviceMapRollupTick,
+	vercel: vercelTick,
 }
 
 /**

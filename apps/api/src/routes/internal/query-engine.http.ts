@@ -19,6 +19,10 @@ import {
 	ServiceApdexResponse,
 	PlanetScaleInfraTimeseriesResponse,
 	RailwayInfraRowsResponse,
+	VercelAiGatewayResponse,
+	VercelInfraProjectDetailResponse,
+	VercelInfraProjectsResponse,
+	VercelInfraRequestTimeseriesResponse,
 	GcpInfraMetricsResponse,
 	GcpInfraPresenceResponse,
 	GcpInfraSparklinesResponse,
@@ -262,18 +266,20 @@ const toServicePlatformRow = (row: CH.ServicePlatformsOutput) => {
 	// Host infrastructure takes precedence over SDK self-report. Google Cloud's
 	// detector sets `faas.name` on Cloud Run and Cloud Functions, so it is checked
 	// before the Lambda rule.
-	const platform: "kubernetes" | "cloudflare" | "gcp" | "lambda" | "web" | "unknown" =
+	const platform: "kubernetes" | "cloudflare" | "gcp" | "vercel" | "lambda" | "web" | "unknown" =
 		cloudPlatform === "cloudflare.workers" || cloudProvider === "cloudflare"
 			? "cloudflare"
 			: cloudProvider === "gcp"
 				? "gcp"
-				: faasName !== "" || cloudPlatform === "aws_lambda"
-					? "lambda"
-					: isKubernetes
-						? "kubernetes"
-						: mapleSdkType === "client"
-							? "web"
-							: "unknown"
+				: cloudProvider === "vercel"
+					? "vercel"
+					: faasName !== "" || cloudPlatform === "aws_lambda"
+						? "lambda"
+						: isKubernetes
+							? "kubernetes"
+							: mapleSdkType === "client"
+								? "web"
+								: "unknown"
 	return {
 		serviceName: decodeServiceName(row.serviceName),
 		platform,
@@ -852,6 +858,86 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new RailwayInfraRowsResponse({
 							data: rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
 						})
+					}),
+				)
+				.handle("vercelInfraProjects", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [requestRows, latencyRows] = yield* Effect.all(
+							[
+								runQuery(Queries.vercelInfraProjectRequests, tenant, payload),
+								runQuery(Queries.vercelInfraProjectLatency, tenant, payload),
+							],
+							{ concurrency: 2 },
+						)
+						const latencyByProject = new Map(latencyRows.map((row) => [row.projectId, row]))
+						return new VercelInfraProjectsResponse({
+							projects: requestRows.map((row) => {
+								const latency = latencyByProject.get(row.projectId)
+								return {
+									...row,
+									lastSeen: DateTime.formatIso(row.lastSeen),
+									p50DurationMs: latency?.p50DurationMs ?? null,
+									p95DurationMs: latency?.p95DurationMs ?? null,
+								}
+							}),
+						})
+					}),
+				)
+				.handle("vercelInfraRequestTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const buckets = yield* runQuery(Queries.vercelInfraRequestTimeseries, tenant, payload)
+						return new VercelInfraRequestTimeseriesResponse({ buckets })
+					}),
+				)
+				.handle("vercelInfraProjectDetail", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [paths, errors] = yield* Effect.all(
+							[
+								runQuery(Queries.vercelInfraTopPaths, tenant, payload),
+								runQuery(Queries.vercelInfraTopErrors, tenant, payload),
+							],
+							{ concurrency: 2 },
+						)
+						return new VercelInfraProjectDetailResponse({
+							paths,
+							errors: errors.map((row) => ({
+								...row,
+								lastSeen: DateTime.formatIso(row.lastSeen),
+							})),
+						})
+					}),
+				)
+				.handle("vercelAiGateway", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [summaryRows, models, projects, timeseries] = yield* Effect.all(
+							[
+								runQuery(Queries.vercelAiGatewaySummary, tenant, payload),
+								runQuery(Queries.vercelAiGatewayByModel, tenant, payload),
+								payload.projectId === undefined
+									? runQuery(Queries.vercelAiGatewayByProject, tenant, payload)
+									: Effect.succeed([]),
+								runQuery(Queries.vercelAiGatewayTimeseries, tenant, payload),
+							],
+							{ concurrency: 4 },
+						)
+						// An aggregate without GROUP BY always returns its one row.
+						const summary = summaryRows[0] ?? {
+							requests: 0,
+							costUsd: 0,
+							inputTokens: 0,
+							outputTokens: 0,
+							errors: 0,
+							p50DurationMs: null,
+							p95DurationMs: null,
+						}
+						return new VercelAiGatewayResponse({ summary, models, projects, timeseries })
 					}),
 				)
 				.handle("gcpInfraPresence", ({ payload }) =>

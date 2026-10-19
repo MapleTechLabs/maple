@@ -1,7 +1,8 @@
 /**
- * Fixture world for the provider infra kinds: Cloudflare zones and Workers, Railway services and
- * PlanetScale databases, answered by the aliases their queries select. One zone serves 5xx above the
- * 5% line, one Railway service runs at its CPU limit, one database's storage is filling up.
+ * Fixture world for the provider infra kinds: Cloudflare zones and Workers, Railway services,
+ * PlanetScale databases and Vercel projects, answered by the aliases their queries select. One zone
+ * serves 5xx above the 5% line, one Railway service runs at its CPU limit, one database's storage is
+ * filling up, one Vercel project fails 8% of its requests.
  */
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import type { FixtureRule } from "./fake-warehouse"
@@ -10,6 +11,7 @@ export const PROVIDER_WORLD = {
 	failingZone: "api.example.com",
 	hotRailwayService: "api",
 	fullDatabase: "maple-prod",
+	failingVercelProject: "storefront",
 } as const
 
 const BUCKETS = 12
@@ -126,7 +128,69 @@ const DATABASES = [
 	{ database: "maple-analytics", cpu: 12, mem: 33, lag: 0, storage: 21, conns: 4, connsMax: 9 },
 ] as const
 
+const VERCEL_PROJECTS = [
+	{
+		id: "prj_store",
+		name: PROVIDER_WORLD.failingVercelProject,
+		requests: 52_000,
+		rate5xx: 0.08,
+		errorLogs: 3_900,
+	},
+	{ id: "prj_docs", name: "docs", requests: 230_000, rate5xx: 0.001, errorLogs: 12 },
+] as const
+
+/** Vercel queries read the log drain's records, all under `cloud.provider = 'vercel'`. */
+const vercelLogs = (sql: string) => mentions(sql, "= 'vercel'")
+
 export const providerFixtureRules = (): FixtureRule[] => [
+	// Vercel projects, from the log drain.
+	{
+		match: (sql) => vercelLogs(sql) && has(sql, "cacheLookups"),
+		rows: VERCEL_PROJECTS.map((p) => ({
+			projectId: p.id,
+			projectName: p.name,
+			serviceName: p.name,
+			requests: p.requests,
+			requests4xx: Math.round(p.requests * 0.03),
+			requests5xx: Math.round(p.requests * p.rate5xx),
+			cacheHits: Math.round(p.requests * 0.4),
+			cacheLookups: Math.round(p.requests * 0.8),
+			errorLogs: p.errorLogs,
+			lastSeen: "2026-10-01 11:59:00",
+		})),
+	},
+	{
+		match: (sql) => vercelLogs(sql) && has(sql, "requests5xx") && bucketed(sql),
+		rows: (sql) =>
+			buckets(sql).map(({ at, t }) => ({
+				bucket: isoZ(at),
+				requests: 4_300,
+				requests2xx: 3_800,
+				requests3xx: 0,
+				requests4xx: 130,
+				requests5xx: t > 0.66 ? 900 : 60,
+				cacheHits: 1_700,
+				errorLogs: t > 0.66 ? 800 : 40,
+			})),
+	},
+	{
+		match: (sql) => vercelLogs(sql) && has(sql, "path"),
+		rows: [
+			{ path: "/api/checkout", requests: 9_400, requests4xx: 120, requests5xx: 3_800, cacheHits: 0 },
+			{ path: "/", requests: 30_000, requests4xx: 40, requests5xx: 20, cacheHits: 27_000 },
+		],
+	},
+	{
+		match: (sql) => vercelLogs(sql) && has(sql, "occurrences"),
+		rows: [
+			{
+				message: "Error: connect ETIMEDOUT 10.0.4.12:5432",
+				occurrences: 3_600,
+				source: "lambda",
+				lastSeen: "2026-10-01 11:58:00",
+			},
+		],
+	},
 	// Cloudflare zones: the fleet list, then single-zone views.
 	{
 		match: (sql) => has(sql, "cacheableRequests"),

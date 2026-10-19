@@ -9,6 +9,7 @@ describe("vendorColor", () => {
 		expect(vendorColor("openai_agents_sdk")).toBe("light-dark(#000000, #FFFFFF)")
 		expect(vendorColor("openinference-openai")).toBe(vendorColor("openai_agents_sdk"))
 		expect(vendorColor("eve")).toBe(vendorColor("vercel_ai_sdk"))
+		expect(vendorColor("vercel_ai_gateway")).toBe(vendorColor("vercel_ai_sdk"))
 	})
 
 	it("falls back to the neutral for frameworks without a brand color, and for no vendor at all", () => {

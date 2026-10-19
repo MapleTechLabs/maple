@@ -22,6 +22,7 @@ import {
 	summarizePlanetScale,
 	summarizePods,
 	summarizeRailway,
+	summarizeVercel,
 } from "@/components/infra/overview/summaries"
 import { FLEET_BAND_BOXED } from "@/components/infra/primitives/fleet-band"
 import { SearchToolbar } from "@/components/common/search-toolbar"
@@ -29,6 +30,20 @@ import { PageHero } from "@/components/common/page-hero"
 import { RailwayEnvironmentStatus } from "@maple/domain/http"
 import { RailwayFleetBand, RailwayServiceTable } from "@/components/infra/railway/railway-service-table"
 import { hasConfiguredLimits } from "@/components/infra/railway/list-model"
+import { vercelProjectRow } from "@/components/infra/vercel/list-model"
+import { VercelListPage, type VercelListState } from "@/components/infra/vercel/vercel-list-page"
+import { VercelProjectPage } from "@/components/infra/vercel/vercel-project-page"
+import {
+	VERCEL_AI_GATEWAY,
+	VERCEL_AI_TIMESERIES,
+	VERCEL_API_AI_GATEWAY,
+	VERCEL_API_DEPLOYMENTS,
+	VERCEL_API_DETAIL,
+	VERCEL_BUCKETS,
+	VERCEL_EMPTY_AI_GATEWAY,
+	VERCEL_PROJECTS,
+	VERCEL_STATUS,
+} from "./vercel-infra-fixtures"
 
 const NOW = Date.now()
 const ago = (ms: number) => new Date(NOW - ms).toISOString()
@@ -187,6 +202,7 @@ const SUMMARIES: ReadonlyArray<readonly [SourceId, SourceSummary]> = [
 	],
 	["cloudflare", summarizeCloudflare(ZONES)],
 	["railway", summarizeRailway(RAILWAY)],
+	["vercel", summarizeVercel(VERCEL_PROJECTS)],
 	["planetscale", summarizePlanetScale(DATABASES)],
 ]
 
@@ -201,13 +217,15 @@ function Frame({ label, children }: { label: string; children: React.ReactNode }
 	)
 }
 
-/** The infra rethink's three surfaces over fixture rows: overview, hosts list, Railway list. */
+/** The infra surfaces over fixture rows: overview, hosts list, Railway list, the Vercel pages. */
 export function InfraLab() {
 	const findings = SUMMARIES.flatMap(([, summary]) => summary.findings).sort(
 		(a, b) => RANK[a.tone] - RANK[b.tone],
 	)
 	const [hostQuery, setHostQuery] = useState("")
 	const [hostScope, setHostScope] = useState<HostScope | undefined>()
+	const [vercelState, setVercelState] = useState<VercelListState>({})
+	const [vercelAiState, setVercelAiState] = useState<VercelListState>({ view: "aiGateway" })
 
 	const hosts = useMemo(
 		() =>
@@ -294,6 +312,72 @@ export function InfraLab() {
 						showLimits={hasConfiguredLimits(RAILWAY)}
 					/>
 				</div>
+			</Frame>
+
+			<Frame label="/infra/vercel">
+				<VercelListPage
+					status={VERCEL_STATUS}
+					projects={VERCEL_PROJECTS}
+					buckets={VERCEL_BUCKETS}
+					aiGateway={VERCEL_AI_GATEWAY}
+					aiTimeseries={VERCEL_AI_TIMESERIES}
+					state={vercelState}
+					onStateChange={(patch) => setVercelState((prev) => ({ ...prev, ...patch }))}
+					timeSearch={{}}
+				/>
+			</Frame>
+
+			<Frame label="/infra/vercel?view=aiGateway">
+				<VercelListPage
+					status={VERCEL_STATUS}
+					projects={VERCEL_PROJECTS}
+					buckets={VERCEL_BUCKETS}
+					aiGateway={VERCEL_AI_GATEWAY}
+					aiTimeseries={VERCEL_AI_TIMESERIES}
+					state={vercelAiState}
+					onStateChange={(patch) => setVercelAiState((prev) => ({ ...prev, ...patch }))}
+					timeSearch={{}}
+				/>
+			</Frame>
+
+			<Frame label="/infra/vercel (connected, no data yet)">
+				<VercelListPage
+					status={VERCEL_STATUS}
+					projects={[]}
+					buckets={[]}
+					aiGateway={VERCEL_EMPTY_AI_GATEWAY}
+					aiTimeseries={[]}
+					state={{}}
+					onStateChange={() => undefined}
+					timeSearch={{}}
+				/>
+			</Frame>
+
+			<Frame label="/infra/vercel?view=aiGateway (no AI Gateway requests)">
+				<VercelListPage
+					status={VERCEL_STATUS}
+					projects={VERCEL_PROJECTS}
+					buckets={VERCEL_BUCKETS}
+					aiGateway={VERCEL_EMPTY_AI_GATEWAY}
+					aiTimeseries={[]}
+					state={{ view: "aiGateway" }}
+					onStateChange={() => undefined}
+					timeSearch={{}}
+				/>
+			</Frame>
+
+			<Frame label="/infra/vercel/$projectId">
+				<VercelProjectPage
+					projectId="prj_api"
+					project={VERCEL_STATUS.projects.find((project) => project.id === "prj_api") ?? null}
+					row={vercelProjectRow("prj_api", VERCEL_STATUS.projects, VERCEL_PROJECTS)}
+					buckets={VERCEL_BUCKETS}
+					detail={VERCEL_API_DETAIL}
+					deployments={VERCEL_API_DEPLOYMENTS}
+					aiGateway={VERCEL_API_AI_GATEWAY}
+					aiTimeseries={VERCEL_AI_TIMESERIES}
+					timeSearch={{}}
+				/>
 			</Frame>
 		</div>
 	)

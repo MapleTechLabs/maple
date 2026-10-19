@@ -55,6 +55,15 @@ describe("list_infra provider kinds", () => {
 		expect(rows[0]?.cpuPeak).toBeCloseTo(0.1, 3)
 	})
 
+	it("lists Vercel projects from the log drain with the failing one first", async () => {
+		const result = await call("list_infra", { kind: "vercel_projects" })
+		const rows = decode(ListInfraOutput, result).sections[0]?.rows ?? []
+		expect(rows.map((row) => row.name)).toEqual([PROVIDER_WORLD.failingVercelProject, "docs"])
+		expect(rows[0]?.errorRate).toBeCloseTo(0.08, 3)
+		expect(rows[0]?.cacheHitRate).toBeCloseTo(0.5, 3)
+		expect(markdown(result)).toContain("HIGH 5xx: 8.00%")
+	})
+
 	it("leaves provider kinds out of the overview when no integration is connected", async () => {
 		const output = decode(ListInfraOutput, await call("list_infra", {}))
 		expect(output.sections.some((section) => section.kind.startsWith("cloudflare"))).toBe(false)
@@ -109,6 +118,21 @@ describe("inspect_infra provider kinds", () => {
 			}),
 		)
 		expect(staging.entity?.environment).toBe("staging")
+	})
+
+	it("shows when a Vercel project's 5xx climbed, its failing paths and its top error log", async () => {
+		const result = await call("inspect_infra", {
+			kind: "vercel_project",
+			name: PROVIDER_WORLD.failingVercelProject,
+		})
+		const output = decode(InspectInfraOutput, result)
+		expect(output.details?.["Project id"]).toBe("prj_store")
+		expect(output.series.find((s) => s.label === "5xx per bucket")?.change).toBeGreaterThan(0)
+		const paths = output.breakdowns?.find((b) => b.title === "Busiest paths")
+		expect(paths?.rows[0]).toEqual({ key: "/api/checkout", values: [9_400, 120, 3_800, 0] })
+		const text = markdown(result)
+		expect(text).toContain("connect ETIMEDOUT")
+		expect(text).toContain('attribute_key="vercel.project.name"')
 	})
 
 	it("reads PlanetScale percentages as fractions", async () => {

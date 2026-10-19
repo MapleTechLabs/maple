@@ -9,14 +9,12 @@ import {
 	CloudflareAccountCard,
 	CloudflareHeaderActions,
 } from "@/components/integrations/cloudflare-account-card"
-import {
-	GcpHeaderStatus,
-	GcpIntegrationCard,
-} from "@/components/integrations/gcp-integration-card"
+import { GcpHeaderStatus, GcpIntegrationCard } from "@/components/integrations/gcp-integration-card"
 import { GithubIntegrationCard } from "@/components/integrations/github-integration-card"
 import { HazelIntegrationCard } from "@/components/integrations/hazel-integration-card"
 import { PlanetScaleIntegrationCard } from "@/components/integrations/planetscale-integration-card"
 import { RailwayIntegrationCard } from "@/components/integrations/railway-integration-card"
+import { VercelHeaderActions, VercelIntegrationCard } from "@/components/integrations/vercel-integration-card"
 import { ChatIntegrationCard } from "@/components/integrations/chat-integration-card"
 import {
 	HEALTH_TONE,
@@ -239,6 +237,8 @@ function IntegrationsPage() {
 					<GcpIntegrationCard />
 				) : integration === "railway" ? (
 					<RailwayIntegrationCard />
+				) : integration === "vercel" ? (
+					<VercelIntegrationCard />
 				) : (
 					// prometheus + warpstream share the generic scrape-target flow
 					<ScrapeTargetsSection sourceFilter="prometheus" />
@@ -310,6 +310,7 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 					</a>
 				) : null}
 				{integration === "cloudflare" && connected ? <CloudflareHeaderActions /> : null}
+				{integration === "vercel" && connected ? <VercelHeaderActions /> : null}
 				{showConnect ? (
 					<Button size="sm" onClick={connectFlow.connect} loading={connectFlow.busy}>
 						{/* No iconClassName: the glyph inherits the button's text color, like the in-card buttons. */}

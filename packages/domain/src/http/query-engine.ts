@@ -492,6 +492,149 @@ export class RailwayInfraRowsResponse extends Schema.Class<RailwayInfraRowsRespo
 	data: Schema.Array(WireRow),
 }) {}
 
+// Vercel infrastructure page (/infra/vercel): log drain records, deployment traces and AI Gateway traces.
+const VercelProjectId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128))
+
+export class VercelInfraProjectsRequest extends Schema.Class<VercelInfraProjectsRequest>(
+	"VercelInfraProjectsRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+}) {}
+
+export const VercelInfraProject = Schema.Struct({
+	projectId: Schema.String,
+	projectName: Schema.String,
+	serviceName: Schema.String,
+	requests: Schema.Number,
+	requests4xx: Schema.Number,
+	requests5xx: Schema.Number,
+	cacheHits: Schema.Number,
+	cacheLookups: Schema.Number,
+	errorLogs: Schema.Number,
+	/** ISO-8601. */
+	lastSeen: Schema.String,
+	/** Root-span latency from deployment traces; null when the project sends none. */
+	p50DurationMs: Schema.NullOr(Schema.Number),
+	p95DurationMs: Schema.NullOr(Schema.Number),
+})
+export type VercelInfraProject = typeof VercelInfraProject.Type
+
+export class VercelInfraProjectsResponse extends Schema.Class<VercelInfraProjectsResponse>(
+	"VercelInfraProjectsResponse",
+)({
+	projects: Schema.Array(VercelInfraProject),
+}) {}
+
+export class VercelInfraTimeseriesRequest extends Schema.Class<VercelInfraTimeseriesRequest>(
+	"VercelInfraTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	/** Every project when absent. */
+	projectId: Schema.optionalKey(VercelProjectId),
+}) {}
+
+export const VercelInfraRequestBucket = Schema.Struct({
+	/** ISO-8601 bucket start. */
+	bucket: Schema.String,
+	requests: Schema.Number,
+	requests2xx: Schema.Number,
+	requests3xx: Schema.Number,
+	requests4xx: Schema.Number,
+	requests5xx: Schema.Number,
+	cacheHits: Schema.Number,
+	errorLogs: Schema.Number,
+})
+export type VercelInfraRequestBucket = typeof VercelInfraRequestBucket.Type
+
+export class VercelInfraRequestTimeseriesResponse extends Schema.Class<VercelInfraRequestTimeseriesResponse>(
+	"VercelInfraRequestTimeseriesResponse",
+)({
+	buckets: Schema.Array(VercelInfraRequestBucket),
+}) {}
+
+export class VercelInfraProjectDetailRequest extends Schema.Class<VercelInfraProjectDetailRequest>(
+	"VercelInfraProjectDetailRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	projectId: VercelProjectId,
+}) {}
+
+export const VercelInfraPath = Schema.Struct({
+	path: Schema.String,
+	requests: Schema.Number,
+	requests4xx: Schema.Number,
+	requests5xx: Schema.Number,
+	cacheHits: Schema.Number,
+})
+export type VercelInfraPath = typeof VercelInfraPath.Type
+
+export const VercelInfraErrorMessage = Schema.Struct({
+	message: Schema.String,
+	occurrences: Schema.Number,
+	source: Schema.String,
+	/** ISO-8601. */
+	lastSeen: Schema.String,
+})
+export type VercelInfraErrorMessage = typeof VercelInfraErrorMessage.Type
+
+export class VercelInfraProjectDetailResponse extends Schema.Class<VercelInfraProjectDetailResponse>(
+	"VercelInfraProjectDetailResponse",
+)({
+	paths: Schema.Array(VercelInfraPath),
+	errors: Schema.Array(VercelInfraErrorMessage),
+}) {}
+
+const VercelAiGatewayUsageFields = {
+	requests: Schema.Number,
+	costUsd: Schema.Number,
+	inputTokens: Schema.Number,
+	outputTokens: Schema.Number,
+	errors: Schema.Number,
+}
+
+export const VercelAiGatewaySummary = Schema.Struct({
+	...VercelAiGatewayUsageFields,
+	p50DurationMs: Schema.NullOr(Schema.Number),
+	p95DurationMs: Schema.NullOr(Schema.Number),
+})
+export type VercelAiGatewaySummary = typeof VercelAiGatewaySummary.Type
+
+export const VercelAiGatewayModel = Schema.Struct({
+	model: Schema.String,
+	provider: Schema.String,
+	...VercelAiGatewayUsageFields,
+	p95DurationMs: Schema.NullOr(Schema.Number),
+})
+export type VercelAiGatewayModel = typeof VercelAiGatewayModel.Type
+
+export const VercelAiGatewayProject = Schema.Struct({
+	/** Empty for requests made outside a Vercel project. */
+	projectId: Schema.String,
+	...VercelAiGatewayUsageFields,
+})
+export type VercelAiGatewayProject = typeof VercelAiGatewayProject.Type
+
+export const VercelAiGatewayBucket = Schema.Struct({
+	/** ISO-8601 bucket start. */
+	bucket: Schema.String,
+	...VercelAiGatewayUsageFields,
+})
+export type VercelAiGatewayBucket = typeof VercelAiGatewayBucket.Type
+
+export class VercelAiGatewayResponse extends Schema.Class<VercelAiGatewayResponse>("VercelAiGatewayResponse")(
+	{
+		summary: VercelAiGatewaySummary,
+		models: Schema.Array(VercelAiGatewayModel),
+		/** Empty when the request named a project. */
+		projects: Schema.Array(VercelAiGatewayProject),
+		timeseries: Schema.Array(VercelAiGatewayBucket),
+	},
+) {}
+
 // Google Cloud infrastructure page (/infra/gcp): `gcp.*` metrics from the Google Cloud poller.
 const GcpInfraService = Schema.Literals(GCP_INFRA_SERVICE_IDS)
 
@@ -1099,6 +1242,7 @@ const ServicePlatformLiteral = Schema.Literals([
 	"kubernetes",
 	"cloudflare",
 	"gcp",
+	"vercel",
 	"lambda",
 	"web",
 	"unknown",
@@ -2874,6 +3018,34 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("railwayInfraServiceTimeseries", "/railway-infra-service-timeseries", {
 			payload: RailwayInfraServiceTimeseriesRequest,
 			success: RailwayInfraRowsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraProjects", "/vercel-infra-projects", {
+			payload: VercelInfraProjectsRequest,
+			success: VercelInfraProjectsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraRequestTimeseries", "/vercel-infra-request-timeseries", {
+			payload: VercelInfraTimeseriesRequest,
+			success: VercelInfraRequestTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraProjectDetail", "/vercel-infra-project-detail", {
+			payload: VercelInfraProjectDetailRequest,
+			success: VercelInfraProjectDetailResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelAiGateway", "/vercel-ai-gateway", {
+			payload: VercelInfraTimeseriesRequest,
+			success: VercelAiGatewayResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

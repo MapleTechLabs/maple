@@ -110,6 +110,7 @@ export function classifyPlatform(row: CH.ServicePlatformsOutput): ServicePlatfor
 	if (row.cloudPlatform === "cloudflare.workers" || row.cloudProvider === "cloudflare") return "cloudflare"
 	// Before the Lambda rule: Google Cloud's detector sets `faas.name` on Cloud Run and Cloud Functions.
 	if (row.cloudProvider === "gcp") return "gcp"
+	if (row.cloudProvider === "vercel") return "vercel"
 	if (row.faasName !== "" || row.cloudPlatform === "aws_lambda") return "lambda"
 	// `k8s.cluster.name` alone does not prove the service runs in Kubernetes.
 	if (row.k8sPodName !== "" || row.k8sDeploymentName !== "") return "kubernetes"

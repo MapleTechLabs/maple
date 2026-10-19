@@ -66,6 +66,7 @@ use maple_ingest::telemetry::{
     PipelineError, SamplingPolicy, TelemetryPipeline, TelemetrySignal, TinybirdConfig,
 };
 use maple_ingest::usage_metrics::{billable_gb, usage_cardinality_view, UsageMetrics};
+use maple_ingest::vercel_logs;
 use maple_ingest::wal_store::WalSegmentStore;
 use moka::future::Cache;
 use opentelemetry::trace::TracerProvider as _;
@@ -1327,6 +1328,30 @@ impl Signal {
             Self::Traces => "traces",
             Self::Logs => "logs",
             Self::Metrics => "metrics",
+        }
+    }
+}
+
+/// What a request body holds: an OTLP export, or a sender's own log format
+/// that is mapped onto OTLP logs.
+#[derive(Clone, Copy)]
+enum Ingress {
+    Otlp(Signal),
+    VercelLogDrain,
+}
+
+impl Ingress {
+    fn signal(self) -> Signal {
+        match self {
+            Self::Otlp(signal) => signal,
+            Self::VercelLogDrain => Signal::Logs,
+        }
+    }
+
+    fn route(self) -> String {
+        match self {
+            Self::Otlp(signal) => format!("/v1/{}", signal.path()),
+            Self::VercelLogDrain => "/v1/logpush/vercel".to_owned(),
         }
     }
 }
@@ -2644,6 +2669,7 @@ async fn main() {
             post(handle_cloudflare_logpush_http_requests),
         )
         .route("/v1/logpush/gcp/{connector_id}", post(handle_gcp_logpush))
+        .route("/v1/logpush/vercel", post(handle_vercel_logpush))
         .layer(cors)
         .layer(DefaultBodyLimit::max(config.max_request_body_bytes))
         .with_state(state);
@@ -3132,7 +3158,7 @@ async fn handle_traces(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    handle_signal(state, headers, body, Signal::Traces).await
+    handle_signal(state, headers, body, Ingress::Otlp(Signal::Traces)).await
 }
 
 async fn handle_logs(
@@ -3140,7 +3166,7 @@ async fn handle_logs(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    handle_signal(state, headers, body, Signal::Logs).await
+    handle_signal(state, headers, body, Ingress::Otlp(Signal::Logs)).await
 }
 
 async fn handle_metrics(
@@ -3148,7 +3174,16 @@ async fn handle_metrics(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    handle_signal(state, headers, body, Signal::Metrics).await
+    handle_signal(state, headers, body, Ingress::Otlp(Signal::Metrics)).await
+}
+
+/// A Vercel log drain, authenticated by the org's ingest key like OTLP.
+async fn handle_vercel_logpush(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    handle_signal(state, headers, body, Ingress::VercelLogDrain).await
 }
 
 // Session replay ingest
@@ -4256,15 +4291,16 @@ async fn handle_signal(
     state: Arc<AppState>,
     headers: HeaderMap,
     body: Bytes,
-    signal: Signal,
+    ingress: Ingress,
 ) -> Response {
     let start = Instant::now();
     let body_bytes = body.len();
+    let signal = ingress.signal();
 
     metrics::request_started();
     let _guard = InFlightGuard;
 
-    let route = format!("/v1/{}", signal.path());
+    let route = ingress.route();
     let otel_name = format!("POST {route}");
     let span = tracing::info_span!(
         "ingest",
@@ -4294,7 +4330,7 @@ async fn handle_signal(
     record_client_identity(&span, &headers);
     let span_handle = span.clone();
 
-    let result = handle_signal_inner(&state, &headers, body, signal)
+    let result = handle_signal_inner(&state, &headers, body, ingress)
         .instrument(span)
         .await;
     let duration = start.elapsed();
@@ -4422,8 +4458,9 @@ async fn handle_signal_inner(
     state: &AppState,
     headers: &HeaderMap,
     body: Bytes,
-    signal: Signal,
+    ingress: Ingress,
 ) -> Result<(Response, usize, String, usize), (ApiError, &'static str)> {
+    let signal = ingress.signal();
     let ingest_key = extract_ingest_key(headers).ok_or_else(|| {
         warn!("Missing ingest key");
         (ApiError::unauthorized("Missing ingest key"), "auth")
@@ -4527,10 +4564,15 @@ async fn handle_signal_inner(
         .unwrap_or("application/x-protobuf")
         .to_ascii_lowercase();
 
-    let payload_format = detect_payload_format(&content_type).map_err(|e| {
-        warn!(content_type = %content_type, "Unsupported content type");
-        (e, "unsupported_media")
-    })?;
+    // A drain's JSON is mapped to OTLP and sent on as protobuf, whatever
+    // content type it was labelled with.
+    let payload_format = match ingress {
+        Ingress::Otlp(_) => detect_payload_format(&content_type).map_err(|e| {
+            warn!(content_type = %content_type, "Unsupported content type");
+            (e, "unsupported_media")
+        })?,
+        Ingress::VercelLogDrain => PayloadFormat::Protobuf,
+    };
     Span::current().record("maple.ingest.payload_format", payload_format.label());
 
     let content_encoding = headers
@@ -4581,24 +4623,28 @@ async fn handle_signal_inner(
     let decoded = {
         let parse_span = parse_internal_span(payload_format.label(), signal.path());
         let _guard = parse_span.enter();
-        let decoded =
-            decode_and_enrich_payload(signal, payload_format, &decoded_payload, &resolved_key)
-                .map_err(|e| {
-                    warn!(
-                        format = payload_format.label(),
-                        signal = signal.path(),
-                        org_id = resolved_key.org_id.as_str(),
-                        key_type = resolved_key.key_type.as_str(),
-                        decoded_bytes = decoded_payload.len(),
-                        reason = %e.message,
-                        "Invalid OTLP payload"
-                    );
-                    // The reason previously only reached the log; on the span it
-                    // is what tells you *why* a customer's SDK is being rejected.
-                    record_stage_error(&parse_span, "enrich", &e.message, false);
-                    metrics::org_data_loss(&resolved_key.org_id, signal.path(), "enrich");
-                    (e, "enrich")
-                })?;
+        let decoded = match ingress {
+            Ingress::Otlp(_) => {
+                decode_and_enrich_payload(signal, payload_format, &decoded_payload, &resolved_key)
+            }
+            Ingress::VercelLogDrain => decode_vercel_logs(&decoded_payload, &resolved_key),
+        }
+        .map_err(|e| {
+            warn!(
+                format = payload_format.label(),
+                signal = signal.path(),
+                org_id = resolved_key.org_id.as_str(),
+                key_type = resolved_key.key_type.as_str(),
+                decoded_bytes = decoded_payload.len(),
+                reason = %e.message,
+                "Invalid OTLP payload"
+            );
+            // The reason previously only reached the log; on the span it
+            // is what tells you *why* a customer's SDK is being rejected.
+            record_stage_error(&parse_span, "enrich", &e.message, false);
+            metrics::org_data_loss(&resolved_key.org_id, signal.path(), "enrich");
+            (e, "enrich")
+        })?;
         parse_span.record("maple.ingest.item_count", decoded.item_count());
         decoded
     };
@@ -5610,6 +5656,17 @@ fn decode_and_enrich_payload(
             Ok(DecodedPayload::Metrics(request))
         }
     }
+}
+
+fn decode_vercel_logs(
+    payload: &[u8],
+    resolved_key: &ResolvedIngestKey,
+) -> Result<DecodedPayload, ApiError> {
+    let entries = vercel_logs::parse(payload)
+        .map_err(|e| ApiError::bad_request(format!("Invalid Vercel log drain payload: {e}")))?;
+    let mut request = vercel_logs::build_logs_request(&entries, current_time_unix_nano());
+    enrich_logs_request(&mut request, resolved_key);
+    Ok(DecodedPayload::Logs(request))
 }
 
 /// OTLP/JSON decode, via the leniency pass in `otlp_json`.
@@ -10553,7 +10610,7 @@ mod tests {
             &state,
             &headers,
             Bytes::from_static(UNDECODABLE_BODY),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect_err("a denied org must be refused");
@@ -10566,7 +10623,7 @@ mod tests {
             &state,
             &test_headers("maple_sk_test_otlp_allowed"),
             Bytes::from(test_log_request("allowed").encode_to_vec()),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect("an allowed org is accepted");
@@ -10583,12 +10640,91 @@ mod tests {
             &state,
             &headers,
             Bytes::from_static(UNDECODABLE_BODY),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect_err("an undecodable body is refused");
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
         assert_eq!(error_kind, "decode");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn vercel_log_drain_maps_each_delivery_format_onto_otlp_logs() {
+        let (forward_url, mut forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("vercel-log-drain");
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_private(
+            "maple_sk_test_vercel",
+            KeyRow {
+                org_id: "org_vercel".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(5),
+        )
+        .await;
+        let headers = |encoding: Option<&str>| {
+            let mut headers = test_headers("maple_sk_test_vercel");
+            headers.insert(CONTENT_TYPE, "application/x-ndjson".parse().unwrap());
+            if let Some(encoding) = encoding {
+                headers.insert(CONTENT_ENCODING, encoding.parse().unwrap());
+            }
+            headers
+        };
+        let log = r#"{"id":"1","projectId":"prj_1","deploymentId":"dpl_1","source":"lambda","level":"info","message":"hi","timestamp":1573817187330}"#;
+        let ndjson = format!("{log}\n{log}\n");
+        let gzipped_array = encode_payload(format!("[{log}]").as_bytes(), Some("gzip")).unwrap();
+
+        // The drain's test delivery is an empty batch.
+        for (body, encoding, rows) in [
+            (ndjson.into_bytes(), None, 2),
+            (gzipped_array, Some("gzip"), 1),
+            (b"[]".to_vec(), None, 0),
+        ] {
+            let (response, item_count, org_id, _) = handle_signal_inner(
+                &state,
+                &headers(encoding),
+                Bytes::from(body),
+                Ingress::VercelLogDrain,
+            )
+            .await
+            .expect("a drain delivery is accepted");
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!((item_count, org_id.as_str()), (rows, "org_vercel"));
+            let forwarded = tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+                .await
+                .expect("the delivery is forwarded")
+                .expect("forward channel should stay open");
+            assert_eq!(forwarded.content_type, "application/x-protobuf");
+        }
+
+        let (error, error_kind) = handle_signal_inner(
+            &state,
+            &headers(None),
+            Bytes::from_static(b"{\"projectId\":"),
+            Ingress::VercelLogDrain,
+        )
+        .await
+        .expect_err("malformed JSON is refused");
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+        assert_eq!(error_kind, "enrich");
+
+        let (error, _) = handle_signal_inner(
+            &state,
+            &HeaderMap::new(),
+            Bytes::from_static(b"[]"),
+            Ingress::VercelLogDrain,
+        )
+        .await
+        .expect_err("a delivery without the ingest key is refused");
+        assert_eq!(error.status, StatusCode::UNAUTHORIZED);
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
@@ -10998,7 +11134,7 @@ mod tests {
             &state,
             &test_headers(raw_key),
             Bytes::from(test_log_request("span tree").encode_to_vec()),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .instrument(server_span)
         .await
@@ -11081,7 +11217,7 @@ mod tests {
             &state,
             &test_headers(raw_key),
             Bytes::from(first_payload),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect("non-ready request should be accepted through forward path");
@@ -11127,7 +11263,7 @@ mod tests {
             &state,
             &test_headers(raw_key),
             Bytes::from(second_payload),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect("ready request should be accepted through ClickHouse path");

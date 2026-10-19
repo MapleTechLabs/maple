@@ -115,8 +115,8 @@ describe("navGroups", () => {
 		}
 	})
 
-	it("keeps Infrastructure at six sources with six unique glyphs", () => {
-		// Six is exactly NavRow's all-or-nothing preview cap, so a seventh unique
+	it("keeps Infrastructure at seven sources with seven unique glyphs", () => {
+		// Seven is exactly NavRow's all-or-nothing preview cap, so an eighth unique
 		// glyph here would drop the closed row's miniatures entirely rather than
 		// truncate them. A new Kubernetes view goes in `views` (free); a new
 		// child with a new glyph is not free. Overview is the section's own page
@@ -129,6 +129,7 @@ describe("navGroups", () => {
 			"Cloudflare",
 			"PlanetScale",
 			"Railway",
+			"Vercel",
 			"Google Cloud",
 		])
 		const sources = infra.subItems?.filter((sub) => sub.href !== infra.href)
@@ -202,7 +203,7 @@ describe("partitionInfraSubItems", () => {
 
 	it("shows every child while the org's surfaces are unknown", () => {
 		const { shown, hidden } = partitionInfraSubItems(subItems(), null, "/infra")
-		expect(shown).toHaveLength(7)
+		expect(shown).toHaveLength(8)
 		expect(hidden).toEqual([])
 	})
 
@@ -213,7 +214,7 @@ describe("partitionInfraSubItems", () => {
 			"/infra",
 		)
 		expect(titles(shown)).toEqual(["Overview", "Hosts", "PlanetScale"])
-		expect(titles(hidden)).toEqual(["Kubernetes", "Cloudflare", "Railway", "Google Cloud"])
+		expect(titles(hidden)).toEqual(["Kubernetes", "Cloudflare", "Railway", "Vercel", "Google Cloud"])
 	})
 
 	// Containers is a view of Hosts, so a Docker-only org still gets the row.

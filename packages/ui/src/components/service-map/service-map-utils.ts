@@ -115,6 +115,8 @@ const PLATFORM_COLORS: Record<ServicePlatform | "unknown", string> = {
 	kubernetes: "oklch(0.62 0.16 250)",
 	cloudflare: CLOUDFLARE_COLOR,
 	gcp: "oklch(0.63 0.2 27)",
+	// Vercel's mark is monochrome; a cool violet keeps it apart from "unknown"'s slate.
+	vercel: "oklch(0.6 0.16 300)",
 	lambda: "oklch(0.7 0.18 60)",
 	web: "oklch(0.65 0.15 145)",
 	unknown: "oklch(0.55 0.02 270)",

@@ -59,6 +59,7 @@ const KIND_FILTERS = {
 	cloudflare_workers: new Set<keyof InfraFilters>(),
 	railway_services: new Set<keyof InfraFilters>(["environment"]),
 	planetscale_databases: new Set<keyof InfraFilters>(),
+	vercel_projects: new Set<keyof InfraFilters>(),
 } satisfies Record<(typeof INFRA_KINDS)[number], ReadonlySet<keyof InfraFilters>>
 const SCOPING_FILTERS: ReadonlyArray<keyof InfraFilters> = [
 	"host",
@@ -98,9 +99,9 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 		title: "List Infrastructure",
 		description:
 			"Hosts, Kubernetes pods/nodes/workloads and Docker containers reporting resource metrics, closest to a limit first: CPU, memory and disk use, CPU/memory against limits, pod counts. " +
-			"Also infrastructure from connected integrations: Cloudflare zones (requests, 5xx rate, cache hit rate, edge TTFB) and Workers (invocations, errors, duration, CPU time), Railway services (CPU/memory against limits, replicas) and PlanetScale databases (CPU, memory, storage, connections, replica lag). " +
+			"Also infrastructure from connected integrations: Cloudflare zones (requests, 5xx rate, cache hit rate, edge TTFB) and Workers (invocations, errors, duration, CPU time), Railway services (CPU/memory against limits, replicas), PlanetScale databases (CPU, memory, storage, connections, replica lag) and Vercel projects (requests, 5xx rate, cache hits and error logs from the log drain). " +
 			"Without `kind` it returns an overview of every kind that reports, with fleet counts and the top 5 of each. " +
-			"Filter with search, namespace, node, host, workload, environment, and status (hot, at_limit, no_limits; for Cloudflare kinds hot is a 1% error rate, at_limit 5%). " +
+			"Filter with search, namespace, node, host, workload, environment, and status (hot, at_limit, no_limits; for Cloudflare and Vercel kinds hot is a 1% error rate, at_limit 5%). " +
 			"Use it to answer 'is anything running hot?', 'which pods have no limits?', 'what runs on this node?', then inspect_infra for one entity over time. " +
 			"Status reflects the window peak, not the latest sample.",
 		parameters: Schema.Struct({
@@ -294,7 +295,7 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 							empty: {
 								message:
 									output.reporting.length === 0
-										? "No infrastructure metrics in this window: no hostmetrics, kubeletstats or docker stats receivers are reporting, and no connected Cloudflare, Railway or PlanetScale integration wrote metrics."
+										? "No infrastructure metrics in this window: no hostmetrics, kubeletstats or docker stats receivers are reporting, and no connected Cloudflare, Railway, PlanetScale or Vercel integration wrote data."
 										: "Nothing matched these filters.",
 								hints:
 									output.reporting.length === 0

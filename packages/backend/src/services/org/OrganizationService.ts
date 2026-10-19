@@ -68,6 +68,9 @@ import {
 	PrReviewReplies,
 	PrReviewEdits,
 	VcsInstallations,
+	VercelConnections,
+	VercelDeployments,
+	VercelProjects,
 	VcsRepositories,
 } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
@@ -165,6 +168,10 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	// The encrypted Railway token would keep the poller reading an account for a deleted org.
 	RailwayConnections,
 	RailwayEnvironments,
+	// The encrypted Vercel token, and the team inventory read with it.
+	VercelConnections,
+	VercelProjects,
+	VercelDeployments,
 	// The org's own OpenRouter key: a recreated org with the same id must not inherit it.
 	OrgOpenRouterKeys,
 	// APNs update tokens for running Live Activities. `mobile_devices` is purged

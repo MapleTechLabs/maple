@@ -19,6 +19,7 @@ import {
 	type IconComponent,
 	KubernetesIcon,
 	ServerIcon,
+	VercelIcon,
 } from "../icons"
 import { formatRuntime } from "./service-map-runtime"
 import type { ServicePlatform } from "./service-map-types"
@@ -37,6 +38,8 @@ function getPlatformIcon(platform: ServicePlatform | undefined): {
 			return { Icon: CloudflareBrandIcon, label: "Cloudflare Workers", branded: true }
 		case "gcp":
 			return { Icon: GoogleCloudIcon, label: "Google Cloud", branded: true }
+		case "vercel":
+			return { Icon: VercelIcon, label: "Vercel", branded: false }
 		case "lambda":
 			return { Icon: AwsLambdaIcon, label: "AWS Lambda", branded: true }
 		case "web":

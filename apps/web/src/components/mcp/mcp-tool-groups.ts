@@ -46,7 +46,7 @@ const RULES: ReadonlyArray<readonly [McpToolGroupId, ReadonlyArray<string>]> = [
 	["traces", ["trace", "traces", "span"]],
 	["logs", ["log", "logs"]],
 	["source", ["source", "ci", "commits", "pull"]],
-	["infrastructure", ["infra", "railway"]],
+	["infrastructure", ["infra", "railway", "vercel"]],
 	["setup", ["ingest", "setup", "integrations", "instrumentation", "scrape"]],
 	["services", ["service", "services", "periods", "route"]],
 	["query", ["query", "data", "sql", "metrics", "attributes", "warehouse", "funnel", "product"]],
