@@ -422,7 +422,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 						h.p(
 							[h.Class("text-2xs text-muted-foreground")],
 							[
-								"Shaded: rule would have fired (approximate — the live scheduler evaluates every minute).",
+								"Shaded: rule would have fired (approximate: the live scheduler checks a sliding window).",
 							],
 						),
 					]
