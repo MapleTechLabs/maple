@@ -30,7 +30,7 @@ import {
 	LoadRailwayStatus,
 } from "./data"
 import { Menu, Message, OutMessage } from "./message"
-import { init, type Model, NamespacesData } from "./model"
+import { DashboardsData, init, type Model, NamespacesData } from "./model"
 import { MeasureSidebarOverflow, MountNamespaceSearch, PositionMenu } from "./mounts"
 import { enter, update } from "./update"
 import * as Tooltip from "../ui/tooltip"
@@ -295,6 +295,14 @@ describe("namespace search", () => {
 })
 
 describe("in-place org change", () => {
+	test("entering another org on mobile drops the previous org's pinned dashboards", () => {
+		const onA = {
+			...signedIn({ maybeOrgId: Option.some("org_a"), isMobile: true }),
+			dashboards: DashboardsData.Success({ data: [] }),
+		}
+		expectVitest(enter("org_b")(onA).model.dashboards._tag).toBe("Idle")
+	})
+
 	test("entering another org drops the previous org's namespaces and integrations and its late answers", () => {
 		const onA = {
 			...signedIn({ maybeOrgId: Option.some("org_a") }),

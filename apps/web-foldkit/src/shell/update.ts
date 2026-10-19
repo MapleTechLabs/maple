@@ -68,6 +68,7 @@ export const enter =
 			// Nothing read for the previous org (an in-place org change) carries over.
 			infraPresence: () => InfraPresenceData.Idle(),
 			integrations: () => NO_INTEGRATIONS,
+			dashboards: () => DashboardsData.Idle(),
 			namespaces: () => NamespacesData.Idle(),
 		})
 		const sidebar = model.isMobile ? { model: entered } : requestSidebarData(entered)
