@@ -6,7 +6,8 @@ import type { PageViewInputs } from "../kit/inputs"
 import { FetchFacets, FetchTraces } from "./command"
 import { Message } from "./message"
 import type { Model, TraceRow } from "./model"
-import { init, update } from "./update"
+import { PAGE_SIZE } from "./fetch-traces"
+import { init, locationChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const NOW = Date.parse("2026-10-01T12:00:30Z")
@@ -101,5 +102,28 @@ describe("local traces list", () => {
 		const result = loaded([])
 		expect(result.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
 		scene({ update: pageUpdate, view }, given(result.model), expectView(text("No traces yet")).toExist())
+	})
+
+	const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+	const fullList = () => {
+		const base = anchored().model
+		const rows = Array.from({ length: PAGE_SIZE }, (_, index) => row(`t${index}`))
+		const data = { pages: [rows], hasNextPage: true }
+		return pageUpdate(base, Message.SucceededFetchTraces({ key: base.traces.key ?? "", data, fetchedAtMs: NOW })).model
+	}
+
+	test("Load more on the previous filter's rows waits for the new filter's list", () => {
+		const filtered = { ...context, location: { path: "/traces", search: "errors=1" } }
+		const pending = locationChanged(fullList(), filtered).model
+		expect(pending.traces.isPlaceholder).toBe(true)
+		expect(names(update(pending, Message.ClickedLoadMore(), filtered).commands)).toEqual([])
+	})
+
+	test("a next page asked for before a same-minute Reload is dropped when it lands", () => {
+		const more = pageUpdate(fullList(), Message.ClickedLoadMore())
+		expect(names(more.commands)).toEqual(["FetchNextLocalTracesPage"])
+		const reloaded = pageUpdate(more.model, Message.CompletedReadRefreshClock({ nowMs: NOW })).model
+		const late = Message.SucceededFetchNextPage({ key: reloaded.traces.key ?? "", generation: more.model.pageGeneration, page: [row("late")] })
+		expect(pageUpdate(reloaded, late).model.traces).toEqual(reloaded.traces)
 	})
 })

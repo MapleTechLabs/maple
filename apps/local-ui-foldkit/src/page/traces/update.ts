@@ -4,7 +4,7 @@ import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
 import { formatCompact, parseRange } from "@maple/web-foldkit/ui/filters/range-format"
 import { Option, Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
-import { accept, acceptCached, idle } from "../../data/slot"
+import { accept, acceptCached, canExtend, idle } from "../../data/slot"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage, replaceParams, withParams } from "../contract"
 import { updateCopy } from "../kit/copies"
@@ -49,6 +49,7 @@ export const init = (context: PageContext): Readonly<{ model: Model; commands: R
 			traces: idle(),
 			facets: idle(),
 			isFetchingNextPage: false,
+			pageGeneration: 0,
 			tracesUpdatedAtMs: 0,
 			search: { text: q, version: 0, sent: q },
 			duration: durationDraftOf(query, 0),
@@ -106,13 +107,14 @@ const loadMore = (model: Model, context: PageContext): UpdateReturn => {
 		Option.fromNullishOr(data.hasNextPage ? nextCursor(data.pages[data.pages.length - 1] ?? []) : undefined),
 	)
 	const maybeBounds = boundsOf(model, context)
-	if (model.isFetchingNextPage || model.traces.key === null || Option.isNone(maybeNext) || Option.isNone(maybeBounds))
+	if (model.isFetchingNextPage || !canExtend(model.traces) || model.traces.key === null || Option.isNone(maybeNext) || Option.isNone(maybeBounds))
 		return { model }
 	return {
 		model: { ...model, isFetchingNextPage: true },
 		commands: [
 			FetchNextPage({
 				key: model.traces.key,
+				generation: model.pageGeneration,
 				search: context.location.search,
 				...maybeBounds.value,
 				apiBase: context.env.apiBase,
@@ -166,10 +168,12 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		FailedFetchTraces: ({ key, failure }) =>
 			({ model: settleRefresh({ ...model, traces: accept(model.traces, key, Result.fail(failure)) }) }),
 		ClickedLoadMore: () => loadMore(model, context),
-		SucceededFetchNextPage: ({ key, page }) => ({ model: appendPage(model, key, page) }),
-		FailedFetchNextPage: ({ key, failure }) => ({
-			model: { ...model, isFetchingNextPage: false, traces: accept(model.traces, key, Result.fail(failure)) },
-		}),
+		SucceededFetchNextPage: ({ key, generation, page }) =>
+			generation === model.pageGeneration ? { model: appendPage(model, key, page) } : { model },
+		FailedFetchNextPage: ({ key, generation, failure }) =>
+			generation !== model.pageGeneration
+				? { model }
+				: { model: { ...model, isFetchingNextPage: false, traces: accept(model.traces, key, Result.fail(failure)) } },
 		SucceededFetchFacets: ({ key, facets, fetchedAtMs }) =>
 			({ model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.succeed(facets), fetchedAtMs) }) }),
 		FailedFetchFacets: ({ key, failure }) =>

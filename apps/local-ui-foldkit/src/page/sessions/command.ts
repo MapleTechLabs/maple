@@ -64,13 +64,16 @@ export const FetchSessions = Command.define("FetchLocalSessions", {
 export const FetchNextPage = Command.define("FetchNextLocalSessionsPage", {
 	args: {
 		...RequestArgs,
+		/** The list generation the page extends; a reload retires it. */
+		generation: Schema.Number,
 		cursorStartTime: Schema.DateTimeUtc,
 		cursorSessionId: Schema.String,
 		/** The pages loaded so far; the cache keeps them with the new one. */
 		pages: Schema.Array(Schema.Array(SessionRow)),
 	},
 	messages: [Message.SucceededFetchNextPage, Message.FailedFetchNextPage],
-	execute: ({ key, search, startTime, endTime, apiBase, cursorStartTime, cursorSessionId, pages }) =>
+	interrupt: { keyFields: ["key", "generation"], toKey: ({ key, generation }) => `${key}#${generation}` },
+	execute: ({ key, generation, search, startTime, endTime, apiBase, cursorStartTime, cursorSessionId, pages }) =>
 		fetchSessionPage(
 			filtersOf(new URLSearchParams(search)),
 			{ startTime, endTime },
@@ -83,8 +86,8 @@ export const FetchNextPage = Command.define("FetchNextLocalSessionsPage", {
 					recordCached(sessionsKey({ search, startTime, endTime }), pagesToCached({ pages: [...pages, page] }), atMs),
 				),
 			),
-			Effect.map((page) => Message.SucceededFetchNextPage({ key, page })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchNextPage({ key, failure }))),
+			Effect.map((page) => Message.SucceededFetchNextPage({ key, generation, page })),
+			Effect.catch((failure) => Effect.succeed(Message.FailedFetchNextPage({ key, generation, failure }))),
 		),
 })
 

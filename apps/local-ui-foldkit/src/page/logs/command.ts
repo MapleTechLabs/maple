@@ -64,6 +64,8 @@ export const FetchLogs = Command.define("FetchLocalLogs", {
 export const FetchNextPage = Command.define("FetchNextLocalLogsPage", {
 	args: {
 		...RequestArgs,
+		/** The list generation the page extends; a reload retires it. */
+		generation: Schema.Number,
 		cursorTimestamp: Schema.String,
 		cursorServiceName: Schema.String,
 		cursorTraceId: Schema.String,
@@ -73,6 +75,7 @@ export const FetchNextPage = Command.define("FetchNextLocalLogsPage", {
 		pages: Schema.Array(Schema.Array(LocalLog)),
 	},
 	messages: [Message.SucceededFetchNextPage, Message.FailedFetchNextPage],
+	interrupt: { keyFields: ["key", "generation"], toKey: ({ key, generation }) => `${key}#${generation}` },
 	execute: (args) =>
 		fetchLogsPage(
 			filtersFrom(args.search),
@@ -92,8 +95,8 @@ export const FetchNextPage = Command.define("FetchNextLocalLogsPage", {
 					recordCached(logsKey(args), pagesToCached({ pages: [...args.pages, page] }), atMs),
 				),
 			),
-			Effect.map((page) => Message.SucceededFetchNextPage({ key: args.key, page })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchNextPage({ key: args.key, failure }))),
+			Effect.map((page) => Message.SucceededFetchNextPage({ key: args.key, generation: args.generation, page })),
+			Effect.catch((failure) => Effect.succeed(Message.FailedFetchNextPage({ key: args.key, generation: args.generation, failure }))),
 		),
 })
 

@@ -51,6 +51,7 @@ export const load = (
 					services: Option.getOrElse(services, () => model.services),
 					severities: Option.getOrElse(severities, () => model.severities),
 					isFetchingNextPage: Option.isSome(logs) ? false : model.isFetchingNextPage,
+					pageGeneration: Option.isSome(logs) ? model.pageGeneration + 1 : model.pageGeneration,
 				},
 				commands: Array.getSomes([
 					Option.map(logs, () => FetchLogs({ key: logsKey, ...args, pageCount, readsCache: model.logs.key !== logsKey })),

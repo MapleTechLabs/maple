@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { DateTime, Option } from "effect"
 import { AsyncData } from "foldkit"
 import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -6,7 +6,8 @@ import { type PageContext, PageOutMessage } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
 import { FetchFacets, FetchSessions, ReadClock } from "./command"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { PAGE_SIZE } from "./fetch"
+import type { Model, SessionRow } from "./model"
 import { init, locationChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -29,6 +30,25 @@ const inputs: PageViewInputs = {
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, inputs)()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+
+const sessionRow: SessionRow = {
+	sessionId: "s",
+	startTime: DateTime.makeUnsafe(NOW - 60_000),
+	durationMs: 1_000,
+	status: "ended",
+	lastActivityAt: null,
+	userId: "",
+	userName: "",
+	userEmail: "",
+	urlInitial: "/",
+	browserName: "Chrome",
+	osName: "macOS",
+	deviceType: "desktop",
+	pageViews: 1,
+	clickCount: 0,
+	errorCount: 0,
+	traceCount: 0,
+}
 
 const clocked = () => pageUpdate(init(context).model, Message.CompletedReadClock({ nowMs: NOW }))
 
@@ -61,5 +81,16 @@ describe("local sessions list", () => {
 		expect(empty.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
 		expect(AsyncData.isSuccess(empty.model.sessions.data)).toBe(true)
 		scene({ update: pageUpdate, view }, given(empty.model), expectView(text("No sessions found")).toExist())
+	})
+
+	test("Load more on the previous filter's rows waits for the new filter's list", () => {
+		const model = clocked().model
+		const placeholderRow = (index: number): SessionRow => ({ ...sessionRow, sessionId: `s${index}` })
+		const data = { pages: [Array.from({ length: PAGE_SIZE }, (_, index) => placeholderRow(index))], hasNextPage: true }
+		const full = pageUpdate(model, Message.SucceededFetchSessions({ key: model.sessions.key ?? "", data, fetchedAtMs: NOW })).model
+		const filtered = contextAt("browser=Chrome")
+		const pending = locationChanged(full, filtered).model
+		expect(pending.sessions.isPlaceholder).toBe(true)
+		expect(names(update(pending, Message.ClickedLoadMore(), filtered).commands)).toEqual([])
 	})
 })

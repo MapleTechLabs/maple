@@ -70,10 +70,12 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		FoundCachedPatterns: (fields) => updateFound(model, Message.FoundCachedPatterns(fields), context),
 		FoundCachedServices: (fields) => updateFound(model, Message.FoundCachedServices(fields), context),
 		FoundCachedSeverities: (fields) => updateFound(model, Message.FoundCachedSeverities(fields), context),
-		SucceededFetchNextPage: ({ key, page }) => loadMoreIfAtEnd(appendPage(model, key, page), context),
-		FailedFetchNextPage: ({ key, failure }) => ({
-			model: { ...model, isFetchingNextPage: false, logs: accept(model.logs, key, Result.fail(failure)) },
-		}),
+		SucceededFetchNextPage: ({ key, generation, page }) =>
+			generation === model.pageGeneration ? loadMoreIfAtEnd(appendPage(model, key, page), context) : { model },
+		FailedFetchNextPage: ({ key, generation, failure }) =>
+			generation !== model.pageGeneration
+				? { model }
+				: { model: { ...model, isFetchingNextPage: false, logs: accept(model.logs, key, Result.fail(failure)) } },
 		SucceededFetchPatterns: (fields) => updateFetch(model, Message.SucceededFetchPatterns(fields), context),
 		FailedFetchPatterns: (fields) => updateFetch(model, Message.FailedFetchPatterns(fields), context),
 		SucceededFetchServices: ({ key, options, fetchedAtMs }) =>

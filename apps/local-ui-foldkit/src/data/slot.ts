@@ -108,3 +108,9 @@ export const isPending = <A>(slot: Slot<A>): boolean =>
 /** `failedWithoutData`: a failure with nothing to show (a failed refresh keeps its rows). */
 export const failureWithoutData = <A>(slot: Slot<A>): Option.Option<LoadFailure> =>
 	AsyncData.isFailure(slot.data) ? AsyncData.getError(slot.data) : Option.none()
+
+/** A fetch for the slot's key is in flight (a first load, a refetch or a new key). */
+export const isInFlight = <A>(slot: Slot<A>): boolean => AsyncData.isLoading(slot.data) || AsyncData.isRefreshing(slot.data)
+
+/** `fetchNextPage` may extend the rows: they are this key's own and no fetch will replace them. */
+export const canExtend = <A>(slot: Slot<A>): boolean => !slot.isPlaceholder && !isInFlight(slot)

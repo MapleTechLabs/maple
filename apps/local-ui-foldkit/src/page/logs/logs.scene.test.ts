@@ -170,4 +170,12 @@ describe("local logs", () => {
 		const left = pageUpdate(entered, Message.LeftChip({ chip })).model
 		expect(pageUpdate(left, Message.ElapsedChipDelay({ generation: entered.chipCard.generation })).model.chipCard.visible).toEqual(Option.none())
 	})
+
+	test("a next page in flight across a same-minute Reload is dropped when it lands", () => {
+		const model = loaded(Array.from({ length: PAGE_SIZE }, (_, index) => log(index)))
+		const scrolled = pageUpdate(model, Message.ChangedViewport({ viewport: { scrollTop: 0, height: 1500 } })).model
+		const reloaded = pageUpdate(scrolled, Message.CompletedReadRefreshClock({ nowMs: NOW })).model
+		const late = Message.SucceededFetchNextPage({ key: reloaded.logs.key ?? "", generation: scrolled.pageGeneration, page: [log(99)] })
+		expect(pageUpdate(reloaded, late).model.logs).toEqual(reloaded.logs)
+	})
 })

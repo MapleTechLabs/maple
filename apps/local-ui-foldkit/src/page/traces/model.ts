@@ -59,6 +59,8 @@ export const Model = Schema.TaggedStruct("TracesPage", {
 	traces: SlotSchema(TracePages),
 	facets: SlotSchema(TraceFacets),
 	isFetchingNextPage: Schema.Boolean,
+	/** Bumped when the list is refetched or rekeyed; a next page from an older generation is dropped. */
+	pageGeneration: Schema.Number,
 	/** `dataUpdatedAt` of the list, for the "New data" pill. */
 	tracesUpdatedAtMs: Schema.Number,
 	search: Draft,

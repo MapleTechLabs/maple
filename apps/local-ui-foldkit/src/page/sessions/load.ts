@@ -42,6 +42,7 @@ export const load = (
 					sessions: Option.getOrElse(sessions, () => model.sessions),
 					facets: Option.getOrElse(facets, () => model.facets),
 					isFetchingNextPage: Option.isSome(sessions) ? false : model.isFetchingNextPage,
+					pageGeneration: Option.isSome(sessions) ? model.pageGeneration + 1 : model.pageGeneration,
 				},
 				commands: Array.getSomes([
 					Option.map(sessions, () => FetchSessions({ key: sessionsKey, ...args, pageCount, readsCache: model.sessions.key !== sessionsKey })),

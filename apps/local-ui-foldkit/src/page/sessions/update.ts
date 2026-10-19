@@ -30,6 +30,7 @@ export const init = (context: PageContext): Readonly<{ model: Model; commands: R
 			sessions: idle(),
 			facets: idle(),
 			isFetchingNextPage: false,
+			pageGeneration: 0,
 			sessionsUpdatedAtMs: 0,
 			search: { text: q, version: 0, sent: q },
 			sections: FilterSections.init(),
@@ -70,10 +71,12 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			model: settleRefresh({ ...model, sessions: accept(model.sessions, key, Result.fail(failure)) }),
 		}),
 		ClickedLoadMore: () => loadMore(model, context),
-		SucceededFetchNextPage: ({ key, page }) => ({ model: appendPage(model, key, page) }),
-		FailedFetchNextPage: ({ key, failure }) => ({
-			model: { ...model, isFetchingNextPage: false, sessions: accept(model.sessions, key, Result.fail(failure)) },
-		}),
+		SucceededFetchNextPage: ({ key, generation, page }) =>
+			generation === model.pageGeneration ? { model: appendPage(model, key, page) } : { model },
+		FailedFetchNextPage: ({ key, generation, failure }) =>
+			generation !== model.pageGeneration
+				? { model }
+				: { model: { ...model, isFetchingNextPage: false, sessions: accept(model.sessions, key, Result.fail(failure)) } },
 		SucceededFetchFacets: ({ key, facets, fetchedAtMs }) => ({
 			model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.succeed(facets), fetchedAtMs) }),
 		}),
