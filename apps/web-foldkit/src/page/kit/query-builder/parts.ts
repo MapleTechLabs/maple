@@ -1,5 +1,4 @@
 import { GROUP_BY_OPTIONS } from "@maple/query-engine/query-builder"
-import { cn } from "@maple/ui/lib/utils"
 import type { WhereClauseAutocompleteValues } from "@maple/web/lib/query-builder/where-clause-autocomplete"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "../../../ui/combobox"
@@ -8,15 +7,11 @@ import { filterChip } from "../../../ui/filter-chip"
 import { input } from "../../../ui/input"
 import * as Select from "../../../ui/select"
 import { view as selectView, type SelectOption } from "../../../ui/select-view"
-import { textarea } from "../../../ui/textarea"
 import type { AddOnKey } from "./change"
 import type { QueryDraft } from "./draft"
 import { Message, type Model } from "./panel"
-import { MountWhereCaret, MountWhereListbox } from "./where-command"
-import { highlightOverlay } from "./where-editor"
-import { caretOf, whereAutocompleteOf, whereTextareaId } from "./where"
-import { isOpenOf } from "../where-autocomplete"
-import { suggestionListbox, whereKeyHandler } from "../where-autocomplete-view"
+import { whereEditor } from "./where-editor"
+import { whereSpecOf, whereTextareaId } from "./where"
 
 // The pieces of a `QueryPanel` body: the where clause, the add-on toggles and their sections.
 
@@ -79,48 +74,24 @@ export const whereClauseEditor = (
 	query: QueryDraft,
 	values: WhereClauseAutocompleteValues,
 	options: Readonly<{ placeholder?: string; className?: string }> = {},
-): Html => {
-	const caret = caretOf(model, query)
-	const autocomplete = whereAutocompleteOf(model, query, values)
-	const isOpen = isOpenOf(caret, autocomplete)
-	return h.div(
-		[h.Class(options.className ?? "relative flex-1")],
-		[
-			textarea(h, {
-				id: whereTextareaId(query.id),
-				className: cn(WHERE_TEXTAREA_CLASS, query.whereClause.length > 0 && "text-transparent caret-foreground"),
-				defaultValue: query.whereClause,
-				attributes: [
-					h.AriaLabel(`Where clause for query ${query.name}`),
-					h.Placeholder(options.placeholder ?? WHERE_PLACEHOLDER[query.dataSource]),
-					h.Rows(1),
-					h.OnInput((value) => Message.ChangedText({ queryId: query.id, field: "whereClause", value })),
-					h.OnKeyDownPreventDefault(
-						whereKeyHandler<Message>(isOpen, {
-							enter: Message.PressedWhereEnter({ queryId: query.id }),
-							move: (step) => Message.MovedWhereSuggestion({ queryId: query.id, step }),
-							tab: Message.PressedWhereTab({ queryId: query.id }),
-							dismiss: Message.DismissedWhereSuggestions({ queryId: query.id }),
-						}),
-					),
-					h.OnMount(MountWhereCaret({ queryId: query.id })),
-				],
-			}),
-			...highlightOverlay(h, query.whereClause, WHERE_TEXTAREA_CLASS),
-			...(isOpen
-				? [
-						suggestionListbox(h, {
-							suggestions: autocomplete.suggestions,
-							activeIndex: caret.activeIndex,
-							anchor: caret.anchor,
-							onApply: (index) => Message.AppliedWhereSuggestion({ queryId: query.id, index }),
-							keepFocus: h.OnMount(MountWhereListbox({ queryId: query.id })),
-						}),
-					]
-				: []),
-		],
-	)
-}
+): Html =>
+	whereEditor(h, {
+		id: whereTextareaId(query.id),
+		value: query.whereClause,
+		ariaLabel: `Where clause for query ${query.name}`,
+		placeholder: options.placeholder ?? WHERE_PLACEHOLDER[query.dataSource],
+		rows: 1,
+		className: options.className ?? "flex-1",
+		textareaClassName: WHERE_TEXTAREA_CLASS,
+		onInput: (value) => Message.ChangedText({ queryId: query.id, field: "whereClause", value }),
+		autocomplete: {
+			fields: model.whereFields,
+			fieldId: query.id,
+			// The view reads no key values: only `update` plans their reads.
+			spec: whereSpecOf(query, values, null),
+			toMessage: (message) => Message.GotWhereField({ message }),
+		},
+	})
 
 
 /** A controlled `<Input>` that reports each keystroke. */

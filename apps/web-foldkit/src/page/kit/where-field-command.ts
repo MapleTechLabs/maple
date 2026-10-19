@@ -3,11 +3,11 @@ import { getMetricAttributeValues } from "@maple/web-data/warehouse/metrics"
 import { getResourceAttributeValues, getSpanAttributeValues } from "@maple/web-data/warehouse/traces"
 import { Effect, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "../../../data/load-failure"
-import { caretEvents, listboxEvents, placeCaret } from "../where-autocomplete"
-import { Message } from "./panel-message"
+import { toLoadFailure } from "../../data/load-failure"
+import { caretEvents, listboxEvents, placeCaret } from "./where-autocomplete"
+import { WhereFieldMessage } from "./where-field"
 
-// The where editors' Commands and Mounts: the active key's values, and the textarea's caret.
+// The where fields' Commands and Mounts: the active key's values, and each textarea's caret.
 
 const valuesOf = (response: { readonly data: ReadonlyArray<{ readonly attributeValue: string }> }) =>
 	response.data.map((row) => row.attributeValue)
@@ -24,7 +24,8 @@ export const WhereValuesRequest = Schema.Union([
 ])
 export type WhereValuesRequest = typeof WhereValuesRequest.Type
 
-const lookup = (request: WhereValuesRequest) => {
+/** `getSpanAttributeValuesResultAtom` and friends, for the key the caret is in. */
+export const lookupWhereValues = (request: WhereValuesRequest) => {
 	switch (request._tag) {
 		case "Span":
 			return Effect.map(getSpanAttributeValues({ data: { ...request } }), valuesOf)
@@ -35,40 +36,35 @@ const lookup = (request: WhereValuesRequest) => {
 	}
 }
 
-/** `getSpanAttributeValuesResultAtom` and friends, for the key the caret is in. */
-export const FetchWhereValues = Command.define("FetchQueryPanelWhereValues", {
+export const FetchWhereFieldValues = Command.define("FetchWhereFieldValues", {
 	args: { slot: Schema.String, key: Schema.String, request: WhereValuesRequest },
-	messages: [Message.CompletedFetchWhereValues],
+	messages: [WhereFieldMessage.CompletedFetchValues],
 	execute: ({ slot, key, request }) =>
-		lookup(request).pipe(
+		lookupWhereValues(request).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
-			Effect.map((result) => Message.CompletedFetchWhereValues({ slot, key, result })),
+			Effect.map((result) => WhereFieldMessage.CompletedFetchValues({ slot, key, result })),
 		),
 })
 
-/** The where textarea's caret, focus and blur, read off the native events. */
-export const MountWhereCaret = Mount.defineStream("MountQueryPanelWhereCaret", {
-	args: { queryId: Schema.String },
-	messages: [Message.GotWhereCaret],
-	execute: ({ element, queryId }) =>
-		Stream.map(caretEvents(element), (message) => Message.GotWhereCaret({ queryId, message })),
+/** A field's caret, focus and blur, read off its textarea's native events. */
+export const MountWhereFieldCaret = Mount.defineStream("MountWhereFieldCaret", {
+	args: { fieldId: Schema.String },
+	messages: [WhereFieldMessage.GotCaret],
+	execute: ({ element, fieldId }) =>
+		Stream.map(caretEvents(element), (message) => WhereFieldMessage.GotCaret({ fieldId, message })),
 })
-
-export const whereTextareaId = (queryId: string): string => `where-${queryId}`
 
 /** The open list: the textarea keeps focus while a row is pressed, and the list follows it. */
-export const MountWhereListbox = Mount.defineStream("MountQueryPanelWhereListbox", {
-	args: { queryId: Schema.String },
-	messages: [Message.GotWhereCaret],
-	execute: ({ element, queryId }) =>
-		Stream.map(listboxEvents(element, whereTextareaId(queryId)), (message) =>
-			Message.GotWhereCaret({ queryId, message }),
-		),
+export const MountWhereFieldListbox = Mount.defineStream("MountWhereFieldListbox", {
+	args: { fieldId: Schema.String, textareaId: Schema.String },
+	messages: [WhereFieldMessage.GotCaret],
+	execute: ({ element, fieldId, textareaId }) =>
+		Stream.map(listboxEvents(element, textareaId), (message) => WhereFieldMessage.GotCaret({ fieldId, message })),
 })
 
-export const PlaceWhereCaret = Command.define("PlaceQueryPanelWhereCaret", {
+export const PlaceWhereFieldCaret = Command.define("PlaceWhereFieldCaret", {
 	args: { id: Schema.String, value: Schema.String, cursor: Schema.Number },
-	messages: [Message.CompletedPlaceWhereCaret],
-	execute: ({ id, value, cursor }) => Effect.as(placeCaret(id, value, cursor), Message.CompletedPlaceWhereCaret()),
+	messages: [WhereFieldMessage.CompletedPlaceCaret],
+	execute: ({ id, value, cursor }) => Effect.as(placeCaret(id, value, cursor), WhereFieldMessage.CompletedPlaceCaret()),
 })

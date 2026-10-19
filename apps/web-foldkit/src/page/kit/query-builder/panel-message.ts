@@ -2,9 +2,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Combobox from "../../../ui/combobox"
 import * as Select from "../../../ui/select"
-import { KeyedSchema } from "../../../data/keyed"
-import { LoadFailure } from "../../../data/load-failure"
-import { CaretMessage, WhereCaret } from "../where-autocomplete"
+import { initWhereFields, WhereFieldMessage, WhereFields } from "../where-field"
 import { AddOnKey, QueryChange, QueryTextField } from "./change"
 
 // `QueryPanel`'s own state (apps/web/src/components/dashboard-builder/config/query-panel.tsx): the
@@ -20,10 +18,8 @@ export const Model = Schema.Struct({
 	metricPickers: Schema.Record(Schema.String, Combobox.Model),
 	metricBreakdowns: Schema.Record(Schema.String, Combobox.Model),
 	collapsed: Schema.Array(Schema.String),
-	/** Each where editor's caret and list state, by query id. */
-	whereCarets: Schema.Record(Schema.String, WhereCaret),
-	/** The active key's values per editor (`<query id>:attr` / `:resource`). */
-	whereValues: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Schema.String), LoadFailure)),
+	/** Each where editor's caret, list and active key values, by query id. */
+	whereFields: WhereFields,
 })
 export type Model = typeof Model.Type
 
@@ -34,8 +30,7 @@ export const init = (slotPrefix: string): Model => ({
 	metricPickers: {},
 	metricBreakdowns: {},
 	collapsed: [],
-	whereCarets: {},
-	whereValues: {},
+	whereFields: initWhereFields(),
 })
 
 export const Message = defineMessageUnion({
@@ -50,18 +45,8 @@ export const Message = defineMessageUnion({
 	ToggledAddOn: { queryId: Schema.String, key: AddOnKey },
 	ClickedClone: { queryId: Schema.String },
 	ClickedRemove: { queryId: Schema.String },
-	PressedWhereEnter: { queryId: Schema.String },
-	GotWhereCaret: { queryId: Schema.String, message: CaretMessage },
-	MovedWhereSuggestion: { queryId: Schema.String, step: Schema.Number },
-	DismissedWhereSuggestions: { queryId: Schema.String },
-	AppliedWhereSuggestion: { queryId: Schema.String, index: Schema.Number },
-	PressedWhereTab: { queryId: Schema.String },
-	CompletedPlaceWhereCaret: {},
-	CompletedFetchWhereValues: {
-		slot: Schema.String,
-		key: Schema.String,
-		result: Schema.Result(Schema.Array(Schema.String), LoadFailure),
-	},
+	/** The where editors' suggestions; a field id is its query's id. */
+	GotWhereField: { message: WhereFieldMessage },
 })
 export type Message = typeof Message.Type
 

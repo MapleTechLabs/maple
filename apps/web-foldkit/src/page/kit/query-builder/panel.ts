@@ -117,10 +117,8 @@ const metricBreakdownStep = (model: Model, queryId: string, message: Combobox.Me
 }
 
 /** Where-editor Messages need `inputs` (the drafts and autocomplete values); without them they are ignored. */
-export const update = (model: Model, message: Message, inputs?: PanelInputs): Return => {
-	const where = inputs === undefined ? null : whereStep(model, message, inputs)
-	if (where !== null) return where
-	return Message.match<Return>(message, {
+export const update = (model: Model, message: Message, inputs?: PanelInputs): Return =>
+	Message.match<Return>(message, {
 		GotSelectMessage: ({ id, message: inner }) => selectStep(model, id, inner),
 		GotGroupByMessage: ({ queryId, message: inner }) => groupByStep(model, queryId, inner),
 		GotMetricMessage: ({ queryId, value, message: inner }) => metricStep(model, queryId, value, inner),
@@ -135,13 +133,5 @@ export const update = (model: Model, message: Message, inputs?: PanelInputs): Re
 		ToggledAddOn: ({ queryId, key }) => changed(model, queryId, QueryChange.ToggledAddOn({ key })),
 		ClickedClone: ({ queryId }) => ({ model, outMessage: OutMessage.ClickedClone({ queryId }) }),
 		ClickedRemove: ({ queryId }) => ({ model, outMessage: OutMessage.ClickedRemove({ queryId }) }),
-		PressedWhereEnter: () => ({ model }),
-		GotWhereCaret: () => ({ model }),
-		MovedWhereSuggestion: () => ({ model }),
-		DismissedWhereSuggestions: () => ({ model }),
-		AppliedWhereSuggestion: () => ({ model }),
-		PressedWhereTab: () => ({ model }),
-		CompletedPlaceWhereCaret: () => ({ model }),
-		CompletedFetchWhereValues: () => ({ model }),
+		GotWhereField: ({ message: inner }) => (inputs === undefined ? { model } : whereStep(model, inner, inputs)),
 	})
-}
