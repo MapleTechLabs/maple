@@ -31,7 +31,7 @@
 
 import { spawnSync } from "node:child_process"
 import { join } from "node:path"
-import { fetchPreviewState, hasPrStateCredentials } from "./lib/pr-state.ts"
+import { fetchPreviewState, hasActivePreviewRun, hasPrStateCredentials } from "./lib/pr-state.ts"
 
 const FAILURE = 1
 const DRY_RUN = process.argv.includes("--dry-run")
@@ -299,6 +299,13 @@ const main = async (): Promise<void> => {
 		}
 		if (state === "unknown") {
 			console.log(`⚠ skipping ${stage} (PR #${prNumber} state unknown)`)
+			continue
+		}
+		const activeRun = await hasActivePreviewRun(prNumber)
+		if (activeRun !== false) {
+			console.log(
+				`⚠ skipping ${stage} (${activeRun === true ? `a preview run for PR #${prNumber} is active` : "preview runs unknown"})`,
+			)
 			continue
 		}
 		const bucket = markers.find((marker) => REPLAY_BUCKET_PATTERN.test(marker))

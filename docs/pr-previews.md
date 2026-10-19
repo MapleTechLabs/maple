@@ -53,9 +53,10 @@ and fails the job if a Postgres- or warehouse-backed route returns a 5xx. Withou
   VPC and prd hold 2.
 - A preview runs an EC2 host, two ALBs and a Fargate task while it is live. Neon compute stays
   awake while Electric holds its replication slot.
-- `cleanup-preview-orphans.yml` destroys the stage of any PR that is closed or no longer carries
-  `preview` (`scripts/preview-stage-orphan-sweep.ts`), then sweeps Tinybird, Workers and
-  Hyperdrive. That also reaps a stage whose teardown was cancelled.
+- `cleanup-preview-orphans.yml` sweeps Tinybird, destroys the stage of any PR that is closed or
+  no longer carries `preview` (`scripts/preview-stage-orphan-sweep.ts`), then sweeps Queues,
+  Workers and Hyperdrive. That also reaps a stage whose teardown was cancelled. A stage with a
+  queued or running preview deploy is skipped until the next sweep.
 
 ## One-time setup
 
