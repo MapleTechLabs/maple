@@ -2571,6 +2571,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				pushBudget: IncidentPushBudget,
 				prefetch: TickPrefetch,
 				stateWrites: RuleStateWrites,
+				windowEndMs: number,
 			) {
 				// `timestamp` is the tick's claim on the rule. The claim can expire while
 				// this runs (slow notification enrichment, a late warehouse result), so
@@ -3152,8 +3153,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					ObservedValue: evaluation.value,
 					SampleCount: evaluation.sampleCount,
 					WindowMinutes: normalized.windowMinutes,
-					WindowStart: toIngestDateTime64(timestamp - normalized.windowMinutes * 60_000),
-					WindowEnd: toIngestDateTime64(timestamp),
+					// The window the tick read, not the claim time: the claim lands later in the spread.
+					WindowStart: toIngestDateTime64(windowEndMs - normalized.windowMinutes * 60_000),
+					WindowEnd: toIngestDateTime64(windowEndMs),
 					ConsecutiveBreaches: outcome.consecutiveBreaches,
 					ConsecutiveHealthy: outcome.consecutiveHealthy,
 					IncidentId: outcome.incidentId,
@@ -3917,6 +3919,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 			const evaluateScheduledRules = Effect.fn("AlertsService.evaluateScheduledRules")(function* () {
 				const tickStart = yield* now
+				// One window for the whole tick: a rule that starts after the spread crossed a
+				// minute must not skip ahead of the rules that started before it.
+				const tickWindowEndMs = snapAlertWindowEndMs(tickStart)
 				const rows = yield* dbExecute((db) =>
 					db.run(
 						selectStoredAlertRules()
@@ -4065,8 +4070,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							ObservedValue: null,
 							SampleCount: 0,
 							WindowMinutes: row.windowMinutes,
-							WindowStart: toIngestDateTime64(failedAt - row.windowMinutes * 60_000),
-							WindowEnd: toIngestDateTime64(failedAt),
+							WindowStart: toIngestDateTime64(tickWindowEndMs - row.windowMinutes * 60_000),
+							WindowEnd: toIngestDateTime64(tickWindowEndMs),
 							ConsecutiveBreaches: 0,
 							ConsecutiveHealthy: 0,
 							IncidentId: null,
@@ -4168,9 +4173,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const unavailableOrgs = yield* Ref.make(HashSet.empty<OrgId>())
 				const markOrgUnavailable = (orgId: OrgId) => Ref.update(unavailableOrgs, HashSet.add(orgId))
 
-				// One window for the whole tick: a rule that starts after the spread crossed a
-				// minute must not skip ahead of the rules that started before it.
-				const tickWindowEndMs = snapAlertWindowEndMs(tickStart)
 				const evaluateBeforeDeadline = (orgId: OrgId, rule: NormalizedRule) =>
 					Effect.flatMap(now, (startedAt) =>
 						evaluateRule(orgId, rule, tickWindowEndMs).pipe(
@@ -4239,6 +4241,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										pushBudget,
 										prefetch,
 										stateWrites,
+										tickWindowEndMs,
 									)
 								}),
 							).pipe(flushingStates)
@@ -4286,6 +4289,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									pushBudget,
 									prefetch,
 									stateWrites,
+									tickWindowEndMs,
 								)
 							}),
 						).pipe(flushingStates)
