@@ -156,6 +156,7 @@ With **Metrics and resources** on, you can chart and alert on any Cloud Monitori
 
 - Filter and group by the metric's labels as `attr.<label>` (e.g. `attr.database_id`, `attr.project_id`). There is no `service.name` or `deployment.environment`.
 - One query reads up to 20 projects and returns up to 500 series. Filter on `project_id` or other labels to stay under.
+- Alerts on these metrics read 4 minutes behind, because Google publishes many metrics a few minutes late.
 
 Google bills these reads per time series returned ([pricing](https://cloud.google.com/stackdriver/pricing)).
 
