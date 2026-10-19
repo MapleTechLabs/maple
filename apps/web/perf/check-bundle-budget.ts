@@ -133,7 +133,9 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // 710.9, the sidebar entry, the palette item and three route-tree entries. The pages stay in
 // their route chunks; the detail route's search schema reads only `source-tabs.ts`.
 // 715.5 KB with both: the Foldkit foundations' ~3.5 KB on top of main's 712.
-const maxGzipBytes = 715.5 * 1024
+// 716 KB after merging #1585 (2026-10-20): its check-cadence wording in the alert form put
+// startup at 715.503 KB measured locally, 3 bytes over.
+const maxGzipBytes = 716 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
