@@ -44,16 +44,17 @@ export const FetchReleaseCommit = Command.define("FetchReleaseCommit", {
 		finish(readCommitDetail(key, sha), (result) => Message.CompletedFetchCommit({ key, result })),
 })
 
-/** `getReleasesResultAtom({ startTime, endTime, environments })`: the list's unfiltered read. */
+/** `getReleasesResultAtom({ startTime, endTime, environments })` with the pin: the list's unfiltered read. */
 export const FetchDeployReleases = Command.define("FetchDeployReleases", {
 	args: {
 		key: Schema.String, refresh: Schema.Boolean,
 		startTime: Schema.String,
 		endTime: Schema.String,
 		environments: Schema.optional(Schema.Array(Schema.String)),
+		namespaces: Schema.optional(Schema.Array(Schema.String)),
 	},
 	messages: [Message.CompletedFetchReleases],
-	execute: ({ key, refresh, startTime, endTime, environments }) =>
+	execute: ({ key, refresh, startTime, endTime, environments, namespaces }) =>
 		finish(
 			readThrough(
 				{ key, refresh, idleTtlMs: IdleTtl.releases, schema: ReleasesData },
@@ -62,6 +63,7 @@ export const FetchDeployReleases = Command.define("FetchDeployReleases", {
 						startTime,
 						endTime,
 						environments: environments === undefined ? undefined : [...environments],
+						namespaces: namespaces === undefined ? undefined : [...namespaces],
 					},
 				}),
 			),

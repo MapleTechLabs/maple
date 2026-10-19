@@ -13,7 +13,7 @@ import { MountNodeLinks } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { subscriptions, withLoadWatchdog } from "./subscription"
-import { init, routeChanged, update } from "./update"
+import { contextChanged, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const ORG = "org_parity"
@@ -209,5 +209,14 @@ describe("investigation detail", () => {
 		expect(pageUpdate(ready, Message.ClickedFollowUp()).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: `/investigations/${ID}?tab=chat`, isReplace: false }),
 		)
+	})
+
+	test("the traces row reads under the namespace pin, and a pin change re-reads it", () => {
+		const pinned: PageContext = { ...context, pinnedNamespace: "payments" }
+		const model = synced(entered(), investigationOf()).model
+		const repinned = contextChanged(model, pinned)
+		const traces = repinned.commands?.find((command) => command.name === "FetchInvestigationSignalTraces")
+		expect(traces?.args).toMatchObject({ namespaces: ["payments"] })
+		expect(repinned.model.traces.key).not.toEqual(model.traces.key)
 	})
 })

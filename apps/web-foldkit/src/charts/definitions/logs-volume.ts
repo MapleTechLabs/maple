@@ -104,7 +104,7 @@ export const buildLogsVolume = (spec: VolumeSpec): BuiltChart<SeverityCell, Date
 										label: key.toUpperCase(),
 										color: color(key),
 										dashed: false,
-										value: value.toLocaleString("en-US"),
+										value: formatNumber(value),
 									},
 								]
 					}),

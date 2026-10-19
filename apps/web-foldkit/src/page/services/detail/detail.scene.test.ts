@@ -1,7 +1,17 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
-import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	expect as expectView,
+	expectOutMessage,
+	given,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import { toLoadFailure } from "../../../data/load-failure"
@@ -20,7 +30,7 @@ import { LinkedCursorMessage, MountLinkedCursor } from "../../../charts/linked-c
 import { Message } from "./message"
 import type { Model, OverviewData } from "./model"
 import type { Endpoint, Operation } from "./model-tabs"
-import { init, routeChanged, update } from "./update"
+import { contextChanged, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -84,9 +94,36 @@ describe("service detail", () => {
 		})
 	})
 
+	test("a window change resolves against the clock now, not the entry clock", () => {
+		const first = entered()
+		const changed = routeChanged(first, route({ timePreset: "1h" }), context)
+		const later = NOW + 40 * 60_000
+		const resolved = pageUpdate(
+			changed.model,
+			Message.CompletedResolveClock({ nowMs: later, mode: "Load" }),
+		)
+		expect(resolved.model.window).toEqual({
+			startTime: "2026-10-01 11:40:00",
+			endTime: "2026-10-01 12:40:00",
+		})
+	})
+
+	test("a zone change re-reads the clock; a pin change keeps it", () => {
+		const first = entered({ timePreset: "today" })
+		const pinned = contextChanged(first, { ...context, pinnedNamespace: "shop" })
+		expect(names(pinned.commands)).not.toContain("ResolveServiceDetailClock")
+		const zoned = contextChanged(first, { ...context, timeZone: "America/New_York" })
+		expect(names(zoned.commands)).toEqual(["ResolveServiceDetailClock"])
+	})
+
 	test("an overview answer for a superseded window is dropped", () => {
 		const first = entered()
-		const second = routeChanged(first, route({ timePreset: "6h" }), context).model
+		const changed = routeChanged(first, route({ timePreset: "6h" }), context)
+		expect(names(changed.commands)).toEqual(["ResolveServiceDetailClock"])
+		const second = pageUpdate(
+			changed.model,
+			Message.CompletedResolveClock({ nowMs: NOW, mode: "Load" }),
+		).model
 		expect(second.window).toEqual({ startTime: "2026-10-01 06:00:00", endTime: "2026-10-01 12:00:00" })
 		const late = pageUpdate(
 			second,
@@ -210,6 +247,29 @@ describe("service detail view", () => {
 		)
 		const retried = pageUpdate(failed, Message.ClickedRetry({ target: "Overview" }))
 		expect(names(retried.commands)).toEqual([FetchOverview.name])
+	})
+
+	test("clicking a tab link replaces the history entry", () => {
+		const model = entered()
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchOverview({
+				key: model.overview.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			themeResolved(),
+			click(role("link", { name: "Operations" })),
+			expectOutMessage(
+				PageOutMessage.RequestedNavigation({
+					url: "/services/payment-svc?tab=operations",
+					isReplace: true,
+				}),
+			),
+		)
 	})
 
 	test("the Operations tab sorts by error rate from its header", () => {

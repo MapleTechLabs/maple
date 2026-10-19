@@ -22,7 +22,8 @@ const environmentsOf = (model: Model): ReadonlyArray<string> =>
 
 /** Default to production; before facets resolve assume it exists, only a confirmed no-production org shows all. */
 export const selectedEnvironment = (model: Model): string => {
-	const isReady = AsyncData.isSuccess(model.facets.data)
+	// Legacy `Result.isSuccess` stays true while a refetch is waiting.
+	const isReady = AsyncData.isSuccess(model.facets.data) || AsyncData.isRefreshing(model.facets.data)
 	const hasProduction = environmentsOf(model).includes("production")
 	return model.search.environment ?? (isReady && !hasProduction ? ALL_ENVIRONMENTS : "production")
 }

@@ -1,4 +1,4 @@
-import { Effect, Queue, Schema, Stream } from "effect"
+import { Effect, Option, Queue, Schema, Stream } from "effect"
 import { Mount } from "foldkit"
 import { Message } from "./canvas"
 import type { HandleBounds, MeasuredNode, Viewport, XY } from "./geometry"
@@ -58,20 +58,23 @@ const measureNode = (node: HTMLElement, zoom: number): MeasuredNode | undefined 
 	const id = node.getAttribute("data-id")
 	if (id === null || node.offsetWidth === 0 || node.offsetHeight === 0) return undefined
 	const nodeRect = node.getBoundingClientRect()
-	const handles: HandleBounds[] = []
-	for (const handle of node.querySelectorAll<HTMLElement>(".react-flow__handle")) {
-		const position = handle.getAttribute("data-handlepos")
-		if (!isSide(position)) continue
-		const rect = handle.getBoundingClientRect()
-		handles.push({
-			type: handle.classList.contains("source") ? "source" : "target",
-			position,
-			x: (rect.left - nodeRect.left) / zoom,
-			y: (rect.top - nodeRect.top) / zoom,
-			width: handle.offsetWidth,
-			height: handle.offsetHeight,
-		})
-	}
+	const handles = Array.from(node.querySelectorAll<HTMLElement>(".react-flow__handle")).flatMap(
+		(handle): ReadonlyArray<HandleBounds> => {
+			const position = handle.getAttribute("data-handlepos")
+			if (!isSide(position)) return []
+			const rect = handle.getBoundingClientRect()
+			return [
+				{
+					type: handle.classList.contains("source") ? "source" : "target",
+					position,
+					x: (rect.left - nodeRect.left) / zoom,
+					y: (rect.top - nodeRect.top) / zoom,
+					width: handle.offsetWidth,
+					height: handle.offsetHeight,
+				},
+			]
+		},
+	)
 	return { id, width: node.offsetWidth, height: node.offsetHeight, handles }
 }
 
@@ -91,13 +94,12 @@ const observeNodes = (renderer: HTMLElement, emit: (message: MountMessage) => vo
 		return viewport === null ? 1 : new DOMMatrixReadOnly(getComputedStyle(viewport).transform).m22
 	}
 	const measure = (nodes: Iterable<HTMLElement>) => {
-		const changed: MeasuredNode[] = []
-		for (const node of nodes) {
+		const changed = Array.from(nodes).flatMap((node): ReadonlyArray<MeasuredNode> => {
 			const measured = measureNode(node, zoomNow())
-			if (measured === undefined || sameMeasurement(last.get(measured.id), measured)) continue
+			if (measured === undefined || sameMeasurement(last.get(measured.id), measured)) return []
 			last.set(measured.id, measured)
-			changed.push(measured)
-		}
+			return [measured]
+		})
 		if (changed.length > 0) emit(Message.MeasuredNodes({ nodes: changed }))
 	}
 	const resizes = new ResizeObserver((entries) =>
@@ -105,11 +107,11 @@ const observeNodes = (renderer: HTMLElement, emit: (message: MountMessage) => vo
 	)
 	const observed = new WeakSet<Element>()
 	const observeNew = () => {
-		for (const node of renderer.querySelectorAll<HTMLElement>(".react-flow__node")) {
-			if (observed.has(node)) continue
+		renderer.querySelectorAll<HTMLElement>(".react-flow__node").forEach((node) => {
+			if (observed.has(node)) return
 			observed.add(node)
 			resizes.observe(node)
-		}
+		})
 	}
 	const additions = new MutationObserver(observeNew)
 	additions.observe(renderer, { childList: true, subtree: true })
@@ -148,30 +150,52 @@ export const DEFAULT_GESTURES: FlowGestures = {
 	translateExtent: null,
 }
 
+/** The zoom limits and gestures, live props on `<ReactFlow>`: the renderer carries them as JSON. */
+export const LIMITS_ATTRIBUTE = "data-flow-limits"
+
+export const FlowLimits = Schema.Struct({ minZoom: Schema.Number, maxZoom: Schema.Number, gestures: FlowGestures })
+export type FlowLimits = typeof FlowLimits.Type
+
+const FlowLimitsJson = Schema.fromJsonString(FlowLimits)
+
+export const limitsAttribute = (limits: FlowLimits): string => Schema.encodeSync(FlowLimitsJson)(limits)
+
+/** Applies the renderer's limits when they differ from the last applied value; returns the applied value. */
+export const followLimits = (raw: string | null, applied: string, apply: (limits: FlowLimits) => void): string =>
+	raw === null || raw === applied
+		? applied
+		: Option.match(Schema.decodeUnknownOption(FlowLimitsJson)(raw), {
+				onNone: () => applied,
+				onSome: (limits) => {
+					apply(limits)
+					return raw
+				},
+			})
+
 /** `ZoomPane`: XYPanZoom on the renderer with the canvas's gesture options. */
 const attachPanZoom = (
 	system: typeof import("@xyflow/system"),
 	renderer: HTMLElement,
-	limits: { readonly minZoom: number; readonly maxZoom: number },
-	gestures: FlowGestures,
+	limits: FlowLimits,
 	emit: (message: MountMessage) => void,
 ) => {
+	const extentOf = (gestures: FlowGestures): [[number, number], [number, number]] =>
+		gestures.translateExtent === null
+			? system.infiniteExtent
+			: [
+					[gestures.translateExtent[0][0], gestures.translateExtent[0][1]],
+					[gestures.translateExtent[1][0], gestures.translateExtent[1][1]],
+				]
 	const panZoom = system.XYPanZoom({
 		domNode: renderer,
 		minZoom: limits.minZoom,
 		maxZoom: limits.maxZoom,
-		translateExtent:
-			gestures.translateExtent === null
-				? system.infiniteExtent
-				: [
-						[gestures.translateExtent[0][0], gestures.translateExtent[0][1]],
-						[gestures.translateExtent[1][0], gestures.translateExtent[1][1]],
-					],
+		translateExtent: extentOf(limits.gestures),
 		viewport: readViewport(renderer) ?? { x: 0, y: 0, zoom: 1 },
 		onDraggingChange: () => {},
 		onPanZoomEnd: () => emit(Message.EndedViewportMove()),
 	})
-	panZoom.update({
+	const updateGestures = (gestures: FlowGestures) => panZoom.update({
 		noWheelClassName: "nowheel",
 		noPanClassName: "nopan",
 		preventScrolling: gestures.preventScrolling,
@@ -190,13 +214,24 @@ const attachPanZoom = (
 		selectionOnDrag: false,
 		onTransformChange: ([x, y, zoom]) => emit(Message.ChangedViewport({ viewport: { x, y, zoom } })),
 	})
+	updateGestures(limits.gestures)
+	// React Flow re-applies these props on every change; follow the renderer's attribute.
+	const applied = { value: limitsAttribute(limits) }
+	const limitChanges = new MutationObserver(() => {
+		applied.value = followLimits(renderer.getAttribute(LIMITS_ATTRIBUTE), applied.value, (next) => {
+			panZoom.setScaleExtent([next.minZoom, next.maxZoom])
+			panZoom.setTranslateExtent(extentOf(next.gestures))
+			updateGestures(next.gestures)
+		})
+	})
+	limitChanges.observe(renderer, { attributes: true, attributeFilter: [LIMITS_ATTRIBUTE] })
 	// The Model moves the camera too (fit, zoom buttons); hand d3 the rendered camera before it reads its own.
 	const sync = () => {
 		const viewport = readViewport(renderer)
 		if (viewport !== undefined) panZoom.syncViewport(viewport)
 	}
 	const gestureEvents = ["wheel", "mousedown", "touchstart", "dblclick"] as const
-	for (const type of gestureEvents) renderer.addEventListener(type, sync, { capture: true })
+	gestureEvents.forEach((type) => renderer.addEventListener(type, sync, { capture: true }))
 	// An animated fit runs as React Flow's does: one d3 transition, every frame back as a Message.
 	const started = { seq: Number.NaN }
 	const animations = new MutationObserver(() => {
@@ -210,7 +245,8 @@ const attachPanZoom = (
 	animations.observe(renderer, { attributes: true, subtree: true, attributeFilter: [ANIMATION_ATTRIBUTE] })
 	return () => {
 		animations.disconnect()
-		for (const type of gestureEvents) renderer.removeEventListener(type, sync, { capture: true })
+		limitChanges.disconnect()
+		gestureEvents.forEach((type) => renderer.removeEventListener(type, sync, { capture: true }))
 		panZoom.destroy()
 	}
 }
@@ -219,6 +255,26 @@ const attachPanZoom = (
 const nodeOrigin = (node: HTMLElement): XY => {
 	const match = node.style.transform.match(/translate\(([-\d.e]+)px,\s*([-\d.e]+)px\)/)
 	return match === null ? { x: 0, y: 0 } : { x: Number(match[1]), y: Number(match[2]) }
+}
+
+type DragTarget = Pick<Window, "addEventListener" | "removeEventListener">
+type DragListener = (event: MouseEvent) => void
+
+/** The drag in progress, whose window listeners outlive the mousedown; `stop` drops them. */
+export const windowDrag = (target: DragTarget) => {
+	const active = { stop: () => {} }
+	const stop = () => active.stop()
+	const start = (move: DragListener, up: DragListener) => {
+		stop()
+		target.addEventListener("mousemove", move)
+		target.addEventListener("mouseup", up)
+		active.stop = () => {
+			target.removeEventListener("mousemove", move)
+			target.removeEventListener("mouseup", up)
+			active.stop = () => {}
+		}
+	}
+	return { start, stop }
 }
 
 /**
@@ -236,6 +292,7 @@ const attachNodeDrag = (renderer: HTMLElement, emit: (message: MountMessage) => 
 			y: (event.clientY - bounds.top - viewport.y) / viewport.zoom,
 		}
 	}
+	const drag = windowDrag(window)
 	const swallowClick = (event: MouseEvent) => {
 		event.stopPropagation()
 		event.preventDefault()
@@ -273,18 +330,20 @@ const attachNodeDrag = (renderer: HTMLElement, emit: (message: MountMessage) => 
 			emit(Message.DraggedNode({ id, position: state.position }))
 		}
 		const up = () => {
-			window.removeEventListener("mousemove", move)
-			window.removeEventListener("mouseup", up)
+			drag.stop()
 			if (state.dragging) emit(Message.EndedNodeDrag({ id, position: state.position }))
 			if (!state.moved) return
 			window.addEventListener("click", swallowClick, { capture: true, once: true })
 			setTimeout(() => window.removeEventListener("click", swallowClick, { capture: true }), 0)
 		}
-		window.addEventListener("mousemove", move)
-		window.addEventListener("mouseup", up)
+		drag.start(move, up)
 	}
 	renderer.addEventListener("mousedown", onDown)
-	return () => renderer.removeEventListener("mousedown", onDown)
+	// An unmount mid-drag also drops the drag's window listeners.
+	return () => {
+		renderer.removeEventListener("mousedown", onDown)
+		drag.stop()
+	}
 }
 
 /** Pane size from the renderer, which fills the `.react-flow` wrapper. */
@@ -329,7 +388,7 @@ export const AttachFlowCanvas = Mount.defineStream("AttachFlowCanvas", {
 						const releases = [
 							observePane(element, emit),
 							observeNodes(element, emit),
-							attachPanZoom(system, element, { minZoom, maxZoom }, gestures, emit),
+							attachPanZoom(system, element, { minZoom, maxZoom, gestures }, emit),
 							attachNodeDrag(element, emit),
 						]
 						return () => releases.forEach((release) => release())

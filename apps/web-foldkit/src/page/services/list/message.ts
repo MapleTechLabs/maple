@@ -70,6 +70,7 @@ export const Message = defineMessageUnion({
 	ClickedClearNamespacePin: {},
 	RemovedFilterChip: { param: FilterParam },
 	ClickedServiceRow: { serviceName: Schema.String, environment: Schema.String },
+	ClickedServiceLink: { url: Schema.String },
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotSparklineMessage: { message: Chart.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },

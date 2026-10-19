@@ -11,6 +11,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { requestKey, type RequestKey } from "../../../data/request-key"
 import { writeClipboard } from "../../kit/clipboard"
+import { listQueryOf } from "./list-query"
 import { Message } from "./message"
 import { ProductEvent } from "./model"
 import { SpanEvents, TraceData } from "./trace-data"
@@ -38,6 +39,14 @@ export const correlationWindow = (
 export const ReadClock = Command.define("ReadTraceDetailClock", {
 	messages: [Message.CompletedReadClock],
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
+})
+
+/** The list filters on the page's URL, which its search schema does not decode. */
+export const ReadListQuery = Command.define("ReadTraceListQuery", {
+	messages: [Message.CompletedReadListQuery],
+	execute: Effect.sync(() =>
+		Message.CompletedReadListQuery({ listQuery: listQueryOf(window.location.search) }),
+	),
 })
 
 /** `getSpanHierarchyResultAtom({ data })`'s identity, shared with the investigation's trace chips. */
@@ -94,7 +103,10 @@ export const FetchLogsCount = Command.define("FetchTraceLogsCount", {
 	execute: ({ key, traceId, startTime, endTime }) =>
 		readThrough(
 			{ key, idleTtlMs: IdleTtl.logsCount, schema: Schema.Number },
-			Effect.map(getLogsCount({ data: { traceId, startTime, endTime } }), (response) => response.data[0]?.total ?? 0),
+			Effect.map(
+				getLogsCount({ data: { traceId, startTime, endTime } }),
+				(response) => response.data[0]?.total ?? 0,
+			),
 		).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
@@ -133,7 +145,10 @@ export const FetchReplays = Command.define("FetchTraceReplays", {
 	execute: ({ key, traceId }) =>
 		readThrough(
 			{ key, idleTtlMs: IdleTtl.replaysForTrace, schema: Schema.NullOr(Schema.String) },
-			Effect.map(getReplaysForTrace({ data: { traceId } }), (response) => response.data[0]?.sessionId ?? null),
+			Effect.map(
+				getReplaysForTrace({ data: { traceId } }),
+				(response) => response.data[0]?.sessionId ?? null,
+			),
 		).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,

@@ -66,13 +66,20 @@ export const FetchSignalLogs = Command.define("FetchInvestigationSignalLogs", {
 		),
 })
 
-/** `TracesRow`'s read: the window's overview rows, every service. */
+/** `TracesRow`'s read: the window's overview rows, every service, under the namespace pin. */
 export const FetchSignalTraces = Command.define("FetchInvestigationSignalTraces", {
-	args: { key: Schema.String, startTime: Schema.String, endTime: Schema.String },
+	args: {
+		key: Schema.String,
+		startTime: Schema.String,
+		endTime: Schema.String,
+		namespaces: Schema.optional(Schema.Array(Schema.String)),
+	},
 	messages: [Message.CompletedFetchTraces],
-	execute: ({ key, startTime, endTime }) =>
+	execute: ({ key, startTime, endTime, namespaces }) =>
 		finish(
-			Effect.map(getServiceOverview({ data: { startTime, endTime } }), (response) =>
+			Effect.map(getServiceOverview({
+				data: { startTime, endTime, namespaces: namespaces === undefined ? undefined : [...namespaces] },
+			}), (response) =>
 				response.data.map(({ serviceName, spanCount, p95LatencyMs, errorRate }) => ({ serviceName, spanCount, p95LatencyMs, errorRate })),
 			),
 			(result) => Message.CompletedFetchTraces({ key, result }),

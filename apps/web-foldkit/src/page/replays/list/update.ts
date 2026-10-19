@@ -26,7 +26,7 @@ import {
 import { emptyWindow } from "../kit/virtualize"
 import { draftOf, nextCursor } from "./derive"
 import { Message, type Range, type RequestMode } from "./message"
-import type { Model, Pagination, Search } from "./model"
+import type { Model, Pagination, ReplaysPage, Search } from "./model"
 import {
 	addedRowTag,
 	clearedFilters,
@@ -84,6 +84,13 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 		],
 	}
 }
+
+/** `use-infinite-replays`: a server repeating an earlier cursor would loop, so paging stops. */
+const isRepeatedCursor = (model: Model, page: ReplaysPage): boolean =>
+	page.hasMore &&
+	page.nextCursor !== null &&
+	(page.nextCursor === Option.getOrUndefined(AsyncData.getData(model.firstPage.data))?.nextCursor ||
+		model.pagination.pages.some((earlier) => earlier.nextCursor === page.nextCursor))
 
 /** The sentinel or Load more asks for the next page; one in flight at a time. */
 const fetchNext = (model: Model): Return => {
@@ -256,6 +263,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 									...model.pagination,
 									pages: [...model.pagination.pages, page],
 									isFetching: false,
+									isStopped: isRepeatedCursor(model, page),
 								}),
 								onFailure: () => ({ ...model.pagination, isFetching: false, isStopped: true }),
 							}),

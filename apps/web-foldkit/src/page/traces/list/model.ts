@@ -76,6 +76,8 @@ export type Pagination = typeof Pagination.Type
 export const Model = Schema.Struct({
 	search: TracesSearch,
 	window: Schema.NullOr(TimeWindow),
+	/** The zone `window` was resolved in: a zone change re-resolves "today" (`useEffectiveTimeRange`). */
+	windowZone: Schema.NullOr(Schema.String),
 	nowMs: Schema.Number,
 	facets: KeyedSchema(TracesFacets, LoadFailure),
 	firstPage: KeyedSchema(TracesPage, LoadFailure),

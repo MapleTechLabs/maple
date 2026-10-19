@@ -48,8 +48,17 @@ export const scopedInstance = (model: Model, log: LogRecord): InstanceAttribute 
 	return instance !== undefined && model.contextScope.values[0] === "instance" ? instance : undefined
 }
 
+/** `applyGlobalNamespace(data, "top")`: the pin is the only namespace filter. */
+const pinned = (pinnedNamespace: string | null) =>
+	pinnedNamespace === null ? {} : { namespaces: [pinnedNamespace] }
+
 /** `contextInputs`: 25 logs each side within an hour; both sides include this instant. */
-export const contextInput = (log: LogRecord, instance: InstanceAttribute | undefined, side: Side) => {
+export const contextInput = (
+	log: LogRecord,
+	instance: InstanceAttribute | undefined,
+	side: Side,
+	pinnedNamespace: string | null,
+) => {
 	const ms = timestampMs(log.timestamp)
 	if (Number.isNaN(ms)) return undefined
 	const at = WAREHOUSE_DATETIME.test(log.exactTimestamp)
@@ -62,6 +71,7 @@ export const contextInput = (log: LogRecord, instance: InstanceAttribute | undef
 			instance === undefined
 				? undefined
 				: [{ key: instance.key, value: instance.value, mode: "equals" as const }],
+		...pinned(pinnedNamespace),
 	}
 	return side === "before"
 		? {
@@ -98,10 +108,16 @@ export const mergeLogContext = (
 
 /** `listLogsResultAtom({ data: before | after })`. */
 export const FetchContext = Command.define("FetchLogContext", {
-	args: { key: Schema.String, side: Side, log: LogRecord, instance: Schema.UndefinedOr(InstanceAttribute) },
+	args: {
+		key: Schema.String,
+		side: Side,
+		log: LogRecord,
+		instance: Schema.UndefinedOr(InstanceAttribute),
+		pinnedNamespace: Schema.NullOr(Schema.String),
+	},
 	messages: [Message.CompletedFetchContext],
-	execute: ({ key, side, log, instance }) =>
-		Effect.suspend(() => listLogs({ data: contextInput(log, instance, side) ?? {} })).pipe(
+	execute: ({ key, side, log, instance, pinnedNamespace }) =>
+		Effect.suspend(() => listLogs({ data: contextInput(log, instance, side, pinnedNamespace) ?? {} })).pipe(
 			Effect.map((response) => response.data),
 			Effect.mapError(toLoadFailure),
 			Effect.result,
@@ -111,10 +127,15 @@ export const FetchContext = Command.define("FetchLogContext", {
 
 /** `listLogsResultAtom({ traceId, limit: 200, ...traceWindow(timestamp) })`. */
 export const FetchTraceLogs = Command.define("FetchLogTraceLogs", {
-	args: { key: Schema.String, traceId: TraceId, timestamp: Schema.String },
+	args: {
+		key: Schema.String,
+		traceId: TraceId,
+		timestamp: Schema.String,
+		pinnedNamespace: Schema.NullOr(Schema.String),
+	},
 	messages: [Message.CompletedFetchTraceLogs],
-	execute: ({ key, traceId, timestamp }) =>
-		listLogs({ data: { traceId, limit: TRACE_LOG_LIMIT, ...traceWindow(timestamp) } }).pipe(
+	execute: ({ key, traceId, timestamp, pinnedNamespace }) =>
+		listLogs({ data: traceLogsInput(traceId, timestamp, pinnedNamespace) }).pipe(
 			Effect.map((response) => response.data),
 			Effect.mapError(toLoadFailure),
 			Effect.result,
@@ -146,6 +167,13 @@ export const traceWindow = (timestamp: string) => {
 		: { startTime: snapTimestamp(window.startTime), endTime: snapTimestamp(window.endTime) }
 }
 
+export const traceLogsInput = (traceId: TraceId, timestamp: string, pinnedNamespace: string | null) => ({
+	traceId,
+	limit: TRACE_LOG_LIMIT,
+	...traceWindow(timestamp),
+	...pinned(pinnedNamespace),
+})
+
 type Step = Readonly<{ model: Model; commands: ReadonlyArray<Cmd> }>
 
 const slotStep = <A, E>(
@@ -164,7 +192,7 @@ const isShowing = (model: Model, tab: string) =>
 	model.isPage || (model.dialog.isOpen && model.tabs.selected === tab)
 
 export const contextKeyOf = (model: Model, log: LogRecord, side: Side): string | undefined => {
-	const input = contextInput(log, scopedInstance(model, log), side)
+	const input = contextInput(log, scopedInstance(model, log), side, model.pinnedNamespace)
 	return input === undefined ? undefined : requestKey(model.orgId, "listLogs", { data: input })
 }
 
@@ -180,14 +208,14 @@ const requestContext = (step: Step, log: LogRecord): Step => {
 					(m) => m.contextBefore,
 					key,
 					(m, contextBefore) => ({ ...m, contextBefore }),
-					FetchContext({ key, side, log, instance }),
+					FetchContext({ key, side, log, instance, pinnedNamespace: acc.model.pinnedNamespace }),
 				)
 			: slotStep(
 					acc,
 					(m) => m.contextAfter,
 					key,
 					(m, contextAfter) => ({ ...m, contextAfter }),
-					FetchContext({ key, side, log, instance }),
+					FetchContext({ key, side, log, instance, pinnedNamespace: acc.model.pinnedNamespace }),
 				)
 	}, step)
 }
@@ -195,9 +223,9 @@ const requestContext = (step: Step, log: LogRecord): Step => {
 const requestTrace = (step: Step, log: LogRecord): Step => {
 	const traceId = log.traceId
 	if (traceId === undefined || traceId === "" || !isShowing(step.model, "trace")) return step
-	const window = traceWindow(log.timestamp)
+	const { pinnedNamespace } = step.model
 	const logsKey = requestKey(step.model.orgId, "listLogs", {
-		data: { traceId, limit: TRACE_LOG_LIMIT, ...window },
+		data: traceLogsInput(traceId, log.timestamp, pinnedNamespace),
 	})
 	const spansKey = requestKey(step.model.orgId, "getSpanHierarchy", {
 		data: { traceId, timestamp: log.timestamp },
@@ -207,7 +235,7 @@ const requestTrace = (step: Step, log: LogRecord): Step => {
 		(m) => m.traceLogs,
 		logsKey,
 		(m, traceLogs) => ({ ...m, traceLogs }),
-		FetchTraceLogs({ key: logsKey, traceId, timestamp: log.timestamp }),
+		FetchTraceLogs({ key: logsKey, traceId, timestamp: log.timestamp, pinnedNamespace }),
 	)
 	return slotStep(
 		withLogs,

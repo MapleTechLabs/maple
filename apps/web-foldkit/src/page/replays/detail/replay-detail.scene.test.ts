@@ -11,8 +11,10 @@ import {
 	FetchTraceSummaries,
 	FetchTranscript,
 	MountEngine,
+	isFigureFullscreen,
 	WatchPlayerKeys,
 } from "./command"
+import { cacheRange, RANGE_CACHE_LIMIT, seedEvents } from "./loader"
 import { Message } from "./message"
 import type { EventRow, Manifest, Model, ReplayDetail } from "./model"
 import { init, update } from "./update"
@@ -201,5 +203,30 @@ describe("replay detail", () => {
 		expect(names(reopened.commands)).toEqual(["FetchReplayTraceSpans"])
 		const succeeded = pageUpdate(reopened.model, Message.CompletedFetchSpans({ traceId, result: Result.succeed([]) })).model
 		expect(names(pageUpdate(pageUpdate(succeeded, toggle).model, toggle).commands)).toEqual([])
+	})
+
+	test("fullscreen counts the figure ToggleFullscreen fullscreens, not the studio", () => {
+		const element = (attribute: string) => ({ hasAttribute: (name: string) => name === attribute })
+		expect(isFigureFullscreen(element("data-replay-figure"))).toBe(true)
+		expect(isFigureFullscreen(element("data-replay-studio"))).toBe(false)
+		expect(isFigureFullscreen(null)).toBe(false)
+	})
+
+	test("the seed is cut once per seed version, not re-flattened on every engine tick", () => {
+		const ready = pageUpdate(seeded(), Message.ReadiedEngine({ seedVersion: 1, totalMs: 1000 })).model
+		const ticked = pageUpdate(ready, Message.TickedEngine({ seedVersion: 1, currentMs: 100 })).model
+		const again = pageUpdate(ticked, Message.TickedEngine({ seedVersion: 1, currentMs: 200 })).model
+		expect(seedEvents(again.loader)).toHaveLength(2)
+		expect(seedEvents(again.loader)).toBe(seedEvents(ready.loader))
+	})
+
+	test("the range cache keeps the newest answers and evicts the oldest", () => {
+		const cache = Array.from({ length: RANGE_CACHE_LIMIT + 3 }, (_, i) => `range-${i}`).reduce(
+			(acc, key) => cacheRange(acc, key, []),
+			cacheRange({}, "range-0", []),
+		)
+		expect(Object.keys(cache)).toHaveLength(RANGE_CACHE_LIMIT)
+		expect(Object.keys(cache)[0]).toBe("range-3")
+		expect(Object.keys(cacheRange(cache, "range-3", [])).at(-1)).toBe("range-3")
 	})
 })

@@ -382,12 +382,30 @@ export const routeChanged = (
 	model: Model,
 	route: { readonly serviceName: string; readonly search: Search },
 	context: PageContext,
-): Return =>
-	searchHref(model.serviceName, model.search) === searchHref(route.serviceName, route.search)
-		? { model }
-		: sync({ ...model, search: route.search }, context, "Load")
+): Return => {
+	if (searchHref(model.serviceName, model.search) === searchHref(route.serviceName, route.search))
+		return { model }
+	const next = { ...model, search: route.search }
+	return isWindowChange(model.search, route.search) ? resolveClock(next) : sync(next, context, "Load")
+}
 
-export const contextChanged = (model: Model, context: PageContext): Return => sync(model, context, "Load")
+/** `useEffectiveTimeRange` re-resolves against now on a window or zone change. */
+const isWindowChange = (a: Search, b: Search) =>
+	a.startTime !== b.startTime || a.endTime !== b.endTime || a.timePreset !== b.timePreset
+
+const resolveClock = (model: Model): Return => ({
+	model,
+	commands: [ResolveClock({ mode: model.refreshVersion === 0 ? "Load" : "Refresh" })],
+})
+
+/** A zone change moves the window (today, yesterday): read the clock again. A pin change does not. */
+export const contextChanged = (model: Model, context: PageContext): Return =>
+	model.nowMs === null || isSameWindow(model.window, windowOf(model, context, model.nowMs))
+		? sync(model, context, "Load")
+		: resolveClock(model)
+
+const isSameWindow = (a: TimeWindow | null, b: TimeWindow) =>
+	a !== null && a.startTime === b.startTime && a.endTime === b.endTime
 
 const withPicker = (model: Model, message: TimeRangePicker.Message): Return => {
 	const next = TimeRangePicker.update(model.timePicker, message)

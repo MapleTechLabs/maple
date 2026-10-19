@@ -62,6 +62,14 @@ export const Pagination = Schema.Struct({
 })
 export type Pagination = typeof Pagination.Type
 
+/** `LogsVolumeChart`'s drag-to-zoom: `refAreaLeft`/`refAreaRight` and `isSelecting`. */
+export const VolumeBrush = Schema.Struct({
+	left: Schema.NullOr(Schema.String),
+	right: Schema.NullOr(Schema.String),
+	isSelecting: Schema.Boolean,
+})
+export type VolumeBrush = typeof VolumeBrush.Type
+
 export const Model = Schema.Struct({
 	search: LogsSearch,
 	/** The resolved window and the clock it was resolved at; `null` until the first resolve. */
@@ -76,6 +84,7 @@ export const Model = Schema.Struct({
 	volume: KeyedSchema(Schema.Array(VolumeBucket), LoadFailure),
 	attributeKeys: KeyedSchema(Schema.Array(AttributeKey), LoadFailure),
 	volumeChart: Chart.Model,
+	volumeBrush: VolumeBrush,
 	stream: LogsStream.Model,
 	/** `useLogsViewPreferences` (`maple.logs.wrap` / `maple.logs.density`), read on entry. */
 	wrap: Schema.Boolean,

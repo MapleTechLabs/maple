@@ -15,7 +15,8 @@ import { chartLoading } from "../../../ui/chart-state"
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
 import { HISTOGRAM_TARGET_POINTS, volumeSeriesKeys, volumeTotal } from "./derive"
 import { Message } from "./message"
-import type { Model, VolumeBucket } from "./model"
+import type { Model, VolumeBrush, VolumeBucket } from "./model"
+import { bucketTooltipBody } from "../../../charts/bucket-tooltip"
 
 // `LogsVolumeChart` (apps/web/src/components/logs/logs-volume-chart.tsx).
 
@@ -35,6 +36,7 @@ const volumeSpec = (
 	buckets: ReadonlyArray<VolumeBucket>,
 	theme: ThemeColors,
 	timeZone: string,
+	brush: VolumeBrush,
 ): ChartSpec => {
 	const seriesKeys = volumeSeriesKeys(buckets)
 	return {
@@ -43,8 +45,9 @@ const volumeSpec = (
 		seriesKeys,
 		colors: Object.fromEntries(seriesKeys.map((key) => [key, resolveColor(theme, severityToken(key))])),
 		border: resolveColor(theme, "--border"),
-		selection: null,
-		isSelecting: false,
+		selection:
+			brush.left !== null && brush.right !== null ? { left: brush.left, right: brush.right } : null,
+		isSelecting: brush.isSelecting,
 		timeZone,
 	}
 }
@@ -52,14 +55,16 @@ const volumeSpec = (
 type PlotInputs = Readonly<{ spec: ChartSpec }>
 
 /** `CursorPlot` with `ariaLabel="Log volume by severity"` in its 120px strip. */
-const volumePlot = Submodel.defineView<Chart.Model, Chart.Message, PlotInputs>((_model, inputs, h) =>
+const volumePlot = Submodel.defineView<Chart.Model, Chart.Message, PlotInputs>((model, inputs, h) =>
 	plotFrame(h, {
 		chartId: "logs-volume",
 		spec: inputs.spec,
 		ariaLabel: "Log volume by severity",
 		className: "h-full w-full",
-		// TODO(volume-tooltip): `PlotTooltipBody` for the hovered bucket.
-		tooltipBody: () => Option.none(),
+		tooltipBody: (portal) =>
+			Option.flatMap(model.tooltip, (tooltip) =>
+				tooltip._tag === "Bucket" ? Option.some(bucketTooltipBody(h, tooltip, portal)) : Option.none(),
+			),
 	}),
 )
 
@@ -244,6 +249,9 @@ export const volumeChart = (h: HtmlBuilder<Message>, model: Model, timeZone: str
 									[
 										h.Style({ height: `${LOGS_VOLUME_CHART_HEIGHT}px` }),
 										h.Class(cn("w-full select-none", "cursor-crosshair")),
+										h.OnPointerDown(() => Option.some(Message.PressedVolumeChart())),
+										h.OnPointerUp(() => Option.some(Message.ReleasedVolumeChart())),
+										h.OnPointerLeave(() => Option.some(Message.LeftVolumeChart())),
 									],
 									[
 										h.submodel({
@@ -251,7 +259,7 @@ export const volumeChart = (h: HtmlBuilder<Message>, model: Model, timeZone: str
 											model: model.volumeChart,
 											view: volumePlot,
 											viewInputs: {
-												spec: volumeSpec(buckets, model.themeColors, timeZone),
+												spec: volumeSpec(buckets, model.themeColors, timeZone, model.volumeBrush),
 											},
 											toParentMessage: (message) =>
 												Message.GotVolumeChartMessage({ message }),

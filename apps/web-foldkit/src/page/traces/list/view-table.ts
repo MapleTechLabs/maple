@@ -146,10 +146,10 @@ const spacer = (h: HtmlBuilder<Message>, height: number): Html =>
 	h.tr([h.AriaHidden(true), h.Style({ height: `${height}px` })], [h.td([], [])])
 
 /** `VirtualTableBody`: spacers around the rendered window, then the loading row. */
-const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html => {
+const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile: boolean): Html => {
 	const rows = allRows(model)
 	const time = timeFormat(timeZone)
-	const activeIndex = peekPosition(model)?.index ?? null
+	const activeIndex = isMobile ? null : (peekPosition(model)?.index ?? null)
 	const first = model.virtualRows[0]
 	const last = model.virtualRows.at(-1)
 	return h.tbody(
@@ -165,6 +165,7 @@ const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html => 
 								search: model.search,
 								isFocused: model.focusedIndex === item.index,
 								isActive: activeIndex === item.index,
+								isMobile,
 							}),
 						]
 			}),
@@ -186,7 +187,13 @@ const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html => 
 	)
 }
 
-const loadedTable = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isWaiting: boolean): Html => {
+const loadedTable = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	timeZone: string,
+	isWaiting: boolean,
+	isMobile: boolean,
+): Html => {
 	const count = allRows(model).length
 	const hidden = hiddenCount(model)
 	return h.div(
@@ -205,7 +212,7 @@ const loadedTable = (h: HtmlBuilder<Message>, model: Model, timeZone: string, is
 				[
 					table(h, { scroll: false, className: "table-fixed", ariaLabel: "Traces" }, [
 						header(h, model),
-						body(h, model, timeZone),
+						body(h, model, timeZone, isMobile),
 					]),
 				],
 			),
@@ -258,12 +265,17 @@ const emptyTable = (h: HtmlBuilder<Message>, model: Model): Html => {
 	)
 }
 
-export const tracesTable = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html =>
+export const tracesTable = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	timeZone: string,
+	isMobile = false,
+): Html =>
 	AsyncData.matchData(model.firstPage.data, {
 		onEmpty: () => loadingState(h),
 		onFailure: (failure) => errorState(h, { failure }),
 		onData: () =>
 			allRows(model).length === 0
 				? emptyTable(h, model)
-				: loadedTable(h, model, timeZone, AsyncData.isRefreshing(model.firstPage.data)),
+				: loadedTable(h, model, timeZone, AsyncData.isRefreshing(model.firstPage.data), isMobile),
 	})

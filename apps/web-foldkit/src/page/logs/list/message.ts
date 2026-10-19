@@ -73,5 +73,8 @@ export const Message = defineMessageUnion({
 	GotDetailMessage: { message: LogDetail.Message },
 	ToggledColumn: { key: Schema.String },
 	GotVolumeChartMessage: { message: Chart.Message },
+	PressedVolumeChart: {},
+	ReleasedVolumeChart: {},
+	LeftVolumeChart: {},
 })
 export type Message = typeof Message.Type

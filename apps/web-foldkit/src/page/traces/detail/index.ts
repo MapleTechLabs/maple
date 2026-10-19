@@ -1,6 +1,7 @@
 import { definePage, pickCommands } from "../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
+import { subscriptions } from "./subscription"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { breadcrumbs, view } from "./view"
 
@@ -18,6 +19,7 @@ export const page = definePage(
 		routeChanged,
 		contextChanged,
 		view,
+		subscriptions,
 		breadcrumbs,
 	},
 )

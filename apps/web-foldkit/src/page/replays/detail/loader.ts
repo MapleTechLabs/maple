@@ -25,6 +25,7 @@ export const emptyLoader = (): Loader => ({
 	isPlanned: false,
 	loaded: [],
 	seedCount: 0,
+	seed: [],
 	queue: [],
 	seekTargetMs: null,
 	isSeeking: false,
@@ -56,8 +57,20 @@ export const subscribedRange = (model: Model): ReplayRange =>
 export const loadedThroughSeq = (loader: Loader): number =>
 	loader.loaded.reduce((max, entry) => Math.max(max, entry.lastChunkSeq), -1)
 
-export const seedEvents = (loader: Loader): ReadonlyArray<unknown> =>
-	loader.seedCount === 0 ? [] : loader.loaded.slice(0, loader.seedCount).flatMap((entry) => entry.events)
+export const seedEvents = (loader: Loader): ReadonlyArray<unknown> => loader.seed
+
+/** Range answers kept for re-seeks; the oldest go first past this many. */
+export const RANGE_CACHE_LIMIT = 12
+
+export const cacheRange = (
+	cache: Loader["rangeCache"],
+	key: string,
+	rows: RangeRows,
+): Loader["rangeCache"] => {
+	const kept = Object.entries(cache).filter(([cached]) => cached !== key)
+	const entries: ReadonlyArray<readonly [string, RangeRows]> = [...kept, [key, rows]]
+	return Object.fromEntries(entries.slice(-RANGE_CACHE_LIMIT))
+}
 
 /** Ranges after the seed, for the feed Mounts. */
 export const trailingRanges = (loader: Loader): ReadonlyArray<LoadedRange> =>
@@ -87,6 +100,7 @@ export const planOnce = (model: Model): Model => {
 			isPlanned: true,
 			loaded: [],
 			seedCount: 0,
+			seed: [],
 			isSeeking: false,
 			seekTargetMs: null,
 			queue: initialRanges(chunks, planOf(model)),
@@ -123,7 +137,13 @@ const cutSeed = (model: Model): Model => {
 	if (loader.queue.length > 0 || loader.loaded.length === 0 || loader.seedCount > 0) return model
 	return {
 		...model,
-		loader: { ...loader, seedCount: loader.loaded.length, isSeeking: false, seedVersion: loader.seedVersion + 1 },
+		loader: {
+			...loader,
+			seedCount: loader.loaded.length,
+			seed: loader.loaded.flatMap((entry) => entry.events),
+			isSeeking: false,
+			seedVersion: loader.seedVersion + 1,
+		},
 	}
 }
 
@@ -158,6 +178,7 @@ export const requestSeek = (model: Model, offsetMs: number): Option.Option<Model
 			...loader,
 			loaded: [],
 			seedCount: 0,
+			seed: [],
 			isSeeking: true,
 			seekTargetMs: offsetMs,
 			queue: rangesCovering(chunks, planOf(model), anchor.chunk_seq, INITIAL_WINDOW_BYTES),

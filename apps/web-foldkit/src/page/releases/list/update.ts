@@ -38,12 +38,13 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 		timeZone: context.timeZone,
 	})
 
-const inputOf = (model: Model, window: TimeWindow): ReleasesInput => ({
+const inputOf = (model: Model, window: TimeWindow, context: PageContext): ReleasesInput => ({
 	startTime: window.startTime,
 	endTime: window.endTime,
 	environments: model.search.environments,
 	excludedEnvironments: model.search.excludedEnvironments,
 	services: model.search.services,
+	namespaces: context.pinnedNamespace === null ? undefined : [context.pinnedNamespace],
 })
 
 /** One slot's request; nothing when the slot already holds the key (`Load`). */
@@ -66,7 +67,7 @@ const chain = (first: Return, next: (model: Model) => Return): Return => {
 }
 
 const requestReleases = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
-	const input = inputOf(model, window)
+	const input = inputOf(model, window, context)
 	const key = requestKey(context.orgId, "getReleases", { data: input })
 	return slotStep({ ...model, window }, model.releases, (releases) => ({ releases }), key, mode, FetchReleases({ key, input, refresh: mode === "Refresh" }))
 }

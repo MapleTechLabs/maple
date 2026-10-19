@@ -14,7 +14,7 @@ import {
 } from "./command"
 import { Message } from "./message"
 import type { Model, TraceRow, TracesFacets, TracesPage } from "./model"
-import { allRows, init, routeChanged, update } from "./update"
+import { allRows, contextChanged, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 import { VirtualizeTraces } from "./virtualize"
 
@@ -65,7 +65,7 @@ const facets: TracesFacets = {
 const windowed = (search = {}): Model =>
 	pageUpdate(
 		init({ search }, context).model,
-		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load", timeZone: "UTC" }),
 	).model
 
 const loaded = (first: TracesPage): Model => {
@@ -91,7 +91,7 @@ describe("traces list", () => {
 		expect(names(init({ search: {} }, context).commands)).toContain("ResolveTracesWindow")
 		const resolved = pageUpdate(
 			init({ search: {} }, context).model,
-			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load", timeZone: "UTC" }),
 		)
 		expect(names(resolved.commands)).toEqual([FetchFacets.name, FetchFirstPage.name])
 	})
@@ -100,7 +100,7 @@ describe("traces list", () => {
 		const first = windowed()
 		const second = pageUpdate(
 			first,
-			Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Load" }),
+			Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Load", timeZone: "UTC" }),
 		)
 		const late = pageUpdate(
 			second.model,
@@ -126,18 +126,18 @@ describe("traces list", () => {
 		const model = loaded(page(3))
 		const reloaded = pageUpdate(
 			model,
-			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" }),
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh", timeZone: "UTC" }),
 		)
 		expect(names(reloaded.commands)).toEqual([FetchFirstPage.name])
 		const filtered = routeChanged(model, { search: { hasError: true } }, context).model
 		const away = pageUpdate(
 			filtered,
-			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load", timeZone: "UTC" }),
 		)
 		const back = routeChanged(away.model, { search: {} }, context).model
 		const returned = pageUpdate(
 			back,
-			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load", timeZone: "UTC" }),
 		)
 		expect(names(returned.commands)).toEqual([])
 		expect(allRows(returned.model)).toHaveLength(3)
@@ -160,7 +160,11 @@ describe("traces list", () => {
 	})
 
 	test("a next page answers only its own request: filter A, B, then A again appends page 2 once", () => {
-		const resolved = (model: Model) => pageUpdate(model, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
+		const resolved = (model: Model) =>
+			pageUpdate(
+				model,
+				Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load", timeZone: "UTC" }),
+			).model
 		const first = pageUpdate(loaded(page(100)), windowOver(70, 95))
 		const [stale] = first.commands ?? []
 		const away = resolved(routeChanged(first.model, { search: { hasError: true } }, context).model)
@@ -169,8 +173,16 @@ describe("traces list", () => {
 		const [current] = second.commands ?? []
 		expect(names(second.commands)).toEqual([FetchNextPage.name])
 		const answer = (command: typeof current) => {
-			const args = command?.args !== undefined && "generation" in command.args ? command.args : { generation: -1 }
-			return Message.CompletedFetchNextPage({ key: second.model.pagination.key ?? "", generation: Number(args.generation), offset: 100, result: Result.succeed(page(100)) })
+			const args =
+				command?.args !== undefined && "generation" in command.args
+					? command.args
+					: { generation: -1 }
+			return Message.CompletedFetchNextPage({
+				key: second.model.pagination.key ?? "",
+				generation: Number(args.generation),
+				offset: 100,
+				result: Result.succeed(page(100)),
+			})
 		}
 		const dropped = pageUpdate(second.model, answer(stale)).model
 		expect(allRows(dropped)).toHaveLength(100)
@@ -192,6 +204,15 @@ describe("traces list", () => {
 			),
 			expectView(text("3 traces")).toExist(),
 		)
+	})
+
+	test("a new time zone re-resolves the window; a new pin re-requests the same one", () => {
+		const model = loaded(page(3))
+		const zoned = contextChanged(model, { ...context, timeZone: "Asia/Tokyo" })
+		expect(names(zoned.commands)).toEqual(["ResolveTracesWindow"])
+		const pinned = contextChanged(model, { ...context, pinnedNamespace: "shop" })
+		expect(names(pinned.commands)).not.toContain("ResolveTracesWindow")
+		expect(names(pinned.commands)).toContain(FetchFirstPage.name)
 	})
 
 	test("the Duration header sorts descending first, then flips", () => {

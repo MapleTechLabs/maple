@@ -19,7 +19,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 const windowed = (): Model =>
 	pageUpdate(
 		init({ search: {} }, context).model,
-		Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+		Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load", timeZone: "UTC" }),
 	).model
 
 const urlOf = (result: { readonly outMessage?: unknown }) =>

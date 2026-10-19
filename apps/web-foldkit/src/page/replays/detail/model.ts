@@ -130,13 +130,15 @@ export const Loader = Schema.Struct({
 	isPlanned: Schema.Boolean,
 	loaded: Schema.Array(LoadedRange),
 	seedCount: Schema.Number,
+	/** The seed's events, cut once per `seedVersion` so ticks and views do not re-flatten them. */
+	seed: Schema.Array(Schema.Unknown),
 	queue: Schema.Array(Range),
 	seekTargetMs: Schema.NullOr(Schema.Number),
 	isSeeking: Schema.Boolean,
 	playheadMs: Schema.Number,
 	/** The range the events subscription reads (`subscribedRange`). */
 	range: KeyedSchema(RangeRows, LoadFailure),
-	/** Answers already received, by range request key (the atom cache). */
+	/** Answers already received, by range request key (the atom cache), oldest first, capped. */
 	rangeCache: Schema.Record(Schema.String, RangeRows),
 	/** Seeds so far: the engine element is keyed by it, so a new seed mounts a new engine. */
 	seedVersion: Schema.Number,

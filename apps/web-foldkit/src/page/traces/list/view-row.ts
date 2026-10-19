@@ -119,7 +119,7 @@ const rootSpanCell = (
 	)
 }
 
-export type RowState = Readonly<{ search: Search; isFocused: boolean; isActive: boolean }>
+export type RowState = Readonly<{ search: Search; isFocused: boolean; isActive: boolean; isMobile: boolean }>
 
 export const traceRow = (
 	h: HtmlBuilder<Message>,
@@ -145,7 +145,11 @@ export const traceRow = (
 			h.Tabindex(0),
 			h.OnKeyDownPreventDefault((key) =>
 				key === "Enter" || key === " "
-					? Option.some(Message.ClickedPeekRow({ index }))
+					? Option.some(
+							state.isMobile
+								? Message.PressedOpenRow({ index })
+								: Message.ClickedPeekRow({ index }),
+						)
 					: Option.none(),
 			),
 		],

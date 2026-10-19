@@ -50,7 +50,7 @@ const compactStrip = <M>(h: HtmlBuilder<M>, options: QueryBuilderLegendOptions<M
 		),
 	)
 
-/** No data reads "—" and four zeros collapse to one muted 0, both in the Last column. */
+/** No data reads as a dash glyph and four zeros collapse to one muted 0, both in the Last column. */
 const statCells = <M>(h: HtmlBuilder<M>, stats: SeriesStats | null, unit: string | undefined) =>
 	STAT_COLUMNS.map((column) =>
 		stats === null || isAllZeroStats(stats)

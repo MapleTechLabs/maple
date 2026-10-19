@@ -163,6 +163,8 @@ export const rangeHistogram = <M>(h: HtmlBuilder<M>, config: RangeHistogramConfi
 			),
 			h.div(
 				[
+					// New buckets (a facets refetch) remount the handlers, which captured the old bounds.
+					h.Key(bounds.map((bound) => `${bound.from}-${bound.to}${bound.unbounded ? "+" : ""}`).join(",")),
 					h.AriaLabel(
 						`${config.title} distribution across ${buckets.length} buckets, from ${formatValue(first.from, unit)} to ${last.unbounded === true ? `over ${formatValue(last.from, unit)}` : formatValue(lastOf(last), unit)}`,
 					),

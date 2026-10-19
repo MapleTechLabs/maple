@@ -2,9 +2,12 @@ import { decodeLogAttributeFilter, logAttributeQueryFilters } from "@maple/web/l
 import { SEVERITY_ORDER } from "@maple/ui/lib/severity"
 import type { CustomChartTimeSeriesInput } from "@maple/web-data/warehouse/custom-charts"
 import type { ListLogsInput } from "@maple/web-data/warehouse/logs"
+import { formatWarehouseDateTime } from "@maple/query-engine"
+import { inferBucketSeconds } from "@maple/ui/lib/format"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 import type { LogsSearch } from "../../../route/search"
 import type { TimeWindow } from "../../../data/time-range"
-import type { LogRowSchema, LogsPage, Pagination, VolumeBucket } from "./model"
+import type { LogRowSchema, LogsPage, Model, Pagination, VolumeBucket } from "./model"
 
 export type Search = typeof LogsSearch.Type
 
@@ -12,6 +15,29 @@ export type Search = typeof LogsSearch.Type
 export const PAGE_SIZE = 100
 export const FETCH_THRESHOLD = 20
 export const MAX_RETAINED_LOGS = 2_000
+
+/** `LogsInspectState.inspecting`: the tail holds while the sheet is open, or while hovering/scrolled. */
+export const isInspectingOf = (model: Model): boolean =>
+	model.isInspecting || (model.detail.dialog.isOpen && model.stream.rows.length > 0)
+
+/**
+ * `handleMouseUp`: the dragged buckets as a window, the right edge widened by one bucket so the last
+ * bar is in. `undefined` for a click without a drag or an unreadable bucket.
+ */
+export const brushRange = (
+	left: string,
+	right: string,
+	buckets: ReadonlyArray<VolumeBucket>,
+): { startTime: string; endTime: string } | undefined => {
+	const leftMs = toEpochMs(left)
+	const rightMs = toEpochMs(right)
+	if (Number.isNaN(leftMs) || Number.isNaN(rightMs) || leftMs === rightMs) return undefined
+	const bucketMs = (inferBucketSeconds(buckets) ?? 300) * 1000
+	return {
+		startTime: formatWarehouseDateTime(Math.min(leftMs, rightMs)),
+		endTime: formatWarehouseDateTime(Math.max(leftMs, rightMs) + bucketMs),
+	}
+}
 
 const mutable = <A>(values: ReadonlyArray<A> | undefined): Array<A> | undefined =>
 	values === undefined ? undefined : [...values]

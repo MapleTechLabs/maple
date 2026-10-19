@@ -18,7 +18,7 @@ import {
 	ToggleFullscreen,
 } from "./command"
 import { detailOf, manifestTotalMs, playerStatus, realOffsetOf, timelineOf, windowOf } from "./derive"
-import { advance, emptyLoader, planOnce, reportProgress, requestSeek, seedEvents, subscribedRange } from "./loader"
+import { advance, cacheRange, emptyLoader, planOnce, reportProgress, requestSeek, seedEvents, subscribedRange } from "./loader"
 import { Message } from "./message"
 import type { Model, Player } from "./model"
 import { controlValue, type TransportAction } from "../kit/replay-engine-mount"
@@ -241,7 +241,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			if (key !== model.loader.range.key) return { model }
 			const range = Keyed.accept(model.loader.range, key, result)
 			const cached = Result.match(result, {
-				onSuccess: (rows) => ({ ...model.loader.rangeCache, [key]: rows }),
+				onSuccess: (rows) => cacheRange(model.loader.rangeCache, key, rows),
 				onFailure: () => model.loader.rangeCache,
 			})
 			const stored: Model = { ...model, loader: { ...model.loader, range, rangeCache: cached } }

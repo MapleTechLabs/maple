@@ -16,7 +16,9 @@ import type { LogRecord } from "../../../ui/logs/log-row-view"
 import * as Tabs from "../../../ui/tabs"
 import { init, Message, OutMessage, open, update, view } from "./index"
 import type { Model } from "./model"
-import { contextKeyOf, mergeLogContext } from "./panels"
+import { contextKeyOf, mergeLogContext, traceLogsInput } from "./panels"
+import { requestKey } from "../../../data/request-key"
+import { TraceId } from "@maple/domain"
 import { CenterContextRow } from "./view-panels"
 
 const log: LogRecord = {
@@ -32,7 +34,8 @@ const log: LogRecord = {
 	resourceAttributes: { "cloud.region": "us-east-1" },
 }
 
-const opened = (): Model => open(init("log-detail"), log, "org_test").model
+const scope = { orgId: "org_test", pinnedNamespace: null }
+const opened = (): Model => open(init("log-detail"), log, scope).model
 const sceneView = withViewInputs(view, { timeZone: "UTC" })()
 const program = { update, view: sceneView }
 
@@ -148,10 +151,32 @@ describe("log detail sheet", () => {
 		}
 		scene(
 			program,
-			given(open(init("log-detail"), failing, "org_test").model),
+			given(open(init("log-detail"), failing, scope).model),
 			...mounted,
 			expectView(text("TimeoutError")).toExist(),
 			expectView(role("button", { name: "Copy error message" })).toExist(),
 		)
+	})
+
+	test("with a namespace pin, Context and Trace read inside the pin only", () => {
+		const traced = { ...log, traceId: TraceId.make("4bf92f3577b34da6a3ce929d0e0e4736") }
+		const pin = { orgId: "org_test", pinnedNamespace: "prod" }
+		const onContext = update(
+			open(init("log-detail"), traced, pin).model,
+			Message.GotTabsMessage({ message: Tabs.Message.ClickedTab({ index: 2 }) }),
+		)
+		expect(contextKeyOf(onContext.model, traced, "before")).toContain('"namespaces":["prod"]')
+		expect(contextKeyOf(onContext.model, traced, "before")).not.toBe(
+			contextKeyOf({ ...onContext.model, pinnedNamespace: null }, traced, "before"),
+		)
+		const onTrace = update(
+			open(init("log-detail"), traced, pin).model,
+			Message.GotTabsMessage({ message: Tabs.Message.ClickedTab({ index: 1 }) }),
+		)
+		const traceKey = requestKey("org_test", "listLogs", {
+			data: traceLogsInput(traced.traceId, traced.timestamp, "prod"),
+		})
+		expect(traceKey).toContain('"namespaces":["prod"]')
+		expect(onTrace.model.traceLogs.key).toBe(traceKey)
 	})
 })

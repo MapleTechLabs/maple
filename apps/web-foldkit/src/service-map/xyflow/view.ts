@@ -8,6 +8,8 @@ import {
 	animationAttribute,
 	DEFAULT_GESTURES,
 	type FlowGestures,
+	LIMITS_ATTRIBUTE,
+	limitsAttribute,
 	MEASURE_EPOCH_ATTRIBUTE,
 	VIEWPORT_ATTRIBUTE,
 	viewportAttribute,
@@ -114,6 +116,12 @@ export interface FlowCanvasView<M> {
 	readonly edgeLabels?: ReadonlyArray<Html>
 }
 
+const limitsOf = <M>(canvas: FlowCanvasView<M>) => ({
+	minZoom: canvas.model.minZoom,
+	maxZoom: canvas.model.maxZoom,
+	gestures: canvas.gestures ?? DEFAULT_GESTURES,
+})
+
 /** `<ReactFlow>`: wrapper, zoom pane, pane, viewport and the a11y descriptions. */
 export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Html =>
 	h.div(
@@ -136,13 +144,10 @@ export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Htm
 					h.Class("react-flow__renderer"),
 					h.Style(FILL),
 					h.Attribute(MEASURE_EPOCH_ATTRIBUTE, String(canvas.model.measureEpoch)),
+					h.Attribute(LIMITS_ATTRIBUTE, limitsAttribute(limitsOf(canvas))),
 					h.OnMount(
 						Mount.mapMessage(
-							AttachFlowCanvas({
-								minZoom: canvas.model.minZoom,
-								maxZoom: canvas.model.maxZoom,
-								gestures: canvas.gestures ?? DEFAULT_GESTURES,
-							}),
+							AttachFlowCanvas(limitsOf(canvas)),
 							canvas.toMessage,
 						),
 					),

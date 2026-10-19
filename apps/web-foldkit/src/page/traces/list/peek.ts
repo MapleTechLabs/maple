@@ -27,16 +27,20 @@ export const peekSearchFor = (search: Search, row: TraceRow): Search => ({
 	peekSpan: row.isRootSpan ? undefined : row.spanId,
 })
 
-/** `resolvePeek`: which loaded row the URL names; `peekRow` disambiguates a per-span list. */
-export const peekPosition = (model: Model): { readonly index: number; readonly count: number } | null => {
+/** `resolvePeek`: the row `peekRow` names among the trace's rows, else the trace's first row. */
+const peekIndex = (model: Model, rows: ReadonlyArray<TraceRow>): number => {
 	const peek = model.search.peek
-	if (peek === undefined) return null
+	if (peek === undefined) return -1
+	const exact =
+		model.search.peekRow === undefined
+			? -1
+			: rows.findIndex((row) => row.traceId === peek && row.spanId === model.search.peekRow)
+	return exact >= 0 ? exact : rows.findIndex((row) => row.traceId === peek)
+}
+
+export const peekPosition = (model: Model): { readonly index: number; readonly count: number } | null => {
 	const rows = allRows(model)
-	const index = rows.findIndex(
-		(row) =>
-			row.traceId === peek &&
-			(model.search.peekRow === undefined || row.spanId === model.search.peekRow),
-	)
+	const index = peekIndex(model, rows)
 	return index < 0 ? null : { index, count: rows.length }
 }
 
@@ -131,11 +135,8 @@ export const syncPeek = (model: Model, context: PageContext): Return => {
 		const closed = liftDialog({ ...model, peek: null }, Dialog.close(model.peekDialog))
 		return closed
 	}
-	const row = allRows(model).find(
-		(candidate) =>
-			candidate.traceId === traceId &&
-			(model.search.peekRow === undefined || candidate.spanId === model.search.peekRow),
-	)
+	const rows = allRows(model)
+	const row = rows[peekIndex(model, rows)]
 	const t = row?.startTime ?? model.search.peekT
 	const search = { t, spanId: model.search.peekSpan }
 	const opened = model.peekDialog.isOpen
@@ -159,19 +160,22 @@ export const peekStep = (model: Model, message: DetailMessage, context: PageCont
 		? { model }
 		: liftDetail(model, TraceDetail.update(model.peek, message, context), context)
 
-/** Escape, the backdrop or the close button: the peek params leave the URL. */
+/** Escape, the backdrop or the close button: the peek params leave the URL, replacing history. */
 export const peekDialogStep = (model: Model, message: Dialog.Message): Return => {
 	const step = Dialog.update(model.peekDialog, message)
 	const lifted = liftDialog(model, step)
 	if (step.outMessage?._tag !== "Closed" || model.search.peek === undefined) return lifted
-	return { ...navigate(lifted.model, { ...model.search, ...PEEK_CLEARED }), commands: lifted.commands }
+	return {
+		...navigate(lifted.model, { ...model.search, ...PEEK_CLEARED }, true),
+		commands: lifted.commands,
+	}
 }
 
-/** ↑/↓ walk the loaded list from the peeked row. */
+/** ↑/↓ walk the loaded list from the peeked row, replacing history as `closePeek` does. */
 export const steppedPeek = (model: Model, delta: 1 | -1): Return => {
 	const position = peekPosition(model)
 	const next = position === null ? undefined : allRows(model)[position.index + delta]
-	return next === undefined ? { model } : navigate(model, peekSearchFor(model.search, next))
+	return next === undefined ? { model } : navigate(model, peekSearchFor(model.search, next), true)
 }
 
 /** The plain click on a row (or Enter on the focused one): peek it. */
