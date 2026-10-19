@@ -48,6 +48,10 @@
 		"./cloudflare": {
 			"types": "./dist/cloudflare/index.d.mts",
 			"import": "./dist/cloudflare/index.mjs"
+		},
+		"./foldkit": {
+			"types": "./dist/foldkit/index.d.mts",
+			"import": "./dist/foldkit/index.mjs"
 		}
 	},
 	"publishConfig": {
