@@ -1,5 +1,5 @@
 import { TimeRangeSchema } from "@maple/domain/http"
-import { WidgetDisplayConfigV3, WidgetLayoutSchema } from "@maple/widgets/dashboard"
+import { DashboardSectionSchema, WidgetDisplayConfigV3, WidgetLayoutSchema } from "@maple/widgets/dashboard"
 import { Schema } from "effect"
 import * as Chart from "../../charts/chart"
 import { ChartRuntime } from "../../charts/chart-runtime"
@@ -36,10 +36,13 @@ export const SharedDashboard = Schema.Struct({
 		name: Schema.String,
 		timeRange: Schema.Unknown,
 		widgets: Schema.Array(ShareWidget),
+		/** Decoded on their own (`decodeShare`): a shape this build can't read costs the grouping only. */
+		sections: Schema.Array(DashboardSectionSchema),
 		refreshIntervalSeconds: Schema.optionalKey(Schema.Number),
 	}),
 })
 export type SharedDashboard = typeof SharedDashboard.Type
+
 
 /** `ShareResolveError`. */
 export const ShareError = Schema.Union([
@@ -119,5 +122,15 @@ export const Model = Schema.Struct({
 	chartRuntime: ChartRuntime,
 	refreshMenu: Menu.Model,
 	nowMs: Schema.Number,
+	/** `isFramed()`: inside an iframe (a cross-origin parent counts), read once on entry. */
+	isFramed: Schema.Boolean,
+	/** The variables the last answered batch resolved (`useShareWidgetData`'s `variables`). */
+	variables: Schema.Record(Schema.String, Schema.String),
+	/** `ReadOnlyDashboardView`'s local section state: collapse overrides and active tabs. */
+	sectionView: Schema.Struct({
+		collapsed: Schema.optionalKey(Schema.String),
+		expanded: Schema.optionalKey(Schema.String),
+		tab: Schema.optionalKey(Schema.String),
+	}),
 })
 export type Model = typeof Model.Type
