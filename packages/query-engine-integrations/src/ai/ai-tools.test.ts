@@ -79,7 +79,7 @@ describe("tool call population", () => {
 		expect(sql).toContain("ai_trace_index.IsToolCall = 1")
 		// The whole page is the index. The moment it reaches the span tables it
 		// costs what the sessions fan-out costs — seconds, per partition.
-		expect(sql).not.toContain("trace_detail_spans")
+		expect(sql).not.toContain("FROM traces")
 		expect(sql).not.toContain("SpanAttributes")
 	})
 
@@ -460,10 +460,10 @@ describe("the tool detail reads", () => {
 			compileUnsafe(aiToolErrorVariantsQuery(group), params).sql,
 			compileUnsafe(aiToolErrorBreakdownQuery(group), params).sql,
 		]) {
-			// Migration 0032. Before it the failure reads seeked `trace_detail_spans`
+			// Migration 0032. Before it the failure reads seeked the span table
 			// inside the traces the index named, which costs by the partitions the
 			// window spreads over — seconds to tens of seconds on a week.
-			expect(sql).not.toContain("trace_detail_spans")
+			expect(sql).not.toContain("FROM traces")
 			expect(sql).not.toContain("SpanAttributes")
 			expect(sql).toContain("ai_trace_index.ToolName = 'search_traces'")
 			// Selected through `toString`: a UInt64 past 2^53 is not a JSON number.
@@ -643,13 +643,20 @@ describe("aiToolErrorPayloadsQuery", () => {
 
 	it("seeks the named spans and nothing else", () => {
 		expect(compiled.tenantScope).toBe("single-tenant")
-		// A primary-key seek on `(OrgId, TraceId, SpanId)`: the tuple list is the
-		// occurrences the modal already has, so the read cannot widen with the
-		// window the reader picked.
+		// The occurrences the modal already has name both the trace_index seek and
+		// the span tuples, so the read cannot widen with the window the reader picked.
+		expect(compiled.sql).toContain("FROM traces")
 		expect(compiled.sql).toContain(
-			"(trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (tuple('t2', 's2'), tuple('t1', 's1'))",
+			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
 		)
-		expect(compiled.sql).not.toContain("IN (SELECT")
+		expect(compiled.sql).toMatch(
+			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \('t2', 't1'\)\)/,
+		)
+		expect(compiled.sql).toContain(
+			"(traces.TraceId, traces.SpanId) IN (tuple('t2', 's2'), tuple('t1', 's1'))",
+		)
+		// The seek is the only subquery, and it reads literals.
+		expect(compiled.sql.split("IN (SELECT").length - 1).toBe(1)
 	})
 
 	it("bounds the read by the occurrences' own extent, unpadded", () => {
@@ -833,7 +840,7 @@ describe("aiToolDescriptionQuery", () => {
 		// One level, one table. This read ranked a hundred calls and then seeked
 		// the span table for each, and it was what the page waited on.
 		expect(orgPredicateCount(compiled.sql)).toBe(1)
-		expect(compiled.sql).not.toContain("trace_detail_spans")
+		expect(compiled.sql).not.toContain("FROM traces")
 		expect(compiled.sql).toContain("FROM ai_trace_index")
 		expect(compiled.sql).toContain("IsToolCall = 1")
 		expect(compiled.sql).toContain("ToolName = 'search_traces'")

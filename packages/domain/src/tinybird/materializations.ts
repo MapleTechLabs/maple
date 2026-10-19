@@ -32,7 +32,8 @@ import {
 	errorFingerprintsMinutely,
 	aiTraceIndex,
 	aiCrawlerRequests,
-	traceDetailSpans,
+	TRACE_BUCKET_EXPR,
+	traceIndex,
 	traceListMv,
 	traceFacetsHourly,
 	attributeKeysHourly,
@@ -633,9 +634,8 @@ export const serviceExternalEdgesHourlyMv = defineMaterializedView("service_exte
 	description:
 		"Pre-aggregates Client/Producer spans without a database system into hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab.",
 	datasource: serviceExternalEdgesHourly,
-	// Migration 0038 only narrows the WHERE and backfills nothing. Without this,
-	// Tinybird rebuilds the target by replaying `traces` through the new view.
-	deploymentMethod: "alter",
+	// No `alter`: the traces re-key migrates this chain, and Tinybird refuses `alter` then.
+	// The target's forward query keeps its history; the new SELECT applies to new rows.
 	nodes: [
 		node({
 			name: "service_external_edges_hourly_mv_node",
@@ -944,9 +944,8 @@ export const errorEventsMv = defineMaterializedView("error_events_mv", {
 	description:
 		"Materializes per-occurrence error events from traces. Unwraps the first OTel exception event (falling back to exception.* / error.* span attributes) and computes a cityHash64 FingerprintHash for issue grouping.",
 	datasource: errorEvents,
-	// Preserve the target's 90d history; replaying traces would retain only 30d
-	// and recompute stored fingerprints. Change the SELECT for future inserts.
-	deploymentMethod: "alter",
+	// No `alter`: the traces re-key migrates this chain, and Tinybird refuses `alter` then.
+	// The target's forward query keeps its history; the new SELECT applies to new rows.
 	nodes: [
 		node({
 			name: "error_events_mv_node",
@@ -967,8 +966,8 @@ export const errorEventsByTimeMv = defineMaterializedView("error_events_by_time_
 	description:
 		"Time-ordered copy of error_events_mv's projection, written to error_events_by_time (sorted by OrgId, Timestamp, FingerprintHash) for recent-window error scans.",
 	datasource: errorEventsByTime,
-	// Keep both projections forward-only, with the same retained history.
-	deploymentMethod: "alter",
+	// No `alter`: the traces re-key migrates this chain, and Tinybird refuses `alter` then.
+	// The target's forward query keeps its history; the new SELECT applies to new rows.
 	nodes: [
 		node({
 			name: "error_events_by_time_mv_node",
@@ -1011,28 +1010,28 @@ export const errorFingerprintsMinutelyMv = defineMaterializedView("error_fingerp
 	],
 })
 
-export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv", {
-	description: "Populates trace_detail_spans with all spans re-sorted by TraceId for fast detail lookups",
-	datasource: traceDetailSpans,
+/**
+ * Populates `trace_index` with each (trace, service, bucket) a batch of spans
+ * lands in. Partial rows from separate inserts merge on `min`/`max`; readers
+ * only test membership, so an unmerged duplicate is harmless.
+ */
+export const traceIndexMv = defineMaterializedView("trace_index_mv", {
+	description:
+		"Populates trace_index with the (service, 5-minute bucket) ranges each trace's spans occupy in traces",
+	datasource: traceIndex,
 	nodes: [
 		node({
-			name: "trace_detail_spans_mv_node",
+			name: "trace_index_mv_node",
 			sql: `
         SELECT
           OrgId,
-          Timestamp,
           TraceId,
-          SpanId,
-          ParentSpanId,
-          SpanName,
-          SpanKind,
           ServiceName,
-          Duration,
-          StatusCode,
-          StatusMessage,
-          SpanAttributes,
-          ResourceAttributes
+          ${TRACE_BUCKET_EXPR} AS Bucket,
+          min(Timestamp) AS MinTimestamp,
+          max(Timestamp) AS MaxTimestamp
         FROM traces
+        GROUP BY OrgId, TraceId, ServiceName, Bucket
       `,
 		}),
 	],

@@ -35,10 +35,11 @@ still looks reasonable. See the comment on `edgeGrain` in
 Three shapes, all already in the codebase. If a proposed MV is not one of these, it is a copy
 of a table we already have.
 
-1. **Re-sort for point lookup.** `trace_detail_spans` is a 1:1 copy of `traces` ordered by
-   `(OrgId, TraceId, SpanId)` instead of `(OrgId, ServiceName, Timestamp)`. That turns
-   "fetch this trace" from a bloom-filter scan into a primary-key lookup. It costs 82 GB,
-   the single most expensive object we have, and it earns it.
+1. **Locator index for point lookup.** `trace_index` holds one row per (trace, service,
+   5-minute bucket), the `traces` sort-key prefixes a trace occupies. A trace-id read matches
+   that prefix against the index and seeks a few granules of `traces` itself. It replaced
+   `trace_detail_spans`, a full TraceId-sorted copy of `traces` (see "Trace storage layout").
+   Never re-sort a whole table into a second copy: index the key you need instead.
 2. **Pre-aggregation for scans.** `*_aggregates_hourly`, `service_overview_*`,
    `service_operations_*`. Trades write amplification for orders-of-magnitude less read.
 3. **Filtered projection.** `error_events` keeps only `StatusCode = 'Error'` and unwraps the
@@ -46,9 +47,42 @@ of a table we already have.
    `exception.*` / `error.*` span attributes. Error queries never touch the Map columns of the
    full traces table.
 
-Storage is not free and the ratio is worse than it looks: `traces` is 110 GB, and its MV
-descendants total roughly 116 GB. **We store traces more than twice over.** Every new MV on
-`traces` adds to that.
+Storage is not free: every MV on `traces` is paid for on every span. Until 2026-10 the
+TraceId-sorted copy alone (159 GiB) was larger than `traces` (156 GiB).
+
+---
+
+## Trace storage layout
+
+`traces` is sorted `(OrgId, ServiceName, toStartOfFiveMinutes(Timestamp), TraceId)` and
+`trace_index` locates traces in it. Read a trace's spans with `inTraces(...)`
+(`packages/query-engine/src/ch/tables.ts`), which compiles to
+`(ServiceName, toStartOfFiveMinutes(Timestamp), TraceId) IN (SELECT ... FROM trace_index ...)`.
+The bucket expression is `TRACE_BUCKET_EXPR` in `datasources.ts`; the key and the index must
+change together.
+
+Chosen 2026-10-19 by benchmarking 6 hours of real spans (4.34M, internal org) on ClickHouse
+25.8 against the prod query mix from `system.query_log` (alert raw SQL is most of the
+`traces` reads, then the service-map join, UI reads, and trace-id reads):
+
+| layout                             | B/span (traces + locator) |
+| :--------------------------------- | ------------------------: |
+| old key + `trace_detail_spans`     |                      98.0 |
+| `(svc, 5m, trace)` + `trace_index` |                      43.8 |
+
+- 5-minute alert windows read +18% (15-minute buckets: +84%, 1-minute buckets doubled
+  single-trace reads); 60-minute alerts -27%, org-wide alerts -14%, the service-map join -34%.
+- `SpanName` left the key; `idx_span_name` (bloom, 0.02 B/span) halves rare-name reads.
+  Span-name search still reads more than before (two-stage search 16 -> 24 MiB on the sample).
+- The real query builders, old vs new SQL on the same data, return identical rows. Trace list
+  54 -> 15 MiB, a 700-span hierarchy 8.0 -> 3.0 MiB, small traces 1.6 -> 2.6 MiB.
+- A tuple `IN` beats per-column `IN`s (2.7x less read for 100 traces; the column sets
+  cross-multiply) and plain `TraceId IN` without the index (2.4x). ClickHouse also turns the
+  index set into a `Timestamp` MinMax condition, so a lookup skips the other daily partitions.
+
+BYO ClickHouse clusters created before migration 0043 keep the old sort key: a key cannot be
+altered in place, and results are identical either way, only slower. Local stores re-sort at
+local schema v34.
 
 ---
 
@@ -165,9 +199,6 @@ Recorded so the next sweep does not re-derive them.
 - **`alertRawQuery`: 173,000 s/week**, the single largest consumer of warehouse time. It is
   user-authored SQL against raw tables, so no MV can see it and no routing guard applies.
   Needs its own design: a rollup users can target, or per-rule result caching.
-- **`trace_detail_spans` TTL.** 82 GB, and TTL is the only remaining lever. Column narrowing
-  recovered 1.19 GB (1.5%) and the rest is `SpanAttributes` (31 GB) and the incompressible
-  `SpanId` (17 GB). A product decision about the trace-drilldown window.
 - **`service_map_spans` + `service_map_children`**: 18.6 GB of intermediate producing a
   223 MB hourly rollup. Suspicious amplification, but the recent-window branch reads them
   directly.

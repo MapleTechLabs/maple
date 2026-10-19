@@ -221,19 +221,22 @@ describe("errorsSummaryQuery", () => {
 // errorDetailTracesQuery
 
 describe("errorDetailTracesQuery", () => {
-	it("compiles trace-detail lookup with a small error TraceId subquery", () => {
+	it("seeks the error traces' spans through trace_index with a small error TraceId subquery", () => {
 		const q = errorDetailTracesQuery({ fingerprintHash: "111" })
 		const { sql } = compileUnsafe(q, baseParams)
-		// The subquery projects a single column (an IN list needs exactly one) from
-		// the ranked error-trace query, now spliced as a typed CHQuery rather than a
-		// pre-compiled SQL string, hence the `AS matching_traces` alias. The IN is
-		// what bounds the span read; the join below it only carries the span id.
-		expect(sql).toContain("trace_detail_spans.TraceId IN (SELECT")
-		expect(sql).toContain("AS matching_traces)")
+		// The ranked error-trace query picks the trace ids inside the trace_index
+		// seek, which is what bounds the span read; the join only carries the span id.
+		expect(sql).toContain("FROM traces")
+		expect(sql).toContain(
+			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
+		)
+		expect(sql).toMatch(
+			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \(SELECT/,
+		)
+		expect(sql).toContain("AS matching_traces))")
 		expect(sql).toContain("GROUP BY TraceId")
-		expect(sql).toContain("FROM trace_detail_spans")
 		expect(sql).toContain("GROUP BY traceId")
-		expect(sql).toContain("groupUniqArray(trace_detail_spans.ServiceName)")
+		expect(sql).toContain("groupUniqArray(traces.ServiceName)")
 		expect(sql).toContain("ORDER BY startTime DESC")
 		expect(sql).toContain("FORMAT JSON")
 		// Error subquery references error_events, filtered by fingerprint hash
@@ -277,13 +280,13 @@ describe("errorDetailTracesQuery", () => {
 		expect(sql).not.toContain("StatusCode = 'Error'")
 		expect(sql).toContain("argMax(error_events.SpanId, error_events.Timestamp) AS occurrenceSpanId")
 		expect(sql).toContain("ORDER BY lastErrorSeen DESC, TraceId DESC")
-		expect(sql).toContain("ON trace_detail_spans.TraceId = occurrence.TraceId")
-		const onOccurrence = "trace_detail_spans.SpanId = occurrence.occurrenceSpanId"
-		expect(sql).toContain(`anyIf(trace_detail_spans.StatusMessage, ${onOccurrence}) AS errorMessage`)
-		expect(sql).toContain(`anyIf(trace_detail_spans.SpanId, ${onOccurrence}) AS errorSpanId`)
-		expect(sql).toContain(`anyIf(trace_detail_spans.SpanName, ${onOccurrence}) AS errorSpanName`)
-		expect(sql).toContain(`anyIf(trace_detail_spans.ServiceName, ${onOccurrence}) AS errorServiceName`)
-		expect(sql).toContain("trace_detail_spans.SpanAttributes['gen_ai.request.model']")
+		expect(sql).toContain("ON traces.TraceId = occurrence.TraceId")
+		const onOccurrence = "traces.SpanId = occurrence.occurrenceSpanId"
+		expect(sql).toContain(`anyIf(traces.StatusMessage, ${onOccurrence}) AS errorMessage`)
+		expect(sql).toContain(`anyIf(traces.SpanId, ${onOccurrence}) AS errorSpanId`)
+		expect(sql).toContain(`anyIf(traces.SpanName, ${onOccurrence}) AS errorSpanName`)
+		expect(sql).toContain(`anyIf(traces.ServiceName, ${onOccurrence}) AS errorServiceName`)
+		expect(sql).toContain("traces.SpanAttributes['gen_ai.request.model']")
 	})
 
 	it("names the error each trace was sampled for", () => {

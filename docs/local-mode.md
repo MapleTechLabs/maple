@@ -290,8 +290,8 @@ classification. Per request, each table is handled one of three ways:
 - **filter**: the table declares every requested dimension, so
   `ALTER TABLE ... DELETE` removes exactly the matching rows. The six raw tables
   read namespace and env from `ResourceAttributes` and can always filter.
-  `trace_list_mv`, `service_overview_*`, `trace_facets_hourly`,
-  `logs_aggregates_hourly` and `trace_detail_spans` also carry the namespace;
+  `trace_list_mv`, `service_overview_*`, `trace_facets_hourly` and
+  `logs_aggregates_hourly` also carry the namespace;
   most other rollups carry `ServiceName` and `DeploymentEnv` only. On a merging
   engine (Aggregating, Summing, Replacing) every filter column must be in the
   sorting key, so a row never mixes scopes. `service_map_edges_hourly` and

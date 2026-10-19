@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
-import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../__evals__/fake-warehouse"
+import {
+	installFakeWarehouse,
+	readsTraceSpans,
+	restoreWarehouse,
+	type FixtureRule,
+} from "../../__evals__/fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import { mapleToolCatalog, toInputSchema } from "../registry"
 import type { McpToolResult } from "../types"
@@ -165,7 +170,7 @@ const payloadRows = [payload(["a", "b"], LONG_ARGUMENTS), payload(["c", "d"], `{
 
 /** The payload read, answering with rows of the test's own shape. */
 const payloadsAre = (rows: ReadonlyArray<unknown>): FixtureRule[] => [
-	{ match: (sql) => sql.includes("trace_detail_spans"), rows },
+	{ match: (sql) => readsTraceSpans(sql), rows },
 ]
 
 /** A result that is itself a fenced block: a fixed ``` fence around it is
@@ -192,7 +197,7 @@ const record = (match: (sql: string) => boolean) => (sql: string) => {
 // `failing_tool_calls` subquery (and every column alias in it), so they are told
 // apart by the grouping of their OUTER select.
 const fixtures: FixtureRule[] = [
-	{ match: record((sql) => sql.includes("trace_detail_spans")), rows: payloadRows },
+	{ match: record((sql) => readsTraceSpans(sql)), rows: payloadRows },
 	// The only read that selects the tool's description.
 	{
 		match: record((sql) => sql.includes("ToolDescription")),

@@ -76,7 +76,22 @@ export const exactDateTime64 = (value: string): CH.Expr<DateTime.Utc> | string =
 
 export const Traces = Datasources.traces
 
-export const TraceDetailSpans = Datasources.traceDetailSpans
+/** One row per (trace, service, 5-minute bucket) the trace's spans occupy in `traces`. */
+export const TraceIndex = Datasources.traceIndex
+
+/**
+ * Selects the spans of the traces `match` picks from `trace_index`, for a query
+ * reading `traces`. The index names every `(ServiceName, bucket, TraceId)` sort-key
+ * prefix those traces occupy, so the read seeks their granules instead of scanning.
+ */
+export const inTraces = <Q>(match: (traceId: T.ColumnRef<"TraceId", T.CHString>) => CH.Condition<Q>) =>
+	T.subqueryCond(
+		T.from(TraceIndex)
+			.select(($) => ({ ServiceName: $.ServiceName, Bucket: $.Bucket, TraceId: $.TraceId }))
+			.where(($) => [$.OrgId.eq(orgIdParam), match($.TraceId)]),
+		(sql) =>
+			`(traces.ServiceName, ${Datasources.TRACE_BUCKET_FN}(traces.Timestamp), traces.TraceId) IN (${sql})`,
+	)
 
 /**
  * Filtered projection of GenAI agent spans (`maple_ai.vendor.id` stamped),
