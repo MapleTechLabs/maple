@@ -1,7 +1,10 @@
-import { AiTriageSettingsUpdateRequest, OpenRouterKeyUpdateRequest } from "@maple/domain/http"
+import { OPENROUTER_BYOK_ADDON_ID } from "@maple/domain/billing"
+import { AiTriageSettingsUpdateRequest, AttachRequest, OpenRouterKeyUpdateRequest } from "@maple/domain/http"
+import { buildCheckoutSuccessUrl } from "@maple/web/lib/billing/checkout-return"
 import { limitsUpdate } from "@maple/web/components/settings/ai-triage-limits"
 import { Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
+import { trackProduct } from "../../../data/analytics"
 import { toLoadFailure } from "../../../data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import * as Dialog from "../../../ui/dialog"
@@ -44,6 +47,31 @@ const RemoveOpenRouterKey = Command.define("RemoveOpenRouterKey", {
 	),
 })
 
+/** `attach({ planId: OPENROUTER_BYOK_ADDON_ID, successUrl })`: Stripe returns to this tab. */
+const AttachAddOn = Command.define("AttachOpenRouterAddOn", {
+	messages: [Message.CompletedAttachAddOn],
+	execute: Effect.gen(function* () {
+		const client = yield* MapleInternalApiClient
+		const successUrl = yield* Effect.sync(() => buildCheckoutSuccessUrl(window.location.href))
+		return yield* client.billing.attach({ payload: new AttachRequest({ planId: OPENROUTER_BYOK_ADDON_ID, successUrl }) })
+	}).pipe(settle((result) => Message.CompletedAttachAddOn({ result }))),
+})
+
+/** `plan_checkout_started`, then the tab leaves for Stripe (`useBillingActions().attach`). */
+const OpenAddOnCheckout = Command.define("OpenOpenRouterAddOnCheckout", {
+	args: { url: Schema.String },
+	messages: [Message.CompletedOpenAddOnCheckout],
+	execute: ({ url }) =>
+		trackProduct("plan_checkout_started", { plan_id: OPENROUTER_BYOK_ADDON_ID }).pipe(
+			Effect.andThen(
+				Effect.sync(() => {
+					window.location.href = url
+				}),
+			),
+			Effect.as(Message.CompletedOpenAddOnCheckout()),
+		),
+})
+
 const UpdateTriage = Command.define("UpdateAiTriageSettings", {
 	args: {
 		enabled: Schema.optional(Schema.Boolean),
@@ -80,6 +108,8 @@ export const init = (isTriageAvailable: boolean): Return => ({
 		isSavingKey: false,
 		removeDialog: Dialog.init("openrouter-remove", "alert-dialog"),
 		isRemoving: false,
+		addOnDialog: Dialog.init("openrouter-add-on", "alert-dialog"),
+		isAttachingAddOn: false,
 		triage: isTriageAvailable ? AsyncData.Loading() : AsyncData.Idle(),
 		isToggling: false,
 		limits: null,
@@ -99,6 +129,11 @@ const refresh = <A, E>(data: AsyncData.AsyncData<A, E>) => Option.getOrElse(Asyn
 const liftRemoveDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, removeDialog: step.model },
 	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRemoveDialogMessage({ message })),
+})
+
+const liftAddOnDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+	model: { ...model, addOnDialog: step.model },
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAddOnDialogMessage({ message })),
 })
 
 const isKeyInUse = (model: Model): boolean =>
@@ -212,6 +247,27 @@ export const update = (model: Model, message: Message): Return =>
 				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Failed to remove the key", error.message) }),
 			})
 		},
+		ClickedAddOn: () => (model.isAttachingAddOn ? { model } : liftAddOnDialog(model, Dialog.open(model.addOnDialog))),
+		GotAddOnDialogMessage: ({ message: child }) =>
+			model.isAttachingAddOn ? { model } : liftAddOnDialog(model, Dialog.update(model.addOnDialog, child)),
+		ClickedConfirmAddOn: () =>
+			model.isAttachingAddOn ? { model } : { model: { ...model, isAttachingAddOn: true }, commands: [AttachAddOn()] },
+		// With a card on file the attach charges at once; otherwise checkout follows.
+		CompletedAttachAddOn: ({ result }) => {
+			const closed = liftAddOnDialog({ ...model, isAttachingAddOn: false }, Dialog.close(model.addOnDialog))
+			return Result.match(result, {
+				onSuccess: ({ paymentUrl }) =>
+					paymentUrl !== undefined && paymentUrl !== null && paymentUrl !== ""
+						? { ...closed, commands: [...(closed.commands ?? []), OpenAddOnCheckout({ url: paymentUrl })] }
+						: {
+								model: { ...closed.model, key: refresh(closed.model.key) },
+								commands: [...(closed.commands ?? []), FetchOpenRouterKey()],
+								outMessage: toast("success", "Add-on added"),
+							},
+				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Failed to add the add-on", error.message) }),
+			})
+		},
+		CompletedOpenAddOnCheckout: () => ({ model }),
 		ToggledTriage: () =>
 			Option.match(AsyncData.getData(model.triage), {
 				onNone: () => ({ model }),

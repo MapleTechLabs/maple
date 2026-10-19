@@ -1,4 +1,5 @@
 import { BillingCustomer } from "@maple/domain/http"
+import type { MapleRegion } from "@maple/domain/organization-regions"
 import { hasSelectedPlan, type PlanAccess, resolvePlanAccess } from "@maple/web/lib/billing/plan-gating"
 import { hasMultipleRegions } from "@maple/web/lib/region"
 import { writeLocalStorage } from "@maple/ui/lib/local-storage"
@@ -63,11 +64,16 @@ export type GateInput = Readonly<{
 	isKnownToRenderApp: boolean
 }>
 
-export type Gate = Readonly<{ redirect: Option.Option<Redirect>; isSplash: boolean }>
+/** `wrongRegion`: the org lives in another region and its choice is closed (`WrongRegionScreen`). */
+export type Gate = Readonly<{ redirect: Option.Option<Redirect>; isSplash: boolean; wrongRegion: MapleRegion | null }>
 
-const app: Gate = { redirect: Option.none(), isSplash: false }
-const splash: Gate = { redirect: Option.none(), isSplash: true }
-const redirectTo = (url: string): Gate => ({ redirect: Option.some({ url, isReplace: true }), isSplash: false })
+const app: Gate = { redirect: Option.none(), isSplash: false, wrongRegion: null }
+const splash: Gate = { redirect: Option.none(), isSplash: true, wrongRegion: null }
+const redirectTo = (url: string): Gate => ({ redirect: Option.some({ url, isReplace: true }), isSplash: false, wrongRegion: null })
+
+/** The region of an org another region serves, once it can no longer choose (`WrongRegionScreen`). */
+export const wrongRegionOf = (organization: Option.Option<ClerkOrganization>): Option.Option<MapleRegion> =>
+	Option.flatMap(organization, (org) => (org.isServedHere || org.isRegionOpen ? Option.none() : Option.some(org.homeRegion)))
 
 /** `/quick-start` asks for the region first (`needsRegion`): a new org another region would serve. */
 export const needsRegion = (organization: Option.Option<ClerkOrganization>): boolean =>
@@ -78,9 +84,13 @@ export const planGate = ({ route, organization, customer, isKnownToRenderApp }: 
 	if (isOrgIndependent(route)) return app
 	const quickStart = hrefOf(AppRoute.QuickStart({ search: { redirect_url: hrefOf(route) } }))
 	if (Option.exists(organization, (org) => !org.isServedHere)) {
+		// A new org with no region yet has not picked one: onboarding asks.
 		const isOpen = Option.exists(organization, (org) => org.isRegionOpen)
-		// TODO(wrong-region): `WrongRegionScreen` for an org another region serves.
-		return isOpen && route._tag !== "QuickStart" ? redirectTo(quickStart) : app
+		if (isOpen) return route._tag !== "QuickStart" ? redirectTo(quickStart) : app
+		return Option.match(wrongRegionOf(organization), {
+			onNone: () => app,
+			onSome: (region) => ({ ...app, wrongRegion: region }),
+		})
 	}
 	const access = accessOf(customer)
 	if (route._tag === "QuickStart" && !needsRegion(organization) && access !== "loading")

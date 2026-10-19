@@ -1,3 +1,4 @@
+import { withoutCheckoutReturn } from "@maple/web/lib/billing/checkout-return"
 import { hasBringYourOwnCloudAddOn } from "@maple/web/lib/billing/plan-gating"
 import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
 import { rowToV2ApiKey } from "@maple/web-data/collections/api-keys"
@@ -169,7 +170,7 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "Billing": {
-			const step = Billing.init(visibilityOf(model).isAdmin)
+			const step = Billing.init(visibilityOf(model).isAdmin, model.search.checkout === "complete")
 			return {
 				model: { ...model, tab: { _tag: "Billing", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotBillingMessage({ message })),
@@ -284,13 +285,45 @@ const liftKeys = (model: Model, current: KeysModel.Model, message: KeysMessage.M
 	}
 }
 
+/** `useCheckoutReturn` settled: drop `checkout=complete` from the URL without a history entry. */
+const clearCheckoutMarker = (model: Model) =>
+	PageOutMessage.RequestedNavigation({
+		url: hrefOf(AppRoute.Settings({ search: withoutCheckoutReturn(model.search) })),
+		isReplace: true,
+	})
+
+/** Lifts a Billing step: its commands, a stale customer read, and the cleared checkout marker. */
+const liftBilling = (model: Model, { step, isCustomerStale, isCheckoutSettled }: Billing.Step): Return => {
+	const next = { ...model, tab: { _tag: "Billing", model: step.model } } as const
+	// `BILLING_CUSTOMER_KEY`: a cap save, the portal, a plan change or Retry read the customer again.
+	return {
+		model: isCustomerStale
+			? { ...next, customer: Option.getOrElse(AsyncData.revalidate(model.customer), () => AsyncData.Loading()) }
+			: next,
+		commands: [
+			...Command.mapMessages(step.commands ?? [], (child) => Message.GotBillingMessage({ message: child })),
+			...(isCustomerStale ? [FetchSettingsCustomer({ refresh: true })] : []),
+		],
+		outMessage: step.outMessage ?? (isCheckoutSettled === true ? clearCheckoutMarker(model) : undefined),
+	}
+}
+
+/** The Billing tab waiting on a checkout return reads every customer answer for the plan. */
+const settleCheckout = ({ model, commands, outMessage }: Return): Return => {
+	if (model.tab === null || model.tab._tag !== "Billing" || !AsyncData.isSuccess(model.customer)) return { model, commands, outMessage }
+	const settled = Billing.customerChanged(model.tab.model, model.customer.data)
+	if (settled === null) return { model, commands, outMessage }
+	const lifted = liftBilling(model, settled)
+	return { ...lifted, commands: [...(commands ?? []), ...(lifted.commands ?? [])], outMessage: outMessage ?? lifted.outMessage }
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		CompletedFetchSession: ({ result }) =>
-			syncTab({ ...model, session: AsyncData.settle(model.session, result) }, context),
+			settleCheckout(syncTab({ ...model, session: AsyncData.settle(model.session, result) }, context)),
 		CompletedFetchCustomer: ({ result }) =>
-			syncTab({ ...model, customer: AsyncData.settle(model.customer, result) }, context),
+			settleCheckout(syncTab({ ...model, customer: AsyncData.settle(model.customer, result) }, context)),
 		GotSetupHealthMessage: ({ message: inner }) => {
 			if (model.tab === null || model.tab._tag !== "SetupHealth") return { model }
 			const step = SetupHealth.update(model.tab.model, inner)
@@ -356,19 +389,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotBillingMessage: ({ message: inner }) => {
 			if (model.tab === null || model.tab._tag !== "Billing") return { model }
 			const customer = AsyncData.getOrElse(model.customer, () => null)
-			const { step, isCustomerStale } = Billing.update(model.tab.model, inner, customer, model.nowMs)
-			const next = { ...model, tab: { _tag: "Billing", model: step.model } } as const
-			// `BILLING_CUSTOMER_KEY`: a cap save, the portal, a plan change or Retry read the customer again.
-			return {
-				model: isCustomerStale
-					? { ...next, customer: Option.getOrElse(AsyncData.revalidate(model.customer), () => AsyncData.Loading()) }
-					: next,
-				commands: [
-					...Command.mapMessages(step.commands ?? [], (child) => Message.GotBillingMessage({ message: child })),
-					...(isCustomerStale ? [FetchSettingsCustomer({ refresh: true })] : []),
-				],
-				outMessage: step.outMessage,
-			}
+			return liftBilling(model, Billing.update(model.tab.model, inner, customer, model.nowMs))
 		},
 		GotIngestionMessage: ({ message: inner }) =>
 			model.tab !== null && model.tab._tag === "Ingestion"

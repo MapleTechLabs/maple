@@ -2,9 +2,12 @@ import type { BillingCustomer } from "@maple/domain/http"
 import { maximumInvoiceCents, uncappedFeatures } from "@maple/web/lib/billing/controls"
 import { getLegacyPlanInfo, getTrialStatus } from "@maple/web/lib/billing/plan-gating"
 import { AsyncData, Submodel } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../../data/load-failure"
 import { button } from "../../../ui/button"
 import { errorState } from "../../../ui/error-state"
+import { panel } from "../../../ui/panel"
+import { spinner } from "../../../ui/spinner"
 import { adminOnlyNotice } from "../kit/members"
 import { settingsSection, settingsSections } from "../kit/section"
 import { Message, type Model } from "./model"
@@ -53,6 +56,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const { isLegacy } = getLegacyPlanInfo(customer ?? undefined, plans)
 	const uncapped = spend === null ? [] : uncappedFeatures(spend, customer ?? undefined)
 	return settingsSections(h, "standard", [
+		...checkoutReturnPanel(h, model),
 		...notice,
 		settingsSection(
 			h,
@@ -104,3 +108,42 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		detailsSection(h, model),
 	])
 })
+
+type H = HtmlBuilder<Message>
+
+/** `CheckoutConfirmingPanel layout="row"` and `CheckoutTimedOutNotice` above the tab. */
+const checkoutReturnPanel = (h: H, model: Model): ReadonlyArray<Html> => {
+	switch (model.checkoutReturn) {
+		case "Idle":
+			return []
+		case "Confirming":
+			return [
+				panel(
+					h,
+					{ className: "flex-row items-center gap-3 px-4 py-3", attributes: [h.Role("status"), h.AriaLive("polite")] },
+					[
+						spinner(h, "size-4 shrink-0"),
+						h.p(
+							[h.Class("text-sm")],
+							[
+								"Confirming your subscription.",
+								" ",
+								h.span(
+									[h.Class("text-muted-foreground")],
+									["This usually takes a few seconds; there's nothing else to click."],
+								),
+							],
+						),
+					],
+				),
+			]
+		case "TimedOut":
+			return [
+				panel(h, { tone: "muted", className: "px-4 py-3 text-sm text-muted-foreground", attributes: [h.Role("status")] }, [
+					"We haven't heard back from Stripe yet. If you completed checkout, your plan will appear here shortly; there's no need to subscribe again. If you left checkout, ",
+					"use Compare plans under Plan",
+					".",
+				]),
+			]
+	}
+}

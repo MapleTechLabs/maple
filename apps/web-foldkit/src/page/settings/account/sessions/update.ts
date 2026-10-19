@@ -4,7 +4,7 @@ import type { ClerkSessionActivityResource } from "../../../../platform/clerk"
 import { ClerkActionError, currentClerkSessionId } from "../../../../platform/clerk"
 import * as Dialog from "../../../../ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../../contract"
-import { settled, withUser } from "../clerk-write"
+import { settled, withUser, withUserReverified } from "../clerk-write"
 import { Message, type Model, type SessionRow } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -46,7 +46,7 @@ const RevokeSession = Command.define("RevokeClerkSession", {
 	args: { id: Schema.String },
 	messages: [Message.CompletedRevoke],
 	execute: ({ id }) =>
-		withUser("Failed to sign out that session", (user) =>
+		withUserReverified("Failed to sign out that session", (user) =>
 			user.getSessions().then((sessions) =>
 				Option.match(
 					Array.findFirst(sessions, (session) => session.id === id),

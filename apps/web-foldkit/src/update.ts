@@ -168,7 +168,8 @@ export const pageContextOf = (model: Model): Option.Option<PageContext> =>
 		SignedIn: ({ maybeOrgId }) =>
 			isBarePageRoute(model.route)
 				? publicContextOf(model, maybeOrgId)
-				: Option.filter(maybeOrgId, () => rendersShell(model.route)).pipe(
+				: // `WrongRegionScreen` replaces the page, so it reads nothing this region would refuse.
+					Option.filter(maybeOrgId, () => rendersShell(model.route) && !isWrongRegion(model)).pipe(
 				Option.map((orgId) => ({
 					orgId,
 					pinnedNamespace: model.shell.pinnedNamespaces[orgId] ?? null,
@@ -534,6 +535,8 @@ export const planGateOf = (model: Model): Option.Option<Gate> =>
 			),
 	})
 
+const isWrongRegion = (model: Model): boolean => Option.exists(planGateOf(model), (gate) => gate.wrongRegion !== null)
+
 const followRedirects: Step = (model) => {
 	const maybeRedirect = Session.match(model.session, {
 		Resolving: () => Option.none<Redirect>(),
@@ -558,7 +561,8 @@ const loadRoute: Step = (model) =>
 		Resolving: () => ({ model }),
 		SignedOut: () => ({ model }),
 		SignedIn: ({ maybeOrgId }) =>
-			Option.isNone(maybeOrgId) || isPublicRoute(model.route)
+			// `WrongRegionScreen` replaces the whole frame: no shell, no chat sheet, nothing it reads.
+			Option.isNone(maybeOrgId) || isPublicRoute(model.route) || isWrongRegion(model)
 				? { model }
 				: rendersShell(model.route)
 					? foldShellStep(Shell.enter(maybeOrgId.value))(model)

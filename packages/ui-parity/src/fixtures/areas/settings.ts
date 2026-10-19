@@ -420,6 +420,17 @@ const settingsMcpClients: Dataset = {
 	telemetry: emptyTelemetry,
 }
 
+/** Acme whose OpenRouter add-on lapsed: the saved key is idle and the card offers the add-on. */
+const settingsAiAddOnLapsed: Dataset = {
+	...defaultDataset,
+	name: "settings-ai-add-on-lapsed",
+	endpoints: {
+		...defaultDataset.endpoints,
+		"openRouterKey.get": (request) => Effect.succeed({ ...openRouterKeyOf(request), entitled: false }),
+	},
+	telemetry: emptyTelemetry,
+}
+
 // INGESTION RULES (attribute mappings and recommendations, with every write)
 
 const mapping = (index: number, fields: Readonly<Record<string, unknown>>) => ({
@@ -587,5 +598,5 @@ export const fixtureArea: FixtureArea = {
 		...clerkBillingEndpoints(warehouse),
 	}),
 	defaultSynced: { api_keys: API_KEYS },
-	datasets: [settingsClerk, settingsMcpClients, settingsIngestionRules, settingsDataPlatformDrift],
+	datasets: [settingsClerk, settingsMcpClients, settingsAiAddOnLapsed, settingsIngestionRules, settingsDataPlatformDrift],
 }

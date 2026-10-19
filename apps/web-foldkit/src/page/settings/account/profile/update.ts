@@ -4,7 +4,7 @@ import * as Dialog from "../../../../ui/dialog"
 import { signOutOfClerk } from "../../../../platform/clerk"
 import { PageOutMessage, type PageReturn } from "../../../contract"
 import { checkImage, clickFileInput } from "../../kit/image-dropzone"
-import { settled, withUser } from "../clerk-write"
+import { settled, withUser, withUserReverified } from "../clerk-write"
 import { type AccountUser, readAccountUser } from "../user"
 import { Message, type Model } from "./model"
 
@@ -43,7 +43,7 @@ const SetAvatar = Command.define("SetClerkProfileImage", {
 /** `user.delete()`, then `signOut()`: the session is gone with the user. */
 const DeleteAccount = Command.define("DeleteClerkUser", {
 	messages: [Message.CompletedDelete],
-	execute: withUser("Failed to delete account", (user) => user.delete()).pipe(
+	execute: withUserReverified("Failed to delete account", (user) => user.delete()).pipe(
 		Effect.tap(() => signOutOfClerk),
 		settled((result) => Message.CompletedDelete({ result })),
 	),

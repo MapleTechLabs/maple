@@ -11,6 +11,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { load } from "foldkit/navigation"
 import { MapleApiClient, MapleInternalApiClient } from "../../platform/api-clients"
 import type { Resources } from "../../platform/resources"
+import { trackProduct } from "../../data/analytics"
 import { LoadFailure, toLoadFailure } from "../../data/load-failure"
 import { getScenario } from "./pricing-plans"
 
@@ -43,6 +44,7 @@ export const Message = defineMessageUnion({
 	ClickedEnterpriseContact: {},
 	CompletedOpenEnterpriseContact: {},
 	CompletedOpenCheckout: {},
+	CompletedTrackCheckoutStarted: {},
 	ElapsedCheckoutPoll: {},
 	ElapsedCheckoutTimeout: {},
 })
@@ -88,6 +90,14 @@ export const OpenCheckout = Command.define("OpenCheckout", {
 	args: { url: Schema.String },
 	messages: [Message.CompletedOpenCheckout],
 	execute: ({ url }) => load(url).pipe(Effect.as(Message.CompletedOpenCheckout())),
+})
+
+/** `useBillingActions().attach`: checkout intent, recorded before the tab leaves for Stripe. */
+export const TrackCheckoutStarted = Command.define("TrackCheckoutStarted", {
+	args: { planId: Schema.String },
+	messages: [Message.CompletedTrackCheckoutStarted],
+	execute: ({ planId }) =>
+		trackProduct("plan_checkout_started", { plan_id: planId }).pipe(Effect.as(Message.CompletedTrackCheckoutStarted())),
 })
 
 const ENTERPRISE_CONTACT_URL = "https://cal.com/david-granzin/30min?overlayCalendar=true"
@@ -151,7 +161,11 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 					}
 				: {
 						model,
-						commands: [LoadPlans(), OpenCheckout({ url: paymentUrl })],
+						commands: [
+							LoadPlans(),
+							...(model.loadingPlanId === null ? [] : [TrackCheckoutStarted({ planId: model.loadingPlanId })]),
+							OpenCheckout({ url: paymentUrl }),
+						],
 						outMessage: OutMessage.ChangedPlan({ isLeavingForCheckout: true }),
 					},
 		FailedAttach: ({ message: failure }) => ({
@@ -161,6 +175,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		ClickedEnterpriseContact: () => ({ model, commands: [OpenEnterpriseContact()] }),
 		CompletedOpenEnterpriseContact: () => ({ model }),
 		CompletedOpenCheckout: () => ({ model }),
+		CompletedTrackCheckoutStarted: () => ({ model }),
 		ElapsedCheckoutPoll: () =>
 			model.checkoutReturn === "Confirming"
 				? { model, commands: [WaitCheckoutPoll()], outMessage: OutMessage.RequestedCustomerRefresh() }

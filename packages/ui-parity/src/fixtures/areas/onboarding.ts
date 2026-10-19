@@ -277,6 +277,8 @@ export const fixtureArea: FixtureArea = {
 		clerkDataset("clerk-reward", acmeAdmin, {
 			"onboardingChecklist.retrieve": () => Effect.succeed(checklist("claimable")),
 		}),
+		// Acme living in the EU region, opened on the US dashboard: the wrong-region screen.
+		clerkDataset("clerk-eu", { ...acmeAdmin, orgPublicMetadata: { regions: ["eu"] } }),
 		clerkDataset("clerk-no-org", orglessUser),
 		clerkDataset("clerk-signed-out", null),
 		// A PR preview deploy: Clerk's sign-in plus the shared reviewer's access-key form.

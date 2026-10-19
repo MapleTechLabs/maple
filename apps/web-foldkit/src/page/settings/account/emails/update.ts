@@ -6,7 +6,7 @@ import * as Dialog from "../../../../ui/dialog"
 import * as Menu from "../../../../ui/menu"
 import * as OtpField from "../../../../ui/otp-field"
 import { PageOutMessage, type PageReturn } from "../../../contract"
-import { settled, withUser } from "../clerk-write"
+import { settled, withUser, withUserReverified } from "../clerk-write"
 import { initCode, isComplete } from "../code-field"
 import { type AccountEmail, readAccountUser } from "../user"
 import { type AddStep, Message, type Model } from "./model"
@@ -23,8 +23,9 @@ const withAddress = <A>(
 	addressId: string,
 	fallback: string,
 	run: (address: ClerkEmailAddressResource, user: ClerkUserResource) => Promise<A>,
+	write = withUser<A>,
 ) =>
-	withUser(fallback, (user) =>
+	write(fallback, (user) =>
 		Option.match(
 			Array.findFirst(user.emailAddresses, (address) => address.id === addressId),
 			{
@@ -38,7 +39,7 @@ const CreateEmail = Command.define("CreateClerkEmailAddress", {
 	args: { email: Schema.String },
 	messages: [Message.CompletedCreate],
 	execute: ({ email }) =>
-		withUser("Failed to add email address", (user) => user.createEmailAddress({ email })).pipe(
+		withUserReverified("Failed to add email address", (user) => user.createEmailAddress({ email })).pipe(
 			Effect.tap((address) =>
 				clerkTry("Failed to add email address", () => address.prepareVerification({ strategy: "email_code" })),
 			),
@@ -82,7 +83,7 @@ const RemoveEmail = Command.define("RemoveClerkEmailAddress", {
 	args: { addressId: Schema.String },
 	messages: [Message.CompletedRemove],
 	execute: ({ addressId }) =>
-		withAddress(addressId, "Failed to remove email address", (address) => address.destroy()).pipe(
+		withAddress(addressId, "Failed to remove email address", (address) => address.destroy(), withUserReverified).pipe(
 			settled((result) => Message.CompletedRemove({ result })),
 		),
 })

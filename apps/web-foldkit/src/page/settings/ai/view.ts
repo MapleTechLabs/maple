@@ -148,21 +148,61 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 	)
 }
 
-const keyPanel = (h: H, model: Model, current: OpenRouterKeyDocument): ReadonlyArray<Html> => {
-	if (!current.entitled)
-		// TODO(settings-ai): attaching the OpenRouter add-on (`useBillingActions().attach`) is not
-		// ported; no fixture org lacks the entitlement.
-		return [
-			h.div(
-				[h.Class("flex flex-col gap-3")],
-				[
-					h.p(
-						[h.Class("text-xs leading-relaxed text-muted-foreground")],
-						["Needs the OpenRouter add-on, ", ADD_ON_PRICE, ", billed with your plan. Cancel any time from billing."],
-					),
-				],
+/** `AddOnUpsell`: a lapsed key's notice, the add-on's price and "Add to plan" behind a confirm. */
+const addOnUpsell = (h: H, model: Model, current: OpenRouterKeyDocument): Html =>
+	h.div(
+		[h.Class("flex flex-col gap-3")],
+		[
+			...(current.configured
+				? [
+						h.div(
+							[h.Class("flex items-center justify-between gap-2 rounded-md border bg-background py-1.5 pr-1.5 pl-2.5")],
+							[
+								h.p(
+									[h.Class("text-xs leading-relaxed text-muted-foreground")],
+									["Your saved key (sk-or-...", current.keyHint ?? "", ") is not in use because the add-on has lapsed."],
+								),
+								button(
+									h,
+									{
+										variant: "ghost",
+										size: "sm",
+										className: "shrink-0 text-destructive-foreground",
+										isDisabled: model.isRemoving,
+										attributes: [h.OnClick(Message.ClickedRemoveKey())],
+									},
+									["Remove"],
+								),
+							],
+						),
+					]
+				: []),
+			h.p(
+				[h.Class("text-xs leading-relaxed text-muted-foreground")],
+				["Needs the OpenRouter add-on, ", ADD_ON_PRICE, ", billed with your plan. Cancel any time from billing."],
 			),
-		]
+			button(
+				h,
+				{ size: "sm", className: "w-fit", isDisabled: model.isAttachingAddOn, attributes: [h.OnClick(Message.ClickedAddOn())] },
+				["Add to plan"],
+			),
+			confirmDialog(h, {
+				slotId: "openrouter-add-on-dialog",
+				model: model.addOnDialog,
+				toParentMessage: (message) => Message.GotAddOnDialogMessage({ message }),
+				tone: "default",
+				title: `Add the OpenRouter add-on for ${ADD_ON_PRICE}?`,
+				description:
+					"If your organization has a payment method on file, the add-on is attached right away and billed with your plan. Otherwise you continue to checkout.",
+				confirmLabel: "Add to plan",
+				onConfirm: Message.ClickedConfirmAddOn(),
+				isPending: model.isAttachingAddOn,
+			}),
+		],
+	)
+
+const keyPanel = (h: H, model: Model, current: OpenRouterKeyDocument): ReadonlyArray<Html> => {
+	if (!current.entitled) return [addOnUpsell(h, model, current)]
 	if (current.configured && !model.isReplacing)
 		return [
 			h.div(
