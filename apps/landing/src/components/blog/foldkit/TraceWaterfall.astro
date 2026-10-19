@@ -1,0 +1,194 @@
+---
+/**
+ * TraceWaterfall: a static trace, one row per span, bars on a shared time axis.
+ * Kinds pick the tone; "dropped" rows are shown struck through and are not part of the trace.
+ */
+type Kind = "browser" | "http" | "server" | "db" | "phase" | "dropped"
+
+interface Props {
+	caption: string
+	note?: string
+	total: number
+	spans: ReadonlyArray<{ name: string; depth: number; start: number; end: number; kind: Kind; attr?: string }>
+}
+
+const { caption, note, total, spans } = Astro.props
+// The axis spans 86% of the track, leaving room for the duration label after the last bar.
+const SPAN = 86
+const at = (ms: number) => (ms / total) * SPAN
+const ticks = [0, 0.25, 0.5, 0.75, 1].map((share) => Math.round(total * share))
+const legend: ReadonlyArray<[Kind, string]> = [
+	["browser", "Foldkit"],
+	["http", "HTTP client"],
+	["server", "API"],
+	["db", "Warehouse"],
+	["phase", "Slow phase"],
+]
+---
+
+<figure class="twf">
+	<div class="twf__head">
+		<span>{caption}</span>
+		<span class="twf__keys">
+			{legend.map(([kind, label]) => <span class={`twf__key twf__key--${kind}`}>{label}</span>)}
+		</span>
+	</div>
+	<div class="twf__body">
+		<div class="twf__axis">
+			<span />
+			<div class="twf__ticks" style={`width: ${SPAN}%`}>{ticks.map((t) => <span>{t} ms</span>)}</div>
+		</div>
+		{
+			spans.map((span) => (
+				<div class={`twf__row twf__row--${span.kind}`}>
+					<div class="twf__name" style={`padding-left: ${span.depth * 14}px`}>
+						<span class="twf__label">{span.name}</span>
+						{span.attr && <span class="twf__attr">{span.attr}</span>}
+					</div>
+					<div class="twf__track">
+						<span class="twf__bar" style={`left: ${at(span.start)}%; width: max(3px, ${at(span.end - span.start)}%)`} />
+						<em class="twf__ms" style={`left: calc(${at(span.end)}% + 6px)`}>
+							{span.kind === "dropped" ? "dropped" : `${span.end - span.start} ms`}
+						</em>
+					</div>
+				</div>
+			))
+		}
+	</div>
+	{note && <figcaption class="twf__note">{note}</figcaption>}
+</figure>
+
+<style>
+	.twf {
+		margin: 40px 0;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		overflow: hidden;
+		background: color-mix(in oklab, var(--bg-elevated) 30%, transparent);
+		--twf-browser: var(--primary);
+		--twf-http: var(--chart-2);
+		--twf-server: var(--chart-5);
+		--twf-db: var(--chart-3);
+		--twf-phase: var(--severity-warn);
+		--twf-dropped: color-mix(in oklab, var(--muted-foreground) 45%, transparent);
+	}
+	.twf__head {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		gap: 8px 16px;
+		padding: 9px 14px;
+		background: var(--bg-elevated);
+		border-bottom: 1px solid var(--border);
+		font-family: var(--font-mono);
+		font-size: 10px;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.twf__keys {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 12px;
+	}
+	.twf__key::before {
+		content: "";
+		display: inline-block;
+		width: 8px;
+		height: 8px;
+		margin-right: 6px;
+		border-radius: 2px;
+		vertical-align: -0.5px;
+		background: var(--twf-tone);
+	}
+	.twf__key--browser, .twf__row--browser { --twf-tone: var(--twf-browser); }
+	.twf__key--http, .twf__row--http { --twf-tone: var(--twf-http); }
+	.twf__key--server, .twf__row--server { --twf-tone: var(--twf-server); }
+	.twf__key--db, .twf__row--db { --twf-tone: var(--twf-db); }
+	.twf__key--phase, .twf__row--phase { --twf-tone: var(--twf-phase); }
+	.twf__row--dropped { --twf-tone: var(--twf-dropped); }
+	.twf__body {
+		padding: 12px 14px 14px;
+		overflow-x: auto;
+	}
+	.twf__axis,
+	.twf__row {
+		display: grid;
+		grid-template-columns: minmax(220px, 40%) 1fr;
+		gap: 12px;
+		min-width: 560px;
+	}
+	.twf__ticks {
+		display: flex;
+		justify-content: space-between;
+		padding-bottom: 6px;
+		border-bottom: 1px solid var(--border);
+		font-family: var(--font-mono);
+		font-size: 10px;
+		color: var(--muted-foreground);
+	}
+	.twf__row {
+		align-items: center;
+		min-height: 30px;
+		border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+	}
+	.twf__row:last-child {
+		border-bottom: 0;
+	}
+	.twf__name {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		padding-block: 5px;
+		font-family: var(--font-mono);
+		font-size: 11.5px;
+		color: var(--foreground);
+		min-width: 0;
+	}
+	.twf__label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.twf__attr {
+		font-size: 10px;
+		color: var(--muted-foreground);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.twf__row--dropped .twf__label {
+		color: var(--muted-foreground);
+		text-decoration: line-through;
+	}
+	.twf__track {
+		position: relative;
+		height: 14px;
+	}
+	.twf__bar {
+		position: absolute;
+		top: 2px;
+		height: 10px;
+		border-radius: 2px;
+		background: var(--twf-tone);
+	}
+	.twf__row--dropped .twf__bar {
+		background: none;
+		border: 1px dashed var(--twf-dropped);
+	}
+	.twf__ms {
+		position: absolute;
+		top: 0;
+		font-style: normal;
+		font-family: var(--font-mono);
+		font-size: 10px;
+		line-height: 14px;
+		white-space: nowrap;
+		color: var(--muted-foreground);
+	}
+	.twf__note {
+		padding: 0 14px 12px;
+		font-size: 12.5px;
+		color: var(--muted-foreground);
+	}
+</style>
