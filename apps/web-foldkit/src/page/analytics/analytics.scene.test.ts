@@ -114,6 +114,15 @@ describe("web analytics", () => {
 		)
 	})
 
+	test("after a Reload a country filter reads under the kept window; only a new preset re-resolves", () => {
+		const reloaded = pageUpdate(windowed(), Message.ClickedReload()).model
+		const filtered = routeChanged(reloaded, { search: { country: "US" } }, context)
+		expect(names(filtered.commands)).not.toContain("ResolveAnalyticsWindow")
+		expect(filtered.commands?.[0]?.args).toMatchObject({ input: { startTime: window.startTime, country: "US" } })
+		const moved = routeChanged(filtered.model, { search: { country: "US", timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveAnalyticsWindow", "Refresh"]])
+	})
+
 	test("a card sorts by sessions when its page views had not arrived as it mounted", () => {
 		const early = settled(windowed(), "breakdowns", breakdowns)
 		expect(panelOf(early, "content").sortKey).toBe("count")

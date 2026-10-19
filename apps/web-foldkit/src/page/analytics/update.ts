@@ -12,6 +12,7 @@ import * as FilterSections from "../../ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import { SignalPresenceData } from "../kit/signal-presence"
 import { nextSort } from "../kit/table-sort"
+import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import { CompleteReloadSpin, LoadSignalPresence, ResolveWindow } from "./command"
 import { type FilterKey, Message, type RequestMode, type SlotName } from "./message"
@@ -203,13 +204,10 @@ export const routeChanged = (model: Model, route: { readonly search: Search }, c
 	// A tab switch unmounts the other tab's cards, and with them their tab, search and sort.
 	const isSameTab = tabOf(model.search) === tabOf(route.search)
 	const next = { ...model, search: route.search, panels: isSameTab ? model.panels : {} }
-	const isSameWindow =
-		model.search.startTime === route.search.startTime &&
-		model.search.endTime === route.search.endTime &&
-		model.search.timePreset === route.search.timePreset
-	return isSameWindow
-		? withRequests(next, context, "Load")
-		: { model: next, commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")] }
+	return routeWindowStep(model.search, route.search, {
+		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
+		requestAll: (mode) => withRequests(next, context, mode),
+	})
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return => withRequests(model, context, "Load")
