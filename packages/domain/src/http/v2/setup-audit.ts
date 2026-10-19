@@ -67,7 +67,7 @@ export const V2SetupAuditCheck = Schema.Struct({
 	}),
 	severity: Schema.Literals(["critical", "warn", "info"]).annotate({
 		description:
-			"How bad a failure is: `critical` breaks a feature outright, `warn` degrades it, `info` is advisory. Fixed per check — it does not vary with the finding.",
+			"How bad a failure is: `critical` breaks a feature outright, `warn` degrades it, `info` is advisory. Fixed per check, except a rate with tiered thresholds (`TRC-02`), which reports the tier it crossed.",
 		examples: ["critical"],
 	}),
 	status: Schema.Literals(["pass", "fail", "skip"]).annotate({
