@@ -359,7 +359,11 @@ describe("SourcesService", () => {
 
 		return Effect.gen(function* () {
 			const keys = yield* SourcesService
-			const created = yield* keys.create(orgA, user, new CreateSourceRequest({ platform: "nodejs", name: "k" }))
+			const created = yield* keys.create(
+				orgA,
+				user,
+				new CreateSourceRequest({ platform: "nodejs", name: "k" }),
+			)
 			yield* TestClock.adjust("1 hour")
 			const stamp = (column: string, ms: number) =>
 				Effect.promise(() =>
@@ -491,6 +495,15 @@ describe("SourcesService", () => {
 				new UpdateSourceRequest({ name: "scraper" }),
 			)
 			assert.deepStrictEqual([renamed.name, renamed.health.status], ["scraper", "failing"])
+			// Integration sources pause like token sources; the pause wins over the integration's health.
+			const paused = yield* keys.pause(orgA, user, broken.id, null)
+			assert.deepStrictEqual([paused.status, paused.health.status], ["paused", "paused"])
+			assert.strictEqual(
+				(yield* ownSources(keys, orgA)).find((source) => source.id === broken.id)?.health.status,
+				"paused",
+			)
+			const resumed = yield* keys.resume(orgA, user, broken.id)
+			assert.deepStrictEqual([resumed.status, resumed.health.status], ["active", "failing"])
 			const refused = yield* keys.delete(orgA, broken.id).pipe(Effect.flip)
 			assert.strictEqual(refused._tag, "@maple/http/errors/SourceValidationError")
 

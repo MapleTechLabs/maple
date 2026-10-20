@@ -4,6 +4,7 @@ import { button } from "../../../ui/button"
 import { confirmDialog } from "../../../ui/confirm-dialog"
 import { icon } from "../../../ui/icon"
 import * as MenuView from "../../../ui/menu-view"
+import { integrationPlatformOf } from "../kit/shared"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { PAUSE_CHOICES, PAUSE_MENU_ID } from "./update"
@@ -14,6 +15,8 @@ type H = HtmlBuilder<Message>
 
 const inlineIcon = (h: H, name: "MediaPauseIcon" | "MediaPlayIcon" | "ArrowPathIcon" | "TrashIcon") =>
 	icon(h, name, { attributes: [h.DataAttribute("icon", "inline-start")] })
+
+const isIntegration = (source: V2Source) => integrationPlatformOf(source) !== null
 
 const pauseMenu = (h: H, model: Model, source: V2Source): Html =>
 	h.submodel({
@@ -33,7 +36,11 @@ const pauseMenu = (h: H, model: Model, source: V2Source): Html =>
 							h.p([h.Class("text-xs font-medium")], ["Pause ingestion"]),
 							h.p(
 								[h.Class("text-muted-foreground text-xs leading-relaxed")],
-								["Senders keep getting 200 OK. Data is dropped, not stored or billed."],
+								[
+									isIntegration(source)
+										? "Maple keeps collecting, but what it collects is dropped, not stored or billed."
+										: "Senders keep getting 200 OK. Data is dropped, not stored or billed.",
+								],
 							),
 						],
 					),
@@ -41,9 +48,11 @@ const pauseMenu = (h: H, model: Model, source: V2Source): Html =>
 				{ _tag: "Separator" },
 				{
 					_tag: "Group",
-					entries: PAUSE_CHOICES.map(
-						(choice): MenuView.MenuItemEntry => ({ _tag: "Item", value: choice.value, label: choice.label }),
-					),
+					entries: PAUSE_CHOICES.map((choice): MenuView.MenuItemEntry => ({
+						_tag: "Item",
+						value: choice.value,
+						label: choice.label,
+					})),
 				},
 			],
 			toView: ({ trigger, withTrigger }) =>
@@ -68,8 +77,8 @@ const pauseMenu = (h: H, model: Model, source: V2Source): Html =>
 
 const name = (h: H, source: V2Source) => h.span([h.Class("text-foreground font-medium")], [source.name])
 
-/** Pause or Resume, Roll token and Delete. Not offered for the default source or integrations. */
-export const sourceActions = (h: H, model: Model, source: V2Source): ReadonlyArray<Html> => [
+/** Resume while paused, the pause menu otherwise. Every source but the default one pauses. */
+export const pauseControl = (h: H, model: Model, source: V2Source): Html =>
 	source.status === "paused"
 		? button(
 				h,
@@ -81,14 +90,23 @@ export const sourceActions = (h: H, model: Model, source: V2Source): ReadonlyArr
 				},
 				[inlineIcon(h, "MediaPlayIcon"), "Resume"],
 			)
-		: pauseMenu(h, model, source),
+		: pauseMenu(h, model, source)
+
+/** Pause or Resume, Roll token and Delete: a token source's actions. */
+export const sourceActions = (h: H, model: Model, source: V2Source): ReadonlyArray<Html> => [
+	pauseControl(h, model, source),
 	button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedRollToken())] }, [
 		inlineIcon(h, "ArrowPathIcon"),
 		"Roll token",
 	]),
 	button(
 		h,
-		{ variant: "ghost", size: "sm", className: "text-destructive", attributes: [h.OnClick(Message.ClickedDelete())] },
+		{
+			variant: "ghost",
+			size: "sm",
+			className: "text-destructive",
+			attributes: [h.OnClick(Message.ClickedDelete())],
+		},
 		[inlineIcon(h, "TrashIcon"), "Delete"],
 	),
 	confirmDialog(h, {
