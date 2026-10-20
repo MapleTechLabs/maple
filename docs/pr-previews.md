@@ -22,6 +22,17 @@ callbacks, which are registered for fixed hosts.
 The app's own browser telemetry still goes to the shared ingest (`VITE_MAPLE_SELF_INGEST_URL`);
 setup snippets and connect flows hand out the preview's gateway.
 
+## Web-only previews (`preview:web`)
+
+For UI work that does not need ingest, label the PR `preview:web` instead. It deploys the
+Workers (web, api, ai, alerting, chat-bot, electric-sync) on the same Neon and Tinybird
+branches, seeded and smoke-tested the same way, but nothing on AWS: no ingest gateway, no
+Electric (live sync stays off), no landing or local-ui. It holds no VPC, so it does not count
+against `MAX_LIVE_PREVIEWS`, and deploys faster. Setup snippets point at the shared ingest.
+
+`preview` wins when both labels are on. Removing one while the other stays redeploys in the
+remaining mode; removing the last one tears the stage down.
+
 ## Signing in
 
 Previews run Clerk's development instance, where reviewers have no account and the OAuth
@@ -49,12 +60,13 @@ and fails the job if a Postgres- or warehouse-backed route returns a 5xx. Withou
 ## Limits and cost
 
 - At most `MAX_LIVE_PREVIEWS` (3) open PRs may carry `preview`; the deploy refuses the next one.
+  `preview:web` previews are not capped, but each still takes 1 of the account's 25 Hyperdrive configs.
   Each preview's ingest needs a VPC in the prd AWS account, and us-east-1 allows 5: the default
   VPC and prd hold 2.
 - A preview runs an EC2 host, two ALBs and a Fargate task while it is live. Neon compute stays
   awake while Electric holds its replication slot.
 - `cleanup-preview-orphans.yml` sweeps Tinybird, destroys the stage of any PR that is closed or
-  no longer carries `preview` (`scripts/preview-stage-orphan-sweep.ts`), then sweeps Queues,
+  carries neither `preview` nor `preview:web` (`scripts/preview-stage-orphan-sweep.ts`), then sweeps Queues,
   Workers and Hyperdrive. That also reaps a stage whose teardown was cancelled. A stage with a
   queued or running preview deploy is skipped until the next sweep.
 

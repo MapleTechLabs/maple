@@ -28,6 +28,19 @@ describe("resolveMapleProfile", () => {
 		expect(profile("dev-alice").deploys.ingest).toBe(false)
 	})
 
+	it("runs a `preview:web` PR on its own database with nothing on AWS", () => {
+		const full = profile("pr-12")
+		const web = resolveMapleProfile(parseMapleDeployment("pr-12"), { webOnlyPreview: true })
+		expect(web.deploys).toEqual({ ...full.deploys, sharedApps: false, ingest: false, electric: false })
+		expect(web.database).toBe("preview")
+		expect(web.migratesDatabase).toBe(true)
+	})
+
+	it("ignores the web-only flag outside PR stages", () => {
+		const prd = parseMapleDeployment("prd")
+		expect(resolveMapleProfile(prd, { webOnlyPreview: true })).toEqual(resolveMapleProfile(prd))
+	})
+
 	// Every stage deploys into the same AWS account: one owner per account-region control.
 	it("puts the AWS security baseline on the prd instances alone, with one account trail", () => {
 		expect(

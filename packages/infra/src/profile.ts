@@ -152,6 +152,12 @@ const PR: MapleProfile = {
 	electric: { taskSize: { cpu: 256, memory: 512 }, dbPoolSize: undefined },
 }
 
+/** `preview:web` PRs: the Workers on their own Neon and Tinybird branches, nothing on AWS. */
+const PR_WEB: MapleProfile = {
+	...PR,
+	deploys: { ...PR.deploys, sharedApps: false, ingest: false, electric: false },
+}
+
 /** Dev stages: Workers on alchemy's local runtime; everything else runs in docker-compose. */
 const DEV: MapleProfile = {
 	...PR,
@@ -160,14 +166,22 @@ const DEV: MapleProfile = {
 	deploys: { ...PR.deploys, ingest: false, electric: false },
 }
 
+export interface MapleProfileOptions {
+	/** A PR stage deployed from the `preview:web` label (`MAPLE_PREVIEW_WEB_ONLY=1`). */
+	readonly webOnlyPreview?: boolean
+}
+
 /** The profile for one deployment. PR previews are `us` only (`parseMapleDeployment`). */
-export function resolveMapleProfile({ stage, region }: MapleDeployment): MapleProfile {
+export function resolveMapleProfile(
+	{ stage, region }: MapleDeployment,
+	{ webOnlyPreview = false }: MapleProfileOptions = {},
+): MapleProfile {
 	const shared = region === DEFAULT_MAPLE_REGION
 	switch (stage.kind) {
 		case "prd":
 			return shared ? US_PRD : EU_PRD
 		case "pr":
-			return PR
+			return webOnlyPreview ? PR_WEB : PR
 		case "dev":
 			return shared
 				? DEV

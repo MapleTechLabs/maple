@@ -28,9 +28,12 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 	merge(
 		authEnv,
 		optionalPlain("MAPLE_ORG_ID_OVERRIDE"),
-		// A preview proxies its own Electric, never the shared `dev` one (another stage's data).
-		stage.kind === "pr" && domains.electric
-			? derived("ELECTRIC_URL", `https://${domains.electric}`)
+		// A preview proxies its own Electric, never the shared `dev` one (another stage's data);
+		// a `preview:web` stage has none, so sync stays off.
+		stage.kind === "pr"
+			? domains.electric
+				? derived("ELECTRIC_URL", `https://${domains.electric}`)
+				: merge()
 			: merge(optionalPlain("ELECTRIC_URL"), optionalPlain("ELECTRIC_SOURCE_ID")),
 		optionalSecret("ELECTRIC_SECRET"),
 		selfObservabilityEnv(stage, region),
