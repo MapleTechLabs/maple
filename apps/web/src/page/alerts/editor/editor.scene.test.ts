@@ -1,16 +1,35 @@
 import { OrgId } from "@maple/domain"
-import { DashboardDocument } from "@maple/domain/http"
+import { AlertRulePreviewResponse, DashboardDocument } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes, V2ChatConnector } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
 import * as Animation from "@foldkit/ui/animation"
-import { all, click, Command, expect as expectView, expectAll, given, hover, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	all,
+	click,
+	Command,
+	expect as expectView,
+	expectAll,
+	given,
+	hover,
+	Mount,
+	placeholder,
+	role,
+	scene,
+	selector,
+	Subscription,
+	text,
+	type,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import * as Chart from "../../../charts/chart"
+import { MountChart } from "../../../charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import * as Menu from "../../../ui/menu"
 import * as Tooltip from "../../../ui/tooltip"
 import type { PageContext } from "../../contract"
 import { destinationRow, NOW, ORG, ruleId, ruleRow } from "../shared/test-rows"
-import { ReloadPage } from "./command"
+import { FetchEditorPreview, ReloadPage } from "./command"
 import { init } from "./init"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -263,5 +282,80 @@ describe("alert rule editor", () => {
 		])
 		expect(model.form?.tags).toEqual(["payments"])
 		expect(model.tagDraft).toBe("")
+	})
+
+	// Every section is memoized on what it reads: each step renders the old state first, so a
+	// section keyed on the wrong input would keep showing it.
+	test("each section follows the edit or sync it reads, after rendering the one before", () => {
+		const ready = withLists(entered({ template: "slow_p95" }))
+		const firing = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+			bucketSeconds: 300,
+			windowMinutes: 5,
+			threshold: 1500,
+			thresholdUpper: null,
+			thresholds: [
+				{ severity: "warning", value: 1500, upper: null, recoveryValue: null, destinationIds: [] },
+			],
+			comparator: "gt",
+			truncatedToStart: null,
+			series: [
+				{
+					groupKey: "__ungrouped__",
+					points: [
+						{
+							bucket: "2026-10-01T11:00:00.000Z",
+							value: 1800,
+							sampleCount: 40,
+							status: "breached",
+						},
+					],
+				},
+			],
+			wouldFire: [
+				{
+					groupKey: "__ungrouped__",
+					start: "2026-10-01T11:00:00.000Z",
+					end: "2026-10-01T11:10:00.000Z",
+					severity: "warning",
+				},
+			],
+		})
+		const edited = pageUpdate(ready, Message.ChangedField({ field: "threshold", value: "1500" })).model
+		const sql = pageUpdate(edited, Message.ClickedSignalKind({ kind: "raw_query" })).model
+		const answer = (key: string | null) =>
+			Message.CompletedFetchPreview({ key: key ?? "", isSaved: false, result: Result.succeed(firing) })
+		scene(
+			{ update: pageUpdate, view },
+			given(ready),
+			themeResolved(),
+			// Details: the org's tags arrive with the rules sync.
+			expectView(selector('option[value="payments"]')).not.toExist(),
+			Subscription.emit(
+				Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { tags_json: ["payments"] })] }),
+			),
+			expectView(selector('option[value="payments"]')).toExist(),
+			// Details: a name edit, which the query, condition and chart sections skip.
+			type(placeholder("Error rate on payments"), "Checkout errors"),
+			expectView(placeholder("Error rate on payments")).toHaveValue("Checkout errors"),
+			// Notifications: the destinations sync.
+			expectView(text(/^Paused/)).not.toExist(),
+			Subscription.emit(
+				Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow({ enabled: false })] }),
+			),
+			expectView(text(/^Paused/)).toExist(),
+			// Condition, action bar and chart: a threshold edit, then its preview.
+			type(selector("#rule-threshold"), "1500"),
+			expectView(selector("#rule-threshold")).toHaveValue("1500"),
+			expectView(text(/is above 1500/)).toExist(),
+			expectView(text("Would have fired")).not.toExist(),
+			Command.resolve(FetchEditorPreview, answer(edited.preview.key)),
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(text("Would have fired")).toExist(),
+			// Query: the mode switch.
+			expectView(role("button", { name: "Collapse SQL" })).not.toExist(),
+			click(role("button", { name: "SQL" })),
+			Command.resolve(FetchEditorPreview, answer(sql.preview.key)),
+			expectView(role("button", { name: "Collapse SQL" })).toExist(),
+		)
 	})
 })

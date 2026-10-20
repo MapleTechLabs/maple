@@ -12,11 +12,11 @@ import type { Model } from "./model"
 // `AlertQueryPanel`'s `autocompleteValues` (the provider is not lazy here): the where editor's
 // suggestions per source, over the editor's 24h window.
 
-const field = (model: Model, lookup: AutocompleteLookup, name: string): Array<string> => [
+const field = (model: Pick<Model, "autocomplete">, lookup: AutocompleteLookup, name: string): Array<string> => [
 	...lookupField(Option.getOrUndefined(AsyncData.getData(model.autocomplete[lookup]?.data ?? AsyncData.Idle())), name),
 ]
 
-export const baseValuesOf = (model: Model, query: QueryDraft): WhereClauseAutocompleteValues => {
+export const baseValuesOf = (model: Pick<Model, "traceFacets" | "autocomplete">, query: QueryDraft): WhereClauseAutocompleteValues => {
 	const facets = traceFacetsOf(model)
 	const spanKeys = field(model, "spanAttributeKeys", "keys")
 	const resourceKeys = field(model, "resourceAttributeKeys", "keys")

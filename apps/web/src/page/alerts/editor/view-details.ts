@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Option } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { Option, Struct } from "effect"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { button } from "../../../ui/button"
 import { card } from "../../../ui/card"
@@ -8,8 +8,8 @@ import { field, fieldDescription, fieldLabel, input } from "../../../ui/field"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { textarea } from "../../../ui/textarea"
+import { stableSlice } from "../../kit/stable-slice"
 import { suggestedName } from "./derive"
-import { tagSuggestionsOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -21,9 +21,12 @@ type H = HtmlBuilder<Message>
 
 const TAG_LIST_ID = "rule-tags-suggestions"
 
+/** What the section reads off the Model. */
+type DetailsView = Pick<Model, "mountedForm" | "tagDraft" | "isNotesOpen" | "tagSuggestions">
+
 /** `TagInput`: chips, a free-text input committing on Enter or comma, and the org's tags as a datalist. */
-const tagInput = (h: H, model: Model, form: RuleForm): Html => {
-	const available = tagSuggestionsOf(model).filter((tag) => !form.tags.includes(tag))
+const tagInput = (h: H, model: DetailsView, form: RuleForm): Html => {
+	const available = model.tagSuggestions.filter((tag) => !form.tags.includes(tag))
 	return h.div(
 		[
 			h.Class(
@@ -72,7 +75,7 @@ const tagInput = (h: H, model: Model, form: RuleForm): Html => {
 	)
 }
 
-const nameField = (h: H, model: Model, form: RuleForm): Html => {
+const nameField = (h: H, model: DetailsView, form: RuleForm): Html => {
 	const suggestion = suggestedName(form)
 	const isSuggesting = form.name.trim().length === 0 && suggestion !== null && suggestion.length > 0
 	const state = fieldStateOf(form.name, model.mountedForm?.name)
@@ -110,7 +113,7 @@ const nameField = (h: H, model: Model, form: RuleForm): Html => {
 	])
 }
 
-const notes = (h: H, model: Model, form: RuleForm): Html => {
+const notes = (h: H, model: DetailsView, form: RuleForm): Html => {
 	if (!model.isNotesOpen)
 		return h.button(
 			[
@@ -141,8 +144,7 @@ const notes = (h: H, model: Model, form: RuleForm): Html => {
 	])
 }
 
-/** `DetailsSection`: the name with a one-click suggestion, tags, and notes behind a button. */
-export const detailsSection = (h: H, model: Model, form: RuleForm): Html => {
+const details = (h: H, model: DetailsView, form: RuleForm): Html => {
 	const tagIds = idsOf("rule-tags", true)
 	const tagState = fieldStateOf("", undefined)
 	return card(
@@ -168,3 +170,11 @@ export const detailsSection = (h: H, model: Model, form: RuleForm): Html => {
 		"p-4",
 	)
 }
+
+const slot = createLazy()
+const viewOf = stableSlice((model: Model) =>
+	Struct.pick(model, ["mountedForm", "tagDraft", "isNotesOpen", "tagSuggestions"]),
+)
+
+/** `DetailsSection`: the name with a one-click suggestion, tags, and notes behind a button. */
+export const detailsSection = (h: H, model: Model, form: RuleForm): Html => slot(details, [h, viewOf(model), form])
