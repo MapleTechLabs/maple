@@ -92,6 +92,24 @@ describe("source detail", () => {
 		expect(names(routeChanged(onSetup, route(), context).commands)).toEqual(["FetchSourceUsage"])
 	})
 
+	test("a push source the gateway refuses shows Failing and why", () => {
+		const refused = source({
+			health: {
+				status: "failing",
+				last_data_at: "2026-10-01T11:56:00.000Z",
+				problem: "Rate limited at 200 requests per second",
+				resources: null,
+			},
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(refused)),
+			resolveTheme,
+			expectView(text("Rate limited at 200 requests per second")).toExist(),
+			expectView(role("alert")).toExist(),
+		)
+	})
+
 	test("the default source has no token actions", () => {
 		scene(
 			{ update: pageUpdate, view },
