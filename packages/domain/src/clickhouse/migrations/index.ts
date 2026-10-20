@@ -43,6 +43,7 @@ import { migration_0041_alert_checks_level } from "./0041_alert_checks_level"
 import { migration_0042_trace_index } from "./0042_trace_index"
 import { migration_0043_traces_span_name_index } from "./0043_traces_span_name_index"
 import { migration_0044_drop_trace_detail_spans } from "./0044_drop_trace_detail_spans"
+import { migration_0045_ttl_only_drop_parts } from "./0045_ttl_only_drop_parts"
 
 /**
  * A migration statement is either a raw SQL string (structural DDL) or a
@@ -118,6 +119,7 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0042_trace_index,
 	migration_0043_traces_span_name_index,
 	migration_0044_drop_trace_detail_spans,
+	migration_0045_ttl_only_drop_parts,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

@@ -48,6 +48,7 @@ export type StepOperation =
 	| { readonly op: "drop-columns"; readonly table: string; readonly columns: ReadonlyArray<string> }
 	| { readonly op: "drop"; readonly kind: "TABLE" | "VIEW"; readonly names: ReadonlyArray<string> }
 	| { readonly op: "backfill"; readonly statements: ReadonlyArray<string> }
+	| { readonly op: "modify-ttl"; readonly table: string; readonly ttl: string }
 
 export const addColumns = (
 	table: string,
@@ -81,6 +82,9 @@ export const backfill = (...statements: ReadonlyArray<string>): StepOperation =>
 	statements,
 })
 
+/** `ttl` is the full TTL expression; MODIFY TTL replaces the table's previous one. */
+export const modifyTtl = (table: string, ttl: string): StepOperation => ({ op: "modify-ttl", table, ttl })
+
 const operationSql = (operation: StepOperation): ReadonlyArray<string> => {
 	switch (operation.op) {
 		case "add-columns":
@@ -97,6 +101,8 @@ const operationSql = (operation: StepOperation): ReadonlyArray<string> => {
 			return operation.names.map((name) => `DROP ${operation.kind} IF EXISTS ${name}`)
 		case "backfill":
 			return operation.statements
+		case "modify-ttl":
+			return [`ALTER TABLE ${operation.table} MODIFY TTL ${operation.ttl}`]
 	}
 }
 
