@@ -67,7 +67,6 @@
 			"entry": ["src/worker.ts", "src/worker-entry.ts"],
 			"ignoreDependencies": [
 				"@floating-ui/dom",
-				"@foldkit/ui",
 				"@tanstack/charts",
 				"@tanstack/charts-scales"
 			]
