@@ -162,9 +162,11 @@ export const revisit = (model: Model): Return => {
 	const settings = revisitData(model.settings, FetchSettings)
 	const diff = revisitData(model.diff, FetchDiff)
 	const usage = revisitData(model.usage, FetchUsage)
+	// The apply poll only runs on the open tab: a run left in progress reads its status now.
+	const applyStatus = AsyncData.isIdle(model.applyStatus) ? [] : [FetchApplyStatus()]
 	return {
 		model: { ...model, settings: settings.data, diff: diff.data, usage: usage.data },
-		commands: [...settings.commands, ...diff.commands, ...usage.commands],
+		commands: [...settings.commands, ...diff.commands, ...usage.commands, ...applyStatus],
 	}
 }
 

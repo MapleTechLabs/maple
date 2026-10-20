@@ -333,7 +333,7 @@ const enter = (model: Model, context: PageContext): Return =>
 	Option.match(resolveLegacySettingsTab(model.search.tab), {
 		onNone: () => syncTab(model, context),
 		onSome: (redirect) => ({
-			model: { ...model, tab: null },
+			model: leaveTab(model),
 			outMessage: PageOutMessage.RequestedNavigation({ url: redirectUrl(redirect), isReplace: true }),
 		}),
 	})
@@ -419,8 +419,10 @@ const liftBilling = (model: Model, { step, isCustomerStale, isCheckoutSettled }:
 
 /** The Billing tab waiting on a checkout return reads every customer answer for the plan. */
 const settleCheckout = ({ model, commands, outMessage }: Return): Return => {
-	if (model.tab === null || model.tab._tag !== "Billing" || !AsyncData.isSuccess(model.customer)) return { model, commands, outMessage }
-	const settled = Billing.customerChanged(model.tab.model, model.customer.data)
+	// A kept Billing tab still polls a checkout return, so it settles here too.
+	const billing = tabNamed(model, "Billing")
+	if (billing === undefined || !AsyncData.isSuccess(model.customer)) return { model, commands, outMessage }
+	const settled = Billing.customerChanged(billing.model, model.customer.data)
 	if (settled === null) return { model, commands, outMessage }
 	const lifted = liftBilling(model, settled)
 	return { ...lifted, commands: [...(commands ?? []), ...(lifted.commands ?? [])], outMessage: outMessage ?? lifted.outMessage }

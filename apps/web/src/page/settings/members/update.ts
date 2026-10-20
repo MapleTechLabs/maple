@@ -366,7 +366,8 @@ export const update = (model: Model, message: Message): Return =>
 			Option.match(AsyncData.getData(model.members), {
 				onNone: () => ({ model }),
 				onSome: (data) =>
-					data.isFetchingMore
+					// While page 1 reads again (a revisit, a mutation) a later page would append to the wrong rows.
+					data.isFetchingMore || AsyncData.isRefreshing(model.members)
 						? { model }
 						: {
 								model: { ...model, members: AsyncData.Success({ data: { ...data, isFetchingMore: true } }) },
@@ -377,7 +378,8 @@ export const update = (model: Model, message: Message): Return =>
 			Option.match(AsyncData.getData(model.invitations), {
 				onNone: () => ({ model }),
 				onSome: (data) =>
-					data.isFetchingMore
+					// While page 1 reads again (a revisit, a mutation) a later page would append to the wrong rows.
+					data.isFetchingMore || AsyncData.isRefreshing(model.invitations)
 						? { model }
 						: {
 								model: { ...model, invitations: AsyncData.Success({ data: { ...data, isFetchingMore: true } }) },
