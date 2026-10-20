@@ -17,7 +17,7 @@ import {
 import { PushSourcePlatform } from "@maple/domain/primitives"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 
-// apps/web/src/lib/search-params.ts
+// apps/web-foldkit/src/lib/search-params.ts
 // Readonly here: legacy marks these `mutable` only for its React call sites.
 const StringArray = Schema.Array(Schema.String)
 const StringArrayFromJsonString = Schema.fromJsonString(Schema.Array(Schema.String))
@@ -40,7 +40,7 @@ export const TimeRangeSearchFields = {
 	timePreset: Schema.optional(Schema.String),
 }
 
-// apps/web/src/lib/dashboard-controls/search-params.ts
+// apps/web-foldkit/src/lib/dashboard-controls/search-params.ts
 export const VARIABLE_PARAM_PREFIX = "var-"
 
 export const variableSearchRest = Schema.Record(
@@ -75,7 +75,7 @@ const ToolAnalyticsSearchFields = {
 	variant: Schema.optional(Schema.String),
 }
 
-// apps/web/src/components/analytics/filters.ts
+// apps/web-foldkit/src/components/analytics/filters.ts
 const analyticsFilterSearchFields = {
 	host: Schema.optional(Schema.String),
 	pagePath: Schema.optional(Schema.String),
@@ -121,7 +121,7 @@ const CodeReviewCiSearchFields = {
 	result: Schema.optional(CiRunResult),
 }
 
-// apps/web/src/components/infra/cloudflare/filters.ts + list-model.ts
+// apps/web-foldkit/src/components/infra/cloudflare/filters.ts + list-model.ts
 const cloudflareFilterSearchFields = {
 	hosts: OptionalStringArrayParam,
 	cacheStatuses: OptionalStringArrayParam,
@@ -147,7 +147,7 @@ const planetscaleFilterSearchFields = {
 	branchContains: Schema.optional(Schema.String),
 }
 
-// apps/web/src/lib/errors/hub-params.ts
+// apps/web-foldkit/src/lib/errors/hub-params.ts
 const HUB_VIEWS = ["open", "closed", "all"] as const
 const LEGACY_HUB_VIEWS = ["triage", "active", "resolved"] as const
 const HUB_SORTS = ["last_seen", "volume", "severity"] as const

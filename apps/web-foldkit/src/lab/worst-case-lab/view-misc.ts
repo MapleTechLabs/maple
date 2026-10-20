@@ -1,4 +1,4 @@
-import { attributes } from "@maple/web/lab/worst-case-fixture"
+import { attributes } from "../worst-case-fixture"
 import { Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import type { Message as HubMessage } from "../../page/alerts/hub/message"

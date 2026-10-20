@@ -1,4 +1,4 @@
-import { decodeLogAttributeFilter, logAttributeQueryFilters } from "@maple/web/lib/logs/log-attribute-filters"
+import { decodeLogAttributeFilter, logAttributeQueryFilters } from "../../../lib/logs/log-attribute-filters"
 import { SEVERITY_ORDER } from "@maple/ui/lib/severity"
 import type { CustomChartTimeSeriesInput } from "@maple/web-data/warehouse/custom-charts"
 import type { ListLogsInput } from "@maple/web-data/warehouse/logs"

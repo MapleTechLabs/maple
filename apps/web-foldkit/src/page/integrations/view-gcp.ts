@@ -5,7 +5,7 @@ import {
 	GCP_STATE_ORDER,
 	gcpConnectionState,
 	gcpWorstState,
-} from "@maple/web/components/integrations/gcp-connector-state"
+} from "../../components/integrations/gcp-connector-state"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"

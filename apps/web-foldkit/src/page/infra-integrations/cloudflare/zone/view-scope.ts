@@ -4,7 +4,7 @@ import {
 	type CloudflareFilters,
 	FILTER_SECTION_LABEL,
 	filterKeysFromServer,
-} from "@maple/web/components/infra/cloudflare/filters"
+} from "../../../../components/infra/cloudflare/filters"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { scopeChip } from "../../kit/scope-chip"
 

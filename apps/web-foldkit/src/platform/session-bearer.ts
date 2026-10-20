@@ -1,5 +1,5 @@
-import { readJwtExpMs } from "@maple/web/lib/services/common/auth-headers"
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { readJwtExpMs } from "../lib/services/common/auth-headers"
+import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
 import { Clock, Context, Duration, Effect, Layer, Option, Semaphore } from "effect"
 import {
 	announceSessionTokenChanged,

@@ -1,4 +1,4 @@
-import { capacityFraction, formatBytesOfAllocatable, formatCoresOfAllocatable } from "@maple/web/components/infra/format"
+import { capacityFraction, formatBytesOfAllocatable, formatCoresOfAllocatable } from "../../../../components/infra/format"
 import { formatUptime } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"

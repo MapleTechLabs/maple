@@ -9,10 +9,10 @@ import {
 	buildCheckoutSuccessUrl,
 	CHECKOUT_CONFIRM_POLL_MS,
 	CHECKOUT_CONFIRM_TIMEOUT_MS,
-} from "@maple/web/lib/billing/checkout-return"
-import { hasSelectedPlan } from "@maple/web/lib/billing/plan-gating"
-import { parseCapInput, spendLimitFor, uncappedFeatures, updateFeatureControls } from "@maple/web/lib/billing/controls"
-import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "@maple/web/lib/billing/spend"
+} from "../../../lib/billing/checkout-return"
+import { hasSelectedPlan } from "../../../lib/billing/plan-gating"
+import { parseCapInput, spendLimitFor, uncappedFeatures, updateFeatureControls } from "../../../lib/billing/controls"
+import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "../../../lib/billing/spend"
 import { Cause, Duration, Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command, Dom } from "foldkit"
 import * as Chart from "../../../charts/chart"
@@ -143,7 +143,7 @@ const WaitCheckoutTimeout = Command.define("WaitBillingCheckoutTimeout", {
 	),
 })
 
-/** `plan_checkout_started` and `plan_checkout_returned` (apps/web/src/lib/analytics.ts). */
+/** `plan_checkout_started` and `plan_checkout_returned` (apps/web-foldkit/src/lib/analytics.ts). */
 const TrackCheckout = Command.define("TrackBillingCheckout", {
 	args: {
 		event: Schema.Literals(["plan_checkout_started", "plan_checkout_returned"]),

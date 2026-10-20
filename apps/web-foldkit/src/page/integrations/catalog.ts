@@ -1,6 +1,6 @@
 import { type ChatConnectorManifest, chatConnectorManifests } from "@maple/chat-platform/manifests"
 import { ChatConnectorId } from "@maple/domain/primitives"
-import { docsUrl } from "@maple/web/lib/docs"
+import { docsUrl } from "../../lib/docs"
 import { Array, Option, Schema } from "effect"
 import type { IconName } from "../../ui/icon"
 import { PLANETSCALE_COLOR } from "../infra-integrations/planetscale/notices"

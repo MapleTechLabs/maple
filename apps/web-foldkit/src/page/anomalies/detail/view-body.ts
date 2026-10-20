@@ -2,8 +2,8 @@ import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { anomalyTimeseriesFromV2 } from "@maple/web/lib/services/anomalies"
-import { errorIssueFromV2 } from "@maple/web/lib/services/error-issues"
+import { anomalyTimeseriesFromV2 } from "../../../lib/services/anomalies"
+import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import {
 	deviation,
 	formatSignalValue,

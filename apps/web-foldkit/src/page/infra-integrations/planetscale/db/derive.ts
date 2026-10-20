@@ -4,8 +4,8 @@ import {
 	mergeBranchCandidates,
 	orderBranches,
 	resolveSelectedBranch,
-} from "@maple/web/components/infra/planetscale/branch-selection"
-import { metricsNeverCollected } from "@maple/web/components/integrations/planetscale-setup-steps"
+} from "../../../../components/infra/planetscale/branch-selection"
+import { metricsNeverCollected } from "../../../../components/integrations/planetscale-setup-steps"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import { chartBucketSeconds } from "../../../../charts/infra-metric-series"

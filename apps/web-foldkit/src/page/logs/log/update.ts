@@ -1,4 +1,4 @@
-import { decodeLogKey, encodeLogKey } from "@maple/web/lib/log-key"
+import { decodeLogKey, encodeLogKey } from "../../../lib/log-key"
 import { getLog } from "@maple/web-data/warehouse/logs"
 import { Effect, Option, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"

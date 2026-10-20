@@ -1,5 +1,5 @@
 import type { MarkdownDocument } from "@foldkit/markdown"
-import { highlightCode } from "@maple/web/lib/sugar-high"
+import { highlightCode } from "../../../lib/sugar-high"
 import { cn } from "@maple/ui/lib/utils"
 import { Effect, Queue, Schema, Stream } from "effect"
 import { Mount } from "foldkit"

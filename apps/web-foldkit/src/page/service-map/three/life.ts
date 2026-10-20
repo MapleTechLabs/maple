@@ -1,8 +1,8 @@
 // copied: apps/web/src/components/service-map/three/maple-scenery-life.tsx (R3F JSX as three construction).
-import type { Creek } from "@maple/web/components/service-map/three/maple-scenery-field"
-import { type Bounds, hash } from "@maple/web/components/service-map/three/maple-scenery-sketch"
-import type { InkPalette } from "@maple/web/components/service-map/three/palette"
-import type { District } from "@maple/web/components/service-map/three/spatial-layout"
+import type { Creek } from "../../../components/service-map/three/maple-scenery-field"
+import { type Bounds, hash } from "../../../components/service-map/three/maple-scenery-sketch"
+import type { InkPalette } from "../../../components/service-map/three/palette"
+import type { District } from "../../../components/service-map/three/spatial-layout"
 import * as THREE from "three"
 import type { Child, Running, Scope, Vec3 } from "./kit"
 

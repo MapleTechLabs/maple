@@ -1,4 +1,4 @@
-import { containerImage, finding, formatterCases, hosts, pods } from "@maple/web/lab/worst-case-fixture"
+import { containerImage, finding, formatterCases, hosts, pods } from "../worst-case-fixture"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { HOST_SORT_ACCESSORS } from "../../page/infra/hosts/list/view"

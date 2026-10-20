@@ -5,7 +5,7 @@ import { countLabel } from "@maple/ui/lib/format"
 import { pickImportantAttributes } from "@maple/ui/lib/log-attributes"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
-import { encodeLogKey } from "@maple/web/lib/log-key"
+import { encodeLogKey } from "../../lib/log-key"
 import { SpanId, TraceId } from "@maple/domain"
 import { Schema } from "effect"
 

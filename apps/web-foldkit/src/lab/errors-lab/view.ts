@@ -1,6 +1,6 @@
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { buildErrorsLabFixture } from "@maple/web/lab/errors-fixture"
+import { buildErrorsLabFixture } from "../errors-fixture"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { dashboardPage } from "../../page/kit/dashboard-page"

@@ -1,7 +1,7 @@
 import { formatClock } from "@maple/ui/lib/replay-format"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { cn } from "@maple/ui/lib/utils"
-import { parseChTimestampMs, spanDisplayRange } from "@maple/web/components/replays/replay-timeline"
+import { parseChTimestampMs, spanDisplayRange } from "../../../components/replays/replay-timeline"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

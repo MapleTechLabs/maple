@@ -3,7 +3,7 @@ import {
 	getPerformanceHints,
 	hasSlowHints,
 	slowHintsSummary,
-} from "@maple/web/lib/query-builder/performance-hints"
+} from "../../lib/query-builder/performance-hints"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AsyncData } from "foldkit"
 import { Option } from "effect"

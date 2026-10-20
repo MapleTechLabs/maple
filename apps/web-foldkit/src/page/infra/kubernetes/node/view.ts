@@ -3,7 +3,7 @@ import {
 	formatBytesOfAllocatable,
 	formatCoresOfAllocatable,
 	severityLevel,
-} from "@maple/web/components/infra/format"
+} from "../../../../components/infra/format"
 import { EMPTY_VALUE, formatPercent, formatUptime } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"

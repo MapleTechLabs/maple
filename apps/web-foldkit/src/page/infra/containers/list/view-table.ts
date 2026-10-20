@@ -1,4 +1,4 @@
-import { formatWholePercent } from "@maple/web/components/infra/format"
+import { formatWholePercent } from "../../../../components/infra/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { middleTruncate } from "../../../../ui/middle-truncate"

@@ -1,5 +1,5 @@
 import { AiModelBrandColor, DetectAiModelsRequest } from "@maple/domain/http"
-import { shortTarget } from "@maple/web/lib/agent-sessions/span-filters"
+import { shortTarget } from "../../../lib/agent-sessions/span-filters"
 import { Effect, Option, Record, Schema } from "effect"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 

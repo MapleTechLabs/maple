@@ -5,7 +5,7 @@ import {
 	layoutMarkerLabels,
 	type PositionedMarker,
 	shouldRenderLabels,
-} from "@maple/web/components/vcs/commit-markers/marker-layout"
+} from "../../../components/vcs/commit-markers/marker-layout"
 import { parseBucketMs } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { PlotGeometry } from "../../../charts/chart"

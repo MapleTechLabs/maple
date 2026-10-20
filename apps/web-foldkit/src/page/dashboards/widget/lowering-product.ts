@@ -12,7 +12,7 @@ import {
 	completedSteps,
 	DEFAULT_FUNNEL_KEY_BY,
 	DEFAULT_FUNNEL_WINDOW_SECONDS,
-} from "@maple/web/components/funnels/definition"
+} from "../../../components/funnels/definition"
 import {
 	compileFunnelStep,
 	compileFunnelSteps,
@@ -20,7 +20,7 @@ import {
 	formatProductEventsFilterClause,
 	hasProductEventsFilters,
 	parseProductEventsFilterClause,
-} from "@maple/web/lib/query-builder/funnel-filters"
+} from "../../../lib/query-builder/funnel-filters"
 import {
 	dataSourceEndpoint,
 	dataSourceRouteParams,

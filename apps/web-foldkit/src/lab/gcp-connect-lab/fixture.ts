@@ -2,7 +2,7 @@ import type { V2GcpConnector, V2GcpSetupScripts } from "@maple/domain/http/v2"
 import { AsyncData } from "foldkit"
 import type { Keyed } from "../../data/keyed"
 import { type LoadFailure, toLoadFailure } from "../../data/load-failure"
-import { GCP_SETUP_FIXTURES } from "@maple/web/lab/gcp-setup-fixtures"
+import { GCP_SETUP_FIXTURES } from "../gcp-setup-fixtures"
 import type { ApplyOpened, LogFilterDraft, SetupMethod } from "../../page/integrations/gcp-configure-schema"
 import { agoOf, connectorOf } from "../gcp-host"
 

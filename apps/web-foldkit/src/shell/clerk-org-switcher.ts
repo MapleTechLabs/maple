@@ -1,6 +1,6 @@
 import { CreateOrganizationRequest } from "@maple/domain/http"
 import { MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
-import { currentRegion, regionAppUrl } from "@maple/web/lib/region"
+import { currentRegion, regionAppUrl } from "../lib/region"
 import { Cause, Effect, Option, Queue, Schema, Stream } from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"

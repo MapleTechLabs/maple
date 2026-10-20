@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 
 // Reuse the workspace's browser tooling; no browser dependency in the landing build.
-const { chromium } = createRequire(new URL("../../web/package.json", import.meta.url))("@playwright/test")
+const { chromium } = createRequire(new URL("../../web-foldkit/package.json", import.meta.url))("playwright")
 const landing = new URL("../", import.meta.url)
 const dataUrl = async (path, mime) =>
 	`data:${mime};base64,${(await readFile(new URL(path, landing))).toString("base64")}`
@@ -70,7 +70,7 @@ try {
 		await writeFile(new URL(`public/${card.file}`, landing), png)
 		// The application has the same generic social preview as the marketing site.
 		if (card.file === "og-image.png") {
-			await writeFile(new URL("../web/public/og-image.png", landing), png)
+			await writeFile(new URL("../web-foldkit/public/og-image.png", landing), png)
 		}
 		console.log(`Generated ${card.file} (1200 × 630)`)
 	}

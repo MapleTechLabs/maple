@@ -1,10 +1,10 @@
-import { buildLogsLabFixture } from "@maple/web/lab/logs-fixture"
+import { buildLogsLabFixture } from "../logs-fixture"
 import {
 	addLogAttributeFilter,
 	type LogAttributeFilter,
 	decodeLogAttributeFilters,
 	matchesLogAttributeFilters,
-} from "@maple/web/lib/logs/log-attribute-filters"
+} from "../../lib/logs/log-attribute-filters"
 import { Duration, Effect, Option, Schema } from "effect"
 import { Command, Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"

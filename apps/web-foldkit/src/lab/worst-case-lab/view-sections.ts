@@ -1,5 +1,5 @@
-import { legend, releaseImpact, toolTable } from "@maple/web/lab/worst-case-fixture"
-import { verdict } from "@maple/web/lab/worst-case-docs"
+import { legend, releaseImpact, toolTable } from "../worst-case-fixture"
+import { verdict } from "../worst-case-docs"
 import type { Html } from "foldkit/html"
 import { dataTable } from "../../page/chat/kit/view-data-table"
 import { verdictCard } from "../../page/investigations/detail/view-verdict"

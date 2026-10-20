@@ -13,8 +13,8 @@ import {
 	spanTokenBuckets,
 	spanTtftMs,
 } from "@maple/agent-sessions"
-import { type AxisTick, buildSessionAxis, type SessionAxis } from "@maple/web/lib/agent-sessions/session-axis"
-import { isDelegation } from "@maple/web/lib/agent-sessions/span-filters"
+import { type AxisTick, buildSessionAxis, type SessionAxis } from "../../../lib/agent-sessions/session-axis"
+import { isDelegation } from "../../../lib/agent-sessions/span-filters"
 import { shortId } from "@maple/ui/lib/ids"
 import { EMPTY_VALUE, formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"

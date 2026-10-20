@@ -1,4 +1,4 @@
-import { dependencyDrillWhereClause } from "@maple/web/components/services/dependency-drill"
+import { dependencyDrillWhereClause } from "../../../components/services/dependency-drill"
 import type { DependencyKind } from "./derive-panels"
 import type { DependencyBundle } from "./model-tabs"
 

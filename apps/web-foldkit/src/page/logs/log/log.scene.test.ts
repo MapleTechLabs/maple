@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { encodeLogKey } from "@maple/web/lib/log-key"
+import { encodeLogKey } from "../../../lib/log-key"
 import { Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import type { LogRecord } from "../../../ui/logs/log-row-view"

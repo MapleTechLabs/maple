@@ -35,7 +35,6 @@
 		"lib/thinking-orbs",
 		"packages/email/emails",
 		"packages/email/components",
-		"apps/web/src/routeTree.gen.ts",
 		"apps/ios/Packages/MapleAPI/Sources/MapleAPI/openapi.json",
 		"scripts/oxlint-plugins/anti-slop/**",
 		"CLAUDE.md",

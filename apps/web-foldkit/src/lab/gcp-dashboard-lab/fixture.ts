@@ -1,6 +1,6 @@
 import { DashboardDocument } from "@maple/domain/http"
 import type { VariableValues } from "@maple/query-engine"
-import fixture from "@maple/web/lab/gcp-dashboard-fixture.json"
+import fixture from "../gcp-dashboard-fixture.json"
 import { Schema } from "effect"
 
 // copied: the series fixture of apps/web `lab/gcp-dashboard-lab.tsx` (WORKLOADS, GROUPS, OPTIONS,

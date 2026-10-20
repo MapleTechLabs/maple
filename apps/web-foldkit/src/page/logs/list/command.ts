@@ -1,5 +1,5 @@
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { logAttributeQueryFilters } from "@maple/web/lib/logs/log-attribute-filters"
+import { logAttributeQueryFilters } from "../../../lib/logs/log-attribute-filters"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getLogAttributeKeys, getLogsFacets, listLogs } from "@maple/web-data/warehouse/logs"
 import { Clock, Duration, Effect, Option, Schema } from "effect"

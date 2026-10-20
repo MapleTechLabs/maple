@@ -3,7 +3,7 @@ import {
 	type AnalyticsMetricKey,
 	type AnalyticsMetricSource,
 	findMetric,
-} from "@maple/web/components/analytics/metrics"
+} from "../../components/analytics/metrics"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html } from "foldkit/html"

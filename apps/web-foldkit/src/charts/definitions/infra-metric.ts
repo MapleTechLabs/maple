@@ -4,7 +4,7 @@ import {
 	type TransformedPoint,
 	transformRows,
 	UNNAMED_SERIES_KEY,
-} from "@maple/web/components/infra/chart-units"
+} from "../../components/infra/chart-units"
 import {
 	areaY,
 	d3Curve,

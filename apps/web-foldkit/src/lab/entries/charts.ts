@@ -7,7 +7,7 @@ import {
 	toLatencyProductionRows,
 	toStackedBarProductionRows,
 	toThroughputProductionRows,
-} from "@maple/web/lab/charts/timeseries-data"
+} from "../charts/timeseries-data"
 import { Clock, Effect, Option, Schema } from "effect"
 import { Command, Mount, Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

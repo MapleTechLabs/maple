@@ -2,7 +2,7 @@ import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage
 import { GcpResourcesResponse } from "@maple/domain/http"
 import { V2GcpSetupScripts } from "@maple/domain/http/v2"
 import { GcpConnectorId } from "@maple/domain/primitives"
-import { gcpLogVolume } from "@maple/web/components/integrations/gcp-usage"
+import { gcpLogVolume } from "../../components/integrations/gcp-usage"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { Effect, Option, Schema } from "effect"

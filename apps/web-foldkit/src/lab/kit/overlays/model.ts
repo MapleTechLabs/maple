@@ -1,4 +1,4 @@
-import { OVERLAY_ITEMS } from "@maple/web/lab/kit/overlay-items"
+import { OVERLAY_ITEMS } from "../overlay-items"
 import { Option, Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Combobox from "../../../ui/combobox"

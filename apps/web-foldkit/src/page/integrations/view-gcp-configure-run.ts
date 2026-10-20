@@ -4,7 +4,7 @@ import {
 	gcpLogFilterChoice,
 	gcpScopeRoles,
 	gcpScriptOverdue,
-} from "@maple/web/components/integrations/gcp-connector-state"
+} from "../../components/integrations/gcp-connector-state"
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

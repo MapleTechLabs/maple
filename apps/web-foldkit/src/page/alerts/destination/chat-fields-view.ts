@@ -1,4 +1,4 @@
-import { channelPickerView, resolveSearchQuery } from "@maple/web/components/alerts/channel-search"
+import { channelPickerView, resolveSearchQuery } from "../../../components/alerts/channel-search"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

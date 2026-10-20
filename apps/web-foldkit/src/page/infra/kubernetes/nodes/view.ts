@@ -1,5 +1,5 @@
-import { deriveHostStatus, type HostStatus } from "@maple/web/components/infra/format"
-import { statusLabel } from "@maple/web/components/infra/severity-tokens"
+import { deriveHostStatus, type HostStatus } from "../../../../components/infra/format"
+import { statusLabel } from "../../../../components/infra/severity-tokens"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"

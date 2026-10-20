@@ -1,7 +1,7 @@
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
-import { getActiveInfraCorrelations } from "@maple/web/components/infra/infra-correlations"
+import { getActiveInfraCorrelations } from "../../../../components/infra/infra-correlations"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

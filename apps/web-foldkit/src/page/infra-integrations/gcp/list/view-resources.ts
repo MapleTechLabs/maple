@@ -1,6 +1,6 @@
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
-import { gcpResourceWorkload } from "@maple/web/components/infra/gcp/inventory"
-import { gcpAssetTypeLabel, gcpResourceName, gcpStateLabel } from "@maple/web/components/infra/gcp/tabs"
+import { gcpResourceWorkload } from "../../../../components/infra/gcp/inventory"
+import { gcpAssetTypeLabel, gcpResourceName, gcpStateLabel } from "../../../../components/infra/gcp/tabs"
 import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html } from "foldkit/html"

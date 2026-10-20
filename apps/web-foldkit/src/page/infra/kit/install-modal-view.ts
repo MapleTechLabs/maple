@@ -1,4 +1,4 @@
-import { docsUrl } from "@maple/web/lib/docs"
+import { docsUrl } from "../../../lib/docs"
 import { cn } from "@maple/ui/lib/utils"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { AsyncData, Submodel } from "foldkit"

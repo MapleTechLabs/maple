@@ -1,5 +1,5 @@
 import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
-import { derivePlanetScaleSetup } from "@maple/web/components/integrations/planetscale-setup-steps"
+import { derivePlanetScaleSetup } from "../../components/integrations/planetscale-setup-steps"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"

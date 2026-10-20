@@ -1,4 +1,4 @@
-import type { WhereClauseAutocompleteSuggestion } from "@maple/web/lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteSuggestion } from "../../lib/query-builder/where-clause-autocomplete"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"

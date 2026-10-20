@@ -1,6 +1,6 @@
 import type { BillingCustomer } from "@maple/domain/http"
-import { maximumInvoiceCents, uncappedFeatures } from "@maple/web/lib/billing/controls"
-import { getLegacyPlanInfo, getTrialStatus } from "@maple/web/lib/billing/plan-gating"
+import { maximumInvoiceCents, uncappedFeatures } from "../../../lib/billing/controls"
+import { getLegacyPlanInfo, getTrialStatus } from "../../../lib/billing/plan-gating"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../../data/load-failure"

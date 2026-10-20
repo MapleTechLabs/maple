@@ -5,8 +5,8 @@ import {
 	NEW_ISSUE_SLACK_MS,
 	shortReleaseLabel,
 	type ReleaseServiceImpact,
-} from "@maple/web/components/releases/release-model"
-import { errorIssueFromV2 } from "@maple/web/lib/services/error-issues"
+} from "../../../components/releases/release-model"
+import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

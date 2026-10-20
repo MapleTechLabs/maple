@@ -1,4 +1,4 @@
-import { describeSpanEvent, formatEventOffset } from "@maple/web/lib/traces/span-events"
+import { describeSpanEvent, formatEventOffset } from "../../../../lib/traces/span-events"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../../ui/icon"
 import { keyValue, keyValueList } from "../../../../ui/key-value"

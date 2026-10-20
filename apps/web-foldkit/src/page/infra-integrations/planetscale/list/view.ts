@@ -1,4 +1,4 @@
-import { derivePlanetScaleSetup } from "@maple/web/components/integrations/planetscale-setup-steps"
+import { derivePlanetScaleSetup } from "../../../../components/integrations/planetscale-setup-steps"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"

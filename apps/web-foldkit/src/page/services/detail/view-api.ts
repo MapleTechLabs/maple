@@ -3,7 +3,7 @@ import {
 	type EndpointSort,
 	groupEndpoints,
 	leafLabel,
-} from "@maple/web/components/services/endpoint-grouping"
+} from "../../../components/services/endpoint-grouping"
 import { errorRateClass, errorRateLevel } from "@maple/ui/lib/error-rate"
 import { countLabel, formatErrorRate, formatLatency, formatNumber, formatRate } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"

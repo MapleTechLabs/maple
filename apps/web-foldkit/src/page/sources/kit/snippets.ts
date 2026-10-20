@@ -1,6 +1,6 @@
 import type { SourcePlatform } from "@maple/domain/primitives"
-import { type FrameworkId, sdkSnippets } from "@maple/web/components/quick-start/sdk-snippets"
-import { ingestUrl } from "@maple/web/lib/services/common/ingest-url"
+import { type FrameworkId, sdkSnippets } from "../../../components/quick-start/sdk-snippets"
+import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { dockerCommand, HOST_CONFIG, helmCommand, hostCommand } from "../../infra/kit/install-snippets"
 
 // `sourceSnippets`, `maskedToken` (apps/web/src/components/sources/snippets.ts).

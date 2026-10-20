@@ -1,4 +1,4 @@
-import { pickDashboardControlParams, variableValuesFromSearch } from "@maple/web/lib/dashboard-controls/search-params"
+import { pickDashboardControlParams, variableValuesFromSearch } from "../../../lib/dashboard-controls/search-params"
 import { behindToast } from "../kit/store"
 import { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
 import { Option, Result, Schema } from "effect"

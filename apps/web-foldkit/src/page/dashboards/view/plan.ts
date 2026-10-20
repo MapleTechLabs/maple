@@ -8,7 +8,7 @@ import { DEFAULT_WIDGET_WIDTH_PX, maxDataPointsForWidth, toPanelType } from "../
 import { dataStateOf } from "../kit/data-state"
 import { planWidget, type WidgetGate } from "../kit/widget-data"
 import { FetchVariableOptions, FetchWidget } from "./command"
-import { variableValuesFromSearch } from "@maple/web/lib/dashboard-controls/search-params"
+import { variableValuesFromSearch } from "../../../lib/dashboard-controls/search-params"
 import { AsyncData } from "foldkit"
 import {
 	optionsByNameOf as optionsByNameFor,

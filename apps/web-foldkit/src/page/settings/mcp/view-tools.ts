@@ -1,7 +1,7 @@
 import type { McpToolCatalogEntry } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
-import { groupMcpTools, type McpToolGroup } from "@maple/web/components/mcp/mcp-tool-groups"
+import { groupMcpTools, type McpToolGroup } from "../../../components/mcp/mcp-tool-groups"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"

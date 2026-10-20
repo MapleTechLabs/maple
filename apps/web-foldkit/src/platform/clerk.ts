@@ -6,9 +6,9 @@ import {
 	organizationRegionOpen,
 	organizationServedIn,
 } from "@maple/domain/organization-regions"
-import { clerkAppearance, clerkLocalization } from "@maple/web/lib/clerk-appearance"
-import { currentRegion } from "@maple/web/lib/region"
-import { purgeForeignClerkCookies } from "@maple/web/lib/services/common/clerk-cookie-guard"
+import { clerkAppearance, clerkLocalization } from "../lib/clerk-appearance"
+import { currentRegion } from "../lib/region"
+import { purgeForeignClerkCookies } from "../lib/services/common/clerk-cookie-guard"
 import { Clock, Effect, Option, Predicate, Queue, Schema, Stream } from "effect"
 
 /** The slice of clerk-js this app reads. `window.Clerk` is what the parity harness stubs. */

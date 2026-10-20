@@ -5,7 +5,7 @@ import {
 	DURATION_SECONDS,
 	generateBenchGraph,
 	refreshBenchMetrics,
-} from "@maple/web/lab/bench/service-map-bench-fixture"
+} from "../../bench/service-map-bench-fixture"
 import type { DeclutterFocus } from "@maple/ui/components/service-map/service-map-declutter"
 import { cn } from "@maple/ui/lib/utils"
 import { Effect, Option, Queue, Schema, Stream } from "effect"

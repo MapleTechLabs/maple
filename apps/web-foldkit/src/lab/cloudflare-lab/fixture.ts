@@ -4,8 +4,8 @@ import {
 	CloudflareConnectedAccountStatus,
 	CloudflareIntegrationStatus,
 } from "@maple/domain/http"
-import { cloudflareAccounts } from "@maple/web/components/infra/cloudflare/accounts"
-import { mergeWorkerRows } from "@maple/web/components/infra/cloudflare/list-model"
+import { cloudflareAccounts } from "../../components/infra/cloudflare/accounts"
+import { mergeWorkerRows } from "../../components/infra/cloudflare/list-model"
 import {
 	DEMO_ACCOUNT_STATUSES,
 	DEMO_DURABLE_OBJECTS,
@@ -23,7 +23,7 @@ import {
 	MAPLE_DEV_PATHS,
 	MAPLE_DEV_ROW,
 	MAPLE_DEV_STATUS,
-} from "@maple/web/lab/cloudflare-fixture"
+} from "../cloudflare-fixture"
 import { Schema } from "effect"
 import { AsyncData, type Command } from "foldkit"
 import type { Keyed } from "../../data/keyed"

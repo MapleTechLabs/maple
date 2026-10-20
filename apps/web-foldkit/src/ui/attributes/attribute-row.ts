@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { highlightCode } from "@maple/web/lib/sugar-high"
+import { highlightCode } from "../../lib/sugar-high"
 import { Option, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyButton } from "../copy-button"

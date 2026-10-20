@@ -7,7 +7,7 @@ import { dataSourceQuerySet, dataSourceTransform, makeRawSqlDataSource } from "@
 // raw-SQL widgets without hand-crafting the dataSource JSON.
 //
 // The visualization → display-type mapping used to be duplicated here and in
-// apps/web/src/lib/raw-sql/templates.ts. Both now read `rawSqlDisplayTypeFor`
+// apps/web-foldkit/src/lib/raw-sql/templates.ts. Both now read `rawSqlDisplayTypeFor`
 // from the shared widget-type table, so only `buildRawSqlDataSource` (which
 // mirrors widget-query-builder-page.tsx) still has a web-side twin.
 

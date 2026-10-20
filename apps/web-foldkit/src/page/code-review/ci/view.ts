@@ -1,5 +1,5 @@
 import type { CodeReviewCiAnalytics } from "@maple/domain/http"
-import { CI_RESULT_LABELS, windowWasCut } from "@maple/web/components/code-review/ci/ci-format"
+import { CI_RESULT_LABELS, windowWasCut } from "../../../components/code-review/ci/ci-format"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"

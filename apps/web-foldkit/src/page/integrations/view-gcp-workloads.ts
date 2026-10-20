@@ -12,7 +12,7 @@ import {
 	gcpWorkloadProject,
 	gcpWorkloadSearch,
 	gcpWorkloadTone,
-} from "@maple/web/components/infra/gcp/tabs"
+} from "../../components/infra/gcp/tabs"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { emptyMessage } from "../../ui/empty"

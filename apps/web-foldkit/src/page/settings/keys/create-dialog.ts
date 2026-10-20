@@ -3,7 +3,7 @@ import { V2ApiKeyCreateParams, V2ApiKeyWithSecret, type V2Scope } from "@maple/d
 import {
 	type ApiKeyCreateOptions,
 	buildApiKeyCreatePayload,
-} from "@maple/web/components/settings/api-key-create-payload"
+} from "../../../components/settings/api-key-create-payload"
 import { Effect, Result, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"

@@ -1,4 +1,4 @@
-import type { BranchCandidate } from "@maple/web/components/infra/planetscale/branch-selection"
+import type { BranchCandidate } from "../../../../components/infra/planetscale/branch-selection"
 import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"

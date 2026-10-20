@@ -1,7 +1,7 @@
 import type { AlertIncidentDocument, AlertRulePreviewResponse, AlertRuleDocument } from "@maple/domain/http"
 import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { decodeAlertContextFromSearchParam } from "@maple/web/components/chat/alert-context"
+import { decodeAlertContextFromSearchParam } from "../../../components/chat/alert-context"
 import {
 	formatAlertDuration,
 	formatSignalValue,

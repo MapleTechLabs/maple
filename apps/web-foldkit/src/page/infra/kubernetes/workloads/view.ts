@@ -1,4 +1,4 @@
-import { deriveHostStatus, severityLevel } from "@maple/web/components/infra/format"
+import { deriveHostStatus, severityLevel } from "../../../../components/infra/format"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL } from "@maple/ui/lib/tone"

@@ -1,4 +1,4 @@
-import type { GcpProjectHealth } from "@maple/web/components/infra/gcp/list-model"
+import type { GcpProjectHealth } from "../../../../components/infra/gcp/list-model"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"

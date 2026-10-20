@@ -1,4 +1,4 @@
-import { humanize } from "@maple/web/lib/humanize"
+import { humanize } from "../../../lib/humanize"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"

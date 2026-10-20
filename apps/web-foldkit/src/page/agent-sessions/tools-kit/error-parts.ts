@@ -6,7 +6,7 @@ import type {
 	ErrorPathPart,
 	ErrorTextToken,
 	FailureStatus,
-} from "@maple/web/lib/agent-sessions/tool-error-display"
+} from "../../../lib/agent-sessions/tool-error-display"
 import { formatToolCount } from "@maple/web-data/lib/tool-analytics"
 import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"

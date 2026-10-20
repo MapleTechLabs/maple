@@ -7,7 +7,7 @@ import {
 	unwrapToolErrorText,
 	variantDifferences,
 	type VariantDifference,
-} from "@maple/web/lib/agent-sessions/tool-error-display"
+} from "../../../lib/agent-sessions/tool-error-display"
 import { formatToolCount, UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"

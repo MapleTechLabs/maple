@@ -1,9 +1,9 @@
-import { CACHE_STATUS_COLORS, STATUS_CLASS_COLORS } from "@maple/web/components/infra/cloudflare/constants"
+import { CACHE_STATUS_COLORS, STATUS_CLASS_COLORS } from "../../../../components/infra/cloudflare/constants"
 import {
 	activeFilterChips,
 	type CloudflareFilters,
 	hasActiveFilters,
-} from "@maple/web/components/infra/cloudflare/filters"
+} from "../../../../components/infra/cloudflare/filters"
 import { cn } from "@maple/ui/lib/utils"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { AsyncData } from "foldkit"

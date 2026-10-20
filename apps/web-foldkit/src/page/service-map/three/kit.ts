@@ -1,5 +1,5 @@
-import { createSketch, type Sketch } from "@maple/web/components/service-map/three/maple-scenery-sketch"
-import { FACE_TONE } from "@maple/web/components/service-map/three/palette"
+import { createSketch, type Sketch } from "../../../components/service-map/three/maple-scenery-sketch"
+import { FACE_TONE } from "../../../components/service-map/three/palette"
 import * as THREE from "three"
 
 // The R3F JSX of `components/service-map/three` as plain three construction. Only the lazy
@@ -71,7 +71,7 @@ export const disposeTree = (root: THREE.Object3D): void => {
 	})
 }
 
-// copied: factory-primitives.tsx (apps/web/src/components/service-map/three), as functions.
+// copied: factory-primitives.tsx (apps/web-foldkit/src/components/service-map/three), as functions.
 
 /** Bake the isometric face tones into vertex colors so materials stay unlit. */
 export function shadeFaces(geometry: THREE.BufferGeometry) {

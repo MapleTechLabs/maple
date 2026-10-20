@@ -1,4 +1,4 @@
-import { type LabWorkload, PAGES, RANGE, WORKLOADS } from "@maple/web/lab/gcp-workload-fixture"
+import { type LabWorkload, PAGES, RANGE, WORKLOADS } from "../gcp-workload-fixture"
 import { Effect } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as Chart from "../../charts/chart"

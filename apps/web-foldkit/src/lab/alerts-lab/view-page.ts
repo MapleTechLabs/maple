@@ -1,4 +1,4 @@
-import { buildAlertsLabFixture, type AlertsLabFixture } from "@maple/web/lab/alerts-fixture"
+import { buildAlertsLabFixture, type AlertsLabFixture } from "../alerts-fixture"
 import { buildIncidentTimeline } from "@maple/web-data/alerts/incident-timeline"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "../../charts/chart-runtime"

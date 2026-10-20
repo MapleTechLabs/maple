@@ -2,7 +2,7 @@ import type { AnomalyIncidentDocument, ErrorIssueDocument } from "@maple/domain/
 import { cn } from "@maple/ui/lib/utils"
 import * as A from "@maple/ui/styles/ui/autocomplete"
 import { commandEmptyStyles, commandItemStyles, commandListStyles } from "@maple/ui/styles/ui/command"
-import { errorIssueFromV2 } from "@maple/web/lib/services/error-issues"
+import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "../../../ui/combobox"

@@ -1,6 +1,6 @@
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
-import { rowHealth, type RowRules } from "@maple/web/components/infra/gcp/list-model"
-import { gcpWorkloadId, gcpWorkloadSearch } from "@maple/web/components/infra/gcp/tabs"
+import { rowHealth, type RowRules } from "../../../../components/infra/gcp/list-model"
+import { gcpWorkloadId, gcpWorkloadSearch } from "../../../../components/infra/gcp/tabs"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"

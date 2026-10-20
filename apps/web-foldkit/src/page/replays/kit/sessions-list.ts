@@ -1,6 +1,6 @@
 import { countLabel, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { SESSION_TAG_DOTS, SESSION_TAG_LABELS } from "@maple/web/components/replays/session-tags"
+import { SESSION_TAG_DOTS, SESSION_TAG_LABELS } from "../../../components/replays/session-tags"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
 import { skeleton } from "../../../ui/skeleton"

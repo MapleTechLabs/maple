@@ -1,4 +1,4 @@
-import { restartTone, summarizePodRestarts } from "@maple/web/components/infra/pod-restarts"
+import { restartTone, summarizePodRestarts } from "../../../components/infra/pod-restarts"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"

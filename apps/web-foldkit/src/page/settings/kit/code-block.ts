@@ -1,4 +1,4 @@
-import { highlightCode } from "@maple/web/lib/sugar-high"
+import { highlightCode } from "../../../lib/sugar-high"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "../../../ui/copy-button"

@@ -1,18 +1,18 @@
-import type { InkPalette } from "@maple/web/components/service-map/three/appearance"
+import type { InkPalette } from "../../../components/service-map/three/appearance"
 import {
 	decorateRoutes,
 	type FactoryLink,
 	factoryRoutes,
 	type RoutingTopology,
-} from "@maple/web/components/service-map/three/factory-routing"
+} from "../../../components/service-map/three/factory-routing"
 import {
 	connectedIds,
 	type SpatialLayout,
 	spatialLayout,
 	type SpatialTopology,
 	type SpatialView,
-} from "@maple/web/components/service-map/three/spatial-layout"
-import type { Topology3D } from "@maple/web/components/service-map/three/types"
+} from "../../../components/service-map/three/spatial-layout"
+import type { Topology3D } from "../../../components/service-map/three/types"
 import type * as THREE from "three"
 import { layoutTopologyOf, topologyKeyOf } from "../scene-layout"
 import { scenery } from "./forest"

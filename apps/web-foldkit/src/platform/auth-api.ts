@@ -1,6 +1,6 @@
 import { BrowserKeyValueStore } from "@effect/platform-browser"
 import { MapleApi, SelfHostedLoginRequest, UnauthorizedError } from "@maple/domain/http"
-import { apiBaseUrl } from "@maple/web/lib/services/common/api-base-url"
+import { apiBaseUrl } from "../lib/services/common/api-base-url"
 import { Context, Effect, Layer, Option, Predicate, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { HttpApiClient } from "effect/http-api"

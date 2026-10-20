@@ -1,13 +1,13 @@
-import { liveTopology } from "@maple/web/components/service-map/three/live-topology"
-import { mapPalette, paperBackground } from "@maple/web/components/service-map/three/palette"
+import { liveTopology } from "../../components/service-map/three/live-topology"
+import { mapPalette, paperBackground } from "../../components/service-map/three/palette"
 import {
 	connectedIds,
 	type District,
 	formatLatency,
 	formatRate,
 	HEALTH_COLOR,
-} from "@maple/web/components/service-map/three/spatial-layout"
-import type { Edge3D, Topology3D } from "@maple/web/components/service-map/three/types"
+} from "../../components/service-map/three/spatial-layout"
+import type { Edge3D, Topology3D } from "../../components/service-map/three/types"
 import { Option } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

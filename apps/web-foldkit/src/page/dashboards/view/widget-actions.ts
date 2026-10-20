@@ -11,7 +11,7 @@ type Widget = DashboardDocument["widgets"][number]
 export const isAlertable = (widget: Widget): boolean =>
 	isQueryDataSource(widget.dataSource) || dataSourceRawSql(widget.dataSource) !== null
 
-// copied: `toBase64Url` (apps/web/src/lib/base64url.ts) and `encodeAlertChartToSearchParam`.
+// copied: `toBase64Url` (apps/web-foldkit/src/lib/base64url.ts) and `encodeAlertChartToSearchParam`.
 const toBase64Url = (input: string): string =>
 	btoa(unescape(encodeURIComponent(input)))
 		.replace(/\+/g, "-")

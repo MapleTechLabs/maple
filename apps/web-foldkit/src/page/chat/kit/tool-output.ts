@@ -1,4 +1,4 @@
-import { STRUCTURED_MARKER } from "@maple/web/components/ai-elements/renderers/constants"
+import { STRUCTURED_MARKER } from "../../../components/ai-elements/renderers/constants"
 import { Array, Option, Predicate, Schema } from "effect"
 
 // The pure half of `tool.tsx` (apps/web components/ai-elements): a call's one-line summary, and

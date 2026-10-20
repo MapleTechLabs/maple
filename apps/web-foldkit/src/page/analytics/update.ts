@@ -1,4 +1,4 @@
-import { toggleFilterValue, toggleTraffic } from "@maple/web/components/analytics/filters"
+import { toggleFilterValue, toggleTraffic } from "../../components/analytics/filters"
 import { Option, Result, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "../../charts/chart"

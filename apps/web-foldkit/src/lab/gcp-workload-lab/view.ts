@@ -1,5 +1,5 @@
-import { BUCKET_SECONDS, PAGE_LABEL, PAGES } from "@maple/web/lab/gcp-workload-fixture"
-import { gcpWorkloadName } from "@maple/web/components/infra/gcp/tabs"
+import { BUCKET_SECONDS, PAGE_LABEL, PAGES } from "../gcp-workload-fixture"
+import { gcpWorkloadName } from "../../components/infra/gcp/tabs"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type PageData, workloadData } from "../../page/infra-integrations/gcp/workload/derive"

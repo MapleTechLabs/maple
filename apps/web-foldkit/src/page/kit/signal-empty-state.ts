@@ -1,5 +1,5 @@
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import { type DocsPage, docsUrl } from "@maple/web/lib/docs"
+import { type DocsPage, docsUrl } from "../../lib/docs"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "../../ui/button"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../ui/empty"

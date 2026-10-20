@@ -1,4 +1,4 @@
-import "@maple/web/components/dotmatrix-loader.css"
+import "../../../components/dotmatrix-loader.css"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 

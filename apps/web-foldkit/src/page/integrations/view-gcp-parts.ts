@@ -1,6 +1,6 @@
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { cloudShellUrl } from "@maple/web/components/integrations/gcp-connector-state"
+import { cloudShellUrl } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "../../ui/button"
 import * as CopyButton from "../../ui/copy-button"

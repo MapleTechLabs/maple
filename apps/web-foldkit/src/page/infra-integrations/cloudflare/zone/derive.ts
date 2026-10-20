@@ -1,10 +1,10 @@
-import { classifyZone, type ZoneHealth } from "@maple/web/components/infra/cloudflare/list-model"
+import { classifyZone, type ZoneHealth } from "../../../../components/infra/cloudflare/list-model"
 import {
 	type CloudflareFilterKey,
 	type CloudflareFilters,
 	filtersFromSearch,
-} from "@maple/web/components/infra/cloudflare/filters"
-import { zoneSignalTotals } from "@maple/web/components/infra/cloudflare/zone-signals"
+} from "../../../../components/infra/cloudflare/filters"
+import { zoneSignalTotals } from "../../../../components/infra/cloudflare/zone-signals"
 import { AsyncData } from "foldkit"
 import { chartBucketSeconds } from "../../../../charts/infra-metric-series"
 import type { TimeWindow } from "../../../../data/time-range"

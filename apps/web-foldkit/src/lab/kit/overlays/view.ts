@@ -1,4 +1,4 @@
-import { OVERLAY_ITEMS } from "@maple/web/lab/kit/overlay-items"
+import { OVERLAY_ITEMS } from "../overlay-items"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { kitPage, kitSection } from "../kit-layout"

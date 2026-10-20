@@ -1,6 +1,6 @@
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
-import { getActiveInfraCorrelations } from "@maple/web/components/infra/infra-correlations"
+import { getActiveInfraCorrelations } from "../../../components/infra/infra-correlations"
 import type { LogRecord } from "../../../ui/logs/log-row-view"
 
 // Pure readings of a log for the sheet: its severity label, JSON payload, tabs and timestamp.

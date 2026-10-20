@@ -1,6 +1,6 @@
 import { WIDGET_TYPES } from "@maple/domain/http"
 import { EMPTY_VALUE, countLabel } from "@maple/ui/lib/format"
-import { asArray, asRecord, asString, safeParseJson } from "@maple/web/components/chat/approval-renderers/parse"
+import { asArray, asRecord, asString, safeParseJson } from "../../../components/chat/approval-renderers/parse"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"

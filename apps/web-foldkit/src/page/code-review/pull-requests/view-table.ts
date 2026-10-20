@@ -1,5 +1,5 @@
 import type { CodeReviewListItem } from "@maple/domain/http"
-import { formatCount, outcomeOf, SKIP_LABELS } from "@maple/web/components/code-review/code-review-format"
+import { formatCount, outcomeOf, SKIP_LABELS } from "../../../components/code-review/code-review-format"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"

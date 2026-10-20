@@ -1,6 +1,6 @@
 import { formatNumber, formatRate, pluralize } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import type { ReleaseHealth } from "@maple/web/components/releases/release-model"
+import type { ReleaseHealth } from "../../../components/releases/release-model"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"

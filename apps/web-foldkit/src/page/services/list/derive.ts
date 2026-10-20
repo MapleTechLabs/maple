@@ -6,7 +6,7 @@ import {
 	type LatencyBaselineSignal,
 	type ServiceHealth,
 	type ServiceHealthCause,
-} from "@maple/web/components/dashboard/service-health"
+} from "../../../components/dashboard/service-health"
 import { DateTime, Option } from "effect"
 import type { ServicesSearch } from "../../../route/search"
 import type { IncidentCause, ServiceRow } from "./model"

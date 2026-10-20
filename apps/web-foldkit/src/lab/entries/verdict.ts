@@ -1,4 +1,4 @@
-import { VERDICT_LAB_CASES } from "@maple/web/lab/verdict-fixture"
+import { VERDICT_LAB_CASES } from "../verdict-fixture"
 import { Clock, Effect, Schema } from "effect"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { verdictCard } from "../../page/investigations/detail/view-verdict"

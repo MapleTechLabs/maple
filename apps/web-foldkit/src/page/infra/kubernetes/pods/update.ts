@@ -1,4 +1,4 @@
-import { podKey } from "@maple/web/components/infra/pod-restarts"
+import { podKey } from "../../../../components/infra/pod-restarts"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../../data/keyed"
 import { requestKey } from "../../../../data/request-key"

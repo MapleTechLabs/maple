@@ -6,7 +6,7 @@ import {
 	gcpSetupRunning,
 	isGcpProjectId,
 	isGcpResourceNumber,
-} from "@maple/web/components/integrations/gcp-connector-state"
+} from "../../components/integrations/gcp-connector-state"
 import { CAPABILITIES, CAPABILITY_IDS } from "./gcp-configure-copy"
 import type { ApplyOpened, Capability, ConfigureModel, GcpFlags } from "./gcp-configure-schema"
 

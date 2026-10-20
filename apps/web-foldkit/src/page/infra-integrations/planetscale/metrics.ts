@@ -1,8 +1,8 @@
-import { VALUE_TONE } from "@maple/web/components/infra/severity-tokens"
+import { VALUE_TONE } from "../../../components/infra/severity-tokens"
 import type { Tone } from "@maple/ui/lib/tone"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
 
-// copied: apps/web/src/components/infra/planetscale/metrics.ts (it re-exports a React icon module).
+// copied: apps/web-foldkit/src/components/infra/planetscale/metrics.ts (it re-exports a React icon module).
 
 /** Metrics missing for the window sort below every real value. */
 export const MISSING = Number.NEGATIVE_INFINITY
@@ -41,4 +41,4 @@ export const abnormalState = (state: string | null): string | null => {
 	return normalized === "ready" || normalized === "active" ? null : normalized
 }
 
-export { formatWholePercent } from "@maple/web/components/infra/format"
+export { formatWholePercent } from "../../../components/infra/format"

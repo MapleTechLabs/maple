@@ -14,14 +14,14 @@ import {
 	type GcpProjectHealth,
 	type GcpSparks,
 	type RowRules,
-} from "@maple/web/components/infra/gcp/list-model"
-import type { GcpCloudSqlInstance } from "@maple/web/components/infra/gcp/inventory"
+} from "../../../../components/infra/gcp/list-model"
+import type { GcpCloudSqlInstance } from "../../../../components/infra/gcp/inventory"
 import {
 	GCP_RESOURCES_TAB,
 	GCP_VIEW_SERVICES,
 	gcpResourcesError,
 	type GcpView,
-} from "@maple/web/components/infra/gcp/tabs"
+} from "../../../../components/infra/gcp/tabs"
 import { formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"

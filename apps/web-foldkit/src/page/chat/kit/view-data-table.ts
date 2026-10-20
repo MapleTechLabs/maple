@@ -1,4 +1,4 @@
-import { formatCell } from "@maple/web/components/ai-elements/renderers/components/data-table-format"
+import { formatCell } from "../../../components/ai-elements/renderers/components/data-table-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 

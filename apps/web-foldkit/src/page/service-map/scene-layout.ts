@@ -4,8 +4,8 @@ import {
 	spatialLayout,
 	type SpatialTopology,
 	type SpatialView,
-} from "@maple/web/components/service-map/three/spatial-layout"
-import type { Edge3D, Node3DKind, Topology3D } from "@maple/web/components/service-map/three/types"
+} from "../../components/service-map/three/spatial-layout"
+import type { Edge3D, Node3DKind, Topology3D } from "../../components/service-map/three/types"
 import { Schema } from "effect"
 
 // The three-free half of the 3D layout (`ServiceMap3DViewport`'s memos), shared by the labels

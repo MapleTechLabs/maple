@@ -1,7 +1,7 @@
 import type { IconName } from "../../../ui/icon"
 
-export { modelVendorColor, vendorColor } from "@maple/web/lib/agent-sessions/vendor-color"
-export { vendorLabel } from "@maple/web/lib/agent-sessions/vendor-label"
+export { modelVendorColor, vendorColor } from "../../../lib/agent-sessions/vendor-color"
+export { vendorLabel } from "../../../lib/agent-sessions/vendor-label"
 
 // copied: the icon maps of apps/web/src/lib/agent-sessions/vendor-icon.ts and model-vendor-icon.ts
 // (React icon components there, icon names here).

@@ -1,5 +1,5 @@
 import { initialsFrom } from "@maple/ui/lib/initials"
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { ClerkUser } from "../../platform/clerk"

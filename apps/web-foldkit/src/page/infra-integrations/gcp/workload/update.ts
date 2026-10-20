@@ -1,6 +1,6 @@
 import { GCP_INFRA_SERVICE_IDS, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
-import { GCP_CLOUD_SQL_INVENTORY_QUERY, gcpResourceQuery } from "@maple/web/components/infra/gcp/inventory"
-import { gcpWorkloadKeys } from "@maple/web/components/infra/gcp/tabs"
+import { GCP_CLOUD_SQL_INVENTORY_QUERY, gcpResourceQuery } from "../../../../components/infra/gcp/inventory"
+import { gcpWorkloadKeys } from "../../../../components/infra/gcp/tabs"
 import { Command } from "foldkit"
 import * as Chart from "../../../../charts/chart"
 import { LoadChartRuntime } from "../../../../charts/chart-runtime"

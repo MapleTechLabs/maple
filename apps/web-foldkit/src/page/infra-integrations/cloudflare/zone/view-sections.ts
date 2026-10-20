@@ -1,4 +1,4 @@
-import type { CloudflareFilters } from "@maple/web/components/infra/cloudflare/filters"
+import type { CloudflareFilters } from "../../../../components/infra/cloudflare/filters"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"

@@ -1,4 +1,4 @@
-import { gcpWorkloadSearch } from "@maple/web/components/infra/gcp/tabs"
+import { gcpWorkloadSearch } from "../../../components/infra/gcp/tabs"
 import { AppRoute, hrefOf } from "../../../route"
 import type { TimeSearch } from "../kit/view-tabs"
 import type { FindingTarget, SourceId } from "./model"

@@ -1,5 +1,5 @@
 import type { V2Investigation } from "@maple/domain/http/v2"
-import type { InvestigationSummary, SignalState } from "@maple/web/lib/models/error-signal"
+import type { InvestigationSummary, SignalState } from "../../../lib/models/error-signal"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { statusDot } from "../../../ui/status-dot"

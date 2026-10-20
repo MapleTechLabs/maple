@@ -1,5 +1,5 @@
 import type { CodeReviewCiRun } from "@maple/domain/http"
-import { externalUrl, pullRequestUrl } from "@maple/web/components/code-review/ci/ci-format"
+import { externalUrl, pullRequestUrl } from "../../../components/code-review/ci/ci-format"
 import { formatDuration } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"

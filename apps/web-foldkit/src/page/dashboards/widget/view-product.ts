@@ -7,8 +7,8 @@ import {
 	FUNNEL_KEY_BY_OPTIONS,
 	FUNNEL_SESSION_DIMENSIONS,
 	FUNNEL_WINDOW_OPTIONS,
-} from "@maple/web/components/funnels/definition"
-import { parseProductEventsFilterClause } from "@maple/web/lib/query-builder/funnel-filters"
+} from "../../../components/funnels/definition"
+import { parseProductEventsFilterClause } from "../../../lib/query-builder/funnel-filters"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { filterChip } from "../../../ui/filter-chip"

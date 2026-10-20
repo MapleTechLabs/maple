@@ -1,4 +1,4 @@
-import type { DocsPage } from "@maple/web/lib/docs"
+import type { DocsPage } from "../../../lib/docs"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"

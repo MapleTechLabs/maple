@@ -1,6 +1,6 @@
 import { AttributeMappingPublicId, RecommendationPublicId } from "@maple/domain/http/v2"
 import { readLocalStorage } from "@maple/ui/lib/local-storage"
-import { ingestUrl } from "@maple/web/lib/services/common/ingest-url"
+import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Clock, Effect, Option, Random, type Result, Schema } from "effect"

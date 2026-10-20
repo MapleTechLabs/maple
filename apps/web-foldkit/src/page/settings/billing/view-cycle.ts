@@ -2,8 +2,8 @@ import { formatCurrency } from "@maple/domain/format"
 import type { DailySpendResponse } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
-import type { TrialStatus } from "@maple/web/lib/billing/plan-gating"
-import { sentenceCasePlanName } from "@maple/web/lib/billing/plans"
+import type { TrialStatus } from "../../../lib/billing/plan-gating"
+import { sentenceCasePlanName } from "../../../lib/billing/plans"
 import {
 	buildCumulativeSeries,
 	costBreakdown,
@@ -11,7 +11,7 @@ import {
 	FEATURE_LABELS,
 	SPEND_FEATURES,
 	type SpendModel,
-} from "@maple/web/lib/billing/spend"
+} from "../../../lib/billing/spend"
 import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
@@ -33,7 +33,7 @@ import { Message, type Model } from "./model"
 
 type H = HtmlBuilder<Message>
 
-// `BillingCyclePanel`, `SpendChart` and `CostBreakdown` (apps/web/src/components/settings/).
+// `BillingCyclePanel`, `SpendChart` and `CostBreakdown` (apps/web-foldkit/src/components/settings/).
 
 const dollars = (cents: number, currency: string) => formatCurrency(cents / 100, currency)
 

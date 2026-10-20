@@ -1,4 +1,4 @@
-import { overviewBenchRows } from "@maple/web/lab/bench/tanstack/bench-data"
+import { overviewBenchRows } from "./tanstack/bench-data"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

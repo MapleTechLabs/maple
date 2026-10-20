@@ -1,5 +1,5 @@
-import { narrowAlertSignal } from "@maple/web/components/ai-triage/breach"
-import { type AlertContext, decodeAlertContextFromSearchParam, signalLabel } from "@maple/web/components/chat/alert-context"
+import { narrowAlertSignal } from "../../../components/ai-triage/breach"
+import { type AlertContext, decodeAlertContextFromSearchParam, signalLabel } from "../../../components/chat/alert-context"
 import { Option, Schema } from "effect"
 
 // `/chat`'s explicit subjects (apps/web routes/chat.tsx): `?mode=alert&alert=` (an alert notification's

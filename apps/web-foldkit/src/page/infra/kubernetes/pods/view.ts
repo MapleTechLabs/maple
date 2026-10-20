@@ -1,4 +1,4 @@
-import { summarizePodRestarts } from "@maple/web/components/infra/pod-restarts"
+import { summarizePodRestarts } from "../../../../components/infra/pod-restarts"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL } from "@maple/ui/lib/tone"

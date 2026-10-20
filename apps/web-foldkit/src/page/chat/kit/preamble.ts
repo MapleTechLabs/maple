@@ -1,4 +1,4 @@
-import { type AutoContext, deriveAutoContexts } from "@maple/web/components/chat/auto-contexts"
+import { type AutoContext, deriveAutoContexts } from "../../../components/chat/auto-contexts"
 import type { InvestigationContext, WidgetFixContext } from "./subject"
 
 // `buildContextPreamble` (apps/web components/chat/context-preamble.ts), verbatim: the model must

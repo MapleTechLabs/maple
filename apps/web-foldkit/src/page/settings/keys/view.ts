@@ -2,7 +2,7 @@ import {
 	buildKeyRows,
 	filterKeyRows,
 	type KeyTypeFilter,
-} from "@maple/web/components/settings/keys-table"
+} from "../../../components/settings/keys-table"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"

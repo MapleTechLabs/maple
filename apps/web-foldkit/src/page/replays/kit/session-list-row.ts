@@ -9,7 +9,7 @@ import {
 	SESSION_TAG_LABELS,
 	SESSION_TAG_ORDER,
 	SESSION_TAG_STYLES,
-} from "@maple/web/components/replays/session-tags"
+} from "../../../components/replays/session-tags"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"

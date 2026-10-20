@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import type { ReleaseHealth } from "@maple/web/components/releases/release-model"
+import type { ReleaseHealth } from "../../components/releases/release-model"
 import { AsyncData } from "foldkit"
 import { childAttributes, type Html, type HtmlBuilder } from "foldkit/html"
 import { badge } from "../../ui/display"

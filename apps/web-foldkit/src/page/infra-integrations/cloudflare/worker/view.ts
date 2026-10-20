@@ -1,4 +1,4 @@
-import { type WorkerHealth, workerHealth } from "@maple/web/components/infra/cloudflare/list-model"
+import { type WorkerHealth, workerHealth } from "../../../../components/infra/cloudflare/list-model"
 import {
 	DURABLE_OBJECT_COLORS,
 	durableObjectRows,
@@ -9,7 +9,7 @@ import {
 	percentileRows,
 	untracedExceptions,
 	workerOutcomeTotals,
-} from "@maple/web/components/infra/cloudflare/worker-signals"
+} from "../../../../components/infra/cloudflare/worker-signals"
 import {
 	EMPTY_VALUE,
 	formatErrorRate,

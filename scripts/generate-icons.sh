@@ -98,7 +98,7 @@ ico() { # ico <tile-fill> <mark-fill> <out>
 	magick "$TMP/16.png" "$TMP/32.png" "$out"
 }
 
-for app in landing web; do
+for app in landing web-foldkit; do
 	ico "$TILE" "$MARK" "apps/$app/public/favicon.ico"
 done
 
@@ -113,7 +113,7 @@ ico "$MARK" "$TILE" "apps/local-ui/public/favicon.ico"
 for size in 192 512; do
 	render "$TMP/square.svg" "$size" "$TMP/logo$size.png"
 	flatten "$TMP/logo$size.png" "$TMP/flat$size.png"
-	for app in landing web; do
+	for app in landing web-foldkit; do
 		cp "$TMP/flat$size.png" "apps/$app/public/logo$size.png"
 	done
 done

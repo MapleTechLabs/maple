@@ -8,7 +8,7 @@ import {
 	spanStartMs,
 	toolSpanIssuers,
 } from "@maple/agent-sessions"
-import { filterSpans } from "@maple/web/lib/agent-sessions/span-filters"
+import { filterSpans } from "../../../lib/agent-sessions/span-filters"
 import { Option, Schema } from "effect"
 import type { SessionData } from "./derive"
 import type { Model } from "./model"

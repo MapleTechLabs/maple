@@ -1,4 +1,4 @@
-import { VALUE_TONE } from "@maple/web/components/infra/severity-tokens"
+import { VALUE_TONE } from "../../../components/infra/severity-tokens"
 import { formatNumber } from "@maple/ui/lib/format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"

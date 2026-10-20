@@ -18,7 +18,7 @@ import {
 import { Schema } from "effect"
 import { QueryDraft } from "../../kit/query-builder/draft"
 
-// The widget editor's state (`QueryBuilderWidgetState`, apps/web/src/lib/query-builder/
+// The widget editor's state (`QueryBuilderWidgetState`, apps/web-foldkit/src/lib/query-builder/
 // widget-builder-shared.ts).
 
 export { QueryDraft } from "../../kit/query-builder/draft"

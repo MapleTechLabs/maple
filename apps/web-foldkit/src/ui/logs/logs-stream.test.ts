@@ -1,4 +1,4 @@
-import { LOGS_TABLE_BENCH_ROWS } from "@maple/web/lab/bench/logs-table-bench-fixture"
+import { LOGS_TABLE_BENCH_ROWS } from "../../lab/bench/logs-table-bench-fixture"
 import { Option } from "effect"
 import { describe, expect, test } from "vitest"
 import { logTimeFormat, toLogRowView } from "./log-row-view"

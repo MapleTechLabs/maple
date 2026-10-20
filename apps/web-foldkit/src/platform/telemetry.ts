@@ -1,6 +1,6 @@
 import { MapleFoldkit } from "@maple-dev/effect-sdk/foldkit"
 import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
-import { selfIngestUrl } from "@maple/web/lib/services/common/ingest-url"
+import { selfIngestUrl } from "../lib/services/common/ingest-url"
 import { Option } from "effect"
 import { fromString } from "foldkit/url"
 import { urlToAppRoute } from "../route"

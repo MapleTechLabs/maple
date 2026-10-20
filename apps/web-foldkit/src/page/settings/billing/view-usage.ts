@@ -1,7 +1,7 @@
 import { formatCurrency } from "@maple/domain/format"
 import type { BillingCustomer } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { capApplies, parseCapInput, spendLimitFor } from "@maple/web/lib/billing/controls"
+import { capApplies, parseCapInput, spendLimitFor } from "../../../lib/billing/controls"
 import {
 	FEATURE_COLORS,
 	type FeatureSpend,
@@ -10,8 +10,8 @@ import {
 	SPEND_FEATURES,
 	type SpendModel,
 	usageMeter,
-} from "@maple/web/lib/billing/spend"
-import { formatCount, formatUsage, formatUsageAgainst } from "@maple/web/lib/billing/usage"
+} from "../../../lib/billing/spend"
+import { formatCount, formatUsage, formatUsageAgainst } from "../../../lib/billing/usage"
 import { Option, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"

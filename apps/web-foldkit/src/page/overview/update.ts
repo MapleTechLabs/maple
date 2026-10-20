@@ -42,7 +42,7 @@ import {
 } from "./derive"
 import { Message, type RequestMode, type RetryTarget } from "./message"
 import { IncidentsData, type Model, RulesData } from "./model"
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { storageKeyOf } from "../onboarding/quick-start-state"
 import type * as SetupChecklist from "./setup-checklist"
 import * as Setup from "./setup-checklist-update"

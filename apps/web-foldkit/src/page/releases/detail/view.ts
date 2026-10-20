@@ -1,6 +1,6 @@
 import type { ErrorIssueDocument } from "@maple/domain/http"
-import { attributeIssues, previousSha, shortReleaseLabel } from "@maple/web/components/releases/release-model"
-import { errorIssueFromV2 } from "@maple/web/lib/services/error-issues"
+import { attributeIssues, previousSha, shortReleaseLabel } from "../../../components/releases/release-model"
+import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

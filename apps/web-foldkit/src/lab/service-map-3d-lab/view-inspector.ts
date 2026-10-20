@@ -1,6 +1,6 @@
 import { formatErrorRate } from "@maple/ui/lib/format"
-import { formatLatency, formatRate, health } from "@maple/web/components/service-map/three/spatial-layout"
-import type { Node3D } from "@maple/web/components/service-map/three/types"
+import { formatLatency, formatRate, health } from "../../components/service-map/three/spatial-layout"
+import type { Node3D } from "../../components/service-map/three/types"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { machineBadge } from "../../page/service-map/badge"
 import { button } from "../../ui/button"

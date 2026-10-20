@@ -1,4 +1,4 @@
-import { ANALYTICS_METRICS, findMetric } from "@maple/web/components/analytics/metrics"
+import { ANALYTICS_METRICS, findMetric } from "../../components/analytics/metrics"
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"

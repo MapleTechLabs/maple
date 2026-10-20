@@ -15,7 +15,7 @@ import type { ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip } from "./plot-constants"
 
-// Port of `IssueOccurrenceChart`'s `definition` memo (apps/web/src/components/errors/
+// Port of `IssueOccurrenceChart`'s `definition` memo (apps/web-foldkit/src/components/errors/
 // issue-occurrence-chart.tsx). TODO(tooltip): the cursor tooltip body (`PlotTooltipBody`).
 
 type OccurrencesSpec = Extract<ChartSpec, { readonly _tag: "Occurrences" }>

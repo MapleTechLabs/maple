@@ -10,7 +10,7 @@ import {
 	type ReleaseGroup,
 	type ReleaseIssueCounts,
 	type ReleaseServiceImpact,
-} from "@maple/web/components/releases/release-model"
+} from "../../../components/releases/release-model"
 import { tableCellStyles } from "@maple/ui/styles/ui/table"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"

@@ -1,4 +1,4 @@
-import { gcpMessageParts } from "@maple/web/components/integrations/gcp-connector-state"
+import { gcpMessageParts } from "../../../components/integrations/gcp-connector-state"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"

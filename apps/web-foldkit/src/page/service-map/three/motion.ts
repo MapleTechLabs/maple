@@ -1,5 +1,5 @@
 // copied: apps/web/src/components/service-map/three/factory-motion.ts (R3F JSX as three construction).
-import type { FactoryLink } from "@maple/web/components/service-map/three/factory-routing"
+import type { FactoryLink } from "../../../components/service-map/three/factory-routing"
 import * as THREE from "three"
 import type { Running, Scope } from "./kit"
 

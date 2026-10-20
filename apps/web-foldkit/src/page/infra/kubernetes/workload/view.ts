@@ -1,4 +1,4 @@
-import { severityLevel } from "@maple/web/components/infra/format"
+import { severityLevel } from "../../../../components/infra/format"
 import { countLabel, EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"

@@ -5,8 +5,8 @@ import {
 	type AiReferralSummary,
 	productForCrawler,
 	purposeForCrawler,
-} from "@maple/web/components/analytics/ai/ai-traffic-model"
-import { SPARK_COLOR } from "@maple/web/components/infra/severity-tokens"
+} from "../../components/analytics/ai/ai-traffic-model"
+import { SPARK_COLOR } from "../../components/infra/severity-tokens"
 import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { formatRelativeTime, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"

@@ -1,4 +1,4 @@
-import type { AutoContext } from "@maple/web/components/chat/auto-contexts"
+import type { AutoContext } from "../../components/chat/auto-contexts"
 import { cn } from "@maple/ui/lib/utils"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"

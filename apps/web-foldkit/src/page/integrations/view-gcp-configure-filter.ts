@@ -1,6 +1,6 @@
 import type { GcpLogRuntime } from "@maple/domain/primitives"
 import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
-import { GCP_LOG_RUNTIMES, gcpLogFilterChoice } from "@maple/web/components/integrations/gcp-connector-state"
+import { GCP_LOG_RUNTIMES, gcpLogFilterChoice } from "../../components/integrations/gcp-connector-state"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"

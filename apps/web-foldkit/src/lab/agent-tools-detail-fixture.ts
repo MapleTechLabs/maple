@@ -1,4 +1,4 @@
-// copied: apps/web/src/lab/agent-tools-fixture.ts, the detail half (`SESSION_SEEDS`, the error
+// copied: apps/web-foldkit/src/lab/agent-tools-fixture.ts, the detail half (`SESSION_SEEDS`, the error
 // groups, `buildToolErrorDetailFixture`, `buildToolDetailFixture`); apps/web's view types are dropped.
 
 import {

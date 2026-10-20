@@ -5,12 +5,12 @@ import {
 	gcpConnectionState,
 	gcpScopeLabel,
 	gcpWorstState,
-} from "@maple/web/components/integrations/gcp-connector-state"
+} from "../../components/integrations/gcp-connector-state"
 import { Array, DateTime, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Keyed } from "../../data/keyed"
 import { CATALOG, chatIntegrationId, type IntegrationId } from "./catalog"
-import { hasBringYourOwnCloudAddOn } from "@maple/web/lib/billing/plan-gating"
+import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
 import type { Visibility } from "../settings/nav"
 import type { Model, Statuses } from "./model"
 

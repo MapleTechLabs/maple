@@ -10,7 +10,7 @@ import {
 	spanStartMs,
 	spanTokenBuckets,
 } from "@maple/agent-sessions"
-import { filterSpans, isDelegation, shortTarget } from "@maple/web/lib/agent-sessions/span-filters"
+import { filterSpans, isDelegation, shortTarget } from "../../../lib/agent-sessions/span-filters"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 
 // copied: the grid layout of session-flow.tsx (`layoutLanes`, `flowSpans`, `assignColumns`, `nodeSubtitle`).

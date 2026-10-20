@@ -12,7 +12,7 @@ import {
 	schemaApplyPlan,
 	type SchemaDiffStatus,
 	schemaDiffCounts,
-} from "@maple/web/components/settings/schema-apply-plan"
+} from "../../../components/settings/schema-apply-plan"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

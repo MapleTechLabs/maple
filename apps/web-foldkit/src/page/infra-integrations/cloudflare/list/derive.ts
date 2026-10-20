@@ -2,13 +2,13 @@ import {
 	type CloudflareAccount,
 	cloudflareAccounts,
 	zoneAccountIds,
-} from "@maple/web/components/infra/cloudflare/accounts"
+} from "../../../../components/infra/cloudflare/accounts"
 import {
 	CLOUDFLARE_VIEWS,
 	type CloudflareView,
 	mergeWorkerRows,
 	type WorkerListRow,
-} from "@maple/web/components/infra/cloudflare/list-model"
+} from "../../../../components/infra/cloudflare/list-model"
 import { AsyncData } from "foldkit"
 import type { PlatformResources, QueueRow, Usage, ZoneBucket, ZoneRow } from "../data"
 import { ingestPhaseOf } from "../ingest"

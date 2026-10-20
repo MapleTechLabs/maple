@@ -1,5 +1,5 @@
-import { deriveHostStatus, type HostStatus } from "@maple/web/components/infra/format"
-import { STATUS_DOT, STATUS_RING, statusLabel } from "@maple/web/components/infra/severity-tokens"
+import { deriveHostStatus, type HostStatus } from "../../../components/infra/format"
+import { STATUS_DOT, STATUS_RING, statusLabel } from "../../../components/infra/severity-tokens"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"

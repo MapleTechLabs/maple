@@ -1,4 +1,4 @@
-import { CLIENT_ERROR_NOTABLE } from "@maple/web/components/infra/cloudflare/list-model"
+import { CLIENT_ERROR_NOTABLE } from "../../../../components/infra/cloudflare/list-model"
 import {
 	cacheHitRows,
 	errorShareRows,
@@ -6,7 +6,7 @@ import {
 	requestRows,
 	type ZoneSignalTotals,
 	zoneSignalTotals,
-} from "@maple/web/components/infra/cloudflare/zone-signals"
+} from "../../../../components/infra/cloudflare/zone-signals"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import {
 	EMPTY_VALUE,

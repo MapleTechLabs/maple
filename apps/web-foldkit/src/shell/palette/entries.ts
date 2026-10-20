@@ -1,5 +1,5 @@
 import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { Array as Arr, Option, Schema } from "effect"
 import { DashboardId } from "@maple/domain/http"
 import { CATALOG } from "../../page/integrations/catalog"

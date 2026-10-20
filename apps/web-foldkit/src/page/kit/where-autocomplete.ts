@@ -2,7 +2,7 @@ import {
 	applyWhereClauseSuggestion,
 	getWhereClauseAutocomplete,
 	type WhereClauseAutocompleteResult,
-} from "@maple/web/lib/query-builder/where-clause-autocomplete"
+} from "../../lib/query-builder/where-clause-autocomplete"
 import type { QueryBuilderDataSource } from "@maple/query-model"
 import { Effect, Option, Schema, Stream } from "effect"
 import { Dom } from "foldkit"

@@ -1,5 +1,5 @@
-import { ENDPOINTS_LIMIT } from "@maple/web/components/services/service-endpoints"
-import { buildServiceOpenIssuesQuery } from "@maple/web/lib/services/error-issues"
+import { ENDPOINTS_LIMIT } from "../../../components/services/service-endpoints"
+import { buildServiceOpenIssuesQuery } from "../../../lib/services/error-issues"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { Option, type Result } from "effect"
 import { AsyncData, Command } from "foldkit"

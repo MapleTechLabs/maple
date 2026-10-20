@@ -1,4 +1,4 @@
-import { REFRESH_INTERVAL_OPTIONS } from "@maple/web/lib/dashboard-controls/search-params"
+import { REFRESH_INTERVAL_OPTIONS } from "../../lib/dashboard-controls/search-params"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"

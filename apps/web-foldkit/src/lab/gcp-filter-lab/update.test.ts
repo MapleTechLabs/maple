@@ -1,4 +1,4 @@
-import { gcpLogFilterChoice } from "@maple/web/components/integrations/gcp-connector-state"
+import { gcpLogFilterChoice } from "../../components/integrations/gcp-connector-state"
 import { describe, expect, test } from "vitest"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
 import { Message, SCENARIOS } from "./model"

@@ -1,4 +1,4 @@
-import { formatValueWithUnit } from "@maple/web/components/infra/chart-units"
+import { formatValueWithUnit } from "../../../components/infra/chart-units"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../../charts/chart"

@@ -1,5 +1,5 @@
 import type { AiTriageResult } from "@maple/domain/http"
-import { parseDiagnosisMarker } from "@maple/web/components/chat/diagnosis-marker"
+import { parseDiagnosisMarker } from "../../../components/chat/diagnosis-marker"
 import { cn } from "@maple/ui/lib/utils"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

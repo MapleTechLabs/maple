@@ -6,7 +6,7 @@ import {
 	healthRank,
 	type ServiceHealth,
 	type ServiceHealthCause,
-} from "@maple/web/components/dashboard/service-health"
+} from "../../components/dashboard/service-health"
 import { DateTime, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { FacetsHint, HealthSnapshot, Incident, Model } from "./model"

@@ -1,4 +1,4 @@
-import type { AccountTone, CloudflareAccount } from "@maple/web/components/infra/cloudflare/accounts"
+import type { AccountTone, CloudflareAccount } from "../../../../components/infra/cloudflare/accounts"
 import { formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"

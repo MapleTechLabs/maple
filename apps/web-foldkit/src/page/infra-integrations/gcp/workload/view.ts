@@ -1,15 +1,15 @@
 import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { formatWarehouseDateTime } from "@maple/query-engine/datetime"
-import { GCP_GKE_NODE_CHARTS, GCP_INFRA_CHARTS } from "@maple/web/components/infra/gcp/charts"
-import { gcpSqlEngine, gcpSqlSize } from "@maple/web/components/infra/gcp/cloud-sql-signals"
-import { gcpConsoleLinks, gcpExplorerWhere } from "@maple/web/components/infra/gcp/inventory"
+import { GCP_GKE_NODE_CHARTS, GCP_INFRA_CHARTS } from "../../../../components/infra/gcp/charts"
+import { gcpSqlEngine, gcpSqlSize } from "../../../../components/infra/gcp/cloud-sql-signals"
+import { gcpConsoleLinks, gcpExplorerWhere } from "../../../../components/infra/gcp/inventory"
 import {
 	gcpWorkloadLocation,
 	gcpWorkloadName,
 	gcpWorkloadNoun,
 	gcpWorkloadProject,
-} from "@maple/web/components/infra/gcp/tabs"
-import type { GcpTraceGap } from "@maple/web/components/infra/gcp/workload-signals"
+} from "../../../../components/infra/gcp/tabs"
+import type { GcpTraceGap } from "../../../../components/infra/gcp/workload-signals"
 import type { ErrorRateLevel } from "@maple/ui/lib/error-rate"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"

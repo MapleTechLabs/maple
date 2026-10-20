@@ -1,5 +1,5 @@
 import type { ErrorIssueDocument } from "@maple/domain/http"
-import { agentPromptFromIssue } from "@maple/web/components/errors/agent-debug-prompt"
+import { agentPromptFromIssue } from "../../../components/errors/agent-debug-prompt"
 import { AlertRuleId } from "@maple/domain/primitives"
 import { Option, Schema } from "effect"
 import { Command, type Update } from "foldkit"

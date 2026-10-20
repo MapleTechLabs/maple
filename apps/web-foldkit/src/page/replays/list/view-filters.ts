@@ -4,7 +4,7 @@ import {
 	SESSION_TAG_DOTS,
 	SESSION_TAG_LABELS,
 	SESSION_TAG_ORDER,
-} from "@maple/web/components/replays/session-tags"
+} from "../../../components/replays/session-tags"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../ui/eyebrow"

@@ -1,5 +1,5 @@
-import { formatSeconds } from "@maple/web/components/infra/chart-units"
-import { severityLevel } from "@maple/web/components/infra/format"
+import { formatSeconds } from "../../../../components/infra/chart-units"
+import { severityLevel } from "../../../../components/infra/format"
 import { formatBytes, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

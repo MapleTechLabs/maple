@@ -1,5 +1,5 @@
 import { initWhereFields } from "../../kit/where-field"
-import { pickDashboardControlParams } from "@maple/web/lib/dashboard-controls/search-params"
+import { pickDashboardControlParams } from "../../../lib/dashboard-controls/search-params"
 import {
 	computeBucketSecondsForWidthRange,
 	formatBucketSecondsShort,

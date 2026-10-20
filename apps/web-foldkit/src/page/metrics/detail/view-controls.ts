@@ -3,7 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import {
 	tokenizeWhereClause,
 	WHERE_CLAUSE_TOKEN_COLOR,
-} from "@maple/web/lib/query-builder/where-clause-highlight"
+} from "../../../lib/query-builder/where-clause-highlight"
 import { Option } from "effect"
 import { AsyncData as FoldkitAsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

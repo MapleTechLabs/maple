@@ -4,7 +4,7 @@ import {
 	type MetricsAuth,
 	metricsHealthState,
 	type SetupStep,
-} from "@maple/web/components/integrations/planetscale-setup-steps"
+} from "../../components/integrations/planetscale-setup-steps"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"

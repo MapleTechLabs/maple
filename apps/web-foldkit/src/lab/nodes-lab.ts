@@ -1,4 +1,4 @@
-import { buildNodeCatalogue } from "@maple/web/lab/node-catalogue/node-catalogue"
+import { buildNodeCatalogue } from "./node-catalogue/node-catalogue"
 import { Clock, Effect, Option, Schema } from "effect"
 import { Command, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

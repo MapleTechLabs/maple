@@ -1,4 +1,4 @@
-import { derivePlanetScaleSetup } from "@maple/web/components/integrations/planetscale-setup-steps"
+import { derivePlanetScaleSetup } from "../../../../components/integrations/planetscale-setup-steps"
 import { countLabel } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -55,7 +55,7 @@ import {
 import { activitySection, eventTriggerId, insightTriggerId, topQueries } from "./view-sections"
 import { sectionHeading } from "../../../kit/section-heading"
 import { planetscaleSidebar } from "./view-sidebar"
-import { absenceReason } from "@maple/web/components/infra/planetscale/branch-selection"
+import { absenceReason } from "../../../../components/infra/planetscale/branch-selection"
 
 // `PlanetScaleDatabasePage` (apps/web/src/routes/infra/planetscale/$dbName.tsx).
 // TODO(alert-menu): "Alert on this" renders its trigger; the suggestion menu and its prefilled

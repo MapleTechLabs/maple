@@ -1,4 +1,4 @@
-import { autoContextDisplay, autoContextLabel, type AutoContext } from "@maple/web/components/chat/auto-contexts"
+import { autoContextDisplay, autoContextLabel, type AutoContext } from "../../../components/chat/auto-contexts"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { alertDescriptionStyles } from "@maple/ui/styles/ui/alert"

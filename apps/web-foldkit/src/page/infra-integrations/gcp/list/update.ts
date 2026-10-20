@@ -1,5 +1,5 @@
-import { GCP_CLOUD_SQL_INVENTORY_QUERY } from "@maple/web/components/infra/gcp/inventory"
-import { gcpSparklineServices } from "@maple/web/components/infra/gcp/list-model"
+import { GCP_CLOUD_SQL_INVENTORY_QUERY } from "../../../../components/infra/gcp/inventory"
+import { gcpSparklineServices } from "../../../../components/infra/gcp/list-model"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "../../../../charts/chart-runtime"
 import * as Keyed from "../../../../data/keyed"

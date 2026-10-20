@@ -1,5 +1,5 @@
-import { formatWholePercent } from "@maple/web/components/infra/format"
-import { formatRestarts, podKey, type PodRestartSummary, restartTone } from "@maple/web/components/infra/pod-restarts"
+import { formatWholePercent } from "../../../components/infra/format"
+import { formatRestarts, podKey, type PodRestartSummary, restartTone } from "../../../components/infra/pod-restarts"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"

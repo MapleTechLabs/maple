@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import type { GcpManualStep, GcpStepField } from "@maple/web/components/integrations/gcp-setup-steps"
+import type { GcpManualStep, GcpStepField } from "../../components/integrations/gcp-setup-steps"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"
 import type { ConfigureModel } from "./gcp-configure-schema"

@@ -1,10 +1,10 @@
-import { makeOnboardingTeamActions } from "@maple/web/components/onboarding/team-actions"
+import { makeOnboardingTeamActions } from "../../components/onboarding/team-actions"
 import { Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { clerkTeamOrganization } from "../../platform/clerk"
 
-// `StepTeamConnected` / `StepTeam` (apps/web/src/components/onboarding): rename the workspace and
+// `StepTeamConnected` / `StepTeam` (apps/web-foldkit/src/components/onboarding): rename the workspace and
 // invite teammates through the Clerk organization, or the self-hosted notice.
 
 const Operation = Schema.Literals(["rename", "invite"])

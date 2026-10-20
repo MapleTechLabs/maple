@@ -1,5 +1,5 @@
 import { isSessionLive, sessionDurationMs } from "@maple/ui/lib/replay-format"
-import { buildTimeline, parseChTimestampMs, type Timeline } from "@maple/web/components/replays/replay-timeline"
+import { buildTimeline, parseChTimestampMs, type Timeline } from "../../../components/replays/replay-timeline"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import { classifyUnplayable } from "../kit/replay-meta"

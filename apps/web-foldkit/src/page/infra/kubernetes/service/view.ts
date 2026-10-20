@@ -1,5 +1,5 @@
-import { deriveLensVerdict, lensHeadline, lensSubhead } from "@maple/web/components/infra/service-lens/service-lens-summary"
-import { unifiedBucketDomain } from "@maple/web/components/infra/service-lens/bucket-domain"
+import { deriveLensVerdict, lensHeadline, lensSubhead } from "../../../../components/infra/service-lens/service-lens-summary"
+import { unifiedBucketDomain } from "../../../../components/infra/service-lens/bucket-domain"
 import { countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"

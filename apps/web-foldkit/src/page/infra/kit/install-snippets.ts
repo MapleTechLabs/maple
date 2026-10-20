@@ -1,4 +1,4 @@
-import { ingestUrl } from "@maple/web/lib/services/common/ingest-url"
+import { ingestUrl } from "../../../lib/services/common/ingest-url"
 
 // copied: the snippet builders of install-modal.tsx (a React module), verbatim.
 

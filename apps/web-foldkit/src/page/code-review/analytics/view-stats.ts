@@ -1,5 +1,5 @@
 import type { CodeReviewTotals } from "@maple/domain/http"
-import { formatCount, formatSpan } from "@maple/web/components/code-review/code-review-format"
+import { formatCount, formatSpan } from "../../../components/code-review/code-review-format"
 import { countLabel, EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { delta, relativeChange } from "../../../ui/delta"

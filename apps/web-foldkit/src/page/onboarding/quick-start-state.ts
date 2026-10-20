@@ -1,5 +1,5 @@
-import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "@maple/web/lib/onboarding-intent"
-import { ONBOARDING_ROLE_IDS, type OnboardingRole } from "@maple/web/lib/onboarding-role"
+import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "../../lib/onboarding-intent"
+import { ONBOARDING_ROLE_IDS, type OnboardingRole } from "../../lib/onboarding-role"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema, SchemaGetter } from "effect"
 

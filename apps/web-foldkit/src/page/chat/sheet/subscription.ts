@@ -1,5 +1,5 @@
 import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
-import { captureChatReferrer } from "@maple/web/components/chat/auto-contexts"
+import { captureChatReferrer } from "../../../components/chat/auto-contexts"
 import { Effect, Option, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import type { Resources } from "../../../platform/resources"

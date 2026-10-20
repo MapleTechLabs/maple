@@ -1,6 +1,6 @@
 import { V2ChatDestination } from "@maple/domain/http/v2"
 import { ChatWorkspaceId } from "@maple/domain/primitives"
-import { channelLabel } from "@maple/web/components/alerts/channel-search"
+import { channelLabel } from "../../../components/alerts/channel-search"
 import { Effect, Option, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"

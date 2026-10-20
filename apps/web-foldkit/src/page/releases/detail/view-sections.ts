@@ -16,7 +16,7 @@ import {
 	shortReleaseLabel,
 	type ReleaseGroup,
 	type ReleaseServiceImpact,
-} from "@maple/web/components/releases/release-model"
+} from "../../../components/releases/release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { badge } from "../../../ui/display"

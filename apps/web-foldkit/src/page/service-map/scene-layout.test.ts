@@ -1,5 +1,5 @@
-import { decorateRoutes, factoryRoutes } from "@maple/web/components/service-map/three/factory-routing"
-import type { Edge3D, Node3D, Topology3D } from "@maple/web/components/service-map/three/types"
+import { decorateRoutes, factoryRoutes } from "../../components/service-map/three/factory-routing"
+import type { Edge3D, Node3D, Topology3D } from "../../components/service-map/three/types"
 import { describe, expect, test } from "vitest"
 import { machineBadge } from "./badge"
 import { layoutTopologyOf, linkLabels, spatialLayoutOf, topologyKeyOf } from "./scene-layout"

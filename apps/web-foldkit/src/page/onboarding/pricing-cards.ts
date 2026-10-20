@@ -3,7 +3,7 @@ import {
 	buildCheckoutSuccessUrl,
 	CHECKOUT_CONFIRM_POLL_MS,
 	CHECKOUT_CONFIRM_TIMEOUT_MS,
-} from "@maple/web/lib/billing/checkout-return"
+} from "../../lib/billing/checkout-return"
 import { displayError } from "@maple/web-data/lib/error-messages"
 import { Duration, Effect, Schema } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"

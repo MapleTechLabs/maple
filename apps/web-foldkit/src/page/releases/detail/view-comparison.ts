@@ -2,7 +2,7 @@ import {
 	MIN_COMPARE_SPANS,
 	type ReleaseServiceImpact,
 	shortReleaseLabel,
-} from "@maple/web/components/releases/release-model"
+} from "../../../components/releases/release-model"
 import {
 	countLabel,
 	EMPTY_VALUE,

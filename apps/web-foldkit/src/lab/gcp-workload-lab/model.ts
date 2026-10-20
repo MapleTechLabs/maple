@@ -1,4 +1,4 @@
-import { PAGES } from "@maple/web/lab/gcp-workload-fixture"
+import { PAGES } from "../gcp-workload-fixture"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Workload from "../../page/infra-integrations/gcp/workload/model"

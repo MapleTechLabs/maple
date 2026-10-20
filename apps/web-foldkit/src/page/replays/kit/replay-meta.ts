@@ -1,4 +1,4 @@
-import { videoSegmentPayload } from "@maple/web/components/replays/engine/video-engine"
+import { videoSegmentPayload } from "../../../components/replays/engine/video-engine"
 import { Schema } from "effect"
 
 // copied: `deriveMeta`, `classifyUnplayable` and the marker maps of replay-player-context.tsx and

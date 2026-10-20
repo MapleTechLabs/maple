@@ -1,6 +1,6 @@
 import * as Markdown from "@foldkit/markdown"
 import { type ChartSpec, normalizeUnit, parseChartSpec } from "@maple/domain/chat-chart-spec"
-import { classifyCell, columnRole, type CellValue } from "@maple/web/components/ai-elements/table-cell-value"
+import { classifyCell, columnRole, type CellValue } from "../../../components/ai-elements/table-cell-value"
 import { httpStatusTone } from "@maple/ui/lib/http"
 import { LATENCY_TEXT_TONE, latencyLevel } from "@maple/ui/lib/latency-tone"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"

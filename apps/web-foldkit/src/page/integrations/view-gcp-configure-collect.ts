@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { type GcpDraftEffect, gcpCollectLock } from "@maple/web/components/integrations/gcp-connector-state"
+import { type GcpDraftEffect, gcpCollectLock } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { labelIdOf } from "../../ui/choice"
 import { icon } from "../../ui/icon"

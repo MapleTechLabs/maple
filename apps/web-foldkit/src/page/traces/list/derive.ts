@@ -1,4 +1,4 @@
-import { attributeFilterOperator, formatAttributeClause } from "@maple/web/lib/traces/advanced-filter-sync"
+import { attributeFilterOperator, formatAttributeClause } from "../../../lib/traces/advanced-filter-sync"
 import type { TracesSearch } from "../../../route/search"
 import type { Facet } from "./message"
 

@@ -1,5 +1,5 @@
 import { rawSqlDisplayTypeFor, widgetTypeByVisualization } from "@maple/domain/http"
-import { RAW_SQL_TEMPLATES } from "@maple/web/lib/raw-sql/templates"
+import { RAW_SQL_TEMPLATES } from "../../../lib/raw-sql/templates"
 import { dataSourceRawSql, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
 import { Schema } from "effect"
 import type { EditorState } from "./editor-state"

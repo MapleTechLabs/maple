@@ -3,7 +3,7 @@ import { funnelDropoffSampleData, pathsSampleData } from "@maple/ui/components/c
 import { HEATMAP_COLOR_SCALES } from "@maple/domain/http"
 import { CHART_GALLERY, sampleDataOf } from "../../page/dashboards/kit/chart-registry"
 
-// Copied from apps/web/src/lab/widget-lab/scenarios.ts; the registry is `CHART_GALLERY` here.
+// Copied from apps/web-foldkit/src/lab/widget-lab/scenarios.ts; the registry is `CHART_GALLERY` here.
 
 type WidgetDisplayConfig = typeof WidgetDisplayConfigSchema.Type
 

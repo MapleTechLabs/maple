@@ -1,4 +1,4 @@
-import { shortTarget } from "@maple/web/lib/agent-sessions/span-filters"
+import { shortTarget } from "../../../lib/agent-sessions/span-filters"
 import { formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { getSmoothStepPath, Position } from "@xyflow/system"

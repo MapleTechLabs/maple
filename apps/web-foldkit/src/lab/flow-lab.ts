@@ -1,4 +1,4 @@
-import { FLOW_LAB_TRACE } from "@maple/web/lab/flow-fixture"
+import { FLOW_LAB_TRACE } from "./flow-fixture"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { dashboardPage } from "../page/kit/dashboard-page"

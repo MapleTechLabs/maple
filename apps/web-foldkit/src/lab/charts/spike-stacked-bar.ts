@@ -6,7 +6,7 @@ import {
 	STACKED_BAR_SPIKE_ROWS,
 	stackedBarAxisContext,
 	type StackedBarSpikeRow,
-} from "@maple/web/lab/charts/timeseries-data"
+} from "./timeseries-data"
 import { barY, type ChartPoint, type ChartValue, defineChart, stack } from "@tanstack/charts"
 import { scaleBand } from "@tanstack/charts-scales/band"
 import { scaleLinear } from "@tanstack/charts-scales/linear"

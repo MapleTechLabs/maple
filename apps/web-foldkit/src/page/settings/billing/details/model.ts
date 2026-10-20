@@ -6,7 +6,7 @@ import * as Combobox from "../../../../ui/combobox"
 import * as Dialog from "../../../../ui/dialog"
 import * as Select from "../../../../ui/select"
 
-// `BillingDetailsDialog` and `BillingTaxIdsEditor` (apps/web/src/components/settings/): company
+// `BillingDetailsDialog` and `BillingTaxIdsEditor` (apps/web-foldkit/src/components/settings/): company
 // name and address saved together, tax IDs saved one by one as they are added or removed.
 
 export const AddressField = Schema.Literals(["name", "line1", "line2", "city", "state", "postalCode"])

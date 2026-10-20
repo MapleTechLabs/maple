@@ -4,7 +4,7 @@ import {
 	getLapsedPlan,
 	getPastDueSubscription,
 	getQuotaStatus,
-} from "@maple/web/lib/billing/plan-gating"
+} from "../lib/billing/plan-gating"
 import { Effect, Option } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

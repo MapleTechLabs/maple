@@ -1,5 +1,5 @@
 // copied: apps/web/src/components/service-map/three/maple-props.tsx (R3F JSX as three construction).
-import type { MachineKind } from "@maple/web/components/service-map/three/palette"
+import type { MachineKind } from "../../../components/service-map/three/palette"
 import { type Child, inkLines, type Scope, type Vec3 } from "./kit"
 import { inkParts, type MapleFinish, type Part, range, variant } from "./props-kit"
 

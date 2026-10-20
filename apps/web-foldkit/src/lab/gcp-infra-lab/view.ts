@@ -9,8 +9,8 @@ import {
 	START,
 	VIEW_LABEL,
 	VIEWS,
-} from "@maple/web/lab/gcp-infra-fixture"
-import { gcpRequestedView, gcpSparks } from "@maple/web/components/infra/gcp/list-model"
+} from "../gcp-infra-fixture"
+import { gcpRequestedView, gcpSparks } from "../../components/infra/gcp/list-model"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../charts/theme-colors"

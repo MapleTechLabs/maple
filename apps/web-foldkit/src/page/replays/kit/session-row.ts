@@ -1,6 +1,6 @@
 import { SessionTag } from "@maple/domain/query-engine"
 import { isSessionLive } from "@maple/ui/lib/replay-format"
-import { noiseTierOf, SESSION_TAG_LABELS } from "@maple/web/components/replays/session-tags"
+import { noiseTierOf, SESSION_TAG_LABELS } from "../../../components/replays/session-tags"
 import { Schema } from "effect"
 
 /** `SessionRow` (components/replays/sessions-list.tsx), the list's view of `replayListItemFromV2`. */

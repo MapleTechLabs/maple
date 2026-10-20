@@ -2,7 +2,7 @@ import {
 	CLOUDFLARE_VIEWS,
 	WORKER_SCOPES,
 	ZONE_SCOPES,
-} from "@maple/web/components/infra/cloudflare/list-model"
+} from "../../../../components/infra/cloudflare/list-model"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "../../../../charts/chart"

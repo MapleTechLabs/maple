@@ -1,4 +1,4 @@
-import type { SetupStep } from "@maple/web/components/integrations/planetscale-setup-steps"
+import type { SetupStep } from "../../../components/integrations/planetscale-setup-steps"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"

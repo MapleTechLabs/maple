@@ -1,6 +1,6 @@
 import type { BillingCustomer } from "@maple/domain/http"
-import { hasLapsedPlan } from "@maple/web/lib/billing/plan-gating"
-import { TRIAL_DURATION_DAYS } from "@maple/web/lib/billing/plans"
+import { hasLapsedPlan } from "../../lib/billing/plan-gating"
+import { TRIAL_DURATION_DAYS } from "../../lib/billing/plans"
 import { Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

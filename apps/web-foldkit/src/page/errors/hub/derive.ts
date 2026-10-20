@@ -1,12 +1,12 @@
 import type { ErrorIssueDocument, IssueKind, WorkflowState } from "@maple/domain/http"
 import { ERROR_ISSUE_SEARCH_MAX_LENGTH } from "@maple/domain/http/v2"
-import { hubViewOf, type HubSort, type HubView, type SeverityFilter } from "@maple/web/lib/errors/hub-params"
+import { hubViewOf, type HubSort, type HubView, type SeverityFilter } from "../../../lib/errors/hub-params"
 import {
 	buildErrorSignals,
 	type ErrorSignal,
 	indexInvestigationsByIssue,
-} from "@maple/web/lib/models/error-signal"
-import { errorIssueFromV2 } from "@maple/web/lib/services/error-issues"
+} from "../../../lib/models/error-signal"
+import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { DateTime, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"

@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
-import { apiPublicUrl } from "@maple/web/lib/services/common/api-base-url"
+import { apiPublicUrl } from "../../../lib/services/common/api-base-url"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyableField } from "../../../ui/copyable-field"
 import { badge } from "../../../ui/display"

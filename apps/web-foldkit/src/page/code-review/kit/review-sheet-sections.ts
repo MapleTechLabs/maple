@@ -14,7 +14,7 @@ import {
 	SEVERITY_LABELS,
 	SEVERITY_TONE,
 	SKIP_LABELS,
-} from "@maple/web/components/code-review/code-review-format"
+} from "../../../components/code-review/code-review-format"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"

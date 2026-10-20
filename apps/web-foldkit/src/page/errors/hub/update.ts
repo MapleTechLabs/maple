@@ -1,6 +1,6 @@
-import { HUB_SORTS, HUB_VIEWS, SEVERITY_FILTERS } from "@maple/web/lib/errors/hub-params"
+import { HUB_SORTS, HUB_VIEWS, SEVERITY_FILTERS } from "../../../lib/errors/hub-params"
 import type { IssueKind } from "@maple/domain/http"
-import { sparkFingerprintHashes } from "@maple/web/lib/models/error-signal"
+import { sparkFingerprintHashes } from "../../../lib/models/error-signal"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"

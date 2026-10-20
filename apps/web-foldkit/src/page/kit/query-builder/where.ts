@@ -1,5 +1,5 @@
 import { toQueryBuilderMetricType } from "@maple/query-model"
-import type { WhereClauseAutocompleteValues } from "@maple/web/lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
 import { Command } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { WhereFieldMessage } from "../where-field"

@@ -1,4 +1,4 @@
-import { getActiveInfraCorrelations, type InfraCorrelation } from "@maple/web/components/infra/infra-correlations"
+import { getActiveInfraCorrelations, type InfraCorrelation } from "../../../components/infra/infra-correlations"
 import { Command } from "foldkit"
 import * as Chart from "../../../charts/chart"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"

@@ -13,8 +13,8 @@ import {
 	type ZoneScope,
 	zoneHealth,
 	zoneInScope,
-} from "@maple/web/components/infra/cloudflare/list-model"
-import type { CloudflareAccount } from "@maple/web/components/infra/cloudflare/accounts"
+} from "../../../../components/infra/cloudflare/list-model"
+import type { CloudflareAccount } from "../../../../components/infra/cloudflare/accounts"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"

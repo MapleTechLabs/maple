@@ -2,7 +2,7 @@ import { MAPLE_REGION_LABELS, MapleRegion } from "@maple/domain/organization-reg
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { cn } from "@maple/ui/lib/utils"
 import { spinnerStyles } from "@maple/ui/styles/ui/spinner"
-import { currentRegion, hasMultipleRegions } from "@maple/web/lib/region"
+import { currentRegion, hasMultipleRegions } from "../lib/region"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"

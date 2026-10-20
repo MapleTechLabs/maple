@@ -2,7 +2,7 @@ import {
 	type CloudflareIngestPhase,
 	cloudflareIngestPhase,
 	describeCloudflareIngestPhase,
-} from "@maple/web/components/infra/cloudflare/ingest-phase"
+} from "../../../components/infra/cloudflare/ingest-phase"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"

@@ -1,4 +1,4 @@
-import { readChatReferrer } from "@maple/web/components/chat/auto-contexts"
+import { readChatReferrer } from "../../../components/chat/auto-contexts"
 import { Clock, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { writeClipboardFallback } from "@maple/ui/lib/clipboard"

@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { isExcluded } from "@maple/web/components/infra/planetscale/branch-selection"
+import { isExcluded } from "../../components/infra/planetscale/branch-selection"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
