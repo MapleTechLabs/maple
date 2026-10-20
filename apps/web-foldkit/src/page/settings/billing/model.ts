@@ -17,9 +17,8 @@ import { LoadFailure } from "../../../data/load-failure"
 import * as Dialog from "../../../ui/dialog"
 import * as Details from "./details/model"
 
-// The Billing tab (`BillingSection`, apps/web/src/components/settings/billing-section.tsx):
-// this cycle's spend, usage and caps, the plan, invoices and billing details. The customer is
-// the settings page's (one `billingCustomerAtom`).
+// The Billing tab: this cycle's spend, usage and caps, the plan, invoices and billing details. The customer
+// is the settings page's (one `billingCustomerAtom`).
 
 export const SpendFeatureId = Schema.Literals(["logs", "traces", "metrics", "browser_sessions", "product_events"])
 export type SpendFeatureId = typeof SpendFeatureId.Type

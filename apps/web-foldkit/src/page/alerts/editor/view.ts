@@ -26,8 +26,7 @@ import { querySection } from "./view-query"
 import { RULE_FORM_MAX_WIDTH, ruleStep } from "./view-step"
 import { templatesOverlay } from "./view-templates"
 
-// `AlertCreatePageContent` and `AlertCreateFormSurface` (components/alerts/alert-create-page-content.tsx,
-// alert-create-form-surface.tsx).
+// `AlertCreatePageContent` and `AlertCreateFormSurface`: the rule editor page and its form.
 
 type H = HtmlBuilder<Message>
 
@@ -50,7 +49,7 @@ const formSkeleton = (h: H): Html =>
 		],
 	)
 
-/** `useAlertRulesList`'s `SYNC_UNAVAILABLE`, shown through `ErrorState` as legacy does. */
+/** The rules list's `SYNC_UNAVAILABLE`, shown through `ErrorState`. */
 const SYNC_UNAVAILABLE = { message: "Live sync is unavailable, so alerts couldn’t be loaded. Reload to try again." }
 
 /** `AlertRuleFormLoadError`: the rules stream stopped, so the rule being edited can never load. */

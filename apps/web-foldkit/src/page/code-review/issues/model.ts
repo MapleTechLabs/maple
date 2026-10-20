@@ -18,7 +18,7 @@ import { Frame, FrameMessage } from "../kit/frame"
 import { ResponseCache } from "../kit/page-steps"
 import { ReviewSheet, SheetMessage } from "../kit/review-sheet"
 
-// `/code-review/issues` (routes/code-review/issues.tsx): findings, their filters and the review sheet.
+// `/code-review/issues`: findings, their filters and the review sheet.
 
 export const FilterKey = Schema.Literals(["severity", "category", "state"])
 export type FilterKey = typeof FilterKey.Type

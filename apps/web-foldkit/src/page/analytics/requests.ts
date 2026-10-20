@@ -1,7 +1,7 @@
-import { filtersFromSearch, hasActiveFilters, type AnalyticsFilters } from "@maple/web/components/analytics/filters"
-import { previousWindow } from "@maple/web/components/analytics/previous-window"
-import { sparkBucketSeconds } from "@maple/web/components/analytics/ai/ai-traffic-model"
-import { chartBucketSeconds } from "@maple/web/components/infra/chart-units"
+import { filtersFromSearch, hasActiveFilters, type AnalyticsFilters } from "../../components/analytics/filters"
+import { previousWindow } from "../../components/analytics/previous-window"
+import { sparkBucketSeconds } from "../../components/analytics/ai/ai-traffic-model"
+import { chartBucketSeconds } from "../../components/infra/chart-units"
 import { Option, Struct } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../data/keyed"
@@ -25,7 +25,7 @@ import {
 import { type Message, SlotName } from "./message"
 import type { Model, Search } from "./model"
 
-// The legacy atoms the page reads, keyed and requested like `useRefreshableAtomValue` (S6).
+// The reads the page makes, each keyed by its input (S6).
 
 type Cmd = Command.Command<Message, never, Resources>
 

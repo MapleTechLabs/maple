@@ -260,7 +260,7 @@ const pageContent = (h: H, model: Model): Html =>
 		),
 	])
 
-/** apps/web's `DashboardLayout` around the lab: the real shell, then the toast regions. */
+/** The real shell around the lab, then the toast regions. */
 export const view = (model: Model, h: H): Html =>
 	h.div(
 		[h.Id("app")],

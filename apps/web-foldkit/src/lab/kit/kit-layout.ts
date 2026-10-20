@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../ui/eyebrow"
 
-// Port of apps/web/src/lab/kit/kit-layout.tsx: the frame every `/lab/kit/<group>` page shares.
+// Port of apps/web-foldkit/src/lab/kit/kit-layout.ts: the frame every `/lab/kit/<group>` page shares.
 
 export const kitPage = <Message>(
 	h: HtmlBuilder<Message>,

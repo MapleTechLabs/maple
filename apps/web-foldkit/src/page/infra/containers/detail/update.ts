@@ -1,4 +1,4 @@
-import { bucketSecondsForRange } from "@maple/web/components/infra/constants"
+import { bucketSecondsForRange } from "../../../../components/infra/constants"
 import { Command } from "foldkit"
 import * as Chart from "../../../../charts/chart"
 import { LoadChartRuntime } from "../../../../charts/chart-runtime"

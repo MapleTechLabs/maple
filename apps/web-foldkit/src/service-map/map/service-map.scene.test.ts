@@ -7,7 +7,7 @@ import {
 	DEFAULT_BENCH_PARAMS,
 	DURATION_SECONDS,
 	generateBenchGraph,
-} from "@maple/web/lab/bench/service-map-bench-fixture"
+} from "../../lab/bench/service-map-bench-fixture"
 import { Option } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 import {

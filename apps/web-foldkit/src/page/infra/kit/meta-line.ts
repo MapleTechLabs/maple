@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "../../../ui/icon"
 
-// `MetaLine` (primitives/meta-line.tsx) and `PlatformLabel` (platform-label.tsx).
+// `MetaLine` and `PlatformLabel`.
 
 /** An item: plain text (capped and titled) or a node. Absent items are dropped. */
 export type MetaItem = Html | string | null | undefined | false

@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
-import { apiPublicUrl } from "@maple/web/lib/services/common/api-base-url"
+import { apiPublicUrl } from "../../../lib/services/common/api-base-url"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyableField } from "../../../ui/copyable-field"
 import { badge } from "../../../ui/display"
@@ -11,7 +11,7 @@ import { settingsSection } from "../kit/section"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `ApiReference` (api-reference.tsx) and `OAuthPointer` (api-keys-section.tsx).
+// `ApiReference` and `OAuthPointer`.
 
 type H = HtmlBuilder<Message>
 

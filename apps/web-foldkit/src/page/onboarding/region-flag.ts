@@ -2,7 +2,7 @@ import type { MapleRegion } from "@maple/domain/organization-regions"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// `RegionFlag` (apps/web/src/components/region/region-flag.tsx): both flags on one 3:2 box.
+// `RegionFlag`: both flags on one 3:2 box.
 
 const W = 60
 const H = 40

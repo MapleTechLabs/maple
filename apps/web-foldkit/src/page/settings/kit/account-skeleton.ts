@@ -5,8 +5,7 @@ import { panel } from "../../../ui/panel"
 import { skeleton } from "../../../ui/skeleton"
 import { settingsSections } from "./section"
 
-// `AccountSectionSkeleton` (apps/web/src/components/account/account-section-skeleton.tsx): what a
-// settings or account section shows while its Clerk resource loads.
+// `AccountSectionSkeleton`: what a settings or account section shows while its Clerk resource loads.
 
 export const accountSectionSkeleton = <M>(h: HtmlBuilder<M>, children?: ReadonlyArray<Html>): Html =>
 	settingsSections(h, "standard", [

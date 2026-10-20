@@ -1,5 +1,5 @@
 import { getReplaysFacets, listReplays, type ListReplaysInput } from "@maple/web-data/warehouse/replays"
-import { sessionTagsFromSearch } from "@maple/web/components/replays/session-tags"
+import { sessionTagsFromSearch } from "../../../components/replays/session-tags"
 import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"

@@ -4,7 +4,7 @@ import {
 	SESSION_TAG_DOTS,
 	SESSION_TAG_LABELS,
 	SESSION_TAG_ORDER,
-} from "@maple/web/components/replays/session-tags"
+} from "../../../components/replays/session-tags"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../ui/eyebrow"
@@ -28,8 +28,6 @@ import { browserIconFor, deviceIconFor } from "../kit/sessions-parts"
 import { hasSidebarFilters, selectedTags } from "./derive"
 import { type Facet, Message, type Range } from "./message"
 import type { Model, ReplaysFacets } from "./model"
-
-// `ReplaysFilterSidebar` (components/replays/replays-filter-sidebar.tsx).
 
 type FacetItem = ReplaysFacets["services"][number]
 

@@ -1,11 +1,10 @@
-import "@maple/web/components/dotmatrix-loader.css"
+import "../../../components/dotmatrix-loader.css"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// `DotLoader` (apps/web components/ai-elements/dot-loader.tsx) over `Dotm3x3_6`: a 3×3 matrix of
-// 4 px square dots breathing out from its centre. Each dot carries the animation class and the
-// reduced-motion resting opacity inline: the animation wins, and the media query that turns it
-// off leaves exactly the frame legacy paints when it reads `prefers-reduced-motion`.
+// The dot loader over `Dotm3x3_6`: a 3×3 matrix of 4 px square dots breathing out from its
+// centre. Each dot carries the animation class and the reduced-motion resting opacity inline:
+// the animation wins, and the media query that turns it off leaves the resting frame.
 
 const DOT_SIZE = 4
 const GAP = 1

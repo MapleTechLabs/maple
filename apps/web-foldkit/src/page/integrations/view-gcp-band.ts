@@ -1,8 +1,8 @@
 import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import type { GcpResourcesResponse } from "@maple/domain/http"
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
-import { type GcpFleetService, gcpFleet } from "@maple/web/components/infra/gcp/tabs"
-import { gcpWorkloadCounts } from "@maple/web/components/integrations/gcp-usage"
+import { type GcpFleetService, gcpFleet } from "../../components/infra/gcp/tabs"
+import { gcpWorkloadCounts } from "../../components/integrations/gcp-usage"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Keyed } from "../../data/keyed"
@@ -13,7 +13,7 @@ import type { LogVolume } from "./gcp-schema"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `GcpUsageBand`, its tiles, `Workloads` and `Resources` (components/integrations/gcp-usage-cards.tsx).
+// `GcpUsageBand`, its tiles, `Workloads` and `Resources`.
 
 type H = HtmlBuilder<Message>
 

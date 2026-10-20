@@ -174,7 +174,7 @@ export const controls = <M>(
 			}),
 	})
 
-// copied: `WIDEN_TIME_PRESET` / `canWidenTimeRange` (time-range-picker/search.ts imports `@/` types).
+// `WIDEN_TIME_PRESET` / `canWidenTimeRange`: the preset an empty page offers to widen to.
 export const WIDEN_TIME_PRESET = "7d"
 const WIDE_TIME_PRESETS = new Set([
 	"7d",

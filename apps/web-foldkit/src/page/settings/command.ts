@@ -1,5 +1,5 @@
 import { organizationFeatureFlagsFrom } from "@maple/domain/organization-feature-flags"
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "../../data/load-failure"

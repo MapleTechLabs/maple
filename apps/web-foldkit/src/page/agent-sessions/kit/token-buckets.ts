@@ -1,8 +1,6 @@
 import type { SessionTokenTotals } from "@maple/agent-sessions"
 import type { IconName } from "../../../ui/icon"
 
-// copied: `TOKEN_BUCKETS` (apps/web/src/lib/agent-sessions/token-buckets.ts, React icons there).
-
 export const TOKEN_BUCKETS = [
 	{
 		key: "input",

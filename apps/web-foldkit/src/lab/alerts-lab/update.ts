@@ -55,7 +55,7 @@ export const init = (flags: AlertsLabFlags & LabShellFlags): Return => {
 
 const foldShell = foldLabShell<Model, Message>((message) => Message.GotShellMessage({ message }))
 
-/** The hub's local UI (menus, the rules search, broken logos); its writes stay no-ops, as legacy's. */
+/** The hub's local UI (menus, the rules search, broken logos); its writes stay no-ops. */
 const hubStep = (model: Model, message: Message & { _tag: "GotHubMessage" }): Return => {
 	const inner = message.message
 	if (inner._tag === "ClickedStatusFilter")

@@ -2,7 +2,7 @@ import type { AlertDestinationType } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import { dialogTitleStyles } from "@maple/ui/styles/ui/dialog"
 import { suggestedDestinationName } from "@maple/web-data/alerts/form-utils"
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
@@ -24,8 +24,7 @@ import { waitingFor } from "../shared/chat-connect"
 import { spinner } from "../../../ui/spinner"
 import { type TextField, toFormState } from "./form"
 
-// `DestinationDialog` (components/alerts/destination-dialog.tsx).
-// The Email, Hazel and chat fields live in `*-fields-view.ts`.
+// The destination dialog. The Email, Hazel and chat fields live in `*-fields-view.ts`.
 
 type H = HtmlBuilder<Message>
 

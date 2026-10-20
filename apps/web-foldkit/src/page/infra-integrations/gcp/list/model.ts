@@ -12,7 +12,7 @@ import * as Select from "../../../../ui/select"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { FleetRead, GcpStatus, Resources, SparkRead } from "../data"
 
-// `/infra/gcp` (apps/web/src/routes/infra/gcp/index.tsx and components/infra/gcp/gcp-list-page.tsx).
+// `/infra/gcp`.
 
 export const Model = Schema.Struct({
 	search: InfraGcpSearch,

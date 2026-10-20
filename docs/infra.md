@@ -394,9 +394,8 @@ What each kind of Worker keeps beside the module:
   (`packages/backend/src/platform/bindings.ts`), never the env.
 
 **web** is a `Cloudflare.Website.Vite` Worker (`apps/web-foldkit/src/worker.ts`). Alchemy owns its
-vite build and its dev server, and the deployed entry is `src/worker-entry.ts`. `MAPLE_WEB_APP`
-picks the build: `foldkit` (default) or `react` (apps/web, the rollback). Its props
-bind the api Worker as `API`, handed over as `ApiWorker`. It carries no `WorkerTelemetry`.
+vite build and its dev server, and the deployed entry is `src/worker-entry.ts`. Its props bind
+the api Worker as `API`, handed over as `ApiWorker`. It carries no `WorkerTelemetry`.
 
 Alchemy evaluates a Worker module in three places (the deploy process, `alchemy dev`, and
 the deployed isolate). Two rules keep it honest about which one it is in:

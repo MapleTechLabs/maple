@@ -1,6 +1,6 @@
 import { MapleFoldkit } from "@maple-dev/effect-sdk/foldkit"
 import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
-import { selfIngestUrl } from "@maple/web/lib/services/common/ingest-url"
+import { selfIngestUrl } from "../lib/services/common/ingest-url"
 import { Option } from "effect"
 import { fromString } from "foldkit/url"
 import { urlToAppRoute } from "../route"
@@ -13,9 +13,8 @@ const routeName = (pathname: string): string =>
 	})
 
 /**
- * The app's own telemetry, configured like apps/web's `otel-layer.ts` (same service, ingest,
- * anticipated errors, replay and privacy switches) so both frontends land in one place.
- * `maple.web.app` tells them apart while both are deployed.
+ * The app's own telemetry: service, ingest, anticipated errors, replay and privacy switches.
+ * `maple.web.app` names the frontend that sent it.
  */
 const maple = MapleFoldkit.make({
 	serviceName: "maple-web",

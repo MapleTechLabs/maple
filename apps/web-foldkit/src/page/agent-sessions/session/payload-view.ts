@@ -5,7 +5,7 @@ import { tryParseJson } from "../../../ui/attributes/attribute-row"
 import * as ToggleGroup from "../../../ui/toggle-group"
 import { Message } from "./message"
 
-// `useJsonPayload`, `useMessageBody`, `ViewSwitch` and `disclosed` (session-detail/payload-view.tsx).
+// Payload views: JSON payloads, message bodies, the view switch and disclosure.
 
 type H = HtmlBuilder<Message>
 

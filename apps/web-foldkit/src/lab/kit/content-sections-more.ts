@@ -100,7 +100,7 @@ export const truncationSection = <M>(
 		),
 	])
 
-// Base UI `useId` values of the React page, kept verbatim (S1: ids are part of the DOM).
+// Base UI `useId` values, kept verbatim (S1: ids are part of the DOM).
 const baseUiId = (n: string) => `base-ui-_r_${n}_`
 
 export const settingRowSection = <M>(h: HtmlBuilder<M>): Html =>

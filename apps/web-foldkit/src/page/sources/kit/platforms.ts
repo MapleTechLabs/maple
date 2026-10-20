@@ -3,7 +3,7 @@ import { PUSH_SOURCE_PLATFORMS } from "@maple/domain/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "../../../ui/icon"
 
-// `PLATFORMS`, `PlatformTile` (apps/web/src/components/sources/platforms.tsx).
+// `PLATFORMS`, `PlatformTile`.
 
 export interface PlatformMeta {
 	readonly label: string

@@ -2,7 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as CopyButton from "../../../ui/copy-button"
 import { copyableField } from "../../../ui/copyable-field"
 
-// `ApiKeySecretReveal` (apps/web/src/components/settings/api-key-secret-reveal.tsx).
+// `ApiKeySecretReveal`.
 
 export type SecretRevealOptions<M> = Readonly<{
 	id: string

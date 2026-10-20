@@ -13,7 +13,7 @@ import type { ToolSeriesPoint } from "../tools-kit/model"
 import { type ToolPlotInputs, toolPlotView } from "../tools-kit/series-chart"
 import { Message } from "./message"
 
-// `ToolDetailCharts` (agent-sessions/tools/tool-detail-charts.tsx): four readings of one tool.
+// The tool detail charts: four readings of one tool.
 
 type H = HtmlBuilder<Message>
 

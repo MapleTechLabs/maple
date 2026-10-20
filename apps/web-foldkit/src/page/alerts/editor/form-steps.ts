@@ -76,7 +76,7 @@ export const pickTemplate = (form: RuleForm, templateId: string): RuleForm => {
 	return applied.signalType === "apdex" ? applied : switchKind(applied, "builder_query").form
 }
 
-// copied: `TagInput`'s limits and `canonicalize` (components/alerts/tag-input.tsx).
+// `TagInput`'s limits and `canonicalize`.
 const MAX_TAGS = 20
 const MAX_TAG_LENGTH = 32
 

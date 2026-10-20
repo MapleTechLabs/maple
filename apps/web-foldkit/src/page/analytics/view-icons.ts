@@ -6,7 +6,7 @@ import { browserIconFor, deviceIconFor } from "../replays/kit/sessions-parts"
 import { Message, type FilterKey } from "./message"
 import type { Model } from "./model"
 
-// `Favicon` and `analyticsRowIcon` (components/analytics/row-icon.tsx).
+// `Favicon` and `analyticsRowIcon`: a breakdown row's leading icon.
 
 type H = HtmlBuilder<Message>
 

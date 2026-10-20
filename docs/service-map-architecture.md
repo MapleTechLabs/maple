@@ -146,7 +146,7 @@ half of this; renaming was the cheap half.
 ## 2D and 3D presentation
 
 `/service-map` stores its renderer choice in the `view=2d|3d` search parameter; 2D remains
-the default. The lazy-loaded voxel factory renderer in `apps/web/src/components/service-map/three` consumes
+the default. The lazy-loaded voxel factory renderer in `apps/web-foldkit/src/page/service-map/three` consumes
 the same resolved `buildFlowElements` graph after decluttering, including integration
 nodes and links. It adds no warehouse queries. Environment, time range, focus, traffic
 thresholds, namespace expansion, and service/database detail panels remain shared.
@@ -174,7 +174,7 @@ The data-agnostic map is shared by the cloud app and Maple Local and lives in
 particles, `buildFlowElements`, the ELK layout, declutter, and
 `ServiceMapFlowCanvas`, which owns selection, layout, the toolbar and the legend.
 Hosts supply the rows, where drag positions and prefs are stored, and the
-selected-node panel. `apps/web`'s `ServiceMapCanvas` wires the warehouse bundle,
+selected-node panel. The dashboard's `/service-map` page (`apps/web-foldkit/src/page/service-map/`) wires the warehouse bundle,
 per-org atoms, the 3D renderer and the integration panels. Maple Local
 (`apps/local-ui/src/views/service-map-view.tsx`) wires chDB queries and browser
 storage.

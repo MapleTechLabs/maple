@@ -1,4 +1,3 @@
-// copied: apps/web/src/components/replays/replay-range.ts (its replay-format import reaches React types).
 import { DateTime, Option } from "effect"
 import type { ReplayPartitionWindow } from "./replay-window"
 

@@ -4,7 +4,7 @@ import * as Combobox from "../../ui/combobox"
 import * as Dialog from "../../ui/dialog"
 import { PaletteAction } from "./entries"
 
-// `CommandPalette` (apps/web components/command-palette/command-palette.tsx): mounted while open, so
+// The command palette: mounted while open, so
 // the Model exists only then, and a close drops it without an exit transition.
 
 export const PALETTE_ID = "command-palette"

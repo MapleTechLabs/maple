@@ -45,7 +45,7 @@ export interface PageHeaderOptions {
 	readonly className?: string
 }
 
-/** `PageLayout.Header`; renders nothing (`null`) when it has no content, like the React one. */
+/** `PageLayout.Header`; renders nothing (`null`) when it has no content. */
 export const pageHeader = <M>(
 	h: HtmlBuilder<M>,
 	options: PageHeaderOptions,

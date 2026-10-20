@@ -4,8 +4,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 
-// Small pieces the session views share: `SectionHeading variant="eyebrow"`, `DisclosureChevron`,
-// `FailedBadge` (session-waterfall.tsx).
+// Small pieces the session views share: the eyebrow section heading, the disclosure chevron and
+// the failed badge.
 
 /** `DisclosureChevron`: `right` turns down when open, `down` flips up. */
 export const disclosureChevron = <M>(

@@ -19,7 +19,7 @@ import {
 } from "./hazel-fields"
 
 // `HazelOAuthFields`' view. TODO(destination-dialog): an org logo that fails to load keeps its
-// broken image (legacy falls back to the Hazel mark).
+// broken image; it should fall back to the Hazel mark.
 
 const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
 const idsOf = (id: string): FieldIds => ({ control: id, label: SelectView.selectLabelId(id), error: `${id}-error` })

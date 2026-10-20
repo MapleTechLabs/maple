@@ -159,7 +159,7 @@ export const FetchTraceSpans = Command.define("FetchLogTraceSpans", {
 		),
 })
 
-/** The trace's window as legacy's atom sends it: its key snaps whole-second bounds to 15 s. */
+/** The trace's window as the request sends it: whole-second bounds snapped to 15 s. */
 export const traceWindow = (timestamp: string) => {
 	const window = computeTraceTimeWindow(timestamp)
 	return window === undefined

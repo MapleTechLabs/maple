@@ -2,8 +2,8 @@ import {
 	applyWhereClauseSuggestion,
 	getWhereClauseAutocomplete,
 	type WhereClauseAutocompleteResult,
-} from "@maple/web/lib/query-builder/where-clause-autocomplete"
-import { applyWhereClause, type TracesSearchLike } from "@maple/web/lib/traces/advanced-filter-sync"
+} from "../../../lib/query-builder/where-clause-autocomplete"
+import { applyWhereClause, type TracesSearchLike } from "../../../lib/traces/advanced-filter-sync"
 import { Option, type Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as Keyed from "../../../data/keyed"

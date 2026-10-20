@@ -37,7 +37,7 @@ const withRetained = <A, E>(key: RequestKey, data: AsyncData.AsyncData<A, E>, re
  * `Load` is route entry or an input change; `Refresh` is the explicit refresh (`useAtomRefresh`).
  * Same key: `Load` keeps cached data and never restarts an in-flight request, `Refresh`
  * revalidates. New key: always requests, keeping the previous data on screen (`Refreshing`) unless
- * the org changed, which is apps/web's `useRetainedResult` (`lib/effect-atom.ts`).
+ * the org changed.
  */
 export type RequestMode = "Load" | "Refresh"
 

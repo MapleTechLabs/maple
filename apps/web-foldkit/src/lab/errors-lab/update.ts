@@ -9,7 +9,7 @@ export type Return = Update.Return<Model, Message, Resources>
 export const ErrorsLabFlags = Schema.Struct({ nowMs: Schema.Number, timeZone: Schema.String })
 export type ErrorsLabFlags = typeof ErrorsLabFlags.Type
 
-/** The boot clock (legacy's one `Date.now()` per mount) and the browser's zone. */
+/** The boot clock (read once) and the browser's zone. */
 export const errorsLabFlags: Effect.Effect<ErrorsLabFlags> = Effect.all({
 	nowMs: Clock.currentTimeMillis,
 	timeZone: Effect.sync(() => Intl.DateTimeFormat().resolvedOptions().timeZone),
@@ -25,7 +25,7 @@ export const init = (flags: ErrorsLabFlags): Model => ({
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotHubMessage: ({ message: inner }) => {
-			// The retry card's button: legacy's `onRetry` puts the lab back to ready.
+			// The retry card's button puts the lab back to ready.
 			if (inner._tag === "ClickedRetry") return { model: { ...model, state: "ready" } }
 			const next = hubStep(model.hub, inner, labSignals(model.hub, model.state))
 			return {

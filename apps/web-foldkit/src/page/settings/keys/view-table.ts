@@ -1,8 +1,8 @@
 import type { V2ApiKey } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { apiKeyRowPermissions } from "@maple/web/components/settings/api-key-permissions"
-import { KEY_TYPE_LABELS, keyAccessSummary, type KeyRow, type KeyType } from "@maple/web/components/settings/keys-table"
+import { apiKeyRowPermissions } from "../../../components/settings/api-key-permissions"
+import { KEY_TYPE_LABELS, keyAccessSummary, type KeyRow, type KeyType } from "../../../components/settings/keys-table"
 import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 import { DateTime, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -18,7 +18,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `KeysTable`, `ApiRow` (apps/web/src/components/settings/api-keys-section.tsx).
+// `KeysTable`, `ApiRow`.
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string }>

@@ -4,7 +4,7 @@ import {
 	hasConfiguredLimits,
 	type RailwayServiceGroup,
 	type RailwaySync,
-} from "@maple/web/components/infra/railway/list-model"
+} from "../../../../components/infra/railway/list-model"
 import type { RailwayEnvironmentStatus } from "@maple/domain/http"
 import { sortRowsByField, type Sort } from "../../../kit/table-sort"
 import type { RailwayServiceRow } from "../model"

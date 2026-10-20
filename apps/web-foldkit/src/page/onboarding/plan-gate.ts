@@ -1,7 +1,7 @@
 import { BillingCustomer } from "@maple/domain/http"
 import type { MapleRegion } from "@maple/domain/organization-regions"
-import { hasSelectedPlan, type PlanAccess, resolvePlanAccess } from "@maple/web/lib/billing/plan-gating"
-import { hasMultipleRegions } from "@maple/web/lib/region"
+import { hasSelectedPlan, type PlanAccess, resolvePlanAccess } from "../../lib/billing/plan-gating"
+import { hasMultipleRegions } from "../../lib/region"
 import { writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { Effect, Option, Schema } from "effect"
@@ -9,8 +9,8 @@ import { AsyncData } from "foldkit"
 import type { ClerkOrganization } from "../../platform/clerk"
 import { AppRoute, hrefOf, type Redirect } from "../../route"
 
-// The plan and region gates of `ClerkReverseRedirects` (apps/web/src/routes/__root.tsx), and the
-// Autumn customer (`billingCustomerAtom`) they share with onboarding and the billing banners.
+// The plan and region gates of `ClerkReverseRedirects`, and the Autumn customer (`billingCustomerAtom`) they
+// share with onboarding and the billing banners.
 
 export const CustomerData = AsyncData.Schema(BillingCustomer, Schema.Literal("Failed"))
 export type CustomerData = typeof CustomerData.schema.Type

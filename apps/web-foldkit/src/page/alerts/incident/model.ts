@@ -14,8 +14,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import { AlertIncidentSearch } from "../../../route/search"
 import { PreviewSlot } from "../shared/preview"
 
-// `/alerts/incidents/$incidentId` (apps/web/src/routes/alerts/incidents/$incidentId.tsx and
-// components/alerts/incident-detail/).
+// `/alerts/incidents/$incidentId`.
 
 const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
 

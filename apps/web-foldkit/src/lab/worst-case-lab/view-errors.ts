@@ -1,6 +1,6 @@
-import { buildErrorsLabFixture } from "@maple/web/lab/errors-fixture"
-import { errorSignal, sampleTraces } from "@maple/web/lab/worst-case-docs"
-import type { ErrorSignal } from "@maple/web/lib/models/error-signal"
+import { buildErrorsLabFixture } from "../errors-fixture"
+import { errorSignal, sampleTraces } from "../worst-case-docs"
+import type { ErrorSignal } from "../../lib/models/error-signal"
 import { Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import type { Message as SignalMessage } from "../../page/errors/hub/message"
@@ -11,7 +11,7 @@ import { actorIdentities } from "./fixture"
 import { Message, type Model } from "./model"
 import { type H, narrow, wcSection } from "./view-parts"
 
-// `ErrorsSection` (apps/web `lab/worst-case-sections.tsx`): occurrences, a signal row, avatars.
+// `ErrorsSection`: occurrences, a signal row, avatars.
 
 /** `ErrorSignalRow` speaks the errors hub's Messages; the lab hosts it in that universe. */
 const signalRowView = Submodel.defineView<ErrorSignal, SignalMessage, RowState>((signal, state, h) =>

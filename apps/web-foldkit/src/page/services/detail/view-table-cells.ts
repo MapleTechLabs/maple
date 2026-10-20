@@ -8,7 +8,7 @@ import { Message } from "./message"
 import type { SortState } from "../../kit/table-sort"
 import type { SortTable } from "./model-tabs"
 
-// The shared cells of the tab tables (components/services/service-table-cells.tsx, sortable-header.tsx).
+// The shared cells of the tab tables.
 
 type H = HtmlBuilder<Message>
 

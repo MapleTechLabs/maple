@@ -1,6 +1,6 @@
 import { formatNumber, formatRate, pluralize } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import type { ReleaseHealth } from "@maple/web/components/releases/release-model"
+import type { ReleaseHealth } from "../../../components/releases/release-model"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
@@ -24,7 +24,6 @@ import { filtersRail } from "./view-filters"
 import { liveNow, releasesTimeline, type TimeSearch } from "./view-overview"
 import { releasesTable } from "./view-table"
 
-// `ReleasesPage` and `ReleasesContent` (apps/web/src/routes/releases/index.tsx).
 // TODO(session-range): `sessionTimeRangeSearchMiddleware` (the range carried across pages).
 
 type H = HtmlBuilder<Message>

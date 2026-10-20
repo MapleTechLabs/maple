@@ -1,4 +1,4 @@
-import { capacityFraction, formatBytesOfAllocatable, formatCoresOfAllocatable } from "@maple/web/components/infra/format"
+import { capacityFraction, formatBytesOfAllocatable, formatCoresOfAllocatable } from "../../../../components/infra/format"
 import { formatUptime } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
@@ -13,7 +13,7 @@ import { hostStatusBadge } from "../../kit/status"
 import { Message, type NodeSortKey } from "./message"
 import type { NodeRow } from "./model"
 
-// `NodeTable` / `NodeTableLoading` (apps/web/src/components/infra/node-table.tsx).
+// `NodeTable` / `NodeTableLoading`.
 
 type H = HtmlBuilder<Message>
 

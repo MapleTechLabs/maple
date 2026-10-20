@@ -1,8 +1,8 @@
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import type { GcpResource } from "@maple/domain/http"
-import type { GcpConsoleLinks } from "@maple/web/components/infra/gcp/inventory"
-import { gcpStateLabel } from "@maple/web/components/infra/gcp/tabs"
-import type { GcpRailFact } from "@maple/web/components/infra/gcp/workload-signals"
+import type { GcpConsoleLinks } from "../../../../components/infra/gcp/inventory"
+import { gcpStateLabel } from "../../../../components/infra/gcp/tabs"
+import type { GcpRailFact } from "../../../../components/infra/gcp/workload-signals"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { detailRailField, detailRailGroup, detailRailMetaRow } from "../../../../ui/detail-rail"
@@ -10,7 +10,7 @@ import { icon, type IconName } from "../../../../ui/icon"
 import { serviceDot } from "../../../../ui/values"
 import type { Message } from "./model"
 
-// `GcpWorkloadRail` (components/infra/gcp/gcp-workload-rail.tsx).
+// `GcpWorkloadRail`.
 
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>

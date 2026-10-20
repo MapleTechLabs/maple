@@ -2,13 +2,13 @@ import type { AlertRuleDocument } from "@maple/domain/http"
 import { defaultRuleForm, ruleToFormState } from "@maple/web-data/alerts/form-utils"
 import { switchSignalKind } from "@maple/web-data/alerts/rule-modes"
 import { buildRuleStatesByRuleId, rowToAlertRuleDocument } from "@maple/web-data/collections/alerts"
-import { createWidgetAlertPrefill, resolveWidgetAlertPrefill } from "@maple/web/lib/alerts/widget-prefill"
+import { createWidgetAlertPrefill, resolveWidgetAlertPrefill } from "../../../lib/alerts/widget-prefill"
 import { Option, Schema } from "effect"
 import { ALERT_TEMPLATES } from "../shared/templates"
 import { fromFormState, type RuleForm } from "./form"
 import type { Model, Notice } from "./model"
 
-// `deriveRuleInitialization` (components/alerts/alert-create-page-content.tsx): which draft the
+// `deriveRuleInitialization`: which draft the
 // page opens on, once the inputs it needs have answered.
 
 export type Initialization =
@@ -41,7 +41,7 @@ const ready = (
 	isShowingTemplates = false,
 ): Initialization => ({ _tag: "Ready", key, form, notices, editingRule, isShowingTemplates })
 
-// copied: `decodeAlertChartFromSearchParam` (lib/alerts/widget-chart-param.ts imports `@/` paths).
+// `decodeAlertChartFromSearchParam`.
 const AlertChartContext = Schema.Struct({
 	dashboardId: Schema.String,
 	widget: Schema.Struct({

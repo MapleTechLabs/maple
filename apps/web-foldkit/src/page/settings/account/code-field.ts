@@ -2,8 +2,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { label } from "../../../ui/label"
 import * as OtpField from "../../../ui/otp-field"
 
-// `CodeField` (apps/web/src/components/account/code-field.tsx): six digits for an email or TOTP
-// code. Slot one carries the field's name through a real label; the others name their position.
+// `CodeField`: six digits for an email or TOTP code. Slot one carries the field's name through a real label;
+// the others name their position.
 
 const SLOTS = [0, 1, 2, 3, 4, 5]
 

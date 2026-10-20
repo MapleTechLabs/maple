@@ -26,7 +26,7 @@ import { railwayFleetBand, railwayFleetBandLoading } from "./view-band"
 import { LIST_TOKEN_FORM, railwayConnectCard } from "./view-connect"
 import { type Clock, railwayTable, railwayTableLoading, triggerIds } from "./view-table"
 
-// `RailwayPage` (apps/web/src/routes/infra/railway/index.tsx).
+// `RailwayPage`.
 
 type H = HtmlBuilder<Message>
 

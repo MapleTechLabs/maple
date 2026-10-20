@@ -26,8 +26,8 @@ export const inputGroup = <Message>(
 export type InputGroupAlign = "inline-start" | "inline-end" | "block-start" | "block-end"
 
 /**
- * `<InputGroupAddon>`. Legacy also focuses the input on a mousedown that lands on non-interactive
- * addon content; here the addon is decorative text or icons and a button, so that is not ported.
+ * `<InputGroupAddon>`. A mousedown on the addon does not focus the input: the addon is decorative
+ * text or icons and a button.
  */
 export const inputGroupAddon = <Message>(
 	h: HtmlBuilder<Message>,

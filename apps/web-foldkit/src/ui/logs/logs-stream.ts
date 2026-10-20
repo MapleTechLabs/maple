@@ -16,7 +16,7 @@ export const ChipRef = Schema.Struct({ index: Schema.Number, key: Schema.String 
 export type ChipRef = typeof ChipRef.Type
 
 /**
- * One virtualized logs stream (apps/web's `LogsTableView`): its rows (derived by the parent and
+ * One virtualized logs stream: its rows (derived by the parent and
  * handed over with `setRows` / `replaceRows`), the virtual window, keyboard focus, expanded rows,
  * the attribute card, and what the reader is inspecting. Rows live here rather than in `viewInputs`
  * because `h.submodel` walks `viewInputs` deeply on every render: O(rows) per scroll frame.
@@ -254,7 +254,7 @@ const panelMessage = (model: Model, index: number, message: AttributesPanel.Mess
 const handle = (model: Model, rows: ReadonlyArray<LogRowView>, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		ChangedVirtualWindow: ({ rows: rendered, totalSize }) => {
-			// A chip that scrolled out of the window unmounts in apps/web, taking its card along.
+			// A chip that scrolled out of the window unmounts, taking its card along.
 			const isRendered = (chip: ChipRef) => rendered.some((row) => row.index === chip.index)
 			return {
 				model: modifyFields(model, {

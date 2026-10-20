@@ -35,8 +35,7 @@ import {
 	kitSelect,
 } from "../../kit/pickers"
 
-// Port of `/lab/kit/forms` (apps/web/src/lab/kit/forms.tsx, pickers.tsx). Ids are the `useId`s
-// Base UI gives each control in apps/web, so the two DOMs diff clean.
+// `/lab/kit/forms`. Control ids follow Base UI's `useId` format.
 
 const INPUT_SIZES = ["sm", "default", "lg"] as const
 const CHECKBOXES = [
@@ -190,7 +189,7 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 		GotComboboxChipsMessage: ({ message }) => foldComboboxChips(model, message),
 		GotAutocompleteMessage: ({ message }) => foldAutocomplete(model, message),
 		GotOtpFieldMessage: ({ message }) => foldOtpField(model, message),
-		// The legacy clear button has no handler either.
+		// The clear button has no handler.
 		ClickedClearSearch: () => ({ model }),
 	})
 

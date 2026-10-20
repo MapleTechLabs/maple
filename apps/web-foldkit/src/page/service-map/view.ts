@@ -31,8 +31,6 @@ import type * as Scene3d from "./scene3d"
 import { scene3dView } from "./view-scene3d"
 import { servicePanel } from "./view-service-panel"
 
-// `ServiceMapPage` / `ServiceMapContent` (apps/web/src/routes/service-map.tsx).
-
 type H = HtmlBuilder<Message>
 
 const VIEW_OPTIONS = [

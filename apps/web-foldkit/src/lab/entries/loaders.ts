@@ -5,7 +5,7 @@ import { statusMarker } from "../../page/chat/kit/view-transcript"
 import { eyebrow } from "../../ui/eyebrow"
 import { defineLab } from "../define"
 
-// `/lab/loaders` (apps/web `lab/loaders-lab.tsx`): the chat's loader on the lines it sits on.
+// `/lab/loaders`: the chat's loader on the lines it sits on.
 
 const Model = Schema.Struct({})
 type Model = typeof Model.Type

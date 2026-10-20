@@ -2,8 +2,6 @@ import type { WorkflowState } from "@maple/domain/http"
 import { TONE_COLOR } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// copied: apps/web/src/components/icons/workflow-ring.tsx (a React module).
-
 export const WORKFLOW_LABEL = {
 	triage: "Triage",
 	regressed: "Regressed",
@@ -111,7 +109,7 @@ export const workflowRingIcon = <M>(
 	)
 }
 
-/** The filled disc with its white mark (`regressed` falls through to won't fix's dash, as in legacy). */
+/** The filled disc with its white mark (`regressed` falls through to won't fix's dash). */
 const closedMark = <M>(h: HtmlBuilder<M>, state: WorkflowState, color: string): ReadonlyArray<Html> => {
 	const [d, isJoined] = CLOSED_MARK.get(state) ?? ["M8 12 L16 12", false]
 	return [

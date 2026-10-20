@@ -10,8 +10,8 @@ import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
 import { authDescription, authLayout, authTitle } from "./auth-layout"
 
-// `/unsubscribe` (apps/web/src/routes/unsubscribe.tsx): the digest email's footer link. Public:
-// the signed token is the credential, and unsubscribing waits for a click (mail scanners prefetch).
+// `/unsubscribe`: the digest email's footer link. Public: the signed token is the credential, and
+// unsubscribing waits for a click (mail scanners prefetch).
 
 // MODEL
 

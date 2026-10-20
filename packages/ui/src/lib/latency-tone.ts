@@ -15,7 +15,7 @@ export type LatencyScale = "p50" | "avg" | "p95" | "p99" | "cpu"
 
 /**
  * Budgets in ms. p95 is anchored on the absolute health thresholds already in
- * apps/web/src/components/dashboard/service-health.ts (P95_DEGRADED_MS = 1000,
+ * apps/web-foldkit/src/components/dashboard/service-health.ts (P95_DEGRADED_MS = 1000,
  * P95_UNHEALTHY_MS = 3000), so a cell's tone agrees with the health badge on
  * the same row. `cpu` exists because Cloudflare Worker CPU-time lives on a
  * different scale entirely — under the p99 budget every worker reads "quiet".

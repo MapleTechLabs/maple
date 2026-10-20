@@ -7,7 +7,7 @@ import type { CopyStatus, PanelState as Model } from "./model"
 
 // `CopyButton` (with `idleIcon` and `tooltip`), `CopyableValue` and `SelectableValue` from @maple/ui,
 // with the copy status read from the panel's Model by target id.
-// TODO(toast): legacy toasts on every copy; toasts are not wired into the page yet.
+// TODO(toast): every copy should toast; toasts are not wired into the page yet.
 
 type H = HtmlBuilder<Message>
 

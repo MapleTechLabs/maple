@@ -14,7 +14,7 @@ import { EXCLUDED_OF, filtersOf } from "./update"
 import { type Facet, Message } from "./message"
 import type { ContainerFacets, Model } from "./model"
 
-// `ContainersFilterSidebarView` (apps/web/src/components/infra/container-filter-sidebar.tsx).
+// `ContainersFilterSidebarView`.
 
 type H = HtmlBuilder<Message>
 

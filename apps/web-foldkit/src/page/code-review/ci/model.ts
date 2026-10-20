@@ -18,7 +18,7 @@ import { getCiAnalytics, listCiRuns } from "../kit/api"
 import { Frame, FrameMessage } from "../kit/frame"
 import { ResponseCache } from "../kit/page-steps"
 
-// `/code-review/ci` (routes/code-review/ci.tsx, components/code-review/ci/).
+// `/code-review/ci`.
 
 const RunsPage = KeyedSchema(CodeReviewCiRunsResponse, LoadFailure)
 

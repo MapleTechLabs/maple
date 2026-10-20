@@ -10,7 +10,7 @@ import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
 import * as InfraCorrelation from "../../kit/infra-correlation"
 
-// `LogDetailSheet` (apps/web/src/components/logs/log-detail-sheet.tsx): the drawer for one log.
+// The drawer for one log.
 
 export const DetailCopy = Schema.Struct({ id: Schema.String, status: CopyStatus, generation: Schema.Number })
 
@@ -44,7 +44,7 @@ export const Model = Schema.Struct({
 	/** The log on show; kept while the sheet animates out. */
 	log: Schema.NullOr(LogRecord),
 	tabs: Tabs.Model,
-	/** Rebuilt per log, like legacy's `key={logKey}` remount (resets the attribute search). */
+	/** Rebuilt per log, which resets the attribute search. */
 	attributes: AttributesPanel.Model,
 	/** The Infrastructure tab, rebuilt per log. */
 	infra: InfraCorrelation.Model,

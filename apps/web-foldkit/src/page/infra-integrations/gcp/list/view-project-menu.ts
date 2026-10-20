@@ -1,4 +1,4 @@
-import type { GcpProjectHealth } from "@maple/web/components/infra/gcp/list-model"
+import type { GcpProjectHealth } from "../../../../components/infra/gcp/list-model"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -9,8 +9,7 @@ import * as MenuView from "../../../../ui/menu-view"
 import { Message } from "./model"
 import type { H } from "./view-rows"
 
-// `GcpProjectMenu` (components/infra/gcp/gcp-projects-ui.tsx): with two or more projects the
-// title's chip picks one of them, or all.
+// `GcpProjectMenu`: with two or more projects the title's chip picks one of them, or all.
 
 export const ALL_PROJECTS = "__all__"
 export const MANAGE_CONNECTIONS = "manage-connections"
@@ -75,7 +74,7 @@ export const projectMenu = (
 		viewInputs: {
 			align: "start",
 			className: "min-w-80",
-			// Two radio groups around the separator: one Base UI group holds both in legacy.
+			// Two radio groups around the separator.
 			entries: [
 				{
 					_tag: "RadioGroup",

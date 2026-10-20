@@ -96,7 +96,6 @@
 		".factory/**",
 		".impeccable/**",
 		".superset/**",
-		"apps/web/src/routeTree.gen.ts",
 		"lib/thinking-orbs/**"
 	]
 }

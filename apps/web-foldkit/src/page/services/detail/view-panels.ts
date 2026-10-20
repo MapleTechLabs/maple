@@ -13,7 +13,7 @@ import { callsPerSecond, windowSeconds } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// The Overview tab's quiet panels (components/services/service-*-panel.tsx, section-card.tsx).
+// The Overview tab's quiet panels.
 
 type H = HtmlBuilder<Message>
 

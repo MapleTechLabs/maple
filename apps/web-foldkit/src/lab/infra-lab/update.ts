@@ -10,7 +10,7 @@ import { Model as RailwayModel } from "../../page/infra-integrations/railway/lis
 import * as RailwayUpdate from "../../page/infra-integrations/railway/list/update"
 import type { Resources } from "../../platform/resources"
 
-// `/lab/infra` (apps/web `lab/infra-lab.tsx`): the infra overview, hosts list and Railway list
+// `/lab/infra`: the infra overview, hosts list and Railway list
 // over fixture rows. The Railway list's own Model hosts its table's sort and row tooltips.
 
 const LAB_CONTEXT: PageContext = {
@@ -66,7 +66,7 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedHostSort: ({ key }) => ({
 			model: { ...model, hostSort: nextSort(model.hostSort, key, { stringKeys: ["hostName"] }) },
 		}),
-		// Only the table's sort and tooltips; legacy's Railway search box here is inert.
+		// Only the table's sort and tooltips; the Railway search box here is inert.
 		GotRailwayMessage: ({ message: inner }) => {
 			if (inner._tag !== "ClickedSort" && inner._tag !== "GotRowTooltipMessage") return { model }
 			const next = RailwayUpdate.update(model.railway, inner, LAB_CONTEXT)

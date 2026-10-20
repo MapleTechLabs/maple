@@ -1,4 +1,4 @@
-import { attributes } from "@maple/web/lab/worst-case-fixture"
+import { attributes } from "../worst-case-fixture"
 import { Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import type { Message as HubMessage } from "../../page/alerts/hub/message"
@@ -18,11 +18,11 @@ import { Message, type Model } from "./model"
 import { type H, narrow, wcSection } from "./view-parts"
 import { releaseNarrow } from "./view-sections"
 
-// `TablesSection` and `MiscSection` (apps/web `lab/worst-case-sections.tsx`).
+// `TablesSection` and `MiscSection`.
 
 type RulesInputs = Readonly<{ mode: Model["mode"]; nowMs: number }>
 
-/** `RulesTab` reads the hub's Model (search, show-all, menus); `status` stays unset, as legacy's. */
+/** `RulesTab` reads the hub's Model (search, show-all, menus); `status` stays unset. */
 const rulesView = Submodel.defineView<HubModel, HubMessage, RulesInputs>((hub, inputs, h) =>
 	rulesTab(h, hub, {
 		data: rulesOverview(inputs.mode, inputs.nowMs),

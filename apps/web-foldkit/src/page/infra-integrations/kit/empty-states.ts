@@ -1,11 +1,11 @@
-import type { DocsPage } from "@maple/web/lib/docs"
+import type { DocsPage } from "../../../lib/docs"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
 
-// `IntegrationNotConnected` (components/infra/primitives/integration-not-connected.tsx).
+// `IntegrationNotConnected`.
 
 type ButtonVariant = Parameters<typeof button>[1]["variant"]
 

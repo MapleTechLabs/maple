@@ -1,6 +1,6 @@
 import type { SessionRow } from "../page/agent-sessions/list/model"
 
-// copied: the rows of apps/web `lab/agent-sessions-list-lab.tsx`, chosen for the shapes that break
+// Agent session rows chosen for the shapes that break
 // the list's columns (an unnamed session, an unidentified vendor, ms beside hours, no usage at all).
 
 const BASE: SessionRow = {

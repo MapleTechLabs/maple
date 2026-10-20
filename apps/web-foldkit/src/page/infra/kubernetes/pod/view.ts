@@ -1,4 +1,4 @@
-import { severityLevel } from "@maple/web/components/infra/format"
+import { severityLevel } from "../../../../components/infra/format"
 import { formatPercent } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -21,7 +21,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 
-// `PodDetailPage` (apps/web/src/routes/infra/kubernetes/pods/$podName.tsx) in `KubernetesShell`.
+// `PodDetailPage` in `KubernetesShell`.
 
 type H = HtmlBuilder<Message>
 type Summary = NonNullable<PodSummary>

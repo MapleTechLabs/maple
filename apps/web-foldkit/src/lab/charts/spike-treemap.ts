@@ -9,7 +9,7 @@ import { MUTED_COLOR_AMOUNT } from "../../charts/definitions/plot-constants"
 import type { SpikeSpec } from "./spike-spec"
 import { serviceToken, TREEMAP_ROWS, type TreemapRow } from "./spike-treemap-data"
 
-// `TreemapSpike` / `TreemapLegendSpike` (apps/web/src/lab/charts/treemap-spike.tsx), definition
+// `TreemapSpike` / `TreemapLegendSpike`, definition
 // half: span volume tiled service → operation, the legend muting by colour. Code copied.
 
 const PATH_DELIMITER = "\u0000"

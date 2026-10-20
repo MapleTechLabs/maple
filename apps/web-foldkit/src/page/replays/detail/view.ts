@@ -3,7 +3,7 @@ import { initialsFrom } from "@maple/ui/lib/initials"
 import { gradientFor, hostFromUrl } from "@maple/ui/lib/replay"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
-import { parseChTimestampMs } from "@maple/web/components/replays/replay-timeline"
+import { parseChTimestampMs } from "../../../components/replays/replay-timeline"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { BreadcrumbEntry } from "../../../shell"
@@ -29,7 +29,7 @@ import { sessionRail } from "./view-rail"
 import { copy } from "./view-session"
 import { replayTimeline } from "./view-timeline"
 
-// `ReplayDetailPage` (apps/web/src/routes/replays/$sessionId.tsx) on `ResultPage`, with `ReplayStudio`.
+// The replay detail page on `ResultPage`, with the replay studio.
 
 type H = HtmlBuilder<Message>
 

@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { panel } from "../../../ui/panel"
 import { sectionHeading } from "../../kit/section-heading"
 
-// `SettingsSection`, `SettingsSections`, `AdminOnlyNote` (apps/web/src/components/settings/settings-section.tsx).
+// `SettingsSection`, `SettingsSections`, `AdminOnlyNote`.
 
 export type SettingsWidth = "standard" | "wide"
 
@@ -12,7 +12,7 @@ const widthClass = (width: SettingsWidth) => (width === "wide" ? "w-full" : "w-f
 type Children = ReadonlyArray<Html | string>
 
 export type SettingsSectionOptions = Readonly<{
-	/** The heading id (`useId` in legacy): stable per section so `aria-labelledby` resolves. */
+	/** The heading id: stable per section so `aria-labelledby` resolves. */
 	id: string
 	title: string
 	description?: Children

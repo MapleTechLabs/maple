@@ -1,4 +1,4 @@
-import { restartTone, summarizePodRestarts } from "@maple/web/components/infra/pod-restarts"
+import { restartTone, summarizePodRestarts } from "../../../components/infra/pod-restarts"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -10,7 +10,7 @@ import { sectionHeading } from "../../kit/section-heading"
 import { statRailItem, statRailItemSkeleton } from "../../kit/stat-rail"
 import type { RestartRow } from "./pod-data"
 
-// `PodRestartsStat` and `PodContainerRestarts` (components/infra/kubernetes/pod-restarts-panel.tsx).
+// `PodRestartsStat` and `PodContainerRestarts`.
 
 type Restarts = AsyncData.AsyncData<ReadonlyArray<RestartRow>, LoadFailure>
 

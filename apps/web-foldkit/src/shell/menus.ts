@@ -12,7 +12,7 @@ export const triggerIdOf = (menu: Menu): string =>
 
 export const popupIdOf = (menu: Menu): string => `${triggerIdOf(menu)}-popup`
 
-/** Each menu's `<DropdownMenuContent>` props in apps/web. */
+/** Each menu's popup placement. */
 export const placementOf = (
 	menu: Menu,
 ): Readonly<{ side: Side; align: Align; sideOffset: number; className: string | undefined }> =>

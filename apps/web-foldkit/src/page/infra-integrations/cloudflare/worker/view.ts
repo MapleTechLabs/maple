@@ -1,4 +1,4 @@
-import { type WorkerHealth, workerHealth } from "@maple/web/components/infra/cloudflare/list-model"
+import { type WorkerHealth, workerHealth } from "../../../../components/infra/cloudflare/list-model"
 import {
 	DURABLE_OBJECT_COLORS,
 	durableObjectRows,
@@ -9,7 +9,7 @@ import {
 	percentileRows,
 	untracedExceptions,
 	workerOutcomeTotals,
-} from "@maple/web/components/infra/cloudflare/worker-signals"
+} from "../../../../components/infra/cloudflare/worker-signals"
 import {
 	EMPTY_VALUE,
 	formatErrorRate,
@@ -43,7 +43,7 @@ import { type PageData, pageOf, type Traced } from "./derive"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 
-// `WorkerDetailPage` and its parts (components/infra/cloudflare/cloudflare-worker-page.tsx).
+// `WorkerDetailPage` and its parts.
 
 type H = HtmlBuilder<Message>
 

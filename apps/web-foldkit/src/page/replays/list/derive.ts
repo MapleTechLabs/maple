@@ -1,5 +1,5 @@
 import type { SessionTag } from "@maple/domain/query-engine"
-import { isQualityTier, sessionTagsFromSearch } from "@maple/web/components/replays/session-tags"
+import { isQualityTier, sessionTagsFromSearch } from "../../../components/replays/session-tags"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import { formatCompact } from "../../../ui/filters/range-format"

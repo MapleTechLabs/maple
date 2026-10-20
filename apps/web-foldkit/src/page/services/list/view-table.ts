@@ -6,7 +6,7 @@ import { TONE_COLOR } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { statusDot } from "../../../ui/status-dot"
 import { tableCellStyles as tableCellClass, tableRowStyles } from "@maple/ui/styles/ui/table"
-import { HEALTH_TONE } from "@maple/web/components/dashboard/service-health"
+import { HEALTH_TONE } from "../../../components/dashboard/service-health"
 import { Option } from "effect"
 import { AsyncData as FoldkitAsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -44,8 +44,6 @@ import { MountEmptyState, MountTable } from "./command"
 import { Message } from "./message"
 import type { Model, ServiceRow } from "./model"
 import { isUnnamedService, type Overlays, rowIdOf, unnamedServiceHint, withOverlays } from "./view-overlays"
-
-// `ServicesTable` (apps/web/src/components/services/services-table.tsx).
 
 export const ERROR_RATE_COLOR = TONE_COLOR.crit
 export const THROUGHPUT_COLOR = "var(--color-primary, #3b82f6)"
@@ -201,7 +199,7 @@ const serviceRow = (
 		service.p95LatencyMs,
 		baselines?.get(baselineKey(service.serviceName, service.serviceNamespace, service.environment)),
 	)
-	// React keys rows inside their namespace and environment fragments, so a regrouped row remounts.
+	// Rows are keyed inside their namespace and environment groups, so a regrouped row remounts.
 	const rowKey = `${groupPath}/${service.serviceName}-${service.serviceNamespace}-${service.environment}`
 	const open = Message.ClickedServiceRow({
 		serviceName: service.serviceName,

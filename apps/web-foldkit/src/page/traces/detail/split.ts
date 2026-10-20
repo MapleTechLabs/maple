@@ -2,7 +2,7 @@ import { Effect, Queue, Stream } from "effect"
 import { Mount } from "foldkit"
 import { Message } from "./message"
 
-// The trace / span-panel split. Legacy passes react-resizable-panels 4 bare numbers, which it reads
+// The trace / span-panel split. Its sizes are the bare numbers react-resizable-panels 4 reads
 // as pixels: `defaultSize` 60 and 40, `minSize` 40 and 25. Its layout is those pixels as percents of
 // the group's panel width, scaled to sum to 100 (`jn`, then `ge`), each rounded to 3 decimals.
 

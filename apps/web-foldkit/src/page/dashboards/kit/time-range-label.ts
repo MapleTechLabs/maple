@@ -3,8 +3,7 @@ import { formatTimestampInTimezone, normalizeTimestampInput } from "@maple/web-d
 import { DateTime, Option } from "effect"
 import { presetLabel } from "../../kit/time-controls"
 
-// `formatTimeRangeDisplay` and `widgetTimeRangeLabel` (apps/web/src/lib/time-utils.ts,
-// widgets/widget-time-range-context.tsx), with the clock passed in instead of read.
+// `formatTimeRangeDisplay` and `widgetTimeRangeLabel`, with the clock passed in instead of read.
 
 const MINUTE = 60_000
 const plural = (count: number, unit: string) => `Last ${count} ${unit}${count !== 1 ? "s" : ""}`

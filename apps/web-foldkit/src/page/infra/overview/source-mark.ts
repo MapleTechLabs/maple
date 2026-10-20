@@ -4,8 +4,7 @@ import { icon } from "../../../ui/icon"
 import type { IconName } from "../../../ui/icons.generated"
 import type { SourceId } from "./model"
 
-// `SOURCE_TITLE` and `SourceMark` (components/infra/overview/infra-overview.tsx): the sidebar's marks.
-// apps/web re-exports `CloudflareBrandIcon` as `CloudflareIcon`.
+// `SOURCE_TITLE` and `SourceMark`: the sidebar's marks.
 
 export const SOURCE_TITLE = {
 	hosts: "Hosts",

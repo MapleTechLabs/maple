@@ -14,7 +14,7 @@ import { EXCLUDED_OF, filtersOf } from "./update"
 import { type Facet, Message } from "./message"
 import type { PodFacets, Model } from "./model"
 
-// `PodsFilterSidebarView` (apps/web/src/components/infra/k8s-filter-sidebar.tsx).
+// `PodsFilterSidebarView`.
 
 type H = HtmlBuilder<Message>
 

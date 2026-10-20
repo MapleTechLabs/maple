@@ -15,7 +15,7 @@ import { disclosed, jsonPayload, messageBody, viewSwitch } from "./payload-view"
 import { clampedBody, payloadCopyButton } from "./transcript-kit"
 import { shownMarkdown } from "./transcript-rows"
 
-// The Messages tab of `SpanExpansion` (session-detail/span-expansion.tsx). Its local state (open,
+// The span expansion's Messages tab. Its local state (open,
 // raw) lives in the page's `openRows` under the popover's key prefix, reset when the span changes.
 
 type H = HtmlBuilder<Message>

@@ -6,7 +6,7 @@ import { icon } from "../../ui/icon"
 import * as Select from "../../ui/select"
 import { type SelectEntry, selectedIndexOf, view as selectView } from "../../ui/select-view"
 
-// apps/web/src/lab/kit/pickers.tsx: the select, combobox and autocomplete fixtures shared by the
+// apps/web-foldkit/src/lab/kit/pickers.ts: the select, combobox and autocomplete fixtures shared by the
 // forms page (closed) and the overlays page (open). `place` positions each one's parts.
 
 export const ENVIRONMENT_ENTRIES: ReadonlyArray<SelectEntry> = [

@@ -1,4 +1,4 @@
-import { autoContextDisplay, autoContextLabel, type AutoContext } from "@maple/web/components/chat/auto-contexts"
+import { autoContextDisplay, autoContextLabel, type AutoContext } from "../../../components/chat/auto-contexts"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { alertDescriptionStyles } from "@maple/ui/styles/ui/alert"
@@ -13,8 +13,8 @@ import { textarea } from "../../../ui/textarea"
 import { dotLoader } from "./dot-loader"
 import type { ChatStatus } from "./ui-message"
 
-// `PromptInput` (apps/web components/ai-elements/prompt-input.tsx), `PageContextChips` and the
-// failure notices (components/chat). The textarea's text lives in the host's Model.
+// The prompt input, the page context chips and the failure notices. The textarea's text lives
+// in the host's Model.
 
 export type ComposerOptions<M> = Readonly<{
 	/** Base UI's `useId` on the textarea. */

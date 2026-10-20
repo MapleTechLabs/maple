@@ -2,7 +2,7 @@ import { type DashboardDocument, findNextPosition, type SectionTarget, withSecti
 import { sortWidgetsForLayout, widgetsInContainer } from "./layout"
 import type { DocumentFields } from "./store"
 
-// The section edits of `useDashboardMutations` (apps/web/src/hooks/use-dashboard-store.ts) as pure
+// The dashboard section edits as pure
 // document updaters; an edit that changes nothing hands the document back unchanged.
 
 type Section = NonNullable<DashboardDocument["sections"]>[number]

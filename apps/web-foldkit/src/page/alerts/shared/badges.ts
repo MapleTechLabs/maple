@@ -5,7 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { statusDot } from "../../../ui/status-dot"
 
-// `AlertSeverityBadge` and `AlertStatusBadge` (apps/web/src/components/alerts).
+// The alert severity and status badges.
 
 const TONE_BY_SEVERITY = new Map<AlertSeverity, Tone>([
 	["warning", "warn"],

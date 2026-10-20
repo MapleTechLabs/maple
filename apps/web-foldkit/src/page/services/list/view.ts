@@ -15,8 +15,6 @@ import { displayedServices } from "./derive"
 import { filtersRail } from "./view-filters"
 import { loadingState, servicesTable, THROUGHPUT_COLOR } from "./view-table"
 
-// `ServicesPage` (apps/web/src/routes/services/index.tsx).
-
 /** The colour tokens the sparklines read off the theme. */
 const THEME_TOKENS = [TONE_COLOR.crit, THROUGHPUT_COLOR]
 

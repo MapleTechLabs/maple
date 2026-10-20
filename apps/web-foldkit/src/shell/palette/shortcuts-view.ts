@@ -13,7 +13,7 @@ import { eyebrow } from "../../ui/eyebrow"
 import { MeasurePaletteList } from "./command"
 import { displayAlternates, type Platform, SHORTCUT_GROUPS, SHORTCUTS, type ShortcutDef } from "./shortcuts"
 
-// `KeyboardShortcutsDialog` (apps/web components/command-palette/keyboard-shortcuts-dialog.tsx).
+// The keyboard shortcuts dialog.
 
 export const SHORTCUTS_DIALOG_ID = "keyboard-shortcuts"
 

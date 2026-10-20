@@ -1,5 +1,5 @@
-import type { FrameworkId } from "@maple/web/components/quick-start/sdk-snippets"
-import type { OnboardingRole } from "@maple/web/lib/onboarding-role"
+import type { FrameworkId } from "../../components/quick-start/sdk-snippets"
+import type { OnboardingRole } from "../../lib/onboarding-role"
 import { Command } from "foldkit"
 import type { TimeWindow } from "../../data/time-range"
 import { AppRoute, hrefOf } from "../../route"

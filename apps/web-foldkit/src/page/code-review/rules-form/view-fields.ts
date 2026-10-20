@@ -1,4 +1,4 @@
-import { CATEGORY_LABELS } from "@maple/web/components/code-review/code-review-format"
+import { CATEGORY_LABELS } from "../../../components/code-review/code-review-format"
 import type { Html, HtmlBuilder, TextareaAttribute } from "foldkit/html"
 import * as Checkbox from "../../../ui/checkbox"
 import { type FieldIds, type FieldState, field, fieldDescription, fieldLabel } from "../../../ui/field"

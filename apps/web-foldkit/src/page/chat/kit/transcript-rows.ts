@@ -1,9 +1,9 @@
 import { stripChatContext } from "@maple/domain/chat-preamble"
-import { parseDiagnosisMarker } from "@maple/web/components/chat/diagnosis-marker"
+import { parseDiagnosisMarker } from "../../../components/chat/diagnosis-marker"
 import { Array } from "effect"
 import type { ToolPart, UIMessage, UIMessagePart } from "./ui-message"
 
-// `transcript-rows.ts` (apps/web components/chat): messages to rows, merging runs of tool-only turns.
+// Messages to rows, merging runs of tool-only turns.
 
 export type ToolStatus = "running" | "completed" | "error"
 

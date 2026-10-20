@@ -1,7 +1,7 @@
 import type { SessionTag } from "@maple/domain/query-engine"
 import type { SessionRow } from "../../page/replays/kit/session-row"
 
-// copied: the fixture of apps/web/src/lab/replays-list-lab.tsx (a React module). A real day of the
+// The replays list fixture: a real day of the
 // dogfood org: mostly bots, bounces and idle tabs, plus an errored bot and a live bounce.
 
 const BASE: SessionRow = {

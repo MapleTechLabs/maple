@@ -12,9 +12,8 @@ import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 
-// Port of `ToolSeriesChart`'s definition memo and `seriesLines` (agent-sessions/tools/
-// tool-series-chart.tsx, tool-chart-marks.ts). TODO(tooltip-anchor): legacy anchors the card on the
-// cursor plot's focus store; here it follows the pointer.
+// The agent tool series chart's definition and its series lines. TODO(tooltip-anchor): anchor the
+// card on the cursor plot's focus store; it follows the pointer.
 
 type ToolSeriesSpec = Extract<ChartSpec, { readonly _tag: "ToolSeries" }>
 type Row = ToolSeriesSpec["rows"][number]

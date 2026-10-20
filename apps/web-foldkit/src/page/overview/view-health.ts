@@ -2,7 +2,7 @@ import type { V2AnomalyServiceCount } from "@maple/domain/http/v2"
 import { formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { HEALTH_TONE, primaryServiceHealthCause } from "@maple/web/components/dashboard/service-health"
+import { HEALTH_TONE, primaryServiceHealthCause } from "../../components/dashboard/service-health"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
@@ -29,7 +29,7 @@ import type { HealthSnapshot, Incident, Model } from "./model"
 import { alertFiringHero } from "./view-hero"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 
-// `ServiceHealthOverview` (components/dashboard/service-health-section.tsx): the alerts banner and
+// The service health overview: the alerts banner and
 // the health summary rail above the usage cards.
 
 export type HealthData = readonly [

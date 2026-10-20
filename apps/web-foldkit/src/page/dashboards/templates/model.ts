@@ -11,7 +11,7 @@ import * as Dialog from "../../../ui/dialog"
 import { TableSort } from "../kit/tiles"
 import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 
-// The template gallery (apps/web/src/routes/dashboards/templates.tsx, dashboard-builder/templates/*).
+// The template gallery.
 
 export const ReadinessFilter = Schema.Literals(["all", "ready", "needs-setup"])
 export type ReadinessFilter = typeof ReadinessFilter.Type

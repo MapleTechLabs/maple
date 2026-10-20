@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { dialogDescription, dialogHeader, dialogTitle } from "../../ui/dialog-view"
 import { eyebrow } from "../../ui/eyebrow"
 
-// `SheetDetailHeader` (apps/web/src/components/common/sheet-detail-header.tsx): a detail sheet's
+// `SheetDetailHeader`: a detail sheet's
 // eyebrow kind, title, screen-reader description and meta row.
 
 export type SheetDetailHeaderOptions = Readonly<{

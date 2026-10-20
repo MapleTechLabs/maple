@@ -42,7 +42,7 @@ import {
 } from "./derive"
 import { Message, type RequestMode, type RetryTarget } from "./message"
 import { IncidentsData, type Model, RulesData } from "./model"
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { storageKeyOf } from "../onboarding/quick-start-state"
 import type * as SetupChecklist from "./setup-checklist"
 import * as Setup from "./setup-checklist-update"
@@ -251,7 +251,7 @@ const persistHint =
 	}
 
 /**
- * Every query the page reads, keyed like apps/web's atoms, for the current Model. Idempotent under
+ * Every query the page reads, keyed by its inputs, for the current Model. Idempotent under
  * `Load`: a slot already holding (or loading) its key sends nothing, so any Message may re-run it.
  */
 export const sync = (model: Model, context: PageContext, mode: RequestMode): Return => {

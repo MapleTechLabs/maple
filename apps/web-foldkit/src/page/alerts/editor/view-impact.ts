@@ -14,7 +14,7 @@ import type { Message } from "./message"
 import type { Model } from "./model"
 import { isEvaluationChanged } from "./plan"
 
-// `RuleEditImpact` (components/alerts/rule-edit-impact.tsx): the saved rule and the draft replayed
+// `RuleEditImpact`: the saved rule and the draft replayed
 // over one window, every changed field, and the open incidents the draft would clear.
 
 type H = HtmlBuilder<Message>

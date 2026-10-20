@@ -1,4 +1,4 @@
-import { toggleFilterValue } from "@maple/web/components/infra/cloudflare/filters"
+import { toggleFilterValue } from "../../../../components/infra/cloudflare/filters"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "../../../../charts/chart"
 import { LoadChartRuntime } from "../../../../charts/chart-runtime"

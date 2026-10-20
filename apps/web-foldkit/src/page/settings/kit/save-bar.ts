@@ -3,9 +3,9 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import type { SettingsWidth } from "./section"
 
-// `SettingsSaveBar` (apps/web/src/components/settings/settings-save-bar.tsx): pinned while a tab has
-// unsaved edits. TODO(settings): its `UnsavedChangesGuard` (confirm before navigating away, and the
-// browser's beforeunload prompt) needs a root-level navigation blocker; not ported.
+// `SettingsSaveBar`: pinned while a tab has unsaved edits. TODO(settings): its `UnsavedChangesGuard`
+// (confirm before navigating away, and the browser's beforeunload prompt) needs a root-level navigation
+// blocker; not implemented.
 
 export type SaveBarOptions<M> = Readonly<{
 	isDirty: boolean

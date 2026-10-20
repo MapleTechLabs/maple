@@ -18,7 +18,7 @@ import { Effect, Option, Result, Schema, Stream } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import type { ChatWorkspaceId } from "@maple/domain/primitives"
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { toLoadFailure } from "../../../data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
@@ -30,8 +30,7 @@ import * as EmailFields from "./email-fields"
 import * as HazelFields from "./hazel-fields"
 import { DestinationForm, TextField, toFormState } from "./form"
 
-// `DestinationDialog` and the `useDestinationManager` state it is driven by
-// (components/alerts/destination-dialog.tsx, overview/routing-tab.tsx), as one Submodel.
+// The destination dialog and the state it is driven by, as one Submodel.
 
 export const Model = Schema.Struct({
 	dialog: Dialog.Model,
@@ -153,8 +152,7 @@ const failure = (error: unknown) => {
 	return { title: body.title, message: body.message }
 }
 
-// The client takes one request shape per payload member, so the union is split on `type`
-// here instead of apps/web's `as never`.
+// The client takes one request shape per payload member, so the union is split on `type` here.
 const createRequest = (payload: V2AlertDestinationCreateParams) => {
 	switch (payload.type) {
 		case "pagerduty":
@@ -286,7 +284,7 @@ const mountFields = (step: Return): Return => {
 	return step
 }
 
-/** A save in flight stays in flight across a reopen (legacy's `useAsyncAction`): no second submit. */
+/** A save in flight stays in flight across a reopen: no second submit. */
 const open = (model: Model, patch: Partial<Model>): Return => {
 	const next = { ...model, ...patch, openCount: model.openCount + 1, telegramChats: null, telegramError: null, isDetectingChats: false, chatConnect: ChatConnect.finish(model.chatConnect) }
 	const opened = liftDialog(next, Dialog.open(model.dialog))
@@ -380,7 +378,7 @@ const detected = (model: Model, result: Result.Result<ReadonlyArray<V2TelegramCh
 
 // SUBSCRIPTION (the host page runs it: a Submodel has no Subscriptions of its own)
 
-/** The connect popup lives with the open dialog, as legacy's hook lives in its picker. */
+/** The connect popup lives with the open dialog. */
 export const chatConnectDependencies = (model: Model): ChatConnectStream.Dependencies =>
 	ChatConnectStream.dependenciesOf(model.chatConnect, model.dialog.isOpen)
 

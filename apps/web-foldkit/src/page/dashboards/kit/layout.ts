@@ -8,8 +8,7 @@ import {
 } from "@maple/domain/http"
 import type { DocumentFields } from "./store"
 
-// The pure layout and widget edits of `use-dashboard-store.ts` and `sections/section-layout.ts`
-// (apps/web/src/components/dashboard-builder), over the stored document.
+// The pure layout and widget edits over the stored document.
 
 type Widget = DashboardDocument["widgets"][number]
 type Section = NonNullable<DashboardDocument["sections"]>[number]

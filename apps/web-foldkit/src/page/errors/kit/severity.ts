@@ -5,7 +5,7 @@ import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { statusDot } from "../../../ui/status-dot"
 
-// copied: the maps and marks of apps/web/src/components/errors/severity-badge.tsx (a React module).
+// The severity badge's maps and marks.
 
 export const SEVERITY_TONE = {
 	critical: "bg-severity-fatal/12 text-severity-fatal",

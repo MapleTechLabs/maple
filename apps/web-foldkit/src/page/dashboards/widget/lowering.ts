@@ -45,8 +45,7 @@ import {
 } from "./lowering-product"
 
 // The editor state read out of a stored widget and lowered back (`toInitialState`,
-// `buildWidgetDataSource`, `buildWidgetDisplay`, `validateQueries` in widget-builder-utils.ts, with
-// each type's halves from widgets/types/*.tsx).
+// `buildWidgetDataSource`, `buildWidgetDisplay`, `validateQueries`, with each type's halves).
 
 export type Widget = DashboardDocument["widgets"][number]
 type Display = Widget["display"]
@@ -274,7 +273,7 @@ const funnelDisplayOf = (state: EditorState): Display["funnel"] => {
 		: undefined
 }
 
-/** Each type's `buildDisplay` additions (`extendDisplay` in widgets/types/*.tsx). */
+/** Each type's `buildDisplay` additions (`extendDisplay`). */
 const ownDisplayOf = (state: EditorState): Partial<Display> => {
 	switch (panelOf(state)) {
 		case "markdown":

@@ -5,7 +5,7 @@ import { modifyFields } from "foldkit/struct"
 import { ChartTooltip } from "./chart-spec"
 
 /**
- * One chart's interaction state, the part React kept in `useState` beside the chart: the hovered
+ * One chart's interaction state beside the chart: the hovered
  * datum (from the plot's focus or a legend row), the legend's pinned emphasis, the tooltip datum
  * and the measured container width. The library owns the canvas; this owns what the view reads.
  */

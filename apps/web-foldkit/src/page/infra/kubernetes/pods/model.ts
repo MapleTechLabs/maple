@@ -9,7 +9,7 @@ import * as InstallModal from "../../kit/install-modal"
 import * as Peek from "../peek/model"
 import { PodsPage, RestartRows } from "../pod-data"
 
-// `/infra/kubernetes/pods` (apps/web/src/routes/infra/kubernetes/pods/index.tsx).
+// `/infra/kubernetes/pods`.
 
 export const PodCounts = Schema.Struct(PodsSummaryResponse.fields)
 export type PodCounts = typeof PodCounts.Type

@@ -1,5 +1,5 @@
-import { BUCKET_SECONDS, PAGE_LABEL, PAGES } from "@maple/web/lab/gcp-workload-fixture"
-import { gcpWorkloadName } from "@maple/web/components/infra/gcp/tabs"
+import { BUCKET_SECONDS, PAGE_LABEL, PAGES } from "../gcp-workload-fixture"
+import { gcpWorkloadName } from "../../components/infra/gcp/tabs"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type PageData, workloadData } from "../../page/infra-integrations/gcp/workload/derive"
@@ -10,7 +10,7 @@ import { segmentedSelect } from "../../ui/segmented-select"
 import { type LabPage, Message, type Model } from "./model"
 import { workloadOf } from "./update"
 
-/** `WorkloadPage`'s props, read off the fixture as the legacy lab hands them to the page. */
+/** `WorkloadPage`'s props, read off the fixture. */
 const dataOf = (page: LabPage): PageData => {
 	const workload = workloadOf(page)
 	const sql = workload.cloudSql

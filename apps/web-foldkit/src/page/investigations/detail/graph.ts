@@ -3,7 +3,7 @@ import { buildProvenanceGraph, type ProvenanceGraph } from "@maple/web-data/inve
 import { modifyFields } from "foldkit/struct"
 import type { Model } from "./model"
 
-// The camera arithmetic of `ProvenanceCanvas` (components/investigations/flow/provenance-canvas.tsx).
+// The camera arithmetic of the provenance canvas.
 
 const MIN_FIT = 0.68
 const FIT_PADDING = 0.06

@@ -1,6 +1,5 @@
 /**
- * `window.__dashboardGridBench` from apps/web's `DashboardGridBench`, for
- * `perf/dashboard-grid.perf.spec.ts`. React's Profiler has no Foldkit counterpart: `react.commits`
+ * `window.__dashboardGridBench` for `perf/dashboard-grid.perf.spec.ts`. `react.commits`
  * counts DOM commits under the board (mutation batches), durations stay 0. A content render is one
  * run of the memoised tile view, which marks `TILE_RENDER_MARK`; the board reports its layout writes.
  */
@@ -62,8 +61,8 @@ const nextPaint = () =>
 const counter = (root: Element, attribute: string) => Number(root.getAttribute(attribute) ?? 0)
 
 /**
- * Legacy moves the lifted tile and the resize ghost with direct style writes outside React
- * (`use-grid-interaction.ts`); here they are patches. A batch of only those does not count.
+ * The lifted tile and the resize ghost follow the pointer through style patches. A batch of only
+ * those does not count.
  */
 const isPointerFollow = (record: MutationRecord): boolean =>
 	record.type === "attributes" &&

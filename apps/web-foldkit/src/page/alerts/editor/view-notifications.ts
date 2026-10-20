@@ -16,7 +16,7 @@ import type { Model } from "./model"
 import { fieldStateOf, idsOf } from "./view-fields"
 import { destinationList } from "./view-notify"
 
-// `NotificationsSection` (components/alerts/notifications-section.tsx): who gets notified, per tier,
+// `NotificationsSection`: who gets notified, per tier,
 // and the optional message template.
 
 type H = HtmlBuilder<Message>

@@ -1,12 +1,12 @@
-import { LAB_ENTRIES, type LabEntry as LegacyLabEntry } from "@maple/web/lab/registry"
+import { LAB_ENTRIES, type LabEntry as RegistryEntry } from "../registry"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { eyebrow } from "../../ui/eyebrow"
 import { defineStaticShellLab } from "../static-shell-lab"
 
-// `/lab` (apps/web `lab/lab-index.tsx`): every lab and bench surface, read from apps/web's registry.
+// `/lab`: every lab and bench surface, read from the registry.
 
-const SECTIONS: ReadonlyArray<{ kind: LegacyLabEntry["kind"]; title: string; blurb: string }> = [
+const SECTIONS: ReadonlyArray<{ kind: RegistryEntry["kind"]; title: string; blurb: string }> = [
 	{
 		kind: "lab",
 		title: "Labs",
@@ -15,11 +15,11 @@ const SECTIONS: ReadonlyArray<{ kind: LegacyLabEntry["kind"]; title: string; blu
 	{
 		kind: "bench",
 		title: "Benches",
-		blurb: "Synthetic perf harnesses. The Playwright gates in apps/web/perf drive these URLs; open them in a foreground tab when measuring by hand.",
+		blurb: "Synthetic perf harnesses. Open them in a foreground tab when measuring by hand.",
 	},
 ]
 
-const entryCard = <M>(h: HtmlBuilder<M>, entry: LegacyLabEntry): Html =>
+const entryCard = <M>(h: HtmlBuilder<M>, entry: RegistryEntry): Html =>
 	h.li(
 		[],
 		[

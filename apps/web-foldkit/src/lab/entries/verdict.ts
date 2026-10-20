@@ -1,10 +1,10 @@
-import { VERDICT_LAB_CASES } from "@maple/web/lab/verdict-fixture"
+import { VERDICT_LAB_CASES } from "../verdict-fixture"
 import { Clock, Effect, Schema } from "effect"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { verdictCard } from "../../page/investigations/detail/view-verdict"
 import { defineShellLab } from "../shell-lab"
 
-// `/lab/verdict` (apps/web `lab/verdict-lab.tsx`): the verdict card and run-progress feed in every
+// `/lab/verdict`: the verdict card and run-progress feed in every
 // state an investigation presents them in, inside the real shell.
 
 const Model = Schema.Struct({ nowMs: Schema.Number })

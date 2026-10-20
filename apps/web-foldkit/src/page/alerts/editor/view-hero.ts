@@ -20,7 +20,7 @@ import { Message } from "./message"
 import type { DryRun, Model } from "./model"
 import { editImpact } from "./view-impact"
 
-// `RuleLiveChartHero` (components/alerts/rule-live-chart-hero.tsx): the evaluator's replay of the
+// `RuleLiveChartHero`: the evaluator's replay of the
 // draft with the threshold, would-fire bands and the dry-run verdict.
 
 type H = HtmlBuilder<Message>

@@ -12,8 +12,7 @@ import {
 import { destinationProvider } from "../shared/providers"
 import type { RuleForm } from "./form"
 
-// copied: the pure helpers of the rule editor's React modules (alert-create-form-surface.tsx,
-// rule-condition-bar.tsx, rule-live-chart-hero.tsx, notifications-section.tsx).
+// The rule editor's pure helpers: form surface, condition bar, live chart hero, notifications.
 
 export const COMPARATOR_WORDS = new Map<AlertComparator, string>([
 	["gt", "is above"],

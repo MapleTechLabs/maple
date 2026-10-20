@@ -23,8 +23,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { CHART_STYLES, PICKER_SECTIONS, PICKER_TABS, type PickerSection } from "./picker-catalog"
 
-// `WidgetPicker` (dashboard-builder/config/chart-picker.tsx) and the presets' thumbnails
-// (widgets/types/preset-preview.tsx, stat.tsx, markdown.tsx).
+// The widget picker and the presets' thumbnails.
 
 type H = HtmlBuilder<Message>
 

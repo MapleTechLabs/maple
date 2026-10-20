@@ -22,8 +22,7 @@ import { RawSqlState } from "./raw-sql"
 import { MetricPageSchema } from "./metric-option"
 import { Suggestion } from "./suggestions"
 
-// The widget editor (apps/web/src/routes/dashboards/$dashboardId_.widgets.$widgetId.tsx and
-// dashboard-builder/config/widget-query-builder-page.tsx).
+// The widget editor.
 
 export const Status = Schema.Literals(["Loading", "Ready", "Missing"])
 export type Status = typeof Status.Type

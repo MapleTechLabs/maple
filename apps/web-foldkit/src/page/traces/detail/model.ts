@@ -11,7 +11,7 @@ import * as Timeline from "./timeline"
 import { SpanEvents, TraceData } from "./trace-data"
 import * as Waterfall from "./waterfall"
 
-// `/traces/$traceId` (apps/web/src/routes/traces/$traceId.tsx).
+// `/traces/$traceId`.
 
 export const ProductEvent = Schema.Struct({
 	eventName: Schema.String,
@@ -32,7 +32,7 @@ const FlowGraphData = Schema.declare(
 export const Model = Schema.Struct({
 	traceId: Schema.String,
 	search: TraceSearch,
-	/** The clock at entry, for "16m ago" (legacy reads `Date.now()` at render). */
+	/** The clock at entry, for "16m ago". */
 	nowMs: Schema.Number,
 	/** The list filters on the URL (`list-query.ts`), kept on every navigation and the crumb. */
 	listQuery: Schema.String,

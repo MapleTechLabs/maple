@@ -1,4 +1,4 @@
-import { countryLabel, languageLabel, referrerLabel, utmLabel } from "@maple/web/components/analytics/labels"
+import { countryLabel, languageLabel, referrerLabel, utmLabel } from "../../components/analytics/labels"
 import {
 	ANALYTICS_METRICS,
 	type AnalyticsMetricDescriptor,
@@ -6,7 +6,7 @@ import {
 	findMetric,
 	isMetricAvailable,
 	metricDelta,
-} from "@maple/web/components/analytics/metrics"
+} from "../../components/analytics/metrics"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
@@ -31,7 +31,7 @@ import { type BreakdownCard, breakdownPanel } from "./view-breakdown"
 import { trafficChart } from "./view-chart"
 import { favicon } from "./view-icons"
 
-// `AnalyticsContent` (routes/analytics/index.tsx): bot notice, metric strip, traffic chart, the
+// `AnalyticsContent`: bot notice, metric strip, traffic chart, the
 // breakdown cards and the traces behind a filtered event.
 
 type H = HtmlBuilder<Message>

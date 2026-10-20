@@ -12,7 +12,7 @@ import { deploysPanel, issuesPanel } from "./view-deploys"
 import { dependencyStrip, usagePanel, workloadsPanel } from "./view-footprint"
 import { SPARKLINE_TOKEN, topOperationsPanel } from "./view-panels"
 
-// `OverviewTab` ($serviceName.tsx): the chart grid, then the quiet panels and the "Talks to" strip.
+// The Overview tab: the chart grid, then the quiet panels and the "Talks to" strip.
 
 type H = HtmlBuilder<Message>
 

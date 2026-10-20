@@ -8,7 +8,7 @@ import { Effect, Result, Schema } from "effect"
 import { toLoadFailure } from "../../data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
 
-// `IntegrationConnectProvider` and `useOAuthPopupFlow` (components/integrations/integration-connect.tsx).
+// `IntegrationConnectProvider` and `useOAuthPopupFlow`.
 
 export const ConnectProvider = Schema.Literals(["cloudflare", "hazel", "github", "planetscale"])
 export type ConnectProvider = typeof ConnectProvider.Type

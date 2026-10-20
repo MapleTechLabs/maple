@@ -1,7 +1,7 @@
 import { Option, Schema } from "effect"
 import { PRODUCT_EVENTS_FUNNEL_ENDPOINT, PRODUCT_EVENTS_PATHS_ENDPOINT } from "@maple/widgets/dashboard"
 
-// `share-support.ts` (dashboard-builder/toolbar/): which widgets a shared view can render, judged
+// Which widgets a shared view can render, judged
 // ahead of time so the share dialog and the embed item can say so. The server stays the authority.
 
 const SUPPORTED_ROUTE_ENDPOINTS = new Set([

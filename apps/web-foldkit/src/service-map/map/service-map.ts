@@ -67,16 +67,16 @@ export const Model = Schema.Struct({
 	snapshots: Schema.Array(Snapshot),
 	/** The first automatic fit snaps; every later one animates (`hasFittedOnce`). */
 	hasFitted: Schema.Boolean,
-	/** The host's legacy frames its first reveal even with namespace boxes (apps/local-ui does). */
+	/** The host frames its first reveal even with namespace boxes (apps/local-ui does). */
 	isFirstBoxedFitKept: Schema.Boolean,
-	/** The live signature had a saved camera when it became live: no auto-fit (legacy `viewportSnapshot`). */
+	/** The live signature had a saved camera when it became live: no auto-fit. */
 	hasSavedCamera: Schema.Boolean,
 	/** Where nodes are drawn: the layout, the signature's saved drags, then a drag in progress. */
 	positions: Positions,
 	drag: Schema.Option(Schema.Struct({ id: Schema.String, position: Point })),
 	/**
 	 * A new signature's bridged layout (known nodes kept, new ones placed by the fallback) until it
-	 * has been measured and painted: legacy draws it for a frame before its worker answers.
+	 * has been measured and painted: it is drawn for a frame before the layout worker answers.
 	 */
 	bridge: Schema.Option(Schema.Struct({ signature: Schema.String, isAwaitingPaint: Schema.Boolean })),
 	/** ELK's answer, held while the bridge is not yet on screen. */
@@ -252,16 +252,13 @@ const requestMapFit = (model: Model, isAnimated: boolean): Model =>
 const FIT_DURATION_MS = 300
 
 /**
- * Legacy bug, mirrored for parity: when the map first appears with namespace boxes, its fit never
- * lands. `ServiceMapFlowCanvas` marks the fit done and schedules it for the next frame; the boxes
- * mount a frame later (deferred), React Flow reports their first measurement through
- * `onNodesChange`, which always yields a new array, and the effect's cleanup cancels the frame.
- * The camera stays at React Flow's 0,0,1. Later layouts mount their boxes while bridged, so fit.
+ * When the map first appears with namespace boxes, its first fit is skipped: the camera stays at
+ * 0,0,1. Later layouts mount their boxes while bridged, so fit.
  */
 export const hasNamespaceBoxes = (graph: EffectiveGraph): boolean =>
 	graph.nodes.some((node) => !node.id.startsWith(DB_NODE_PREFIX) && Boolean(node.data.namespace))
 
-/** The automatic fit of a new layout: skipped for a saved camera, dropped where legacy drops it. */
+/** The automatic fit of a new layout: skipped for a saved camera and for the first boxed reveal. */
 const autoFit = (model: Model, isFirstReveal: boolean): Model => {
 	if (model.hasSavedCamera) return model
 	const fitted = { ...model, hasFitted: true }
@@ -299,7 +296,7 @@ const fallBack = (model: Model, signature: string): Model =>
 const savedCameraOf = (snapshots: ReadonlyArray<Snapshot>, signature: string) =>
 	Option.flatMap(snapshotFor(snapshots, signature), (snapshot) => Option.fromNullishOr(snapshot.viewport))
 
-/** The legacy split: 65 / 35 when a node opens the panel (as react-resizable-panels lays it out). */
+/** The 65 / 35 split when a node opens the panel (as react-resizable-panels lays it out). */
 const DETAIL_SPLIT = [64.999, 35.001]
 
 const withSelection = (model: Model, selectedId: Option.Option<string>): Model => {
@@ -312,13 +309,13 @@ const withSelection = (model: Model, selectedId: Option.Option<string>): Model =
 /**
  * A new effective graph. Same signature: metrics or dimming changed, positions stay. New signature:
  * keep every known node where it is and place new ones by the anchored fallback while ELK runs
- * (legacy's `carriedPositions` bridge), restoring that signature's saved camera if it has one.
+ * (the bridge), restoring that signature's saved camera if it has one.
  */
 const applyGraph = (model: Model, graph: EffectiveGraph): Return => {
 	if (graph.signature === model.graph.signature) return { model: withPositions({ ...model, graph }) }
 	const savedCamera = savedCameraOf(model.snapshots, graph.signature)
 	const anchor = model.layout.positions
-	// One synchronous layout per signature (legacy's `fallbackPositions` memo): the bridge places
+	// One synchronous layout per signature: the bridge places
 	// new nodes by it, and it is the layout shown if ELK fails or is late.
 	const fallback = fallbackPositions(graph, anchor)
 	const positions = model.revealed ? { ...fallback, ...anchor } : anchor
@@ -333,7 +330,7 @@ const applyGraph = (model: Model, graph: EffectiveGraph): Return => {
 			onSome: (viewport) => ({ ...model.canvas, viewport }),
 		}),
 	})
-	// Legacy's fit of the bridge is cancelled by ELK's answer a frame later; only that one frames.
+	// The bridge is not fitted: ELK's answer lands a frame later and only that one frames.
 	const bridged = next.revealed
 		? awaitBridgePaint({
 				...next,
@@ -357,7 +354,7 @@ const applyGraph = (model: Model, graph: EffectiveGraph): Return => {
 
 /**
  * Declutter again after an input changed. A focus target that left the graph clears, and a
- * selected node that collapse or focus-hide removed is deselected (legacy's two effects).
+ * selected node that collapse or focus-hide removed is deselected.
  */
 const redeclutter = (model: Model): Return => {
 	const first = graphOf(model)
@@ -566,7 +563,7 @@ const step = (model: Model, message: Message): Return =>
 							}
 						: reveal(model, "ready", positions),
 		}),
-		// A failure lands after the bridge's frame too; legacy then shows the signature's fallback.
+		// A failure lands after the bridge's frame too; the signature's fallback shows then.
 		FailedElkLayout: ({ signature }) =>
 			Option.exists(model.bridge, (bridge) => bridge.signature === signature) &&
 			model.fallback.signature === signature
@@ -614,7 +611,7 @@ const step = (model: Model, message: Message): Return =>
 			model.collapsedNamespaces.includes(namespace)
 				? { model }
 				: redeclutter({ ...model, collapsedNamespaces: [...model.collapsedNamespaces, namespace] }),
-		// The combobox comes back fresh, as the remounted legacy one does.
+		// The combobox comes back fresh.
 		ClickedClearFocus: () =>
 			withFocus(
 				{

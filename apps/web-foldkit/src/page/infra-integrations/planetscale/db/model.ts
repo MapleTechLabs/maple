@@ -21,7 +21,7 @@ import {
 	TimeseriesRow,
 } from "../data"
 
-// `/infra/planetscale/$dbName` (apps/web/src/routes/infra/planetscale/$dbName.tsx).
+// `/infra/planetscale/$dbName`.
 
 export const Measure = Schema.Literals(["connections", "cpu", "memory", "storage", "lag"])
 export type Measure = typeof Measure.Type
@@ -38,7 +38,7 @@ export const Model = Schema.Struct({
 	dbName: Schema.String,
 	search: InfraPlanetscaleDatabaseSearch,
 	window: Schema.NullOr(TimeWindow),
-	/** `window` read as browser-local time (legacy's `Date.parse`), for the events read. */
+	/** `window` read as browser-local time, for the events read. */
 	localWindow: Schema.NullOr(LocalWindow),
 	nowMs: Schema.Number,
 	status: KeyedSchema(PlanetscaleStatus, LoadFailure),

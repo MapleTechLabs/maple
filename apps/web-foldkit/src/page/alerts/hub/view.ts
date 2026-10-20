@@ -20,7 +20,7 @@ import { routingTab } from "./view-routing"
 import * as DestinationDialogView from "../destination/view"
 import { rulesTab } from "./view-rules"
 
-// `AlertsPage` (apps/web/src/routes/alerts/index.tsx) and `AlertsHub` (overview/alerts-hub.tsx).
+// `AlertsPage` and `AlertsHub`: the `/alerts` page and its tabs.
 
 type H = HtmlBuilder<Message>
 

@@ -4,7 +4,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as ToggleGroup from "../../ui/toggle-group"
 import type { SceneHandle, SceneInput } from "./three/scene"
 
-// `ServiceMap3DViewport`'s own state (components/service-map/three/viewport.tsx): the Atlas or
+// The 3D viewport's own state: the Atlas or
 // Cascade perspective, the traffic toggle and the camera command. The scene itself runs in a
 // Mount that `import()`s `./three/scene`, so three never reaches the startup bundle.
 
@@ -24,7 +24,7 @@ export const Model = Schema.Struct({
 	command: CameraCommand,
 	/** `useTheme()`: read from `<html>` by a Mount, `null` until it ran. */
 	isDark: Schema.NullOr(Schema.Boolean),
-	/** WebGL could not start: legacy's `SceneBoundary` fallback. */
+	/** WebGL could not start: the fallback shows instead. */
 	isFailed: Schema.Boolean,
 })
 export type Model = typeof Model.Type

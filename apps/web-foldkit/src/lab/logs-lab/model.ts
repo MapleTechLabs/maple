@@ -5,7 +5,7 @@ import * as LogsStream from "../../ui/logs/logs-stream"
 import * as Menu from "../../ui/menu"
 import * as Toast from "../../ui/toast"
 
-/** The lab's header toggles (apps/web's `LogsLabPage`), pins aside. */
+/** The lab's header toggles, pins aside. */
 export const Toggle = Schema.Literals(["Wrap", "Comfortable", "Search", "Empty"])
 export type Toggle = typeof Toggle.Type
 
@@ -32,7 +32,7 @@ export const Model = Schema.Struct({
 	isEmpty: Schema.Boolean,
 	attrs: Schema.Array(Schema.String),
 	toasts: Toast.Model,
-	/** The real app shell around the page (apps/web's `DashboardLayout`). */
+	/** The real app shell around the page. */
 	shell: Shell.Model,
 })
 export type Model = typeof Model.Type

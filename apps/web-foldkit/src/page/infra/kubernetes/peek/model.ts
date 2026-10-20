@@ -7,7 +7,7 @@ import * as Dialog from "../../../../ui/dialog"
 import { ChartModels, SeriesSlots } from "../../kit/series"
 import { PodMetric, PodSummary } from "../pod-data"
 
-// `PodPeekSheet` (components/infra/kubernetes/pod-peek-sheet.tsx): a pod's page in a sheet over the list.
+// `PodPeekSheet`: a pod's page in a sheet over the list.
 
 /** Limits first (what the list is sorted by), then the raw cores and the requests. */
 export const PEEK_METRICS: ReadonlyArray<PodMetric> = [

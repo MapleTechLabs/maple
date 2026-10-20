@@ -26,8 +26,7 @@ import { Message, type RetryTarget } from "./message"
 import type { Model, OverviewPoint } from "./model"
 import { widgetShell } from "./view-widget"
 
-// `MetricsGrid` (apps/web/src/components/dashboard/metrics-grid.tsx) as the home page feeds it
-// (`OVERVIEW_CHARTS` and the `metrics` memo in routes/index.tsx).
+// The home page's metrics grid: its four overview charts.
 
 /** The colour tokens the four charts and their chrome read off the theme. */
 export const THEME_TOKENS = [
@@ -86,7 +85,7 @@ export const bodyOf = <A>(
 
 export type GridContext = Readonly<{
 	colors: ThemeColors
-	/** Theme and chart runtime are in: before that a card shows its ghost (legacy's Suspense fallback). */
+	/** Theme and chart runtime are in: before that a card shows its ghost. */
 	isChartReady: boolean
 	timeZone: string
 	nowMs: number

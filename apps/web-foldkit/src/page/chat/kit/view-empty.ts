@@ -4,7 +4,7 @@ import { panel } from "../../../ui/panel"
 import { docsLink } from "../../kit/signal-empty-state"
 import type { SignalPresence } from "../../kit/signal-presence"
 
-// `ChatEmptyState` (apps/web components/chat/chat-empty-state.tsx): the opening screen of a fresh
+// The empty state: the opening screen of a fresh
 // conversation, its suggestions as openable rows whose glyph and hue are read from the words.
 
 type Tone = Readonly<{ glyph: IconName; chip: string }>

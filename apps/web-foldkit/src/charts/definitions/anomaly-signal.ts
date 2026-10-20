@@ -13,8 +13,7 @@ import type { BuiltChart } from "./built-chart"
 import { verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 
-// The definition half of `AnomalyTimeseriesChart` (apps/web/src/components/anomalies/
-// anomaly-timeseries-chart.tsx); code copied. `thresholdRules` is copied below because
+// The anomaly timeseries chart's definition. `thresholdRules` is copied below because
 // threshold-rules.ts reads the theme through a React module; colours arrive resolved.
 
 type AnomalySignalSpec = Extract<ChartSpec, { readonly _tag: "AnomalySignal" }>

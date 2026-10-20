@@ -10,8 +10,8 @@ import { icon } from "../../ui/icon"
 import { input } from "../../ui/input"
 import { appliedRange, type CalendarDate, Message, type Model } from "./custom-range"
 
-// `CustomRangePicker`'s DOM: react-day-picker `<Calendar mode="range" numberOfMonths={2}>` (en-US,
-// rdp-* classes, Maple's `calendarClassNames`), then the Start/End time fields and the actions.
+// The custom range picker's DOM: a two-month range calendar (en-US, rdp-* classes, Maple's
+// `calendarClassNames`), then the Start/End time fields and the actions.
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 const MONTH_NAMES = [
@@ -76,7 +76,7 @@ const flagsOf = (model: Model, month: CalendarDate, date: CalendarDate, tabbable
 	}
 }
 
-/** react-day-picker joins the day class with each active modifier's class, in modifier order. */
+/** The day class joined with each active modifier's class, in modifier order. */
 const dayCellClass = (flags: DayFlags): string =>
 	[
 		calendarClassNames.day,
@@ -176,7 +176,7 @@ const monthGrid = (h: HtmlBuilder<Message>, model: Model, first: CalendarDate, t
 	)
 }
 
-/** react-day-picker's focus target: the start day when shown and enabled, else today, else the 1st. */
+/** The focus target: the start day when shown and enabled, else today, else the 1st. */
 const tabbableOf = (model: Model, first: CalendarDate): CalendarDate => {
 	const last = Calendar.lastOfMonth(Calendar.addMonths(first, 1))
 	const isShown = (date: CalendarDate) =>

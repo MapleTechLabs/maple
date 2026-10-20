@@ -311,7 +311,7 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 
 export const contextChanged = (model: Model): Return => ({ model })
 
-/** The selection changed under an open tab: legacy re-renders it with the new `selectedSpanId`. */
+/** The selection changed under an open tab: the tab follows the new `selectedSpanId`. */
 const selectInTab = (model: Model): Return => {
 	const spanId = selectedSpanOf(model)?.spanId ?? null
 	if (model.timeline !== null) {

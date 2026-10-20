@@ -1,5 +1,4 @@
-// The global chat sheet, embedded by the root (it lives above every page, like `<GlobalChatSheet />`
-// in apps/web's root frame).
+// The global chat sheet, embedded by the root so it lives above every page.
 export { init, Message, Model } from "./model"
 export { subscriptions } from "./subscription"
 export { sessionChanged, update } from "./update"

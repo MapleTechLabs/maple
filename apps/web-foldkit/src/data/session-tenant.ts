@@ -46,7 +46,7 @@ export const makeSessionTenantCache = (
 
 /**
  * `retainedQuery("auth", "session", {})`: one `GET /api/auth/session` per session token, shared by
- * every reader (the shell's tenant lookup, the alerts pages' admin check), as one atom is in apps/web.
+ * every reader (the shell's tenant lookup, the alerts pages' admin check).
  */
 export class SessionTenant extends Context.Service<SessionTenant, { readonly get: Effect.Effect<Tenant, unknown> }>()(
 	"@maple/web-foldkit/SessionTenant",

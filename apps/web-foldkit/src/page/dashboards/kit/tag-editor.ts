@@ -17,7 +17,7 @@ import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { input } from "../../../ui/input"
 
-// `TagEditorDialog` (dashboard-builder/tag-editor.tsx) on `FormDialog`: one dashboard's tags,
+// `TagEditorDialog` on `FormDialog`: one dashboard's tags,
 // added by typing or from the org's other tags, removed by chip; Save reports them.
 
 const MAX_TAG_LENGTH = 32

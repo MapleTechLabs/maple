@@ -1,4 +1,4 @@
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { Result, Schema, Stream } from "effect"
 import { Command, Submodel, Subscription } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
@@ -19,7 +19,7 @@ import * as Mcp from "./mcp/update"
 import * as McpView from "./mcp/view"
 import { apiKeyRows } from "./subscription"
 
-// `/mcp` (apps/web/src/routes/mcp.tsx): the same `McpSection` as `/settings?tab=mcp`, standalone.
+// `/mcp`: the same `McpSection` as `/settings?tab=mcp`, standalone.
 
 const Model = Schema.Struct({ nowMs: Schema.Number, isAdmin: Schema.Boolean, mcp: McpModel.Model })
 type Model = typeof Model.Type

@@ -3,7 +3,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { Message as HubMessage } from "../../page/errors/hub/message"
 import { Model as HubModel } from "../../page/errors/hub/model"
 
-// `/lab/errors` (apps/web `lab/errors-lab.tsx`): the errors hub over a fixture holding every row
+// `/lab/errors`: the errors hub over a fixture holding every row
 // state at once, with the lab's State and Width toggles. Shell-free; the entry wraps it.
 
 export const LAB_STATES = ["ready", "loading", "failed", "empty"] as const

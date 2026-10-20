@@ -55,7 +55,7 @@ type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 export type Search = typeof AgentSessionSearch.Type
 
-/** The tab ids Base UI gives this page's Tabs (`useId` order on the legacy page). */
+/** The id base of this page's Tabs. */
 const TABS_ID_BASE = 58
 
 const windowOf = (search: Search): TimeWindow | null => resolveWindow(search.t, search.end) ?? null
@@ -195,7 +195,7 @@ const navigate = (model: Model, search: Search, isReplace: boolean): Return => (
 	}),
 })
 
-/** A relayout of the open Flow view: React Flow then draws edges from measured handles. */
+/** A relayout of the open Flow view: edges then draw from measured handles. */
 const isFlowOpen = (model: Model): boolean => viewOf(model.search.view) === "flow"
 
 const toggledIn = (values: ReadonlyArray<string>, value: string): ReadonlyArray<string> =>

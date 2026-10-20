@@ -4,7 +4,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Scene3d from "../../page/service-map/scene3d"
 import type { Resources } from "../../platform/resources"
 
-// `/lab/service-map-3d` (apps/web `lab/service-map-3d/index.tsx`): the 3D viewport Submodel over
+// `/lab/service-map-3d`: the 3D viewport Submodel over
 // the sample topology, with the inventory and inspector rail beside it.
 
 export const Model = Schema.Struct({

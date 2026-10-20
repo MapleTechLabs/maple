@@ -1,5 +1,5 @@
-import { ingestUrl } from "@maple/web/lib/services/common/ingest-url"
-import { getOnboardingSetupHint } from "@maple/web/lib/onboarding-intent"
+import { ingestUrl } from "../../lib/services/common/ingest-url"
+import { getOnboardingSetupHint } from "../../lib/onboarding-intent"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"

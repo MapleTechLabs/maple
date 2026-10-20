@@ -1,6 +1,6 @@
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import type { ErrorSignal } from "@maple/web/lib/models/error-signal"
+import type { ErrorSignal } from "../../../lib/models/error-signal"
 import { skeletonStyles } from "@maple/ui/styles/ui/skeleton"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Checkbox from "../../../ui/checkbox"
@@ -35,7 +35,7 @@ import {
 	sparkOf,
 } from "./view-signal"
 
-// `ErrorSignalHeader` and `ErrorSignalRowSkeleton` (apps/web/src/components/errors/error-signal-row.tsx).
+// The error signal header and row skeleton.
 
 /** Lane geometry, shared by the header and the rows so the two cannot drift. */
 export const LANE = {

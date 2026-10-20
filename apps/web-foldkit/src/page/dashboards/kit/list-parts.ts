@@ -5,7 +5,7 @@ import { searchInput } from "../../../ui/search-input"
 
 // Shared by the dashboards list and the template gallery.
 
-/** `ListSectionHeader` (dashboard-builder/list-section-header.tsx): heading, count, rule, note. */
+/** `ListSectionHeader`: heading, count, rule, note. */
 export const listSectionHeader = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ title: string; count: number; accent?: boolean; note?: string; className?: string }>,

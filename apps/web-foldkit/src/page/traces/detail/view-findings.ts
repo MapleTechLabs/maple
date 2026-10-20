@@ -1,5 +1,5 @@
 import { countLabel } from "@maple/ui/lib/format"
-import { collectTraceErrors, spanHttpStatus, type TraceErrors } from "@maple/web/lib/traces/trace-errors"
+import { collectTraceErrors, spanHttpStatus, type TraceErrors } from "../../../lib/traces/trace-errors"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertAction, alertDescription, alertTitle } from "../../../ui/alert"
 import { button } from "../../../ui/button"
@@ -11,7 +11,7 @@ import { Message } from "./message"
 import type { ProductEvent } from "./model"
 import { type SpanNodeData, toSpanNode } from "./trace-data"
 
-// `TraceErrorCallout` and `TraceProductEvents` (apps/web components/traces/).
+// The trace's error callout and product events.
 
 export const traceErrors = (rootSpans: ReadonlyArray<SpanNodeData>): TraceErrors =>
 	collectTraceErrors(rootSpans.map(toSpanNode))

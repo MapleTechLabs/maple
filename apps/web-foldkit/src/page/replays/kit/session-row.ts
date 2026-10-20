@@ -1,9 +1,9 @@
 import { SessionTag } from "@maple/domain/query-engine"
 import { isSessionLive } from "@maple/ui/lib/replay-format"
-import { noiseTierOf, SESSION_TAG_LABELS } from "@maple/web/components/replays/session-tags"
+import { noiseTierOf, SESSION_TAG_LABELS } from "../../../components/replays/session-tags"
 import { Schema } from "effect"
 
-/** `SessionRow` (components/replays/sessions-list.tsx), the list's view of `replayListItemFromV2`. */
+/** A session list row, the list's view of `replayListItemFromV2`. */
 export const SessionRow = Schema.Struct({
 	sessionId: Schema.String,
 	startTime: Schema.String,
@@ -41,7 +41,7 @@ export type SessionListItem =
 			readonly expanded: boolean
 	  }
 
-// copied: session-list-items.ts (its replay-format import pulls React types into the typecheck).
+// A finished session with no errors, tagged as noise.
 export const isLowSignal = (session: SessionRow, nowMs: number): boolean =>
 	noiseTierOf(session.tags) !== undefined && session.errorCount === 0 && !isSessionLive(session, nowMs)
 

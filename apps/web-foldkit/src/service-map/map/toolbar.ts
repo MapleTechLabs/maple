@@ -92,7 +92,7 @@ const focusCombobox = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>): Html =>
 				serviceDot(h, { serviceName: service, className: "size-1.5" }),
 				service,
 			],
-			// The wrapper carries the responsive width, not the input (legacy comment).
+			// The wrapper carries the responsive width, not the input.
 			toView: ({ field, rest }) => h.div([h.Class("w-full sm:w-52")], [field, ...rest]),
 		},
 	})
@@ -205,7 +205,7 @@ const presentationControls = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, tr
 			className: "min-w-0 capitalize",
 			ariaLabel: "Color nodes by",
 			leading: [icon(h, "PaletteIcon", { size: 14, className: "text-muted-foreground" })],
-			// No `items` on the legacy Select: `<SelectValue>` shows the raw value, capitalized by CSS.
+			// The value shows raw, capitalized by CSS.
 			renderValue: (value) => [value],
 			toView: (parts) =>
 				h.div(
@@ -264,7 +264,7 @@ const bar = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, trigger: Trigger, p
 		],
 	)
 
-/** The bar, its three tooltips sharing one Tooltip (each legacy trigger has its own). */
+/** The bar, its three tooltips sharing one Tooltip. */
 export const serviceMapToolbar = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>): Html =>
 	h.submodel({
 		slotId: "service-map-toolbar-tip",

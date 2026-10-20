@@ -1,4 +1,4 @@
-import { containerImage, finding, formatterCases, hosts, pods } from "@maple/web/lab/worst-case-fixture"
+import { containerImage, finding, formatterCases, hosts, pods } from "../worst-case-fixture"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { HOST_SORT_ACCESSORS } from "../../page/infra/hosts/list/view"
@@ -10,7 +10,7 @@ import { sortRowsBy } from "../../page/kit/table-sort"
 import { listFooter } from "../../ui/list-footer"
 import { Message, type Model } from "./model"
 
-// `WcSection`, `Narrow`, `FormattersSection` and `InfraSection` (apps/web `lab/worst-case-*.tsx`).
+// `WcSection`, `Narrow`, `FormattersSection` and `InfraSection`.
 
 export type H = HtmlBuilder<Message>
 
@@ -108,7 +108,7 @@ export const infraSection = (h: H, model: Model): Html =>
 			sortDir: "desc",
 			timeSearch: {},
 			isWaiting: false,
-			// Legacy reads `Date.now()` when no reference time is passed: the boot clock here.
+			// No reference time is passed, so it is the boot clock.
 			referenceTime: new Date(model.nowMs).toISOString(),
 			nowMs: model.nowMs,
 			timeZone: model.timeZone,

@@ -16,7 +16,7 @@ import { Message, type Model } from "./model"
 import { DEFAULT_PRESET, MAX_ROWS, STATUS_LABELS } from "./update"
 import { reviewTable } from "./view-table"
 
-// `CodeReviewPullRequestsPage` (routes/code-review/pull-requests.tsx).
+// The code review pull requests page.
 
 type H = HtmlBuilder<Message>
 

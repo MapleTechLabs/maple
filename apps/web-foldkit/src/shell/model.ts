@@ -16,7 +16,7 @@ import * as Palette from "./palette/model"
 import { Platform } from "./palette/shortcuts"
 import { Menu, Theme } from "./message"
 
-/** A loader that failed reads as legacy's `orElse` fallback; the reason is not shown anywhere. */
+/** A loader that failed reads as its fallback; the reason is not shown anywhere. */
 export const LoadFailure = Schema.Literal("Failed")
 
 export const TenantData = AsyncData.Schema(OrgId, LoadFailure)
@@ -111,7 +111,7 @@ export const initRailTooltip = (): Tooltip.Model =>
 export const FILTER_SHEET_ID = "page-filter-sheet"
 export const RIGHT_SHEET_ID = "page-right-sheet"
 
-/** A page change remounts legacy's `PageLayout.Root`, so its sheets start closed. */
+/** A page change starts the page's sheets closed. */
 export const initFilterSheet = (): Dialog.Model => Dialog.init(FILTER_SHEET_ID, "sheet")
 export const initRightSheet = (): Dialog.Model => Dialog.init(RIGHT_SHEET_ID, "sheet")
 

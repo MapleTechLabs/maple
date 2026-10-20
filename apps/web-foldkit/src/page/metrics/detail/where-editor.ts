@@ -1,7 +1,7 @@
 import {
 	getWhereClauseAutocomplete,
 	type WhereClauseAutocompleteResult,
-} from "@maple/web/lib/query-builder/where-clause-autocomplete"
+} from "../../../lib/query-builder/where-clause-autocomplete"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import { Option, Schema } from "effect"
 import { AsyncData } from "foldkit"

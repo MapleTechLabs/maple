@@ -9,7 +9,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { toolbar } from "./view-toolbar"
 
-// `LogsTableView`'s empty branch (apps/web/src/components/logs/logs-table.tsx).
+// The logs table's empty state.
 
 const exclusionsHint = (h: HtmlBuilder<Message>, model: Model): Html | null =>
 	excludedEmptyHint(h, {

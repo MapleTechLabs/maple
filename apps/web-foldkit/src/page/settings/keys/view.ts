@@ -2,7 +2,7 @@ import {
 	buildKeyRows,
 	filterKeyRows,
 	type KeyTypeFilter,
-} from "@maple/web/components/settings/keys-table"
+} from "../../../components/settings/keys-table"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
@@ -23,7 +23,7 @@ import { STATUS_VALUES } from "./update"
 import { apiReference, oauthPointer } from "./view-reference"
 import { keysEmpty, keysTable } from "./view-table"
 
-// `ApiKeysSection` (apps/web/src/components/settings/api-keys-section.tsx).
+// `ApiKeysSection`.
 
 export type ViewInputs = Readonly<{ nowMs: number; timeZone: string }>
 

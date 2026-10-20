@@ -24,7 +24,7 @@ import { waterfall } from "./view-waterfall"
 import { flow } from "./view-flow"
 import { viewPopover } from "./span-popover"
 
-// `AgentSessionDetailPage` (routes/agent-sessions/$sessionId.tsx) over `ResultPage`, and `SessionViews`.
+// The agent session detail page over `ResultPage`, and its views.
 
 type H = HtmlBuilder<Message>
 

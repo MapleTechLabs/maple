@@ -3,7 +3,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Dialog from "../../../../ui/dialog"
 import { AccountUser } from "../user"
 
-// The Connected accounts tab (`ConnectedAccountsSection`, apps/web/src/components/account/connected-accounts-section.tsx).
+// The Connected accounts tab.
 
 export const ProviderId = Schema.Literals(["google", "github"])
 export type ProviderId = typeof ProviderId.Type

@@ -1,6 +1,6 @@
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
-import { gcpResourceWorkload } from "@maple/web/components/infra/gcp/inventory"
-import { gcpAssetTypeLabel, gcpResourceName, gcpStateLabel } from "@maple/web/components/infra/gcp/tabs"
+import { gcpResourceWorkload } from "../../../../components/infra/gcp/inventory"
+import { gcpAssetTypeLabel, gcpResourceName, gcpStateLabel } from "../../../../components/infra/gcp/tabs"
 import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html } from "foldkit/html"
@@ -24,8 +24,8 @@ import { Message, type Model } from "./model"
 import type { H, TimeSearch } from "./view-rows"
 import { workloadHref } from "./view-rows"
 
-// `GcpResources` (components/infra/gcp/gcp-resources.tsx): the inventory filtered by type and project.
-// TODO(select-align): legacy opens these Selects below the trigger (`alignItemWithTrigger={false}`).
+// `GcpResources`: the inventory filtered by type and project.
+// TODO(select-align): these Selects should open below the trigger (`alignItemWithTrigger={false}`).
 
 const ALL = "all"
 const CELL = "truncate font-mono text-xs text-foreground/80"

@@ -1,8 +1,6 @@
 import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// `chatConnectorIcon` (apps/web/src/components/integrations/integration-catalog.tsx).
-
 /** `chatConnectorIcon`: one `<svg>` from a manifest's path data; `monochrome` drops the brand fills. */
 export const manifestGlyph = <M>(
 	h: HtmlBuilder<M>,

@@ -3,7 +3,7 @@ import { type Resources, ResourcesLive } from "../platform/resources"
 
 /**
  * A lab entry is a self-contained Foldkit program booted on `/lab/<path>` instead of the app,
- * mirroring `apps/web/src/lab`. Closing over the program keeps it typed; the registry holds `start`.
+ * mirroring `apps/web-foldkit/src/lab`. Closing over the program keeps it typed; the registry holds `start`.
  */
 export interface LabEntry {
 	readonly title: string

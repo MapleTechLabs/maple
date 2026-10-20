@@ -28,8 +28,6 @@ import { usageCards } from "./view-usage"
 
 import * as SetupChecklistView from "./setup-checklist-view"
 
-// `HomePage` / `DashboardContent` (apps/web/src/routes/index.tsx).
-
 type H = HtmlBuilder<Message>
 
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })

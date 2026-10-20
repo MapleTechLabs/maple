@@ -1,7 +1,7 @@
 import * as Page from "../time-range-lab"
 import { defineShellLab } from "../shell-lab"
 
-// `/lab/time-range` (apps/web `lab/time-range-lab.tsx`): the time range picker over plain state.
+// `/lab/time-range`: the time range picker over plain state.
 // TODO(picker): the "D" hotkey, the timezone list and the custom tab are the picker's own gaps.
 
 export const lab = defineShellLab("Time range picker", {

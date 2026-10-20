@@ -1,9 +1,9 @@
 
-// copied: apps/web/src/components/chat/investigation-context.ts (the context type, `investigationNoun`
-// and `investigationSuggestions`); the legacy module's alert half imports through apps/web's `@/` alias.
+// The investigation context type, `investigationNoun` and `investigationSuggestions`. The alert
+// half lives in components/chat/alert-context.ts.
 
 import { Schema } from "effect"
-import { signalLabel } from "@maple/web/components/chat/alert-context"
+import { signalLabel } from "../../../components/chat/alert-context"
 
 /** The three things Maple can investigate. Kind is carried by the attached resource, not the URL. */
 const InvestigationKindSchema = Schema.Literals(["alert", "anomaly", "error", "freeform"])

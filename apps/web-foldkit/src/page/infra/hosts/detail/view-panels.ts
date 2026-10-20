@@ -5,7 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../../../charts/chart"
 import { panel, panelHeader } from "../../../../ui/panel"
 import { middleTruncate } from "../../../../ui/middle-truncate"
-import { formatValueWithUnit } from "@maple/web/components/infra/chart-units"
+import { formatValueWithUnit } from "../../../../components/infra/chart-units"
 import { LINKED_CURSOR_STYLE, MountLinkedCursor } from "../../../../charts/linked-cursor"
 import { INFRA_METRIC_CHART_HEIGHT, type InfraSeriesInfo, metricView as metricChartView } from "../../../../charts/infra-metric-chart"
 import { chartError, chartLoading, chartPlotArea } from "../../../../ui/chart-state"
@@ -15,8 +15,7 @@ import { formatSeen } from "../../../metrics/time-format"
 import { type HostMetric, Message } from "./message"
 import type { HostSummary, Model } from "./model"
 
-// `HostMetadataPanel` (host-metadata-panel.tsx), and the Metrics panel of `HostDetailPage` with its
-// `MetricStrip`s (host-detail-chart.tsx).
+// `HostMetadataPanel`, and the Metrics panel of `HostDetailPage` with its `MetricStrip`s.
 
 type H = HtmlBuilder<Message>
 

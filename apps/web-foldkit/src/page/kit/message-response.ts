@@ -3,7 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// `MessageResponse lightweight` (components/ai-elements/message-response.tsx over Streamdown): markdown
+// Lightweight markdown over Streamdown:
 // laid out with Streamdown's element classes. The parser loads on first use, never at startup.
 // TODO(markdown-table): Maple's `MarkdownTable` primitives are drawn with Streamdown's own table classes.
 

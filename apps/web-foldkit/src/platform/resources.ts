@@ -10,7 +10,7 @@ import { ApiClientsLive, MapleApiV2Client, MapleInternalApiClient } from "./api-
 /**
  * The runtime's `resources`: built once, shared by every Command and Subscription. The warehouse
  * batcher and the org collections are here because their state (the batch window, the synced
- * rows) must be one instance for the whole app, like apps/web's module singletons.
+ * rows) must be one instance for the whole app.
  */
 export const ResourcesLive = Layer.mergeAll(
 	ApiClientsLive,

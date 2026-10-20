@@ -1,4 +1,4 @@
-import { decodeLogAttributeFilter, logAttributeQueryFilters } from "@maple/web/lib/logs/log-attribute-filters"
+import { decodeLogAttributeFilter, logAttributeQueryFilters } from "../../../lib/logs/log-attribute-filters"
 import { SEVERITY_ORDER } from "@maple/ui/lib/severity"
 import type { CustomChartTimeSeriesInput } from "@maple/web-data/warehouse/custom-charts"
 import type { ListLogsInput } from "@maple/web-data/warehouse/logs"
@@ -87,7 +87,7 @@ export const hasNextPage = (firstPage: LogsPage | undefined, pagination: Paginat
 	!pagination.isStopped &&
 	lastCursor(firstPage, pagination) !== null
 
-// copied: `canWidenTimeRange` (apps/web/src/components/time-range-picker/search.ts pulls an `@/` type).
+// Presets already wide enough that widening the range would not help.
 const WIDE_TIME_PRESETS = new Set([
 	"7d",
 	"1w",
@@ -108,7 +108,6 @@ export const canWidenRange = (search: Search): boolean =>
 	search.startTime === undefined && !WIDE_TIME_PRESETS.has(search.timePreset ?? "")
 
 // FILTER CHIPS
-// copied: apps/web/src/lib/logs/log-filter-chips.ts (its `@/` type import cannot be typechecked here).
 
 const FACETS = [
 	{ label: "Severity", include: "severities", exclude: "excludedSeverities" },

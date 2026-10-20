@@ -26,7 +26,7 @@ const labelContent = <M>(
 	if (isMissing) return hovered ? [h.span([h.Class("italic text-muted-foreground/60")], ["no data"])] : null
 	if (hovered) {
 		const sharePct = formatShare(share)
-		// Text runs split where JSX interpolates, so the DOM holds the same text nodes as React's.
+		// Text runs stay split, so the DOM holds the same text nodes as the packages/ui flow edge.
 		return [
 			...(data.startOffsetMs !== undefined && data.startOffsetMs > 0
 				? [h.span([h.Class(data.accentText)], ["+", formatDuration(data.startOffsetMs), " → "])]

@@ -17,7 +17,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { githubStatusOf, trackedBranchOf } from "./update-github"
 
-// `ConnectedView`'s repository panels, `RepoRow` and `BranchSelector` (github-integration-card.tsx).
+// `ConnectedView`'s repository panels, `RepoRow` and `BranchSelector`.
 
 type H = HtmlBuilder<Message>
 

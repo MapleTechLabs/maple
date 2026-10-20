@@ -1,5 +1,5 @@
 import type { SourcePlatform } from "@maple/domain/primitives"
-import { ingestUrl } from "@maple/web/lib/services/common/ingest-url"
+import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -13,8 +13,8 @@ import * as TabsView from "../../../ui/tabs-view"
 import { codeBlock } from "../../settings/kit/code-block"
 import { maskedToken, sourceSnippets } from "./snippets"
 
-// `SourceSetup` (apps/web/src/components/sources/source-setup.tsx): endpoint, header and the
-// platform's setup snippets. The parent embeds it and passes the token only right after a create or roll.
+// `SourceSetup`: endpoint, header and the platform's setup snippets. The parent embeds it and passes the
+// token only right after a create or roll.
 
 export const Model = Schema.Struct({
 	tabs: Tabs.Model,

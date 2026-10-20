@@ -14,7 +14,7 @@ import * as Tooltip from "../../../ui/tooltip"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `LogsTableToolbar` (apps/web/src/components/logs/logs-table-toolbar.tsx): the Columns picker,
+// The logs table toolbar: the Columns picker,
 // wrap and density, under one `TooltipProvider delay={250}`. Pinned columns live in `?columns`.
 
 // The popover anchors to its trigger by id, so the tooltip shares the popover's trigger id.

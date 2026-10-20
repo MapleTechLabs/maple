@@ -7,10 +7,9 @@ import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { isMachineTurn, messageText, type TranscriptRow } from "./transcript-rows"
 
-// `TurnMinimap` (apps/web components/chat/turn-minimap.tsx): one marker per human turn down the
-// transcript's gutter, lit while its turn is on screen; hovering previews a turn, a click jumps.
-// The logic is `turn-minimap-logic.ts`'s, copied: that module imports React-coupled code. The
-// pointer, keyboard and scrolling live in `MountTurnMinimap` (`turn-minimap-mount.ts`).
+// The turn minimap: one marker per human turn down the transcript's gutter, lit while its turn
+// is on screen; hovering previews a turn, a click jumps. The pointer, keyboard and scrolling
+// live in `MountTurnMinimap` (`turn-minimap-mount.ts`).
 
 const ITEM_SPACING_PX = 8
 const MAX_HEIGHT_CSS = "calc(100% - 6rem)"

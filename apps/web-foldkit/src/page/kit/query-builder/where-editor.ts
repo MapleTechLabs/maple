@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import {
 	tokenizeWhereClause,
 	WHERE_CLAUSE_TOKEN_COLOR,
-} from "@maple/web/lib/query-builder/where-clause-highlight"
+} from "../../../lib/query-builder/where-clause-highlight"
 import { Option } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -23,7 +23,7 @@ export type WhereEditorAutocomplete<M> = Readonly<{
 }>
 
 /**
- * `WhereClauseEditor` (components/query-builder/where-clause-editor.tsx): the textarea under its
+ * `WhereClauseEditor`: the textarea under its
  * highlight overlay, and with `autocomplete` its suggestion list. Enter never inserts a newline.
  */
 export type WhereEditorOptions<M> = Readonly<

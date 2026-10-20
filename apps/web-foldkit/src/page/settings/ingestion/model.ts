@@ -8,8 +8,8 @@ import * as Menu from "../../../ui/menu"
 import * as Tabs from "../../../ui/tabs"
 import * as MappingDialog from "./mapping-dialog"
 
-// `IngestionSection` (apps/web/src/components/settings/ingestion-section.tsx): the ingest-health
-// strip, the OTLP endpoint and ingest keys, install steps, recommendations and attribute mappings.
+// `IngestionSection`: the ingest-health strip, the OTLP endpoint and ingest keys, install steps,
+// recommendations and attribute mappings.
 
 /** `ServiceOverview` reduced to what `useIngestConnection` reads. */
 export const OverviewRow = Schema.Struct({ serviceName: Schema.String, spanCount: Schema.Number })

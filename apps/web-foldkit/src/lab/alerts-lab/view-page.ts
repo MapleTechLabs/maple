@@ -1,4 +1,4 @@
-import { buildAlertsLabFixture, type AlertsLabFixture } from "@maple/web/lab/alerts-fixture"
+import { buildAlertsLabFixture, type AlertsLabFixture } from "../alerts-fixture"
 import { buildIncidentTimeline } from "@maple/web-data/alerts/incident-timeline"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "../../charts/chart-runtime"
@@ -100,7 +100,7 @@ const pageBody = (h: H, model: Model): Html => {
 	)
 }
 
-/** apps/web's `DashboardLayout` around the lab page: the real shell. */
+/** The real shell around the lab page. */
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[h.Id("app")],

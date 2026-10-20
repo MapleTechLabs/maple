@@ -5,7 +5,7 @@ import { countLabel } from "@maple/ui/lib/format"
 import { pickImportantAttributes } from "@maple/ui/lib/log-attributes"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
-import { encodeLogKey } from "@maple/web/lib/log-key"
+import { encodeLogKey } from "../../lib/log-key"
 import { SpanId, TraceId } from "@maple/domain"
 import { Schema } from "effect"
 
@@ -27,7 +27,7 @@ export type LogRecord = typeof LogRecord.Type
 
 /**
  * Everything a log row renders, derived once per data, pin or timezone change (in `update`), so
- * scrolling only builds markup. apps/web derives the same values in `LogRow`'s render and memos.
+ * scrolling only builds markup.
  */
 export const LogChip = Schema.Struct({
 	key: Schema.String,
@@ -101,7 +101,7 @@ const shortKey = (key: string): string => {
 const truncateValue = (value: string): string =>
 	value.length <= MAX_VALUE_CHARS ? value : value.slice(0, MAX_VALUE_CHARS - 1) + "…"
 
-/** The two formatters apps/web's `formatCompactTimeInTimezone` and `formatTimestampInTimezone` build. */
+/** The compact and full timestamp formatters for the viewer's time zone. */
 export interface LogTimeFormat {
 	readonly compact: Intl.DateTimeFormat
 	readonly full: Intl.DateTimeFormat

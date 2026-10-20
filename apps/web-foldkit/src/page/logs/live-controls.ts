@@ -4,7 +4,7 @@ import { icon } from "../../ui/icon"
 import type * as Menu from "../../ui/menu"
 import { refreshControls } from "../kit/refresh-controls"
 
-// `LogsLiveControls` (apps/web/src/components/logs/logs-live-controls.tsx), shared by /logs and /lab/logs.
+// The live-tail controls, shared by /logs and /lab/logs.
 
 export type LiveControlsInputs<M> = Readonly<{
 	/** Auto-refresh cadence in seconds, 0 for off. */

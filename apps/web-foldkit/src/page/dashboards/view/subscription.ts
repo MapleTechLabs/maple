@@ -1,4 +1,4 @@
-import { resolveRefreshIntervalSeconds } from "@maple/web/lib/dashboard-controls/search-params"
+import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/search-params"
 import { Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
 import type { Resources } from "../../../platform/resources"

@@ -29,8 +29,7 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `CloudflareZoneBoard`, `ResourceRow`, `CountChip` and `CloudflareWorkersCard`
-// (components/integrations/cloudflare-zone-board.tsx, count-chip.tsx).
+// `CloudflareZoneBoard`, `ResourceRow`, `CountChip` and `CloudflareWorkersCard`.
 // TODO(tooltip): the "Details" trigger renders; its popup with the raw error is the overlay port's.
 
 type H = HtmlBuilder<Message>

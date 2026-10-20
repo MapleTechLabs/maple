@@ -27,7 +27,7 @@ import * as Prometheus from "./update-prometheus"
 import { ChartRuntime } from "../../charts/chart-runtime"
 import { isMultiAccount } from "./view-cloudflare"
 import * as Connect from "./update-connect"
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { LoadCustomer, LoadSession, ReadClock, StripChatParams } from "./command"
 import { chain, requestStatus, STATUS_NAMES } from "./update-status"
 import { Message } from "./message"
@@ -48,8 +48,7 @@ const requestCustomer = (model: Model, context: PageContext): Return => {
 
 /**
  * The chat OAuth return: the toast now, the param strip after (`StripChatParams`). On entry (the
- * callback's full-page load) legacy's toast is added before its toast region subscribes and is
- * lost; `withToast: false` keeps that (only the strip runs).
+ * callback's full-page load) no toast shows: `withToast: false` runs only the strip.
  */
 const handleChatCallback = (model: Model, withToast: boolean): Return => {
 	const callback = chatCallbackOf(model.search)
@@ -214,7 +213,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedCloudflarePrime: ({ isOk, isConnected }) =>
 			CloudflareCard.completedPrime(model, context, isOk, isConnected),
 		TickedCloudflareIngest: () => {
-			// Legacy reads `Date.now()` on every render: the ingest phase (stalled, backfill) follows the clock.
+			// The ingest phase (stalled, backfill) follows the clock, so each tick rereads it.
 			const refreshed = CloudflareCard.refreshCloudflare(model, context)
 			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
 		},

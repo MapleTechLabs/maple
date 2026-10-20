@@ -2,7 +2,7 @@ import {
 	TIMELINE_LAB_EVENTS,
 	TIMELINE_LAB_MARKERS,
 	TIMELINE_LAB_TRACE,
-} from "@maple/web/lab/timeline-fixture"
+} from "../timeline-fixture"
 import { Option, Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as SpanPanel from "../../page/traces/detail/span-panel"
@@ -12,7 +12,7 @@ import * as Waterfall from "../../page/traces/detail/waterfall"
 import * as TraceFlow from "../../service-map/trace-flow/trace-flow"
 import * as Tabs from "../../ui/tabs"
 
-// `/lab/timeline` (apps/web `lab/timeline-lab.tsx`): `TraceViewTabs` over a synthetic trace with a
+// `/lab/timeline`: `TraceViewTabs` over a synthetic trace with a
 // wide dynamic range, span event markers, and the selected span's events beside it.
 
 /** The fixture as the trace page's Model data, with the id `getSpanHierarchy` adds to the tree. */

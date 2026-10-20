@@ -1,5 +1,5 @@
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { NEW_ISSUE_SLACK_MS, previousSha } from "@maple/web/components/releases/release-model"
+import { NEW_ISSUE_SLACK_MS, previousSha } from "../../../components/releases/release-model"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Overlays from "../overlays"

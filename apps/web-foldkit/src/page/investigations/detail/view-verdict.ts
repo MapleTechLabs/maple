@@ -13,7 +13,7 @@ import { statusDot } from "../../../ui/status-dot"
 import { confidenceMeter } from "../kit"
 import { elapsedBetween } from "./derive"
 
-// `VerdictCard` and `RunProgress` (components/investigations/verdict-card.tsx, run-progress.tsx).
+// `VerdictCard` and `RunProgress`: the verdict and the run's progress.
 
 type Children = ReadonlyArray<Html | string>
 

@@ -1,9 +1,9 @@
 import type { CatalogPlan } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { getTrialStatus } from "@maple/web/lib/billing/plan-gating"
-import { getPlanFeatures, sentenceCasePlanName, TRIAL_DURATION_DAYS } from "@maple/web/lib/billing/plans"
-import { featureUnit, type SpendModel } from "@maple/web/lib/billing/spend"
-import { formatCount } from "@maple/web/lib/billing/usage"
+import { getTrialStatus } from "../../../lib/billing/plan-gating"
+import { getPlanFeatures, sentenceCasePlanName, TRIAL_DURATION_DAYS } from "../../../lib/billing/plans"
+import { featureUnit, type SpendModel } from "../../../lib/billing/spend"
+import { formatCount } from "../../../lib/billing/usage"
 import type { BillingCustomer } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -20,7 +20,7 @@ import { Message, type Model } from "./model"
 
 type H = HtmlBuilder<Message>
 
-// `BillingPlanSection` and `PlanOffer` (apps/web/src/components/settings/).
+// `BillingPlanSection` and `PlanOffer` (apps/web-foldkit/src/components/settings/).
 
 const ENTERPRISE_CALL_URL = "https://cal.com/david-granzin/30min?overlayCalendar=true"
 const CURRENT_PLAN_CAPTION = "Change or cancel it in Manage billing"
@@ -79,7 +79,6 @@ const planRow = (h: H, spend: SpendModel, plans: ReadonlyArray<CatalogPlan>): Ht
 								? [
 										h.span(
 											[h.Class("text-2xs text-muted-foreground")],
-											// JSX `Available add-ons: {list}`: two text nodes.
 											["Available add-ons: ", available.map(addOnLabel).join(", ")],
 										),
 									]
@@ -191,7 +190,6 @@ const offerPanel = (
 					h.div(
 						[h.Class("mt-3 flex items-baseline gap-2")],
 						[
-							// JSX `${amount}` and `/{interval} + usage`: one text node per part.
 							h.span([h.Class("font-mono text-3xl tabular-nums")], ["$", String(plan.price?.amount ?? 0)]),
 							h.span([h.Class("text-2xs text-muted-foreground")], ["/", plan.price?.interval ?? "month", " + usage"]),
 						],

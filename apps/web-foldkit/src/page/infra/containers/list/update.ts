@@ -102,7 +102,7 @@ const facetsStep: RequestStep = (model, context, window, mode) =>
 		(key) => FetchFacets({ key, window }),
 	)
 
-/** Every query the page reads, keyed like the legacy atoms, for the resolved window. */
+/** Every query the page reads, for the resolved window. */
 const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
 	const window = model.frame.window
 	if (window === null) return { model }

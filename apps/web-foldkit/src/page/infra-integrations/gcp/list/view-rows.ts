@@ -1,6 +1,6 @@
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
-import { rowHealth, type RowRules } from "@maple/web/components/infra/gcp/list-model"
-import { gcpWorkloadId, gcpWorkloadSearch } from "@maple/web/components/infra/gcp/tabs"
+import { rowHealth, type RowRules } from "../../../../components/infra/gcp/list-model"
+import { gcpWorkloadId, gcpWorkloadSearch } from "../../../../components/infra/gcp/tabs"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -14,7 +14,7 @@ import { gcpServiceIcon } from "../service-icon"
 import { Message } from "./model"
 import { type GcpBandSpec, healthDot } from "./view-band"
 
-// The shared parts of the Google Cloud list rows (components/infra/gcp/gcp-list-tables.tsx).
+// The shared parts of the Google Cloud list rows.
 
 export type H = HtmlBuilder<Message>
 

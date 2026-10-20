@@ -54,7 +54,7 @@ export const operationsBucketSeconds = (window: TimeWindow): number =>
 export const callsPerSecond = (estimatedSpanCount: number, seconds: number): number =>
 	seconds <= 0 ? 0 : estimatedSpanCount / seconds
 
-/** `previousWindow` (service-usage-panel.tsx): the equally long window ending where this one starts. */
+/** The equally long window ending where this one starts. */
 export const previousWindow = (
 	window: TimeWindow,
 ): { previousStartTime: string; previousEndTime: string } | undefined => {

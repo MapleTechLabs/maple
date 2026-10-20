@@ -4,7 +4,7 @@ import {
 	gcpOverlapNote,
 	isGcpProjectId,
 	isGcpResourceNumber,
-} from "@maple/web/components/integrations/gcp-connector-state"
+} from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "../../ui/alert"
 import * as Field from "../../ui/field"

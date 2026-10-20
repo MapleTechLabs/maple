@@ -8,7 +8,7 @@ import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { sortStateOf } from "../../../kit/table-sort"
 import { DatabaseList, DatabaseStat, PlanetscaleStatus } from "../data"
 
-// `/infra/planetscale` (apps/web/src/routes/infra/planetscale/index.tsx).
+// `/infra/planetscale`.
 
 export const SortKey = Schema.Literals([
 	"name",

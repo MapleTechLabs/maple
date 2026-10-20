@@ -26,7 +26,7 @@ import {
 import { FUNNEL_MAX_STEPS, stepBuilder } from "./view-steps"
 import { lookupField } from "../../kit/autocomplete-lookups"
 
-// `FunnelQueryPanel` (funnel-query-panel.tsx) and `PathsQueryPanel` (paths-query-panel.tsx), each
+// `FunnelQueryPanel` and `PathsQueryPanel`, each
 // with the Run preview row the editor page puts under it.
 
 type H = HtmlBuilder<Message>

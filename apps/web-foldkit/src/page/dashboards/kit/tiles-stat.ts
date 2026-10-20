@@ -11,12 +11,12 @@ import { widgetFrame } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
 
-// `StatWidget` (dashboard-builder/widgets/stat-widget.tsx), with its trend sparkline when
+// The stat widget, with its trend sparkline when
 // `display.sparkline` names a series (`StatSparkline`).
 
 type Widget = TileWidget
 
-/** `formatValue` (stat-widget.tsx). */
+/** The stat's value, formatted. */
 export const formatStatValue = (value: unknown, unit?: string, prefix?: string, suffix?: string): string => {
 	if (value === null || value === undefined || typeof value === "object") return EMPTY_VALUE
 	const num = typeof value === "number" ? value : Number(value)

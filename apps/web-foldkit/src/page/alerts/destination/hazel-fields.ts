@@ -10,7 +10,7 @@ import * as Select from "../../../ui/select"
 import { currentReturnPath, startConnect } from "../../integrations/connect"
 import type { DestinationForm } from "./form"
 
-// `HazelOAuthFields` (components/alerts/destination-dialog.tsx): connect Hazel over OAuth, then pick
+// `HazelOAuthFields`: connect Hazel over OAuth, then pick
 // the organization and channel this destination posts into.
 
 export const HazelStatus = Schema.Struct({ connected: Schema.Boolean, account: Schema.String })

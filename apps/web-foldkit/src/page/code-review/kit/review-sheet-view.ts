@@ -16,7 +16,7 @@ import type { ReviewSheet } from "./review-sheet"
 import { SheetMessage } from "./review-sheet"
 import { reviewSections } from "./review-sheet-sections"
 
-// `ReviewDetailSheet`, `ReviewDetailBody` and `SheetDetailHeader` (review-detail-sheet.tsx).
+// `ReviewDetailSheet`, `ReviewDetailBody` and `SheetDetailHeader`.
 
 type H = HtmlBuilder<SheetMessage>
 

@@ -14,7 +14,7 @@ import { serviceDot } from "../../../ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
 
-// `IssueIncidentsTable` and `IssueOccurrencesTable` (components/errors/issue-*-table.tsx).
+// The issue incidents and occurrences tables.
 // TODO(tooltip): the incident status's explanation popup; its trigger is ported.
 
 type Clock = Readonly<{ nowMs: number; timeZone: string }>

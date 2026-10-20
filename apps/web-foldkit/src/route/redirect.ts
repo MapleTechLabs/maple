@@ -48,7 +48,7 @@ const DATA_INTEGRATIONS: ReadonlySet<string> = new Set([
 const redirect = (to: AppRoute, isReplace: boolean) =>
 	Option.some(Redirect.make({ url: hrefOf(to), isReplace }))
 
-/** The `beforeLoad` redirects of legacy route files (connectors, developer, infra, errors/issues), and moved integrations. */
+/** Redirects of retired paths (connectors, developer, infra, errors/issues) and moved integrations. */
 export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 	AppRoute.matchOrElse<Option.Option<Redirect>>(
 		route,

@@ -4,8 +4,8 @@ import type { Update } from "foldkit"
 import * as Calendar from "foldkit/calendar"
 import { defineMessageUnion } from "foldkit/message"
 
-// `CustomRangePicker` (apps/web/src/components/time-range-picker/custom-range-picker.tsx): a
-// two-month range calendar and two time inputs in the selected zone's wall clock. The view is
+// The custom range picker: a two-month range calendar and two time inputs in the selected
+// zone's wall clock. The view is
 // `custom-range-view.ts`.
 
 export const CalendarDate = Calendar.CalendarDate
@@ -13,7 +13,7 @@ export type CalendarDate = Calendar.CalendarDate
 
 export const Model = Schema.Struct({
 	timeZone: Schema.String,
-	/** The first of the two months shown (react-day-picker starts on today's month). */
+	/** The first of the two months shown (starts on today's month). */
 	viewYear: Schema.Number,
 	viewMonth: Schema.Number,
 	/** `dateLib.today()`: the browser's day, which carries the today dot. */
@@ -101,7 +101,7 @@ export const parseTimeInput = (input: string): Option.Option<{ hours: number; mi
 
 type Range = { maybeFrom: Option.Option<CalendarDate>; maybeTo: Option.Option<CalendarDate> }
 
-/** react-day-picker's `addToRange` with `min = 0`, not required. */
+/** Adds a day to the range (`addToRange` with `min = 0`, not required). */
 export const addToRange = (range: Range, date: CalendarDate): Range => {
 	const span = (start: CalendarDate, end: CalendarDate): Range => ({
 		maybeFrom: Option.some(start),

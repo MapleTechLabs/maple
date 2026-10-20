@@ -15,8 +15,8 @@ import { AsyncData } from "foldkit"
 import { KeyedSchema } from "../../../data/keyed"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 
-// `useAlertRulePreview` (apps/web/src/hooks/use-alert-rule-preview.ts), React-free: the payload the
-// preview atom is keyed by, the fetch, and the `{ preview, previewLoading, previewError }` reading.
+// The alert rule preview: the payload the preview is keyed by, the fetch, and the
+// `{ preview, previewLoading, previewError }` reading.
 
 /** A failed preview: the message to show, or `null` for "no data" (the friendly empty chart). */
 export const PreviewFailure = Schema.Struct({ message: Schema.NullOr(Schema.String) })

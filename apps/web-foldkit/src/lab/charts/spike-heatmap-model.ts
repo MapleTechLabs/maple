@@ -1,6 +1,6 @@
 import { heatmapSampleData } from "@maple/ui/components/charts/_shared/sample-data"
 
-// `HeatmapSpike`'s model (apps/web/src/lab/charts/heatmap-spike.tsx): empty rows and columns
+// `HeatmapSpike`'s model: empty rows and columns
 // pruned, the holes listed, the colour domain and the cell geometry. Pure, so the lab page can
 // render the "hidden" footer without loading the chart library.
 

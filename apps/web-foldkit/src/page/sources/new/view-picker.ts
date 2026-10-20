@@ -10,7 +10,7 @@ import { PLATFORMS, platformTile, PUSH_PLATFORMS, type PlatformMeta } from "../k
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `PlatformPicker` (apps/web/src/components/sources/platform-picker.tsx): step 1.
+// `PlatformPicker`: step 1.
 
 type H = HtmlBuilder<Message>
 

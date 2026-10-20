@@ -1,4 +1,4 @@
-import type { ReplayEngine, ReplayEngineFactory } from "@maple/web/components/replays/engine/replay-engine"
+import type { ReplayEngine, ReplayEngineFactory } from "../../../components/replays/engine/replay-engine"
 import { Effect, Queue, Stream } from "effect"
 import { deriveMeta } from "./replay-meta"
 import type { ReplayFormat } from "./replay-window"

@@ -1,10 +1,10 @@
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as OrgSwitcherView from "../../shell/clerk-org-switcher-view"
 import { accountLayout } from "../../layout/account-layout"
-import { currentRegion, MAPLE_REGION_LABELS, regionAppUrl } from "@maple/web/lib/region"
+import { currentRegion, MAPLE_REGION_LABELS, regionAppUrl } from "../../lib/region"
 import { button, linkButton } from "../../ui/button"
 import { authDescription, authLayout, authTitle } from "./auth-layout"
 import type * as ClerkScreens from "./clerk-screens"
@@ -166,7 +166,7 @@ const wrongRegionView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs, 
 	const here = MAPLE_REGION_LABELS[currentRegion]
 	const url = regionAppUrl(screen.region)
 	return authLayout(h, "max-w-lg", [
-		// One text node per JSX expression, as React renders them.
+		// One text node per part.
 		authTitle(h, [orgName, " is in the ", target.short, " region"]),
 		authDescription(h, [
 			"Its data is stored in the ",

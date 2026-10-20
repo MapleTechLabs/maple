@@ -6,7 +6,7 @@ import { skeleton } from "../../ui/skeleton"
 import type { Model, UsageTotals } from "./model"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 
-// `ServiceUsageCards` (apps/web/src/components/dashboard/service-usage-cards.tsx).
+// The service usage cards.
 
 const CARDS: ReadonlyArray<{ title: string; key: keyof UsageTotals; format: (value: number) => string }> = [
 	{ title: "Total Logs", key: "logs", format: formatNumber },

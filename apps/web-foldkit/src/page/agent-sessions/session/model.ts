@@ -25,7 +25,7 @@ export const ScrollRequest = Schema.Struct({
 	reveal: Schema.Boolean,
 })
 
-// `/agent-sessions/$sessionId` (routes/agent-sessions/$sessionId.tsx, session-detail/*).
+// `/agent-sessions/$sessionId`.
 
 export const SESSION_VIEWS = ["overview", "trace", "flow", "transcript"] as const
 export type SessionView = (typeof SESSION_VIEWS)[number]
@@ -100,7 +100,7 @@ export const Model = Schema.Struct({
 		Schema.String,
 		Schema.NullOr(Schema.Struct({ document: Schema.NullOr(MarkdownDocument) })),
 	),
-	/** The Flow view's camera and pane, kept across view switches like legacy's zoom. */
+	/** The Flow view's camera and pane, kept across view switches. */
 	flowCanvas: Canvas.Model,
 	/** The open flow was laid out again: its edges leave measured handles, a half pixel lower and one right. */
 	isFlowRelaid: Schema.Boolean,

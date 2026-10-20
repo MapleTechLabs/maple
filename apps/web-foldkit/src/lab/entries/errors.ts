@@ -3,7 +3,7 @@ import { ErrorsLabFlags, errorsLabFlags, init, update } from "../errors-lab/upda
 import { view } from "../errors-lab/view"
 import { defineShellLab } from "../shell-lab"
 
-// `/lab/errors` (apps/web `lab/errors-lab.tsx`): the errors hub over fixtures, inside the real shell.
+// `/lab/errors`: the errors hub over fixtures, inside the real shell.
 
 export const lab = defineShellLab("Errors", {
 	Model: Page.Model,

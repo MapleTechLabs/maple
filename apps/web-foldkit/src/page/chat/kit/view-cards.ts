@@ -1,4 +1,4 @@
-import { humanize } from "@maple/web/lib/humanize"
+import { humanize } from "../../../lib/humanize"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -12,7 +12,7 @@ import { toolLabel } from "./tool-metadata"
 import { inputRecord } from "./tool-output"
 import { dashboardSummary } from "./view-approval"
 
-// `ApprovalCard` and `TaskCard` (apps/web components/chat): a proposal waiting on the user, and
+// `ApprovalCard` and `TaskCard`: a proposal waiting on the user, and
 // a sub-agent run as a line.
 
 const stringify = (input: unknown): string => JSON.stringify(input, null, 2) ?? String(input)
@@ -121,7 +121,7 @@ const AGENTS = new Map<string, AgentPresentation>([
 	["investigation-validator", { label: "Validator", activity: "Validating", icon: "ShieldIcon" }],
 ])
 
-/** `agentPresentation` (components/ai-elements/agent-metadata.ts). */
+/** `agentPresentation`: a sub-agent's label and look. */
 export const agentPresentation = (agent: string): AgentPresentation =>
 	AGENTS.get(agent) ??
 	(agent.startsWith("hypothesis-")

@@ -8,7 +8,7 @@ import { MapleInternalApiClient } from "../../platform/api-clients"
 import * as Field from "../../ui/field"
 import { Message } from "./message"
 
-// `RailwayIntegrationCard` (components/integrations/railway-integration-card.tsx): state and writes.
+// `RailwayIntegrationCard`: state and writes.
 
 export const RailwayCardModel = Schema.Struct({
 	/** `RailwayTokenForm`'s state (the shape the infra page's form shares). */

@@ -1,5 +1,5 @@
 import type { V2GcpConnector } from "@maple/domain/http/v2"
-import { GCP_SCOPE_NAMES, logRouterUrl } from "@maple/web/components/integrations/gcp-connector-state"
+import { GCP_SCOPE_NAMES, logRouterUrl } from "../../components/integrations/gcp-connector-state"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
 import { confirmDialog } from "../../ui/confirm-dialog"

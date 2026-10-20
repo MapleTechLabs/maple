@@ -24,7 +24,7 @@ import type { HostRow, Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { hostTable, hostTableLoading } from "./view-table"
 
-// `HostsPage` / `HostList` (apps/web/src/routes/infra/hosts/index.tsx).
+// `HostsPage` / `HostList`.
 
 type H = HtmlBuilder<Message>
 

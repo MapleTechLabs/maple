@@ -1,8 +1,8 @@
 import { containerKeyFor, containerKeyOf, ROOT_CONTAINER_KEY } from "@maple/domain/http"
 import { normalizeLayout } from "@maple/grid-engine"
 import { ALL_VALUE, type VariableValues } from "@maple/query-engine"
-import { resolveSectionView } from "@maple/web/lib/dashboards/section-view-state"
-import { GRID_ROW_HEIGHT, projectLayout, tierForWidth } from "@maple/web/components/dashboard-builder/canvas/grid-breakpoints"
+import { resolveSectionView } from "../../lib/dashboards/section-view-state"
+import { GRID_ROW_HEIGHT, projectLayout, tierForWidth } from "../../components/dashboard-builder/canvas/grid-breakpoints"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { WIDGET_CHART_TOKENS } from "../dashboards/kit/chart-tokens"
@@ -23,7 +23,7 @@ import type { Model, ShareError, SharedDashboard, ShareWidget, WidgetState } fro
 import { refreshSecondsOf } from "./update"
 import { sharedSection } from "./view-sections"
 
-// `SharePage` (apps/web/src/routes/share/$token.tsx): its own chrome outside the app shell.
+// `SharePage`: its own chrome outside the app shell.
 
 type H = HtmlBuilder<Message>
 

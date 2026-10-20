@@ -7,7 +7,7 @@ import { ThemeColors } from "../../charts/theme-colors"
 import * as AlertsHub from "../../page/alerts/hub/model"
 import * as Shell from "../../shell"
 
-// `/lab/alerts` (apps/web/src/lab/alerts-lab.tsx): the hub's tabs and the incident page over one
+// `/lab/alerts`: the hub's tabs and the incident page over one
 // fixture org (`buildAlertsLabFixture`), inside the real shell.
 
 export const Model = Schema.Struct({

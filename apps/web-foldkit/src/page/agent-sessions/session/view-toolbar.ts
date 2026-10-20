@@ -9,7 +9,7 @@ import { Message } from "./message"
 import type { Model, SessionView, ViewOption } from "./model"
 import { searchInput } from "../../../ui/search-input"
 
-// The control bar of `SessionViews` (session-detail/session-views.tsx): the filter and `ViewOptions`.
+// The session views' control bar: the filter and the view options.
 
 type H = HtmlBuilder<Message>
 

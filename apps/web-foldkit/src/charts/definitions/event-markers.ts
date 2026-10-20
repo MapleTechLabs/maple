@@ -3,8 +3,7 @@ import { decorative } from "@tanstack/charts/mark/decorative"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { type ChartEventMarker, EventTone, type MarkerColors } from "../event-marker-spec"
 
-// Port of `chartEventMarkerMarks` and `placeMarkersInWindow`
-// (apps/web/src/components/infra/primitives/chart-event-markers.tsx), colours resolved by the page.
+// Chart event marker marks and their placement in the window, colours resolved by the page.
 
 interface PlacedMarker {
 	readonly marker: ChartEventMarker

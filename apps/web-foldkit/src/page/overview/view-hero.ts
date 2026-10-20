@@ -4,7 +4,7 @@ import { card, cardPanel } from "../../ui/card"
 import { eyebrow } from "../../ui/eyebrow"
 import { statusDot } from "../../ui/status-dot"
 
-// `AlertFiringHero` (apps/web/src/components/alerts/alert-firing-hero.tsx) without `lastEvaluatedHint`.
+// The firing-alerts hero, without the last-evaluated hint.
 
 export type HeroCounts = Readonly<{
 	openCount: number

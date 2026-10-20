@@ -26,7 +26,7 @@ import {
 	ZoneSecurity,
 } from "../data"
 
-// `/infra/cloudflare/$zoneName` (apps/web/src/routes/infra/cloudflare/$zoneName.tsx).
+// `/infra/cloudflare/$zoneName`.
 
 export const ZoneTab = Schema.Literals(["traffic", "dns", "security"])
 export type ZoneTab = typeof ZoneTab.Type

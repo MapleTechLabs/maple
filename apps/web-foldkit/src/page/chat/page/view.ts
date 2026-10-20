@@ -23,8 +23,8 @@ import { investigationCard, widgetFixCard } from "../kit/view-subject"
 import { mobileLayout } from "./view-mobile"
 import { chatSidebar } from "./view-sidebar"
 
-// `ChatPage` (apps/web components/chat/chat-page.tsx), desktop layout: the conversation rail
-// beside every open conversation (hidden but mounted, like legacy's tab panes).
+// The chat page, desktop layout: the conversation rail beside every open conversation (hidden
+// but mounted, so each keeps its state).
 // Below `md` the rail becomes a header with a conversation sheet (`view-mobile.ts`).
 
 type H = HtmlBuilder<Message>

@@ -3,7 +3,7 @@ import { shortId } from "@maple/ui/lib/ids"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { cn } from "@maple/ui/lib/utils"
-import { countryFlag, countryName } from "@maple/web/components/analytics/labels"
+import { countryFlag, countryName } from "../../../components/analytics/labels"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import * as CopyButton from "../../../ui/copy-button"
@@ -18,7 +18,7 @@ import { recordedMarker } from "../kit/replay-window"
 import { Message } from "./message"
 import type { Model, ReplayDetail } from "./model"
 
-// The rail's Session tab (`SessionTab` in components/replays/session-events-panel.tsx).
+// The rail's Session tab.
 // TODO(tooltip): the identity links' and copy buttons' hover tooltips.
 
 type H = HtmlBuilder<Message>

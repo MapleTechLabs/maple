@@ -30,7 +30,7 @@ import type { Model } from "./model"
 import { ruleMenuId } from "./update"
 import { searchInput } from "../../../ui/search-input"
 
-// `RulesTab` (components/alerts/overview/rules-tab.tsx).
+// `RulesTab`: the hub's Rules tab.
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const RIBBON_DAYS = 7

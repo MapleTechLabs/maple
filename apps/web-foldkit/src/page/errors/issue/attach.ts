@@ -19,7 +19,7 @@ import { LinkPullRequest } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `AttachPullRequestDialog` (components/errors/attach-pull-request-dialog.tsx): pick a pull request
+// The attach pull request dialog: pick a pull request
 // of the connected repository (a Select picks it when the org has several), or paste a link.
 
 type Return = PageReturn<Model, Message>
@@ -300,7 +300,7 @@ export const attachDialog = (h: H, model: Model): Html => {
 		submitLabel: "Attach",
 		isPending: model.isAttaching,
 		isSubmitDisabled: typedOf(model) === null,
-		// Legacy's attach dialog closes without handing focus back to the Attach button.
+		// The attach dialog closes without handing focus back to the Attach button.
 		isReturningFocus: false,
 		panelClassName: "space-y-3",
 		fields: isConnected

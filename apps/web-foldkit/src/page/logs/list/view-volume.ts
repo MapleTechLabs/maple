@@ -18,8 +18,6 @@ import { Message } from "./message"
 import type { Model, VolumeBrush, VolumeBucket } from "./model"
 import { bucketTooltipBody } from "../../../charts/bucket-tooltip"
 
-// `LogsVolumeChart` (apps/web/src/components/logs/logs-volume-chart.tsx).
-
 /** The strip is a scrubber above the list, not a chart in its own right. */
 export const LOGS_VOLUME_CHART_HEIGHT = 120
 
@@ -222,7 +220,7 @@ const header = (h: HtmlBuilder<Message>, total: number): Html =>
 export const volumeChart = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.volume.data, {
 		onEmpty: () => chartLoading(h, { variant: "bar", height: LOGS_VOLUME_CHART_HEIGHT }),
-		// Legacy renders nothing for a failed volume query.
+		// A failed volume query renders nothing.
 		onFailure: () => h.empty,
 		onData: (buckets) => {
 			const isWaiting = AsyncData.isRefreshing(model.volume.data)

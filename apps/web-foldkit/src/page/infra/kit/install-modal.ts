@@ -8,9 +8,9 @@ import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
 import * as Tabs from "../../../ui/tabs"
 
-// `InstallHostModal` (apps/web/src/components/infra/install-modal.tsx): Kubernetes, Docker and Host
-// install snippets carrying the org's private ingest key, masked until revealed. Mounted closed on
-// every collector-fed infra page, so the key is fetched on entry (`retainedQueryV2("ingestKeys")`).
+// `InstallHostModal`: Kubernetes, Docker and Host install snippets carrying the org's private ingest
+// key, masked until revealed. Mounted closed on every collector-fed infra page, so the key is fetched
+// on entry (`retainedQueryV2("ingestKeys")`).
 
 export const InstallTab = Schema.Literals(["kubernetes", "docker", "hosts"])
 export type InstallTab = typeof InstallTab.Type
@@ -38,7 +38,7 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-/** `idBase`: the Base UI `useId` the modal's Tabs would get; ids are not compared by parity. */
+/** `id` keys the dialog; the Tabs take a fixed `idBase`. */
 export const init = (id: string, defaultTab: InstallTab): Model => ({
 	id,
 	defaultTab,

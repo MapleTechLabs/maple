@@ -1,11 +1,11 @@
-import { mcpUrl } from "@maple/web/lib/services/common/mcp-url"
+import { mcpUrl } from "../../../lib/services/common/mcp-url"
 import {
 	claudeCodeCommand,
 	isMcpClient,
 	type McpClient,
 	mcpClientConfig,
-} from "@maple/web/components/settings/mcp-client-config"
-import { REPLAY_BLOCK_CLASS } from "@maple/web/components/common/replay-privacy"
+} from "../../../components/settings/mcp-client-config"
+import { REPLAY_BLOCK_CLASS } from "../../../components/common/replay-privacy"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Submodel } from "foldkit"
 import { button } from "../../../ui/button"

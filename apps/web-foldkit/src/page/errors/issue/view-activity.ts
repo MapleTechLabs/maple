@@ -27,8 +27,7 @@ import {
 } from "./activity-format"
 import { Message } from "./message"
 
-// `IssueTimeline` and `IssueCommentComposer` (components/errors/issue-timeline.tsx and
-// issue-comment-composer.tsx).
+// The issue timeline and the comment composer.
 
 /** Rows mounted before "Show earlier" (`RECENT_ITEMS`). */
 const RECENT_ITEMS = 50

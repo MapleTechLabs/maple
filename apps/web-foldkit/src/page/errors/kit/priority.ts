@@ -1,7 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// copied: `PRIORITY_LABEL`, `PriorityBarsIcon` (components/icons/priority-bars.tsx) and
-// `clampPriority` (components/errors/issue-id.ts), React modules.
+// Issue priority: its labels, the bars icon and the clamp.
 
 export type PriorityLevel = 0 | 1 | 2 | 3 | 4
 

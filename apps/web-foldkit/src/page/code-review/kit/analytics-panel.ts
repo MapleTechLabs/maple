@@ -4,7 +4,7 @@ import { BAR_CHART_TOKENS } from "../../../charts/bar-chart"
 import { emptyMessage } from "../../../ui/empty"
 import { panel, panelBody, panelHeader } from "../../../ui/panel"
 
-// `AnalyticsPanel` and `ChartFrame` (code-review-analytics.tsx), shared with the CI tab.
+// `AnalyticsPanel` and `ChartFrame`, shared with the CI tab.
 
 export const analyticsPanel = <M>(
 	h: HtmlBuilder<M>,

@@ -16,7 +16,7 @@ import {
 	shortReleaseLabel,
 	type ReleaseGroup,
 	type ReleaseServiceImpact,
-} from "@maple/web/components/releases/release-model"
+} from "../../../components/releases/release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { badge } from "../../../ui/display"
@@ -386,7 +386,7 @@ export const releaseChangeset = <M>(h: HtmlBuilder<M>, state: ChangesetState, cl
 	)
 }
 
-// copied: `SEVERITY_TONE` / `SEVERITY_LABEL` (components/errors/severity-badge.tsx, a React module).
+// Issue severity tones and labels (as in page/errors/kit/severity.ts).
 const SEVERITY = new Map([
 	["critical", { tone: "bg-severity-fatal/12 text-severity-fatal", label: "Critical" }],
 	["high", { tone: "bg-severity-error/12 text-severity-error", label: "High" }],

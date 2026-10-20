@@ -1,5 +1,5 @@
 import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
-import { captureChatReferrer } from "@maple/web/components/chat/auto-contexts"
+import { captureChatReferrer } from "../../../components/chat/auto-contexts"
 import { Effect, Option, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import type { Resources } from "../../../platform/resources"
@@ -54,7 +54,7 @@ export const subscriptions = Subscription.make<SheetHost, Message, Resources>()(
 				!isSignedIn ? Stream.empty : isTypeAnywhere ? openEvents : Stream.merge(openEvents, shortcut),
 		},
 	),
-	/** `captureChatReferrer(pathname)` (`__root.tsx`): the page a chat opens over, for its context chips. */
+	/** `captureChatReferrer(pathname)`: the page a chat opens over, for its context chips. */
 	referrer: entry(
 		{ pathname: Schema.String },
 		{

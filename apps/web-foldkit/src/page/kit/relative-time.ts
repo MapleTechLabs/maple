@@ -10,8 +10,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 
-// `RelativeTime` (apps/web/src/components/common/relative-time.tsx). `nowMs` is the page's resolved
-// clock (legacy reads `Date.now()` at render).
+// `RelativeTime`. `nowMs` is the page's resolved clock.
 // TODO(tooltip): without `trigger` the tooltip variant renders its trigger only; the absolute-time
 // popup is the page Tooltip's to draw (the `title` variant carries it natively).
 
@@ -28,7 +27,7 @@ export type RelativeTimeOptions = Readonly<{
 	className?: string
 }>
 
-/** The absolute time legacy shows on hover: `formatTimestampInTimezone(epochMs, { withYear: true })`. */
+/** The absolute time shown on hover: `formatTimestampInTimezone(epochMs, { withYear: true })`. */
 export const formatAbsolute = (epochMs: number, timeZone: string): string =>
 	formatTimestampInTimezone(epochMs, { timeZone, withYear: true })
 

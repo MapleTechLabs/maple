@@ -1,5 +1,5 @@
 import { makeChatSessionId } from "@maple/domain/chat-session"
-import { suggestionsForContexts, type AutoContext } from "@maple/web/components/chat/auto-contexts"
+import { suggestionsForContexts, type AutoContext } from "../../../components/chat/auto-contexts"
 import { Array, Option, Result } from "effect"
 import { Command } from "foldkit"
 import type { Resources } from "../../../platform/resources"

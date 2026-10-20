@@ -1,6 +1,6 @@
 import { TimeRangeSchema } from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
-import { REFRESH_INTERVAL_OPTIONS, resolveRefreshIntervalSeconds, variableValuesFromSearch } from "@maple/web/lib/dashboard-controls/search-params"
+import { REFRESH_INTERVAL_OPTIONS, resolveRefreshIntervalSeconds, variableValuesFromSearch } from "../../lib/dashboard-controls/search-params"
 import { Option, Schema } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "../../charts/chart"
@@ -9,7 +9,7 @@ import { AppRoute, hrefOf } from "../../route"
 import * as Menu from "../../ui/menu"
 import { type PageReturn, PageOutMessage } from "../contract"
 import { presetLabel } from "../kit/time-controls"
-import { withActiveTab, withSectionCollapsed } from "@maple/web/lib/dashboards/section-view-state"
+import { withActiveTab, withSectionCollapsed } from "../../lib/dashboards/section-view-state"
 import { FetchBatch, GoToSignIn, ReadFrame, ResolveClock, ResolveReloadClock, ResolveShare, WaitFlushFrame } from "./command"
 import { Message } from "./message"
 import type { Model, SharedDashboard, ShareWindow } from "./model"
@@ -26,7 +26,7 @@ export const resolveShareWindow = (model: Model, share: SharedDashboard): ShareW
 	const { search } = model
 	const options = { snap: model.refreshTick === 0, nowMs: model.nowMs }
 	if (search.from !== undefined && search.to !== undefined)
-		// TODO(range-label): legacy formats an absolute window with `formatTimeRangeDisplay`.
+		// TODO(range-label): format an absolute window with `formatTimeRangeDisplay`.
 		return { startTime: search.from, endTime: search.to, label: `${search.from} - ${search.to}` }
 	if (search.range !== undefined) {
 		const range = resolveTimeRangeWindow({ type: "relative", value: search.range }, options)

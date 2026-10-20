@@ -89,7 +89,7 @@ export const culpritPanel = (h: H, model: Model, issue: ErrorIssueDocument): Htm
 								[h.Class("text-sm text-muted-foreground")],
 								["This error carries no message — only its type and where it was raised."],
 							),
-					// TODO(top-frame-copy): a top frame copies through its own button status in legacy.
+					// TODO(top-frame-copy): a top frame should copy through its own button status.
 					issueField(h, "Culprit", [
 						issue.topFrame
 							? mono(h, issue.topFrame, "Top frame", model.fingerprintCopy, toFingerprint)

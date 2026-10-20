@@ -28,8 +28,8 @@ type Instance = Virtualizer<HTMLElement, HTMLElement>
 
 /**
  * The scroll-to-selected effect of `SpanHierarchy`, verbatim: retry across frames, latch only once
- * a later frame sees the row in view. Like legacy it stops on estimated row heights when the rows
- * were not measured first (the parity README's known `span-hierarchy.tsx` race).
+ * a later frame sees the row in view. It stops on estimated row heights when the rows were not
+ * measured first (a known race).
  */
 const scrollToSelected = (
 	scroller: HTMLElement,

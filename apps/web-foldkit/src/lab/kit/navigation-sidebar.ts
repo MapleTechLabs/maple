@@ -22,7 +22,7 @@ import {
 	sidebarWrapper,
 } from "../../ui/sidebar"
 
-// apps/web/src/lab/kit/navigation.tsx `SidebarFrame`: a layout-contained frame holds the sidebar's
+// `SidebarFrame`: a layout-contained frame holds the sidebar's
 // fixed container, so an expanded and a collapsed sidebar sit side by side.
 
 const TELEMETRY: ReadonlyArray<

@@ -1,6 +1,6 @@
 import { ALL_VALUE, type ResolvedVariable } from "@maple/query-engine"
-import { REFRESH_INTERVAL_OPTIONS } from "@maple/web/lib/dashboard-controls/search-params"
-import { highlightCode } from "@maple/web/lib/sugar-high"
+import { REFRESH_INTERVAL_OPTIONS } from "../../../lib/dashboard-controls/search-params"
+import { highlightCode } from "../../../lib/sugar-high"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
@@ -22,7 +22,7 @@ import { optionsByNameOf, variablesOf } from "./plan"
 import { boardShareOf, chartShareOf, embedUrl, ShareMessage } from "./share"
 import { shareLinkRow } from "./view-share"
 
-// `EmbedWidgetDialog` (dashboard-builder/toolbar/embed-widget-dialog.tsx).
+// The embed widget dialog.
 
 type H = HtmlBuilder<Message>
 

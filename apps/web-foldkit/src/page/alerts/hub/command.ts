@@ -30,7 +30,7 @@ export const FetchHubDeliveries = Command.define("FetchAlertsHubDeliveries", {
 })
 
 /**
- * The Routing tab renders `deliveryEventsResult.cause`; in apps/web that Cause carries no typed failure
+ * The Routing tab renders `deliveryEventsResult.cause`, which can carry no typed failure
  * (observed: "An unexpected error occurred" for a 500), so the slot keeps the unexpected body too.
  */
 export const FetchRoutingDeliveries = Command.define("FetchAlertsRoutingDeliveries", {

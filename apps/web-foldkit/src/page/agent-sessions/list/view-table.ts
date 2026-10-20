@@ -22,7 +22,7 @@ import { vendorColor, vendorIcon, vendorLabel } from "../kit/vendor"
 import type { DisplayRow, Sort } from "./derive"
 import { Message } from "./message"
 
-// `AgentSessionsList` (agent-sessions-list.tsx), windowed like its `useVirtualizer`.
+// The agent sessions list, windowed.
 // TODO(tooltip): every `Hint` is drawn as its trigger; the popups are not ported.
 
 type H = HtmlBuilder<Message>
@@ -125,7 +125,7 @@ export const listSkeleton = (h: H): Html =>
 		})),
 	})
 
-// copied: ROW_STRETCHED_LINK_CLASS and ROW_LIFT_TOOLTIPS (components/common/data-table.tsx).
+// A row link stretched over its row, and the lift for tooltips above it.
 const ROW_STRETCHED_LINK_CLASS =
 	"after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:ring-1 focus-visible:after:ring-ring focus-visible:after:ring-inset"
 const ROW_LIFT_TOOLTIPS = "[&_[data-slot=tooltip-trigger]]:relative [&_[data-slot=tooltip-trigger]]:z-10"

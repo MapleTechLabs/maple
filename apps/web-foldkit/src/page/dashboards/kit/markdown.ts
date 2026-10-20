@@ -2,7 +2,7 @@ import { validateUrlScheme } from "@maple/ui/lib/sanitizers"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { inlineCode } from "../../../ui/inline-code"
 
-// `MarkdownWidget`'s renderer (dashboard-builder/widgets/markdown-widget.tsx): headings, bullet
+// The markdown widget's renderer: headings, bullet
 // and numbered lists, paragraphs; inline links, bold, italic and code.
 
 const HEADING_RE = /^(#{1,6})\s+(.*)$/

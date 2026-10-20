@@ -1,7 +1,7 @@
-import { humanize } from "@maple/web/lib/humanize"
+import { humanize } from "../../../lib/humanize"
 import type { IconName } from "../../../ui/icon"
 
-// `tool-metadata.ts` (apps/web components/ai-elements): a tool's label, icon and live activity.
+// A tool's label, icon and live activity.
 
 /** Strips the `mcp__<server>__` prefix MCP tools arrive with. */
 export const normalizeToolName = (toolName: string): string => toolName.replace(/^mcp__.+?__/, "")

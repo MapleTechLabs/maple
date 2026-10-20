@@ -11,7 +11,7 @@ import { signalsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `IssuesBulkBar` (components/errors/issues-bulk-bar.tsx): the selection's actions, pinned to the foot.
+// The issues bulk bar: the selection's actions, pinned to the foot.
 
 type H = HtmlBuilder<Message>
 

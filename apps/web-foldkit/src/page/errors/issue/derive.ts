@@ -1,6 +1,6 @@
 import type { ErrorIssueDetailResponse, ErrorIssueDocument } from "@maple/domain/http"
 import { warehouseDateTimeToIso } from "@maple/query-engine"
-import { errorIssueDetailFromV2 } from "@maple/web/lib/services/error-issues"
+import { errorIssueDetailFromV2 } from "../../../lib/services/error-issues"
 import { AlertIncidentId } from "@maple/domain/primitives"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { DateTime, Option, Schema } from "effect"

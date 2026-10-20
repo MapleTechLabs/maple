@@ -12,7 +12,7 @@ import { hasToken } from "../kit/shared"
 import { Message } from "./message"
 import type { Model, RevealedToken, SettingsForm } from "./model"
 
-// `SourceSetupTab` (components/sources/source-detail.tsx) and `SourceSettings` (source-settings.tsx).
+// `SourceSetupTab` and `SourceSettings`.
 
 type H = HtmlBuilder<Message>
 

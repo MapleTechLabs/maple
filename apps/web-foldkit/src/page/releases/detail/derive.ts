@@ -1,4 +1,4 @@
-import { groupReleases, type ReleaseGroup } from "@maple/web/components/releases/release-model"
+import { groupReleases, type ReleaseGroup } from "../../../components/releases/release-model"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import { deriveOf } from "../list/derive"

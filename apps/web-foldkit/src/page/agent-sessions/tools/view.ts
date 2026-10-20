@@ -36,8 +36,6 @@ import type { Model } from "./model"
 import { bucketSecondsOf } from "./update"
 import { toolsTable } from "./view-table"
 
-// `AgentToolsPage` / `AgentToolsBody` (routes/agent-sessions/tools/index.tsx) and `AgentToolsView`.
-
 type H = HtmlBuilder<Message>
 
 const failureOf = <A>(data: AsyncData.AsyncData<A, LoadFailure>): LoadFailure | undefined =>

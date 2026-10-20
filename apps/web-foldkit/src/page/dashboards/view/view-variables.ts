@@ -18,7 +18,7 @@ import type { Model } from "./model"
 import { optionsByNameOf, variablesOf } from "./plan"
 import { variableComboIdOf } from "./variable-update"
 
-// `VariableSelects` (dashboard-builder/toolbar/variable-selects.tsx): one chip per variable, and in
+// The variable selects: one chip per variable, and in
 // edit mode the `+` chip that opens the manager.
 
 type H = HtmlBuilder<Message>
@@ -145,7 +145,7 @@ const textboxControl = (h: H, model: Model, variable: DashboardVariable, current
 			size: "sm",
 			controlClassName: "w-28 font-mono",
 			attributes: [
-				// Keyed by the committed value, as the uncontrolled legacy input: a URL change resets it.
+				// Keyed by the committed value, so a URL change resets the input.
 				h.Key(`textbox-${name}-${current}`),
 				h.Value(model.variableDrafts[name] ?? current),
 				h.Placeholder("any"),

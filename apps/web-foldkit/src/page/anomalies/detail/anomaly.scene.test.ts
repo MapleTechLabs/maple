@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { AnomalyIncidentId, AnomalyIncidentNotFoundError } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes, V2AnomalyIncident, V2ErrorIssue } from "@maple/domain/http/v2"
-import { errorIssueFromV2 } from "@maple/web/lib/services/error-issues"
+import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { Result, Schema } from "effect"
 import {
 	Command,

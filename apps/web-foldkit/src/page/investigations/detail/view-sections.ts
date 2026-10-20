@@ -21,14 +21,13 @@ import { Message } from "./message"
 import type { Escalation, LogBucket, Model, OverviewRow, TracesRow } from "./model"
 
 // The Overview's lower sections and the Evidence tab: `ImpactStrip`, `SignalsCard`, `InvestigationMeta`,
-// `FollowUpComposer`, `CauseRecap`, `EvidenceTab` and `EvidenceChips` (components/investigations/).
+// `FollowUpComposer`, `CauseRecap`, `EvidenceTab` and `EvidenceChips`.
 
 type H = HtmlBuilder<Message>
 
 const link = (h: H, href: string, className: string, children: ReadonlyArray<Html | string>): Html =>
 	h.a([h.Href(href), h.Class(className)], children)
 
-// styles: apps/web/src/components/errors/fact-strip.tsx
 const STRIP = [
 	"grid shrink-0 gap-y-5 px-1",
 	"grid-cols-2 xl:grid-cols-4",

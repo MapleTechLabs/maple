@@ -10,7 +10,7 @@ import { defineLab } from "../../define"
 import { contentSections } from "../../kit/content-sections"
 import { kitPage } from "../../kit/kit-layout"
 
-// Port of `/lab/kit/content` (apps/web/src/lab/kit/content.tsx): text, identity, conversation
+// `/lab/kit/content`: text, identity, conversation
 // and layout primitives. The calendar and the trace id copy button are live Submodels.
 
 // MODEL
@@ -18,7 +18,7 @@ import { kitPage } from "../../kit/kit-layout"
 const Model = Schema.Struct({ calendar: Calendar.Model, traceIdCopy: CopyButton.Model })
 type Model = typeof Model.Type
 
-// `MONTH`, `SELECTED` and `TODAY` of the React page (fixed dates, not the clock).
+// `MONTH`, `SELECTED` and `TODAY`: fixed dates, not the clock.
 const init = (): Update.Return<Model, Message> => ({
 	model: {
 		calendar: Calendar.init({

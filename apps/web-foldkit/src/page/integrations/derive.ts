@@ -5,16 +5,16 @@ import {
 	gcpConnectionState,
 	gcpScopeLabel,
 	gcpWorstState,
-} from "@maple/web/components/integrations/gcp-connector-state"
+} from "../../components/integrations/gcp-connector-state"
 import { Array, DateTime, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Keyed } from "../../data/keyed"
 import { chatIntegrationId, HUB_CATALOG, type IntegrationId } from "./catalog"
-import { hasBringYourOwnCloudAddOn } from "@maple/web/lib/billing/plan-gating"
+import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
 import type { Visibility } from "../settings/nav"
 import type { Model, Statuses } from "./model"
 
-// `useIntegrationStatuses` and `useIntegrationOverviews` (integration-catalog.tsx), as pure folds.
+// `useIntegrationStatuses` and `useIntegrationOverviews`, as pure folds.
 
 /** `Result.builder`: success (also while revalidating), initial (`null`), else the failure value. */
 export const fold = <A, E, R>(slot: Keyed<A, E>, onSuccess: (data: A) => R, onFailure: () => R): R | null =>

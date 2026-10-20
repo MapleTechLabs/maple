@@ -67,8 +67,8 @@ const subscriptions = Subscription.lift(pullRequestsSubscriptions)<PageSubscript
 
 /**
  * `/code-review` and its tabs (Analytics, Pull requests, CI, Issues, Settings) as one instance per
- * org: a tab change keeps the instance, so what one tab read serves the next, as legacy's retained
- * query atoms do. Filters and windows are search params; each tab's own update handles them.
+ * org: a tab change keeps the instance, so what one tab read serves the next. Filters and windows
+ * are search params; each tab's own update handles them.
  */
 export const page = definePage(
 	"CodeReview",

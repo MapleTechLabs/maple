@@ -50,7 +50,7 @@ export const Message = defineMessageUnion({
 	GotQueryPanelMessage: { message: QueryPanel.Message },
 	ClickedAddQuery: {},
 	ClickedAddFormula: {},
-	/** A fresh id for what was asked (`crypto.randomUUID()` in legacy's builder actions). */
+	/** A fresh id for what was asked (`crypto.randomUUID()`). */
 	GeneratedId: {
 		purpose: GeneratedIdPurpose,
 		source: Schema.String,

@@ -1,6 +1,6 @@
 import type { BillingCustomer } from "@maple/domain/http"
-import { hasLapsedPlan } from "@maple/web/lib/billing/plan-gating"
-import { TRIAL_DURATION_DAYS } from "@maple/web/lib/billing/plans"
+import { hasLapsedPlan } from "../../lib/billing/plan-gating"
+import { TRIAL_DURATION_DAYS } from "../../lib/billing/plans"
 import { Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -11,8 +11,8 @@ import { icon } from "../../ui/icon"
 import * as PricingCards from "./pricing-cards"
 import * as PricingCardsView from "./pricing-cards-view"
 
-// `/select-plan` (apps/web/src/routes/select-plan.tsx): the trial pitch, or for a returning
-// subscriber whose plan lapsed, the reactivation framing, over the same pricing cards.
+// `/select-plan`: the trial pitch, or for a returning subscriber whose plan lapsed, the reactivation framing,
+// over the same pricing cards.
 
 export const Model = Schema.TaggedStruct("SelectPlan", { pricing: PricingCards.Model })
 export type Model = typeof Model.Type

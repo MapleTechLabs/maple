@@ -139,7 +139,7 @@ const setViewport = (model: Model, viewport: Viewport): Model => ({
 	viewport: clampViewport(viewport, model.traceStartMs, model.traceEndMs),
 })
 
-/** `controller.zoomToSpan` (eased in legacy; TODO(animation): applied at once here). */
+/** Zooms to the span with 10% padding. TODO(animation): ease it; applied at once here. */
 const zoomToSpan = (model: Model, startMs: number, endMs: number): Model => {
 	const padding = Math.max((endMs - startMs) * 0.1, 0.001)
 	return setViewport(model, { startMs: startMs - padding, endMs: endMs + padding })
@@ -342,7 +342,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 				: { model, outMessage: OutMessage.ChangedColorBy({ colorBy }) },
 	})
 
-/** The keys `pressedKey` consumes (legacy `preventDefault`s exactly these). */
+/** The keys `pressedKey` consumes (and `preventDefault`s). */
 export const TIMELINE_KEYS = new Set([
 	"arrowdown",
 	"arrowup",

@@ -1,5 +1,4 @@
-// copied: apps/web/src/components/service-map/three/factory-brand.tsx (R3F JSX as three construction).
-import { fade, type InkPalette } from "@maple/web/components/service-map/three/appearance"
+import { fade, type InkPalette } from "../../../components/service-map/three/appearance"
 import * as THREE from "three"
 import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js"
 import type { MachineBadge } from "./badge-art"

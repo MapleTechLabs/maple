@@ -5,7 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "../../../ui/icon"
 import { manifestGlyph } from "../../../ui/manifest-glyph"
 
-// copied: `PROVIDERS` and `ProviderLogo` (components/alerts/destination-provider.tsx, a React module).
+// `PROVIDERS` and `ProviderLogo`: the destination providers and their marks.
 
 const BRANDFETCH_CLIENT_ID = "1id0IQ-4i8Z46-n-DfQ"
 const HAZEL_ACCENT_TEXT = "light-dark(#A34209, #F46F0F)"

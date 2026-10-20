@@ -9,7 +9,7 @@ import * as Frame from "../../kit/frame"
 import { ChartModels, SeriesSlots } from "../../kit/series"
 import { PodsPage } from "../pod-data"
 
-// `/infra/kubernetes/nodes/$nodeName` (apps/web/src/routes/infra/kubernetes/nodes/$nodeName.tsx).
+// `/infra/kubernetes/nodes/$nodeName`.
 
 export const NodeSummary = NodeDetailSummaryResponse.fields.data
 export type NodeSummary = NodeDetailSummaryResponse["data"]

@@ -8,7 +8,7 @@ import { docsLink, emptyActions } from "../../kit/signal-empty-state"
 import { alertsHref, createHref } from "../shared/links"
 import { ALERT_TEMPLATES, type AlertTemplate, type AlertTemplateId } from "../shared/templates"
 
-// `AlertsEmptyState` (components/alerts/overview/alerts-empty-state.tsx): zero rules.
+// `AlertsEmptyState`: zero rules.
 
 const TILE_TONE = new Map<AlertTemplateId, { glyph: string; hoverBorder: string }>([
 	["high_error_rate", { glyph: "bg-chart-error/10 text-chart-error", hoverBorder: "hover:border-chart-error/50" }],

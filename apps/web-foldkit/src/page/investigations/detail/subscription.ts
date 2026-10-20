@@ -35,7 +35,7 @@ const investigationStream = (orgId: string, id: string, attempt: number) =>
 		}),
 	).pipe((live) => withLoadWatchdog(live, Message.SyncedInvestigation({ orgId, id, attempt, sync: { _tag: "Failed" } })))
 
-/** `COLLECTION_LOAD_TIMEOUT_MS`: how long the shape may stay loading before legacy calls it lost. */
+/** `COLLECTION_LOAD_TIMEOUT_MS`: how long the shape may stay loading before it counts as lost. */
 export const LOAD_TIMEOUT = Duration.seconds(30)
 
 /** `useCollectionLoadFailed`: nothing synced within the timeout means the connection is lost (with Retry). */

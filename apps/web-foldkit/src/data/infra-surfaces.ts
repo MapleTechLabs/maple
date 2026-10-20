@@ -7,7 +7,7 @@ import { readThrough } from "./read-cache"
 import { requestKey } from "./request-key"
 import type { TimeWindow } from "./time-range"
 
-// `useInfraSurfaces` (apps/web/src/hooks/use-infra-surfaces.ts): the presence probe plus the four
+// The infra surfaces: the presence probe plus the four
 // integration statuses. The shell and the pages read the probe through one cache entry per window.
 
 /** The last hour, snapped to five minutes so the key holds still. */

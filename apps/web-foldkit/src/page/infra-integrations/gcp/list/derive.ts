@@ -1,4 +1,4 @@
-import { gcpCloudSqlInstances } from "@maple/web/components/infra/gcp/inventory"
+import { gcpCloudSqlInstances } from "../../../../components/infra/gcp/inventory"
 import {
 	gcpListRows,
 	gcpListScope,
@@ -6,9 +6,9 @@ import {
 	gcpSparklineBucketSeconds,
 	gcpSparks,
 	NO_GCP_SPARKS,
-} from "@maple/web/components/infra/gcp/list-model"
-import { gcpInfraNotice, gcpInfraSetupPending, type GcpView } from "@maple/web/components/infra/gcp/tabs"
-import { gcpMetricsState } from "@maple/web/components/integrations/gcp-connector-state"
+} from "../../../../components/infra/gcp/list-model"
+import { gcpInfraNotice, gcpInfraSetupPending, type GcpView } from "../../../../components/infra/gcp/tabs"
+import { gcpMetricsState } from "../../../../components/integrations/gcp-connector-state"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../../data/time-range"

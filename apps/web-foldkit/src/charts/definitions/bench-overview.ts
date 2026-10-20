@@ -16,8 +16,7 @@ import type { BuiltChart } from "./built-chart"
 import { verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip } from "./plot-constants"
 
-// Ports of the `/lab/bench/tanstack` chart definitions (apps/web lab/bench/tanstack/
-// throughput-area.tsx, error-rate-area.tsx, latency-line.tsx). Code copied, constants unchanged.
+// The `/lab/bench/tanstack` chart definitions: throughput area, error rate area and latency line.
 
 type BenchSpec = Extract<ChartSpec, { readonly _tag: "BenchOverview" }>
 type Row = BenchSpec["rows"][number]
@@ -60,7 +59,7 @@ const yScale = (domain: readonly [number, number], format: (value: number) => st
 	axis: { line: false, ticks: { size: 0, padding: 6, format } },
 })
 
-/** The series a chart draws, in its legacy order, with the per-second rows throughput reads. */
+/** The series a chart draws, in paint order, with the per-second rows throughput reads. */
 const seriesOf = (spec: BenchSpec, rateLabel: string): ReadonlyArray<Series> => {
 	const color = (key: string) => spec.colors[key] ?? ""
 	const perSecond = (value: number) => `${value.toLocaleString()}${rateLabel}`
@@ -189,7 +188,7 @@ export const buildBenchOverview = (spec: BenchSpec): BuiltChart<Row, ChartValue,
 			scales: { x: xScale(axisContext), y: yOf(spec, rows, rateLabel) },
 			focus: "group-x",
 			focusRing: false,
-			// TODO(tooltip-anchor): legacy anchors the card on the focus store; here it follows the pointer.
+			// TODO(tooltip-anchor): anchor the card on the focus store; it follows the pointer.
 			tooltip: cursorTooltip("pointer"),
 		}),
 		focusKeyOf: (point) => bucketOf(point.datum),

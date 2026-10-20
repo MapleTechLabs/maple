@@ -11,7 +11,7 @@ import { dashboardPage } from "../page/kit/dashboard-page"
 import type { Resources } from "../platform/resources"
 import { agoOf, connectorOf, type GcpLabFlags, hubOf, hubStep, withIndexId } from "./gcp-host"
 
-// `/lab/gcp-connections` (apps/web `lab/gcp-connections-lab.tsx`): each state of a Google Cloud
+// `/lab/gcp-connections`: each state of a Google Cloud
 // connection over fixture data, as an admin sees it.
 
 /** A project connection whose script ran an hour ago and that delivers both. */
@@ -88,7 +88,7 @@ export const scenariosAt = (nowMs: number): ReadonlyArray<{ title: string; conne
 export const Model = Schema.Struct({
 	timeZone: Schema.String,
 	titles: Schema.Array(Schema.String),
-	/** The cards' connectors, fixed as legacy's props whatever the page's status read becomes. */
+	/** The cards' connectors, fixed whatever the page's status read becomes. */
 	connectors: Schema.Array(V2GcpConnector),
 	hub: IntegrationsModel,
 })
@@ -112,7 +112,7 @@ export const init = (flags: GcpLabFlags): Return => {
 	}
 }
 
-/** Legacy's `onConfigure` is a no-op: Configure and the run-script buttons open nothing. */
+/** Configure and the run-script buttons open nothing in the lab. */
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotHubMessage: ({ message: inner }) => {

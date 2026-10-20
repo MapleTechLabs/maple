@@ -7,7 +7,7 @@ import * as Dialog from "../../ui/dialog"
 import * as Popover from "../../ui/popover"
 import { Message } from "./message"
 
-// `GithubIntegrationCard` (components/integrations/github-integration-card.tsx): state and writes.
+// `GithubIntegrationCard`: state and writes.
 
 export const GithubCardModel = Schema.Struct({
 	/** The Refresh button's 700 ms spinner (`refreshing`), versioned so a late timer is ignored. */

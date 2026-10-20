@@ -14,14 +14,14 @@ import {
 	type GcpProjectHealth,
 	type GcpSparks,
 	type RowRules,
-} from "@maple/web/components/infra/gcp/list-model"
-import type { GcpCloudSqlInstance } from "@maple/web/components/infra/gcp/inventory"
+} from "../../../../components/infra/gcp/list-model"
+import type { GcpCloudSqlInstance } from "../../../../components/infra/gcp/inventory"
 import {
 	GCP_RESOURCES_TAB,
 	GCP_VIEW_SERVICES,
 	gcpResourcesError,
 	type GcpView,
-} from "@maple/web/components/infra/gcp/tabs"
+} from "../../../../components/infra/gcp/tabs"
 import { formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
@@ -74,8 +74,7 @@ import {
 	subscriptionsTable,
 } from "./view-tables"
 
-// `GcpPage`, `GcpInfra` and `GcpListPage` (apps/web/src/routes/infra/gcp/index.tsx,
-// components/infra/gcp/gcp-list-page.tsx). `gcpListPage` is the presentational page the lab reuses.
+// `GcpPage`, `GcpInfra` and `GcpListPage`. `gcpListPage` is the presentational page the lab reuses.
 
 const VIEW_LABEL = {
 	services: "Services",

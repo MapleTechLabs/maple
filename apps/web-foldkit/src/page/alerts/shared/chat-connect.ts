@@ -3,7 +3,7 @@ import { ChatConnectorId, type ChatWorkspaceId } from "@maple/domain/primitives"
 import { Option, Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 
-// `useChatWorkspaceConnect` (components/alerts/use-chat-workspaces.ts): link a chat workspace in a
+// Chat workspace connect: link a chat workspace in a
 // popup so the half-written form underneath survives. Polling the connector list notices the new
 // workspace; the host closes the popup (drops `active`) and hands the workspace on.
 

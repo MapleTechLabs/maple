@@ -1,4 +1,4 @@
-import { type LabWorkload, PAGES, RANGE, WORKLOADS } from "@maple/web/lab/gcp-workload-fixture"
+import { type LabWorkload, PAGES, RANGE, WORKLOADS } from "../gcp-workload-fixture"
 import { Effect } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as Chart from "../../charts/chart"
@@ -84,7 +84,7 @@ const stepWorkload = (model: Model, message: Workload.Message): Return => {
 			)
 			return set({ ...workload, charts: { ...workload.charts, [chartId]: next.model } }, commands)
 		}
-		// Legacy's `onChange` is a no-op: the picker opens and closes, the window stays.
+		// The picker opens and closes; the window stays.
 		case "GotTimePickerMessage": {
 			const step = stepTimePicker(
 				workload.timePicker,

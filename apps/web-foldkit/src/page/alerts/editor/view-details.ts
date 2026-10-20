@@ -15,7 +15,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { fieldStateOf, idsOf } from "./view-fields"
 
-// `DetailsSection` and `TagInput` (components/alerts/details-section.tsx, tag-input.tsx).
+// `DetailsSection` and `TagInput`: the rule's name, description and tags.
 
 type H = HtmlBuilder<Message>
 

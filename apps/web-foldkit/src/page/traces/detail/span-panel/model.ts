@@ -5,7 +5,7 @@ import * as Tabs from "../../../../ui/tabs"
 import * as InfraCorrelation from "../../../kit/infra-correlation"
 import { SpanNodeData } from "../trace-data"
 
-// `SpanDetailPanel` (apps/web/src/components/traces/span-detail-panel.tsx) as a Submodel.
+// The span detail panel, as a Submodel.
 
 const Attributes = Schema.Record(Schema.String, Schema.String)
 

@@ -205,7 +205,6 @@ const dangerZone = (h: H, model: Model, org: OrgInfo): Html => {
 										h.p([h.Class("text-sm font-medium text-foreground")], ["Delete organization"]),
 										h.p(
 											[h.Class("text-xs text-muted-foreground")],
-											// JSX's `"{organization.name}"` renders three text nodes.
 											['Permanently deletes "', org.name, `" and removes every member's access. This cannot be undone.`],
 										),
 										deletionFacts(h),

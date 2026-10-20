@@ -10,7 +10,7 @@ import type { MapleInternalHttp, WarehouseExecutor } from "@maple/web-data/wareh
 import { Effect, Schema } from "effect"
 import type { TimeWindow } from "../../data/time-range"
 
-// `AutocompleteValuesProvider` (apps/web/src/hooks/use-autocomplete-values.tsx): the lookups a
+// The autocomplete lookups a
 // query builder fetches once it is first focused, each reduced to the names it suggests.
 
 export const AutocompleteLookup = Schema.Literals([

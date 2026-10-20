@@ -94,7 +94,7 @@ const panelKind = (selectedId: Option.Option<string>) =>
 /**
  * What the host does after the map moved: the focus goes to the URL (replace), prefs and drags
  * go to localStorage, and a newly selected database node requests its summary. The service panel's
- * tabs reset when the panel closes or changes kind (React remounts it then, not per node).
+ * tabs reset when the panel closes or changes kind (not when only the node changes).
  */
 const afterMap = (before: Option.Option<ServiceMap.Model>, result: Return, context: PageContext): Return => {
 	const { model } = result
@@ -160,7 +160,7 @@ const withMapStep = (
 	)
 
 /**
- * Rebuild the graph from whatever has landed (`buildFlowElements` every render in legacy): the
+ * Rebuild the graph from whatever has landed (`buildFlowElements`): the
  * first time the bundle and the stored prefs are both in, the map is created; later rows refine it.
  */
 const syncMap =
@@ -288,7 +288,7 @@ const withTimePicker = (model: Model, message: TimeRangePicker.Message): Return 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, timeZone, facetsWindow, nowMs, mode }) =>
-			// Legacy mints `facetsRange` once per mount (`useMemo` with no deps).
+			// The facets window is minted once per visit and kept.
 			requestAll(
 				{ ...model, window, windowZone: timeZone, facetsWindow: model.facetsWindow ?? facetsWindow, nowMs },
 				context,

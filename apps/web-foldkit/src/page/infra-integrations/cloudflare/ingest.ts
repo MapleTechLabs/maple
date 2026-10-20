@@ -2,7 +2,7 @@ import {
 	type CloudflareIngestPhase,
 	cloudflareIngestPhase,
 	describeCloudflareIngestPhase,
-} from "@maple/web/components/infra/cloudflare/ingest-phase"
+} from "../../../components/infra/cloudflare/ingest-phase"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
@@ -12,7 +12,7 @@ import { integrationLinkActions, integrationNotConnected } from "../kit/empty-st
 import type { Status, Usage } from "./data"
 
 // `CloudflareIngestBanner`, `CloudflareIngestEmpty`, `CloudflareStalledAction`
-// (components/infra/cloudflare/cloudflare-ingest-status.tsx) and `CloudflareNotConnected`.
+// and `CloudflareNotConnected`.
 
 /** `useCloudflareIngestPhase`'s phase: null without a usable connection. */
 export const ingestPhaseOf = (

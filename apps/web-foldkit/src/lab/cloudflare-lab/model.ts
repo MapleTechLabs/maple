@@ -4,7 +4,7 @@ import * as List from "../../page/infra-integrations/cloudflare/list/model"
 import * as Worker from "../../page/infra-integrations/cloudflare/worker/model"
 import * as Zone from "../../page/infra-integrations/cloudflare/zone/model"
 
-// `/lab/cloudflare` (apps/web `lab/cloudflare-lab.tsx`): the Cloudflare pages, whole, over a copy of
+// `/lab/cloudflare`: the Cloudflare pages, whole, over a copy of
 // production data, switched by the floating "Lab page" pivot.
 
 export const LAB_PAGES = ["zones", "workers", "queues", "zone", "worker", "accounts"] as const

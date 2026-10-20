@@ -10,8 +10,8 @@ import {
 	type BillingProfile,
 	UpdateBillingProfileRequest,
 } from "@maple/domain/http"
-import { fieldOrNull } from "@maple/web/lib/billing/billing-profile"
-import { countryName, sortedCountryCodes } from "@maple/web/lib/billing/countries"
+import { fieldOrNull } from "../../../../lib/billing/billing-profile"
+import { countryName, sortedCountryCodes } from "../../../../lib/billing/countries"
 import { Effect, Option, Result } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "../../../../data/load-failure"

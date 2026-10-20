@@ -15,7 +15,7 @@ import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
 import { Model as IntegrationModel } from "../../integrations/model"
 
-// `/sources/$sourceId` (apps/web/src/routes/sources/$sourceId.tsx).
+// `/sources/$sourceId`.
 
 /** `RevealedToken`: the one-time token from a roll, held while this page is open. */
 export const RevealedToken = Schema.Struct({ sourceId: SourceId, secret: Schema.String, rolled: Schema.Boolean })

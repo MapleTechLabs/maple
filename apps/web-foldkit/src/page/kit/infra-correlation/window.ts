@@ -12,7 +12,7 @@ const FALLBACK_PRESET = "30m"
 
 /**
  * `infraCorrelationWindow` for a parseable anchor: 15 minutes either side, covering the span, on
- * the 15 s grid legacy snaps an atom key to before it sends the request.
+ * snapped to a 15 s grid before the request is sent.
  */
 export const anchoredWindow = (anchor: string, spanDurationMs: number): Option.Option<TimeWindow> => {
 	const anchorMs = new Date(normalizeTimestampInput(anchor)).getTime()

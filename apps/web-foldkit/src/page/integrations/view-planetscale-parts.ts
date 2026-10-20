@@ -4,7 +4,7 @@ import {
 	type MetricsAuth,
 	metricsHealthState,
 	type SetupStep,
-} from "@maple/web/components/integrations/planetscale-setup-steps"
+} from "../../components/integrations/planetscale-setup-steps"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
@@ -19,8 +19,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { SECRET_PREFIX } from "./planetscale"
 
-// `PlanetScaleMetricsHealth`, `PlanetScaleMetricsTokenForm`, `PlanetScaleSetupChecklist` and
-// `PlanetScaleOrgPicker` (components/integrations/planetscale-*.tsx, common/option-card.tsx).
+// `PlanetScaleMetricsHealth`, `PlanetScaleMetricsTokenForm`,
+// `PlanetScaleSetupChecklist` and `PlanetScaleOrgPicker`.
 
 type H = HtmlBuilder<Message>
 

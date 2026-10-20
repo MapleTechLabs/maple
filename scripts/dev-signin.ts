@@ -63,7 +63,7 @@ const ticket = (await clerkFetch("/sign_in_tokens", {
 })) as { token: string }
 
 // Both shapes of local web: the portless stack (`bun dev`) and the raw Vite
-// port (`bun --filter=@maple/web dev`).
+// port (`bun --filter=@maple/web-foldkit dev`).
 const targets = process.env.MAPLE_DEV_WEB_URL
 	? [process.env.MAPLE_DEV_WEB_URL]
 	: ["https://web.localhost", "http://localhost:3471"]

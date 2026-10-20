@@ -27,7 +27,7 @@ import {
 } from "./panels"
 import { copyStatusOf } from "./update"
 
-// `LogErrorBanner`, `LogContextPanel` and `LogTraceTimeline` (apps/web/src/components/logs/).
+// The log's error banner, context panel and trace timeline.
 
 type H = HtmlBuilder<Message>
 

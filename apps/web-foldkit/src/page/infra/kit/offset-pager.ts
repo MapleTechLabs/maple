@@ -3,8 +3,8 @@ import { listFooterStartStyles, listFooterStyles } from "@maple/ui/styles/ui/lis
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 
-// `OffsetPager` and `pageRangeLabel` (apps/web/src/components/infra/primitives/offset-pager.tsx),
-// on `ListFooter align="start"` with children only. Counts use `toLocaleString()` (en-US).
+// `OffsetPager` and `pageRangeLabel`, on `ListFooter align="start"` with children only. Counts
+// use `toLocaleString()` (en-US).
 
 const count = (value: number) => value.toLocaleString("en-US")
 

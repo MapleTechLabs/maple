@@ -4,7 +4,7 @@ import {
 	type GcpConnectionPeak,
 	type GcpStatement,
 	type GcpTracedStatement,
-} from "@maple/web/components/infra/gcp/cloud-sql-signals"
+} from "../../../../components/infra/gcp/cloud-sql-signals"
 import { EMPTY_VALUE, formatLatency, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
@@ -22,8 +22,7 @@ import { sectionHeading } from "../../../kit/section-heading"
 import type { Statement } from "../data"
 import { Message } from "./model"
 
-// `GcpCloudSqlTopQueries` (components/infra/gcp/gcp-cloudsql-top-queries.tsx) and the
-// `GcpAppWaitCallout` of gcp-workload-page.tsx.
+// `GcpCloudSqlTopQueries` and the workload page's `GcpAppWaitCallout`.
 
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
