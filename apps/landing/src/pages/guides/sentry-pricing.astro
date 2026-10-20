@@ -312,6 +312,9 @@ const articleJsonLd = {
                         </table>
                     </div>
 
+                    <p class="table-note">
+                        These are the quotas each plan includes. Usage past them is billed per category at the rates in <a href="#usage">How Sentry bills usage</a>.
+                    </p>
                     <p>
                         The annual price is paid up front for the year. Prices are in US dollars before tax: EU and UK customers pay VAT unless they give a valid VAT ID, and sales tax applies in some US states. Organizations that signed up before June 11, 2024 may still be on the older plans billed by transactions; <strong>Settings &gt; Subscription</strong> in Sentry shows which one applies.
                     </p>
@@ -582,8 +585,11 @@ const articleJsonLd = {
                         </li>
                     </ol>
 
+                    <p>
+                        Steps 02 and 03 happen in the SDK. This is a browser setup for a frontend app, where replays are recorded: it keeps every error, drops one known noisy error, sends 10% of traces, records 1% of sessions plus every session with an error, and sends nothing from local development.
+                    </p>
                     <div class="code-file">
-                        <p class="code-file__name">sentry.ts</p>
+                        <p class="code-file__name">sentry.ts (browser)</p>
                         <pre><code set:html={highlight(sentryInit, "typescript")} /></pre>
                     </div>
                     <p>
@@ -733,6 +739,7 @@ const articleJsonLd = {
     .bills__legend i { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 0.15rem; background: color-mix(in oklab, var(--cat) 80%, transparent); }
 
     .pricing-guide .code-file { margin: 1.5rem 0 1.25rem; }
+    .pricing-guide > section > p.table-note { margin-top: -0.75rem; font-size: 14px; }
     .pricing-guide .code-file__name { margin: 0; width: fit-content; border: 1px solid var(--border); border-bottom: 0; border-radius: 0.5rem 0.5rem 0 0; background: var(--bg-elevated); padding: 0.35rem 0.8rem; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
     .pricing-guide .tok-comment { color: var(--muted-foreground); }
     .pricing-guide .tok-labels { color: color-mix(in oklab, var(--chart-3) 75%, var(--foreground)); }
