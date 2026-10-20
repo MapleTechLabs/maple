@@ -72,6 +72,7 @@ export const separator = <Message>(
 /**
  * `<Avatar><AvatarImage><AvatarFallback>`: the initials, with `imageUrl` (a Clerk avatar, an org
  * logo) laid over them. Until it loads, or if it fails (`alt=""` draws nothing), the initials show;
+ * once it loads they hide (`ui/avatar-image.ts`), so transparent logo pixels never show them;
  * assistive tech reads the image, named `imageLabel` (`AvatarImage alt`), as Base UI leaves it.
  */
 export const avatarFallback = <Message>(
@@ -87,7 +88,10 @@ export const avatarFallback = <Message>(
 ): Html => {
 	const imageUrl = options.imageUrl ?? ""
 	return h.span(
-		[h.Class(cn(avatarStyles, imageUrl === "" ? undefined : "relative", options.className)), h.DataAttribute("slot", "avatar")],
+		[
+			h.Class(cn(avatarStyles, imageUrl === "" ? undefined : "relative", options.className)),
+			h.DataAttribute("slot", "avatar"),
+		],
 		[
 			h.span(
 				[

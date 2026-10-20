@@ -3,10 +3,13 @@ import "./styles.css"
 import { Runtime } from "foldkit"
 import type { UrlRequest } from "foldkit/navigation"
 import type { Url } from "foldkit/url"
+import { trackAvatarImageLoads } from "./ui/avatar-image"
 import { labEnabled, labPathOf, startLab } from "./lab/boot"
 import { Flags, flags, init, Message, Model, subscriptions, update, view } from "./main"
 import { ResourcesLive } from "./platform/resources"
 import { instrument } from "./platform/telemetry"
+
+trackAvatarImageLoads()
 
 const container = document.getElementById("app") ?? document.body
 
