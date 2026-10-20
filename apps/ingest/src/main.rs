@@ -4926,14 +4926,6 @@ async fn handle_signal_inner(
             max_bytes = state.config.max_request_body_bytes,
             "Payload too large"
         );
-        state.resolver.note_source_rejection(
-            &resolved_key,
-            format!(
-                "Sent a {:.1} MB request; the limit is {:.1} MB",
-                body.len() as f64 / 1_000_000.0,
-                state.config.max_request_body_bytes as f64 / 1_000_000.0
-            ),
-        );
         return Err((
             ApiError::payload_too_large("Request body too large"),
             "payload_too_large",
