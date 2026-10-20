@@ -313,45 +313,50 @@ const navigate = (model: Model, search: Search): Return => ({
 export const initWith =
 	(isClerk: boolean) =>
 	(route: { readonly search: Search }, context: PageContext): Return => {
-	const setup = isClerk ? Setup.init(storageKeyOf(Option.some(context.orgId))) : null
-	const model: Model = {
-		search: route.search,
-		nowMs: null,
-		hint: DEFAULT_HINT,
-		facetsWindow: null,
-		window: null,
-		facets: Keyed.idle(),
-		snapshot: Keyed.idle(),
-		anomalies: Keyed.idle(),
-		usage: Keyed.idle(),
-		overviewSeries: Keyed.idle(),
-		logSeries: Keyed.idle(),
-		refinement: Keyed.idle(),
-		incidents: IncidentsData.Loading(),
-		rules: RulesData.Loading(),
-		presence: SignalPresenceData.Idle(),
-		environmentSelect: Select.init("overview-environment", { value: ALL_ENVIRONMENTS, selectedIndex: 0 }),
-		timePicker: TimeRangePicker.init("overview-time-range"),
-		charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
-		chartRuntime: { _tag: "Loading" },
-		themeColors: null,
-		refreshVersion: 0,
-		isReloading: false,
-		setup: setup?.model ?? null,
+		const setup = isClerk ? Setup.init(storageKeyOf(Option.some(context.orgId))) : null
+		const model: Model = {
+			search: route.search,
+			nowMs: null,
+			hint: DEFAULT_HINT,
+			facetsWindow: null,
+			window: null,
+			facets: Keyed.idle(),
+			snapshot: Keyed.idle(),
+			anomalies: Keyed.idle(),
+			usage: Keyed.idle(),
+			overviewSeries: Keyed.idle(),
+			logSeries: Keyed.idle(),
+			refinement: Keyed.idle(),
+			incidents: IncidentsData.Loading(),
+			rules: RulesData.Loading(),
+			presence: SignalPresenceData.Idle(),
+			environmentSelect: Select.init("overview-environment", {
+				value: ALL_ENVIRONMENTS,
+				selectedIndex: 0,
+			}),
+			timePicker: TimeRangePicker.init("overview-time-range"),
+			charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
+			chartRuntime: { _tag: "Loading" },
+			themeColors: null,
+			refreshVersion: 0,
+			isReloading: false,
+			setup: setup?.model ?? null,
+		}
+		return {
+			model,
+			commands: [
+				ReadEntry({ orgId: context.orgId }),
+				...Command.mapMessages(setup?.commands ?? [], (message) =>
+					Message.GotSetupMessage({ message }),
+				),
+				Command.mapMessage(LoadChartRuntime(), (message) =>
+					message._tag === "CompletedLoadChartRuntime"
+						? Message.CompletedLoadChartRuntime()
+						: Message.FailedLoadChartRuntime({ reason: message.reason }),
+				),
+			],
+		}
 	}
-	return {
-		model,
-		commands: [
-			ReadEntry({ orgId: context.orgId }),
-			...Command.mapMessages(setup?.commands ?? [], (message) => Message.GotSetupMessage({ message })),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
-	}
-}
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Home({ search }))
 
@@ -379,6 +384,9 @@ const RETRY_SLOT = {
 } as const satisfies Record<RetryTarget, keyof Model>
 
 const retry = (model: Model, context: PageContext, target: RetryTarget): Return => {
+	// Cards sharing a target each offer a retry: one request in flight answers them all.
+	const slot: Keyed.Keyed<unknown, unknown> = model[RETRY_SLOT[target]]
+	if (AsyncData.isPending(slot.data)) return { model }
 	const { facetsWindow } = model
 	// Facets are shared with the shell through the probe, which keeps a failure until refreshed.
 	return target === "Facets" && facetsWindow !== null && model.facets.key !== null
