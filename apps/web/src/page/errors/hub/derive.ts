@@ -166,7 +166,12 @@ export const signalsOf = (model: Model): ReadonlyArray<ErrorSignal> =>
 
 export type ListStatus = "loading" | "failed" | "ready"
 
+/** The volume sort's ranking failed: no list page can be asked until it is retried. */
+export const rankingFailed = (model: Model): boolean =>
+	sortOf(model.search) === "volume" && AsyncData.isFailure(model.ranking.data)
+
 export const listStatusOf = (model: Model): ListStatus => {
+	if (rankingFailed(model)) return "failed"
 	const first = model.pages[0]
 	if (first === undefined) return "loading"
 	const data = first.page.data

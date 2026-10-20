@@ -8,8 +8,10 @@ import * as Tabs from "../../ui/tabs"
 import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import * as Billing from "./billing/update"
+import { Message as BillingMessage } from "./billing/model"
 import * as McpMessage from "./mcp/message"
 import type { Model } from "./model"
+import { subscriptions } from "./subscription"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -156,6 +158,39 @@ describe("settings page", () => {
 		expect(billing?._tag === "Billing" && billing.model.checkoutReturn).toBe("Idle")
 		expect(settled.commands).toContainEqual(
 			expect.objectContaining({ args: { event: "plan_checkout_returned", props: { confirmed: true } } }),
+		)
+	})
+
+	test("an api_keys shape that fails before answering shows the sync error, not a skeleton", () => {
+		const keys = [
+			Message.CompletedFetchSession({ result: Result.succeed({ isAdmin: true, userId: null, hasAiAutoTriage: true }) }),
+			Message.CompletedFetchCustomer({ result: Result.succeed(new BillingCustomer({ id: "org_acme", subscriptions: [] })) }),
+		].reduce((model, message) => pageUpdate(model, message).model, entered({ tab: "keys" }).model)
+		const watching = (model: Model) => subscriptions.apiKeysLoad.modelToDependencies({ model, context }).isWatching
+		expect(watching(keys)).toBe(true)
+		const failed = pageUpdate(keys, Message.FailedLoadApiKeys({ orgId: context.orgId })).model
+		expect(watching(failed)).toBe(false)
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("Failed to load keys")).toExist(),
+		)
+		const answered = pageUpdate(failed, Message.UpdatedApiKeys({ orgId: context.orgId, rows: [] })).model
+		scene({ update: pageUpdate, view }, given(answered), expectView(text("Failed to load keys")).not.toExist())
+	})
+
+	test("a saved cap re-reads the app's customer too, keeping its toast", () => {
+		const customer = new BillingCustomer({ id: "org_acme", subscriptions: [] })
+		const editing: Model = { ...mcpLoaded(), tab: { _tag: "Billing", model: { ...Billing.init(true, false).model, isSavingCap: true } } }
+		const saved = pageUpdate(
+			editing,
+			Message.GotBillingMessage({
+				message: BillingMessage.CompletedSaveCap({ featureId: "logs", label: "Logs", result: Result.succeed(customer) }),
+			}),
+		)
+		expect(names(saved.commands)).toContain("FetchSettingsCustomer")
+		expect(saved.outMessage).toEqual(
+			PageOutMessage.RequestedCustomerRefresh({ toast: { type: "success", title: "Logs cap saved", description: "" } }),
 		)
 	})
 })

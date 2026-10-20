@@ -8,10 +8,20 @@ import * as Tabs from "../../ui/tabs"
 import { PageOutMessage, type PageReturn } from "../contract"
 import { PACKAGE_TAB_VALUES, SETUP_TAB_VALUES } from "../kit/guided-setup"
 import type { QuickStartState } from "../onboarding/quick-start-state"
-import { FetchSetupKeys, FetchSetupOverview, ReadSetupState, SaveSetupState, SendSetupTestEvent } from "./setup-checklist-command"
+import {
+	FetchSetupKeys,
+	FetchSetupOverview,
+	ReadSetupState,
+	ResolveSetupPollWindow,
+	SaveSetupState,
+	SendSetupTestEvent,
+} from "./setup-checklist-command"
 import { type CopyField, Message, type Model, type ServiceRow } from "./setup-checklist"
 
 type Return = PageReturn<Model, Message>
+
+/** What the card reads from the page context. */
+export type SetupContext = Readonly<{ pinnedNamespace: string | null; timeZone: string }>
 
 const ROLE_DEFAULT_FRAMEWORK = {
 	backend: "nodejs",
@@ -108,8 +118,10 @@ const tabsStep = (
 const isWindow = (model: Model, window: TimeWindow) =>
 	model.window !== null && model.window.startTime === window.startTime && model.window.endTime === window.endTime
 
-export const update = (model: Model, message: Message, pinnedNamespace: string | null): Return =>
-	Message.match<Return>(message, {
+export const update = (model: Model, message: Message, context: SetupContext): Return => {
+	const { pinnedNamespace } = context
+	const resolvePoll = isMounted(model) ? [ResolveSetupPollWindow({ timeZone: context.timeZone })] : []
+	return Message.match<Return>(message, {
 		ReadState: ({ state }) => {
 			const next = { ...model, state }
 			// The card mounts: `useIngestConnection` reads the keys and the overview.
@@ -123,9 +135,10 @@ export const update = (model: Model, message: Message, pinnedNamespace: string |
 		FailedLoadKeys: () => ({ model: { ...model, keys: { _tag: "Failed" } } }),
 		SucceededLoadOverview: ({ window, services }) =>
 			isWindow(model, window) ? { model: { ...model, services } } : { model },
-		// `Result.isSuccess(overviewResult) ? ... : []`: a failed refresh reads as no services.
-		FailedLoadOverview: ({ window }) => (isWindow(model, window) ? { model: { ...model, services: [] } } : { model }),
-		TickedPoll: () => ({ model, commands: isMounted(model) ? fetchOverview(model, pinnedNamespace) : [] }),
+		// One failed poll keeps the services already found, so the card does not un-detect them.
+		FailedLoadOverview: () => ({ model }),
+		TickedPoll: () => ({ model, commands: resolvePoll }),
+		ResolvedPollWindow: ({ window }) => windowResolved(model, window, pinnedNamespace),
 		ClickedToggleExpanded: () =>
 			model.state === null
 				? { model }
@@ -151,7 +164,7 @@ export const update = (model: Model, message: Message, pinnedNamespace: string |
 			isSent
 				? {
 						model: { ...model, isSendingTest: false },
-						commands: fetchOverview(model, pinnedNamespace),
+						commands: resolvePoll,
 						outMessage: toast("success", "Test event sent. Watch for it to land below."),
 					}
 				: {
@@ -167,3 +180,4 @@ export const update = (model: Model, message: Message, pinnedNamespace: string |
 			tabsStep(model, "packageTabs", inner, (child) => Message.GotPackageTabsMessage({ message: child })),
 		GotSnippetCopyMessage: ({ snippet, message: inner }) => snippetCopyStep(model, snippet, inner),
 	})
+}

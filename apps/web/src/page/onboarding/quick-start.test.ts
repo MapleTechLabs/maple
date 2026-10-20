@@ -1,9 +1,10 @@
 import { CatalogPlan, CatalogPlansResponse } from "@maple/domain/http"
-import { describe, expect, test } from "vitest"
+import { Effect } from "effect"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import * as PricingCards from "./pricing-cards"
 import { init, Message, type Model, update } from "./quick-start"
 import { DEFAULT_QUICK_START_STATE, resolveQuickStartStep } from "./quick-start-state"
-import { loadingTeam, TeamMessage, updateTeam } from "./quick-start-team"
+import { LoadTeam, loadingTeam, TeamMessage, updateTeam } from "./quick-start-team"
 
 const loaded = (): Model => ({ ...init("maple-onboarding-v6-org_1").model, state: DEFAULT_QUICK_START_STATE })
 
@@ -103,5 +104,20 @@ describe("pricing cards", () => {
 		const failed = PricingCards.update(clicked, PricingCards.Message.FailedAttach({ message: "Card declined" }))
 		expect(failed.model.loadingPlanId).toBeNull()
 		expect(failed.outMessage).toEqual(PricingCards.OutMessage.FailedChangePlan({ message: "Card declined" }))
+	})
+})
+
+describe("quick start team load", () => {
+	afterEach(() => {
+		vi.unstubAllGlobals()
+	})
+
+	test("an admin whose pending invitations fail to load still gets the team step, with no invitations", async () => {
+		const organization = { id: "org_1", name: "Acme", getInvitations: () => Promise.reject(new Error("Network down")) }
+		vi.stubGlobal("window", {
+			Clerk: { organization, user: { organizationMemberships: [{ organization: { id: "org_1" }, role: "org:admin" }] } },
+		})
+		const loaded = await Effect.runPromise(LoadTeam().effect)
+		expect(loaded).toEqual(TeamMessage.LoadedTeam({ name: "Acme", canManage: true, invitations: [] }))
 	})
 })

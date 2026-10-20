@@ -121,6 +121,9 @@ const syncRange = (model: Model, context: PageContext, mode: Keyed.RequestMode =
 		const advanced = withSeed(model, advance(answered, Option.some(cached)))
 		return rangeKey(subscribedRange(advanced)) === rangeKey(range) ? { model: advanced } : syncRange(advanced, context)
 	}
+	// A failed range is not asked again on every engine tick; the player's retry button refreshes it.
+	const failed = model.loader.range.key === key && AsyncData.isFailure(model.loader.range.data)
+	if (failed && mode === "Load") return { model }
 	return Option.match(Keyed.request(model.loader.range, key, mode), {
 		onNone: () => ({ model }),
 		onSome: (slot) => ({

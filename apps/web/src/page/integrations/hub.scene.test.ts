@@ -1,7 +1,8 @@
 import { OrgId } from "@maple/domain"
 import { HazelIntegrationStatus } from "@maple/domain/http"
 import { V2ChatConnectorList } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Option, Result, Schema } from "effect"
+import { AsyncData } from "foldkit"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../data/load-failure"
@@ -68,6 +69,27 @@ describe("integrations hub", () => {
 			Message.CompletedLoadHazel({ key: "stale", result: Result.succeed(hazel(true)) }),
 		)
 		expect(late.model.statuses.hazel).toEqual(model.statuses.hazel)
+	})
+
+	test("a write's re-read supersedes the read in flight, so the older answer cannot land last", () => {
+		const model = entered()
+		const preWriteKey = model.statuses.hazel.key ?? ""
+		const retried = pageUpdate(model, Message.ClickedRetryStatus({ name: "hazel" }))
+		expect(names(retried.commands)).toEqual(["LoadIntegrationsHazelStatus"])
+		const fresh = pageUpdate(
+			retried.model,
+			Message.CompletedLoadHazel({
+				key: retried.model.statuses.hazel.key ?? "",
+				result: Result.succeed(hazel(false)),
+			}),
+		).model
+		const late = pageUpdate(
+			fresh,
+			Message.CompletedLoadHazel({ key: preWriteKey, result: Result.succeed(hazel(true)) }),
+		).model
+		expect(Option.map(AsyncData.getData(late.statuses.hazel.data), (status) => status.connected)).toEqual(
+			Option.some(false),
+		)
 	})
 
 	test("a connected status lists the integration under Connected; selecting it navigates", () => {

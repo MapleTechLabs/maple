@@ -31,6 +31,8 @@ export const Model = Schema.Struct({
 	readOnly: ReadOnly,
 	/** False until the durable history has been read. */
 	historyReady: Schema.Boolean,
+	/** The durable history could not be read: the thread is unknown, not empty, until a retry reads it. */
+	historyError: Schema.NullOr(Schema.String),
 	messages: Schema.Array(UIMessage),
 	status: ChatStatus,
 	error: Schema.NullOr(Schema.String),

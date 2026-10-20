@@ -164,7 +164,20 @@ export const emptyNotice = <M>(h: HtmlBuilder<M>, title: string, body: string): 
 		],
 	)
 
+/** The history read failed: the thread is unknown, so it offers a retry instead of the empty state. */
+const historyFailure = <M>(h: HtmlBuilder<M>, error: string, options: ConversationViewOptions<M>): Html =>
+	h.div(
+		[h.Class("flex flex-col items-center justify-center gap-3 text-center")],
+		[
+			emptyNotice(h, "Couldn't load this conversation", error),
+			button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(options.toMessage(Message.ClickedRetryHistory()))] }, [
+				"Try again",
+			]),
+		],
+	)
+
 const emptyStateOf = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): Html => {
+	if (model.historyError !== null) return historyFailure(h, model.historyError, options)
 	if (!model.historyReady) return loadingSkeleton(h)
 	switch (model.readOnly) {
 		case "shared":
@@ -284,7 +297,7 @@ export const conversationView = <M>(h: HtmlBuilder<M>, model: Model, options: Co
 						h.div(
 							[h.Class("mx-auto w-full max-w-3xl shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]")],
 							[
-								...(model.messages.length === 0 && options.suggestions !== undefined
+								...(model.historyReady && model.messages.length === 0 && options.suggestions !== undefined
 									? [suggestionPills(h, options.suggestions)]
 									: []),
 								...notices(h, model, options),

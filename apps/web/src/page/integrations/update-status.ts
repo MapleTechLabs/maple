@@ -50,15 +50,21 @@ const step = <A, E>(
 	key: string,
 	mode: StatusMode,
 	set: (statuses: Statuses, next: Keyed.Keyed<A, E>) => Statuses,
-	command: () => AnyCommand,
-): Return =>
-	Option.match(Keyed.request(slot, key, mode === "Load" ? "Load" : "Refresh"), {
-		onNone: () => (mode === "Refresh" ? { model, commands: [command()] } : { model }),
-		onSome: (next) => ({
-			model: { ...model, statuses: set(model.statuses, next) },
-			commands: [command()],
+	command: (slotKey: string) => AnyCommand,
+): Return => {
+	// A write's re-read supersedes a read in flight, so a pre-write answer cannot land last.
+	const next =
+		mode === "Refresh"
+			? Option.some(Keyed.supersede(slot, key))
+			: Keyed.request(slot, key, mode === "Load" ? "Load" : "Refresh")
+	return Option.match(next, {
+		onNone: () => ({ model }),
+		onSome: (requested) => ({
+			model: { ...model, statuses: set(model.statuses, requested) },
+			commands: [command(requested.key ?? key)],
 		}),
 	})
+}
 
 /** Requests one status read; a write's `reactivityKeys` refresh it with `Refresh`. */
 export const requestStatus = (
@@ -73,62 +79,62 @@ export const requestStatus = (
 	const go = <A, E>(
 		slot: Keyed.Keyed<A, E>,
 		set: (all: Statuses, next: Keyed.Keyed<A, E>) => Statuses,
-		command: () => AnyCommand,
+		command: (slotKey: string) => AnyCommand,
 	) => step(model, slot, key, mode, set, command)
 	switch (name) {
 		case "cloudflare":
 			return go(
 				s.cloudflare,
 				(all, cloudflare) => ({ ...all, cloudflare }),
-				() => LoadCloudflare({ key, refresh }),
+				(slotKey) => LoadCloudflare({ key: slotKey, refresh }),
 			)
 		case "railway":
 			return go(
 				s.railway,
 				(all, railway) => ({ ...all, railway }),
-				() => LoadRailway({ key, refresh }),
+				(slotKey) => LoadRailway({ key: slotKey, refresh }),
 			)
 		case "planetscale":
 			return go(
 				s.planetscale,
 				(all, planetscale) => ({ ...all, planetscale }),
-				() => LoadPlanetscale({ key, refresh }),
+				(slotKey) => LoadPlanetscale({ key: slotKey, refresh }),
 			)
 		case "planetscaleDatabases":
 			return go(
 				s.planetscaleDatabases,
 				(all, planetscaleDatabases) => ({ ...all, planetscaleDatabases }),
-				() => LoadPlanetscaleDatabases({ key }),
+				(slotKey) => LoadPlanetscaleDatabases({ key: slotKey }),
 			)
 		case "gcp":
 			return go(
 				s.gcp,
 				(all, gcp) => ({ ...all, gcp }),
-				() => LoadGcp({ key, refresh }),
+				(slotKey) => LoadGcp({ key: slotKey, refresh }),
 			)
 		case "hazel":
 			return go(
 				s.hazel,
 				(all, hazel) => ({ ...all, hazel }),
-				() => LoadHazel({ key }),
+				(slotKey) => LoadHazel({ key: slotKey }),
 			)
 		case "github":
 			return go(
 				s.github,
 				(all, github) => ({ ...all, github }),
-				() => LoadGithub({ key }),
+				(slotKey) => LoadGithub({ key: slotKey }),
 			)
 		case "chat":
 			return go(
 				s.chat,
 				(all, chat) => ({ ...all, chat }),
-				() => LoadChat({ key }),
+				(slotKey) => LoadChat({ key: slotKey }),
 			)
 		case "scrapeTargets":
 			return go(
 				s.scrapeTargets,
 				(all, scrapeTargets) => ({ ...all, scrapeTargets }),
-				() => LoadScrapeTargets({ key }),
+				(slotKey) => LoadScrapeTargets({ key: slotKey }),
 			)
 	}
 }

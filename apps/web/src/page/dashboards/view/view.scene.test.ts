@@ -99,6 +99,18 @@ describe("dashboard view", () => {
 		expect(late.model.requests).toEqual(revealed.requests)
 	})
 
+	test("an auto-refresh keeps each tile's data on screen and forgets the old window's request", () => {
+		const revealed = pageUpdate(ready(), Message.RevealedWidget({ widgetId: "total-errors" })).model
+		const firstKey = Object.keys(revealed.requests)[0] ?? ""
+		const answered = pageUpdate(revealed, Message.CompletedFetchWidget({ key: firstKey, result: Result.succeed({ data: [] }) })).model
+		const ticked = pageUpdate(answered, Message.TickedAutoRefresh()).model
+		const refreshed = pageUpdate(ticked, Message.CompletedReadClock({ nowMs: NOW + 60_000 }))
+		expect(names(refreshed.commands)).toContain(FetchWidget.name)
+		const slots = Object.entries(refreshed.model.requests)
+		expect(slots.map(([key]) => key)).not.toContain(firstKey)
+		expect(slots.map(([, slot]) => slot.data._tag)).toEqual(["Refreshing"])
+	})
+
 	test("picking a preset re-plans the tiles and saves the range to the board", () => {
 		const revealed = pageUpdate(ready(), Message.RevealedWidget({ widgetId: "total-errors" })).model
 		const picked = pageUpdate(

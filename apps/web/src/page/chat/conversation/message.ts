@@ -24,6 +24,7 @@ export const ApplyOutcome = Schema.Struct({ isError: Schema.Boolean, content: Sc
 
 export const Message = defineMessageUnion({
 	CompletedLoadHistory: { generation: Schema.Number, result: Schema.Result(History, Schema.String) },
+	ClickedRetryHistory: {},
 	ChangedDraft: { text: Schema.String },
 	/** `trackProduct("chat_message_sent")` was handed to the session SDK. */
 	CompletedTrackMessageSent: {},

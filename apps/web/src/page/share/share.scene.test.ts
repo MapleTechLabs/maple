@@ -64,6 +64,22 @@ describe("share", () => {
 		expect(answered.model.queuedBatches).toHaveLength(0)
 	})
 
+	test("a reload drops batches queued for the old window", () => {
+		const flushed = update(measured(6), Message.CompletedFlushFrame())
+		const reloaded = update(flushed.model, Message.CompletedResolveReloadClock({ nowMs: NOW + 5 * 60_000 })).model
+		const queuedKeys = reloaded.queuedBatches.flatMap((batch) => batch.requests.map((request) => request.key))
+		expect(queuedKeys.every((key) => key.includes("12:05:00"))).toBe(true)
+		const answered = update(reloaded, Message.CompletedFetchBatch({ keys: {}, states: {} }))
+		expect(names(answered.commands)).toEqual([FetchBatch.name])
+		expect(names(update(answered.model, Message.CompletedFetchBatch({ keys: {}, states: {} })).commands)).toEqual([])
+	})
+
+	test("a tile the answer left out settles as a failure, not loading", () => {
+		const flushed = update(measured(1), Message.CompletedFlushFrame()).model
+		const answered = update(flushed, Message.CompletedFetchBatch({ keys: { w0: flushed.requested.w0 ?? "" }, states: {} }))
+		expect(answered.model.states.w0?._tag).toBe("Error")
+	})
+
 	test("a reload refetches every reported tile", () => {
 		const settled = update(measured(2), Message.CompletedFlushFrame()).model
 		expect(names(update(settled, Message.CompletedFlushFrame()).commands)).toEqual([])

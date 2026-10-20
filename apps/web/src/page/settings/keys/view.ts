@@ -14,6 +14,8 @@ import { searchInput } from "../../../ui/search-input"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import * as SelectView from "../../../ui/select-view"
 import { skeletonList } from "../../../ui/skeleton"
+import { errorState } from "../../../ui/error-state"
+import { toLoadFailure } from "../../../data/load-failure"
 import { settingsSection, settingsSections } from "../kit/section"
 import * as CreateDialogView from "./create-dialog-view"
 import { Message } from "./message"
@@ -130,10 +132,14 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 		],
 	)
 
+/** `SyncUnavailable`: the `api_keys` stream stopped before its first answer. */
+const SYNC_UNAVAILABLE = { message: "Live sync is unavailable, so keys couldn’t be loaded. Reload to try again." }
+
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const rows = buildKeyRows({ apiKeys: model.apiKeys ?? [], now: inputs.nowMs })
 	const counts = filterKeyRows(rows, { type: model.typeFilter, status: model.statusFilter, search: model.search })
-	const isLoading = model.apiKeys === null
+	const isLoading = model.apiKeys === null && !model.isLoadFailed
+	const isFailed = model.apiKeys === null && model.isLoadFailed
 	return settingsSections(h, "wide", [
 		settingsSection(
 			h,
@@ -147,14 +153,14 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			},
 			[
 				toolbar(h, model, counts),
-				// TODO(settings-keys): `SyncUnavailable` needs the collection load-failure signal
-				// (`useCollectionLoadFailed`), not wired in Foldkit yet.
 				panel(h, {}, [
-					isLoading
-						? skeletonList(h, { rows: 3, rowClassName: "h-[52px]", gap: "2", className: "p-4" })
-						: counts.visible.length === 0
-							? keysEmpty(h, model)
-							: keysTable(h, model, counts.visible, inputs),
+					isFailed
+						? errorState(h, { failure: toLoadFailure(SYNC_UNAVAILABLE), title: "Failed to load keys", className: "py-12" })
+						: isLoading
+							? skeletonList(h, { rows: 3, rowClassName: "h-[52px]", gap: "2", className: "p-4" })
+							: counts.visible.length === 0
+								? keysEmpty(h, model)
+								: keysTable(h, model, counts.visible, inputs),
 				]),
 			],
 		),

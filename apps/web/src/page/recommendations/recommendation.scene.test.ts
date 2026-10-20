@@ -75,6 +75,7 @@ describe("recommendation detail", () => {
 
 	test("Dismiss sends one request and refreshes the list", () => {
 		const model = loaded([rec()])
+		const reread = pageUpdate(pageUpdate(model, Message.ClickedDismiss()).model, Message.CompletedDismiss({ result: Result.succeed(undefined) }))
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
@@ -82,13 +83,22 @@ describe("recommendation detail", () => {
 			Command.resolve(DismissRecommendation, Message.CompletedDismiss({ result: Result.succeed(undefined) })),
 			Command.resolve(
 				FetchRecommendations,
-				Message.CompletedFetchList({ key: model.list.key ?? "", result: Result.succeed([rec("dismissed")]) }),
+				Message.CompletedFetchList({ key: reread.model.list.key ?? "", result: Result.succeed([rec("dismissed")]) }),
 			),
 			expectView(role("button", { name: "Reopen recommendation" })).toExist(),
 		)
 		const started = pageUpdate(model, Message.ClickedDismiss())
 		expect(names(started.commands)).toEqual(["DismissRecommendation"])
 		expect(pageUpdate(started.model, Message.ClickedApply()).commands ?? []).toHaveLength(0)
+	})
+
+	test("a write's re-read is sent even while a list read is in flight, and only its answer lands", () => {
+		const reading = pageUpdate(loaded([rec()]), Message.ClickedRetry()).model
+		const started = pageUpdate(reading, Message.ClickedDismiss()).model
+		const reread = pageUpdate(started, Message.CompletedDismiss({ result: Result.succeed(undefined) }))
+		expect(names(reread.commands)).toEqual(["FetchRecommendations"])
+		const late = pageUpdate(reread.model, Message.CompletedFetchList({ key: reading.list.key ?? "", result: Result.succeed([rec()]) })).model
+		expect(late.list).toEqual(reread.model.list)
 	})
 
 	test("a failed apply toasts and clears the busy state", () => {

@@ -25,15 +25,21 @@ type RecommendationRoute = Extract<AppRoute, { readonly _tag: "Recommendation" }
 
 const LIST_QUERY = { query: { limit: 100 } }
 
+/** `Supersede`: the re-read after a write, which a read already in flight cannot swallow. */
+type LoadMode = Keyed.RequestMode | "Supersede"
+
+const requestIn = <A, E>(slot: Keyed.Keyed<A, E>, key: string, mode: LoadMode): Option.Option<Keyed.Keyed<A, E>> =>
+	mode === "Supersede" ? Option.some(Keyed.supersede(slot, key)) : Keyed.request(slot, key, mode)
+
 /** Requests the list (and the mappings when asked) under `mode`. */
-const load = (model: Model, context: PageContext, mode: Keyed.RequestMode, withMappings: boolean) => {
+const load = (model: Model, context: PageContext, mode: LoadMode, withMappings: boolean) => {
 	const listKey = requestKey(context.orgId, "instrumentationRecommendations.list", LIST_QUERY)
 	const mappingsKey = requestKey(context.orgId, "attributeMappings.list", LIST_QUERY)
-	const list = Keyed.request(model.list, listKey, mode)
-	const mappings = withMappings ? Keyed.request(model.mappings, mappingsKey, mode) : Option.none()
+	const list = requestIn(model.list, listKey, mode)
+	const mappings = withMappings ? requestIn(model.mappings, mappingsKey, mode) : Option.none()
 	const commands: Commands = [
-		...(Option.isSome(list) ? [FetchRecommendations({ key: listKey })] : []),
-		...(Option.isSome(mappings) ? [FetchAttributeMappings({ key: mappingsKey })] : []),
+		...Option.toArray(Option.map(list, (slot) => FetchRecommendations({ key: slot.key ?? listKey }))),
+		...Option.toArray(Option.map(mappings, (slot) => FetchAttributeMappings({ key: slot.key ?? mappingsKey }))),
 	]
 	return {
 		model: {
@@ -81,7 +87,7 @@ const settle = <A>(
 	Result.match(result, {
 		onFailure: (failure) => ({ model: { ...model, busy: null }, outMessage: errorToast(options.error, failure) }),
 		onSuccess: (value) => {
-			const refreshed = load({ ...model, busy: null }, context, "Refresh", options.withMappings)
+			const refreshed = load({ ...model, busy: null }, context, "Supersede", options.withMappings)
 			if (options.success === undefined) return refreshed
 			const outMessage = PageOutMessage.RequestedToast({
 				type: "success",

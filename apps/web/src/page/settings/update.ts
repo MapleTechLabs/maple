@@ -132,7 +132,7 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 		case "Keys": {
 			const step = Keys.init(sessionOf(model))
 			return {
-				model: { ...model, tab: { _tag: "Keys", model: { ...step.model, apiKeys: model.apiKeys } } },
+				model: { ...model, tab: { _tag: "Keys", model: { ...step.model, apiKeys: model.apiKeys, isLoadFailed: model.isApiKeysLoadFailed } } },
 				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotKeysMessage({ message })),
 			}
 		}
@@ -218,7 +218,12 @@ const revisitTab = (model: Model, kept: TabModel, context: PageContext): Return 
 		}
 		case "Keys":
 			// The key list lives on the page, which kept reading it.
-			return { model: { ...model, tab: { _tag: "Keys", model: { ...kept.model, apiKeys: model.apiKeys } } } }
+			return {
+				model: {
+					...model,
+					tab: { _tag: "Keys", model: { ...kept.model, apiKeys: model.apiKeys, isLoadFailed: model.isApiKeysLoadFailed } },
+				},
+			}
 		case "SetupHealth": {
 			const step = SetupHealth.revisit(kept.model)
 			return {
@@ -348,6 +353,7 @@ export const init = (route: SettingsRoute, context: PageContext): Return => {
 			session: AsyncData.Loading(),
 			customer: AsyncData.Loading(),
 			apiKeys: null,
+			isApiKeysLoadFailed: false,
 			tab: null,
 			kept: [],
 		},
@@ -413,9 +419,17 @@ const liftBilling = (model: Model, { step, isCustomerStale, isCheckoutSettled }:
 			...Command.mapMessages(step.commands ?? [], (child) => Message.GotBillingMessage({ message: child })),
 			...(isCustomerStale ? [FetchSettingsCustomer({ refresh: true })] : []),
 		],
-		outMessage: step.outMessage ?? (isCheckoutSettled === true ? clearCheckoutMarker(model) : undefined),
+		outMessage: isCustomerStale
+			? withCustomerRefresh(step.outMessage)
+			: (step.outMessage ?? (isCheckoutSettled === true ? clearCheckoutMarker(model) : undefined)),
 	}
 }
+
+/** A toasted billing change (cap save, plan attach) is the app's too: the root re-reads its customer. */
+const withCustomerRefresh = (out: PageOutMessage | undefined): PageOutMessage | undefined =>
+	out !== undefined && out._tag === "RequestedToast"
+		? PageOutMessage.RequestedCustomerRefresh({ toast: { type: out.type, title: out.title, description: out.description } })
+		: out
 
 /** The Billing tab waiting on a checkout return reads every customer answer for the plan. */
 const settleCheckout = ({ model, commands, outMessage }: Return): Return => {
@@ -532,9 +546,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		UpdatedApiKeys: ({ orgId, rows }) => {
 			if (orgId !== context.orgId) return { model }
 			const apiKeys = rows.map(rowToV2ApiKey)
-			const next = { ...model, apiKeys }
+			const next = { ...model, apiKeys, isApiKeysLoadFailed: false }
 			return next.tab !== null && next.tab._tag === "Keys"
 				? liftKeys(next, next.tab.model, KeysMessageValue.UpdatedApiKeys({ rows: apiKeys }))
+				: { model: next }
+		},
+		FailedLoadApiKeys: ({ orgId }) => {
+			if (orgId !== context.orgId || model.apiKeys !== null) return { model }
+			const next = { ...model, isApiKeysLoadFailed: true }
+			return next.tab !== null && next.tab._tag === "Keys"
+				? liftKeys(next, next.tab.model, KeysMessageValue.FailedLoadApiKeys())
 				: { model: next }
 		},
 	})

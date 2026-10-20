@@ -3,6 +3,7 @@ import { Option, Result, Schema } from "effect"
 import { click, Command, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../charts/theme-colors"
+import { toLoadFailure } from "../../data/load-failure"
 import * as ServiceMap from "../../service-map/map/service-map"
 import { PageOutMessage, type PageContext } from "../contract"
 import { CompleteReloadSpin, FetchBundle, FetchFacets, LoadSignalPresence, MountEmptyState, ResolveWindow } from "./command"
@@ -287,5 +288,26 @@ describe("service map page: environment default across a refetch", () => {
 		expect(selectedEnvironment(refreshed.model)).toBe(ALL_ENVIRONMENTS)
 		expect(refreshed.model.facetsWindow).toEqual(facetsWindow)
 		expect(refreshed.model.bundle.key).toBe(loaded.bundle.key)
+	})
+
+	test("a failed facets refetch keeps the environment the previous facets chose", () => {
+		const model = windowed()
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchFacets({ key: model.facets.key ?? "", result: Result.succeed(["staging"]) }),
+		).model
+		const refreshed = pageUpdate(
+			loaded,
+			Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: NOW, mode: "Refresh" }),
+		).model
+		const failed = pageUpdate(
+			refreshed,
+			Message.CompletedFetchFacets({
+				key: refreshed.facets.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("down"))),
+			}),
+		)
+		expect(selectedEnvironment(failed.model)).toBe(ALL_ENVIRONMENTS)
+		expect(names(failed.commands)).not.toContain("FetchServiceMapBundle")
 	})
 })

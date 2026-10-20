@@ -1,6 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { RailwayEnvironmentStatus, RailwayIntegrationStatus } from "@maple/domain/http"
-import { Result, Schema } from "effect"
+import { Option, Result, Schema } from "effect"
+import { AsyncData } from "foldkit"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import * as Field from "../../../../ui/field"
@@ -191,6 +192,20 @@ describe("railway list", () => {
 			{ update: pageUpdate, view },
 			given(rejected.model),
 			expectView(role("alert")).toHaveText("Railway rejected the token."),
+		)
+	})
+
+	test("a status read in flight from before a connect cannot flip the page back to the form", () => {
+		const polled = pageUpdate(withStatus(false), Message.TickedEmptyRefresh({ includeStatus: true }))
+		expect(names(polled.commands)).toEqual(["LoadRailwayStatus"])
+		const preConnectKey = polled.model.status.key ?? ""
+		const connected = pageUpdate(polled.model, Message.SucceededConnect({ status: status(true) })).model
+		const late = pageUpdate(
+			connected,
+			Message.CompletedLoadStatus({ key: preConnectKey, result: Result.succeed(status(false)) }),
+		).model
+		expect(Option.map(AsyncData.getData(late.status.data), (current) => current.connected)).toEqual(
+			Option.some(true),
 		)
 	})
 

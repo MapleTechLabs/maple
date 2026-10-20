@@ -4,6 +4,7 @@ import { Result, Schema } from "effect"
 import { Command, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { MeasureTabIndicator, Message as TabsMessage } from "../../../ui/tabs"
+import { toLoadFailure } from "../../../data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import {
 	FetchInvestigations,
@@ -137,6 +138,47 @@ describe("errors hub", () => {
 			}),
 		)
 		expect(names(ranked.commands)).toEqual([FetchPage.name])
+	})
+
+	test("a failed volume ranking shows the list's failure, and Retry asks the ranking again", () => {
+		const model = windowed({ sort: "volume" })
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchRanking({
+				key: model.ranking.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("boom"))),
+			}),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(failed.model),
+			measured,
+			railMounted,
+			expectView(text("Failed to load errors")).toExist(),
+		)
+		const retried = pageUpdate(failed.model, Message.ClickedRetry())
+		expect(names(retried.commands)).toEqual(["FetchErrorsRanking"])
+		const ranked = pageUpdate(
+			retried.model,
+			Message.CompletedFetchRanking({ key: retried.model.ranking.key ?? "", result: Result.succeed(["1"]) }),
+		)
+		expect(names(ranked.commands)).toEqual([FetchPage.name])
+	})
+
+	test("a filter change under the volume sort waits for the new ranking, not the retained one", () => {
+		const model = windowed({ sort: "volume" })
+		const ranked = pageUpdate(
+			model,
+			Message.CompletedFetchRanking({ key: model.ranking.key ?? "", result: Result.succeed(["1", "2"]) }),
+		).model
+		const filtered = routeChanged(ranked, { search: { sort: "volume", service: "payment-svc" } }, context)
+		expect(names(filtered.commands)).toEqual(["FetchErrorsSummary", "FetchErrorsRanking"])
+		const reranked = pageUpdate(
+			filtered.model,
+			Message.CompletedFetchRanking({ key: filtered.model.ranking.key ?? "", result: Result.succeed(["3"]) }),
+		)
+		expect(names(reranked.commands)).toEqual([FetchPage.name])
+		expect(reranked.model.listKey).toContain('"fingerprint_hash":"3"')
 	})
 
 	test("rows render as links to the issue, newest first", () => {

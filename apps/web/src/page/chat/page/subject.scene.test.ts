@@ -102,6 +102,34 @@ describe("chat subjects", () => {
 		expect(postedText(step(sent.model, Message.CompletedSaveTabs()))).toBe("")
 	})
 
+	test("a widget-fix thread whose history read failed shows a retry and sends nothing until it loads", () => {
+		const model = entered({ mode: "widget-fix", widget: WIDGET }).model
+		const tabId = "widget-fix-dash-1-w-1"
+		const failed = step(
+			model,
+			Message.GotConversationMessage({ tabId, message: ConversationMessage.CompletedLoadHistory({ generation: 1, result: Result.fail("Service unavailable") }) }),
+		)
+		expect(postedText(failed)).toBe("")
+		scene(
+			{ update: step, view: withViewInputs(view, { context })() },
+			given(failed.model),
+			Mount.resolve(MountStopClickPropagation, MountMessage.CompletedMountStopClick()),
+			Mount.resolve(MountStopClickPropagation, MountMessage.CompletedMountStopClick()),
+			expectView(text("Couldn't load this conversation")).toExist(),
+			expectView(role("button", { name: "Try again" })).toExist(),
+		)
+		const retried = step(failed.model, Message.GotConversationMessage({ tabId, message: ConversationMessage.ClickedRetryHistory() }))
+		expect(postedText(retried)).toBe("")
+		const loaded = step(
+			retried.model,
+			Message.GotConversationMessage({
+				tabId,
+				message: ConversationMessage.CompletedLoadHistory({ generation: 2, result: Result.succeed({ messages: [], cursor: 0, running: false }) }),
+			}),
+		)
+		expect(postedText(loaded)).toContain("Fix this widget")
+	})
+
 	test("an undecodable subject is ignored", () => {
 		expect(entered({ mode: "alert", alert: "not-base64!" }).model.subject).toBeNull()
 	})

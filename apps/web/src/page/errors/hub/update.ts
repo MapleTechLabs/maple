@@ -34,6 +34,7 @@ import {
 	INVESTIGATIONS_LIMIT,
 	issuesOf,
 	listQueryOf,
+	rankingFailed,
 	type Search,
 	severityOf,
 	signalsOf,
@@ -161,12 +162,9 @@ const rankingStep =
 /** The ranked hashes the list waits for: `Some(null)` when not ranking, `None` until ready. */
 const rankedHashes = (model: Model): Option.Option<ReadonlyArray<string> | null> => {
 	if (sortOf(model.search) !== "volume") return Option.some(null)
-	const ranking = model.ranking.data
-	// Still refreshing with no rows: the previous mode's answer, not a ranking.
-	return Option.filter(
-		AsyncData.getData(ranking),
-		(rows) => !(AsyncData.isRefreshing(ranking) && rows.length === 0),
-	)
+	// Retained rows answer the previous filters' key: wait for the current key's ranking.
+	if (model.ranking.retained === true) return Option.none()
+	return AsyncData.getData(model.ranking.data)
 }
 
 /** Page one of the current list query; a new query drops the pages loaded for the old one. */
@@ -488,6 +486,10 @@ const retryFirstPage = (model: Model): Return => {
 	})
 }
 
+/** The failed volume ranking, asked again; its answer requests the list (`follow`). */
+const retryRanking = (model: Model, context: PageContext): Return =>
+	model.window === null ? { model } : applySteps(model, [rankingStep(context, model.window, "Refresh")])
+
 const settled = <
 	K extends "summary" | "serviceCounts" | "environments" | "volume" | "spark" | "investigations",
 >(
@@ -560,7 +562,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		// TODO(retry): this should reload the whole window; it refetches page one instead.
-		ClickedRetry: () => retryFirstPage(model),
+		ClickedRetry: () => (rankingFailed(model) ? retryRanking(model, context) : retryFirstPage(model)),
 		ClickedLoadMore: () => loadMore(model, context),
 		ToggledFilterOption: ({ param, name }) => navigate(model, toggledFilter(model, param, name)),
 		ClickedClearFilters: () => navigate(model, CLEARED_ERROR_FILTERS),

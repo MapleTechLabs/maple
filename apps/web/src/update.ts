@@ -259,7 +259,7 @@ const writePage =
 			Option.flatMap(transition.outMessage, (out): Option.Option<PageToast> =>
 				out._tag === "RequestedToast"
 					? Option.some(out)
-					: out._tag === "RequestedNavigation" && out.toast !== undefined
+					: (out._tag === "RequestedNavigation" || out._tag === "RequestedCustomerRefresh") && out.toast !== undefined
 						? Option.some(
 								PageOutMessage.RequestedToast({
 									...out.toast,
@@ -313,6 +313,8 @@ const writePage =
 						RequestedInfraSurfaces: () => [],
 						RequestedToast: () => [],
 						RequestedReconnectOrgCollections: () => [ReconnectOrgCollections()],
+						RequestedCustomerRefresh: () =>
+							model.customer.orgId === null ? [] : [LoadCustomer({ orgId: model.customer.orgId, refresh: true })],
 					}),
 				}),
 				...followed.commands,

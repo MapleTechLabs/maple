@@ -73,12 +73,32 @@ describe("connect panel scene", () => {
 describe("connect panel update", () => {
 	const open = (model: Model) => update(model, Message.GotPopoverMessage({ message: Popover.Message.ClickedTrigger() }), context)
 
-	test("another org's late answers are dropped and the poll re-reads the open window", () => {
+	test("another org's late answers are dropped and the poll re-reads the clock", () => {
 		const opened = update(open(init()).model, Message.ResolvedWindow({ orgId: ORG, window }), context).model
 		const stale = update(opened, Message.SucceededLoadKeys({ orgId: "org_b", publicKey: "pk", privateKey: "sk" }), context)
 		expectVitest(stale.model.keys).toEqual({ _tag: "Loading" })
 		const polled = update(opened, Message.TickedPoll(), context)
-		expectVitest(polled.commands?.map((command) => command.name)).toEqual(["FetchConnectOverview"])
+		expectVitest(polled.commands?.map((command) => command.name)).toEqual(["ResolveConnectWindow"])
+	})
+
+	test("a poll asks the overview for the last hour up to now and takes its answer", () => {
+		const opened = update(open(init()).model, Message.ResolvedWindow({ orgId: ORG, window }), context).model
+		const later = { startTime: "2026-10-19 10:05:00", endTime: "2026-10-19 11:05:00" }
+		const polled = update(opened, Message.ResolvedWindow({ orgId: ORG, window: later }), context)
+		expectVitest(polled.commands?.map((command) => command.args)).toEqual([
+			{ orgId: ORG, window: later, pinnedNamespace: "prod" },
+		])
+		const services = [{ serviceName: "checkout", spanCount: 3 }]
+		const landed = update(polled.model, Message.SucceededLoadOverview({ orgId: ORG, window: later, services }), context)
+		expectVitest(landed.model.services).toEqual(services)
+	})
+
+	test("a failed poll keeps the services already found", () => {
+		const opened = update(open(init()).model, Message.ResolvedWindow({ orgId: ORG, window }), context).model
+		const services = [{ serviceName: "checkout", spanCount: 3 }]
+		const found = update(opened, Message.SucceededLoadOverview({ orgId: ORG, window, services }), context).model
+		const failed = update(found, Message.FailedLoadOverview({ orgId: ORG, window }), context)
+		expectVitest(failed.model.services).toEqual(services)
 	})
 
 	test("a reopen in the same org keeps the keys it read and does not read them again", () => {

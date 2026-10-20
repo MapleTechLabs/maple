@@ -89,12 +89,20 @@ type PlanState = Readonly<{
 	asked: ReadonlyArray<string>
 }>
 
-/** Asks for a gate's request unless this pass already did, or the key is held and fresh. */
-const ask = (state: PlanState, gate: WidgetGate, mode: Keyed.RequestMode): PlanState => {
-	if (gate._tag !== "Request") return state
+const requestKeyOf = (gate: WidgetGate | null | undefined): string | null =>
+	gate?._tag === "Request" ? gate.request.key : null
+
+/**
+ * Asks for a gate's request unless this pass already did, or the key is held and fresh. A new key
+ * starts from the tile's previous key, so its data shows as refreshing rather than a skeleton.
+ */
+const ask = (state: PlanState, gate: WidgetGate | null, previous: WidgetGate | null | undefined, mode: Keyed.RequestMode): PlanState => {
+	if (gate === null || gate._tag !== "Request") return state
 	const { key, endpoint, params } = gate.request
 	if (state.asked.includes(key)) return state
-	return Option.match(Keyed.request(state.requests[key] ?? Keyed.idle(), key, mode), {
+	const previousKey = requestKeyOf(previous)
+	const seed = state.requests[key] ?? (previousKey === null ? undefined : state.requests[previousKey]) ?? Keyed.idle()
+	return Option.match(Keyed.request(seed, key, mode), {
 		onNone: () => state,
 		onSome: (next) => ({
 			...state,
@@ -103,6 +111,14 @@ const ask = (state: PlanState, gate: WidgetGate, mode: Keyed.RequestMode): PlanS
 			asked: [...state.asked, key],
 		}),
 	})
+}
+
+/** Drops request slots no tile's current gate points at, so refreshes do not grow the map. */
+const referencedRequests = (state: PlanState): Model["requests"] => {
+	const keys = new Set(
+		Object.values(state.widgets).flatMap((slot) => [requestKeyOf(slot.gate), requestKeyOf(slot.sparkGate)]),
+	)
+	return Object.fromEntries(Object.entries(state.requests).filter(([key]) => keys.has(key)))
 }
 
 /**
@@ -166,13 +182,10 @@ export const replan = (
 		})
 		const sparkGate = sparklineGate(context, widget, window, state.requests, gate, variables)
 		const widgets = { ...state.widgets, [widget.id]: { ...slot, gate, sparkGate } }
-		return [gate, sparkGate].reduce(
-			(acc, next) => (next === null ? acc : ask(acc, next, mode)),
-			{ ...state, widgets },
-		)
+		return ask(ask({ ...state, widgets }, gate, slot.gate, mode), sparkGate, slot.sparkGate, mode)
 	}, initial)
 	return {
-		model: { ...withOptions, widgets: planned.widgets, requests: planned.requests },
+		model: { ...withOptions, widgets: planned.widgets, requests: referencedRequests(planned) },
 		commands: planned.commands,
 	}
 }

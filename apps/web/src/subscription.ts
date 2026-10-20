@@ -16,6 +16,7 @@ import * as Shell from "./shell"
 import * as ChatSheet from "./page/chat/sheet"
 import { hrefOf } from "./route"
 import { pollTicks } from "./data/poll"
+import { collectionLoadFailed } from "./page/alerts/shared/collection-load"
 
 /** Emits nothing: an Alt+click on a tri-state filter label is redirected to that row's Exclude button. */
 const altClickExclude: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
@@ -54,6 +55,12 @@ const pages = Subscription.lift(pageSubscriptions)<Model, Message>({
 	read: (model) => Option.some({ page: model.page, context: Option.getOrNull(pageContextOf(model)) }),
 	toParentMessage: (message) => Message.GotPageMessage({ message }),
 })
+
+/** The org whose `dashboards` the shell reads: once the sidebar or palette wants them. */
+const shellDashboardsOrgId = (model: Model): string | null =>
+	model.session._tag === "SignedIn" && rendersShell(model.route) && (model.shell.hasRequestedSidebarData || model.shell.palette !== null)
+		? Option.getOrNull(model.shell.maybeOrgId)
+		: null
 
 const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 	/** `subscribeSelfHostedAuthChanges`: a renewal elsewhere ended or replaced the session. */
@@ -161,12 +168,7 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 	shellDashboards: entry(
 		{ orgId: Schema.NullOr(Schema.String) },
 		{
-			modelToDependencies: (model) => ({
-				orgId:
-					model.session._tag === "SignedIn" && rendersShell(model.route) && (model.shell.hasRequestedSidebarData || model.shell.palette !== null)
-						? Option.getOrNull(model.shell.maybeOrgId)
-						: null,
-			}),
+			modelToDependencies: (model) => ({ orgId: shellDashboardsOrgId(model) }),
 			dependenciesToStream: ({ orgId }) =>
 				orgId === null
 					? Stream.empty
@@ -174,6 +176,24 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 							Message.GotShellMessage({
 								message: Shell.Message.SucceededLoadDashboards({ orgId, dashboards }),
 							}),
+						),
+		},
+	),
+	/** `useCollectionLoadFailed` while the Pinned group waits on its first `dashboards` answer. */
+	shellDashboardsLoad: entry(
+		{ orgId: Schema.NullOr(Schema.String) },
+		{
+			modelToDependencies: (model) => ({
+				orgId:
+					model.shell.dashboards._tag === "Idle" || model.shell.dashboards._tag === "Loading"
+						? shellDashboardsOrgId(model)
+						: null,
+			}),
+			dependenciesToStream: ({ orgId }) =>
+				orgId === null
+					? Stream.empty
+					: collectionLoadFailed(`dashboards:${orgId}`, () =>
+							Message.GotShellMessage({ message: Shell.Message.FailedLoadDashboards({ orgId }) }),
 						),
 		},
 	),

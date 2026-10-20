@@ -136,8 +136,18 @@ const dialogStep = (
 const wrapResolve = (message: Dialog.Message) => Message.GotResolveDialogMessage({ message })
 const wrapLink = (message: Dialog.Message) => Message.GotLinkDialogMessage({ message })
 
-/** A successful write re-reads the incident (its `reactivityKeys`); the answer re-follows the issue. */
-const afterWrite = (model: Model, context: PageContext): Return => loadIncident({ ...model, busy: null }, context, "Refresh")
+/**
+ * A successful write re-reads the incident (its `reactivityKeys`); the answer re-follows the issue.
+ * It supersedes a live-refresh read in flight, so a pre-write answer cannot land last.
+ */
+const afterWrite = (model: Model, context: PageContext): Return => {
+	const key = requestKey(context.orgId, "anomalies.getIncident", { params: { id: model.incidentId } })
+	const incident = Keyed.supersede(model.incident, key)
+	return {
+		model: { ...model, busy: null, incident },
+		commands: [FetchIncident({ key: incident.key ?? key, id: model.incidentId })],
+	}
+}
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {

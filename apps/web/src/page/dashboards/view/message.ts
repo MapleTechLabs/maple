@@ -60,7 +60,7 @@ export const Message = defineMessageUnion({
 	GotTagEditorMessage: { message: TagEditor.Message },
 	GotVariablesManagerMessage: { message: VariablesManager.Message },
 	ClickedCloseHistory: {},
-	CompletedFetchVersions: { result: Schema.Result(Schema.Array(VersionRow), LoadFailure) },
+	CompletedFetchVersions: { generation: Schema.Number, result: Schema.Result(Schema.Array(VersionRow), LoadFailure) },
 	ClickedVersion: { versionId: Schema.String },
 	CompletedFetchSnapshot: { versionId: Schema.String, result: Schema.Result(DashboardDocument, LoadFailure) },
 	ClickedCancelPreview: {},

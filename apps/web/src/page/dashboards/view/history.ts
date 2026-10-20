@@ -66,6 +66,8 @@ export const KIND_DOT = {
 export const HistoryState = Schema.Struct({
 	isOpen: Schema.Boolean,
 	versions: VersionsData.schema,
+	/** Bumped per version-list read, so an older list landing last is dropped. */
+	versionsGeneration: Schema.Number,
 	previewed: Schema.NullOr(VersionRow),
 	snapshot: SnapshotData.schema,
 	restoreDialog: Dialog.Model,
@@ -82,6 +84,7 @@ export type HistoryState = typeof HistoryState.Type
 export const initHistory = (): HistoryState => ({
 	isOpen: false,
 	versions: AsyncData.Idle(),
+	versionsGeneration: 0,
 	previewed: null,
 	snapshot: AsyncData.Idle(),
 	restoreDialog: Dialog.init("dashboard-restore-version", "alert-dialog"),

@@ -528,5 +528,5 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotTimePickerMessage: ({ message: inner }) => withPicker(model, inner),
 		GotChartMessage: ({ chartId, message: inner }) => withChart(model, chartId, inner),
 		GotSetupMessage: ({ message: inner }) =>
-			withSetup({ model }, (setup) => Setup.update(setup, inner, context.pinnedNamespace)),
+			withSetup({ model }, (setup) => Setup.update(setup, inner, context)),
 	})

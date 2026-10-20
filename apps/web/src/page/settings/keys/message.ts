@@ -13,6 +13,7 @@ import * as RollDialog from "./roll-dialog"
 
 export const Message = defineMessageUnion({
 	UpdatedApiKeys: { rows: Schema.Array(V2ApiKey) },
+	FailedLoadApiKeys: {},
 	ClickedTypeFilter: { type: KeyTypeFilter },
 	GotStatusSelectMessage: { message: Select.Message },
 	ChangedSearch: { value: Schema.String },

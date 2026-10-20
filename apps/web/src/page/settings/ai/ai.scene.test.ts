@@ -61,6 +61,9 @@ describe("ai tab", () => {
 		expect(checkout.commands?.map((command) => command.name)).toContain("OpenOpenRouterAddOnCheckout")
 		const attached = update(attaching.model, Message.CompletedAttachAddOn({ result: Result.succeed(new AttachResult({})) }))
 		expect(attached.commands?.map((command) => command.name)).toContain("FetchOpenRouterKey")
-		expect(attached.outMessage).toMatchObject({ type: "success", title: "Add-on added" })
+		expect(attached.outMessage).toMatchObject({
+			_tag: "RequestedCustomerRefresh",
+			toast: { type: "success", title: "Add-on added" },
+		})
 	})
 })

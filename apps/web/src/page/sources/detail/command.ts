@@ -1,6 +1,7 @@
 import { SourceId } from "@maple/domain/primitives"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
+import { baseKey } from "../../../data/keyed"
 import { toLoadFailure } from "../../../data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { V2SourceUpdateParams } from "@maple/domain/http/v2"
@@ -19,7 +20,7 @@ export const FetchSourceList = Command.define("FetchSourceDetailList", {
 	args: { key: Schema.String, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchList],
 	execute: ({ key, refresh }) =>
-		loadSources(key, refresh).pipe(
+		loadSources(baseKey(key), refresh).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchList({ key, result })),
 		),

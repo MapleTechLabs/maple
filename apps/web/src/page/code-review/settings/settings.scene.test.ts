@@ -52,6 +52,64 @@ describe("code review settings", () => {
 		expect(picked.model.modelSelect.value).toBe("anthropic/claude-sonnet-5.5")
 	})
 
+	test("a rules save during a model save waits for it, then writes both changes", () => {
+		const settingsArgs = (result: { readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> }) =>
+			(result.commands ?? []).filter((command) => command.name === "SaveCodeReviewSettings").map((command) => command.args)
+		const picked = pageUpdate(
+			loaded().model,
+			Message.GotModelSelectMessage({
+				message: Select.Message.SelectedItem({ index: 8, value: "anthropic/claude-haiku-5.5" }),
+			}),
+		)
+		const edited = pageUpdate(
+			picked.model,
+			Message.GotDefaultsFormMessage({ message: RulesForm.Message.ChangedText({ field: "instructions", value: "Be terse." }) }),
+		).model
+		const queued = pageUpdate(edited, Message.GotDefaultsFormMessage({ message: RulesForm.Message.ClickedSave() }))
+		expect(settingsArgs(queued)).toEqual([])
+		const modelSaved = pageUpdate(
+			queued.model,
+			Message.CompletedSaveSettings({ purpose: "model", label: "Claude Haiku", result: Result.void }),
+		)
+		expect(settingsArgs(modelSaved)).toEqual([
+			{
+				purpose: "defaults",
+				label: "",
+				settings: expect.objectContaining({
+					model: "anthropic/claude-haiku-5.5",
+					defaults: expect.objectContaining({ instructions: "Be terse." }),
+				}),
+			},
+		])
+		expect(names(modelSaved.commands)).not.toContain("FetchCodeReviewSettings")
+		const rulesSaved = pageUpdate(
+			modelSaved.model,
+			Message.CompletedSaveSettings({ purpose: "defaults", label: "", result: Result.void }),
+		)
+		expect(names(rulesSaved.commands)).toEqual(["FetchCodeReviewSettings"])
+	})
+
+	test("a switch's re-read is sent even while the status read is still in flight", () => {
+		const model = loaded().model
+		const toggled = pageUpdate(
+			model,
+			Message.ToggledRepo({ repositoryId: INFRA, fullName: "acme-shop/infra", isEnabled: true }),
+		).model
+		const saved = pageUpdate(
+			toggled,
+			Message.CompletedSetPrReview({ repositoryId: INFRA, fullName: "acme-shop/infra", isEnabled: true, result: Result.void }),
+		)
+		expect(names(saved.commands)).toEqual(["FetchCodeReviewSettingsStatus"])
+		const late = pageUpdate(
+			saved.model,
+			Message.CompletedFetchStatus({
+				key: model.githubStatus.key ?? "",
+				result: Result.succeed(githubStatusOf([{ name: "infra", reviewed: false }])),
+			}),
+		).model
+		expect(late.githubStatus).toEqual(saved.model.githubStatus)
+	})
+
 	test("a repository's switch sends one write while it is in flight", () => {
 		const model = pageUpdate(
 			loaded().model,

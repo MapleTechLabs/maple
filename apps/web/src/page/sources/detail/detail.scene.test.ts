@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2Source, V2SourceUsage } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { Option, Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
@@ -11,7 +11,7 @@ import { ScrapeTargetId } from "@maple/domain/primitives"
 import { Message as IntegrationMessage } from "../../integrations/message"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, routeChanged, update } from "./update"
+import { init, routeChanged, sourceOf, update } from "./update"
 import { breadcrumbsOf, view as pageView } from "./view"
 
 const context: PageContext = {
@@ -157,6 +157,26 @@ describe("source detail", () => {
 		expect(failed.outMessage?._tag === "RequestedToast" && failed.outMessage.title).toBe(
 			"Failed to pause source",
 		)
+	})
+
+	test("a quick pause then resume ends resumed even when the pause's re-read lands last", () => {
+		const paused = pageUpdate(
+			{ ...loaded(source()), busy: "pause" },
+			Message.CompletedPause({ result: Result.succeed(source({ status: "paused" })) }),
+		).model
+		const resumed = pageUpdate(
+			{ ...paused, busy: "resume" },
+			Message.CompletedResume({ result: Result.succeed(source()) }),
+		)
+		expect(names(resumed.commands)).toEqual(["FetchSourceDetailList"])
+		const final = [
+			Message.CompletedFetchList({ key: resumed.model.list.key ?? "", result: Result.succeed([source()]) }),
+			Message.CompletedFetchList({
+				key: paused.list.key ?? "",
+				result: Result.succeed([source({ status: "paused" })]),
+			}),
+		].reduce((model, message) => pageUpdate(model, message).model, resumed.model)
+		expect(Option.map(sourceOf(final), (row) => row.status)).toEqual(Option.some("active"))
 	})
 
 	test("a confirmed roll shows the new token above the tab", () => {

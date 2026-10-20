@@ -5,7 +5,7 @@ import {
 	decodeChatEvent,
 } from "@maple/domain/chat-session"
 import { apiBaseUrl } from "../../../lib/services/common/api-base-url"
-import { Effect, Option, Ref, Schema, Stream } from "effect"
+import { Clock, Effect, Option, Ref, Schema, Stream } from "effect"
 import { HttpClientRequest, HttpClientResponse } from "effect/http"
 import { MapleSyncHttpClient } from "../../../platform/api-clients"
 import { taskOf } from "./fold"
@@ -67,6 +67,8 @@ export const abortTurn = (sessionId: string) =>
 
 /** Consecutive-failure budget for a dropped events stream before it surfaces an error. */
 const MAX_STREAM_RETRIES = 3
+/** An empty close sooner than this is the server refusing; a later one is an idle connection recycled. */
+const QUICK_CLOSE_MS = 5_000
 
 /** One SSE frame's `data:` lines joined (a payload may span several), or `None`. */
 const frameData = (frame: string): Option.Option<string> => {
@@ -87,19 +89,33 @@ const isTopLevelTurnEnd = (event: ChatEvent): boolean => event.type === "turn-en
 
 /**
  * `GET .../events?cursor=`, read as SSE frames until the top-level `turn-end`. A clean EOF without
- * one is the server recycling the connection: it reconnects from the last seq. A dropped
- * connection retries with a 300 ms × n backoff, `MAX_STREAM_RETRIES` times in a row.
+ * one is the server recycling the connection: it reconnects from the last seq, at once if it
+ * delivered events. A dropped or empty connection retries with a 300 ms × n backoff,
+ * `MAX_STREAM_RETRIES` times in a row.
  */
 export const tailEvents = (sessionId: string, cursor: number): Stream.Stream<TailOutput, never, MapleSyncHttpClient> =>
 	Stream.unwrap(
 		Effect.gen(function* () {
 			const seq = yield* Ref.make(cursor)
 			const ended = yield* Ref.make(false)
+			const retry = (failures: number, message: string): Stream.Stream<TailOutput, never, MapleSyncHttpClient> =>
+				failures + 1 > MAX_STREAM_RETRIES
+					? Stream.succeed<TailOutput>({ _tag: "Failed", message })
+					: Stream.unwrap(Effect.as(Effect.sleep(300 * (failures + 1)), connection(failures + 1)))
 			const connection = (failures: number): Stream.Stream<TailOutput, never, MapleSyncHttpClient> =>
+				Stream.unwrap(
+					Effect.map(Effect.all([Ref.get(seq), Clock.currentTimeMillis]), ([from, openedAt]) =>
+						attempt(from, failures, openedAt),
+					),
+				)
+			const attempt = (
+				from: number,
+				failures: number,
+				openedAt: number,
+			): Stream.Stream<TailOutput, never, MapleSyncHttpClient> =>
 				Stream.unwrap(
 					Effect.gen(function* () {
 						const client = yield* MapleSyncHttpClient
-						const from = yield* Ref.get(seq)
 						const response = yield* client.get(sessionUrl(sessionId, `/events?cursor=${from}`))
 						if (response.status < 200 || response.status >= 300)
 							return yield* new ChatRequestError({
@@ -138,20 +154,21 @@ export const tailEvents = (sessionId: string, cursor: number): Stream.Stream<Tai
 						)
 					}),
 				).pipe(
+					// A quick clean close that delivered nothing counts as a failure, so it cannot hot-loop.
 					Stream.concat(
 						Stream.unwrap(
-							Effect.map(Ref.get(ended), (isEnded) => (isEnded ? Stream.empty : connection(0))),
+							Effect.gen(function* () {
+								if (yield* Ref.get(ended)) return Stream.empty
+								const delivered = (yield* Ref.get(seq)) !== from
+								const lived = (yield* Clock.currentTimeMillis) - openedAt
+								return delivered || lived >= QUICK_CLOSE_MS
+									? connection(0)
+									: retry(failures, "Lost connection to chat.")
+							}),
 						),
 					),
 					Stream.catch((error) =>
-						failures + 1 > MAX_STREAM_RETRIES
-							? Stream.succeed<TailOutput>({
-									_tag: "Failed",
-									message: error instanceof ChatRequestError ? error.message : "Lost connection to chat.",
-								})
-							: Stream.unwrap(
-									Effect.as(Effect.sleep(300 * (failures + 1)), connection(failures + 1)),
-								),
+						retry(failures, error instanceof ChatRequestError ? error.message : "Lost connection to chat."),
 					),
 				)
 			return connection(0)

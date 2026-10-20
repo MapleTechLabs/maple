@@ -14,8 +14,10 @@ import * as Preload from "./page/preload"
 import * as SignIn from "./page/sign-in"
 import { AppRoute } from "./route"
 import * as Shell from "./shell"
+import { DashboardsData } from "./shell/model"
 import * as Toast from "./ui/toast"
 import type { ClerkSnapshot } from "./platform/clerk"
+import { subscriptions } from "./subscription"
 import { settle, update } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -148,5 +150,17 @@ describe("re-render on change only", () => {
 		const visible = update(model, Message.GotShellMessage({ message: Shell.Message.BecameTabVisible() }))
 		expect(visible.model).toBe(model)
 		expect(commandsOf(visible).map(({ name }) => name)).toEqual(["CheckDeployedCommit"])
+	})
+})
+
+describe("pinned dashboards load", () => {
+	test("the sidebar waiting on dashboards watches for a sync failure, which settles it as failed", () => {
+		const shell = { ...base(AppRoute.Logs({ search: {} })).shell, maybeOrgId: Option.some(orgId), hasRequestedSidebarData: true }
+		const waiting: Model = { ...base(AppRoute.Logs({ search: {} })), shell: { ...shell, dashboards: DashboardsData.Loading() } }
+		const watched = (model: Model) => subscriptions.shellDashboardsLoad.modelToDependencies(model).orgId
+		expect(watched(waiting)).toBe(orgId)
+		const failed = update(waiting, Message.GotShellMessage({ message: Shell.Message.FailedLoadDashboards({ orgId }) })).model
+		expect(failed.shell.dashboards._tag).toBe("Failure")
+		expect(watched(failed)).toBeNull()
 	})
 })

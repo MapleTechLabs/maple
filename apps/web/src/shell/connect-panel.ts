@@ -32,9 +32,9 @@ export const Model = Schema.Struct({
 	/** The org the keys and overview were read for; another org's late answer is dropped. */
 	orgId: Schema.NullOr(Schema.String),
 	keys: Keys,
-	/** `useIngestConnection`'s last-hour overview; empty until it lands (or when it failed). */
+	/** `useIngestConnection`'s last-hour overview; empty until it lands, kept when a poll fails. */
 	services: Schema.Array(ServiceRow),
-	/** `useEffectiveTimeRange(.., "1h")`: resolved once per open; the 15 s poll re-reads it. */
+	/** `useEffectiveTimeRange(.., "1h")`: resolved on open and again on each 15 s poll. */
 	window: Schema.NullOr(TimeWindow),
 	copies: Schema.Struct({
 		endpoint: CopyButton.Model,
@@ -192,8 +192,9 @@ export const update = (model: Model, message: Message, context: Context): Update
 				: { model },
 		FailedLoadKeys: ({ orgId }) =>
 			model.orgId === orgId ? { model: { ...model, keys: { _tag: "Failed" } } } : { model },
+		// The open read and every poll: the overview follows the clock, not the window at open.
 		ResolvedWindow: ({ orgId, window }) =>
-			model.orgId === orgId && model.popover.isOpen && model.window === null
+			model.orgId === orgId && model.popover.isOpen
 				? {
 						model: { ...model, window },
 						commands: [
@@ -203,20 +204,11 @@ export const update = (model: Model, message: Message, context: Context): Update
 				: { model },
 		SucceededLoadOverview: ({ orgId, window, services }) =>
 			isCurrent(model, orgId, window) ? { model: { ...model, services } } : { model },
-		FailedLoadOverview: ({ orgId, window }) =>
-			isCurrent(model, orgId, window) ? { model: { ...model, services: [] } } : { model },
+		// One failed poll keeps the services already found, so the pill does not un-detect them.
+		FailedLoadOverview: () => ({ model }),
 		TickedPoll: () =>
 			model.popover.isOpen && model.window !== null && model.orgId !== null
-				? {
-						model,
-						commands: [
-							FetchOverview({
-								orgId: model.orgId,
-								window: model.window,
-								pinnedNamespace: context.pinnedNamespace,
-							}),
-						],
-					}
+				? { model, commands: [ResolveWindow({ orgId: model.orgId })] }
 				: { model },
 		GotCopyMessage: ({ field, message: child }) => copyStep(model, field, child),
 		ClickedRevealPublicKey: () => ({

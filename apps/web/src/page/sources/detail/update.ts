@@ -52,9 +52,15 @@ export const sourceOf = (model: Model): Option.Option<V2Source> =>
 const loadList = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	if (model.sourceId === null) return { model }
 	const key = sourcesListKey(context.orgId)
-	return Option.match(Keyed.request(model.list, key, mode), {
+	// `Refresh` is a write's re-read: it supersedes a read in flight that may predate the write.
+	const next =
+		mode === "Refresh" ? Option.some(Keyed.supersede(model.list, key)) : Keyed.request(model.list, key, mode)
+	return Option.match(next, {
 		onNone: () => ({ model }),
-		onSome: (list) => ({ model: { ...model, list }, commands: [FetchSourceList({ key, refresh: mode === "Refresh" })] }),
+		onSome: (list) => ({
+			model: { ...model, list },
+			commands: [FetchSourceList({ key: list.key ?? key, refresh: mode === "Refresh" })],
+		}),
 	})
 }
 

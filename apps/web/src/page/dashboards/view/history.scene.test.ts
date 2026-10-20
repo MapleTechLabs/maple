@@ -1,6 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
 import { Option, Result, Schema } from "effect"
+import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { type PageContext } from "../../contract"
 import { FetchSnapshot, FetchVersions, RestoreVersion } from "./command-history"
@@ -46,7 +47,7 @@ const withVersions = (): Model =>
 		Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
 		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
 		openHistoryMessage,
-		Message.CompletedFetchVersions({ result: Result.succeed([version]) }),
+		Message.CompletedFetchVersions({ generation: 1, result: Result.succeed([version]) }),
 	].reduce((model, message) => pageUpdate(model, message).model, init(ROUTE, context).model)
 
 describe("dashboard version history", () => {
@@ -78,5 +79,15 @@ describe("dashboard version history", () => {
 		expect(done.model.history.previewed).toBeNull()
 		expect(names(done.commands)).toContain(FetchVersions.name)
 		expect(done.outMessage?._tag).toBe("RequestedToast")
+	})
+
+	test("a version list read before a restore is dropped when it lands after the re-read", () => {
+		const previewed = pageUpdate(withVersions(), Message.ClickedVersion({ versionId: version.id })).model
+		const confirmed = pageUpdate(previewed, Message.ConfirmedRestore()).model
+		const done = pageUpdate(confirmed, Message.CompletedRestore({ versionNumber: 2, error: null })).model
+		const restoredRow = { ...version, id: "ver_restored", versionNumber: 3, isRestore: true }
+		const fresh = pageUpdate(done, Message.CompletedFetchVersions({ generation: 2, result: Result.succeed([restoredRow, version]) })).model
+		const late = pageUpdate(fresh, Message.CompletedFetchVersions({ generation: 1, result: Result.succeed([version]) })).model
+		expect(AsyncData.getOrElse(late.history.versions, () => []).map((row) => row.id)).toEqual(["ver_restored", version.id])
 	})
 })

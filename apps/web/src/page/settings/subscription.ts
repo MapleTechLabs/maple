@@ -11,6 +11,7 @@ import { Message as DataPlatformMessage } from "./data-platform/model"
 import { isRunActive } from "./data-platform/update"
 import { Message as AutomationMessage } from "./automation/model"
 import { destinationRows } from "../alerts/shared/collections"
+import { collectionLoadFailed } from "../alerts/shared/collection-load"
 import { rowToAlertDestinationDocument } from "@maple/web-data/collections/alerts"
 import type { Model } from "./model"
 import { pollTicks } from "../../data/poll"
@@ -55,6 +56,18 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 		{
 			modelToDependencies: ({ model, context }) => ({ orgId: context.orgId, isReading: readsApiKeys(model) }),
 			dependenciesToStream: ({ orgId, isReading }) => (isReading ? apiKeyRows(orgId, (rows) => Message.UpdatedApiKeys({ orgId, rows })) : Stream.empty),
+		},
+	),
+	/** `useCollectionLoadFailed` while a tab waits on the first `api_keys` answer. */
+	apiKeysLoad: entry(
+		{ orgId: Schema.String, isWatching: Schema.Boolean },
+		{
+			modelToDependencies: ({ model, context }) => ({
+				orgId: context.orgId,
+				isWatching: readsApiKeys(model) && model.apiKeys === null && !model.isApiKeysLoadFailed,
+			}),
+			dependenciesToStream: ({ orgId, isWatching }) =>
+				isWatching ? collectionLoadFailed(`api_keys:${orgId}`, () => Message.FailedLoadApiKeys({ orgId })) : Stream.empty,
 		},
 	),
 	/** `useAlertDestinationsList()` while the Automation tab routes to them. */
