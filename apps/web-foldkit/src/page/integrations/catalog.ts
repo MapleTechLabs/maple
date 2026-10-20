@@ -159,6 +159,11 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 	...CHAT_ENTRIES,
 ]
 
+/** What `/integrations` lists: chat and alert connectors. Data integrations live under Sources. */
+export const HUB_CATALOG: ReadonlyArray<CatalogEntry> = CATALOG.filter(
+	(entry) => entry.category === "notifications",
+)
+
 export const catalogEntry = (id: IntegrationId): CatalogEntry =>
 	Option.getOrElse(
 		Array.findFirst(CATALOG, (entry) => entry.id === id),

@@ -1,5 +1,5 @@
 import type { PushSourcePlatform, SourcePlatform } from "@maple/domain/primitives"
-import { PULL_SOURCE_PLATFORMS, PUSH_SOURCE_PLATFORMS } from "@maple/domain/primitives"
+import { PUSH_SOURCE_PLATFORMS } from "@maple/domain/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "../../../ui/icon"
 
@@ -50,7 +50,6 @@ export const PLATFORMS = {
 export const platformMeta = (platform: SourcePlatform): PlatformMeta => PLATFORMS[platform]
 
 export const PUSH_PLATFORMS: ReadonlyArray<PushSourcePlatform> = PUSH_SOURCE_PLATFORMS
-export const PULL_PLATFORMS = PULL_SOURCE_PLATFORMS
 
 /** Source name prefilled on create: the platform label. */
 export const defaultSourceName = (platform: PushSourcePlatform): string => PLATFORMS[platform].label

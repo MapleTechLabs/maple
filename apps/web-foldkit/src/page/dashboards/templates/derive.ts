@@ -59,7 +59,7 @@ export const relativeAge = (iso: string | null, now: number): string | null => {
 
 /** Where a gated template sends you to fix the gap (`setupDestination`). */
 export const setupHref = (template: V2DashboardTemplate): string =>
-	template.requirement?.kind === "integration" ? "/integrations" : "/settings?tab=ingestion"
+	template.requirement?.kind === "integration" ? "/sources/new" : "/settings?tab=ingestion"
 
 const TEMPLATE_ICONS = new Map<string, IconName>([
 	["service-health", "PulseIcon"],

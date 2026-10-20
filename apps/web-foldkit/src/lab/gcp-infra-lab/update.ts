@@ -14,7 +14,7 @@ type Return = Update.Return<Model, Message, Resources>
 /** "Manage connections" is a link out of the lab, as legacy's `<Link to="/integrations">`. */
 export const LoadIntegrationsPage = Command.define("LoadGcpIntegrationsPage", {
 	messages: [Message.CompletedLoadIntegrationsPage],
-	execute: load(hrefOf(AppRoute.Integrations({ search: { integration: "gcp" } }))).pipe(
+	execute: load(hrefOf(AppRoute.SourcesNew({ search: { integration: "gcp" } }))).pipe(
 		Effect.as(Message.CompletedLoadIntegrationsPage()),
 	),
 })

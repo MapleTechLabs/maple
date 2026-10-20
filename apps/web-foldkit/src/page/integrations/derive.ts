@@ -9,7 +9,7 @@ import {
 import { Array, DateTime, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Keyed } from "../../data/keyed"
-import { CATALOG, chatIntegrationId, type IntegrationId } from "./catalog"
+import { chatIntegrationId, HUB_CATALOG, type IntegrationId } from "./catalog"
 import { hasBringYourOwnCloudAddOn } from "@maple/web/lib/billing/plan-gating"
 import type { Visibility } from "../settings/nav"
 import type { Model, Statuses } from "./model"
@@ -476,7 +476,7 @@ export const summaryOf = (
 	statuses: Statuses,
 	nowMs: number,
 ): { readonly connected: number; readonly attention: number } | null => {
-	const values = CATALOG.map((entry) => overviewOf(statuses, nowMs, entry.id))
+	const values = HUB_CATALOG.map((entry) => overviewOf(statuses, nowMs, entry.id))
 	if (values.some((value) => value === null)) return null
 	const connected = Array.filter(values, (value): value is ConnectedOverview => value?.kind === "connected")
 	if (connected.length === 0) return null

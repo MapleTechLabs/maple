@@ -53,7 +53,7 @@ const noCiRuns = (h: H): Html =>
 				{
 					variant: "outline",
 					size: "sm",
-					href: hrefOf(AppRoute.Integrations({ search: { integration: "github" } })),
+					href: hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } })),
 				},
 				["Open the GitHub integration"],
 			),

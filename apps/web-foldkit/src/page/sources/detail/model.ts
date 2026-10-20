@@ -13,6 +13,7 @@ import * as Menu from "../../../ui/menu"
 import { SourceList } from "../kit/data"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
+import { Model as IntegrationModel } from "../../integrations/model"
 
 // `/sources/$sourceId` (apps/web/src/routes/sources/$sourceId.tsx).
 
@@ -55,5 +56,7 @@ export const Model = Schema.Struct({
 	/** The Setup tab's snippet tabs and copy buttons; `null` while another tab shows. */
 	setup: Schema.NullOr(Setup.Model),
 	settings: Schema.NullOr(SettingsForm),
+	/** An integration source's integration (its card, connect flow and reads); `null` for push sources. */
+	connection: Schema.NullOr(IntegrationModel),
 })
 export type Model = typeof Model.Type

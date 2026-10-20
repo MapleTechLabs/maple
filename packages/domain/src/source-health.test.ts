@@ -49,7 +49,12 @@ describe("integrationSourceHealth", () => {
 				},
 			],
 		})
-		expect(health).toEqual({ status: "stale", lastDataAt: now - HOUR, problem: "1 of 2 stale" })
+		expect(health).toEqual({
+			status: "stale",
+			lastDataAt: now - HOUR,
+			problem: "1 of 2 stale",
+			resources: { total: 2, unhealthy: 1 },
+		})
 	})
 
 	it("is disconnected once the integration is gone", () => {
@@ -129,6 +134,7 @@ describe("githubInstallationHealth", () => {
 			status: "healthy",
 			lastDataAt: now - HOUR,
 			problem: null,
+			resources: { total: 2, unhealthy: 0 },
 		})
 		expect(githubInstallationHealth(entry, "globex")).toEqual({
 			status: "failing",

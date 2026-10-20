@@ -31,6 +31,7 @@ const source = (fields: Readonly<Record<string, unknown>> = {}) =>
 		platform: "nodejs",
 		is_default: false,
 		key_prefix: "maple_src_Q7xZa",
+		integration_id: null,
 		status: "active",
 		allowed_signals: ["traces", "logs"],
 		rate_limit_rps: 200,
@@ -42,14 +43,14 @@ const source = (fields: Readonly<Record<string, unknown>> = {}) =>
 		rolled_at: null,
 		created_at: "2026-09-01T12:00:00.000Z",
 		updated_at: "2026-09-01T12:00:00.000Z",
-		health: { status: "healthy", last_data_at: "2026-10-01T11:56:00.000Z", problem: null },
+		health: { status: "healthy", last_data_at: "2026-10-01T11:56:00.000Z", problem: null, resources: null },
 		...fields,
 	})
 
-const route = (tab?: "setup" | "settings", sourceId = PUBLIC_ID) =>
+const route = (tab?: "setup" | "connection" | "settings", sourceId = PUBLIC_ID) =>
 	AppRoute.Source({ sourceId, search: tab === undefined ? {} : { tab } })
 
-const loaded = (row: V2Source, tab?: "setup" | "settings"): Model => {
+const loaded = (row: V2Source, tab?: "setup" | "connection" | "settings"): Model => {
 	const entered = init(route(tab), context).model
 	return [
 		Message.ReadClock({ nowMs: NOW }),
@@ -161,5 +162,68 @@ describe("source detail tabs", () => {
 		const away = routeChanged(edited, route(), context).model
 		expect(away.settings).toBeNull()
 		expect(routeChanged(away, route("settings"), context).model.settings?.name).toBe("Checkout API")
+	})
+})
+
+describe("integration sources", () => {
+	const prometheus = (fields: Readonly<Record<string, unknown>> = {}) =>
+		source({
+			name: "node-exporter",
+			platform: "prometheus",
+			key_prefix: null,
+			integration_id: null,
+			health: {
+				status: "stale",
+				last_data_at: "2026-09-30T12:00:00.000Z",
+				problem: "No scrape in 10 minutes",
+				resources: null,
+			},
+			...fields,
+		})
+
+	test("a Prometheus source opens its own target and reads that target's checks", () => {
+		const target = encodePublicId(PublicIdPrefixes.scrapeTarget, "0199a0e1-0000-7000-8000-0000000000aa")
+		const entered = init(route("connection"), context).model
+		const step = pageUpdate(
+			pageUpdate(entered, Message.ReadClock({ nowMs: NOW })).model,
+			Message.CompletedFetchList({
+				key: entered.list.key ?? "",
+				result: Result.succeed([prometheus({ integration_id: target })]),
+			}),
+		)
+		expect(step.model.connection?.prometheusCard.selectedId).toBe("0199a0e1-0000-7000-8000-0000000000aa")
+		expect(names(step.commands)).toContain("FetchScrapeTargetChecks")
+	})
+
+	test("the list answer builds the integration and reads its statuses", () => {
+		const entered = init(route(), context).model
+		const step = pageUpdate(
+			pageUpdate(entered, Message.ReadClock({ nowMs: NOW })).model,
+			Message.CompletedFetchList({
+				key: entered.list.key ?? "",
+				result: Result.succeed([prometheus()]),
+			}),
+		)
+		expect(step.model.connection).not.toBeNull()
+		expect(names(step.commands)).toEqual(
+			expect.arrayContaining(["FetchSourceUsage", "LoadIntegrationsScrapeTargets"]),
+		)
+	})
+
+	test("Connection replaces Setup, and the overview says when it last synced", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(prometheus())),
+			resolveTheme,
+			expectView(role("tab", { name: "Connection" })).toExist(),
+			expectView(role("tab", { name: "Setup" })).not.toExist(),
+			expectView(text("Last sync")).toExist(),
+		)
+	})
+
+	test("a Setup link opens Connection on an integration source, and the reverse on a push source", () => {
+		expect(loaded(prometheus(), "setup").tab).toBe("connection")
+		expect(loaded(source(), "connection").tab).toBe("setup")
+		expect(loaded(source()).connection).toBeNull()
 	})
 })

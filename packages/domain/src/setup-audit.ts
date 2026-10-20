@@ -832,7 +832,7 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		title: "Source repositories are syncing",
 		severity: "warn",
 		fixHint:
-			"Re-check the repository's installation in Settings → Integrations; commit linking and release markers depend on it.",
+			"Re-check the repository's installation in Sources; commit linking and release markers depend on it.",
 		evaluate: ({ config }) => {
 			const failing = config.vcsRepositories
 				.filter((repository) => repository.syncStatus === "error")
@@ -856,7 +856,7 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		title: "Railway metrics are being collected",
 		severity: "warn",
 		fixHint:
-			"Settings → Integrations → Railway: save a new API token if Railway rejected it; a stale environment usually means the token lost access to its project.",
+			"Sources → Railway: save a new API token if Railway rejected it; a stale environment usually means the token lost access to its project.",
 		evaluate: ({ config }) => {
 			const affected = inventoryFindings(config.integrationInventory, "railway")
 			return affected.length === 0
@@ -873,7 +873,7 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		title: "PlanetScale is fully set up and polling",
 		severity: "warn",
 		fixHint:
-			"Settings → Integrations → PlanetScale: finish picking the organization, or reconnect with the missing permissions.",
+			"Sources → PlanetScale: finish picking the organization, or reconnect with the missing permissions.",
 		evaluate: ({ config }) => {
 			const affected = inventoryFindings(config.integrationInventory, "planetscale")
 			return affected.length === 0
@@ -906,7 +906,7 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		category: "integrations",
 		title: "Prometheus scrape targets are reachable",
 		severity: "warn",
-		fixHint: "Verify the target URL and credentials in Settings → Integrations → Prometheus.",
+		fixHint: "Verify the target URL and credentials in Sources → Prometheus.",
 		evaluate: ({ config }) => {
 			const failing = config.scrapeTargets
 				.filter((target) => target.enabled && target.lastScrapeError !== null)

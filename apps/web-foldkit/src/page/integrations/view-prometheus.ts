@@ -331,9 +331,16 @@ const placeholder = (h: H): Html =>
 	])
 
 /** `ScrapeTargetsSection`: the list, the selected target's details, and its dialogs. */
-export const scrapeTargetsSection = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
+/** `focusId`: a source's own target (`/sources/$id`), shown alone instead of the whole list. */
+export const scrapeTargetsSection = (
+	h: H,
+	model: Model,
+	timeZone: string,
+	focusId: string | null = null,
+): ReadonlyArray<Html> => {
 	const data = model.statuses.scrapeTargets.data
-	const targets = prometheusTargets(model)
+	const all = prometheusTargets(model)
+	const targets = focusId === null ? all : all.filter((target) => target.id === focusId)
 	const isLoaded = AsyncData.isSuccess(data) || AsyncData.isRefreshing(data)
 	const isEmpty = isLoaded && targets.length === 0
 	const selected = targets.find((target) => target.id === model.prometheusCard.selectedId)

@@ -9,7 +9,14 @@ import type * as Chart from "../../../charts/chart"
 import { alert, alertDescription, alertTitle } from "../../../ui/alert"
 import { panel } from "../../../ui/panel"
 import { skeleton } from "../../../ui/skeleton"
-import { hasToken, MODE_LABELS, pausedLabel, rateLimitLabel, signalsSummary } from "../kit/shared"
+import {
+	integrationPlatformOf,
+	hasToken,
+	MODE_LABELS,
+	pausedLabel,
+	rateLimitLabel,
+	signalsSummary,
+} from "../kit/shared"
 import { sourceStatusBadge, sourceStatusLabel } from "../kit/status"
 import { METRICS_ONLY, usageRows, usageTotals } from "./derive"
 import { Message } from "./message"
@@ -172,8 +179,10 @@ export const overviewTab = (h: H, model: Model, source: V2Source, timeZone: stri
 					),
 					statCard(
 						h,
-						"Last data",
-						source.health.last_data_at === null ? "Never" : formatRelativeTime(source.health.last_data_at, nowMs),
+						integrationPlatformOf(source) === null ? "Last data" : "Last sync",
+						source.health.last_data_at === null
+							? "Never"
+							: formatRelativeTime(source.health.last_data_at, nowMs),
 						hasToken(source) || source.is_default
 							? "Last request the gateway accepted"
 							: "Last successful collection",

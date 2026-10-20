@@ -343,9 +343,12 @@ export const DashboardSearch = Schema.StructWithRest(
 // apps/web/src/routes/sources/new.tsx, $sourceId.tsx (`SOURCE_TABS`, components/sources/source-tabs.ts)
 export const SourcesNewSearch = Schema.Struct({
 	platform: Schema.optional(PushSourcePlatform),
+	/** A data integration's connect step. A plain string: OAuth callbacks return here, so an unknown id falls back to the picker. */
+	integration: Schema.optional(Schema.String),
 })
 
-export const SOURCE_TABS = ["overview", "setup", "settings"] as const
+/** Push sources show Setup, integration sources show Connection; a link to the other one falls back. */
+export const SOURCE_TABS = ["overview", "setup", "connection", "settings"] as const
 export type SourceTab = (typeof SOURCE_TABS)[number]
 
 export const SourceSearch = Schema.Struct({

@@ -166,7 +166,7 @@ export const repositoryList = <M>(h: HtmlBuilder<M>, options: RepoListOptions<M>
 			action: h.a(
 				[
 					h.Class("hover:text-foreground hover:underline"),
-					h.Href(hrefOf(AppRoute.Integrations({ search: {} }))),
+					h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
 				],
 				["Manage GitHub access"],
 			),

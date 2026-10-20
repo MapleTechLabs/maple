@@ -188,7 +188,7 @@ const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntr
 					[
 						h.a(
 							[
-								h.Href("/integrations"),
+								h.Href("/sources/new?integration=github"),
 								h.Class(
 									"inline-flex items-center gap-1 font-medium text-primary hover:underline",
 								),

@@ -171,7 +171,9 @@ describe("v2 sources", () => {
 				status: "pending",
 				last_data_at: null,
 				problem: null,
+				resources: null,
 			})
+			expect(listed.body.data[0].integration_id).toBeNull()
 			expect(listed.body.data[1].id).toBe(id)
 			expect(listed.body.data[1]).not.toHaveProperty("secret")
 

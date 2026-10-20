@@ -34,24 +34,37 @@ const errorsSearchOf = ({ search }: typeof AppRoute.ErrorIssues.Type): typeof Er
 	)
 }
 
+/** Integrations that bring data in; their pages moved under Sources (`page/integrations/embed.ts`). */
+const DATA_INTEGRATIONS: ReadonlySet<string> = new Set([
+	"cloudflare",
+	"prometheus",
+	"planetscale",
+	"gcp",
+	"railway",
+	"warpstream",
+	"github",
+])
+
 const redirect = (to: AppRoute, isReplace: boolean) =>
 	Option.some(Redirect.make({ url: hrefOf(to), isReplace }))
 
-/** The `beforeLoad` redirects of legacy route files (connectors, developer, infra, errors/issues). */
+/** The `beforeLoad` redirects of legacy route files (connectors, developer, infra, errors/issues), and moved integrations. */
 export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 	AppRoute.matchOrElse<Option.Option<Redirect>>(
 		route,
 		{
 			Connectors: ({ search }) =>
 				redirect(
-					AppRoute.Integrations({
-						search:
-							search.tab === "prometheus" || search.tab === "cloudflare"
-								? { integration: search.tab }
-								: {},
-					}),
+					search.tab === "prometheus" || search.tab === "cloudflare"
+						? AppRoute.SourcesNew({ search: { integration: search.tab } })
+						: AppRoute.Integrations({ search: {} }),
 					false,
 				),
+			/** Old links and OAuth returns to a data integration's page open its step under Sources. */
+			Integrations: ({ search }) =>
+				search.integration !== undefined && DATA_INTEGRATIONS.has(search.integration)
+					? redirect(AppRoute.SourcesNew({ search: { integration: search.integration } }), true)
+					: Option.none(),
 			Developer: ({ search }) =>
 				redirect(
 					AppRoute.Settings({

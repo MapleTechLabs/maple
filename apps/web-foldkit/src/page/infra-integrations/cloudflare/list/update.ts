@@ -232,7 +232,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				return {
 					...lifted,
 					outMessage: PageOutMessage.RequestedNavigation({
-						url: hrefOf(AppRoute.Integrations({ search: { integration: "cloudflare" } })),
+						url: hrefOf(AppRoute.SourcesNew({ search: { integration: "cloudflare" } })),
 						isReplace: false,
 					}),
 				}

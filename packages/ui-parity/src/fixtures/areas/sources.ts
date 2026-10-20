@@ -31,6 +31,7 @@ const health = (status: string, lastDataAt: string | null, problem: string | nul
 	status,
 	last_data_at: lastDataAt,
 	problem,
+	resources: null,
 })
 
 interface SourceFields {
@@ -39,6 +40,7 @@ interface SourceFields {
 	readonly platform: string
 	readonly createdAgoMs: number
 	readonly keyPrefix?: string | null
+	readonly integrationId?: string | null
 	readonly isDefault?: boolean
 	readonly description?: string | null
 	readonly status?: "active" | "paused" | "expired"
@@ -60,6 +62,7 @@ const source = (request: EndpointRequest, fields: SourceFields) => ({
 	platform: fields.platform,
 	is_default: fields.isDefault ?? false,
 	key_prefix: fields.keyPrefix ?? null,
+	integration_id: fields.integrationId ?? null,
 	status: fields.status ?? "active",
 	allowed_signals: fields.allowedSignals ?? null,
 	rate_limit_rps: fields.rateLimitRps ?? null,
@@ -129,6 +132,8 @@ const acmeSources = (request: EndpointRequest) => [
 		uuid: SOURCE_UUIDS.prometheus,
 		name: "Prometheus",
 		platform: "prometheus",
+		// The redis exporter scrape target (integrations.ts).
+		integrationId: encodePublicId(PublicIdPrefixes.scrapeTarget, fixtureUuid(0xd4, 2)),
 		createdAgoMs: 20 * DAY,
 		lastUsedAt: at(request, 2 * DAY),
 		health: health("stale", at(request, 2 * DAY), "No successful scrape in 2 days."),

@@ -1,20 +1,49 @@
-import type { PullSourcePlatform, PushSourcePlatform, SourcePlatform } from "@maple/domain/primitives"
+import type { PushSourcePlatform } from "@maple/domain/primitives"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
-import { PLATFORMS, platformTile, PULL_PLATFORMS, PUSH_PLATFORMS } from "../kit/platforms"
+import { statusDot } from "../../../ui/status-dot"
+import { DATA_INTEGRATIONS, type DataIntegration } from "../../integrations/embed"
+import { HEALTH_TONE, overviewOf } from "../../integrations/derive"
+import { PLATFORMS, platformTile, PUSH_PLATFORMS, type PlatformMeta } from "../kit/platforms"
 import { Message } from "./message"
+import type { Model } from "./model"
 
 // `PlatformPicker` (apps/web/src/components/sources/platform-picker.tsx): step 1.
 
 type H = HtmlBuilder<Message>
 
-const platformCard = (h: H, platform: SourcePlatform, onSelect: Message): Html => {
-	const meta = PLATFORMS[platform]
-	return h.button(
+/** WarpStream is a Prometheus target with its own setup, so it has no source platform of its own. */
+const WARPSTREAM: PlatformMeta = {
+	label: "WarpStream",
+	description: "Cluster metrics via Prometheus",
+	icon: "WarpStreamIcon",
+}
+
+export const integrationMeta = (integration: DataIntegration): PlatformMeta =>
+	integration === "warpstream" ? WARPSTREAM : PLATFORMS[integration]
+
+const tile = (h: H, meta: PlatformMeta): Html =>
+	h.span(
 		[
-			h.Key(platform),
+			h.AriaHidden(true),
+			h.Class("bg-card inline-flex size-10 shrink-0 items-center justify-center rounded-lg border"),
+		],
+		[icon(h, meta.icon, { size: 18 })],
+	)
+
+const card = (
+	h: H,
+	key: string,
+	meta: PlatformMeta,
+	leading: Html,
+	onSelect: Message,
+	badge: Html | null,
+): Html =>
+	h.button(
+		[
+			h.Key(key),
 			h.Type("button"),
 			h.OnClick(onSelect),
 			h.Class(
@@ -25,7 +54,7 @@ const platformCard = (h: H, platform: SourcePlatform, onSelect: Message): Html =
 			),
 		],
 		[
-			platformTile(h, platform),
+			leading,
 			h.span(
 				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
 				[
@@ -33,11 +62,25 @@ const platformCard = (h: H, platform: SourcePlatform, onSelect: Message): Html =
 					h.span([h.Class("text-muted-foreground truncate text-xs")], [meta.description]),
 				],
 			),
+			...(badge === null ? [] : [badge]),
 			icon(h, "ChevronRightIcon", {
 				size: 14,
 				className: "text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100",
 			}),
 		],
+	)
+
+/** "Connected" on an integration that already feeds a source, toned by its health. */
+const connectedBadge = (h: H, model: Model, integration: DataIntegration): Html | null => {
+	const overview = overviewOf(model.integrations.statuses, model.integrations.nowMs, integration)
+	if (overview?.kind !== "connected") return null
+	return h.span(
+		[
+			h.Class(
+				"inline-flex shrink-0 items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-2xs text-muted-foreground",
+			),
+		],
+		[statusDot(h, { tone: HEALTH_TONE[overview.health] }), "Connected"],
 	)
 }
 
@@ -47,8 +90,8 @@ const section = (h: H, title: string, cards: ReadonlyArray<Html>): Html =>
 		[eyebrow(h, {}, [title]), h.div([h.Class("grid gap-2 sm:grid-cols-2 xl:grid-cols-3")], cards)],
 	)
 
-/** Push platforms create a source here, pull platforms open their integration. */
-export const platformPicker = (h: H): Html =>
+/** Push platforms create a source here; integrations open their connect step. */
+export const platformPicker = (h: H, model: Model): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-8")],
 		[
@@ -56,14 +99,28 @@ export const platformPicker = (h: H): Html =>
 				h,
 				"Send with OpenTelemetry",
 				PUSH_PLATFORMS.map((platform: PushSourcePlatform) =>
-					platformCard(h, platform, Message.ClickedPushPlatform({ platform })),
+					card(
+						h,
+						platform,
+						PLATFORMS[platform],
+						platformTile(h, platform),
+						Message.ClickedPushPlatform({ platform }),
+						null,
+					),
 				),
 			),
 			section(
 				h,
 				"Connect an integration",
-				PULL_PLATFORMS.map((platform: PullSourcePlatform) =>
-					platformCard(h, platform, Message.ClickedPullPlatform({ platform })),
+				DATA_INTEGRATIONS.map((integration) =>
+					card(
+						h,
+						integration,
+						integrationMeta(integration),
+						tile(h, integrationMeta(integration)),
+						Message.ClickedIntegration({ integration }),
+						connectedBadge(h, model, integration),
+					),
 				),
 			),
 		],

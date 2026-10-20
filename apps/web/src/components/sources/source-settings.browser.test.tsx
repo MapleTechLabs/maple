@@ -28,6 +28,7 @@ const source = (overrides: Record<string, unknown>) =>
 		platform: "nodejs",
 		is_default: false,
 		key_prefix: "maple_src_Q7xZa",
+		integration_id: null,
 		status: "active",
 		allowed_signals: ["traces"],
 		rate_limit_rps: null,
@@ -39,7 +40,7 @@ const source = (overrides: Record<string, unknown>) =>
 		rolled_at: "2026-07-01T12:00:00.000Z",
 		created_at: "2026-07-01T12:00:00.000Z",
 		updated_at: "2026-07-01T12:00:00.000Z",
-		health: { status: "pending", last_data_at: null, problem: null },
+		health: { status: "pending", last_data_at: null, problem: null, resources: null },
 		...overrides,
 	})
 
@@ -74,6 +75,7 @@ describe("SourceSettings", () => {
 				source={source({
 					is_default: true,
 					key_prefix: null,
+					integration_id: null,
 					expires_at: null,
 					allowed_signals: null,
 				})}

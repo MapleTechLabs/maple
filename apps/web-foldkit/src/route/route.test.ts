@@ -48,6 +48,17 @@ describe("routes", () => {
 		)
 	})
 
+	test("a data integration's old page opens its step under Sources; chat connectors stay", () => {
+		expect(routeRedirect(parse("/integrations?integration=cloudflare"))).toEqual(
+			Option.some({ url: "/sources/new?integration=cloudflare", isReplace: true }),
+		)
+		expect(routeRedirect(parse("/connectors?tab=prometheus"))).toEqual(
+			Option.some({ url: "/sources/new?integration=prometheus", isReplace: false }),
+		)
+		expect(routeRedirect(parse("/integrations?integration=chat-slack"))).toEqual(Option.none())
+		expect(routeRedirect(parse("/integrations"))).toEqual(Option.none())
+	})
+
 	test("an unknown path is NotFound", () => {
 		expect(parse("/nope/nope")).toEqual(AppRoute.NotFound({ path: "/nope/nope" }))
 	})

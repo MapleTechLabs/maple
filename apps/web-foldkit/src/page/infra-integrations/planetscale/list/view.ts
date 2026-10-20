@@ -82,7 +82,7 @@ const noDatabases = (h: H): Html =>
 					{
 						variant: "outline",
 						size: "sm",
-						href: hrefOf(AppRoute.Integrations({ search: { integration: "planetscale" } })),
+						href: hrefOf(AppRoute.SourcesNew({ search: { integration: "planetscale" } })),
 					},
 					["Check the connection"],
 				),
