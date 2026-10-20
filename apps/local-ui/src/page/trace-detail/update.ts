@@ -251,4 +251,5 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		GotAttributesMessage: () => panelStep(model, context, message),
 		CompletedWriteClipboard: () => panelStep(model, context, message),
 		ElapsedCopyStatus: () => panelStep(model, context, message),
+		CompletedFocusSpanPanel: () => ({ model }),
 	})

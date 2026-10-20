@@ -11,7 +11,7 @@ import { serviceDot } from "@maple/web/ui/values"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { hrefFor } from "../../route"
 import type { MetricEntry } from "./catalog"
-import { CARD_ROW_HEIGHT, columnsFor, previewValues, sparklineValues } from "./derive"
+import { CARD_ROW_HEIGHT, columnsFor, type GridViewport, previewValues, sparklineValues, visibleRows } from "./derive"
 import type { SparklinePoint } from "./fetch"
 import { MeasureGrid } from "./command"
 import { Message } from "./message"
@@ -31,7 +31,7 @@ export type GridInputs = Readonly<{
 	isFailed: boolean
 	query: URLSearchParams
 	isDimmed: boolean
-	width: number
+	viewport: GridViewport
 	theme: ThemeColors
 }>
 
@@ -114,20 +114,16 @@ const previewCard = (h: H, inputs: GridInputs, entry: MetricEntry): Html => {
 	)
 }
 
-/**
- * Up to 500 cards in rows of the measured column count, each row placed where the virtualizer
- * would put it. Every row is drawn: the capture grows the viewport until nothing scrolls.
- * TODO(virtualize): rows outside the viewport are not windowed.
- */
+/** Up to 500 cards in rows of the measured column count; only the rows near the viewport are drawn. */
 export const metricGrid = (h: H, inputs: GridInputs): Html => {
-	const columns = columnsFor(inputs.width)
+	const columns = columnsFor(inputs.viewport.width)
 	const rowCount = Math.ceil(inputs.entries.length / columns)
 	return h.div(
 		[h.Class(cn("h-full overflow-auto", inputs.isDimmed && "opacity-60 transition-opacity")), h.OnMount(MeasureGrid())],
 		[
 			h.div(
 				[h.Class("relative m-4"), h.Style({ height: `${rowCount * CARD_ROW_HEIGHT}px` })],
-				Array.from({ length: rowCount }, (_, index) =>
+				visibleRows(rowCount, inputs.viewport).map((index) =>
 					h.div(
 						[
 							h.Key(`row-${index}`),

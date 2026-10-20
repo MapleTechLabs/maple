@@ -5,6 +5,7 @@ import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
 import { Copies } from "../kit/copies"
 import { MetricsListData } from "./catalog"
+import { GridViewport } from "./derive"
 import { MetricSparkline, SummaryRow } from "./fetch"
 
 /** A debounced text input: what is typed, a version that retires timers, and the last sent value. */
@@ -24,8 +25,8 @@ export const Model = Schema.TaggedStruct("MetricsPage", {
 	search: Draft,
 	sections: FilterSections.Model,
 	isRefreshing: Schema.Boolean,
-	/** The grid's scroll container width (`ResizeObserver`); 0 before measured. */
-	gridWidth: Schema.Number,
+	/** The grid's scroller: width picks the columns, height and offset the drawn rows; 0 before measured. */
+	grid: GridViewport,
 	themeColors: Schema.NullOr(ThemeColors),
 	chartRuntime: ChartRuntime,
 	copies: Copies,

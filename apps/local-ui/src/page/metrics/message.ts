@@ -8,6 +8,7 @@ import { CachedOf } from "../../data/cached"
 import { LoadFailure } from "../../data/local-query"
 import { ListRequest, SparklinesRequest, SummaryRequest } from "./requests"
 import { MetricsListData } from "./catalog"
+import { GridViewport } from "./derive"
 import { MetricSparkline, SummaryRow } from "./fetch"
 
 export const FacetParam = Schema.Literals(["type", "service"])
@@ -36,7 +37,7 @@ export const Message = defineMessageUnion({
 	ClickedClearFilters: {},
 	ChangedRange: { range: Schema.String },
 	ClickedWidenRange: {},
-	MeasuredGrid: { width: Schema.Number },
+	MeasuredGrid: { viewport: GridViewport },
 	ResolvedThemeColors: { colors: ThemeColors },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },

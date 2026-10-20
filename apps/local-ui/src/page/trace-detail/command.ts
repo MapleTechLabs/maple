@@ -77,6 +77,20 @@ export const WriteClipboard = Command.define("WriteLocalSpanClipboard", {
 })
 
 /**
+ * A deep-linked panel opens with nothing focused, so the page's Escape handler would never hear
+ * the key: take focus then. A click keeps focus where it was (the timeline's keyboard navigation).
+ */
+export const FocusSpanPanel = Mount.define("FocusLocalSpanPanel", {
+	messages: [Message.CompletedFocusSpanPanel],
+	execute: ({ element }) =>
+		Effect.sync(() => {
+			if (element instanceof HTMLElement && (document.activeElement === null || document.activeElement === document.body))
+				element.focus({ preventScroll: true })
+			return Message.CompletedFocusSpanPanel()
+		}),
+})
+
+/**
  * The pointer's viewport position over the page, at most once per frame (the timeline's
  * `onMouseMove` writes the tooltip position from a rAF).
  */

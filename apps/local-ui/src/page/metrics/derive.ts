@@ -2,6 +2,7 @@ import { type ChartWindow, chartWindow, parseClickHouseDateTime, type TimeBounds
 import { isCounter } from "../../lib/units"
 import type { MetricEntry } from "./catalog"
 import type { SparklineGroup, SparklinePoint } from "./fetch"
+import { Schema } from "effect"
 
 // Pure parts of the Metrics page.
 
@@ -50,3 +51,18 @@ export const columnsFor = (width: number): number => {
 
 /** Card height plus the grid gap, the virtualizer's row estimate. */
 export const CARD_ROW_HEIGHT = 124 + 12
+const ROW_OVERSCAN = 4
+
+export const GridViewport = Schema.Struct({ width: Schema.Number, height: Schema.Number, scrollTop: Schema.Number })
+export type GridViewport = typeof GridViewport.Type
+
+/** `useVirtualizer` (fixed rows, overscan 4): the row indexes to draw. Unmeasured, the first rows. */
+export const visibleRows = (rowCount: number, viewport: GridViewport): ReadonlyArray<number> => {
+	if (rowCount === 0) return []
+	const lastIndex = rowCount - 1
+	const start = Math.min(lastIndex, Math.floor(viewport.scrollTop / CARD_ROW_HEIGHT))
+	const end = Math.min(lastIndex, Math.max(start, Math.ceil((viewport.scrollTop + viewport.height) / CARD_ROW_HEIGHT) - 1))
+	const from = Math.max(start - ROW_OVERSCAN, 0)
+	const to = Math.min(end + ROW_OVERSCAN, lastIndex)
+	return Array.from({ length: to - from + 1 }, (_, offset) => from + offset)
+}

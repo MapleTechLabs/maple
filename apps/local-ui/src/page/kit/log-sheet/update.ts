@@ -1,6 +1,7 @@
 import * as AttributesPanel from "@maple/web/ui/attributes/attributes-panel"
 import * as Dialog from "@maple/web/ui/dialog"
 import * as Tabs from "@maple/web/ui/tabs"
+import * as Tooltip from "@maple/web/ui/tooltip"
 import type { Option } from "effect"
 import { Command, type Update } from "foldkit"
 import { updateCopy } from "../copies"
@@ -46,5 +47,12 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		GotCopyMessage: ({ id, message: child }) => {
 			const next = updateCopy(model.copies, id, child, (copyId, copyMessage) => Message.GotCopyMessage({ id: copyId, message: copyMessage }))
 			return { model: { ...model, copies: next.copies }, commands: next.commands }
+		},
+		GotTooltipMessage: ({ message: child }) => {
+			const next = Tooltip.update(model.tooltip, child)
+			return {
+				model: { ...model, tooltip: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (tooltip) => Message.GotTooltipMessage({ message: tooltip })),
+			}
 		},
 	})

@@ -12,6 +12,7 @@ import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { failureWithoutData, isPending } from "../../data/slot"
+import { FocusSpanPanel } from "./command"
 import { Message } from "./message"
 import { LOG_LIMIT, type PanelModel } from "./panel-model"
 import { attributesFailedNote, attributesPending, sectionView } from "./view-attributes"
@@ -19,7 +20,6 @@ import { spanLogs } from "./view-panel-logs"
 import { detailsView, headerView, summaryView } from "./view-panel-parts"
 
 // The span detail panel beside the waterfall.
-// TODO(focus): focus the panel on mount when nothing has focus.
 
 type H = HtmlBuilder<Message>
 
@@ -89,6 +89,7 @@ export const spanPanel = (h: H, panel: PanelModel, input: PanelViewInput): Html 
 	return h.aside(
 		[
 			h.Tabindex(-1),
+			h.OnMount(FocusSpanPanel()),
 			h.Class("flex h-full w-full shrink-0 flex-col overflow-hidden border-l bg-background focus:outline-none sm:w-[28rem]"),
 		],
 		[

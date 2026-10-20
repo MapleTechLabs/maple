@@ -44,5 +44,6 @@ export const Message = defineMessageUnion({
 	GotLogSheetMessage: { message: LogSheetMessage },
 	CompletedWriteClipboard: { id: Schema.String, generation: Schema.Number, isOk: Schema.Boolean },
 	ElapsedCopyStatus: { id: Schema.String, generation: Schema.Number },
+	CompletedFocusSpanPanel: {},
 })
 export type Message = typeof Message.Type

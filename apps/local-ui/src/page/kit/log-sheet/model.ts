@@ -1,6 +1,7 @@
 import * as AttributesPanel from "@maple/web/ui/attributes/attributes-panel"
 import * as Dialog from "@maple/web/ui/dialog"
 import * as Tabs from "@maple/web/ui/tabs"
+import * as Tooltip from "@maple/web/ui/tooltip"
 import { Option, Schema } from "effect"
 import { Copies } from "../copies"
 
@@ -27,8 +28,13 @@ export const logKey = (log: LocalLog): string =>
 	`${log.timestamp}|${log.serviceName}|${log.traceId}|${log.spanId}|${log.recordIdentity}`
 
 export const SHEET_ID = "log-detail-sheet"
+const TOOLTIP_ID = "log-detail-tooltip"
 
-/** The sheet: the log, its dialog, the body and error expansions, tabs, attributes, copies. */
+/** The copy buttons the sheet's one Tooltip serves. */
+export const JSON_COPY_TRIGGER = "log-detail-copy-json"
+export const PROMPT_COPY_TRIGGER = "log-detail-copy-prompt"
+
+/** The sheet: the log, its dialog, the body and error expansions, tabs, attributes, copies, tooltip. */
 export const Model = Schema.Struct({
 	log: LocalLog,
 	dialog: Dialog.Model,
@@ -37,6 +43,7 @@ export const Model = Schema.Struct({
 	tabs: Tabs.Model,
 	attributes: AttributesPanel.Model,
 	copies: Copies,
+	tooltip: Tooltip.Model,
 })
 export type Model = typeof Model.Type
 
@@ -55,6 +62,7 @@ export const withLog = (maybeSheet: Option.Option<Model>, log: LocalLog): Model 
 			tabs: Tabs.init({ idBase: 900, values: tabValuesOf(log), selected: "attributes" }),
 			attributes: AttributesPanel.init("log-detail-attributes"),
 			copies: {},
+			tooltip: Tooltip.init(TOOLTIP_ID),
 		}),
 		// A sheet that stays mounted keeps its tab and body expansion; the rest is per log.
 		onSome: (sheet) => {

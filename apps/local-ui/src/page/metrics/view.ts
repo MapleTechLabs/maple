@@ -65,7 +65,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			isFailed: Option.isSome(failureWithoutData(model.sparklines)),
 			query: queryOf(context.location),
 			isDimmed: model.list.isPlaceholder,
-			width: model.gridWidth,
+			viewport: model.grid,
 			theme,
 		})
 	}

@@ -72,20 +72,30 @@ export const WaitSearchDebounce = Command.define("WaitMetricsSearchDebounce", {
 	execute: ({ version }) => Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ version })),
 })
 
-/** The grid's `ResizeObserver`: its width picks the column count. */
+/** The grid scroller's `ResizeObserver` and scroll offset: columns and the drawn rows. */
 export const MeasureGrid = Mount.defineStream("MeasureLocalMetricsGrid", {
 	messages: [Message.MeasuredGrid],
 	execute: ({ element }) =>
 		Stream.callback<typeof Message.MeasuredGrid.Type>((queue) =>
 			Effect.acquireRelease(
 				Effect.sync(() => {
-					const observer = new ResizeObserver((entries) =>
-						Queue.offerUnsafe(queue, Message.MeasuredGrid({ width: entries[0]?.contentRect.width ?? 0 })),
-					)
+					if (!(element instanceof HTMLElement)) return () => undefined
+					const emit = () =>
+						Queue.offerUnsafe(
+							queue,
+							Message.MeasuredGrid({
+								viewport: { width: element.clientWidth, height: element.offsetHeight, scrollTop: element.scrollTop },
+							}),
+						)
+					const observer = new ResizeObserver(emit)
 					observer.observe(element)
-					return observer
+					element.addEventListener("scroll", emit, { passive: true })
+					return () => {
+						observer.disconnect()
+						element.removeEventListener("scroll", emit)
+					}
 				}),
-				(observer) => Effect.sync(() => observer.disconnect()),
+				(cleanup) => Effect.sync(cleanup),
 			).pipe(Effect.flatMap(() => Effect.never)),
 		),
 })
