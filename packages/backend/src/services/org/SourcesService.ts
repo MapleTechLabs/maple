@@ -96,7 +96,7 @@ const rowToSource = (row: SourceRow, now: number, pullHealth?: SourceHealthResul
 		rolledAt: isoOrNull(row.rolledAt),
 		createdAt: toIso(row.createdAt),
 		updatedAt: toIso(row.updatedAt),
-		health: toSourceHealth(pullHealth ?? pushSourceHealth({ status, lastUsedAt: row.lastUsedAt }, now)),
+		health: toSourceHealth(pullHealth ?? pushSourceHealth({ ...row, status }, now)),
 	})
 }
 

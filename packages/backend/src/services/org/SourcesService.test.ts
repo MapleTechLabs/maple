@@ -354,6 +354,39 @@ describe("SourcesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("a refusal newer than the last accepted request makes the source failing", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const keys = yield* SourcesService
+			const created = yield* keys.create(orgA, user, new CreateSourceRequest({ platform: "nodejs", name: "k" }))
+			yield* TestClock.adjust("1 hour")
+			const stamp = (column: string, ms: number) =>
+				Effect.promise(() =>
+					executeSql(
+						testDb,
+						`UPDATE sources SET ${column} = to_timestamp($1::bigint / 1000.0) WHERE id = $2`,
+						[ms, created.source.id],
+					),
+				)
+			yield* stamp("last_used_at", 1_000)
+			yield* stamp("last_rejected_at", 2_000)
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE sources SET last_rejection = $1 WHERE id = $2", [
+					"Rate limited at 200 requests per second",
+					created.source.id,
+				]),
+			)
+			const failing = (yield* keys.get(orgA, created.source.id)).health
+			assert.strictEqual(failing.status, "failing")
+			assert.strictEqual(failing.problem, "Rate limited at 200 requests per second")
+
+			// Data accepted after the refusal: the newest attempt decides.
+			yield* stamp("last_used_at", 3_000)
+			assert.strictEqual((yield* keys.get(orgA, created.source.id)).health.status, "healthy")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("lists one default source per org that only takes a name and description", () => {
 		const testDb = createTestDb(trackedDbs)
 

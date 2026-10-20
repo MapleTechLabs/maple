@@ -19,6 +19,22 @@ describe("pushSourceHealth", () => {
 	] as const)("%s with last data %s is %s", (status, lastUsedAt, expected) => {
 		expect(pushSourceHealth({ status, lastUsedAt }, now).status).toBe(expected)
 	})
+
+	it("fails while the newest attempt was refused, within a day", () => {
+		const refused = { status: "active" as const, lastUsedAt: now - 2 * HOUR, lastRejection: "Rate limited" }
+		expect(pushSourceHealth({ ...refused, lastRejectedAt: now - HOUR }, now)).toEqual({
+			status: "failing",
+			lastDataAt: now - 2 * HOUR,
+			problem: "Rate limited",
+		})
+		expect(pushSourceHealth({ ...refused, lastRejectedAt: now - 3 * HOUR }, now).status).toBe("healthy")
+		expect(pushSourceHealth({ ...refused, lastUsedAt: null, lastRejectedAt: now - 30 * HOUR }, now).status).toBe(
+			"pending",
+		)
+		expect(pushSourceHealth({ ...refused, status: "paused", lastRejectedAt: now - HOUR }, now).status).toBe(
+			"paused",
+		)
+	})
 })
 
 describe("integrationSourceHealth", () => {

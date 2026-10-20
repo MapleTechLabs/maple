@@ -42,6 +42,9 @@ export const Sources = PG.table("sources", {
 		pausedUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "paused_until" }),
 		// Written by the gateway at most once a minute per source and instance (5 minutes for the default source).
 		lastUsedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_used_at" }),
+		// The gateway's last 4xx for a token source (rate limit, signal, size), at most once a minute.
+		lastRejectedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_rejected_at" }),
+		lastRejection: PG.column(PG.nullable(PG.text), { name: "last_rejection" }),
 		rolledAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "rolled_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
