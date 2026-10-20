@@ -9,6 +9,7 @@ import {
 import { clerkAppearance, clerkLocalization } from "../lib/clerk-appearance"
 import { currentRegion } from "../lib/region"
 import { purgeForeignClerkCookies } from "../lib/services/common/clerk-cookie-guard"
+import { clerkJsUrl } from "./clerk-js-url"
 import { Clock, Effect, Option, Predicate, Queue, Schema, Stream } from "effect"
 
 /** The slice of clerk-js this app reads (`window.Clerk`). */
@@ -254,12 +255,9 @@ const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ?? ""
 const signInUrl = import.meta.env.VITE_CLERK_SIGN_IN_URL?.trim() || "/sign-in"
 const signUpUrl = import.meta.env.VITE_CLERK_SIGN_UP_URL?.trim() || "/sign-up"
 
-/** `pk_test_<base64(frontendApi$)>`: where @clerk/clerk-react loads clerk-js from. */
-const clerkJsUrl = (key: string) =>
-	`https://${atob(key.split("_").slice(2).join("_")).replace(/\$$/, "")}/npm/@clerk/clerk-js@5/dist/clerk.browser.js`
-
 const injectClerkJs = Effect.callback<void, ClerkLoadError>((resume) => {
 	const script = document.createElement("script")
+	// The exact URL index.html preloads (vite.config.ts), so this runs the bytes already fetched.
 	script.src = clerkJsUrl(publishableKey)
 	script.async = true
 	script.crossOrigin = "anonymous"

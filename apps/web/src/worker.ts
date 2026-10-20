@@ -30,6 +30,9 @@ const props = Effect.gen(function* () {
 			notFoundHandling: "single-page-application" as const,
 			// Or the SPA fallback answers the API proxy.
 			runWorkerFirst: [API_PROXY_PREFIX, `${API_PROXY_PREFIX}/*`],
+			// Vite's content-hashed output never changes under a name. Served by the asset layer,
+			// not worker-first: the Worker is placed in one region, a hop that cost ~1s per cold load.
+			headers: "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n",
 		},
 		memo: { include: MEMO_INCLUDE, lockfile: true },
 		placement: resolveWorkerPlacement(region),
