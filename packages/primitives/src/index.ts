@@ -314,12 +314,6 @@ export type SourcePlatform = Schema.Schema.Type<typeof SourcePlatform>
 
 export const isPushSourcePlatform = Schema.is(PushSourcePlatform)
 
-/**
- * Whether a source's data goes through the ingest gateway into the warehouse, so it can be paused
- * and its volume counted. PlanetScale is read live from its API and stores no telemetry.
- */
-export const sourceStoresTelemetry = (platform: SourcePlatform): boolean => platform !== "planetscale"
-
 /** Signal families a source can be limited to; `sessions` covers replays and session events. */
 export const SourceSignal = Schema.Literals(["traces", "logs", "metrics", "sessions", "events"]).annotate({
 	identifier: "@maple/SourceSignal",

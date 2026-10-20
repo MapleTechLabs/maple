@@ -15,12 +15,7 @@ import {
 	type UpdateSourceRequest,
 	type UserId,
 } from "@maple/domain/http"
-import {
-	SourceId,
-	type SourceResourceAttribute,
-	type SourceSignal,
-	sourceStoresTelemetry,
-} from "@maple/domain/primitives"
+import { SourceId, type SourceResourceAttribute, type SourceSignal } from "@maple/domain/primitives"
 import { hashIngestKey, parseIngestKeyLookupHmacKey } from "@maple/db"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -68,9 +63,6 @@ const statusOf = (row: SourceRow, now: number): SourceTokenStatus => {
 	return "active"
 }
 
-// Same line push sources get from `pushSourceHealth`.
-const PAUSED_PROBLEM = "Data is dropped while paused"
-
 const isoOrNull = (epochMs: number | null) => (epochMs === null ? null : toIso(epochMs))
 
 const toSourceHealth = (health: SourceHealthResult) =>
@@ -108,7 +100,7 @@ const rowToSource = (row: SourceRow, now: number, pullHealth?: SourceHealthResul
 			pullHealth === undefined
 				? pushSourceHealth({ ...row, status }, now)
 				: status === "paused"
-					? { status: "paused", lastDataAt: pullHealth.lastDataAt, problem: PAUSED_PROBLEM }
+					? pushSourceHealth({ status, lastUsedAt: pullHealth.lastDataAt }, now)
 					: pullHealth,
 		),
 	})
@@ -519,10 +511,6 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 			if (untilMs !== null && untilMs <= now) return yield* invalid("A pause must end in the future")
 			const existing = yield* requireRow(orgId, sourceId)
 			if (existing.isDefault) return yield* defaultSourceCannot("be paused")
-			if (!sourceStoresTelemetry(existing.platform))
-				return yield* invalid(
-					`${existing.name} is read live and stores no data, so there is nothing to pause`,
-				)
 			const row = yield* updateRow(orgId, sourceId, {
 				pausedAt: now,
 				pausedUntil: untilMs,

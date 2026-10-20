@@ -1,5 +1,4 @@
 import type { V2Source } from "@maple/domain/http/v2"
-import { sourceStoresTelemetry } from "@maple/domain/primitives"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -110,7 +109,7 @@ const connectionPart = (
 const headerActions = (h: H, model: Model, source: V2Source, timeZone: string): Html | undefined => {
 	if (hasToken(source)) return detailActions(h, sourceActions(h, model, source))
 	const connection = connectionPart(h, model, source, timeZone, "actions")
-	const pausable = !source.is_default && sourceStoresTelemetry(source.platform)
+	const pausable = !source.is_default
 	const children = [
 		...(pausable ? [pauseControl(h, model, source)] : []),
 		...(connection === null ? [] : [connection]),

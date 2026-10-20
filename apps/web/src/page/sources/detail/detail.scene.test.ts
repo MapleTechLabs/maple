@@ -337,17 +337,6 @@ describe("integration sources", () => {
 		expect(names(pageUpdate(loaded(paused), Message.ClickedResume()).commands)).toEqual(["ResumeSource"])
 	})
 
-	test("a PlanetScale source stores nothing, so it neither pauses nor counts volume", () => {
-		scene(
-			{ update: pageUpdate, view },
-			given(loaded(source({ name: "PlanetScale acme", platform: "planetscale", key_prefix: null }))),
-			resolveTheme,
-			expectView(role("button", { name: "Pause" })).not.toExist(),
-			expectView(text("Volume, last 24 hours")).not.toExist(),
-			expectView(text(/stores no telemetry/)).toExist(),
-		)
-	})
-
 	test("the overview totals every signal and its stored size", () => {
 		const model = loaded(prometheus())
 		const withUsage = pageUpdate(

@@ -1,5 +1,4 @@
 import type { V2Source } from "@maple/domain/http/v2"
-import { sourceStoresTelemetry } from "@maple/domain/primitives"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
@@ -17,7 +16,6 @@ import {
 	rateLimitLabel,
 	signalsSummary,
 } from "../kit/shared"
-import { platformMeta } from "../kit/platforms"
 import { sourceStatusBadge, sourceStatusLabel } from "../kit/status"
 import { signalCounts, volumeSize } from "../kit/volume"
 import { usageRows, usageTotals } from "./derive"
@@ -158,15 +156,6 @@ const last24h = (h: H, model: Model): Html => {
 	)
 }
 
-/** PlanetScale is read live: there is nothing stored to count. */
-const liveReadNote = (h: H, source: V2Source): Html =>
-	h.p(
-		[h.Class("text-muted-foreground text-xs")],
-		[
-			`Maple reads ${platformMeta(source.platform).label} live from its API and stores no telemetry, so there is no volume to count or pause.`,
-		],
-	)
-
 const rulesSummary = (h: H, source: V2Source, nowMs: number): Html =>
 	panel(h, {}, [
 		configRow(h, "Signals", [signalsSummary(source.allowed_signals)]),
@@ -197,7 +186,6 @@ const rulesSummary = (h: H, source: V2Source, nowMs: number): Html =>
 	])
 
 export const overviewTab = (h: H, model: Model, source: V2Source, timeZone: string, nowMs: number): Html => {
-	const storesTelemetry = sourceStoresTelemetry(source.platform)
 	return h.div(
 		[h.Class("flex flex-col gap-4")],
 		[
@@ -223,10 +211,10 @@ export const overviewTab = (h: H, model: Model, source: V2Source, timeZone: stri
 							? "Last request the gateway accepted"
 							: "Last successful collection",
 					),
-					...(storesTelemetry ? [last24h(h, model)] : []),
+					last24h(h, model),
 				],
 			),
-			storesTelemetry ? volumePanel(h, model, timeZone, nowMs) : liveReadNote(h, source),
+			volumePanel(h, model, timeZone, nowMs),
 			...(hasToken(source) ? [rulesSummary(h, source, nowMs)] : []),
 		],
 	)

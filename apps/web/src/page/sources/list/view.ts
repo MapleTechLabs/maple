@@ -12,12 +12,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { platformMeta, platformTile } from "../kit/platforms"
-import {
-	PULL_SOURCE_PLATFORMS,
-	type PullSourcePlatform,
-	type SourceId,
-	sourceStoresTelemetry,
-} from "@maple/domain/primitives"
+import { PULL_SOURCE_PLATFORMS, type PullSourcePlatform, type SourceId } from "@maple/domain/primitives"
 import { AppRoute, hrefOf } from "../../../route"
 import * as ToggleGroup from "../../../ui/toggle-group"
 import { integrationPlatformOf, orderSources, sourceHref, viaLabel } from "../kit/shared"
@@ -52,7 +47,7 @@ const usageBySource = (model: Model): UsageBySource =>
 const NO_VOLUME: VolumeTotals = { spans: 0, logs: 0, metrics: 0, bytes: 0 }
 
 const volumeCell = (h: H, source: V2Source, usage: UsageBySource, isUnavailable: boolean): Html | string => {
-	if (!sourceStoresTelemetry(source.platform) || isUnavailable) return "-"
+	if (isUnavailable) return "-"
 	if (usage === null) return skeleton(h, "h-4 w-16")
 	const totals = usage.get(source.id) ?? NO_VOLUME
 	return h.div(
