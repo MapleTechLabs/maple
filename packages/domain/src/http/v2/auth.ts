@@ -109,6 +109,8 @@ const READ_ONLY_POST_PATHS = new Set([
 const READ_ONLY_POST_PATTERNS: ReadonlyArray<RegExp> = [
 	// Builds the dashboard a template would create, without creating it.
 	/^\/v2\/dashboards\/templates\/[^/]+\/preview$/,
+	// Evaluates a saved dashboard's widgets; the body is the batch, not a change.
+	/^\/v2\/dashboards\/[^/]+\/widget_data$/,
 ]
 
 const isReadOnlyPost = (path: string): boolean =>

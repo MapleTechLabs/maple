@@ -30,9 +30,12 @@ import {
 	type DashboardDocument,
 	type DashboardVariable,
 	OrgId,
+	ShareRangeInvalidError,
 	ShareUnsupportedWidgetError,
+	ShareVariableInvalidError,
 	ShareWidgetExecutionError,
 	ShareWidgetNotFoundError,
+	type ShareWidgetDataOutcome,
 	UserId,
 } from "@maple/domain/http"
 import { RoleName } from "@maple/domain/primitives"
@@ -66,6 +69,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeServerQuerySetExecutor } from "./server-query-set-executor"
 import { ROUTE_ENDPOINT_PLANS, type RouteEndpointContext } from "./route-endpoint-plans"
+import { resolveShareVariables } from "./share-variables"
 import { resolveShareWindow } from "./share-window"
 
 const UNSUPPORTED_WIDGET_MESSAGE = "This widget isn't available in shared views."
@@ -216,7 +220,42 @@ export interface DashboardWidgetDataServiceApi {
 		WidgetDataOutcome,
 		ShareWidgetNotFoundError | ShareUnsupportedWidgetError | ShareWidgetExecutionError
 	>
+	/**
+	 * A batch of widgets over one requested window: bounds the window, resolves
+	 * the variable ladder, then one outcome per request. Shared by the share
+	 * page and the signed-in `widget_data` route.
+	 */
+	readonly resolveBatch: (
+		orgId: OrgId,
+		document: DashboardDocument,
+		input: WidgetDataBatchInput,
+	) => Effect.Effect<WidgetDataBatchResult, ShareRangeInvalidError | ShareVariableInvalidError>
 }
+
+export interface WidgetDataBatchInput {
+	readonly requests: ReadonlyArray<WidgetDataRequest>
+	/** The caller's window, still unvalidated; `resolveShareWindow` bounds it. */
+	readonly window: ResolvedWindow
+	readonly variableValues: Readonly<Record<string, string>>
+	/** A widget-scoped share answers for this widget and nothing else. */
+	readonly onlyWidgetId?: string
+}
+
+export interface WidgetDataBatchResult {
+	readonly results: ReadonlyArray<ShareWidgetDataOutcome>
+	/** The value each variable resolved to (`$__all` for All), for title interpolation. */
+	readonly variables: Readonly<Record<string, string>>
+}
+
+const WIDGET_NOT_ON_DASHBOARD = "That widget is not on this dashboard."
+
+/** Every where-clause the board could interpolate a variable into. */
+const boardWhereClauses = (document: DashboardDocument): ReadonlyArray<string> =>
+	document.widgets.flatMap((widget) =>
+		(dataSourceQuerySet(widget.dataSource)?.queries ?? []).flatMap((query) =>
+			typeof query.whereClause === "string" ? [query.whereClause] : [],
+		),
+	)
 
 export class DashboardWidgetDataService extends Context.Service<
 	DashboardWidgetDataService,
@@ -494,7 +533,61 @@ export class DashboardWidgetDataService extends Context.Service<
 			return byName
 		})
 
-		return { variableOptions, resolve } satisfies DashboardWidgetDataServiceApi
+		const failed = (
+			widgetId: string,
+			reason: "unsupported" | "not_found" | "failed",
+			message: string,
+		): ShareWidgetDataOutcome => ({ widgetId, ok: false, reason, message })
+
+		const resolveBatch = Effect.fn("DashboardWidgetDataService.resolveBatch")(function* (
+			orgId: OrgId,
+			document: DashboardDocument,
+			input: WidgetDataBatchInput,
+		) {
+			const window = yield* resolveShareWindow(input.window)
+
+			// Query-variable options are listed over the same window, so the board's
+			// ladder (selection, default, All, first option) resolves as it does there.
+			const definitions = document.variables ?? []
+			const queryOptions = yield* variableOptions(orgId, definitions, window)
+			const variableValues = yield* resolveShareVariables(
+				definitions,
+				input.variableValues,
+				queryOptions,
+				boardWhereClauses(document),
+			)
+
+			const results = yield* Effect.forEach(input.requests, (request) =>
+				input.onlyWidgetId !== undefined && request.widgetId !== input.onlyWidgetId
+					? Effect.succeed(failed(request.widgetId, "not_found", WIDGET_NOT_ON_DASHBOARD))
+					: resolve(orgId, document, request, window, variableValues).pipe(
+							Effect.map(({ data, narrowedToSeconds }): ShareWidgetDataOutcome =>
+								narrowedToSeconds === undefined
+									? { widgetId: request.widgetId, ok: true, data }
+									: { widgetId: request.widgetId, ok: true, data, narrowedToSeconds },
+							),
+							// Per-widget failures ride inside the batch: one tile that cannot
+							// be served must not blank its neighbours. `failed` is retryable.
+							Effect.catchTags({
+								"@maple/http/errors/ShareWidgetNotFoundError": (error) =>
+									Effect.succeed(failed(request.widgetId, "not_found", error.message)),
+								"@maple/http/errors/ShareUnsupportedWidgetError": (error) =>
+									Effect.succeed(failed(request.widgetId, "unsupported", error.message)),
+								"@maple/http/errors/ShareWidgetExecutionError": (error) =>
+									Effect.succeed(failed(request.widgetId, "failed", error.message)),
+							}),
+						),
+			)
+
+			const variables = Object.fromEntries(
+				Object.entries(variableValues).flatMap(([name, resolved]): Array<[string, string]> =>
+					resolved === undefined ? [] : [[name, resolved.value]],
+				),
+			)
+			return { results, variables } satisfies WidgetDataBatchResult
+		})
+
+		return { variableOptions, resolve, resolveBatch } satisfies DashboardWidgetDataServiceApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(

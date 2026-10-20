@@ -50,6 +50,22 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"listErrorIssues",
 	"listErrorIssueServiceCounts",
 	"getErrorIssue",
+	// Error triage, as the signed-in user.
+	"transitionErrorIssue",
+	"claimErrorIssue",
+	"releaseErrorIssue",
+	"setErrorIssueSeverity",
+	// Traces and logs
+	"searchTraces",
+	"getTrace",
+	"getSpan",
+	"searchLogs",
+	"queryLogTimeseries",
+	"getLog",
+	// Dashboards
+	"listDashboards",
+	"getDashboard",
+	"queryDashboardWidgetData",
 	// Alerts
 	"listAlertIncidents",
 	"getAlertIncident",
@@ -154,6 +170,7 @@ function render(): { text: string; doc: JsonObject } {
 	collapseNullableUnions(doc)
 	collapseErrorResponses(doc)
 	mergeDuplicateComponents(doc)
+	renameEncodedComponents(doc)
 	sweepUnreachableSchemas(doc)
 
 	const sorted = sortKeysDeep(doc)
@@ -245,6 +262,7 @@ function collapseNullableUnions(doc: JsonObject): void {
 			const next =
 				finiteNumberSchema(current, deref) ??
 				mergedStringEnum(current, deref) ??
+				widenedStringUnion(current, deref) ??
 				flattenedConstraintAllOf(current) ??
 				singleBranchUnion(current)
 			if (next === undefined) break
@@ -431,6 +449,31 @@ function mergedStringEnum(
 	}
 
 	return mergeAnnotations(schema, { type: "string", enum: values })
+}
+
+/**
+ * `{ anyOf: [enum, { type: "string", pattern }] }` → `{ type: "string" }`.
+ *
+ * A string that is one of a few names or matches a pattern (a funnel's
+ * `breakdown_by`: `"country"` or `"attribute:…"`) is just a `String` to the
+ * app; as a union it becomes a struct-of-optionals. The server validates.
+ */
+function widenedStringUnion(
+	schema: JsonObject,
+	deref: (schema: JsonObject) => JsonObject,
+): JsonObject | undefined {
+	const branches = asObjectArray(schema.anyOf)
+	if (branches === undefined || branches.length < 2) return undefined
+
+	const structural = ["$ref", "properties", "items", "allOf", "anyOf", "oneOf", "additionalProperties"]
+	const resolved = branches.map(deref)
+	if (resolved.some((branch) => branch.type !== "string" || structural.some((key) => key in branch))) {
+		return undefined
+	}
+	// All-enum unions are `mergedStringEnum`'s, which keeps the values.
+	if (resolved.every((branch) => asStringArray(branch.enum) !== undefined)) return undefined
+
+	return mergeAnnotations(schema, { type: "string" })
 }
 
 /**
@@ -653,6 +696,43 @@ function mergeDuplicateComponents(doc: JsonObject): void {
 		delete schemas[from]
 	}
 	for (const name of aliases.keys()) delete schemas[name]
+}
+
+/**
+ * Pass 3c: `DashboardEncoded` becomes `Dashboard`.
+ *
+ * Effect names a schema's encoded side `<Identifier>Encoded` when it renames
+ * keys (`Schema.encodeKeys`), which is the only side this document has. The
+ * app should see the resource name, so the suffix is dropped unless that
+ * would collide with an existing component.
+ */
+function renameEncodedComponents(doc: JsonObject): void {
+	const schemas = asObject(asObject(doc.components)?.schemas) ?? {}
+	const renames = new Map<string, string>()
+	for (const name of Object.keys(schemas)) {
+		const base = /^(.+)Encoded$/.exec(name)?.[1]
+		if (base !== undefined && schemas[base] === undefined) renames.set(name, base)
+	}
+
+	const rewrite = (node: JsonValue | undefined): void => {
+		if (Array.isArray(node)) {
+			for (const entry of node) rewrite(entry)
+			return
+		}
+		const object = asObject(node)
+		if (object === undefined) return
+		const ref = asString(object.$ref)
+		const name = ref === undefined ? undefined : componentNameFromRef(ref)
+		const target = name === undefined ? undefined : renames.get(name)
+		if (target !== undefined) object.$ref = `#/components/schemas/${target}`
+		for (const value of Object.values(object)) rewrite(value)
+	}
+
+	rewrite(doc)
+	for (const [from, to] of renames) {
+		schemas[to] = schemas[from]
+		delete schemas[from]
+	}
 }
 
 function sweepUnreachableSchemas(doc: JsonObject): void {

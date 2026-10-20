@@ -101,6 +101,9 @@ private struct HomeContent: View {
 			StatusHeadline(snapshot: snapshot)
 				.padding(.horizontal, 16)
 
+			OverviewStats(snapshot: snapshot)
+				.padding(.horizontal, 16)
+
 			if !snapshot.incidents.isEmpty {
 				HomeSection(title: "Open alerts", count: snapshot.incidents.count) {
 					VStack(spacing: 8) {
@@ -126,15 +129,15 @@ private struct HomeContent: View {
 							: "All \(snapshot.services.count) services within thresholds."
 					)
 				} else {
-					VStack(spacing: 0) {
+					TableCard(columns: ["Service", "Err", "p95"]) {
 						ForEach(snapshot.attention.prefix(6), id: \.name) { service in
 							NavigationLink(value: Route.service(name: service.name, window: .lastHour)) {
 								AttentionRow(service: service)
 							}
 							.buttonStyle(RowButtonStyle())
-							Hairline()
 						}
 					}
+					.padding(.horizontal, 16)
 				}
 			}
 
@@ -326,47 +329,61 @@ private struct AttentionRow: View {
 	}
 
 	var body: some View {
-		HStack(spacing: 12) {
-			Rectangle()
-				.fill(health == .unhealthy ? Token.destructive : .clear)
-				.frame(width: 2)
-			ServiceDot(serviceName: service.name)
-			Text(service.name)
-				.font(Typo.bodyMedium)
-				.foregroundStyle(Token.foreground)
-				.lineLimit(1)
-			HealthDot(health: health)
-			Spacer(minLength: 8)
-			HStack(spacing: 14) {
-				Metric(label: "err", value: Format.errorRate(service.errorRate), tint: Tone.errorRate(service.errorRate))
-				Metric(
-					label: "p95",
-					value: Format.latency(service.p95LatencyMs),
-					tint: Tone.latency(service.p95LatencyMs, scale: .p95)
-				)
+		TableRow {
+			HStack(spacing: 8) {
+				ServiceDot(serviceName: service.name)
+				Text(service.name)
+					.font(Typo.bodyMedium)
+					.foregroundStyle(Token.foreground)
+					.lineLimit(1)
+				HealthDot(health: health)
 			}
+		} trailing: {
+			TableCell(text: Format.errorRate(service.errorRate), tint: Tone.errorRate(service.errorRate))
+			TableCell(
+				text: Format.latency(service.p95LatencyMs),
+				tint: Tone.latency(service.p95LatencyMs, scale: .p95)
+			)
 		}
-		.padding(.trailing, 16)
-		.frame(minHeight: 48)
-		.contentShape(.rect)
 	}
+}
 
-	private struct Metric: View {
-		let label: String
-		let value: String
-		let tint: Color
+/// The web overview's lead row: four tiles, each with its change against the
+/// hour before, so "is it getting worse" reads before any list.
+private struct OverviewStats: View {
+	let snapshot: HomeSnapshot
 
-		var body: some View {
-			VStack(alignment: .trailing, spacing: 1) {
-				Text(value)
-					.font(Typo.smallSemibold)
-					.tabularNumbers()
-					.foregroundStyle(tint)
-				Text(label)
-					.font(Typo.micro)
-					.foregroundStyle(Token.mutedForeground.opacity(0.6))
-			}
-			.frame(minWidth: 52, alignment: .trailing)
+	var body: some View {
+		StatGrid(columns: 2) {
+			StatTile(
+				label: "Throughput",
+				value: Format.throughput(snapshot.totalThroughput),
+				delta: StatDelta(
+					current: snapshot.totalThroughput,
+					previous: snapshot.previousThroughput,
+					higherIsBetter: true
+				)
+			)
+			StatTile(
+				label: "Error rate",
+				value: Format.errorRate(snapshot.errorRate),
+				tint: Tone.errorRate(snapshot.errorRate),
+				delta: StatDelta(
+					current: snapshot.errorRate,
+					previous: snapshot.previousErrorRate,
+					higherIsBetter: false
+				)
+			)
+			StatTile(
+				label: "Slowest p95",
+				value: Format.latency(snapshot.worstP95),
+				delta: StatDelta(current: snapshot.worstP95, previous: snapshot.previousWorstP95, higherIsBetter: false)
+			)
+			StatTile(
+				label: "Open alerts",
+				value: "\(snapshot.incidents.count)",
+				tint: snapshot.criticalIncidents.isEmpty ? Token.foreground : Token.destructive
+			)
 		}
 	}
 }

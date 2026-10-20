@@ -10,6 +10,7 @@ import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyD
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
@@ -135,7 +136,10 @@ const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatW
 		HttpV2ApiKeysLive,
 		HttpV2ChatIntegrationsLive.pipe(Layer.provide(chatWorkspace)),
 		HttpV2PlanetScaleIntegrationsLive,
-		HttpV2DashboardsLive,
+		// Real widget evaluation over whichever warehouse and query-engine stubs the test provides.
+		HttpV2DashboardsLive.pipe(
+			Layer.provide(Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make)),
+		),
 		HttpV2AlertDeliveriesLive,
 		HttpV2AlertRulesLive,
 		HttpV2AlertDestinationsLive,
@@ -205,6 +209,8 @@ const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatW
 				Layer.succeed(DashboardWidgetDataService, {
 					variableOptions: () => Effect.succeed({}),
 					resolve: () => Effect.die("share widget data is not exercised by v2 route harnesses"),
+					resolveBatch: () =>
+						Effect.die("share widget data is not exercised by v2 route harnesses"),
 				}),
 			),
 			Layer.provide(
@@ -298,6 +304,22 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		proposeFix: die,
 		recordAnomalyLinkEvent: die,
 		runTick: die,
+	}),
+	Layer.succeed(ErrorIssueWorkflowService, {
+		rowToIssue: dieSync,
+		requireIssue: die,
+		issuesWithOpenIncidents: die,
+		hydrateIssueRows: die,
+		hydrateIssue: die,
+		recordEvent: die,
+		buildEvent: dieSync,
+		applyTransition: die,
+		heartbeatIssue: die,
+		releaseIssue: die,
+		assignIssue: die,
+		setSeverity: die,
+		commentOnIssue: die,
+		listIssueEvents: die,
 	}),
 	Layer.succeed(ErrorActorsService, {
 		registerAgent: die,
