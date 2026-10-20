@@ -591,7 +591,10 @@ export class GcpLiveMetricsService extends Context.Service<GcpLiveMetricsService
 									recordFailure(failures, `projects/${target.projectId}`, target.connector),
 								),
 							)
-						if (types !== undefined) return types
+						if (types !== undefined) {
+							yield* logFailures(failures)
+							return types
+						}
 					}
 					yield* logFailures(failures)
 					return failures.length > 0 ? yield* readFailed(failures) : []

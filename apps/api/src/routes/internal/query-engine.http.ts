@@ -1491,7 +1491,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							],
 							{ concurrency: "unbounded" },
 						)
-						return new ListMetricsResponse({ data: [...rows, ...gcpRows] })
+						// One page of `limit`: the table reads `limit + 1` rows to tell whether more exist.
+						return new ListMetricsResponse({ data: [...rows, ...gcpRows].slice(0, payload.limit ?? 100) })
 					}),
 				)
 				.handle("metricsSummary", ({ payload }) =>
