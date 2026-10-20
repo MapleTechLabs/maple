@@ -43,6 +43,20 @@ describe("auto-retry budget", () => {
 		expect(resume(spent, 15_000 + RESUME_WINDOW_MS, MID).attempt).toBe(0)
 	})
 
+	test("manual retries after the last probe do not keep a spent budget alive", () => {
+		const spent = Array.from({ length: 6 }).reduce<RetryBudget>(
+			(budget) => probed(budget, budget.nextAt, MID),
+			resume(undefined, 0, MID),
+		)
+		const lastProbe = spent.touchedAt
+		const remounted = [10_000, 30_000, 50_000].reduce(
+			(budget, offset) => resume(budget, lastProbe + offset, MID),
+			spent,
+		)
+		expect(isExhausted(remounted)).toBe(true)
+		expect(isExhausted(resume(remounted, lastProbe + RESUME_WINDOW_MS, MID))).toBe(false)
+	})
+
 	test("jitter stays within ten percent of the step", () => {
 		expect(delayFor(1, 0)).toBe(9_000)
 		expect(delayFor(1, 0.999)).toBeLessThan(11_000)

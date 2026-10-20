@@ -18,10 +18,11 @@ export type RetryBudget = Readonly<{
 export const delayFor = (attempt: number, jitter: number): number =>
 	(POLL_DELAYS_MS[Math.min(attempt, POLL_DELAYS_MS.length - 1)] ?? 30_000) * (0.9 + jitter * 0.2)
 
-/** The budget a new mount continues, or a fresh one when the last outage went quiet. */
+/** The budget a new mount continues, or a fresh one when the last outage went quiet. A mount does
+ * not touch it: a manual retry after the last probe must not keep a spent budget alive. */
 export const resume = (prior: RetryBudget | undefined, now: number, jitter: number): RetryBudget =>
 	prior !== undefined && now - prior.touchedAt < RESUME_WINDOW_MS
-		? { ...prior, touchedAt: now }
+		? prior
 		: { attempt: 0, nextAt: now + delayFor(0, jitter), touchedAt: now }
 
 /** A timed probe fired: count it and back off. */
