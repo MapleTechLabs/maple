@@ -70,4 +70,11 @@ describe("log detail sheet", () => {
 		const reopened = openLog(Option.some(closed), log("ERROR")).model
 		expect([isOpen(reopened), reopened.isBodyExpanded]).toEqual([true, true])
 	})
+
+	test("a tooltip open when the sheet closed is closed when it reopens", () => {
+		const opened = openLog(Option.none(), log("INFO")).model
+		const hovering = { ...opened, tooltip: { ...opened.tooltip, isOpen: true } }
+		const closed = update(hovering, Message.ClosedSheet()).model
+		expect(openLog(Option.some(closed), log("INFO")).model.tooltip.isOpen).toBe(false)
+	})
 })

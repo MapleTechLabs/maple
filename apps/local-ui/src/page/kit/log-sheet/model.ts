@@ -64,7 +64,8 @@ export const withLog = (maybeSheet: Option.Option<Model>, log: LocalLog): Model 
 			copies: {},
 			tooltip: Tooltip.init(TOOLTIP_ID),
 		}),
-		// A sheet that stays mounted keeps its tab and body expansion; the rest is per log.
+		// A sheet that stays mounted keeps its tab and body expansion; the rest is per log. The tooltip
+		// starts closed: one left open when the sheet closed would show on a button nobody hovered.
 		onSome: (sheet) => {
 			const isSameLog = logKey(sheet.log) === logKey(log)
 			return {
@@ -73,6 +74,7 @@ export const withLog = (maybeSheet: Option.Option<Model>, log: LocalLog): Model 
 				isErrorExpanded: isSameLog && sheet.isErrorExpanded,
 				tabs: { ...sheet.tabs, values: tabValuesOf(log) },
 				attributes: isSameLog ? sheet.attributes : AttributesPanel.init("log-detail-attributes"),
+				tooltip: Tooltip.init(TOOLTIP_ID),
 			}
 		},
 	})
