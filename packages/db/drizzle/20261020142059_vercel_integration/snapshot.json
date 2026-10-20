@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "7fc1ade36ae90c0fc1d04652b466913962e12d6a24fcf0190358ceecdd787393",
+	"id": "c03fb1d03bb2ff37699400c4a7e423df9299da7146ccef89a094cca93a2831d5",
 	"prevIds": [
-		"a88fc245ecbb455bc7d1caa5d2b62725564fe88ab7b9369316d03c754cfc61fd"
+		"8cc8f517baeb18d14d70fdb032b23cdd5a1c93fe0674364d432fc085cba7c2a7"
 	],
 	"entities": [
 		{
@@ -10969,7 +10969,7 @@
 		{
 			"kind": "column",
 			"table": "sources",
-			"name": "rolled_at",
+			"name": "last_rejected_at",
 			"position": 16,
 			"type": "timestamp with time zone",
 			"notNull": false,
@@ -10979,8 +10979,28 @@
 		{
 			"kind": "column",
 			"table": "sources",
-			"name": "created_at",
+			"name": "last_rejection",
 			"position": 17,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "rolled_at",
+			"position": 18,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "sources",
+			"name": "created_at",
+			"position": 19,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -10990,7 +11010,7 @@
 			"kind": "column",
 			"table": "sources",
 			"name": "updated_at",
-			"position": 18,
+			"position": 20,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -11000,7 +11020,7 @@
 			"kind": "column",
 			"table": "sources",
 			"name": "created_by",
-			"position": 19,
+			"position": 21,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -11010,7 +11030,7 @@
 			"kind": "column",
 			"table": "sources",
 			"name": "updated_by",
-			"position": 20,
+			"position": 22,
 			"type": "text",
 			"notNull": false,
 			"default": null,
