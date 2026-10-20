@@ -66,10 +66,12 @@ const liftIntegrations = (model: Model, step: PageReturn<IntegrationModel, Integ
 	return step.outMessage === undefined ? lifted : { ...lifted, outMessage: step.outMessage }
 }
 
-const merge = (first: Return, second: Return): Return => ({
-	...second,
-	commands: [...(first.commands ?? []), ...(second.commands ?? [])],
-})
+/** Both steps' Commands; the second's outMessage wins, else the first's (a connect toast). */
+const merge = (first: Return, second: Return): Return => {
+	const merged: Return = { ...second, commands: [...(first.commands ?? []), ...(second.commands ?? [])] }
+	const outMessage = second.outMessage ?? first.outMessage
+	return outMessage === undefined ? merged : { ...merged, outMessage }
+}
 
 export const init = (route: NewRoute, context: PageContext): Return => {
 	const platform = route.search.platform ?? null
