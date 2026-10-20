@@ -133,13 +133,13 @@ jobs:
                   WEB_URL: ${{ steps.deploy.outputs.web_url }}
               run: bun scripts/preview-seed-smoke.ts
 
-            # Browser e2e against the fresh preview (apps/web-foldkit/e2e/README.md). Non-blocking while
+            # Browser e2e against the fresh preview (apps/web/e2e/README.md). Non-blocking while
             # it beds in; `agent.*` tests register only once ANTHROPIC_API_KEY is in Infisical.
             - name: End-to-end tests against the preview
               id: e2e
               if: ${{ env.TEARDOWN != 'true' && steps.smoke.outcome == 'success' }}
               continue-on-error: true
-              working-directory: apps/web-foldkit/e2e
+              working-directory: apps/web/e2e
               env:
                   MAPLE_E2E_APP_URL: ${{ steps.deploy.outputs.web_url }}
                   MAPLE_E2E_API_URL: ${{ steps.deploy.outputs.api_url }}
@@ -153,7 +153,7 @@ jobs:
               uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
                   name: e2e-results
-                  path: apps/web-foldkit/e2e/.e2e/
+                  path: apps/web/e2e/.e2e/
                   if-no-files-found: warn
                   include-hidden-files: true
                   retention-days: 7

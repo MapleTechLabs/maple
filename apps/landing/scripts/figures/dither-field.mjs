@@ -4,7 +4,7 @@
 import { writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 
-const { chromium } = createRequire(new URL("../../../web-foldkit/package.json", import.meta.url))("playwright")
+const { chromium } = createRequire(new URL("../../../web/package.json", import.meta.url))("playwright")
 const out = new URL("../../public/blog/react-to-foldkit-dither.png", import.meta.url)
 
 const browser = await chromium.launch()

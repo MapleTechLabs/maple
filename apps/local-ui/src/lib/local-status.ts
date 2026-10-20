@@ -3,7 +3,7 @@
 // and "refused" (nothing is listening) need different screens.
 
 import { Effect, Option, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http"
+import { HttpClient, HttpClientResponse } from "effect/http"
 
 export const LocalServerStatus = Schema.Struct({
 	service: Schema.String,
@@ -61,13 +61,3 @@ export const probeLocalStatus = (baseUrl: string, timeoutMs: number) =>
 		Effect.timeoutOption(timeoutMs),
 		Effect.map(Option.getOrElse((): StatusProbe => ({ _tag: "Busy" }))),
 	)
-
-export const runStatusProbe = (
-	baseUrl: string,
-	timeoutMs: number,
-	signal?: AbortSignal,
-): Promise<StatusProbe> =>
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide
-	Effect.runPromise(probeLocalStatus(baseUrl, timeoutMs).pipe(Effect.provide(FetchHttpClient.layer)), {
-		signal,
-	})

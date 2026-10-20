@@ -72,6 +72,8 @@ jobs:
                         - *base
                         - 'apps/cli/**'
                         - 'apps/local-ui/**'
+                        # local-ui renders apps/web's source modules.
+                        - 'apps/web/src/**'
                         - 'packages/effect-sdk/**'
                         - 'packages/domain/**'
                         - 'packages/query-engine/**'

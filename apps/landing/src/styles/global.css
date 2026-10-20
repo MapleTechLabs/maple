@@ -1,6 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-/* Design tokens are shared with apps/web-foldkit — do not re-declare token names
+/* Design tokens are shared with apps/web — do not re-declare token names
    here (enforced by `bun run check:tokens`). Must come after tailwindcss.
    Landing is dark-only: Layout.astro pins class="dark" on <html>. */
 @import "@maple/ui/styles/tokens.css";
@@ -695,7 +695,7 @@
    dot + label + req/s · err% · avg metrics, smoothstep edges rendered
    as multi-layer SVG (glow / tube / core / flowing dashes), dot-grid
    background. The flow keyframe is the same 1.5s linear cadence as
-   the product (apps/web-foldkit/src/theme.css).
+   the product (apps/web/src/theme.css).
    ────────────────────────────────────────────────────────────── */
 @keyframes service-map-flow {
 	to {

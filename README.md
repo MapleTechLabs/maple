@@ -67,7 +67,7 @@ claude mcp add --transport http maple https://api.maple.dev/mcp
 
 | Path                        | What lives there                                                         |
 | --------------------------- | ------------------------------------------------------------------------ |
-| `apps/web-foldkit`          | Dashboard (Foldkit, Vite)                                                |
+| `apps/web`          | Dashboard (Foldkit, Vite)                                                |
 | `apps/api`                  | Effect HTTP API, auth and OAuth                                          |
 | `apps/ai`                   | MCP server, chat agent and investigations                                |
 | `apps/ingest`               | OTLP ingest gateway: key auth, org enrichment, forwarding                |
@@ -110,7 +110,7 @@ bun dev api web
 A single non-Worker app can also run on its raw port, outside the stack:
 
 ```bash
-bun --filter=@maple/web-foldkit dev
+bun --filter=@maple/web dev
 ```
 
 ### Validate
@@ -145,7 +145,7 @@ single `Alchemy.Stack("maple", …)` whose program yields one module per app:
   KV, queues, the two Workflows and the `ChatSession` Durable Object, all yielded from its init
 - `apps/alerting/src/worker.ts` — cron-driven alerting Worker (cross-script workflow ref)
 - `apps/electric-sync/src/worker.ts` — ElectricSQL shape-proxy Worker
-- `apps/web-foldkit/src/worker.ts` / `apps/landing/src/worker.ts` / `apps/local-ui/src/worker.ts`
+- `apps/web/src/worker.ts` / `apps/landing/src/worker.ts` / `apps/local-ui/src/worker.ts`
   — static builds via `Command.Build` + asset-serving Workers
 
 Stage grammar is `prd` / `pr-<number>` / dev names, resolved via
@@ -207,7 +207,7 @@ Setup note: the machine identity must have a **GitHub OIDC** auth method configu
 Runtime API URL behavior:
 
 - Deploy-time web builds resolve `VITE_API_BASE_URL` from the Cloudflare api worker domain (`api.maple.dev` in `prd`, worker.dev URL for `pr-*`).
-- Local `bun --filter=@maple/web-foldkit dev` can still use root `.env` `VITE_API_BASE_URL` for local API routing.
+- Local `bun --filter=@maple/web dev` can still use root `.env` `VITE_API_BASE_URL` for local API routing.
 
 ## Environment
 
@@ -284,7 +284,7 @@ Start apps:
 
 ```bash
 bun --filter=@maple/api dev
-bun --filter=@maple/web-foldkit dev
+bun --filter=@maple/web dev
 ```
 
 Validate behavior:

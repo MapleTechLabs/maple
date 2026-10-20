@@ -58,7 +58,7 @@ services:
     web:
         build:
             context: .
-            dockerfile: apps/web-foldkit/Dockerfile
+            dockerfile: apps/web/Dockerfile
             args:
                 VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3472}
                 VITE_MAPLE_AUTH_MODE: ${MAPLE_AUTH_MODE:-self_hosted}

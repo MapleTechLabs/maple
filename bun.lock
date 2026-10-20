@@ -221,45 +221,15 @@
     "apps/local-ui": {
       "name": "@maple/local-ui",
       "dependencies": {
-        "@fontsource-variable/geist": "^5.3.0",
-        "@fontsource-variable/geist-mono": "^5.3.0",
-        "@maple/infra": "workspace:*",
-        "@maple/query-engine": "workspace:*",
-        "@maple/ui": "workspace:*",
-        "@tanstack/react-query": "^5.104.1",
-        "@tanstack/react-virtual": "^3.14.13",
-        "effect": "catalog:effect",
-        "react": "catalog:react",
-        "react-dom": "catalog:react",
-        "sugar-high": "^2.5.1",
-      },
-      "devDependencies": {
-        "@tailwindcss/vite": "catalog:tailwind",
-        "@testing-library/react": "^16.3.3",
-        "@types/react": "catalog:react",
-        "@types/react-dom": "catalog:react",
-        "@vitejs/plugin-react": "^6.1.2",
-        "@vitest/browser-playwright": "catalog:",
-        "playwright": "catalog:",
-        "tailwindcss": "catalog:tailwind",
-        "tw-animate-css": "catalog:tailwind",
-        "typescript": "catalog:tooling",
-        "vite": "catalog:",
-        "vitest": "catalog:",
-      },
-    },
-    "apps/local-ui-foldkit": {
-      "name": "@maple/local-ui-foldkit",
-      "dependencies": {
         "@floating-ui/dom": "1.8.0",
         "@foldkit/ui": "0.168.0",
         "@fontsource-variable/geist": "^5.3.0",
         "@fontsource-variable/geist-mono": "^5.3.0",
         "@maple/domain": "workspace:*",
-        "@maple/local-ui": "workspace:*",
+        "@maple/infra": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "@maple/ui": "workspace:*",
-        "@maple/web-foldkit": "workspace:*",
+        "@maple/web": "workspace:*",
         "@tanstack/charts": "catalog:charts",
         "@tanstack/charts-scales": "catalog:charts",
         "effect": "catalog:effect",
@@ -314,8 +284,8 @@
         "vitest": "catalog:",
       },
     },
-    "apps/web-foldkit": {
-      "name": "@maple/web-foldkit",
+    "apps/web": {
+      "name": "@maple/web",
       "dependencies": {
         "@clerk/themes": "^2.4.57",
         "@effect/platform-browser": "4.0.4",
@@ -1642,8 +1612,6 @@
 
     "@maple/local-ui": ["@maple/local-ui@workspace:apps/local-ui"],
 
-    "@maple/local-ui-foldkit": ["@maple/local-ui-foldkit@workspace:apps/local-ui-foldkit"],
-
     "@maple/primitives": ["@maple/primitives@workspace:packages/primitives"],
 
     "@maple/prometheus-otlp": ["@maple/prometheus-otlp@workspace:lib/prometheus-otlp"],
@@ -1668,9 +1636,9 @@
 
     "@maple/unitflow": ["@maple/unitflow@workspace:lib/unitflow"],
 
-    "@maple/web-data": ["@maple/web-data@workspace:packages/web-data"],
+    "@maple/web": ["@maple/web@workspace:apps/web"],
 
-    "@maple/web-foldkit": ["@maple/web-foldkit@workspace:apps/web-foldkit"],
+    "@maple/web-data": ["@maple/web-data@workspace:packages/web-data"],
 
     "@maple/widgets": ["@maple/widgets@workspace:packages/widgets"],
 

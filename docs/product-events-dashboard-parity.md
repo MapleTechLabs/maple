@@ -133,7 +133,7 @@ hangs off the `QuerySpec` arms from phase 1.
     - `applyProductEventsClause` mirrors `applyLogsClause`: `event.name`, `event.kind`, `source`,
       `host`, `page.path`, `service.name`, `user.id`, `group.id`, `attr.<key>`, and the session keys
       the funnel population filter already parses (`country`, `referrer.host`, `utm.source`, …,
-      reuse `productEventsFilterField` from `apps/web-foldkit/src/lib/query-builder/funnel-filters.ts` by
+      reuse `productEventsFilterField` from `apps/web/src/lib/query-builder/funnel-filters.ts` by
       lifting it into `@maple/query-model` where `FUNNEL_POPULATION_FILTER_FIELDS` already lives).
     - `buildTimeseriesQuerySpec` gains the `product_events` branch; `buildBreakdownQuerySpec` and
       `buildListQuerySpec` fall out.
