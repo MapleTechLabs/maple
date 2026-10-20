@@ -138,16 +138,18 @@ final class DashboardDetailModel {
 		}
 		let api = self.api
 		let id = dashboardID
-		let outcomes = await withTaskGroup(of: [WidgetOutcome].self, returning: [WidgetOutcome].self) { group in
+		// Throwing, so an expired session or a 5xx reaches `session.perform` and the
+		// screen's error state; per-widget failures still ride inside a 200.
+		let outcomes = try await withThrowingTaskGroup(of: [WidgetOutcome].self, returning: [WidgetOutcome].self) { group in
 			for batch in batches where batch.contains(where: { $0.kind != .markdown && $0.kind != .unsupported }) {
 				group.addTask {
-					(try? await api.dashboardWidgetData(
+					try await api.dashboardWidgetData(
 						dashboardId: id, widgetIds: batch.map(\.id), window: resolved, maxDataPoints: 48
-					)) ?? batch.map { WidgetOutcome(widgetId: $0.id, response: nil, failure: .failed) }
+					)
 				}
 			}
 			var all: [WidgetOutcome] = []
-			for await batch in group { all += batch }
+			for try await batch in group { all += batch }
 			return all
 		}
 		var board = DashboardBoard(dashboard: dashboard)
