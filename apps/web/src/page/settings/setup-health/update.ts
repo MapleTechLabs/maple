@@ -22,6 +22,13 @@ export const init = (): Return => ({
 	commands: [FetchSetupAudit()],
 })
 
+/** Back on the tab: the last report stays. The audit is a dozen warehouse reads, so only Re-run repeats it. */
+export const revisit = (model: Model): Return =>
+	Option.match(AsyncData.loadIfMissing(model.audit), {
+		onNone: () => ({ model }),
+		onSome: (audit) => ({ model: { ...model, audit }, commands: [FetchSetupAudit()] }),
+	})
+
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		CompletedFetchAudit: ({ result }) => ({ model: { ...model, audit: AsyncData.settle(model.audit, result) } }),

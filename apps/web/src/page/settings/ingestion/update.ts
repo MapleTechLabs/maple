@@ -2,6 +2,7 @@ import type { RecommendationPublicId } from "@maple/domain/http/v2"
 import { Array, Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { PageOutMessage, type PageReturn } from "../../contract"
+import { revisitData } from "../kit/revisit"
 import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
@@ -136,6 +137,26 @@ const triage = (model: Model, id: RecommendationId, action: "dismiss" | "reopen"
 				model: { ...model, pendingRecommendations: [...model.pendingRecommendations, id] },
 				commands: [TriageRecommendation({ id, action })],
 			}
+
+/** Back on the tab: the overview, keys, recommendations and mappings stay up while they load again. */
+export const revisit = (model: Model, options: InitOptions): Return => {
+	const overview = revisitData(model.overview, () =>
+		FetchIngestOverview({ timeZone: options.timeZone, pinnedNamespace: options.pinnedNamespace }),
+	)
+	const ingest = revisitData(model.ingest, FetchIngestionKeys)
+	const recommendations = revisitData(model.recommendations, FetchRecommendations)
+	const mappings = revisitData(model.mappings, FetchMappings)
+	return {
+		model: {
+			...model,
+			overview: overview.data,
+			ingest: ingest.data,
+			recommendations: recommendations.data,
+			mappings: mappings.data,
+		},
+		commands: [...overview.commands, ...ingest.commands, ...recommendations.commands, ...mappings.commands],
+	}
+}
 
 export const update = (model: Model, message: Message, options: InitOptions): Return =>
 	Message.match<Return>(message, {

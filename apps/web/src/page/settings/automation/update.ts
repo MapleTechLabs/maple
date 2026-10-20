@@ -13,8 +13,9 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import * as Select from "../../../ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
+import { revisitData } from "../kit/revisit"
 import { SEVERITY_ORDER } from "../../errors/kit/severity"
-import { ConfidenceChoice, DecisionSource, Message, type Model, type PolicyDraft, type RuleDraft } from "./model"
+import { ConfidenceChoice, DecisionSource, Message, type Model, PolicyDraft, type RuleDraft } from "./model"
 
 type Return = PageReturn<Model, Message>
 
@@ -109,19 +110,34 @@ const requestOf = (draft: PolicyDraft) =>
 		}),
 	})
 
+const isSameDraft = Schema.toEquivalence(PolicyDraft)
+
 /** An edit: dirty, and the revision moves so a stale simulation is dropped. */
 const edit = (model: Model, change: (draft: PolicyDraft) => PolicyDraft): Return =>
 	model.draft === null || !model.isAdmin || model.isSaving
 		? { model }
 		: { model: { ...model, draft: change(model.draft), isDirty: true, revision: model.revision + 1 } }
 
+/** Back on the tab: the policy and attempts stay up while they load again; an unsaved draft is kept. */
+export const revisit = (model: Model): Return => {
+	const policy = revisitData(model.policy, FetchEscalationPolicy)
+	const attempts = revisitData(model.attempts, FetchRecentEscalations)
+	return {
+		model: { ...model, policy: policy.data, attempts: attempts.data },
+		commands: [...policy.commands, ...attempts.commands],
+	}
+}
+
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		CompletedFetchPolicy: ({ result }) => {
 			const policy = AsyncData.settle(model.policy, result)
-			// The form initialises once, from the first stored policy.
-			const draft = model.draft ?? Option.getOrNull(Option.map(AsyncData.getData(policy), draftOf))
-			return { model: { ...model, policy, draft } }
+			// An untouched form follows the stored policy (a revisit reads it again); edits are kept.
+			const stored = Option.getOrNull(Option.map(AsyncData.getData(policy), draftOf))
+			if (model.isDirty || stored === null || (model.draft !== null && isSameDraft(model.draft, stored))) {
+				return { model: { ...model, policy, draft: model.draft ?? stored } }
+			}
+			return { model: { ...model, policy, draft: stored, revision: model.revision + 1 } }
 		},
 		CompletedFetchAttempts: ({ result }) => ({ model: { ...model, attempts: AsyncData.settle(model.attempts, result) } }),
 		UpdatedDestinations: ({ destinations }) => ({ model: { ...model, destinations } }),

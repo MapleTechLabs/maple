@@ -13,6 +13,7 @@ import * as Field from "../../../ui/field"
 import * as Menu from "../../../ui/menu"
 import * as Select from "../../../ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
+import { revisitData } from "../kit/revisit"
 import { memberDisplayName } from "../kit/members"
 import { type InvitationRow, type MemberRow, Message, type Model, OrgRole } from "./model"
 
@@ -333,6 +334,29 @@ const pickedRowAction = (model: Model, menuId: string, value: string): Return =>
 	})
 }
 
+/** Back on the tab: members, invitations and the organization's name stay up while they load again. */
+export const revisit = (model: Model): Return => {
+	// A later page still in flight would append to a refreshed page 1, so that list waits for it.
+	const isPaging = <A, E>(data: AsyncData.AsyncData<{ readonly isFetchingMore: boolean } & A, E>) =>
+		Option.exists(AsyncData.getData(data), (list) => list.isFetchingMore)
+	const members = isPaging(model.members)
+		? { data: model.members, commands: [] }
+		: revisitData(model.members, () => FetchMembers({ page: 1 }))
+	const invitations = isPaging(model.invitations)
+		? { data: model.invitations, commands: [] }
+		: revisitData(model.invitations, () => FetchInvitations({ page: 1 }))
+	return {
+		model: { ...model, members: members.data, invitations: invitations.data },
+		// The organization may have been renamed on General meanwhile.
+		commands: [
+			...members.commands,
+			...invitations.commands,
+			FetchOrganization(),
+			...(model.isAdmin ? [] : [FetchAdminName()]),
+		],
+	}
+}
+
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		CompletedFetchOrganization: ({ name }) => ({
@@ -355,7 +379,8 @@ export const update = (model: Model, message: Message): Return =>
 			Option.match(AsyncData.getData(model.members), {
 				onNone: () => ({ model }),
 				onSome: (data) =>
-					data.isFetchingMore
+					// While page 1 reads again (a revisit, a mutation) a later page would append to the wrong rows.
+					data.isFetchingMore || AsyncData.isRefreshing(model.members)
 						? { model }
 						: {
 								model: { ...model, members: AsyncData.Success({ data: { ...data, isFetchingMore: true } }) },
@@ -366,7 +391,8 @@ export const update = (model: Model, message: Message): Return =>
 			Option.match(AsyncData.getData(model.invitations), {
 				onNone: () => ({ model }),
 				onSome: (data) =>
-					data.isFetchingMore
+					// While page 1 reads again (a revisit, a mutation) a later page would append to the wrong rows.
+					data.isFetchingMore || AsyncData.isRefreshing(model.invitations)
 						? { model }
 						: {
 								model: { ...model, invitations: AsyncData.Success({ data: { ...data, isFetchingMore: true } }) },

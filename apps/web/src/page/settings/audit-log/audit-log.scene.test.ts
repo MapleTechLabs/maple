@@ -3,7 +3,7 @@ import { expect as expectView, given, role, scene, withViewInputs } from "foldki
 import { describe, expect, test } from "vitest"
 import { PageOutMessage } from "../../contract"
 import { Message } from "./model"
-import { init, searchChanged, update } from "./update"
+import { init, revisit, searchChanged, update } from "./update"
 import { view } from "./view"
 
 const page = { data: [], has_more: true, next_cursor: "cursor_2" }
@@ -67,5 +67,17 @@ describe("audit log tab", () => {
 		expect(update(loaded, Message.ClickedLoadMore(), {}).commands?.[0]).toMatchObject({
 			args: { request: { cursor: "cursor_2" } },
 		})
+	})
+
+	test("a revisit reads the first page quietly and holds Load more until it lands", () => {
+		const loaded = update(init({}).model, Message.CompletedFetchPage({ request: {}, resolvedSince: null, result: Result.succeed(page) }), {}).model
+		const back = revisit(loaded, {})
+		expect(back.commands?.map(({ name }) => name)).toEqual(["FetchAuditLogPage"])
+		// The old list's cursor would continue a page the refresh is about to replace.
+		expect(update(back.model, Message.ClickedLoadMore(), {}).commands ?? []).toEqual([])
+	})
+
+	test("a revisit while the same first page is in flight does not read it twice", () => {
+		expect(revisit(init({}).model, {}).commands ?? []).toEqual([])
 	})
 })

@@ -10,6 +10,7 @@ import { MapleInternalApiClient } from "../../../platform/api-clients"
 import * as Dialog from "../../../ui/dialog"
 import * as Field from "../../../ui/field"
 import { PageOutMessage, type PageReturn } from "../../contract"
+import { revisitData } from "../kit/revisit"
 import { type LimitsDraft, Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -184,6 +185,13 @@ const saveLimits = (model: Model): Return =>
 			}
 		},
 	})
+
+/** Back on the tab: the key and triage settings stay up while they load again. */
+export const revisit = (model: Model): Return => {
+	const key = revisitData(model.key, FetchOpenRouterKey)
+	const triage = model.isTriageAvailable ? revisitData(model.triage, FetchTriageSettings) : { data: model.triage, commands: [] }
+	return { model: { ...model, key: key.data, triage: triage.data }, commands: [...key.commands, ...triage.commands] }
+}
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {

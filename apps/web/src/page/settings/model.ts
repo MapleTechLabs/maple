@@ -29,7 +29,7 @@ export const SessionData = AsyncData.Schema(SessionInfo, LoadFailure)
 /** `billingCustomerAtom`: the nav's data-platform gate and the Billing tab read the one customer. */
 export const CustomerData = AsyncData.Schema(BillingCustomer, LoadFailure)
 
-/** The active tab's state; a tab switch drops the old one (the section unmounts). */
+/** One tab's state. A tab switch keeps the one left in `kept`, so coming back repaints its data. */
 export const TabModel = Schema.Union([
 	Schema.TaggedStruct("Mcp", { model: Mcp.Model }),
 	Schema.TaggedStruct("Keys", { model: Keys.Model }),
@@ -57,5 +57,7 @@ export const Model = Schema.Struct({
 	apiKeys: Schema.NullOr(Schema.Array(V2ApiKey)),
 	/** `null` until the active tab is known (the session gates it in Clerk mode). */
 	tab: Schema.NullOr(TabModel),
+	/** Tabs left during this visit, one per tab: they still take their answers, and revalidate on return. */
+	kept: Schema.Array(TabModel),
 })
 export type Model = typeof Model.Type

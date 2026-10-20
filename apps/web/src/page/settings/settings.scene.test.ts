@@ -7,9 +7,10 @@ import { describe, expect, test } from "vitest"
 import * as Tabs from "../../ui/tabs"
 import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
+import * as Billing from "./billing/update"
 import * as McpMessage from "./mcp/message"
 import type { Model } from "./model"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const context: PageContext = { orgId: Schema.decodeSync(OrgId)("org_parity"), pinnedNamespace: null, timeZone: "UTC" }
@@ -19,6 +20,8 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 
 const entered = (search: Model["search"] = {}) => init({ _tag: "Settings", search }, context)
 const mcp = (message: McpMessage.Message) => Message.GotMcpMessage({ message })
+const toTab = (model: Model, tab: NonNullable<Model["search"]["tab"]>) =>
+	routeChanged(model, { _tag: "Settings", search: { tab } }, context)
 
 const tools = [
 	{ name: "update_dashboard", title: "Update", description: "Change a dashboard's widgets.", readOnly: false, destructive: false },
@@ -113,6 +116,46 @@ describe("settings page", () => {
 			expectView(text("No tools match “zzz”.")).toExist(),
 			click(role("button", { name: "Audit log" })),
 			expectOutMessage(PageOutMessage.RequestedNavigation({ url: "/settings?tab=audit-log", isReplace: false })),
+		)
+	})
+
+	// The flicker: every tab switch rebuilt the tab from Loading, so a revisit painted skeletons over
+	// data shown a moment ago until the reads answered again.
+	test("coming back to a tab shows its data at once while it reads again", () => {
+		const back = toTab(toTab(mcpLoaded(), "setup-health").model, "mcp")
+		expect(names(back.commands)).toEqual(["FetchMcpConnections", "FetchMcpTools"])
+		scene(
+			{ update: pageUpdate, view },
+			given(back.model),
+			indicatorMeasured(),
+			expectView(text("david@acme.com")).toExist(),
+			expectView(role("heading", { name: "Tools · 2" })).toExist(),
+		)
+	})
+
+	test("a tab left mid-read takes the answer, and coming back does not ask twice", () => {
+		const opened = toTab(mcpLoaded(), "setup-health").model
+		const fresh = toTab({ ...opened, kept: [] }, "mcp").model
+		const away = toTab(fresh, "setup-health").model
+		const answered = pageUpdate(away, mcp(McpMessage.Message.CompletedFetchConnections({ result: Result.succeed([connection]) })))
+		const back = toTab(answered.model, "mcp")
+		// Connections answered while away and revalidate; the tools read is still in flight.
+		expect(names(back.commands)).toEqual(["FetchMcpConnections"])
+		scene({ update: pageUpdate, view }, given(back.model), indicatorMeasured(), expectView(text("david@acme.com")).toExist())
+	})
+
+	// Billing is Clerk-only, so the tab left while it confirmed a checkout return is placed in `kept`.
+	test("a checkout return settles even when the Billing tab was left while it waited", () => {
+		const subscribed = Schema.decodeUnknownSync(BillingCustomer)({
+			id: "org_acme",
+			subscriptions: [{ planId: "startup", status: "active", currentPeriodStart: 0, currentPeriodEnd: 30 * 86_400_000 }],
+		})
+		const away: Model = { ...mcpLoaded(), kept: [{ _tag: "Billing", model: Billing.init(true, true).model }] }
+		const settled = pageUpdate(away, Message.CompletedFetchCustomer({ result: Result.succeed(subscribed) }))
+		const billing = settled.model.kept.find((tab) => tab._tag === "Billing")
+		expect(billing?._tag === "Billing" && billing.model.checkoutReturn).toBe("Idle")
+		expect(settled.commands).toContainEqual(
+			expect.objectContaining({ args: { event: "plan_checkout_returned", props: { confirmed: true } } }),
 		)
 	})
 })

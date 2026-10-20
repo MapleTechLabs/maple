@@ -11,6 +11,7 @@ import {
 } from "../../../platform/clerk"
 import * as Dialog from "../../../ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
+import { revisitData } from "../kit/revisit"
 import * as Draft from "../kit/draft"
 import { checkImage, clickFileInput } from "../kit/image-dropzone"
 import { memberDisplayName } from "../kit/members"
@@ -194,6 +195,13 @@ const startLogo = (model: Model, file: File.File | null): Return =>
 	!model.isAdmin || model.isSavingLogo
 		? { model }
 		: { model: { ...model, isSavingLogo: true, isDragging: false }, commands: [SetLogo({ file })] }
+
+/** Back on the tab: the organization and its admins stay up while they load again. */
+export const revisit = (model: Model): Return => {
+	const org = revisitData(model.org, FetchOrganization)
+	const admins = revisitData(model.admins, FetchAdmins)
+	return { model: { ...model, org: org.data, admins: admins.data }, commands: [...org.commands, ...admins.commands] }
+}
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
