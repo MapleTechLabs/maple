@@ -42,9 +42,7 @@ const { reducedMotion } = subscriptions
 const afterFirstEmit = (model: Model) =>
 	Effect.runPromise(
 		reducedMotion
-			.dependenciesToStream(reducedMotion.modelToDependencies({ model, context }), () => ({
-				hasMap: true,
-			}))
+			.dependenciesToStream(reducedMotion.modelToDependencies({ model, context }))
 			.pipe(Stream.take(1), Stream.runCollect),
 	).then((messages) => Array.from(messages).reduce(step, model))
 
