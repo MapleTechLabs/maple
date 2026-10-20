@@ -162,6 +162,25 @@ describe("ReadCache", () => {
 			}),
 		))
 
+	test("a read counts as recent from when it settles, not when it started", () =>
+		run(
+			Effect.gen(function* () {
+				const { runs, load } = yield* counting
+				const gate = yield* Deferred.make<void>()
+				const slow = yield* Effect.forkChild(read(keyOf("org_a", "slow"), Effect.andThen(Deferred.await(gate), load)))
+				yield* Effect.yieldNow
+				const shas = Array.from({ length: READ_CACHE_MAX_ENTRIES - 1 }, (_, index) => `sha${index}`)
+				yield* Effect.forEach(shas, (sha) => read(keyOf("org_a", sha), load), { discard: true })
+				yield* Deferred.succeed(gate, undefined)
+				yield* Fiber.join(slow)
+				yield* read(keyOf("org_a", "new"), load)
+				const before = yield* Ref.get(runs)
+				// `sha0` is now the least recently read and goes; the slow read just settled and stays.
+				yield* read(keyOf("org_a", "slow"), load)
+				expect(yield* Ref.get(runs)).toBe(before)
+			}),
+		))
+
 	test("a refresh reads again and replaces the entry", () =>
 		run(
 			Effect.gen(function* () {

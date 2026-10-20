@@ -82,7 +82,7 @@ const settle = (entries: EntriesRef, key: RequestKey, result: Answer, exit: Exit
 			const entry = current.get(key)
 			if (entry === undefined || entry.result !== result) return current
 			const next = new Map(current)
-			if (Exit.isSuccess(exit)) next.set(key, { ...entry, touchedAtMs: nowMs, isSettled: true })
+			if (Exit.isSuccess(exit)) touched(next, key, { ...entry, touchedAtMs: nowMs, isSettled: true })
 			else next.delete(key)
 			return next
 		}),
