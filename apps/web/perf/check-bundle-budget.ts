@@ -72,6 +72,15 @@ for (const chunk of chunks.sort((a, b) => b.gzipBytes - a.gzipBytes).slice(0, ov
 if (forbidden.length > 0) {
 	throw new Error(`Lazy-only code leaked into startup:\n${forbidden.join("\n")}`)
 }
+// The lab pattern covers many modules, so check each glob entry (src/lab/boot.ts) on its own.
+const labEntries = [
+	...new Bun.Glob("**/*.ts").scanSync({ cwd: join(import.meta.dirname, "..", "src", "lab", "entries") }),
+]
+	.map((file) => `src/lab/entries/${file}`)
+	.filter((key) => !key.endsWith(".test.ts") && !lazyKeys.includes(key))
+if (labEntries.length > 0) {
+	throw new Error(`Lab entries are no longer lazy chunks of their own:\n${labEntries.join("\n")}`)
+}
 if (missingLazy.length > 0) {
 	throw new Error(
 		`No lazy chunk matches these patterns any more (now static, or renamed):\n${missingLazy.join("\n")}`,
