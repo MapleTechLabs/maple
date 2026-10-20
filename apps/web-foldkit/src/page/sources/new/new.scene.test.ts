@@ -209,4 +209,29 @@ describe("connect a source", () => {
 			expectView(role("link", { name: "Open source" })).toExist(),
 		)
 	})
+
+	test("from a push form straight to an integration, the step reads the list again", () => {
+		const form = init(route("nodejs"), context).model
+		const step = routeChanged(form, integrationRoute("cloudflare"), context)
+		expect(step.model.platform).toBeNull()
+		expect(step.model.integration).toBe("cloudflare")
+		expect(names(step.commands)).toContain("FetchSourcesList")
+	})
+
+	test("WarpStream finishes once a target is added in this visit, and links to the list", () => {
+		const entered = init(integrationRoute("warpstream"), context).model
+		expect(entered.hasAddedTarget).toBe(false)
+		const added = pageUpdate(
+			entered,
+			Message.GotIntegrationsMessage({
+				message: IntegrationMessage.CompletedSave({ isEdit: false, id: null, failure: null }),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(added),
+			expectView(text("Step 3 of 3 · Collecting")).toExist(),
+			expectView(role("link", { name: "View sources" })).toExist(),
+		)
+	})
 })

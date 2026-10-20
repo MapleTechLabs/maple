@@ -120,15 +120,25 @@ const ensureConnection = (model: Model, context: PageContext): Return => {
 	const source = Option.getOrNull(sourceOf(model))
 	const platform = source === null ? null : integrationPlatformOf(source)
 	if (source === null || platform === null) return { model }
-	const built = liftConnection(model, initEmbedded(platform, context))
-	// A Prometheus source opens on its own target, so its scheduled checks show without a click.
-	const target = scrapeTargetIdOf(source)
-	const connection = built.model.connection
-	return target === null || connection === null
-		? built
-		: andThen(built, (next) =>
-				liftConnection(next, Integrations.update(connection, IntegrationMessage.ClickedTarget({ id: target }), context)),
-			)
+	return andThen(liftConnection(model, initEmbedded(platform, context)), (next) => syncTarget(next, context))
+}
+
+/**
+ * A Prometheus source's own target is selected while Connection shows (its scheduled checks
+ * open without a click) and let go on other tabs, so the checks stop polling.
+ */
+const syncTarget = (model: Model, context: PageContext): Return => {
+	const connection = model.connection
+	const target = Option.match(sourceOf(model), { onNone: () => null, onSome: scrapeTargetIdOf })
+	if (connection === null || target === null) return { model }
+	const selected = connection.prometheusCard.selectedId
+	if (model.tab !== "connection")
+		return selected === null
+			? { model }
+			: { model: { ...model, connection: { ...connection, prometheusCard: { ...connection.prometheusCard, selectedId: null } } } }
+	return selected === target
+		? { model }
+		: liftConnection(model, Integrations.update(connection, IntegrationMessage.ClickedTarget({ id: target }), context))
 }
 
 export const init = (route: SourceRoute, context: PageContext): Return => {
@@ -162,7 +172,10 @@ export const init = (route: SourceRoute, context: PageContext): Return => {
 
 /** A tab link keeps the instance: the overview reads its usage again when it shows. */
 export const routeChanged = (model: Model, route: SourceRoute, context: PageContext): Return =>
-	loadUsage(withTabState({ ...model, tab: route.search.tab ?? "overview", setup: null, settings: null }), context)
+	andThen(
+		loadUsage(withTabState({ ...model, tab: route.search.tab ?? "overview", setup: null, settings: null }), context),
+		(next) => syncTarget(next, context),
+	)
 
 const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
@@ -238,6 +251,33 @@ const save = (model: Model): Return => {
 	}
 }
 
+/**
+ * A write in the Connection tab changes this source too: deleting its own target leaves for the
+ * list (the source goes with it); a toggle, edit or disconnect re-reads it so the header follows.
+ */
+const afterConnectionWrite = (model: Model, child: IntegrationMessage, step: Return, context: PageContext): Return => {
+	const isWrite =
+		child._tag === "CompletedTargetDelete" ||
+		child._tag === "CompletedToggle" ||
+		child._tag === "CompletedSave" ||
+		child._tag === "CompletedDisconnect"
+	if (!isWrite || child.failure !== null) return step
+	const own = Option.match(sourceOf(model), { onNone: () => null, onSome: scrapeTargetIdOf })
+	if (child._tag === "CompletedTargetDelete" && own !== null && child.id === own) {
+		const toast = step.outMessage?._tag === "RequestedToast" ? step.outMessage : undefined
+		const leave =
+			toast === undefined
+				? PageOutMessage.RequestedNavigation({ url: SOURCES_HREF, isReplace: true })
+				: PageOutMessage.RequestedNavigation({
+						url: SOURCES_HREF,
+						isReplace: true,
+						toast: { type: toast.type, title: toast.title, description: toast.description },
+					})
+		return { ...step, outMessage: leave }
+	}
+	return andThen(step, (next) => loadList(next, context, "Refresh"))
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
@@ -249,7 +289,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotConnectionMessage: ({ message: child }) =>
 			model.connection === null
 				? { model }
-				: liftConnection(model, Integrations.update(model.connection, child, context)),
+				: afterConnectionWrite(model, child, liftConnection(model, Integrations.update(model.connection, child, context)), context),
 		CompletedFetchUsage: ({ key, result }) => ({
 			model: { ...model, usage: Keyed.accept(model.usage, key, result) },
 		}),

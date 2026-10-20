@@ -35,12 +35,19 @@ const decodeSpecs = Schema.decodeUnknownOption(
 
 type Camera = { x: number; y: number; zoom: number }
 
+/** The reader's cache: the camera leaf, its last attribute, and the camera parsed from it. */
+interface CameraCache {
+	leaf: Element | null
+	raw: string | null
+	camera: Camera
+}
+
 /**
  * The renderer's camera (`readViewport`) without a per-frame DOM query: the leaf is looked up
  * again only once detached, and its attribute parsed only when it changed.
  */
 const cameraReader = (canvas: HTMLCanvasElement) => {
-	const state: { leaf: Element | null; raw: string | null; camera: Camera } = {
+	const state: CameraCache = {
 		leaf: null,
 		raw: null,
 		camera: { x: 0, y: 0, zoom: 1 },

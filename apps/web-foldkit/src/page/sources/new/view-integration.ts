@@ -16,20 +16,25 @@ import { integrationMeta } from "./view-picker"
 
 type H = HtmlBuilder<Message>
 
+/**
+ * WarpStream clusters are scraped as Prometheus targets and cannot be told apart from other ones,
+ * so its step is done once a target is added in this visit, not when any Prometheus target exists.
+ */
 export const isIntegrationConnected = (model: Model, integration: DataIntegration): boolean =>
-	overviewOf(model.integrations.statuses, model.integrations.nowMs, integration)?.kind === "connected"
+	integration === "warpstream"
+		? model.hasAddedTarget
+		: overviewOf(model.integrations.statuses, model.integrations.nowMs, integration)?.kind === "connected"
 
-/** The sources an integration feeds: WarpStream targets are Prometheus sources. */
-export const sourcesOfIntegration = (model: Model, integration: DataIntegration): ReadonlyArray<V2Source> => {
-	const platform = integration === "warpstream" ? "prometheus" : integration
-	return AsyncData.getOrElse(model.list.data, (): ReadonlyArray<V2Source> => []).filter(
-		(source) => source.platform === platform,
+/** The sources an integration feeds. */
+const sourcesOfIntegration = (model: Model, integration: Exclude<DataIntegration, "warpstream">): ReadonlyArray<V2Source> =>
+	AsyncData.getOrElse(model.list.data, (): ReadonlyArray<V2Source> => []).filter(
+		(source) => source.platform === integration,
 	)
-}
 
 /** Once connected, one source opens directly; several (accounts, targets) open the list. */
 const connectedNotice = (h: H, model: Model, integration: DataIntegration): Html => {
-	const sources = sourcesOfIntegration(model, integration)
+	// A WarpStream target is one Prometheus source among others: the list, not a guess at which.
+	const sources = integration === "warpstream" ? [] : sourcesOfIntegration(model, integration)
 	const only = sources.length === 1 ? sources[0] : undefined
 	return alert(h, { variant: "ok" }, [
 		icon(h, "CircleCheckIcon"),
