@@ -7,6 +7,7 @@ import { describe, expect, test } from "vitest"
 import * as Tabs from "../../ui/tabs"
 import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
+import * as Billing from "./billing/update"
 import * as McpMessage from "./mcp/message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -141,5 +142,20 @@ describe("settings page", () => {
 		// Connections answered while away and revalidate; the tools read is still in flight.
 		expect(names(back.commands)).toEqual(["FetchMcpConnections"])
 		scene({ update: pageUpdate, view }, given(back.model), indicatorMeasured(), expectView(text("david@acme.com")).toExist())
+	})
+
+	// Billing is Clerk-only, so the tab left while it confirmed a checkout return is placed in `kept`.
+	test("a checkout return settles even when the Billing tab was left while it waited", () => {
+		const subscribed = Schema.decodeUnknownSync(BillingCustomer)({
+			id: "org_acme",
+			subscriptions: [{ planId: "startup", status: "active", currentPeriodStart: 0, currentPeriodEnd: 30 * 86_400_000 }],
+		})
+		const away: Model = { ...mcpLoaded(), kept: [{ _tag: "Billing", model: Billing.init(true, true).model }] }
+		const settled = pageUpdate(away, Message.CompletedFetchCustomer({ result: Result.succeed(subscribed) }))
+		const billing = settled.model.kept.find((tab) => tab._tag === "Billing")
+		expect(billing?._tag === "Billing" && billing.model.checkoutReturn).toBe("Idle")
+		expect(settled.commands).toContainEqual(
+			expect.objectContaining({ args: { event: "plan_checkout_returned", props: { confirmed: true } } }),
+		)
 	})
 })
