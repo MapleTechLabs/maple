@@ -57,7 +57,7 @@ const requestStatus = (model: Model, context: PageContext, mode: Keyed.RequestMo
 		onNone: () => ({ model }),
 		onSome: (status) => ({
 			model: { ...model, status },
-			commands: [LoadStatus({ key, refresh: mode === "Refresh" })],
+			commands: [LoadStatus({ key: status.key, refresh: mode === "Refresh" })],
 		}),
 	})
 }
@@ -206,13 +206,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 			})
 		},
-		// `RailwayTokenForm` toasts `connectedToast` on success.
+		// `RailwayTokenForm` toasts `connectedToast` on success. The connect's status lands under a
+		// new generation of the key, so a status read in flight from before it is dropped.
 		SucceededConnect: ({ status }) => ({
 			...requestServices(
 				{
 					...model,
 					connect: { token: Field.init(), isSubmitting: false, error: null },
-					status: { key: statusKey(context), data: AsyncData.Success({ data: status }) },
+					status: {
+						key: Keyed.supersede(model.status, statusKey(context)).key,
+						data: AsyncData.Success({ data: status }),
+					},
 				},
 				context,
 				"Load",

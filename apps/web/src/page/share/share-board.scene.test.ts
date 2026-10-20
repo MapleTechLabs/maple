@@ -95,11 +95,11 @@ describe("share board", () => {
 		const board = share([widget("root", { display: { title: "Throughput for $service", markdown: { content: "x" } } })])
 		const answered = update(
 			resolved(board),
-			Message.CompletedFetchBatch({ keys: {}, states: {}, variables: { service: "api" } }),
+			Message.CompletedFetchBatch({ batchId: 0, keys: {}, states: {}, variables: { service: "api" } }),
 		).model
 		expect(answered.variables).toEqual({})
 		const live = { ...answered, requested: { root: "k" } }
-		const withVariables = update(live, Message.CompletedFetchBatch({ keys: { root: "k" }, states: { root: { _tag: "Loading" } }, variables: { service: "api" } })).model
+		const withVariables = update(live, Message.CompletedFetchBatch({ batchId: 0, keys: { root: "k" }, states: { root: { _tag: "Loading" } }, variables: { service: "api" } })).model
 		scene(
 			{ update: (model, message) => update(model, message), view },
 			given(withVariables),

@@ -259,7 +259,7 @@ const writePage =
 			Option.flatMap(transition.outMessage, (out): Option.Option<PageToast> =>
 				out._tag === "RequestedToast"
 					? Option.some(out)
-					: out._tag === "RequestedNavigation" && out.toast !== undefined
+					: (out._tag === "RequestedNavigation" || out._tag === "RequestedCustomerRefresh") && out.toast !== undefined
 						? Option.some(
 								PageOutMessage.RequestedToast({
 									...out.toast,
@@ -305,14 +305,19 @@ const writePage =
 				...Option.match(transition.outMessage, {
 					onNone: () => [],
 					onSome: PageOutMessage.match({
-						RequestedNavigation: ({ url, isReplace }) => [
+						RequestedNavigation: ({ url, isReplace, refreshesCustomer }) => [
 							navigateTo(model, url, isReplace),
+							...(refreshesCustomer === true && model.customer.orgId !== null
+								? [LoadCustomer({ orgId: model.customer.orgId, refresh: true })]
+								: []),
 						],
 						RequestedNamespacePin: () => [],
 						RequestedSidebarToggle: () => [],
 						RequestedInfraSurfaces: () => [],
 						RequestedToast: () => [],
 						RequestedReconnectOrgCollections: () => [ReconnectOrgCollections()],
+						RequestedCustomerRefresh: () =>
+							model.customer.orgId === null ? [] : [LoadCustomer({ orgId: model.customer.orgId, refresh: true })],
 					}),
 				}),
 				...followed.commands,

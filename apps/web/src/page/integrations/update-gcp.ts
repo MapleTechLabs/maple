@@ -250,7 +250,7 @@ export const completedDisconnect = (
 	return chain(withCard(settled, { removed, disconnectId: null }), [
 		(next) => disconnectStep(next, Dialog.close(next.gcpCard.disconnectDialog)),
 		(next) => ({ model: next, commands: [WriteRemoved({ orgId: context.orgId, removed })] }),
-		(next) => requestStatus(next, context, "gcp", "Refresh"),
+		(next) => requestStatus(next, context, "gcp", "Supersede"),
 		// `GCP_REACTIVITY_KEYS` also covers the resource inventory the band reads.
 		(next) => refreshInventory(next),
 	])

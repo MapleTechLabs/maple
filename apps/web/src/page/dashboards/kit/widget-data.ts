@@ -4,6 +4,7 @@ import {
 	formatRangeSeconds,
 	formatWarehouseDateTime,
 	hasUnresolvedVariableRefs,
+	interpolateWidgetParams,
 	parseWarehouseDateTime,
 	MAX_LIST_RANGE_SECONDS,
 	planWidgetRequest,
@@ -26,9 +27,13 @@ import { requestKey } from "../../../data/request-key"
 type Transform = typeof WidgetDataSourceTransformSchema.Type
 type Row = Readonly<Record<string, unknown>>
 
-/** A widget whose request is planned: its dedupe key, endpoint and resolved params. */
+/**
+ * A widget whose request is planned: its dedupe key, endpoint and resolved params. `shape` is the
+ * request without its window, so a re-plan can tell a time-only change from a different query.
+ */
 export const PlannedRequest = Schema.Struct({
 	key: Schema.String,
+	shape: Schema.String,
 	endpoint: Schema.String,
 	params: Schema.Record(Schema.String, Schema.Unknown),
 })
@@ -120,6 +125,13 @@ export const planWidget = (input: PlanInput): WidgetGate => {
 		_tag: "Request",
 		request: {
 			key: requestKey(input.orgId, "widgetData", { endpoint: plan.endpoint, params }),
+			shape: requestKey(input.orgId, "widgetShape", {
+				endpoint: plan.endpoint,
+				params:
+					input.variables === undefined
+						? request.params
+						: interpolateWidgetParams(request.params, input.variables.values),
+			}),
 			endpoint: plan.endpoint,
 			params,
 		},

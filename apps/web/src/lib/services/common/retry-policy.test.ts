@@ -1,8 +1,13 @@
-import { Effect } from "effect"
+import { Effect, Option, Ref } from "effect"
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { describe, it } from "@effect/vitest"
 import { expect } from "vitest"
-import { isRetryableResponse, isRetryableTransportError, withMapleRetryPolicy } from "./retry-policy"
+import {
+	isRetryableResponse,
+	isRetryableTransportError,
+	withMapleRetryPolicy,
+	withUnauthorizedResign,
+} from "./retry-policy"
 
 const transportError = (request: HttpClientRequest.HttpClientRequest, cause?: unknown) =>
 	new HttpClientError.HttpClientError({
@@ -102,6 +107,63 @@ describe("isRetryableResponse", () => {
 			const result = yield* client.post("https://api.maple.dev/v1/dashboards")
 			expect(result.status).toBe(503)
 			expect(attempts).toBe(1)
+		}),
+	)
+})
+
+describe("withUnauthorizedResign", () => {
+	// Records each sent bearer; only `fresh` is accepted.
+	const makeClient = (sent: Ref.Ref<ReadonlyArray<string | undefined>>, shouldRetry: boolean) =>
+		withUnauthorizedResign(
+			HttpClient.mapRequest(
+				HttpClient.make((request) =>
+					Ref.update(sent, (all) => [...all, request.headers.authorization]).pipe(
+						Effect.as(
+							HttpClientResponse.fromWeb(
+								request,
+								new Response(null, {
+									status: request.headers.authorization === "Bearer fresh" ? 200 : 401,
+								}),
+							),
+						),
+					),
+				),
+				HttpClientRequest.bearerToken("stale"),
+			),
+			{ shouldRetry: () => shouldRetry, freshToken: Effect.succeed(Option.some("fresh")) },
+		)
+
+	it.live("resends a 401 read signed with a freshly fetched token", () =>
+		Effect.gen(function* () {
+			const sent = yield* Ref.make<ReadonlyArray<string | undefined>>([])
+			const result = yield* makeClient(sent, true).get(
+				"https://api.maple.dev/internal/billing/customer",
+			)
+
+			expect(result.status).toBe(200)
+			expect(yield* Ref.get(sent)).toEqual(["Bearer stale", "Bearer fresh"])
+		}),
+	)
+
+	it.live("fails fast on a 401 outside the retried scope", () =>
+		Effect.gen(function* () {
+			const sent = yield* Ref.make<ReadonlyArray<string | undefined>>([])
+			const result = yield* makeClient(sent, false).get("https://api.maple.dev/v1/services")
+
+			expect(result.status).toBe(401)
+			expect(yield* Ref.get(sent)).toEqual(["Bearer stale"])
+		}),
+	)
+
+	it.live("never replays a mutation", () =>
+		Effect.gen(function* () {
+			const sent = yield* Ref.make<ReadonlyArray<string | undefined>>([])
+			const result = yield* makeClient(sent, true).post(
+				"https://api.maple.dev/internal/billing/customer",
+			)
+
+			expect(result.status).toBe(401)
+			expect(yield* Ref.get(sent)).toEqual(["Bearer stale"])
 		}),
 	)
 })

@@ -8,8 +8,11 @@ import * as Tabs from "../../ui/tabs"
 import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import * as Billing from "./billing/update"
+import { Message as BillingMessage } from "./billing/model"
+import { Message as KeysMessage } from "./keys/message"
 import * as McpMessage from "./mcp/message"
 import type { Model } from "./model"
+import { subscriptions } from "./subscription"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -144,6 +147,21 @@ describe("settings page", () => {
 		scene({ update: pageUpdate, view }, given(back.model), indicatorMeasured(), expectView(text("david@acme.com")).toExist())
 	})
 
+	test("checkout polls re-read only the page's customer; the confirmed plan refreshes the app's once", () => {
+		const subscribed = Schema.decodeUnknownSync(BillingCustomer)({
+			id: "org_acme",
+			subscriptions: [{ planId: "startup", status: "active", currentPeriodStart: 0, currentPeriodEnd: 30 * 86_400_000 }],
+		})
+		const returning: Model = { ...mcpLoaded(), tab: { _tag: "Billing", model: Billing.init(true, true).model } }
+		const polled = pageUpdate(returning, Message.GotBillingMessage({ message: BillingMessage.ElapsedCheckoutPoll() }))
+		expect(names(polled.commands)).toContain("FetchSettingsCustomer")
+		expect(polled.outMessage).toBeUndefined()
+		const confirmed = pageUpdate(polled.model, Message.CompletedFetchCustomer({ result: Result.succeed(subscribed) }))
+		expect(confirmed.outMessage).toMatchObject({ _tag: "RequestedNavigation", isReplace: true, refreshesCustomer: true })
+		const after = pageUpdate(confirmed.model, Message.CompletedFetchCustomer({ result: Result.succeed(subscribed) }))
+		expect(after.outMessage).toBeUndefined()
+	})
+
 	// Billing is Clerk-only, so the tab left while it confirmed a checkout return is placed in `kept`.
 	test("a checkout return settles even when the Billing tab was left while it waited", () => {
 		const subscribed = Schema.decodeUnknownSync(BillingCustomer)({
@@ -157,5 +175,63 @@ describe("settings page", () => {
 		expect(settled.commands).toContainEqual(
 			expect.objectContaining({ args: { event: "plan_checkout_returned", props: { confirmed: true } } }),
 		)
+	})
+
+	test("an api_keys shape that fails before answering shows the sync error, not a skeleton", () => {
+		const keys = [
+			Message.CompletedFetchSession({ result: Result.succeed({ isAdmin: true, userId: null, hasAiAutoTriage: true }) }),
+			Message.CompletedFetchCustomer({ result: Result.succeed(new BillingCustomer({ id: "org_acme", subscriptions: [] })) }),
+		].reduce((model, message) => pageUpdate(model, message).model, entered({ tab: "keys" }).model)
+		const watching = (model: Model) => subscriptions.apiKeysLoad.modelToDependencies({ model, context }).isWatching
+		expect(watching(keys)).toBe(true)
+		const failed = pageUpdate(keys, Message.FailedLoadApiKeys({ orgId: context.orgId })).model
+		expect(watching(failed)).toBe(false)
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("Failed to load keys")).toExist(),
+			expectView(text("Live sync is unavailable, so keys couldn’t be loaded. Try again.")).toExist(),
+		)
+		const answered = pageUpdate(failed, Message.UpdatedApiKeys({ orgId: context.orgId, rows: [] })).model
+		scene({ update: pageUpdate, view }, given(answered), expectView(text("Failed to load keys")).not.toExist())
+	})
+
+	test("retrying a failed api_keys load reconnects the collections and watches the load again", () => {
+		const keys = [
+			Message.CompletedFetchSession({ result: Result.succeed({ isAdmin: true, userId: null, hasAiAutoTriage: true }) }),
+			Message.FailedLoadApiKeys({ orgId: context.orgId }),
+		].reduce((model, message) => pageUpdate(model, message).model, entered({ tab: "keys" }).model)
+		const watching = (model: Model) => subscriptions.apiKeysLoad.modelToDependencies({ model, context }).isWatching
+		scene(
+			{ update: pageUpdate, view },
+			given(keys),
+			click(role("button", { name: "Try again" })),
+			expectOutMessage(PageOutMessage.RequestedReconnectOrgCollections()),
+			expectView(text("Failed to load keys")).not.toExist(),
+		)
+		const retried = pageUpdate(keys, Message.GotKeysMessage({ message: KeysMessage.ClickedRetryLoad() })).model
+		expect(watching(retried)).toBe(true)
+	})
+
+	test("a saved cap re-reads the app's customer too, keeping its toast", () => {
+		const customer = new BillingCustomer({ id: "org_acme", subscriptions: [] })
+		const editing: Model = { ...mcpLoaded(), tab: { _tag: "Billing", model: { ...Billing.init(true, false).model, isSavingCap: true } } }
+		const saved = pageUpdate(
+			editing,
+			Message.GotBillingMessage({
+				message: BillingMessage.CompletedSaveCap({ featureId: "logs", label: "Logs", result: Result.succeed(customer) }),
+			}),
+		)
+		expect(names(saved.commands)).toContain("FetchSettingsCustomer")
+		expect(saved.outMessage).toEqual(
+			PageOutMessage.RequestedCustomerRefresh({ toast: { type: "success", title: "Logs cap saved", description: "" } }),
+		)
+	})
+
+	test("a customer re-read without a toast still re-reads the app's customer", () => {
+		const billing: Model = { ...mcpLoaded(), tab: { _tag: "Billing", model: Billing.init(true, false).model } }
+		const retried = pageUpdate(billing, Message.GotBillingMessage({ message: BillingMessage.ClickedRetryCustomer() }))
+		expect(names(retried.commands)).toContain("FetchSettingsCustomer")
+		expect(retried.outMessage).toEqual(PageOutMessage.RequestedCustomerRefresh({}))
 	})
 })

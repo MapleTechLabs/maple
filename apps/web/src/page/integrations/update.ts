@@ -238,7 +238,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				},
 			},
 		}),
-		TickedTargetsRefresh: () => requestStatus(model, context, "scrapeTargets", "Poll"),
+		TickedTargetsRefresh: () => requestStatus(model, context, "scrapeTargets", "Refresh"),
 		TickedChecksRefresh: () => Prometheus.requestChecks(model, context, "Refresh"),
 		ClickedProbe: ({ id }) => Prometheus.clickedProbe(model, id),
 		CompletedProbe: ({ id, failure, success, error }) =>
@@ -267,7 +267,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedRailwaySync: ({ failure }) => Railway.completedSync(model, context, failure),
 		ClickedRailwayRotate: () => Railway.setRotating(model, true),
 		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
-		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Poll"),
+		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
 		CompletedFetchOrganizations: ({ key, result }) =>
 			Planetscale.updateCard(model, {
 				organizations: Keyed.accept(model.planetscaleCard.organizations, key, result),
@@ -313,7 +313,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 		},
 		TickedPlanetscaleWatch: () => {
-			const refreshed = requestStatus(model, context, "planetscale", "Poll")
+			const refreshed = requestStatus(model, context, "planetscale", "Refresh")
 			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
 		},
 		CompletedGcpLogVolume: ({ key, result }) =>
@@ -377,7 +377,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedGcpConfirmRemoval: () => Configure.clickedConfirmRemoval(model),
 		CompletedGcpConfirmRemoval: ({ failure }) => Configure.completedConfirmRemoval(model, context, failure),
 		TickedGcpRefresh: () => {
-			const refreshed = requestStatus(model, context, "gcp", "Poll")
+			const refreshed = requestStatus(model, context, "gcp", "Refresh")
 			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
 		},
 		ClickedGithubRefresh: () => Github.clickedRefresh(model, context),
@@ -385,7 +385,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ToggledCiTraces: () => Github.toggledCiTraces(model),
 		CompletedCiTraces: ({ enabled, failure }) =>
 			Github.completedCiTraces(model, context, enabled, failure),
-		TickedGithubPoll: () => requestStatus(model, context, "github", "Poll"),
+		TickedGithubPoll: () => requestStatus(model, context, "github", "Refresh"),
 		EndedGithubForcePoll: ({ version }) => Github.endedForcePoll(model, version),
 		ClickedRepoDelete: ({ repoId }) => Github.clickedRepoDelete(model, repoId),
 		GotRepoDeleteDialogMessage: ({ message: child }) => Github.gotRepoDeleteDialog(model, child),
@@ -416,7 +416,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		EndedConnectGrace: ({ attempt }) => Connect.endedGrace(model, attempt),
 		ReceivedConnectMessage: ({ provider, status, message: text }) =>
 			Connect.receivedCallback(model, context, provider, status, text),
-		ClickedRetryStatus: ({ name }) => requestStatus(model, context, name, "Refresh"),
+		ClickedRetryStatus: ({ name }) => requestStatus(model, context, name, "Supersede"),
 		ClickedDisconnect: () => withDisconnectDialog(model, Dialog.open(model.disconnect.dialog)),
 		GotDisconnectDialogMessage: ({ message: child }) =>
 			model.disconnect.isPending ||
@@ -455,7 +455,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return chain(settled, [
 				(next) => ({ model: next, outMessage: toast }),
 				...(failure === null ? spec.refresh : []).map(
-					(name) => (next: Model) => requestStatus(next, context, name, "Refresh"),
+					(name) => (next: Model) => requestStatus(next, context, name, "Supersede"),
 				),
 				(next) =>
 					failure === null && integration.startsWith("cloudflare")

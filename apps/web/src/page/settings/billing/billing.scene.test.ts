@@ -92,7 +92,7 @@ describe("billing tab", () => {
 		const planless = new BillingCustomer({ id: "org_acme", subscriptions: [] })
 		expect(customerChanged(returning.model, planless)).toBeNull()
 		const confirmed = customerChanged(returning.model, customer)
-		expect(confirmed?.isCheckoutSettled).toBe(true)
+		expect(confirmed?.checkout).toBe("Confirmed")
 		expect(confirmed?.step.model.checkoutReturn).toBe("Idle")
 		expect(confirmed?.step.commands?.[0]).toMatchObject({ args: { event: "plan_checkout_returned", props: { confirmed: true } } })
 	})
@@ -100,7 +100,7 @@ describe("billing tab", () => {
 	test("the wait gives up after the timeout with the notice, and an idle tab never polls", () => {
 		const timedOut = update(init(true, true).model, Message.ElapsedCheckoutTimeout(), null, 0)
 		expect(timedOut.step.model.checkoutReturn).toBe("TimedOut")
-		expect(timedOut.isCheckoutSettled).toBe(true)
+		expect(timedOut.checkout).toBe("TimedOut")
 		expect(update(timedOut.step.model, Message.ElapsedCheckoutPoll(), null, 0).isCustomerStale).toBe(false)
 		expect(names(init(true, false).commands)).not.toContain("WaitBillingCheckoutPoll")
 	})

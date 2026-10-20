@@ -252,7 +252,7 @@ const settleWrite = (model: Model, opens: number): { readonly model: Model; read
 const staleWrite = (model: Model, context: PageContext, isSaved: boolean): Return => {
 	const freed = withConfigure(model, () => ({ isCreating: false, isSaving: false }))
 	return isSaved
-		? chain(freed, [(next) => requestStatus(next, context, "gcp", "Refresh"), refreshInventory])
+		? chain(freed, [(next) => requestStatus(next, context, "gcp", "Supersede"), refreshInventory])
 		: { model: freed }
 }
 
@@ -281,7 +281,7 @@ export const completedCreate = (
 		withConfigure(settled, () => ({ created: connector, target })),
 		[
 			(next) => toMethod(next, false),
-			(next) => requestStatus(next, context, "gcp", "Refresh"),
+			(next) => requestStatus(next, context, "gcp", "Supersede"),
 			refreshInventory,
 		],
 	)
@@ -416,7 +416,7 @@ export const completedUpdate = (
 	const applied = withConfigure(settled, () => ({ asked: flags, confirm: initConfirm() }))
 	return chain(applied, [
 		(next) => toMethod(next, false),
-		(next) => requestStatus(next, context, "gcp", "Refresh"),
+		(next) => requestStatus(next, context, "gcp", "Supersede"),
 		refreshInventory,
 	])
 }
@@ -544,5 +544,5 @@ export const completedConfirmRemoval = (
 				description: failure.message,
 			}),
 		}
-	return chain(settled, [(next) => requestStatus(next, context, "gcp", "Refresh"), refreshInventory])
+	return chain(settled, [(next) => requestStatus(next, context, "gcp", "Supersede"), refreshInventory])
 }

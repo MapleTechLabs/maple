@@ -28,10 +28,12 @@ export const Model = Schema.Struct({
 	/** `null` until the stored state was read; nothing renders before. */
 	state: Schema.NullOr(QuickStartState),
 	keys: Keys,
-	/** The last hour's overview; empty until it lands (or when it failed). */
+	/** The last hour's overview; empty until it lands, kept when a later poll fails. */
 	services: Schema.Array(ServiceRow),
 	/** `useEffectiveTimeRange(.., "1h")`: snapped on entry, unsnapped after a Reload. */
 	window: Schema.NullOr(TimeWindow),
+	/** An overview read is out: a poll waits for it, so a slow answer still matches `window`. */
+	isOverviewInFlight: Schema.Boolean,
 	isSendingTest: Schema.Boolean,
 	copies: Schema.Struct({ endpoint: CopyButton.Model, privateKey: CopyButton.Model }),
 	isPrivateKeyVisible: Schema.Boolean,
@@ -49,6 +51,8 @@ export const Message = defineMessageUnion({
 	FailedLoadOverview: { window: TimeWindow },
 	/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the card is mounted. */
 	TickedPoll: {},
+	/** A poll or a sent test event read the clock: the last hour up to now. */
+	ResolvedPollWindow: { window: TimeWindow },
 	ClickedToggleExpanded: {},
 	ClickedDismiss: {},
 	ClickedDismissCelebration: {},

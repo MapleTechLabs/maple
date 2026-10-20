@@ -148,6 +148,36 @@ describe("anomalies list", () => {
 		)
 	})
 
+	test("during a tab switch Load more waits for the new tab's first page and drops the old tab's cursor", () => {
+		const entered = init({ search: {} }, context).model
+		const open = pageUpdate(
+			entered,
+			Message.CompletedFetchFirstPage({
+				key: entered.firstPage.key ?? "",
+				result: Result.succeed({ data: [incident(1, "critical")], nextCursor: "c1" }),
+			}),
+		).model
+		const switched = routeChanged(open, { search: { status: "all" } }, context).model
+		expect(pageUpdate(switched, Message.ClickedLoadMore()).commands ?? []).toHaveLength(0)
+		const mixed = pageUpdate(
+			switched,
+			Message.CompletedLoadMore({
+				status: "all",
+				cursor: "c1",
+				result: Result.succeed({ data: [incident(2, "critical")], nextCursor: null }),
+			}),
+		).model
+		expect(allIncidentsOf(mixed).map((row) => row.id.slice(-1))).toEqual(["1"])
+		const landed = pageUpdate(
+			mixed,
+			Message.CompletedFetchFirstPage({
+				key: switched.firstPage.key ?? "",
+				result: Result.succeed({ data: [incident(3, "critical")], nextCursor: "a1" }),
+			}),
+		).model
+		expect(names(pageUpdate(landed, Message.ClickedLoadMore()).commands)).toEqual(["LoadMoreAnomalyIncidents"])
+	})
+
 	test("a load-more answer for a cursor a live tick discarded is dropped", () => {
 		const entered = init({ search: {} }, context).model
 		const first = (rows: ReadonlyArray<V2AnomalyIncident>) =>

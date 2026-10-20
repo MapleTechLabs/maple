@@ -35,7 +35,7 @@ export const requestUsage = (model: Model, context: PageContext, mode: Keyed.Req
 /** `refreshStatus()` + `refreshUsage()`. */
 export const refreshCloudflare = (model: Model, context: PageContext): Return =>
 	chain(model, [
-		(next) => requestStatus(next, context, "cloudflare", "Refresh"),
+		(next) => requestStatus(next, context, "cloudflare", "Supersede"),
 		(next) => requestUsage(next, context, "Refresh"),
 	])
 

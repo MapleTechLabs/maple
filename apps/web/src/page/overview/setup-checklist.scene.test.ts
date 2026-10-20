@@ -114,6 +114,43 @@ describe("overview setup checklist", () => {
 		)
 	})
 
+	test("each poll re-reads the clock and asks the overview for the last hour up to now", () => {
+		const model = withServices(entered(true).read.model, [])
+		const polled = pageUpdate(model, setup(SetupMessage.TickedPoll()))
+		expect(names(polled.commands)).toEqual(["ResolveSetupChecklistPollWindow"])
+		const later = { startTime: "2026-10-01 11:05:00", endTime: "2026-10-01 12:05:00" }
+		const resolved = pageUpdate(polled.model, setup(SetupMessage.ResolvedPollWindow({ window: later })))
+		expect(resolved.commands?.map((command) => command.args)).toEqual([{ window: later, pinnedNamespace: null }])
+		expect(withServices(resolved.model, ["checkout"]).setup?.services).toEqual([
+			{ serviceName: "checkout", spanCount: 10 },
+		])
+	})
+
+	test("a poll during a slow overview read waits for it, and the slow answer lands", () => {
+		const reading = entered(true).read.model
+		const polled = pageUpdate(reading, setup(SetupMessage.TickedPoll()))
+		expect(names(polled.commands)).toEqual([])
+		const landed = withServices(polled.model, ["checkout"])
+		expect(landed.setup?.services).toEqual([{ serviceName: "checkout", spanCount: 10 }])
+		expect(names(pageUpdate(landed, setup(SetupMessage.TickedPoll())).commands)).toEqual([
+			"ResolveSetupChecklistPollWindow",
+		])
+	})
+
+	test("a sent test event re-reads the clock before asking the overview again", () => {
+		const sent = pageUpdate(entered(true).read.model, setup(SetupMessage.CompletedSendTestEvent({ isSent: true })))
+		expect(names(sent.commands)).toEqual(["ResolveSetupChecklistPollWindow"])
+	})
+
+	test("a failed poll keeps the services already found", () => {
+		const found = withServices(entered(true).read.model, ["checkout"])
+		const failed = pageUpdate(
+			found,
+			setup(SetupMessage.FailedLoadOverview({ window: found.setup?.window ?? { startTime: "", endTime: "" } })),
+		)
+		expect(failed.model.setup?.services).toEqual([{ serviceName: "checkout", spanCount: 10 }])
+	})
+
 	test("a stored dismissal sends none of the card's reads", () => {
 		const { read } = entered(true, { ...DEFAULT_QUICK_START_STATE, checklistDismissed: true })
 		expect(names(read.commands)).toEqual([])

@@ -15,7 +15,10 @@ import { Clock, Effect, Option, Predicate, Queue, Schema, Stream } from "effect"
 /** The slice of clerk-js this app reads (`window.Clerk`). */
 interface ClerkResources {
 	readonly user?: ClerkUserResource | null
-	readonly session?: { readonly id: string; readonly getToken: () => Promise<string | null> } | null
+	readonly session?: {
+		readonly id: string
+		readonly getToken: (options?: { readonly skipCache?: boolean }) => Promise<string | null>
+	} | null
 	readonly organization?: ClerkOrganizationResource | null
 }
 
@@ -360,10 +363,17 @@ export const clerkTeamOrganization: Effect.Effect<Option.Option<ClerkTeamOrganiz
 	}),
 )
 
+const sessionToken = (skipCache: boolean): Effect.Effect<Option.Option<string>> =>
+	Effect.tryPromise(() => window.Clerk?.session?.getToken({ skipCache }) ?? Promise.resolve(null)).pipe(
+		Effect.map(Option.fromNullishOr),
+		Effect.orElseSucceed(Option.none),
+	)
+
 /** The session JWT for API calls (`session.getToken()`). */
-export const clerkSessionToken: Effect.Effect<Option.Option<string>> = Effect.tryPromise(
-	() => window.Clerk?.session?.getToken() ?? Promise.resolve(null),
-).pipe(Effect.map(Option.fromNullishOr), Effect.orElseSucceed(Option.none))
+export const clerkSessionToken = sessionToken(false)
+
+/** A session JWT minted now, bypassing clerk-js's token cache. */
+export const freshClerkSessionToken = sessionToken(true)
 
 // clerk-js resources for the Clerk-only settings tabs and `/account`: ported markup over the
 // vanilla resource API.

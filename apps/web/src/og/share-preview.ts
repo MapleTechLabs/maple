@@ -93,6 +93,10 @@ export const fetchShareOgMeta = async (api: ApiTarget, token: string): Promise<S
 	let meta: ShareOgMeta | undefined
 	try {
 		const response = await postJson(api, "/v2/share/og-meta", { token })
+		// A 4xx (no such public link) is a cacheable negative; a 408, 429 or 5xx is retried next load.
+		const isNegative =
+			response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429
+		if (!response.ok && !isNegative) return undefined
 		meta = response.ok ? ((await response.json()) as ShareOgMeta) : undefined
 	} catch {
 		// A timeout or a network failure is not cached: the next request should
@@ -149,6 +153,33 @@ export const shareOgMetaRewriter = (meta: ShareOgMeta, origin: string): Rewriter
 /** Big enough for a 30px avatar at 2×; anything larger is not a logo. */
 const MAX_LOGO_BYTES = 512 * 1024
 
+/** The whole stream, or `undefined` (and the stream cancelled) once it passes `limit` bytes. */
+const readCapped = async (
+	body: ReadableStream<Uint8Array>,
+	limit: number,
+): Promise<Uint8Array | undefined> => {
+	const reader = body.getReader()
+	const chunks: Array<Uint8Array> = []
+	const read = async (total: number): Promise<number | undefined> => {
+		const { done, value } = await reader.read()
+		if (done) return total
+		if (total + value.byteLength > limit) {
+			await reader.cancel()
+			return undefined
+		}
+		chunks.push(value)
+		return read(total + value.byteLength)
+	}
+	const total = await read(0)
+	if (total === undefined) return undefined
+	const data = new Uint8Array(total)
+	chunks.reduce((offset, chunk) => {
+		data.set(chunk, offset)
+		return offset + chunk.byteLength
+	}, 0)
+	return data
+}
+
 /**
  * The org's logo, fetched so the renderer never has to.
  *
@@ -161,10 +192,14 @@ const fetchOrgLogo = async (url: string): Promise<EmbeddedImage | undefined> => 
 	try {
 		if (new URL(url).protocol !== "https:") return undefined
 		const response = await fetch(url, { signal: AbortSignal.timeout(API_TIMEOUT_MS) })
-		if (!response.ok) return undefined
+		if (!response.ok || response.body === null) return undefined
+		if (Number(response.headers.get("content-length") ?? 0) > MAX_LOGO_BYTES) {
+			await response.body.cancel()
+			return undefined
+		}
 
-		const data = new Uint8Array(await response.arrayBuffer())
-		return data.byteLength > MAX_LOGO_BYTES ? undefined : { src: url, data }
+		const data = await readCapped(response.body, MAX_LOGO_BYTES)
+		return data === undefined ? undefined : { src: url, data }
 	} catch {
 		return undefined
 	}

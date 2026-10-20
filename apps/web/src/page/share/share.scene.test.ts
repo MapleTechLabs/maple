@@ -15,6 +15,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	(commands ?? []).map(({ name }) => name)
+const answer = (batchId: number) => Message.CompletedFetchBatch({ batchId, keys: {}, states: {} })
 
 const widget = (id: string): ShareWidget => ({
 	id,
@@ -59,9 +60,34 @@ describe("share", () => {
 		const flushed = update(measured(6), Message.CompletedFlushFrame())
 		expect(names(flushed.commands)).toEqual([FetchBatch.name])
 		expect(flushed.model.queuedBatches).toHaveLength(1)
-		const answered = update(flushed.model, Message.CompletedFetchBatch({ keys: {}, states: {} }))
+		const answered = update(flushed.model, answer(flushed.model.sentBatchId))
 		expect(names(answered.commands)).toEqual([FetchBatch.name])
 		expect(answered.model.queuedBatches).toHaveLength(0)
+	})
+
+	test("a reload drops batches queued for the old window", () => {
+		const flushed = update(measured(6), Message.CompletedFlushFrame())
+		const reloaded = update(flushed.model, Message.CompletedResolveReloadClock({ nowMs: NOW + 5 * 60_000 })).model
+		const queuedKeys = reloaded.queuedBatches.flatMap((batch) => batch.requests.map((request) => request.key))
+		expect(queuedKeys.every((key) => key.includes("12:05:00"))).toBe(true)
+	})
+
+	test("the old window's answer after a reload does not send the new window's queued batch early", () => {
+		const flushed = update(measured(6), Message.CompletedFlushFrame()).model
+		const reloaded = update(flushed, Message.CompletedResolveReloadClock({ nowMs: NOW + 5 * 60_000 }))
+		expect(names(reloaded.commands)).toEqual([FetchBatch.name])
+		const stale = update(reloaded.model, answer(flushed.sentBatchId))
+		expect(names(stale.commands)).toEqual([])
+		expect(stale.model.queuedBatches).toHaveLength(1)
+		const current = update(stale.model, answer(reloaded.model.sentBatchId))
+		expect(names(current.commands)).toEqual([FetchBatch.name])
+		expect(names(update(current.model, answer(current.model.sentBatchId)).commands)).toEqual([])
+	})
+
+	test("a tile the answer left out settles as a failure, not loading", () => {
+		const flushed = update(measured(1), Message.CompletedFlushFrame()).model
+		const answered = update(flushed, Message.CompletedFetchBatch({ batchId: flushed.sentBatchId, keys: { w0: flushed.requested.w0 ?? "" }, states: {} }))
+		expect(answered.model.states.w0?._tag).toBe("Error")
 	})
 
 	test("a reload refetches every reported tile", () => {

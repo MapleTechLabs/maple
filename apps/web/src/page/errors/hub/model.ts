@@ -68,6 +68,8 @@ export const Model = Schema.Struct({
 	isFilterRailMounted: Schema.Boolean,
 	/** The volume sort's warehouse ranking (fingerprints by window volume). */
 	ranking: KeyedSchema(Schema.Array(Schema.String), LoadFailure),
+	/** The service and env filters the ranking on screen answers (`rankingFiltersOf`). */
+	rankedFilters: Schema.NullOr(Schema.String),
 	/** The list query the pages extend; a change starts over at page one. */
 	listKey: Schema.NullOr(Schema.String),
 	pages: Schema.Array(PageSlot),

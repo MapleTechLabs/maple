@@ -189,6 +189,27 @@ describe("chat conversation", () => {
 		expect(names(sent.commands)).toContain("PostChatMessage")
 	})
 
+	test("a failed history read is not an empty thread: nothing sends until a retry reads it", () => {
+		const entered = init("default", "org_acme:default").model
+		const failed = step(entered, Message.CompletedLoadHistory({ generation: 1, result: Result.fail("Service unavailable") })).model
+		expect(failed.historyError).toBe("Service unavailable")
+		expect(failed.error).toBeNull()
+		const early = step(failed, Message.ClickedSuggestion({ text: "Hi" }))
+		expect(early.commands ?? []).toEqual([])
+		expect(early.outMessage).toBeUndefined()
+		const retried = step(failed, Message.ClickedRetryHistory())
+		expect(retried.commands?.map((command) => command.args)).toEqual([{ sessionId: "org_acme:default", generation: 2 }])
+		const earlier = { id: "m1", role: "user" as const, parts: [TextPart.make({ text: "Earlier", state: "done" })] }
+		const loaded = step(
+			retried.model,
+			Message.CompletedLoadHistory({ generation: 2, result: Result.succeed({ messages: [earlier], cursor: 3, running: false }) }),
+		).model
+		expect(loaded.historyError).toBeNull()
+		const sent = step(loaded, Message.ClickedSuggestion({ text: "Hi" }))
+		expect(sent.outMessage).toBeUndefined()
+		expect(names(sent.commands)).toContain("PostChatMessage")
+	})
+
 	test("a streaming answer parses one version at a time, keeps the last parse on screen and only on-screen bodies", async () => {
 		const sending = step(ready(), Message.ClickedSuggestion({ text: "Hi" })).model
 		const accepted = step(

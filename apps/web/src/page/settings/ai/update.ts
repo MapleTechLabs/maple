@@ -270,7 +270,10 @@ export const update = (model: Model, message: Message): Return =>
 						: {
 								model: { ...closed.model, key: refresh(closed.model.key) },
 								commands: [...(closed.commands ?? []), FetchOpenRouterKey()],
-								outMessage: toast("success", "Add-on added"),
+								// The add-on is on the app's customer too: the root re-reads it.
+								outMessage: PageOutMessage.RequestedCustomerRefresh({
+									toast: { type: "success", title: "Add-on added", description: "" },
+								}),
 							},
 				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Failed to add the add-on", error.message) }),
 			})

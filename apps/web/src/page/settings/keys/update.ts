@@ -21,6 +21,7 @@ export const init = (options: Readonly<{ isAdmin: boolean; userId: string | null
 		isAdmin: options.isAdmin,
 		userId: options.userId,
 		apiKeys: null,
+		isLoadFailed: false,
 		typeFilter: "all",
 		statusFilter: "active",
 		statusSelect: Select.init("keys-status", { value: "active", selectedIndex: 0 }),
@@ -106,7 +107,13 @@ const updateMenu = (
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
-		UpdatedApiKeys: ({ rows }) => ({ model: { ...model, apiKeys: rows } }),
+		UpdatedApiKeys: ({ rows }) => ({ model: { ...model, apiKeys: rows, isLoadFailed: false } }),
+		FailedLoadApiKeys: () => ({ model: { ...model, isLoadFailed: true } }),
+		// `retryOrgCollections`: a stopped shape syncs again only on fresh collections.
+		ClickedRetryLoad: () => ({
+			model: { ...model, isLoadFailed: false },
+			outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
+		}),
 		ClickedTypeFilter: ({ type }) => ({ model: { ...model, typeFilter: type } }),
 		GotStatusSelectMessage: ({ message: child }) => {
 			const step = Select.update(model.statusSelect, child)

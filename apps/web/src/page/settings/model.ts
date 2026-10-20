@@ -55,6 +55,8 @@ export const Model = Schema.Struct({
 	customer: CustomerData.schema,
 	/** The `api_keys` shape while a tab reads it, `null` before its first answer. */
 	apiKeys: Schema.NullOr(Schema.Array(V2ApiKey)),
+	/** The `api_keys` shape failed before its first answer (`useCollectionLoadFailed`). */
+	isApiKeysLoadFailed: Schema.Boolean,
 	/** `null` until the active tab is known (the session gates it in Clerk mode). */
 	tab: Schema.NullOr(TabModel),
 	/** Tabs left during this visit, one per tab: they still take their answers, and revalidate on return. */

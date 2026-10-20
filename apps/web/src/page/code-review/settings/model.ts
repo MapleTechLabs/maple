@@ -2,6 +2,7 @@ import {
 	GithubIntegrationStatus,
 	GithubPrReviewConfigResponse,
 	GithubPrReviewSettingsResponse,
+	PrReviewOrgSettings,
 	VcsRepositoryId,
 } from "@maple/domain/http"
 import { Schema } from "effect"
@@ -16,6 +17,9 @@ import { RepoFilter, RepoListState } from "./repositories"
 // `/code-review/settings`: the review model, the default rules and the
 // repositories, each repository's own rules in a dialog.
 
+export const SavePurpose = Schema.Literals(["model", "defaults"])
+export type SavePurpose = typeof SavePurpose.Type
+
 export const Model = Schema.Struct({
 	settings: KeyedSchema(GithubPrReviewSettingsResponse, LoadFailure),
 	githubStatus: KeyedSchema(GithubIntegrationStatus, LoadFailure),
@@ -23,6 +27,14 @@ export const Model = Schema.Struct({
 	isAdmin: Schema.Boolean,
 	modelSelect: Select.Model,
 	isSavingModel: Schema.Boolean,
+	/** The settings as this tab has written them (in flight or queued); every save is built from it. */
+	localSettings: Schema.NullOr(PrReviewOrgSettings),
+	/** The settings row is written whole, so saves run one at a time: the one in flight, then the queue. */
+	savingSettings: Schema.NullOr(SavePurpose),
+	/** The settings the save in flight sent, and the last ones the server confirmed (null: the read). */
+	sentSettings: Schema.NullOr(PrReviewOrgSettings),
+	confirmedSettings: Schema.NullOr(PrReviewOrgSettings),
+	queuedSaves: Schema.Array(Schema.Struct({ purpose: SavePurpose, label: Schema.String })),
 	/** Built from the first settings answer, then kept in step with refetches. */
 	defaultsForm: Schema.NullOr(RulesForm.Model),
 	repoList: RepoListState,
@@ -46,9 +58,6 @@ const result = <S extends Schema.Top>(schema: S) => ({
 	key: Schema.String,
 	result: Schema.Result(schema, LoadFailure),
 })
-
-export const SavePurpose = Schema.Literals(["model", "defaults"])
-export type SavePurpose = typeof SavePurpose.Type
 
 export const Message = defineMessageUnion({
 	CompletedFetchSettings: result(GithubPrReviewSettingsResponse),

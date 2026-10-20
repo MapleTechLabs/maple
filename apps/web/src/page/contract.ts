@@ -76,6 +76,8 @@ export const PageOutMessage = defineMessageUnion({
 		followUpToast: Schema.optionalKey(
 			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
 		),
+		/** A confirmed checkout's URL cleanup: the root re-reads the app's customer too. */
+		refreshesCustomer: Schema.optionalKey(Schema.Boolean),
 	},
 	/** The org-global namespace pin (the shell's org menu owns it): set, or cleared with `None`. */
 	RequestedNamespacePin: { maybeNamespace: Schema.Option(Schema.String) },
@@ -88,6 +90,12 @@ export const PageOutMessage = defineMessageUnion({
 	RequestedInfraSurfaces: {},
 	/** `retryOrgCollections` / `handleCollectionStuck`: recreate the org's synced collections. */
 	RequestedReconnectOrgCollections: {},
+	/** A billing change in a page: the root re-reads the app's customer (plan gate, quota banners). */
+	RequestedCustomerRefresh: {
+		toast: Schema.optionalKey(
+			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
+		),
+	},
 	/**
 	 * `toastManager.add`: the root shows it. `action` is the page's own Message for the action
 	 * button (`actionProps`); the root sends it back to the page that is open when it is clicked.

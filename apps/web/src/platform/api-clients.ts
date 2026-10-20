@@ -1,8 +1,9 @@
 import { MapleAiApi, MapleApi, MapleInternalApi } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { transformMapleApiClient } from "../lib/services/common/api-client-transform"
+import { isBillingRequest, transformMapleApiClient } from "../lib/services/common/api-client-transform"
 import { apiBaseUrl } from "../lib/services/common/api-base-url"
 import { withRequestTimeout } from "../lib/services/common/http-client"
+import { withUnauthorizedResign } from "../lib/services/common/retry-policy"
 import { Context, Effect, Layer, Option } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
@@ -10,8 +11,8 @@ import { MapleAuthApi } from "./auth-api"
 import { SessionBearer } from "./session-bearer"
 
 /**
- * The API HTTP client: requests to the API carry the session
- * bearer, and every request has the same 45 s deadline.
+ * The API HTTP client: requests to the API carry the session bearer, every request has
+ * the same 45 s deadline, and billing reads that 401 are resent with a fresh bearer.
  */
 const MapleHttpClientLive = Layer.effect(
 	HttpClient.HttpClient,
@@ -31,7 +32,10 @@ const MapleHttpClientLive = Layer.effect(
 		// The base URL is prepended here, not by HttpApiClient: its `baseUrl` is applied after this
 		// client's request mapping, so `authorize` would only ever see relative URLs.
 		const absolute = HttpClient.mapRequest(client, HttpClientRequest.prependUrl(apiBaseUrl))
-		return withRequestTimeout(HttpClient.mapRequestEffect(absolute, authorize))
+		return withUnauthorizedResign(withRequestTimeout(HttpClient.mapRequestEffect(absolute, authorize)), {
+			shouldRetry: (request) => request.url.startsWith(apiBaseUrl) && isBillingRequest(request),
+			freshToken: bearer.freshToken,
+		})
 	}),
 ).pipe(Layer.provide([FetchHttpClient.layer, SessionBearer.layer]))
 

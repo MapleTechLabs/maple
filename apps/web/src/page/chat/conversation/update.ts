@@ -96,6 +96,7 @@ export const init = (tabId: string, sessionId: string, readOnly: ReadOnly = null
 		sessionId,
 		readOnly,
 		historyReady: false,
+		historyError: null,
 		messages: [],
 		status: "ready",
 		error: null,
@@ -190,7 +191,7 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 			if (generation !== model.generation) return { model }
 			return Result.match(result, {
 				onSuccess: (history) => {
-					const loaded: Model = { ...model, historyReady: true, messages: history.messages }
+					const loaded: Model = { ...model, historyReady: true, historyError: null, messages: history.messages }
 					// A turn already running when this device connected: resume its tail.
 					return history.running
 						? {
@@ -203,9 +204,17 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 							}
 						: { model: loaded }
 				},
-				onFailure: (error) => ({ model: { ...model, historyReady: true, error } }),
+				// Unknown, not empty: sends stay blocked until a retry reads it.
+				onFailure: (error) => ({ model: { ...model, historyError: error } }),
 			})
 		},
+		ClickedRetryHistory: () =>
+			model.historyReady || model.historyError === null
+				? { model }
+				: {
+						model: { ...model, historyError: null, generation: model.generation + 1 },
+						commands: [LoadHistory({ sessionId: model.sessionId, generation: model.generation + 1 })],
+					},
 		CompletedTrackMessageSent: () => ({ model }),
 		ChangedDraft: ({ text }) => ({ model: { ...model, draft: text } }),
 		// `form.reset()` runs before `onSubmit`, so the composer clears even when nothing is sent.

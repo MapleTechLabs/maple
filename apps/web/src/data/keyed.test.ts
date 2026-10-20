@@ -73,9 +73,34 @@ describe("Keyed slots", () => {
 		expect(superseded.key).not.toBe(morning)
 		const afterOld = Keyed.accept(superseded, morning, Result.succeed(1))
 		expect(afterOld).toEqual(superseded)
-		const key = superseded.key ?? ""
+		const key = superseded.key
 		expect(Keyed.accept(afterOld, key, Result.succeed(2)).data).toEqual(AsyncData.Success({ data: 2 }))
 		expect(Keyed.request(Keyed.accept(afterOld, key, Result.succeed(2)), morning, "Load")).toEqual(Option.none())
 		expect(Keyed.supersede(superseded, morning).key).not.toBe(key)
+	})
+
+	test("a later poll or retry keeps the superseding generation: the pre-write answer stays dropped", () => {
+		const superseded = Keyed.supersede(requested(loaded(morning, 1), morning, "Refresh"), morning)
+		const landed = Keyed.accept(superseded, superseded.key, Result.succeed(2))
+		const polled = requested(landed, morning, "Refresh")
+		expect(polled.key).toBe(superseded.key)
+		expect(Keyed.accept(polled, morning, Result.succeed(1))).toEqual(polled)
+		const failed = Keyed.accept(polled, polled.key, Result.fail("timeout"))
+		const retried = requested(failed, morning, "Refresh")
+		expect(Keyed.accept(retried, morning, Result.succeed(1))).toEqual(retried)
+		expect(Keyed.accept(retried, retried.key, Result.succeed(3)).data).toEqual(AsyncData.Success({ data: 3 }))
+	})
+
+	test("requestFor: `Supersede` always re-reads, the other modes defer to `request`", () => {
+		const pending = requested(Keyed.idle<number, string>(), morning)
+		expect(Keyed.requestFor(pending, morning, "Load")).toEqual(Option.none())
+		expect(Keyed.requestFor(pending, morning, "Refresh")).toEqual(
+			Keyed.request(pending, morning, "Refresh"),
+		)
+		const superseded = Option.getOrThrow(Keyed.requestFor(pending, morning, "Supersede"))
+		expect(Keyed.accept(superseded, morning, Result.succeed(1))).toEqual(superseded)
+		expect(Keyed.accept(superseded, superseded.key, Result.succeed(2)).data).toEqual(
+			AsyncData.Success({ data: 2 }),
+		)
 	})
 })

@@ -22,14 +22,18 @@ const toAsync = <A, E>(result: Result.Result<A, E>) =>
 		onFailure: (error) => AsyncData.fail<E, A>(error),
 	})
 
+/** A version-list read under a new generation; only its answer is kept. */
+const readVersions = (model: Model, history: Partial<HistoryState>): Return => {
+	const generation = model.history.versionsGeneration + 1
+	return {
+		model: withHistory(model, { ...history, versionsGeneration: generation }),
+		commands: [FetchVersions({ dashboardId: model.dashboardId, generation })],
+	}
+}
+
 /** `openHistory`: the panel mounts and reads the version list. */
 export const openHistory = (model: Model): Return =>
-	model.history.isOpen
-		? { model }
-		: {
-				model: withHistory(model, { isOpen: true, versions: AsyncData.Loading() }),
-				commands: [FetchVersions({ dashboardId: model.dashboardId })],
-			}
+	model.history.isOpen ? { model } : readVersions(model, { isOpen: true, versions: AsyncData.Loading() })
 
 type HistoryMessage = Extract<
 	Message,
@@ -69,13 +73,11 @@ const restored = (model: Model, versionNumber: number, error: string | null): Re
 			outMessage: toast("error", "Restore failed", error),
 		}
 	const closed = Dialog.close(model.history.restoreDialog)
+	// The restore cuts a version: the list re-reads, as its reactivity key does.
+	const reread = readVersions(closePreview(model), { isRestoring: false, restoreDialog: closed.model })
 	return {
-		model: withHistory(closePreview(model), { isRestoring: false, restoreDialog: closed.model }),
-		// The restore cuts a version: the list re-reads, as its reactivity key does.
-		commands: [
-			...Command.mapMessages(closed.commands ?? [], wrapDialog),
-			FetchVersions({ dashboardId: model.dashboardId }),
-		],
+		model: reread.model,
+		commands: [...Command.mapMessages(closed.commands ?? [], wrapDialog), ...(reread.commands ?? [])],
 		outMessage: toast("success", `Restored from v${versionNumber}`, ""),
 	}
 }
@@ -91,7 +93,9 @@ export const historyStep = (model: Model, message: HistoryMessage): Return => {
 		case "ClickedCloseHistory":
 			return { model: withHistory(closePreview(model), { isOpen: false }) }
 		case "CompletedFetchVersions":
-			return { model: withHistory(model, { versions: toAsync(message.result) }) }
+			return message.generation !== history.versionsGeneration
+				? { model }
+				: { model: withHistory(model, { versions: toAsync(message.result) }) }
 		case "ClickedVersion":
 			return preview(model, message.versionId)
 		case "CompletedFetchSnapshot":

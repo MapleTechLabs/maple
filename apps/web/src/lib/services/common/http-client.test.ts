@@ -4,6 +4,7 @@ import { TestClock } from "effect/testing"
 import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
 
 import { withRequestTimeout } from "./http-client"
+import { isRetryableTransportError } from "./retry-policy"
 
 const NEVER_RESPONDS: typeof globalThis.fetch = () => new Promise<Response>(() => {})
 
@@ -34,6 +35,16 @@ describe("withRequestTimeout", () => {
 				Result.isFailure(result) ? result.failure : undefined,
 				HttpClientError.HttpClientError,
 			)
+		}),
+	)
+
+	it.effect("is not retried, so a hung read fails after one deadline", () =>
+		Effect.gen(function* () {
+			const fiber = yield* Effect.forkChild(Effect.flip(get(NEVER_RESPONDS)))
+			yield* TestClock.adjust("45 seconds")
+			const error = yield* Fiber.join(fiber)
+
+			assert.isFalse(isRetryableTransportError(error))
 		}),
 	)
 

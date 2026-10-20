@@ -75,9 +75,9 @@ const invitationsPage = (organization: ClerkOrganizationResource, page: number) 
 	)
 
 const FetchMembers = Command.define("FetchClerkMemberships", {
-	args: { page: Schema.Number },
+	args: { page: Schema.Number, generation: Schema.Number },
 	messages: [Message.CompletedFetchMembers],
-	execute: ({ page }) =>
+	execute: ({ page, generation }) =>
 		currentClerkOrganization.pipe(
 			Effect.flatMap((organization) => membershipsPage(organization, page)),
 			Effect.map((result) => {
@@ -86,20 +86,20 @@ const FetchMembers = Command.define("FetchClerkMemberships", {
 			}),
 			Effect.mapError(toLoadFailure),
 			Effect.result,
-			Effect.map((result) => Message.CompletedFetchMembers({ page, result })),
+			Effect.map((result) => Message.CompletedFetchMembers({ page, generation, result })),
 		),
 })
 
 const FetchInvitations = Command.define("FetchClerkInvitations", {
-	args: { page: Schema.Number },
+	args: { page: Schema.Number, generation: Schema.Number },
 	messages: [Message.CompletedFetchInvitations],
-	execute: ({ page }) =>
+	execute: ({ page, generation }) =>
 		currentClerkOrganization.pipe(
 			Effect.flatMap((organization) => invitationsPage(organization, page)),
 			Effect.map((result) => ({ rows: result.data.map(invitationRow), total: result.total_count })),
 			Effect.mapError(toLoadFailure),
 			Effect.result,
-			Effect.map((result) => Message.CompletedFetchInvitations({ page, result })),
+			Effect.map((result) => Message.CompletedFetchInvitations({ page, generation, result })),
 		),
 })
 
@@ -219,6 +219,8 @@ export const init = (isAdmin: boolean): Return => ({
 		orgName: "",
 		members: AsyncData.Loading(),
 		invitations: AsyncData.Loading(),
+		membersGeneration: 0,
+		invitationsGeneration: 0,
 		inviteDialog: Dialog.init("invite-member", "dialog"),
 		inviteEmail: Field.init(),
 		inviteRole: roleSelect("invite-role", "org:member"),
@@ -237,8 +239,8 @@ export const init = (isAdmin: boolean): Return => ({
 	},
 	commands: [
 		FetchOrganization(),
-		FetchMembers({ page: 1 }),
-		FetchInvitations({ page: 1 }),
+		FetchMembers({ page: 1, generation: 0 }),
+		FetchInvitations({ page: 1, generation: 0 }),
 		...(isAdmin ? [] : [FetchAdminName()]),
 	],
 })
@@ -260,16 +262,32 @@ const liftInvite = lift("inviteDialog", (message) => Message.GotInviteDialogMess
 const liftRemove = lift("removeDialog", (message) => Message.GotRemoveDialogMessage({ message }))
 const liftRevoke = lift("revokeDialog", (message) => Message.GotRevokeDialogMessage({ message }))
 
-/** `memberships.revalidate()`: the list reads again from its first page. */
-const revalidateMembers = (model: Model): Return => ({
-	model: { ...model, members: Option.getOrElse(AsyncData.revalidate(model.members), () => model.members) },
-	commands: [FetchMembers({ page: 1 })],
-})
+/** A Load more in flight is abandoned: its answer is for the rows before the mutation. */
+const stopPaging = <A extends { readonly isFetchingMore: boolean }, E>(data: AsyncData.AsyncData<A, E>) =>
+	AsyncData.map(data, (list) => ({ ...list, isFetchingMore: false }))
 
-const revalidateInvitations = (model: Model): Return => ({
-	model: { ...model, invitations: Option.getOrElse(AsyncData.revalidate(model.invitations), () => model.invitations) },
-	commands: [FetchInvitations({ page: 1 })],
-})
+/** `memberships.revalidate()`: the list reads again from its first page, dropping older answers. */
+const revalidateMembers = (model: Model): Return => {
+	const members = stopPaging(model.members)
+	const generation = model.membersGeneration + 1
+	return {
+		model: { ...model, members: Option.getOrElse(AsyncData.revalidate(members), () => members), membersGeneration: generation },
+		commands: [FetchMembers({ page: 1, generation })],
+	}
+}
+
+const revalidateInvitations = (model: Model): Return => {
+	const invitations = stopPaging(model.invitations)
+	const generation = model.invitationsGeneration + 1
+	return {
+		model: {
+			...model,
+			invitations: Option.getOrElse(AsyncData.revalidate(invitations), () => invitations),
+			invitationsGeneration: generation,
+		},
+		commands: [FetchInvitations({ page: 1, generation })],
+	}
+}
 
 /** A page answer: the first page replaces the list, a later one appends to it. */
 const mergePage = <A, E>(
@@ -339,14 +357,21 @@ export const revisit = (model: Model): Return => {
 	// A later page still in flight would append to a refreshed page 1, so that list waits for it.
 	const isPaging = <A, E>(data: AsyncData.AsyncData<{ readonly isFetchingMore: boolean } & A, E>) =>
 		Option.exists(AsyncData.getData(data), (list) => list.isFetchingMore)
+	// Each page-1 read takes a new generation, so an older read can never land over a newer one.
 	const members = isPaging(model.members)
 		? { data: model.members, commands: [] }
-		: revisitData(model.members, () => FetchMembers({ page: 1 }))
+		: revisitData(model.members, () => FetchMembers({ page: 1, generation: model.membersGeneration + 1 }))
 	const invitations = isPaging(model.invitations)
 		? { data: model.invitations, commands: [] }
-		: revisitData(model.invitations, () => FetchInvitations({ page: 1 }))
+		: revisitData(model.invitations, () => FetchInvitations({ page: 1, generation: model.invitationsGeneration + 1 }))
 	return {
-		model: { ...model, members: members.data, invitations: invitations.data },
+		model: {
+			...model,
+			members: members.data,
+			invitations: invitations.data,
+			membersGeneration: model.membersGeneration + (members.commands.length === 0 ? 0 : 1),
+			invitationsGeneration: model.invitationsGeneration + (invitations.commands.length === 0 ? 0 : 1),
+		},
 		// The organization may have been renamed on General meanwhile.
 		commands: [
 			...members.commands,
@@ -363,18 +388,14 @@ export const update = (model: Model, message: Message): Return =>
 			model: { ...model, hasOrganization: name !== null, orgName: name ?? "" },
 		}),
 		CompletedFetchAdminName: ({ name }) => ({ model: { ...model, adminName: name } }),
-		CompletedFetchMembers: ({ page, result }) => ({
-			model: {
-				...model,
-				members: settlePage(model.members, page, result),
-			},
-		}),
-		CompletedFetchInvitations: ({ page, result }) => ({
-			model: {
-				...model,
-				invitations: settlePage(model.invitations, page, result),
-			},
-		}),
+		CompletedFetchMembers: ({ page, generation, result }) =>
+			generation === model.membersGeneration
+				? { model: { ...model, members: settlePage(model.members, page, result) } }
+				: { model },
+		CompletedFetchInvitations: ({ page, generation, result }) =>
+			generation === model.invitationsGeneration
+				? { model: { ...model, invitations: settlePage(model.invitations, page, result) } }
+				: { model },
 		ClickedLoadMoreMembers: () =>
 			Option.match(AsyncData.getData(model.members), {
 				onNone: () => ({ model }),
@@ -384,7 +405,7 @@ export const update = (model: Model, message: Message): Return =>
 						? { model }
 						: {
 								model: { ...model, members: AsyncData.Success({ data: { ...data, isFetchingMore: true } }) },
-								commands: [FetchMembers({ page: data.page + 1 })],
+								commands: [FetchMembers({ page: data.page + 1, generation: model.membersGeneration })],
 							},
 			}),
 		ClickedLoadMoreInvitations: () =>
@@ -396,7 +417,7 @@ export const update = (model: Model, message: Message): Return =>
 						? { model }
 						: {
 								model: { ...model, invitations: AsyncData.Success({ data: { ...data, isFetchingMore: true } }) },
-								commands: [FetchInvitations({ page: data.page + 1 })],
+								commands: [FetchInvitations({ page: data.page + 1, generation: model.invitationsGeneration })],
 							},
 			}),
 		ClickedInvite: () => liftInvite(model, Dialog.open(model.inviteDialog)),

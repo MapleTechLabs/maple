@@ -49,12 +49,14 @@ export const sourceOf = (model: Model): Option.Option<V2Source> =>
 		Option.fromUndefinedOr(rows.find((row) => row.id === model.sourceId)),
 	)
 
-const loadList = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
+const loadList = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
 	if (model.sourceId === null) return { model }
-	const key = sourcesListKey(context.orgId)
-	return Option.match(Keyed.request(model.list, key, mode), {
+	return Option.match(Keyed.requestFor(model.list, sourcesListKey(context.orgId), mode), {
 		onNone: () => ({ model }),
-		onSome: (list) => ({ model: { ...model, list }, commands: [FetchSourceList({ key, refresh: mode === "Refresh" })] }),
+		onSome: (list) => ({
+			model: { ...model, list },
+			commands: [FetchSourceList({ key: list.key, refresh: mode !== "Load" })],
+		}),
 	})
 }
 
@@ -219,7 +221,7 @@ const settled = <A>(
 ): Return =>
 	Result.match(result, {
 		onFailure: (failure) => ({ model: { ...model, busy: null }, outMessage: failureToast(copy.error, failure) }),
-		onSuccess: () => ({ ...loadList({ ...model, busy: null }, context, "Refresh"), outMessage: toast("success", copy.success) }),
+		onSuccess: () => ({ ...loadList({ ...model, busy: null }, context, "Supersede"), outMessage: toast("success", copy.success) }),
 	})
 
 const withSource = (model: Model, run: (id: NonNullable<Model["sourceId"]>) => Return): Return =>
@@ -275,7 +277,7 @@ const afterConnectionWrite = (model: Model, child: IntegrationMessage, step: Ret
 					})
 		return { ...step, outMessage: leave }
 	}
-	return andThen(step, (next) => loadList(next, context, "Refresh"))
+	return andThen(step, (next) => loadList(next, context, "Supersede"))
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
@@ -336,7 +338,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						loadList(
 							{ ...next, revealed: { sourceId: rolled.id, secret: rolled.secret, rolled: true } },
 							context,
-							"Refresh",
+							"Supersede",
 						),
 					),
 			})
@@ -349,7 +351,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 				onSuccess: () => {
 					const closed = liftDialog({ ...model, busy: null }, "deleteDialog", Dialog.close(model.deleteDialog))
-					const refreshed = andThen(closed, (next) => loadList(next, context, "Refresh"))
+					const refreshed = andThen(closed, (next) => loadList(next, context, "Supersede"))
 					return {
 						...refreshed,
 						outMessage: PageOutMessage.RequestedNavigation({

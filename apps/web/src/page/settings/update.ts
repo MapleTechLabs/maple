@@ -132,7 +132,7 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 		case "Keys": {
 			const step = Keys.init(sessionOf(model))
 			return {
-				model: { ...model, tab: { _tag: "Keys", model: { ...step.model, apiKeys: model.apiKeys } } },
+				model: { ...model, tab: { _tag: "Keys", model: { ...step.model, apiKeys: model.apiKeys, isLoadFailed: model.isApiKeysLoadFailed } } },
 				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotKeysMessage({ message })),
 			}
 		}
@@ -218,7 +218,12 @@ const revisitTab = (model: Model, kept: TabModel, context: PageContext): Return 
 		}
 		case "Keys":
 			// The key list lives on the page, which kept reading it.
-			return { model: { ...model, tab: { _tag: "Keys", model: { ...kept.model, apiKeys: model.apiKeys } } } }
+			return {
+				model: {
+					...model,
+					tab: { _tag: "Keys", model: { ...kept.model, apiKeys: model.apiKeys, isLoadFailed: model.isApiKeysLoadFailed } },
+				},
+			}
 		case "SetupHealth": {
 			const step = SetupHealth.revisit(kept.model)
 			return {
@@ -348,6 +353,7 @@ export const init = (route: SettingsRoute, context: PageContext): Return => {
 			session: AsyncData.Loading(),
 			customer: AsyncData.Loading(),
 			apiKeys: null,
+			isApiKeysLoadFailed: false,
 			tab: null,
 			kept: [],
 		},
@@ -394,15 +400,19 @@ const liftKeys = (model: Model, current: KeysModel.Model, message: KeysMessage.M
 	}
 }
 
-/** `useCheckoutReturn` settled: drop `checkout=complete` from the URL without a history entry. */
-const clearCheckoutMarker = (model: Model) =>
+/**
+ * `useCheckoutReturn` settled: drop `checkout=complete` from the URL without a history entry. A
+ * confirmed plan also has the root re-read the app's customer (plan gate, quota banners).
+ */
+const clearCheckoutMarker = (model: Model, isConfirmed: boolean) =>
 	PageOutMessage.RequestedNavigation({
 		url: hrefOf(AppRoute.Settings({ search: withoutCheckoutReturn(model.search) })),
 		isReplace: true,
+		refreshesCustomer: isConfirmed,
 	})
 
 /** Lifts a Billing step: its commands, a stale customer read, and the cleared checkout marker. */
-const liftBilling = (model: Model, { step, isCustomerStale, isCheckoutSettled }: Billing.Step): Return => {
+const liftBilling = (model: Model, { step, isCustomerStale, checkout }: Billing.Step): Return => {
 	const next = putTab(model, { _tag: "Billing", model: step.model })
 	// `BILLING_CUSTOMER_KEY`: a cap save, the portal, a plan change or Retry read the customer again.
 	return {
@@ -413,9 +423,23 @@ const liftBilling = (model: Model, { step, isCustomerStale, isCheckoutSettled }:
 			...Command.mapMessages(step.commands ?? [], (child) => Message.GotBillingMessage({ message: child })),
 			...(isCustomerStale ? [FetchSettingsCustomer({ refresh: true })] : []),
 		],
-		outMessage: step.outMessage ?? (isCheckoutSettled === true ? clearCheckoutMarker(model) : undefined),
+		// A checkout poll re-reads only this page's copy; the app's waits for the confirmed plan.
+		outMessage:
+			checkout === "Confirmed" || checkout === "TimedOut"
+				? (step.outMessage ?? clearCheckoutMarker(model, checkout === "Confirmed"))
+				: isCustomerStale && checkout === undefined
+					? withCustomerRefresh(step.outMessage)
+					: step.outMessage,
 	}
 }
+
+/** A stale customer is the app's too: the root re-reads it and shows the step's toast, if any. */
+const withCustomerRefresh = (out: PageOutMessage | undefined): PageOutMessage =>
+	PageOutMessage.RequestedCustomerRefresh(
+		out !== undefined && out._tag === "RequestedToast"
+			? { toast: { type: out.type, title: out.title, description: out.description } }
+			: {},
+	)
 
 /** The Billing tab waiting on a checkout return reads every customer answer for the plan. */
 const settleCheckout = ({ model, commands, outMessage }: Return): Return => {
@@ -527,14 +551,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		GotKeysMessage: ({ message: inner }) => {
 			const tab = tabNamed(model, "Keys")
-			return tab === undefined ? { model } : liftKeys(model, tab.model, inner)
+			if (tab === undefined) return { model }
+			// A retry re-arms the page's load watcher over the reconnected collections.
+			const next = inner._tag === "ClickedRetryLoad" ? { ...model, isApiKeysLoadFailed: false } : model
+			return liftKeys(next, tab.model, inner)
 		},
 		UpdatedApiKeys: ({ orgId, rows }) => {
 			if (orgId !== context.orgId) return { model }
 			const apiKeys = rows.map(rowToV2ApiKey)
-			const next = { ...model, apiKeys }
+			const next = { ...model, apiKeys, isApiKeysLoadFailed: false }
 			return next.tab !== null && next.tab._tag === "Keys"
 				? liftKeys(next, next.tab.model, KeysMessageValue.UpdatedApiKeys({ rows: apiKeys }))
+				: { model: next }
+		},
+		FailedLoadApiKeys: ({ orgId }) => {
+			if (orgId !== context.orgId || model.apiKeys !== null) return { model }
+			const next = { ...model, isApiKeysLoadFailed: true }
+			return next.tab !== null && next.tab._tag === "Keys"
+				? liftKeys(next, next.tab.model, KeysMessageValue.FailedLoadApiKeys())
 				: { model: next }
 		},
 	})

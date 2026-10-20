@@ -29,9 +29,10 @@ type Return = PageReturn<Model, Message>
 
 /**
  * A step plus whether the settings page's customer must be read again (`BILLING_CUSTOMER_KEY`),
- * and whether the checkout return settled, so `checkout=complete` leaves the URL (replace).
+ * and where a checkout return stands: a poll re-reads only the page's copy, a confirmed plan
+ * refreshes the app's customer once, and a settled return drops `checkout=complete` (replace).
  */
-export type Step = Readonly<{ step: Return; isCustomerStale: boolean; isCheckoutSettled?: boolean }>
+export type Step = Readonly<{ step: Return; isCustomerStale: boolean; checkout?: "Polled" | "Confirmed" | "TimedOut" }>
 
 // READS
 
@@ -375,7 +376,9 @@ export const update = (model: Model, message: Message, customer: BillingCustomer
 					same({ model: { ...model, attaching: null }, outMessage: toast("error", "Failed to update your plan", error.message) }),
 			}),
 		ElapsedCheckoutPoll: () =>
-			model.checkoutReturn === "Confirming" ? staleCustomer({ model, commands: [WaitCheckoutPoll()] }) : same({ model }),
+			model.checkoutReturn === "Confirming"
+				? { step: { model, commands: [WaitCheckoutPoll()] }, isCustomerStale: true, checkout: "Polled" }
+				: same({ model }),
 		ElapsedCheckoutTimeout: () =>
 			model.checkoutReturn === "Confirming"
 				? {
@@ -384,7 +387,7 @@ export const update = (model: Model, message: Message, customer: BillingCustomer
 							commands: [TrackCheckout({ event: "plan_checkout_returned", props: { confirmed: false } })],
 						},
 						isCustomerStale: false,
-						isCheckoutSettled: true,
+						checkout: "TimedOut",
 					}
 				: same({ model }),
 		CompletedTrackProduct: () => same({ model }),
@@ -423,7 +426,7 @@ export const customerChanged = (model: Model, customer: BillingCustomer): Step |
 					commands: [TrackCheckout({ event: "plan_checkout_returned", props: { confirmed: true } })],
 				},
 				isCustomerStale: false,
-				isCheckoutSettled: true,
+				checkout: "Confirmed",
 			}
 		: null
 

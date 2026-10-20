@@ -220,6 +220,19 @@ describe("replay detail", () => {
 		expect(seedEvents(again.loader)).toBe(seedEvents(ready.loader))
 	})
 
+	test("a failed range is not asked again on engine ticks, only on retry", () => {
+		const model = loaded()
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchRange({ key: model.loader.range.key ?? "", result: Result.fail(toLoadFailure(new Error("down"))) }),
+		).model
+		const ticked = pageUpdate(failed, Message.TickedEngine({ seedVersion: 0, currentMs: 100 }))
+		expect(names(ticked.commands)).toEqual([])
+		expect(ticked.model.loader.range.data._tag).toBe("Failure")
+		const retried = pageUpdate(ticked.model, Message.ClickedRetryPlayer())
+		expect(names(retried.commands)).toContain(FetchRange.name)
+	})
+
 	test("the range cache keeps the newest answers and evicts the oldest", () => {
 		const cache = Array.from({ length: RANGE_CACHE_LIMIT + 3 }, (_, i) => `range-${i}`).reduce(
 			(acc, key) => cacheRange(acc, key, []),
