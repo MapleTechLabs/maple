@@ -5,6 +5,7 @@
 import type { Message } from "@cloudflare/workers-types"
 import { Effect, Layer } from "effect"
 import { HttpServerResponse } from "effect/http"
+import type { VcsSyncIsolateCaches } from "@maple/backend/services/integrations/vcs/vcs-sync-isolate-caches"
 import type { ApiPortsLayer } from "./bindings"
 import { runEvent } from "./events"
 import { vcsSyncModule } from "./modules"
@@ -93,15 +94,20 @@ export const serveVcsSyncBatch = <E>(
 		),
 	)
 
-const vcsSyncLayer = (ports: ApiPortsLayer) =>
+const vcsSyncLayer = (ports: ApiPortsLayer, caches: VcsSyncIsolateCaches) =>
 	Effect.map(vcsSyncModule, ({ VcsSyncLive }) =>
-		VcsSyncLive.pipe(Layer.provideMerge(vcsSyncTelemetry), Layer.provideMerge(ports)),
+		VcsSyncLive.pipe(
+			Layer.provide(caches),
+			Layer.provideMerge(vcsSyncTelemetry),
+			Layer.provideMerge(ports),
+		),
 	)
 
 /** The queue consumer: placed when the handler takes the batch, else inline over its own graph. */
 export const consumeVcsSyncBatch = (
 	ports: ApiPortsLayer,
 	env: Record<string, unknown>,
+	caches: VcsSyncIsolateCaches,
 	messages: ReadonlyArray<Message<unknown>>,
 ) =>
 	handOffVcsSyncBatch(env, messages).pipe(
@@ -112,7 +118,7 @@ export const consumeVcsSyncBatch = (
 			handOff.run === "placed" || (handOff.run === "exhausted" && handOff.messages.length === 0)
 				? Effect.void
 				: Effect.flatMap(
-						Effect.all([vcsSyncModule, vcsSyncLayer(ports)]),
+						Effect.all([vcsSyncModule, vcsSyncLayer(ports, caches)]),
 						([{ processBatch, recordExhaustedBatch }, layer]) =>
 							runEvent(
 								handOff.run === "inline"
@@ -125,9 +131,13 @@ export const consumeVcsSyncBatch = (
 	)
 
 /** The fetch route the self binding reaches: the batch over its own graph and Postgres socket. */
-export const vcsSyncBatchRoute = (ports: ApiPortsLayer, env: Record<string, unknown>) =>
+export const vcsSyncBatchRoute = (
+	ports: ApiPortsLayer,
+	env: Record<string, unknown>,
+	caches: VcsSyncIsolateCaches,
+) =>
 	serveVcsSyncBatch(env, (messages, placement) =>
-		Effect.flatMap(Effect.all([vcsSyncModule, vcsSyncLayer(ports)]), ([{ processPlacedBatch }, layer]) =>
+		Effect.flatMap(Effect.all([vcsSyncModule, vcsSyncLayer(ports, caches)]), ([{ processPlacedBatch }, layer]) =>
 			runEvent(processPlacedBatch(messages, placement), layer),
 		),
 	)
