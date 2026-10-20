@@ -12,6 +12,7 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import { makeRandom } from "alchemy/Random"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer } from "effect"
+import { makeVcsSyncIsolateCaches } from "@maple/backend/services/integrations/vcs/vcs-sync-isolate-caches"
 import { ApiObservabilityLive } from "./http/api-observability"
 import { apiConfiguredEnv } from "./resources/env"
 import { ApiBindingsLive, apiPorts, bindApiClients } from "./worker/bindings"
@@ -68,8 +69,12 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 		const isolate = isolateContext(yield* Effect.context())
 		const { app, queryApp } = yield* makeAppGraphs(isolate, ports)
 		yield* registerCrons(ports)
-		yield* registerQueueConsumers(ports, env)
-		return { fetch: yield* makeFetch(app, ports, queryApp, vcsSyncBatchRoute(ports, env)) }
+		// The init runs once per isolate, so these caches outlive each VCS batch's layer.
+		const vcsSyncCaches = yield* makeVcsSyncIsolateCaches
+		yield* registerQueueConsumers(ports, env, vcsSyncCaches)
+		return {
+			fetch: yield* makeFetch(app, ports, queryApp, vcsSyncBatchRoute(ports, env, vcsSyncCaches)),
+		}
 	}).pipe(
 		// The init is the entry point: cron and queue sources need the host Worker.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
