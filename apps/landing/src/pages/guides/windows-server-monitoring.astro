@@ -773,26 +773,26 @@ const articleJsonLd = {
                         </li>
                         <li>
                             <span>04</span>
-                            <div><h4>Alert on high CPU</h4><p>Open <code>system.cpu.utilization</code>, set the aggregation to <code>avg</code> and the filter to <code>attr.state = "idle"</code>, then click <strong>Create alert</strong>. Fire when the value is below <code>0.15</code> over a 10-minute window: less than 15% idle is more than 85% busy. Metric rules count data points as samples, and this filter gives one per CPU core every 30 seconds, so a 2-core server sends 40 in 10 minutes. Lower <strong>Min samples</strong> from its default of 50 to match your smallest server.</p></div>
+                            <div><h4>Alert on high CPU</h4><p>Open <code>system.cpu.utilization</code>, set the aggregation to <code>avg</code> and the filter to <code>attr.state = "idle"</code>, then click <strong>Create alert</strong>. Fire when the value is below <code>0.15</code> over a 10-minute window: less than 15% idle is more than 85% busy. Metric rules count data points as samples, and this filter gives one per CPU core every 30 seconds, so a 2-core server sends 40 in 10 minutes. Lower <strong>Minimum samples</strong> from its default of 50 to match your smallest server.</p></div>
                         </li>
                         <li>
                             <span>05</span>
-                            <div><h4>Alert on a stopped service</h4><p>Open <code>windows.service.status</code> with <code>attr.name = "W3SVC"</code> and the aggregation <code>min</code>, so one stopped copy on any server pulls the value down. Create an alert that fires below <code>4</code>, with <strong>Min samples</strong> at 1. If the Collector itself stops, the rule sees no data; turn on <strong>Alert when there is no data</strong> to catch that too.</p></div>
+                            <div><h4>Alert on a stopped service</h4><p>Open <code>windows.service.status</code> with <code>attr.name = "W3SVC"</code> and the aggregation <code>min</code>, so one stopped copy on any server pulls the value down. Create an alert that fires below <code>4</code>, with <strong>Minimum samples</strong> at 1. If the Collector itself stops, the rule sees no data; turn on <strong>Alert when there is no data</strong> to catch that too.</p></div>
                         </li>
                     </ol>
 
                     <h3 id="per-server-alerts" class="scroll-mt-24">One alert per server</h3>
                     <p>
-                        A metric query rule can group by <code>service.name</code> or a data point attribute, but <code>host.name</code> is a resource attribute, so the CPU rule above evaluates the average of every server that sends the metric. For one incident per server, write the rule as <strong>Raw SQL</strong> and return a <code>group</code> column:
+                        A metric query rule can group by <code>service.name</code> or a data point attribute, but <code>host.name</code> is a resource attribute, so the CPU rule above evaluates the average of every server that sends the metric. For one incident per server, write the rule as <strong>SQL</strong> and return a <code>group</code> column:
                     </p>
                     <pre><code set:html={code(perHostCpuSql, "sql")} /></pre>
                     <p>
-                        Set the condition to below <code>0.15</code> and <strong>Reduce buckets by</strong> to <strong>Average</strong>. The <code>samples</code> column is what <strong>Min samples</strong> sums; without it, every row counts as one sample.
+                        Set the condition to below <code>0.15</code> and <strong>Reduce each window by</strong> to <strong>Average</strong>. The <code>samples</code> column is what <strong>Minimum samples</strong> sums; without it, every row counts as one sample.
                     </p>
                     <div class="guide-callout">
                         <p class="guide-kicker">A silent server does not fire a grouped rule</p>
                         <p>
-                            <strong>Alert when there is no data</strong> is not available on grouped rules, and a Raw SQL rule with a <code>group</code> column only counts as empty when no server returns rows at all. A server whose Collector stops drops out of the results: no new incident opens for it, and an open one stays open until its data returns. Watch for it on the Hosts page, where a host with no report for 5 minutes shows <strong>Ended</strong>.
+                            <strong>Alert when there is no data</strong> is not available on grouped rules, and an SQL rule with a <code>group</code> column only counts as empty when no server returns rows at all. A server whose Collector stops drops out of the results: no new incident opens for it, and an open one stays open until its data returns. Watch for it on the Hosts page, where a host with no report for 5 minutes shows <strong>Ended</strong>.
                         </p>
                     </div>
 
