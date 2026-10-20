@@ -104,6 +104,7 @@ const makeHarness = Effect.fnUntraced(function* (rowCount: number) {
 							),
 						),
 					),
+				forget: die,
 				rerollPublic: die,
 				rerollPrivate: die,
 				resolveIngestKey: die,

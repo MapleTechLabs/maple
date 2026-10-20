@@ -8,7 +8,7 @@ import {
 } from "../../bench/service-map-bench-fixture"
 import type { DeclutterFocus } from "@maple/ui/components/service-map/service-map-declutter"
 import { cn } from "@maple/ui/lib/utils"
-import { Effect, Option, Queue, Schema, Stream } from "effect"
+import { Effect, Option, Schema, Stream } from "effect"
 import { Command, Mount, Subscription, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -150,30 +150,12 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 			),
 	})
 
-const reducedMotionQuery = () => window.matchMedia("(prefers-reduced-motion: reduce)")
-
 const subscriptions = Subscription.make<Model, Message>()((entry) => ({
-	/** `useMediaQuery("(prefers-reduced-motion: reduce)")`, which gates the particle canvas. */
 	reducedMotion: entry(
 		{},
 		{
 			modelToDependencies: () => ({}),
-			dependenciesToStream: () =>
-				Stream.concat(
-					Stream.sync(() => reducedMotionQuery().matches),
-					Stream.callback<boolean>((queue) =>
-						Effect.acquireRelease(
-							Effect.sync(() => {
-								const query = reducedMotionQuery()
-								const listener = (event: MediaQueryListEvent) =>
-									Queue.offerUnsafe(queue, event.matches)
-								query.addEventListener("change", listener)
-								return () => query.removeEventListener("change", listener)
-							}),
-							(release) => Effect.sync(release),
-						).pipe(Effect.flatMap(() => Effect.never)),
-					),
-				).pipe(Stream.map((reduced) => toMap(ServiceMap.Message.ChangedReducedMotion({ reduced })))),
+			dependenciesToStream: () => Stream.map(ServiceMap.reducedMotionChanges, toMap),
 		},
 	),
 }))

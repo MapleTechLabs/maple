@@ -5,8 +5,8 @@ import {
 	isNsAggregateId,
 	NS_AGGREGATE_PREFIX,
 } from "@maple/ui/components/service-map/service-map-utils"
-import { Duration, Effect, Option, Schema } from "effect"
-import { Command, type Update } from "foldkit"
+import { Duration, Effect, Option, Schema, type Stream } from "effect"
+import { Command, Dom, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import * as Combobox from "../../ui/combobox"
@@ -123,6 +123,15 @@ export const Message = defineMessageUnion({
 export type Message = typeof Message.Type
 
 type Return = Update.Return<Model, Message>
+
+/**
+ * `useMediaQuery("(prefers-reduced-motion: reduce)")`, which gates the particle canvas. The model
+ * starts reduced, so every host must subscribe to this or the edges never animate.
+ */
+export const reducedMotionChanges: Stream.Stream<Message> = Dom.streamFromMediaQuery({
+	query: "(prefers-reduced-motion: reduce)",
+	mapMatches: (reduced) => Message.ChangedReducedMotion({ reduced }),
+})
 
 /** Default `fitView()` of the map: padding 0.1 inside the canvas's zoom range. */
 export const MAP_FIT: Canvas.FitRequest = { padding: 0.1, minZoom: 0.05, maxZoom: 2 }
