@@ -1,0 +1,6 @@
+receivers:
+    file_log/syslog:
+        include: [/var/log/remote/hosts.log]
+        operators:
+            - type: syslog_parser
+              protocol: rfc5424

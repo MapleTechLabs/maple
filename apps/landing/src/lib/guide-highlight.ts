@@ -1,7 +1,18 @@
 // Tiny highlighter for guide code blocks. The token classes match the colors a
 // guide uses in its diagrams (metric name, labels, value), so a block reads the
 // same way as the annotated example above it. Style the `tok-*` classes on the page.
-export type GuideLang = "exposition" | "promql" | "yaml" | "python" | "typescript" | "go" | "rust" | "java" | "csharp";
+export type GuideLang =
+    | "exposition"
+    | "promql"
+    | "yaml"
+    | "python"
+    | "typescript"
+    | "go"
+    | "rust"
+    | "java"
+    | "csharp"
+    | "shell"
+    | "otel-debug";
 
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const span = (cls: string, text: string) => `<span class="tok-${cls}">${escape(text)}</span>`;
@@ -98,5 +109,31 @@ const rust = braces("use|fn|let|mut|for|in");
 const java = braces("import|public|static|final|class|void|new|try|throws");
 const csharp = braces("using|var|new|await");
 
+// Shell commands: the program name, flags and quoted arguments. Single-quoted
+// arguments (awk programs, jq filters) are one string, whatever quotes they hold.
+const shell = (code: string) =>
+    tokenize(code, [
+        [/#.*/y, (m) => span("comment", m[0])],
+        [/(?<=^|\n|\| )(\s*)([\w.-]+)/y, (m) => escape(m[1]) + span("fn", m[2])],
+        [/'[^'\n]*'/y, (m) => span("labels", m[0])],
+        [/"[^"\n]*"/y, (m) => span("labels", m[0])],
+        [/(?<=\s)--?[\w-]+/y, (m) => span("value", m[0])],
+    ]);
+
+// The OpenTelemetry Collector's debug exporter output: field and attribute keys
+// as names, values as values, the type wrappers (Str, Int) as comments. A value
+// that runs over several lines leaves its closing parenthesis to the last one.
+const otelDebug = (code: string) =>
+    code
+        .split("\n")
+        .map((line) => {
+            const attr = /^(\s*-> )([\w.]+)(: )(\w+\()(.*?)(\)?)$/.exec(line);
+            if (attr) return span("comment", attr[1]) + span("name", attr[2]) + escape(attr[3]) + span("comment", attr[4]) + span("value", attr[5]) + span("comment", attr[6]);
+            const field = /^(\w[\w ]*)(:)(.*)$/.exec(line);
+            if (field) return span("name", field[1]) + escape(field[2]) + span("value", field[3]);
+            return escape(line);
+        })
+        .join("\n");
+
 export const highlight = (code: string, lang: GuideLang) =>
-    ({ exposition, promql, yaml, python, typescript, go, rust, java, csharp })[lang](code);
+    ({ exposition, promql, yaml, python, typescript, go, rust, java, csharp, shell, "otel-debug": otelDebug })[lang](code);

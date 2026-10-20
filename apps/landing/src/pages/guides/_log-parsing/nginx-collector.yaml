@@ -1,5 +1,5 @@
 receivers:
-    filelog/nginx:
+    file_log/nginx:
         include: [/var/log/nginx/access.log]
         operators:
             - type: regex_parser
@@ -64,6 +64,6 @@ exporters:
 service:
     pipelines:
         logs:
-            receivers: [filelog/nginx]
+            receivers: [file_log/nginx]
             processors: [transform/nginx, batch]
             exporters: [otlphttp/maple]
