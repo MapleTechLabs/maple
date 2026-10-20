@@ -149,7 +149,7 @@ const faqs = [
     {
         question: "How much does New Relic cost per month?",
         answer:
-            "Users plus data. On Standard, the first full platform user is $10 and each additional one $99, up to five. On Pro each full platform user is $349 a month on an annual term or $418.80 month to month. Core users are $49 on any paid plan, and every GB past the first 100 is $0.40. A 12-person team sending 800 GB pays about $979 a month with 4 full platform and 8 core users on Standard, or $4,468 with all 12 on Pro.",
+            "Users plus data. On Standard, the first full platform user is $10 a month and each additional one $99 a month, up to five. On Pro each full platform user is $349 a month on an annual term or $418.80 month to month. Core users are $49 a month on any paid plan, and every GB past the first 100 is $0.40. A 12-person team sending 800 GB pays about $979 a month with 4 full platform and 8 core users on Standard, or $4,468 with all 12 on Pro.",
     },
     {
         question: "What happens past 100 GB on the New Relic free tier?",
@@ -408,11 +408,11 @@ const articleJsonLd = {
                             <p>Unlimited. Set up instrumentation, run NRQL queries, build custom dashboards and basic alerts. No curated APM, browser, mobile or infrastructure views.</p>
                         </div>
                         <div class="user-types__row" style={`--meter: ${meters.core.color}`}>
-                            <span class="meter-badge">Core · $49</span>
+                            <span class="meter-badge">Core · $49 per user a month</span>
                             <p>Paid editions only. Adds the logs UI, errors inbox, the CodeStream IDE extension, and user and billing management. Still no curated APM views.</p>
                         </div>
                         <div class="user-types__row" style={`--meter: ${meters.full.color}`}>
-                            <span class="meter-badge">Full platform · $10 to $418.80</span>
+                            <span class="meter-badge">Full platform · $10 to $418.80 per user a month</span>
                             <p>Every feature, including APM, infrastructure, Kubernetes, browser, mobile and synthetics. The price depends on edition and term.</p>
                         </div>
                     </div>
@@ -472,7 +472,7 @@ const articleJsonLd = {
                                 <div class="bars__row">
                                     <div class="bars__head">
                                         <span><strong>{s.label}</strong> {s.title}</span>
-                                        <strong class="bars__total">{usd(s.total)}</strong>
+                                        <strong class="bars__total">{usd(s.total)}<small> a month</small></strong>
                                     </div>
                                     <div class="bars__track">
                                         {s.parts.map((p) => (
@@ -501,10 +501,10 @@ const articleJsonLd = {
                                 <tr><th>Change</th><th>Effect</th></tr>
                             </thead>
                             <tbody>
-                                <tr><td>Switch to Data Plus</td><td>{billableGb} GB × $0.60 = {usd(dataPlusCost)}, {usd(dataPlusCost - allFullData.value)} more on either option</td></tr>
-                                <tr><td>Option A month to month</td><td>12 × $418.80 = {usd(proMonthlyUsers)} for users, {usd(proMonthlyUsers - allFullUsers.value)} more</td></tr>
+                                <tr><td>Switch to Data Plus</td><td>{billableGb} GB × $0.60 = {usd(dataPlusCost)}, {usd(dataPlusCost - allFullData.value)} a month more on either option</td></tr>
+                                <tr><td>Option A month to month</td><td>12 × $418.80 = {usd(proMonthlyUsers)} for users, {usd(proMonthlyUsers - allFullUsers.value)} a month more</td></tr>
                                 <tr><td>A 13th full platform user on A</td><td>$349 more</td></tr>
-                                <tr><td>Double the data to 1,600 GB</td><td>{usd(800 * 0.4)} more</td></tr>
+                                <tr><td>Double the data to 1,600 GB</td><td>{usd(800 * 0.4)} a month more</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -590,9 +590,8 @@ const articleJsonLd = {
                         The <code>otlphttp/maple</code> exporter sends a copy of the same data to Maple, so you can compare what each vendor would bill for identical traffic. Delete it, and its name in both <code>exporters</code> lists, if you only want the filter. Sampling traces and dropping attributes nobody queries cut ingest the same way; <a href="/docs/concepts/sampling-throughput">sampling and throughput</a> covers how Maple keeps request rates accurate under sampling.
                     </p>
                     <p>
-                        After a few days of dual export, <strong>Settings → Billing &amp; usage</strong> in Maple shows the GB each signal sent this cycle against the plan's included 100 GB, next to the <code>NrConsumption</code> numbers from the first query:
+                        After a few days of dual export, compare the GB each signal sent to Maple with the <code>NrConsumption</code> numbers from the first query.
                     </p>
-                    <figure class="guide-figure"><img src="/screenshots/guides/new-relic-pricing-01-billing-usage.webp" data-zoomable alt="Maple's Billing and usage settings: logs, traces and metrics each with GB used this cycle against 100 GB included, and the overage per signal." width="2000" height="1000" loading="lazy" /></figure>
 
                     <div class="guide-maple">
                         <p class="guide-kicker">Send to Maple</p>
@@ -697,6 +696,7 @@ const articleJsonLd = {
     .bars__head { display: flex; justify-content: space-between; gap: 1rem; font-size: 14px; color: var(--muted-foreground); }
     .bars__head strong { color: var(--foreground); }
     .bars__total { font-family: var(--font-mono); font-size: 14px; }
+    .bars__total small { font-size: 10px; font-weight: 400; color: var(--muted-foreground); }
     .bars__track { display: flex; gap: 2px; height: 1.4rem; }
     .bars__seg { display: block; height: 100%; border-radius: 3px; background: color-mix(in oklab, var(--meter) 75%, transparent); }
     .bars figcaption { margin-top: 1.25rem; border-top: 1px dashed var(--border); padding-top: 0.9rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
