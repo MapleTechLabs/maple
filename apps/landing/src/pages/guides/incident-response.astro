@@ -8,119 +8,159 @@ import FAQ from "../../components/FAQ.astro";
 import SeoHead from "../../components/SeoHead.astro";
 import TableOfContents from "../../components/TableOfContents.astro";
 import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { highlight } from "../../lib/guide-highlight";
 
-const pageTitle = "Incident Response Steps: The Incident Response Lifecycle for Software Teams";
+const pageTitle = "Incident response steps and lifecycle | Maple";
 const pageDescription =
-    "The incident response steps on-call teams follow, from detection to postmortem. NIST and SANS phases, severity levels, roles, MTTR and a postmortem template.";
+    "The incident response lifecycle from NIST and SANS, the incident response steps on-call teams follow, severity levels, MTTR and a postmortem template.";
 const published = "2026-10-19";
-const updatedLabel = "October 19, 2026";
+const updatedLabel = "October 20, 2026";
 const author = CONTRIBUTORS.jeremyfunk;
 const authorUrl = `https://github.com/${author.github}`;
 
 const toc = [
-    ["lifecycle", "The incident response lifecycle"],
-    ["nist-sans", "NIST and SANS phases"],
-    ["steps", "Incident response steps"],
-    ["severity", "Severity levels"],
-    ["roles", "Incident roles"],
-    ["timeline", "An example timeline"],
-    ["metrics", "MTTD, MTTA and MTTR"],
-    ["postmortem", "Postmortem template"],
-    ["maple", "Running it with Maple"],
-] as const;
-const tocHeadings = toc.map(([slug, text]) => ({ depth: 2, slug, text }));
+    { depth: 2, slug: "lifecycle", text: "The lifecycle" },
+    { depth: 3, slug: "nist", text: "NIST: four phases" },
+    { depth: 3, slug: "sans", text: "SANS: six steps" },
+    { depth: 2, slug: "steps", text: "Incident response steps" },
+    { depth: 2, slug: "severity", text: "Severity and roles" },
+    { depth: 3, slug: "severity-levels", text: "Severity levels" },
+    { depth: 3, slug: "roles", text: "Incident roles" },
+    { depth: 2, slug: "example", text: "A worked example" },
+    { depth: 3, slug: "timeline", text: "The timeline" },
+    { depth: 3, slug: "metrics", text: "MTTD, MTTA and MTTR" },
+    { depth: 2, slug: "postmortem", text: "The postmortem" },
+    { depth: 2, slug: "maple", text: "In Maple" },
+];
+const sectionNav = toc.filter((h) => h.depth === 2);
 
-const phaseMap = [
-    ["Preparation", "Preparation", "Govern, Identify, Protect", "Runbooks, on-call rotation, alert rules, dashboards, access to production"],
-    ["Detection and Analysis", "Identification", "Detect", "Detect, triage and declare"],
-    ["Containment, Eradication and Recovery", "Containment", "Respond", "Mitigate: roll back, fail over, shed load, turn off a feature flag"],
-    ["", "Eradication", "Respond", "Fix the root cause in code or configuration"],
-    ["", "Recovery", "Recover", "Resolve: confirm the service is healthy, drain backlogs, close the incident"],
-    ["Post-Incident Activity", "Lessons Learned", "Identify (Improvement)", "Postmortem and tracked action items"],
-] as const;
+// One color per NIST phase, used by the lifecycle diagram, the step badges and the timeline.
+// Severity uses the warm colors, so the phases keep to the cool ones.
+const phases = {
+    prep: { name: "Preparation", color: "var(--chart-5)" },
+    detect: { name: "Detection and Analysis", short: "Detection", color: "var(--chart-2)" },
+    contain: { name: "Containment, Eradication and Recovery", short: "Containment", color: "var(--chart-4)" },
+    post: { name: "Post-Incident Activity", short: "Post-incident", color: "var(--chart-3)" },
+} as const;
+type PhaseKey = keyof typeof phases;
 
+const lifecycle: { key: PhaseKey; title: string[]; sans: string[] }[] = [
+    { key: "prep", title: ["Preparation"], sans: ["Preparation"] },
+    { key: "detect", title: ["Detection and", "Analysis"], sans: ["Identification"] },
+    { key: "contain", title: ["Containment,", "Eradication and", "Recovery"], sans: ["Containment", "Eradication", "Recovery"] },
+    { key: "post", title: ["Post-Incident", "Activity"], sans: ["Lessons Learned"] },
+];
+
+const steps: { slug: string; title: string; phase: PhaseKey | null; label?: string; body: string }[] = [
+    { slug: "detect", title: "Detect", phase: "detect", body: "An alert fires on something users feel: error rate, latency, a drop in traffic. A customer report counts too, and an incident customers reported first should end with a new alert among the postmortem's action items." },
+    { slug: "declare", title: "Triage and declare", phase: "detect", body: "Acknowledge the page and check how far the problem reaches: one service or all, one region or all, which customers. If it is an incident, declare it with a severity level, name an incident commander and open a channel for it. Declaring early and downgrading later costs less than declaring late." },
+    { slug: "mitigate", title: "Mitigate", phase: "contain", body: "Stop the user impact before you know the cause. Roll back the last deploy, turn off the feature flag, fail over to another region, scale up or shed load. A deploy in the last hour is the first suspect." },
+    { slug: "communicate", title: "Communicate", phase: null, label: "Throughout", body: "Post to the status page and to internal stakeholders at a fixed interval, even when nothing has changed. Each update says what is affected, what is being done and when the next update comes." },
+    { slug: "resolve", title: "Resolve", phase: "contain", body: "Confirm recovery on the same signal that detected the problem, then check for side effects: queued jobs, duplicate writes, retries still running. Close the incident and post a final update. The root-cause fix can ship later as an action item." },
+    { slug: "review", title: "Review", phase: "post", body: "Write the postmortem within five working days, review it with the people involved, and track each action item until it is done." },
+];
+
+// Warm colors, darkest for the worst. Reused by the badges in the table and nowhere else.
 const severities = [
-    ["SEV1", "Critical", "A core user journey is down or data is at risk for most customers. Security breaches start here.", "Checkout returns 5xx for every user", "Page now, IC assigned, updates every 30 min"],
-    ["SEV2", "Major", "A key feature is down for a subset of customers, or badly degraded for all of them.", "p99 latency at 8s in one region", "Page now, updates every hour"],
-    ["SEV3", "Minor", "A non-critical feature is broken and a workaround exists.", "CSV export fails for large accounts", "Ticket, fix in working hours"],
-    ["SEV4", "Low", "Cosmetic issues or internal tooling with no customer impact.", "Wrong label on an admin page", "Backlog"],
-] as const;
+    { level: "SEV1", name: "Critical", color: "var(--severity-fatal)", impact: "A core user journey is down, or data is at risk, for most users. Security breaches start here.", example: "Checkout fails for every user", response: "Page now, commander assigned, updates every 30 min, postmortem required" },
+    { level: "SEV2", name: "Major", color: "var(--severity-error)", impact: "A key feature is down for some users, or badly degraded for all of them.", example: "p99 latency at 8 s in one region", response: "Page now, updates every hour, postmortem required" },
+    { level: "SEV3", name: "Minor", color: "var(--severity-warn)", impact: "A non-critical feature is broken and a workaround exists.", example: "CSV export fails for large accounts", response: "Ticket, fixed in working hours" },
+    { level: "SEV4", name: "Low", color: "var(--severity-trace)", impact: "Cosmetic issues, or internal tools with no user impact.", example: "Wrong label on an admin page", response: "Backlog" },
+];
 
-const timeline = [
-    ["14:02", "Deploy", "checkout-service v2.41.0 ships. It adds a query per cart item when loading a cart."],
-    ["14:06", "Impact starts", "Large carts hold database connections longer. The connection pool runs dry and checkout requests start failing with 503."],
-    ["14:08", "Detected", "The High error rate alert breaches its 5% threshold on two consecutive checks and opens an incident. PagerDuty pages the on-call engineer."],
-    ["14:11", "Acknowledged", "On-call acknowledges the page and opens the alert. Error rate is 23% on checkout-service and nowhere else."],
-    ["14:13", "Declared", "On-call declares a SEV1, takes incident commander, opens #inc-checkout-1019 and asks for a comms lead and a scribe."],
-    ["14:16", "Diagnosis", "Failing traces spend 4 to 5 seconds in a pool.acquire span before timing out. The service page shows a deploy marker at 14:02."],
-    ["14:18", "Decision", "IC decides to roll back to v2.40.3 rather than raise the pool size. Comms posts the first status page update."],
-    ["14:24", "Mitigated", "Rollback finishes. Error rate falls under 1% within two minutes."],
-    ["14:28", "Alert resolves", "Two consecutive healthy checks resolve the alert incident and send a resolve notification."],
-    ["14:45", "Resolved", "Order queue drained, payment provider confirms no duplicate charges. IC closes the incident and schedules the postmortem."],
-] as const;
+const roles = [
+    ["Commander", "Owns the incident: sets priorities, assigns work, makes the rollback call and decides when it is over. The commander does not debug; to start debugging, they hand command to someone else first."],
+    ["Ops", "The engineers changing production. One person runs commands at a time and announces each change in the channel before making it."],
+    ["Comms", "Writes the status page and stakeholder updates at the interval the severity sets, and keeps support and account managers from interrupting the responders."],
+    ["Scribe", "Keeps a timestamped log of findings, decisions and changes. The postmortem timeline comes from this log."],
+];
 
-const postmortemTemplate = `# Postmortem: Checkout failures after v2.41.0 (SEV1, 2026-10-19)
+// Minutes after 14:00 UTC. The clock chart below uses the same minutes.
+const timeline: { at: number; label: string; phase: PhaseKey | null; body: string }[] = [
+    { at: 2, label: "Deploy", phase: null, body: "checkout v2.41.0 ships. It runs one database query per item when it loads a cart." },
+    { at: 6, label: "Impact starts", phase: null, body: "Large carts hold database connections longer, the connection pool runs dry and checkout requests fail with 503." },
+    { at: 8, label: "Alert fires", phase: "detect", body: "The checkout error rate has been above 5% on two checks in a row. The alert rule opens an incident and PagerDuty pages the on-call engineer." },
+    { at: 11, label: "Acknowledged", phase: "detect", body: "The on-call engineer acknowledges the page. The error rate is 23% on checkout and normal everywhere else." },
+    { at: 13, label: "Declared", phase: "detect", body: "SEV1. The on-call engineer takes command, opens #inc-checkout and asks for a comms lead and a scribe." },
+    { at: 16, label: "Diagnosis", phase: "detect", body: "Failing traces wait 4 to 5 seconds for a database connection before they time out. The failures started four minutes after the deploy." },
+    { at: 18, label: "Decision", phase: "contain", body: "Roll back to v2.40.3 instead of raising the pool size. Comms posts the first status page update." },
+    { at: 24, label: "Mitigated", phase: "contain", body: "The rollback finishes. The error rate is under 1% within two minutes." },
+    { at: 31, label: "Alert resolves", phase: "contain", body: "Once the 5-minute window no longer holds the failures, two healthy checks in a row resolve the alert's incident. The resolve notification closes the PagerDuty incident." },
+    { at: 45, label: "Resolved", phase: "contain", body: "The order queue is drained and the payment provider confirms no duplicate charges. The commander closes the incident and books the postmortem." },
+];
+const clock = (minutes: number) => `14:${String(minutes).padStart(2, "0")}`;
+
+const axisMinutes = 50; // 14:00 to 14:50 on the clock chart
+const clocks = [
+    { name: "MTTD", full: "time to detect", from: 6, to: 8, by: "Alerts on user-facing symptoms, shorter evaluation windows" },
+    { name: "MTTA", full: "time to acknowledge", from: 8, to: 11, by: "Paging escalation, fewer noisy alerts" },
+    { name: "MTTM", full: "time to mitigate", from: 6, to: 24, by: "Rollbacks that take one command, feature flags, runbooks" },
+    { name: "MTTR", full: "time to resolve", from: 6, to: 45, by: "All of the above, plus written exit criteria" },
+];
+const pct = (minutes: number) => `${(minutes / axisMinutes) * 100}%`;
+
+const postmortemTemplate = `# Postmortem: checkout failures after v2.41.0 (SEV1, 2026-10-19)
 
 Status: draft | Owner: <name> | Review date: <date>
 
 ## Summary
-Two to three sentences. What broke, for whom, for how long, how it was fixed.
+Two or three sentences: what broke, for whom, for how long, how it was fixed.
 
 ## Impact
-- Duration of customer impact: 14:06 to 14:24 UTC (18 minutes)
-- Users affected: ~23% of checkout attempts failed (about 4,100 orders)
+- User impact: 14:06 to 14:24 UTC (18 minutes)
+- Users affected: 23% of checkout attempts failed (<number> orders)
 - Revenue, SLO budget or data impact: <numbers>
 
 ## Timeline (UTC)
-Copy from the incident channel. Include when each person learned what.
+From the scribe's log. Include when each person learned what.
 
 ## Root cause
-The technical chain of events. Describe systems and decisions, not people.
+The chain of events in the system. Describe systems and decisions, not people.
 
 ## Detection
-How we found out, and how long after impact started. Would an existing
-alert have caught it sooner with a different threshold?
+How we found out, and how long after impact started. Would a different
+threshold or window have caught it sooner?
 
 ## Response
 What went well, what slowed us down, where we got lucky.
 
 ## Action items
-| Action                                      | Type     | Owner  | Due    | Ticket |
-| ------------------------------------------- | -------- | ------ | ------ | ------ |
-| Add a test for queries per cart item        | Prevent  | <name> | <date> | <link> |
-| Alert on connection pool wait time          | Detect   | <name> | <date> | <link> |
-| Document the rollback command in the runbook | Mitigate | <name> | <date> | <link> |`;
+| Action                                       | Type     | Owner  | Due    |
+| -------------------------------------------- | -------- | ------ | ------ |
+| Load test checkout with large carts          | Prevent  | <name> | <date> |
+| Alert on connection pool wait time           | Detect   | <name> | <date> |
+| Put the rollback command in the runbook      | Mitigate | <name> | <date> |`;
 
 const faqs = [
     {
         question: "What are the incident response steps?",
         answer:
-            "For an on-call software team the steps are: detect the problem, triage it and declare an incident with a severity level, mitigate the customer impact, communicate with stakeholders throughout, resolve the incident once the service is healthy, and run a blameless postmortem with tracked action items. Preparation (runbooks, alerts, an on-call rotation) happens before any of them.",
+            "For an on-call software team: detect the problem, triage it and declare an incident with a severity level, mitigate the user impact, communicate at a fixed interval throughout, resolve the incident once the service is healthy, and review it in a blameless postmortem with tracked action items. Preparation (runbooks, alert rules, an on-call rotation) happens before any of them.",
     },
     {
         question: "What are the phases of the incident response lifecycle?",
         answer:
-            "NIST SP 800-61 Rev. 2 defines four phases: Preparation; Detection and Analysis; Containment, Eradication and Recovery; and Post-Incident Activity. The SANS Incident Handler's Handbook splits the same work into six: Preparation, Identification, Containment, Eradication, Recovery and Lessons Learned. Rev. 3, published in April 2025, reorganizes the guidance around the six NIST CSF 2.0 functions.",
+            "NIST SP 800-61 Rev. 2 defines four phases: Preparation; Detection and Analysis; Containment, Eradication and Recovery; and Post-Incident Activity. The SANS Incident Handler's Handbook splits the same work into six steps: Preparation, Identification, Containment, Eradication, Recovery and Lessons Learned. Rev. 3, published in April 2025, organizes the guidance around the six functions of the NIST Cybersecurity Framework 2.0 instead.",
     },
     {
-        question: "What is the difference between the NIST and SANS incident response models?",
+        question: "What is the difference between the NIST and SANS incident response frameworks?",
         answer:
-            "They cover the same work at different granularity. NIST groups containment, eradication and recovery into one phase because in practice they overlap and repeat. SANS lists them as separate steps, which reads more like a checklist. Either works as an incident response framework for a software team; pick one vocabulary and use it in your runbooks and postmortems.",
+            "They cover the same work at different levels of detail. NIST groups containment, eradication and recovery into one phase because they overlap and repeat. SANS lists them as separate steps, which reads more like a checklist. Either one works for a software team; pick one set of names and use it in your runbooks and postmortems.",
     },
     {
         question: "What is a SEV1 incident?",
         answer:
-            "A SEV1 is the highest severity level in most incident response plans: a core user journey is down, data is at risk, or many customers are affected. It pages people immediately, gets a dedicated incident commander and regular status updates, and always gets a postmortem. Each company writes its own definitions, so publish yours where on-call engineers can find them.",
+            "SEV1 is the highest severity level in most incident response plans: a core user journey is down, data is at risk, or most users are affected. It pages people immediately, gets a dedicated incident commander and regular status updates, and always gets a postmortem. Each company writes its own definitions, so publish yours where on-call engineers can find them.",
     },
     {
         question: "What goes in a postmortem?",
         answer:
-            "A summary, the customer impact in numbers, a timestamped timeline, the root cause and contributing factors, how the incident was detected, what helped and hurt the response, and action items with an owner, a due date and a ticket each. A blameless postmortem describes systems and decisions, not who made a mistake.",
+            "A summary, the user impact in numbers, a timestamped timeline, the root cause, how the incident was detected, what helped and what slowed the response, and action items with an owner and a due date each. A blameless postmortem describes systems and decisions, not who made a mistake.",
     },
     {
         question: "What is the difference between MTTA and MTTR?",
         answer:
-            "MTTA (mean time to acknowledge) runs from the alert firing to a person acknowledging it, and measures your paging and on-call setup. MTTR runs from the start of the incident to recovery, and measures the whole response. MTTR is also used for repair, respond and resolve, so write down which clock your team means.",
+            "MTTA (mean time to acknowledge) runs from the alert firing to a person acknowledging it, and measures paging and on-call. MTTR runs from the start of the incident to its resolution, and measures the whole response. MTTR also stands for repair, recover and respond, so write down which clock your team means.",
     },
 ];
 
@@ -128,10 +168,10 @@ const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev"
 const articleJsonLd = {
     "@context": "https://schema.org",
     "@type": "TechArticle",
-    headline: "Incident response steps for software teams",
+    headline: "Incident response, step by step",
     description: pageDescription,
     datePublished: published,
-    dateModified: published,
+    dateModified: "2026-10-20",
     author: { "@type": "Person", name: author.name, url: authorUrl },
     publisher: {
         "@type": "Organization",
@@ -150,7 +190,7 @@ const articleJsonLd = {
         items={[
             { label: "Home", href: "/" },
             { label: "Guides", href: "/guides" },
-            { label: "Incident response steps" },
+            { label: "Incident response" },
         ]}
     />
 
@@ -162,338 +202,321 @@ const articleJsonLd = {
                 style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
             >
             </div>
-            <div class="relative mx-auto grid max-w-6xl gap-12 px-6 pb-16 pt-20 md:pb-24 md:pt-28 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.75fr)] lg:items-center lg:gap-16">
-                <div>
-                    <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
-                        <span class="border border-primary/40 px-2 py-1 text-primary">On-call</span>
-                        <span>12 min read</span>
-                    </div>
-                    <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
-                        Incident response steps for software teams
-                    </h1>
-                    <p class="mt-7 max-w-[62ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
-                        The incident response lifecycle as NIST and SANS define it, translated into what an on-call engineer does when production breaks: detect, declare, mitigate, communicate, resolve and write it up.
-                    </p>
-                    <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
-                        <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
-                            <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
-                            <span>By {author.name}</span>
-                        </a>
-                        <time datetime={published}>Updated {updatedLabel}</time>
-                    </div>
+            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-20 md:pt-28">
+                <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                    <span class="border border-primary/40 px-2 py-1 text-primary">On-call</span>
+                    <span>9 min read</span>
                 </div>
-
-                <div class="rounded-xl border border-border bg-bg-deep p-4 shadow-2xl shadow-black/20 md:p-5" aria-label="Incident response steps at a glance">
-                    <div class="flex items-center justify-between border-b border-border pb-3 font-mono text-[10px] text-fg-muted">
-                        <span>incident / steps</span>
-                        <span class="text-primary">page to postmortem</span>
-                    </div>
-                    <ol class="divide-y divide-border">
-                        {[
-                            ["01", "Detect", "An alert or a customer report", "MTTD"],
-                            ["02", "Triage and declare", "Pick a severity, name an IC", "MTTA"],
-                            ["03", "Mitigate", "Stop the bleeding first", "rollback, failover"],
-                            ["04", "Communicate", "Status page, stakeholders", "on a fixed cadence"],
-                            ["05", "Resolve", "Healthy and verified", "MTTR"],
-                            ["06", "Postmortem", "Blameless, with owners", "within 5 working days"],
-                        ].map(([number, label, headline, detail]) => (
-                            <li class="grid grid-cols-[2rem_1fr] gap-3 py-3.5">
-                                <span class="font-mono text-[10px] text-primary">{number}</span>
-                                <div>
-                                    <div class="flex items-baseline justify-between gap-3">
-                                        <span class="text-xs font-medium text-fg">{label}</span>
-                                        <span class="font-mono text-[9px] text-fg-muted">{detail}</span>
-                                    </div>
-                                    <p class="mt-1 text-[11px] leading-relaxed text-fg-muted">{headline}</p>
-                                </div>
-                            </li>
-                        ))}
-                    </ol>
+                <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                    Incident response, step by step
+                </h1>
+                <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
+                    The lifecycle NIST and SANS describe, and the steps an on-call team follows when production breaks.
+                </p>
+                <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                    <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                        <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <span>By {author.name}</span>
+                    </a>
+                    <time datetime="2026-10-20">Updated {updatedLabel}</time>
                 </div>
             </div>
         </header>
 
         <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
             <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
-                {toc.map(([id, label]) => (
-                    <a href={`#${id}`} class="transition-colors hover:text-primary">{label}</a>
+                {sectionNav.map((h) => (
+                    <a href={`#${h.slug}`} class="transition-colors hover:text-primary">{h.text}</a>
                 ))}
             </div>
         </nav>
 
         <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
             <aside class="hidden lg:block">
-                <TableOfContents headings={tocHeadings} class="sticky top-28" />
+                <TableOfContents headings={toc} class="sticky top-28" />
             </aside>
 
             <article class="ir-guide min-w-0">
                 <section id="lifecycle" class="scroll-mt-24">
-                    <p class="guide-eyebrow">01 · Definition</p>
+                    <p class="guide-eyebrow"><span>01</span> · Definition</p>
                     <h2>The incident response lifecycle</h2>
 
                     <div class="guide-answer">
-                        <p>
-                            <strong>Incident response</strong> is the process a team follows from the moment something breaks in production until the cause is fixed and the lessons are written down. The <strong>incident response lifecycle</strong> is that process as a repeating cycle: prepare, detect, contain, recover and learn, with each postmortem feeding the next round of preparation.
-                        </p>
+                        <p><strong>Incident response</strong> is what a team does from the moment something breaks until it works again and the lessons are written down. The <strong>incident response lifecycle</strong> draws that work as a loop, because each review changes how the team prepares for the next incident.</p>
                     </div>
 
                     <p>
-                        An incident is any unplanned event that degrades a service for its users or puts data at risk. That covers an outage, a latency regression, a broken payment flow and a leaked credential. A single failing request is not an incident; 20% of checkouts failing for ten minutes is.
+                        An incident is an unplanned event that hurts users or puts data at risk: an outage, a slow checkout, a leaked credential. One failed request is noise; a fifth of checkouts failing for ten minutes is an incident.
                     </p>
                     <p>
-                        The two published models most teams start from come out of security incident handling: NIST Special Publication 800-61 and the SANS Incident Handler's Handbook. Both apply to outages with small changes in vocabulary.
-                    </p>
-                </section>
-
-                <section id="nist-sans" class="scroll-mt-24">
-                    <p class="guide-eyebrow">02 · Published models</p>
-                    <h2>NIST and SANS incident response phases</h2>
-
-                    <h3>NIST SP 800-61: four phases</h3>
-                    <p>
-                        <a href="https://csrc.nist.gov/pubs/sp/800/61/r2/final" target="_blank" rel="noopener noreferrer">NIST SP 800-61 Rev. 2</a> (2012) defines the <strong>NIST incident response lifecycle</strong> in four phases: <strong>Preparation</strong>; <strong>Detection and Analysis</strong>; <strong>Containment, Eradication and Recovery</strong>; and <strong>Post-Incident Activity</strong>. The third phase loops back to the second, because containing one host often reveals another.
-                    </p>
-                    <p>
-                        In April 2025 NIST published <a href="https://csrc.nist.gov/pubs/sp/800/61/r3/final" target="_blank" rel="noopener noreferrer">SP 800-61 Rev. 3</a>, which supersedes Rev. 2. It drops the four-phase diagram and maps incident response onto the six functions of the NIST Cybersecurity Framework 2.0: Govern, Identify and Protect cover preparation; Detect, Respond and Recover cover the incident itself; lessons learned feed back through improvement under Identify. The four phases are still the version most runbooks and certifications use.
+                        The two published models come from security teams: NIST Special Publication 800-61 and the SANS Incident Handler's Handbook. They describe the same loop at different levels of detail, and both fit a production outage with a few changes of vocabulary.
                     </p>
 
-                    <h3>SANS: six steps</h3>
-                    <p>
-                        The <a href="https://www.sans.org/white-papers/33901" target="_blank" rel="noopener noreferrer">SANS Incident Handler's Handbook</a> (Patrick Kral, 2012) splits the same work into six steps, often abbreviated PICERL: <strong>Preparation</strong>, <strong>Identification</strong>, <strong>Containment</strong>, <strong>Eradication</strong>, <strong>Recovery</strong> and <strong>Lessons Learned</strong>.
-                    </p>
-
-                    <h3>The models side by side</h3>
-                    <p>
-                        The difference is granularity. SANS lists containment, eradication and recovery as separate steps; NIST groups them because they overlap and repeat. The last column translates each phase to an outage.
-                    </p>
-                    <div class="guide-table">
-                        <table>
-                            <thead>
-                                <tr><th>NIST Rev. 2</th><th>SANS</th><th>NIST Rev. 3 (CSF 2.0)</th><th>On an outage</th></tr>
-                            </thead>
-                            <tbody>
-                                {phaseMap.map(([nist, sans, csf, outage]) => (
-                                    <tr><td class="guide-table__key">{nist}</td><td>{sans}</td><td>{csf}</td><td>{outage}</td></tr>
+                    <figure class="cycle" aria-label="The incident response lifecycle. Preparation leads to Detection and Analysis, which leads to Containment, Eradication and Recovery, which leads to Post-Incident Activity. Containment loops back to analysis when it turns up new evidence, and Post-Incident Activity loops back to Preparation. Inside each NIST phase are the SANS steps it covers: Preparation; Identification; Containment, Eradication and Recovery; Lessons Learned.">
+                        <svg viewBox="0 0 760 280" aria-hidden="true">
+                            <defs>
+                                {Object.entries(phases).map(([key, p]) => (
+                                    <marker id={`cycle-arrow-${key}`} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                                        <path d="M0,0 L8,4 L0,8 z" style={`fill: ${p.color}`} />
+                                    </marker>
                                 ))}
-                            </tbody>
-                        </table>
-                    </div>
+                            </defs>
+
+                            <path d="M 470 60 C 470 22, 290 22, 290 58" class="cycle__loop" style={`stroke: ${phases.contain.color}`} marker-end="url(#cycle-arrow-contain)" />
+                            <text x="380" y="20" text-anchor="middle" class="cycle__note">new evidence: analyse again</text>
+
+                            {lifecycle.map((phase, i) => {
+                                const x = i * 203;
+                                const color = phases[phase.key].color;
+                                return (
+                                    <g style={`--phase: ${color}`}>
+                                        <rect x={x} y="60" width="150" height="150" rx="8" class="cycle__box" />
+                                        {phase.title.map((line, l) => (
+                                            <text x={x + 14} y={88 + l * 19} class="cycle__title">{line}</text>
+                                        ))}
+                                        <line x1={x + 14} y1="142" x2={x + 136} y2="142" class="cycle__rule" />
+                                        <text x={x + 14} y="160" class="cycle__kicker">SANS</text>
+                                        {phase.sans.map((line, l) => (
+                                            <text x={x + 14} y={176 + l * 14} class="cycle__sans">{line}</text>
+                                        ))}
+                                        {i < lifecycle.length - 1 && (
+                                            <line x1={x + 152} y1="110" x2={x + 199} y2="110" class="cycle__line" style={`stroke: ${color}`} marker-end={`url(#cycle-arrow-${phase.key})`} />
+                                        )}
+                                    </g>
+                                );
+                            })}
+
+                            <path d="M 684 212 L 684 242 L 75 242 L 75 216" class="cycle__loop" style={`stroke: ${phases.post.color}`} marker-end="url(#cycle-arrow-post)" />
+                            <text x="380" y="264" text-anchor="middle" class="cycle__note">lessons learned change the next round of preparation</text>
+                        </svg>
+                    </figure>
+                    <p class="guide-caption">NIST's four phases, with the SANS steps each one covers. Each arrow takes the color of the phase it leaves.</p>
+
+                    <h3 id="nist" class="scroll-mt-24">NIST SP 800-61: four phases</h3>
                     <p>
-                        For a security incident, containment means isolating a compromised host and eradication means removing the attacker. For an outage, containment is mitigation (stop the customer impact) and eradication is the permanent fix, which can wait until Monday if the mitigation holds.
+                        <a href="https://csrc.nist.gov/pubs/sp/800/61/r2/final" target="_blank" rel="noopener noreferrer">NIST SP 800-61 Rev. 2</a> (2012) defines the four phases in the diagram. The third is one box because its parts overlap: rolling back one service can show that a second one is broken too, which sends the team back to analysis.
+                    </p>
+                    <p>
+                        <a href="https://csrc.nist.gov/pubs/sp/800/61/r3/final" target="_blank" rel="noopener noreferrer">Rev. 3</a>, published in April 2025, supersedes Rev. 2. It drops the four-phase cycle and files incident response under the six functions of the NIST Cybersecurity Framework 2.0: Govern, Identify, Protect, Detect, Respond and Recover. Most runbooks and training material still use the four phases, and so does this guide.
+                    </p>
+
+                    <h3 id="sans" class="scroll-mt-24">SANS: six steps</h3>
+                    <p>
+                        The <a href="https://www.sans.org/white-papers/33901" target="_blank" rel="noopener noreferrer">SANS Incident Handler's Handbook</a> (Patrick Kral, 2012) splits NIST's third phase into its parts. That gives six steps, often shortened to PICERL: Preparation, Identification, Containment, Eradication, Recovery and Lessons Learned.
+                    </p>
+                    <p>
+                        On a security incident, containment isolates a compromised host and eradication removes the attacker. On an outage, containment is mitigation: a rollback, a feature flag or a failover that stops the user impact. Eradication is the permanent fix, which can wait for working hours if the mitigation holds.
                     </p>
                 </section>
 
                 <section id="steps" class="scroll-mt-24">
-                    <p class="guide-eyebrow">03 · On call</p>
-                    <h2>Incident response steps for an on-call team</h2>
+                    <p class="guide-eyebrow"><span>02</span> · On call</p>
+                    <h2>Incident response steps</h2>
                     <p>
-                        The published phases describe the work. These steps describe the order an on-call engineer does it in, with preparation (runbooks, alert rules, a paging rotation, production access) done beforehand.
+                        These steps put the phases in the order an on-call engineer works through them once an alert goes off. Each badge names the NIST phase the step belongs to. <span class="phase-badge" style={`--phase: ${phases.prep.color}`}>Preparation</span> comes first and happens on a quiet day: runbooks, alert rules, a paging rotation, and production access for whoever is on call.
                     </p>
 
                     <ol class="guide-steps">
-                        <li>
-                            <span>01</span>
-                            <div>
-                                <h3>Detect</h3>
-                                <p>An alert fires on a symptom users feel: error rate, latency, a drop in throughput. Customer reports and support tickets count too, and every incident a customer reported first should produce an alerting action item in the postmortem.</p>
-                            </div>
-                        </li>
-                        <li>
-                            <span>02</span>
-                            <div>
-                                <h3>Triage and declare</h3>
-                                <p>Acknowledge the page, check the blast radius (one service or all, one region or all, which customers), and decide whether this is an incident. If it is, declare it with a severity level, name an incident commander, and open a dedicated channel. Declaring early and downgrading later costs less than declaring late.</p>
-                            </div>
-                        </li>
-                        <li>
-                            <span>03</span>
-                            <div>
-                                <h3>Mitigate</h3>
-                                <p>Restore service before you understand the cause. Roll back the last deploy, turn off the feature flag, fail over to another region, scale up, or shed load. If a deploy went out in the last hour, rolling it back is usually the first thing to try.</p>
-                            </div>
-                        </li>
-                        <li>
-                            <span>04</span>
-                            <div>
-                                <h3>Communicate</h3>
-                                <p>Post updates to the status page and to internal stakeholders on a fixed cadence, even when the update is "still investigating". Each update says what is affected, what is being done, and when the next update will come.</p>
-                            </div>
-                        </li>
-                        <li>
-                            <span>05</span>
-                            <div>
-                                <h3>Resolve</h3>
-                                <p>Confirm recovery from the same signal that detected the problem, check for side effects (queued jobs, duplicate writes, stuck retries), then close the incident and post a final update. The root-cause fix can ship later as a postmortem action item.</p>
-                            </div>
-                        </li>
-                        <li>
-                            <span>06</span>
-                            <div>
-                                <h3>Postmortem</h3>
-                                <p>Write it within 5 working days while memory is fresh, review it with the people involved, and track each action item to completion. SEV1 and SEV2 always get one; SEV3 when something was learned.</p>
-                            </div>
-                        </li>
+                        {steps.map((s, i) => (
+                            <li>
+                                <span>{String(i + 1).padStart(2, "0")}</span>
+                                <div>
+                                    <div class="guide-steps__head">
+                                        <h3 id={s.slug} class="scroll-mt-24">{s.title}</h3>
+                                        {s.phase === null
+                                            ? <span class="phase-badge phase-badge--neutral">{s.label}</span>
+                                            : <span class="phase-badge" style={`--phase: ${phases[s.phase].color}`}>{phases[s.phase].short}</span>}
+                                    </div>
+                                    <p>{s.body}</p>
+                                </div>
+                            </li>
+                        ))}
                     </ol>
                 </section>
 
                 <section id="severity" class="scroll-mt-24">
-                    <p class="guide-eyebrow">04 · Classification</p>
-                    <h2>Incident severity levels</h2>
+                    <p class="guide-eyebrow"><span>03</span> · Classification</p>
+                    <h2>Severity levels and roles</h2>
+
+                    <h3 id="severity-levels" class="scroll-mt-24">Incident severity levels</h3>
                     <p>
-                        A severity level decides who gets woken up, how often stakeholders hear from you, and whether a postmortem is mandatory. Define levels by customer impact, not by which component broke, so the on-call engineer can classify an incident in under a minute. A common starting point:
+                        A severity level decides who gets woken up, how often stakeholders hear from you, and whether a postmortem is required. Define the levels by user impact rather than by which component broke, so the on-call engineer can pick one in under a minute. A common starting set:
                     </p>
                     <div class="guide-table">
                         <table>
                             <thead>
-                                <tr><th>Level</th><th>Definition</th><th>Example</th><th>Response</th></tr>
+                                <tr><th>Level</th><th>Impact</th><th>Example</th><th>Response</th></tr>
                             </thead>
                             <tbody>
-                                {severities.map(([level, name, definition, example, response]) => (
+                                {severities.map((s) => (
                                     <tr>
-                                        <td class="guide-table__key"><strong>{level}</strong><br />{name}</td>
-                                        <td>{definition}</td>
-                                        <td>{example}</td>
-                                        <td>{response}</td>
+                                        <td><span class="sev-badge" style={`--sev: ${s.color}`}>{s.level}</span><span class="sev-name">{s.name}</span></td>
+                                        <td>{s.impact}</td>
+                                        <td>{s.example}</td>
+                                        <td>{s.response}</td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
                     <p>
-                        Severity can change during an incident. A SEV3 that turns out to affect every enterprise customer becomes a SEV1, and the declaration should say so in the incident channel.
+                        Severity can change mid-incident. A SEV3 that turns out to hit every enterprise customer becomes a SEV1, and the change is announced in the incident channel.
                     </p>
-                </section>
 
-                <section id="roles" class="scroll-mt-24">
-                    <p class="guide-eyebrow">05 · People</p>
-                    <h2>Incident roles: commander, comms and scribe</h2>
+                    <h3 id="roles" class="scroll-mt-24">Incident roles</h3>
                     <p>
-                        Small incidents need one person. Once more than two people are involved, split the work so nobody debugs and writes status updates at the same time. The <a href="https://sre.google/sre-book/managing-incidents/" target="_blank" rel="noopener noreferrer">Google SRE book's chapter on managing incidents</a> describes a version of this structure.
+                        One person can run a small incident. Once more than two people are involved, split the work so nobody debugs and writes status updates at the same time. The <a href="https://sre.google/sre-book/managing-incidents/" target="_blank" rel="noopener noreferrer">Google SRE book's chapter on managing incidents</a> describes the same split.
                     </p>
-                    <div class="guide-signal-list">
-                        <div><span>Commander</span><p>Owns the incident. Sets priorities, assigns work, makes the rollback call, and decides when the incident is over. The IC does not debug; if they have to, they hand over command first.</p></div>
-                        <div><span>Ops lead</span><p>The engineers changing production. One person runs commands at a time, and announces each change in the channel before making it.</p></div>
-                        <div><span>Comms</span><p>Writes the status page and stakeholder updates on the cadence the severity sets, and keeps support and account managers from interrupting the responders.</p></div>
-                        <div><span>Scribe</span><p>Records a timestamped log of findings, decisions and changes. The postmortem timeline comes from this log.</p></div>
+                    <div class="role-list">
+                        {roles.map(([role, body]) => (
+                            <div><span>{role}</span><p>{body}</p></div>
+                        ))}
                     </div>
                     <p>
-                        At 3am the on-call engineer often holds every role until help arrives. The structure matters most when it is handed over: "I'm handing IC to Priya, she has the channel" is a clear sentence in an incident log.
+                        At 3 a.m. the on-call engineer holds every role until help arrives. The roles matter most at handover: "I'm handing command to Priya, she has the channel" is one line in the incident log.
                     </p>
                 </section>
 
-                <section id="timeline" class="scroll-mt-24">
-                    <p class="guide-eyebrow">06 · Worked example</p>
-                    <h2>An example incident timeline</h2>
+                <section id="example" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>04</span> · Worked example</p>
+                    <h2>An incident, minute by minute</h2>
                     <p>
-                        A deploy at 14:02 UTC introduces a query per cart item. Under normal traffic it passes; under the afternoon peak the database connection pool runs out and checkout fails.
+                        A deploy at 14:02 UTC makes checkout run one database query per item in a cart. At normal traffic nobody notices. At the afternoon peak, large carts hold database connections longer, the connection pool runs dry, and checkout starts failing.
                     </p>
+
+                    <h3 id="timeline" class="scroll-mt-24">The timeline</h3>
                     <ol class="ir-timeline">
-                        {timeline.map(([time, label, body]) => (
-                            <li>
-                                <time>{time}</time>
-                                <div><p class="guide-kicker">{label}</p><p>{body}</p></div>
+                        {timeline.map((e) => (
+                            <li style={e.phase === null ? undefined : `--phase: ${phases[e.phase].color}`} class={e.phase === null ? "ir-timeline__before" : undefined}>
+                                <time>{clock(e.at)}</time>
+                                <div><h4>{e.label}</h4><p>{e.body}</p></div>
                             </li>
                         ))}
                     </ol>
                     <p>
-                        From these timestamps: time to detect is 2 minutes (14:06 to 14:08), time to acknowledge 3 minutes, time to mitigate 18 minutes from the start of impact, and time to resolve 39 minutes. The rollback at 14:18 happened before anyone had confirmed the root cause, which is the right order. The cause was confirmed after the incident by reading the diff against the <code>pool.acquire</code> traces.
+                        The dot on each entry takes the color of its phase: <span class="phase-badge" style={`--phase: ${phases.detect.color}`}>Detection</span> until the decision to roll back, <span class="phase-badge" style={`--phase: ${phases.contain.color}`}>Containment</span> from then on. The rollback went out before anyone had confirmed the cause, which is the intended order. The diff was read against the slow traces after the incident closed.
                     </p>
-                </section>
 
-                <section id="metrics" class="scroll-mt-24">
-                    <p class="guide-eyebrow">07 · Measurement</p>
-                    <h2>Incident metrics: MTTD, MTTA and MTTR</h2>
+                    <h3 id="metrics" class="scroll-mt-24">MTTD, MTTA, MTTM and MTTR</h3>
+                    <p>
+                        Each incident metric is a clock that starts and stops at a different event. Measured on this incident:
+                    </p>
+                    <figure class="clocks" aria-label="Four clocks on a 14:00 to 14:50 axis. MTTD runs from 14:06 to 14:08, 2 minutes. MTTA from 14:08 to 14:11, 3 minutes. MTTM from 14:06 to 14:24, 18 minutes. MTTR from 14:06 to 14:45, 39 minutes.">
+                        <div class="clocks__rows" aria-hidden="true">
+                            <div class="clocks__row clocks__row--phases">
+                                <span class="clocks__label"></span>
+                                <span class="clocks__track">
+                                    <span class="clocks__phase" style={`left: ${pct(6)}; width: ${pct(18 - 6)}; --phase: ${phases.detect.color}`}>Detection</span>
+                                    <span class="clocks__phase" style={`left: ${pct(18)}; width: ${pct(45 - 18)}; --phase: ${phases.contain.color}`}>Containment and recovery</span>
+                                </span>
+                                <span></span>
+                            </div>
+                            {clocks.map((c) => (
+                                <div class="clocks__row">
+                                    <span class="clocks__label"><strong>{c.name}</strong>{c.full}</span>
+                                    <span class="clocks__track"><span class="clocks__bar" style={`left: ${pct(c.from)}; width: ${pct(c.to - c.from)}`}></span></span>
+                                    <span class="clocks__value">{c.to - c.from} min</span>
+                                </div>
+                            ))}
+                            <div class="clocks__row clocks__row--axis">
+                                <span class="clocks__label"></span>
+                                <span class="clocks__track">
+                                    {[0, 10, 20, 30, 40, 50].map((m) => (
+                                        <span class="clocks__tick" style={`left: ${pct(m)}`}>{clock(m)}</span>
+                                    ))}
+                                </span>
+                                <span></span>
+                            </div>
+                        </div>
+                        <figcaption>Three of the four clocks start when users are first affected, at 14:06. MTTA starts at the alert, so it measures paging, not the alerts themselves.</figcaption>
+                    </figure>
                     <div class="guide-table">
                         <table>
                             <thead>
-                                <tr><th>Metric</th><th>Clock starts</th><th>Clock stops</th><th>Improve it with</th></tr>
+                                <tr><th>Metric</th><th>Starts</th><th>Stops</th><th>Shortened by</th></tr>
                             </thead>
                             <tbody>
-                                <tr><td class="guide-table__key"><strong>MTTD</strong> mean time to detect</td><td>Customer impact begins</td><td>An alert fires or someone reports it</td><td>Alerts on user-facing symptoms, shorter evaluation windows</td></tr>
-                                <tr><td class="guide-table__key"><strong>MTTA</strong> mean time to acknowledge</td><td>The alert fires</td><td>A person acknowledges it</td><td>Paging escalation, fewer noisy alerts</td></tr>
-                                <tr><td class="guide-table__key"><strong>MTTM</strong> mean time to mitigate</td><td>Customer impact begins</td><td>Customer impact ends</td><td>Fast rollbacks, feature flags, runbooks</td></tr>
-                                <tr><td class="guide-table__key"><strong>MTTR</strong> mean time to resolve</td><td>Customer impact begins</td><td>The incident is closed</td><td>Everything above, plus clear exit criteria</td></tr>
+                                <tr><td><strong>MTTD</strong></td><td>User impact begins</td><td>An alert fires or someone reports it</td><td>{clocks[0].by}</td></tr>
+                                <tr><td><strong>MTTA</strong></td><td>The alert fires</td><td>A person acknowledges it</td><td>{clocks[1].by}</td></tr>
+                                <tr><td><strong>MTTM</strong></td><td>User impact begins</td><td>User impact ends</td><td>{clocks[2].by}</td></tr>
+                                <tr><td><strong>MTTR</strong></td><td>User impact begins</td><td>The incident is closed</td><td>{clocks[3].by}</td></tr>
                             </tbody>
                         </table>
                     </div>
                     <p>
-                        "MTTR" is used for repair, recover, respond and resolve, and teams compare numbers that measure different things. Write down which clock your team means. With a handful of incidents a quarter, a single long outage dominates the mean, so report the median next to it and read the individual timelines.
-                    </p>
-                    <p>
-                        A falling MTTA with a flat MTTD usually means the team fixed its paging but not its alerts.
+                        MTTR also stands for repair, recover and respond, so teams end up comparing different clocks. Write down which one yours means. With a handful of incidents a quarter, one long outage moves the mean a lot: report the median next to it.
                     </p>
                 </section>
 
                 <section id="postmortem" class="scroll-mt-24">
-                    <p class="guide-eyebrow">08 · Lessons learned</p>
-                    <h2>A blameless postmortem template</h2>
+                    <p class="guide-eyebrow"><span>05</span> · <span class="eyebrow-phase" style={`--phase: ${phases.post.color}`}>Post-incident</span></p>
+                    <h2>The blameless postmortem</h2>
                     <p>
-                        A blameless postmortem assumes everyone acted reasonably given what they knew at the time, and asks which parts of the system let a reasonable action cause an outage. "The deploy pipeline has no load test for checkout" leads to a fix; "Alex shipped a bad query" leads to people hiding mistakes in the next incident. The <a href="https://sre.google/sre-book/postmortem-culture/" target="_blank" rel="noopener noreferrer">Google SRE book's postmortem chapter</a> covers the practice in more depth.
+                        A blameless postmortem assumes everyone acted reasonably with what they knew at the time, and asks which parts of the system let a reasonable action cause an outage. "Checkout has no load test with large carts" leads to a fix. "Alex shipped a bad query" teaches people to hide their mistakes next time. The <a href="https://sre.google/sre-book/postmortem-culture/" target="_blank" rel="noopener noreferrer">Google SRE book's postmortem chapter</a> covers the practice in depth.
                     </p>
-                    <p>Copy this into your docs tool and fill it in from the incident channel:</p>
-                    <pre><code>{postmortemTemplate}</code></pre>
+                    <p>
+                        The template carries the checkout incident's numbers as an example. Copy it into your docs tool and replace each <code>&lt;placeholder&gt;</code> from the incident channel and the scribe's log:
+                    </p>
+                    <div class="code-file">
+                        <p class="code-file__name">postmortem.md</p>
+                        <pre><code set:html={highlight(postmortemTemplate, "markdown")} /></pre>
+                    </div>
                     <div class="guide-callout">
-                        <p class="guide-kicker">Action items decide whether the postmortem worked</p>
+                        <p class="guide-kicker">The action items decide whether it worked</p>
                         <p>
-                            Each one needs an owner, a due date and a ticket in the same tracker as feature work. Review open postmortem items in a recurring meeting; items that live only in the document do not get done.
+                            Give each one an owner, a due date and a ticket in the same tracker as feature work, and review the open ones in a recurring meeting. An item that only exists in the postmortem document does not get done.
                         </p>
                     </div>
                 </section>
 
                 <section id="maple" class="scroll-mt-24">
-                    <p class="guide-eyebrow">09 · In practice</p>
-                    <h2>Running the incident response steps with Maple</h2>
+                    <p class="guide-eyebrow"><span>06</span> · In practice</p>
+                    <h2>Incident response in Maple</h2>
                     <p>
-                        Maple covers detection, notification and diagnosis from the OpenTelemetry traces, logs and metrics your services already send. Declaring severity, assigning roles and running the status page stay with your team and your paging tool.
+                        Maple covers detection and notification, from the OpenTelemetry traces, logs and metrics your services send, and keeps a history of every alert incident. Declaring severity, assigning roles, acknowledging pages and the status page stay with your team and your paging tool.
                     </p>
 
                     <ol class="guide-steps">
                         <li>
                             <span>01</span>
                             <div>
-                                <h3>Alert on symptoms</h3>
-                                <p>Create an <a href="/docs/alerting/alert-rules">alert rule</a> from a template such as <strong>High error rate</strong> (above 5% over 5 minutes, one incident per service) or <strong>Slow P95 latency</strong>, and set its <strong>Severity</strong> to <strong>Warning</strong> or <strong>Critical</strong>. <strong>Test rule</strong> replays it over a past range, so you can check it would have caught your last outage.</p>
+                                <h4>Alert on what users feel</h4>
+                                <p>On the <strong>Alerts</strong> page, click <strong>New rule</strong> and start from a template such as <strong>High error rate</strong> (above 5% over a 5-minute window) or <strong>Slow P95 latency</strong>. Set <strong>Severity</strong> to <strong>Critical</strong> or <strong>Warning</strong>; Maple shows it on the incident and in every notification. Pick a past range and click <strong>Test rule</strong> to replay the rule: the chart shades where it would have held an incident open, so you can check it would have caught your last outage.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/incident-response-01-rule.webp" data-zoomable alt="A new alert rule from the High error rate template: error rate above 5% over 5 minutes, severity Critical, with the Test rule preview shading the span where the rule would have fired." width="2368" height="1400" loading="lazy" /></figure>
                             </div>
                         </li>
                         <li>
                             <span>02</span>
                             <div>
-                                <h3>Route the page</h3>
-                                <p>Attach <a href="/docs/alerting/notification-destinations">notification destinations</a>: PagerDuty for paging, plus Slack, Discord, Telegram, email or a signed webhook. PagerDuty receives a stable <code>dedup_key</code>, so the trigger and resolve land on the same PagerDuty incident.</p>
+                                <h4>Route pages by severity</h4>
+                                <p>Each rule sends to the <a href="/docs/alerting/notification-destinations">notification destinations</a> attached to it. Attach PagerDuty to the <strong>Critical</strong> rules and a Slack channel to the <strong>Warning</strong> ones. PagerDuty receives a stable <code>dedup_key</code>, so the trigger and the resolve land on the same PagerDuty incident.</p>
                             </div>
                         </li>
                         <li>
                             <span>03</span>
                             <div>
-                                <h3>Let the incident open, renotify and resolve</h3>
-                                <p>An <a href="/docs/alerting/incidents">incident</a> opens after <strong>Breaches to fire</strong> consecutive checks, renotifies every <strong>Renotify (min)</strong> minutes while it keeps breaching, and resolves after <strong>Healthy to resolve</strong> healthy checks. If the service stops sending telemetry, the incident shows <strong>Waiting on data</strong> rather than resolving on an empty window.</p>
+                                <h4>Open the incident from the notification</h4>
+                                <p>Maple checks each rule once a minute and opens an <a href="/docs/alerting/incidents">incident</a> after <strong>Breaches to fire</strong> breaching checks in a row (2 by default). The notification shows the value, the threshold and the window, and links to the alert in Maple and to Maple AI. Open incidents are listed under <strong>Active incidents</strong> on <strong>Alerts → Overview</strong>. If the service stops sending telemetry, the incident shows <strong>Waiting on data</strong> and stays open instead of resolving on an empty window.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/incident-response-02-active-incident.webp" data-zoomable alt="Alerts overview with one firing incident in the Active incidents table: severity Critical, rule High error rate, group checkout, its current value, duration and last notified time." width="2368" height="900" loading="lazy" /></figure>
                             </div>
                         </li>
                         <li>
                             <span>04</span>
                             <div>
-                                <h3>Diagnose from the notification</h3>
-                                <p>Each notification carries a link to the alert in Maple and a link to ask Maple AI about it. From there, filter <a href="/docs/explore/traces">Traces</a> by <strong>Has Error</strong> for the failing service, open a trace to find the slow or failing span, and check the deploy markers on the <a href="/docs/explore/services">service page</a>. <a href="/docs/errors/overview">Error issues</a> group the exceptions behind the incident, with occurrences linked to their traces and <a href="/docs/explore/logs">logs</a>.</p>
-                            </div>
-                        </li>
-                        <li>
-                            <span>05</span>
-                            <div>
-                                <h3>Pull the timeline for the postmortem</h3>
-                                <p>The rule's <strong>History</strong> tab lists past incidents with <strong>Avg resolution</strong>. The <code>get_incident_timeline</code> tool on the <a href="/docs/reference/mcp">MCP server</a> returns trigger, notification and resolution times, which gives you the detection side of the postmortem timeline. Acknowledgment times live in your paging tool.</p>
+                                <h4>Use the history in the postmortem</h4>
+                                <p>The incident resolves after <strong>Healthy to resolve</strong> healthy checks in a row and sends a resolve notification. The rule's <strong>History</strong> tab lists its past incidents with <strong>Total triggered</strong> and <strong>Avg resolution</strong>. On the <a href="/docs/reference/mcp">MCP server</a>, <code>list_alert_incidents</code> and <code>get_incident_timeline</code> return the same data to an AI assistant drafting the postmortem.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/incident-response-03-history.webp" data-zoomable alt="The History tab of the High error rate rule: past incidents with their open and resolve times, plus Total triggered and Avg resolution." width="2368" height="1100" loading="lazy" /></figure>
                             </div>
                         </li>
                     </ol>
 
                     <div class="guide-maple">
-                        <p class="guide-kicker">Maple alerting</p>
-                        <h3>From the first breach to the resolve notification</h3>
-                        <p>
-                            The incidents page documents each lifecycle step, what a notification contains, how flapping is suppressed, and where open and past incidents appear in the app.
-                        </p>
+                        <p class="guide-kicker">Set it up in Maple</p>
+                        <h3>Your first alert rule</h3>
+                        <p>Every rule setting, when incidents open and resolve, and what each notification contains.</p>
                         <div class="mt-6 flex flex-wrap gap-3">
-                            <a href="/docs/alerting/incidents" class="guide-button guide-button--primary">Read the incidents docs</a>
-                            <a href="/docs/alerting/alert-rules" class="guide-button">Create an alert rule</a>
+                            <a href="/docs/alerting/alert-rules" class="guide-button guide-button--primary">Alert rules docs</a>
+                            <a href="/docs/alerting/incidents" class="guide-button">Incidents docs</a>
                         </div>
                     </div>
                 </section>
@@ -506,6 +529,8 @@ const articleJsonLd = {
                         <li><a href="https://www.sans.org/white-papers/33901" target="_blank" rel="noopener noreferrer">SANS Institute: Incident Handler's Handbook</a></li>
                         <li><a href="https://sre.google/sre-book/managing-incidents/" target="_blank" rel="noopener noreferrer">Google SRE book: Managing Incidents</a></li>
                         <li><a href="https://sre.google/sre-book/postmortem-culture/" target="_blank" rel="noopener noreferrer">Google SRE book: Postmortem Culture</a></li>
+                        <li><a href="/docs/alerting/alert-rules">Maple docs: Alert rules</a></li>
+                        <li><a href="/docs/alerting/incidents">Maple docs: Incidents</a></li>
                         <li><a href="/guides/uptime-monitoring">Maple guide: Uptime monitoring with traces and HTTP checks</a></li>
                     </ul>
                 </section>
@@ -519,46 +544,103 @@ const articleJsonLd = {
 </Layout>
 
 <style is:global>
-    .ir-guide { max-width: 48rem; }
+    .ir-guide { max-width: 46rem; font-family: var(--font-display); }
     .ir-guide section + section { margin-top: 5.5rem; }
     .ir-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
-    .ir-guide h2 { max-width: 24ch; margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
-    .ir-guide h3 { margin: 2.5rem 0 0.8rem; font-family: var(--font-display); font-size: 1.15rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
-    .ir-guide > section > p:not(.guide-eyebrow, .guide-kicker), .ir-guide .guide-answer p { max-width: 70ch; margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .ir-guide .guide-eyebrow > span:first-child { color: var(--primary); }
+    .ir-guide .guide-eyebrow .eyebrow-phase { color: color-mix(in oklab, var(--phase) 75%, var(--foreground)); }
+    .ir-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .ir-guide h3 { margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .ir-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
+    .ir-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .ir-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .ir-guide strong { font-weight: 600; color: var(--foreground); }
     .ir-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
-    .ir-guide pre { max-width: 100%; margin: 1.5rem 0 1.75rem; overflow-x: auto; border: 1px solid var(--border); border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
+    .ir-guide pre { margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
     .ir-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .ir-guide a:not(.guide-button):hover { color: var(--foreground); }
-    .ir-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); background: color-mix(in oklab, var(--primary) 7%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
-    .ir-guide .guide-answer p { margin: 0; font-size: 16px; color: var(--foreground); }
-    .ir-guide .guide-table { margin: 1.6rem 0 2rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
-    .ir-guide table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
-    .ir-guide th { border-bottom: 1px solid var(--border); background: var(--bg-deep); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--foreground); }
-    .ir-guide td { border-bottom: 1px solid var(--border); padding: 0.9rem; vertical-align: top; }
+    .ir-guide .guide-caption { margin: 0.7rem 0 0; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
+    .ir-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .ir-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
+    .ir-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+
+    /* One color per NIST phase: set --phase on the element. */
+    .ir-guide .phase-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in oklab, var(--phase) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--phase) 14%, transparent); padding: 0.1rem 0.55rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; line-height: 1.5; color: color-mix(in oklab, var(--phase) 70%, var(--foreground)); white-space: nowrap; vertical-align: 0.1em; }
+    .ir-guide .phase-badge--neutral { --phase: var(--muted-foreground); }
+    /* One color per severity level: set --sev on the element. */
+    .ir-guide .sev-badge { display: inline-block; border-radius: 0.3rem; background: color-mix(in oklab, var(--sev) 22%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--sev) 55%, transparent); padding: 0.1rem 0.45rem; font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: color-mix(in oklab, var(--sev) 65%, var(--foreground)); }
+    .ir-guide .sev-name { display: block; margin-top: 0.35rem; font-size: 12px; color: var(--foreground); }
+
+    .cycle { margin: 2rem 0 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
+    .cycle svg { display: block; width: 100%; min-width: 600px; height: auto; }
+    .cycle__box { fill: color-mix(in oklab, var(--phase) 9%, var(--background)); stroke: color-mix(in oklab, var(--phase) 60%, transparent); }
+    .cycle__title { fill: color-mix(in oklab, var(--phase) 45%, var(--foreground)); font-family: var(--font-display); font-size: 14px; font-weight: 600; }
+    .cycle__rule { stroke: color-mix(in oklab, var(--phase) 30%, transparent); }
+    .cycle__kicker { fill: var(--muted-foreground); font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; }
+    .cycle__sans { fill: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; }
+    .cycle__line { stroke-width: 1.5; }
+    .cycle__loop { fill: none; stroke-width: 1.5; stroke-dasharray: 4 3; }
+    .cycle__note { fill: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; }
+
+    .ir-guide .guide-steps { margin: 1.75rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .ir-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.2rem 0; }
+    .ir-guide .guide-steps > li > span { display: grid; width: 1.9rem; height: 1.9rem; place-items: center; border: 1px solid color-mix(in oklab, var(--primary) 45%, transparent); border-radius: 0.4rem; background: color-mix(in oklab, var(--primary) 12%, transparent); font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
+    .ir-guide .guide-steps__head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+    .ir-guide .guide-steps h3 { margin: 0; font-size: 1.05rem; }
+    .ir-guide .guide-steps p { margin: 0.4rem 0 0; font-size: 14px; line-height: 1.7; color: var(--muted-foreground); }
+    .ir-guide .guide-figure { margin: 1rem 0 0; }
+    .ir-guide .guide-figure img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 0.6rem; background: var(--bg-deep); }
+
+    .ir-guide .guide-table { margin: 1.75rem 0 2rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
+    .ir-guide table { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .ir-guide th { border-bottom: 1px solid var(--border); background: var(--bg-deep); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .ir-guide td { border-bottom: 1px solid var(--border); padding: 0.8rem 0.9rem; vertical-align: top; }
     .ir-guide td + td { border-left: 1px solid var(--border); }
     .ir-guide tbody tr:last-child td { border-bottom: 0; }
-    .ir-guide .guide-table__key { color: var(--foreground); }
-    .ir-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+
+    .ir-guide .role-list { display: grid; gap: 1px; margin: 1.75rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .ir-guide .role-list > div { display: grid; grid-template-columns: 6.5rem 1fr; gap: 1rem; background: var(--background); padding: 1rem 1.2rem; }
+    .ir-guide .role-list span { padding-top: 0.15rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--foreground); }
+    .ir-guide .role-list p { margin: 0; font-size: 14px; line-height: 1.65; color: var(--muted-foreground); }
+
+    .ir-timeline { margin: 1.5rem 0 2rem; padding: 0; list-style: none; }
+    .ir-timeline li { --phase: var(--muted-foreground); position: relative; display: grid; grid-template-columns: 3.25rem 1fr; gap: 1.25rem; padding: 0 0 1.1rem; }
+    .ir-timeline li::before { content: ""; position: absolute; top: 0.3rem; left: 3.85rem; width: 0.55rem; height: 0.55rem; border-radius: 999px; background: var(--phase); box-shadow: 0 0 0 3px color-mix(in oklab, var(--phase) 20%, transparent); }
+    .ir-timeline li::after { content: ""; position: absolute; top: 1.1rem; bottom: 0; left: calc(3.85rem + 0.25rem); width: 1px; background: var(--border); }
+    .ir-timeline li:last-child::after { display: none; }
+    .ir-timeline li > div { padding-left: 0.6rem; }
+    .ir-timeline li.ir-timeline__before::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted-foreground); }
+    .ir-timeline time { font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
+    .ir-timeline h4 { font-size: 0.9rem; }
+    .ir-timeline p { margin: 0.2rem 0 0; font-size: 14px; line-height: 1.65; color: var(--muted-foreground); }
+
+    .clocks { --label-w: 9rem; --value-w: 3.5rem; margin: 1.5rem 0 1rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
+    .clocks__rows { display: grid; gap: 0.6rem; min-width: 30rem; }
+    .clocks__row { display: grid; grid-template-columns: var(--label-w) 1fr var(--value-w); align-items: center; gap: 0.75rem; }
+    .clocks__label { display: grid; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
+    .clocks__label strong { font-size: 12px; }
+    .clocks__track { position: relative; height: 1.1rem; border-radius: 0.25rem; background: repeating-linear-gradient(to right, color-mix(in oklab, var(--foreground) 10%, transparent) 0 1px, transparent 1px 20%); }
+    .clocks__bar { position: absolute; top: 0; bottom: 0; border-radius: 0.25rem; background: color-mix(in oklab, var(--foreground) 62%, transparent); }
+    .clocks__value { font-family: var(--font-mono); font-size: 11px; text-align: right; color: var(--foreground); }
+    .clocks__row--phases .clocks__track, .clocks__row--axis .clocks__track { background: none; }
+    .clocks__phase { position: absolute; top: 0; bottom: 0; overflow: hidden; border-bottom: 2px solid var(--phase); background: color-mix(in oklab, var(--phase) 16%, transparent); padding: 0 0.35rem; font-family: var(--font-mono); font-size: 9px; line-height: 1.1rem; white-space: nowrap; text-overflow: ellipsis; color: color-mix(in oklab, var(--phase) 70%, var(--foreground)); }
+    .clocks__tick { position: absolute; top: 0; transform: translateX(-50%); font-family: var(--font-mono); font-size: 9px; color: var(--muted-foreground); }
+    .clocks__tick:first-child { transform: none; }
+    .clocks__tick:last-child { transform: translateX(-100%); }
+    @media (max-width: 639px) { .clocks { --label-w: 6.5rem; --value-w: 3rem; padding: 1rem; } .clocks__rows { min-width: 24rem; } }
+    .clocks figcaption { margin-top: 1rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+
+    .ir-guide .code-file { margin: 1.25rem 0; }
+    .ir-guide .code-file__name { margin: 0; width: fit-content; border: 1px solid var(--border); border-bottom: 0; border-radius: 0.5rem 0.5rem 0 0; background: var(--bg-elevated); padding: 0.35rem 0.8rem; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
+    .ir-guide .code-file pre { margin: 0; border-top-left-radius: 0; }
+    .ir-guide .tok-comment { color: var(--muted-foreground); }
+    .ir-guide .tok-name { font-weight: 600; color: var(--foreground); }
+    .ir-guide .tok-labels { color: var(--primary); }
+
     .ir-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: color-mix(in oklab, var(--warning) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
     .ir-guide .guide-callout .guide-kicker { color: var(--warning); }
     .ir-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
-    .ir-guide .guide-steps { margin: 2rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
-    .ir-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.35rem 0; }
-    .ir-guide .guide-steps > li > span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
-    .ir-guide .guide-steps h3, .ir-guide .guide-steps p { margin: 0; }
-    .ir-guide .guide-steps h3 { font-size: 1rem; }
-    .ir-guide .guide-steps p { margin-top: 0.45rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
-    .ir-guide .guide-signal-list { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
-    .ir-guide .guide-signal-list > div { display: grid; grid-template-columns: 6.5rem 1fr; gap: 1rem; background: var(--background); padding: 1.1rem 1.25rem; }
-    .ir-guide .guide-signal-list span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--primary); }
-    .ir-guide .guide-signal-list p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
-    .ir-timeline { margin: 2rem 0; padding: 0; list-style: none; border-left: 1px solid var(--border); }
-    .ir-timeline li { display: grid; grid-template-columns: 3.5rem 1fr; gap: 1rem; padding: 0.85rem 0 0.85rem 1.1rem; }
-    .ir-timeline time { padding-top: 0.05rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
-    .ir-guide .ir-timeline p:not(.guide-kicker) { margin: 0.3rem 0 0; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
-    .ir-guide .guide-maple { margin-top: 3.5rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
-    .ir-guide .guide-maple h3 { margin: 0.55rem 0 0.8rem; font-size: 1.35rem; }
+    .ir-guide .guide-maple { margin-top: 3rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .ir-guide .guide-maple h3 { margin: 0.55rem 0 0.6rem; font-size: 1.35rem; }
     .ir-guide .guide-maple > p:not(.guide-kicker) { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
     .ir-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
     .ir-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
