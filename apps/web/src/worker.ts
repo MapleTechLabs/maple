@@ -14,7 +14,6 @@ import { plainFrom, selfObservabilityEnv } from "@maple/infra/env"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
 import { API_PROXY_PREFIX } from "./api-proxy.ts"
-import { HASHED_ASSETS_PREFIX } from "./hashed-assets.ts"
 
 // `memo.include` also hashes the `@maple/*` sources; `lockfile` is restated because `include` drops it.
 const MEMO_INCLUDE = ["**/*", "../../packages/*/src/**", "../../lib/*/src/**"]
@@ -29,8 +28,11 @@ const props = Effect.gen(function* () {
 		assets: {
 			// Deep links serve the shell in place; otherwise hard reloads 307 to "/".
 			notFoundHandling: "single-page-application" as const,
-			// Or the SPA fallback answers the API proxy, and a missing hashed asset.
-			runWorkerFirst: [API_PROXY_PREFIX, `${API_PROXY_PREFIX}/*`, `${HASHED_ASSETS_PREFIX}*`],
+			// Or the SPA fallback answers the API proxy.
+			runWorkerFirst: [API_PROXY_PREFIX, `${API_PROXY_PREFIX}/*`],
+			// Vite's content-hashed output never changes under a name. Served by the asset layer,
+			// not worker-first: the Worker is placed in one region, a hop that cost ~1s per cold load.
+			headers: "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n",
 		},
 		memo: { include: MEMO_INCLUDE, lockfile: true },
 		placement: resolveWorkerPlacement(region),

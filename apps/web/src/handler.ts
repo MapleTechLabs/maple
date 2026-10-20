@@ -1,6 +1,5 @@
 import { Effect } from "effect"
 import { apiProxyPath } from "./api-proxy"
-import { HASHED_ASSETS_PREFIX } from "./hashed-assets"
 import { forwardToApi } from "./api-proxy-forward"
 import { ogIdFromPath, shareTokenFromPath } from "./og/share-links"
 import { chartRequestFromPath, renderChartImage } from "./og/chart-image"
@@ -79,25 +78,6 @@ const applyShareOgMeta = async (
 	return meta === undefined ? response : shareOgMetaRewriter(meta, url.origin).transform(response)
 }
 
-const IMMUTABLE = "public, max-age=31536000, immutable"
-/** The file's bytes or a revalidation of them; an error status must not be pinned for a year. */
-const CACHEABLE_STATUSES = new Set([200, 206, 304])
-
-/**
- * A missing hashed file (a tab from before a deploy) gets a 404, never the SPA shell
- * the assets layer answers with: HTML cached a year under a script's name.
- */
-const serveHashedAsset = async (request: Request, env: WebWorkerEnv): Promise<Response> => {
-	const response = await env.ASSETS.fetch(request)
-	if (response.status === 404 || (response.status === 200 && isHtmlResponse(response))) {
-		return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } })
-	}
-	if (!CACHEABLE_STATUSES.has(response.status)) return response
-	const headers = new Headers(response.headers)
-	headers.set("Cache-Control", IMMUTABLE)
-	return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
-}
-
 /** One request against the built SPA: OG images, the share preview, security headers, the shell fallback. */
 export const handleRequest = async (
 	request: Request,
@@ -113,8 +93,6 @@ export const handleRequest = async (
 		const proxyTarget = env.API === undefined ? undefined : api
 		return runTraced(forwardToApi(request, url, proxyTarget, apiPath))
 	}
-
-	if (url.pathname.startsWith(HASHED_ASSETS_PREFIX)) return serveHashedAsset(request, env)
 
 	// Ahead of the assets lookup: this path has no asset behind it, and the
 	// 404 the assets layer returns for it would fall through to the SPA shell.
