@@ -1,6 +1,6 @@
 // Google Cloud connector rules shared by the card, the hub and the Infrastructure page: what
 // each capability is doing, what a connection asks of its owner, what a change to its configuration
-// does and when, and the add form's validation. Pure (no React, no atoms), like planetscale-setup-steps.ts.
+// does and when, and the add form's validation. Pure, like planetscale-setup-steps.ts.
 
 import { Option, Schema } from "effect"
 import { V2GcpCreateConnectorRequest, type V2GcpConnector } from "@maple/domain/http/v2"

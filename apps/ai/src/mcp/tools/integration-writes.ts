@@ -33,7 +33,7 @@ const adminOnly = (tool: string) =>
 			tenant.roles,
 			() =>
 				new McpUnavailableError({
-					message: `${tool} changes the organization's integrations, which only org admins may do. Ask an admin, or change it in Settings → Integrations.`,
+					message: `${tool} changes the organization's integrations, which only org admins may do. Ask an admin, or change it in Sources.`,
 					capability: "org_admin",
 				}),
 		)
@@ -101,7 +101,7 @@ const resolveTarget = (
 		}
 		if (target.managedBy !== null) {
 			return yield* new McpInvalidInputError({
-				message: `"${target.name}" is managed by the ${target.managedBy.split(":")[0]} integration; change it from that integration in Settings → Integrations.`,
+				message: `"${target.name}" is managed by the ${target.managedBy.split(":")[0]} integration; change it from that integration in Sources.`,
 				parameter: "target",
 			})
 		}
@@ -179,8 +179,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 				? {
 						title: "Sync Railway",
 						empty: {
-							message:
-								"Railway is not connected. Connect it with an API token in Settings → Integrations.",
+							message: "Railway is not connected. Connect it with an API token in Sources.",
 						},
 						blocks: [],
 					}
@@ -189,14 +188,14 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 						notices: [
 							...(output.authFailed
 								? [
-										"Railway rejected the stored token, so nothing was polled. Save a new token in Settings → Integrations.",
+										"Railway rejected the stored token, so nothing was polled. Save a new token in Sources.",
 									]
 								: []),
 							...output.environments
 								.filter((env) => env.stale && env.lastError === null)
 								.map(
 									(env) =>
-										`The poll ran, but ${env.project} / ${env.environment} still has no new data: Railway returned nothing for it. The token most likely lost access to that project or environment, or its services stopped. Check it in Railway, then save a token with access in Settings → Integrations.`,
+										`The poll ran, but ${env.project} / ${env.environment} still has no new data: Railway returned nothing for it. The token most likely lost access to that project or environment, or its services stopped. Check it in Railway, then save a token with access in Sources.`,
 								),
 						],
 						blocks: [
@@ -233,7 +232,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		name: "create_scrape_target",
 		title: "Create Scrape Target",
 		description:
-			"Start scraping a Prometheus metrics endpoint: Maple's scraper pulls `url` every interval and stores the samples as metrics, tagged with `service` when given. Admin only. The endpoint must be reachable from the internet without credentials; to add a bearer or basic credential, create it in Settings → Integrations → Prometheus instead.",
+			"Start scraping a Prometheus metrics endpoint: Maple's scraper pulls `url` every interval and stores the samples as metrics, tagged with `service` when given. Admin only. The endpoint must be reachable from the internet without credentials; to add a bearer or basic credential, create it in Sources → Prometheus instead.",
 		parameters: Schema.Struct({
 			name: P.text("A label for the target, e.g. `node-exporter`"),
 			url: P.text("The full metrics URL, e.g. `https://metrics.example.com/metrics`"),

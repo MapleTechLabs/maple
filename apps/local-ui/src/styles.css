@@ -9,6 +9,8 @@
 @import "@fontsource-variable/geist/wght.css";
 
 @source "../../../packages/ui/src";
+@source "./";
+@source "../../web/src";
 
 /* Sugar High syntax highlighting (app-local, same values as apps/web) */
 :root {
@@ -35,10 +37,8 @@
 	--sh-comment: oklch(0.46 0.02 55);
 }
 
-/* Loading spinner — the shared <Spinner> renders the Nucleo "Pixel Essential" loader
-   (LoaderIcon). Step it frame-by-frame instead of rotating smoothly so it reads as a
-   retro pixel loader. Scoped to local-ui; the only animate-spin consumer here is the
-   <Spinner> (role="status"). */
+/* Loading spinner: step the Nucleo "Pixel Essential" loader frame by frame so it reads as
+   a retro pixel loader. Only the spinner (role="status") uses animate-spin here. */
 @keyframes pixel-spin {
 	to {
 		transform: rotate(360deg);
@@ -58,4 +58,12 @@
 
 .stale-notice {
 	animation: stale-notice-in 150ms ease-out 800ms both;
+}
+
+/* Base UI injects this rule from `utils/styles.mjs` for scroll area viewports and select lists. */
+.base-ui-disable-scrollbar {
+	scrollbar-width: none;
+}
+.base-ui-disable-scrollbar::-webkit-scrollbar {
+	display: none;
 }

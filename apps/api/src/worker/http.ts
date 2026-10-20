@@ -22,6 +22,7 @@ import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import type { ApiPortsLayer } from "./bindings"
+import { VCS_SYNC_BATCH_PATH } from "./vcs-sync-dispatch"
 
 /**
  * The route graph as the bridge's handler, built for the isolate.
@@ -179,6 +180,11 @@ export const makeFetch = (
 	app: Effect.Effect<HttpEffect, unknown>,
 	ports: Layer.Layer<MapleDbConnection | AiWorkerFetcher>,
 	queryApp: Effect.Effect<HttpEffect, unknown> = app,
+	vcsSyncBatch?: Effect.Effect<
+		HttpServerResponse.HttpServerResponse,
+		never,
+		HttpServerRequest.HttpServerRequest
+	>,
 ) =>
 	IsolateAge.useSync((isolateAge) => {
 		const serve = Effect.gen(function* () {
@@ -200,6 +206,10 @@ export const makeFetch = (
 						onSome: (sha) => ({ ...API_CORS_RESPONSE_HEADERS, "x-maple-revision": sha }),
 					}),
 				})
+			}
+			// A queue batch handed over the self binding; graph-free, like the queue consumer it stands in for.
+			if (vcsSyncBatch !== undefined && request.method === "POST" && path === VCS_SYNC_BATCH_PATH) {
+				return yield* vcsSyncBatch
 			}
 			// The unattributed 500s all landed within ~60ms of an isolate's first request, so the
 			// span carries that shape. Counted before the graph builds, so build failures count too,

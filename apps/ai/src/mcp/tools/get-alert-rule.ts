@@ -5,6 +5,7 @@ import { GetAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { alertEvaluationIntervalMinutes } from "@maple/query-engine/datetime"
 import { formatCondition, ruleConfigWarnings, ruleNotFound, toAlertRuleRow } from "../lib/alert-rules"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
@@ -95,7 +96,10 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 					["Severity", rule.severity],
 					["Signal", rule.signalType],
 					["Condition", formatCondition(rule)],
-					["Window", `${rule.windowMinutes}m`],
+					[
+						"Window",
+						`${rule.windowMinutes}m, checked every ${alertEvaluationIntervalMinutes(rule.windowMinutes)}m`,
+					],
 					["Last evaluated", rule.lastEvaluatedAt ?? undefined],
 					["Last evaluation error", rule.lastEvaluationError ?? undefined],
 				]),

@@ -1,7 +1,7 @@
 import { formatBucketLabel } from "../../lib/format"
 import { toEpochMs } from "../../lib/time-format"
 import { bucketTimeScale } from "./plot-scales"
-import { timeseriesXAxis, type TimeseriesAxisContext } from "./timeseries"
+import { timeseriesXAxis, type TimeseriesAxisContext } from "./timeseries-axis"
 
 /** A warehouse bucket as an instant: tz-less buckets are read as UTC, never as local time. */
 export function bucketDate(iso: string): Date {

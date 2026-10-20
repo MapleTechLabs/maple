@@ -21,7 +21,7 @@ import {
 	type WorkflowState,
 } from "@maple/domain/http"
 
-import type { ErrorSignal, InvestigationSummary } from "@/lib/models/error-signal"
+import type { ErrorSignal, InvestigationSummary } from "../lib/models/error-signal"
 
 // The whole document decodes in one go, nested actor included, so no fixture
 // value is ever branded by hand.

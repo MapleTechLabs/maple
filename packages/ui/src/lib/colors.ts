@@ -131,7 +131,10 @@ export function getServiceColor(serviceName: string): string {
  * - Each class within a service gets a lightness/saturation variation
  * - Returns inline style object with background color and appropriate text color
  */
-export function getSpanColorStyle(spanName: string, serviceName: string): React.CSSProperties {
+export function getSpanColorStyle(
+	spanName: string,
+	serviceName: string,
+): { readonly backgroundColor: string; readonly color: string } {
 	const baseHue = getServiceHueFromName(serviceName)
 
 	const className = extractClassName(spanName)

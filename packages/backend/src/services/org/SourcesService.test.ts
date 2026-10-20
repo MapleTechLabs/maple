@@ -354,6 +354,52 @@ describe("SourcesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("a refusal in the last 15 minutes makes the source failing", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const keys = yield* SourcesService
+			const created = yield* keys.create(orgA, user, new CreateSourceRequest({ platform: "nodejs", name: "k" }))
+			yield* TestClock.adjust("1 hour")
+			const stamp = (column: string, ms: number) =>
+				Effect.promise(() =>
+					executeSql(
+						testDb,
+						`UPDATE sources SET ${column} = to_timestamp($1::bigint / 1000.0) WHERE id = $2`,
+						[ms, created.source.id],
+					),
+				)
+			// The test clock is at one hour.
+			yield* stamp("last_used_at", 1_800_000)
+			yield* stamp("last_rejected_at", 3_300_000)
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE sources SET last_rejection = $1 WHERE id = $2", [
+					"Rate limited at 200 requests per second",
+					created.source.id,
+				]),
+			)
+			const failing = (yield* keys.get(orgA, created.source.id)).health
+			assert.strictEqual(failing.status, "failing")
+			assert.strictEqual(failing.problem, "Rate limited at 200 requests per second")
+
+			// Fifteen minutes without a refusal: it clears on its own.
+			yield* stamp("last_rejected_at", 2_000_000)
+			assert.strictEqual((yield* keys.get(orgA, created.source.id)).health.status, "healthy")
+
+			// A new token or new rules: the old refusal no longer applies.
+			yield* stamp("last_rejected_at", 3_400_000)
+			assert.strictEqual((yield* keys.get(orgA, created.source.id)).health.status, "failing")
+			yield* keys.roll(orgA, user, created.source.id)
+			assert.strictEqual((yield* keys.get(orgA, created.source.id)).health.status, "healthy")
+			yield* stamp("last_rejected_at", 3_500_000)
+			// Saving the same rules lifts nothing; a new rate limit does.
+			yield* keys.update(orgA, user, created.source.id, new UpdateSourceRequest({ rateLimitRps: null }))
+			assert.strictEqual((yield* keys.get(orgA, created.source.id)).health.status, "failing")
+			yield* keys.update(orgA, user, created.source.id, new UpdateSourceRequest({ rateLimitRps: 500 }))
+			assert.strictEqual((yield* keys.get(orgA, created.source.id)).health.status, "healthy")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("lists one default source per org that only takes a name and description", () => {
 		const testDb = createTestDb(trackedDbs)
 

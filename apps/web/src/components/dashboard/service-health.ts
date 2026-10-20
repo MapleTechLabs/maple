@@ -1,4 +1,4 @@
-import type { ServiceLatencyBaseline } from "@/api/warehouse/services"
+import type { ServiceLatencyBaseline } from "@maple/web-data/warehouse/services"
 import type { AnomalySignalType } from "@maple/domain/http"
 import type { Tone } from "@maple/ui/lib/tone"
 

@@ -1,18 +1,4 @@
 import type { AuditActorType, AuditOutcome } from "@maple/domain/http"
-import { Schema } from "effect"
-
-/**
- * Audit log filters carried in the `/settings` search params, so a filtered view survives tab
- * switches and can be shared. Plain strings: a hand-edited value is ignored, never a failed route.
- */
-export const AuditLogSearchFields = {
-	range: Schema.optional(Schema.String),
-	since: Schema.optional(Schema.String),
-	until: Schema.optional(Schema.String),
-	actor: Schema.optional(Schema.String),
-	actor_type: Schema.optional(Schema.String),
-	outcome: Schema.optional(Schema.String),
-}
 
 export interface AuditLogSearch {
 	readonly range?: string

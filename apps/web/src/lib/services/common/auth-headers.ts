@@ -120,16 +120,8 @@ export const invalidateMapleAuthToken = () => {
 /** Whether a bearer token is currently being served from cache. */
 export const hasCachedMapleAuthToken = (): boolean => cachedAuth !== undefined
 
-// The active org isn't carried in the auth headers — it's implicit in the
-// Clerk/self-hosted bearer token, so the API derives it server-side. Client-side
-// caches that must not bleed across orgs (e.g. SpanMetrics availability) can't
-// see it from the headers, so the React auth layer publishes it here and those
-// caches key on it. Reset to null on sign-out / org-less states.
+// The last org published by the auth layer, so a switch drops the cached token.
 let activeOrgId: string | null = null
-
-const activeOrgSubscribers = new Set<() => void>()
-
-export const getActiveOrgId = (): string | null => activeOrgId
 
 export const setActiveOrgId = (orgId: string | null | undefined) => {
 	const next = orgId && orgId.length > 0 ? orgId : null
@@ -139,15 +131,6 @@ export const setActiveOrgId = (orgId: string | null | undefined) => {
 	// org switch would query the previous org's data. Drop it here rather than
 	// relying on Clerk to have re-issued before the next request goes out.
 	invalidateMapleAuthToken()
-	// Notify reactive consumers (e.g. useActiveOrgId → the per-org ElectricSQL
-	// collection lifecycle) so an org switch recreates org-scoped state.
-	for (const notify of activeOrgSubscribers) notify()
-}
-
-/** Subscribe to active-org changes. Returns an unsubscribe fn (useSyncExternalStore-shaped). */
-export const subscribeActiveOrgId = (notify: () => void): (() => void) => {
-	activeOrgSubscribers.add(notify)
-	return () => activeOrgSubscribers.delete(notify)
 }
 
 /** Cached token if it has enough life left, otherwise a fresh resolve. */

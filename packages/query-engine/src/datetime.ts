@@ -1040,6 +1040,53 @@ export const ALERT_TICK_SECONDS = 60
  */
 export const snapAlertWindowEndMs = (epochMs: number): number => floorToBucketMs(epochMs, ALERT_TICK_SECONDS)
 
+/** Longest gap between a rule's checks, so a long-window rule still fires within minutes. */
+export const ALERT_MAX_EVALUATION_INTERVAL_MINUTES = 5
+
+/**
+ * Minutes between a rule's checks: a fifth of its window, 1 to 5. Every check
+ * reads the whole window, so consecutive windows overlap and no data goes unchecked.
+ */
+export const alertEvaluationIntervalMinutes = (windowMinutes: number): number =>
+	Math.min(ALERT_MAX_EVALUATION_INTERVAL_MINUTES, Math.max(1, Math.floor(windowMinutes / 5)))
+
+// FNV-1a: a stable phase per rule, so rules sharing an interval split across its minutes.
+const alertRulePhase = (ruleId: string, intervalMinutes: number): number => {
+	let hash = 0x811c9dc5
+	for (let i = 0; i < ruleId.length; i++) {
+		hash = Math.imul(hash ^ ruleId.charCodeAt(i), 0x01000193)
+	}
+	return (hash >>> 0) % intervalMinutes
+}
+
+export interface AlertRuleDueInput {
+	readonly ruleId: string
+	readonly windowMinutes: number
+	/** The rule's last edit, epoch ms. */
+	readonly updatedAt: number
+	/** When a tick last claimed the rule, epoch ms; 0 or undefined when never or released. */
+	readonly lastClaimedAt: number | undefined
+	/** The tick's snapped window end (`snapAlertWindowEndMs`). */
+	readonly windowEndMs: number
+}
+
+/**
+ * Whether a tick evaluates the rule: on its phase minute, or straight away when it
+ * was never claimed, was edited since, or missed its last slot.
+ */
+export const isAlertRuleDue = (input: AlertRuleDueInput): boolean => {
+	const tickMs = ALERT_TICK_SECONDS * 1000
+	const intervalMinutes = alertEvaluationIntervalMinutes(input.windowMinutes)
+	const lastClaimedAt = input.lastClaimedAt ?? 0
+	if (lastClaimedAt <= 0 || input.updatedAt > lastClaimedAt) return true
+	// Claims land seconds into their minute, so compare on the minute.
+	if (input.windowEndMs - floorToBucketMs(lastClaimedAt, ALERT_TICK_SECONDS) > intervalMinutes * tickMs) {
+		return true
+	}
+	const tick = Math.floor(input.windowEndMs / tickMs)
+	return tick % intervalMinutes === alertRulePhase(input.ruleId, intervalMinutes)
+}
+
 const floorToBucketMs = (epochMs: number, bucketSeconds: number): number => {
 	const bucketMs = bucketSeconds * 1000
 	return Math.floor(epochMs / bucketMs) * bucketMs

@@ -2,15 +2,18 @@ import { HttpApiBuilder } from "effect/http-api"
 import type { Source } from "@maple/domain/http"
 import { CreateSourceRequest, CurrentTenant, UpdateSourceRequest } from "@maple/domain/http"
 import {
+	GcpConnectorPublicId,
 	MapleApiV2,
 	paginateArray,
+	ScrapeTargetPublicId,
 	SourcePublicId,
 	timestamp,
 	timestampOrNull,
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
 import type { V2Source, V2SourceUpdateParams } from "@maple/domain/http/v2"
-import { Effect, Schema } from "effect"
+import { GcpConnectorId, ScrapeTargetId } from "@maple/domain/primitives"
+import { Effect, Option, Schema } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
@@ -24,6 +27,22 @@ const toIsoTimestamp = (epochMs: number) => timestamp(new Date(epochMs).toISOStr
 const adminOnly = (action: string) => () =>
 	V2InsufficientPermissions.make(`Only org admins can ${action} sources`)
 
+const decodeScrapeTargetId = Schema.decodeUnknownOption(ScrapeTargetId)
+const decodeGcpConnectorId = Schema.decodeUnknownOption(GcpConnectorId)
+const encodeScrapeTargetId = Schema.encodeSync(ScrapeTargetPublicId)
+const encodeGcpConnectorId = Schema.encodeSync(GcpConnectorPublicId)
+
+/** The id a client can look the integration record up by: its public form where the API has one. */
+export const integrationIdOf = (source: Source): string | null => {
+	const raw = source.integrationId
+	if (raw === null) return null
+	if (source.platform === "prometheus")
+		return Option.match(decodeScrapeTargetId(raw), { onNone: () => raw, onSome: encodeScrapeTargetId })
+	if (source.platform === "gcp")
+		return Option.match(decodeGcpConnectorId(raw), { onNone: () => raw, onSome: encodeGcpConnectorId })
+	return raw
+}
+
 const toV2Source = (source: Source): V2Source => ({
 	id: source.id,
 	object: "source",
@@ -32,6 +51,7 @@ const toV2Source = (source: Source): V2Source => ({
 	platform: source.platform,
 	is_default: source.isDefault,
 	key_prefix: source.keyPrefix,
+	integration_id: integrationIdOf(source),
 	status: source.status,
 	allowed_signals: source.allowedSignals,
 	rate_limit_rps: source.rateLimitRps,
@@ -47,6 +67,7 @@ const toV2Source = (source: Source): V2Source => ({
 		status: source.health.status,
 		last_data_at: timestampOrNull(source.health.lastDataAt),
 		problem: source.health.problem,
+		resources: source.health.resources,
 	},
 })
 

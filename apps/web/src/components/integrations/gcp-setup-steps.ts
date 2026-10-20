@@ -10,9 +10,6 @@ import type { V2GcpConnector } from "@maple/domain/http/v2"
 
 import { gcpScopeRoles } from "./gcp-connector-state"
 
-/** How a connection is set up. Chosen in the dialog's Method step and kept nowhere else. */
-export type GcpSetupMethod = "script" | "manual" | "terraform" | "alchemy"
-
 /** One value to enter in the console, or several of a kind. `copy`: exact text, in mono with a copy button. */
 export interface GcpStepField {
 	readonly label: string
@@ -78,7 +75,9 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 			fields: [field("APIs", plan.apis)],
 			notes: [
 				"pubsub.googleapis.com is the Cloud Pub/Sub API, not Pub/Sub Lite.",
-				...(reader === null ? [] : ["Cloud Monitoring only answers for a project with billing linked."]),
+				...(reader === null
+					? []
+					: ["Cloud Monitoring only answers for a project with billing linked."]),
 			],
 		},
 	]
@@ -253,9 +252,7 @@ export function gcpManualSteps(plan: GcpSetupPlan): ReadonlyArray<GcpManualStep>
 							field("Principal", reader.serviceAccountEmail),
 							field("Roles", GCP_READER_SCOPE_ROLES.map(roleName).join(", "), false),
 						],
-						notes: [
-							`Granted on project ${host} instead, Maple would read only that project.`,
-						],
+						notes: [`Granted on project ${host} instead, Maple would read only that project.`],
 					},
 			...(plan.scopeType === "project"
 				? []

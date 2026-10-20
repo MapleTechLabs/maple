@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { parseWhereClause } from "@/lib/traces/advanced-filter-sync"
+import { parseWhereClause } from "../../lib/traces/advanced-filter-sync"
 import { dependencyDrillWhereClause, type DependencyDrillKind } from "./dependency-drill"
 
 const filtersOf = (kind: DependencyDrillKind, target: string, system: string) =>

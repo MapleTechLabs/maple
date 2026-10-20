@@ -1,4 +1,3 @@
-import type { ClerkProviderProps } from "@clerk/clerk-react"
 import { dark } from "@clerk/themes"
 
 // Provider-wide theme: every Clerk surface (user button popover, re-verification
@@ -84,8 +83,6 @@ export const clerkAuthCardAppearance = {
 // Clerk's stock strings ("Welcome back! Please sign in to continue") carry the
 // exclamation points and reassurance the product voice rules out. Only the two
 // entry cards are overridden; every other Clerk surface keeps its own copy.
-type ClerkLocalization = NonNullable<ClerkProviderProps["localization"]>
-
 export const clerkLocalization = {
 	signIn: {
 		start: {
@@ -99,4 +96,4 @@ export const clerkLocalization = {
 			subtitle: "Connect a service and start sending telemetry.",
 		},
 	},
-} satisfies ClerkLocalization
+}

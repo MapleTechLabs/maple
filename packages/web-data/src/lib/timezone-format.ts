@@ -1,0 +1,169 @@
+import { warehouseDateTimeToIso } from "@maple/query-engine"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { getBrowserTimeZone, isValidIanaTimeZone } from "./timezone"
+
+type TimezoneFormatInput = string | number | Date
+
+/**
+ * Normalize a tz-less warehouse (Tinybird/ClickHouse) DateTime string to an
+ * explicit-UTC ISO string. Delegates to the canonical shared helper so web,
+ * mobile, and the API all agree on one normalization.
+ */
+export function normalizeTimestampInput(value: string): string {
+	return warehouseDateTimeToIso(value)
+}
+
+function toValidDate(input: TimezoneFormatInput): Date | null {
+	const normalized = typeof input === "string" ? normalizeTimestampInput(input) : input
+
+	const date = normalized instanceof Date ? normalized : new Date(normalized)
+	return Number.isNaN(date.getTime()) ? null : date
+}
+
+function resolveTimeZone(timeZone: string): string {
+	return isValidIanaTimeZone(timeZone) ? timeZone : getBrowserTimeZone()
+}
+
+const timestampFormatters = new Map<string, Intl.DateTimeFormat>()
+const timeFormatters = new Map<string, Intl.DateTimeFormat>()
+const compactTimeFormatters = new Map<string, Intl.DateTimeFormat>()
+
+export function formatTimestampInTimezone(
+	input: TimezoneFormatInput,
+	options: { timeZone: string; withMilliseconds?: boolean; withYear?: boolean; style?: "full" | "range" },
+): string {
+	const date = toValidDate(input)
+	if (!date) return EMPTY_VALUE
+
+	const tz = resolveTimeZone(options.timeZone)
+	const style = options.style ?? "full"
+	const key = `${tz}|${style}|${options.withMilliseconds ? "ms" : ""}|${options.withYear ? "y" : ""}`
+	let formatter = timestampFormatters.get(key)
+	if (!formatter) {
+		formatter =
+			style === "range"
+				? // `Sep 10, 14:05` — the time-range picker's label, where seconds are
+					// noise and a 24h clock keeps the two ends the same width.
+					new Intl.DateTimeFormat("en-US", {
+						timeZone: tz,
+						month: "short",
+						day: "numeric",
+						hour: "2-digit",
+						minute: "2-digit",
+						hourCycle: "h23",
+					})
+				: new Intl.DateTimeFormat("en-US", {
+						timeZone: tz,
+						// A timestamp inside the selected window reads without its year;
+						// a first-seen months old needs one.
+						year: options.withYear ? "numeric" : undefined,
+						month: "short",
+						day: "numeric",
+						hour: "2-digit",
+						minute: "2-digit",
+						second: "2-digit",
+						fractionalSecondDigits: options.withMilliseconds ? 3 : undefined,
+					})
+		timestampFormatters.set(key, formatter)
+	}
+
+	return formatter.format(date)
+}
+
+export function formatTimeInTimezone(
+	input: TimezoneFormatInput,
+	options: { timeZone: string; withSeconds?: boolean },
+): string {
+	const date = toValidDate(input)
+	if (!date) return EMPTY_VALUE
+
+	const tz = resolveTimeZone(options.timeZone)
+	const key = `${tz}|${options.withSeconds ? "s" : ""}`
+	let formatter = timeFormatters.get(key)
+	if (!formatter) {
+		formatter = new Intl.DateTimeFormat("en-US", {
+			timeZone: tz,
+			hour: "2-digit",
+			minute: "2-digit",
+			second: options.withSeconds ? "2-digit" : undefined,
+		})
+		timeFormatters.set(key, formatter)
+	}
+
+	return formatter.format(date)
+}
+
+const clockFormatters = new Map<string, Intl.DateTimeFormat>()
+
+/** `14:21:58` — the transcript's clock gutter, where the millisecond
+ *  `formatCompactTimeInTimezone` adds is noise down a thousand rows. */
+export function formatClockInTimezone(input: TimezoneFormatInput, options: { timeZone: string }): string {
+	const date = toValidDate(input)
+	if (!date) return EMPTY_VALUE
+
+	const tz = resolveTimeZone(options.timeZone)
+	let formatter = clockFormatters.get(tz)
+	if (!formatter) {
+		formatter = new Intl.DateTimeFormat("en-GB", {
+			timeZone: tz,
+			hour: "2-digit",
+			minute: "2-digit",
+			second: "2-digit",
+			hour12: false,
+		})
+		clockFormatters.set(tz, formatter)
+	}
+
+	return formatter.format(date)
+}
+
+export function formatCompactTimeInTimezone(
+	input: TimezoneFormatInput,
+	options: { timeZone: string },
+): string {
+	const date = toValidDate(input)
+	if (!date) return EMPTY_VALUE
+
+	const tz = resolveTimeZone(options.timeZone)
+	let formatter = compactTimeFormatters.get(tz)
+	if (!formatter) {
+		formatter = new Intl.DateTimeFormat("en-GB", {
+			timeZone: tz,
+			hour: "2-digit",
+			minute: "2-digit",
+			second: "2-digit",
+			fractionalSecondDigits: 3,
+			hour12: false,
+		})
+		compactTimeFormatters.set(tz, formatter)
+	}
+
+	return formatter.format(date)
+}
+
+const dateFormatters = new Map<string, Intl.DateTimeFormat>()
+
+/** `Oct 7, 2026`: a calendar date (created, joined, billed) in the user's timezone. */
+export function formatDateInTimezone(
+	input: TimezoneFormatInput,
+	options: { timeZone: string; withYear?: boolean },
+): string {
+	const date = toValidDate(input)
+	if (!date) return EMPTY_VALUE
+
+	const tz = resolveTimeZone(options.timeZone)
+	const withYear = options.withYear ?? true
+	const key = `${tz}|${withYear ? "y" : ""}`
+	let formatter = dateFormatters.get(key)
+	if (!formatter) {
+		formatter = new Intl.DateTimeFormat("en-US", {
+			timeZone: tz,
+			year: withYear ? "numeric" : undefined,
+			month: "short",
+			day: "numeric",
+		})
+		dateFormatters.set(key, formatter)
+	}
+
+	return formatter.format(date)
+}

@@ -20,15 +20,6 @@ export function apiKeyStatus(apiKey: Pick<V2ApiKey, "revoked" | "expires_at">, n
 	return expiresAt - now < EXPIRING_WINDOW_MS ? "expiring" : "active"
 }
 
-/** Whether any key can still change status on the wall clock alone, so the page needs a ticking clock. */
-export function hasPendingStatusBoundary(keys: ReadonlyArray<V2ApiKey>, now: number): boolean {
-	return keys.some((apiKey) => {
-		if (apiKey.revoked || apiKey.expires_at === null) return false
-		const expiresAt = Date.parse(apiKey.expires_at)
-		return Number.isFinite(expiresAt) && expiresAt > now
-	})
-}
-
 export interface KeyRow {
 	readonly id: string
 	readonly type: "api" | "mcp"

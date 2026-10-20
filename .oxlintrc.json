@@ -135,7 +135,21 @@
 		// implementation of `parseWarehouseDateTime` itself is the one permanent entry.
 		{
 			"files": [
-				"apps/web/**",
+				"apps/web/src/components/infra/gcp/list-model.ts",
+				"apps/web/src/components/integrations/gcp-connector-state.ts",
+				"apps/web/src/components/integrations/gcp-usage.ts",
+				"apps/web/src/components/integrations/planetscale-setup-steps.ts",
+				"apps/web/src/components/releases/release-model.ts",
+				"apps/web/src/components/replays/replay-timeline.ts",
+				"apps/web/src/components/settings/audit-log-filters.ts",
+				"apps/web/src/components/settings/keys-table.ts",
+				"apps/web/src/lab/alerts-fixture.ts",
+				"apps/web/src/lab/cloudflare-fixture.ts",
+				"apps/web/src/lab/gcp-infra-fixture.ts",
+				"apps/web/src/lab/gcp-workload-fixture.ts",
+				"apps/web/src/lib/billing/spend.ts",
+				"apps/web/src/lib/models/error-signal.ts",
+				"packages/web-data/**",
 				"apps/cli/**",
 				"packages/ui/**",
 				"packages/domain/**",
@@ -170,7 +184,14 @@
 		// ~460 `try`/`catch` blocks and ~500 non-null assertions between them.
 		// Drop entries from this list as each is converted rather than widening it.
 		{
-			"files": ["apps/**", "scripts/**", "**/scripts/**", "examples/**", "alchemy.run.ts"],
+			"files": [
+				"apps/**",
+				"packages/web-data/**",
+				"scripts/**",
+				"**/scripts/**",
+				"examples/**",
+				"alchemy.run.ts"
+			],
 			"rules": {
 				"maple/no-try-catch": "off",
 				"typescript/no-non-null-assertion": "off"
@@ -622,9 +643,7 @@
 		}
 	],
 	// Vendored third-party source is read as a unit and re-pulled wholesale from its upstream,
-	// so house rules that would be rewrites are not applied to it. The dot-matrix loader runtime
-	// comes from the `@dotmatrix` shadcn registry (see `registries` in `apps/web/components.json`);
-	// re-add a variant with `shadcn add`, don't hand-edit these.
+	// so house rules that would be rewrites are not applied to it.
 	"ignorePatterns": [
 		".agents/**",
 		".codex/**",
@@ -633,10 +652,6 @@
 		".factory/**",
 		".impeccable/**",
 		".superset/**",
-		"apps/web/src/routeTree.gen.ts",
-		"apps/web/src/components/ui/dotm-*.tsx",
-		"apps/web/src/lib/dotmatrix-core.tsx",
-		"apps/web/src/lib/dotmatrix-hooks.ts",
 		"scripts/oxlint-plugins/anti-slop/**"
 	]
 }

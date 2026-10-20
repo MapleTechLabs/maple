@@ -5,11 +5,7 @@ import {
 	AnomalyTimeseriesBucket,
 	IsoDateTimeString,
 } from "@maple/domain/http"
-import type {
-	V2AnomalyIncident,
-	V2AnomalyIncidentTimeseries,
-	V2AnomalyServiceCount,
-} from "@maple/domain/http/v2"
+import type { V2AnomalyIncident, V2AnomalyIncidentTimeseries } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 
 /**
@@ -81,32 +77,3 @@ export const anomalyTimeseriesFromV2 = (
 		baselineMedian: timeseries.baseline_median,
 		thresholdValue: timeseries.threshold_value,
 	})
-
-/**
- * One (service, environment, signal) group from `/v2/anomalies/incidents/service_counts`.
- *
- * Deliberately not an `AnomalyIncidentDocument`: the fleet-health surfaces only
- * ever shaded rows from these five fields, and pretending a group is an incident
- * would invent an id that identifies nothing.
- */
-export interface AnomalyServiceCount {
-	readonly serviceName: string
-	readonly deploymentEnv: string
-	readonly signalType: AnomalyIncidentDocument["signalType"]
-	readonly severity: AnomalyIncidentDocument["severity"]
-	readonly incidentCount: number
-	readonly lastTriggeredAt: string
-	readonly status: AnomalyIncidentDocument["status"]
-}
-
-export const anomalyServiceCountFromV2 = (row: V2AnomalyServiceCount): AnomalyServiceCount => ({
-	serviceName: row.service_name,
-	deploymentEnv: row.deployment_env,
-	signalType: row.signal_type,
-	severity: row.severity,
-	incidentCount: row.incident_count,
-	lastTriggeredAt: row.last_triggered_at,
-	// The endpoint aggregates open incidents; carrying the status keeps
-	// `anomalyAffectsServiceHealth`'s predicate readable at the call site.
-	status: "open",
-})

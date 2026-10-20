@@ -15,8 +15,8 @@ import {
 	CLOUDFLARE_COLOR,
 	getDbNodeColor,
 	PLANETSCALE_COLOR,
-	resolveDbNodePresentation,
-} from "./service-map-db"
+	resolveDbNodeStyle,
+} from "./service-map-db-style"
 import {
 	matchHyperdriveConfigs,
 	type HyperdriveConfigInput,
@@ -479,7 +479,7 @@ export function buildFlowElements({
 				hyperdrive,
 				// Named databases show their identity; the generic node keeps the system;
 				// Hyperdrive-fronted databases collapse to a single "Hyperdrive" node.
-				label: resolveDbNodePresentation(agg.dbSystem, agg.dbNamespace).title,
+				label: resolveDbNodeStyle(agg.dbSystem, agg.dbNamespace).title,
 				kind: "database",
 				// Sample-weighted, like every service node beside it. This divided the
 				// RAW count and hardcoded `hasSampling: false`, so at a sample rate of

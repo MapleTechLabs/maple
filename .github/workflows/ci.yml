@@ -29,8 +29,6 @@ jobs:
             has-tests: ${{ steps.tests.outputs.has-tests }}
             cli: ${{ steps.filter.outputs.cli == 'true' }}
             archive: ${{ steps.filter.outputs.archive == 'true' }}
-            web: ${{ steps.filter.outputs.web == 'true' }}
-            perf: ${{ steps.perf.outputs.matrix }}
             clickhouse: ${{ steps.filter.outputs.clickhouse == 'true' }}
             postgres: ${{ steps.filter.outputs.postgres == 'true' }}
         steps:
@@ -74,6 +72,8 @@ jobs:
                         - *base
                         - 'apps/cli/**'
                         - 'apps/local-ui/**'
+                        # local-ui renders apps/web's source modules.
+                        - 'apps/web/src/**'
                         - 'packages/effect-sdk/**'
                         - 'packages/domain/**'
                         - 'packages/query-engine/**'
@@ -92,12 +92,6 @@ jobs:
                         - 'apps/local-ui/**'
                         - 'scripts/build-local-binary.sh'
                         - 'scripts/gen-ui-embed.ts'
-                      # Perf runs where the UI's code lives; data-shape edits in domain or
-                      # query-engine are covered by the web unit tests.
-                      web:
-                        - *base
-                        - 'apps/web/**'
-                        - 'packages/ui/**'
                       # Query definitions, the warehouse schema and the migrations the
                       # e2e job replays: without them a schema change skips the only
                       # job that runs it against a real ClickHouse.
@@ -138,33 +132,10 @@ jobs:
               env:
                   CHANGED_FILES: ${{ steps.filter.outputs.base != 'true' && fromJSON(steps.filter.outputs.changed_count) <= 1000 && steps.filter.outputs.changed_files || '' }}
               run: |
-                  bun test scripts/ci/plan-tests.test.ts
+                  bun test scripts/ci/plan-tests.test.ts scripts/lib/pr-state.test.ts
                   matrix="$(bun scripts/ci/plan-tests.ts)"
                   echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
                   echo "has-tests=$(jq '.include | length > 0' <<< "$matrix")" >> "$GITHUB_OUTPUT"
-
-            # Firefox and WebKit smokes run on main and on PRs labeled `perf` (read at the
-            # next push: labeling does not start a run). Built here because a matrix
-            # `exclude` cannot drop `include` entries.
-            - name: Pick web perf shards
-              id: perf
-              env:
-                  CROSS_BROWSER: ${{ github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'perf') }}
-              run: |
-                  jq -c --argjson cross "$CROSS_BROWSER" '{include: [.[] | select($cross or .browser == "chromium")]}' <<'EOF' | sed 's/^/matrix=/' >> "$GITHUB_OUTPUT"
-                  [
-                    {"shard": "service-map-1", "browser": "chromium", "projects": "chromium-performance",
-                     "specs": "perf/service-map.perf.spec.ts", "playwright-args": "--shard=1/2"},
-                    {"shard": "service-map-2", "browser": "chromium", "projects": "chromium-performance",
-                     "specs": "perf/service-map.perf.spec.ts", "playwright-args": "--shard=2/2"},
-                    {"shard": "chromium", "browser": "chromium", "projects": "chromium-performance chromium-smoke",
-                     "specs": "perf/infra.perf.spec.ts perf/logs.perf.spec.ts perf/logs-hover.spec.ts perf/service-detail.perf.spec.ts perf/cross-browser.perf.spec.ts"},
-                    {"shard": "firefox-smoke", "browser": "firefox", "projects": "firefox-smoke",
-                     "specs": "perf/cross-browser.perf.spec.ts"},
-                    {"shard": "webkit-smoke", "browser": "webkit", "projects": "webkit-smoke",
-                     "specs": "perf/cross-browser.perf.spec.ts"}
-                  ]
-                  EOF
 
             # shellcheck is preinstalled; a runner of its own would be ~90% setup.
             - name: shellcheck
@@ -218,7 +189,7 @@ jobs:
             - name: Build production bundles
               if: ${{ matrix.shard == 'quality' }}
               run: >-
-                  bun turbo build --filter=@maple/web --filter=@maple-dev/alchemy
+                  bun turbo build --filter=@maple-dev/alchemy
                   --filter=@maple-dev/browser
                   --filter=@maple-dev/effect-sdk --filter=@maple/landing
                   --filter=@maple/local-ui --concurrency=2
@@ -252,17 +223,6 @@ jobs:
                     if: ${{ matrix.shard == 'quality' }}
                     run: bunx tsrs -p tsconfig.alchemy.json
 
-                  # Initial-load gzip budget, and no chat/replay code in the startup graph.
-                  - name: Web bundle budget
-                    if: ${{ matrix.shard == 'quality' }}
-                    run: bun run check:bundle
-                    working-directory: apps/web
-
-                  # `--only` skips the ^build edge the build step already ran.
-                  - name: Typecheck web
-                    if: ${{ matrix.shard == 'quality' }}
-                    run: bun turbo typecheck --filter=@maple/web --only
-
                   - name: Find unused files and dependencies
                     if: ${{ matrix.shard == 'quality' }}
                     run: bun knip
@@ -285,7 +245,7 @@ jobs:
               run: >-
                   bun turbo typecheck --filter='./apps/*' --filter='./packages/*'
                   --filter='./lib/*' --filter='./examples/*'
-                  --filter='!@maple/web' --filter='!@maple/ingest' --concurrency=3
+                  --filter='!@maple/ingest' --concurrency=3
 
     tests:
         name: Tests (${{ matrix.name }})
@@ -586,90 +546,6 @@ jobs:
                   path: ${{ runner.temp }}/archive-${{ matrix.leg }}
                   if-no-files-found: ignore
 
-    # One Playwright worker per machine so concurrent browsers cannot distort frame
-    # timings. Shards come from the changes job: service-map's spec runs in parallel
-    # mode so --shard splits it, and the chromium projects split by @cross-browser.
-    service-map-perf:
-        name: Web perf (${{ matrix.shard }})
-        needs: changes
-        if: ${{ needs.changes.outputs.web == 'true' }}
-        runs-on: ubuntu-latest
-        timeout-minutes: 15
-        strategy:
-            fail-fast: false
-            matrix: ${{ fromJSON(needs.changes.outputs.perf) }}
-        steps:
-            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-
-            - uses: ./.github/actions/setup
-              with:
-                  install-filters: "@maple/web"
-
-            # The perf dev server resolves @maple-dev/browser and effect-sdk from dist/.
-            - name: Build web workspace deps
-              run: bun turbo build --filter=@maple/web^...
-
-            - name: Resolve Playwright version
-              id: playwright
-              working-directory: apps/web
-              run: |
-                  version="$(bun -e 'console.log(require("@playwright/test/package.json").version)')"
-                  echo "version=$version" >> "$GITHUB_OUTPUT"
-
-            - name: Cache Playwright browsers
-              id: playwright-cache
-              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-              with:
-                  path: ~/.cache/ms-playwright
-                  key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ matrix.browser }}
-                  restore-keys: |
-                      playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ matrix.browser }}-
-                      playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-
-            - name: Install Playwright browser
-              if: steps.playwright-cache.outputs.cache-hit != 'true'
-              env:
-                  PW_BROWSER: ${{ matrix.browser }}
-              run: bunx playwright install "$PW_BROWSER"
-              working-directory: apps/web
-
-            # Not folded into `install --with-deps`: apt paths are outside the browser
-            # cache, so a cache hit would skip them. Chromium needs none on ubuntu-latest
-            # (only CJK/Thai fonts the bench never renders); re-enable it if it stops launching.
-            # The apt mirror can stall instead of failing, so each attempt is capped, and
-            # the root apt-get `timeout` leaves behind is stopped before retrying.
-            - name: Install Playwright system deps
-              if: ${{ matrix.browser != 'chromium' }}
-              env:
-                  PW_BROWSER: ${{ matrix.browser }}
-              run: |
-                  printf 'Acquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAcquire::Retries "3";\n' \
-                      | sudo tee /etc/apt/apt.conf.d/99ci-timeouts > /dev/null
-                  for attempt in 1 2 3; do
-                      timeout 180 bunx playwright install-deps "$PW_BROWSER" && exit 0
-                      echo "::warning::playwright install-deps attempt $attempt failed"
-                      sudo pkill -x apt-get || true
-                      if ! sudo timeout 60 sh -c 'while fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 2; done'; then
-                          echo "::error::dpkg lock still held 60s after stopping apt-get"
-                          exit 1
-                      fi
-                      sudo dpkg --configure -a || true
-                  done
-                  exit 1
-              working-directory: apps/web
-
-            - name: Run perf shard
-              env:
-                  PW_PROJECTS: ${{ matrix.projects }}
-                  PW_SPECS: ${{ matrix.specs }}
-                  PW_ARGS: ${{ matrix.playwright-args }}
-              run: |
-                  read -r -a specs <<< "$PW_SPECS"
-                  read -r -a projects <<< "$PW_PROJECTS"
-                  read -r -a args <<< "$PW_ARGS"
-                  bunx playwright test "${specs[@]}" "${projects[@]/#/--project=}" "${args[@]}"
-              working-directory: apps/web
-
     # The single required check, and branch protection must require only this one:
     # skipped path-filtered jobs never report, so requiring them would hang forever.
     ci:
@@ -685,7 +561,6 @@ jobs:
             - clickhouse-schema-e2e
             - local-checkpoint-native
             - local-archive-native
-            - service-map-perf
         steps:
             - name: Fail if any job failed or was cancelled
               if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}

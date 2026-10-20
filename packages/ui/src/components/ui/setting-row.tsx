@@ -3,6 +3,18 @@
 import { Field as FieldPrimitive } from "@base-ui/react/field"
 import type * as React from "react"
 import { cn } from "../../lib/utils"
+import {
+	settingRowControlStyles,
+	settingRowDescriptionStyles,
+	settingRowFramedActiveStyles,
+	settingRowFramedStyles,
+	settingRowHeaderStyles,
+	settingRowIconStyles,
+	settingRowLabelStyles,
+	settingRowLeadStyles,
+	settingRowStyles,
+	settingRowTextStyles,
+} from "./setting-row.styles"
 
 export interface SettingRowProps {
 	label: React.ReactNode
@@ -38,27 +50,25 @@ export function SettingRow({
 			disabled={disabled}
 			data-slot="setting-row"
 			className={cn(
-				"flex flex-col gap-3",
-				framed && "rounded-md border p-4 transition-colors",
-				framed && active && "border-primary/20 bg-primary/[0.02]",
+				settingRowStyles,
+				framed && settingRowFramedStyles,
+				framed && active && settingRowFramedActiveStyles,
 				className,
 			)}
 		>
-			<div className="flex items-center justify-between gap-4">
-				<div className="flex min-w-0 items-start gap-3">
-					{icon ? <div className="shrink-0">{icon}</div> : null}
-					<div className="min-w-0 space-y-0.5">
-						<FieldPrimitive.Label className="text-sm font-medium text-foreground data-disabled:opacity-64">
-							{label}
-						</FieldPrimitive.Label>
+			<div className={settingRowHeaderStyles}>
+				<div className={settingRowLeadStyles}>
+					{icon ? <div className={settingRowIconStyles}>{icon}</div> : null}
+					<div className={settingRowTextStyles}>
+						<FieldPrimitive.Label className={settingRowLabelStyles}>{label}</FieldPrimitive.Label>
 						{description ? (
-							<FieldPrimitive.Description className="text-xs text-muted-foreground">
+							<FieldPrimitive.Description className={settingRowDescriptionStyles}>
 								{description}
 							</FieldPrimitive.Description>
 						) : null}
 					</div>
 				</div>
-				<div className="flex shrink-0 items-center gap-2">{control}</div>
+				<div className={settingRowControlStyles}>{control}</div>
 			</div>
 			{children}
 		</FieldPrimitive.Root>

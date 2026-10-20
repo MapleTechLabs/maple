@@ -1,0 +1,14 @@
+import type { Option } from "effect"
+import type { ClerkOrganization, ClerkUser } from "../../platform/clerk"
+import type { CustomerSlot } from "./plan-gate"
+
+/** What the root knows about the session, read by every onboarding screen. */
+export interface Inputs {
+	readonly session: "SignedOut" | "SignedIn"
+	readonly maybeOrgId: Option.Option<string>
+	/** Clerk mode: the active org, the user's orgs and the user (`None` / empty self-hosted). */
+	readonly maybeOrganization: Option.Option<ClerkOrganization>
+	readonly memberships: ReadonlyArray<ClerkOrganization>
+	readonly maybeUser: Option.Option<ClerkUser>
+	readonly customer: CustomerSlot
+}

@@ -17,9 +17,9 @@ import {
 } from "@maple/domain/http"
 import { V2Investigation } from "@maple/domain/http/v2"
 
-import type { AlertRuleStateRow } from "@/lib/collections/alerts"
-import { type AlertsOverviewReady, deriveOverview } from "@/lib/models/alerts-overview-model"
-import { VERDICT_LAB_CASES } from "@/lab/verdict-fixture"
+import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
+import { type AlertsOverviewReady, deriveOverview } from "@maple/web-data/alerts/overview"
+import { VERDICT_LAB_CASES } from "./verdict-fixture"
 
 const decodeRule = Schema.decodeUnknownSync(AlertRuleDocument)
 const decodeIncident = Schema.decodeUnknownSync(AlertIncidentDocument)
@@ -386,25 +386,131 @@ interface IncidentSpec {
 }
 
 const OPEN_INCIDENTS: ReadonlyArray<IncidentSpec> = [
-	{ id: INCIDENT.chat, ruleId: RULE.errorRate, groupKey: "maple-chat", startAgo: 23 * MIN, endAgo: null, value: 0.084 },
-	{ id: INCIDENT.slowApi, ruleId: RULE.slowApi, groupKey: "maple-api", startAgo: 41 * MIN, endAgo: null, value: 1920 },
-	{ id: INCIDENT.ingest, ruleId: RULE.ingestSilent, groupKey: null, startAgo: 72 * MIN, endAgo: null, value: 3, held: true },
+	{
+		id: INCIDENT.chat,
+		ruleId: RULE.errorRate,
+		groupKey: "maple-chat",
+		startAgo: 23 * MIN,
+		endAgo: null,
+		value: 0.084,
+	},
+	{
+		id: INCIDENT.slowApi,
+		ruleId: RULE.slowApi,
+		groupKey: "maple-api",
+		startAgo: 41 * MIN,
+		endAgo: null,
+		value: 1920,
+	},
+	{
+		id: INCIDENT.ingest,
+		ruleId: RULE.ingestSilent,
+		groupKey: null,
+		startAgo: 72 * MIN,
+		endAgo: null,
+		value: 3,
+		held: true,
+	},
 ]
 
 /** Resolved history: four in the last day (seven with the open ones), the rest across the week. */
 const RESOLVED_INCIDENTS: ReadonlyArray<IncidentSpec> = [
-	{ id: uuid(311), ruleId: RULE.errorRate, groupKey: "maple-api", startAgo: 19 * HOUR, endAgo: 18.4 * HOUR, value: 0.061 },
-	{ id: uuid(312), ruleId: RULE.errorRate, groupKey: "maple-chat", startAgo: 7 * HOUR, endAgo: 6.2 * HOUR, value: 0.072 },
-	{ id: uuid(313), ruleId: RULE.slowApi, groupKey: "maple-api", startAgo: 13 * HOUR, endAgo: 12.1 * HOUR, value: 1710 },
-	{ id: uuid(314), ruleId: RULE.walBacklog, groupKey: null, startAgo: 10 * HOUR, endAgo: 9.7 * HOUR, value: 3100 },
-	{ id: uuid(321), ruleId: RULE.errorRate, groupKey: "maple-ingest", startAgo: 2.3 * DAY, endAgo: 2.25 * DAY, value: 0.058 },
-	{ id: uuid(322), ruleId: RULE.slowApi, groupKey: "maple-api", startAgo: 3.1 * DAY, endAgo: 3 * DAY, value: 1640 },
-	{ id: uuid(323), ruleId: RULE.slowApi, groupKey: "maple-api", startAgo: 5.4 * DAY, endAgo: 5.3 * DAY, value: 2050 },
-	{ id: uuid(324), ruleId: RULE.walBacklog, groupKey: null, startAgo: 4.2 * DAY, endAgo: 4.1 * DAY, value: 2900 },
-	{ id: uuid(325), ruleId: RULE.alertingP99, groupKey: null, startAgo: 6.2 * DAY, endAgo: 6.1 * DAY, value: 4800 },
-	{ id: uuid(326), ruleId: RULE.ingestSilent, groupKey: null, startAgo: 1.8 * DAY, endAgo: 1.75 * DAY, value: 0 },
-	{ id: uuid(327), ruleId: RULE.tinybirdMirror, groupKey: null, startAgo: 4.6 * DAY, endAgo: 3.9 * DAY, value: 48_000 },
-	{ id: uuid(328), ruleId: RULE.apdex, groupKey: null, startAgo: 6.6 * DAY, endAgo: 6.55 * DAY, value: 0.79 },
+	{
+		id: uuid(311),
+		ruleId: RULE.errorRate,
+		groupKey: "maple-api",
+		startAgo: 19 * HOUR,
+		endAgo: 18.4 * HOUR,
+		value: 0.061,
+	},
+	{
+		id: uuid(312),
+		ruleId: RULE.errorRate,
+		groupKey: "maple-chat",
+		startAgo: 7 * HOUR,
+		endAgo: 6.2 * HOUR,
+		value: 0.072,
+	},
+	{
+		id: uuid(313),
+		ruleId: RULE.slowApi,
+		groupKey: "maple-api",
+		startAgo: 13 * HOUR,
+		endAgo: 12.1 * HOUR,
+		value: 1710,
+	},
+	{
+		id: uuid(314),
+		ruleId: RULE.walBacklog,
+		groupKey: null,
+		startAgo: 10 * HOUR,
+		endAgo: 9.7 * HOUR,
+		value: 3100,
+	},
+	{
+		id: uuid(321),
+		ruleId: RULE.errorRate,
+		groupKey: "maple-ingest",
+		startAgo: 2.3 * DAY,
+		endAgo: 2.25 * DAY,
+		value: 0.058,
+	},
+	{
+		id: uuid(322),
+		ruleId: RULE.slowApi,
+		groupKey: "maple-api",
+		startAgo: 3.1 * DAY,
+		endAgo: 3 * DAY,
+		value: 1640,
+	},
+	{
+		id: uuid(323),
+		ruleId: RULE.slowApi,
+		groupKey: "maple-api",
+		startAgo: 5.4 * DAY,
+		endAgo: 5.3 * DAY,
+		value: 2050,
+	},
+	{
+		id: uuid(324),
+		ruleId: RULE.walBacklog,
+		groupKey: null,
+		startAgo: 4.2 * DAY,
+		endAgo: 4.1 * DAY,
+		value: 2900,
+	},
+	{
+		id: uuid(325),
+		ruleId: RULE.alertingP99,
+		groupKey: null,
+		startAgo: 6.2 * DAY,
+		endAgo: 6.1 * DAY,
+		value: 4800,
+	},
+	{
+		id: uuid(326),
+		ruleId: RULE.ingestSilent,
+		groupKey: null,
+		startAgo: 1.8 * DAY,
+		endAgo: 1.75 * DAY,
+		value: 0,
+	},
+	{
+		id: uuid(327),
+		ruleId: RULE.tinybirdMirror,
+		groupKey: null,
+		startAgo: 4.6 * DAY,
+		endAgo: 3.9 * DAY,
+		value: 48_000,
+	},
+	{
+		id: uuid(328),
+		ruleId: RULE.apdex,
+		groupKey: null,
+		startAgo: 6.6 * DAY,
+		endAgo: 6.55 * DAY,
+		value: 0.79,
+	},
 ]
 
 const incidentFrom = (spec: IncidentSpec, rule: AlertRuleDocument, nowMs: number): AlertIncidentDocument => {
@@ -520,27 +626,22 @@ const allDeliveries = (nowMs: number): AlertDeliveryEventDocument[] => {
 		["email", RULE.scraper, 5 * DAY],
 		["discord", RULE.alertingP99, 6.2 * DAY],
 	]
-	const routine = history.map(
-		([destination, ruleId, ago]): DeliverySpec => ({
-			destination,
-			ruleId,
-			incidentId: null,
-			eventType: "trigger",
-			atMs: nowMs - ago,
-		}),
-	)
+	const routine = history.map(([destination, ruleId, ago]): DeliverySpec => ({
+		destination,
+		ruleId,
+		incidentId: null,
+		eventType: "trigger",
+		atMs: nowMs - ago,
+	}))
 	// The legacy webhook failed until Maple auto-disabled it.
-	const legacy = Array.from(
-		{ length: 8 },
-		(_, i): DeliverySpec => ({
-			destination: "legacy",
-			ruleId: RULE.tinybirdMirror,
-			incidentId: null,
-			eventType: i === 0 ? "trigger" : "renotify",
-			atMs: nowMs - 4.6 * DAY + i * 2 * HOUR,
-			failed: { code: 410, message: "HTTP 410 Gone" },
-		}),
-	)
+	const legacy = Array.from({ length: 8 }, (_, i): DeliverySpec => ({
+		destination: "legacy",
+		ruleId: RULE.tinybirdMirror,
+		incidentId: null,
+		eventType: i === 0 ? "trigger" : "renotify",
+		atMs: nowMs - 4.6 * DAY + i * 2 * HOUR,
+		failed: { code: 410, message: "HTTP 410 Gone" },
+	}))
 	return [...specs, ...routine, ...legacy]
 		.toSorted((a, b) => b.atMs - a.atMs)
 		.map((spec, i) => deliveryFrom(spec, i))
@@ -573,6 +674,7 @@ const chatPreview = (nowMs: number, range: { start: number; end: number }): Aler
 		windowMinutes: 5,
 		threshold: 0.05,
 		thresholdUpper: null,
+		thresholds: [{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] }],
 		comparator: "gt",
 		truncatedToStart: null,
 		series: [{ groupKey: "maple-chat", points }],
@@ -593,7 +695,8 @@ const chatInvestigation = (nowMs: number): V2Investigation => {
 		updated_at: iso(opened + 5 * MIN),
 		report: {
 			...base.report,
-			headline: "412 of 6,750 /chat/stream requests fail with TimeoutError from maple-ai after deploy 4f2c1a",
+			headline:
+				"412 of 6,750 /chat/stream requests fail with TimeoutError from maple-ai after deploy 4f2c1a",
 		},
 	})
 }
@@ -633,7 +736,12 @@ export function buildAlertsLabFixture(nowMs: number): AlertsLabFixture {
 	// Quiet inbox: the open incidents resolved and two blind spots fixed, leaving two.
 	const fixed = new Set<string>([RULE.errorTick, RULE.pgPermission, RULE.ingestSilent])
 	const quietIncidents = incidentsOf([
-		...OPEN_INCIDENTS.map((spec) => ({ ...spec, startAgo: spec.startAgo + 3 * HOUR, endAgo: 2 * HOUR, held: false })),
+		...OPEN_INCIDENTS.map((spec) => ({
+			...spec,
+			startAgo: spec.startAgo + 3 * HOUR,
+			endAgo: 2 * HOUR,
+			held: false,
+		})),
 		...RESOLVED_INCIDENTS,
 	])
 	const quiet = deriveOverview({
