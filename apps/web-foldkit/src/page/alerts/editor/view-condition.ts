@@ -17,7 +17,7 @@ import type { Model } from "./model"
 import { fieldStateOf, idsOf, numberField, wasNote } from "./view-fields"
 import { formSelect } from "./view-select"
 
-// `RuleConditionFields` (components/alerts/rule-condition-bar.tsx).
+// `RuleConditionFields`: the rule's condition row.
 
 type H = HtmlBuilder<Message>
 

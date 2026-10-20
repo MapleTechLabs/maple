@@ -10,7 +10,7 @@ import { sectionNote, settingsSection } from "../kit/section"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `McpConnectedClientsSection` (apps/web/src/components/settings/mcp-connected-clients.tsx).
+// `McpConnectedClientsSection`.
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ isAdmin: boolean; nowMs: number; timeZone: string }>

@@ -21,7 +21,7 @@ import { SignalPresenceData } from "../kit/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as Scene3d from "./scene3d"
 
-// `/service-map` (apps/web/src/routes/service-map.tsx and components/service-map/).
+// `/service-map`.
 
 // The warehouse answers feed `buildFlowElements` unchanged, so they stay the web-data shapes,
 // boxed as opaque values (as `SourceGraph` is) rather than re-declared as Schemas.
@@ -79,7 +79,7 @@ export const Model = Schema.Struct({
 	search: ServiceMapSearch,
 	/** The map's window and the 24 h facets window, resolved at the same clock; `null` until resolved. */
 	window: Schema.NullOr(TimeWindow),
-	/** The zone `window` was resolved in: legacy's memo re-resolves on a zone change. */
+	/** The zone `window` was resolved in: a zone change re-resolves it. */
 	windowZone: Schema.NullOr(Schema.String),
 	facetsWindow: Schema.NullOr(TimeWindow),
 	nowMs: Schema.Number,

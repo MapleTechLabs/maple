@@ -22,7 +22,7 @@ import {
 	type WidgetScenario,
 } from "./scenarios"
 
-// The widget lab's sections (apps/web/src/lab/widget-lab/widget-lab.tsx), each cell a widget built
+// The widget lab's sections, each cell a widget built
 // from its scenario: the lab renders the dashboard tiles outside a dashboard.
 
 type Widget = DashboardDocument["widgets"][number]
@@ -49,7 +49,7 @@ export type Section = Readonly<{
 
 const LAB_SOURCE = makeQueryDataSource({ resultShape: "timeseries", queries: [] })
 
-/** The legacy `WidgetDataState` as the tiles read it. */
+/** A `WidgetDataState` as the tiles read it. */
 export const toTileState = (state: WidgetDataState): TileState => {
 	switch (state.status) {
 		case "loading":

@@ -58,7 +58,7 @@ const previewAccessForm = (h: H, model: Model, wrap: Wrap): Html => {
 	)
 }
 
-/** Nothing renders until the route loader's preview probe answers, as in legacy. */
+/** Nothing renders until the route loader's preview probe answers. */
 export const view = (h: H, model: Model, wrap: Wrap): Html =>
 	model.preview === "Checking"
 		? h.empty

@@ -89,7 +89,7 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Ret
 	outMessage: result.outMessage?._tag === "Closed" ? OutMessage.Closed() : undefined,
 })
 
-/** A log on show: legacy's `key={logKey}` remounts the attributes and context panels. */
+/** A log on show: the attributes and context panels start fresh. */
 const viewing = (model: Model, log: LogRecord, selected: string): Model => {
 	const values = tabValues(log)
 	const isSameTabs = model.tabs.selected === selected && values.join() === model.tabs.values.join()
@@ -123,7 +123,7 @@ const withPanels = (result: Return): Return => {
 /** The org and namespace pin the panel reads are keyed under (`PageContext`'s). */
 export type Scope = Readonly<{ orgId: string; pinnedNamespace: string | null }>
 
-/** Shows `log`, starting fresh on the Attributes tab (legacy remounts the panels per log). */
+/** Shows `log`, starting fresh on the Attributes tab with new panels. */
 export const open = (model: Model, log: LogRecord, scope: Scope): Return =>
 	withPanels(liftDialog(viewing({ ...model, orgId: scope.orgId, pinnedNamespace: scope.pinnedNamespace }, log, "attributes"), Dialog.open(model.dialog)))
 

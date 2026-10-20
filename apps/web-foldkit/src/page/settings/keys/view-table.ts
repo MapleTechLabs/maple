@@ -18,7 +18,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `KeysTable`, `ApiRow` (apps/web/src/components/settings/api-keys-section.tsx).
+// `KeysTable`, `ApiRow`.
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string }>

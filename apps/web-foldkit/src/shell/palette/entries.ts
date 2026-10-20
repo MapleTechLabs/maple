@@ -9,7 +9,7 @@ import type { PinnedDashboardRow } from "../dashboards-shape"
 import type { Theme } from "../message"
 import { navGroups } from "../nav"
 
-// `PaletteContent`'s entries (apps/web components/command-palette/command-palette.tsx).
+// The palette's entries.
 
 export const GROUP_ORDER = ["Navigation", "Services", "Dashboards", "Integrations", "Actions"] as const
 export type Group = (typeof GROUP_ORDER)[number]

@@ -1,4 +1,4 @@
-// copied: the fixture of apps/web `lab/bench/agent-transcript-bench.tsx` (`buildLargeSessionFixture`),
+// The agent transcript bench fixture (`buildLargeSessionFixture`),
 // a session big enough to hurt: every call carries its prompt and reply, every tool a large result.
 
 import type { AiSessionGenAiValues, AiSessionSpan } from "@maple/domain/http"

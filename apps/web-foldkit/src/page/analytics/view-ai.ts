@@ -36,7 +36,7 @@ import {
 } from "./view-ai-parts"
 import { favicon } from "./view-icons"
 
-// `AnalyticsAiTab` (components/analytics/ai/analytics-ai-tab.tsx).
+// `AnalyticsAiTab`: the AI traffic tab.
 
 type H = HtmlBuilder<Message>
 

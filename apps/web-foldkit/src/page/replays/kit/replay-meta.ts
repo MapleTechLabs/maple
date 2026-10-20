@@ -1,8 +1,8 @@
 import { videoSegmentPayload } from "../../../components/replays/engine/video-engine"
 import { Schema } from "effect"
 
-// copied: `deriveMeta`, `classifyUnplayable` and the marker maps of replay-player-context.tsx and
-// replay-format.ts (React modules). rrweb's enum values are inlined: @rrweb/types loads in the Mount.
+// A replay's derived meta, why it cannot play, and the marker maps. rrweb's enum values are
+// inlined: @rrweb/types loads in the Mount.
 
 export const ActionKind = Schema.Literals(["click", "input", "scroll", "nav"])
 export type ActionKind = typeof ActionKind.Type

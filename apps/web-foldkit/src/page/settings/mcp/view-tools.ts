@@ -13,7 +13,7 @@ import { sectionNote, settingsSection } from "../kit/section"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `McpToolsList` (apps/web/src/components/mcp/mcp-tools-list.tsx).
+// `McpToolsList`.
 
 type H = HtmlBuilder<Message>
 

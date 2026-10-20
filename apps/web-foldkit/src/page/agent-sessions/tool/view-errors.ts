@@ -35,8 +35,6 @@ import {
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 
-// `ToolErrorsTable` (agent-sessions/tools/tool-errors-table.tsx).
-
 type H = HtmlBuilder<Message>
 
 const VISIBLE_GROUPS = 10

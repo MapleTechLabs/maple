@@ -238,7 +238,7 @@ export const anchoredRegion = Submodel.defineView<Model, Message>((model, h) =>
 	),
 )
 
-/** Both regions, in legacy's order, for a root view (the app shell or a lab page). */
+/** Both regions, in order, for a root view (the app shell or a lab page). */
 export const regions = <ParentMessage>(
 	h: HtmlBuilder<ParentMessage>,
 	model: Model,

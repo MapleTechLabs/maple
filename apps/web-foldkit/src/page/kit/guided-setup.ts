@@ -13,8 +13,7 @@ import type * as Tabs from "../../ui/tabs"
 import * as TabsView from "../../ui/tabs-view"
 import { codeBlock } from "../settings/kit/code-block"
 
-// `FrameworkIconStrip`, `FrameworkPicker` and `ConnectInstructions`
-// (apps/web/src/components/ingest/guided-setup.tsx), with `PackageManagerCodeBlock`.
+// `FrameworkIconStrip`, `FrameworkPicker` and `ConnectInstructions`, with `PackageManagerCodeBlock`.
 
 const FRAMEWORK_ICONS = {
 	nextjs: "FrameworkNextjsIcon",

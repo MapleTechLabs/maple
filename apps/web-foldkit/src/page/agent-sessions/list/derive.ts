@@ -138,7 +138,7 @@ const OPTIONAL_INPUT_KEYS = [
 	"sortDir",
 ] as const satisfies ReadonlyArray<keyof FilterInputs>
 
-/** The inputs without their unset keys: legacy's request comes back out of a JSON atom key. */
+/** The inputs without their unset keys, as a JSON round trip would leave them. */
 export const presentInputs = (inputs: FilterInputs): FilterInputs => {
 	const present: Types.Mutable<FilterInputs> = {
 		startTime: inputs.startTime,

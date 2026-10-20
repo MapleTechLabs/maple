@@ -2,7 +2,7 @@ import { VALUE_TONE } from "../../../components/infra/severity-tokens"
 import type { Tone } from "@maple/ui/lib/tone"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
 
-// copied: apps/web-foldkit/src/components/infra/planetscale/metrics.ts (it re-exports a React icon module).
+// A copy of apps/web-foldkit/src/components/infra/planetscale/metrics.ts; keep the two in step.
 
 /** Metrics missing for the window sort below every real value. */
 export const MISSING = Number.NEGATIVE_INFINITY

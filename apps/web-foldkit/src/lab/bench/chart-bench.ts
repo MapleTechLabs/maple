@@ -8,7 +8,7 @@ import { ChartRuntime, isChartRuntimeReady, LoadChartRuntime } from "../../chart
 import { ThemeColors } from "../../charts/theme-colors"
 import type { Resources } from "../../platform/resources"
 
-// The chart benches' shared state (apps/web `lab/bench/*-chart-bench.tsx`): a canvas chart per id,
+// The chart benches' shared state: a canvas chart per id,
 // the chart runtime, the resolved theme, and one linked cursor across them.
 
 export const Model = Schema.Struct({

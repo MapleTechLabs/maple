@@ -24,8 +24,6 @@ import { filtersRail } from "./view-filters"
 import { listSkeleton, sessionsTable } from "./view-table"
 import { toolbar } from "./view-toolbar"
 
-// `AgentSessionsPage` (apps/web/src/routes/agent-sessions/index.tsx).
-
 type H = HtmlBuilder<Message>
 
 const listArea = (h: H, model: Model, inputs: PageViewInputs): Html => {

@@ -3,7 +3,7 @@ import type { GcpCollectLock, GcpDraftEffect } from "../../components/integratio
 import { docsUrl } from "../../lib/docs"
 import type { Capability } from "./gcp-configure-schema"
 
-// `GcpConfigure`'s copy (components/integrations/gcp-configure.tsx), verbatim.
+// `GcpConfigure`'s copy.
 
 export const DOCS = docsUrl("gcp")
 export const OTEL_DOCS = docsUrl("gcpOpenTelemetry")

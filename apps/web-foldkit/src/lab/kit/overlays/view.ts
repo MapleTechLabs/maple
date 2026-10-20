@@ -64,8 +64,8 @@ const renderItem = (h: H, model: Model, item: OverlayItem): Html => {
 	}
 }
 
-/** `KitToast`'s note; the toast itself is in the bottom-right region. Three text nodes, as React
- *  renders `{type}` between literals: one merged node shapes differently at the joins. */
+/** `KitToast`'s note; the toast itself is in the bottom-right region. Three text nodes, `type`
+ *  between literals: one merged node shapes differently at the joins. */
 const kitToastNote = (h: H, type: string): Html =>
 	h.p(
 		[h.Class("text-muted-foreground text-sm")],
@@ -88,7 +88,6 @@ const itemLink = (h: H, name: OverlayItem, isActive: boolean): Html =>
 		[name],
 	)
 
-// apps/web/src/lab/kit/overlays.tsx `KitOverlaysLab`
 export const view = (model: Model, h: H): Html =>
 	h.div(
 		[h.Id("app")],

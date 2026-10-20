@@ -8,8 +8,8 @@ import { MapleApiClient } from "../../platform/api-clients"
 import type { Resources } from "../../platform/resources"
 import { endpointMessage } from "./request"
 
-// Clerk-mode `/sign-in` (apps/web/src/routes/sign-in.tsx): Clerk's card, and on PR previews the
-// access-key form that buys a sign-in ticket for the shared reviewer (`PreviewAccessForm`).
+// Clerk-mode `/sign-in`: Clerk's card, and on PR previews the access-key form that buys a sign-in ticket for
+// the shared reviewer (`PreviewAccessForm`).
 
 export const Preview = Schema.Literals(["Checking", "Disabled", "Enabled"])
 export type Preview = typeof Preview.Type

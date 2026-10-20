@@ -14,7 +14,7 @@ import { facetsOf, filtersOf, hasAnomalyFilters } from "./derive"
 import { type Facet, Message } from "./message"
 import type { Model } from "./model"
 
-// `AnomaliesFilterSidebar` (apps/web/src/components/anomalies/anomalies-filter-sidebar.tsx).
+// `AnomaliesFilterSidebar`: the list's filter rail.
 
 type H = HtmlBuilder<Message>
 

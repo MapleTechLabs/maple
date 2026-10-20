@@ -17,7 +17,7 @@ import { ADVANCED_TEXTAREA_ID, MountSuggestions, MountWhereEditor } from "./comm
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `AdvancedFilterDialog` (components/traces/advanced-filter-dialog.tsx) around `WhereClauseEditor`.
+// The advanced filter dialog around `WhereClauseEditor`.
 
 type H = HtmlBuilder<Message>
 

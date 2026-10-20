@@ -13,8 +13,7 @@
  * is a causal chain in columns, this is a labelled grid, and forcing one to
  * produce the other would mean bending the chain's arithmetic around a catalogue.
  *
- * Free of React and of `@xyflow/react`, for the same reason `provenance-graph.ts`
- * is: coverage over the state space is a fact about this array, and it should be
+ * Free of rendering code: coverage over the state space is a fact about this array, and it should be
  * assertable without mounting a canvas.
  */
 import type { Tone } from "@maple/ui/lib/tone"

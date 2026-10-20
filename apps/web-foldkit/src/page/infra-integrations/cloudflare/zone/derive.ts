@@ -36,7 +36,7 @@ export type DimensionDef = Readonly<{
 	liveDimension?: "host" | "path"
 }>
 
-/** `DIMENSIONS` (cloudflare-breakdown-panel.tsx). */
+/** `DIMENSIONS`. */
 export const DIMENSIONS: ReadonlyArray<DimensionDef> = [
 	{ id: "path", tab: "Paths", column: "Path", noun: "paths", filterKey: "paths", liveDimension: "path" },
 	{ id: "host", tab: "Hosts", column: "Host", noun: "hosts", filterKey: "hosts", liveDimension: "host" },
@@ -176,7 +176,7 @@ const ZONE_HEALTH_DOT = {
 	lowVolume: "bg-muted-foreground",
 } as const satisfies Record<ZoneHealth, string>
 
-/** `zoneSeverityClass` (cloudflare-zone-signals.tsx): the header dot. */
+/** `zoneSeverityClass`: the header dot. */
 export const severityOf = (model: Model): string | null => {
 	const detail = dataOf(model.detail.data)
 	if (detail === null) return null

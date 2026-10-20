@@ -9,7 +9,7 @@ import { skeleton } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
 import { msIso } from "../shared/time"
 
-// `IncidentTimeline` (components/alerts/incident-detail/incident-timeline.tsx).
+// `IncidentTimeline`: the incident's events in order.
 
 const sameDay = (a: number, b: number, timeZone: string): boolean =>
 	formatDateInTimezone(a, { timeZone }) === formatDateInTimezone(b, { timeZone })

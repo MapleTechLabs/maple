@@ -94,7 +94,7 @@ export const completedCommitDetail = (
 })
 
 /**
- * `CopyableBadge label="commit SHA"`: writes the clipboard and toasts. The card is a React portal
+ * `CopyableBadge label="commit SHA"`: writes the clipboard and toasts. The card sits
  * inside the row, so the click also bubbles to the row's `goToDetail`: the page opens with the toast.
  */
 export const clickedCopySha = (model: Model, sha: string, rowUrl: string): Return => ({

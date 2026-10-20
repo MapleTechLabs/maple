@@ -32,7 +32,6 @@ import * as ErrorModal from "./error-modal-model"
 import * as ErrorModalView from "./view-error-modal"
 import { sessionsPanel } from "./view-sessions"
 
-// `ToolDetailPage` / `ToolDetailBody` (routes/agent-sessions/tools/$toolName.tsx) and `ToolDetailView`.
 // TODO(tooltip): the description's tooltip is drawn as its trigger.
 
 type H = HtmlBuilder<Message>

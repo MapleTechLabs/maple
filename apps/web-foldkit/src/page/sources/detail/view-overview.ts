@@ -15,7 +15,7 @@ import { METRICS_ONLY, usageRows, usageTotals } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `SourceOverview` (apps/web/src/components/sources/source-overview.tsx).
+// `SourceOverview`.
 
 type H = HtmlBuilder<Message>
 type Children = ReadonlyArray<Html | string>

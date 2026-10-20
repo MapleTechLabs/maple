@@ -3,8 +3,7 @@ import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
 import { DateTime, Option, Predicate, Schema } from "effect"
 import type { AppRoute, RouteTag } from "./app-route"
 
-// `sessionTimeRangeSearchMiddleware` and `persistSessionTimeRange`
-// (apps/web/src/components/time-range-picker/session-time-range.ts): a navigation that names no
+// The session time range middleware: a navigation that names no
 // window gets the one last chosen in this tab, when it fits the page's ceiling.
 
 /** `SessionTimeRangeSchema`: what the tab remembers, per org. */
@@ -19,7 +18,7 @@ const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
 /** `DEFAULT_MAX_RANGE_SECONDS`: the widest standard preset, a calendar month. */
 const DEFAULT_MAX_RANGE_SECONDS = 32 * 24 * 60 * 60
 
-/** The routes whose legacy definition carries the middleware, with the ceiling they pass it. */
+/** The routes that carry the middleware, with the ceiling they pass it. */
 const CEILINGS: ReadonlyMap<RouteTag, number> = new Map<RouteTag, number>([
 	...(["Services", "Service", "ServiceMap", "Releases", "Release", "AlertRule"] as const).map(
 		(tag) => [tag, ONE_YEAR_SECONDS] as const,

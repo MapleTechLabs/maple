@@ -17,7 +17,7 @@ import { clusterByService, GROUP_LABEL, groupIncidents } from "./derive"
 import { Message } from "./message"
 import type { GroupKey, Model, StatusTab } from "./model"
 
-// `AnomaliesPageBody` and `AnomalyGroup` (routes/anomalies/index.tsx, components/anomalies/anomaly-group.tsx).
+// `AnomaliesPageBody` and `AnomalyGroup`: the anomalies, grouped.
 
 type H = HtmlBuilder<Message>
 

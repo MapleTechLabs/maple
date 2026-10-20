@@ -8,7 +8,7 @@ import { MapleApiClient } from "../../platform/api-clients"
 import type { Resources } from "../../platform/resources"
 import { endpointMessage, localeTimeOf } from "./request"
 
-// `/mcp-authorize` (apps/web/src/routes/mcp-authorize.tsx): OAuth consent for an MCP client.
+// `/mcp-authorize`: OAuth consent for an MCP client.
 
 // MODEL
 

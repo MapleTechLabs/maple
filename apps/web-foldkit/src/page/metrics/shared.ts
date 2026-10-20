@@ -42,6 +42,6 @@ export const metricTypeBadge = <M>(h: HtmlBuilder<M>, type: string): Html => {
 	return badge(h, { variant: "secondary", className: config.className }, [config.label])
 }
 
-/** The sparkline query's metric types, in the order legacy reads them. */
+/** The sparkline query's metric types, in read order. */
 export const SPARKLINE_METRIC_TYPES = ["sum", "gauge", "histogram", "exponential_histogram"] as const
 export type SparklineMetricType = (typeof SPARKLINE_METRIC_TYPES)[number]

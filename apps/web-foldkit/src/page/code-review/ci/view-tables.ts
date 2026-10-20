@@ -16,7 +16,7 @@ import { ciResultBadge } from "../kit/parts"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
 
-// `WorkflowsTable`, `RedStreakLine` and `JobsTable` (ci-analytics.tsx).
+// `WorkflowsTable`, `RedStreakLine` and `JobsTable`.
 
 type H = HtmlBuilder<Message>
 type TimeContext = Readonly<{ nowMs: number; timeZone: string }>

@@ -147,7 +147,7 @@ const setUp = (list: HTMLElement, config: VirtualConfig, offer: (window: Virtual
 		state.last = next
 		offer(next)
 	}
-	// React batches the re-render a measurement raises (a microtask here); a scroll flushes.
+	// The re-render a measurement raises is batched to a microtask; a scroll flushes.
 	const onChange = (instance: Instance, sync: boolean) => {
 		applyDirect(instance, state, container)
 		if (sync && !state.isMeasuring) return emit(instance)

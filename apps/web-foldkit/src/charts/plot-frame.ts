@@ -4,7 +4,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { Message } from "./chart"
 import { CHART_LABEL_ATTRIBUTE, CHART_SPEC_ATTRIBUTE, type ChartSpec, encodeChartSpec } from "./chart-spec"
 import { type ChartRenderer, MountChart, PLOT_BOX_ATTRIBUTE, PortalTooltipBody } from "./chart-mounts"
-// The tooltip shell theming, imported where legacy imports it: every chart goes through the frame.
+// The tooltip shell theming, imported here because every chart goes through the frame.
 import "@maple/ui/components/plot/plot-tooltip.css"
 
 // Port of `PlotFrame` (packages/ui/src/components/plot/plot-frame.tsx). The markup and class

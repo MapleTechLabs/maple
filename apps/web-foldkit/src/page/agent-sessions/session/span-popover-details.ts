@@ -24,7 +24,7 @@ import type { Model } from "./model"
 import { payloadCard } from "./span-popover-messages"
 import { toolIo } from "./tool-io"
 
-// The Tool calls, Details and Logs tabs of `SpanExpansion` (session-detail/span-expansion.tsx).
+// The span expansion's Tool calls, Details and Logs tabs.
 // Details and Logs draw the trace span panel's parts over the popover's own `PanelState`.
 
 type H = HtmlBuilder<Message>

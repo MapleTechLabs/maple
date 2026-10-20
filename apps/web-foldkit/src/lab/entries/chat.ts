@@ -20,7 +20,7 @@ import { buildChatLabMessages } from "../chat-fixture"
 import { defineLabWithFlags } from "../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
 
-// `/lab/chat` (apps/web `lab/chat-lab.tsx`): the real transcript over a fixture thread, at the
+// `/lab/chat`: the real transcript over a fixture thread, at the
 // page, sheet and narrow widths, idle or streaming, with the composer's context tray.
 
 const WIDTHS = [

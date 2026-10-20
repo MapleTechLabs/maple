@@ -7,7 +7,7 @@ import { type AnchorRect, listboxStyle } from "./where-autocomplete"
 
 // `WhereClauseEditor`'s suggestion list and key handling, generic over the owner's Message.
 
-/** The suggestion list, fixed under (or over) the textarea like legacy's body portal. */
+/** The suggestion list, fixed under (or over) the textarea. */
 export const suggestionListbox = <M>(
 	h: HtmlBuilder<M>,
 	inputs: Readonly<{

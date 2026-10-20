@@ -9,7 +9,7 @@ import { Message } from "./message"
 import type { Model, TraceRow } from "./model"
 import { allRows } from "./update"
 
-// `TracePeekSheet` wiring (components/traces/traces-table.tsx + lib/traces/peek.ts): the URL's
+// The trace peek sheet's wiring: the URL's
 // `peek*` params pick the trace; the trace page's Model runs inside the sheet.
 
 type Return = PageReturn<Model, Message>

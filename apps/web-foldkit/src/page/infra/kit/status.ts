@@ -4,7 +4,7 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// `SeverityDot` (primitives/severity-dot.tsx) and `HostStatusBadge` (status-badge.tsx).
+// `SeverityDot` and `HostStatusBadge`.
 
 export const severityDot = <M>(
 	h: HtmlBuilder<M>,

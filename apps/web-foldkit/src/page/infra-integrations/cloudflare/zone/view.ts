@@ -48,7 +48,7 @@ import {
 } from "./view-sections"
 import { zoneSignals } from "./view-strips"
 
-// `ZoneDetailPage` (apps/web/src/routes/infra/cloudflare/$zoneName.tsx).
+// `ZoneDetailPage`.
 
 type H = HtmlBuilder<Message>
 type Context = Readonly<{ theme: ThemeColors; timeZone: string }>
@@ -56,7 +56,7 @@ type Context = Readonly<{ theme: ThemeColors; timeZone: string }>
 /** The stacked charts name `--chart-2` and the colour-mixed severities too. */
 const THEME_TOKENS = [...INFRA_CHART_TOKENS, "--chart-2", "--severity-fatal", "--primary"]
 
-/** The lab's frame: legacy's lab page has no time controls and no filter chips. */
+/** The lab's frame: no time controls and no filter chips. */
 export type ZonePageOptions = Readonly<{ isTimed?: boolean; hasFilters?: boolean }>
 
 const header = (h: H, model: Model, hasFilters: boolean): Html => {

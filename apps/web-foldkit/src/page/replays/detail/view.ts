@@ -29,7 +29,7 @@ import { sessionRail } from "./view-rail"
 import { copy } from "./view-session"
 import { replayTimeline } from "./view-timeline"
 
-// `ReplayDetailPage` (apps/web/src/routes/replays/$sessionId.tsx) on `ResultPage`, with `ReplayStudio`.
+// The replay detail page on `ResultPage`, with the replay studio.
 
 type H = HtmlBuilder<Message>
 

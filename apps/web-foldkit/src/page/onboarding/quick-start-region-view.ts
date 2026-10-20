@@ -9,8 +9,8 @@ import { optionCard } from "./option-card"
 import { Message, type RegionChoice } from "./quick-start"
 import { regionFlag } from "./region-flag"
 
-// `StepRegion` (apps/web/src/components/onboarding/step-region.tsx): the first step for an org
-// created without a region. This region continues here; the other moves onboarding there.
+// `StepRegion`: the first step for an org created without a region. This region continues here; the other
+// moves onboarding there.
 
 type H = HtmlBuilder<Message>
 

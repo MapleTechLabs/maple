@@ -25,7 +25,7 @@ export const init = (id: string, orgId: string): Model => ({
 	themeColors: null,
 })
 
-/** A chart's slot and chart id, `<kind>-<metric>` (the legacy linked-cursor id). */
+/** A chart's slot and chart id, `<kind>-<metric>` (the linked-cursor id). */
 export const chartIdOf = (correlation: InfraCorrelation, metric: string): string => `${correlation.kind}-${metric}`
 
 /** Every chart's read, in render order (Container, Pod, Node, Host; each group's charts in order). */

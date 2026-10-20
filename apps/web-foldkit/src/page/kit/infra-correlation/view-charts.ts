@@ -10,7 +10,7 @@ import { k8sChart } from "../../infra/kit/k8s-chart"
 import { Message, type Model } from "./model"
 import { chartIdOf } from "./update"
 
-// `renderCharts`: each group's charts, as the legacy detail-chart components draw them.
+// `renderCharts`: each group's charts, drawn as the detail charts.
 
 type H = HtmlBuilder<Message>
 

@@ -8,12 +8,11 @@ import { button } from "../../ui/button"
 import { badge } from "../../ui/display"
 import { icon, type IconName } from "../../ui/icon"
 
-// The React-free halves of components/investigations/investigation-status.tsx and confidence-meter.tsx.
+// The investigation status badge and confidence meter.
 
 type InvestigationStatus = V2Investigation["status"]
 type Confidence = NonNullable<V2Investigation["confidence"]>
 
-// styles: apps/web/src/components/investigations/investigation-status.tsx (STATUS)
 export const STATUS = {
 	investigating: { label: "In progress", tone: "bg-primary/10 text-primary" },
 	diagnosed: { label: "Diagnosed", tone: TONE_SOFT.ok },
@@ -66,7 +65,6 @@ export const kindMarker = <M>(
 	)
 }
 
-// styles: apps/web/src/components/investigations/confidence-meter.tsx
 const CONFIDENCE_TONE_OF = { high: "ok", medium: "warn", low: "neutral" } as const satisfies Record<Confidence, Tone>
 
 export const CONFIDENCE_TONE = {

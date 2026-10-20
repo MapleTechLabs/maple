@@ -15,9 +15,8 @@ import { trackProduct } from "../../data/analytics"
 import { LoadFailure, toLoadFailure } from "../../data/load-failure"
 import { getScenario } from "./pricing-plans"
 
-// `PricingCards` (apps/web/src/components/settings/pricing-cards.tsx) for a planless org: the
-// catalog (`billingPlansAtom`), and a plan's trial or subscribe button, which attaches it and
-// follows Autumn's checkout link to Stripe.
+// `PricingCards` for a planless org: the catalog (`billingPlansAtom`), and a plan's trial or subscribe
+// button, which attaches it and follows Autumn's checkout link to Stripe.
 
 export const PlansData = AsyncData.Schema(CatalogPlansResponse, LoadFailure)
 

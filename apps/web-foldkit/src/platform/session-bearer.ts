@@ -10,7 +10,7 @@ import {
 } from "./auth-api"
 import { clerkSessionToken } from "./clerk"
 
-/** Renew this far ahead of expiry, like apps/web (`RENEW_WHEN_REMAINING_MS`). */
+/** Renew this far ahead of expiry. */
 const RENEW_AHEAD = Duration.minutes(5)
 
 /** The bearer token API requests carry: the self-hosted session or Clerk's session JWT. */

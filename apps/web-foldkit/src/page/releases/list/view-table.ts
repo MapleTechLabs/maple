@@ -25,7 +25,7 @@ import { MountReleasesTable } from "./command"
 import { Message } from "./message"
 import type { TimeSearch } from "./view-overview"
 
-// `ReleasesTable` (apps/web/src/components/releases/releases-table.tsx) and `CommitCount`.
+// The releases table and its commit count.
 
 type H = HtmlBuilder<Message>
 

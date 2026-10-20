@@ -71,7 +71,7 @@ export const selectedOf = (model: Model): Option.Option<V2Recommendation> =>
 const errorToast = (title: string, failure: LoadFailure) =>
 	PageOutMessage.RequestedToast({ type: "error", title, description: failure.message })
 
-/** The write's outcome: refresh what legacy's `onSuccess` refreshes, or toast the failure. */
+/** The write's outcome: refresh what the write affects, or toast the failure. */
 const settle = <A>(
 	model: Model,
 	context: PageContext,

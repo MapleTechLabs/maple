@@ -23,7 +23,7 @@ import type { Breakdowns, Model } from "./model"
 import { filtersOf } from "./requests"
 import { favicon, isHostLike } from "./view-icons"
 
-// `AnalyticsFilterSidebar` (components/analytics/analytics-filter-sidebar.tsx).
+// `AnalyticsFilterSidebar`: the page's filter rail.
 
 type H = HtmlBuilder<Message>
 

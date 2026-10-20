@@ -131,7 +131,7 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 	readonly key?: (route: RouteOf<Tags>) => string
 	readonly init: (route: RouteOf<Tags>, context: PageContext) => PageReturn<Model, Message>
 	/**
-	 * The requests legacy's route loader warms on link intent (`warmAtoms`): the same fetch Commands
+	 * The requests warmed on link intent: the same fetch Commands
 	 * `init` goes on to send, keyed alike, so the root seeds them into the new instance (s8 "Preload").
 	 */
 	readonly preload?: (

@@ -7,7 +7,7 @@ import type * as Menu from "../../ui/menu"
 import * as MenuView from "../../ui/menu-view"
 import { refreshButton } from "../../ui/refresh-button"
 
-// `RefreshControls` (components/time-range-picker/refresh-controls.tsx): Reload joined to the
+// `RefreshControls`: Reload joined to the
 // auto-refresh cadence menu. The caller owns the menu Model and what a picked cadence does.
 
 /** `formatRefreshInterval`: `0` is off. */

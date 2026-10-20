@@ -5,7 +5,7 @@ import { card, cardHeader, cardPanel } from "../../ui/card"
 import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
 
-// `ReadonlyWidgetShell` (apps/web/src/components/dashboard-builder/widgets/widget-shell.tsx) in view
+// A read-only widget shell in view
 // mode with no widget actions: title, hoisted legend chips, headline value, content and footer.
 
 const MAX_HEADER_ITEMS = 5

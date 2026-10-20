@@ -12,7 +12,7 @@ import * as CreateDialog from "../page/settings/keys/create-dialog"
 import type { ClerkSnapshot } from "../platform/clerk"
 import { identityOf, isSameIdentity } from "../platform/session-identity"
 
-// Each product event legacy's `trackProduct` fires is a Command at the same moment here.
+// Each product event fires as a Command at the moment the user acts.
 
 type Commands = { readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> }
 const tracked = (result: Commands, name: string) => result.commands?.find((command) => command.name === name)?.args

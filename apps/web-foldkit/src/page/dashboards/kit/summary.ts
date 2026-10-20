@@ -3,9 +3,6 @@ import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { dataSourceEndpoint, dataSourceQuerySet, dataSourceRawSql } from "@maple/widgets/dashboard"
 import { DateTime, Option } from "effect"
 
-// Copied from apps/web/src/components/dashboard-builder/list/dashboard-summary.ts: the module types
-// its input with `@/` imports, which do not resolve from this app. Logic unchanged.
-
 export type DashboardDomain = "Traces" | "Logs" | "Errors" | "Metrics" | "Raw SQL"
 
 export type DashboardSortOption = "updated" | "created" | "name-asc" | "name-desc" | "widgets"
@@ -86,6 +83,6 @@ export const readsFromLabel = (dashboard: DashboardDocument): { short: string; f
 	return { short: `${shown} +${domains.length - MAX_DOMAIN_TERMS}`, full }
 }
 
-/** `Date.parse` (lint-banned): NaN for an unparseable value, as legacy's comparators see it. */
+/** `Date.parse` (lint-banned): NaN for an unparseable value, as the comparators expect. */
 export const epochOf = (iso: string): number =>
 	Option.match(DateTime.make(iso), { onNone: () => Number.NaN, onSome: DateTime.toEpochMillis })

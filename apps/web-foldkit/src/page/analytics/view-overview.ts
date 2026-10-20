@@ -31,7 +31,7 @@ import { type BreakdownCard, breakdownPanel } from "./view-breakdown"
 import { trafficChart } from "./view-chart"
 import { favicon } from "./view-icons"
 
-// `AnalyticsContent` (routes/analytics/index.tsx): bot notice, metric strip, traffic chart, the
+// `AnalyticsContent`: bot notice, metric strip, traffic chart, the
 // breakdown cards and the traces behind a filtered event.
 
 type H = HtmlBuilder<Message>

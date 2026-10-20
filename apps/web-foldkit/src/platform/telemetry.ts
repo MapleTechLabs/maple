@@ -13,9 +13,8 @@ const routeName = (pathname: string): string =>
 	})
 
 /**
- * The app's own telemetry, configured like apps/web's `otel-layer.ts` (same service, ingest,
- * anticipated errors, replay and privacy switches) so both frontends land in one place.
- * `maple.web.app` tells them apart while both are deployed.
+ * The app's own telemetry: service, ingest, anticipated errors, replay and privacy switches.
+ * `maple.web.app` names the frontend that sent it.
  */
 const maple = MapleFoldkit.make({
 	serviceName: "maple-web",

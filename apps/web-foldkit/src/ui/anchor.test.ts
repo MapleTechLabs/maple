@@ -3,7 +3,7 @@ import { computePosition } from "./anchor"
 
 const viewport = { width: 1440, height: 900 }
 
-// Expected values are what Base UI wrote on legacy's positioners in the shell parity captures.
+// Expected values are what Base UI's positioner writes for the same inputs.
 describe("computePosition", () => {
 	test("a menu above its trigger, start-aligned (the user menu)", () => {
 		expect(

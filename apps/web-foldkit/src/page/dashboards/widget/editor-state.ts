@@ -18,8 +18,7 @@ import {
 import { Schema } from "effect"
 import { QueryDraft } from "../../kit/query-builder/draft"
 
-// The widget editor's state (`QueryBuilderWidgetState`, apps/web-foldkit/src/lib/query-builder/
-// widget-builder-shared.ts).
+// The widget editor's state (`QueryBuilderWidgetState`).
 
 export { QueryDraft } from "../../kit/query-builder/draft"
 
@@ -80,7 +79,7 @@ export const FunnelDraft = Schema.Struct({
 	windowSeconds: Schema.Number,
 	breakdownBy: Schema.optionalKey(FunnelBreakdownBy),
 	filterClause: Schema.String,
-	/** `undefined` in legacy: Auto. */
+	/** `null`: Auto. */
 	showStepPercent: Schema.NullOr(Schema.Boolean),
 	variant: FunnelVariant,
 	addOns: FunnelAddOns,
@@ -134,7 +133,7 @@ export const EditorState = Schema.Struct({
 	gaugeMin: Schema.String,
 	gaugeMax: Schema.String,
 	tableLimit: Schema.String,
-	/** `undefined` in legacy: never chosen, so Apply leaves `display.heatmap.colorScale` absent. */
+	/** `null`: never chosen, so Apply leaves `display.heatmap.colorScale` absent. */
 	heatmapColorScale: Schema.NullOr(Schema.Literals(HEATMAP_COLOR_SCALES)),
 	heatmapScaleType: Schema.Literals(HEATMAP_SCALE_TYPES),
 	/** A note's body; static, it never reaches the warehouse. */

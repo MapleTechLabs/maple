@@ -79,7 +79,6 @@ const planRow = (h: H, spend: SpendModel, plans: ReadonlyArray<CatalogPlan>): Ht
 								? [
 										h.span(
 											[h.Class("text-2xs text-muted-foreground")],
-											// JSX `Available add-ons: {list}`: two text nodes.
 											["Available add-ons: ", available.map(addOnLabel).join(", ")],
 										),
 									]
@@ -191,7 +190,6 @@ const offerPanel = (
 					h.div(
 						[h.Class("mt-3 flex items-baseline gap-2")],
 						[
-							// JSX `${amount}` and `/{interval} + usage`: one text node per part.
 							h.span([h.Class("font-mono text-3xl tabular-nums")], ["$", String(plan.price?.amount ?? 0)]),
 							h.span([h.Class("text-2xs text-muted-foreground")], ["/", plan.price?.interval ?? "month", " + usage"]),
 						],

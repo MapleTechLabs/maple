@@ -8,7 +8,7 @@ import {
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { scopeChip } from "../../kit/scope-chip"
 
-// `PanelScope` (components/infra/cloudflare/panel-scope.tsx): what a panel is actually scoped to.
+// `PanelScope`: what a panel is actually scoped to.
 
 export type Trigger = (id: string) => ReadonlyArray<ChildAttribute>
 

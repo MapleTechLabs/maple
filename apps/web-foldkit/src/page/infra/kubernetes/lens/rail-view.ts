@@ -13,8 +13,7 @@ import { serviceDot } from "../../../../ui/values"
 import type { TimeSearch } from "../../kit/view-tabs"
 import type { Model } from "./rail"
 
-// `ServiceLensRail` (components/infra/service-lens/service-lens-rail.tsx) and the rail rows
-// `useServiceLensRail` folds out of the join.
+// `ServiceLensRail` and the rail rows `useServiceLensRail` folds out of the join.
 
 export type RailService = Readonly<{ serviceName: string; podCount: number; avgCpuLimitUtilization: number | null }>
 

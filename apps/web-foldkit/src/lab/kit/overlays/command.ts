@@ -12,7 +12,7 @@ import { view as dialogView } from "../../../ui/dialog-view"
 import { kbd } from "../../../ui/display"
 import { Message } from "./model"
 
-// apps/web/src/lab/kit/overlays-menus.tsx `KitCommand`: the command palette, open on mount.
+// `KitCommand`: the command palette, open on mount.
 type H = HtmlBuilder<Message>
 
 export const COMMANDS: ReadonlyArray<CommandGroup> = [

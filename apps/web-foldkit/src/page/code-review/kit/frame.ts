@@ -11,8 +11,8 @@ import * as Select from "../../../ui/select"
 import type { PageOutMessage } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
-// The state every Code Review tab with filters shares (code-review-layout.tsx): the repository
-// select, the author or workflow select, the window and Reload (`PageRefreshProvider`).
+// The state every Code Review tab with filters shares: the repository select, the author or
+// workflow select, the window and Reload.
 
 export const ALL = "all"
 

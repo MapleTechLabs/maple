@@ -14,7 +14,7 @@ import {
 } from "../../../ui/dialog-view"
 import { Message } from "./model"
 
-// apps/web/src/lab/kit/overlays-dialogs.tsx: dialog-like overlays, each open on mount.
+// Dialog-like overlays, each open on mount.
 type H = HtmlBuilder<Message>
 
 const itemRow = (h: H, children: ReadonlyArray<Html>) =>

@@ -8,8 +8,8 @@ import { readThrough } from "../../../data/read-cache"
 import { type RequestKey, requestKey } from "../../../data/request-key"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 
-// `sourcesListAtom` (apps/web/src/lib/services/atoms/sources-atoms.ts) and the detail page's
-// `retainedQueryV2("sources", "usage" | "retrieve")` reads, through the read cache.
+// The sources list and the detail page's `retainedQueryV2("sources", "usage" | "retrieve")` reads, through
+// the read cache.
 
 const PAGE_LIMIT = 100
 

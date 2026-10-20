@@ -5,7 +5,7 @@ import * as Dialog from "../../../../ui/dialog"
 import * as Field from "../../../../ui/field"
 import * as Select from "../../../../ui/select"
 
-// `VariablesManagerDialog` (dashboard-builder/config/variables-manager-dialog.tsx): a session of
+// The variables manager dialog: a session of
 // drafts started from the saved variables each time it opens, one draft's form expanded at a time.
 
 export type Variable = typeof DashboardVariableSchema.Type

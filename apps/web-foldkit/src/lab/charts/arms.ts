@@ -1,4 +1,4 @@
-// The gallery's arms and card titles, verbatim from `cards` in apps/web/src/lab/charts/charts-lab.tsx.
+// The gallery's arms and card titles.
 
 export const ARM_TITLES = {
 	"pie-production": "Pie — production (PORTED: polar + radialArc; was hand-rolled SVG arcs)",
@@ -46,7 +46,7 @@ export const ARM_TITLES = {
 
 export type ChartsLabArm = keyof typeof ARM_TITLES
 
-/** The gallery layout: sections of pairs and grids, in legacy order. */
+/** The gallery layout: sections of pairs and grids, in order. */
 export const SECTIONS: ReadonlyArray<{
 	readonly title: string
 	readonly rows: ReadonlyArray<ReadonlyArray<ChartsLabArm>>

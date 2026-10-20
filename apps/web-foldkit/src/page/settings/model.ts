@@ -16,7 +16,7 @@ import * as Keys from "./keys/model"
 import * as Mcp from "./mcp/model"
 import * as SetupHealth from "./setup-health/model"
 
-// `/settings` (apps/web/src/routes/settings.tsx): the nav rail and the active tab's section.
+// `/settings`: the nav rail and the active tab's section.
 
 /** What `useVisibleSettingsSections` reads from the session: whether the member administers the org. */
 export const SessionInfo = Schema.Struct({
@@ -29,7 +29,7 @@ export const SessionData = AsyncData.Schema(SessionInfo, LoadFailure)
 /** `billingCustomerAtom`: the nav's data-platform gate and the Billing tab read the one customer. */
 export const CustomerData = AsyncData.Schema(BillingCustomer, LoadFailure)
 
-/** The active tab's state; a tab switch drops the old one (React unmounts the section). */
+/** The active tab's state; a tab switch drops the old one (the section unmounts). */
 export const TabModel = Schema.Union([
 	Schema.TaggedStruct("Mcp", { model: Mcp.Model }),
 	Schema.TaggedStruct("Keys", { model: Keys.Model }),
@@ -49,7 +49,7 @@ export type TabModel = typeof TabModel.Type
 
 export const Model = Schema.Struct({
 	search: SettingsSearch,
-	/** The clock at entry, for relative times (legacy reads `Date.now()` at render). */
+	/** The clock at entry, for relative times. */
 	nowMs: Schema.Number,
 	session: SessionData.schema,
 	customer: CustomerData.schema,

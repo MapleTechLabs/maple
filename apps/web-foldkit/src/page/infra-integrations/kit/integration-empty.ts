@@ -5,8 +5,7 @@ import { eyebrow } from "../../../ui/eyebrow"
 import { icon, type IconName } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
 
-// `IntegrationEmpty` and its parts (apps/web/src/components/integrations/integration-empty-state.tsx)
-// and `IntegrationIconPlate` (integration-catalog.tsx).
+// `IntegrationEmpty` and its parts and `IntegrationIconPlate`.
 
 export const RAILWAY_ACCENT = "#0B0D0E"
 

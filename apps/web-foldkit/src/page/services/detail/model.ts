@@ -12,7 +12,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { SortState } from "../../kit/table-sort"
 import { DependencyBundle, Endpoint, Operation } from "./model-tabs"
 
-// The service detail page (apps/web/src/routes/services/$serviceName.tsx and components/services/).
+// The service detail page.
 
 /** `ServiceDetailTimeSeriesPoint` (@maple/web-data/warehouse/services). */
 export const DetailPoint = Schema.Struct({

@@ -18,7 +18,7 @@ import { recordedMarker } from "../kit/replay-window"
 import { Message } from "./message"
 import type { Model, ReplayDetail } from "./model"
 
-// The rail's Session tab (`SessionTab` in components/replays/session-events-panel.tsx).
+// The rail's Session tab.
 // TODO(tooltip): the identity links' and copy buttons' hover tooltips.
 
 type H = HtmlBuilder<Message>

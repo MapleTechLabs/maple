@@ -2,8 +2,6 @@ import { formatValue, type RangeUnit } from "./range-format"
 import type { RangePreset } from "./range-filter-section"
 import type { RangeBucket } from "./range-histogram"
 
-// copied: apps/web/src/components/filters/range-distribution.ts (it imports the React section).
-
 /** One non-empty log bucket as the warehouse counts it: its floor, in the control's unit. */
 export interface LogBucketCount {
 	readonly floor: number

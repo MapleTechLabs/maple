@@ -10,10 +10,10 @@ import { icon } from "../icon"
 import { highlightedText } from "./highlight"
 import type { LogRecord } from "./log-row-view"
 
-// `LogRowExpanded` (apps/web/src/components/logs/log-row-expanded.tsx): the full body on a
+// An expanded log row: the full body on a
 // severity-coloured edge, Details and JSON actions, then every attribute.
 
-/** `buildLogJsonPayload` (log-raw-panel.tsx): the log as the Raw panel and the JSON copy show it. */
+/** The log as the Raw panel and the JSON copy show it. */
 export const buildLogJsonPayload = (log: LogRecord): string =>
 	JSON.stringify(
 		{

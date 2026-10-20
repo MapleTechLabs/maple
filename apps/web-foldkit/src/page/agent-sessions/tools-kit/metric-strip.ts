@@ -16,8 +16,7 @@ import * as ToggleGroup from "../../../ui/toggle-group"
 import type { ToolMetric, ToolPercentile, ToolSeriesPoint, ToolTotals } from "./model"
 import { statRailItem } from "../../kit/stat-rail"
 
-// `ToolMetricStrip` (agent-sessions/tools/tool-metric-strip.tsx) over the selectable `StatRailItem`
-// (components/common/stat-rail.tsx).
+// The tool metric strip over selectable stat rail items.
 
 const SPARK_WINDOW = 24
 const TILE = "min-w-0 flex-1 border-l border-border first:border-l-0"

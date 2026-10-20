@@ -1,8 +1,8 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { encode } from "uqr"
 
-// `QrCode` (apps/web/src/components/account/qr-code.tsx): one `<path>` in `currentColor`, a
-// 1x1 square per dark module, so the code inherits the theme's foreground.
+// `QrCode`: one `<path>` in `currentColor`, a 1x1 square per dark module, so the code inherits
+// the theme's foreground.
 
 export const qrCode = <M>(h: HtmlBuilder<M>, value: string, className?: string): Html => {
 	const result = encode(value, { border: 1 })

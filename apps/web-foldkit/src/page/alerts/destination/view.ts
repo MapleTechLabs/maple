@@ -24,8 +24,7 @@ import { waitingFor } from "../shared/chat-connect"
 import { spinner } from "../../../ui/spinner"
 import { type TextField, toFormState } from "./form"
 
-// `DestinationDialog` (components/alerts/destination-dialog.tsx).
-// The Email, Hazel and chat fields live in `*-fields-view.ts`.
+// The destination dialog. The Email, Hazel and chat fields live in `*-fields-view.ts`.
 
 type H = HtmlBuilder<Message>
 

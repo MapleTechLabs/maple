@@ -9,8 +9,8 @@ import type { Model as IntegrationsModel } from "../page/integrations/model"
 import * as Integrations from "../page/integrations/update"
 import type { Resources } from "../platform/resources"
 
-// The integrations page's Model and update, hosted by the Google Cloud labs (apps/web's
-// `gcp-connections-lab.tsx`, `gcp-connect-lab.tsx`) over fixture connectors.
+// The integrations page's Model and update, hosted by the Google Cloud labs
+// (connections, connect) over fixture connectors.
 
 /** The labs run against a fixture org: the page's status reads are never sent. */
 export const LAB_CONTEXT: PageContext = {
@@ -19,7 +19,7 @@ export const LAB_CONTEXT: PageContext = {
 	timeZone: "UTC",
 }
 
-/** The lab's clock (legacy's module-level `Date.now()`) and the browser's zone. */
+/** The lab's clock (read once at boot) and the browser's zone. */
 export const GcpLabFlags = Schema.Struct({ nowMs: Schema.Number, timeZone: Schema.String })
 export type GcpLabFlags = typeof GcpLabFlags.Type
 
@@ -36,7 +36,7 @@ export const connectorOf = (
 	over: Readonly<Record<string, unknown>> = {},
 ): V2GcpConnector => decodeConnector({ ...base, ...over })
 
-/** Legacy's cards share one id; each needs its own here, as menus and dialogs are keyed by it. */
+/** The fixture cards share one id; each needs its own, as menus and dialogs are keyed by it. */
 export const withIndexId = (connector: V2GcpConnector, index: number): V2GcpConnector => ({
 	...connector,
 	id: Schema.decodeSync(GcpConnectorId)(

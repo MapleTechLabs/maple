@@ -28,7 +28,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { fleetOf, gcpTitles, inventoryOf, logTiles, metricsTiles } from "./view-gcp-band"
 
-// `Workloads`, `Resources` and `GcpUsageBand` (components/integrations/gcp-usage-cards.tsx).
+// `Workloads`, `Resources` and `GcpUsageBand`.
 
 type H = HtmlBuilder<Message>
 

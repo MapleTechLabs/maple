@@ -21,8 +21,7 @@ import { type Child, group, type Scope } from "./kit"
 import { factoryMachine } from "./machines"
 import { factoryTransport } from "./transport"
 
-// `ServiceMap3DViewport`'s layout memos and `MapScene` (components/service-map/three/viewport.tsx
-// and scene.tsx): the derived layout, then the scene graph in MapScene's JSX order.
+// The 3D viewport's derived layout, then the scene graph in draw order.
 
 export interface Layout {
 	readonly topologyKey: string

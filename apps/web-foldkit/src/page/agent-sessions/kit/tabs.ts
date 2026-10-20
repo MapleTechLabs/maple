@@ -5,8 +5,8 @@ import { icon } from "../../../ui/icon"
 import { AppRoute, hrefOf } from "../../../route"
 import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 
-// `AgentSessionsTabs` (apps/web/src/components/agent-sessions/tools/agent-sessions-tabs.tsx): two
-// route links. TanStack marks a link active by path prefix, so Sessions is active on both pages.
+// The agent sessions tabs: two route links. A link is active by path prefix, so Sessions is
+// active on both pages.
 
 export type AgentSessionsTab = "sessions" | "tools"
 

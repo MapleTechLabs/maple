@@ -23,8 +23,6 @@ import type { Model, ShellClerk } from "./model"
 import * as ClerkOrgSwitcherView from "./clerk-org-switcher-view"
 import { orgAvatar } from "./clerk-org-switcher-view"
 
-// apps/web/src/components/dashboard/app-sidebar.tsx and org-switcher.tsx.
-
 /** The selected row's rail: a 2px lane every row reserves, painted only when active. */
 export const ACTIVE_RAIL = `${ROW_LANE} data-[active=true]:rounded-l-none data-[active=true]:before:bg-sidebar-primary data-[active=true]:text-sidebar-primary`
 
@@ -215,7 +213,7 @@ const footerNavRow = (
 		),
 	])
 
-/** `UserAvatar` (dashboard/user-avatar.tsx): the Clerk image over the initials. */
+/** The user avatar: the Clerk image over the initials. */
 export const userAvatar = (
 	h: HtmlBuilder<Message>,
 	initials: string,

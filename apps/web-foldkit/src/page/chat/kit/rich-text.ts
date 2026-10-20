@@ -2,7 +2,7 @@ import { type AnnotationSegment, parseAnnotations } from "@maple/domain/chat-ann
 import { stripChatContext } from "@maple/domain/chat-preamble"
 import type { UIMessage } from "./ui-message"
 
-// `RichText` (apps/web components/ai-elements/rich-text.tsx): prose split at inline `<<maple:…>>`
+// Rich text: prose split at inline `<<maple:…>>`
 // cards. Only the markdown segments need the (async) parser.
 
 export type RichTextBody =

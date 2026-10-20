@@ -2,7 +2,7 @@ import { dependencyDrillWhereClause } from "../../../components/services/depende
 import type { DependencyKind } from "./derive-panels"
 import type { DependencyBundle } from "./model-tabs"
 
-// The rows, host folding and summary of `ServiceDependenciesTab` (service-dependencies-tab.tsx).
+// The rows, host folding and summary of the Dependencies tab.
 
 export type DependencyRow = Readonly<{
 	id: string

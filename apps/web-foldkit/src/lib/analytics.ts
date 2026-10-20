@@ -4,7 +4,7 @@
  * `track()` lands as a `session_events` row with `Type='custom'`, so an
  * activation milestone shows up inline in the session transcript next to the
  * clicks and network calls around it — not in a separate analytics silo. The
- * session already carries the Clerk user and org (see `clerk-auth-bridge.tsx`)
+ * session already carries the Clerk user and org (see `platform/session-identity.ts`)
  * and a visitor id shared with `maple.dev`, so these events join back to the
  * marketing visit that produced the signup.
  *

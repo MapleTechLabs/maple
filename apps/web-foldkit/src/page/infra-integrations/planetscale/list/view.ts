@@ -31,7 +31,7 @@ import { Message, type Model } from "./model"
 import { DEFAULT_PRESET, neverCollected, sortOf } from "./update"
 import { databaseTable, databaseTableLoading } from "./view-table"
 
-// `PlanetScalePage` (apps/web/src/routes/infra/planetscale/index.tsx).
+// `PlanetScalePage`.
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>

@@ -1,4 +1,4 @@
-// The hosts fleet's scope rules, framework-free so the overview and the Foldkit port share them.
+// The hosts fleet's scope rules, framework-free.
 
 import type { ListHostsResponse } from "@maple/domain/http"
 import { deriveHostStatus, severityLevel } from "./format"

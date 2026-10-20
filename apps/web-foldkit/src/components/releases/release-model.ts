@@ -1,4 +1,4 @@
-// Pure derivations for the Releases pages. Kept free of React so the
+// Pure derivations for the Releases pages, so the
 // thresholds unit-test cleanly and the list, the swimlanes and the detail page
 // all describe a release the same way.
 

@@ -40,7 +40,7 @@ import { CATEGORY_FILL, CATEGORY_ICON, CATEGORY_TEXT } from "./span-visuals"
 import { failedBadge } from "./view-kit"
 import { rowHeight, spanHeading, spanTarget, type WaterfallRow, waterfallRowsOf } from "./waterfall-rows"
 
-// `SessionWaterfall` (session-detail/session-waterfall.tsx): turns, spans and idle gaps on one axis.
+// The session waterfall: turns, spans and idle gaps on one axis.
 
 type H = HtmlBuilder<Message>
 
@@ -429,7 +429,7 @@ const ruler = (
 						h.p(
 							[h.Class("border-border border-b px-2.5 py-1 text-2xs text-muted-foreground")],
 							[
-								// React's text nodes, one per expression: the split shifts the line's kerning.
+								// One text node per expression: the split shifts the line's kerning.
 								"Axis shows active time. ",
 								formatSessionDuration(axis.removedMs),
 								" of idle removed across",

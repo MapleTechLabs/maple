@@ -3,8 +3,8 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "../../../ui/icon"
 
-// `GcpServiceIcon` (components/infra/gcp/gcp-service-icon.tsx): the service glyph as a tile, or a
-// Cloud SQL instance's engine logo once the inventory knows it.
+// `GcpServiceIcon`: the service glyph as a tile, or a Cloud SQL instance's engine logo once the
+// inventory knows it.
 
 const SERVICE_ICON = {
 	cloudRun: "CloudRunIcon",

@@ -1,8 +1,7 @@
 import { formatWarehouseDateTime, warehouseDateTimeToIso } from "@maple/query-engine"
 import { DateTime, Option, Schema } from "effect"
 
-// The warehouse-coupled half of apps/web/src/components/replays/replay-format.ts (that module
-// imports types from the React player context): the partition window and the SDK's markers.
+// The warehouse-coupled half of the replay format: the partition window and the SDK's markers.
 
 export interface ReplayPartitionWindow {
 	readonly windowStart: string

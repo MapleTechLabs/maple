@@ -20,7 +20,7 @@ import {
 } from "../../page/onboarding/quick-start-state"
 import { ready, Team, TeamMessage, updateTeam } from "../../page/onboarding/quick-start-team"
 
-// `/lab/onboarding` (apps/web `lab/onboarding/onboarding-lab.tsx`): click through onboarding with a
+// `/lab/onboarding`: click through onboarding with a
 // sample catalog; rename, invites and checkout are simulated, and Restart starts over.
 
 const meteredItem = (featureId: string, included: number, amount: number, billingUnits: number, secondaryText: string) =>

@@ -44,7 +44,7 @@ const answer = (model: Model, commands: Commands): Step =>
 		return DROPPED.has(command.name) ? acc : { ...acc, commands: [...acc.commands, command] }
 	}, { model, commands: [] })
 
-/** A navigation the page asks for re-enters its own route, as legacy's local `viewSearch` does. */
+/** A navigation the page asks for re-enters its own route. */
 const navigated = (model: Model, outMessage: PageOutMessage | undefined): PageReturn<Model, Message> => {
 	if (outMessage?._tag !== "RequestedNavigation") return { model }
 	return Option.match(urlFromString(new URL(outMessage.url, "http://localhost").href), {

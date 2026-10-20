@@ -10,7 +10,7 @@ import { logTimeFormat, toLogRowView } from "../../ui/logs/log-row-view"
 import type { LogRowView } from "../../ui/logs/log-row-view"
 import type { WorstCaseMode } from "./model"
 
-// The lab's reads of apps/web's `worst-case-*` fixtures, shaped for the Foldkit ports.
+// The lab's reads of the `worst-case-*` fixtures, shaped for the views.
 
 const DAY_MS = 24 * 60 * 60 * 1000
 

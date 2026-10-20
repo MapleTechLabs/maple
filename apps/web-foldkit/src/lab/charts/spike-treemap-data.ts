@@ -1,4 +1,4 @@
-// The span-volume fixture of `TreemapSpike` (apps/web/src/lab/charts/treemap-spike.tsx) and its
+// The span-volume fixture of `TreemapSpike` and its
 // service palette, kept apart from the definition so the lab page can build the legend.
 
 export interface TreemapRow {

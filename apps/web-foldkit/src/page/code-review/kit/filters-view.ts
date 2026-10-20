@@ -8,7 +8,7 @@ import { CI_MAX_RANGE_MS } from "./layout"
 import { ALL, type Frame, FrameMessage, type WindowSearch } from "./frame"
 import { repositoriesOf } from "./frame-update"
 
-// `CodeReviewFilters` and `CodeReviewCiFilters` (code-review-layout.tsx): repository, author or
+// `CodeReviewFilters` and `CodeReviewCiFilters`: repository, author or
 // workflow, and the window.
 
 export type FiltersOptions<M> = Readonly<{

@@ -43,7 +43,7 @@ import { type PageData, pageOf, type Traced } from "./derive"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 
-// `WorkerDetailPage` and its parts (components/infra/cloudflare/cloudflare-worker-page.tsx).
+// `WorkerDetailPage` and its parts.
 
 type H = HtmlBuilder<Message>
 

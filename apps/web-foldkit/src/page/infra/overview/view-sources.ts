@@ -15,7 +15,7 @@ import { sourceMark, SOURCE_TITLE } from "./source-mark"
 import type { SourceState } from "./state"
 import { ROW_CLASS } from "./view-findings"
 
-// `SourcesTable`, `SourceRowBody` and `HealthBar` (components/infra/overview/infra-overview.tsx).
+// `SourcesTable`, `SourceRowBody` and `HealthBar`.
 
 const SEGMENT_CLASS = {
 	ok: TONE_FILL.ok,

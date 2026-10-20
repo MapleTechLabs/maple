@@ -15,7 +15,7 @@ import {
 import { orgOfKey, type RequestKey, requestKey } from "./request-key"
 
 /**
- * The app's read cache (s6-data.md "Read cache"): what apps/web's query atoms share across pages.
+ * The app's read cache (s6-data.md "Read cache"): reads shared across pages.
  * One entry per request key; in-flight reads are joined, a settled one is served until its idle TTL
  * runs out, counted from its last read or its holder's release (a page leaving, a preload's hold).
  */
@@ -23,7 +23,7 @@ import { orgOfKey, type RequestKey, requestKey } from "./request-key"
 /** `withRetention`'s LRU bound: the oldest entries go first past it. */
 export const READ_CACHE_MAX_ENTRIES = 400
 
-/** One read: its request key, the legacy family's idle TTL, and the schema a cached value must pass. */
+/** One read: its request key, its idle TTL, and the schema a cached value must pass. */
 export interface ReadSpec<S extends Schema.Top> {
 	readonly key: RequestKey
 	readonly idleTtlMs: number

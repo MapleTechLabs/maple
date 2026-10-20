@@ -13,7 +13,7 @@ import type { LogVolume } from "./gcp-schema"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `GcpUsageBand`, its tiles, `Workloads` and `Resources` (components/integrations/gcp-usage-cards.tsx).
+// `GcpUsageBand`, its tiles, `Workloads` and `Resources`.
 
 type H = HtmlBuilder<Message>
 

@@ -1,4 +1,3 @@
-// copied: apps/web/src/components/service-map/three/maple-props.tsx (R3F JSX as three construction).
 import type { MachineFinish as LegacyMachineFinish } from "../../../components/service-map/three/palette"
 import * as THREE from "three"
 import {

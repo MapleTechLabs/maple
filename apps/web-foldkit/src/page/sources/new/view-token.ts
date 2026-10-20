@@ -11,7 +11,7 @@ import { Message } from "./message"
 import type { Created, Model } from "./model"
 import { isReceiving } from "./update"
 
-// `TokenStep` and `FirstDataStatus` (apps/web/src/components/sources/token-step.tsx): step 3.
+// `TokenStep` and `FirstDataStatus`: step 3.
 
 type H = HtmlBuilder<Message>
 

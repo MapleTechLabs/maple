@@ -27,7 +27,7 @@ export const keyedStep = <Patch, M, A, E>(
 /** `DEFAULT_QUERY_TTL`: a retained answer serves a revisit of its key for a minute. */
 export const CACHE_TTL_MS = 60_000
 
-/** Answers by request key and when they were last used (legacy's retained query atoms). */
+/** Answers by request key and when they were last used, kept across tabs. */
 export const ResponseCache = <S extends Schema.Top>(value: S) =>
 	Schema.Record(Schema.String, Schema.Struct({ value, usedAtMs: Schema.Number }))
 export type ResponseCache<A> = Readonly<Record<string, Readonly<{ value: A; usedAtMs: number }>>>

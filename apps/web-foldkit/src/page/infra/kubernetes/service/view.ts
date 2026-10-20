@@ -33,7 +33,7 @@ import * as InfraMetricChart from "../../../../charts/infra-metric-chart"
 import { MountLinkedCursor } from "../../../../charts/linked-cursor"
 import { correlationStrips, type StripSeries } from "../../kit/correlation-strips"
 
-// `ServiceLensPage` / `LensBody` (routes/infra/kubernetes/services/$serviceName.tsx) in `ServiceLensShell`.
+// `ServiceLensPage` / `LensBody` in `ServiceLensShell`.
 
 type H = HtmlBuilder<Message>
 
@@ -283,7 +283,7 @@ const lensEmpty = (h: H, title: string, description: string, hasDocs: boolean): 
 		"py-24",
 	)
 
-/** `ServiceLensIndexPage` (routes/infra/kubernetes/services/index.tsx): nothing picked yet. */
+/** `ServiceLensIndexPage`: nothing picked yet. */
 const pickAService = (h: H, model: Model): Html => {
 	const rail = railState(model.rail)
 	return !rail.isLoading && rail.services.length === 0

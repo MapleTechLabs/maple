@@ -11,7 +11,7 @@ import { DateTime, Option } from "effect"
 import type { ServicesSearch } from "../../../route/search"
 import type { IncidentCause, ServiceRow } from "./model"
 
-// Pure derivations of components/services (services-table.tsx, use-service-health-summary.ts).
+// Pure derivations of the services table and its health summary.
 
 export type Search = typeof ServicesSearch.Type
 export type { ServiceHealth }
@@ -28,7 +28,7 @@ export type HealthSummary = Readonly<{
 	counts: Readonly<Record<ServiceHealth, number>>
 }>
 
-/** An ISO-8601 instant in epoch ms; `NaN` when unparseable, as `Date.parse` answered in legacy. */
+/** An ISO-8601 instant in epoch ms; `NaN` when unparseable, like `Date.parse`. */
 export const isoMs = (iso: string): number =>
 	Option.match(DateTime.make(iso), { onNone: () => Number.NaN, onSome: DateTime.toEpochMillis })
 

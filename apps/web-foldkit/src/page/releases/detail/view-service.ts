@@ -38,8 +38,7 @@ import {
 import { releaseComparison, releaseVersionsRail } from "./view-comparison"
 import { type ChangesetState, type Clock, issueList, releaseChangeset, sectionCard } from "./view-sections"
 
-// `ReleaseBody` / `ReleaseBodyLoaded` (routes/releases/$commitSha.tsx with `?service=`) and
-// `ReleaseIssuesPanel` (components/releases/release-issues-panel.tsx).
+// The release body for one service (`?service=`) and its issues panel.
 
 type H = HtmlBuilder<Message>
 

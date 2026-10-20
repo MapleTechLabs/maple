@@ -13,7 +13,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { repositoryList } from "./view-lists"
 
-// `VolumeCard` and `IssuesCard` (code-review-analytics.tsx).
+// `VolumeCard` and `IssuesCard`.
 
 type H = HtmlBuilder<Message>
 

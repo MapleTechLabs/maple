@@ -10,7 +10,7 @@ import { MapleAuthApi } from "./auth-api"
 import { SessionBearer } from "./session-bearer"
 
 /**
- * apps/web's `MapleFetchHttpClientLive` as an Effect layer: requests to the API carry the session
+ * The API HTTP client: requests to the API carry the session
  * bearer, and every request has the same 45 s deadline.
  */
 const MapleHttpClientLive = Layer.effect(

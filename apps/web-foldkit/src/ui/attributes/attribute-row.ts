@@ -125,7 +125,7 @@ const jsonValue = (h: H, model: Model, id: string, value: string, parsed: unknow
 										),
 									],
 								),
-								// TODO(copy-tooltip): legacy wraps this CopyButton in its tooltip.
+								// TODO(copy-tooltip): wrap this CopyButton in its tooltip.
 								copyButton(h, {
 									status: copyStatusOf(model, `json:${id}`),
 									label: "JSON",
@@ -151,7 +151,7 @@ const COMMIT_SHA_KEYS = new Set(["vcs.ref.head.revision"])
 const FULL_SHA = /^[0-9a-f]{40}$/i
 const COMMIT_SHA_CLASS = "-mx-0.5 cursor-pointer break-all rounded px-0.5 transition-colors hover:bg-muted/50"
 
-/** `CommitShaAttributeValue` (apps/web renderValue). TODO(commit-card): the hover card itself. */
+/** A commit SHA value as a commit link. TODO(commit-card): the hover card itself. */
 const commitShaValue = (h: H, id: string, value: string): Html =>
 	h.button(
 		[
@@ -200,7 +200,7 @@ export type RowContext = Readonly<{
 	source: AttributeSource
 	canFilter: boolean
 	idPrefix: string
-	/** apps/web's `renderValue` for commit SHAs; apps/local-ui has none (default true). */
+	/** Renders commit SHAs as commit links; apps/local-ui has none (default true). */
 	hasCommitShaValues?: boolean
 }>
 

@@ -11,8 +11,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { parsePatternList } from "./planetscale"
 
-// `PlanetScaleOrgPicker` and `OptionCard` / `DrawnCheck` (components/common/option-card.tsx,
-// drawn-check.tsx). The check is drawn at its end state (motion's final frame).
+// `PlanetScaleOrgPicker` and `OptionCard` / `DrawnCheck`. The check is drawn at its end state.
 
 type H = HtmlBuilder<Message>
 

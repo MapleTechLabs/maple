@@ -88,9 +88,9 @@ export const hostFor = <S extends ChartSpec, TDatum, X extends ChartValue, Y ext
 	build: (spec: S) => BuiltChart<TDatum, X, Y>,
 	{ ariaLabel, idPrefix, renderer, callbacks }: ChartHostOptions,
 ): ChartHost => {
-	// One renderer per host, as the React components memoise it: a new one would remount the surface.
+	// One renderer per host: a new one would remount the surface.
 	const chartRenderer = renderer === "canvas" ? canvasChartRenderer : createSvgChartRenderer(renderChartSvg)
-	// NOTE: the callbacks must keep their identity across updates, like React's `useCallback`s: the
+	// NOTE: the callbacks must keep their identity across updates: the
 	// tooltip replaces its body element whenever `onTooltipBodyChange` changes, detaching the portaled body.
 	const current = { built: build(initialSpec) }
 	const onFocusChange = (point: Parameters<BuiltChart<TDatum, X, Y>["focusKeyOf"]>[0] | null) =>

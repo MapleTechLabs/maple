@@ -37,8 +37,7 @@ import { type ChartsContext, correlationStrips, workloadCharts } from "./view-ch
 import { workloadRail } from "./view-rail"
 import { appWaitCallout, figure, topQueries } from "./view-sql"
 
-// `GcpWorkloadPage` (apps/web/src/routes/infra/gcp/$service/$name.tsx and
-// components/infra/gcp/gcp-workload-page.tsx).
+// `GcpWorkloadPage`.
 
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>

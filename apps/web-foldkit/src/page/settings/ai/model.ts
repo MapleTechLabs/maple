@@ -6,8 +6,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import * as Dialog from "../../../ui/dialog"
 import * as Field from "../../../ui/field"
 
-// The AI tab (`settings.tsx`): `ModelProviderSection` (ai-provider-section.tsx), `AutoTriageSection`
-// (ai-triage-settings-section.tsx) and `AiEscalationCard`.
+// The AI tab: `ModelProviderSection`, `AutoTriageSection` and `AiEscalationCard`.
 
 export const Provider = Schema.Literals(["managed", "openrouter"])
 export type Provider = typeof Provider.Type

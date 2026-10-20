@@ -6,7 +6,7 @@ import { ReplaySearch } from "../../../route/search"
 import * as CopyButton from "../../../ui/copy-button"
 import { ReplayMeta } from "../kit/replay-meta"
 
-// The replay detail page (apps/web/src/routes/replays/$sessionId.tsx, components/replays/).
+// The replay detail page.
 
 /** `replayDetailFromV2`: the session row the studio renders. */
 export const ReplayDetail = Schema.Struct({

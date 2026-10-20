@@ -1,6 +1,6 @@
 
-// copied: apps/web/src/components/chat/investigation-context.ts (the context type, `investigationNoun`
-// and `investigationSuggestions`); the legacy module's alert half imports through apps/web's `@/` alias.
+// The investigation context type, `investigationNoun` and `investigationSuggestions`. The alert
+// half lives in components/chat/alert-context.ts.
 
 import { Schema } from "effect"
 import { signalLabel } from "../../../components/chat/alert-context"

@@ -105,7 +105,7 @@ const addFilter =
 		replaceRows(modifyFields(model, { attrs: (attrs) => addLogAttributeFilter(attrs, filter) }))
 
 const streamOutMessage = LogsStream.OutMessage.match<Step>({
-	// Opens `LogDetailSheet` in apps/web; the sheet is not ported yet.
+	// TODO(log-detail): open the log detail sheet.
 	OpenedLog: () => unchanged,
 	ChangedInspecting:
 		({ isInspecting, isScrolledAway }) =>

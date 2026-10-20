@@ -19,8 +19,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { SECRET_PREFIX } from "./planetscale"
 
-// `PlanetScaleMetricsHealth`, `PlanetScaleMetricsTokenForm`, `PlanetScaleSetupChecklist` and
-// `PlanetScaleOrgPicker` (components/integrations/planetscale-*.tsx, common/option-card.tsx).
+// `PlanetScaleMetricsHealth`, `PlanetScaleMetricsTokenForm`,
+// `PlanetScaleSetupChecklist` and `PlanetScaleOrgPicker`.
 
 type H = HtmlBuilder<Message>
 

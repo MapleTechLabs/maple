@@ -3,8 +3,8 @@ import { ONBOARDING_ROLE_IDS, type OnboardingRole } from "../../lib/onboarding-r
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema, SchemaGetter } from "effect"
 
-// `quickStartAtomFamily(orgId)` (apps/web/src/atoms/quick-start-atoms.ts): the wizard's progress
-// in localStorage `maple-onboarding-v6-<orgId>`, with the same normalisation of older saves.
+// The quick start wizard's progress in localStorage `maple-onboarding-v6-<orgId>`, with normalisation
+// of older saves.
 
 export const STEP_IDS = ["role", "intent", "team", "plan"] as const
 export type StepId = (typeof STEP_IDS)[number]
@@ -76,7 +76,7 @@ export const DEFAULT_QUICK_START_STATE: QuickStartState = {
 	checklistExpanded: true,
 }
 
-/** Legacy keys the atom by org, or `"default"` without one. */
+/** Keyed by org, or `"default"` without one. */
 export const storageKeyOf = (orgId: Option.Option<string>): string =>
 	`maple-onboarding-v6-${Option.getOrElse(orgId, () => "default")}`
 

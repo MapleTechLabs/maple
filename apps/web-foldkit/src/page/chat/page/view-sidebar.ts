@@ -15,11 +15,11 @@ import { MountRenameInput, MountStopClickPropagation } from "./mounts"
 import { Message } from "./message"
 import type { ChatTab, Model } from "./model"
 
-// `ChatSidebar` (apps/web components/chat/chat-sidebar.tsx): conversations grouped by recency.
+// The chat sidebar: conversations grouped by recency.
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/** Local midnight of the day `ts` falls on, as legacy's `setHours(0, 0, 0, 0)`. */
+/** Local midnight of the day `ts` falls on (`setHours(0, 0, 0, 0)`). */
 const startOfDay = (ts: number): number => {
 	const date = new Date(ts)
 	date.setHours(0, 0, 0, 0)

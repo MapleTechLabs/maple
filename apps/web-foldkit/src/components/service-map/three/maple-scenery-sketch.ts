@@ -2,7 +2,7 @@ import * as THREE from "three"
 import { FACE_TONE } from "./appearance"
 import type { Vec3 } from "./types"
 
-// The React-free half of the scenery kit, so the drawings can be shared outside React.
+// The pure half of the scenery kit, so the drawings can be shared outside the 3D scene.
 
 /** Seeded noise in [0, 1): a layout always grows the same forest. */
 export const hash = (x: number, z: number) => Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1

@@ -1,6 +1,6 @@
 // The include/exclude arithmetic of a tri-state `FilterSection` (packages/ui/src/components/filters),
-// as legacy pages apply it to their URL search: an empty list leaves the URL, and a value is never
-// both included and excluded. The page maps the result back onto its own search keys.
+// as applied to a page's URL search: an empty list leaves the URL, and a value is never both included and
+// excluded. The page maps the result back onto its own search keys.
 
 export type FacetLists = Readonly<{
 	selected: ReadonlyArray<string> | undefined

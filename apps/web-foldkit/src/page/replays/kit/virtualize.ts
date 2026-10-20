@@ -57,7 +57,7 @@ export const virtualizeSessions = <A>(list: HTMLElement, toMessage: (window: Vir
 					state.last = next
 					Queue.offerUnsafe(queue, toMessage(next))
 				}
-				// React batches the re-render a measurement raises; a microtask does the same here.
+				// The re-render a measurement raises is batched to a microtask.
 				const schedule = (instance: Virtualizer<HTMLElement, HTMLElement>) => {
 					if (state.isScheduled) return
 					state.isScheduled = true

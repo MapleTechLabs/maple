@@ -1,9 +1,8 @@
 import { type AutoContext, deriveAutoContexts } from "../../../components/chat/auto-contexts"
 import type { InvestigationContext, WidgetFixContext } from "./subject"
 
-// `buildContextPreamble` (apps/web components/chat/context-preamble.ts), verbatim: the model must
-// see the same blocks legacy sends. The module itself is not importable (its investigation types
-// pull in code on apps/web's `@/` alias).
+// `buildContextPreamble`: the context blocks sent to the model ahead of a message. Their text is
+// part of what the model reads, so change it deliberately.
 
 const formatAutoContextLine = (context: AutoContext): string => {
 	switch (context.kind) {
@@ -58,7 +57,7 @@ export const pageContextPreamble = (pathname: string | null, contexts: ReadonlyA
 		.trim()
 }
 
-/** `formatWidgetFixContextBlock`, trimmed. The heading's dash is legacy's wire text. */
+/** `formatWidgetFixContextBlock`, trimmed. The heading's dash is wire text. */
 export const widgetFixPreamble = (ctx: WidgetFixContext): string =>
 	[
 		"",

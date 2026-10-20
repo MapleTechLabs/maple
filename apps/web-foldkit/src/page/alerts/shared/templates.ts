@@ -1,8 +1,7 @@
 import type { RuleFormState } from "@maple/web-data/alerts/form-utils"
 import type { IconName } from "../../../ui/icon"
 
-// copied: `ALERT_TEMPLATES` (apps/web/src/lib/alerts/templates.ts imports React icon components);
-// the icon is its generated name here.
+// `ALERT_TEMPLATES`; each icon is its generated name.
 
 export type AlertTemplateId = "high_error_rate" | "slow_p95" | "slow_p99" | "low_apdex" | "throughput_drop"
 

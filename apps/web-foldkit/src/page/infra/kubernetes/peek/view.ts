@@ -25,7 +25,7 @@ import { type Model, PEEK_CHART_HEIGHT, PEEK_METRICS, seriesId } from "./model"
 import type { Peek } from "./update"
 import { peekHeader } from "./view-header"
 
-// `PodPeekSheet` (components/infra/kubernetes/pod-peek-sheet.tsx).
+// `PodPeekSheet`.
 
 type H = HtmlBuilder<Message>
 
@@ -154,7 +154,7 @@ const content = (h: H, model: Model, peek: Peek, inputs: ViewInputs): ReadonlyAr
 	peekFooter(h, peek, inputs.timeSearch, inputs.locale),
 ]
 
-/** The sheet; its content renders only while a row is peeked (legacy's `{pod ? ... : null}`). */
+/** The sheet; its content renders only while a row is peeked. */
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],

@@ -5,10 +5,8 @@ import type { ReleaseHealth } from "../../components/releases/release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 
-// The React-free halves of components/releases/release-health.tsx and the commit helpers of
-// components/vcs/commit-sha-hover-card.tsx, shared by the list and the detail.
+// Release health and commit helpers, shared by the list and the detail.
 
-// styles: apps/web/src/components/releases/release-health.tsx
 export const RELEASE_HEALTH_LABEL = {
 	regressed: "errors up",
 	watch: "latency up",

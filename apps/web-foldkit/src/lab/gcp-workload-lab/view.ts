@@ -10,7 +10,7 @@ import { segmentedSelect } from "../../ui/segmented-select"
 import { type LabPage, Message, type Model } from "./model"
 import { workloadOf } from "./update"
 
-/** `WorkloadPage`'s props, read off the fixture as the legacy lab hands them to the page. */
+/** `WorkloadPage`'s props, read off the fixture. */
 const dataOf = (page: LabPage): PageData => {
 	const workload = workloadOf(page)
 	const sql = workload.cloudSql

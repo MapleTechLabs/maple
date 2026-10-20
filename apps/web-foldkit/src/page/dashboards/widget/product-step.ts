@@ -37,7 +37,7 @@ export const suggestionWindowOf = (model: Model, context: PageContext): TimeWind
 	return window === null ? null : { startTime: window.startTime, endTime: window.endTime }
 }
 
-/** The key the event-name lookup shares with the autocomplete provider's (one atom in legacy). */
+/** The key the event-name lookup shares with the autocomplete provider's, so it is read once. */
 export const eventNamesKeyOf = (orgId: string, window: TimeWindow): string => {
 	const { operation, data } = suggestionRequestOf("eventNames", window)
 	return requestKey(orgId, operation, { data })
@@ -51,7 +51,7 @@ export const requestSuggestions = (model: Model, context: PageContext): Return =
 		(step, lookup) => {
 			const { operation, data } = suggestionRequestOf(lookup, window)
 			const key = requestKey(context.orgId, operation, { data })
-			// The provider already asked for these names over this window: legacy reads one atom.
+			// The provider already asked for these names over this window: read them once.
 			if (
 				lookup === "eventNames" &&
 				step.model.autocomplete.productEventNames?.key ===

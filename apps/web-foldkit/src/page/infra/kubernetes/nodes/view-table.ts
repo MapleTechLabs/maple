@@ -13,7 +13,7 @@ import { hostStatusBadge } from "../../kit/status"
 import { Message, type NodeSortKey } from "./message"
 import type { NodeRow } from "./model"
 
-// `NodeTable` / `NodeTableLoading` (apps/web/src/components/infra/node-table.tsx).
+// `NodeTable` / `NodeTableLoading`.
 
 type H = HtmlBuilder<Message>
 

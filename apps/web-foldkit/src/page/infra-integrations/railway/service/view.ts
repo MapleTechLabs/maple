@@ -22,7 +22,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { CHART_IDS, DEFAULT_PRESET } from "./update"
 
-// `RailwayServicePage` (apps/web/src/routes/infra/railway/$serviceId.tsx).
+// `RailwayServicePage`.
 
 type H = HtmlBuilder<Message>
 type Pick = (row: RailwayServiceTimeseriesRow) => number

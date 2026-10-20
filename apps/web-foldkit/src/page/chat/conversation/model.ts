@@ -40,7 +40,7 @@ export const Model = Schema.Struct({
 	generation: Schema.Number,
 	/** The last folded event's seq; a reconnected tail never folds an event twice. */
 	lastSeq: Schema.Number,
-	/** The composer's text (legacy reads the uncontrolled textarea on submit). */
+	/** The composer's text, read on submit. */
 	draft: Schema.String,
 	/** Expanded tool rows and groups, by id. */
 	openPanels: Schema.Array(Schema.String),

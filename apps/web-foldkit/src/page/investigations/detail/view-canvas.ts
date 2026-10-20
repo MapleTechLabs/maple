@@ -33,8 +33,7 @@ import { CONTROL_GUTTER, fitScale, graphOf, HEADING_GUTTER } from "./graph"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `ProvenanceCanvas`, `FlowEdge`, the flow nodes and `ProvenanceCanvasLoading`
-// (components/investigations/flow/).
+// `ProvenanceCanvas`, `FlowEdge`, the flow nodes and `ProvenanceCanvasLoading`.
 
 type H = HtmlBuilder<Message>
 
@@ -512,7 +511,7 @@ export const provenanceCanvas = (h: H, model: Model, investigation: V2Investigat
 	])
 }
 
-// The ghost canvas: `provenance-loading.tsx`'s arithmetic, mirrored rather than shared.
+// The ghost canvas shown while the provenance graph loads.
 const GUTTER = 52
 const SPINE_H = 128
 const SPINE_H_LIVE = 148

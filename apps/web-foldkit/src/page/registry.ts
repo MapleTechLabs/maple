@@ -81,7 +81,7 @@ import * as TraceDetail from "./traces/detail"
 import * as TracesList from "./traces/list"
 
 /**
- * Every ported page, registered once. Adding a page: import its module and append `X.page` below;
+ * Every page, registered once. Adding a page: import its module and append `X.page` below;
  * that is the only shared file a page touches. Shell routes without a page render the placeholder.
  */
 export const pages = [

@@ -21,7 +21,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 
-// `PodDetailPage` (apps/web/src/routes/infra/kubernetes/pods/$podName.tsx) in `KubernetesShell`.
+// `PodDetailPage` in `KubernetesShell`.
 
 type H = HtmlBuilder<Message>
 type Summary = NonNullable<PodSummary>

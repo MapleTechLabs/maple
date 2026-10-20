@@ -3,7 +3,7 @@ import { shortTarget } from "../../../lib/agent-sessions/span-filters"
 import { Effect, Option, Record, Schema } from "effect"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
-// `useDetectedModels` (apps/web/src/hooks/use-detected-models.ts): one `detectMany` per distinct
+// Model detection: one `detectMany` per distinct
 // sorted model set a call site renders, deduped across the page, answers kept for the page's life.
 
 /** What a model string resolved to; the same shape whether the catalog answered or not. */

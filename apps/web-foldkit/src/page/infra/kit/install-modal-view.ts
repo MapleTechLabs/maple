@@ -21,7 +21,7 @@ import {
 	maskToken,
 } from "./install-snippets"
 
-// `InstallHostModal`'s dialog (install-modal.tsx). Rendered only while open or closing.
+// `InstallHostModal`'s dialog. Rendered only while open or closing.
 
 type H = HtmlBuilder<Message>
 

@@ -13,7 +13,7 @@ import { MapleInternalApiClient } from "../../platform/api-clients"
 import { skeleton } from "../../ui/skeleton"
 import { relativeTime } from "./relative-time"
 
-// `CommitShaHoverCard`'s card (apps/web/src/components/vcs/commit-sha-hover-card.tsx): the body
+// The commit SHA hover card: the body
 // `CommitDetailBody` renders once `commitQueryAtom(sha)` settles, and the lookup itself.
 
 /** A full 40-hex git SHA: only those open a card and reach the VCS endpoint. */

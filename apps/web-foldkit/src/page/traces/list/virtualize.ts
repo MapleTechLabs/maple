@@ -23,7 +23,7 @@ type WindowMessage = typeof Message.ChangedVirtualWindow.Type
 
 /**
  * `useVirtualizer` from `TracesTableView` on @tanstack/virtual-core: the same estimate, overscan
- * and measuring of every mounted row (`VirtualTableBody`'s `measureRef`). Like React, changes raised
+ * and measuring of every mounted row (`VirtualTableBody`'s `measureRef`). Changes raised
  * while measuring are batched to a microtask; a scroll renders synchronously.
  */
 /** The virtualizer's running state between its measure and scroll callbacks. */

@@ -44,7 +44,7 @@ import { defineLab } from "../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
 import * as Toast from "../../ui/toast"
 
-// Port of `/lab/charts` (apps/web/src/lab/charts/charts-lab.tsx): the gallery, canvas renderer.
+// `/lab/charts`: the gallery, canvas renderer.
 
 const PRODUCTION_CHART_CLASS = "h-full w-full aspect-auto"
 const pieRows = toBreakdownRows(pieSampleData, pickValueField(pieSampleData)).map((row) => ({

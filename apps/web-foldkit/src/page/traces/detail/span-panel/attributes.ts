@@ -9,8 +9,8 @@ import { type AttributeScope, Message } from "./message"
 import type { PanelState as Model } from "./model"
 
 // `AttributesSection` / `AttributesTable` / `AttributeRow` (packages/ui/src/components/attributes)
-// inside `TraceAttributeFilterProvider`, with apps/web's root `renderValue` (commit SHAs).
-// TODO(json-highlight): an expanded JSON value renders plain; legacy highlights it with sugar-high.
+// with filter actions and a value renderer that links commit SHAs.
+// TODO(json-highlight): an expanded JSON value renders plain; it should highlight with sugar-high.
 
 type H = HtmlBuilder<Message>
 type Entries = ReadonlyArray<readonly [string, string]>

@@ -19,7 +19,7 @@ import * as Mcp from "./mcp/update"
 import * as McpView from "./mcp/view"
 import { apiKeyRows } from "./subscription"
 
-// `/mcp` (apps/web/src/routes/mcp.tsx): the same `McpSection` as `/settings?tab=mcp`, standalone.
+// `/mcp`: the same `McpSection` as `/settings?tab=mcp`, standalone.
 
 const Model = Schema.Struct({ nowMs: Schema.Number, isAdmin: Schema.Boolean, mcp: McpModel.Model })
 type Model = typeof Model.Type

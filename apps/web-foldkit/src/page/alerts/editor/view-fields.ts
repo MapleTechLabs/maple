@@ -5,7 +5,7 @@ import type { FieldState } from "../../../ui/input"
 import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "../../../ui/input-group"
 import type { Message } from "./message"
 
-// `NumberField` (rule-condition-bar.tsx) and `NoiseRow` (rule-noise-section.tsx): a Base UI field
+// `NumberField` and `NoiseRow`: a Base UI field
 // holding an input group with the unit as its trailing addon.
 
 type H = HtmlBuilder<Message>

@@ -4,7 +4,7 @@ import { eyebrow } from "../../ui/eyebrow"
 import type { IconName } from "../../ui/icon"
 import { Message, type Model } from "./model"
 
-// `CopyScenarios` (widget-lab.tsx): every shape `CopyButton` is asked to take, side by side.
+// `CopyScenarios`: every shape `CopyButton` is asked to take, side by side.
 
 type H = HtmlBuilder<Message>
 

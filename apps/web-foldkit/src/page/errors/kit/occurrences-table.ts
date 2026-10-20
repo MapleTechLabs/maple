@@ -10,7 +10,7 @@ import { truncatedText } from "../../../ui/truncated-text"
 import { serviceDot } from "../../../ui/values"
 import { relativeTime } from "../../kit/relative-time"
 
-// `IssueOccurrencesTable` (apps/web/src/components/errors/issue-occurrences-table.tsx).
+// The issue occurrences table.
 
 export type OccurrencesTableInputs = Readonly<{ nowMs: number; timeZone: string }>
 

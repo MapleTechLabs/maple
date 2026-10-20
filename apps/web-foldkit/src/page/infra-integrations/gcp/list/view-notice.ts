@@ -8,7 +8,7 @@ import { spinner } from "../../../../ui/spinner"
 import { gcpMessage } from "../gcp-message"
 import type { H } from "./view-rows"
 
-// `GcpNotice` (apps/web/src/routes/infra/gcp/index.tsx): what the connections say, above the lists.
+// `GcpNotice`: what the connections say, above the lists.
 
 const integration = (h: H, label: string): Html =>
 	alertAction(h, [

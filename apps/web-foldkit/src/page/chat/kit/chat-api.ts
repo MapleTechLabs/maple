@@ -10,7 +10,7 @@ import { HttpClientRequest, HttpClientResponse } from "effect/http"
 import { MapleSyncHttpClient } from "../../../platform/api-clients"
 import { taskOf } from "./fold"
 
-// `useMapleChat`'s transport (apps/web hooks/use-maple-chat.ts): Maple's durable chat session at
+// The chat transport: Maple's durable chat session at
 // `/api/chat/sessions/<orgId>:<tabId>`. Raw routes, so plain requests with the session bearer.
 
 export class ChatRequestError extends Schema.TaggedError<ChatRequestError>()("@maple/web-foldkit/chat/ChatRequestError", {
@@ -24,7 +24,7 @@ export const TURN_IN_FLIGHT_MESSAGE =
 const sessionUrl = (sessionId: string, suffix: string): string =>
 	`${apiBaseUrl}/api/chat/sessions/${encodeURIComponent(sessionId)}${suffix}`
 
-/** A browser `TypeError` and friends surface as their own text, like legacy's `Error.message`. */
+/** A browser `TypeError` and friends surface as their own `message` text. */
 const failWith =
 	(message: string) =>
 	<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, ChatRequestError, R> =>

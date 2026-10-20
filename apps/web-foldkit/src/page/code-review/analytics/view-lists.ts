@@ -9,7 +9,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import { analyticsPanel } from "../kit/analytics-panel"
 import { authorLabel } from "../kit/author"
 
-// `RepositoryList`, `BarList`, `CategoriesCard`, `OutcomesCard`, `AuthorsCard` (code-review-analytics.tsx).
+// `RepositoryList`, `BarList`, `CategoriesCard`, `OutcomesCard`, `AuthorsCard`.
 
 type Row = Readonly<{ key: string; name: string; value: number }>
 

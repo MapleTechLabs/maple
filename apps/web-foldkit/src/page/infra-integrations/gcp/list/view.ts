@@ -74,8 +74,7 @@ import {
 	subscriptionsTable,
 } from "./view-tables"
 
-// `GcpPage`, `GcpInfra` and `GcpListPage` (apps/web/src/routes/infra/gcp/index.tsx,
-// components/infra/gcp/gcp-list-page.tsx). `gcpListPage` is the presentational page the lab reuses.
+// `GcpPage`, `GcpInfra` and `GcpListPage`. `gcpListPage` is the presentational page the lab reuses.
 
 const VIEW_LABEL = {
 	services: "Services",

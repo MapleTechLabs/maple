@@ -27,7 +27,7 @@ import { expandDialog } from "./view-expand"
 import { filtersRail } from "./view-filters"
 import { overviewContent } from "./view-overview"
 
-// `WebAnalyticsPage` (apps/web/src/routes/analytics/index.tsx).
+// The web analytics page.
 
 type H = HtmlBuilder<Message>
 

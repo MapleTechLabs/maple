@@ -84,7 +84,7 @@ const stepWorkload = (model: Model, message: Workload.Message): Return => {
 			)
 			return set({ ...workload, charts: { ...workload.charts, [chartId]: next.model } }, commands)
 		}
-		// Legacy's `onChange` is a no-op: the picker opens and closes, the window stays.
+		// The picker opens and closes; the window stays.
 		case "GotTimePickerMessage": {
 			const step = stepTimePicker(
 				workload.timePicker,

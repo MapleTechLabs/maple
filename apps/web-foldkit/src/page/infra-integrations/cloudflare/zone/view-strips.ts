@@ -26,7 +26,7 @@ import type { ZoneDetail, ZoneRow } from "../data"
 import { MountLinkedCursor } from "./command"
 import { Message, type Model } from "./model"
 
-// `CloudflareZoneSignals` (components/infra/cloudflare/cloudflare-zone-signals.tsx).
+// `CloudflareZoneSignals`.
 
 type H = HtmlBuilder<Message>
 

@@ -22,7 +22,8 @@ import type { Model } from "./model"
 import { changesetState, overlaysOf, serviceBody, serviceButton } from "./view-service"
 import { type Clock, deploySummary, deployServices, issueList, releaseChangeset } from "./view-sections"
 
-// `ReleaseDetailPage` (apps/web/src/routes/releases/$commitSha.tsx): `ReleaseDeployOverview`, or with `?service=` the service body (view-service.ts).
+// The release detail page: the deploy overview, or with `?service=` the service body
+// (view-service.ts).
 
 type H = HtmlBuilder<Message>
 

@@ -6,7 +6,7 @@ import { badge } from "../../ui/display"
 import { icon } from "../../ui/icon"
 
 /**
- * `PinnedNamespaceNotice` (apps/web/src/components/filters/pinned-namespace-notice.tsx): replaces a
+ * `PinnedNamespaceNotice`: replaces a
  * rail's Namespace section while the org-global pin is on. `onClear` should end in the page's
  * `PageOutMessage.RequestedNamespacePin({ maybeNamespace: Option.none() })`.
  */

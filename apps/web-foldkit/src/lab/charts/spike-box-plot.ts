@@ -8,7 +8,7 @@ import type { BuiltChart } from "../../charts/definitions/built-chart"
 import { cursorTooltip } from "../../charts/definitions/plot-constants"
 import type { SpikeSpec } from "./spike-spec"
 
-// `BoxPlotSpike` (apps/web/src/lab/charts/box-plot-spike.tsx), definition half: Tukey boxes over a
+// `BoxPlotSpike`, definition half: Tukey boxes over a
 // seeded log-normal sample per operation, on a log y scale. Code copied, constants unchanged.
 
 interface BoxPlotRow {
@@ -31,7 +31,7 @@ const OPERATIONS: ReadonlyArray<{ name: string; medianMs: number; sigma: number 
 
 const SAMPLES_PER_OPERATION = 120
 
-/** `makeRandom`: an LCG, the same sequence as legacy's for the same seed. */
+/** `makeRandom`: an LCG, the same sequence for the same seed. */
 const nextState = (state: number): number => (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0
 
 /** `makeRows`: two uniforms per sample through Box-Muller, in operation order. */

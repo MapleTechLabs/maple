@@ -8,7 +8,7 @@
 // warning badge on an otherwise "Connected" card taught people the integration
 // was broken. Presenting it as step 3 of 4 teaches them it isn't finished.
 //
-// Pure — no React, no atoms — so the progression rules are testable on their own
+// Pure, so the progression rules are testable on their own
 // (same shape as branch-selection.ts).
 
 import type { V2PlanetScaleIntegration, V2PlanetScaleScrapeTarget } from "@maple/domain/http/v2"

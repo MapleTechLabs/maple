@@ -310,7 +310,6 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 					[
 						h.span([], [period]),
 						h.span([h.Class("text-muted-foreground")], ["·"]),
-						// JSX `Day {dayOfCycle} of {cycleDays}`: four text nodes.
 						h.span([h.Class("text-muted-foreground")], ["Day ", String(spend.dayOfCycle), " of ", String(spend.cycleDays)]),
 					],
 				),

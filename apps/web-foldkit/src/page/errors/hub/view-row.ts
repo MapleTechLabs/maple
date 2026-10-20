@@ -35,7 +35,7 @@ import {
 	sparkOf,
 } from "./view-signal"
 
-// `ErrorSignalHeader` and `ErrorSignalRowSkeleton` (apps/web/src/components/errors/error-signal-row.tsx).
+// The error signal header and row skeleton.
 
 /** Lane geometry, shared by the header and the rows so the two cannot drift. */
 export const LANE = {

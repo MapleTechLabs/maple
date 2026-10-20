@@ -8,7 +8,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { searchInput } from "../../../ui/search-input"
 
-// `AgentSessionsToolbar` (agent-sessions-toolbar.tsx), `ToolbarSearch` over `SearchInput`.
+// The agent sessions toolbar, its search over `SearchInput`.
 // TODO(tooltip): the count's and the switch's tooltips are drawn as triggers only.
 
 type H = HtmlBuilder<Message>

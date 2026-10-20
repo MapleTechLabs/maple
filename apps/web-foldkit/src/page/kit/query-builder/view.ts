@@ -21,7 +21,7 @@ import { Message, type Model } from "./panel"
 import { type MetricOption, metricsBody } from "./metrics-body"
 import { addOnSections, ADD_ON_KEYS, addOnToggles, panelSelect, textInput, whereClauseEditor } from "./parts"
 
-// `QueryPanel` and `QueryPanelShell` (dashboard-builder/config/query-panel.tsx, query-panel-shell.tsx).
+// `QueryPanel` and `QueryPanelShell`: one query's builder panel and its frame.
 
 type H = HtmlBuilder<Message>
 

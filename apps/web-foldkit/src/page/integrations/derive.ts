@@ -14,7 +14,7 @@ import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
 import type { Visibility } from "../settings/nav"
 import type { Model, Statuses } from "./model"
 
-// `useIntegrationStatuses` and `useIntegrationOverviews` (integration-catalog.tsx), as pure folds.
+// `useIntegrationStatuses` and `useIntegrationOverviews`, as pure folds.
 
 /** `Result.builder`: success (also while revalidating), initial (`null`), else the failure value. */
 export const fold = <A, E, R>(slot: Keyed<A, E>, onSuccess: (data: A) => R, onFailure: () => R): R | null =>

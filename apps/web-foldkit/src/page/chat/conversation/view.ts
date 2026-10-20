@@ -26,7 +26,7 @@ import { type TranscriptHost, transcript } from "../kit/view-transcript"
 import { Message } from "./message"
 import { isLoading, type Model } from "./model"
 
-// `ChatConversation` (apps/web components/chat/chat-conversation.tsx): transcript, notices, composer.
+// One conversation: transcript, notices, composer.
 
 /** The area and bar plots' colours, read once for every chart fence. */
 const CHART_TOKENS = [...new Set([...AREA_CHART_TOKENS, ...BAR_CHART_TOKENS])]
@@ -245,7 +245,7 @@ const notices = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOp
 			]
 }
 
-/** `Suggestions` + `Suggestion` (ai-elements/suggestion.tsx): one-line outline pills. */
+/** The suggestions as one-line outline pills. */
 const suggestionPills = <M>(
 	h: HtmlBuilder<M>,
 	suggestions: Readonly<{ items: ReadonlyArray<string>; onSelect: (text: string) => M }>,

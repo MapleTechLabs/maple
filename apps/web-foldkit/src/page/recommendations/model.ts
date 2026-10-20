@@ -4,7 +4,7 @@ import { KeyedSchema } from "../../data/keyed"
 import { LoadFailure } from "../../data/load-failure"
 import * as CopyButton from "../../ui/copy-button"
 
-// `/recommendations/$recommendationKey` (apps/web/src/routes/recommendations/$recommendationKey.tsx).
+// `/recommendations/$recommendationKey`.
 
 /** `BusyAction`: the one write in flight. */
 export const BusyAction = Schema.NullOr(Schema.Literals(["apply", "dismiss", "reopen"]))
@@ -16,7 +16,7 @@ export const Model = Schema.Struct({
 	nowMs: Schema.NullOr(Schema.Number),
 	/** `recommendationIssuesListAtom`: every page of the org's recommendations. */
 	list: KeyedSchema(Schema.Array(V2Recommendation), LoadFailure),
-	/** `ingestAttributeMappingsListAtom`: mounted by `useAtomRefresh`, so legacy reads it too. */
+	/** `ingestAttributeMappingsListAtom`: the org's attribute mappings, read with the list. */
 	mappings: KeyedSchema(Schema.Array(V2AttributeMapping), LoadFailure),
 	busy: BusyAction,
 	copy: CopyButton.Model,

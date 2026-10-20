@@ -15,7 +15,7 @@ import { computeServiceShares, type ServiceShare } from "./derive"
 import { Message } from "./message"
 import type { LoadedTrace } from "./select"
 
-// `TraceAnatomyStrip` (apps/web components/traces/trace-anatomy-strip.tsx over the @maple/ui strip).
+// The trace anatomy strip, over the @maple/ui strip.
 // TODO(tooltip): spectrum segment tooltips, the commit hover card and the copy badge's feedback.
 
 const stampFormat = (timeZone: string) =>

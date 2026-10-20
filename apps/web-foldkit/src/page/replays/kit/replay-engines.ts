@@ -5,7 +5,7 @@ import { videoEngineFactory } from "../../../components/replays/engine/video-eng
 import type { ReplayFormat } from "./replay-window"
 
 // Loaded with `import()` from the player Mount only (S2): rrweb and its stylesheet never reach
-// the startup chunk. The engines are apps/web's, unchanged.
+// the startup chunk. The engines live in components/replays/engine.
 
 export const ENGINE_FACTORIES = {
 	rrweb: rrwebEngineFactory,

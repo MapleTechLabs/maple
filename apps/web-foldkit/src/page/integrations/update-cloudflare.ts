@@ -74,7 +74,7 @@ export const enterCloudflare = (model: Model, context: PageContext): Return => {
 export const gotZoneFilter = (model: Model, message: ToggleGroup.Message): Return => {
 	const next = ToggleGroup.update(model.cloudflareCard.zoneFilter, message)
 	return {
-		// Controlled like legacy's `value={[filter]}`: unpressing the active chip falls back to "All".
+		// Unpressing the active chip falls back to "All".
 		model: withCard(model, {
 			zoneFilter: next.model.values.length === 0 ? { ...next.model, values: ["all"] } : next.model,
 		}),

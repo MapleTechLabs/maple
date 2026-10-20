@@ -23,7 +23,7 @@ import { ProductEdit } from "./product-edit"
 import { product } from "./view-product"
 import { listColumnRow } from "./view-list-column"
 
-// `ListConfigPanel` (dashboard-builder/config/list-config-panel.tsx) and its Run preview row.
+// `ListConfigPanel` and its Run preview row.
 
 type H = HtmlBuilder<Message>
 

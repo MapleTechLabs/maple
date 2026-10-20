@@ -12,7 +12,7 @@ import * as Dialog from "../../../ui/dialog"
 import * as DialogView from "../../../ui/dialog-view"
 import { secretReveal } from "./secret-reveal"
 
-// `RollApiKeyDialog` (apps/web/src/components/settings/roll-api-key-dialog.tsx).
+// `RollApiKeyDialog`.
 
 export const Model = Schema.Struct({
 	dialog: Dialog.Model,

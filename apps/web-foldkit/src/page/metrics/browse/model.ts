@@ -10,7 +10,7 @@ import { SignalPresenceData } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { MetricRow } from "../shared"
 
-// `/metrics` (apps/web/src/routes/metrics/index.tsx and components/metrics/metrics-browse.tsx).
+// `/metrics`.
 
 export const SparklinePoint = Schema.Struct({
 	bucket: Schema.String,

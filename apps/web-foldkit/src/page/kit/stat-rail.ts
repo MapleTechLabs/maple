@@ -7,8 +7,7 @@ import { miniBars } from "../../ui/mini-bars"
 import { skeleton } from "../../ui/skeleton"
 import { statFigure } from "../../ui/stat-figure"
 
-// `StatRail`, `StatRailItem`, `StatRailItemSkeleton` and `StatRailLoading`
-// (apps/web/src/components/common/stat-rail.tsx).
+// `StatRail`, `StatRailItem`, `StatRailItemSkeleton` and `StatRailLoading`.
 
 export type StatRailColumns = 2 | 3 | 4 | 5
 

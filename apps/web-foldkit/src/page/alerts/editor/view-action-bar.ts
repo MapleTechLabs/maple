@@ -10,7 +10,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { RULE_FORM_MAX_WIDTH } from "./view-step"
 
-// `RuleActionBar` (components/alerts/rule-action-bar.tsx): the sticky bar with the rule in one
+// `RuleActionBar`: the sticky bar with the rule in one
 // sentence, what is still missing, and Cancel / Save.
 
 type H = HtmlBuilder<Message>

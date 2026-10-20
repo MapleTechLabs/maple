@@ -1,6 +1,6 @@
 // A Cloud SQL instance in words and figures: its settings from the inventory, Query Insights
 // statements matched to the traces' query shapes, when the app-vs-database callout shows, and the
-// rail's health readings. Pure (no React, no atoms).
+// rail's health readings. Pure.
 
 import type { GcpCloudSqlTopQueriesResponse } from "@maple/domain/http"
 import { formatBytes, formatLatency, formatPercent } from "@maple/ui/lib/format"

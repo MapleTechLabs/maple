@@ -60,7 +60,7 @@ export const listQueryOf = (search: Search, rankedHashes: ReadonlyArray<string> 
 	}
 }
 
-// copied: `VIEW_STATES`, `viewCovers` and `sortSignals` (errors-hub-view.tsx, a React module).
+// The states each hub view covers, and the signal sort.
 const VIEW_STATES = {
 	open: ["triage", "regressed", "todo", "in_progress", "in_review"],
 	closed: ["verifying", "done", "cancelled", "wontfix"],

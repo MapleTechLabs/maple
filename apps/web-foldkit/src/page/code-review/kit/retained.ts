@@ -10,7 +10,7 @@ import {
 import { Option, Schema } from "effect"
 import { CACHE_TTL_MS, ResponseCache } from "./page-steps"
 
-// What legacy's retained query atoms keep across the Code Review tabs: answers by request key for
+// What the Code Review tabs keep across a tab change: answers by request key for
 // a minute after their last use. The tabs share one page instance, which carries these from the
 // tab being left to the next one.
 

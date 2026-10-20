@@ -13,7 +13,7 @@ import {
 } from "../data"
 import { Message, RequestMode } from "./model"
 
-/** The window plus its bounds read as browser-local time (`Date.parse` in legacy's events read). */
+/** The window plus its bounds read as browser-local time, for the events read. */
 const withLocal = (window: TimeWindow) => ({
 	window,
 	localWindow: { startMs: new Date(window.startTime).getTime(), endMs: new Date(window.endTime).getTime() },

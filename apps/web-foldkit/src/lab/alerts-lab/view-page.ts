@@ -100,7 +100,7 @@ const pageBody = (h: H, model: Model): Html => {
 	)
 }
 
-/** apps/web's `DashboardLayout` around the lab page: the real shell. */
+/** The real shell around the lab page. */
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[h.Id("app")],

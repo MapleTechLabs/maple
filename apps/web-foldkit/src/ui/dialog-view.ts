@@ -130,7 +130,7 @@ export type ViewInputs = Readonly<{
 	isNested?: boolean
 	/** `initialFocus={popupRef}`: focus lands on the popup itself, not its first control. */
 	isPopupFocused?: boolean
-	/** `false`: closing does not hand focus back (legacy's controlled dialog ends on the body). */
+	/** `false`: closing does not hand focus back (focus ends on the body). */
 	isReturningFocus?: boolean
 }>
 

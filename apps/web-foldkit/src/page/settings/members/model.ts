@@ -7,8 +7,8 @@ import * as Field from "../../../ui/field"
 import * as Menu from "../../../ui/menu"
 import * as Select from "../../../ui/select"
 
-// The Members tab (`MembersSection`, apps/web/src/components/settings/members-section.tsx): the
-// active Clerk organization's memberships and pending invitations, read and written through clerk-js.
+// The Members tab: the active Clerk organization's memberships and pending invitations, read and
+// written through clerk-js.
 
 export const OrgRole = Schema.Literals(["org:admin", "org:member"])
 export type OrgRole = typeof OrgRole.Type

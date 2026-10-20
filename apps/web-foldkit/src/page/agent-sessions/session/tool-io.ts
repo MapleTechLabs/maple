@@ -12,7 +12,7 @@ import type { Model } from "./model"
 import { disclosed, jsonPayload, viewSwitch } from "./payload-view"
 import { clampedBody, payloadCopyButton } from "./transcript-kit"
 
-// `ToolIo`, `ToolIoSummary` (session-detail/tool-io.tsx): one invocation, both halves, joined by a spine.
+// Tool input and output, and its summary: one invocation, both halves, joined by a spine.
 
 type H = HtmlBuilder<Message>
 

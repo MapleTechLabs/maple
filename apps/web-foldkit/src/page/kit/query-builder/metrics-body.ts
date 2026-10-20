@@ -8,7 +8,7 @@ import type { QueryDraft } from "./draft"
 import { Message, metricBreakdownIdOf, metricPickerIdOf, type Model } from "./panel"
 import { panelSelect, textInput, whereClauseEditor } from "./parts"
 
-// `MetricsBody` (query-panel.tsx): the metric picker, the where clause, and the two aggregation rows
+// `MetricsBody`: the metric picker, the where clause, and the two aggregation rows
 // with the one-field breakdown.
 // The where editor's values are scoped to the picked metric (`useMetricScopedAutocomplete`).
 
@@ -50,7 +50,7 @@ const picker = (h: H, model: Model, query: MetricsQuery, options: ReadonlyArray<
 			// `MetricOptionsEmpty` replaces the list only when nothing is listed.
 			emptyText: listed.length > 0 ? "" : term === "" ? "No metrics found." : `No metric name contains "${term}".`,
 			highlightsSelected: true,
-			// Measured: legacy's positioner resolves the input (30 px), not the input group.
+			// Measured: the positioner resolves the input (30 px), not the input group.
 			anchorsInput: true,
 			renderItem: (item) => [listed.find((option) => option.value === item)?.label ?? item],
 			isUnfiltered: true,
@@ -79,7 +79,7 @@ const breakdown = (h: H, model: Model, query: MetricsQuery, keys: ReadonlyArray<
 			placeholder: "Search fields...",
 			emptyText: "",
 			highlightsSelected: true,
-			// Measured: legacy's positioner resolves the input (30 px), not the input group.
+			// Measured: the positioner resolves the input (30 px), not the input group.
 			anchorsInput: true,
 			renderItem: (item) => [item === NONE ? "Everything (no breakdown)" : item],
 			isUnfiltered: true,

@@ -6,7 +6,7 @@ import type { Resources } from "../../../platform/resources"
 import * as Combobox from "../../../ui/combobox"
 import type { DestinationForm } from "./form"
 
-// `EmailMemberPicker` (components/alerts/destination-dialog.tsx): workspace members from Clerk's
+// `EmailMemberPicker`: workspace members from Clerk's
 // memberships. The server re-resolves the picked ids to emails on save, so this is a convenience.
 // TODO(destination-dialog): the popup's "Load more" past the first 100 members, and avatar images.
 

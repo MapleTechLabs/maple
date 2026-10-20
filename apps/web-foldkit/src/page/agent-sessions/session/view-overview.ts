@@ -25,7 +25,7 @@ import { sectionHeading } from "../../kit/section-heading"
 import { loadIndicator } from "./view-load"
 import { rail } from "./view-rail"
 
-// `SessionOverview` (session-detail/session-overview.tsx): checks and the tool ledger, the rail.
+// The session overview: checks and the tool ledger, the rail.
 
 type H = HtmlBuilder<Message>
 

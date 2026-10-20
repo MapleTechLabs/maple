@@ -1,4 +1,4 @@
-// The app shell (apps/web `DashboardLayout` + `AppSidebar`): a Submodel the root keeps across
+// The app shell (layout and sidebar): a Submodel the root keeps across
 // navigation, embedded twice: the frame around the page and the overlay layers after it.
 export { readShellFlags } from "./flags"
 export { Message, OutMessage, Theme } from "./message"

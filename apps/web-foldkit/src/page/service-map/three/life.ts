@@ -1,4 +1,3 @@
-// copied: apps/web/src/components/service-map/three/maple-scenery-life.tsx (R3F JSX as three construction).
 import type { Creek } from "../../../components/service-map/three/maple-scenery-field"
 import { type Bounds, hash } from "../../../components/service-map/three/maple-scenery-sketch"
 import type { InkPalette } from "../../../components/service-map/three/palette"

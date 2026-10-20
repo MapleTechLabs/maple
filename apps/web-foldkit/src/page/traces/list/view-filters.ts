@@ -18,8 +18,6 @@ import { excludedOf, hasSidebarFilters } from "./derive"
 import { type Facet, Message } from "./message"
 import type { Model, TracesFacets } from "./model"
 
-// `TracesFilterSidebar` (apps/web/src/components/traces/traces-filter-sidebar.tsx).
-
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
 const facetSection = (

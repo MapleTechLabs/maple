@@ -19,7 +19,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { cloudflareConnected } from "./view-cloudflare-connected"
 
-// `CloudflareAccountCard` and `CloudflareHeaderActions` (components/integrations/cloudflare-account-card.tsx).
+// `CloudflareAccountCard` and `CloudflareHeaderActions`.
 
 type H = HtmlBuilder<Message>
 

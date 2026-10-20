@@ -9,7 +9,7 @@ import { hasErrorFilters, severityOf, viewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `HubEmpty` (components/errors/errors-hub-view.tsx): what an empty view says, and what it offers.
+// The hub's empty state: what an empty view says, and what it offers.
 
 type H = HtmlBuilder<Message>
 

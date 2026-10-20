@@ -8,9 +8,8 @@ import { type CameraCommand, cameraRig, type Size } from "./camera"
 import { type Child, disposeTree, group, makeScope, type Scope } from "./kit"
 import { type Layout, layoutOf, sceneryKey, sceneryOf, worldOf } from "./world"
 
-// `ServiceMap3D` (components/service-map/three/scene.tsx) without R3F: the `<Canvas orthographic
-// flat dpr={[1, 2]} gl={{ antialias, alpha }}>` renderer, its demand or always frame loop, the
-// camera rig and machine picking. The lazy scene chunk's entry; the view owns all DOM.
+// The 3D service map: an orthographic, flat renderer (dpr 1 to 2, antialias, alpha), its demand
+// or always frame loop, the camera rig and machine picking. The lazy scene chunk's entry; the view owns all DOM.
 
 export interface SceneInput {
 	readonly topology: Topology3D
@@ -135,7 +134,7 @@ const measure = (element: Element): Size => {
 
 /**
  * Starts the scene on `canvas` (inside R3F's two wrapper divs, under `[data-scene-root]`, which
- * holds the labels). `onSelect` gets a machine click as legacy's `onSelect`, or `null` for a miss.
+ * holds the labels). `onSelect` gets a machine click, or `null` for a miss.
  */
 export function startScene(
 	canvas: HTMLCanvasElement,
@@ -239,8 +238,8 @@ export function startScene(
 				previous.selectedId !== input.selectedId ||
 				previous.dark !== input.dark
 			if (changed) state.built = build(scene, input, state.built, flowing)
-			// Legacy parity: a camera command alone changes no three prop, so R3F's demand loop draws
-			// no frame for it; the zoom lands on the next frame (always while traffic flows).
+			// A camera command alone changes no scene prop, so the demand loop draws no frame for it;
+			// the zoom lands on the next frame (always while traffic flows).
 			if (changed || input.flowing !== previous.flowing) invalidate()
 		},
 		stop: () => {

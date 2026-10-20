@@ -27,8 +27,7 @@ import { disconnectDialog } from "./view-disconnect"
 import { metricsHealth, metricsTokenForm, QUIET_LINK, setupChecklist } from "./view-planetscale-parts"
 import { orgPicker, pickerDialog } from "./view-planetscale-picker"
 
-// `PlanetScaleIntegrationCard`, `FirstMetricsDetail` and `PlanetScaleWebhookSetup`
-// (components/integrations/planetscale-integration-card.tsx).
+// `PlanetScaleIntegrationCard`, `FirstMetricsDetail` and `PlanetScaleWebhookSetup`.
 
 type H = HtmlBuilder<Message>
 

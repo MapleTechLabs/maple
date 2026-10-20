@@ -34,7 +34,7 @@ const podsHref = (workload: ServiceWorkload, kind: KnownKind | null): string => 
 					? { daemonsets: [workload.workloadName] }
 					: {}
 	const href = hrefOf(AppRoute.InfraKubernetesPods({ search: { ...byKind, namespaces } }))
-	// Legacy's router prints search keys in insertion order: the kind filter, then namespaces.
+	// Orders the search keys: the kind filter, then namespaces.
 	const [path, query] = href.split("?")
 	if (query === undefined) return href
 	const pairs = query.split("&")

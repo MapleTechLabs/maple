@@ -103,7 +103,7 @@ export const TypeIntoComposer = Command.define("TypeIntoChatComposer", {
 		}),
 })
 
-/** The empty state painted: legacy's `useSignalPresence` only asks once it mounts. */
+/** The empty state painted: signal presence is only asked for once it shows. */
 export const MountEmptyState = Mount.define("MountChatEmptyState", {
 	messages: [Message.PaintedEmptyState],
 	execute: () =>

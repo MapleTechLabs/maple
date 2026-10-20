@@ -16,7 +16,7 @@ import {
 } from "@maple/ui/styles/ui/page-layout"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// `DashboardPage` (apps/web/src/components/layout/dashboard-page.tsx) below the shell's top bar:
+// The dashboard page below the shell's top bar:
 // `PageLayout.Body` with its filter rail, content column, sticky header and scroll area.
 // Below `lg` the shell lifts both rails out of the body into sheets (`shell/page-rails.ts`).
 
@@ -103,7 +103,6 @@ const stickyArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, isScrol
 const fillArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.DataAttribute("slot", "page-fill"), h.Class(pageFillStyles)], children)
 
-// styles: apps/web/src/components/layout/dashboard-layout.tsx (PAGE_WIDTH, PAGE_GAP)
 const PAGE_WIDTH = { full: null, reading: "mx-auto max-w-4xl", narrow: "mx-auto max-w-3xl" } as const
 const PAGE_GAP = { none: null, sm: "gap-3", md: "gap-4", lg: "gap-6" } as const
 export type PageWidth = keyof typeof PAGE_WIDTH

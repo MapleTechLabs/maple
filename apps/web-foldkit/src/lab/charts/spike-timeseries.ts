@@ -23,8 +23,7 @@ import {
 } from "../../charts/definitions/plot-constants"
 import { type SpikeSpec, mutedOf, MUTED_OPACITY } from "./spike-spec"
 
-// `LineSpike` / `LineLegendSpike` and `AreaSpike` / `AreaLegendSpike`
-// (apps/web-foldkit/src/lab/charts/{line,area}-spike.tsx), definition half. Code copied, constants unchanged.
+// `LineSpike` / `LineLegendSpike` and `AreaSpike` / `AreaLegendSpike`, definition half.
 
 type Point = ChartPoint<TimeseriesSpikeRow, ChartValue, number>
 

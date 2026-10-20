@@ -1,5 +1,5 @@
 // A Google Cloud workload's page: which charts each service shows, and how the buckets of the
-// timeseries query become their rows. Pure (no React, no atoms).
+// timeseries query become their rows. Pure.
 
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { GCP_METRIC_GROUPS, gcpMetricPointAttributes } from "@maple/domain/gcp-metrics"

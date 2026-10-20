@@ -3,7 +3,7 @@ import { type FrameworkId, sdkSnippets } from "../../../components/quick-start/s
 import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { dockerCommand, HOST_CONFIG, helmCommand, hostCommand } from "../../infra/kit/install-snippets"
 
-// `sourceSnippets`, `maskedToken` (apps/web/src/components/sources/snippets.ts).
+// `sourceSnippets`, `maskedToken`.
 
 export interface SourceSnippet {
 	readonly id: string

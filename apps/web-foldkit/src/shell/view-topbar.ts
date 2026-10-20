@@ -17,7 +17,7 @@ import { sidebarTrigger } from "../ui/sidebar"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `DashboardLayout.Breadcrumbs` (apps/web/src/components/layout/dashboard-layout.tsx).
+// The top bar's breadcrumbs.
 
 /** A page's trail: data, so it stays a page input (`DashboardPage`'s `breadcrumbs`). */
 export type BreadcrumbEntry = Readonly<{ label: string; href?: string }>

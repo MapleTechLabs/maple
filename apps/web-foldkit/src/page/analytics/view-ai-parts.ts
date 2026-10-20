@@ -21,7 +21,7 @@ import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { AiCrawlers } from "./model"
 
-// The AI tab's building blocks (components/analytics/ai/ai-sections.tsx, ai-product-icon.tsx).
+// The AI tab's building blocks: its sections and product icons.
 
 type H = HtmlBuilder<Message>
 

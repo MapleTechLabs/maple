@@ -30,7 +30,7 @@ import {
 } from "./product-selects"
 import { pageSelect } from "./view-select"
 
-// `QueryPanelShell` and `AddOnToggleBar` (query-panel-shell.tsx), and the rows the funnel and
+// `QueryPanelShell` and `AddOnToggleBar`, and the rows the funnel and
 // paths panels share: the population filter, Count by, the window, the breakdown.
 
 type H = HtmlBuilder<Message>

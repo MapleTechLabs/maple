@@ -11,7 +11,7 @@ import type { Resources } from "../../../platform/resources"
 import * as Combobox from "../../../ui/combobox"
 import type { DestinationForm } from "./form"
 
-// `ChatDestinationFields` (components/alerts/destination-dialog.tsx): the channel a `chat`
+// `ChatDestinationFields`: the channel a `chat`
 // destination posts to, from what the workspace's connector says the bot can post in.
 
 export const Model = Schema.Struct({
@@ -21,7 +21,7 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-/** One dialog is open at a time, so the picker keeps legacy's fixed id. */
+/** One dialog is open at a time, so the picker keeps a fixed id. */
 export const CHANNEL_COMBOBOX_ID = "destination-chat-channel"
 
 export const init = (): Model => ({

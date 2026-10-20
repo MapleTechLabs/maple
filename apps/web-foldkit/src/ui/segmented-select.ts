@@ -95,9 +95,9 @@ export const multiSegmentedSelect = <T extends string, M>(
 	)
 }
 
-// Port of `SegmentedSelect` (apps/web/src/components/common/segmented-select.tsx): an `outline`
+// The segmented select: an `outline`
 // ToggleGroup track with one raised pill. Stateless: the value is the caller's (often the URL).
-// TODO(motion): legacy slides the pill between items (motion `layoutId`); here it jumps.
+// TODO(motion): slide the pill between items; it jumps.
 
 /** An icon-only option passes `label: ""`, its `icon` and an `ariaLabel`. */
 export type SegmentedOption<T extends string> = Readonly<{

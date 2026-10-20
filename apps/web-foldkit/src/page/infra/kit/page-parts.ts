@@ -8,8 +8,7 @@ import { icon } from "../../../ui/icon"
 import { searchInput } from "../../../ui/search-input"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
 
-// `PageHero` (common/page-hero.tsx), `SearchToolbar` (common/search-toolbar.tsx) and the infra
-// empty states.
+// `PageHero`, `SearchToolbar` and the infra empty states.
 
 type Children = ReadonlyArray<Html | string>
 
@@ -137,7 +136,7 @@ export const setupEmpty = <M>(
 		"py-16",
 	)
 
-/** `NoMetricsMessage` (primitives/no-metrics-message.tsx). */
+/** `NoMetricsMessage`. */
 export const noMetricsMessage = <M>(h: HtmlBuilder<M>, noun: string): Html =>
 	emptyMessage(h, { dashed: true, className: "py-12" }, [`No metrics arrived for this ${noun} in the selected window.`])
 

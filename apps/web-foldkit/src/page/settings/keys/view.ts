@@ -23,7 +23,7 @@ import { STATUS_VALUES } from "./update"
 import { apiReference, oauthPointer } from "./view-reference"
 import { keysEmpty, keysTable } from "./view-table"
 
-// `ApiKeysSection` (apps/web/src/components/settings/api-keys-section.tsx).
+// `ApiKeysSection`.
 
 export type ViewInputs = Readonly<{ nowMs: number; timeZone: string }>
 

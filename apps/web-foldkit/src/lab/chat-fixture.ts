@@ -1,6 +1,6 @@
 import { TextPart, ToolPart, type UIMessage } from "../page/chat/kit/ui-message"
 
-// apps/web `lab/chat-fixture.ts` as Schema-typed messages: a merged tool run, a standalone call,
+// The chat lab fixture as Schema-typed messages: a merged tool run, a standalone call,
 // prose with all four inline cards, a table, two charts, an approval, two sub-agents and a burst
 // mid-flight. Inline cards are written the way the model emits them, so the real parser runs.
 

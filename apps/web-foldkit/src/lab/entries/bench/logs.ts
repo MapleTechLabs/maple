@@ -14,8 +14,8 @@ import * as Toast from "../../../ui/toast"
 import { installLogsBench } from "../../bench/logs-harness"
 
 /**
- * `/lab/bench/logs`: the logs stream over 2,000 wide synthetic rows (apps/web's `LogsTableBench`),
- * with the same `window.__logsBench` harness for `perf/logs.perf.spec.ts`.
+ * `/lab/bench/logs`: the logs stream over 2,000 wide synthetic rows,
+ * with the `window.__logsBench` harness for `perf/logs.perf.spec.ts`.
  */
 const PINNED_COLUMNS = ["deployment.environment.name", "cloud.region"]
 

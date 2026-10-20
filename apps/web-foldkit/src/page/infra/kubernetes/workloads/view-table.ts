@@ -15,7 +15,7 @@ import { hostStatusBadge } from "../../kit/status"
 import { Message, type WorkloadSortKey } from "./message"
 import type { WorkloadKind, WorkloadRow } from "./model"
 
-// `WorkloadTable` / `WorkloadTableLoading` (apps/web/src/components/infra/workload-table.tsx).
+// `WorkloadTable` / `WorkloadTableLoading`.
 
 type H = HtmlBuilder<Message>
 

@@ -6,7 +6,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
 import { KeyValueStore } from "effect/persistence"
 
-/** apps/web's `self-hosted-auth.ts` keeps the root-password session here, per tab. */
+/** The self-hosted root-password session lives here, per tab. */
 const SELF_HOSTED_TOKEN_STORAGE_KEY = "maple.self_hosted.token"
 /** Dispatched when the stored token changes outside `update` (a rejected renewal). */
 export const SELF_HOSTED_AUTH_EVENT = "maple:self-hosted-auth-changed"
@@ -21,7 +21,7 @@ export const readSessionToken: Effect.Effect<Option.Option<string>> = Effect.gen
 	return Option.filter(Option.fromNullishOr(token), (value) => value.length > 0)
 }).pipe(withSessionStorage, Effect.orElseSucceed(Option.none))
 
-/** Storage failures are ignored like apps/web: the session simply does not persist. */
+/** Storage failures are ignored: the session simply does not persist. */
 export const saveSessionToken = (token: string): Effect.Effect<void> =>
 	Effect.gen(function* () {
 		const store = yield* KeyValueStore.KeyValueStore

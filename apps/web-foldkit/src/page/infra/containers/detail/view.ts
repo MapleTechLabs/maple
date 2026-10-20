@@ -22,8 +22,7 @@ import { Message } from "./message"
 import type { ContainerMetric, ContainerSummary, Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 
-// `ContainerDetailPage` (apps/web/src/routes/infra/containers/$containerName.tsx) and
-// `ContainerDetailChart` (components/infra/container-detail-chart.tsx).
+// `ContainerDetailPage` and `ContainerDetailChart`.
 
 type H = HtmlBuilder<Message>
 type Summary = NonNullable<ContainerSummary>

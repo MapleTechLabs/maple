@@ -1,11 +1,9 @@
 import type { ServiceOverview } from "@maple/query-engine"
 
 /**
- * Deterministic synthetic topology for the service-map bench, shared by the React
- * bench (`service-map-bench.tsx`) and the Foldkit port. Framework-free.
+ * Deterministic synthetic topology for the service-map bench. Framework-free.
  *
- * The row types restate `@/api/warehouse/*` structurally: those modules resolve `@/`
- * against apps/web, which the Foldkit app cannot follow.
+ * The row types restate the warehouse row types structurally.
  */
 
 type ServicePlatform = "kubernetes" | "cloudflare" | "gcp" | "lambda" | "web" | "unknown"

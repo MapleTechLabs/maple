@@ -11,7 +11,7 @@ import { statusDot } from "../../../ui/status-dot"
 import { createHref, incidentHref, ruleHref } from "../shared/links"
 import { isoMs } from "../shared/time"
 
-// `IncidentRail` (components/alerts/incident-detail/incident-rail.tsx).
+// `IncidentRail`: the incident detail's side rail.
 
 const GROUP_ROW_LIMIT = 8
 const DAY_MS = 24 * 60 * 60 * 1000

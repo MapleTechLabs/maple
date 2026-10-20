@@ -14,7 +14,7 @@ import { CommitDetailData } from "../../kit/commit-card"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
-// The `/services` list (apps/web/src/routes/services/index.tsx and components/services/).
+// The `/services` list.
 
 const CommitBreakdown = Schema.Struct({
 	commitSha: Schema.String,
@@ -92,7 +92,7 @@ export const Model = Schema.Struct({
 	anomalies: KeyedSchema(Schema.Array(V2AnomalyServiceCount), LoadFailure),
 	/** `useAlertIncidentsList()`: the org's synced incidents. */
 	incidents: IncidentsData.schema,
-	/** The loaded table has painted; legacy's commit lookup mounts with it (`CommitMessagesProvider`). */
+	/** The loaded table has painted; the commit message lookup starts with it. */
 	hasPaintedTable: Schema.Boolean,
 	/** First lines of the deploy commits on screen, by sha (`commitsQueryAtom`). */
 	commitMessages: KeyedSchema(Schema.Record(Schema.String, Schema.String), LoadFailure),

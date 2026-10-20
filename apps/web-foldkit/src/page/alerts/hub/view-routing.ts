@@ -34,7 +34,7 @@ import { destinationMenuId } from "./update"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 
-// `AlertsRoutingTab` and `DestinationRow` (overview/routing-tab.tsx, overview/destination-row.tsx).
+// `AlertsRoutingTab` and `DestinationRow`: the hub's Routing tab.
 
 export const HEALTH_WINDOW = 20
 export const DESTINATION_ROW_GRID =
@@ -308,7 +308,7 @@ const ATTEMPT_CLASS = new Map<AlertDeliveryEventDocument["status"], string>([
 	["processing", "bg-muted-foreground/40"],
 ])
 
-// TODO(tooltip): the strip's hover tooltip ("Last N attempts delivered") is not ported.
+// TODO(tooltip): the strip's hover tooltip ("Last N attempts delivered") is not drawn yet.
 const deliveryStrip = (h: H, recent: ReadonlyArray<AlertDeliveryEventDocument>, failed: number): Html =>
 	recent.length === 0
 		? h.span([h.Class("text-xs text-muted-foreground")], ["No deliveries yet"])
@@ -471,7 +471,7 @@ const logRow = (h: H, model: Model, inputs: RoutingInputs, event: AlertDeliveryE
 					: [],
 			"max-w-0",
 		),
-		// TODO(tooltip): the full date-time tooltip on the time cell is not ported; it is the title.
+		// TODO(tooltip): the full date-time tooltip on the time cell is not drawn yet; it is the title.
 		tableCell(
 			h,
 			[

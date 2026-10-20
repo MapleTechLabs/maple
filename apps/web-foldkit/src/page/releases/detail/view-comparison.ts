@@ -21,7 +21,7 @@ import { releaseHealthFigure, releaseHref } from "../kit"
 import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
 import { sectionCard } from "./view-sections"
 
-// `ReleaseComparison` and `ReleaseVersionsRail` (components/releases/release-detail-panels.tsx).
+// The release comparison and the versions rail.
 
 type Row = Readonly<{
 	label: string

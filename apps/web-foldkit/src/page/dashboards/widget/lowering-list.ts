@@ -4,7 +4,7 @@ import { makeQueryDataSource, makeRouteDataSource } from "@maple/widgets/dashboa
 import type { EditorState, ListColumn, ListDataSource } from "./editor-state"
 import { buildListLogsParams } from "./list-logs-params"
 
-// The list widget's halves (widgets/types/list.tsx): configured by `ListConfigPanel`, not the
+// The list widget's halves: configured by `ListConfigPanel`, not the
 // query builder, so it owns its whole display.
 
 type Widget = DashboardDocument["widgets"][number]
@@ -22,7 +22,7 @@ const LIST_DATA_SOURCES: ReadonlyArray<ListDataSource> = ["traces", "logs", "pro
 export const toListDataSource = (value: unknown): ListDataSource =>
 	LIST_DATA_SOURCES.find((candidate) => candidate === value) ?? "traces"
 
-/** `DEFAULT_LIST_COLUMNS` (lib/query-builder/list-widget-config.ts). */
+/** The columns a new list widget starts with. */
 export const DEFAULT_LIST_COLUMNS = {
 	traces: [
 		{ field: "serviceName", header: "Service" },

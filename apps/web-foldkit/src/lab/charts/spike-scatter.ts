@@ -12,7 +12,7 @@ import type { BuiltChart } from "../../charts/definitions/built-chart"
 import type { SpikeSpec } from "./spike-spec"
 import { RAMP_TOKENS } from "./spike-timeseries-tokens"
 
-// `TraceScatterSpike` (apps/web/src/lab/charts/trace-scatter-spike.tsx), definition half: 5,000
+// `TraceScatterSpike`, definition half: 5,000
 // seeded spans hex-binned by screen-space density. Code copied, constants unchanged.
 
 interface ScatterRow {

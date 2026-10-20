@@ -5,7 +5,7 @@ import type { TimeWindow } from "../../../../data/time-range"
 import type { ServiceWorkload } from "../lens/rail"
 import type { Model } from "./model"
 
-// Pure derivations of `LensBody` (routes/infra/kubernetes/services/$serviceName.tsx), copied.
+// Pure derivations of `LensBody`.
 
 export type LinkedWorkload = Readonly<{
 	workloadKind: "deployment" | "statefulset" | "daemonset"

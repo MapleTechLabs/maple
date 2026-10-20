@@ -19,8 +19,6 @@ import { getCloudPlatform } from "./platform"
 import { cacheSummary, formatTimestamp, panelHeader, platformSummary, summaryStats } from "./view-header"
 import { spanLogs, tabsView } from "./view-tabs"
 
-// `SpanDetailPanel` (apps/web/src/components/traces/span-detail-panel.tsx).
-
 export type ViewInputs = Readonly<{ timeZone: string }>
 
 type H = HtmlBuilder<Message>

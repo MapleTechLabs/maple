@@ -479,7 +479,7 @@ const updateOnboarding = (model: Model, message: Onboarding.Message): UpdateRetu
 
 // ROUTING
 
-/** apps/web's `redirectToDashboard`: same-origin `redirect_url`, else `/`. */
+/** Where sign-in lands: a same-origin `redirect_url`, else `/`. */
 const targetAfterSignIn = (route: AppRoute): string =>
 	AppRoute.matchOrElse(
 		route,
@@ -487,7 +487,7 @@ const targetAfterSignIn = (route: AppRoute): string =>
 		() => "/",
 	)
 
-/** Clerk's reverse redirects (`ClerkReverseRedirects` in `__root.tsx`): signed in, leave the auth pages. */
+/** Clerk's reverse redirects: signed in, leave the auth pages. */
 const clerkReverseRedirect = (route: AppRoute, maybeOrgId: Option.Option<unknown>): Option.Option<Redirect> =>
 	AppRoute.matchOrElse<Option.Option<Redirect>>(
 		route,
@@ -759,7 +759,7 @@ const withPreload = (model: Model, preload: Preload.Model) => modifyFields(model
 const preloadLink = (model: Model, href: string, nowMs: number): UpdateReturn =>
 	Option.match(
 		Option.flatMap(urlFromString(href), (hovered) => {
-			// Legacy builds the link's location through the middleware, so the preload sees its window.
+			// The link's location goes through the session-range middleware, so the preload sees its window.
 			const url = Option.getOrElse(
 				Option.flatMap(sessionRangeUrl(model, hovered), (path) => urlFromString(new URL(path, href).href)),
 				() => hovered,

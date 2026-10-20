@@ -14,7 +14,7 @@ import { changeOf } from "../analytics/view-stats"
 import { analyticsPanel, chartFrame } from "../kit/analytics-panel"
 import { Message, type Model } from "./model"
 
-// `HeadlineStrip`, `RunsCard`, `DurationCard` and `CiAnalyticsSkeleton` (ci-analytics.tsx).
+// `HeadlineStrip`, `RunsCard`, `DurationCard` and `CiAnalyticsSkeleton`.
 
 type H = HtmlBuilder<Message>
 

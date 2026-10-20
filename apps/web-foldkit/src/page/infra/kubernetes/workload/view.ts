@@ -23,8 +23,7 @@ import { Message } from "./message"
 import { type Model, seriesId, type WorkloadKind, type WorkloadMetric, type WorkloadSummary } from "./model"
 import { DEFAULT_PRESET } from "./update"
 
-// `WorkloadDetailPage` (routes/infra/kubernetes/workloads/$kind/$workloadName.tsx) and
-// `WorkloadDetailChart` (components/infra/k8s-detail-chart.tsx).
+// `WorkloadDetailPage` and `WorkloadDetailChart`.
 
 type H = HtmlBuilder<Message>
 type Summary = NonNullable<WorkloadSummary>

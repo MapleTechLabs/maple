@@ -6,8 +6,8 @@ import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTi
 import { icon, type IconName } from "../../ui/icon"
 import type { SignalPresence, TelemetrySignalKind } from "./signal-presence"
 
-// `SignalEmptyState` (apps/web/src/components/common/signal-empty-state.tsx), `FilteredEmpty` and
-// `DocsLink`/`EmptyActions` (common/docs-link.tsx). Presence comes from the page's Model.
+// `SignalEmptyState`, `FilteredEmpty` and `DocsLink`/`EmptyActions`. Presence comes from the
+// page's Model.
 
 type SignalCopy = Readonly<{
 	noun: string
@@ -19,7 +19,6 @@ type SignalCopy = Readonly<{
 	guideDocs: DocsPage
 }>
 
-// copied: SIGNAL_COPY (the React module also holds the component).
 const SIGNAL_COPY = {
 	traces: {
 		noun: "traces",

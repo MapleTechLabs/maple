@@ -9,8 +9,7 @@ import { icon } from "../../ui/icon"
 import type { MenuEntry } from "../../ui/menu-view"
 import type { Message } from "./index"
 
-// `OnboardingOrgSwitcher` and `OnboardingUserMenu` (onboarding-header-actions.tsx): the account
-// actions in the onboarding header.
+// `OnboardingOrgSwitcher` and `OnboardingUserMenu`: the account actions in the onboarding header.
 
 const AVATAR_CLASS = "size-5 rounded-md text-3xs"
 export const LOG_OUT = "log-out"

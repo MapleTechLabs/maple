@@ -11,7 +11,7 @@ import { settingsSection } from "../kit/section"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `ApiReference` (api-reference.tsx) and `OAuthPointer` (api-keys-section.tsx).
+// `ApiReference` and `OAuthPointer`.
 
 type H = HtmlBuilder<Message>
 

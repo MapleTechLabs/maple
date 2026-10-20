@@ -154,8 +154,7 @@ export const signalChart = (h: H, model: Model, incident: AnomalyIncidentDocumen
 				["No signal data in window"],
 			)
 		const stroke = resolveColor(colors, SEVERITY_STROKE[incident.severity])
-		// Legacy hands `thresholdRules` bare tokens, which `canvasSafeThresholdColor` rejects: both
-		// rules fall back to `--destructive`.
+		// Both threshold rules draw in `--destructive`.
 		const rule = resolveColor(colors, "--destructive")
 		const fmt = (value: number) => formatSignalValue(series.signalType, value)
 		return h.div(
@@ -201,7 +200,6 @@ export const signalChart = (h: H, model: Model, incident: AnomalyIncidentDocumen
 }
 
 const IN_FLIGHT_SOFT = "bg-severity-debug/12 text-severity-debug"
-// styles: apps/web/src/components/errors/workflow-badge.tsx (WORKFLOW_TONE)
 const WORKFLOW_TONE = {
 	triage: TONE_SOFT.warn,
 	regressed: TONE_SOFT.crit,

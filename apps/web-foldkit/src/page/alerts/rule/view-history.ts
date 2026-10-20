@@ -28,7 +28,7 @@ import type { Model, StateFilter } from "./model"
 import { incidentMenuId } from "./update"
 import { sectionHeading } from "../../kit/section-heading"
 
-// The History tab of `RuleDetailContent` (apps/web/src/routes/alerts/$ruleId.tsx).
+// The rule detail's History tab.
 
 type H = HtmlBuilder<Message>
 

@@ -10,7 +10,7 @@ import { icon, type IconName } from "../../../../ui/icon"
 import { serviceDot } from "../../../../ui/values"
 import type { Message } from "./model"
 
-// `GcpWorkloadRail` (components/infra/gcp/gcp-workload-rail.tsx).
+// `GcpWorkloadRail`.
 
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>

@@ -11,7 +11,7 @@ import { SEVERITY_TEXT } from "../kit/severity"
 import { investigationChip } from "../kit/state-chip"
 import { Message } from "./message"
 
-// Row pieces of `ErrorSignalRow` (components/errors/error-signal-row.tsx) and `SignalSpark`.
+// Row pieces of an error signal row and its spark.
 
 type H = HtmlBuilder<Message>
 

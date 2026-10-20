@@ -1,6 +1,6 @@
 import { vendorLabel } from "./vendor"
 
-// copied: `sessionIdentity` (session-detail/session-header.tsx) and `sessionHeading` (session-name.tsx).
+// A session's identity and heading.
 
 /** The name instrumentation writes when nothing named the agent. */
 const PLACEHOLDER_AGENT_NAME = "default"

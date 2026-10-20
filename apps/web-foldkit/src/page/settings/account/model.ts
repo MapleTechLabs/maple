@@ -10,10 +10,10 @@ import * as Passkeys from "./passkeys/model"
 import * as Emails from "./emails/model"
 import * as Password from "./password/model"
 
-// `/account` (apps/web/src/routes/account.tsx): the account nav rail and the active tab. Clerk only;
-// self-hosted has a single root pseudo-user and redirects to `/settings`.
+// `/account`: the account nav rail and the active tab. Clerk only; self-hosted has a single root pseudo-user
+// and redirects to `/settings`.
 
-/** The active tab's state; a tab switch drops the old one (React unmounts the section). */
+/** The active tab's state; a tab switch drops the old one (the section unmounts). */
 export const TabModel = Schema.Union([
 	Schema.TaggedStruct("Profile", { model: Profile.Model }),
 	Schema.TaggedStruct("Password", { model: Password.Model }),

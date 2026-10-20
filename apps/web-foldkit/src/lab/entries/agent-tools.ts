@@ -31,7 +31,7 @@ import { ViewerFlags, viewerFlags } from "../../ui/logs/viewer"
 import { defineLabWithFlags } from "../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
 
-// `/lab/agent-tools` (apps/web `lab/agent-tools-lab.tsx`): the tools page over apps/web's synthetic
+// `/lab/agent-tools`: the tools page over a synthetic
 // week. The page's warehouse reads are answered from the fixture; its URL is the lab's state. The
 // "detail" view is the tool detail page and its error modal over the fixture's failure groups.
 

@@ -13,7 +13,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { searchInput } from "../../../ui/search-input"
 
-// `ErrorsStatStrip`, `ListToolbar`, `ToolbarSearch` and the sort and severity selects (errors-hub-view.tsx).
+// The errors stat strip, list toolbar, search and the sort and severity selects.
 
 type H = HtmlBuilder<Message>
 

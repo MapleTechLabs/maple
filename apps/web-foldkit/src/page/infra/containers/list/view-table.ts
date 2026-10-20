@@ -13,7 +13,7 @@ import { hostStatusBadge } from "../../kit/status"
 import { type ContainerSortKey, Message } from "./message"
 import type { ContainerRow } from "./model"
 
-// `ContainerTable` / `ContainerTableLoading` (apps/web/src/components/infra/container-table.tsx).
+// `ContainerTable` / `ContainerTableLoading`.
 
 type H = HtmlBuilder<Message>
 type Sort = Readonly<{ key: string | null; dir: SortDir }> | null

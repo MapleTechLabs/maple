@@ -20,7 +20,7 @@ import * as MenuView from "../../../ui/menu-view"
 import { openAnomalyBadge } from "./view-anomalies"
 import type { Model } from "./model"
 
-// `IssueHeader` (components/errors/issue-header.tsx) over `DetailHeader`, and `IssueTabs`.
+// The issue header over `DetailHeader`, and the issue tabs.
 
 type H = HtmlBuilder<Message>
 

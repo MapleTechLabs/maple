@@ -1,6 +1,6 @@
 import type { LogRow } from "@maple/query-engine"
 
-/** `/lab/bench/logs`: 2,000 wide synthetic rows, shared with the Foldkit port of the bench. */
+/** `/lab/bench/logs`: 2,000 wide synthetic rows. */
 const ROW_COUNT = 2_000
 const ATTRIBUTE_VALUE = "wide-value-".repeat(12)
 

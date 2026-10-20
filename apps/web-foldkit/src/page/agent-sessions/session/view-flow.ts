@@ -32,7 +32,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { CATEGORY_ICON, CATEGORY_TEXT } from "./span-visuals"
 
-// `SessionFlow` (session-detail/session-flow.tsx): one lane per turn on the xyflow canvas.
+// The session flow: one lane per turn on the xyflow canvas.
 // TODO(list-navigation): the arrow-key node cursor is not ported.
 
 type H = HtmlBuilder<Message>

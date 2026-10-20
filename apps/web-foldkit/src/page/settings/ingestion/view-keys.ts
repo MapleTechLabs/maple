@@ -11,7 +11,7 @@ import { skeleton } from "../../../ui/skeleton"
 import { Message } from "./message"
 import type { IngestKeyKind, Model } from "./model"
 
-// `CredentialRow` (apps/web/src/components/settings/ingestion-section.tsx).
+// `CredentialRow`.
 
 type H = HtmlBuilder<Message>
 
@@ -126,7 +126,7 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 
 /** `IngestKeyRows`: the org's pair, masked until revealed. Admin-only. */
 export const ingestKeyRows = (h: H, model: Model): ReadonlyArray<Html> => {
-	// Legacy reads a `Result`: only Success (incl. waiting) has keys; a failed refetch drops them.
+	// Only Success (incl. waiting) has keys; a failed refetch drops them.
 	const hasKeys = AsyncData.isSuccess(model.ingest) || AsyncData.isRefreshing(model.ingest)
 	const keys = hasKeys ? AsyncData.getOrElse(model.ingest, () => null) : null
 	const isFailed = AsyncData.isFailure(model.ingest) || AsyncData.isStale(model.ingest)

@@ -26,7 +26,7 @@ import { incidentHref, ROW_STRETCHED_LINK_CLASS, ruleHref } from "../shared/link
 import { sortIncidents } from "../shared/sort"
 import { isoMs, msIso } from "../shared/time"
 
-// `InboxTab` and `HeadroomList` (components/alerts/overview/inbox-tab.tsx, headroom-list.tsx).
+// `InboxTab` and `HeadroomList`: the hub's Inbox tab.
 
 const HOUR_MS = 60 * 60 * 1000
 const INCIDENT_GRID = "grid grid-cols-[minmax(0,1fr)_150px_90px] items-center gap-4"

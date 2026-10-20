@@ -1,5 +1,5 @@
 // Infrastructure -> Google Cloud: the page's views, what each service's columns read, and how the
-// metric points of a service fold into one table row per workload. Pure (no React, no atoms).
+// metric points of a service fold into one table row per workload. Pure.
 
 import { GCP_INFRA_ROW_LIMIT, GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import type { V2GcpConnector } from "@maple/domain/http/v2"
@@ -248,7 +248,7 @@ export function gcpWorkload(
 	}
 }
 
-/** A workload's identity values as one string: a map key, a React key. */
+/** A workload's identity values as one string: a map key, a render key. */
 export const gcpWorkloadId = (keys: ReadonlyArray<string>): string => keys.join("\u0000")
 
 /** Points that carry their workload's `keys`, grouped by workload in the order they first appear. */

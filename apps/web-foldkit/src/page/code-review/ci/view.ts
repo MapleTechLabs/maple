@@ -26,7 +26,7 @@ import { runsList } from "./view-runs"
 import { chartsRow, ciSkeleton, headlineStrip, RESULT_SERIES } from "./view-stats"
 import { jobsTable, workflowsTable } from "./view-tables"
 
-// `CodeReviewCiPage` (routes/code-review/ci.tsx) and `CiAnalyticsView` (ci-analytics.tsx).
+// `CodeReviewCiPage` and `CiAnalyticsView`.
 
 type H = HtmlBuilder<Message>
 

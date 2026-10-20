@@ -19,7 +19,7 @@ import { ciResultBadge, traceLink } from "../kit/parts"
 import { relativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
 
-// `CiRunsList`, `RunRows` and the paging footers (ci-runs-list.tsx).
+// `CiRunsList`, `RunRows` and the paging footers.
 
 type H = HtmlBuilder<Message>
 type TimeContext = Readonly<{ nowMs: number; timeZone: string }>

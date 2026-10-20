@@ -7,7 +7,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as ToggleGroup from "../../../ui/toggle-group"
 import { SIGNALS } from "./shared"
 
-// The rules draft and its outcome (apps/web/src/components/sources/rules-draft.ts, rules-payload.ts).
+// The rules draft and its outcome.
 
 export const { maxResourceAttributes: MAX_ATTRIBUTES, maxRateLimitRps: MAX_RATE_LIMIT_RPS } = SOURCE_LIMITS
 
@@ -38,7 +38,7 @@ export const Model = Schema.Struct({
 	rateLimitText: Schema.String,
 	attributes: Schema.Array(AttributeDraft),
 	expiry: ExpiryChoice,
-	/** Row keys for added attributes (React keys in legacy: `crypto.randomUUID()`). */
+	/** Row keys for added attributes. */
 	nextRowId: Schema.Number,
 })
 export type Model = typeof Model.Type

@@ -17,7 +17,7 @@ import { facetsOf, hasFilters } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `ReleasesFilterSidebar` (apps/web/src/components/releases/releases-filter-sidebar.tsx): every facet
+// The releases filter sidebar: every facet
 // derives from the releases read the table uses.
 
 type H = HtmlBuilder<Message>

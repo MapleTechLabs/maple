@@ -7,7 +7,7 @@ import { MapleAuthApi } from "../../platform/auth-api"
 
 // MODEL
 
-/** Why the root password was not accepted; the view turns it into apps/web's copy. */
+/** Why the root password was not accepted; the view turns it into copy. */
 export const SignInFailure = defineTaggedUnion({
 	Rejected: { message: Schema.String },
 	Unreachable: {},
@@ -62,7 +62,7 @@ const rejected = (error: { readonly message: string }) =>
 		Message.FailedSignInWithRootPassword({ failure: SignInFailure.Rejected({ message: error.message }) }),
 	)
 
-/** `POST /api/auth/login` with the root password (`loginSelfHosted` in apps/web's sign-in route). */
+/** `POST /api/auth/login` with the root password. */
 export const SignInWithRootPassword = Command.define("SignInWithRootPassword", {
 	args: { password: Schema.String },
 	messages: [Message.SucceededSignInWithRootPassword, Message.FailedSignInWithRootPassword],

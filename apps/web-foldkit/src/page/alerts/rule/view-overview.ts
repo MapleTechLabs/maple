@@ -39,7 +39,7 @@ import { checksPanel } from "./view-checks"
 import { diagnosisPanel } from "./view-diagnosis"
 import { sectionHeading } from "../../kit/section-heading"
 
-// The Overview tab of `RuleDetailContent` (apps/web/src/routes/alerts/$ruleId.tsx).
+// The rule detail's Overview tab.
 
 type H = HtmlBuilder<Message>
 

@@ -19,8 +19,6 @@ import { DEFAULT_PRESET, draftOf, summaryOf } from "./update"
 import { graduationActions, queryControls } from "./view-controls"
 import { metadataPanel, metricBreakdown, metricChart } from "./view-panels"
 
-// `MetricDetailPage` (routes/metrics/$metricName.tsx) and `MetricDetail` (components/metrics/metric-detail.tsx).
-
 type H = HtmlBuilder<Message>
 
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })

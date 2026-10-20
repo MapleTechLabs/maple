@@ -8,7 +8,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { button } from "../../../ui/button"
 import { type CodeActions, messageResponse } from "../../kit/message-response"
 
-// `ClampedText` and `firstLine` (session-detail/clamped-text.tsx): a body clamped with a "Show full" control.
+// Clamped text and its first line: a body clamped with a "Show full" control.
 
 const CLAMP_CLASSES = {
 	6: "line-clamp-[6]",

@@ -15,7 +15,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import { Message, type Model } from "./model"
 import { ACTOR_BADGES, SOURCE_LABELS } from "./view"
 
-// `AuditLogDetail` and its parts (audit-log-section.tsx).
+// `AuditLogDetail` and its parts.
 
 type H = HtmlBuilder<Message>
 

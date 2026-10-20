@@ -23,7 +23,7 @@ import type { Model } from "./model"
 import { historyTab } from "./view-history"
 import { overviewTab } from "./view-overview"
 
-// `RuleDetailPage` (apps/web/src/routes/alerts/$ruleId.tsx) through `ResultPage` and `DetailHeader`.
+// The rule detail page through `ResultPage` and `DetailHeader`.
 
 type H = HtmlBuilder<Message>
 

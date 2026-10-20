@@ -19,7 +19,7 @@ import {
 } from "./span-visuals"
 import { sectionHeading } from "../../kit/section-heading"
 
-// `Rail` and `TimeComposition` (session-detail/session-overview.tsx): where the time, cost and tokens went.
+// The overview rail and its time composition: where the time, cost and tokens went.
 
 type H = HtmlBuilder<Message>
 

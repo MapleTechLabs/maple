@@ -119,7 +119,7 @@ export const sessionLink = (
 ): Html =>
 	h.a(
 		[
-			// `{ tool, view, span }` in that order, as the legacy link writes it.
+			// `{ tool, view, span }` in that order.
 			h.Href(
 				`${hrefOf(AppRoute.AgentSession({ sessionId: options.sessionId, search: {} }))}${orderedSearch([
 					["tool", options.tool],

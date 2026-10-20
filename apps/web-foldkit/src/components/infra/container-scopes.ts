@@ -1,4 +1,4 @@
-// The container fleet's scope counts, framework-free so the overview and the Foldkit port share them.
+// The container fleet's scope counts, framework-free.
 
 export interface ContainerScopeCounts {
 	readonly totalContainers: number

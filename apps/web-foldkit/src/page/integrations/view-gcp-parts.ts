@@ -12,8 +12,7 @@ import { spinner } from "../../ui/spinner"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `GcpCommand`, `GcpOpenCloudShellButton`, `GcpCopyScriptButton`, `Script` and `Step`
-// (components/integrations/gcp-configure.tsx).
+// `GcpCommand`, `GcpOpenCloudShellButton`, `GcpCopyScriptButton`, `Script` and `Step`.
 
 type H = HtmlBuilder<Message>
 

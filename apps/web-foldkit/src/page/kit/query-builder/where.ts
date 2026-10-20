@@ -23,7 +23,7 @@ export type PanelInputs = Readonly<{
 
 export const whereTextareaId = (queryId: string): string => `where-${queryId}`
 
-/** The read for one active key, or none where legacy reads nothing. */
+/** The read for one active key, or none where the key needs no read. */
 const requestOf = (
 	query: QueryDraft,
 	kind: ActiveKeyKind,

@@ -1,4 +1,4 @@
-// The where-clause helpers of the metric breakdown, React-free so other surfaces can share them.
+// The where-clause helpers of the metric breakdown, pure so other surfaces can share them.
 
 function quoteFilterValue(value: string): string {
 	return `"${value.replaceAll('"', '\\"')}"`

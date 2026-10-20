@@ -23,7 +23,7 @@ import type { Model } from "./model"
 import { unsyncedEnvironments } from "./railway"
 import { disconnectDialog } from "./view-disconnect"
 
-// `RailwayIntegrationCard` (components/integrations/railway-integration-card.tsx).
+// `RailwayIntegrationCard`.
 
 type H = HtmlBuilder<Message>
 

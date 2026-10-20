@@ -1,7 +1,7 @@
 import { Option } from "effect"
 import type { Html } from "foldkit/html"
 
-// `PageLayout.FilterSidebar` / `RightSidebar` below `lg`: legacy renders each as a sheet, not an
+// The filter and right sidebars below `lg`: each renders as a sheet, not an
 // inline rail, and puts a trigger in the top bar while one is mounted. The page always renders the
 // inline rails (`page/kit/dashboard-page.ts`); the shell lifts them out of the body here.
 

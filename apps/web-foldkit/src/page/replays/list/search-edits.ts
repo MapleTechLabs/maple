@@ -3,7 +3,7 @@ import type { Facet, Range } from "./message"
 import type { Search } from "./model"
 import { selectedTags } from "./derive"
 
-// The `navigate({ search })` edits of routes/replays/index.tsx and replays-filter-sidebar.tsx.
+// The search edits of the replays page and its filter sidebar.
 
 const withTags = (search: Search, tags: ReadonlyArray<string>): Search => ({
 	...search,

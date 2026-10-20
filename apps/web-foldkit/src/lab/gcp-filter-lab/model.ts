@@ -4,7 +4,7 @@ import { LogFilterDraft } from "../../page/integrations/gcp-configure-schema"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
 import * as Select from "../../ui/select"
 
-// `/lab/gcp` (apps/web `lab/gcp-lab.tsx`): the Google Cloud configuration's Log filter over plain
+// `/lab/gcp`: the Google Cloud configuration's Log filter over plain
 // state, in each place it shows up. Each card prints what the setup script would be asked for.
 
 export type Scenario = Readonly<{

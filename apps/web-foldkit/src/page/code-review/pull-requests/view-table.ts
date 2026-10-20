@@ -14,7 +14,7 @@ import { authorLabel } from "../kit/author"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
 
-// `ReviewTable` (routes/code-review/pull-requests.tsx).
+// `ReviewTable`: the pull requests and their reviews.
 
 type H = HtmlBuilder<Message>
 

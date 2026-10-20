@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Dialog from "../../../../ui/dialog"
 
-// The Active sessions tab (`ActiveSessionsSection`, apps/web/src/components/account/active-sessions-section.tsx).
+// The Active sessions tab.
 
 export const SessionRow = Schema.Struct({
 	id: Schema.String,

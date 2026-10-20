@@ -31,7 +31,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { MAX_PREVIEW_WIDGETS } from "./update"
 
-// `TemplateDetailPanel` and `TemplateLivePreview` (dashboard-builder/templates/).
+// `TemplateDetailPanel` and `TemplateLivePreview`: a template's details and live preview.
 
 type H = HtmlBuilder<Message>
 

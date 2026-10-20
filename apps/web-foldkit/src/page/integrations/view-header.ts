@@ -9,7 +9,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { entryPlate } from "./view-entry"
 
-// `IntegrationHeader` (apps/web/src/routes/integrations.tsx).
+// `IntegrationHeader`.
 
 type H = HtmlBuilder<Message>
 

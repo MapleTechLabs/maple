@@ -15,7 +15,7 @@ import * as RadioGroup from "../ui/radio-group"
 import { containSearchKeys } from "./namespace-search"
 
 /**
- * `ClerkOrgSwitcherMenu` (apps/web/src/components/dashboard/org-switcher-menu.tsx): the active
+ * The Clerk org switcher menu: the active
  * user's organizations, "Create Organization" (its `CreateOrganizationDialog`), and in the sidebar
  * the namespace submenu. One Submodel backs the sidebar switcher and the auth screens' buttons.
  */

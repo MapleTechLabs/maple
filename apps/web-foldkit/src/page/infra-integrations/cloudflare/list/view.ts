@@ -53,7 +53,7 @@ import { DEFAULT_PRESET } from "./update"
 import { accountHealthLine, accountMenu, accountsStrip } from "./view-accounts"
 import { type SparkContext, queueTable, workerTable, zoneTable, zoneTableLoading } from "./view-tables"
 
-// `CloudflarePage` (apps/web/src/routes/infra/cloudflare/index.tsx) and `CloudflareListPage`.
+// `CloudflarePage` and `CloudflareListPage`.
 
 type H = HtmlBuilder<Message>
 

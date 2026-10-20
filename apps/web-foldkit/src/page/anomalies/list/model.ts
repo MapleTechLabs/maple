@@ -7,7 +7,7 @@ import * as FilterSections from "../../../ui/filters/filter-sections"
 import * as Tabs from "../../../ui/tabs"
 import { SignalPresenceData } from "../../kit/signal-presence"
 
-// `/anomalies` (apps/web/src/routes/anomalies/index.tsx and components/anomalies/).
+// `/anomalies`.
 
 export const StatusTab = Schema.Literals(["open", "resolved", "all"])
 export type StatusTab = typeof StatusTab.Type

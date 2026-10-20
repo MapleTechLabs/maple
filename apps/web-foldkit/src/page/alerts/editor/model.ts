@@ -27,7 +27,7 @@ import * as ChatConnect from "../shared/chat-connect"
 import { PreviewSlot } from "../shared/preview"
 import { RuleForm } from "./form"
 
-// `/alerts/create` (apps/web/src/routes/alerts/create.tsx): `AlertCreatePageContent` and the
+// `/alerts/create`: `AlertCreatePageContent` and the
 // `AlertCreateFormSurface` it mounts once the draft is known.
 
 const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))

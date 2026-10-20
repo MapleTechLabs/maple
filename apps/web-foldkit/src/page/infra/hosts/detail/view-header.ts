@@ -13,8 +13,7 @@ import { hostStatusBadge } from "../../kit/status"
 import { Message } from "./message"
 import type { HostSummary } from "./model"
 
-// `HostDetailHeader` / `HostDetailHeaderLoading` (components/infra/host-detail-header.tsx) and
-// `HeroChip` (components/common/page-hero.tsx).
+// `HostDetailHeader` / `HostDetailHeaderLoading` and `HeroChip`.
 
 type H = HtmlBuilder<Message>
 

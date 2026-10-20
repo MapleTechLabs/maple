@@ -3,9 +3,9 @@ import { HttpClient, HttpClientResponse } from "effect/http"
 import { Command, Dom } from "foldkit"
 import { Message } from "./message"
 
-// apps/web `use-app-version.ts`: notice when the server serves a newer build than this tab runs.
+// Notice when the server serves a newer build than this tab runs.
 
-/** The commit this bundle was built from; empty (dev, parity builds) turns the probe off. */
+/** The commit this bundle was built from; empty (dev builds) turns the probe off. */
 export const BUILT_COMMIT: string = import.meta.env.VITE_COMMIT_SHA ?? ""
 
 const POLL_INTERVAL = Duration.minutes(15)
@@ -19,7 +19,7 @@ export const CheckDeployedCommit = Command.define("CheckDeployedCommit", {
 		if (document.hidden) return Message.CheckedDeployedCommit({ maybeCommit: Option.none() })
 		const now = yield* Clock.currentTimeMillis
 		const client = yield* HttpClient.HttpClient
-		// The timestamp busts every cache, which is what legacy's `cache: "no-store"` is for.
+		// The timestamp busts every cache.
 		const response = yield* client.get(`/version.json?t=${now}`)
 		const { commit } = yield* HttpClientResponse.schemaBodyJson(VersionFile)(response)
 		return Message.CheckedDeployedCommit({

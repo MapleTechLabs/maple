@@ -22,7 +22,7 @@ import {
 } from "./state"
 import { idsOf, lenses, numberField, textareaField, valueState } from "./view-fields"
 
-// `ReviewRulesForm`'s layout, selects, toggles and footer (review-rules-form.tsx).
+// `ReviewRulesForm`'s layout, selects, toggles and footer.
 
 type H = HtmlBuilder<Message>
 

@@ -31,7 +31,7 @@ import { shareDialog } from "./view-share"
 import { embedDialog } from "./view-embed"
 import { errorState } from "../../../ui/error-state"
 
-// `DashboardViewPage` (apps/web/src/routes/dashboards/$dashboardId.tsx).
+// The dashboard view page.
 
 type H = HtmlBuilder<Message>
 

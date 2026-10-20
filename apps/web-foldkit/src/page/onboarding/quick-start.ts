@@ -25,8 +25,8 @@ import {
 	writeQuickStartState,
 } from "./quick-start-state"
 
-// `/quick-start` (apps/web/src/routes/quick-start.tsx): role, intent, team and plan, one step at a
-// time, resumed from localStorage. The plan and region gates around it are the root's (`plan-gate.ts`).
+// `/quick-start`: role, intent, team and plan, one step at a time, resumed from localStorage. The plan and
+// region gates around it are the root's (`plan-gate.ts`).
 
 export const Step = Schema.Literals(STEP_IDS)
 

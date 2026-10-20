@@ -5,9 +5,8 @@ import { emptyMessage } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
 import type { SortDir } from "../../kit/table-sort"
 
-// `DataTable`, `ColumnHead` and `ROW_LINK_CLASS` (apps/web/src/components/common/data-table.tsx).
+// `DataTable`, `ColumnHead` and `ROW_LINK_CLASS`.
 
-// copied: `ROW_LINK_CLASS` (data-table.tsx, a React module).
 export const ROW_LINK_CLASS =
 	"group flex items-center gap-4 border-b border-border/40 px-4 py-3 transition-colors last:border-0 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
 

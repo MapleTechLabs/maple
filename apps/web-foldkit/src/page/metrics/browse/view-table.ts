@@ -14,11 +14,9 @@ import type { Model } from "./model"
 import { metricLink } from "./update"
 import { relativeTime } from "../../kit/relative-time"
 
-// `MetricsTable` (components/metrics/metrics-table.tsx).
-
 type H = HtmlBuilder<Message>
 
-// copied: `ROW_STRETCHED_LINK_CLASS` and `ROW_LINK_LIFT` (components/common/data-table.tsx, a React module).
+// A row link stretched over its row, and the lift for controls above it.
 const ROW_STRETCHED_LINK_CLASS =
 	"after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:ring-1 focus-visible:after:ring-ring focus-visible:after:ring-inset"
 const ROW_LINK_LIFT = "relative z-10"

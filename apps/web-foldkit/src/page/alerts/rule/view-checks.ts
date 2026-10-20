@@ -22,7 +22,7 @@ import { Message } from "./message"
 import type { CheckStatusFilter, ChecksResponse, Model } from "./model"
 import { sectionHeading } from "../../kit/section-heading"
 
-// `ChecksPanel` and `CheckDelta` (apps/web/src/routes/alerts/$ruleId.tsx).
+// `ChecksPanel` and `CheckDelta`: the rule's recent checks.
 
 type H = HtmlBuilder<Message>
 

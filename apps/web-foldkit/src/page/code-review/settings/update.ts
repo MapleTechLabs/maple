@@ -154,7 +154,7 @@ export const init = (_route: unknown, context: PageContext, carried: Carried = n
 		repoConfig: Keyed.idle(),
 		repoForm: null,
 	}
-	// Legacy pins on mount from whatever status it has, a handed-over one included.
+	// Pins on mount from whatever status it has, a handed-over one included.
 	const pinned: Model = AsyncData.isSuccess(model.githubStatus.data)
 		? { ...model, repoList: pinOnce(model.repoList, activeRepositories(model)) }
 		: model
@@ -434,7 +434,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: liftForm(model, "repo", RulesForm.update(model.repoForm, inner)),
 		CompletedSaveRepoConfig: ({ repositoryId, fullName, result }) => {
 			const failure = result._tag === "Failure" ? Option.some(result.failure) : Option.none()
-			// Legacy's per-row dialog: another repository's form only gets the success toast.
+			// Per-row dialog: another repository's form only gets the success toast.
 			if (model.configuring !== repositoryId)
 				return Option.isSome(failure)
 					? { model }

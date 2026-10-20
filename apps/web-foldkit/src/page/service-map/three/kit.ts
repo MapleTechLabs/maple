@@ -2,9 +2,9 @@ import { createSketch, type Sketch } from "../../../components/service-map/three
 import { FACE_TONE } from "../../../components/service-map/three/palette"
 import * as THREE from "three"
 
-// The R3F JSX of `components/service-map/three` as plain three construction. Only the lazy
-// scene chunk imports this folder. A ported component returns `Child`: what its JSX
-// rendered, in JSX order, so materials are created in the order React created them.
+// Scene parts as plain three construction. Only the lazy scene chunk imports this folder.
+// A part returns `Child`: its children in declaration order, so materials are created in a
+// fixed order.
 
 export type Vec3 = readonly [number, number, number]
 
@@ -22,7 +22,7 @@ export type Running = () => boolean
 /** Per-frame work, as R3F's `useFrame((_, delta) => ...)`. */
 export type FrameCallback = (delta: number) => void
 
-/** What one build of the scene shares: frame callbacks and canvas textures (legacy's module caches). */
+/** What one build of the scene shares: frame callbacks and canvas textures. */
 export interface Scope {
 	readonly frames: Array<FrameCallback>
 	readonly textures: Map<string, THREE.Texture>
@@ -71,7 +71,7 @@ export const disposeTree = (root: THREE.Object3D): void => {
 	})
 }
 
-// copied: factory-primitives.tsx (apps/web-foldkit/src/components/service-map/three), as functions.
+// Geometry primitives, as functions.
 
 /** Bake the isometric face tones into vertex colors so materials stay unlit. */
 export function shadeFaces(geometry: THREE.BufferGeometry) {
@@ -114,7 +114,7 @@ export const paperMaterial = (color: string) =>
 		polygonOffsetUnits: 1,
 	})
 
-/** `<mesh geometry>{material}</mesh>`; pass the material inline so it is built first, as in React. */
+/** A mesh of `geometry`; pass the material inline so it is built first. */
 export const mesh = (
 	geometry: THREE.BufferGeometry,
 	material: THREE.Material | Array<THREE.Material>,
@@ -204,7 +204,7 @@ export function inkLines(points: ReadonlyArray<number>, ink: string): THREE.Line
 	return inkOutline(lines, ink)
 }
 
-/** `<SketchDrawing>` (maple-scenery-kit.tsx): one shaded mesh and one ink draw. */
+/** A sketch drawing: one shaded mesh and one ink draw. */
 export function sketchDrawing(draw: (sketch: Sketch) => void, ink: string): THREE.Group {
 	const sketch = createSketch()
 	draw(sketch)

@@ -16,7 +16,7 @@ import * as TraceBox from "./trace-box"
 
 export type Return = Update.Return<Model, Message, Resources>
 
-/** The boot clock, the browser's zone, and the route's `?data=` (legacy's `data ?? "worst"`). */
+/** The boot clock, the browser's zone, and the route's `?data=` (default `worst`). */
 export const worstCaseFlags: Effect.Effect<Flags> = Effect.all({
 	nowMs: Clock.currentTimeMillis,
 	timeZone: Effect.sync(() => Intl.DateTimeFormat().resolvedOptions().timeZone),
@@ -91,7 +91,7 @@ export const init = (flags: Flags): Return => {
 	}
 }
 
-/** Only legacy `RulesTab`'s own state moves: the search, show-all, row menus and broken logos. */
+/** Only `RulesTab`'s own state moves: the search, show-all, row menus and broken logos. */
 const isRulesLocal = (message: Message & { _tag: "GotRulesMessage" }): boolean => {
 	const inner = message.message
 	return (
@@ -162,7 +162,7 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedHostSort: ({ key }) => ({
 			model: { ...model, hostSort: nextSort(model.hostSort, key, { stringKeys: ["hostName"] }) },
 		}),
-		// Legacy hosts the row with no-op selection, focus and picker handlers.
+		// The row's selection, focus and picker handlers are no-ops.
 		GotSignalRowMessage: () => ({ model }),
 		GotRulesMessage: (got) => {
 			if (!isRulesLocal(got)) return { model }

@@ -4,7 +4,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Dialog from "../../../../ui/dialog"
 import { AccountUser } from "../user"
 
-// The Profile tab (`ProfileSection`, apps/web/src/components/account/profile-section.tsx).
+// The Profile tab.
 
 /** Name edits tagged with the user they were typed against, so a user switch drops them. */
 export const NameDraft = Schema.Struct({ userId: Schema.String, firstName: Schema.String, lastName: Schema.String })

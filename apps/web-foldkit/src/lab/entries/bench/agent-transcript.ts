@@ -14,7 +14,7 @@ import { defineLabWithFlags } from "../../define"
 import { enterSession, type SessionStep, sessionViews, stepSession, toWire } from "../../session-lab"
 import { foldLabToasts, initLabToasts, labRoot } from "../../toasts"
 
-// `/lab/bench/agent-transcript` (apps/web `lab/bench/agent-transcript-bench.tsx`): the transcript
+// `/lab/bench/agent-transcript`: the transcript
 // over a session big enough to hurt, `?turns=` turns of it, with the perf spec's harness.
 
 const SESSION_ID = "transcript-bench"

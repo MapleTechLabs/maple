@@ -23,7 +23,7 @@ import { stepComboId } from "./product-step"
 import type { Suggestion } from "./suggestions"
 import { pageSelect } from "./view-select"
 
-// `FunnelStepBuilder` (components/funnels/funnel-step-builder.tsx), compact: an ordered list of
+// The funnel step builder, compact: an ordered list of
 // steps, each an event name, a page path or (first step only) a session dimension.
 
 type H = HtmlBuilder<Message>

@@ -14,7 +14,7 @@ import { bulletList, ciResultBadge, section, traceLink } from "./parts"
 import { type ReviewSheet, SheetMessage } from "./review-sheet"
 import { CI_RUNS_SHOWN } from "./review-sheet-update"
 
-// `ProductionSection`, `PostMergeSection`, `PullRequestCiRuns` and the review history (review-detail-sheet.tsx).
+// `ProductionSection`, `PostMergeSection`, `PullRequestCiRuns` and the review history.
 
 type H = HtmlBuilder<SheetMessage>
 

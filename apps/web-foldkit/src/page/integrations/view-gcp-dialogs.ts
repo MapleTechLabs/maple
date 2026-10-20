@@ -16,8 +16,7 @@ import { gcpConnectors, neverReported } from "./update-gcp"
 import { openCloudShellButton, type ScriptFailure, SMALL, scriptBlock, step } from "./view-gcp-parts"
 import { removalItem } from "./view-gcp-setup-methods"
 
-// `GcpDisconnectDialog` (gcp-configure.tsx), and the `ConfirmDialog`s of `GcpConnection` and
-// `GcpIntegrationCard`.
+// `GcpDisconnectDialog`, and the `ConfirmDialog`s of `GcpConnection` and `GcpIntegrationCard`.
 
 type H = HtmlBuilder<Message>
 

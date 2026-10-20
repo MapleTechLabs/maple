@@ -56,8 +56,8 @@ const FetchUsage = Command.define("FetchBillingUsage", {
 })
 
 /**
- * `SpendChartError` renders `dailySpendResult.cause`, which apps/web's `displayError` reads as the
- * unexpected body (a retry button), so the slot keeps that body too.
+ * `SpendChartError` renders `dailySpendResult.cause` as the unexpected body (a retry button), so
+ * the slot keeps that body too.
  */
 const FetchDaily = Command.define("FetchBillingDailySpend", {
 	messages: [Message.CompletedFetchDaily],

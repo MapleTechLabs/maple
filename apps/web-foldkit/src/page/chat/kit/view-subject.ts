@@ -7,7 +7,7 @@ import { panel } from "../../../ui/panel"
 import { statusDot } from "../../../ui/status-dot"
 import type { InvestigationContext, WidgetFixContext } from "./subject"
 
-// `AttachmentCard`, `InvestigationAttachmentCard` (components/chat/investigation-attachment-card.tsx)
+// `AttachmentCard`, `InvestigationAttachmentCard`
 // and `WidgetFixAttachmentCard`: the subject pinned above the thread.
 
 const ACCENT = new Map([

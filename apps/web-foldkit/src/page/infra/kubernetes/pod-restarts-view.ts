@@ -10,7 +10,7 @@ import { sectionHeading } from "../../kit/section-heading"
 import { statRailItem, statRailItemSkeleton } from "../../kit/stat-rail"
 import type { RestartRow } from "./pod-data"
 
-// `PodRestartsStat` and `PodContainerRestarts` (components/infra/kubernetes/pod-restarts-panel.tsx).
+// `PodRestartsStat` and `PodContainerRestarts`.
 
 type Restarts = AsyncData.AsyncData<ReadonlyArray<RestartRow>, LoadFailure>
 

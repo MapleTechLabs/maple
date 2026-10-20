@@ -13,7 +13,7 @@ import { isNarrowedBySidebar } from "./view-empty"
 import { listBody } from "./view-list"
 import { statStrip, toolbar } from "./view-toolbar"
 
-// `ErrorsPage` (apps/web/src/routes/errors/index.tsx): sidebar, Reload, chips and the hub.
+// The errors page: sidebar, Reload, chips and the hub.
 
 type H = HtmlBuilder<Message>
 

@@ -30,7 +30,7 @@ import { bulletList, section } from "./parts"
 import type { ReviewSheet, SheetMessage } from "./review-sheet"
 import { ciRunsSection, historySection, postMergeSection, productionSection } from "./review-sheet-more"
 
-// `ReviewDetailContent`'s body (review-detail-sheet.tsx).
+// `ReviewDetailContent`'s body.
 
 type H = HtmlBuilder<SheetMessage>
 

@@ -1,4 +1,3 @@
-// copied: apps/web/src/components/service-map/three/factory-machines.tsx (R3F JSX as three construction).
 import { fade, type InkPalette, type MachineKind } from "../../../components/service-map/three/appearance"
 import {
 	health,

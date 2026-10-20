@@ -57,7 +57,7 @@ import { sectionHeading } from "../../../kit/section-heading"
 import { planetscaleSidebar } from "./view-sidebar"
 import { absenceReason } from "../../../../components/infra/planetscale/branch-selection"
 
-// `PlanetScaleDatabasePage` (apps/web/src/routes/infra/planetscale/$dbName.tsx).
+// `PlanetScaleDatabasePage`.
 // TODO(alert-menu): "Alert on this" renders its trigger; the suggestion menu and its prefilled
 // `/alerts/create` navigation (`encodeAlertChartToSearchParam`, `makeQueryDataSource`) are not ported.
 

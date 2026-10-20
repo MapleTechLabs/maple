@@ -50,7 +50,7 @@ export type ListData = Readonly<{
 	workerRows: ReadonlyArray<WorkerListRow> | null
 }>
 
-/** `CloudflareData`'s reads: null while loading (a failed read stays loading, as legacy). */
+/** `CloudflareData`'s reads: null while loading (a failed read stays loading). */
 export const listDataOf = (model: Model): ListData => {
 	const timeseries = dataOf(model.timeseries.data)
 	const platform = dataOf(model.platform.data)

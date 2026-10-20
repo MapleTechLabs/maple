@@ -20,7 +20,7 @@ import { Message } from "./message"
 import { ConfigureModel } from "./gcp-configure-schema"
 import { LogVolume, RemovedConnector } from "./gcp-schema"
 
-// `GcpIntegrationCard` and `GcpUsageBand` (components/integrations/gcp-*.tsx): state and reads.
+// `GcpIntegrationCard` and `GcpUsageBand`: state and reads.
 
 export { RemovedConnector } from "./gcp-schema"
 
@@ -180,7 +180,7 @@ export const WriteRemoved = Command.define("WriteGcpRemovedConnectors", {
 	messages: [Message.CompletedWriteGcpRemoved],
 	execute: ({ orgId, removed }) =>
 		Effect.sync(() => {
-			// Best effort, like the legacy atom: private mode and blocked site data throw here.
+			// Best effort: private mode and blocked site data throw here.
 			writeLocalStorage(storageKey(orgId), encodeRemoved(removed))
 			return Message.CompletedWriteGcpRemoved()
 		}),

@@ -29,7 +29,7 @@ import type { HealthSnapshot, Incident, Model } from "./model"
 import { alertFiringHero } from "./view-hero"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 
-// `ServiceHealthOverview` (components/dashboard/service-health-section.tsx): the alerts banner and
+// The service health overview: the alerts banner and
 // the health summary rail above the usage cards.
 
 export type HealthData = readonly [

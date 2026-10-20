@@ -20,7 +20,7 @@ import {
 } from "../filters"
 import { Message, type Model } from "./model"
 
-// `PlanetScaleFilterSidebar` (components/infra/planetscale/planetscale-filter-sidebar.tsx).
+// `PlanetScaleFilterSidebar`.
 
 type H = HtmlBuilder<Message>
 

@@ -559,7 +559,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
-		// TODO(retry): legacy reloads the whole window here; this refetches page one instead.
+		// TODO(retry): this should reload the whole window; it refetches page one instead.
 		ClickedRetry: () => retryFirstPage(model),
 		ClickedLoadMore: () => loadMore(model, context),
 		ToggledFilterOption: ({ param, name }) => navigate(model, toggledFilter(model, param, name)),

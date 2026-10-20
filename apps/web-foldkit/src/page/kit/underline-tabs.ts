@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// `UnderlineTabStrip` and `underlineTabClass` (apps/web/src/components/common/underline-link-tabs.tsx).
+// `UnderlineTabStrip` and `underlineTabClass`: a row of tabs with an underlined active tab.
 
 export type UnderlineTabStripOptions = Readonly<{
 	label: string

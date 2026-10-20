@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-// `UIMessage` / `UIMessagePart` (apps/web components/ai-elements/types.ts) as Schemas, so a
+// `UIMessage` / `UIMessagePart` as Schemas, so a
 // transcript can live in a Model. A sub-agent's nested messages never carry another `task` part.
 
 export const TextPart = Schema.TaggedStruct("text", {

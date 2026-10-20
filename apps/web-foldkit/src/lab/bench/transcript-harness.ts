@@ -1,8 +1,7 @@
 /**
- * `window.__transcriptBench` from apps/web's `AgentTranscriptBench`, for
- * `perf/agent-transcript.perf.spec.ts`: the same sweep of the page scroller, one frame per step,
- * frame and long-task sampling and the DOM the mounted rows hold. React's Profiler has no Foldkit
- * counterpart: `reactCommits` counts DOM commits under the list, the durations stay 0.
+ * `window.__transcriptBench` for `perf/agent-transcript.perf.spec.ts`: a sweep of the page
+ * scroller, one frame per step, frame and long-task sampling and the DOM the mounted rows hold.
+ * `reactCommits` counts DOM commits under the list, the durations stay 0.
  */
 export interface TranscriptBenchMetrics {
 	readonly frames: number

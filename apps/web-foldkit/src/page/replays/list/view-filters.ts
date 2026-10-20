@@ -29,8 +29,6 @@ import { hasSidebarFilters, selectedTags } from "./derive"
 import { type Facet, Message, type Range } from "./message"
 import type { Model, ReplaysFacets } from "./model"
 
-// `ReplaysFilterSidebar` (components/replays/replays-filter-sidebar.tsx).
-
 type FacetItem = ReplaysFacets["services"][number]
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })

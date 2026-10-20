@@ -111,7 +111,7 @@
 	animation: provenance-progress 1.5s cubic-bezier(0.65, 0, 0.35, 1) infinite;
 }
 
-/* The ghost canvas (provenance-loading.tsx). Cards assemble left to right, the
+/* The ghost canvas. Cards assemble left to right, the
    strands fade in behind them, and one bar per card keeps breathing afterwards so
    a graph that takes a while to arrive still reads as loading rather than as an
    empty graph that finished. Same easing as the service map's ghost topology. */
@@ -183,8 +183,8 @@
 	}
 }
 
-/* Cold-boot splash — branded self-assembling trace waterfall (see boot-splash.tsx
-   and the inline copy in index.html). The Maple tree blinks above five span bars
+/* Cold-boot splash: branded self-assembling trace waterfall (see
+   layout/boot-splash.ts and the inline copy in index.html). The Maple tree blinks above five span bars
    that grow in, in start-time order, while a thin amber playhead scans across them
    so it reads as a trace being collected in real time, not a skeleton shimmering.
    Keep this in sync with the inline copy in index.html.
@@ -205,8 +205,8 @@
 /* Blink. The lid is a rect in tree colour over an eye knockout; scaling it up from
    its own top edge fills the hole top-down, which reads as a lid closing. Resting
    state is scaleY(0) — open — so if the animation never runs the eyes stay open.
-   The rects are unclipped and over-cover onto the canopy on purpose (see the note
-   in boot-splash.tsx — clipping them to the eye curve produces a seam).
+   The rects are unclipped and over-cover onto the canopy on purpose: clipping
+   them to the eye curve produces a seam.
 
    `transform-box: fill-box` is load-bearing: without it `transform-origin` resolves
    against the SVG viewport rather than the rect's own box and the lid slides across
@@ -647,8 +647,8 @@ width = its duration */
 	}
 }
 
-/* Crash screen — the boot trace frozen at the moment of failure (see
-   app-error-boundary.tsx). Reuses the .boot-track / .boot-span--N row
+/* Crash screen: the boot trace frozen at the moment of failure.
+   Reuses the .boot-track / .boot-span--N row
    geometry; spans 1–3 landed, span 4 errored, span 5 never arrived. */
 .crash-trace {
 	position: relative;
@@ -711,7 +711,7 @@ width = its duration */
 	}
 }
 
-/* Trace timeline bar hover — CSS-only to avoid React re-renders */
+/* Trace timeline bar hover: CSS-only, no re-render */
 .trace-timeline-bar:hover {
 	background-color: var(--hover-bg) !important;
 	box-shadow: inset 0 0 0 1px oklch(0.5 0.05 0 / 0.15);

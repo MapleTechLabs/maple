@@ -17,7 +17,7 @@ import { actorInitials, KIND_DOT, KIND_LABEL, type VersionRow } from "./history"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `DashboardHistoryPanel`, `VersionListItem` and `PreviewBanner` (dashboard-builder/history/).
+// `DashboardHistoryPanel`, `VersionListItem` and `PreviewBanner`: the version history panel.
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>

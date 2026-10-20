@@ -37,7 +37,7 @@ const errorsSearchOf = ({ search }: typeof AppRoute.ErrorIssues.Type): typeof Er
 const redirect = (to: AppRoute, isReplace: boolean) =>
 	Option.some(Redirect.make({ url: hrefOf(to), isReplace }))
 
-/** The `beforeLoad` redirects of legacy route files (connectors, developer, infra, errors/issues). */
+/** Redirects of retired paths (connectors, developer, infra, errors/issues). */
 export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 	AppRoute.matchOrElse<Option.Option<Redirect>>(
 		route,

@@ -6,8 +6,8 @@ import { LoadFailure } from "../../../../data/load-failure"
 import * as Combobox from "../../../../ui/combobox"
 import { DraftState } from "../../kit/draft"
 
-// The Email preferences tab (`EmailPreferencesSection`, apps/web/src/components/account/email-preferences-section.tsx):
-// the weekly ops and web analytics digests this user gets for the active organization.
+// The Email preferences tab: the weekly ops and web analytics digests this user gets for
+// the active organization.
 
 export const DigestDraft = Schema.Struct({
 	dayOfWeek: Schema.Number,

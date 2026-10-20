@@ -10,7 +10,7 @@ import { dashboardPage } from "../page/kit/dashboard-page"
 import * as TimeRangePicker from "../page/kit/time-range-picker"
 import { kbd } from "../ui/display"
 
-// apps/web `lab/time-range-lab.tsx`: the header time range picker over plain state, and a strip
+// The header time range picker over plain state, and a strip
 // printing the window and two fixed instants in the effective zone.
 
 export const Range = Schema.Struct({

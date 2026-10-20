@@ -23,7 +23,7 @@
 
 import type { ServiceEndpoint } from "@maple/web-data/warehouse/service-endpoints"
 
-// `use-table-sort`'s `SortDir`, spelled out so this module stays React-free (apps/web-foldkit imports it).
+// The table sort direction.
 type SortDir = "asc" | "desc"
 
 export type EndpointGroupKind = "stem" | "ungrouped" | "unrouted" | "probes"

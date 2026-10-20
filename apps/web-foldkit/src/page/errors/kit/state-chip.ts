@@ -5,7 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { statusDot } from "../../../ui/status-dot"
 import { WORKFLOW_LABEL, workflowRingIcon } from "./workflow"
 
-// `SignalStateChip` and `InvestigationChip` (apps/web/src/components/errors/signal-state-chip.tsx).
+// The signal state and investigation chips.
 
 const INVESTIGATION_LABEL = {
 	investigating: "Investigating",

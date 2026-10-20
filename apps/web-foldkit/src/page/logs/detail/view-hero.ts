@@ -15,8 +15,6 @@ import { severityLabel } from "./derive"
 import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
 
-// `LogHeroHeader` (apps/web/src/components/logs/log-hero-header.tsx).
-
 type H = HtmlBuilder<Message>
 
 const BODY_LINE_THRESHOLD = 280

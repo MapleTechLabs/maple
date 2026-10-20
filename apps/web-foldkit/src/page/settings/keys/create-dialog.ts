@@ -16,8 +16,7 @@ import * as Dialog from "../../../ui/dialog"
 import * as Field from "../../../ui/field"
 import * as Select from "../../../ui/select"
 
-// `CreateApiKeyDialog` (apps/web/src/components/settings/create-api-key-dialog.tsx), as one
-// Submodel shared by the Keys and MCP tabs.
+// `CreateApiKeyDialog`, as one Submodel shared by the Keys and MCP tabs.
 
 export const EXPIRATION_OPTIONS = [
 	{ value: "never", label: "Never" },
@@ -175,7 +174,7 @@ const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Retur
 
 /**
  * `handleClose(false)`: the form resets as the dialog closes, but a create in flight stays in
- * flight (legacy's `useAsyncAction`), so its secret lands in `created` and no second create starts.
+ * flight, so its secret lands in `created` and no second create starts.
  */
 const reset = (model: Model): Model => ({
 	...init(model.dialog.id),
@@ -186,7 +185,7 @@ const reset = (model: Model): Model => ({
 
 const close = (model: Model): Return => liftDialog(reset(model), Dialog.close(model.dialog))
 
-/** Opens empty for `kind` (`openCreate`); a key created while it was closed is shown, as legacy does. */
+/** Opens empty for `kind` (`openCreate`); a key created while it was closed is shown. */
 export const open = (model: Model, kind: ApiKeyKind): Return => {
 	const fresh = init(model.dialog.id)
 	const kept = { isCreating: model.isCreating, created: model.created }

@@ -8,8 +8,8 @@ import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { meter } from "../../../ui/meter"
 
-// The table chrome the tools pages share (agent-sessions/tools/tool-breakdown-tables.tsx): open,
-// mono, uppercase heads and 38px rows, with client-side column sorting (`useTableSort`).
+// The table chrome the tools pages share: open,
+// mono, uppercase heads and 38px rows, with client-side column sorting.
 
 export type SortDir = "asc" | "desc"
 export type SortState = Readonly<{ key: string | null; dir: SortDir }>

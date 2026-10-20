@@ -2,8 +2,8 @@ import { type DashboardDocument, PortableDashboardDocument } from "@maple/domain
 import type { V2DashboardCreateParams } from "@maple/domain/http/v2"
 import { Effect, Schema } from "effect"
 
-// apps/web/src/components/dashboard-builder/portable-dashboard.ts and `importDashboard`'s payload
-// (use-dashboard-store.ts). Stored widgets always carry a valid layout, so normalisation is a copy.
+// The portable dashboard format and `importDashboard`'s payload. Stored widgets always carry a
+// valid layout, so normalisation is a copy.
 
 type Widget = DashboardDocument["widgets"][number]
 

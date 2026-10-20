@@ -18,7 +18,7 @@ import { hostStatusBadge } from "../kit/status"
 import type { TimeSearch } from "../kit/view-tabs"
 import type { PodRow } from "./pod-data"
 
-// `PodTable` / `PodTableLoading` (apps/web/src/components/infra/pod-table.tsx).
+// `PodTable` / `PodTableLoading`.
 
 export type PodSortKey = "saturation" | "cpuUsage" | "cpuLimitPct" | "memoryLimitPct" | "podName" | "lastSeen"
 type Sort = Readonly<{ key: string | null; dir: SortDir }> | null

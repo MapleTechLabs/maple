@@ -32,8 +32,7 @@ import type { Model } from "./model"
 import { gcpInfraHref, gcpLogsHref } from "./update-gcp"
 import { gcpCommand } from "./view-gcp-parts"
 
-// `GcpConnection`, `connectionIssues`, `signalText`, `Signal` and `Fact`
-// (components/integrations/gcp-integration-card.tsx).
+// `GcpConnection`, `connectionIssues`, `signalText`, `Signal` and `Fact`.
 
 type H = HtmlBuilder<Message>
 type Children = ReadonlyArray<Html | string>

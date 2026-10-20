@@ -25,7 +25,7 @@ import {
 import { type Message, SlotName } from "./message"
 import type { Model, Search } from "./model"
 
-// The legacy atoms the page reads, keyed and requested like `useRefreshableAtomValue` (S6).
+// The reads the page makes, each keyed by its input (S6).
 
 type Cmd = Command.Command<Message, never, Resources>
 

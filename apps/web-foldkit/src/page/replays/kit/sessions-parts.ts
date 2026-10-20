@@ -9,10 +9,10 @@ import type { IconName } from "../../../ui/icon"
 import { statusDot } from "../../../ui/status-dot"
 import type { SessionListItem, SessionRow } from "./session-row"
 
-// Shared parts of `SessionsList` (components/replays/sessions-list.tsx, session-pills.tsx).
+// Shared parts of the sessions list and its pills.
 // TODO(tooltip): the org and tag pills' hover tooltips.
 
-// copied: session-icons.ts (imports the React icon components).
+// The icon for a browser, OS or device name.
 export const browserIconFor = (name: string): IconName => {
 	const n = name.toLowerCase()
 	if (n.includes("edg")) return "EdgeIcon"

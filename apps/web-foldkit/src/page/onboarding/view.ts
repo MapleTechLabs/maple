@@ -166,7 +166,7 @@ const wrongRegionView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs, 
 	const here = MAPLE_REGION_LABELS[currentRegion]
 	const url = regionAppUrl(screen.region)
 	return authLayout(h, "max-w-lg", [
-		// One text node per JSX expression, as React renders them.
+		// One text node per part.
 		authTitle(h, [orgName, " is in the ", target.short, " region"]),
 		authDescription(h, [
 			"Its data is stored in the ",

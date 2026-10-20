@@ -44,8 +44,8 @@ const openPopup = (name: string, features: string, label: string) =>
 /** Polls the popup until it closes: `PolledConnect` every 3 s (polling providers), then `Closed`. */
 
 /**
- * The flow's 500 ms interval (legacy's `setInterval` tick): every sixth tick polls (polling
- * providers); `isClosed` ends it with `Closed` once the popup is gone.
+ * The flow's 500 ms interval: every sixth tick polls (polling providers); `isClosed` ends it with
+ * `Closed` once the popup is gone.
  */
 const ticker = (attempt: number, polls: boolean, isClosed: () => boolean, graceMs: number | null) =>
 	Stream.callback<Message>((queue) =>
@@ -127,7 +127,7 @@ const popupFlow = ({ provider, attempt }: ConnectAttempt) =>
 const GITHUB_POLL_MS = 3_000
 const FORCE_POLL_WINDOW_MS = 10_000
 
-/** A `setInterval` as a stream (legacy's timers; the parity clock clamps them, not Effect sleeps). */
+/** A `setInterval` as a stream. */
 const every = (millis: number, message: () => Message) =>
 	Stream.callback<Message>((queue) =>
 		Effect.acquireRelease(

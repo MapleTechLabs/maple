@@ -13,8 +13,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { inlineCodeClassName } from "../../../ui/inline-code"
 import { statusDot } from "../../../ui/status-dot"
 
-// The pieces the Errors table (and the error modal) draw a failure with
-// (agent-sessions/tools/tool-error-parts.tsx).
+// The pieces the Errors table (and the error modal) draw a failure with.
 
 /** `MaskChip`: a span the grouping ignores, drawn as the kind of value it is; the raw text is its title. */
 export const maskChip = <M>(h: HtmlBuilder<M>, label: string, raw: string, className?: string): Html =>

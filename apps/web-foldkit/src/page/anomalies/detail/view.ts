@@ -28,7 +28,7 @@ import { anomalyHero, CHART_TOKENS, linkedIssueCard, signalChart } from "./view-
 import { linkIssueDialog } from "./view-link-dialog"
 import { anomalySidebar } from "./view-sidebar"
 
-// `AnomalyDetailPage` (apps/web/src/routes/anomalies/$incidentId.tsx) over `ResultPage`.
+// The anomaly detail page over `ResultPage`.
 
 type H = HtmlBuilder<Message>
 

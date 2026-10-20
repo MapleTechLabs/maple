@@ -3,7 +3,7 @@ import type { TimeWindow } from "../../../data/time-range"
 import type { MetricRow, SparklineMetricType } from "../shared"
 import type { SparklinePoint } from "./model"
 
-// Pure parts of metric-preview-grid.tsx and metric-preview-card.tsx.
+// Pure parts of the metric preview grid and its cards.
 
 export const PAGE_SIZE = 24
 /** Catalog rows fetched once; unique metrics are paginated client-side. */

@@ -18,7 +18,7 @@ import { AuthType } from "./prometheus-form-field"
 
 export { FormFieldName } from "./prometheus-form-field"
 
-// `ScrapeTargetsSection` (components/settings/scrape-targets-section.tsx): state and writes.
+// `ScrapeTargetsSection`: state and writes.
 
 export const ScrapeForm = Schema.Struct({
 	name: Field.Model,
@@ -148,7 +148,7 @@ export const DeleteTarget = Command.define("DeleteScrapeTarget", {
 		),
 })
 
-/** The form's payload, encoded as legacy sends it (`auth_credentials` only when entered). */
+/** The form's payload (`auth_credentials` only when entered). */
 export const SavePayload = Schema.Struct({
 	name: Schema.String,
 	scrape_interval_seconds: Schema.Number,

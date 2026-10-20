@@ -24,7 +24,7 @@ import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
 import { integrationCatalog, integrationsSummary } from "./view-hub"
 
-// `IntegrationsPage` (apps/web/src/routes/integrations.tsx).
+// `IntegrationsPage`.
 
 type H = HtmlBuilder<Message>
 

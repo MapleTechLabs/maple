@@ -13,8 +13,7 @@ import { isEditing } from "./update"
 import { variableSelects } from "./view-variables"
 import type { PageContext } from "../../contract"
 
-// `DashboardToolbar` (dashboard-builder/toolbar/dashboard-toolbar.tsx) and `RefreshControls`
-// (components/time-range-picker/refresh-controls.tsx).
+// The dashboard toolbar and `RefreshControls`.
 
 type H = HtmlBuilder<Message>
 
@@ -176,7 +175,7 @@ export const toolbar = (h: H, model: Model, context: PageContext): Html => {
 							size: "sm",
 							isDisabled: isReadOnly,
 							attributes: [
-								// One element across Edit and Done, as React keeps it, so focus survives the toggle.
+								// One element across Edit and Done, so focus survives the toggle.
 								h.Key("toggle-edit"),
 								h.AriaLabel(isEdit ? "Done editing" : "Edit dashboard"),
 								h.OnClick(Message.ClickedToggleEdit()),

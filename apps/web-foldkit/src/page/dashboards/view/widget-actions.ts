@@ -2,7 +2,7 @@ import type { DashboardDocument } from "@maple/domain/http"
 import { dataSourceRawSql, isQueryDataSource } from "@maple/widgets/dashboard"
 import type { AlertsCreateSearch } from "../../../route/search"
 
-// `WidgetActionsProvider` (dashboard-builder/widgets/widget-actions-context.tsx): which actions a
+// The widget actions: which actions a
 // tile's menu offers, and the alert prefill it hands /alerts/create.
 
 type Widget = DashboardDocument["widgets"][number]
@@ -11,7 +11,7 @@ type Widget = DashboardDocument["widgets"][number]
 export const isAlertable = (widget: Widget): boolean =>
 	isQueryDataSource(widget.dataSource) || dataSourceRawSql(widget.dataSource) !== null
 
-// copied: `toBase64Url` (apps/web-foldkit/src/lib/base64url.ts) and `encodeAlertChartToSearchParam`.
+// `toBase64Url` (as in lib/base64url.ts) and `encodeAlertChartToSearchParam`.
 const toBase64Url = (input: string): string =>
 	btoa(unescape(encodeURIComponent(input)))
 		.replace(/\+/g, "-")

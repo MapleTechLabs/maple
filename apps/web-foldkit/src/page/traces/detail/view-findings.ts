@@ -11,7 +11,7 @@ import { Message } from "./message"
 import type { ProductEvent } from "./model"
 import { type SpanNodeData, toSpanNode } from "./trace-data"
 
-// `TraceErrorCallout` and `TraceProductEvents` (apps/web components/traces/).
+// The trace's error callout and product events.
 
 export const traceErrors = (rootSpans: ReadonlyArray<SpanNodeData>): TraceErrors =>
 	collectTraceErrors(rootSpans.map(toSpanNode))

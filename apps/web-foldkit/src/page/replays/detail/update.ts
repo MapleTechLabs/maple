@@ -77,7 +77,7 @@ const requestStudio = (model: Model, context: PageContext): Return => {
 		data: { traceIds: session.traceIds, ...window },
 	})
 	const summaries = Keyed.request(model.traceSummaries, summariesKey, "Load")
-	// Legacy's provider mounts before it sees the manifest, so its first subscription is always 0–0;
+	// The first subscription is always 0–0, sent before the manifest is known;
 	// that request goes out even when the plan already names another range.
 	const opening = { fromChunkSeq: 0, toChunkSeq: 0 }
 	const isFirstMount = model.loader.range.key === null
@@ -309,7 +309,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const expandedTraces = isOpen
 				? model.expandedTraces.filter((id) => id !== traceId)
 				: [...model.expandedTraces, traceId]
-			// The lane remounts on open, so legacy's atom asks again after a failure.
+			// Opening the lane asks again after a failure.
 			const cached = model.spans[traceId]
 			const needsSpans = !isOpen && (cached === undefined || AsyncData.isFailure(cached))
 			return {

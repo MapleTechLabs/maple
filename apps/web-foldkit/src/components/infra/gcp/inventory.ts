@@ -1,6 +1,6 @@
 // How a workload of the metric tables and a resource of the inventory find each other, and where
 // a workload links to. A match is by identity only: asset type, project, name and, where the
-// workload has one, location. Pure (no React, no atoms).
+// workload has one, location. Pure.
 
 import {
 	GCP_INFRA_SERVICES,

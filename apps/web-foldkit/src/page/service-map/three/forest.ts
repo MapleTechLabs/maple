@@ -1,4 +1,3 @@
-// copied: apps/web/src/components/service-map/three/maple-scenery-forest.tsx (R3F JSX as three construction).
 import type { FactoryLink } from "../../../components/service-map/three/factory-routing"
 import {
 	drawBridge,
@@ -107,7 +106,7 @@ export function mapleForest(
 	])
 }
 
-/** `Scenery` (factory-decor.tsx): the sugar-bush round the map, framed on the districts. */
+/** The sugar-bush round the map, framed on the districts. */
 export function scenery(
 	scope: Scope,
 	{

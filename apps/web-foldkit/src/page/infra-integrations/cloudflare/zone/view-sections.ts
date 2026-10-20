@@ -16,8 +16,7 @@ import type { ZoneDns, ZoneSecurity } from "../data"
 import { Message, type Model } from "./model"
 import { panelScope, type Trigger } from "./view-scope"
 
-// `CloudflareZoneDnsSection`, `CloudflareZoneSecuritySection` and their `StackedBreakdownChart`
-// (components/infra/cloudflare/cloudflare-zone-{dns,security,detail-charts}.tsx).
+// `CloudflareZoneDnsSection`, `CloudflareZoneSecuritySection` and their `StackedBreakdownChart`.
 
 type H = HtmlBuilder<Message>
 

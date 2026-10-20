@@ -13,7 +13,7 @@ import { externalLink } from "./view-gcp-configure-parts"
 import { filterModeSelect } from "./view-gcp-configure-filter-mode"
 import { runtimeFields } from "./view-gcp-configure-runtimes"
 
-// `LogFilter` and `GcpLogFilterField` (gcp-configure.tsx): the filter the script gives the log sink.
+// `LogFilter` and `GcpLogFilterField`: the filter the script gives the log sink.
 
 type H = HtmlBuilder<Message>
 
@@ -123,7 +123,6 @@ export type FilterFieldOptions = Readonly<{
 	forwardId?: string
 }>
 
-// styles: apps/web/src/components/integrations/gcp-configure.tsx (LABEL)
 const LABEL = "text-xs font-medium text-muted-foreground"
 
 /** `GcpLogFilterField`: whose application output comes along. */

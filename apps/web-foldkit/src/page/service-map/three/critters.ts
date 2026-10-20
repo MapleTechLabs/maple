@@ -1,4 +1,3 @@
-// copied: apps/web/src/components/service-map/three/maple-scenery-critters.tsx (R3F JSX as three construction).
 import type { InkPalette } from "../../../components/service-map/three/palette"
 import {
 	DEER_NECK,

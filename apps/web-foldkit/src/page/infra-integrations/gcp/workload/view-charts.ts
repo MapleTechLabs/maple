@@ -28,8 +28,7 @@ import type { BucketPoint } from "../data"
 import { MountLinkedCursor } from "./command"
 import { Message, type Model } from "./model"
 
-// `CorrelationStrips` (components/infra/service-lens/correlation-strips.tsx) as the workload's
-// signals, and `GcpWorkloadCharts` (components/infra/gcp/gcp-workload-charts.tsx).
+// `CorrelationStrips` as the workload's signals, and `GcpWorkloadCharts`.
 
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>

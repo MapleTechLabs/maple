@@ -5,9 +5,6 @@ import { formatRelativeFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import type { IconName } from "../../../ui/icon"
 import type { MetricSeen } from "./model"
 
-// Copied from apps/web/src/components/dashboard-builder/templates/{template-summary,template-icons,
-// use-template-readiness}.ts: pure, but typed and imported through `@/` paths this app cannot resolve.
-
 /** The empty-dashboard template, pinned below the list and excluded from every count. */
 export const BLANK_TEMPLATE_ID = "blank"
 

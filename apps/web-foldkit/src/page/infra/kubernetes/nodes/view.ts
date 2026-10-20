@@ -33,7 +33,7 @@ import { type Model, NODE_LIST_LIMIT, type NodeFacets, type NodeRow } from "./mo
 import { DEFAULT_PRESET, filtersOf } from "./update"
 import { nodeTable, nodeTableLoading } from "./view-table"
 
-// `NodesPage` (apps/web/src/routes/infra/kubernetes/nodes/index.tsx) and `NodesFilterSidebarView`.
+// `NodesPage` and `NodesFilterSidebarView`.
 
 type H = HtmlBuilder<Message>
 

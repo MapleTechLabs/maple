@@ -12,7 +12,7 @@ import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
 import { copyable } from "./view-hero"
 
-// `LogMetaStrip` (apps/web/src/components/logs/log-meta-strip.tsx), as the drawer shows it.
+// The log's meta strip, as the drawer shows it.
 
 type H = HtmlBuilder<Message>
 

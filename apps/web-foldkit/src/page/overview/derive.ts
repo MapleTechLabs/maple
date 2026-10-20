@@ -11,8 +11,8 @@ import { DateTime, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { FacetsHint, HealthSnapshot, Incident, Model } from "./model"
 
-// Pure derivations of routes/index.tsx (`defaultPreset`, `environmentFilter`) and
-// components/dashboard/service-health-section.tsx (`enrichServices`, `countByHealth`).
+// Pure derivations of the home page (`defaultPreset`, `environmentFilter`) and its service health
+// section (`enrichServices`, `countByHealth`).
 
 export type { ServiceHealth, ServiceHealthCause }
 
@@ -69,7 +69,7 @@ export const derivedHint = (model: Model): FacetsHint => ({
 	seen: true,
 })
 
-// copied: `ANOMALY_LABEL` / `ANOMALY_METRIC` (service-health-section.tsx, a React module).
+// The label and metric of each anomaly signal.
 const ANOMALY_LABEL = new Map<AnomalySignalType, string>([
 	["error_rate", "Error rate anomaly"],
 	["latency_p95", "Latency anomaly"],
@@ -84,7 +84,7 @@ const ANOMALY_METRIC = new Map<AnomalySignalType, ServiceHealthCause["metric"]>(
 	["log_volume", "error"],
 ])
 
-/** An ISO-8601 instant in epoch ms; `NaN` when unparseable, as `Date.parse` answered in legacy. */
+/** An ISO-8601 instant in epoch ms; `NaN` when unparseable, like `Date.parse`. */
 const isoMs = (iso: string): number =>
 	Option.match(DateTime.make(iso), { onNone: () => Number.NaN, onSome: DateTime.toEpochMillis })
 

@@ -8,7 +8,7 @@ import type { Model } from "./model"
 import { externalLink } from "./view-gcp-configure-parts"
 import { copyOf, GCP_TITLE, SMALL } from "./view-gcp-parts"
 
-// `GcpValue` and `GcpManualSteps` (components/integrations/gcp-setup-methods.tsx).
+// `GcpValue` and `GcpManualSteps`.
 
 type H = HtmlBuilder<Message>
 

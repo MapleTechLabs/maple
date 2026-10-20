@@ -1,6 +1,6 @@
 import { ingestUrl } from "../../../lib/services/common/ingest-url"
 
-// copied: the snippet builders of install-modal.tsx (a React module), verbatim.
+// The install modal's snippet builders.
 
 const CHART_DEFAULT_INGEST_URL = "https://ingest.maple.dev"
 

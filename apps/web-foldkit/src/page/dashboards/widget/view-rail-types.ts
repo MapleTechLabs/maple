@@ -10,8 +10,7 @@ import { checkboxRow, divider, legendField, queryOptions, railSetting, segments,
 import { thresholds } from "./view-rail-thresholds"
 import { pageSelect } from "./view-select"
 
-// Each non-timeseries panel type's `ConfigPanel` (widgets/types/*.tsx) over the `WidgetSettings`
-// fields (settings-fields.tsx).
+// Each non-timeseries panel type's `ConfigPanel` over the `WidgetSettings` fields.
 
 type H = HtmlBuilder<Message>
 

@@ -3,7 +3,7 @@ import { countLabel, formatRatePerHour } from "@maple/ui/lib/format"
 import { AGENT_ACCENT, TONE_FILL } from "@maple/ui/lib/tone"
 import { DateTime, Option } from "effect"
 
-// The vocabulary of `IssueTimeline` (components/errors/issue-timeline.tsx): labels, dots, payload text.
+// The issue timeline's vocabulary: labels, dots, payload text.
 
 export type EventType = ErrorIssueEventDocument["type"]
 

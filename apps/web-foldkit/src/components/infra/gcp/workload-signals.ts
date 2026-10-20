@@ -1,5 +1,5 @@
 // A Google Cloud workload's detail page: its signal strips on one time axis, the figures beside
-// them and in the rail, and when the trace-gap callout shows. Pure (no React, no atoms).
+// them and in the rail, and when the trace-gap callout shows. Pure.
 
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import type { ServiceOverview } from "@maple/query-engine"

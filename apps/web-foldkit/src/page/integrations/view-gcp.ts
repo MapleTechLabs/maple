@@ -33,7 +33,7 @@ import { gcpDialogs } from "./view-gcp-dialogs"
 import { copyScriptButton, GCP_TITLE, openCloudShellButton } from "./view-gcp-parts"
 import { usageBand } from "./view-gcp-workloads"
 
-// `GcpIntegrationCard` and `GcpHeaderStatus` (components/integrations/gcp-integration-card.tsx).
+// `GcpIntegrationCard` and `GcpHeaderStatus`.
 
 type H = HtmlBuilder<Message>
 

@@ -15,8 +15,7 @@ import { sectionView } from "./view-sections"
 import { resolveSectionView } from "../../../lib/dashboards/section-view-state"
 import { containerKeyFor } from "@maple/domain/http"
 
-// `DashboardSections` + `DashboardGrid` (dashboard-builder/sections/dashboard-sections.tsx,
-// canvas/dashboard-canvas.tsx): one measured container, CSS Grid placement per stored layout.
+// The dashboard sections and grid: one measured container, CSS Grid placement per stored layout.
 
 type H = HtmlBuilder<Message>
 type Widget = DashboardDocument["widgets"][number]

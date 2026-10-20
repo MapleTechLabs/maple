@@ -2,7 +2,7 @@ import { Array as Arr, Order, Schema, Stream } from "effect"
 import { type OrgCollections, orgLive } from "../data/collections/org-collections"
 import { liveQueryStream } from "../data/live-query"
 
-/** What the Pinned group reads from a `dashboards` row (`DashboardRowSchema` in apps/web). */
+/** What the Pinned group reads from a `dashboards` row. */
 export const PinnedDashboardRow = Schema.Struct({
 	id: Schema.String,
 	name: Schema.String,

@@ -27,7 +27,7 @@ export type WhereFieldSpec = Readonly<{
 	scope?: WhereClauseAutocompleteScope
 	/** The editor's `values`; the active key's own values are merged in when they are read. */
 	values: WhereClauseAutocompleteValues
-	/** The read for the key the caret is in (`onActiveAttributeKey`), or null where legacy reads none. */
+	/** The read for the key the caret is in (`onActiveAttributeKey`), or null where none is needed. */
 	requestOf: (kind: ActiveKeyKind, attributeKey: string) => WhereValuesRequest | null
 }>
 

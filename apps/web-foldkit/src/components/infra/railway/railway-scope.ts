@@ -1,4 +1,4 @@
-// A Railway service's use of its own limits, framework-free so the overview and the Foldkit port share it.
+// A Railway service's use of its own limits, framework-free.
 
 import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
 

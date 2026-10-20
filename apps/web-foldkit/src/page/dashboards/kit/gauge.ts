@@ -1,6 +1,6 @@
 import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 
-// The geometry of `GaugeWidget` (dashboard-builder/widgets/gauge-widget.tsx): a 270 degree segmented
+// The gauge widget's geometry: a 270 degree segmented
 // dial whose viewBox is fitted to what is drawn. The view is in ./tiles-gauge.ts.
 
 const CX = 120

@@ -1,5 +1,5 @@
-// copied: apps/web-foldkit/src/lab/agent-tools-fixture.ts, the detail half (`SESSION_SEEDS`, the error
-// groups, `buildToolErrorDetailFixture`, `buildToolDetailFixture`); apps/web's view types are dropped.
+// The tool analytics fixture, detail half (`SESSION_SEEDS`, the error groups,
+// `buildToolErrorDetailFixture`, `buildToolDetailFixture`).
 
 import {
 	EMPTY_MEASURES,

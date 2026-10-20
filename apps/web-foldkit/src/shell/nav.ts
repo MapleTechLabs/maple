@@ -2,8 +2,7 @@ import { KUBERNETES_ROOT, KUBERNETES_VIEWS } from "../components/infra/kubernete
 import { Schema } from "effect"
 import type { IconName } from "../ui/icon"
 
-// Copied from apps/web/src/components/dashboard/nav-items.ts (it imports React icon components):
-// the same tree and helpers, with generated icon names in place of components.
+// The sidebar's nav tree and helpers, with generated icon names.
 
 export const NavSurface = Schema.Literals([
 	"hosts",

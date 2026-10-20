@@ -19,8 +19,7 @@ import { cursorTooltip, MUTED_COLOR_AMOUNT } from "../../charts/definitions/plot
 import type { SpikeSpec } from "./spike-spec"
 import { STACK_TOKEN_BY_SERVICE } from "./spike-timeseries-tokens"
 
-// `StackedBarSpike`, `StackedBarLegendSpike` and `StackedBarSceneLegendSpike`
-// (apps/web/src/lab/charts/stacked-bar-spike.tsx), definition half. Code copied, constants unchanged.
+// `StackedBarSpike`, `StackedBarLegendSpike` and `StackedBarSceneLegendSpike`, definition half.
 
 type Point = ChartPoint<StackedBarSpikeRow, ChartValue, number>
 

@@ -23,7 +23,7 @@ export type WhereEditorAutocomplete<M> = Readonly<{
 }>
 
 /**
- * `WhereClauseEditor` (components/query-builder/where-clause-editor.tsx): the textarea under its
+ * `WhereClauseEditor`: the textarea under its
  * highlight overlay, and with `autocomplete` its suggestion list. Enter never inserts a newline.
  */
 export type WhereEditorOptions<M> = Readonly<

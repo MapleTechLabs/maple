@@ -54,8 +54,8 @@ const openMenuOf = (model: Model): Option.Option<Menu> => Option.map(model.openM
 // ENTRY POINTS
 
 /**
- * A shell route rendered for a signed-in org: the boot requests legacy's sidebar and root fire,
- * once per org. A later org change (Clerk) reloads the page in legacy, so a new org reboots here.
+ * A shell route rendered for a signed-in org: the sidebar's and root's boot requests fire once
+ * per org. A later org change (Clerk) reloads the page, so a new org reboots here.
  */
 export const enter =
 	(orgId: string) =>
@@ -85,7 +85,7 @@ export const enter =
 
 /**
  * What `AppSidebar` reads once it mounts: always on desktop, but below `md` only when its sheet
- * first opens (legacy's closed sheet renders nothing). The live dashboards read follows the flag.
+ * first opens (a closed sheet renders nothing). The live dashboards read follows the flag.
  */
 const requestSidebarData = (model: Model): UpdateReturn => {
 	if (model.hasRequestedSidebarData || Option.isNone(model.maybeOrgId)) return { model }
@@ -157,8 +157,8 @@ export const isConnectPolling = (model: Model): boolean => ConnectPanel.isPollin
 export const connectPollTicked = (): Message => Message.GotConnectMessage({ message: ConnectPanel.Message.TickedPoll() })
 
 /**
- * A signed-in route outside the shell (`/cli-login`, `/quick-start`): legacy's root still mounts
- * `GlobalChatSheet`, whose org lookup is the only request of the shell's that it sends.
+ * A signed-in route outside the shell (`/cli-login`, `/quick-start`): the root still mounts
+ * the global chat sheet, whose org lookup is the only request of the shell's that it sends.
  */
 export const enterBare = (model: Model): UpdateReturn =>
 	AsyncData.isIdle(model.tenant)
@@ -166,7 +166,7 @@ export const enterBare = (model: Model): UpdateReturn =>
 		: { model }
 
 /**
- * Navigation remounts the page in legacy, which closes every menu and the mobile sheet. The page
+ * Navigation closes every menu and the mobile sheet. The page
  * rails' sheets live in the page's `PageLayout.Root`: they survive a search change, not a new page.
  */
 export const routeChanged =
@@ -182,7 +182,7 @@ export const routeChanged =
 
 /**
  * Every checklist step is done on another page: a navigation re-reads it (`onResolved`), but only
- * where the top bar's pill is mounted. `/chat` has no top bar, so legacy's subscription is gone there.
+ * where the top bar's pill is mounted. `/chat` has no top bar, so it never re-reads there.
  */
 export const checklistRefreshOnNavigation = (model: Model, hasTopBar: boolean, isClerk: boolean) =>
 	isClerk && hasTopBar && model.checklist.checklist !== null ? [toChecklist(Checklist.LoadChecklist())] : []
@@ -442,7 +442,7 @@ export const update =(model: Model, message: Message): UpdateReturn =>
 		FailedLoadNamespaces: ({ orgId }) =>
 			forOrg(model, orgId, (current) => modifyFields(current, { namespaces: () => NamespacesData.Failure({ error: "Failed" }) })),
 		ClickedSearch: () => openPalette(model),
-		// Legacy's popup closes on Mod+K and its document listener reopens it in the same batch: a no-op.
+		// Mod+K while the palette is open keeps it open: a no-op.
 		PressedPaletteShortcut: () => openPalette(model),
 		PressedShortcutsKey: () => openShortcuts(model),
 		PressedThemeKey: () => toggleTheme(model),

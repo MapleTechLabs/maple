@@ -17,7 +17,7 @@ import * as DialogView from "../../../ui/dialog-view"
 import { templateList } from "./view-list"
 import { detailPanel, panelRestState } from "./view-panel"
 
-// `TemplatesPage` (apps/web/src/routes/dashboards/templates.tsx): below `lg` the detail panel is a
+// The templates page: below `lg` the detail panel is a
 // right sheet over the list (`panelIsSheet`), else the side pane.
 
 type H = HtmlBuilder<Message>

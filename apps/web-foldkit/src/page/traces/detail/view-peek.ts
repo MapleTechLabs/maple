@@ -19,8 +19,7 @@ import * as SpanPanel from "./span-panel"
 import { anatomy, callout, traceViewTabs } from "./view"
 import { logsLink, replayLink } from "./view-header"
 
-// `TracePeekBody` / `TracePeekLoaded` (components/traces/trace-peek-sheet.tsx): the trace page in
-// the list's sheet. The sheet, its footer and the keys are the list's.
+// The trace page in the list's peek sheet. The sheet, its footer and the keys are the list's.
 
 export type PeekViewInputs = Readonly<{ dialogId: string; timeZone: string }>
 

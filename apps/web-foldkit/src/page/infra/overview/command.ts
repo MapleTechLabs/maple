@@ -22,7 +22,7 @@ import { TimeWindow } from "../../../data/time-range"
 import { Message } from "./message"
 import { SourceId, type SourceReading } from "./model"
 
-// The `*Data` components of components/infra/overview/infra-overview.tsx: one read per source.
+// One read per source.
 
 const reading = (summary: SourceReading["summary"]): SourceReading => ({ summary })
 

@@ -10,7 +10,7 @@ import { SignalPresenceData } from "../../kit/signal-presence"
 import { Model as TraceDetailModel } from "../detail/model"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
-// The `/traces` list (apps/web/src/routes/traces/index.tsx and components/traces/traces-table.tsx).
+// The `/traces` list.
 
 const FacetItem = Schema.Struct({ name: Schema.String, count: Schema.Number })
 

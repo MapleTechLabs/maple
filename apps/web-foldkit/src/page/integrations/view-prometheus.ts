@@ -35,8 +35,7 @@ import { prometheusTargets } from "./update-prometheus"
 import { targetDetails } from "./view-prometheus-details"
 import { targetDialogs } from "./view-prometheus-form"
 
-// `ScrapeTargetsSection` and `ScrapeTargetRow` (components/settings/scrape-targets-section.tsx), with
-// the Prometheus and WarpStream intro alerts of routes/integrations.tsx.
+// `ScrapeTargetsSection` and `ScrapeTargetRow`, with the Prometheus and WarpStream intro alerts.
 // TODO(tooltip): the last-error line renders its trigger; the raw-error popup is the overlay port's.
 
 type H = HtmlBuilder<Message>

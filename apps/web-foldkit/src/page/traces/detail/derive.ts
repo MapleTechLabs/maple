@@ -54,7 +54,7 @@ const eventsOf = (span: SpanNodeData, services: Set<string>): ReadonlyArray<Shar
 			],
 		)
 	})()
-	// Legacy stops at a span with an unparseable start, children included.
+	// Stops at a span with an unparseable start, children included.
 	if (span.isMissing !== true && Number.isNaN(spanStartMs(span))) return own
 	return [...own, ...span.children.flatMap((child) => eventsOf(child, services))]
 }

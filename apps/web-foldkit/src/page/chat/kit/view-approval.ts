@@ -8,7 +8,7 @@ import { icon, type IconName } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
 import { panel } from "../../../ui/panel"
 
-// The dashboard tools' approval summaries (apps/web components/chat/approval-renderers/dashboard.tsx).
+// The dashboard tools' approval summaries.
 // Icons and labels follow the widget-type registry (`widgetTypeFor`): `chart` and unknown kinds read as a line.
 
 const ICONS = new Map<string, IconName>([

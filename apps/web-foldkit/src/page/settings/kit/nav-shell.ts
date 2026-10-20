@@ -3,8 +3,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon, type IconName } from "../../../ui/icon"
 
-// `SettingsNavShell` (apps/web/src/components/settings/settings-nav-shell.tsx): the rail of
-// `/settings`, `/account` and `/integrations`. Tabs are buttons, sibling pages are links.
+// `SettingsNavShell`: the rail of `/settings`, `/account` and `/integrations`. Tabs are buttons, sibling
+// pages are links.
 
 export type NavShellRow<Id extends string> =
 	| Readonly<{ kind: "tab"; id: Id; label: string; icon: IconName }>

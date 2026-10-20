@@ -8,7 +8,7 @@ import { SourceList } from "../kit/data"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
 
-// `/sources/new` (apps/web/src/routes/sources/new.tsx): pick a platform, name it, copy the token.
+// `/sources/new`: pick a platform, name it, copy the token.
 
 /** The create's answer: the source and its one-time token, held in memory only. */
 export const Created = Schema.Struct({ source: V2Source, secret: Schema.String })

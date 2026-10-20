@@ -14,7 +14,7 @@ import { SessionTimeRange } from "./route/session-time-range"
 import * as Shell from "./shell"
 import * as ChatSheet from "./page/chat/sheet"
 
-/** The router's `auth` context in apps/web: unknown until resolved (`<BootSplash>`), then settled. */
+/** The session: unknown until resolved (boot splash), then settled. */
 export const Session = defineTaggedUnion({
 	Resolving: {},
 	SignedOut: {},
@@ -38,7 +38,7 @@ export const Model = Schema.Struct({
 	signIn: SignIn.Model,
 	/** Sidebar, menus and boot data: survives navigation like the rest of the root Model. */
 	shell: Shell.Model,
-	/** The app-wide toasts (`ToastProvider` at the root in apps/web). */
+	/** The app-wide toasts. */
 	toasts: Toast.Model,
 	/** A page toast's action, by toast id: the page Message its button sends (`actionProps.onClick`). */
 	toastActions: Schema.Record(Schema.String, PageMessage),

@@ -9,7 +9,7 @@ import { defineLab } from "../../define"
 import { kitPage, kitSection } from "../../kit/kit-layout"
 import { sidebarFrame } from "../../kit/navigation-sidebar"
 
-// Port of `/lab/kit/navigation` (apps/web/src/lab/kit/navigation.tsx): navigation menu, an
+// `/lab/kit/navigation`: navigation menu, an
 // expanded and a collapsed sidebar, and nested resizable panel groups.
 
 // MODEL

@@ -20,7 +20,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { disconnectDialog } from "./view-disconnect"
 
-// `HazelIntegrationCard` (components/integrations/hazel-integration-card.tsx).
+// `HazelIntegrationCard`.
 
 type H = HtmlBuilder<Message>
 

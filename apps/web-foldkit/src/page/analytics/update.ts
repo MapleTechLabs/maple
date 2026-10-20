@@ -133,8 +133,8 @@ const hasAnswered = (slot: Keyed.Keyed<unknown, LoadFailure>): boolean =>
 	AsyncData.isSuccess(slot.data) || AsyncData.isFailure(slot.data)
 
 /**
- * Both reads leave together, breakdowns first, and legacy's breakdowns answer lands first, which the
- * Events card's sort seeds from. An events answer that beats the breakdowns waits for them here.
+ * Both reads leave together, breakdowns first. The Events card's sort seeds from the breakdowns,
+ * so an events answer that beats the breakdowns waits for them here.
  */
 const delivered = (model: Model, key: string, result: Result.Result<unknown, LoadFailure>): Model => {
 	if (key === model.events.key && key !== model.breakdowns.key && !hasAnswered(model.breakdowns))

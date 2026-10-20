@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Workload from "../../page/infra-integrations/gcp/workload/model"
 
-// `/lab/gcp-workload` (apps/web `lab/gcp-workload-lab.tsx`): the workload page over fixture series,
+// `/lab/gcp-workload`: the workload page over fixture series,
 // a Cloud Run burst and a Cloud SQL instance, picked from the floating lab bar.
 
 export const LabPage = Schema.Literals(PAGES)

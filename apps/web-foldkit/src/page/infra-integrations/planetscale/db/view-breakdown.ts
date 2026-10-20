@@ -18,7 +18,7 @@ import {
 } from "../metrics"
 import { type BreakdownSortKey, type Measure, Message } from "./model"
 
-// `PlanetScaleBranchBreakdownPanel` (components/infra/planetscale/planetscale-branch-breakdown-panel.tsx).
+// `PlanetScaleBranchBreakdownPanel`.
 
 type H = HtmlBuilder<Message>
 
@@ -80,7 +80,7 @@ interface Row {
 	readonly isOther: boolean
 }
 
-/** `relativeRatio` (primitives/share-bar.ts). */
+/** `relativeRatio`. */
 const relativeRatio = (value: number, max: number): number =>
 	max > 0 && Number.isFinite(value) ? Math.max(0, value) / max : 0
 

@@ -26,7 +26,7 @@ export const resolveShareWindow = (model: Model, share: SharedDashboard): ShareW
 	const { search } = model
 	const options = { snap: model.refreshTick === 0, nowMs: model.nowMs }
 	if (search.from !== undefined && search.to !== undefined)
-		// TODO(range-label): legacy formats an absolute window with `formatTimeRangeDisplay`.
+		// TODO(range-label): format an absolute window with `formatTimeRangeDisplay`.
 		return { startTime: search.from, endTime: search.to, label: `${search.from} - ${search.to}` }
 	if (search.range !== undefined) {
 		const range = resolveTimeRangeWindow({ type: "relative", value: search.range }, options)

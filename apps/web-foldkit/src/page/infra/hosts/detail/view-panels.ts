@@ -15,8 +15,7 @@ import { formatSeen } from "../../../metrics/time-format"
 import { type HostMetric, Message } from "./message"
 import type { HostSummary, Model } from "./model"
 
-// `HostMetadataPanel` (host-metadata-panel.tsx), and the Metrics panel of `HostDetailPage` with its
-// `MetricStrip`s (host-detail-chart.tsx).
+// `HostMetadataPanel`, and the Metrics panel of `HostDetailPage` with its `MetricStrip`s.
 
 type H = HtmlBuilder<Message>
 

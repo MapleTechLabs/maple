@@ -27,7 +27,7 @@ import { railView } from "./view-error-modal-rail"
 import { samplesPane } from "./view-error-modal-samples"
 import type { Prepared } from "./view-errors"
 
-// `ToolErrorModal` (agent-sessions/tools/tool-error-modal.tsx): one error group of one tool in full.
+// The tool error modal: one error group of one tool in full.
 
 type H = HtmlBuilder<Message>
 

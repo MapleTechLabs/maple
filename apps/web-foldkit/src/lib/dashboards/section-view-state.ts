@@ -11,7 +11,7 @@ import type { DashboardSection, SectionMembership } from "@maple/widgets/dashboa
 // up in URLs people paste to each other, and `?tab=overview:latency` is both
 // readable and impossible to fail parsing.
 //
-// Pure and React-free so the precedence rules are testable without a router.
+// Pure so the precedence rules are testable without a router.
 
 export interface SectionViewSearch {
 	collapsed?: string | undefined

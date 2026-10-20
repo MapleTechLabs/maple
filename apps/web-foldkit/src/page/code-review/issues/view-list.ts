@@ -17,7 +17,7 @@ import { panel } from "../../../ui/panel"
 import * as Tooltip from "../../../ui/tooltip"
 import { Message, type Model } from "./model"
 
-// `FindingRow` (routes/code-review/issues.tsx) under one `RelativeTime` tooltip.
+// `FindingRow` under one `RelativeTime` tooltip.
 
 type H = HtmlBuilder<Message>
 

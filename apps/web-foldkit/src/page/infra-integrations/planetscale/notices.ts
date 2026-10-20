@@ -17,7 +17,7 @@ import {
 } from "../kit/integration-empty"
 import { relativeTime } from "../../kit/relative-time"
 
-// `planetscale-absence.tsx`, `planetscale-setup-state.tsx` and `planetscale-setup-checklist.tsx`.
+// PlanetScale absence notices, setup state and the setup checklist.
 
 export const METRICS_PAUSED_MESSAGE = "Branch metrics are paused. Add a metrics token to collect them."
 export const METRICS_PAUSED_SHORT = "metrics paused"

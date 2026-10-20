@@ -6,7 +6,7 @@ import { GCP_SETUP_FIXTURES } from "../gcp-setup-fixtures"
 import type { ApplyOpened, LogFilterDraft, SetupMethod } from "../../page/integrations/gcp-configure-schema"
 import { agoOf, connectorOf } from "../gcp-host"
 
-// apps/web `lab/gcp-connect-lab.tsx`'s fixtures: minutes old against the lab's clock.
+// The connect lab's fixtures: minutes old against the lab's clock.
 
 export const STATES = {
 	new: {

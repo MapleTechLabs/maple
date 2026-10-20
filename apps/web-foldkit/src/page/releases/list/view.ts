@@ -24,7 +24,6 @@ import { filtersRail } from "./view-filters"
 import { liveNow, releasesTimeline, type TimeSearch } from "./view-overview"
 import { releasesTable } from "./view-table"
 
-// `ReleasesPage` and `ReleasesContent` (apps/web/src/routes/releases/index.tsx).
 // TODO(session-range): `sessionTimeRangeSearchMiddleware` (the range carried across pages).
 
 type H = HtmlBuilder<Message>

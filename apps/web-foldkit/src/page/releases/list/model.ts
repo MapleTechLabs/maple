@@ -9,7 +9,7 @@ import { ReleasesSearch } from "../../../route/search"
 import * as FilterSections from "../../../ui/filters/filter-sections"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
-// `/releases` (apps/web/src/routes/releases/index.tsx and components/releases/).
+// `/releases`.
 
 /** `Release` (`@maple/web-data/warehouse/releases`): a release row, `firstSeen` in ISO. */
 export const ReleaseRow = Schema.Struct({

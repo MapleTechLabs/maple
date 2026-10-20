@@ -34,8 +34,6 @@ import {
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 
-// `ToolsTable` (agent-sessions/tools/tool-breakdown-tables.tsx).
-
 type H = HtmlBuilder<Message>
 
 export type ToolsTableInputs = Readonly<{

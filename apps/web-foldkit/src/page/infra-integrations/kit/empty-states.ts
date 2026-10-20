@@ -5,7 +5,7 @@ import { button, linkButton } from "../../../ui/button"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { docsLink, emptyActions } from "../../kit/signal-empty-state"
 
-// `IntegrationNotConnected` (components/infra/primitives/integration-not-connected.tsx).
+// `IntegrationNotConnected`.
 
 type ButtonVariant = Parameters<typeof button>[1]["variant"]
 

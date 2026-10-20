@@ -33,13 +33,12 @@ import type { DbSummary, Model } from "./model"
 import { metricTile, metricValue, sampled, tagBadge } from "./view-panel-kit"
 import { queryActivityCharts } from "./view-db-charts"
 
-// The database panel's sections (components/service-map/service-map-view.tsx): Hyperdrive configs,
+// The database panel's sections: Hyperdrive configs,
 // PlanetScale health and branches, query activity and the top query shapes.
 
 type H = HtmlBuilder<Message>
 
-// copied: `utilizationClass`, `lagClass`, `formatLag`, `formatStoragePercent`
-// (apps/web components/infra/planetscale/metrics.ts re-exports a React module).
+// PlanetScale tone classes and formats (see components/infra/planetscale/metrics.ts).
 const utilizationClass = (percent: number): string | undefined => {
 	const level = utilizationLevel(percent / 100)
 	return level === "ok" ? undefined : TONE_TEXT[level]

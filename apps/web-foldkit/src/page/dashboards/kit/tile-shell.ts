@@ -13,7 +13,7 @@ import { NARROW_RANGE_LABEL } from "./widget-data"
 /** `useId` of the grid's hidden rearranging instructions, which every grip describes itself by. */
 export const GRID_INSTRUCTIONS_ID = "dashboard-grid-instructions"
 
-// `WidgetShell`, `WidgetFrame` and `WidgetEmptyState` (dashboard-builder/widgets/widget-shell.tsx).
+// `WidgetShell`, `WidgetFrame` and `WidgetEmptyState`: a tile's card, header and empty state.
 
 export type ShellOptions = Readonly<{
 	widgetId: string

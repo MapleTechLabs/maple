@@ -13,7 +13,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { startHubWrite } from "./selection"
 
-// `IssueContextMenu` (components/errors/issue-context-menu.tsx): a row's right-click menu.
+// The issue context menu: a row's right-click menu.
 
 type Return = PageReturn<Model, Message>
 

@@ -11,7 +11,7 @@
 //     Building it from metrics alone silently drops branches excluded from
 //     scraping or asleep, leaving no way to tell "no such branch" from "no data".
 //
-// Pure — no React, no atoms — so the precedence rules are testable on their own.
+// Pure, so the precedence rules are testable on their own.
 
 import { matchesGlob } from "@maple/domain/glob"
 import type { V2PlanetScaleBranch } from "@maple/domain/http/v2"

@@ -29,8 +29,8 @@ import {
 } from "./scene3d"
 import { type LinkLabel, linkLabels, spatialLayoutOf } from "./scene-layout"
 
-// `ServiceMap3DViewport` (components/service-map/three/viewport.tsx): the perspective bar, the
-// paper section with R3F's canvas wrappers, the timber sign labels, the HUD, legend and camera
+// The 3D viewport: the perspective bar, the
+// paper section with the canvas wrappers, the timber sign labels, the HUD, legend and camera
 // controls, and the footer. The scene Mount positions the labels each frame.
 
 const VIEW_COPY = {
@@ -143,14 +143,14 @@ const perspectiveBar = <M>(
 	)
 }
 
-/** The labels' inline style before the rig first places them (React's `style` prop). */
+/** The labels' inline style before the rig first places them. */
 const signStyle = (palette: Palette): Record<string, string> => ({
 	visibility: "hidden",
 	"background-color": palette.sign,
 	color: palette.signInk,
 })
 
-/** A node sign's style also carries its opacity, between visibility and colours as in React. */
+/** A node sign's style also carries its opacity, between visibility and colours. */
 const nodeSignStyle = (palette: Palette, opacity: number): Record<string, string> => ({
 	visibility: "hidden",
 	opacity: String(opacity),

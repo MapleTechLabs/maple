@@ -8,8 +8,8 @@
 // existing infra detail routes.
 //
 // This is the SINGLE source of truth for both the tab-visibility gate and the
-// panel renderer, so the two never drift. Keep it React-free — it is unit
-// tested directly.
+// panel renderer, so the two never drift. Keep it pure: it is unit tested
+// directly.
 
 import type {
 	ContainerInfraMetric,

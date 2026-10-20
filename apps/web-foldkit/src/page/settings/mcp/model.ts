@@ -9,8 +9,8 @@ import * as Dialog from "../../../ui/dialog"
 import * as Tabs from "../../../ui/tabs"
 import * as CreateKey from "../keys/create-dialog"
 
-// `McpSection` (apps/web/src/components/settings/mcp-section.tsx): connect a client, the connected
-// OAuth clients and the tool catalog. Shared by `/settings?tab=mcp` and `/mcp`.
+// `McpSection`: connect a client, the connected OAuth clients and the tool catalog. Shared by
+// `/settings?tab=mcp` and `/mcp`.
 
 export const ConnectionsData = AsyncData.Schema(Schema.Array(V2McpConnection), LoadFailure)
 export const ToolsData = AsyncData.Schema(Schema.Array(McpToolCatalogEntry), LoadFailure)

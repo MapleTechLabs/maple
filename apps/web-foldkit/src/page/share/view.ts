@@ -23,7 +23,7 @@ import type { Model, ShareError, SharedDashboard, ShareWidget, WidgetState } fro
 import { refreshSecondsOf } from "./update"
 import { sharedSection } from "./view-sections"
 
-// `SharePage` (apps/web/src/routes/share/$token.tsx): its own chrome outside the app shell.
+// `SharePage`: its own chrome outside the app shell.
 
 type H = HtmlBuilder<Message>
 

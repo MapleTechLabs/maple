@@ -41,7 +41,7 @@ export const orderedSearch = (entries: ReadonlyArray<readonly [string, string | 
 
 const SearchRecord = Schema.Record(Schema.String, Schema.String)
 
-/** The query codec of a route: the legacy `validateSearch` schema, carried as the route's `search`. */
+/** The query codec of a route: its search schema, carried as the route's `search`. */
 export const tanstackSearch = <A, I>(schema: Schema.Codec<A, I>) =>
 	SearchRecord.pipe(
 		Schema.decodeTo(Schema.Unknown, {

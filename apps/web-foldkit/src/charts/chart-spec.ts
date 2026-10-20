@@ -5,7 +5,7 @@ import { ChartEventMarker, MarkerColors } from "./event-marker-spec"
 /**
  * Everything a chart definition is built from, as data. The view renders it into the chart host's
  * `data-chart-spec` attribute and the chart Mount rebuilds the `@tanstack/charts` definition from it,
- * so the definition follows the Model the way a React `useMemo` follows its props.
+ * so the definition follows the Model.
  *
  * Optional values are `NullOr`, not `Option`: this is a JSON wire format, not Model state.
  */
@@ -57,7 +57,7 @@ export type FixedMetricRow = typeof FixedMetricRow.Type
 
 export const ChartSpec = defineTaggedUnion({
 	/**
-	 * `ToolSeriesChart` and the tool detail grid (apps/web/src/components/agent-sessions/tools): one
+	 * The agent tool series chart and the tool detail grid: one
 	 * monotone line per series over zero-filled buckets, colours resolved, ticks in the metric's unit.
 	 */
 	ToolSeries: {
@@ -83,7 +83,7 @@ export const ChartSpec = defineTaggedUnion({
 		unit: Nullable(Schema.String),
 		showTooltip: Schema.Boolean,
 	},
-	/** `PieFigure` in apps/web/src/lab/charts/pie-spike.tsx. `activeName` absent = not wired. */
+	/** The lab pie figure. `activeName` absent = not wired. */
 	PieSpike: {
 		rows: Schema.Array(PieSliceRow),
 		donut: Schema.Boolean,
@@ -111,7 +111,7 @@ export const ChartSpec = defineTaggedUnion({
 		gradientId: Schema.String,
 		fillStart: Schema.Number,
 		fillEnd: Schema.Number,
-		/** Bumped when the data arrives again: React rebuilds the definition on every new result. */
+		/** Bumped when the data arrives again: every new result rebuilds the definition. */
 		revision: Schema.Number,
 		/** `PlotSparkline`'s `curve`; absent is linear. */
 		curve: Schema.optionalKey(Schema.Literals(["linear", "monotone"])),
@@ -181,7 +181,7 @@ export const ChartSpec = defineTaggedUnion({
 		isSelecting: Schema.Boolean,
 		timeZone: Schema.String,
 	},
-	/** `HistogramSpike` (binX over raw observations) in apps/web/src/lab/charts/histogram-spike.tsx. */
+	/** The lab histogram (binX over raw observations). */
 	BinnedHistogram: {
 		values: Schema.Array(Schema.Number),
 		color: Schema.String,
@@ -221,7 +221,7 @@ export const ChartSpec = defineTaggedUnion({
 		markerColors: MarkerColors,
 	},
 	/**
-	 * The `/lab/bench/tanstack` overview charts (apps/web `lab/bench/tanstack/*.tsx`): point-scaled
+	 * The `/lab/bench/tanstack` overview charts: point-scaled
 	 * buckets, y pinned at 0, no legend. Rows are `overviewBenchRows`.
 	 */
 	BenchOverview: {
@@ -241,13 +241,13 @@ export const ChartSpec = defineTaggedUnion({
 		colors: Schema.Record(Schema.String, Schema.String),
 		perSecond: Schema.Boolean,
 		timeZone: Nullable(Schema.String),
-		/** The render-time clock the in-flight split reads (`Date.now()` in legacy). */
+		/** The render-time clock the in-flight split reads. */
 		nowMs: Schema.Number,
 		gradientPrefix: Schema.String,
 		showTooltip: Schema.Boolean,
 	},
 	/**
-	 * `AlertRuleChart` (apps/web/src/components/alerts/alert-rule-chart.tsx): the rule's signal, the
+	 * The alert rule chart: the rule's signal, the
 	 * threshold rules and the shaded bands, already decided by `@maple/web-data/alerts/chart-series`.
 	 */
 	AlertRule: {
@@ -287,7 +287,7 @@ export const ChartSpec = defineTaggedUnion({
 		bucketSeconds: Nullable(Schema.Number),
 		gradientId: Schema.String,
 	},
-	/** `StackedBreakdownChart` (components/infra/cloudflare/cloudflare-zone-detail-charts.tsx). */
+	/** The Cloudflare zone detail's stacked breakdown chart. */
 	StackedBreakdown: {
 		rows: Schema.Array(
 			Schema.Struct({ bucket: Schema.String, attributeValue: Schema.String, value: Schema.Number }),
@@ -302,7 +302,7 @@ export const ChartSpec = defineTaggedUnion({
 		gradientPrefix: Schema.String,
 	},
 	/**
-	 * `AnalyticsTrafficChart` (components/analytics/analytics-traffic-chart.tsx): the selected metric
+	 * The analytics traffic chart: the selected metric
 	 * and its companion per bucket, painted largest total first, ticks in the metric's format.
 	 */
 	AnalyticsTraffic: {
@@ -323,7 +323,7 @@ export const ChartSpec = defineTaggedUnion({
 		gradientPrefix: Schema.String,
 		isNarrow: Schema.Boolean,
 	},
-	/** `PlanetScaleChart` (components/infra/planetscale/planetscale-chart.tsx): one gauge, gaps kept. */
+	/** The PlanetScale chart: one gauge, gaps kept. */
 	PlanetScaleMetric: {
 		metric: Schema.Literals([
 			"connectionsAvg",
@@ -353,7 +353,7 @@ export const ChartSpec = defineTaggedUnion({
 		timeZone: Schema.String,
 	},
 	/**
-	 * `SpendChart` (apps/web/src/components/settings/spend-chart.tsx): cumulative spend by band, day
+	 * The spend chart: cumulative spend by band, day
 	 * by day (`buildCumulativeSeries`), and the dashed projection to the end of the cycle.
 	 */
 	SpendCumulative: {

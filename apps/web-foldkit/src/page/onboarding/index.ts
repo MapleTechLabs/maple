@@ -25,7 +25,7 @@ import * as PricingCards from "./pricing-cards"
 export type { Inputs } from "./inputs"
 
 /**
- * The onboarding and auth-handoff screens legacy renders without `DashboardLayout`: CLI login,
+ * The onboarding and auth-handoff screens rendered without `DashboardLayout`: CLI login,
  * MCP consent, unsubscribe, quick start, plan selection, org selection and sign-up. Some are
  * public or org-less, so they cannot take a `PageContext`; the root holds the open one here.
  */

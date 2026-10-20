@@ -1,6 +1,6 @@
 import { AuditActorType, AuditOutcome } from "@maple/domain/http"
 import type { V2AuditLogEntry } from "@maple/domain/http/v2"
-/** `AUDIT_LOG_PAGE_LIMIT` (audit-log-atoms.ts, a React module). */
+/** Entries per audit log page. */
 const AUDIT_LOG_PAGE_LIMIT = 50
 import {
 	AUDIT_RANGE_PRESETS,

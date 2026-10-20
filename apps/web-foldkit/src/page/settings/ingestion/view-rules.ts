@@ -24,7 +24,7 @@ import { settingsSection } from "../kit/section"
 import { Message } from "./message"
 import type { Model, RecommendationTab } from "./model"
 
-// `RecommendedMappingsSection` and `AttributeMappingsSection` (settings/*-section.tsx).
+// `RecommendedMappingsSection` and `AttributeMappingsSection`.
 
 type H = HtmlBuilder<Message>
 

@@ -31,7 +31,7 @@ import { Option, Schema } from "effect"
 import type { FunnelDraft, PathsDraft, StepDraft } from "./editor-state"
 
 // The funnel's and the paths widget's editor drafts, read from a stored widget
-// (`initialState` in widgets/types/breakdown.tsx and paths.tsx) and checked (`validate`).
+// and checked (`validate`).
 
 type Widget = DashboardDocument["widgets"][number]
 

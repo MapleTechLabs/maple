@@ -17,7 +17,7 @@ import { Message } from "./message"
 import type { Endpoint } from "./model-tabs"
 import { barCell } from "./view-table-cells"
 
-// `ServiceApiTab` (components/services/service-api-tab.tsx): rows and group rows.
+// The API tab: rows and group rows.
 
 type H = HtmlBuilder<Message>
 

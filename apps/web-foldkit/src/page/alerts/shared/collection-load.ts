@@ -1,7 +1,7 @@
 import { Effect, Option, Queue, Schema, Stream } from "effect"
 
-// `useCollectionLoadFailed` (apps/web/src/lib/collections/collection-load.ts) for a collection a
-// page is still waiting on. TODO(collection-load): the stuck-collection heal it triggers.
+// Whether a collection a page is still waiting on failed to load. TODO(collection-load): heal a
+// stuck collection.
 
 /** `COLLECTION_LOAD_TIMEOUT_MS`: how long a collection may sit loading with nothing to show. */
 export const COLLECTION_LOAD_TIMEOUT_MS = 30_000

@@ -4,7 +4,7 @@
 // value formatting used by tooltips, legend chips, and axes. Series colors come
 // from `resolveSeriesColors` — a host/pod/zone keeps its color across windows.
 
-// Framework-free (the Foldkit app imports it): no `@/` imports, no React. The zone-aware
+// Framework-free: no `@/` imports. The zone-aware
 // `isoToLabel` default lives in `./chart-utils`.
 import { bucketDate } from "@maple/ui/components/plot/bucket-axis"
 import {

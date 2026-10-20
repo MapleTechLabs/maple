@@ -31,7 +31,7 @@ import type { Model, PodCounts } from "./model"
 import { DEFAULT_PRESET, filtersOf, pageIndexOf, peekOf, sortOf } from "./update"
 import { filtersRail } from "./view-filters"
 
-// `PodsPage` (apps/web/src/routes/infra/kubernetes/pods/index.tsx) in `KubernetesShell`.
+// `PodsPage` in `KubernetesShell`.
 
 type H = HtmlBuilder<Message>
 

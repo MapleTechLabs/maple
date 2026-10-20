@@ -2,8 +2,8 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { PIXEL_GLYPHS } from "../../ui/icons.generated"
 
-// `OptionCard` (apps/web/src/components/common/option-card.tsx, row layout), `DrawnCheck` and the
-// onboarding `PixelGlyph`. Motion runs reduced in parity, so each animation is drawn at its end.
+// `OptionCard` (row layout), `DrawnCheck` and the onboarding `PixelGlyph`. Each animation is drawn at
+// its end state.
 
 export type PixelGlyphName = keyof typeof PIXEL_GLYPHS
 

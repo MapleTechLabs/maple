@@ -21,7 +21,7 @@ import { Message } from "./message"
 import type { Model, SpanRow, TraceSummary } from "./model"
 import { displayState, idleBandsLayer, markersLayer } from "./view-player"
 
-// `ReplayEditorTimeline` (components/replays/replay-editor-timeline.tsx).
+// The replay editor timeline.
 // TODO(tooltip): the trace and span bars' hover tooltips.
 
 type H = HtmlBuilder<Message>

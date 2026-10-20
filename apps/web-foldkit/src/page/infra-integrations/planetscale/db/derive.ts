@@ -88,7 +88,7 @@ export const insightsInputOf = (model: Model, window: TimeWindow): EpochWindowIn
 	limit: 12,
 })
 
-// copied: the pure vocabulary of planetscale-events.ts (its module imports a `@/` type).
+// The PlanetScale events vocabulary: tone, short label and chart placement per event.
 
 type Presentation = Readonly<{ tone: EventTone; short: string; onChart: boolean }>
 

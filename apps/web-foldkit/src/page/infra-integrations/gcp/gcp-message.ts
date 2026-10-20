@@ -4,8 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { icon } from "../../../ui/icon"
 
-// `GcpMessage`, `Linked` (components/integrations/gcp-integration-card.tsx) and `GcpExternalLink`
-// (gcp-configure.tsx): a failure in the API's own words, laid out to be scanned.
+// `GcpMessage`, `Linked` and `GcpExternalLink`: a failure in the API's own words, laid out to be scanned.
 
 const GCP_LINK = "underline underline-offset-2 hover:no-underline"
 const BILLING_PAGE = "Settings, Billing"

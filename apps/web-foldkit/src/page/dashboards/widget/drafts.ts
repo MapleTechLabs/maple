@@ -15,8 +15,7 @@ import { Option, Schema } from "effect"
 import type { FormulaDraft, QueryDraft } from "./editor-state"
 
 // Stored query sets read back into editor drafts, and the predicates over them
-// (`loadQueryDrafts`, `inferDefaultUnitForQueries`, `deriveDefaultWidgetTitle`, ... in
-// apps/web/src/lib/query-builder/widget-builder-shared.ts).
+// (`loadQueryDrafts`, `inferDefaultUnitForQueries`, `deriveDefaultWidgetTitle`, ...).
 
 /** `toQueryGroupByArray`: a stored draft with no group-by list groups by service. */
 const groupByOf = (groupBy: ReadonlyArray<string> | undefined): Array<string> =>
@@ -66,7 +65,7 @@ const normalizeLoadedQuery = (raw: QueryBuilderQueryDraftPayload, index: number)
 	return { ...shared, dataSource: "traces" }
 }
 
-/** `loadQueryDrafts`: a stored draft without a where clause string is dropped, as in legacy. */
+/** `loadQueryDrafts`: a stored draft without a where clause string is dropped. */
 export const loadQueryDrafts = (set: {
 	readonly queries: ReadonlyArray<QueryBuilderQueryDraftPayload>
 	readonly formulas?: ReadonlyArray<QueryBuilderFormulaPayload> | undefined

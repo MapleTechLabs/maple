@@ -23,8 +23,7 @@ import { filterChipRail } from "../../kit/filter-chip-rail"
 import type { ZoneFacets } from "../data"
 import { type FilterKey, Message, type Model } from "./model"
 
-// `CloudflareFilterChips`, `CloudflareFilterPopover` and `CloudflareFilterSidebarView`
-// (components/infra/cloudflare/cloudflare-filter-{chips,popover,sidebar}.tsx).
+// `CloudflareFilterChips`, `CloudflareFilterPopover` and `CloudflareFilterSidebarView`.
 
 type H = HtmlBuilder<Message>
 

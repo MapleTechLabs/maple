@@ -10,9 +10,9 @@ import { avatarFallbackStyles, avatarStyles } from "@maple/ui/styles/ui/avatar"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
 
-// `ActorAvatar` / `ActorChip` (apps/web/src/components/errors/actor-chip.tsx).
-// TODO(actor-directory): people resolve through the Clerk member directory in legacy; here every
-// person renders as their short id, which is legacy's fallback for an unknown member.
+// Actor avatars and chips.
+// TODO(actor-directory): people should resolve through the Clerk member directory; here every
+// person renders as their short id, the fallback for an unknown member.
 
 export interface ActorIdentity {
 	readonly kind: "user" | "agent"
@@ -22,7 +22,7 @@ export interface ActorIdentity {
 	readonly detail: string | null
 	readonly initials: string
 	readonly seed: string
-	/** A directory member's photo (legacy `ActorIdentity.imageUrl`). */
+	/** A directory member's photo. */
 	readonly imageUrl?: string | null
 }
 
@@ -86,7 +86,7 @@ export const identityAvatar = <M>(
 		)
 	}
 	const gradient = cn("bg-gradient-to-br text-white", gradientFor(identity.seed))
-	// Legacy's `Avatar` shows the initials until the photo loads; photos are not loaded here yet.
+	// The initials show until the photo loads; photos are not loaded here yet.
 	if (identity.imageUrl !== undefined && identity.imageUrl !== null && identity.imageUrl !== "")
 		return h.span(
 			[

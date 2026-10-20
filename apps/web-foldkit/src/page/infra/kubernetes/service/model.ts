@@ -9,8 +9,7 @@ import { ChartModels, SeriesRow } from "../../kit/series"
 import * as Rail from "../lens/rail"
 import { PodsPage } from "../pod-data"
 
-// `/infra/kubernetes/services/$serviceName` (routes/infra/kubernetes/services/$serviceName.tsx): the
-// service lens, latency and CPU-of-limit on one axis.
+// `/infra/kubernetes/services/$serviceName`: the service lens, latency and CPU-of-limit on one axis.
 
 /** The fields of a `getServiceDetailOverview` point the lens reads. */
 export const ServicePoint = Schema.Struct({

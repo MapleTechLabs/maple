@@ -22,8 +22,8 @@ import { Message } from "./message"
 import { baseValuesOf } from "./where-inputs"
 import type { Model } from "./model"
 
-// `WidgetQueryBuilderPage`'s query side: the source toggle, one `QueryPanel` per query,
-// `FormulaPanel`s, and the toolbar (query-panel.tsx, query-panel-shell.tsx, formula-panel.tsx).
+// The widget editor's query side: the source toggle, one `QueryPanel` per query,
+// `FormulaPanel`s, and the toolbar.
 
 type H = HtmlBuilder<Message>
 
@@ -273,7 +273,7 @@ const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): 
 					},
 					["Run preview"],
 				),
-				// Two text nodes once there are formulas, as legacy renders them.
+				// Two text nodes once there are formulas.
 				h.span(
 					[h.Class("text-2xs text-muted-foreground ml-auto")],
 					[

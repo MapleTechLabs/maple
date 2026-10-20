@@ -23,7 +23,7 @@ import { type FilterKey, Message, type Model } from "./model"
 import { DEFAULT_PRESET, MAX_ROWS } from "./update"
 import { findingsList } from "./view-list"
 
-// `CodeReviewIssuesPage` (routes/code-review/issues.tsx).
+// The code review issues page.
 
 type H = HtmlBuilder<Message>
 

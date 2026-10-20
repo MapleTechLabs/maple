@@ -2,8 +2,7 @@ import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { DateTime, Option } from "effect"
 
-// `formatTimestampInTimezone(value, { timeZone, withYear: true })` (apps/web/src/lib/timezone-format.ts
-// reads timezone atoms): warehouse timestamps are tz-less UTC strings.
+// Timestamps in the page's time zone, with the year: warehouse timestamps are tz-less UTC strings.
 
 /** The instant a warehouse timestamp names, if it parses. */
 export const epochMsOf = (value: string): Option.Option<number> =>

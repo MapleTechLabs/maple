@@ -14,8 +14,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { formSelect } from "./view-select"
 
-// `RawSqlEditorPanel` (dashboard-builder/config/raw-sql-editor-panel.tsx, `showBucketControl={false}`)
-// and the alert's reducer row under it (`RawQueryEditor` in rule-query-section.tsx).
+// `RawSqlEditorPanel` without the bucket control, and the alert's reducer row under it
+// (`RawQueryEditor`).
 
 type H = HtmlBuilder<Message>
 

@@ -26,7 +26,7 @@ import { PlanetscaleCardModel } from "./planetscale"
 import { GcpCardModel } from "./gcp"
 import { ConnectModel } from "./connect"
 
-// `/integrations` (apps/web/src/routes/integrations.tsx): the hub and every integration's page.
+// `/integrations`: the hub and every integration's page.
 
 const keyed = <A, AI>(schema: Schema.Codec<A, AI>) => KeyedSchema(schema, LoadFailure)
 

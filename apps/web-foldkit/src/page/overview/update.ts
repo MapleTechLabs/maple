@@ -251,7 +251,7 @@ const persistHint =
 	}
 
 /**
- * Every query the page reads, keyed like apps/web's atoms, for the current Model. Idempotent under
+ * Every query the page reads, keyed by its inputs, for the current Model. Idempotent under
  * `Load`: a slot already holding (or loading) its key sends nothing, so any Message may re-run it.
  */
 export const sync = (model: Model, context: PageContext, mode: RequestMode): Return => {

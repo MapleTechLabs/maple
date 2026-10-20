@@ -27,7 +27,7 @@ type H = HtmlBuilder<Message>
 
 export type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
-// copied: `SEVERITY_TONE` / `SEVERITY_LABEL` (components/errors/severity-badge.tsx, a React module).
+// Issue severity tones and labels (as in page/errors/kit/severity.ts).
 const SEVERITY = new Map([
 	["critical", { tone: "bg-severity-fatal/12 text-severity-fatal", label: "Critical" }],
 	["high", { tone: "bg-severity-error/12 text-severity-error", label: "High" }],

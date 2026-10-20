@@ -5,8 +5,8 @@ import { Schema } from "effect"
 import type { EditorState } from "./editor-state"
 import type { Widget } from "./lowering"
 
-// The editor's Raw SQL source (`readRawSqlDraftFromWidget`, `buildRawSqlDataSource` in
-// widget-query-builder-page.tsx): the SQL draft, the staged copy the preview runs, and the
+// The editor's Raw SQL source (`readRawSqlDraftFromWidget`, `buildRawSqlDataSource`): the SQL
+// draft, the staged copy the preview runs, and the
 // `raw_sql` data source Apply writes for the type picked in the editor.
 
 export const RawSqlDraft = Schema.Struct({

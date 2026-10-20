@@ -24,7 +24,7 @@ import { CAP_INPUT_ID, Message, type Model, SpendFeatureId } from "./model"
 
 type H = HtmlBuilder<Message>
 
-// `BillingUsageTable` (apps/web/src/components/settings/billing-usage-table.tsx).
+// `BillingUsageTable`.
 
 /** `formatFeatureUsage`: bytes for GB features, a count otherwise. */
 const featureUsage = (featureId: string, value: number): string =>

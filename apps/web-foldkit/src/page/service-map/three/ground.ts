@@ -16,8 +16,8 @@ import {
 } from "./kit"
 import { linkSeed } from "./transport"
 
-// copied: the zone and path drawing of apps/web/src/components/service-map/three/scene.tsx
-// (StoneTerrace, MeadowMat, WornPaths, TerraceSteps and their helpers) as three construction.
+// The zone and path drawing: stone terraces, meadow mats, worn paths, terrace steps and their
+// helpers.
 
 /** Zones and terraces are solid plinths standing on the paper. */
 export const PLINTH_FLOOR = -0.14

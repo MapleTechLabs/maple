@@ -6,7 +6,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../ui/display"
 
-// The small pieces both detail panels share (components/service-map/service-map-view.tsx).
+// The small pieces both detail panels share.
 
 type Children = ReadonlyArray<Html | string>
 

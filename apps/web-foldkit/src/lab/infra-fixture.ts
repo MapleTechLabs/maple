@@ -16,7 +16,7 @@ import {
 
 /**
  * `/lab/infra`'s rows: a host fleet, Railway services in two environments, Cloudflare zones and
- * PlanetScale databases, all relative to `nowMs`. React-free so the Foldkit lab reads the same rows.
+ * PlanetScale databases, all relative to `nowMs`.
  */
 type HostRow = ListHostsResponse["data"][number]
 

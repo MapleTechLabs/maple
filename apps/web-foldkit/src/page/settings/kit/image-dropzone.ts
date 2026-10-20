@@ -7,8 +7,8 @@ import { icon } from "../../../ui/icon"
 import { input } from "../../../ui/input"
 import { label } from "../../../ui/label"
 
-// `ImageDropzone` and `TypeToConfirmField` (apps/web/src/components/common/image-dropzone.tsx).
-// The parent owns `isDragging` and checks the picked file with `checkImage`.
+// `ImageDropzone` and `TypeToConfirmField`. The parent owns `isDragging` and checks the picked
+// file with `checkImage`.
 
 const MAX_BYTES = 10 * 1024 * 1024
 const ACCEPT = "image/png,image/jpeg,image/webp,image/gif"

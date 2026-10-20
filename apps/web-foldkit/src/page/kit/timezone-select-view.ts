@@ -8,8 +8,8 @@ import { icon } from "../../ui/icon"
 import { SYSTEM_VALUE } from "../../platform/time-zone"
 import { matchesZoneQuery, type ZoneRow } from "./timezone-zones"
 
-// `TimezoneSelect`'s `ComboboxContent` (apps/web/src/components/time-range-picker/timezone-select.tsx):
-// the search input, "No timezone matches that." and the grouped zone list with clock and offset.
+// The timezone select's list: the search input, "No timezone matches that." and the grouped
+// zone list with clock and offset.
 
 export type ZoneListInputs = Readonly<{
 	rows: ReadonlyArray<ZoneRow>

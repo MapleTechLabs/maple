@@ -5,7 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { meter } from "../../../ui/meter"
 
-// `MeterRows` (apps/web/src/components/infra/primitives/meter-rows.tsx).
+// `MeterRows`.
 
 export type MeterRow = Readonly<{ label: string; fraction: number }>
 

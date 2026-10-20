@@ -22,7 +22,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { AUTH_TYPE_LABELS, hostnameOf, type ScheduledStatus, toneBadge } from "./view-prometheus"
 
-// `ScrapeTargetDetails`, `MetricBox` and `ScrapeTargetChecksTable` (scrape-targets-section.tsx).
+// `ScrapeTargetDetails`, `MetricBox` and `ScrapeTargetChecksTable`.
 // TODO(tooltip): a check's message renders its trigger; the full-message popup is the overlay port's.
 
 type H = HtmlBuilder<Message>

@@ -23,7 +23,7 @@ import * as Menu from "../../../ui/menu"
 import * as Select from "../../../ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
-// The issue detail page (apps/web/src/routes/errors/issues/$issueId.tsx).
+// The issue detail page.
 
 const keyed = <A, AI>(schema: Schema.Codec<A, AI>) => KeyedSchema(schema, LoadFailure)
 
@@ -58,7 +58,7 @@ export const Model = Schema.Struct({
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),
 	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
-	/** The rail writes in flight, one entry per write (legacy runs one `useMutationAction` per kind). */
+	/** The rail writes in flight, one entry per write kind. */
 	busy: Schema.Array(Schema.Literals(["state", "severity", "claim", "heartbeat", "release"])),
 	/** The severity raise waiting on "Notify escalation destinations?". */
 	/** `startingInvestigation`: the create is in flight. */

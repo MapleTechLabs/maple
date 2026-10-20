@@ -85,7 +85,7 @@ export const liveNow = (h: H, live: ReadonlyArray<LiveVersion>, timeSearch: Time
 	])
 }
 
-// copied: releases-timeline.tsx constants.
+// The releases timeline's layout constants.
 const MAX_LANES = 12
 const MERGE_PX = 18
 const FALLBACK_MERGE_RATIO = 0.016

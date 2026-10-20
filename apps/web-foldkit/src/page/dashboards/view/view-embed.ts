@@ -22,7 +22,7 @@ import { optionsByNameOf, variablesOf } from "./plan"
 import { boardShareOf, chartShareOf, embedUrl, ShareMessage } from "./share"
 import { shareLinkRow } from "./view-share"
 
-// `EmbedWidgetDialog` (dashboard-builder/toolbar/embed-widget-dialog.tsx).
+// The embed widget dialog.
 
 type H = HtmlBuilder<Message>
 

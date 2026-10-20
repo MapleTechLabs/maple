@@ -4,7 +4,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import { CopyStatus } from "../copy-button"
 
-// `LogAttributesPanel` (apps/web/src/components/logs/log-attributes-panel.tsx) state: the attribute
+// The log attributes panel's state: the attribute
 // search, which collapsibles (namespace groups, JSON values, "Maple internal") are open, and the
 // status of the last copy. What the panel shows comes in as view inputs.
 

@@ -18,7 +18,7 @@ import { relativeTime } from "../../kit/relative-time"
 import type { SessionRow } from "./session-row"
 import { browserIconFor, COLUMNS, deviceIconFor, errorCountPill, livePill, type SessionsListOptions } from "./sessions-parts"
 
-// `SessionListRow`, `OrgButton`, `SessionTags` and `SessionBadges` (components/replays/sessions-list.tsx).
+// A session list row: its org button, tags and badges.
 
 const identityLabel = (session: SessionRow): string =>
 	session.userName || session.userEmail || session.userId || "Anonymous"

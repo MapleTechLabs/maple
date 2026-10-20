@@ -12,7 +12,7 @@ import { integrationLinkActions, integrationNotConnected } from "../kit/empty-st
 import type { Status, Usage } from "./data"
 
 // `CloudflareIngestBanner`, `CloudflareIngestEmpty`, `CloudflareStalledAction`
-// (components/infra/cloudflare/cloudflare-ingest-status.tsx) and `CloudflareNotConnected`.
+// and `CloudflareNotConnected`.
 
 /** `useCloudflareIngestPhase`'s phase: null without a usable connection. */
 export const ingestPhaseOf = (

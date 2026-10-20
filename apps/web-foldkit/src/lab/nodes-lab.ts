@@ -10,7 +10,7 @@ import { dashboardPage } from "../page/kit/dashboard-page"
 import * as Canvas from "../service-map/xyflow/canvas"
 import { edgesLayer, flowCanvas, flowNode, nodesLayer } from "../service-map/xyflow/view"
 
-// apps/web `routes/lab/nodes.tsx` + `lab/node-catalogue/node-catalogue-canvas.tsx`: every
+// `/lab/nodes`: every
 // provenance-canvas node and edge state in the investigation page's renderer, at 1:1.
 
 const CATALOGUE = buildNodeCatalogue()
@@ -31,7 +31,7 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-/** A card's link leaves the studio for the page it names, as legacy's router link does. */
+/** A card's link leaves the studio for the page it names. */
 const LoadNodeLink = Command.define("LoadNodeLinkFromLab", {
 	args: { href: Schema.String },
 	messages: [Message.CompletedLoadNodeLink],

@@ -8,7 +8,7 @@ import { panel } from "../../../ui/panel"
 import { statusDot } from "../../../ui/status-dot"
 import { actorChip } from "../kit/actor"
 
-// `LeaseHud` (components/errors/lease-hud.tsx): the countdown ring beside who holds the lease.
+// The lease HUD: the countdown ring beside who holds the lease.
 
 const DANGER_MS = 60_000
 const RING_SIZE = 36
