@@ -5,8 +5,8 @@ import { countHostScopes } from "./derive"
 import type { HostScope } from "./message"
 import type { HostRow } from "./model"
 
-// `HostSummaryBand` (components/infra/host-summary-band.tsx): the fleet split by busiest resource,
-// with Saturated, Elevated and Stopped reporting as scope buttons.
+// `HostSummaryBand`: the fleet split by busiest resource, with Saturated, Elevated and Stopped reporting
+// as scope buttons.
 
 export type HostSummaryBandOptions<M> = Readonly<{
 	hosts: ReadonlyArray<HostRow>

@@ -26,8 +26,8 @@ export interface ViewInputs {
 	/** Adds "Filter in" / "Filter out" to the attribute card. */
 	readonly canFilter: boolean
 	/**
-	 * The parent renders the stream's box (with its toolbar before the stream, as apps/web's
-	 * `LogsTableView` does on /logs); the stream's own root is then `display: contents`.
+	 * The parent renders the stream's box (with its toolbar before the stream, as on
+	 * /logs); the stream's own root is then `display: contents`.
 	 */
 	readonly isBare?: boolean
 	/** The row the detail sheet shows (`rowSelectedClass`). */
@@ -52,7 +52,7 @@ const ROW_EVENTS: RowEvents<Message> = {
 	gotPanelMessage: (index, message) => Message.GotPanelMessage({ index, message }),
 }
 
-/** Sticky column labels (apps/web's `ColumnHeader`). */
+/** Sticky column labels. */
 const columnHeader = (
 	h: HtmlBuilder<Message>,
 	pinnedColumns: ReadonlyArray<string>,
@@ -111,12 +111,12 @@ const rowView = (
 		canFilter,
 	})
 
-// Rows are keyed by index like apps/web; the slot is `index % 256` so the cache stays bounded
+// Rows are keyed by index; the slot is `index % 256` so the cache stays bounded
 // (a window never holds 256 rows) while each slot still renders at one position.
 const lazyRow = createKeyedLazy()
 const ROW_SLOTS = 256
 
-/** apps/web's `LogsTableView` for a non-empty stream. */
+/** The logs table for a non-empty stream. */
 export const view = defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const focused = Option.getOrElse(model.focusedIndex, () => -1)
 	const rows = model.window.flatMap(({ index, start }) => {

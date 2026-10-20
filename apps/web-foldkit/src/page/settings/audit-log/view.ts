@@ -10,8 +10,8 @@ import {
 	type AuditDateRange,
 	hasAuditLogFilters,
 	parseAuditLogSearch,
-} from "@maple/web/components/settings/audit-log-filters"
-import { auditResourceDisplay } from "@maple/web/components/settings/audit-log-resource"
+} from "../../../components/settings/audit-log-filters"
+import { auditResourceDisplay } from "../../../components/settings/audit-log-resource"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

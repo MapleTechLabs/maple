@@ -4,7 +4,7 @@ import {
 	type WhereClauseAutocompleteResult,
 	type WhereClauseAutocompleteScope,
 	type WhereClauseAutocompleteValues,
-} from "@maple/web/lib/query-builder/where-clause-autocomplete"
+} from "../../lib/query-builder/where-clause-autocomplete"
 import { Option } from "effect"
 import { AsyncData, type Command } from "foldkit"
 import * as Keyed from "../../data/keyed"
@@ -27,7 +27,7 @@ export type WhereFieldSpec = Readonly<{
 	scope?: WhereClauseAutocompleteScope
 	/** The editor's `values`; the active key's own values are merged in when they are read. */
 	values: WhereClauseAutocompleteValues
-	/** The read for the key the caret is in (`onActiveAttributeKey`), or null where legacy reads none. */
+	/** The read for the key the caret is in (`onActiveAttributeKey`), or null where none is needed. */
 	requestOf: (kind: ActiveKeyKind, attributeKey: string) => WhereValuesRequest | null
 }>
 

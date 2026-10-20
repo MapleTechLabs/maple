@@ -4,7 +4,7 @@ import { OrgCollections } from "../../../data/collections/org-collections"
 import { rowToDocument } from "../../../data/collections/dashboards"
 import { PageOutMessage } from "../../contract"
 
-// `useDashboardMutations` (apps/web/src/hooks/use-dashboard-store.ts) over the org collection:
+// The dashboard mutations over the org collection:
 // writes go through the collection's optimistic update, so live queries show them at once.
 
 /** `getErrorMessage`'s fallback when no failure in the chain carries a message. */
@@ -125,7 +125,7 @@ export const mutateDashboard = (
 	Effect.gen(function* () {
 		const collection = yield* dashboardsOf(orgId)
 		const current = yield* readDocument(orgId, id)
-		// `new Date().toISOString()` inside legacy's updaters.
+		// The updaters' `updatedAt` timestamp.
 		const nowIso = IsoDateTimeString.make(new Date(yield* Clock.currentTimeMillis).toISOString())
 		const updated = updater(current, nowIso)
 		if (updated === current) return "Synced" satisfies WriteSync

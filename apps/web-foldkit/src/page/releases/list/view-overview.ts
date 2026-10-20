@@ -8,7 +8,7 @@ import {
 	type LiveVersion,
 	type ReleaseHealth,
 	type ReleaseServiceImpact,
-} from "@maple/web/components/releases/release-model"
+} from "../../../components/releases/release-model"
 import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "../../../ui/button"
@@ -21,7 +21,7 @@ import { RELEASE_HEALTH_DOT_CLASS, RELEASE_HEALTH_LABEL, releaseHealthFigure, re
 import { MeasureReleasesTrack } from "./command"
 import type { Message } from "./message"
 
-// `ReleasesLiveNow` and `ReleasesTimeline` (apps/web/src/components/releases/).
+// `ReleasesLiveNow` and `ReleasesTimeline` (apps/web-foldkit/src/components/releases/).
 
 type H = HtmlBuilder<Message>
 export type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
@@ -85,7 +85,7 @@ export const liveNow = (h: H, live: ReadonlyArray<LiveVersion>, timeSearch: Time
 	])
 }
 
-// copied: releases-timeline.tsx constants.
+// The releases timeline's layout constants.
 const MAX_LANES = 12
 const MERGE_PX = 18
 const FALLBACK_MERGE_RATIO = 0.016

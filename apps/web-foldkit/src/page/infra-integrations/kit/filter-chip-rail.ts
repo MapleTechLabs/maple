@@ -3,8 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
 
-// `FilterChipRail` and `MonoLinkButton` (components/infra/primitives/filter-chips.tsx,
-// mono-link-button.tsx): the active filters as removable chips, six until expanded.
+// `FilterChipRail` and `MonoLinkButton`: the active filters as removable chips, six until expanded.
 
 const VISIBLE_LIMIT = 6
 

@@ -18,7 +18,7 @@ import { shellNavGroups, surfacesOf } from "./view-nav"
 import { pinnedNamespaceOf, userAvatar, userImageOf, userNameOf } from "./view-sidebar"
 
 // The open menu's content: GuestMenu, SupportMenu, the self-hosted org switcher's namespace list
-// and the collapsed rail's section menus (app-sidebar.tsx, namespace-scope-menu.tsx).
+// and the collapsed rail's section menus.
 
 type Item = Readonly<{
 	content: ReadonlyArray<Html | string>

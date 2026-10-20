@@ -25,7 +25,7 @@ import {
 } from "../session-lab"
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
 
-// `/lab/agent-session` (apps/web `lab/agent-session-lab.tsx`): the session page's header and four
+// `/lab/agent-session`: the session page's header and four
 // views over the package's fixture, with the Clean and Capture off toggles. No warehouse reads.
 
 const SESSION_ID = "lab-session-0f3c9a1e2b7d"
@@ -65,7 +65,7 @@ const landed = (model: Model, step: SessionStep): Return => ({
 	commands: Command.mapMessages(step.commands, toLab),
 })
 
-/** A toggle swaps the session's spans; the views keep their state, as legacy's do. */
+/** A toggle swaps the session's spans; the views keep their state. */
 const swapped = (model: Model): Return =>
 	landed(model, withSpans(model.session, spansOf(model.isClean, model.isCaptureOff), model.timeZone))
 

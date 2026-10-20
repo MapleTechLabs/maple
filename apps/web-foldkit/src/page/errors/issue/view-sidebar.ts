@@ -24,8 +24,8 @@ import { leaseHud } from "./view-lease"
 import type { Model } from "./model"
 import { sidebarBusy } from "./writes"
 
-// `IssueSidebar` (components/errors/issue-sidebar.tsx) with `StateSelect` and `SeveritySelect`.
-// TODO(lease): a held lease renders `LeaseHud` with Extend and Release in legacy; Claim is inert here.
+// The issue sidebar with its state and severity selects.
+// TODO(lease): a held lease should render the lease HUD with Extend and Release; Claim is inert here.
 
 type H = HtmlBuilder<Message>
 

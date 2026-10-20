@@ -8,7 +8,7 @@ import * as RadioGroup from "../../../ui/radio-group"
 import * as Tabs from "../../../ui/tabs"
 import { defineMessageUnion } from "foldkit/message"
 
-// `ShareDashboardDialog` and `EmbedWidgetDialog` (dashboard-builder/toolbar/): the board's share
+// `ShareDashboardDialog` and `EmbedWidgetDialog`: the board's share
 // links (`dashboardSharesAtom`), the access pick held until the server confirms it, and the writes.
 
 export const ShareRow = Schema.Struct({

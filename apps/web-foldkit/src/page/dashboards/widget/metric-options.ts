@@ -96,7 +96,7 @@ export const pickedMetric = (value: string, options: ReadonlyArray<MetricOption>
 
 export const optionsOf = (model: Model): ReadonlyArray<MetricOption> => model.metricOptions?.options ?? []
 
-/** The first page's first metric fills any metrics query that has none yet (once, as legacy). */
+/** The first page's first metric fills any metrics query that has none yet (once). */
 export const withDefaultMetric = (state: EditorState, options: ReadonlyArray<MetricOption>): EditorState => {
 	const first = options[0]
 	if (first === undefined) return state

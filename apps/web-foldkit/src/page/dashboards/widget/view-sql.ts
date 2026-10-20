@@ -3,7 +3,7 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { fieldErrorStyles } from "@maple/ui/styles/ui/field"
-import { tokenizeSql } from "@maple/web/lib/sql-highlight"
+import { tokenizeSql } from "../../../lib/sql-highlight"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import * as Tooltip from "../../../ui/tooltip"
 import { button } from "../../../ui/button"
@@ -18,7 +18,7 @@ import { type RawSqlState, rawSqlErrorOf } from "./raw-sql"
 import { SQL_TEXTAREA_ID } from "./sql-step"
 import { widgetOf } from "./update"
 
-// `RawSqlEditorPanel` (dashboard-builder/config/raw-sql-editor-panel.tsx) under the editor's Raw SQL
+// `RawSqlEditorPanel` under the editor's Raw SQL
 // tab: the highlighted SQL, the macro and variable chips, the bucket, Run preview.
 
 type H = HtmlBuilder<Message>
@@ -133,7 +133,7 @@ const chipDescription = (chips: ReadonlyArray<readonly [string, string]>, trigge
 const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
 const BUCKET_IDS = { control: "widget-editor-sql-bucket", label: "widget-editor-sql-bucket-label", error: "widget-editor-sql-bucket-error" }
 
-/** The chips, each a trigger of the one description tooltip (`<Tooltip>` around each in legacy). */
+/** The chips, each a trigger of the one description tooltip. */
 const chipRow = (
 	h: H,
 	chips: ReadonlyArray<readonly [string, string]>,

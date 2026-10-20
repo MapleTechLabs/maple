@@ -7,10 +7,10 @@ import { MountEmptyState } from "./command"
 import type { Message } from "./message"
 import type { Model } from "./model"
 
-// `ServiceMapEmptyState` and `GhostNode` (components/service-map/service-map-view.tsx): the dotted
+// The service map's empty state: the dotted
 // grid and a faint ghost graph over the presence-aware empty copy.
 
-/** The legacy template literal, whitespace included (its text is part of the page's text). */
+/** The keyframes' CSS text, whitespace included (it is part of the page's text). */
 const FLOW_CSS = [
 	"",
 	"\t\t\t\t\t\t@keyframes sm-empty-flow { to { stroke-dashoffset: -16; } }",

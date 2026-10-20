@@ -1,5 +1,5 @@
-import { ENDPOINTS_LIMIT } from "@maple/web/components/services/service-endpoints"
-import { buildServiceOpenIssuesQuery } from "@maple/web/lib/services/error-issues"
+import { ENDPOINTS_LIMIT } from "../../../components/services/service-endpoints"
+import { buildServiceOpenIssuesQuery } from "../../../lib/services/error-issues"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { Option, type Result } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -300,7 +300,7 @@ const tabSteps = (model: Model, context: PageContext, window: TimeWindow, mode: 
 }
 
 /**
- * Every query the current tab reads, keyed like apps/web's atoms. Idempotent under `Load`: a slot
+ * Every query the current tab reads, keyed by its inputs. Idempotent under `Load`: a slot
  * already holding (or loading) its key sends nothing, so any Message may re-run it.
  */
 export const sync = (model: Model, context: PageContext, mode: RequestMode): Return => {

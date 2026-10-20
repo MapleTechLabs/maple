@@ -1,4 +1,4 @@
-import { highlightCode } from "@maple/web/lib/sugar-high"
+import { highlightCode } from "../../../lib/sugar-high"
 import * as SheetStyles from "@maple/ui/styles/ui/sheet"
 import { cn } from "@maple/ui/lib/utils"
 import { Submodel } from "foldkit"

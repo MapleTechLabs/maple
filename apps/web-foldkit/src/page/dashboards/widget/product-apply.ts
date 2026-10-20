@@ -2,7 +2,7 @@ import {
 	DEFAULT_FUNNEL_KEY_BY,
 	DEFAULT_FUNNEL_WINDOW_SECONDS,
 	FUNNEL_SESSION_DIMENSIONS,
-} from "@maple/web/components/funnels/definition"
+} from "../../../components/funnels/definition"
 import type { EditorState, FunnelDraft, ListColumn, PathsDraft, StepDraft } from "./editor-state"
 import { DEFAULT_LIST_COLUMNS } from "./lowering-list"
 import { ProductEdit, type StepKind, type StepScope, type StepTextField } from "./product-edit"

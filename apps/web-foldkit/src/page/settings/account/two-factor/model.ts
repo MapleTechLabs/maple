@@ -5,7 +5,7 @@ import * as Dialog from "../../../../ui/dialog"
 import * as OtpField from "../../../../ui/otp-field"
 import { AccountUser } from "../user"
 
-// The Two-factor tab (`TwoFactorSection`, apps/web/src/components/account/two-factor-section.tsx).
+// The Two-factor tab.
 
 /**
  * Enrollment: scan the `createTOTP()` key, type a code, then the backup codes `verifyTOTP()`

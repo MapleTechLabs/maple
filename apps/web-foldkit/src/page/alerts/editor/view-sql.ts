@@ -3,7 +3,7 @@ import { RAW_QUERY_REDUCER_LABELS } from "@maple/web-data/alerts/form-utils"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { tokenizeSql } from "@maple/web/lib/sql-highlight"
+import { tokenizeSql } from "../../../lib/sql-highlight"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
@@ -14,8 +14,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { formSelect } from "./view-select"
 
-// `RawSqlEditorPanel` (dashboard-builder/config/raw-sql-editor-panel.tsx, `showBucketControl={false}`)
-// and the alert's reducer row under it (`RawQueryEditor` in rule-query-section.tsx).
+// `RawSqlEditorPanel` without the bucket control, and the alert's reducer row under it
+// (`RawQueryEditor`).
 
 type H = HtmlBuilder<Message>
 

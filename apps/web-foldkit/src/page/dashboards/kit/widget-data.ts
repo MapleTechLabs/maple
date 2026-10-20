@@ -20,7 +20,7 @@ import {
 import { Duration, Effect, Schedule, Schema } from "effect"
 import { requestKey } from "../../../data/request-key"
 
-// `useWidgetDataSource` (apps/web/src/hooks/use-widget-data.ts), React-free: the request a widget
+// A widget's data source: the request a widget
 // sends, the fetch with its retry policy, and the transform that turns the answer into rows.
 
 type Transform = typeof WidgetDataSourceTransformSchema.Type
@@ -34,7 +34,7 @@ export const PlannedRequest = Schema.Struct({
 })
 export type PlannedRequest = typeof PlannedRequest.Type
 
-/** Why a widget draws no query: the `dataState` legacy derives before any fetch. */
+/** Why a widget draws no query: the `dataState` derived before any fetch. */
 export const WidgetGate = Schema.Union([
 	Schema.TaggedStruct("Request", { request: PlannedRequest }),
 	Schema.TaggedStruct("Static", {}),

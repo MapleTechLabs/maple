@@ -2,7 +2,7 @@ import { Array, Option } from "effect"
 import type { NavShellRow, NavShellSection } from "./kit/nav-shell"
 import { legacySettingsTabValues, settingsTabValues } from "../../route/search"
 
-// `settings-nav.tsx`: the tab set, labels, retired-tab redirects, nav groups and their visibility.
+// The tab set, labels, retired-tab redirects, nav groups and their visibility.
 
 export type SettingsTab = (typeof settingsTabValues)[number]
 export type LegacySettingsTab = (typeof legacySettingsTabValues)[number]

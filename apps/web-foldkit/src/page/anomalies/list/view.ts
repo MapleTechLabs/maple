@@ -23,7 +23,7 @@ import type { Model } from "./model"
 import { filtersRail } from "./view-filters"
 import { listBody } from "./view-list"
 
-// `AnomaliesPage` (apps/web/src/routes/anomalies/index.tsx).
+// The anomalies page.
 // TODO(tooltip): the Live chip's "Auto-refreshing every 15s" tooltip popup.
 
 type H = HtmlBuilder<Message>

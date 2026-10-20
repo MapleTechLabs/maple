@@ -1,7 +1,7 @@
 import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
-import { encodeLogKey } from "@maple/web/lib/log-key"
+import { encodeLogKey } from "../../../lib/log-key"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { copyButton } from "../../../ui/copy-button"
@@ -12,7 +12,7 @@ import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
 import { copyable } from "./view-hero"
 
-// `LogMetaStrip` (apps/web/src/components/logs/log-meta-strip.tsx), as the drawer shows it.
+// The log's meta strip, as the drawer shows it.
 
 type H = HtmlBuilder<Message>
 

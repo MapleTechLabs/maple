@@ -22,7 +22,7 @@ import { outcomeBadgeStyle, type PlatformInfo } from "./platform"
 
 type H = HtmlBuilder<Message>
 
-/** `formatTimestampInTimezone` (apps/web/src/lib/timezone-format.ts imports timezone atoms). */
+/** A warehouse timestamp in `timeZone`, optionally with milliseconds. */
 export const formatTimestamp = (value: string, timeZone: string, withMilliseconds: boolean): string => {
 	const date = new Date(warehouseDateTimeToIso(value))
 	if (Number.isNaN(date.getTime())) return EMPTY_VALUE

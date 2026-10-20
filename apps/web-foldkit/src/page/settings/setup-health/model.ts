@@ -4,7 +4,7 @@ import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../../data/load-failure"
 
-// `SetupAuditSection` (apps/web/src/components/settings/setup-audit-section.tsx): the audit report.
+// `SetupAuditSection`: the audit report.
 
 export const AuditData = AsyncData.Schema(V2SetupAudit, LoadFailure)
 

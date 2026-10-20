@@ -1,10 +1,9 @@
 import type { CatalogPlan, CatalogPlanItem } from "@maple/domain/http"
 import { formatCurrency } from "@maple/domain/format"
-import { formatCount, formatQuoteUnits, quoteUnits } from "@maple/web/lib/billing/usage"
+import { formatCount, formatQuoteUnits, quoteUnits } from "../../lib/billing/usage"
 import type { IconName } from "../../ui/icon"
 
-// The data side of `PricingCards` (apps/web/src/components/settings/pricing-cards.tsx): which
-// plans show, their prices, metered rows and buttons, copied from its module-private helpers.
+// The data side of `PricingCards`: which plans show, their prices, metered rows and buttons.
 
 export const FEATURE_ICONS = new Map<string, IconName>([
 	["logs", "FileIcon"],

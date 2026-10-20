@@ -15,7 +15,7 @@
 		// Both bundlers also read the root `.env*` files and fold a few unprefixed
 		// variables into inlined values (vite.config.ts, astro.config.mjs), so those
 		// are part of the build's identity too.
-		"@maple/web#build": {
+		"@maple/web-foldkit#build": {
 			"dependsOn": ["^build"],
 			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.env", "$TURBO_ROOT$/.env.*"],
 			"env": [
@@ -77,7 +77,7 @@
 				"$TURBO_ROOT$/apps/ios/Packages/MapleAPI/Sources/MapleAPI/openapi.json"
 			]
 		},
-		"@maple/web#test": {
+		"@maple/web-foldkit#test": {
 			"dependsOn": ["^build"],
 			"outputs": [],
 			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/landing/src/content/docs/**"]
@@ -106,10 +106,7 @@
 				"$TURBO_DEFAULT$",
 				"$TURBO_ROOT$/apps/chat-bot/src/**",
 				"$TURBO_ROOT$/apps/api/src/routes/**",
-				"$TURBO_ROOT$/apps/web/src/components/integrations/**",
-				"$TURBO_ROOT$/apps/web/src/hooks/use-organization-feature-flags.ts",
-				"$TURBO_ROOT$/apps/web/src/lib/organization-feature-flags.ts",
-				"$TURBO_ROOT$/apps/web/src/routes/integrations.tsx",
+				"$TURBO_ROOT$/apps/web-foldkit/src/page/integrations/**",
 				"$TURBO_ROOT$/packages/backend/src/services/alerts/**",
 				"$TURBO_ROOT$/packages/backend/src/services/auth/MembershipRevocationService.ts",
 				"$TURBO_ROOT$/packages/backend/src/services/integrations/**",

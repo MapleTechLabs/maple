@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { GAUGE_CENTER, type GaugeOptions, gaugeGeometry, LABEL_FONT_SIZE, polar, R_TICK_INNER, R_TICK_OUTER, VALUE_Y } from "./gauge"
 
-// The dial of `GaugeWidget` (dashboard-builder/widgets/gauge-widget.tsx), as SVG.
+// The gauge widget's dial, as SVG.
 
 const attrs = <M>(h: HtmlBuilder<M>, entries: Readonly<Record<string, string | number>>) =>
 	Object.entries(entries).map(([name, value]) => h.Attribute(name, String(value)))

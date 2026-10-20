@@ -1,5 +1,4 @@
-// copied: apps/web/src/components/service-map/three/maple-scenery-forest.tsx (R3F JSX as three construction).
-import type { FactoryLink } from "@maple/web/components/service-map/three/factory-routing"
+import type { FactoryLink } from "../../../components/service-map/three/factory-routing"
 import {
 	drawBridge,
 	drawCampfire,
@@ -11,15 +10,15 @@ import {
 	drawPerch,
 	drawPlant,
 	drawSteppingStones,
-} from "@maple/web/components/service-map/three/maple-scenery"
-import { lakeLoop } from "@maple/web/components/service-map/three/maple-scenery-field"
+} from "../../../components/service-map/three/maple-scenery"
+import { lakeLoop } from "../../../components/service-map/three/maple-scenery-field"
 import {
 	drawDock,
 	drawHill,
 	drawLake,
 	drawMound,
 	drawPath,
-} from "@maple/web/components/service-map/three/maple-scenery-land"
+} from "../../../components/service-map/three/maple-scenery-land"
 import {
 	forestPlan,
 	groundOf,
@@ -27,14 +26,14 @@ import {
 	landmarks,
 	openGround,
 	worldOf,
-} from "@maple/web/components/service-map/three/maple-scenery-plan"
+} from "../../../components/service-map/three/maple-scenery-plan"
 import {
 	type Bounds,
 	prototypes,
 	type Sketch,
-} from "@maple/web/components/service-map/three/maple-scenery-sketch"
-import type { InkPalette } from "@maple/web/components/service-map/three/palette"
-import type { District, SpatialLayout } from "@maple/web/components/service-map/three/spatial-layout"
+} from "../../../components/service-map/three/maple-scenery-sketch"
+import type { InkPalette } from "../../../components/service-map/three/palette"
+import type { District, SpatialLayout } from "../../../components/service-map/three/spatial-layout"
 import type * as THREE from "three"
 import { birds, campfire, deerHead, ducks } from "./critters"
 import { type Child, group, type Running, type Scope, sketchDrawing, type Vec3 } from "./kit"
@@ -107,7 +106,7 @@ export function mapleForest(
 	])
 }
 
-/** `Scenery` (factory-decor.tsx): the sugar-bush round the map, framed on the districts. */
+/** The sugar-bush round the map, framed on the districts. */
 export function scenery(
 	scope: Scope,
 	{

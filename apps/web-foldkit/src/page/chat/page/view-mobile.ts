@@ -7,7 +7,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { chatSidebar } from "./view-sidebar"
 
-// `ChatPage` below `md` (apps/web components/chat/chat-page.tsx): a header with the sidebar
+// The chat page below `md`: a header with the sidebar
 // trigger, the active conversation's title (opens the list as a sheet), share and new chat.
 
 type H = HtmlBuilder<Message>

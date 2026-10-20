@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 
-// `HeroChip` (apps/web/src/components/common/page-hero.tsx).
+// `HeroChip`.
 
 /** A plain-text chip titles itself with its text, so a long value stays readable. */
 export const heroChip = <M>(

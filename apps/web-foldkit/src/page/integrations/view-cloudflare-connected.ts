@@ -28,8 +28,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { workersCard, zoneBoard } from "./view-cloudflare-board"
 
-// The connected `CloudflareAccountCard` (components/integrations/cloudflare-account-card.tsx) and
-// `CloudflareStatCards` (cloudflare-stat-cards.tsx).
+// The connected `CloudflareAccountCard` and `CloudflareStatCards`.
 
 type H = HtmlBuilder<Message>
 

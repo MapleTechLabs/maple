@@ -3,7 +3,7 @@ import { button } from "../../../ui/button"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 
-// `ToolScopeRow` (agent-sessions/tools/tool-scope-row.tsx): what the page is about, one click out of each.
+// The tool scope row: what the page is about, one click out of each.
 
 export type ScopeChip = Readonly<{ kind: "tool" | "model"; value: string }>
 

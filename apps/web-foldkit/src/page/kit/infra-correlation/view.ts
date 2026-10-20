@@ -1,4 +1,4 @@
-import { getActiveInfraCorrelations, type InfraCorrelation } from "@maple/web/components/infra/infra-correlations"
+import { getActiveInfraCorrelations, type InfraCorrelation } from "../../../components/infra/infra-correlations"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { INFRA_CHART_TOKENS } from "../../../charts/infra-metric-series"

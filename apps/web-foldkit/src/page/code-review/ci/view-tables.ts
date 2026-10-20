@@ -1,6 +1,6 @@
 import type { CodeReviewCiJob, CodeReviewCiPipeline, CodeReviewCiRedStreak } from "@maple/domain/http"
-import { failRate } from "@maple/web/components/code-review/ci/ci-format"
-import { formatCount, formatSpan } from "@maple/web/components/code-review/code-review-format"
+import { failRate } from "../../../components/code-review/ci/ci-format"
+import { formatCount, formatSpan } from "../../../components/code-review/code-review-format"
 import { EMPTY_VALUE, formatDuration, formatPercent } from "@maple/ui/lib/format"
 import { TONE_SOFT, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -16,7 +16,7 @@ import { ciResultBadge } from "../kit/parts"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
 
-// `WorkflowsTable`, `RedStreakLine` and `JobsTable` (ci-analytics.tsx).
+// `WorkflowsTable`, `RedStreakLine` and `JobsTable`.
 
 type H = HtmlBuilder<Message>
 type TimeContext = Readonly<{ nowMs: number; timeZone: string }>

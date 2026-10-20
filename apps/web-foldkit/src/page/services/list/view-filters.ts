@@ -15,8 +15,6 @@ import { HEALTH_LEVELS, hasActiveServiceFilters, type HealthSummary } from "./de
 import { type Facet, Message } from "./message"
 import type { Model, ServicesFacets } from "./model"
 
-// `ServicesFilterSidebar` (apps/web/src/components/services/services-filter-sidebar.tsx).
-
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
 const facetSection = (

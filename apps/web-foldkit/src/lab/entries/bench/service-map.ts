@@ -5,7 +5,7 @@ import {
 	DURATION_SECONDS,
 	generateBenchGraph,
 	refreshBenchMetrics,
-} from "@maple/web/lab/bench/service-map-bench-fixture"
+} from "../../bench/service-map-bench-fixture"
 import type { DeclutterFocus } from "@maple/ui/components/service-map/service-map-declutter"
 import { cn } from "@maple/ui/lib/utils"
 import { Effect, Option, Schema, Stream } from "effect"
@@ -23,7 +23,7 @@ import { defineLabWithFlags } from "../../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../../toasts"
 import * as Toast from "../../../ui/toast"
 
-// `/lab/bench/service-map` (apps/web `routes/lab/bench/service-map.tsx` + `lab/bench/service-map-bench.tsx`):
+// `/lab/bench/service-map`:
 // the synthetic topology at `?services=&edges=&rps=&seed=&groups=&minTraffic=&focus=`, with the
 // namespace-group switch and the `window.__smBench` perf harness.
 
@@ -72,7 +72,7 @@ type Message = typeof Message.Type
 const toMap = (message: ServiceMap.Message): Message => Message.GotMapMessage({ message })
 
 const initMap = (params: BenchParams) => {
-	// The legacy bench renders revision 0 of its metric refresh, not the raw generated graph.
+	// The bench renders revision 0 of its metric refresh, not the raw generated graph.
 	const graph = refreshBenchMetrics(generateBenchGraph(params), 0)
 	const source = buildSourceGraph({
 		edges: graph.edges,
@@ -124,7 +124,7 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 				commands: Command.mapMessages(next.commands, toMap),
 			}
 		},
-		// The legacy route keys the bench on its params, so a new grouping starts a fresh map.
+		// The bench is keyed on its params, so a new grouping starts a fresh map.
 		ClickedNamespaceGroups: ({ groups }) => {
 			const fresh = init({ ...model.params, groups })
 			return {
@@ -162,7 +162,7 @@ const subscriptions = Subscription.make<Model, Message>()((entry) => ({
 
 const GROUP_OPTIONS = [0, 3, 6, 10]
 
-/** The namespace-group switch the legacy route draws over the map. */
+/** The namespace-group switch drawn over the map. */
 const groupSwitch = (h: HtmlBuilder<Message>, groups: number): Html =>
 	h.div(
 		[

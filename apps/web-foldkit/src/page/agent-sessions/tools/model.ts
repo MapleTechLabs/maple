@@ -13,7 +13,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Facets } from "../list/model"
 import { ToolBreakdownRow, ToolSeries, TotalsResult } from "../tools-kit/model"
 
-// `/agent-sessions/tools` (apps/web/src/routes/agent-sessions/tools/index.tsx, tools/agent-tools-view.tsx).
+// `/agent-sessions/tools`.
 
 export const Breakdowns = Schema.Struct({ tools: Schema.Array(ToolBreakdownRow) })
 export type Breakdowns = typeof Breakdowns.Type

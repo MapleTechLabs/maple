@@ -1,5 +1,5 @@
 import type { CodeReviewAnalytics, CodeReviewTotals } from "@maple/domain/http"
-import { CATEGORY_LABELS, formatCount } from "@maple/web/components/code-review/code-review-format"
+import { CATEGORY_LABELS, formatCount } from "../../../components/code-review/code-review-format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "../../../ui/empty"
@@ -9,7 +9,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import { analyticsPanel } from "../kit/analytics-panel"
 import { authorLabel } from "../kit/author"
 
-// `RepositoryList`, `BarList`, `CategoriesCard`, `OutcomesCard`, `AuthorsCard` (code-review-analytics.tsx).
+// `RepositoryList`, `BarList`, `CategoriesCard`, `OutcomesCard`, `AuthorsCard`.
 
 type Row = Readonly<{ key: string; name: string; value: number }>
 

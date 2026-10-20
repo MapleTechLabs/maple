@@ -13,7 +13,7 @@ import { Facets } from "../list/model"
 import { ToolErrorRow, ToolSeries, TotalsResult } from "../tools-kit/model"
 import * as ErrorModal from "./error-modal-model"
 
-// `/agent-sessions/tools/$toolName` (routes/agent-sessions/tools/$toolName.tsx, tools/tool-detail-view.tsx).
+// `/agent-sessions/tools/$toolName`.
 
 export const SessionRows = Schema.Struct({ data: Schema.Array(AiSessionListItem) })
 

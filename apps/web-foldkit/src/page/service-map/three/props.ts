@@ -1,4 +1,3 @@
-// copied: apps/web/src/components/service-map/three/maple-props.tsx (R3F JSX as three construction).
 import * as THREE from "three"
 import { bunting } from "./decor"
 import { type Child, group, inkBox, inkLines, inkPlate, inkSolid, type Scope, type Vec3 } from "./kit"

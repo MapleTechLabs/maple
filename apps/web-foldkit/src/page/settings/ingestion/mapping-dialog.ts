@@ -12,8 +12,8 @@ import * as Dialog from "../../../ui/dialog"
 import * as Field from "../../../ui/field"
 import * as Select from "../../../ui/select"
 
-// The add / edit dialog of `AttributeMappingsSection` (attribute-mappings-section.tsx), with
-// `AttributeKeyAutocomplete`'s two key lists (read once, when the dialog first opens).
+// The add / edit dialog of `AttributeMappingsSection`, with `AttributeKeyAutocomplete`'s two key lists (read
+// once, when the dialog first opens).
 
 export const KeysData = AsyncData.Schema(Schema.Array(Schema.String), LoadFailure)
 

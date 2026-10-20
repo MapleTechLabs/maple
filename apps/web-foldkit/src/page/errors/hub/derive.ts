@@ -1,12 +1,12 @@
 import type { ErrorIssueDocument, IssueKind, WorkflowState } from "@maple/domain/http"
 import { ERROR_ISSUE_SEARCH_MAX_LENGTH } from "@maple/domain/http/v2"
-import { hubViewOf, type HubSort, type HubView, type SeverityFilter } from "@maple/web/lib/errors/hub-params"
+import { hubViewOf, type HubSort, type HubView, type SeverityFilter } from "../../../lib/errors/hub-params"
 import {
 	buildErrorSignals,
 	type ErrorSignal,
 	indexInvestigationsByIssue,
-} from "@maple/web/lib/models/error-signal"
-import { errorIssueFromV2 } from "@maple/web/lib/services/error-issues"
+} from "../../../lib/models/error-signal"
+import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { DateTime, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
@@ -60,7 +60,7 @@ export const listQueryOf = (search: Search, rankedHashes: ReadonlyArray<string> 
 	}
 }
 
-// copied: `VIEW_STATES`, `viewCovers` and `sortSignals` (errors-hub-view.tsx, a React module).
+// The states each hub view covers, and the signal sort.
 const VIEW_STATES = {
 	open: ["triage", "regressed", "todo", "in_progress", "in_review"],
 	closed: ["verifying", "done", "cancelled", "wontfix"],

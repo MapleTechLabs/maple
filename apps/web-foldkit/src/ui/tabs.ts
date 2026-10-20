@@ -23,7 +23,7 @@ export type IndicatorRect = typeof IndicatorRect.Type
 // MODEL
 
 export const Model = Schema.Struct({
-	/** First React `useId` number of this Tabs, so element ids match Base UI's (`base-ui-_r_<n>_`). */
+	/** The id seed of this Tabs, so element ids follow Base UI's format (`base-ui-_r_<n>_`). */
 	idBase: Schema.Number,
 	values: Schema.Array(Schema.String),
 	selected: Schema.String,

@@ -4,8 +4,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { readViewport } from "../xyflow/attach"
 import { Viewport } from "../xyflow/geometry"
 
-// `window.__smBench` for the Foldkit bench, the frame-timing half of apps/web's `BenchDriver`
-// (`lab/bench/service-map-bench.tsx`): readiness, idle and pan runs, camera pin and fit. Camera
+// `window.__smBench` for the service map bench: readiness, idle and pan runs, camera pin and fit. Camera
 // moves go through the Model as Messages, so a pan frame costs update, view and patch.
 
 export const HarnessMessage = defineMessageUnion({
@@ -37,7 +36,7 @@ const isReady = (root: Element) => {
 	)
 }
 
-/** What one run reports: frame pacing and main-thread blocking, as apps/web's `BenchMetrics`. */
+/** What one run reports: frame pacing and main-thread blocking. */
 export interface FrameReport {
 	readonly durationMs: number
 	readonly frames: number
@@ -159,7 +158,7 @@ export const AttachBenchHarness = Mount.defineStream("AttachBenchHarness", {
 		),
 })
 
-/** Resolves once no DOM mutation has landed for `quietMs` (Foldkit's stand-in for React commits). */
+/** Resolves once no DOM mutation has landed for `quietMs` (the render has settled). */
 const waitForQuiet = (root: Element, maxMs: number, quietMs: number) =>
 	new Promise<boolean>((resolve) => {
 		const start = performance.now()

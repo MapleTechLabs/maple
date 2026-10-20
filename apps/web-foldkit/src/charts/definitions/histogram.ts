@@ -18,7 +18,7 @@ import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 
 // Port of packages/ui/src/components/charts/histogram/query-builder-histogram-chart.tsx (definition
-// half) and apps/web/src/lab/charts/histogram-spike.tsx. Constants and comments as there.
+// half), plus the lab's binned histogram.
 
 type NumericSpec = Extract<ChartSpec, { readonly _tag: "NumericHistogram" }>
 type CategoricalSpec = Extract<ChartSpec, { readonly _tag: "CategoricalHistogram" }>

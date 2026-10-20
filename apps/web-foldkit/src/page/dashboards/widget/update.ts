@@ -1,5 +1,5 @@
 import { initWhereFields } from "../../kit/where-field"
-import { pickDashboardControlParams } from "@maple/web/lib/dashboard-controls/search-params"
+import { pickDashboardControlParams } from "../../../lib/dashboard-controls/search-params"
 import {
 	computeBucketSecondsForWidthRange,
 	formatBucketSecondsShort,
@@ -154,7 +154,7 @@ const revisionOf = (text: string): string =>
 		.toString(36)
 
 /**
- * Legacy's list builds its engine query from a fresh `createQueryDraft(0)` each time the preview
+ * The list builds its engine query from a fresh `createQueryDraft(0)` each time the preview
  * recomputes (any edit, or the stored widget changing), so each recompute is a new request.
  */
 const listPreviewQueries = (
@@ -389,7 +389,7 @@ export const requestAutocomplete = (model: Model, context: PageContext): Return 
 	if (range === null) return { model }
 	return AUTOCOMPLETE_LOOKUPS.reduce<Return>(
 		(step, lookup) => {
-			// The suggestions already asked for these names over this window: legacy reads one atom.
+			// The suggestions already asked for these names over this window: read them once.
 			if (lookup === "productEventNames" && step.model.suggestions.eventNames?.key === eventNamesKeyOf(context.orgId, range))
 				return step
 			const key = requestKey(context.orgId, `autocomplete.${lookup}`, range)

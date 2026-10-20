@@ -1,4 +1,3 @@
-// copied: apps/web/src/components/service-map/three/factory-decor.tsx (R3F JSX as three construction).
 import * as THREE from "three"
 import { type Child, group, inkBox, inkLines, inkSolid, mesh, type Scope, type Vec3 } from "./kit"
 import type { MachineFinish } from "./props"

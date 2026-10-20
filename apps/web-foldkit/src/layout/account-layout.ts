@@ -4,7 +4,7 @@ import { icon } from "../ui/icon"
 const WEBSITE_URL = "https://maple.dev"
 const DOCS_URL = "https://maple.dev/docs"
 
-/** `<AccountLayout>` (apps/web/src/components/layout/account-layout.tsx): artwork left, form right. */
+/** The account layout: artwork left, form right. */
 export const accountLayout = <Message>(h: HtmlBuilder<Message>, children: ReadonlyArray<Html>): Html =>
 	h.main(
 		[h.Class("account-layout dark")],

@@ -34,7 +34,7 @@ export const SectionEdit = defineTaggedUnion({
 })
 export type SectionEdit = typeof SectionEdit.Type
 
-/** Applies an edit; `nextId` mints the ids a new group or tab needs, in legacy's call order. */
+/** Applies an edit; `nextId` mints the ids a new group or tab needs, in a fixed call order. */
 export const applySectionEdit = (
 	edit: SectionEdit,
 	document: DashboardDocument,

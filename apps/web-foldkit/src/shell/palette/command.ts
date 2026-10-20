@@ -100,7 +100,7 @@ const nextFrame = Effect.callback<void>((resume) => {
 
 /**
  * An action that opens another overlay keeps the palette a few frames, so focus moves on from its
- * input (keeping `:focus-visible`), as legacy's unmount in the same commit does.
+ * input (keeping `:focus-visible`).
  */
 export const DelayClose = Command.define("DelayClose", {
 	messages: [Message.ElapsedCloseDelay],

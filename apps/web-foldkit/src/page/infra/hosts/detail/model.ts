@@ -9,7 +9,7 @@ import * as Frame from "../../kit/frame"
 import { Copies } from "../../kit/resource-attributes"
 import { ChartModels, SeriesSlots } from "../../kit/series"
 
-// `/infra/hosts/$hostName` (apps/web/src/routes/infra/hosts/$hostName.tsx).
+// `/infra/hosts/$hostName`.
 
 export const HostSummary = HostDetailSummaryResponse.fields.data
 export type HostSummary = HostDetailSummaryResponse["data"]

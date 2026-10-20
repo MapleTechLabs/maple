@@ -13,7 +13,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { type Access, boardShareOf, ShareMessage, shareUrl } from "./share"
 
-// `ShareDashboardDialog` and `ShareLinkRow` (dashboard-builder/toolbar/share-dashboard-dialog.tsx).
+// `ShareDashboardDialog` and `ShareLinkRow`: the share dialog and one link's row.
 
 type H = HtmlBuilder<Message>
 

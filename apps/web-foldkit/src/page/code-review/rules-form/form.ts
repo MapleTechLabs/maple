@@ -5,7 +5,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Select from "../../../ui/select"
 import { ALL_CATEGORIES, configFromState, FormState, Mode, sameState, stateFromConfig } from "./state"
 
-// `ReviewRulesForm` (components/code-review/review-rules-form.tsx) as a Submodel: the edited state,
+// `ReviewRulesForm` as a Submodel: the edited state,
 // what was last saved, and the save in flight. The page performs the save (`OutMessage.Saved`)
 // and reports back with `completeSave`; a refetched config arrives through `syncConfig`.
 

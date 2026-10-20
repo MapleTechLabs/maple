@@ -9,7 +9,7 @@ import { manifestGlyph } from "../../ui/manifest-glyph"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// The chat card's parts (components/integrations/chat-integration-card.tsx); the card is view-chat-card.ts.
+// The chat card's parts; the card is view-chat-card.ts.
 
 type H = HtmlBuilder<Message>
 

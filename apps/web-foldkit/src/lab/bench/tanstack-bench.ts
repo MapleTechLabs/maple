@@ -1,4 +1,4 @@
-import { overviewBenchRows } from "@maple/web/lab/bench/tanstack/bench-data"
+import { overviewBenchRows } from "./tanstack/bench-data"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -10,7 +10,7 @@ import { resolveColor, ResolveThemeColors, type ThemeColors } from "../../charts
 import { chartSkeleton } from "../../ui/chart-skeleton"
 import { isReady, type Message, type Model, toChart } from "./chart-bench"
 
-// apps/web `lab/bench/tanstack-chart-bench.tsx` (`/lab/bench/tanstack`): the three `/` overview
+// `/lab/bench/tanstack`: the three `/` overview
 // charts on the canvas renderer off identical rows, deliberately without the linked cursor.
 
 const CHART_CLASS = "h-[220px] w-full"

@@ -6,7 +6,7 @@ import {
 	payloadLinesBytes,
 	unwrapToolErrorText,
 	whatsWrong,
-} from "@maple/web/lib/agent-sessions/tool-error-display"
+} from "../../../lib/agent-sessions/tool-error-display"
 import { formatToolCount } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../ui/eyebrow"

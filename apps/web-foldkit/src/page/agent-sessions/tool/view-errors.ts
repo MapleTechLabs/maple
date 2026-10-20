@@ -9,7 +9,7 @@ import {
 	failureStatus,
 	fillTrend,
 	unwrapToolErrorText,
-} from "@maple/web/lib/agent-sessions/tool-error-display"
+} from "../../../lib/agent-sessions/tool-error-display"
 import { formatToolCount, UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../../data/load-failure"
@@ -34,8 +34,6 @@ import {
 } from "../tools-kit/table"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
-
-// `ToolErrorsTable` (agent-sessions/tools/tool-errors-table.tsx).
 
 type H = HtmlBuilder<Message>
 

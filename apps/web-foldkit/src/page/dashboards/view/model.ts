@@ -19,7 +19,7 @@ import { SharingState } from "./share"
 import { TableSort } from "../kit/tiles"
 import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 
-// The dashboard view and builder (apps/web/src/routes/dashboards/$dashboardId.tsx).
+// The dashboard view and builder.
 
 export const Status = Schema.Literals(["Loading", "Ready", "Missing"])
 export type Status = typeof Status.Type
@@ -37,7 +37,7 @@ export const WidgetSlot = Schema.Struct({
 })
 export type WidgetSlot = typeof WidgetSlot.Type
 
-/** The widget fetches, deduped by request key like apps/web's atom family. */
+/** The widget fetches, deduped by request key. */
 export const RequestSlot = KeyedSchema(Schema.Unknown, WidgetFailure)
 export type RequestSlot = typeof RequestSlot.Type
 

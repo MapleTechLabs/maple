@@ -6,7 +6,7 @@ import {
 	gcpLogState,
 	gcpMetricsState,
 	gcpSetupRunning,
-} from "@maple/web/components/integrations/gcp-connector-state"
+} from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"
 import { spinner } from "../../ui/spinner"

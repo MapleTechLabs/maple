@@ -23,7 +23,7 @@ const subscriptions = Subscription.make<Model, Message, Resources>()((entry) => 
 		{},
 		{ modelToDependencies: () => ({}), dependenciesToStream: () => Stream.map(Shell.sidebarShortcut, toShell) },
 	),
-	// The widget modules start the org's dashboards sync in apps/web; the rows are not read here.
+	// The org's dashboards sync starts with the widgets; the rows are not read here.
 	dashboards: entry(
 		{ orgId: Schema.NullOr(Schema.String) },
 		{

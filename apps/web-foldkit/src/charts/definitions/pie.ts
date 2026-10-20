@@ -17,8 +17,8 @@ import { ChartTooltip, type ChartSpec, type PieSliceRow } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, MUTED_COLOR_AMOUNT } from "./plot-constants"
 
-// Port of packages/ui/src/components/charts/pie/query-builder-pie-chart.tsx (definition half)
-// and apps/web/src/lab/charts/pie-spike.tsx (`PieFigure`). Constants and comments as there.
+// Port of packages/ui/src/components/charts/pie/query-builder-pie-chart.tsx (definition half),
+// plus the lab pie figure.
 
 type PieSlice = PieDatum<PieSliceRow>
 type PieSpec = Extract<ChartSpec, { readonly _tag: "Pie" }>
@@ -45,7 +45,7 @@ export const resolveInnerRadius = (
 	return Math.max(8, Math.min(outerRadius - 6, innerRadius ?? outerRadius * 0.58))
 }
 
-/** The polar layout the arcs were struck from, recorded for `wedgeFocus` (see the React file). */
+/** The polar layout the arcs were struck from, recorded for `wedgeFocus`. */
 interface PolarLayoutBox {
 	layout: PolarLayoutContext | null
 }
@@ -180,8 +180,8 @@ export const buildPie = (spec: PieSpec): BuiltChart<PieSlice, number, number> =>
 export const buildPieSpike = (spec: PieSpikeSpec): BuiltChart<PieSlice, number, number> => {
 	const { donut, activeName } = spec
 	const slices = pie(spec.rows, { value: (row: PieSliceRow) => row.value, gapAngle: 0.012 })
-	// NOTE: legacy leaves `activeName` undefined when no legend wires it, so `=== null` is false and
-	// every slice takes REST_OPACITY. Ported as is.
+	// NOTE: `activeName` is undefined when no legend wires it, so `=== null` is false and
+	// every slice takes REST_OPACITY.
 	const active = activeName === null ? [] : slices.filter((slice) => slice.name === activeName)
 	const rest = activeName === null ? slices : slices.filter((slice) => slice.name !== activeName)
 

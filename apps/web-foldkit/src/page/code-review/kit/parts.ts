@@ -1,5 +1,5 @@
 import type { CodeReviewCiRun } from "@maple/domain/http"
-import { ciResultLabel, ciResultTone } from "@maple/web/components/code-review/ci/ci-format"
+import { ciResultLabel, ciResultTone } from "../../../components/code-review/ci/ci-format"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"

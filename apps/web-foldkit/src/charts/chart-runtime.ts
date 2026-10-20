@@ -6,7 +6,7 @@ import { defineTaggedUnion } from "foldkit/schema"
 /**
  * The lazily loaded chart library (`./chart-host` and `@tanstack/charts`). A page loads it once and
  * renders its charts when it is `Ready`, so each chart Mount finds the module cached and draws
- * before the first paint that shows the card, as React's layout-effect mount does. Without it the
+ * before the first paint that shows the card. Without it the
  * cards paint empty and the canvases arrive frames later.
  */
 export const ChartRuntime = defineTaggedUnion({

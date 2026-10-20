@@ -9,7 +9,7 @@ import * as Select from "../../ui/select"
 import * as ToggleGroup from "../../ui/toggle-group"
 import { ConfigureTarget } from "./gcp-schema"
 
-// `GcpConfigure` (components/integrations/gcp-configure.tsx): the wizard's state.
+// `GcpConfigure`: the wizard's state.
 
 /** `GcpFlags`: what a connection collects. */
 export const GcpFlags = Schema.Struct({ logs_enabled: Schema.Boolean, metrics_enabled: Schema.Boolean })

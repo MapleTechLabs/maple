@@ -51,7 +51,7 @@ export const traceCollapsible = <M>(
 	h: HtmlBuilder<M>,
 	options: {
 		readonly isOpen: boolean
-		/** The panel's id (`aria-controls`); Base UI's `useId` in legacy. */
+		/** The panel's id (`aria-controls`). */
 		readonly panelId: string
 		readonly onToggle: M
 		readonly line: Html

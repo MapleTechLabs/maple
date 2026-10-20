@@ -8,7 +8,7 @@ import type * as Tabs from "../../ui/tabs"
 import * as TabsView from "../../ui/tabs-view"
 import { flowGraphOf, Message, type Model } from "./trace-box"
 
-// `TraceViewTabs` inside the lab's `h-[640px]` box (apps/web `lab/worst-case-lab.tsx` `TraceBox`).
+// `TraceViewTabs` inside the lab's `h-[640px]` box.
 
 type H = HtmlBuilder<Message>
 

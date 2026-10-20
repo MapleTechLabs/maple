@@ -6,9 +6,9 @@ import { openGlobalChat } from "../page/chat/sheet/subscription"
 import { clearSessionToken } from "../platform/auth-api"
 import { Message, Theme } from "./message"
 
-/** `maple.global-namespace.<orgId>` (apps/web `global-namespace.ts`). */
+/** `maple.global-namespace.<orgId>`. */
 export const NAMESPACE_STORAGE_PREFIX = "maple.global-namespace."
-/** The theme key apps/web's `use-theme` and its pre-paint script share. */
+/** The theme key the app and the pre-paint script in index.html share. */
 export const THEME_STORAGE_KEY = "maple-theme"
 
 /** Base UI moves DOM focus to the open popup and to the hovered or arrowed item. */
@@ -71,7 +71,7 @@ export const SaveNamespace = Command.define("SaveNamespace", {
 	},
 })
 
-/** `SidebarProvider.setOpen`: the `sidebar_state` cookie (7 days). Legacy never reads it back. */
+/** `SidebarProvider.setOpen`: the `sidebar_state` cookie (7 days). Never read back. */
 export const SaveSidebarState = Command.define("SaveSidebarState", {
 	args: { isOpen: Schema.Boolean },
 	messages: [Message.CompletedSaveSidebarState],

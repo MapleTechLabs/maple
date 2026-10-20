@@ -1,4 +1,4 @@
-import { SPARK_COLOR, VALUE_TONE } from "@maple/web/components/infra/severity-tokens"
+import { SPARK_COLOR, VALUE_TONE } from "../../components/infra/severity-tokens"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
@@ -7,8 +7,7 @@ import { miniBars } from "../../ui/mini-bars"
 import { skeleton } from "../../ui/skeleton"
 import { statFigure } from "../../ui/stat-figure"
 
-// `StatRail`, `StatRailItem`, `StatRailItemSkeleton` and `StatRailLoading`
-// (apps/web/src/components/common/stat-rail.tsx).
+// `StatRail`, `StatRailItem`, `StatRailItemSkeleton` and `StatRailLoading`.
 
 export type StatRailColumns = 2 | 3 | 4 | 5
 

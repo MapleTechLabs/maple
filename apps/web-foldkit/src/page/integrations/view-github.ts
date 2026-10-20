@@ -29,7 +29,7 @@ import { ciTracesShown } from "./update-github"
 import { disconnectDialog } from "./view-disconnect"
 import { repositoriesPanels, repoDialogs } from "./view-github-repos"
 
-// `GithubIntegrationCard` (components/integrations/github-integration-card.tsx).
+// `GithubIntegrationCard`.
 
 const ACCOUNT_TYPE = new Map([
 	["organization", "Organization"],

@@ -4,7 +4,7 @@ import type * as Shell from "../shell"
 import type { LabEntry } from "./define"
 import { defineShellLab } from "./shell-lab"
 
-// A lab page with no state of its own inside the real shell (apps/web's `DashboardLayout`).
+// A lab page with no state of its own inside the real shell.
 
 const Empty = Schema.Struct({})
 

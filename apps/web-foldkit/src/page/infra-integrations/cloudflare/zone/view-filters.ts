@@ -1,9 +1,9 @@
-import { CACHE_STATUS_COLORS, STATUS_CLASS_COLORS } from "@maple/web/components/infra/cloudflare/constants"
+import { CACHE_STATUS_COLORS, STATUS_CLASS_COLORS } from "../../../../components/infra/cloudflare/constants"
 import {
 	activeFilterChips,
 	type CloudflareFilters,
 	hasActiveFilters,
-} from "@maple/web/components/infra/cloudflare/filters"
+} from "../../../../components/infra/cloudflare/filters"
 import { cn } from "@maple/ui/lib/utils"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { AsyncData } from "foldkit"
@@ -23,8 +23,7 @@ import { filterChipRail } from "../../kit/filter-chip-rail"
 import type { ZoneFacets } from "../data"
 import { type FilterKey, Message, type Model } from "./model"
 
-// `CloudflareFilterChips`, `CloudflareFilterPopover` and `CloudflareFilterSidebarView`
-// (components/infra/cloudflare/cloudflare-filter-{chips,popover,sidebar}.tsx).
+// `CloudflareFilterChips`, `CloudflareFilterPopover` and `CloudflareFilterSidebarView`.
 
 type H = HtmlBuilder<Message>
 

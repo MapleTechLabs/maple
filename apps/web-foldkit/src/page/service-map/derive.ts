@@ -6,8 +6,7 @@ import { buildSourceGraph, type SourceGraph } from "../../service-map/map/graph"
 import type { Focus } from "../../service-map/map/state"
 import type { Model } from "./model"
 
-// The pure halves of `ServiceMapContent` and `ServiceMapView` (routes/service-map.tsx,
-// components/service-map/service-map-view.tsx).
+// The pure halves of the service map page and its view.
 
 /** The "All environments" option, kept in the URL so the explicit choice sticks. */
 export const ALL_ENVIRONMENTS = "__all__"
@@ -22,7 +21,7 @@ const environmentsOf = (model: Model): ReadonlyArray<string> =>
 
 /** Default to production; before facets resolve assume it exists, only a confirmed no-production org shows all. */
 export const selectedEnvironment = (model: Model): string => {
-	// Legacy `Result.isSuccess` stays true while a refetch is waiting.
+	// Ready stays true while a refetch is waiting.
 	const isReady = AsyncData.isSuccess(model.facets.data) || AsyncData.isRefreshing(model.facets.data)
 	const hasProduction = environmentsOf(model).includes("production")
 	return model.search.environment ?? (isReady && !hasProduction ? ALL_ENVIRONMENTS : "production")

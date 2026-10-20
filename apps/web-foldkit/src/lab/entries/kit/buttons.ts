@@ -17,7 +17,7 @@ import * as ToggleGroup from "../../../ui/toggle-group"
 import { defineLab } from "../../define"
 import { kitPage, kitRow, kitSection } from "../../kit/kit-layout"
 
-// Port of `/lab/kit/buttons` (apps/web/src/lab/kit/buttons.tsx).
+// `/lab/kit/buttons`.
 
 const VARIANTS = [
 	"default",

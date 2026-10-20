@@ -9,9 +9,9 @@ import { LoadFailure } from "../../../data/load-failure"
 import * as Combobox from "../../../ui/combobox"
 import * as Dialog from "../../../ui/dialog"
 
-// `/anomalies/$incidentId` (apps/web/src/routes/anomalies/$incidentId.tsx and components/anomalies/).
+// `/anomalies/$incidentId`.
 
-/** The write in flight: legacy's `resolving || linking || unlinking || investigating`. */
+/** The write in flight: resolving, linking, unlinking or investigating. */
 export const Busy = Schema.NullOr(Schema.Literals(["resolve", "link", "unlink", "investigate"]))
 export type Busy = typeof Busy.Type
 

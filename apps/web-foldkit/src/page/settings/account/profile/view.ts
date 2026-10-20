@@ -112,7 +112,6 @@ const dangerZone = (h: H, user: AccountUser): ReadonlyArray<Html> =>
 					panel(h, { padded: true, className: "flex-row items-center justify-between gap-4 border-destructive/40" }, [
 						h.p(
 							[h.Class("text-xs text-muted-foreground")],
-							// JSX `Delete {email || "your account"} and sign out everywhere.`: three text nodes.
 							["Delete ", user.primaryEmail ?? "your account", " and sign out everywhere."],
 						),
 						button(

@@ -27,7 +27,6 @@ import { type ListFacet, Message } from "./message"
 import type { Distributions, Facets, Model, RangeKey } from "./model"
 import { RANGE_UNITS } from "./update"
 
-// `AgentSessionsFilterSidebar` (agent-sessions-filter-sidebar.tsx).
 // TODO(tooltip): the sections' description popovers are drawn as their closed info marks.
 
 type H = HtmlBuilder<Message>

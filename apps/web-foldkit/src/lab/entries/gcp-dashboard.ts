@@ -6,7 +6,7 @@ import { init, update } from "../gcp-dashboard-lab/update"
 import { view } from "../gcp-dashboard-lab/view"
 import { defineShellLab } from "../shell-lab"
 
-// `/lab/gcp-dashboard` (apps/web `lab/gcp-dashboard-lab.tsx`): the Google Cloud template as a
+// `/lab/gcp-dashboard`: the Google Cloud template as a
 // board inside the real shell, with no API.
 
 export const lab = defineShellLab("Google Cloud dashboard", {

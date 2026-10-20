@@ -1,11 +1,11 @@
-import { connectedIds, type SpatialView } from "@maple/web/components/service-map/three/spatial-layout"
-import type { Topology3D } from "@maple/web/components/service-map/three/types"
+import { connectedIds, type SpatialView } from "../../../components/service-map/three/spatial-layout"
+import type { Topology3D } from "../../../components/service-map/three/types"
 import * as THREE from "three"
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import type { Vec3 } from "./kit"
 import type { Layout } from "./world"
 
-// copied: `CameraRig` (components/service-map/three/scene.tsx). The camera and HTML labels share
+// The camera rig. The camera and HTML labels share
 // one projection; labels are the `[data-scene-label]` elements under the scene root.
 
 export interface CameraCommand {

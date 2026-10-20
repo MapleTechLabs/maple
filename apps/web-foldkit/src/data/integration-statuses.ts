@@ -4,8 +4,8 @@ import { Context, Effect, Layer, Option, Ref, SynchronizedRef } from "effect"
 import { MapleApiV2Client, MapleInternalApiClient } from "../platform/api-clients"
 
 /**
- * The four integration statuses the sidebar mounts and the infra integration pages read. apps/web
- * shares one atom per status between them; this does the same: one request, shared while in flight
+ * The four integration statuses the sidebar mounts and the infra integration pages read:
+ * one request per status, shared while in flight
  * and kept after, until a reader asks for a refresh (a write's `reactivityKeys`, an empty-page poll).
  */
 
@@ -22,8 +22,8 @@ type Loader<A> = (options?: LoadOptions) => Effect.Effect<A, unknown>
 type Held<A> = Readonly<{ orgId: string | null; shared: Effect.Effect<A, unknown> }>
 
 /**
- * One shared load per status and org (legacy keys the atoms by the active org): another org's
- * answer is never served. A failure is not kept: the next reader asks again, like the atom.
+ * One shared load per status and org: another org's
+ * answer is never served. A failure is not kept: the next reader asks again.
  */
 export const sharedLoader = <A>(load: Effect.Effect<A, unknown>): Effect.Effect<Loader<A>> =>
 	Effect.map(SynchronizedRef.make(Option.none<Held<A>>()), (ref) => {

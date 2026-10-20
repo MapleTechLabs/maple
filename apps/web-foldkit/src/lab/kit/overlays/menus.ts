@@ -6,7 +6,7 @@ import * as MenuView from "../../../ui/menu-view"
 import type { MenuEntry } from "../../../ui/menu-view"
 import { Message, type Model } from "./model"
 
-// apps/web/src/lab/kit/overlays-menus.tsx `KitContextMenu` (opened by a right-click in the scenario).
+// `KitContextMenu` (opened by a right-click in the scenario).
 type H = HtmlBuilder<Message>
 
 const CONTEXT_MENU_ENTRIES: ReadonlyArray<Entry> = [
@@ -54,7 +54,7 @@ const dropdownEntries = (settings: Model["menuSettings"]): ReadonlyArray<MenuEnt
 	{ _tag: "Item", value: "delete", label: "Delete", variant: "destructive" },
 ]
 
-// apps/web/src/lab/kit/overlays-menus.tsx `KitDropdownMenu` (`defaultOpen`).
+// `KitDropdownMenu` (`defaultOpen`).
 export const kitDropdownMenu = (h: H, model: Model): Html =>
 	h.submodel({
 		slotId: "dropdown-menu",

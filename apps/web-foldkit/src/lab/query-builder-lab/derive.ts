@@ -5,7 +5,7 @@ import type { QueryDraft } from "../../page/kit/query-builder/draft"
 import type { ScrollAreaOverflowY } from "../../ui/scroll-area"
 import type { FormulaDraft, MetricRow, RunPoint, ScrollMetrics } from "./model"
 
-// The lab's pure helpers (apps/web `lab/query-builder-lab.tsx`).
+// The lab's pure helpers.
 
 const isMetricType = (value: string): value is QueryBuilderMetricType =>
 	QUERY_BUILDER_METRIC_TYPES.some((type) => type === value)

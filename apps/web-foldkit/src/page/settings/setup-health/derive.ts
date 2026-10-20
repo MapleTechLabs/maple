@@ -1,10 +1,8 @@
 import { decodePublicId, PublicIdPrefixes, type V2SetupAuditCheck } from "@maple/domain/http/v2"
-import { docsUrl } from "@maple/web/lib/docs"
+import { docsUrl } from "../../../lib/docs"
 import { AppRoute, hrefOf } from "../../../route"
 
-// Copied from apps/web/src/components/settings/setup-health.ts, whose `@/lib/docs` import does not
-// resolve here; in-app links are built as hrefs. Keep the two in step until the module moves to
-// @maple/web-data.
+// Setup health checks; in-app links are built as hrefs.
 
 type Check = Pick<V2SetupAuditCheck, "id" | "affected">
 

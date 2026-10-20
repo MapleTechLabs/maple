@@ -17,7 +17,7 @@ import { truncatedId } from "../../../ui/truncated-id"
 import { truncatedText } from "../../../ui/truncated-text"
 import { latencyValue } from "../../../ui/values"
 
-// The inline reference cards (apps/web components/ai-elements/inline/*): a service, an error
+// The inline reference cards: a service, an error
 // fingerprint, a trace and a log line the model wrote as `<<maple:…>>`.
 
 const SHELL = "@container/inline flex w-full flex-col gap-1 rounded-md border border-border bg-muted px-3 py-2"
@@ -62,7 +62,7 @@ const serviceChips = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): Re
 	]
 }
 
-/** A card that opens its subject in a new tab, like legacy's `<Link target="_blank">`. */
+/** A card that opens its subject in a new tab. */
 const linkCard = <M>(h: HtmlBuilder<M>, href: string, children: ReadonlyArray<Html>): Html =>
 	h.a(
 		[h.Href(href), h.Target("_blank"), h.Rel("noreferrer"), h.Class(cn("group/inline", cardClass(true)))],

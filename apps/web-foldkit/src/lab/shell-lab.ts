@@ -17,9 +17,9 @@ import {
 import { defineLabWithFlags, type LabEntry } from "./define"
 import { foldLabToasts, initLabToasts } from "./toasts"
 
-// A lab page inside the real shell (apps/web's `DashboardLayout`): the page is a Submodel with its
-// own Flags, the shell is booted for the session's org around it, and the root `ToastProvider`'s
-// Notifications regions follow it, as on every legacy lab page.
+// A lab page inside the real shell: the page is a Submodel with its
+// own Flags, the shell is booted for the session's org around it, and the app's
+// Notifications regions follow it.
 
 export type ShellLabPage<PageModel, PageMessage extends { _tag: string }, PageFlags> = Readonly<{
 	Model: Schema.Codec<PageModel, unknown>
@@ -35,7 +35,7 @@ export type ShellLabPage<PageModel, PageMessage extends { _tag: string }, PageFl
 	breadcrumbs:
 		| ReadonlyArray<Shell.BreadcrumbEntry>
 		| ((model: PageModel) => ReadonlyArray<Shell.BreadcrumbEntry>)
-	/** Rendered in `#app` before the shell, as legacy's lab toolbars that sit beside `DashboardLayout`. */
+	/** Rendered in `#app` before the shell: lab toolbars that sit beside the shell. */
 	before?: (model: PageModel, h: HtmlBuilder<PageMessage>) => Html
 }>
 

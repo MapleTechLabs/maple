@@ -3,7 +3,7 @@ import type { ClerkUserResource } from "../../../platform/clerk"
 import { type ClerkActionError, clerkTry, clerkTryReverified, currentClerkUser } from "../../../platform/clerk"
 
 // The `/account` tabs' writes: a call on the signed-in Clerk user, settled into a message with
-// Clerk's own failure text (what `settleClerk` toasts in apps/web).
+// Clerk's own failure text.
 
 export const withUser = <A>(
 	fallback: string,

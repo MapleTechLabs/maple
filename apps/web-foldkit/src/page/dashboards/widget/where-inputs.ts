@@ -1,5 +1,5 @@
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
-import type { WhereClauseAutocompleteValues } from "@maple/web/lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { PageContext } from "../../contract"

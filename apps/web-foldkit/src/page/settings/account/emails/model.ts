@@ -5,7 +5,7 @@ import * as Menu from "../../../../ui/menu"
 import * as OtpField from "../../../../ui/otp-field"
 import { AccountEmail, AccountUser } from "../user"
 
-// The Email addresses tab (`EmailAddressesSection`, apps/web/src/components/account/email-addresses-section.tsx).
+// The Email addresses tab.
 
 /** The add flow: create the address, then verify the emailed code on that address. */
 export const AddStep = Schema.Union([

@@ -4,8 +4,6 @@ import { linkButton } from "../../ui/button"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../ui/empty"
 import { icon } from "../../ui/icon"
 
-// Port of `ResourceNotFound` (apps/web/src/components/common/resource-not-found.tsx).
-
 export const resourceNotFound = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{

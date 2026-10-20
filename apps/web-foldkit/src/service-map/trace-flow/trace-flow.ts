@@ -111,7 +111,7 @@ export const update =
 					canvasMessage._tag === "ResizedPane" && !next.canvas.movedByUser
 						? refit(next, graph)
 						: next
-				// Legacy re-adopts its initial nodes once React Flow is ready, re-measuring handles at the fitted zoom.
+				// After the first fit, the nodes re-measure so handles are measured at the fitted zoom.
 				return refitted.canvas.fitsApplied > model.canvas.fitsApplied && !refitted.canvas.movedByUser
 					? modifyFields(refitted, { canvas: Canvas.remeasure })
 					: refitted

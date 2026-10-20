@@ -17,7 +17,7 @@ import { issuesCard, SEVERITY_SERIES, volumeCard } from "./view-charts"
 import { authorsCard, categoriesCard, outcomesCard } from "./view-lists"
 import { headlineStrip, secondaryStats } from "./view-stats"
 
-// `CodeReviewAnalyticsPage` (routes/code-review/index.tsx) and `CodeReviewAnalyticsView`.
+// `CodeReviewAnalyticsPage` and `CodeReviewAnalyticsView`.
 
 type H = HtmlBuilder<Message>
 

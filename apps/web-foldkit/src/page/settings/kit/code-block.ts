@@ -1,11 +1,10 @@
-import { highlightCode } from "@maple/web/lib/sugar-high"
+import { highlightCode } from "../../../lib/sugar-high"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "../../../ui/copy-button"
 import { eyebrow } from "../../../ui/eyebrow"
 
-// `CodeBlock` (apps/web/src/components/quick-start/code-block.tsx): language eyebrow, copy button,
-// Sugar High markup. The parent owns the copy status.
+// `CodeBlock`: language eyebrow, copy button, Sugar High markup. The parent owns the copy status.
 
 export type CodeBlockOptions<M> = Readonly<{
 	code: string

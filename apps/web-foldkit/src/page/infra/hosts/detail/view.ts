@@ -13,7 +13,7 @@ import { DEFAULT_PRESET } from "./update"
 import { hostDetailHeader, hostDetailHeaderLoading } from "./view-header"
 import { hostMetadataPanel, metricsPanel } from "./view-panels"
 
-// `HostDetailPage` (apps/web/src/routes/infra/hosts/$hostName.tsx).
+// `HostDetailPage`.
 
 type H = HtmlBuilder<Message>
 

@@ -1,4 +1,4 @@
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
 import { Clock, Duration, Effect, Option, Schedule, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import { Message } from "./message"

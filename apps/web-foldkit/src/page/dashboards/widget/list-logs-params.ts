@@ -1,7 +1,7 @@
 import { normalizeKey, parseWhereClause } from "@maple/domain/where-clause"
 import type { ListLogsInput } from "@maple/web-data/warehouse/logs"
 
-// `buildListLogsParams` (apps/web/src/lib/query-builder/widget-builder-shared.ts): a logs list
+// `buildListLogsParams`: a logs list
 // widget's where clause as `list_logs` column filters, unsupported clauses reported as warnings.
 
 type IncludeKey = "service" | "severity" | "deploymentEnv" | "namespace"

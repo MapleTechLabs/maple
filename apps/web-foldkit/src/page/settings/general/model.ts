@@ -6,8 +6,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import * as Dialog from "../../../ui/dialog"
 import { DraftState } from "../kit/draft"
 
-// The General tab (`GeneralSection`, apps/web/src/components/settings/general-section.tsx): the
-// active Clerk organization's logo and name, its data region and the danger zone.
+// The General tab: the active Clerk organization's logo and name, its data region and the danger zone.
 
 export const OrgInfo = Schema.Struct({
 	id: Schema.String,

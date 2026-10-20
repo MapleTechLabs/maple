@@ -6,8 +6,7 @@ import {
 } from "@maple/domain/http"
 import { Schema } from "effect"
 
-// copied: the form state and its conversions from `ReviewRulesForm`
-// (components/code-review/review-rules-form.tsx, a React module).
+// The review rules form state and its conversions.
 
 export const INSTRUCTIONS_MAX = 4_000
 const IGNORE_PATH_MAX = 200

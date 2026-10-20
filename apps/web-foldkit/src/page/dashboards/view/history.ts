@@ -4,7 +4,7 @@ import { Schema } from "effect"
 import { LoadFailure } from "../../../data/load-failure"
 import * as Dialog from "../../../ui/dialog"
 
-// Version history (`dashboard-builder/history/*`): the panel's timeline, the previewed version and
+// Version history: the panel's timeline, the previewed version and
 // its snapshot, read through `dashboards.listVersions` / `retrieveVersion`.
 
 export const VersionRow = Schema.Struct({

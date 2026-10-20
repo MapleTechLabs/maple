@@ -5,7 +5,7 @@ import {
 	type GridTier,
 	projectLayout,
 	tierForWidth,
-} from "@maple/web/components/dashboard-builder/canvas/grid-breakpoints"
+} from "../../../components/dashboard-builder/canvas/grid-breakpoints"
 import type { Model } from "./model"
 
 // One container's grid as `DashboardGrid` derives it (the root canvas, or a section tab): the tier

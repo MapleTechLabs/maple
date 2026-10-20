@@ -1,5 +1,5 @@
-import { bucketSecondsForRange } from "@maple/web/components/infra/constants"
-import { podKey } from "@maple/web/components/infra/pod-restarts"
+import { bucketSecondsForRange } from "../../../../components/infra/constants"
+import { podKey } from "../../../../components/infra/pod-restarts"
 import type { Result } from "effect"
 import { Command, type Update } from "foldkit"
 import * as Chart from "../../../../charts/chart"

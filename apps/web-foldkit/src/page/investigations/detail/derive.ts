@@ -17,7 +17,7 @@ export const breadcrumbLabel = (title: string): string => {
 	return line.length > 64 ? `${line.slice(0, 63).trimEnd()}…` : line
 }
 
-/** `servicesTouched` (impact-strip.tsx): every service the evidence touched, the scope as fallback. */
+/** `servicesTouched`: every service the evidence touched, the scope as fallback. */
 export const servicesTouched = (investigation: V2Investigation): ReadonlyArray<string> => {
 	const seen = new Set<string>()
 	;(investigation.report?.evidence ?? []).forEach((evidence) =>
@@ -33,7 +33,7 @@ export const servicesTouched = (investigation: V2Investigation): ReadonlyArray<s
 	return [...seen]
 }
 
-/** `elapsedBetween` (verdict-card.tsx). */
+/** `elapsedBetween`: the run's elapsed time. */
 export const elapsedBetween = (from: string, to: string | null): Elapsed | null => {
 	if (!to) return null
 	const start = toEpochMs(from)
@@ -51,7 +51,7 @@ export interface SignalWindow {
 	readonly label: string | null
 }
 
-/** `resolveWindow` (signals-card.tsx): the incident's window, or the run's; both ends real instants. */
+/** `resolveWindow`: the incident's window, or the run's; both ends real instants. */
 export const signalWindowOf = (investigation: V2Investigation): SignalWindow | null => {
 	const { snapshot } = investigation
 	const startMs = toEpochMs(snapshot.incidentStartedAt ?? investigation.created_at)

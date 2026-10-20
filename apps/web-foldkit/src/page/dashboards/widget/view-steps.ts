@@ -1,8 +1,8 @@
 import { formatNumber } from "@maple/domain/format"
 import { FUNNEL_MAX_STEPS, FUNNEL_SESSION_DIMENSION_LABEL } from "@maple/query-model"
 import { cn } from "@maple/ui/lib/utils"
-import { FUNNEL_SESSION_DIMENSIONS } from "@maple/web/components/funnels/definition"
-import { parseFunnelStepFilter } from "@maple/web/lib/query-builder/funnel-filters"
+import { FUNNEL_SESSION_DIMENSIONS } from "../../../components/funnels/definition"
+import { parseFunnelStepFilter } from "../../../lib/query-builder/funnel-filters"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import * as Combobox from "../../../ui/combobox"
@@ -23,7 +23,7 @@ import { stepComboId } from "./product-step"
 import type { Suggestion } from "./suggestions"
 import { pageSelect } from "./view-select"
 
-// `FunnelStepBuilder` (components/funnels/funnel-step-builder.tsx), compact: an ordered list of
+// The funnel step builder, compact: an ordered list of
 // steps, each an event name, a page path or (first step only) a session dimension.
 
 type H = HtmlBuilder<Message>

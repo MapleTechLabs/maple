@@ -13,7 +13,7 @@ import type { BuiltChart } from "./built-chart"
 import { verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 
-// Port of `StackedBreakdownChart`'s definition (components/infra/cloudflare/cloudflare-zone-detail-charts.tsx).
+// The Cloudflare zone detail's stacked breakdown chart definition.
 
 type StackedBreakdownSpec = Extract<ChartSpec, { readonly _tag: "StackedBreakdown" }>
 
@@ -74,7 +74,7 @@ export const buildStackedBreakdown = (
 	})
 	const tooltipOf = (points: ReadonlyArray<ChartPoint<BreakdownCell, ChartValue, number>>) =>
 		Option.map(Option.fromNullishOr(points[0]), ({ datum }) => {
-			// The raw value, as legacy's cursor series carry no stacked position.
+			// The raw value: the cursor series carry no stacked position.
 			const highlighted = focus.highlight(
 				series.map((name): readonly [string, number | null] => {
 					const value = datum.row[name]

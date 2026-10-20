@@ -1,7 +1,6 @@
 import { Schema } from "effect"
 
-// `useSortState` / `useTableSort` (apps/web/src/hooks/use-table-sort.ts, a React module): the
-// click-to-sort state as Model data, and the comparator copied verbatim.
+// The click-to-sort state as Model data, and the comparator.
 
 export const SortDir = Schema.Literals(["asc", "desc"])
 export type SortDir = typeof SortDir.Type

@@ -1,6 +1,6 @@
 import type { AlertRuleDocument } from "@maple/domain/http"
-import { formatSql } from "@maple/web/lib/sql-format"
-import { tokenizeSql } from "@maple/web/lib/sql-highlight"
+import { formatSql } from "../../../lib/sql-format"
+import { tokenizeSql } from "../../../lib/sql-highlight"
 import { cn } from "@maple/ui/lib/utils"
 import { SIGNAL_SOURCE_LABEL } from "@maple/web-data/alerts/chart-series"
 import { comparatorLabels, formatSignalValue, ruleToFormState, signalLabels } from "@maple/web-data/alerts/form-utils"
@@ -39,7 +39,7 @@ import { checksPanel } from "./view-checks"
 import { diagnosisPanel } from "./view-diagnosis"
 import { sectionHeading } from "../../kit/section-heading"
 
-// The Overview tab of `RuleDetailContent` (apps/web/src/routes/alerts/$ruleId.tsx).
+// The rule detail's Overview tab.
 
 type H = HtmlBuilder<Message>
 

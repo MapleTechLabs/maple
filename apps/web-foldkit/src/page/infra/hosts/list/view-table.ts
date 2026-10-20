@@ -19,8 +19,8 @@ import { hostStatusBadge } from "../../kit/status"
 import type { HostSortKey } from "./message"
 import type { HostRow } from "./model"
 
-// `HostTable` / `HostTableLoading` (apps/web/src/components/infra/host-table.tsx), generic over
-// the host's Message: /infra/hosts sorts through its Model, `/lab/worst-case` through its own.
+// `HostTable` / `HostTableLoading`, generic over the host's Message: /infra/hosts sorts through its Model,
+// `/lab/worst-case` through its own.
 
 type OnSort<M> = (key: HostSortKey) => M
 

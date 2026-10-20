@@ -8,8 +8,8 @@ import { Retained } from "./kit/retained"
 import * as PullRequestsModel from "./pull-requests/model"
 import * as SettingsModel from "./settings/model"
 
-// The Code Review tabs as one page instance (legacy's retained query atoms outlive a tab, so
-// switching tabs reuses what the last one read): the active tab's Model and what it hands on.
+// The Code Review tabs as one page instance (switching tabs reuses what the last one read): the
+// active tab's Model and what it hands on.
 
 export const Tab = Schema.Union([
 	Schema.TaggedStruct("Analytics", { model: AnalyticsModel.Model }),

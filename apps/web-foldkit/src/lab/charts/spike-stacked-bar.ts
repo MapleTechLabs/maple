@@ -6,7 +6,7 @@ import {
 	STACKED_BAR_SPIKE_ROWS,
 	stackedBarAxisContext,
 	type StackedBarSpikeRow,
-} from "@maple/web/lab/charts/timeseries-data"
+} from "./timeseries-data"
 import { barY, type ChartPoint, type ChartValue, defineChart, stack } from "@tanstack/charts"
 import { scaleBand } from "@tanstack/charts-scales/band"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
@@ -19,8 +19,7 @@ import { cursorTooltip, MUTED_COLOR_AMOUNT } from "../../charts/definitions/plot
 import type { SpikeSpec } from "./spike-spec"
 import { STACK_TOKEN_BY_SERVICE } from "./spike-timeseries-tokens"
 
-// `StackedBarSpike`, `StackedBarLegendSpike` and `StackedBarSceneLegendSpike`
-// (apps/web/src/lab/charts/stacked-bar-spike.tsx), definition half. Code copied, constants unchanged.
+// `StackedBarSpike`, `StackedBarLegendSpike` and `StackedBarSceneLegendSpike`, definition half.
 
 type Point = ChartPoint<StackedBarSpikeRow, ChartValue, number>
 

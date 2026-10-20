@@ -6,7 +6,7 @@ import {
 import { type MetricsQueryDraftSchema, toQueryBuilderMetricType } from "@maple/query-model"
 import type { MetricRow } from "../shared"
 
-// Pure parts of metric-detail.tsx and metric-breakdown.tsx (React modules).
+// Pure parts of the metric detail and its breakdown.
 
 export interface QueryState {
 	readonly type?: QueryBuilderMetricType | undefined

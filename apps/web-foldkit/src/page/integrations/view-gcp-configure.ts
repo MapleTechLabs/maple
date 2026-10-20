@@ -1,4 +1,4 @@
-import { GCP_SCOPE_NAMES } from "@maple/web/components/integrations/gcp-connector-state"
+import { GCP_SCOPE_NAMES } from "../../components/integrations/gcp-connector-state"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import * as DialogView from "../../ui/dialog-view"
 import { skeleton } from "../../ui/skeleton"

@@ -28,7 +28,7 @@ import { detailLoading, traceNotFound } from "./view-states"
 import { anatomyStrip } from "./view-summary"
 import * as Waterfall from "./waterfall"
 
-// `TraceDetailPage` (apps/web/src/routes/traces/$traceId.tsx) on `ResultPage`.
+// The trace detail page on `ResultPage`.
 
 /** `ResultPage`'s crumb: the short id once loaded, else the state it is in. */
 export const breadcrumbs = (model: Model): ReadonlyArray<BreadcrumbEntry> => {

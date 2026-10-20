@@ -7,7 +7,7 @@ import {
 	workerHealth,
 	type WorkerListRow,
 	workerRowKey,
-} from "@maple/web/components/infra/cloudflare/list-model"
+} from "../../../../components/infra/cloudflare/list-model"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import {
 	EMPTY_VALUE,
@@ -37,8 +37,7 @@ import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import type { QueueRow, ZoneRow } from "../data"
 import { Message, type QueueSortKey, type ZoneSortKey } from "./model"
 
-// `CloudflareZoneTable`, `CloudflareWorkerTable`, `CloudflareQueueTable`
-// (components/infra/cloudflare/cloudflare-{zone,worker,queue}-table.tsx).
+// `CloudflareZoneTable`, `CloudflareWorkerTable`, `CloudflareQueueTable`.
 
 type H = HtmlBuilder<Message>
 

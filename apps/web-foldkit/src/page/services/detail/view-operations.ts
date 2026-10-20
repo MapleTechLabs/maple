@@ -22,7 +22,7 @@ import type { Operation } from "./model-tabs"
 import { SPARKLINE_TOKEN } from "./view-panels"
 import { barCell, headLabel, sortColumnHead } from "./view-table-cells"
 
-// `ServiceOperationsTab` (components/services/service-operations-tab.tsx), desktop table.
+// The Operations tab, desktop table.
 // TODO(mobile-list): the `md:hidden` tap-to-trace list and its sort pills are not ported.
 // TODO(row-keyboard): Enter / Space on a focused row does not drill down yet; click does.
 

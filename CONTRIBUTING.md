@@ -203,11 +203,11 @@ The variables below are the API's:
 Loads env via `alchemy dev --env-file .env.local`; a changed variable needs a restart.
 Requires docker Postgres running (`bun run db:migrate:local`).
 
-### 2. Web (`apps/web`)
+### 2. Web (`apps/web-foldkit`)
 
 ```bash
 bun dev web                    # in the stack: https://web.localhost
-bun --filter=@maple/web dev    # alone, raw port
+bun --filter=@maple/web-foldkit dev   # alone, raw port
 ```
 
 Default raw URL: `http://localhost:3471`

@@ -6,12 +6,12 @@ import { highlightedText } from "../../../ui/logs/highlight"
 import * as Popover from "../../../ui/popover"
 import { Message } from "./message"
 
-// `LogSearchHelp` (apps/web/src/components/logs/log-search-help.tsx): what the search box
+// What the log search box
 // accepts, from the info affordance beside the SEARCH label (a hover popover, 200 ms).
 
 type Mode = "text" | "trace" | "header"
 
-// copied: `MODE` (apps/web/src/components/logs/log-search-mode-badge.tsx, a React module).
+// The search mode badge's label and colours.
 const MODE = new Map<Mode, Readonly<{ label: string; className: string }>>([
 	["text", { label: "Text", className: "bg-primary/15 text-primary" }],
 	["trace", { label: "Trace", className: "bg-info/15 text-info" }],

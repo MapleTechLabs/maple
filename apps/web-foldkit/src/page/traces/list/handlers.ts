@@ -41,7 +41,7 @@ export const sidebarHandlers = (model: Model) => ({
 		navigate(model, onlyFacet(model.search, facet, name)),
 	ClickedExcludeFacetOption: ({ facet, name }: { facet: Facet; name: string }): Return =>
 		navigate(model, excludedFacet(model.search, facet, name)),
-	// Legacy keeps only the absolute bounds here, dropping a relative preset.
+	// Keeps only the absolute bounds here, dropping a relative preset.
 	ClickedClearSidebarFilters: (): Return =>
 		navigate(model, { startTime: model.search.startTime, endTime: model.search.endTime }),
 	ChangedDurationDraft: ({ min, max }: Payload<"ChangedDurationDraft">): Return => {

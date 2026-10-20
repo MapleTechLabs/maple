@@ -1,4 +1,4 @@
-import { summarizePodRestarts } from "@maple/web/components/infra/pod-restarts"
+import { summarizePodRestarts } from "../../../../components/infra/pod-restarts"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL } from "@maple/ui/lib/tone"
@@ -31,7 +31,7 @@ import type { Model, PodCounts } from "./model"
 import { DEFAULT_PRESET, filtersOf, pageIndexOf, peekOf, sortOf } from "./update"
 import { filtersRail } from "./view-filters"
 
-// `PodsPage` (apps/web/src/routes/infra/kubernetes/pods/index.tsx) in `KubernetesShell`.
+// `PodsPage` in `KubernetesShell`.
 
 type H = HtmlBuilder<Message>
 

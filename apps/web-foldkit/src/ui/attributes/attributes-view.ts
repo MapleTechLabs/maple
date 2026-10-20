@@ -11,7 +11,7 @@ import { type AttributeSource, isOpen, Message, type Model } from "./attributes-
 import { searchInput } from "../search-input"
 
 // Port of `AttributesTable`, `AttributesSection`, `ResourceAttributesSection` (packages/ui/src/
-// components/attributes/attributes-table.tsx) and `LogAttributesPanel` (apps/web components/logs).
+// components/attributes/attributes-table.tsx) and the log attributes panel.
 
 type H = HtmlBuilder<Message>
 
@@ -261,7 +261,7 @@ export type PanelInputs = Readonly<{
 	canFilter: boolean
 	/** The log section's heading (apps/local-ui says "Log attributes"). */
 	logTitle?: string
-	/** apps/web renders commit SHAs as commit links; apps/local-ui shows them as text. */
+	/** The dashboard renders commit SHAs as commit links; apps/local-ui shows them as text. */
 	hasCommitShaValues?: boolean
 }>
 

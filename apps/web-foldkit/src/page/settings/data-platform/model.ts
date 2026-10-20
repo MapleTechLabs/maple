@@ -10,7 +10,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../../data/load-failure"
 import * as Dialog from "../../../ui/dialog"
 
-// `OrgClickHouseSettingsSection` and `DataPlatformUsageSection` (apps/web/src/components/settings/).
+// `OrgClickHouseSettingsSection` and `DataPlatformUsageSection` (apps/web-foldkit/src/components/settings/).
 
 export const Totals = Schema.Struct({
 	logs: Schema.Number,

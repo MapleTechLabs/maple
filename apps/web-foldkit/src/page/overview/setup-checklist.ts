@@ -5,7 +5,7 @@ import * as CopyButton from "../../ui/copy-button"
 import * as Tabs from "../../ui/tabs"
 import { QuickStartState } from "../onboarding/quick-start-state"
 
-// `SetupChecklist` (apps/web/src/components/dashboard/setup-checklist.tsx): Clerk mode's
+// The setup checklist: Clerk mode's
 // "Connect your app" card over `useQuickStart` and `useIngestConnection`.
 
 /** `readIngestKeys`: both keys from one admin-only read. */

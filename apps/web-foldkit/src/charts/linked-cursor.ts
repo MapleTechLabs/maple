@@ -3,9 +3,9 @@ import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 
-// `useLinkedCursor` / `LinkedCursorOverlay` (apps/web/src/hooks/use-linked-cursor.tsx): hovering one
+// The linked cursor: hovering one
 // chart paints a cursor at the same x ratio on every sibling, through CSS variables written
-// imperatively, never through state, exactly as legacy does.
+// imperatively, never through state.
 
 /** The container's resting cursor variables. */
 export const LINKED_CURSOR_STYLE = { "--linked-cursor-ratio": "0", "--linked-cursor-visible": "0" }

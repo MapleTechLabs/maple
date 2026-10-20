@@ -1,7 +1,7 @@
 import { DateTime, Effect, Option, Predicate } from "effect"
 
 /**
- * Legacy's `errorMessage(response, fallback)`: an endpoint error's own `message` (the JSON body
+ * An endpoint error's own `message` (the JSON body
  * the API sent), otherwise the screen's fallback copy.
  */
 export const endpointMessage = (error: unknown, fallback: string): string =>

@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../ui/eyebrow"
 
-// `SectionHeading` (apps/web/src/components/common/section-heading.tsx): the `title` row and the
+// `SectionHeading`: the `title` row and the
 // `eyebrow` overline.
 
 export type SectionHeadingOptions = Readonly<{

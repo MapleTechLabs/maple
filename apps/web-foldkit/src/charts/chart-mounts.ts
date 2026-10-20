@@ -26,8 +26,8 @@ const failed = (reason: string) => Message.FailedMountChart({ reason })
 /**
  * `PlotFrame` + `CanvasChart`/`Chart` on the plot box: measures the box's height
  * (`useMeasuredHeight`), mounts `@tanstack/charts` into `.ts-chart-surface`, keeps the plot anchor
- * on the scene's plot rect, and follows the box's `data-chart-spec` (a MutationObserver plays the
- * part of React re-rendering with a new definition). Focus and tooltip changes become Messages.
+ * on the scene's plot rect, and follows the box's `data-chart-spec` (a MutationObserver picks up
+ * each new definition). Focus and tooltip changes become Messages.
  */
 export const MountChart = Mount.defineStream("MountChart", {
 	args: {
@@ -106,15 +106,15 @@ export const MountChart = Mount.defineStream("MountChart", {
 										},
 									},
 								})
-							// NOTE: mounted at the fallback height and then corrected, the order React's layout
-							// effects run in (chart first, then the frame's measurement); the first scene shapes the canvas state.
+							// NOTE: mounted at the fallback height and then corrected (chart first, then the frame's
+							// measurement); the first scene shapes the canvas state.
 							host.style.height = `${FALLBACK_HEIGHT}px`
 							// The live handle and what it was last drawn from; local to this Mount's lifetime.
 							const state = {
 								height: FALLBACK_HEIGHT,
 								chart: create(initialSpec.value, FALLBACK_HEIGHT),
 							}
-							// Measured with the fallback drawn, as legacy's layout effect is: a flex item's
+							// Measured with the fallback drawn: a flex item's
 							// automatic minimum then holds a fixed-height box at its height instead of shrinking.
 							const measured = Math.round(element.getBoundingClientRect().height)
 

@@ -4,7 +4,7 @@ import {
 	type SessionToolCall,
 	type SessionToolUsage,
 } from "@maple/agent-sessions"
-import { buildSessionAxis, type SessionAxis } from "@maple/web/lib/agent-sessions/session-axis"
+import { buildSessionAxis, type SessionAxis } from "../../../lib/agent-sessions/session-axis"
 import { formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
@@ -25,7 +25,7 @@ import { sectionHeading } from "../../kit/section-heading"
 import { loadIndicator } from "./view-load"
 import { rail } from "./view-rail"
 
-// `SessionOverview` (session-detail/session-overview.tsx): checks and the tool ledger, the rail.
+// The session overview: checks and the tool ledger, the rail.
 
 type H = HtmlBuilder<Message>
 

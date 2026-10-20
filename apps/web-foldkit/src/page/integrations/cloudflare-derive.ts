@@ -6,8 +6,8 @@ import type {
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 
-// The pure halves of cloudflare-zone-board.tsx and `CloudflareAccountCard`: row usage, error
-// descriptions, the zone status rules, and the entries the board renders.
+// The pure halves of `CloudflareZoneBoard` and `CloudflareAccountCard`: row usage, error descriptions, the
+// zone status rules, and the entries the board renders.
 
 const HOUR_MS = 3_600_000
 

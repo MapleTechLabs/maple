@@ -1,5 +1,5 @@
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { logAttributeQueryFilters } from "@maple/web/lib/logs/log-attribute-filters"
+import { logAttributeQueryFilters } from "../../../lib/logs/log-attribute-filters"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getLogAttributeKeys, getLogsFacets, listLogs } from "@maple/web-data/warehouse/logs"
 import { Clock, Duration, Effect, Option, Schema } from "effect"
@@ -171,7 +171,7 @@ export const WaitSearchDebounce = Command.define("WaitLogsSearchDebounce", {
 		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ generation })),
 })
 
-/** The filter rail is in the DOM (legacy reads its facets as it renders, so no paint wait). */
+/** The filter rail is in the DOM (its facets read as it renders, so no paint wait). */
 export const MountFilterRail = Mount.define("MountLogsFilterRail", {
 	messages: [Message.MountedFilterRail],
 	execute: () => Effect.succeed(Message.MountedFilterRail()),

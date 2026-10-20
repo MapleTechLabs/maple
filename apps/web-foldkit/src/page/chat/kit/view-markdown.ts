@@ -1,6 +1,6 @@
 import * as Markdown from "@foldkit/markdown"
 import { type ChartSpec, normalizeUnit, parseChartSpec } from "@maple/domain/chat-chart-spec"
-import { classifyCell, columnRole, type CellValue } from "@maple/web/components/ai-elements/table-cell-value"
+import { classifyCell, columnRole, type CellValue } from "../../../components/ai-elements/table-cell-value"
 import { httpStatusTone } from "@maple/ui/lib/http"
 import { LATENCY_TEXT_TONE, latencyLevel } from "@maple/ui/lib/latency-tone"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
@@ -21,9 +21,8 @@ import * as HbarChart from "../../../charts/hbar-chart"
 import { MATH_MARK } from "./math"
 import { type CodeHost, codeBlock, mermaidBlock } from "./view-code"
 
-// The chat's own markdown elements over Streamdown's (apps/web components/ai-elements/
-// markdown-table.tsx, markdown-chart.tsx): tables on Maple's `Table` with recognised cells, and
-// ```chart fences as the query builder's plots.
+// The chat's own markdown elements over Streamdown's: tables on Maple's `Table` with recognised
+// cells, and ```chart fences as the query builder's plots.
 // Math (`$$…$$`, ```math) is drawn by KaTeX (`kit/math.ts`).
 
 export type ChartHost<M> = Readonly<{
@@ -213,7 +212,7 @@ export const chatMarkdownOverrides =
 	<M>(h: HtmlBuilder<M>, knownServices: ReadonlySet<string>, charts: ChartHost<M>, code: CodeHost<M>): ViewOverrides =>
 	(views) => ({
 		Table: (node) => tableView(h, knownServices)(views)(node),
-		// KaTeX draws into an unstyled span: legacy's `.katex` / `.katex-display` sit in its place.
+		// KaTeX draws into an unstyled span carrying the `.katex` / `.katex-display` classes.
 		InlineCode: (node) =>
 			node.value.startsWith(MATH_MARK)
 				? h.keyed("span")(`math:${node.value}`, [h.OnMount(code.mathMount(node.value.slice(MATH_MARK.length), false))], [])

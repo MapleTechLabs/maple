@@ -13,8 +13,7 @@ import { ChartRuntime } from "../../../charts/chart-runtime"
 import { ThemeColors } from "../../../charts/theme-colors"
 import { CommitData, DetailPoint } from "../../services/detail/model"
 
-// `/releases/$commitSha` (apps/web/src/routes/releases/$commitSha.tsx): the deploy across every
-// service it reached (`ReleaseDeployOverview`).
+// `/releases/$commitSha`: the deploy across every service it reached.
 
 /** `getReleaseDetail`: the service's versions and timeline, this version's and the baseline's series. */
 export const ReleaseDetail = Schema.Struct({

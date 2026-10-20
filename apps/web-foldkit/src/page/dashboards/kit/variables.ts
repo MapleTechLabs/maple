@@ -18,7 +18,7 @@ import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import type { WidgetFailure } from "./widget-data"
 
-// `DashboardVariablesProvider` (dashboard-builder/dashboard-variables-context.tsx), React-free: the
+// The dashboard variables: the
 // option list each variable reads, and the value it resolves to from the URL, its default or the list.
 
 export type Variable = NonNullable<DashboardDocument["variables"]>[number]

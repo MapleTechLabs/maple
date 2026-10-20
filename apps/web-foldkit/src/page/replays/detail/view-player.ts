@@ -28,7 +28,7 @@ import { Message } from "./message"
 import type { Model, ReplayDetail } from "./model"
 import type { LoadFailure } from "../../../data/load-failure"
 
-// `ReplaySurface` and `ReplayTransport` (components/replays/replay-player.tsx).
+// The replay surface and its transport controls.
 // TODO(scrubber-drag): the scrubber seeks on pointer down; drag-to-scrub and the hover time bubble
 // are not ported.
 

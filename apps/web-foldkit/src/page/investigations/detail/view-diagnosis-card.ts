@@ -16,7 +16,7 @@ import { actionSheetContent } from "./view-action-sheet"
 import { ACTION_GLYPH } from "./view-canvas"
 import { evidenceChips, type TipTrigger } from "./view-sections"
 
-// `DiagnosisReportCard` (components/chat/diagnosis-report-card.tsx): the report an investigation's
+// `DiagnosisReportCard`: the report an investigation's
 // Chat and Transcript tabs lead with until the thread's own `submit_diagnosis` turn lands. Its
 // action rows open the action sheet from local state, not `?action=`.
 

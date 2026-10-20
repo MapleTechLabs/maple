@@ -13,8 +13,7 @@ import { statsLegend } from "../../charts/plot-legend"
 import { muteColor } from "../../charts/sequential-colors"
 import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
 
-// Ports of `PieSpike` (apps/web/src/lab/charts/pie-spike.tsx) and `HistogramSpike`
-// (apps/web/src/lab/charts/histogram-spike.tsx), canvas arm.
+// `PieSpike` and `HistogramSpike`, canvas arm.
 
 export interface PieSpikeRow {
 	readonly name: string

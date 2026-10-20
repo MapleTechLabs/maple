@@ -14,7 +14,7 @@ import { icon } from "../../../ui/icon"
 import * as Popover from "../../../ui/popover"
 import { scrollArea } from "../../../ui/scroll-area"
 
-// `QuickPickMenu` (components/errors/quick-pick-menu.tsx): a popover with a type-to-filter input
+// A quick-pick menu: a popover with a type-to-filter input
 // (an inline, always-open Autocomplete, first match highlighted) and one row per choice; a digit
 // picks a row outright while nothing is typed.
 

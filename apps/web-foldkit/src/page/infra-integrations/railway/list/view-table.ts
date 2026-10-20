@@ -13,7 +13,7 @@ import { formatVcpu, groupedRows, type RailwayRowView, type RailwaySync, rowKey 
 import { Message } from "./message"
 import type { SortKey } from "./model"
 
-// `RailwayServiceTable` and `RailwayServiceTableLoading` (components/infra/railway/railway-service-table.tsx).
+// `RailwayServiceTable` and `RailwayServiceTableLoading`.
 
 type H = HtmlBuilder<Message>
 type Trigger = (id: string) => ReadonlyArray<ChildAttribute>
@@ -94,7 +94,7 @@ const syncNote = (h: H, sync: RailwaySync, clock: Clock): Html => {
 	}
 }
 
-/** Tooltip trigger ids: one per cell that legacy wraps in a `Tooltip`. */
+/** Tooltip trigger ids: one per cell with a `Tooltip`. */
 export const triggerIds = (row: RailwayServiceRow) => {
 	const key = rowKey(row)
 	return { memory: `railway-mem-${key}`, cpu: `railway-cpu-${key}`, seen: `railway-seen-${key}` }

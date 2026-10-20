@@ -1,4 +1,4 @@
-import { gcpLogState } from "@maple/web/components/integrations/gcp-connector-state"
+import { gcpLogState } from "../components/integrations/gcp-connector-state"
 import { describe, expect, test } from "vitest"
 import { Message as IntegrationsMessage } from "../page/integrations/message"
 import { init, Message, update } from "./gcp-connections-lab"

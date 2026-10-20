@@ -11,7 +11,7 @@ import { createSourceForm } from "./view-form"
 import { platformPicker } from "./view-picker"
 import { tokenStep } from "./view-token"
 
-// `NewSourcePage` (apps/web/src/routes/sources/new.tsx).
+// `NewSourcePage`.
 
 type H = HtmlBuilder<Message>
 

@@ -1,4 +1,4 @@
-import { derivePlanetScaleSetup } from "@maple/web/components/integrations/planetscale-setup-steps"
+import { derivePlanetScaleSetup } from "../../../../components/integrations/planetscale-setup-steps"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -31,7 +31,7 @@ import { Message, type Model } from "./model"
 import { DEFAULT_PRESET, neverCollected, sortOf } from "./update"
 import { databaseTable, databaseTableLoading } from "./view-table"
 
-// `PlanetScalePage` (apps/web/src/routes/infra/planetscale/index.tsx).
+// `PlanetScalePage`.
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>

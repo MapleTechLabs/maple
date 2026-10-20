@@ -15,19 +15,19 @@ import { linkedCursorOverlay } from "./linked-cursor"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
 
-// `InfraMetricChart` (apps/web/src/components/infra/primitives/infra-metric-chart.tsx): the spec
+// The infra metric chart: the spec
 // with every colour resolved, the header's series info, the linked-cursor marker and overlay, and the
 // `CursorPlot` box. Embed `view` (a built spec) or `metricView` (rows) with `h.submodel`.
 
 export const INFRA_METRIC_CHART_HEIGHT = 220
-/** `CHART_EMPTY_MESSAGE` (components/common/chart-card.tsx). */
+/** The empty-chart message. */
 export const CHART_EMPTY_MESSAGE = "No data for this metric in the selected window."
 
 export type InfraMetricSpec = Extract<ChartSpec, { readonly _tag: "InfraMetric" }>
 
 /**
  * `canvasSafeThresholdColor` (plot/threshold-rules.ts): a bare `--token` is not a CSS colour, so the
- * 80% rule legacy asks to paint `--severity-warn` falls back to `--destructive`.
+ * 80% rule's `--severity-warn` falls back to `--destructive`.
  */
 const canvasSafeThresholdColor = (theme: ThemeColors, color: string): string => {
 	const fallback = resolveColor(theme, "--destructive")
@@ -62,7 +62,7 @@ export type InfraSeriesInfo = Readonly<{
 	unit: ChartUnit
 }>
 
-/** The spec the Mount builds the definition from, and the header's series info, as legacy derives them. */
+/** The spec the Mount builds the definition from, and the header's series info. */
 export const infraMetricModel = (options: InfraMetricOptions) => {
 	const points = infraPoints({
 		rows: options.rows,

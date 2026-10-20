@@ -1,7 +1,7 @@
-import { REPLAY_BLOCK_CLASS } from "@maple/web/components/common/replay-privacy"
-import { ONBOARD_SKILL_COMMAND, onboardSkillPrompt } from "@maple/web/components/ingest/onboard-skill"
-import { type FrameworkId, sdkSnippets } from "@maple/web/components/quick-start/sdk-snippets"
-import { ingestUrl } from "@maple/web/lib/services/common/ingest-url"
+import { REPLAY_BLOCK_CLASS } from "../../components/common/replay-privacy"
+import { ONBOARD_SKILL_COMMAND, onboardSkillPrompt } from "../../components/ingest/onboard-skill"
+import { type FrameworkId, sdkSnippets } from "../../components/quick-start/sdk-snippets"
+import { ingestUrl } from "../../lib/services/common/ingest-url"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "../../ui/copy-button"
@@ -13,8 +13,7 @@ import type * as Tabs from "../../ui/tabs"
 import * as TabsView from "../../ui/tabs-view"
 import { codeBlock } from "../settings/kit/code-block"
 
-// `FrameworkIconStrip`, `FrameworkPicker` and `ConnectInstructions`
-// (apps/web/src/components/ingest/guided-setup.tsx), with `PackageManagerCodeBlock`.
+// `FrameworkIconStrip`, `FrameworkPicker` and `ConnectInstructions`, with `PackageManagerCodeBlock`.
 
 const FRAMEWORK_ICONS = {
 	nextjs: "FrameworkNextjsIcon",

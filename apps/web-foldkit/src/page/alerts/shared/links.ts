@@ -3,7 +3,7 @@ import { Option, Schema } from "effect"
 import { AppRoute, hrefOf } from "../../../route"
 import type { AlertRuleSearch, AlertsCreateSearch, AlertsSearch } from "../../../route/search"
 
-// copied: `ROW_STRETCHED_LINK_CLASS` and `ROW_LINK_LIFT` (apps/web components/common/data-table.tsx).
+// `ROW_STRETCHED_LINK_CLASS` and `ROW_LINK_LIFT`: a row-wide link and the lift for controls above it.
 export const ROW_STRETCHED_LINK_CLASS =
 	"after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:ring-1 focus-visible:after:ring-ring focus-visible:after:ring-inset"
 export const ROW_LINK_LIFT = "relative z-10"

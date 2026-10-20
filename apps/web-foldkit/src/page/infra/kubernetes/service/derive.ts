@@ -1,11 +1,11 @@
-import { chartBucketSeconds } from "@maple/web/components/infra/chart-units"
+import { chartBucketSeconds } from "../../../../components/infra/chart-units"
 import { toIsoBucket } from "@maple/web-data/warehouse/timeseries-utils"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../../data/time-range"
 import type { ServiceWorkload } from "../lens/rail"
 import type { Model } from "./model"
 
-// Pure derivations of `LensBody` (routes/infra/kubernetes/services/$serviceName.tsx), copied.
+// Pure derivations of `LensBody`.
 
 export type LinkedWorkload = Readonly<{
 	workloadKind: "deployment" | "statefulset" | "daemonset"

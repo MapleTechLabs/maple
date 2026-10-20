@@ -1,4 +1,4 @@
-import { readChatReferrer } from "@maple/web/components/chat/auto-contexts"
+import { readChatReferrer } from "../../../components/chat/auto-contexts"
 import { Clock, Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
 import { writeClipboardFallback } from "@maple/ui/lib/clipboard"
@@ -103,7 +103,7 @@ export const TypeIntoComposer = Command.define("TypeIntoChatComposer", {
 		}),
 })
 
-/** The empty state painted: legacy's `useSignalPresence` only asks once it mounts. */
+/** The empty state painted: signal presence is only asked for once it shows. */
 export const MountEmptyState = Mount.define("MountChatEmptyState", {
 	messages: [Message.PaintedEmptyState],
 	execute: () =>

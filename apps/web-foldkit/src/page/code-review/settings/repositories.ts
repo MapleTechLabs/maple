@@ -3,7 +3,7 @@ import {
 	type RepositoryFilter,
 	SEARCH_THRESHOLD,
 	visibleRepositories,
-} from "@maple/web/components/code-review/repository-filter"
+} from "../../../components/code-review/repository-filter"
 import { pluralize } from "@maple/ui/lib/format"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -16,7 +16,7 @@ import { segmentedSelect } from "../../../ui/segmented-select"
 import * as Switch from "../../../ui/switch"
 import { searchInput } from "../../../ui/search-input"
 
-// `RepositoryList`, `RepositoryRow` and `RepositoryName` (code-review-settings.tsx), shared with
+// `RepositoryList`, `RepositoryRow` and `RepositoryName`, shared with
 // `/lab/code-review-repos`.
 
 export const RepoFilter = Schema.Literals(["all", "reviewed", "off"])

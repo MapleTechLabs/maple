@@ -29,7 +29,7 @@ import { detailsSection, logsSection, metaStrip, toolCallsSection } from "./span
 import { messagesSection, POPOVER_KEY } from "./span-popover-messages"
 import { payloadCopyButton } from "./transcript-kit"
 
-// `SpanPopover` over `SpanExpansion` (session-detail/span-popover.tsx, span-expansion.tsx): one span
+// The span popover over its expansion: one span
 // inspected over the whole page, from the Overview's findings, the flow's nodes and the waterfall's rows.
 
 type H = HtmlBuilder<Message>

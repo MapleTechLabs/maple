@@ -10,7 +10,7 @@ import { InfraCloudflareWorkerSearch } from "../../../../route/search"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { PlatformResources, Release, Status, Usage, WorkerDetail, WorkerRow } from "../data"
 
-// `/infra/cloudflare/workers/$scriptName` (apps/web/src/routes/infra/cloudflare/workers/$scriptName.tsx).
+// `/infra/cloudflare/workers/$scriptName`.
 
 export const Model = Schema.Struct({
 	scriptName: Schema.String,

@@ -139,7 +139,7 @@ type PointerSample = Readonly<{ x: number; y: number; href: string | null }>
 
 /**
  * `onMouseEnter` needs a pointer that moved onto the link: one appearing under a resting pointer
- * (an overlay unmounting) gets a `mouseover` at the last position, which React's link ignores.
+ * (an overlay unmounting) gets a `mouseover` at the last position, which does not count.
  */
 export const isPointerEntry = (last: Option.Option<Position>, x: number, y: number): boolean =>
 	!Option.exists(last, (position) => position.x === x && position.y === y)

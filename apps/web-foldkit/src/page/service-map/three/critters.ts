@@ -1,20 +1,19 @@
-// copied: apps/web/src/components/service-map/three/maple-scenery-critters.tsx (R3F JSX as three construction).
-import type { InkPalette } from "@maple/web/components/service-map/three/palette"
+import type { InkPalette } from "../../../components/service-map/three/palette"
 import {
 	DEER_NECK,
 	DEER_YAW,
 	drawBird,
 	drawDeerHead,
 	drawDuck,
-} from "@maple/web/components/service-map/three/maple-scenery"
-import type { Waterway } from "@maple/web/components/service-map/three/maple-scenery-field"
+} from "../../../components/service-map/three/maple-scenery"
+import type { Waterway } from "../../../components/service-map/three/maple-scenery-field"
 import {
 	type Bounds,
 	hash,
 	prototypes,
 	type Sketch,
 	sketchOf,
-} from "@maple/web/components/service-map/three/maple-scenery-sketch"
+} from "../../../components/service-map/three/maple-scenery-sketch"
 import * as THREE from "three"
 import { group, inkSolid, mesh, type Running, type Scope, sketchDrawing, type Vec3 } from "./kit"
 

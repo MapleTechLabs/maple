@@ -6,7 +6,7 @@ import { icon } from "../../../ui/icon"
 import { PLATFORMS, platformTile, PULL_PLATFORMS, PUSH_PLATFORMS } from "../kit/platforms"
 import { Message } from "./message"
 
-// `PlatformPicker` (apps/web/src/components/sources/platform-picker.tsx): step 1.
+// `PlatformPicker`: step 1.
 
 type H = HtmlBuilder<Message>
 

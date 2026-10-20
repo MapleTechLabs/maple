@@ -1,12 +1,12 @@
-import { ONBOARDING_INTENT_IDS } from "@maple/web/lib/onboarding-intent"
-import { ONBOARDING_ROLE_IDS } from "@maple/web/lib/onboarding-role"
+import { ONBOARDING_INTENT_IDS } from "../../lib/onboarding-intent"
+import { ONBOARDING_ROLE_IDS } from "../../lib/onboarding-role"
 import { ChooseOrganizationRegionRequest } from "@maple/domain/http"
 import { MapleRegion } from "@maple/domain/organization-regions"
-import { currentRegion, regionAppUrl } from "@maple/web/lib/region"
+import { currentRegion, regionAppUrl } from "../../lib/region"
 import { Effect, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { load } from "foldkit/navigation"
 import { trackProduct } from "../../data/analytics"
 import { MapleInternalApiClient } from "../../platform/api-clients"
@@ -25,8 +25,8 @@ import {
 	writeQuickStartState,
 } from "./quick-start-state"
 
-// `/quick-start` (apps/web/src/routes/quick-start.tsx): role, intent, team and plan, one step at a
-// time, resumed from localStorage. The plan and region gates around it are the root's (`plan-gate.ts`).
+// `/quick-start`: role, intent, team and plan, one step at a time, resumed from localStorage. The plan and
+// region gates around it are the root's (`plan-gate.ts`).
 
 export const Step = Schema.Literals(STEP_IDS)
 

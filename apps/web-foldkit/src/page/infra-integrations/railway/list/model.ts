@@ -9,7 +9,7 @@ import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { sortStateOf } from "../../../kit/table-sort"
 import { RailwayServiceRow, RailwayStatus } from "../model"
 
-// `/infra/railway` (apps/web/src/routes/infra/railway/index.tsx).
+// `/infra/railway`.
 
 export const SortKey = Schema.Literals([
 	"displayName",

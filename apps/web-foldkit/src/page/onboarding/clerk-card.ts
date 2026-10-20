@@ -1,4 +1,4 @@
-import { clerkAuthCardAppearance } from "@maple/web/lib/clerk-appearance"
+import { clerkAuthCardAppearance } from "../../lib/clerk-appearance"
 import { Effect, Schema } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

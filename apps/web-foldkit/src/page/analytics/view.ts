@@ -1,4 +1,4 @@
-import { activeFilterChips } from "@maple/web/components/analytics/filters"
+import { activeFilterChips } from "../../components/analytics/filters"
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -27,7 +27,7 @@ import { expandDialog } from "./view-expand"
 import { filtersRail } from "./view-filters"
 import { overviewContent } from "./view-overview"
 
-// `WebAnalyticsPage` (apps/web/src/routes/analytics/index.tsx).
+// The web analytics page.
 
 type H = HtmlBuilder<Message>
 

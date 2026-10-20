@@ -15,8 +15,8 @@ import type { ThemeColors } from "../../../charts/theme-colors"
 import { LINKED_CURSOR_STYLE } from "../../../charts/linked-cursor"
 import { seriesLegend } from "../../kit/series-legend"
 
-// `CorrelationStrips` (components/infra/service-lens/correlation-strips.tsx): signals stacked on one
-// time axis under one linked cursor, each with its label, source and window summary.
+// `CorrelationStrips`: signals stacked on one time axis under one linked cursor, each with its label, source
+// and window summary.
 
 const STRIP_HEIGHT = 96
 

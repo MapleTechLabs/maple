@@ -17,7 +17,7 @@ import type { Model } from "./model"
 import { ACTION_GLYPH } from "./view-canvas"
 import { evidenceChips, type TipTrigger } from "./view-sections"
 
-// `ActionDetailSheet` (components/investigations/action-detail-sheet.tsx): the whole proposed action,
+// `ActionDetailSheet`: the whole proposed action,
 // the diagnosis behind it and its evidence, keyed by `?action=`.
 
 type H = HtmlBuilder<Message>

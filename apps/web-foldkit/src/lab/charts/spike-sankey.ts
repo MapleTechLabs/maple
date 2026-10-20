@@ -16,7 +16,7 @@ import { MUTED_COLOR_AMOUNT } from "../../charts/definitions/plot-constants"
 import { FLOW_BANDS, SANKEY_EDGES, SANKEY_NODES, type SankeyEdge, type SankeyNode } from "./spike-sankey-data"
 import { mutedOf, type SpikeSpec } from "./spike-spec"
 
-// `SankeySpike` / `SankeyLegendSpike` (apps/web/src/lab/charts/sankey-spike.tsx), definition half:
+// `SankeySpike` / `SankeyLegendSpike`, definition half:
 // service call flow weighted by call volume, ribbons coloured by error band. Code copied.
 
 const NODE_WIDTH = 14

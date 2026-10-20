@@ -1,6 +1,6 @@
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
-import { getActiveInfraCorrelations } from "@maple/web/components/infra/infra-correlations"
+import { getActiveInfraCorrelations } from "../../../components/infra/infra-correlations"
 import type { LogRecord } from "../../../ui/logs/log-row-view"
 
 // Pure readings of a log for the sheet: its severity label, JSON payload, tabs and timestamp.
@@ -15,7 +15,7 @@ export const severityLabel = (severityText: string, severityNumber?: number): st
 	return "UNSET"
 }
 
-// copied: `buildLogJsonPayload` (apps/web/src/components/logs/log-raw-panel.tsx).
+// The log as the Raw tab's JSON.
 export const buildLogJsonPayload = (log: LogRecord): string =>
 	JSON.stringify(
 		{
@@ -36,7 +36,7 @@ export const buildLogJsonPayload = (log: LogRecord): string =>
 export const hasInfraCorrelations = (log: LogRecord): boolean =>
 	getActiveInfraCorrelations(log.resourceAttributes).length > 0
 
-/** The tabs a log gets, in legacy's order: Trace needs a trace, Infrastructure a host or pod. */
+/** The tabs a log gets, in order: Trace needs a trace, Infrastructure a host or pod. */
 export const tabValues = (log: LogRecord): ReadonlyArray<string> => [
 	"attributes",
 	...(log.traceId ? ["trace"] : []),

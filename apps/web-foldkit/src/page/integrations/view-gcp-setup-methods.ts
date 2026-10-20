@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import type { GcpManualStep, GcpStepField } from "@maple/web/components/integrations/gcp-setup-steps"
+import type { GcpManualStep, GcpStepField } from "../../components/integrations/gcp-setup-steps"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../ui/icon"
 import type { ConfigureModel } from "./gcp-configure-schema"
@@ -8,7 +8,7 @@ import type { Model } from "./model"
 import { externalLink } from "./view-gcp-configure-parts"
 import { copyOf, GCP_TITLE, SMALL } from "./view-gcp-parts"
 
-// `GcpValue` and `GcpManualSteps` (components/integrations/gcp-setup-methods.tsx).
+// `GcpValue` and `GcpManualSteps`.
 
 type H = HtmlBuilder<Message>
 

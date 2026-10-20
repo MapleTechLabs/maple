@@ -5,7 +5,7 @@ import * as Select from "../../../ui/select"
 import { initWhereFields, WhereFieldMessage, WhereFields } from "../where-field"
 import { AddOnKey, QueryChange, QueryTextField } from "./change"
 
-// `QueryPanel`'s own state (apps/web/src/components/dashboard-builder/config/query-panel.tsx): the
+// `QueryPanel`'s own state: the
 // selects and group-by chips of every panel, and which panels are collapsed. The drafts stay with
 // the host page; an edit leaves as `ChangedQuery` for the host to apply.
 

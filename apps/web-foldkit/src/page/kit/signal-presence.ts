@@ -3,7 +3,7 @@ import { AsyncData } from "foldkit"
 import { LoadFailure, toLoadFailure } from "../../data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
 
-// `useSignalPresence` (apps/web/src/hooks/use-signal-presence.ts) over `telemetrySignalsAtom`.
+// Signal presence over `telemetrySignalsAtom`.
 
 export const TelemetrySignalKind = Schema.Literals([
 	"traces",

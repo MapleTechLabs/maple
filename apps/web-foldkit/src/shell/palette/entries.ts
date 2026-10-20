@@ -1,5 +1,5 @@
 import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { Array as Arr, Option, Schema } from "effect"
 import { DashboardId } from "@maple/domain/http"
 import { CATALOG } from "../../page/integrations/catalog"
@@ -9,7 +9,7 @@ import type { PinnedDashboardRow } from "../dashboards-shape"
 import type { Theme } from "../message"
 import { navGroups } from "../nav"
 
-// `PaletteContent`'s entries (apps/web components/command-palette/command-palette.tsx).
+// The palette's entries.
 
 export const GROUP_ORDER = ["Navigation", "Services", "Dashboards", "Integrations", "Actions"] as const
 export type Group = (typeof GROUP_ORDER)[number]

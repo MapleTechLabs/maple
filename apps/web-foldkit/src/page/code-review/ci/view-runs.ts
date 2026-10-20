@@ -1,5 +1,5 @@
 import type { CodeReviewCiRun } from "@maple/domain/http"
-import { externalUrl, pullRequestUrl } from "@maple/web/components/code-review/ci/ci-format"
+import { externalUrl, pullRequestUrl } from "../../../components/code-review/ci/ci-format"
 import { formatDuration } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -19,7 +19,7 @@ import { ciResultBadge, traceLink } from "../kit/parts"
 import { relativeTime } from "../../kit/relative-time"
 import { Message, type Model } from "./model"
 
-// `CiRunsList`, `RunRows` and the paging footers (ci-runs-list.tsx).
+// `CiRunsList`, `RunRows` and the paging footers.
 
 type H = HtmlBuilder<Message>
 type TimeContext = Readonly<{ nowMs: number; timeZone: string }>

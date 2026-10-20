@@ -443,7 +443,7 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 
 export type SingleViewInputs = Readonly<{
 	items: ReadonlyArray<string>
-	/** Omitted when the legacy input has no `aria-label`. */
+	/** Omitted when the input has no `aria-label`. */
 	ariaLabel?: string
 	placeholder: string
 	emptyText: string

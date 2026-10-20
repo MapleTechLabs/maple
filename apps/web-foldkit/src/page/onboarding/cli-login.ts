@@ -8,7 +8,7 @@ import type { Resources } from "../../platform/resources"
 import * as OtpField from "../../ui/otp-field"
 import { endpointMessage, localeTimeOf } from "./request"
 
-// `/cli-login` (apps/web/src/routes/cli-login.tsx): approve a terminal's device code.
+// `/cli-login`: approve a terminal's device code.
 
 // MODEL
 
@@ -47,7 +47,7 @@ export const normalizeCliUserCode = (value: string): string => {
 	return normalized.length > 4 ? `${normalized.slice(0, 4)}-${normalized.slice(4)}` : normalized
 }
 
-/** Legacy's `useId` for the code field: the first slot, which its `<Label htmlFor>` points at. */
+/** The code field's id: the first slot, which its label's `for` points at. */
 export const CODE_FIELD_ID = "cli-login-code"
 export const CODE_LABEL_ID = `${CODE_FIELD_ID}-label`
 

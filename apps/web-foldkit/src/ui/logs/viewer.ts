@@ -4,7 +4,7 @@ import { Effect, Option, Schema } from "effect"
 export const ViewerFlags = Schema.Struct({ timeZone: Schema.String, locale: Schema.String })
 export type ViewerFlags = typeof ViewerFlags.Type
 
-// apps/web/src/atoms/timezone-preference-atoms.ts: the stored preference, "system" or an IANA zone.
+// The stored time zone preference, "system" or an IANA zone.
 const TIMEZONE_STORAGE_KEY = "maple.preferences.timezone"
 const SYSTEM_VALUE = "__system__"
 

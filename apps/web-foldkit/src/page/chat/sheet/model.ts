@@ -7,7 +7,7 @@ import { SignalPresenceData, SignalPresences } from "../../kit/signal-presence"
 import { Message as ConversationMessage } from "../conversation/message"
 import * as Conversation from "../conversation/model"
 
-// `GlobalChatSheet` + `GlobalChatPanel` (apps/web components/chat): the app-wide chat slide-over,
+// The global chat sheet: the app-wide chat slide-over,
 // opened from the top bar's "Ask Maple AI", the command palette or `C`, on the org's quick thread
 // (or the conversation it last showed). Its content mounts only while open.
 

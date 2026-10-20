@@ -11,7 +11,7 @@ import * as TimeRangePicker from "../../page/kit/time-range-picker"
 import * as Combobox from "../../ui/combobox"
 import * as Select from "../../ui/select"
 
-// apps/web `lab/query-builder-lab.tsx` and its route (`routes/lab/query-builder.tsx`).
+// The query builder lab.
 
 export const Session = Schema.Literals(["Checking", "SignedIn", "SignedOut", "Unreachable"])
 export type Session = typeof Session.Type

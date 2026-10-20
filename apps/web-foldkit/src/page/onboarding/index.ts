@@ -1,5 +1,5 @@
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
@@ -25,7 +25,7 @@ import * as PricingCards from "./pricing-cards"
 export type { Inputs } from "./inputs"
 
 /**
- * The onboarding and auth-handoff screens legacy renders without `DashboardLayout`: CLI login,
+ * The onboarding and auth-handoff screens rendered without `DashboardLayout`: CLI login,
  * MCP consent, unsubscribe, quick start, plan selection, org selection and sign-up. Some are
  * public or org-less, so they cannot take a `PageContext`; the root holds the open one here.
  */

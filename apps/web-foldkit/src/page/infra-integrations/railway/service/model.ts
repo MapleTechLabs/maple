@@ -9,7 +9,7 @@ import { InfraRailwayServiceSearch } from "../../../../route/search"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { RailwayServiceRow, RailwayServiceTimeseriesRow } from "../model"
 
-// `/infra/railway/$serviceId` (apps/web/src/routes/infra/railway/$serviceId.tsx).
+// `/infra/railway/$serviceId`.
 
 export const Model = Schema.Struct({
 	serviceId: Schema.String,

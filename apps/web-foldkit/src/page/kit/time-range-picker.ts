@@ -24,10 +24,10 @@ import * as CustomRange from "./custom-range"
 import * as CustomRangeView from "./custom-range-view"
 import { presetLabel, timeRangeTriggerContent } from "./time-controls"
 
-// `TimeRangePicker` (apps/web/src/components/time-range-picker/time-range-picker.tsx): the header
+// `TimeRangePicker`: the header
 // popover with the preset rail and quick select. Picking a range is an OutMessage; the page writes
 // it to its URL search (`applyTimeRangeSearch`).
-// TODO(picker): recently used is not ported yet.
+// TODO(picker): recently used ranges are not shown yet.
 
 export const Tab = Schema.Literals(["relative", "custom"])
 export type Tab = typeof Tab.Type
@@ -262,7 +262,7 @@ const QUICK_SELECT = ["3h", "12h", "4d", "10d", "2w", "6w", "2mo", "today"]
 
 const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
 
-/** The page's maximum; every legacy page on the long-range presets also caps at a year. */
+/** The page's maximum; every page on the long-range presets also caps at a year. */
 const maxRangeOf = (inputs: ViewInputs): number | undefined =>
 	inputs.maxRangeSeconds ?? (inputs.presets === LONG_RANGE_PRESET_VALUES ? ONE_YEAR_SECONDS : undefined)
 

@@ -1,4 +1,4 @@
-import { pickDashboardControlParams, variableValuesFromSearch } from "@maple/web/lib/dashboard-controls/search-params"
+import { pickDashboardControlParams, variableValuesFromSearch } from "../../../lib/dashboard-controls/search-params"
 import { Command } from "foldkit"
 import { AppRoute, hrefOf } from "../../../route"
 import * as Combobox from "../../../ui/combobox"

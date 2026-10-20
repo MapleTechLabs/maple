@@ -1,11 +1,10 @@
-// copied: apps/web/src/components/service-map/three/factory-machines.tsx (R3F JSX as three construction).
-import { fade, type InkPalette, type MachineKind } from "@maple/web/components/service-map/three/appearance"
+import { fade, type InkPalette, type MachineKind } from "../../../components/service-map/three/appearance"
 import {
 	health,
 	HEALTH_COLOR,
 	type SpatialView,
-} from "@maple/web/components/service-map/three/spatial-layout"
-import type { Node3D } from "@maple/web/components/service-map/three/types"
+} from "../../../components/service-map/three/spatial-layout"
+import type { Node3D } from "../../../components/service-map/three/types"
 import * as THREE from "three"
 import { resolveMachineBadge } from "./badge-art"
 import { factoryBadge } from "./brand"

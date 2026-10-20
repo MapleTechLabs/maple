@@ -5,7 +5,7 @@ import MapleAPI
 
 /// Supplies the Clerk session JWT that every v2 request carries.
 ///
-/// Deliberately thin. The web client (`apps/web/src/lib/services/common/auth-headers.ts`)
+/// Deliberately thin. The web client (`apps/web-foldkit/src/lib/services/common/auth-headers.ts`)
 /// hand-rolls an expiry cache with a generation counter because the Clerk JS
 /// SDK does not cache for you. The Swift SDK does: `getToken` keeps a token
 /// with a one-minute TTL and an `expirationBuffer`, and `skipCache` forces a

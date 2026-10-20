@@ -33,7 +33,7 @@ const SCROLL_EVENT = "maple:trace-timeline-scroll"
 
 /**
  * `rowVirtualizer.scrollToIndex(index, { align: "auto" })`, delivered to the body's Mount after the
- * next paint (legacy runs it from an effect, after the rows rendered).
+ * next paint, once the rows rendered.
  */
 export const ScrollToRow = Command.define("ScrollTraceTimelineToRow", {
 	args: { index: Schema.Number },

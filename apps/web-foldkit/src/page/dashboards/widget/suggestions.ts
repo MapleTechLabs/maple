@@ -4,7 +4,7 @@ import { FUNNEL_POPULATION_FILTER_FIELDS, type FunnelPopulationFilterField } fro
 import { Effect, Schema } from "effect"
 import type { TimeWindow } from "../../../data/time-range"
 
-// `useFunnelSuggestions` (components/funnels/use-funnel-suggestions.ts): what the funnel and paths
+// The funnel suggestions: what the funnel and paths
 // panels' inputs complete from, over the preview's window.
 
 /** One suggestion: an event name or page path with its count, or a facet value under its field. */
@@ -24,7 +24,7 @@ const EVENT_NAME_LIMIT = 200
 const PAGE_SUGGESTION_LIMIT = 100
 const FACET_LIMIT = 50
 
-/** The operation and input a lookup is keyed on, as legacy's atom family keys it. */
+/** The operation and input a lookup is keyed on. */
 export const suggestionRequestOf = (lookup: SuggestionLookup, window: TimeWindow) => {
 	switch (lookup) {
 		case "eventNames":

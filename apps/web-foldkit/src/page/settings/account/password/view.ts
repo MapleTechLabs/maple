@@ -19,7 +19,7 @@ const passwordField = (
 		id: string
 		label: string
 		autoComplete: string
-		/** `aria-invalid={tooShort}`: React writes `"false"` too, which Base UI's styles read. */
+		/** `aria-invalid` is written as `"false"` when valid too, which Base UI's styles read. */
 		invalid?: Readonly<{ isInvalid: boolean; error: string | ReadonlyArray<string> }>
 	}>,
 ): Html => {
@@ -75,7 +75,6 @@ const loaded = (h: H, model: Model): Html => {
 							id: "account-new-password",
 							label: "New password",
 							autoComplete: "new-password",
-							// JSX `Use at least {MIN_PASSWORD_LENGTH} characters.`: three text nodes.
 							invalid: { isInvalid: isTooShort(model), error: ["Use at least ", String(MIN_PASSWORD_LENGTH), " characters."] },
 						}),
 						passwordField(h, model, {

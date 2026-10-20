@@ -7,8 +7,8 @@ import * as Select from "../../../ui/select"
 import * as CreateDialog from "./create-dialog"
 import * as RollDialog from "./roll-dialog"
 
-// `ApiKeysSection` (apps/web/src/components/settings/api-keys-section.tsx): API and MCP keys in one
-// filterable list, the API reference and the create, roll and revoke flows.
+// `ApiKeysSection`: API and MCP keys in one filterable list, the API reference and the create, roll
+// and revoke flows.
 
 export const KeyTypeFilter = Schema.Literals(["all", "api", "mcp"])
 export type KeyTypeFilter = typeof KeyTypeFilter.Type

@@ -1,7 +1,7 @@
 import { initialsFrom } from "@maple/ui/lib/initials"
-import { rulesFixture, WORST_CASE_PEOPLE } from "@maple/web/lab/worst-case-docs"
-import { logs } from "@maple/web/lab/worst-case-fixture"
-import { worstCaseTrace } from "@maple/web/lab/worst-case-trace"
+import { rulesFixture, WORST_CASE_PEOPLE } from "../worst-case-docs"
+import { logs } from "../worst-case-fixture"
+import { worstCaseTrace } from "../worst-case-trace"
 import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 import { Option, Schema } from "effect"
 import type { ActorIdentity } from "../../page/errors/kit/actor"
@@ -10,7 +10,7 @@ import { logTimeFormat, toLogRowView } from "../../ui/logs/log-row-view"
 import type { LogRowView } from "../../ui/logs/log-row-view"
 import type { WorstCaseMode } from "./model"
 
-// The lab's reads of apps/web's `worst-case-*` fixtures, shaped for the Foldkit ports.
+// The lab's reads of the `worst-case-*` fixtures, shaped for the views.
 
 const DAY_MS = 24 * 60 * 60 * 1000
 

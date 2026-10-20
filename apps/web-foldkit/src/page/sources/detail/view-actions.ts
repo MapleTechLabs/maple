@@ -8,7 +8,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { PAUSE_CHOICES, PAUSE_MENU_ID } from "./update"
 
-// `SourceActions` and `PauseMenu` (apps/web/src/components/sources/source-actions.tsx).
+// `SourceActions` and `PauseMenu`.
 
 type H = HtmlBuilder<Message>
 

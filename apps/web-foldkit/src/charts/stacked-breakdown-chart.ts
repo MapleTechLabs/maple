@@ -1,4 +1,4 @@
-import { BREAKDOWN_OTHER_KEY, BREAKDOWN_OTHER_LABEL } from "@maple/web/components/infra/cloudflare/constants"
+import { BREAKDOWN_OTHER_KEY, BREAKDOWN_OTHER_LABEL } from "../components/infra/cloudflare/constants"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import type { ChartSpec } from "./chart-spec"
 import { type LongRow, transformRows } from "./infra-metric-series"

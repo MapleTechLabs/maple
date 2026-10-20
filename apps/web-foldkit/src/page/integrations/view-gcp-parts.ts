@@ -1,6 +1,6 @@
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { cloudShellUrl } from "@maple/web/components/integrations/gcp-connector-state"
+import { cloudShellUrl } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "../../ui/button"
 import * as CopyButton from "../../ui/copy-button"
@@ -12,8 +12,7 @@ import { spinner } from "../../ui/spinner"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `GcpCommand`, `GcpOpenCloudShellButton`, `GcpCopyScriptButton`, `Script` and `Step`
-// (components/integrations/gcp-configure.tsx).
+// `GcpCommand`, `GcpOpenCloudShellButton`, `GcpCopyScriptButton`, `Script` and `Step`.
 
 type H = HtmlBuilder<Message>
 

@@ -8,7 +8,7 @@ import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 import { SortState } from "../../../kit/table-sort"
 
-// `/infra/kubernetes/nodes` (apps/web/src/routes/infra/kubernetes/nodes/index.tsx).
+// `/infra/kubernetes/nodes`.
 
 export const NodeRows = ListNodesResponse.fields.data
 export type NodeRow = ListNodesResponse["data"][number]

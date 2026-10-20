@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "../../../ui/icon"
 import type { Message } from "./message"
 
-// The frame every transcript block shares (session-transcript.tsx's `Row`, `Avatar`, `IndentLanes`).
+// The frame every transcript block shares: row, avatar and indent lanes.
 
 type H = HtmlBuilder<Message>
 

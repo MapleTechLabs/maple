@@ -7,7 +7,7 @@ import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 import { SortState } from "../../../kit/table-sort"
 
-// `/infra/hosts` (apps/web/src/routes/infra/hosts/index.tsx).
+// `/infra/hosts`.
 
 export const HostRows = ListHostsResponse.fields.data
 export type HostRow = ListHostsResponse["data"][number]

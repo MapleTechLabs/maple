@@ -13,7 +13,7 @@ import { isDegraded, isLoadFailed, isReadOnly, listedOf } from "./update"
 import { listBody, listSkeleton } from "./view-list"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 
-// `DashboardListPage` (apps/web/src/routes/dashboards/index.tsx): `PageShell` around the list.
+// The dashboards list page: `PageShell` around the list.
 
 type H = HtmlBuilder<Message>
 
@@ -76,7 +76,7 @@ const persistenceBanner = (h: H, error: string | null): Html | undefined =>
 				),
 			])
 
-/** `SyncUnavailable` (components/common/sync-unavailable.tsx) as `ListLoadError`. */
+/** The sync-unavailable state as `ListLoadError`. */
 const listLoadError = (h: H): Html =>
 	empty(
 		h,

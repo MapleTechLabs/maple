@@ -1,6 +1,6 @@
 import { shortId } from "@maple/ui/lib/ids"
-import { addLogAttributeFilter } from "@maple/web/lib/logs/log-attribute-filters"
-import { parseLogSearch } from "@maple/web/lib/logs/log-search-query"
+import { addLogAttributeFilter } from "../../../lib/logs/log-attribute-filters"
+import { parseLogSearch } from "../../../lib/logs/log-search-query"
 import { computeBucketSeconds } from "@maple/web-data/warehouse/timeseries-utils"
 import { Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -60,7 +60,7 @@ import type { LoadFailure } from "../../../data/load-failure"
 export type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
-// copied: `WIDEN_TIME_PRESET` (apps/web/src/components/time-range-picker/search.ts pulls an `@/` type).
+// The preset "widen the time range" switches to.
 const WIDEN_TIME_PRESET = "7d"
 
 /** The stream's default window (`DashboardPage`'s `defaultPreset`). */
@@ -155,7 +155,7 @@ const keyed = <A, E>(
 		onSome: (next) => ({ model: write(step.model, next), commands: [...step.commands, fetch(key)] }),
 	})
 
-/** Every query the page reads, keyed like apps/web's atoms, for the resolved window. */
+/** Every query the page reads, keyed by its inputs, for the resolved window. */
 /**
  * Reload refreshes only the stream (`useRefreshableAtomValue`); the other reads refetch only when
  * their key moves. `facetsMode` is the sidebar's own retry.

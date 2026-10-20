@@ -23,7 +23,7 @@ import { Message } from "./message"
 import type { Model, ReadinessFilter } from "./model"
 import { filteredEmpty as filteredEmptyState } from "../../kit/signal-empty-state"
 
-// `TemplateList` (dashboard-builder/templates/template-list.tsx).
+// `TemplateList`: the templates as rows.
 
 type H = HtmlBuilder<Message>
 

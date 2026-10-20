@@ -21,8 +21,6 @@ import { allRows, DEFAULT_PRESET, hasNextPage, hiddenCount, MAX_RETAINED_TRACES 
 import { noiseNote, timeFormat, traceRow } from "./view-row"
 import { COUNT_ATTRIBUTE, VirtualizeTraces } from "./virtualize"
 
-// `TracesTable` (apps/web/src/components/traces/traces-table.tsx).
-
 /** `TRACE_COLUMNS`: shared by the table, the skeleton and the header. */
 const COLUMNS = [
 	{ id: "traceId", header: "Trace ID", width: 100, skeleton: "w-16" },
@@ -81,7 +79,7 @@ const loadingState = (h: HtmlBuilder<Message>): Html =>
 		],
 	)
 
-/** `SortableHeader` (apps/web/src/components/common/sortable-header.tsx), no hint. */
+/** A sortable column header, no hint. */
 const sortableHeader = (h: HtmlBuilder<Message>, label: string, sortKey: SortKey, model: Model): Html => {
 	const isActive = (model.search.sortBy ?? "timestamp") === sortKey
 	const isAscending = (model.search.sortDir ?? "desc") === "asc"

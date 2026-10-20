@@ -1,13 +1,13 @@
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import { type DocsPage, docsUrl } from "@maple/web/lib/docs"
+import { type DocsPage, docsUrl } from "../../lib/docs"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "../../ui/button"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../ui/empty"
 import { icon, type IconName } from "../../ui/icon"
 import type { SignalPresence, TelemetrySignalKind } from "./signal-presence"
 
-// `SignalEmptyState` (apps/web/src/components/common/signal-empty-state.tsx), `FilteredEmpty` and
-// `DocsLink`/`EmptyActions` (common/docs-link.tsx). Presence comes from the page's Model.
+// `SignalEmptyState`, `FilteredEmpty` and `DocsLink`/`EmptyActions`. Presence comes from the
+// page's Model.
 
 type SignalCopy = Readonly<{
 	noun: string
@@ -19,7 +19,6 @@ type SignalCopy = Readonly<{
 	guideDocs: DocsPage
 }>
 
-// copied: SIGNAL_COPY (the React module also holds the component).
 const SIGNAL_COPY = {
 	traces: {
 		noun: "traces",

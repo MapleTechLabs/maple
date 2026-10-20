@@ -10,7 +10,7 @@ import type { Finding, SourceId } from "./model"
 import { sourceMark, SOURCE_TITLE } from "./source-mark"
 import type { SourceState } from "./state"
 
-// `NeedsAttention` and its rows (components/infra/overview/infra-overview.tsx).
+// `NeedsAttention` and its rows.
 
 // A stale source is an outline, not a status fill.
 const STALE_DOT = "border-[1.5px] border-muted-foreground bg-transparent"

@@ -9,7 +9,7 @@ import * as Frame from "../../kit/frame"
 import { ChartModels, SeriesSlots } from "../../kit/series"
 import { PodsPage } from "../pod-data"
 
-// `/infra/kubernetes/workloads/$kind/$workloadName` (routes/infra/kubernetes/workloads/$kind/$workloadName.tsx).
+// `/infra/kubernetes/workloads/$kind/$workloadName`.
 
 export const WorkloadSummary = WorkloadDetailSummaryResponse.fields.data
 export type WorkloadSummary = WorkloadDetailSummaryResponse["data"]

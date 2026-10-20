@@ -1,6 +1,6 @@
 import { taxIdExampleFor, taxIdLabel } from "@maple/domain/billing-tax-ids"
 import type { BillingProfile, BillingTaxId } from "@maple/domain/http"
-import { verificationBadge } from "@maple/web/lib/billing/billing-profile"
+import { verificationBadge } from "../../../../lib/billing/billing-profile"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

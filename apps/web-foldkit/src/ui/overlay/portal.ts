@@ -187,7 +187,7 @@ export const manageFocus = (
 			const previous = document.activeElement
 			const target =
 				options.initialFocus === "first-tabbable"
-					? // React's `autoFocus` focuses its element first, and the manager leaves it there.
+					? // An `[autofocus]` element is focused first, and the manager leaves it there.
 						(popup.querySelector<HTMLElement>("[autofocus]") ?? tabbables(popup)[0] ?? popup)
 					: options.initialFocus === "highlighted"
 						? (popup.querySelector<HTMLElement>("[data-highlighted]") ?? popup)

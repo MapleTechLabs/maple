@@ -165,7 +165,7 @@ const logEntry = (h: H, log: LogEntry, timeZone: string): Html =>
 
 /**
  * `SpanLogs`: the logs carrying this span's context.
- * TODO(log-sheet): a row click opens `LogDetailSheet` in legacy; the sheet is not ported.
+ * TODO(log-sheet): a row click should open the log detail sheet; it is not wired here yet.
  */
 export const spanLogs = (h: H, model: Pick<Model, "logs">, timeZone: string): Html =>
 	AsyncData.matchData(model.logs.data, {

@@ -7,7 +7,7 @@ import type { GridGesture, Model } from "./model"
 import { endKeyboardMove, keyboardStep } from "./keyboard-move"
 import { isEditing } from "./mode"
 
-// `useGridInteraction` (dashboard-builder/canvas/use-grid-interaction.ts): pointer drag and resize
+// Grid interaction: pointer drag and resize
 // over the canvas, one commit on release. The pointer is tracked by a window subscription.
 // TODO(motion): the glide into place is not animated.
 

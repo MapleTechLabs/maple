@@ -1,4 +1,4 @@
-// The service-flow fixture of `SankeySpike` (apps/web/src/lab/charts/sankey-spike.tsx) and its
+// The service-flow fixture of `SankeySpike` and its
 // error bands, kept apart from the definition so the lab page can build the legend.
 
 export interface SankeyEdge {

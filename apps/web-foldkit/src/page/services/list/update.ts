@@ -125,7 +125,7 @@ const facetsStep = (model: Model, context: PageContext, window: TimeWindow, mode
 		(key) => FetchFacets({ key, window, refresh: mode === "Refresh" }),
 	)
 
-/** Every query the page reads, keyed like apps/web's atoms, for the resolved window. */
+/** Every query the page reads, keyed by its inputs, for the resolved window. */
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const org = context.orgId
 	const input = overviewInput(model.search, window, context.pinnedNamespace)
@@ -357,10 +357,10 @@ export const routeChanged = (
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = { ...model, search: route.search, rowRevision: model.rowRevision + 1 }
-	// Legacy re-resolves only on a window change; filters and grouping keep the window.
+	// Re-resolves only on a window change; filters and grouping keep the window.
 	if (!isWindowChange(model.search, route.search) && model.window !== null)
 		return followData(context)(requestAll(next, context, model.window, "Load"))
-	// After a Reload the mount keeps resolving unsnapped (`refreshVersion > 0`), like legacy.
+	// After a Reload the mount keeps resolving unsnapped (`refreshVersion > 0`).
 	return {
 		model: next,
 		commands: [resolveCommand(next, context, model.refreshVersion === 0 ? "Load" : "Refresh")],

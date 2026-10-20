@@ -127,7 +127,7 @@ export const fetchPodSeries = (input: PodSeriesInput) =>
 		Effect.result,
 	)
 
-/** `POD_METRIC_LABELS` (k8s-detail-chart.tsx). */
+/** `POD_METRIC_LABELS`. */
 export const POD_METRIC_LABELS = new Map<PodMetric, string>([
 	["cpu_usage", "CPU usage"],
 	["cpu_limit", "CPU / limit"],

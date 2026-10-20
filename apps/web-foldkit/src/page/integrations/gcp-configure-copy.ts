@@ -1,9 +1,9 @@
 import type { GcpScopeType } from "@maple/domain/primitives"
-import type { GcpCollectLock, GcpDraftEffect } from "@maple/web/components/integrations/gcp-connector-state"
-import { docsUrl } from "@maple/web/lib/docs"
+import type { GcpCollectLock, GcpDraftEffect } from "../../components/integrations/gcp-connector-state"
+import { docsUrl } from "../../lib/docs"
 import type { Capability } from "./gcp-configure-schema"
 
-// `GcpConfigure`'s copy (components/integrations/gcp-configure.tsx), verbatim.
+// `GcpConfigure`'s copy.
 
 export const DOCS = docsUrl("gcp")
 export const OTEL_DOCS = docsUrl("gcpOpenTelemetry")

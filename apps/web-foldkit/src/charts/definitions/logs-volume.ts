@@ -10,7 +10,7 @@ import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip } from "./plot-constants"
 
-// Port of `LogsVolumePlot`'s `definition` memo (apps/web/src/components/logs/logs-volume-chart.tsx).
+// The logs volume chart's definition.
 
 type VolumeSpec = Extract<ChartSpec, { readonly _tag: "LogsVolume" }>
 type Row = Readonly<Record<string, unknown>> & { readonly bucket: string }

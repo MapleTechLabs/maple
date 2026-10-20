@@ -169,7 +169,7 @@ const railModels = (model: Model): ReadonlyArray<string> => [
 	...(Option.isSome(AsyncData.getData(model.facets.data)) ? (model.search.models ?? []) : []),
 ]
 
-/** The rail's own detection, sent as it mounts (before the window resolves, like legacy's render). */
+/** The rail's own detection, sent as it mounts (before the window resolves). */
 const followRail = (result: Return): Return =>
 	Option.match(missingDetection(result.model.detections, railModels(result.model)), {
 		onNone: () => result,

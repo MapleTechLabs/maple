@@ -24,7 +24,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { shortIssueId } from "../kit/row"
 import { Message } from "./message"
 
-// `AnomalySidebar` (apps/web/src/components/anomalies/anomaly-sidebar.tsx).
+// `AnomalySidebar`: the anomaly detail's side rail.
 
 type H = HtmlBuilder<Message>
 

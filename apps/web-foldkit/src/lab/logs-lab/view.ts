@@ -9,7 +9,7 @@ import { liveControls } from "../../page/logs/live-controls"
 import { labShellView } from "../app-shell"
 import { Message, type Model, PIN_OPTIONS, type Toggle } from "./model"
 
-// apps/web/src/lab/logs-lab.tsx `Toggle`
+// `Toggle`
 const toggleButton = (h: HtmlBuilder<Message>, label: string, isOn: boolean, onClick: Message): Html =>
 	button(
 		h,
@@ -123,7 +123,7 @@ const pageBody = (h: HtmlBuilder<Message>, model: Model): Html =>
 		],
 	)
 
-/** apps/web's `DashboardLayout` around the lab page: the real shell, then the toast regions. */
+/** The real shell around the lab page, then the toast regions. */
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[h.Id("app")],

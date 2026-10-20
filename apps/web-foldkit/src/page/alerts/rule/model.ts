@@ -17,7 +17,7 @@ import * as Menu from "../../../ui/menu"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { PreviewSlot } from "../shared/preview"
 
-// `/alerts/$ruleId` (apps/web/src/routes/alerts/$ruleId.tsx, components/alerts/rule-detail/).
+// `/alerts/$ruleId`.
 
 const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
 
@@ -76,7 +76,7 @@ export const Model = Schema.Struct({
 	deliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
 	checks: KeyedSchema(ChecksResponse, LoadFailure),
 	preview: PreviewSlot,
-	// UI state the React page kept in `useState`.
+	// Local UI state.
 	stateFilter: StateFilter,
 	checkStatusFilter: CheckStatusFilter,
 	signalSource: SignalSource,

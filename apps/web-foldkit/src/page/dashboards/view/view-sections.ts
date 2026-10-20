@@ -15,7 +15,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { sectionMenuIdOf } from "./section-update"
 
-// `DashboardSectionView`'s header (sections/dashboard-section.tsx), `SectionTabBar` and
+// A dashboard section's header, `SectionTabBar` and
 // `InlineEditableText`: the chevron, the renamable title, the tabs, "+" and the options menu.
 
 type H = HtmlBuilder<Message>

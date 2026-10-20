@@ -36,7 +36,7 @@ const startApplication = () =>
 		{ flags },
 	)
 
-// `/lab/<path>` boots that lab page's own program instead of the app (parity scenarios, benches).
+// `/lab/<path>` boots that lab page's own program instead of the app (scenarios, benches).
 const labPath = labEnabled ? labPathOf(location.pathname) : undefined
 if (labPath === undefined) startApplication()
 else void startLab(labPath, container)

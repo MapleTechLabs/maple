@@ -27,7 +27,7 @@ import { defineLabWithFlags } from "../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
 import { buildRows } from "../agent-sessions-rows"
 
-// `/lab/agent-sessions` (apps/web `lab/agent-sessions-list-lab.tsx`): the list's tab strip, toolbar
+// `/lab/agent-sessions`: the list's tab strip, toolbar
 // and table over rows chosen to break its lanes. No server: a header click only marks the order.
 
 const WIDTHS = [

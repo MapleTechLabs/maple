@@ -5,7 +5,7 @@ import { ThemeColors } from "../../charts/theme-colors"
 import * as GcpList from "../../page/infra-integrations/gcp/list/model"
 import * as Menu from "../../ui/menu"
 
-// `/lab/gcp-infra` (apps/web `lab/gcp-infra-lab.tsx`): the Google Cloud list over fixtures, its
+// `/lab/gcp-infra`: the Google Cloud list over fixtures, its
 // `GcpListState` held here instead of the URL.
 
 export const ListState = Schema.Struct({

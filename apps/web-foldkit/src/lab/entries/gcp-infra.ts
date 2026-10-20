@@ -4,7 +4,7 @@ import { init, update } from "../gcp-infra-lab/update"
 import { overlay, view } from "../gcp-infra-lab/view"
 import { defineShellLab } from "../shell-lab"
 
-// `/lab/gcp-infra` (apps/web `lab/gcp-infra-lab.tsx`): the redesigned Google Cloud list, whole,
+// `/lab/gcp-infra`: the redesigned Google Cloud list, whole,
 // over fixtures that reproduce the Paper artboards, inside the real shell.
 
 export const lab = defineShellLab("Google Cloud", {

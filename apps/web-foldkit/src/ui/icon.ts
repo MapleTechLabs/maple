@@ -12,12 +12,12 @@ import {
 export type { IconName } from "./icons.generated"
 
 export type IconOptions<Message> = Readonly<{
-	/** React's `size` prop: width and height. Defaults to the icon's own (24 for most). */
+	/** Width and height. Defaults to the icon's own (24 for most). */
 	size?: number | string
 	className?: string
-	/** Inline style the React call site passes (`style={{ color }}`). */
+	/** Inline style (`{ color }`). */
 	style?: Readonly<Record<string, string>>
-	/** Props spread onto the React `<svg>` after its defaults (`aria-label`, `role`, `data-*`). */
+	/** Attributes set on the `<svg>` after its defaults (`aria-label`, `role`, `data-*`). */
 	attributes?: ReadonlyArray<Attribute<Message>>
 	/** Root attributes the call site sets to `undefined` (`aria-hidden={undefined}`). */
 	removedAttributes?: ReadonlyArray<string>
@@ -51,7 +51,7 @@ const renderNode = <Message>(
 	)
 }
 
-/** `<XIcon size className style {...props}>` from @maple/ui or apps/web, as generated markup. */
+/** A generated icon with its size, class, style and attributes. */
 export const icon = <Message>(
 	h: HtmlBuilder<Message>,
 	name: IconName,

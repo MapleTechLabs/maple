@@ -24,7 +24,7 @@ import { alertsHref } from "../shared/links"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `RuleDiagnosisPanel` (components/alerts/rule-detail/rule-diagnosis-panel.tsx).
+// `RuleDiagnosisPanel`: the rule's diagnosis.
 
 type H = HtmlBuilder<Message>
 

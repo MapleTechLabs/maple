@@ -10,7 +10,7 @@ import {
 	type WidgetGate,
 } from "./widget-data"
 
-// `WidgetDataState` (dashboard-builder/types.ts), as `useWidgetDataSource` derives it.
+// `WidgetDataState`, as `widget-data.ts` derives it.
 
 type Widget = DashboardDocument["widgets"][number]
 

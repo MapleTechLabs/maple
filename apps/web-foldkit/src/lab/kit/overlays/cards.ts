@@ -5,7 +5,7 @@ import * as Popover from "../../../ui/popover"
 import * as Tooltip from "../../../ui/tooltip"
 import { Message } from "./model"
 
-// apps/web/src/lab/kit/overlays-dialogs.tsx `KitPopover` and `KitHoverCard`.
+// `KitPopover` and `KitHoverCard`.
 type H = HtmlBuilder<Message>
 
 const itemRow = (h: H, children: ReadonlyArray<Html>) =>

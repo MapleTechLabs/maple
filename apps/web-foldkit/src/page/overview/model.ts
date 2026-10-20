@@ -14,7 +14,7 @@ import { SignalPresenceData } from "../kit/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as SetupChecklist from "./setup-checklist"
 
-// The Overview home page (apps/web/src/routes/index.tsx and components/dashboard/).
+// The Overview home page.
 
 /** `DashboardFacetsHint` (atoms/dashboard-facets-hint-atoms.ts), persisted per org. */
 export const FacetsHint = Schema.Struct({

@@ -1,7 +1,7 @@
 import type { V2GcpConnector } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
-import { GCP_SCOPE_NAMES, gcpScopeLabel } from "@maple/web/components/integrations/gcp-connector-state"
-import { gcpRemovalList } from "@maple/web/components/integrations/gcp-setup-steps"
+import { GCP_SCOPE_NAMES, gcpScopeLabel } from "../../components/integrations/gcp-connector-state"
+import { gcpRemovalList } from "../../components/integrations/gcp-setup-steps"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
@@ -16,8 +16,7 @@ import { gcpConnectors, neverReported } from "./update-gcp"
 import { openCloudShellButton, type ScriptFailure, SMALL, scriptBlock, step } from "./view-gcp-parts"
 import { removalItem } from "./view-gcp-setup-methods"
 
-// `GcpDisconnectDialog` (gcp-configure.tsx), and the `ConfirmDialog`s of `GcpConnection` and
-// `GcpIntegrationCard`.
+// `GcpDisconnectDialog`, and the `ConfirmDialog`s of `GcpConnection` and `GcpIntegrationCard`.
 
 type H = HtmlBuilder<Message>
 

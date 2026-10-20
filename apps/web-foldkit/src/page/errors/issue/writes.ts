@@ -69,7 +69,7 @@ const settledBusy = (busy: Model["busy"], kind: Busy): Model["busy"] => {
 
 const BUSY_PRIORITY: ReadonlyArray<Busy> = ["state", "severity", "heartbeat", "release", "claim"]
 
-/** Legacy's `sidebarBusy`: the first in-flight kind by its priority chain. */
+/** The sidebar's busy state: the first in-flight kind by its priority chain. */
 export const sidebarBusy = (model: Model): Busy | null =>
 	BUSY_PRIORITY.find((kind) => model.busy.includes(kind)) ?? null
 

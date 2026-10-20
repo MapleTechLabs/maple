@@ -3,7 +3,7 @@ import { zonedDateParts } from "@maple/query-engine/datetime"
 import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { type ErrorSignal, densifySpark, surgeRatio } from "@maple/web/lib/models/error-signal"
+import { type ErrorSignal, densifySpark, surgeRatio } from "../../../lib/models/error-signal"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
 import { miniBars } from "../../../ui/mini-bars"
@@ -11,7 +11,7 @@ import { SEVERITY_TEXT } from "../kit/severity"
 import { investigationChip } from "../kit/state-chip"
 import { Message } from "./message"
 
-// Row pieces of `ErrorSignalRow` (components/errors/error-signal-row.tsx) and `SignalSpark`.
+// Row pieces of an error signal row and its spark.
 
 type H = HtmlBuilder<Message>
 

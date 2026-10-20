@@ -1,5 +1,5 @@
-import { formatSeconds } from "@maple/web/components/infra/chart-units"
-import { severityLevel } from "@maple/web/components/infra/format"
+import { formatSeconds } from "../../../../components/infra/chart-units"
+import { severityLevel } from "../../../../components/infra/format"
 import { formatBytes, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -22,8 +22,7 @@ import { Message } from "./message"
 import type { ContainerMetric, ContainerSummary, Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 
-// `ContainerDetailPage` (apps/web/src/routes/infra/containers/$containerName.tsx) and
-// `ContainerDetailChart` (components/infra/container-detail-chart.tsx).
+// `ContainerDetailPage` and `ContainerDetailChart`.
 
 type H = HtmlBuilder<Message>
 type Summary = NonNullable<ContainerSummary>

@@ -5,7 +5,7 @@ import {
 	GCP_STATE_ORDER,
 	gcpConnectionState,
 	gcpWorstState,
-} from "@maple/web/components/integrations/gcp-connector-state"
+} from "../../components/integrations/gcp-connector-state"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
@@ -33,7 +33,7 @@ import { gcpDialogs } from "./view-gcp-dialogs"
 import { copyScriptButton, GCP_TITLE, openCloudShellButton } from "./view-gcp-parts"
 import { usageBand } from "./view-gcp-workloads"
 
-// `GcpIntegrationCard` and `GcpHeaderStatus` (components/integrations/gcp-integration-card.tsx).
+// `GcpIntegrationCard` and `GcpHeaderStatus`.
 
 type H = HtmlBuilder<Message>
 

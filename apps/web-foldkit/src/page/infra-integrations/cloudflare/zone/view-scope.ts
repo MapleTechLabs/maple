@@ -4,11 +4,11 @@ import {
 	type CloudflareFilters,
 	FILTER_SECTION_LABEL,
 	filterKeysFromServer,
-} from "@maple/web/components/infra/cloudflare/filters"
+} from "../../../../components/infra/cloudflare/filters"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { scopeChip } from "../../kit/scope-chip"
 
-// `PanelScope` (components/infra/cloudflare/panel-scope.tsx): what a panel is actually scoped to.
+// `PanelScope`: what a panel is actually scoped to.
 
 export type Trigger = (id: string) => ReadonlyArray<ChildAttribute>
 

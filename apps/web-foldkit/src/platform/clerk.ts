@@ -6,12 +6,12 @@ import {
 	organizationRegionOpen,
 	organizationServedIn,
 } from "@maple/domain/organization-regions"
-import { clerkAppearance, clerkLocalization } from "@maple/web/lib/clerk-appearance"
-import { currentRegion } from "@maple/web/lib/region"
-import { purgeForeignClerkCookies } from "@maple/web/lib/services/common/clerk-cookie-guard"
+import { clerkAppearance, clerkLocalization } from "../lib/clerk-appearance"
+import { currentRegion } from "../lib/region"
+import { purgeForeignClerkCookies } from "../lib/services/common/clerk-cookie-guard"
 import { Clock, Effect, Option, Predicate, Queue, Schema, Stream } from "effect"
 
-/** The slice of clerk-js this app reads. `window.Clerk` is what the parity harness stubs. */
+/** The slice of clerk-js this app reads (`window.Clerk`). */
 interface ClerkResources {
 	readonly user?: ClerkUserResource | null
 	readonly session?: { readonly id: string; readonly getToken: () => Promise<string | null> } | null
@@ -362,13 +362,13 @@ export const clerkTeamOrganization: Effect.Effect<Option.Option<ClerkTeamOrganiz
 	}),
 )
 
-/** The session JWT for API calls (`getToken()` in apps/web's ClerkAuthBridge). */
+/** The session JWT for API calls (`session.getToken()`). */
 export const clerkSessionToken: Effect.Effect<Option.Option<string>> = Effect.tryPromise(
 	() => window.Clerk?.session?.getToken() ?? Promise.resolve(null),
 ).pipe(Effect.map(Option.fromNullishOr), Effect.orElseSucceed(Option.none))
 
 // clerk-js resources for the Clerk-only settings tabs and `/account`: ported markup over the
-// vanilla resource API (`useUser()`/`useOrganization()` in apps/web read the same objects).
+// vanilla resource API.
 
 export class ClerkActionError extends Schema.TaggedError<ClerkActionError>()(
 	"@maple/web-foldkit/ClerkActionError",

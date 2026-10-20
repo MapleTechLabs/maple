@@ -6,7 +6,7 @@ import { defineMessageUnion } from "foldkit/message"
 import type { LoadFailure } from "../data/load-failure"
 import { button } from "./button"
 
-// `ErrorState` (apps/web/src/components/common/error-state.tsx). The failure is already the
+// The error state. The failure is already the
 // `displayError` body (`data/load-failure.ts`).
 
 export type ErrorStateOptions<M> = Readonly<{
@@ -165,7 +165,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 	const canRetry =
 		options.onRetry !== undefined && (failure.recovery === "retry" || failure.recovery === "refresh")
 	const { onRetry } = options
-	// TODO(auto-retry-exhausted): legacy drops the "Retrying" note after the sixth probe.
+	// TODO(auto-retry-exhausted): drop the "Retrying" note after the sixth probe.
 	const autoRetry =
 		onRetry !== undefined && canRetry && failure.retryable
 			? [h.OnMount(Mount.mapMessage(MountNetworkAutoRetry(), () => onRetry))]

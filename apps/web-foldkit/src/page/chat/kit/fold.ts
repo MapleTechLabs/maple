@@ -17,7 +17,7 @@ import {
 	type UIMessagePart,
 } from "./ui-message"
 
-// The transcript reducer of `useMapleChat` (apps/web hooks/use-maple-chat.ts): durable history to
+// The transcript reducer: durable history to
 // `UIMessage`s, and every live `ChatEvent` folded in. Pure; the stream lives in a Subscription.
 
 /** A tool's error output as the text a card renders. */

@@ -15,7 +15,7 @@ import * as LogDetail from "../detail"
 import { SignalPresenceData } from "../../kit/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
-// The `/logs` stream (apps/web/src/routes/logs/index.tsx and components/logs/).
+// The `/logs` stream.
 
 import { LogRecord } from "../../../ui/logs/log-row-view"
 

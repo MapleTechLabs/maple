@@ -1,7 +1,5 @@
 import type { IssueKind } from "@maple/domain/http"
 
-// copied: apps/web/src/components/errors/issue-source.tsx (a React module).
-
 /** What opened an issue. */
 export const SOURCES: ReadonlyArray<IssueKind> = ["error", "alert", "integration"]
 

@@ -10,22 +10,6 @@
 			// alchemy's optional peer, dynamic-imported when the deploy applies migrations.
 			"ignoreDependencies": ["pg"]
 		},
-		"apps/web": {
-			// `src/worker-entry.ts` is the Worker entry of the `MAPLE_WEB_APP=react` build,
-			// named by string in apps/web-foldkit/src/worker.ts. knip cannot follow a path in
-			// a string, so without this it reports the entry and everything only it reaches
-			// (the handler, the OG renderers) as unused files.
-			"entry": [
-				"src/routes/**/*.tsx",
-				"src/worker-entry.ts",
-				"src/components/ai-elements/**",
-				"src/components/icons/**",
-				"src/lib/effect-atom.ts",
-				// The browser e2e suite, loaded by path by `e2e run` (`test:e2e`).
-				"e2e/e2e.config.ts",
-				"e2e/tests/**/*.e2e.ts"
-			]
-		},
 		"apps/landing": {
 			// scripts/figures/*.mjs generate blog figures and covers, run by hand with node.
 			// iso/ is a vendored drawing kit; only part of its API is used.
@@ -70,17 +54,13 @@
 		"apps/local-ui": {
 			"entry": ["src/worker.ts"]
 		},
-		// Run by path: the icon generator and the service-map bench script.
-		// tailwindcss is @tailwindcss/vite's peer; the fonts and tw-animate-css are reached through
-		// src/styles.css importing apps/web's stylesheet, which knip does not follow.
+		// Run by path: the browser e2e suite (`e2e run`, `test:e2e`).
 		"apps/web-foldkit": {
-			// `src/worker-entry.ts` is named by string in `src/worker.ts`, as in apps/web.
-			"entry": ["scripts/generate-icons.tsx", "perf/service-map-bench.ts", "src/worker-entry.ts"],
-			"ignoreDependencies": [
-				"tailwindcss",
-				"tw-animate-css",
-				"@fontsource-variable/geist",
-				"@fontsource-variable/geist-mono"
+			// `src/worker-entry.ts` is named by string in `src/worker.ts`.
+			"entry": [
+				"src/worker-entry.ts",
+				"e2e/e2e.config.ts",
+				"e2e/tests/**/*.e2e.ts"
 			]
 		},
 		// local-ui-foldkit renders apps/web-foldkit's source modules (ui, charts), so their runtime
@@ -94,14 +74,8 @@
 				"@tanstack/charts",
 				"@tanstack/charts-scales",
 				"sugar-high",
-				"tailwindcss",
 				"tw-animate-css"
 			]
-		},
-		// Scenario and fixture area modules are loaded with readdirSync + import() (src/scenarios.ts,
-		// src/fixtures/areas.ts); the bench is run by path.
-		"packages/ui-parity": {
-			"entry": ["src/scenarios/*.ts", "src/fixtures/areas/*.ts", "src/bench/*.ts"]
 		},
 		"apps/cli": {
 			"entry": [

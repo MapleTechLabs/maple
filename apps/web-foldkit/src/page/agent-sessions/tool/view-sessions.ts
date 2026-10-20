@@ -20,13 +20,11 @@ import { vendorLabel } from "../kit/vendor"
 import { relativeTime } from "../../kit/relative-time"
 import type { Message } from "./message"
 
-// `ToolDetailSessions` (agent-sessions/tools/tool-detail-sessions.tsx).
-
 type H = HtmlBuilder<Message>
 
 type SessionRow = typeof AiSessionListItem.Type
 
-/** `ErrorCountPill` (components/replays/session-pills.tsx). */
+/** A session's error count pill. */
 const errorCountPill = (h: H, count: number): Html =>
 	badge(
 		h,
@@ -42,7 +40,7 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 			h.Class(
 				"relative flex w-full items-center gap-4 border-b border-border px-3 py-2.5 text-left transition-colors last:border-0 hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none",
 			),
-			// `{ ...sessionLinkWindow(session), tool, view }` in that order, as the legacy link writes it.
+			// `{ ...sessionLinkWindow(session), tool, view }` in that order.
 			h.Href(
 				`${hrefOf(AppRoute.AgentSession({ sessionId: session.sessionId, search: {} }))}${orderedSearch([
 					["t", sessionLinkWindow(session).t],

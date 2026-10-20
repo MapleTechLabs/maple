@@ -9,7 +9,7 @@ import { eyebrow } from "../eyebrow"
 import { scrollArea } from "../scroll-area"
 import { skeleton } from "../skeleton"
 
-// Port of packages/ui/src/components/filters/filter-sidebar.tsx and apps/web's `FilterSidebarError`.
+// Port of packages/ui/src/components/filters/filter-sidebar.tsx, plus its error state.
 
 /** `FilterSidebarFrame`: dims while a refetch runs over the facets it shows. */
 export const filterSidebarFrame = <M>(
@@ -146,7 +146,7 @@ export const filterSidebarEmpty = <M>(h: HtmlBuilder<M>): Html =>
 		),
 	])
 
-/** apps/web's `FilterSidebarError`. */
+/** The filter sidebar's failure state. */
 export const filterSidebarError = <M>(h: HtmlBuilder<M>, failure: LoadFailure, onRetry?: M): Html =>
 	filterSidebarFrame(h, {}, [
 		filterSidebarHeader(h),

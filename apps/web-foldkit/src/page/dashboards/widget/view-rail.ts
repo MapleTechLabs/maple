@@ -17,8 +17,7 @@ import { thresholds } from "./view-rail-thresholds"
 import { pageSelect } from "./view-select"
 import { typeSettings } from "./view-rail-types"
 
-// `WidgetSettingsBar` and the `WidgetSettings` fields the timeseries panels compose
-// (settings-fields.tsx, widgets/types/chart.tsx).
+// `WidgetSettingsBar` and the `WidgetSettings` fields the timeseries panels compose.
 
 type H = HtmlBuilder<Message>
 
@@ -129,7 +128,7 @@ const descriptionField = (h: H, state: EditorState): Html =>
 
 /**
  * `WidgetTimeRange`: Dashboard or Custom, and under Custom the override's own picker.
- * TODO(picker): the picker's custom-range tab (an absolute window) is not ported anywhere yet.
+ * TODO(picker): the picker's custom-range tab (an absolute window) is not built yet.
  */
 const timeRangeField = (h: H, model: Model, state: EditorState, timeZone: string): Html =>
 	railSetting(h, "time-range", "Time range", false, [

@@ -29,7 +29,7 @@ import {
 	topQueries,
 } from "./view-db-sections"
 
-// `DatabaseDetailPanel` (components/service-map/service-map-view.tsx).
+// The database detail panel.
 // TODO(gcp): `GcpCloudSqlSection` renders only while a GCP connection collects metrics; not ported.
 
 type H = HtmlBuilder<Message>

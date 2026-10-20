@@ -3,7 +3,7 @@ import * as TraceFlow from "../../service-map/trace-flow/trace-flow"
 import { FLOW_LAB_GRAPH, pageBody } from "../flow-lab"
 import { defineShellLab } from "../shell-lab"
 
-// `/lab/flow` (apps/web `lab/flow-lab.tsx`): the flow view lab inside the real shell.
+// `/lab/flow`: the flow view lab inside the real shell.
 
 const updateFlow = TraceFlow.update(FLOW_LAB_GRAPH)
 

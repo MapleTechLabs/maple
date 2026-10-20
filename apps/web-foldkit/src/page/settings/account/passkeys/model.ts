@@ -4,7 +4,7 @@ import * as Dialog from "../../../../ui/dialog"
 import * as Menu from "../../../../ui/menu"
 import { AccountPasskey, AccountUser } from "../user"
 
-// The Passkeys tab (`PasskeysSection`, apps/web/src/components/account/passkeys-section.tsx).
+// The Passkeys tab.
 
 export const Model = Schema.Struct({
 	isLoaded: Schema.Boolean,

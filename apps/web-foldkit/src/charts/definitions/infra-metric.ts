@@ -4,7 +4,7 @@ import {
 	type TransformedPoint,
 	transformRows,
 	UNNAMED_SERIES_KEY,
-} from "@maple/web/components/infra/chart-units"
+} from "../../components/infra/chart-units"
 import {
 	areaY,
 	d3Curve,
@@ -32,8 +32,7 @@ import { verticalGradient } from "./fixed-metric-axes"
 import { chartEventMarkerMarks, placeMarkersInWindow } from "./event-markers"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 
-// Port of `InfraMetricChart`'s definition (apps/web/src/components/infra/primitives/infra-metric-chart.tsx),
-// code copied, constants unchanged. Colours arrive resolved in the spec.
+// The infra metric chart's definition. Colours arrive resolved in the spec.
 
 type InfraMetricSpec = Extract<ChartSpec, { readonly _tag: "InfraMetric" }>
 type InfraPoint = TransformedPoint
@@ -212,7 +211,7 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 	const tooltipOf = (points: ReadonlyArray<ChartPoint<InfraDatum, ChartValue, number>>) =>
 		Option.map(Option.fromNullishOr(points[0]), ({ datum }) => {
 			const row = rowOf(datum)
-			// The raw value, stacked or not: legacy's cursor series carry no stacked position.
+			// The raw value, stacked or not: the cursor series carry no stacked position.
 			const highlighted = focus.highlight(
 				series.map((name): readonly [string, number | null] => [label(name), valueOf(name)(row)]),
 			)

@@ -1,5 +1,5 @@
-import { formatWholePercent } from "@maple/web/components/infra/format"
-import { formatRestarts, podKey, type PodRestartSummary, restartTone } from "@maple/web/components/infra/pod-restarts"
+import { formatWholePercent } from "../../../components/infra/format"
+import { formatRestarts, podKey, type PodRestartSummary, restartTone } from "../../../components/infra/pod-restarts"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
@@ -18,7 +18,7 @@ import { hostStatusBadge } from "../kit/status"
 import type { TimeSearch } from "../kit/view-tabs"
 import type { PodRow } from "./pod-data"
 
-// `PodTable` / `PodTableLoading` (apps/web/src/components/infra/pod-table.tsx).
+// `PodTable` / `PodTableLoading`.
 
 export type PodSortKey = "saturation" | "cpuUsage" | "cpuLimitPct" | "memoryLimitPct" | "podName" | "lastSeen"
 type Sort = Readonly<{ key: string | null; dir: SortDir }> | null

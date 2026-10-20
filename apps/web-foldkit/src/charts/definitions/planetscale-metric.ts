@@ -12,7 +12,7 @@ import { chartEventMarkerMarks, placeMarkersInWindow } from "./event-markers"
 import { cursorTooltip } from "./plot-constants"
 import { formatMetricValue, METRIC_LABELS, type PlanetScaleMetric } from "../planetscale-metric-series"
 
-// Port of `PlanetScaleChart`'s definition (apps/web/src/components/infra/planetscale/planetscale-chart.tsx).
+// The PlanetScale chart's definition.
 
 type PlanetScaleSpec = Extract<ChartSpec, { readonly _tag: "PlanetScaleMetric" }>
 

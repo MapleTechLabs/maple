@@ -1,11 +1,11 @@
-import { severityLevel } from "@maple/web/components/infra/format"
-import { BAR_FILL, BAR_VALUE_TONE } from "@maple/web/components/infra/severity-tokens"
+import { severityLevel } from "../../../components/infra/format"
+import { BAR_FILL, BAR_VALUE_TONE } from "../../../components/infra/severity-tokens"
 import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { meter } from "../../../ui/meter"
 
-// `MeterRows` (apps/web/src/components/infra/primitives/meter-rows.tsx).
+// `MeterRows`.
 
 export type MeterRow = Readonly<{ label: string; fraction: number }>
 

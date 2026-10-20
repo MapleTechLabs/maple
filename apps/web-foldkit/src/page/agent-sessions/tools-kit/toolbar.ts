@@ -6,8 +6,7 @@ import * as Select from "../../../ui/select"
 import * as SelectView from "../../../ui/select-view"
 import { searchInput } from "../../../ui/search-input"
 
-// `ToolFilterToolbar` and `FacetSelect` (agent-sessions/tools/tool-filter-toolbar.tsx,
-// components/common/facet-select.tsx).
+// The tool filter toolbar and its facet selects.
 
 /** Base UI selects need a real value for "no filter"; it never reaches the URL. */
 export const ALL = "__all__"

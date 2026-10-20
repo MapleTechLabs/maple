@@ -1,4 +1,4 @@
-import { deriveHostStatus, severityLevel } from "@maple/web/components/infra/format"
+import { deriveHostStatus, severityLevel } from "../../../../components/infra/format"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL } from "@maple/ui/lib/tone"
@@ -35,8 +35,7 @@ import { type Model, WORKLOAD_LIST_LIMIT, type WorkloadFacets, type WorkloadKind
 import { DEFAULT_PRESET, filtersOf, kindOf } from "./update"
 import { workloadTable, workloadTableLoading } from "./view-table"
 
-// `WorkloadsPage` (apps/web/src/routes/infra/kubernetes/workloads/index.tsx) and
-// `WorkloadsFilterSidebarView` (components/infra/k8s-filter-sidebar.tsx).
+// `WorkloadsPage` and `WorkloadsFilterSidebarView`.
 
 type H = HtmlBuilder<Message>
 

@@ -104,8 +104,8 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 		scrollTo(target, behavior)
 	}
 	const isAnchor = (element: HTMLElement) => element.dataset.scrollAnchor === "true"
-	// Legacy's thread is laid out on its first paint; here replies are laid out once their markdown
-	// parses (`data-markdown-pending` clears), so the permalink waits for that, as a queued jump.
+	// Replies are laid out once their markdown parses (`data-markdown-pending` clears), so the
+	// permalink waits for that, as a queued jump.
 	let pendingFocus = focusMessageId
 	const flushFocus = (): boolean => {
 		if (pendingFocus === null || content.hasAttribute("data-markdown-pending")) return false
@@ -120,8 +120,7 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 		const list = items()
 		const previous = count
 		count = list.length
-		// The turns already there when the thread loads are history, never re-anchored to later
-		// (legacy leaves them unmarked and only its frame batching keeps it from re-anchoring).
+		// The turns already there when the thread loads are history, never re-anchored to later.
 		if (previous === 0) {
 			list.filter(isAnchor).forEach((item) => handled.add(item))
 			return flushFocus() ? undefined : toEnd("auto")

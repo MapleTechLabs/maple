@@ -11,14 +11,14 @@ import * as ReleaseOverlays from "../../page/releases/overlays"
 import * as Toast from "../../ui/toast"
 import * as TraceBox from "./trace-box"
 
-// `/lab/worst-case` (apps/web `lab/worst-case-lab.tsx`): product components over worst-case
+// `/lab/worst-case`: product components over worst-case
 // fixtures, with a demo twin of each, behind the Demo data / Worst case toggle. Shell-free.
 
 export const WorstCaseMode = Schema.Literals(["demo", "worst"])
 export type WorstCaseMode = typeof WorstCaseMode.Type
 
 export const Flags = Schema.Struct({
-	/** The boot clock: legacy's `useState(() => Date.now())` readings. */
+	/** The boot clock, read once. */
 	nowMs: Schema.Number,
 	timeZone: Schema.String,
 	/** The route's `?data=` search, `worst` when absent or unknown. */
@@ -30,7 +30,7 @@ export const Model = Schema.Struct({
 	mode: WorstCaseMode,
 	nowMs: Schema.Number,
 	timeZone: Schema.String,
-	/** The two `TraceBox`es, rebuilt on a mode change (legacy keys them by mode). */
+	/** The two `TraceBox`es, rebuilt on a mode change. */
 	waterfallBox: Schema.NullOr(TraceBox.Model),
 	timelineBox: Schema.NullOr(TraceBox.Model),
 	/** `HostTable`'s own `useTableSort`: `cpuPct` descending until a head is clicked. */

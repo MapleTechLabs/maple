@@ -12,7 +12,7 @@ import * as Select from "../../../ui/select"
 import * as Tabs from "../../../ui/tabs"
 import { SignalPresenceData } from "../../kit/signal-presence"
 
-// The errors list (apps/web/src/routes/errors/index.tsx and components/errors/errors-hub*.tsx).
+// The errors list.
 
 /** `ErrorsSummary` (`@maple/query-engine` route-rows). */
 export const ErrorsSummary = Schema.Struct({

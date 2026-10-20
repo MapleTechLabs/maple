@@ -13,8 +13,8 @@ import {
 	type ZoneScope,
 	zoneHealth,
 	zoneInScope,
-} from "@maple/web/components/infra/cloudflare/list-model"
-import type { CloudflareAccount } from "@maple/web/components/infra/cloudflare/accounts"
+} from "../../../../components/infra/cloudflare/list-model"
+import type { CloudflareAccount } from "../../../../components/infra/cloudflare/accounts"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -53,7 +53,7 @@ import { DEFAULT_PRESET } from "./update"
 import { accountHealthLine, accountMenu, accountsStrip } from "./view-accounts"
 import { type SparkContext, queueTable, workerTable, zoneTable, zoneTableLoading } from "./view-tables"
 
-// `CloudflarePage` (apps/web/src/routes/infra/cloudflare/index.tsx) and `CloudflareListPage`.
+// `CloudflarePage` and `CloudflareListPage`.
 
 type H = HtmlBuilder<Message>
 

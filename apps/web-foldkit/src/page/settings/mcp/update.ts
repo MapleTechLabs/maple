@@ -11,7 +11,7 @@ import { CLIENT_VALUES, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 
-/** Base UI `useId` numbering of the client Tabs on a fresh mount (ids are not compared). */
+/** The client Tabs' id base. */
 const TABS_ID_BASE = 12
 
 export const init = (): Return => ({

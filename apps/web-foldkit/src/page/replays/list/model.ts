@@ -9,7 +9,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { SessionRow } from "../kit/session-row"
 import { VirtualWindow } from "../kit/virtualize"
 
-// The `/replays` list (apps/web/src/routes/replays/index.tsx and components/replays/).
+// The `/replays` list.
 
 export type Search = typeof ReplaysSearch.Type
 
