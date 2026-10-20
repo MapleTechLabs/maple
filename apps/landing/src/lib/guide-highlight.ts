@@ -1,7 +1,19 @@
 // Tiny highlighter for guide code blocks. The token classes match the colors a
 // guide uses in its diagrams (metric name, labels, value), so a block reads the
 // same way as the annotated example above it. Style the `tok-*` classes on the page.
-export type GuideLang = "exposition" | "promql" | "yaml" | "python" | "typescript" | "go" | "rust" | "java" | "csharp";
+export type GuideLang =
+    | "exposition"
+    | "promql"
+    | "yaml"
+    | "python"
+    | "typescript"
+    | "go"
+    | "rust"
+    | "java"
+    | "csharp"
+    | "json"
+    | "python-logging"
+    | "loguru-output";
 
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const span = (cls: string, text: string) => `<span class="tok-${cls}">${escape(text)}</span>`;
@@ -98,5 +110,67 @@ const rust = braces("use|fn|let|mut|for|in");
 const java = braces("import|public|static|final|class|void|new|try|throws");
 const csharp = braces("using|var|new|await");
 
+// JSON and NDJSON log lines. OpenTelemetry's trace-context fields get their own
+// class so a guide can color them like the traces in its diagrams.
+const json = (code: string) =>
+    tokenize(code, [
+        [/"(?:trace_id|span_id|trace_flags)":\s*"[^"\n]*"/y, (m) => span("trace", m[0])],
+        [/"(?:[^"\\\n]|\\.)*"(?=\s*:)/y, (m) => span("name", m[0])],
+        [/"(?:[^"\\\n]|\\.)*"/y, (m) => span("labels", m[0])],
+        [/-?\b\d+(?:\.\d+)?\b|\b(?:true|false|null)\b/y, (m) => span("value", m[0])],
+    ]);
+
+// Python logging code. Loguru, the standard logging module and the OpenTelemetry
+// SDK each get a class, so a guide can color them like the systems in its diagrams.
+const pythonLogging = (code: string) =>
+    tokenize(code, [
+        [/#.*/y, (m) => span("comment", m[0])],
+        [/"[^"\n]*"|'[^'\n]*'/y, (m) => span("labels", m[0])],
+        [/\b(?:from|import|def|class|with|as|return|try|except|if|else|for|while|in|not|is|and|or|None|True|False|lambda|global|async|await|raise)\b/y, (m) => span("fn", m[0])],
+        [/\b(?:loguru|logger)\b/y, (m) => span("loguru", m[0])],
+        [/\b(?:logging|LogRecord|Handler|getLogger|basicConfig|makeRecord)\b/y, (m) => span("stdlib", m[0])],
+        [/\b(?:opentelemetry|LoggingHandler|LoggerProvider|logger_provider|set_logger_provider|trace|tracer|BatchLogRecordProcessor|SimpleLogRecordProcessor|OTLPLogExporter|ConsoleLogRecordExporter)\b/y, (m) => span("otel", m[0])],
+        [/\b\d+(?:\.\d+)?\b/y, (m) => span("value", m[0])],
+        [/[a-zA-Z_]\w*/y, (m) => escape(m[0])],
+    ]);
+
+// Loguru's default console line: time | LEVEL | location - message. Each level
+// gets its own class (tok-level-info, tok-level-error...); traceback lines pass through.
+const loguruOutput = (code: string) =>
+    code
+        .split("\n")
+        .map((line) => {
+            const entry = /^([\d-]+ [\d:.]+|[\d:]+)( \| )([A-Z]+)(\s*)( \| )(.*)$/.exec(line);
+            if (entry) {
+                const [, time, sep1, level, pad, sep2, rest] = entry;
+                const location = /^(\S+ - )(.*)$/.exec(rest);
+                return (
+                    span("comment", time) +
+                    span("comment", sep1) +
+                    span(`level-${level.toLowerCase()}`, level) +
+                    pad +
+                    span("comment", sep2) +
+                    (location ? span("comment", location[1]) + escape(location[2]) : escape(rest))
+                );
+            }
+            const error = /^(\w+(?:Error|Exception)):(.*)$/.exec(line);
+            if (error) return span("level-error", error[1]) + escape(":" + error[2]);
+            return /^\s*[│└]/.test(line) ? span("comment", line) : escape(line);
+        })
+        .join("\n");
+
 export const highlight = (code: string, lang: GuideLang) =>
-    ({ exposition, promql, yaml, python, typescript, go, rust, java, csharp })[lang](code);
+    ({
+        exposition,
+        promql,
+        yaml,
+        python,
+        typescript,
+        go,
+        rust,
+        java,
+        csharp,
+        json,
+        "python-logging": pythonLogging,
+        "loguru-output": loguruOutput,
+    })[lang](code);
