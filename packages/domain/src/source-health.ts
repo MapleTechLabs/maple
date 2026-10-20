@@ -57,19 +57,15 @@ export interface PushSourceState {
 }
 
 /**
- * The gateway writes each timestamp at most once a minute per instance, so an accepted request
- * just after a refusal may not be recorded. A refusal counts once it is a full write interval newer.
+ * Refusals are recent when the gateway stamped one in the last 15 minutes. A source refused even
+ * part of the time is failing (data is dropped); with no refusal for 15 minutes it clears itself.
+ * Accepted requests are not compared: both stamps are written once a minute per instance.
  */
-const REJECTION_MARGIN_MS = 60 * 1000
+const REFUSAL_WINDOW_MS = 15 * 60 * 1000
 
-/** Like `pollStatus`, the newest attempt decides: refusals outlasting the last accepted request are failing. */
 const isRejectedNow = (source: PushSourceState, now: number): boolean => {
 	const rejectedAt = source.lastRejectedAt ?? null
-	return (
-		rejectedAt !== null &&
-		now - rejectedAt <= PUSH_STALE_MS &&
-		(source.lastUsedAt === null || rejectedAt - source.lastUsedAt > REJECTION_MARGIN_MS)
-	)
+	return rejectedAt !== null && now - rejectedAt <= REFUSAL_WINDOW_MS
 }
 
 export const pushSourceHealth = (source: PushSourceState, now: number): SourceHealthResult => {

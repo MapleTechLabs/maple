@@ -20,22 +20,17 @@ describe("pushSourceHealth", () => {
 		expect(pushSourceHealth({ status, lastUsedAt }, now).status).toBe(expected)
 	})
 
-	it("fails while the newest attempt was refused, within a day", () => {
-		const refused = { status: "active" as const, lastUsedAt: now - 2 * HOUR, lastRejection: "Rate limited" }
-		expect(pushSourceHealth({ ...refused, lastRejectedAt: now - HOUR }, now)).toEqual({
+	it("fails while a refusal is under 15 minutes old, even with data still accepted", () => {
+		const refused = { status: "active" as const, lastUsedAt: now - 60_000, lastRejection: "Rate limited" }
+		expect(pushSourceHealth({ ...refused, lastRejectedAt: now - 5 * 60_000 }, now)).toEqual({
 			status: "failing",
-			lastDataAt: now - 2 * HOUR,
+			lastDataAt: now - 60_000,
 			problem: "Rate limited",
 		})
-		expect(pushSourceHealth({ ...refused, lastRejectedAt: now - 3 * HOUR }, now).status).toBe("healthy")
-		expect(pushSourceHealth({ ...refused, lastUsedAt: null, lastRejectedAt: now - 30 * HOUR }, now).status).toBe(
-			"pending",
-		)
-		expect(pushSourceHealth({ ...refused, status: "paused", lastRejectedAt: now - HOUR }, now).status).toBe(
+		expect(pushSourceHealth({ ...refused, lastRejectedAt: now - 20 * 60_000 }, now).status).toBe("healthy")
+		expect(pushSourceHealth({ ...refused, status: "paused", lastRejectedAt: now - 60_000 }, now).status).toBe(
 			"paused",
 		)
-		// Within a write interval of the last accepted request: an unrecorded acceptance may follow it.
-		expect(pushSourceHealth({ ...refused, lastRejectedAt: now - 2 * HOUR + 30_000 }, now).status).toBe("healthy")
 	})
 })
 
