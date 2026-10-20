@@ -336,8 +336,15 @@ const pickedRowAction = (model: Model, menuId: string, value: string): Return =>
 
 /** Back on the tab: members, invitations and the organization's name stay up while they load again. */
 export const revisit = (model: Model): Return => {
-	const members = revisitData(model.members, () => FetchMembers({ page: 1 }))
-	const invitations = revisitData(model.invitations, () => FetchInvitations({ page: 1 }))
+	// A later page still in flight would append to a refreshed page 1, so that list waits for it.
+	const isPaging = <A, E>(data: AsyncData.AsyncData<{ readonly isFetchingMore: boolean } & A, E>) =>
+		Option.exists(AsyncData.getData(data), (list) => list.isFetchingMore)
+	const members = isPaging(model.members)
+		? { data: model.members, commands: [] }
+		: revisitData(model.members, () => FetchMembers({ page: 1 }))
+	const invitations = isPaging(model.invitations)
+		? { data: model.invitations, commands: [] }
+		: revisitData(model.invitations, () => FetchInvitations({ page: 1 }))
 	return {
 		model: { ...model, members: members.data, invitations: invitations.data },
 		// The organization may have been renamed on General meanwhile.

@@ -170,6 +170,8 @@ const toggled = (values: ReadonlyArray<string>, value: string) =>
 export const revisit = (model: Model, search: SettingsSearch): Return => {
 	const filters = parseAuditLogSearch(search)
 	const request = baseRequestOf(filters)
+	// The same first page still in flight answers it: a second read could land out of order.
+	if (model.isWaiting && sameRequest(request, model.request)) return { model }
 	return {
 		model: { ...model, request, base: request, pinnedUntil: null, isWaiting: true, isQuiet: model.view !== null, failure: null },
 		commands: [FetchAuditPage({ request, presetMs: presetMsOf(filters.range), resolvedSince: null })],

@@ -76,4 +76,8 @@ describe("audit log tab", () => {
 		// The old list's cursor would continue a page the refresh is about to replace.
 		expect(update(back.model, Message.ClickedLoadMore(), {}).commands ?? []).toEqual([])
 	})
+
+	test("a revisit while the same first page is in flight does not read it twice", () => {
+		expect(revisit(init({}).model, {}).commands ?? []).toEqual([])
+	})
 })
