@@ -7,11 +7,13 @@ export type VolumeTotals = Readonly<{ spans: number; logs: number; metrics: numb
 /** "4.1K spans · 120 logs": the signals the source stored, zero ones left out. */
 export const signalCounts = (totals: VolumeTotals): string => {
 	const parts = [
-		[totals.spans, "spans"],
-		[totals.logs, "logs"],
-		[totals.metrics, "metric points"],
+		[totals.spans, "span", "spans"],
+		[totals.logs, "log", "logs"],
+		[totals.metrics, "metric point", "metric points"],
 	] as const
-	const shown = parts.filter(([count]) => count > 0).map(([count, label]) => `${formatNumber(count)} ${label}`)
+	const shown = parts
+		.filter(([count]) => count > 0)
+		.map(([count, one, many]) => `${formatNumber(count)} ${count === 1 ? one : many}`)
 	return shown.length === 0 ? "Nothing stored" : shown.join(" · ")
 }
 
