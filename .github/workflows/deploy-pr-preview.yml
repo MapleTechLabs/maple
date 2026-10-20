@@ -73,8 +73,10 @@ jobs:
             # Set `PREVIEW_INFISICAL_ENV_SLUG` once a dedicated preview environment exists.
             INFISICAL_ENV_SLUG: ${{ vars.PREVIEW_INFISICAL_ENV_SLUG || 'dev' }}
             # Each live preview holds a VPC in the prd AWS account, whose us-east-1 quota of 5
-            # leaves 3 beside the default and prd VPCs (also 1 of 25 Hyperdrive configs).
+            # leaves 3 beside the default and prd VPCs.
             MAX_LIVE_PREVIEWS: 3
+            # Every preview, `preview:web` included, takes 1 of the account's 25 Hyperdrive configs.
+            MAX_TOTAL_PREVIEWS: 8
             # `unlabeled` only reaches here for a preview label; it tears down once neither is left.
             TEARDOWN: >-
                 ${{ (github.event.action == 'closed'
@@ -83,7 +85,7 @@ jobs:
                         && !contains(github.event.pull_request.labels.*.name, 'preview:web')))
                 && 'true' || 'false' }}
             # `preview:web` alone: Workers, Neon and Tinybird branches, nothing on AWS
-            # (`webOnlyPreview` in alchemy.run.ts). Holds no VPC, so the cap below skips it.
+            # (`webOnlyPreview` in alchemy.run.ts). Holds no VPC, so only the total cap applies.
             MAPLE_PREVIEW_WEB_ONLY: >-
                 ${{ contains(github.event.pull_request.labels.*.name, 'preview:web')
                 && !contains(github.event.pull_request.labels.*.name, 'preview') && '1' || '' }}
@@ -98,16 +100,22 @@ jobs:
             - name: Checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            # Counts open PRs carrying `preview`, this one included. Runs before anything is created.
-            - name: Check the live preview cap
-              if: ${{ env.TEARDOWN != 'true' && env.MAPLE_PREVIEW_WEB_ONLY != '1' }}
+            # Counts open preview PRs, this one included. Runs before anything is created.
+            - name: Check the live preview caps
+              if: ${{ env.TEARDOWN != 'true' }}
               env:
                   GH_TOKEN: ${{ github.token }}
               run: |
-                  live=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --label preview --limit 200 --json number --jq length)
-                  echo "live previews: $live (cap $MAX_LIVE_PREVIEWS)"
-                  if [ "$live" -gt "$MAX_LIVE_PREVIEWS" ]; then
-                    echo "::error::$live open PRs carry 'preview'; remove the label from one before deploying another."
+                  list() { gh pr list --repo "$GITHUB_REPOSITORY" --state open --label "$1" --limit 200 --json number --jq '.[].number'; }
+                  full=$(list preview | wc -l | tr -d ' ')
+                  total=$({ list preview; list preview:web; } | sort -u | wc -l | tr -d ' ')
+                  echo "full previews: $full (cap $MAX_LIVE_PREVIEWS), all previews: $total (cap $MAX_TOTAL_PREVIEWS)"
+                  if [ "$MAPLE_PREVIEW_WEB_ONLY" != "1" ] && [ "$full" -gt "$MAX_LIVE_PREVIEWS" ]; then
+                    echo "::error::$full open PRs carry 'preview'; remove the label from one before deploying another."
+                    exit 1
+                  fi
+                  if [ "$total" -gt "$MAX_TOTAL_PREVIEWS" ]; then
+                    echo "::error::$total open PRs carry a preview label; remove one before deploying another."
                     exit 1
                   fi
 
