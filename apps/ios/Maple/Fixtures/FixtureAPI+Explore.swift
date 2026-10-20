@@ -236,10 +236,10 @@ extension FixtureAPI {
 			widgets: [
 				MobileWidget(id: "w_req", visualization: "stat", title: "Requests", transform: reduce, x: 0, y: 0, w: 6),
 				MobileWidget(id: "w_err", visualization: "stat", title: "Error rate", unit: "percent", transform: reduce, x: 6, y: 0, w: 6),
-				MobileWidget(id: "w_lat", visualization: "chart", title: "Latency by percentile", unit: "ms", x: 0, y: 2),
+				MobileWidget(id: "w_lat", visualization: "chart", title: "Latency by percentile", unit: "duration_ms", x: 0, y: 2),
 				MobileWidget(id: "w_vol", visualization: "chart", title: "Requests by service", x: 0, y: 4),
 				MobileWidget(id: "w_top", visualization: "hbar", title: "Errors by service", x: 0, y: 6),
-				MobileWidget(id: "w_slow", visualization: "table", title: "Slowest endpoints", unit: "ms", x: 0, y: 8),
+				MobileWidget(id: "w_slow", visualization: "table", title: "Slowest endpoints", unit: "duration_ms", x: 0, y: 8),
 			]
 		)
 	}

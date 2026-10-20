@@ -292,17 +292,45 @@ extension WidgetResult {
 	}
 }
 
-/// Units as the web widget formatter names them.
+/// Port of the web's `formatValueByUnit` (`packages/ui/src/lib/format.ts`), so a
+/// widget reads the same on the phone as on the board.
 enum WidgetFormat {
 	static func value(_ value: Double, unit: String?) -> String {
-		if value == 0 { return "0" }
-		return switch unit {
-		case "ms", "duration_ms": Format.latency(value)
-		case "s", "seconds": Format.latency(value * 1000)
-		case "percent", "percentage": value <= 1 ? Format.errorRate(value) : String(format: "%.1f%%", value)
-		case "requests_per_second", "rps": Format.throughput(value)
+		switch unit {
+		case "percent": percent(value * 100)
+		case "percent_100": percent(value)
+		case "duration_ms": Format.latency(value)
+		case "duration_us": Format.latency(value / 1000)
+		case "duration_s": Format.latency(value * 1000)
+		case "duration_ns": Format.latency(value / 1_000_000)
+		case "requests_per_sec": Format.count(value) + "/s"
+		case "bytes": bytes(value)
 		default: Format.count(value)
 		}
+	}
+
+	/// `percentText`: one decimal, with more digits only for a tiny nonzero value.
+	static func percent(_ pct: Double) -> String {
+		guard pct.isFinite else { return "—" }
+		let magnitude = abs(pct)
+		if magnitude == 0 || magnitude >= 0.05 { return String(format: "%.1f%%", pct) }
+		let digits = min(6, Int((-log10(magnitude)).rounded(.up)) + 1)
+		let rounded = (pct * pow(10, Double(digits))).rounded() / pow(10, Double(digits))
+		if rounded != 0 { return String(format: "%.\(digits)f", rounded).replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression) + "%" }
+		return pct < 0 ? ">-0.000001%" : "<0.000001%"
+	}
+
+	/// `formatStorageBytes`: decimal (1000-based), as saved dashboards expect.
+	static func bytes(_ value: Double) -> String {
+		guard value.isFinite, value > 0 else { return "0 B" }
+		let units = ["B", "KB", "MB", "GB", "TB", "PB"]
+		var scaled = value
+		var index = 0
+		while scaled >= 1000, index < units.count - 1 {
+			scaled /= 1000
+			index += 1
+		}
+		return String(format: scaled >= 100 ? "%.0f %@" : "%.1f %@", scaled, units[index])
 	}
 }
 
