@@ -54,7 +54,7 @@ import {
 } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
-import type { ClerkSnapshot } from "./platform/clerk"
+import { ClerkSnapshot } from "./platform/clerk"
 import { identityOf, isSameIdentity } from "./platform/session-identity"
 import { AppRoute, hrefOf, isPublicRoute, type Redirect, routeRedirect, urlToAppRoute } from "./route"
 import { completeRangeOf, isWithin, withSessionRange } from "./route/session-time-range"
@@ -726,6 +726,14 @@ const signedIn =
 
 const signedOut: Step = (model) => settle(modifyFields(model, { session: () => Session.SignedOut() }))
 
+const isSameClerkSnapshot = Schema.toEquivalence(ClerkSnapshot)
+
+/** Clerk emits on every token refresh and tab focus. An unchanged snapshot was already settled, so it keeps the model. */
+const changedClerkSession = (model: Model, snapshot: ClerkSnapshot): UpdateReturn =>
+	model.clerkSnapshot !== null && isSameClerkSnapshot(model.clerkSnapshot, snapshot)
+		? { model }
+		: appliedClerkSnapshot(snapshot, false)(model)
+
 /** `useClerkAuthSettled`: a signed-out first answer waits for a refreshing session, except on public pages. */
 const appliedClerkSnapshot =
 	(snapshot: ClerkSnapshot, isFirstAnswer: boolean): Step =>
@@ -812,7 +820,7 @@ const heldNavigation = (model: Model, url: Url): Option.Option<UpdateReturn> =>
 
 // UPDATE
 
-export const update = (model: Model, message: Message) =>
+const foldMessage = (model: Model, message: Message) =>
 	Message.match<UpdateReturn>(message, {
 		ClickedLink: ({ request }) =>
 			UrlRequest.match<UpdateReturn>(request, {
@@ -843,7 +851,7 @@ export const update = (model: Model, message: Message) =>
 			appliedClerkSnapshot(snapshot, true)(modifyFields(model, { clerk: () => ClerkPhase.Loaded() })),
 		FailedLoadClerk: ({ message }) =>
 			signedOut(modifyFields(model, { clerk: () => ClerkPhase.Failed({ message }) })),
-		ChangedClerkSession: ({ snapshot }) => appliedClerkSnapshot(snapshot, false)(model),
+		ChangedClerkSession: ({ snapshot }) => changedClerkSession(model, snapshot),
 		CompletedWaitForAuthSettle: () => (model.session._tag === "Resolving" ? signedOut(model) : { model }),
 		SucceededLoadCustomer: ({ orgId, customer }) =>
 			settledCustomer(model, orgId, CustomerData.Success({ data: customer })),
@@ -913,3 +921,13 @@ export const update = (model: Model, message: Message) =>
 			}),
 		}),
 	})
+
+/**
+ * A child fold that changed nothing still writes a fresh root object; hand back the old one so
+ * the runtime, which re-renders on any new Model reference, skips the frame.
+ */
+export const update = (model: Model, message: Message): UpdateReturn => {
+	const result = foldMessage(model, message)
+	const next = result.model
+	return next !== model && Struct.keys(model).every((key) => model[key] === next[key]) ? { ...result, model } : result
+}

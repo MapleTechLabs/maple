@@ -1,12 +1,13 @@
 import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
 import { Option } from "effect"
-import type { Document, Html, HtmlBuilder } from "foldkit/html"
+import { createKeyedLazy, type Document, type Html, type HtmlBuilder } from "foldkit/html"
 import { bootSplash } from "./layout/boot-splash"
 import { Message } from "./message"
 import { type Model, Session } from "./model"
 import { onboardingInputsOf, pageContextOf, planGateOf, shellClerkOf } from "./update"
 import * as OnboardingView from "./page/onboarding/view"
 import { breadcrumbsOf, placeholderContent, rendersShell } from "./page/chrome"
+import type { PageContext, ShellInfraSurfaces } from "./page/contract"
 import { isBarePageRoute, type PageMessage, pageBreadcrumbs, viewPage, viewPageTopbarActions } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { AppRoute, hrefOf, isPublicRoute } from "./route"
@@ -48,13 +49,65 @@ const toShellMessage = (message: Shell.Message) => Message.GotShellMessage({ mes
 
 const toPageMessage = (message: PageMessage) => Message.GotPageMessage({ message })
 
+// One cache slot per position the page renders at: inside the shell, inside the bare shell, alone.
+type PagePosition = "shell" | "bare-shell" | "bare"
+const lazyPage = createKeyedLazy()
+
+const renderPage = (
+	h: HtmlBuilder<Message>,
+	page: NonNullable<Model["page"]>,
+	orgId: PageContext["orgId"],
+	pinnedNamespace: PageContext["pinnedNamespace"],
+	timeZone: PageContext["timeZone"],
+	presence: ShellInfraSurfaces["presence"] | undefined,
+	integrations: ShellInfraSurfaces["integrations"] | undefined,
+	isMobile: boolean,
+	isBelowSm: boolean,
+	isBelowLg: boolean,
+): Html =>
+	viewPage(
+		h,
+		page,
+		{
+			context: {
+				orgId,
+				pinnedNamespace,
+				timeZone,
+				...(presence === undefined || integrations === undefined ? undefined : { infra: { presence, integrations } }),
+			},
+			isMobile,
+			isBelowSm,
+			isBelowLg,
+		},
+		toPageMessage,
+	)
+
+/**
+ * The routed page, rebuilt only when its slot or an input it reads changes: a hovered link, a
+ * toast or a shell menu re-renders the root, not the page. The context is rebuilt on every call,
+ * so it is passed by field.
+ */
+const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosition): Option.Option<Html> =>
+	Option.flatMap(Option.fromNullishOr(model.page), (page) =>
+		Option.map(pageContextOf(model), ({ orgId, pinnedNamespace, timeZone, infra }) =>
+			lazyPage(position, renderPage, [
+				h,
+				page,
+				orgId,
+				pinnedNamespace,
+				timeZone,
+				infra?.presence,
+				infra?.integrations,
+				model.shell.isMobile,
+				model.shell.isBelowSm,
+				model.shell.isFilterCollapsed,
+			]),
+		),
+	)
+
 /** The routed page, or the placeholder while the route has no ported page. */
-const pageView = (model: Model, h: HtmlBuilder<Message>): Html => {
-	const maybeContext = pageContextOf(model)
-	return model.page !== null && Option.isSome(maybeContext)
-		? viewPage(h, model.page, { context: maybeContext.value, isMobile: model.shell.isMobile, isBelowSm: model.shell.isBelowSm, isBelowLg: model.shell.isFilterCollapsed }, toPageMessage)
-		: placeholderContent(h, model.route)
-}
+const pageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosition): Html =>
+	Option.getOrElse(lazyPageView(model, h, position), () => placeholderContent(h, model.route))
 
 /** The routed page's own top-bar actions, if it has any. */
 const topbarActionsView = (model: Model, h: HtmlBuilder<Message>): Html => {
@@ -78,7 +131,7 @@ const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> 
 				currentPath,
 				clerk,
 				breadcrumbs: model.page === null ? breadcrumbsOf(model.route) : pageBreadcrumbs(model.page),
-				page: () => pageView(model, h),
+				page: () => pageView(model, h, "shell"),
 				topbarActions: () => topbarActionsView(model, h),
 			},
 		}),
@@ -133,7 +186,6 @@ const shellOverlays = (
 /** `/chat`: the shell's rail held collapsed around the page, no top bar (the page's own layout). */
 const bareShellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => {
 	const currentPath = hrefOf(model.route).split("?")[0] ?? "/"
-	const maybeContext = pageContextOf(model)
 	const clerk = shellClerkOf(model)
 	return [
 		h.submodel({
@@ -144,10 +196,7 @@ const bareShellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Ht
 			viewInputs: {
 				currentPath,
 				clerk,
-				page: () =>
-					model.page !== null && Option.isSome(maybeContext)
-						? viewPage(h, model.page, { context: maybeContext.value, isMobile: model.shell.isMobile, isBelowSm: model.shell.isBelowSm, isBelowLg: model.shell.isFilterCollapsed }, toPageMessage)
-						: h.empty,
+				page: () => Option.getOrElse(lazyPageView(model, h, "bare-shell"), () => h.empty),
 			},
 		}),
 		...shellOverlays(model, h, currentPath, clerk),
@@ -185,7 +234,7 @@ const routeView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =
 					rendersShell(model.route)
 						? shellRoute(model, h)
 						: isBarePageRoute(model.route) && model.page !== null
-							? [pageView(model, h)]
+							? [pageView(model, h, "bare")]
 							: [placeholder(model, h, [])],
 			}),
 	)
