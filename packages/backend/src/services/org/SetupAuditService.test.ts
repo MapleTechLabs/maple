@@ -55,10 +55,17 @@ const signalPresence = (probe: Probe) =>
 			}),
 	})
 
+/** The SQL of each warehouse query the last audit ran, by its `context`. */
+const sqlByContext = new Map<string, string>()
+
 const warehouse = Layer.succeed(
 	WarehouseQueryService,
 	makeWarehouseServiceStub({
-		compiledQuery: (_tenant, compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
+		compiledQuery: (_tenant, compiled, options) => {
+			const query = compiledQueryOf(compiled)
+			if (options?.context) sqlByContext.set(options.context, query.sql)
+			return query.decodeRows([]).pipe(Effect.orDie)
+		},
 	}),
 )
 
@@ -158,5 +165,40 @@ describe("SetupAuditService first-data stamping", () => {
 				assert.isNull(row?.first_data_received_at ?? null)
 			}).pipe(Effect.provide(makeLayer(testDb, "unavailable")))
 		},
+	)
+})
+
+describe("SetupAuditService ingest sampling", () => {
+	const seedSamplingPolicy = (testDb: TestDb, ratio: number) =>
+		Effect.promise(() =>
+			executeSql(
+				testDb,
+				`INSERT INTO org_ingest_sampling_policies (org_id, trace_sample_ratio, always_keep_error_spans, always_keep_slow_spans_ms)
+				 VALUES ($1, $2, true, 2000)`,
+				[ORG, ratio],
+			),
+		)
+
+	const rootlessSql = (testDb: TestDb, ratio: number) =>
+		Effect.gen(function* () {
+			sqlByContext.clear()
+			yield* seedSamplingPolicy(testDb, ratio)
+			yield* SetupAuditService.use((audit) => audit.run(tenant))
+			return sqlByContext.get("setupAuditRootlessTraces") ?? ""
+		}).pipe(Effect.provide(makeLayer(testDb, "present")))
+
+	it.effect("treats the spans the ingest sampler keeps as sampled when it drops traces", () =>
+		Effect.gen(function* () {
+			const sql = yield* rootlessSql(createTestDb(trackedDbs), 0.25)
+			assert.include(sql, "traces.StatusCode = 'Error' OR traces.Duration >= 2000000000")
+		}),
+	)
+
+	it.effect("ignores the keep rules when the ingest sampler keeps every trace", () =>
+		Effect.gen(function* () {
+			const sql = yield* rootlessSql(createTestDb(trackedDbs), 1)
+			assert.include(sql, "unkeptSpans")
+			assert.notInclude(sql, "Duration >=")
+		}),
 	)
 })

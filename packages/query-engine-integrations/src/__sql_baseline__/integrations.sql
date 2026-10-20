@@ -4053,16 +4053,21 @@ SELECT
           t.entryService AS entryService,
           count() AS traceCount,
           countIf(r.TraceId = '') AS rootlessCount,
-          countIf((r.TraceId = '' AND t.isSampled = 1)) AS sampledRootlessCount
+          countIf((r.TraceId = '' AND (t.thresholdSampled = 1 OR t.unkeptSpans = 0))) AS sampledRootlessCount,
+          sum(count()) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgTraceCount,
+          sum(countIf(r.TraceId = '')) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgRootlessCount,
+          sum(countIf((r.TraceId = '' AND (t.thresholdSampled = 1 OR t.unkeptSpans = 0)))) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgSampledRootlessCount
         FROM (SELECT
-          service_map_children.TraceId AS TraceId,
-          argMin(service_map_children.ServiceName, service_map_children.Timestamp) AS entryService,
-          max(match(service_map_children.TraceState, 'th:[0-9a-f]+')) AS isSampled
-        FROM service_map_children
-        WHERE service_map_children.OrgId = 'org_sql_catalog'
-          AND service_map_children.Timestamp >= '2026-01-01 10:30:00'
-          AND service_map_children.Timestamp < '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS t
+          traces.TraceId AS TraceId,
+          argMin(traces.ServiceName, traces.Timestamp) AS entryService,
+          max(match(traces.TraceState, 'th:[0-9a-f]+')) AS thresholdSampled,
+          countIf(NOT ((traces.StatusCode = 'Error' OR traces.Duration >= 2000000000))) AS unkeptSpans
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 08:30:00'
+          AND traces.Timestamp < '2026-01-03 14:15:00'
+        GROUP BY TraceId
+        HAVING min(traces.Timestamp) >= '2026-01-01 10:30:00') AS t
         LEFT JOIN (SELECT
           trace_list_mv.TraceId AS TraceId
         FROM trace_list_mv
@@ -4071,8 +4076,8 @@ SELECT
           AND trace_list_mv.Timestamp < '2026-01-03 14:15:00'
         GROUP BY TraceId) AS r ON t.TraceId = r.TraceId
         GROUP BY entryService
-        ORDER BY rootlessCount DESC
-        LIMIT 200
+        ORDER BY traceCount DESC
+        LIMIT 1000
         FORMAT JSON
 
 -- builder:setup-audit:auditSamplingByServiceQuery:default

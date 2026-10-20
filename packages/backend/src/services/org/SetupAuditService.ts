@@ -44,12 +44,25 @@ const LOOKBACK_HOURS = 24
 
 /**
  * The trace-completeness joins read one hour, trailing 15 minutes behind now so exporter batching
- * cannot masquerade as a missing parent, with an extra hour of parent lookback for long spans. Same
- * shape and window size as the hourly service-map rollup, which is the cost precedent — do not widen.
+ * cannot masquerade as a missing parent, with an extra hour of parent lookback for long spans. The
+ * orphan join has the hourly service-map rollup's shape and window, which is the cost precedent; the
+ * rootless join reads raw `traces` over the same two hours. Do not widen either.
  */
 const TRACE_WINDOW_MINUTES = 60
 const TRACE_WINDOW_LAG_MINUTES = 15
 const TRACE_PARENT_LOOKBACK_MINUTES = 60
+
+/** What the ingest sampler keeps from traces it drops; null when it drops nothing. */
+const samplingOverrides = (
+	policy: ConfigAuditInputs["samplingPolicy"],
+): Integrations.AuditSamplingOverrides | null =>
+	policy === null || policy.traceSampleRatio >= 1
+		? null
+		: {
+				keepErrorSpans: policy.alwaysKeepErrorSpans,
+				slowSpanNs:
+					policy.alwaysKeepSlowSpansMs === null ? null : policy.alwaysKeepSlowSpansMs * 1_000_000,
+			}
 
 export interface SetupAuditServiceApi {
 	/** Runs every check against a fresh snapshot of config + telemetry. */
@@ -158,7 +171,11 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 							),
 							db.run(
 								PG.from(OrgIngestSamplingPolicies)
-									.select("traceSampleRatio", "alwaysKeepErrorSpans")
+									.select(
+										"traceSampleRatio",
+										"alwaysKeepErrorSpans",
+										"alwaysKeepSlowSpansMs",
+									)
 									.where(($) => [$.orgId.eq(orgId)])
 									.limit(1),
 							),
@@ -281,6 +298,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 					? {
 							traceSampleRatio: rows.sampling[0].traceSampleRatio,
 							alwaysKeepErrorSpans: rows.sampling[0].alwaysKeepErrorSpans,
+							alwaysKeepSlowSpansMs: rows.sampling[0].alwaysKeepSlowSpansMs,
 						}
 					: null,
 				attributeMappings: rows.mappings.map((mapping) => ({
@@ -346,6 +364,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 			tenant: TenantContext,
 			now: number,
 			spanCountOverLookback: number,
+			samplingOverrides: Integrations.AuditSamplingOverrides | null,
 		) {
 			const childEnd = now - TRACE_WINDOW_LAG_MINUTES * 60_000
 			const childStart = childEnd - TRACE_WINDOW_MINUTES * 60_000
@@ -361,18 +380,38 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 			// empty connection pool rather than queueing behind a sibling's warehouse
 			// fetch. No-op on a warm memo.
 			yield* warehouse.warmRoute(tenant)
+			// Each join degrades alone: a timed-out rootless scan costs TRC-02, not TRC-01 and TRC-03.
+			const orEmpty = <A>(context: string, read: Effect.Effect<ReadonlyArray<A>, unknown>) =>
+				read.pipe(
+					Effect.catchCause((cause) =>
+						Effect.logWarning("Setup audit trace-completeness join skipped").pipe(
+							Effect.annotateLogs({ context, cause }),
+							Effect.as([]),
+						),
+					),
+				)
 			const joined = yield* Effect.all(
 				{
-					orphans: warehouse.compiledQuery(tenant, Integrations.auditOrphanSpansSQL(window), {
-						profile: "aggregation",
-						settings: { maxThreads: 4 },
-						context: "setupAuditOrphanSpans",
-					}),
-					rootless: warehouse.compiledQuery(tenant, Integrations.auditRootlessTracesSQL(window), {
-						profile: "aggregation",
-						settings: { maxThreads: 4 },
-						context: "setupAuditRootlessTraces",
-					}),
+					orphans: orEmpty(
+						"setupAuditOrphanSpans",
+						warehouse.compiledQuery(tenant, Integrations.auditOrphanSpansSQL(window), {
+							profile: "aggregation",
+							settings: { maxThreads: 4 },
+							context: "setupAuditOrphanSpans",
+						}),
+					),
+					rootless: orEmpty(
+						"setupAuditRootlessTraces",
+						warehouse.compiledQuery(
+							tenant,
+							Integrations.auditRootlessTracesSQL(window, samplingOverrides),
+							{
+								profile: "aggregation",
+								settings: { maxThreads: 4 },
+								context: "setupAuditRootlessTraces",
+							},
+						),
+					),
 				},
 				{ concurrency: 2 },
 			)
@@ -393,6 +432,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 		 */
 		const fetchWarehouseInputs = Effect.fn("SetupAuditService.fetchWarehouseInputs")(function* (
 			tenant: TenantContext,
+			samplingOverrides: Integrations.AuditSamplingOverrides | null,
 		) {
 			const now = yield* Clock.currentTimeMillis
 			const window = {
@@ -450,7 +490,12 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 			// and sizes its trace sampling from the volume they just reported. It degrades on its own:
 			// a join that times out costs the three TRC checks, not the whole telemetry half.
 			const totalSpans = results.spanShape.reduce((sum, row) => sum + row.weightedSpanCount, 0)
-			const traceCompleteness = yield* fetchTraceCompleteness(tenant, now, totalSpans).pipe(
+			const traceCompleteness = yield* fetchTraceCompleteness(
+				tenant,
+				now,
+				totalSpans,
+				samplingOverrides,
+			).pipe(
 				Effect.catchCause((cause) =>
 					Effect.logWarning("Setup audit trace-completeness checks skipped").pipe(
 						Effect.annotateLogs({ cause }),
@@ -553,7 +598,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 			const warehouseInputs =
 				config.telemetry === "unavailable"
 					? undefined
-					: yield* fetchWarehouseInputs(tenant).pipe(
+					: yield* fetchWarehouseInputs(tenant, samplingOverrides(config.samplingPolicy)).pipe(
 							Effect.catchCause((cause) =>
 								Effect.logWarning(
 									"Setup audit telemetry checks skipped: warehouse unavailable",
