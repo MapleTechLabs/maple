@@ -1,6 +1,6 @@
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { loadSources } from "../kit/data"
+import { loadSources, loadSourcesUsage } from "../kit/data"
 import { Message } from "./message"
 
 export const ReadSourcesClock = Command.define("ReadSourcesClock", {
@@ -15,5 +15,15 @@ export const FetchSourcesList = Command.define("FetchSourcesList", {
 		loadSources(key, refresh).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchList({ key, result })),
+		),
+})
+
+export const FetchSourcesUsage = Command.define("FetchSourcesUsage", {
+	args: { key: Schema.String, refresh: Schema.Boolean },
+	messages: [Message.CompletedFetchUsage],
+	execute: ({ key, refresh }) =>
+		loadSourcesUsage(key, refresh).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchUsage({ key, result })),
 		),
 })

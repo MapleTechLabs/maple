@@ -30,12 +30,20 @@ export const createTinybirdProjectRevision = (
 	return digest.digest("hex")
 }
 
+// Rollups whose first deploy must not replay raw history through their views:
+// Tinybird ignores `BACKFILL skip` once the datasource exists, so it stays harmless.
+const SKIP_BACKFILL: ReadonlySet<string> = new Set([Datasources.sourceUsageHourly._name])
+
+const withBackfillSkip = (datasource: GeneratedResource): GeneratedResource =>
+	SKIP_BACKFILL.has(datasource.name)
+		? { ...datasource, content: `${datasource.content}\n\nBACKFILL skip` }
+		: datasource
+
 export const buildTinybirdProjectManifest: Effect.Effect<TinybirdProjectManifest, SchemaDefinitionError> =
-	Effect.map(buildProject(Datasources, Materializations), ({ datasources, pipes }) => ({
-		datasources,
-		pipes,
-		projectRevision: createTinybirdProjectRevision(datasources, pipes),
-	}))
+	Effect.map(buildProject(Datasources, Materializations), ({ datasources: built, pipes }) => {
+		const datasources = built.map(withBackfillSkip)
+		return { datasources, pipes, projectRevision: createTinybirdProjectRevision(datasources, pipes) }
+	})
 
 export const renderTinybirdProjectManifestModule = (manifest: TinybirdProjectManifest): string => {
 	const datasources = JSON.stringify(manifest.datasources, null, 2)

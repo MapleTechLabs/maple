@@ -134,6 +134,7 @@ export const TABLE_DELETE_PLAN = {
 	service_platforms_hourly: derived("Hour"),
 	service_usage: derived("Hour", { env: null }),
 	session_events: { strategy: "excluded", reason: SESSION_DATA },
+	source_usage_hourly: unkeyed("Hour"),
 	session_replay_events: { strategy: "excluded", reason: SESSION_DATA },
 	session_replays: { strategy: "excluded", reason: SESSION_DATA },
 	span_metrics_calls_hourly: derived("Hour", { env: null }),

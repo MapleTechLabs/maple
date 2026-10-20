@@ -99,12 +99,31 @@ export class SourceUsageBucket extends Schema.Class<SourceUsageBucket>("SourceUs
 	hour: Schema.Number,
 	spans: Schema.Number,
 	logs: Schema.Number,
+	/** Metric data points. */
+	metrics: Schema.Number,
+	/** Estimated stored bytes across every signal. */
+	bytes: Schema.Number,
 }) {}
 
 export class SourceUsage extends Schema.Class<SourceUsage>("SourceUsage")({
 	windowStart: Schema.Number,
 	windowEnd: Schema.Number,
 	buckets: Schema.Array(SourceUsageBucket),
+}) {}
+
+export class SourceUsageTotal extends Schema.Class<SourceUsageTotal>("SourceUsageTotal")({
+	/** The public `src_` id stamped as `maple_source_id`. */
+	sourceId: Schema.String,
+	spans: Schema.Number,
+	logs: Schema.Number,
+	metrics: Schema.Number,
+	bytes: Schema.Number,
+}) {}
+
+export class SourceUsageSummary extends Schema.Class<SourceUsageSummary>("SourceUsageSummary")({
+	windowStart: Schema.Number,
+	windowEnd: Schema.Number,
+	totals: Schema.Array(SourceUsageTotal),
 }) {}
 
 export class SourceNotFoundError extends HttpTaggedError<SourceNotFoundError>()(

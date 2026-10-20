@@ -22,6 +22,7 @@ import { timestampMs } from "@maple/backend/platform/time"
 import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
 
 const encodePublicSourceId = Schema.encodeSync(SourcePublicId)
+const decodePublicSourceId = Schema.decodeUnknownOption(SourcePublicId)
 const toIsoTimestamp = (epochMs: number) => timestamp(new Date(epochMs).toISOString())
 
 const adminOnly = (action: string) => () =>
@@ -204,7 +205,35 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 							hour: toIsoTimestamp(bucket.hour),
 							spans: bucket.spans,
 							logs: bucket.logs,
+							metrics: bucket.metrics,
+							bytes: bucket.bytes,
 						})),
+					}
+				}),
+			)
+			.handle("usageSummary", () =>
+				Effect.gen(function* () {
+					const tenant = yield* adminTenant("view")
+					const summary = yield* sourceUsage.summary(tenant)
+					return {
+						object: "source_usage_summary" as const,
+						window_start: toIsoTimestamp(summary.windowStart),
+						window_end: toIsoTimestamp(summary.windowEnd),
+						// The rollup keys on the stamped `src_` id; one that does not decode names no source.
+						data: summary.totals.flatMap((total) =>
+							Option.match(decodePublicSourceId(total.sourceId), {
+								onNone: () => [],
+								onSome: (id) => [
+									{
+										source_id: id,
+										spans: total.spans,
+										logs: total.logs,
+										metrics: total.metrics,
+										bytes: total.bytes,
+									},
+								],
+							}),
+						),
 					}
 				}),
 			)

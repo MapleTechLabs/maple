@@ -199,6 +199,8 @@ export const AttributeValuesHourly = Datasources.attributeValuesHourly
 
 export const ServiceUsage = Datasources.serviceUsage
 
+export const SourceUsageHourly = Datasources.sourceUsageHourly
+
 export const ServiceMapSpans = Datasources.serviceMapSpans
 
 export const ServiceMapChildren = Datasources.serviceMapChildren

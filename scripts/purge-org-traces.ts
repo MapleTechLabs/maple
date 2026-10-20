@@ -69,8 +69,8 @@ const TARGETS: ReadonlyArray<Target> = [
 ]
 
 // Trace-derived, deliberately kept: billing usage counters with no span content,
-// one row per (org, service, hour) shared with logs and metrics.
-const KEPT = new Set(["service_usage"])
+// one row per (org, service or source, hour) shared with logs and metrics.
+const KEPT = new Set(["service_usage", "source_usage_hourly"])
 
 // Fed from `traces` by the scheduled service-map rollup job, not by an MV, so the
 // lineage walk below can't see them.

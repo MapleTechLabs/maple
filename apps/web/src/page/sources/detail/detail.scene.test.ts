@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { encodePublicId, PublicIdPrefixes, V2Source } from "@maple/domain/http/v2"
+import { encodePublicId, PublicIdPrefixes, V2Source, V2SourceUsage } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -14,11 +14,16 @@ import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { breadcrumbsOf, view as pageView } from "./view"
 
-const context: PageContext = { orgId: Schema.decodeSync(OrgId)("org_parity"), pinnedNamespace: null, timeZone: "UTC" }
+const context: PageContext = {
+	orgId: Schema.decodeSync(OrgId)("org_parity"),
+	pinnedNamespace: null,
+	timeZone: "UTC",
+}
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const NOW = Date.UTC(2026, 9, 1, 12)
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 const resolveTheme = Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
 const UUID = "0199a0e1-0000-7000-8000-000000000002"
@@ -45,7 +50,12 @@ const source = (fields: Readonly<Record<string, unknown>> = {}) =>
 		rolled_at: null,
 		created_at: "2026-09-01T12:00:00.000Z",
 		updated_at: "2026-09-01T12:00:00.000Z",
-		health: { status: "healthy", last_data_at: "2026-10-01T11:56:00.000Z", problem: null, resources: null },
+		health: {
+			status: "healthy",
+			last_data_at: "2026-10-01T11:56:00.000Z",
+			problem: null,
+			resources: null,
+		},
 		...fields,
 	})
 
@@ -65,7 +75,12 @@ describe("source detail", () => {
 		const entered = init(route(undefined, "nope"), context)
 		expect(names(entered.commands)).toEqual(["ReadSourceClock", "LoadChartRuntime"])
 		expect(breadcrumbsOf(entered.model).map((crumb) => crumb.label)).toEqual(["Sources", "Not found"])
-		scene({ update: pageUpdate, view }, given(entered.model), resolveTheme, expectView(text("Source not found")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(entered.model),
+			resolveTheme,
+			expectView(text("Source not found")).toExist(),
+		)
 	})
 
 	test("the overview reads the usage once the list has the source", () => {
@@ -122,14 +137,26 @@ describe("source detail", () => {
 	test("a pause refreshes the list and toasts; a failure toasts the error", () => {
 		const busy: Model["busy"] = "pause"
 		const model: Model = { ...loaded(source()), busy }
-		const done = pageUpdate(model, Message.CompletedPause({ result: Result.succeed(source({ status: "paused" })) }))
+		const done = pageUpdate(
+			model,
+			Message.CompletedPause({ result: Result.succeed(source({ status: "paused" })) }),
+		)
 		expect(names(done.commands)).toEqual(["FetchSourceDetailList"])
 		expect(done.outMessage).toEqual(
-			PageOutMessage.RequestedToast({ type: "success", title: "Source paused. Takes effect within a minute.", description: "" }),
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Source paused. Takes effect within a minute.",
+				description: "",
+			}),
 		)
-		const failed = pageUpdate(model, Message.CompletedPause({ result: Result.fail(toLoadFailure(new Error("boom"))) }))
+		const failed = pageUpdate(
+			model,
+			Message.CompletedPause({ result: Result.fail(toLoadFailure(new Error("boom"))) }),
+		)
 		expect(failed.model.busy).toBeNull()
-		expect(failed.outMessage?._tag === "RequestedToast" && failed.outMessage.title).toBe("Failed to pause source")
+		expect(failed.outMessage?._tag === "RequestedToast" && failed.outMessage.title).toBe(
+			"Failed to pause source",
+		)
 	})
 
 	test("a confirmed roll shows the new token above the tab", () => {
@@ -150,7 +177,10 @@ describe("source detail", () => {
 
 	test("a deleted source navigates back to the list with a toast", () => {
 		const confirmed = pageUpdate(loaded(source()), Message.ConfirmedDelete())
-		const deleted = pageUpdate(confirmed.model, Message.CompletedDelete({ result: Result.succeed(undefined) }))
+		const deleted = pageUpdate(
+			confirmed.model,
+			Message.CompletedDelete({ result: Result.succeed(undefined) }),
+		)
 		expect(deleted.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
 				url: "/sources",
@@ -173,12 +203,18 @@ describe("source detail tabs", () => {
 	})
 
 	test("an empty name blocks the save", () => {
-		const model = pageUpdate(loaded(source(), "settings"), Message.ChangedSettingsName({ value: "  " })).model
+		const model = pageUpdate(
+			loaded(source(), "settings"),
+			Message.ChangedSettingsName({ value: "  " }),
+		).model
 		expect(pageUpdate(model, Message.SubmittedSettings()).commands ?? []).toEqual([])
 	})
 
 	test("leaving and reopening settings drops the unsaved edit", () => {
-		const edited = pageUpdate(loaded(source(), "settings"), Message.ChangedSettingsName({ value: "Renamed" })).model
+		const edited = pageUpdate(
+			loaded(source(), "settings"),
+			Message.ChangedSettingsName({ value: "Renamed" }),
+		).model
 		const away = routeChanged(edited, route(), context).model
 		expect(away.settings).toBeNull()
 		expect(routeChanged(away, route("settings"), context).model.settings?.name).toBe("Checkout API")
@@ -216,9 +252,9 @@ describe("integration sources", () => {
 		// Off the Connection tab the target is let go, so its checks stop polling.
 		const away = routeChanged(step.model, route(), context).model
 		expect(away.connection?.prometheusCard.selectedId).toBeNull()
-		expect(routeChanged(away, route("connection"), context).model.connection?.prometheusCard.selectedId).toBe(
-			"0199a0e1-0000-7000-8000-0000000000aa",
-		)
+		expect(
+			routeChanged(away, route("connection"), context).model.connection?.prometheusCard.selectedId,
+		).toBe("0199a0e1-0000-7000-8000-0000000000aa")
 	})
 
 	test("deleting the source's own target leaves for the list; another write re-reads it", () => {
@@ -228,14 +264,20 @@ describe("integration sources", () => {
 		const deleted = pageUpdate(
 			model,
 			Message.GotConnectionMessage({
-				message: IntegrationMessage.CompletedTargetDelete({ id: Schema.decodeSync(ScrapeTargetId)(uuid), failure: null }),
+				message: IntegrationMessage.CompletedTargetDelete({
+					id: Schema.decodeSync(ScrapeTargetId)(uuid),
+					failure: null,
+				}),
 			}),
 		)
 		expect(deleted.outMessage?._tag === "RequestedNavigation" && deleted.outMessage.url).toBe("/sources")
 		const toggled = pageUpdate(
 			model,
 			Message.GotConnectionMessage({
-				message: IntegrationMessage.CompletedToggle({ id: Schema.decodeSync(ScrapeTargetId)(uuid), failure: null }),
+				message: IntegrationMessage.CompletedToggle({
+					id: Schema.decodeSync(ScrapeTargetId)(uuid),
+					failure: null,
+				}),
 			}),
 		)
 		expect(names(toggled.commands)).toContain("FetchSourceDetailList")
@@ -264,6 +306,74 @@ describe("integration sources", () => {
 			expectView(role("tab", { name: "Connection" })).toExist(),
 			expectView(role("tab", { name: "Setup" })).not.toExist(),
 			expectView(text("Last sync")).toExist(),
+		)
+	})
+
+	test("an integration source pauses from its header and says collection keeps running", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(prometheus())),
+			resolveTheme,
+			expectView(role("button", { name: "Pause" })).toExist(),
+			expectView(role("button", { name: "Roll token" })).not.toExist(),
+		)
+		const paused = prometheus({
+			status: "paused",
+			paused_at: "2026-10-01T11:00:00.000Z",
+			health: {
+				status: "paused",
+				last_data_at: null,
+				problem: "Data is dropped while paused",
+				resources: null,
+			},
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(paused)),
+			resolveTheme,
+			expectView(role("button", { name: "Resume" })).toExist(),
+			expectView(text(/^Maple keeps collecting/)).toExist(),
+		)
+		expect(names(pageUpdate(loaded(paused), Message.ClickedResume()).commands)).toEqual(["ResumeSource"])
+	})
+
+	test("the overview totals every signal and its stored size", () => {
+		const model = loaded(prometheus())
+		const withUsage = pageUpdate(
+			model,
+			Message.CompletedFetchUsage({
+				key: model.usage.key ?? "",
+				result: Result.succeed(
+					Schema.decodeUnknownSync(V2SourceUsage)({
+						object: "source_usage",
+						window_start: "2026-09-30T13:00:00.000Z",
+						window_end: "2026-10-01T12:00:00.000Z",
+						buckets: [
+							{
+								hour: "2026-10-01T10:00:00.000Z",
+								spans: 0,
+								logs: 0,
+								metrics: 1500,
+								bytes: 225_000,
+							},
+							{
+								hour: "2026-10-01T11:00:00.000Z",
+								spans: 0,
+								logs: 0,
+								metrics: 500,
+								bytes: 75_000,
+							},
+						],
+					}),
+				),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(withUsage),
+			resolveTheme,
+			expectView(text("300 KB")).toExist(),
+			expectView(text("2.0K metric points")).toExist(),
 		)
 	})
 

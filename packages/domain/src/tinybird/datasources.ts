@@ -341,6 +341,37 @@ export const serviceUsage = defineDatasource("service_usage", {
 export type ServiceUsageRow = InferRow<typeof serviceUsage>
 
 /**
+ * Per-source ingestion volume per hour, keyed by the `maple_source_id` resource
+ * attribute the gateway stamps (the public `src_` id). Read by
+ * `sourceUsageHourlyQuery` and `sourceUsageTotalsQuery` (source-usage.ts).
+ */
+export const sourceUsageHourly = defineDatasource("source_usage_hourly", {
+	tenantColumn: "OrgId",
+	description:
+		"Hourly span, log and metric data point counts with estimated bytes per source (maple_source_id). Uses SummingMergeTree, populated by materialized views.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		SourceId: t.string(),
+		Hour: utcDateTime(),
+		SpanCount: t.uint64(),
+		SpanSizeBytes: t.uint64(),
+		LogCount: t.uint64(),
+		LogSizeBytes: t.uint64(),
+		MetricCount: t.uint64(),
+		MetricSizeBytes: t.uint64(),
+	},
+	// Unpartitioned like service_usage: one row per source-hour stays tiny. 90 days
+	// matches the minutely-tier retention; reads only cover the last 24 hours.
+	engine: engine.summingMergeTree({
+		sortingKey: ["OrgId", "SourceId", "Hour"],
+		ttl: "Hour + INTERVAL 90 DAY",
+	}),
+})
+
+export type SourceUsageHourlyRow = InferRow<typeof sourceUsageHourly>
+
+/**
  * Lightweight projection of traces for service map JOIN queries.
  * Pre-extracts deployment.environment from Map columns.
  * Sorted by (OrgId, TraceId, SpanId) to align with the JOIN key.

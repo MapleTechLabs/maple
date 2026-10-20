@@ -1424,5 +1424,33 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Only the TTL expression changes. A row now expires at the start of its day, up to a day earlier than before.",
 		})),
 	},
+	{
+		// Purely additive and filled forward only: the sources view reads 24 hours,
+		// and local OTLP ingest stamps no maple_source_id, so there is nothing to backfill.
+		id: "local-0036-to-0037-source-usage-hourly",
+		from: 36,
+		to: 37,
+		description: "source_usage_hourly + its six views: hourly volume and bytes per source",
+		clonedBefore: "additive DDL runs",
+		plan: [
+			[
+				"install-source-usage-hourly",
+				"Install the source_usage_hourly rollup and its six materialized views via the v37 bootstrap",
+			],
+		],
+		verifies: "Verify the v37 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "source_usage_hourly",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Filled forward from traces, logs and metrics writes that carry a source id; complete once the 24-hour read window passes.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 90,
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

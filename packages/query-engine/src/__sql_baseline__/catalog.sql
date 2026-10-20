@@ -6693,6 +6693,37 @@ SELECT
           AND product_events.Timestamp <= '2026-01-03 14:15:00'
 FORMAT JSON
 
+-- builder:source-usage:sourceUsageHourlyQuery:default  [7dcda428]
+SELECT
+          toString(source_usage_hourly.Hour) AS hour,
+          sum(source_usage_hourly.SpanCount) AS spans,
+          sum(source_usage_hourly.LogCount) AS logs,
+          sum(source_usage_hourly.MetricCount) AS metrics,
+          sum(source_usage_hourly.SpanSizeBytes) + sum(source_usage_hourly.LogSizeBytes) + sum(source_usage_hourly.MetricSizeBytes) AS bytes
+        FROM source_usage_hourly
+        WHERE source_usage_hourly.OrgId = 'org_sql_catalog'
+          AND source_usage_hourly.Hour >= '2026-01-01 10:30:00'
+          AND source_usage_hourly.Hour < '2026-01-03 14:15:00'
+          AND source_usage_hourly.SourceId = 'src_aXunrkWtzvXSkw9Z2smcft'
+        GROUP BY hour
+        ORDER BY hour ASC
+        FORMAT JSON
+
+-- builder:source-usage:sourceUsageTotalsQuery:default  [9b0d300e]
+SELECT
+          source_usage_hourly.SourceId AS sourceId,
+          sum(source_usage_hourly.SpanCount) AS spans,
+          sum(source_usage_hourly.LogCount) AS logs,
+          sum(source_usage_hourly.MetricCount) AS metrics,
+          sum(source_usage_hourly.SpanSizeBytes) + sum(source_usage_hourly.LogSizeBytes) + sum(source_usage_hourly.MetricSizeBytes) AS bytes
+        FROM source_usage_hourly
+        WHERE source_usage_hourly.OrgId = 'org_sql_catalog'
+          AND source_usage_hourly.Hour >= '2026-01-01 10:30:00'
+          AND source_usage_hourly.Hour < '2026-01-03 14:15:00'
+        GROUP BY sourceId
+        ORDER BY bytes DESC
+        FORMAT JSON
+
 -- builder:traces:traceServicesByTraceIdsQuery:page-enrichment  [465d5a7d]
 SELECT
           service_map_spans.TraceId AS traceId,

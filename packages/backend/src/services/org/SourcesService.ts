@@ -96,7 +96,13 @@ const rowToSource = (row: SourceRow, now: number, pullHealth?: SourceHealthResul
 		rolledAt: isoOrNull(row.rolledAt),
 		createdAt: toIso(row.createdAt),
 		updatedAt: toIso(row.updatedAt),
-		health: toSourceHealth(pullHealth ?? pushSourceHealth({ ...row, status }, now)),
+		health: toSourceHealth(
+			pullHealth === undefined
+				? pushSourceHealth({ ...row, status }, now)
+				: status === "paused"
+					? pushSourceHealth({ status, lastUsedAt: pullHealth.lastDataAt }, now)
+					: pullHealth,
+		),
 	})
 }
 
@@ -125,7 +131,10 @@ const normalizeSignals = Effect.fnUntraced(function* (signals: ReadonlyArray<Sou
 })
 
 /** The same signal set, in any order; `null` (every signal) only equals `null`. */
-const sameSignals = (a: ReadonlyArray<SourceSignal> | null, b: ReadonlyArray<SourceSignal> | null): boolean =>
+const sameSignals = (
+	a: ReadonlyArray<SourceSignal> | null,
+	b: ReadonlyArray<SourceSignal> | null,
+): boolean =>
 	a === null || b === null ? a === b : a.length === b.length && a.every((signal) => b.includes(signal))
 
 const normalizeRateLimit = Effect.fnUntraced(function* (rps: number | null) {
@@ -188,6 +197,11 @@ const tokenSourceOnly = (row: SourceRow, action: string) =>
 	row.isDefault
 		? invalid(`The default source uses the organization's ingest keys and cannot ${action}`)
 		: invalid(`${row.name} is collected by an integration and cannot ${action}`)
+
+// Every source but the default one pauses: the gateway drops a paused token's data and the
+// resources a poller sends under a paused integration source.
+const defaultSourceCannot = (action: string) =>
+	invalid(`The default source uses the organization's ingest keys and cannot ${action}`)
 
 export class SourcesService extends Context.Service<SourcesService>()("@maple/api/services/SourcesService", {
 	make: Effect.gen(function* () {
@@ -449,9 +463,13 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 			}
 			const now = yield* Clock.currentTimeMillis
 			const allowedSignals =
-				request.allowedSignals === undefined ? undefined : yield* normalizeSignals(request.allowedSignals)
+				request.allowedSignals === undefined
+					? undefined
+					: yield* normalizeSignals(request.allowedSignals)
 			const rateLimitRps =
-				request.rateLimitRps === undefined ? undefined : yield* normalizeRateLimit(request.rateLimitRps)
+				request.rateLimitRps === undefined
+					? undefined
+					: yield* normalizeRateLimit(request.rateLimitRps)
 			// Only a real change of signals or rate limit can lift a refusal.
 			const clearsRejection =
 				(allowedSignals !== undefined && !sameSignals(allowedSignals, existing.allowedSignals)) ||
@@ -492,14 +510,14 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 			const now = yield* Clock.currentTimeMillis
 			if (untilMs !== null && untilMs <= now) return yield* invalid("A pause must end in the future")
 			const existing = yield* requireRow(orgId, sourceId)
-			if (existing.keyHash === null) return yield* tokenSourceOnly(existing, "be paused")
+			if (existing.isDefault) return yield* defaultSourceCannot("be paused")
 			const row = yield* updateRow(orgId, sourceId, {
 				pausedAt: now,
 				pausedUntil: untilMs,
 				updatedAt: now,
 				updatedBy: userId,
 			})
-			return rowToSource(row, now)
+			return row.integrationId === null ? rowToSource(row, now) : yield* get(orgId, sourceId)
 		})
 
 		const resume = Effect.fn("SourcesService.resume")(function* (
@@ -509,7 +527,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
 			const existing = yield* requireRow(orgId, sourceId)
-			if (existing.keyHash === null) return yield* tokenSourceOnly(existing, "be resumed")
+			if (existing.isDefault) return yield* defaultSourceCannot("be resumed")
 			const now = yield* Clock.currentTimeMillis
 			const row = yield* updateRow(orgId, sourceId, {
 				pausedAt: null,
@@ -517,7 +535,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 				updatedAt: now,
 				updatedBy: userId,
 			})
-			return rowToSource(row, now)
+			return row.integrationId === null ? rowToSource(row, now) : yield* get(orgId, sourceId)
 		})
 
 		const roll = Effect.fn("SourcesService.roll")(function* (

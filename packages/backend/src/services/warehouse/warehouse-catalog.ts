@@ -103,6 +103,11 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Metric counts are split across four columns by point type (`SumMetricCount`, `GaugeMetricCount`, `HistogramMetricCount`, `ExpHistogramMetricCount`) — add all four for a total metric-point count.",
 		"Has no `DeploymentEnv` dimension, so prod-vs-staging splits are impossible here; use `logs_aggregates_hourly` / `traces_aggregates_hourly` for that.",
 	],
+	source_usage_hourly: [
+		"Hourly per-source rollup of STORED rows, keyed by `SourceId`, the public `src_…` id the ingest gateway stamps as `ResourceAttributes['maple_source_id']`. Rows without a source id are not counted here.",
+		"`SpanCount`, `LogCount` and `MetricCount` (data points across every metric type) with `*SizeBytes` STORAGE ESTIMATES computed like `service_usage`'s; never present them as billed usage.",
+		"Filled forward by its views from migration 0046, never backfilled, 90-day TTL.",
+	],
 } satisfies Record<string, ReadonlyArray<string>>
 
 interface ColumnInfo {

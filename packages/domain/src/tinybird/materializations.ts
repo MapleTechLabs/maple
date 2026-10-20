@@ -17,6 +17,7 @@ import {
 } from "./fingerprint"
 import {
 	serviceUsage,
+	sourceUsageHourly,
 	serviceMapEdgesHourly,
 	serviceMapSpans,
 	serviceMapChildren,
@@ -287,6 +288,96 @@ export const serviceUsageMetricsExpHistogramMv = defineMaterializedView(
 			}),
 		],
 	},
+)
+
+/**
+ * One `source_usage_hourly` row per (org, source, hour) from a signal table.
+ * Consumed by `sourceUsageHourlyQuery` and `sourceUsageTotalsQuery`; byte
+ * estimates match the `service_usage_*_mv` views.
+ */
+const sourceUsageSql = (opts: {
+	readonly table: string
+	readonly hour: string
+	readonly spans?: readonly [string, string]
+	readonly logs?: readonly [string, string]
+	readonly metrics?: readonly [string, string]
+}) => `
+        SELECT
+          OrgId,
+          ResourceAttributes['maple_source_id'] AS SourceId,
+          toStartOfHour(${opts.hour}) AS Hour,
+          ${opts.spans?.[0] ?? "0"} AS SpanCount,
+          ${opts.spans?.[1] ?? "0"} AS SpanSizeBytes,
+          ${opts.logs?.[0] ?? "0"} AS LogCount,
+          ${opts.logs?.[1] ?? "0"} AS LogSizeBytes,
+          ${opts.metrics?.[0] ?? "0"} AS MetricCount,
+          ${opts.metrics?.[1] ?? "0"} AS MetricSizeBytes
+        FROM ${opts.table}
+        WHERE ResourceAttributes['maple_source_id'] != ''
+        GROUP BY OrgId, SourceId, Hour
+      `
+
+const sourceUsageMv = (name: string, signal: string, sql: string) =>
+	defineMaterializedView(name, {
+		description: `Materialized view to aggregate ${signal} usage per source per hour`,
+		datasource: sourceUsageHourly,
+		nodes: [node({ name: `${name}_node`, sql })],
+	})
+
+export const sourceUsageLogsMv = sourceUsageMv(
+	"source_usage_logs_mv",
+	"log",
+	sourceUsageSql({ table: "logs", hour: "TimestampTime", logs: ["count()", "sum(length(Body) + 200)"] }),
+)
+
+export const sourceUsageTracesMv = sourceUsageMv(
+	"source_usage_traces_mv",
+	"span",
+	sourceUsageSql({
+		table: "traces",
+		hour: "toDateTime(Timestamp)",
+		spans: ["count()", "sum(length(SpanName) + 300)"],
+	}),
+)
+
+export const sourceUsageMetricsSumMv = sourceUsageMv(
+	"source_usage_metrics_sum_mv",
+	"sum metric",
+	sourceUsageSql({
+		table: "metrics_sum",
+		hour: "toDateTime(TimeUnix)",
+		metrics: ["count()", "count() * 150"],
+	}),
+)
+
+export const sourceUsageMetricsGaugeMv = sourceUsageMv(
+	"source_usage_metrics_gauge_mv",
+	"gauge metric",
+	sourceUsageSql({
+		table: "metrics_gauge",
+		hour: "toDateTime(TimeUnix)",
+		metrics: ["count()", "count() * 150"],
+	}),
+)
+
+export const sourceUsageMetricsHistogramMv = sourceUsageMv(
+	"source_usage_metrics_histogram_mv",
+	"histogram metric",
+	sourceUsageSql({
+		table: "metrics_histogram",
+		hour: "toDateTime(TimeUnix)",
+		metrics: ["count()", "count() * 250"],
+	}),
+)
+
+export const sourceUsageMetricsExpHistogramMv = sourceUsageMv(
+	"source_usage_metrics_exp_histogram_mv",
+	"exponential histogram metric",
+	sourceUsageSql({
+		table: "metrics_exponential_histogram",
+		hour: "toDateTime(TimeUnix)",
+		metrics: ["count()", "count() * 300"],
+	}),
 )
 
 /**

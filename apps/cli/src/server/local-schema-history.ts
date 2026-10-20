@@ -459,6 +459,19 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		manifestDigest: "d3a1e5d8eb21f57ff5d8e1abca55fbe5203da61ab02babbfa3176c66bf64d2fd",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
+	Object.freeze({
+		// TODO(v37): what changed, whether any part is rewritten or any row
+		// moves, and what this edge does NOT backfill.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 37,
+		fingerprint: "1772296e571539fd",
+		digest: "1772296e571539fdff7d2289c58910c1a8a496967f23613d5b2e81935541a786",
+		manifestDigest: "9f47ab6ca94633c667375133a2a2bc8fab1065a0494fb89973ba2230d8f9d516",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
 ] as const)
 
 /** Immutable SQLite control DDL identities, checked by clickhouse:schema:check. */
