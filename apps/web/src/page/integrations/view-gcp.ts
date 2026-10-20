@@ -126,6 +126,8 @@ const byStatus = (
 	const connectors =
 		focusId === null ? status.connectors : status.connectors.filter((connector) => connector.id === focusId)
 	const dialogs = [...gcpDialogs(h, model, timeZone), ...gcpConfigure(h, model, timeZone)]
+	if (connectors.length === 0 && focusId !== null)
+		return h.p([h.Class("text-muted-foreground text-sm")], ["This Google Cloud connection no longer exists."])
 	if (connectors.length === 0)
 		return h.div(
 			[h.Class("flex flex-col gap-4")],

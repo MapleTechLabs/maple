@@ -33,7 +33,7 @@ const encodeScrapeTargetId = Schema.encodeSync(ScrapeTargetPublicId)
 const encodeGcpConnectorId = Schema.encodeSync(GcpConnectorPublicId)
 
 /** The id a client can look the integration record up by: its public form where the API has one. */
-const integrationIdOf = (source: Source): string | null => {
+export const integrationIdOf = (source: Source): string | null => {
 	const raw = source.integrationId
 	if (raw === null) return null
 	if (source.platform === "prometheus")
