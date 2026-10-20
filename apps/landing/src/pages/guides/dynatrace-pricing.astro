@@ -475,7 +475,7 @@ const articleJsonLd = {
                         <pre><code set:html={highlight(dropDebugConfig, "yaml")} /></pre>
                     </div>
                     <p>
-                        The same <code>filter</code> processor can drop health-check spans or noisy metrics. Set <code>DT_ENVIRONMENT_ID</code> and <code>DT_PLATFORM_TOKEN</code> in the Collector's environment.
+                        The same <code>filter</code> processor can drop health-check spans or noisy metrics. Set <code>DT_ENVIRONMENT_ID</code> and <code>DT_PLATFORM_TOKEN</code> in the Collector's environment. The component names are the current spelling, tested on Collector contrib 0.163.1; older releases only know them as <code>otlphttp</code> and <code>cumulativetodelta</code>, which 0.163.1 also still accepts.
                     </p>
                 </section>
 
