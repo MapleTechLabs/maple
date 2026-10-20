@@ -9,6 +9,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { Message as SetupMessage } from "./setup-checklist"
 import { isMounted } from "./setup-checklist-update"
+import { pollTicks } from "../../data/poll"
 
 const withSet = (
 	orgId: string,
@@ -69,8 +70,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				}),
 				dependenciesToStream: ({ isPolling }) =>
 					isPolling
-						? Stream.tick("15 seconds").pipe(
-								Stream.drop(1),
+						? pollTicks("15 seconds").pipe(
 								Stream.map(() => Message.GotSetupMessage({ message: SetupMessage.TickedPoll() })),
 							)
 						: Stream.empty,
