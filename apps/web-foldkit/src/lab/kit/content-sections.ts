@@ -67,11 +67,17 @@ const breadcrumbSection = <M>(h: HtmlBuilder<M>): Html =>
 		]),
 	])
 
+const TRANSPARENT_LOGO = `data:image/svg+xml,${encodeURIComponent(
+	'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="9" fill="#e8853d"/></svg>',
+)}`
+
 const markerSection = <M>(h: HtmlBuilder<M>): Html =>
 	kitSection(h, "Avatar, spinner, marker", [
 		kitRow(h, undefined, [
 			avatarFallback(h, {}, "DM"),
 			avatarFallback(h, { className: "size-6" }, "AB"),
+			// A logo with transparent pixels: the initials must not show through once it loads.
+			avatarFallback(h, { imageUrl: TRANSPARENT_LOGO, imageLabel: "Logo" }, "TL"),
 			spinner(h),
 			spinner(h, "size-6"),
 		]),

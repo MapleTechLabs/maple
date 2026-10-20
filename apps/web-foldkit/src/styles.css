@@ -14,3 +14,9 @@
 .base-ui-disable-scrollbar::-webkit-scrollbar {
 	display: none;
 }
+
+/* `AvatarImage` replaces its fallback once loaded; a logo with transparent pixels must not show the
+   initials through (see `ui/avatar-image.ts`). */
+[data-slot="avatar"]:has(> img[data-slot="avatar-image"][data-loaded]) > [data-slot="avatar-fallback"] {
+	visibility: hidden;
+}
