@@ -51,7 +51,7 @@ const latest = (...values: ReadonlyArray<number | null>): number | null =>
 export interface PushSourceState {
 	readonly status: "active" | "paused" | "expired"
 	readonly lastUsedAt: number | null
-	/** The gateway's last refusal (rate limit, disallowed signal, size) and why; null when none. */
+	/** The gateway's last refusal (rate limit or disallowed signal) and why; null when none. */
 	readonly lastRejectedAt?: number | null
 	readonly lastRejection?: string | null
 }
