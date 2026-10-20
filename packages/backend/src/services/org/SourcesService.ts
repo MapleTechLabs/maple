@@ -422,6 +422,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 									name,
 									description,
 									platform: request.platform,
+									kind: "token",
 									isDefault: false,
 									keyHash: hashIngestKey(secret, lookupHmacKey),
 									keyPrefix: displayPrefix(secret),

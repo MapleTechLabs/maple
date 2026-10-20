@@ -314,6 +314,16 @@ export type SourcePlatform = Schema.Schema.Type<typeof SourcePlatform>
 
 export const isPushSourcePlatform = Schema.is(PushSourcePlatform)
 
+/**
+ * `default` stands for the org's public/private ingest keys, `token` carries its own
+ * `maple_src_` token, `integration` is owned by an integration row (its `source_id`).
+ */
+export const SourceKind = Schema.Literals(["default", "token", "integration"]).annotate({
+	identifier: "@maple/SourceKind",
+	title: "Source Kind",
+})
+export type SourceKind = Schema.Schema.Type<typeof SourceKind>
+
 /** Signal families a source can be limited to; `sessions` covers replays and session events. */
 export const SourceSignal = Schema.Literals(["traces", "logs", "metrics", "sessions", "events"]).annotate({
 	identifier: "@maple/SourceSignal",
