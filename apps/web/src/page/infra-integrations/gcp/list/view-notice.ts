@@ -17,7 +17,7 @@ const integration = (h: H, label: string): Html =>
 			{
 				size: "sm",
 				variant: "outline",
-				href: hrefOf(AppRoute.Integrations({ search: { integration: "gcp" } })),
+				href: hrefOf(AppRoute.SourcesNew({ search: { integration: "gcp" } })),
 			},
 			[label],
 		),

@@ -26,7 +26,19 @@ export interface SourceHealthResult {
 	readonly lastDataAt: number | null
 	/** One line on why the source is not healthy; null when it is. */
 	readonly problem: string | null
+	/** For a source that stands for several resources (zones, repos): how many are not healthy. */
+	readonly resources?: SourceResourceCount
 }
+
+export interface SourceResourceCount {
+	readonly total: number
+	readonly unhealthy: number
+}
+
+const countOf = (resources: ReadonlyArray<{ readonly status: string }>): SourceResourceCount | undefined =>
+	resources.length < 2
+		? undefined
+		: { total: resources.length, unhealthy: resources.filter((resource) => resource.status !== "healthy").length }
 
 /** SDKs can go quiet overnight; a day without data is worth a look, not an alarm. */
 const PUSH_STALE_MS = 24 * 60 * 60 * 1000
@@ -60,11 +72,13 @@ export const integrationSourceHealth = (entry: IntegrationEntry | undefined): So
 	if (entry === undefined) {
 		return { status: "disconnected", lastDataAt: null, problem: "The integration is no longer connected" }
 	}
-	return {
+	const health: SourceHealthResult = {
 		status: fromIntegrationStatus(entry.status),
 		lastDataAt: latest(...entry.resources.map((resource) => resource.lastSuccessAt)),
 		problem: entry.problem,
 	}
+	const resources = countOf(entry.resources)
+	return resources === undefined ? health : { ...health, resources }
 }
 
 export const scrapeTargetSourceHealth = (
@@ -129,7 +143,7 @@ export const githubInstallationHealth = (
 	if (repos.length === 0) return { status: "pending", lastDataAt: null, problem: null }
 	const status = worstStatus(repos.map((repo) => repo.status))
 	const failing = repos.find((repo) => repo.status === status && repo.lastError !== null)
-	return {
+	const health: SourceHealthResult = {
 		status: fromIntegrationStatus(status),
 		lastDataAt: latest(...repos.map((repo) => repo.lastSuccessAt)),
 		problem:
@@ -139,4 +153,6 @@ export const githubInstallationHealth = (
 					? `Repositories under ${accountLogin} are ${status}`
 					: `${failing.name}: ${failing.lastError}`,
 	}
+	const resources = countOf(repos)
+	return resources === undefined ? health : { ...health, resources }
 }

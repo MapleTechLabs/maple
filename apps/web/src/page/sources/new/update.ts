@@ -12,7 +12,12 @@ import { defaultSourceName } from "../kit/platforms"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
 import { CreateSource, FetchCreatedSource, FetchSourcesList, WaitFirstDataPoll } from "./command"
+import { type DataIntegration, initEmbedded, isDataIntegration } from "../../integrations/embed"
+import type { Message as IntegrationMessage } from "../../integrations/message"
+import type { Model as IntegrationModel } from "../../integrations/model"
+import * as Integrations from "../../integrations/update"
 import { Message } from "./message"
+import { isIntegrationConnected } from "./view-integration"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -44,8 +49,34 @@ const readList = (model: Model, context: PageContext, refresh: boolean): Return 
 	})
 }
 
+/** `?integration=` when it names a data integration and no push platform is picked. */
+const integrationOf = (route: NewRoute): DataIntegration | null => {
+	const raw = route.search.integration
+	return route.search.platform === undefined && raw !== undefined && isDataIntegration(raw) ? raw : null
+}
+
+/** The integrations module's step, lifted: its Commands answer as `GotIntegrationsMessage`. */
+const liftIntegrations = (model: Model, step: PageReturn<IntegrationModel, IntegrationMessage>): Return => {
+	const lifted: Return = {
+		model: { ...model, integrations: step.model },
+		commands: Command.mapMessages(step.commands ?? [], (message) =>
+			Message.GotIntegrationsMessage({ message }),
+		),
+	}
+	return step.outMessage === undefined ? lifted : { ...lifted, outMessage: step.outMessage }
+}
+
+/** Both steps' Commands; the second's outMessage wins, else the first's (a connect toast). */
+const merge = (first: Return, second: Return): Return => {
+	const merged: Return = { ...second, commands: [...(first.commands ?? []), ...(second.commands ?? [])] }
+	const outMessage = second.outMessage ?? first.outMessage
+	return outMessage === undefined ? merged : { ...merged, outMessage }
+}
+
 export const init = (route: NewRoute, context: PageContext): Return => {
 	const platform = route.search.platform ?? null
+	const integration = integrationOf(route)
+	const embedded = initEmbedded(integration, context)
 	const model = withForm(
 		{
 			platform: null,
@@ -58,17 +89,44 @@ export const init = (route: NewRoute, context: PageContext): Return => {
 			firstData: Keyed.idle(),
 			setup: Setup.init("opentelemetry"),
 			tokenCopy: CopyButton.init(),
+			integration,
+			integrations: embedded.model,
+			hasAddedTarget: false,
 		},
 		platform,
 	)
-	return platform === null ? { model } : readList(model, context, false)
+	const lifted = liftIntegrations(model, embedded)
+	// An integration's step reads the list too: once connected it links to the source it made.
+	return platform === null && integration === null ? lifted : merge(lifted, readList(lifted.model, context, false))
 }
 
 export const routeChanged = (model: Model, route: NewRoute, context: PageContext): Return => {
 	const platform = route.search.platform ?? null
-	if (platform === model.platform) return { model }
-	const next = withForm({ ...model, list: platform === null ? Keyed.idle() : model.list }, platform)
-	return platform === null || model.created !== null ? { model: next } : readList(next, context, true)
+	const integration = integrationOf(route)
+	const entered: Return =
+		integration === model.integration
+			? { model }
+			: liftIntegrations(
+					{ ...model, integration },
+					Integrations.routeChanged(
+						model.integrations,
+						{ search: integration === null ? {} : { integration } },
+						context,
+					),
+				)
+	if (platform === model.platform)
+		return integration === null || integration === model.integration
+			? entered
+			: merge(entered, readList(entered.model, context, false))
+	const next = withForm(
+		{ ...entered.model, list: platform === null ? Keyed.idle() : entered.model.list },
+		platform,
+	)
+	if (model.created !== null) return { ...entered, model: next }
+	// Back to the picker clears the form's list; an integration's step reads it again.
+	if (platform === null)
+		return integration === null ? { ...entered, model: next } : merge(entered, readList(next, context, false))
+	return merge(entered, readList(next, context, true))
 }
 
 /** `FirstDataStatus`'s `latest`: the polled source, else the one the create answered. */
@@ -124,10 +182,23 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model,
 			outMessage: navigate(hrefOf(Routes.SourcesNew({ search: { platform } }))),
 		}),
-		ClickedPullPlatform: ({ platform }) => ({
+		ClickedIntegration: ({ integration }) => ({
 			model,
-			outMessage: navigate(hrefOf(Routes.Integrations({ search: { integration: platform } }))),
+			outMessage: navigate(hrefOf(Routes.SourcesNew({ search: { integration } }))),
 		}),
+		GotIntegrationsMessage: ({ message: child }) => {
+			const integration = model.integration
+			const added = child._tag === "CompletedSave" && !child.isEdit && child.failure === null
+			const step = liftIntegrations(
+				added && integration === "warpstream" ? { ...model, hasAddedTarget: true } : model,
+				Integrations.update(model.integrations, child, context),
+			)
+			// A connect just finished or a target was added: its source is new, so read the list again.
+			return integration !== null &&
+				(added || (!isIntegrationConnected(model, integration) && isIntegrationConnected(step.model, integration)))
+				? merge(step, readList(step.model, context, true))
+				: step
+		},
 		ChangedName: ({ value }) => ({ model: { ...model, name: value } }),
 		ToggledAdvanced: () => ({ model: { ...model, isAdvancedOpen: !model.isAdvancedOpen } }),
 		GotRulesMessage: ({ message: inner }) =>

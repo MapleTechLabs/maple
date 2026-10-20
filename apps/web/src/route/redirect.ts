@@ -1,6 +1,7 @@
 import { Option, Schema } from "effect"
 import { AppRoute } from "./app-route"
 import { hrefOf } from "./routers"
+import { DATA_INTEGRATIONS } from "./data-integrations"
 import { ErrorsSearch } from "./search"
 
 /** Where a route sends the browser instead of rendering, and whether it replaces history. */
@@ -34,24 +35,28 @@ const errorsSearchOf = ({ search }: typeof AppRoute.ErrorIssues.Type): typeof Er
 	)
 }
 
+const DATA_INTEGRATION_IDS: ReadonlySet<string> = new Set(DATA_INTEGRATIONS)
+
 const redirect = (to: AppRoute, isReplace: boolean) =>
 	Option.some(Redirect.make({ url: hrefOf(to), isReplace }))
 
-/** Redirects of retired paths (connectors, developer, infra, errors/issues). */
+/** Redirects of retired paths (connectors, developer, infra, errors/issues) and moved integrations. */
 export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 	AppRoute.matchOrElse<Option.Option<Redirect>>(
 		route,
 		{
 			Connectors: ({ search }) =>
 				redirect(
-					AppRoute.Integrations({
-						search:
-							search.tab === "prometheus" || search.tab === "cloudflare"
-								? { integration: search.tab }
-								: {},
-					}),
+					search.tab === "prometheus" || search.tab === "cloudflare"
+						? AppRoute.SourcesNew({ search: { integration: search.tab } })
+						: AppRoute.Integrations({ search: {} }),
 					false,
 				),
+			/** Old links and OAuth returns to a data integration's page open its step under Sources. */
+			Integrations: ({ search }) =>
+				search.integration !== undefined && DATA_INTEGRATION_IDS.has(search.integration)
+					? redirect(AppRoute.SourcesNew({ search: { integration: search.integration } }), true)
+					: Option.none(),
 			Developer: ({ search }) =>
 				redirect(
 					AppRoute.Settings({

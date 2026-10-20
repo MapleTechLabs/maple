@@ -299,9 +299,9 @@ const commitMessage = <M>(h: HtmlBuilder<M>, tag: string): Html => {
 			h.p([h.Class("font-medium text-foreground")], [title]),
 			h.p([h.Class("text-muted-foreground")], [detail]),
 			...(action === "connect"
-				? [link("/integrations", "Connect a repository")]
+				? [link("/sources/new?integration=github", "Connect a repository")]
 				: action === "manage"
-					? [link("/integrations?integration=github", "Manage repository access")]
+					? [link("/sources/new?integration=github", "Manage repository access")]
 					: []),
 		],
 	)

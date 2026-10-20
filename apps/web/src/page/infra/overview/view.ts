@@ -61,7 +61,7 @@ const addSource = (h: H, missing: ReadonlyArray<SourceId>): Html =>
 							icon(h, "SquareTerminalIcon"),
 							"Install a collector",
 						]),
-						linkButton(h, { size: "sm", href: hrefOf(AppRoute.Integrations({ search: {} })) }, [
+						linkButton(h, { size: "sm", href: hrefOf(AppRoute.SourcesNew({ search: {} })) }, [
 							"Connect a provider",
 							icon(h, "ArrowRightIcon"),
 						]),

@@ -6,7 +6,8 @@ import { icon } from "../../ui/icon"
 import { panel } from "../../ui/panel"
 import { skeleton } from "../../ui/skeleton"
 import { statusDot } from "../../ui/status-dot"
-import { CATALOG, type CatalogEntry, INTEGRATION_CATEGORIES, type IntegrationId } from "./catalog"
+import { AppRoute, hrefOf } from "../../route"
+import { type CatalogEntry, HUB_CATALOG, INTEGRATION_CATEGORIES, type IntegrationId } from "./catalog"
 import {
 	type AvailableOverview,
 	type ConnectedOverview,
@@ -179,7 +180,7 @@ const skeletonRow = (h: H): Html =>
 	)
 
 export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html => {
-	const rows = CATALOG.map((entry) => ({
+	const rows = HUB_CATALOG.map((entry) => ({
 		entry,
 		overview: overviewOf(model.statuses, model.nowMs, entry.id),
 	}))
@@ -205,6 +206,20 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 			),
 		],
 		[
+			h.p(
+				[h.Class("text-muted-foreground text-sm")],
+				[
+					"Cloudflare, Prometheus, GitHub and the other integrations that bring data in are under ",
+					h.a(
+						[
+							h.Href(hrefOf(AppRoute.Sources())),
+							h.Class("text-foreground underline underline-offset-2"),
+						],
+						["Sources"],
+					),
+					".",
+				],
+			),
 			...(connected.length > 0 || loading.length > 0
 				? [
 						h.section(

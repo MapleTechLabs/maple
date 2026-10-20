@@ -134,7 +134,11 @@ const notConnected = (h: H, isConnected: boolean): Html =>
 		),
 		linkButton(
 			h,
-			{ variant: "outline", size: "sm", href: hrefOf(AppRoute.Integrations({ search: {} })) },
+			{
+				variant: "outline",
+				size: "sm",
+				href: hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } })),
+			},
 			[isConnected ? "Manage GitHub access" : "Connect GitHub"],
 		),
 	])

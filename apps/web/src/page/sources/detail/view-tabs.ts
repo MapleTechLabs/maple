@@ -1,12 +1,10 @@
 import type { V2Source } from "@maple/domain/http/v2"
-import { isPushSourcePlatform } from "@maple/domain/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button } from "../../../ui/button"
 import { type FieldIds, type FieldState, field, fieldLabel, input } from "../../../ui/field"
 import { textarea } from "../../../ui/textarea"
 import { settingsSection, settingsSections } from "../../settings/kit/section"
-import { platformMeta } from "../kit/platforms"
 import { rulesOutcome } from "../kit/rules"
 import * as RulesView from "../kit/rules-view"
 import * as Setup from "../kit/setup"
@@ -30,18 +28,6 @@ export const setupTab = (h: H, model: Model, source: V2Source, revealed: Reveale
 			"The default source receives everything sent with your organization's ingest keys. Setup steps are on the ",
 			h.a([h.Href(INGESTION_HREF), h.Class(LINK_CLASS)], ["Ingestion"]),
 			" page.",
-		])
-	if (!isPushSourcePlatform(source.platform))
-		return note(h, [
-			"Maple collects this source through the ",
-			platformMeta(source.platform).label,
-			" integration. Connection settings are on the",
-			" ",
-			h.a(
-				[h.Href(hrefOf(AppRoute.Integrations({ search: { integration: source.platform } }))), h.Class(LINK_CLASS)],
-				["integration page"],
-			),
-			".",
 		])
 	return h.div(
 		[h.Class("max-w-3xl")],

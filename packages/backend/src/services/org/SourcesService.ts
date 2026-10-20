@@ -70,6 +70,7 @@ const toSourceHealth = (health: SourceHealthResult) =>
 		status: health.status,
 		lastDataAt: isoOrNull(health.lastDataAt),
 		problem: health.problem,
+		resources: health.resources ?? null,
 	})
 
 // Pull sources pass the integration's health; everything else reads the gateway's last_used_at.
@@ -82,6 +83,7 @@ const rowToSource = (row: SourceRow, now: number, pullHealth?: SourceHealthResul
 		platform: row.platform,
 		isDefault: row.isDefault,
 		keyPrefix: row.keyPrefix,
+		integrationId: row.integrationId,
 		status,
 		allowedSignals: row.allowedSignals,
 		rateLimitRps: row.rateLimitRps,

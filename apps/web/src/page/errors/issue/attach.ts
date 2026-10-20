@@ -172,7 +172,7 @@ const pasteField = (h: H, model: Model): Html =>
 					h.a(
 						[
 							h.Class("underline hover:no-underline"),
-							h.Href(hrefOf(AppRoute.Integrations({ search: { integration: "github" } }))),
+							h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
 						],
 						["Connect GitHub"],
 					),

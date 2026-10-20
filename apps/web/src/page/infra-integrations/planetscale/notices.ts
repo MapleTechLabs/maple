@@ -27,7 +27,7 @@ export const BRANCH_ABSENCE_COPY = {
 	"no-data": "No metrics for this branch in the selected window.",
 } as const
 
-const INTEGRATION_HREF = hrefOf(AppRoute.Integrations({ search: { integration: "planetscale" } }))
+const INTEGRATION_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "planetscale" } }))
 
 export const metricsNotice = <M>(h: HtmlBuilder<M>): Html =>
 	alert(h, { variant: "warn" }, [

@@ -5,7 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { BAR_CHART_TOKENS } from "../../../charts/bar-chart"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
-import { SOURCE_TABS, type SourceTab } from "../../../route/search"
+import type { SourceTab } from "../../../route/search"
 import type { BreadcrumbEntry } from "../../../shell"
 import { alert, alertTitle } from "../../../ui/alert"
 import { copyableField } from "../../../ui/copyable-field"
@@ -18,7 +18,8 @@ import { detailActions, detailTitle } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 import { platformMeta, platformTile } from "../kit/platforms"
-import { hasToken, sourceHref } from "../kit/shared"
+import { effectiveTab, hasToken, integrationPlatformOf, focusIdOf, sourceHref, tabsOf } from "../kit/shared"
+import { actionsEmbed, cardEmbed } from "../../integrations/embed"
 import { sourceStatusBadge } from "../kit/status"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -30,7 +31,12 @@ import { settingsTab, setupTab } from "./view-tabs"
 type H = HtmlBuilder<Message>
 
 const SOURCES_HREF = hrefOf(AppRoute.Sources())
-const TAB_LABELS = { overview: "Overview", setup: "Setup", settings: "Settings" } as const satisfies Record<SourceTab, string>
+const TAB_LABELS = {
+	overview: "Overview",
+	setup: "Setup",
+	connection: "Connection",
+	settings: "Settings",
+} as const satisfies Record<SourceTab, string>
 
 const notFound = (h: H): Html =>
 	resourceNotFound(h, {
@@ -47,7 +53,7 @@ const tabs = (h: H, source: V2Source, active: SourceTab): Html =>
 	underlineTabStrip(
 		h,
 		{ label: "Source sections" },
-		SOURCE_TABS.map((tab) => {
+		tabsOf(source).map((tab) => {
 			const isActive = tab === active
 			return h.keyed("a")(
 				tab,
@@ -80,14 +86,38 @@ const rolledBanner = (h: H, model: Model, secret: string): Html =>
 		}),
 	])
 
+/** An integration source's integration, rendered through its own module (`slot` keeps the two apart). */
+const connectionPart = (
+	h: H,
+	model: Model,
+	source: V2Source,
+	timeZone: string,
+	part: "card" | "actions",
+): Html | null => {
+	const platform = integrationPlatformOf(source)
+	if (platform === null || model.connection === null) return null
+	return h.submodel({
+		slotId: `source-connection-${part}`,
+		model: model.connection,
+		view: part === "card" ? cardEmbed : actionsEmbed,
+		viewInputs: { integration: platform, timeZone, focusId: focusIdOf(source) },
+		toParentMessage: (message) => Message.GotConnectionMessage({ message }),
+	})
+}
+
 const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, nowMs: number): Html => {
 	const shown = model.revealed !== null && model.revealed.sourceId === source.id ? model.revealed : null
 	const timeZone = inputs.context.timeZone
+	const tab = effectiveTab(source, model.tab)
 	return dashboardPage(
 		h,
 		{
 			titleContent: detailTitle(h, {
-				kind: ["Source", platformMeta(source.platform).label, source.is_default ? "Default" : null],
+				kind: [
+					"Source",
+					platformMeta(source.platform).label,
+					source.is_default ? "Default" : integrationPlatformOf(source) === null ? null : "Integration",
+				],
 				title: [source.name],
 				adornment: platformTile(h, source.platform, "sm"),
 				meta: [
@@ -97,15 +127,20 @@ const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, now
 						: [h.span([h.Class("text-muted-foreground font-mono text-xs")], [source.key_prefix, "…"])]),
 				],
 			}),
-			actions: hasToken(source) ? detailActions(h, sourceActions(h, model, source)) : undefined,
-			tabs: tabs(h, source, model.tab),
+			actions: hasToken(source)
+				? detailActions(h, sourceActions(h, model, source))
+				: (connectionPart(h, model, source, timeZone, "actions") ?? undefined),
+			tabs: tabs(h, source, tab),
 			gap: "md",
 		},
 		[
 			...(shown !== null && shown.rolled ? [rolledBanner(h, model, shown.secret)] : []),
-			...(model.tab === "overview" ? [overviewTab(h, model, source, timeZone, nowMs)] : []),
-			...(model.tab === "setup" ? [setupTab(h, model, source, shown)] : []),
-			...(model.tab === "settings" ? [settingsTab(h, model, source)] : []),
+			...(tab === "overview" ? [overviewTab(h, model, source, timeZone, nowMs)] : []),
+			...(tab === "setup" ? [setupTab(h, model, source, shown)] : []),
+			...(tab === "connection"
+				? [connectionPart(h, model, source, timeZone, "card") ?? loading(h)]
+				: []),
+			...(tab === "settings" ? [settingsTab(h, model, source)] : []),
 		],
 	)
 }

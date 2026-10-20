@@ -10,6 +10,7 @@ import * as Menu from "../../../ui/menu"
 import { SourceList } from "../kit/data"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
+import { Message as IntegrationMessage } from "../../integrations/message"
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
@@ -38,5 +39,6 @@ export const Message = defineMessageUnion({
 	ChangedSettingsDescription: { value: Schema.String },
 	SubmittedSettings: {},
 	CompletedSave: { result: Schema.Result(V2Source, LoadFailure) },
+	GotConnectionMessage: { message: IntegrationMessage },
 })
 export type Message = typeof Message.Type

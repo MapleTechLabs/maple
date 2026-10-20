@@ -1,11 +1,13 @@
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2SourceWithSecret } from "@maple/domain/http/v2"
+import { CloudflareIntegrationStatus } from "@maple/domain/http"
 import { Result, Schema } from "effect"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import * as Tabs from "../../../ui/tabs"
 import { type PageContext, PageOutMessage } from "../../contract"
+import { Message as IntegrationMessage } from "../../integrations/message"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -19,6 +21,9 @@ const route = (platform?: "nodejs" | "kubernetes") => ({
 	_tag: "SourcesNew" as const,
 	search: platform === undefined ? {} : { platform },
 })
+const integrationRoute = (integration: string) => ({ _tag: "SourcesNew" as const, search: { integration } })
+/** The integrations module's status reads, which the picker's connected badges come from. */
+const STATUS_READS = ["LoadIntegrationsCloudflareStatus", "LoadIntegrationsScrapeTargets"]
 
 /** The setup's snippet tabs measure their indicator on mount. */
 const indicatorMeasured = () =>
@@ -36,6 +41,7 @@ const created = (lastUsedAt: string | null = null) =>
 		platform: "nodejs",
 		is_default: false,
 		key_prefix: "maple_src_Q7xZa",
+		integration_id: null,
 		status: "active",
 		allowed_signals: null,
 		rate_limit_rps: null,
@@ -47,26 +53,38 @@ const created = (lastUsedAt: string | null = null) =>
 		rolled_at: "2026-10-01T00:00:00.000Z",
 		created_at: "2026-10-01T00:00:00.000Z",
 		updated_at: "2026-10-01T00:00:00.000Z",
-		health: { status: "pending", last_data_at: null, problem: null },
+		health: { status: "pending", last_data_at: null, problem: null, resources: null },
 		secret: "maple_src_Q7xZa8Kt7pQ2wR5vN0sL3dJ6hM4gY9dW1",
 	})
 
 describe("connect a source", () => {
-	test("the picker reads nothing; a push card sets the platform, a pull card opens its integration", () => {
+	test("the picker reads the integration statuses; a push card sets the platform, an integration card its step", () => {
 		const entered = init(route(), context)
-		expect(entered.commands ?? []).toHaveLength(0)
-		scene({ update: pageUpdate, view }, given(entered.model), expectView(text("Step 1 of 3 · Pick what sends the data")).toExist())
-		expect(pageUpdate(entered.model, Message.ClickedPushPlatform({ platform: "nodejs" })).outMessage).toEqual(
+		expect(names(entered.commands)).toEqual(expect.arrayContaining(STATUS_READS))
+		expect(names(entered.commands)).not.toContain("FetchSourcesList")
+		scene(
+			{ update: pageUpdate, view },
+			given(entered.model),
+			expectView(text("Step 1 of 3 · Pick what sends the data")).toExist(),
+		)
+		expect(
+			pageUpdate(entered.model, Message.ClickedPushPlatform({ platform: "nodejs" })).outMessage,
+		).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/sources/new?platform=nodejs", isReplace: false }),
 		)
-		expect(pageUpdate(entered.model, Message.ClickedPullPlatform({ platform: "prometheus" })).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/integrations?integration=prometheus", isReplace: false }),
+		expect(
+			pageUpdate(entered.model, Message.ClickedIntegration({ integration: "warpstream" })).outMessage,
+		).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/sources/new?integration=warpstream",
+				isReplace: false,
+			}),
 		)
 	})
 
 	test("the form prefills the platform label and mounts the list", () => {
 		const entered = init(route("nodejs"), context)
-		expect(names(entered.commands)).toEqual(["FetchSourcesList"])
+		expect(names(entered.commands)).toContain("FetchSourcesList")
 		expect(entered.model.name).toBe("Node.js")
 		scene(
 			{ update: pageUpdate, view },
@@ -114,5 +132,118 @@ describe("connect a source", () => {
 		expect(receiving.commands ?? []).toHaveLength(0)
 		expect(pageUpdate(receiving.model, Message.ElapsedPoll({ key })).commands ?? []).toHaveLength(0)
 		scene({ update: pageUpdate, view }, given(receiving.model), indicatorMeasured(), expectView(role("link", { name: "Open source" })).toExist())
+	})
+
+	test("an integration's step shows its own connect card; an unknown id falls back to the picker", () => {
+		const entered = init(integrationRoute("cloudflare"), context)
+		expect(entered.model.integration).toBe("cloudflare")
+		const status = new CloudflareIntegrationStatus({
+			connected: false,
+			accountId: null,
+			accountName: null,
+			connectedByUserId: null,
+			scope: null,
+			analyticsCapable: false,
+			zones: [],
+			workers: null,
+		})
+		const loaded = pageUpdate(
+			entered.model,
+			Message.GotIntegrationsMessage({
+				message: IntegrationMessage.CompletedLoadCloudflare({
+					key: entered.model.integrations.statuses.cloudflare.key ?? "",
+					result: Result.succeed(status),
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			expectView(text("Step 2 of 3 · Connect Cloudflare")).toExist(),
+			expectView(role("button", { name: "Connect Cloudflare" })).toExist(),
+			click(role("button", { name: "Pick another source" })),
+		)
+		expect(pageUpdate(entered.model, Message.ClickedBack()).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/sources/new", isReplace: false }),
+		)
+		const unknown = init(integrationRoute("slack"), context)
+		expect(unknown.model.integration).toBeNull()
+		scene(
+			{ update: pageUpdate, view },
+			given(unknown.model),
+			expectView(text("Step 1 of 3 · Pick what sends the data")).toExist(),
+		)
+	})
+
+	test("once connected, the step links to the source the connect made", () => {
+		const entered = init(integrationRoute("cloudflare"), context)
+		expect(names(entered.commands)).toContain("FetchSourcesList")
+		const status = (connected: boolean) =>
+			IntegrationMessage.CompletedLoadCloudflare({
+				key: entered.model.integrations.statuses.cloudflare.key ?? "",
+				result: Result.succeed(
+					new CloudflareIntegrationStatus({
+						connected,
+						accountId: connected ? "acc" : null,
+						accountName: connected ? "Acme" : null,
+						connectedByUserId: null,
+						scope: null,
+						analyticsCapable: true,
+						zones: [],
+						workers: null,
+					}),
+				),
+			})
+		const waiting = pageUpdate(entered.model, Message.GotIntegrationsMessage({ message: status(false) })).model
+		const connected = pageUpdate(waiting, Message.GotIntegrationsMessage({ message: status(true) }))
+		expect(names(connected.commands)).toContain("FetchSourcesList")
+		const row = { ...created(), platform: "cloudflare" as const, key_prefix: null, name: "Cloudflare Acme" }
+		const listed = pageUpdate(
+			connected.model,
+			Message.CompletedFetchList({ key: connected.model.list.key ?? "", result: Result.succeed([row]) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(listed),
+			expectView(text("Step 3 of 3 · Collecting")).toExist(),
+			expectView(role("link", { name: "Open source" })).toExist(),
+		)
+	})
+
+	test("from a push form straight to an integration, the step reads the list again", () => {
+		const form = init(route("nodejs"), context).model
+		const step = routeChanged(form, integrationRoute("cloudflare"), context)
+		expect(step.model.platform).toBeNull()
+		expect(step.model.integration).toBe("cloudflare")
+		expect(names(step.commands)).toContain("FetchSourcesList")
+	})
+
+	test("WarpStream finishes once a target is added in this visit, and links to the list", () => {
+		const entered = init(integrationRoute("warpstream"), context).model
+		expect(entered.hasAddedTarget).toBe(false)
+		const added = pageUpdate(
+			entered,
+			Message.GotIntegrationsMessage({
+				message: IntegrationMessage.CompletedSave({ isEdit: false, id: null, failure: null }),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(added),
+			expectView(text("Step 3 of 3 · Collecting")).toExist(),
+			expectView(role("link", { name: "View sources" })).toExist(),
+		)
+	})
+
+	test("a target added on another integration's step re-reads the list but does not finish WarpStream", () => {
+		const entered = init(integrationRoute("prometheus"), context).model
+		const added = pageUpdate(
+			entered,
+			Message.GotIntegrationsMessage({
+				message: IntegrationMessage.CompletedSave({ isEdit: false, id: null, failure: null }),
+			}),
+		)
+		expect(added.model.hasAddedTarget).toBe(false)
+		expect(names(added.commands)).toContain("FetchSourcesList")
 	})
 })

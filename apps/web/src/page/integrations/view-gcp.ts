@@ -115,9 +115,19 @@ const emptyState = (h: H): Html =>
 		]),
 	])
 
-const byStatus = (h: H, model: Model, status: V2GcpIntegration, timeZone: string): Html => {
-	const connectors = status.connectors
+const byStatus = (
+	h: H,
+	model: Model,
+	status: V2GcpIntegration,
+	timeZone: string,
+	focusId: string | null,
+): Html => {
+	// A Google Cloud source stands for one connector: its Connection tab shows only that one.
+	const connectors =
+		focusId === null ? status.connectors : status.connectors.filter((connector) => connector.id === focusId)
 	const dialogs = [...gcpDialogs(h, model, timeZone), ...gcpConfigure(h, model, timeZone)]
+	if (connectors.length === 0 && focusId !== null)
+		return h.p([h.Class("text-muted-foreground text-sm")], ["This Google Cloud connection no longer exists."])
 	if (connectors.length === 0)
 		return h.div(
 			[h.Class("flex flex-col gap-4")],
@@ -138,13 +148,14 @@ const byStatus = (h: H, model: Model, status: V2GcpIntegration, timeZone: string
 				[h.Class("flex min-w-0 flex-col gap-3 font-display")],
 				[
 					sectionHeading(h, {
-						title: "Connections",
+						title: focusId === null ? "Connections" : "Connection",
 						count: connectors.length > 1 ? String(connectors.length) : undefined,
-						actions: button(
-							h,
-							{ size: "sm", variant: "outline", attributes: [h.OnClick(newConnection)] },
-							["Add connection"],
-						),
+						actions:
+							focusId === null
+								? button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(newConnection)] }, [
+										"Add connection",
+									])
+								: undefined,
 					}),
 					...ordered.map((connector) => gcpConnection(h, model, connector, timeZone)),
 				],
@@ -154,7 +165,7 @@ const byStatus = (h: H, model: Model, status: V2GcpIntegration, timeZone: string
 	)
 }
 
-export const gcpCard = (h: H, model: Model, timeZone: string): Html =>
+export const gcpCard = (h: H, model: Model, timeZone: string, focusId: string | null = null): Html =>
 	AsyncData.match(model.statuses.gcp.data, {
 		onIdle: () => skeleton(h, "h-40 w-full rounded-md"),
 		onLoading: () => skeleton(h, "h-40 w-full rounded-md"),
@@ -164,9 +175,9 @@ export const gcpCard = (h: H, model: Model, timeZone: string): Html =>
 				title: "Failed to load the Google Cloud integration",
 				onRetry: Message.ClickedRetryStatus({ name: "gcp" }),
 			}),
-		onStale: ({ data }) => byStatus(h, model, data, timeZone),
-		onRefreshing: (data) => byStatus(h, model, data, timeZone),
-		onSuccess: (data) => byStatus(h, model, data, timeZone),
+		onStale: ({ data }) => byStatus(h, model, data, timeZone, focusId),
+		onRefreshing: (data) => byStatus(h, model, data, timeZone, focusId),
+		onSuccess: (data) => byStatus(h, model, data, timeZone, focusId),
 	})
 
 /** `GcpHeaderStatus`: the worst connection's state, how many share it, how many projects send data. */

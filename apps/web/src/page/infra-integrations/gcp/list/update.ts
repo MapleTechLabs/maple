@@ -297,7 +297,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				url:
 					pick._tag === "Project"
 						? hrefOfSearch({ ...model.search, project: pick.project, scope: undefined })
-						: hrefOf(AppRoute.Integrations({ search: { integration: "gcp" } })),
+						: hrefOf(AppRoute.SourcesNew({ search: { integration: "gcp" } })),
 				isReplace: false,
 			})
 			return { model: next, commands: step.commands, outMessage }

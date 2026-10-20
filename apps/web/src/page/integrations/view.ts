@@ -31,7 +31,7 @@ type H = HtmlBuilder<Message>
 const selectIntegration = (id: IntegrationId) => Message.ClickedIntegration({ integration: id })
 
 /** The header's Connect button for an OAuth integration (`useIntegrationConnect()`). */
-const connectButton = (h: H, model: Model, integration: IntegrationId): Html | undefined => {
+export const connectButton = (h: H, model: Model, integration: IntegrationId): Html | undefined => {
 	if (!Schema.is(ConnectProvider)(integration)) return undefined
 	const entry = catalogEntry(integration)
 	return button(
@@ -46,7 +46,13 @@ const connectButton = (h: H, model: Model, integration: IntegrationId): Html | u
 }
 
 /** The integration's own card under the header. */
-const cardView = (h: H, model: Model, integration: IntegrationId, timeZone: string): ReadonlyArray<Html> => {
+export const cardView = (
+	h: H,
+	model: Model,
+	integration: IntegrationId,
+	timeZone: string,
+	focusId: string | null = null,
+): ReadonlyArray<Html> => {
 	const connector = chatConnectorOf(integration)
 	if (connector !== null) return [chatCard(h, model, connector, timeZone)]
 	switch (integration) {
@@ -61,10 +67,12 @@ const cardView = (h: H, model: Model, integration: IntegrationId, timeZone: stri
 		case "planetscale":
 			return [planetscaleCard(h, model, timeZone)]
 		case "gcp":
-			return [gcpCard(h, model, timeZone)]
+			return [gcpCard(h, model, timeZone, focusId)]
 		case "prometheus":
 		case "warpstream":
-			return [scrapeIntro(h, integration), ...scrapeTargetsSection(h, model, timeZone)]
+			return focusId === null
+				? [scrapeIntro(h, integration), ...scrapeTargetsSection(h, model, timeZone)]
+				: scrapeTargetsSection(h, model, timeZone, focusId)
 		default:
 			return []
 	}

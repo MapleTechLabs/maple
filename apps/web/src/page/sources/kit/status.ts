@@ -28,6 +28,29 @@ const LABEL = {
 
 export const sourceStatusLabel = (status: SourceStatus): string => LABEL[status]
 
+/** "1 of 3 unhealthy": a source that stands for several zones or repos, while some of them are not healthy. */
+export const rollupLabel = (source: V2Source): string | null => {
+	const resources = source.health.resources
+	return resources === null || resources.unhealthy === 0 || source.health.status === "healthy"
+		? null
+		: `${resources.unhealthy} of ${resources.total} unhealthy`
+}
+
+/** Worst first, the order the list sorts by (`SOURCE_HEALTH_STATUSES`). */
+const STATUS_RANK = {
+	disconnected: 0,
+	failing: 1,
+	stale: 2,
+	paused: 3,
+	pending: 4,
+	healthy: 5,
+} as const satisfies Record<SourceStatus, number>
+
+export const statusRank = (source: V2Source): number => STATUS_RANK[source.health.status]
+
+/** Disconnected, failing or stale: something to fix. Paused and waiting are on purpose or new. */
+export const needsAttention = (source: V2Source): boolean => statusRank(source) <= STATUS_RANK.stale
+
 export type StatusBadgeOptions = Readonly<{
 	nowMs: number
 	/** Appends the relative time of the last data to "Receiving". */
@@ -41,6 +64,7 @@ export const sourceStatusBadge = <M>(h: HtmlBuilder<M>, source: V2Source, option
 		(options.showTime ?? true) && status === "healthy" && lastDataAt !== null
 			? formatRelativeTime(lastDataAt, options.nowMs)
 			: null
+	const rollup = rollupLabel(source)
 	return h.span(
 		[h.Class(cn("inline-flex min-w-0 items-center gap-2 text-sm", options.className))],
 		[
@@ -50,6 +74,7 @@ export const sourceStatusBadge = <M>(h: HtmlBuilder<M>, source: V2Source, option
 				[
 					LABEL[status],
 					...(time === null ? [] : [h.span([h.Class("text-muted-foreground")], [" ", "· ", time])]),
+					...(rollup === null ? [] : [h.span([h.Class("text-muted-foreground")], [" ", "· ", rollup])]),
 				],
 			),
 		],
