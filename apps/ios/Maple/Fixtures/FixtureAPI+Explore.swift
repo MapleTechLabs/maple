@@ -208,14 +208,17 @@ extension FixtureAPI {
 
 	// MARK: Dashboards
 
-	func dashboards(limit: Int, cursor: String?) async throws -> Page<DashboardSummary> {
-		try await pause()
-		let items = [
+	private var dashboardSummaries: [DashboardSummary] {
+		[
 			DashboardSummary(id: "dash_checkout", name: "Checkout health", description: "Golden signals for the purchase path", tags: ["commerce"], widgetCount: 6, updatedAt: stamp(-3_600)),
 			DashboardSummary(id: "dash_edge", name: "Edge traffic", description: nil, tags: ["edge"], widgetCount: 4, updatedAt: stamp(-86_400 * 2)),
 			DashboardSummary(id: "dash_db", name: "Database queries", description: "Slowest statements by service", tags: [], widgetCount: 5, updatedAt: stamp(-86_400 * 9)),
 		]
-		return Page(items: items, hasMore: false, nextCursor: nil)
+	}
+
+	func dashboards(limit: Int, cursor: String?) async throws -> Page<DashboardSummary> {
+		try await pause()
+		return Page(items: dashboardSummaries, hasMore: false, nextCursor: nil)
 	}
 
 	func dashboard(id: String) async throws -> MobileDashboard {
@@ -223,10 +226,12 @@ extension FixtureAPI {
 		var reduce = WidgetTransform()
 		reduce.reduceField = "value"
 		reduce.reduceAggregate = "sum"
+		// Every fixture board shares one widget set but keeps its own title.
+		let summary = dashboardSummaries.first { $0.id == id }
 		return MobileDashboard(
 			id: id,
-			name: "Checkout health",
-			description: "Golden signals for the purchase path",
+			name: summary?.name ?? "Checkout health",
+			description: summary?.description,
 			relativeRange: "24h",
 			widgets: [
 				MobileWidget(id: "w_req", visualization: "stat", title: "Requests", transform: reduce, x: 0, y: 0, w: 6),
