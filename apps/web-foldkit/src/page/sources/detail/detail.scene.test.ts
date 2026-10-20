@@ -7,6 +7,8 @@ import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import { toLoadFailure } from "../../../data/load-failure"
 import { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage } from "../../contract"
+import { ScrapeTargetId } from "@maple/domain/primitives"
+import { Message as IntegrationMessage } from "../../integrations/message"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -193,6 +195,26 @@ describe("integration sources", () => {
 		)
 		expect(step.model.connection?.prometheusCard.selectedId).toBe("0199a0e1-0000-7000-8000-0000000000aa")
 		expect(names(step.commands)).toContain("FetchScrapeTargetChecks")
+	})
+
+	test("deleting the source's own target leaves for the list; another write re-reads it", () => {
+		const uuid = "0199a0e1-0000-7000-8000-0000000000aa"
+		const target = encodePublicId(PublicIdPrefixes.scrapeTarget, uuid)
+		const model = loaded(prometheus({ integration_id: target }), "connection")
+		const deleted = pageUpdate(
+			model,
+			Message.GotConnectionMessage({
+				message: IntegrationMessage.CompletedTargetDelete({ id: Schema.decodeSync(ScrapeTargetId)(uuid), failure: null }),
+			}),
+		)
+		expect(deleted.outMessage?._tag === "RequestedNavigation" && deleted.outMessage.url).toBe("/sources")
+		const toggled = pageUpdate(
+			model,
+			Message.GotConnectionMessage({
+				message: IntegrationMessage.CompletedToggle({ id: Schema.decodeSync(ScrapeTargetId)(uuid), failure: null }),
+			}),
+		)
+		expect(names(toggled.commands)).toContain("FetchSourceDetailList")
 	})
 
 	test("the list answer builds the integration and reads its statuses", () => {

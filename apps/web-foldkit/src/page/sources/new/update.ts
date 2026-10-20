@@ -119,9 +119,11 @@ export const routeChanged = (model: Model, route: NewRoute, context: PageContext
 		{ ...entered.model, list: platform === null ? Keyed.idle() : entered.model.list },
 		platform,
 	)
-	return platform === null || model.created !== null
-		? { ...entered, model: next }
-		: merge(entered, readList(next, context, true))
+	if (model.created !== null) return { ...entered, model: next }
+	// Back to the picker clears the form's list; an integration's step reads it again.
+	if (platform === null)
+		return integration === null ? { ...entered, model: next } : merge(entered, readList(next, context, false))
+	return merge(entered, readList(next, context, true))
 }
 
 /** `FirstDataStatus`'s `latest`: the polled source, else the one the create answered. */

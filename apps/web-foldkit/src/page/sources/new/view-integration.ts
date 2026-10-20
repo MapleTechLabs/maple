@@ -16,8 +16,13 @@ import { integrationMeta } from "./view-picker"
 
 type H = HtmlBuilder<Message>
 
+/** WarpStream clusters are Prometheus targets, so its step is done once a target exists. */
 export const isIntegrationConnected = (model: Model, integration: DataIntegration): boolean =>
-	overviewOf(model.integrations.statuses, model.integrations.nowMs, integration)?.kind === "connected"
+	overviewOf(
+		model.integrations.statuses,
+		model.integrations.nowMs,
+		integration === "warpstream" ? "prometheus" : integration,
+	)?.kind === "connected"
 
 /** The sources an integration feeds: WarpStream targets are Prometheus sources. */
 export const sourcesOfIntegration = (model: Model, integration: DataIntegration): ReadonlyArray<V2Source> => {

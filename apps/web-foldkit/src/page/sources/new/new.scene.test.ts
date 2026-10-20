@@ -209,4 +209,12 @@ describe("connect a source", () => {
 			expectView(role("link", { name: "Open source" })).toExist(),
 		)
 	})
+
+	test("from a push form straight to an integration, the step reads the list again", () => {
+		const form = init(route("nodejs"), context).model
+		const step = routeChanged(form, integrationRoute("cloudflare"), context)
+		expect(step.model.platform).toBeNull()
+		expect(step.model.integration).toBe("cloudflare")
+		expect(names(step.commands)).toContain("FetchSourcesList")
+	})
 })

@@ -238,6 +238,30 @@ const save = (model: Model): Return => {
 	}
 }
 
+/**
+ * A write in the Connection tab changes this source too: deleting its own target leaves for the
+ * list (the source goes with it), any other write re-reads the list so status and name follow.
+ */
+const afterConnectionWrite = (model: Model, child: IntegrationMessage, step: Return, context: PageContext): Return => {
+	const isWrite =
+		child._tag === "CompletedTargetDelete" || child._tag === "CompletedToggle" || child._tag === "CompletedSave"
+	if (!isWrite || child.failure !== null) return step
+	const own = Option.match(sourceOf(model), { onNone: () => null, onSome: scrapeTargetIdOf })
+	if (child._tag === "CompletedTargetDelete" && own !== null && child.id === own) {
+		const toast = step.outMessage?._tag === "RequestedToast" ? step.outMessage : undefined
+		const leave =
+			toast === undefined
+				? PageOutMessage.RequestedNavigation({ url: SOURCES_HREF, isReplace: true })
+				: PageOutMessage.RequestedNavigation({
+						url: SOURCES_HREF,
+						isReplace: true,
+						toast: { type: toast.type, title: toast.title, description: toast.description },
+					})
+		return { ...step, outMessage: leave }
+	}
+	return andThen(step, (next) => loadList(next, context, "Refresh"))
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
@@ -249,7 +273,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotConnectionMessage: ({ message: child }) =>
 			model.connection === null
 				? { model }
-				: liftConnection(model, Integrations.update(model.connection, child, context)),
+				: afterConnectionWrite(model, child, liftConnection(model, Integrations.update(model.connection, child, context)), context),
 		CompletedFetchUsage: ({ key, result }) => ({
 			model: { ...model, usage: Keyed.accept(model.usage, key, result) },
 		}),
