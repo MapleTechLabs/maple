@@ -9,7 +9,7 @@ import {
 	withActiveTab,
 	withSectionCollapsed,
 } from "./section-view-state"
-import type { DashboardSection, DashboardWidget } from "@/components/dashboard-builder/types"
+import type { DashboardSection, SectionMembership } from "@maple/widgets/dashboard"
 
 const section = (
 	id: string,
@@ -22,12 +22,8 @@ const section = (
 	tabs: tabIds.map((tabId) => ({ id: tabId, title: tabId })),
 })
 
-const widget = (id: string, membership?: { sectionId: string; tabId: string }): DashboardWidget => ({
+const widget = (id: string, membership?: { sectionId: string; tabId: string }): { id: string } & SectionMembership => ({
 	id,
-	visualization: "chart",
-	dataSource: { kind: "query", resultShape: "timeseries", queries: [] },
-	display: {},
-	layout: { x: 0, y: 0, w: 4, h: 4 },
 	...(membership ?? {}),
 })
 

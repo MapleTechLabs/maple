@@ -27,6 +27,7 @@ const sourceExample = {
 	platform: "nodejs",
 	is_default: false,
 	key_prefix: "maple_src_Q7xZa",
+	integration_id: null,
 	status: "active",
 	allowed_signals: ["traces", "logs"],
 	rate_limit_rps: 200,
@@ -41,7 +42,7 @@ const sourceExample = {
 	rolled_at: "2026-07-01T12:00:00.000Z",
 	created_at: "2026-07-01T12:00:00.000Z",
 	updated_at: "2026-07-15T09:12:00.000Z",
-	health: { status: "healthy", last_data_at: "2026-07-15T09:14:00.000Z", problem: null },
+	health: { status: "healthy", last_data_at: "2026-07-15T09:14:00.000Z", problem: null, resources: null },
 } as const
 
 const allowedSignalsField = Schema.NullOr(Schema.Array(SourceSignal)).annotate({
@@ -98,6 +99,15 @@ const V2SourceHealth = Schema.Struct({
 	problem: Schema.NullOr(Schema.String).annotate({
 		description: "One line on why the source is not healthy, or `null` when it is.",
 	}),
+	resources: Schema.NullOr(
+		Schema.Struct({
+			total: Schema.Int.annotate({ description: "Resources the source stands for." }),
+			unhealthy: Schema.Int.annotate({ description: "How many of them are not healthy." }),
+		}),
+	).annotate({
+		description:
+			"For a pull source that stands for several resources (a Cloudflare account's zones, a GitHub org's repositories): how many are not healthy, so `failing` can read as 1 of 3. `null` otherwise.",
+	}),
 }).annotate({
 	identifier: "SourceHealth",
 	title: "Source health",
@@ -127,6 +137,10 @@ export const V2Source = Schema.Struct({
 		description:
 			"The non-secret leading portion of the source token, safe to display. The full token is returned only when the source is created or rolled. `null` for the default source and pull sources.",
 		examples: ["maple_src_Q7xZa"],
+	}),
+	integration_id: Schema.NullOr(Schema.String).annotate({
+		description:
+			"For a pull source, the id of the integration record it stands for (a scrape target, a cloud connection or installation). `null` for push sources.",
 	}),
 	status: Schema.Literals(["active", "paused", "expired"]).annotate({
 		description:

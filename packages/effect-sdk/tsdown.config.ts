@@ -7,6 +7,7 @@ export default defineConfig({
 		"server/index": "./src/server/index.ts",
 		"client/index": "./src/client/index.ts",
 		"cloudflare/index": "./src/cloudflare/index.ts",
+		"foldkit/index": "./src/foldkit/index.ts",
 	},
 	format: "esm",
 	// Types are emitted by tsgo in one pass rooted at the tsconfig's directory,

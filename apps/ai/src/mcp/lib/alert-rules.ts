@@ -16,6 +16,7 @@ import {
 } from "@maple/domain/http"
 import { QueryEngineAlertReducer } from "@maple/domain"
 import { rawAlertSampleCountWarning } from "@maple/domain/raw-sql"
+import { alertEvaluationIntervalMinutes } from "@maple/query-engine/datetime"
 import { McpInvalidInputError } from "../tools/types"
 import { doc, type ToolDoc } from "./tool-doc"
 
@@ -151,12 +152,15 @@ export const ruleConfigWarnings = (rule: {
 	return warning === null ? [] : [warning]
 }
 
-const evaluationBlocks = (evaluation: typeof AlertRuleFirstEvaluation.Type | undefined) => {
+const evaluationBlocks = (
+	evaluation: typeof AlertRuleFirstEvaluation.Type | undefined,
+	windowMinutes: number,
+) => {
 	if (evaluation === undefined) return []
 	const when =
 		evaluation.nextEvaluationAt === null
 			? "The rule is disabled, so the scheduler will not evaluate it."
-			: `First scheduled evaluation by ${evaluation.nextEvaluationAt.slice(0, 19)}Z (every minute after), no need to poll list_alert_checks before then.`
+			: `First scheduled evaluation by ${evaluation.nextEvaluationAt.slice(0, 19)}Z (every ${alertEvaluationIntervalMinutes(windowMinutes)}m after), no need to poll list_alert_checks before then.`
 	const now =
 		evaluation.previewError !== undefined
 			? `A preview of the latest window failed: ${evaluation.previewError}. Run preview_alert_rule to see what it observes.`
@@ -212,7 +216,7 @@ export const renderRuleWrite = (
 	title,
 	...(warnings.length > 0 ? { notices: warnings } : undefined),
 	blocks: [
-		...evaluationBlocks(evaluation),
+		...evaluationBlocks(evaluation, rule.windowMinutes),
 		doc.fields([
 			["ID", rule.id],
 			["Name", rule.name],

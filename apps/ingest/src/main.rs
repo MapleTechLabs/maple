@@ -793,6 +793,8 @@ struct IngestKeyResolver {
     routing: Arc<OrgRoutingResolver>,
     /// Source ids whose `last_used_at` was written recently, each held for its write interval.
     recent_key_uses: Cache<String, Duration>,
+    /// Token source ids whose `last_rejected_at` was written within the last minute.
+    recent_key_rejections: Cache<String, ()>,
     /// (org id, claim as received) to whether it names one of the org's pull sources,
     /// for `maple_source_id` values sent with the default keys.
     source_claims: Cache<(String, String), bool>,
@@ -829,6 +831,13 @@ fn source_claims_cache(ttl: Duration) -> Cache<(String, String), bool> {
 fn recent_key_uses_cache() -> Cache<String, Duration> {
     Cache::builder()
         .expire_after(SourceUseExpiry)
+        .max_capacity(50_000)
+        .build()
+}
+
+fn recent_key_rejections_cache() -> Cache<String, ()> {
+    Cache::builder()
+        .time_to_live(SOURCE_USE_WRITE_INTERVAL)
         .max_capacity(50_000)
         .build()
 }
@@ -951,6 +960,14 @@ trait KeyStore: Send + Sync {
 
     /// Stamps `last_used_at` on a source whose data the gateway just accepted.
     async fn record_source_used(&self, key_id: &str, now_ms: i64) -> Result<(), String>;
+
+    /// Stamps `last_rejected_at` and the reason on a token source whose request was refused.
+    async fn record_source_rejected(
+        &self,
+        key_id: &str,
+        now_ms: i64,
+        reason: &str,
+    ) -> Result<(), String>;
 
     /// The source created for one integration; `None` until the API creates it.
     async fn fetch_integration_source_id(
@@ -2773,6 +2790,7 @@ async fn main() {
             negative_cache: ingest_key_negative_cache,
             routing: Arc::clone(&org_routing_resolver),
             recent_key_uses: recent_key_uses_cache(),
+            recent_key_rejections: recent_key_rejections_cache(),
             source_claims: source_claims_cache(Duration::from_secs(
                 config.ingest_key_cache_ttl_secs,
             )),
@@ -3682,6 +3700,13 @@ async fn authorize_source(
             signal = names.as_str(),
             "Source denied for signal"
         );
+        // A paused source drops what it is sent; a refusal now would surface only after resume.
+        if !source.is_paused(now_ms) {
+            state.resolver.note_source_rejection(
+                resolved_key,
+                format!("Sent {names}, which this source does not allow"),
+            );
+        }
         return Err(ApiError::tagged(
             StatusCode::FORBIDDEN,
             &INGEST_SIGNAL_NOT_ALLOWED,
@@ -3702,6 +3727,10 @@ async fn authorize_source(
                 key_id = %source.public_id,
                 rate_limit_rps = rps,
                 "Source rate limit exceeded"
+            );
+            state.resolver.note_source_rejection(
+                resolved_key,
+                format!("Rate limited at {rps} requests per second"),
             );
             return Err(ApiError::tagged(
                 StatusCode::TOO_MANY_REQUESTS,
@@ -6823,6 +6852,36 @@ impl IngestKeyResolver {
         );
     }
 
+    /// Stamps why a token source's request was refused, at most once a minute per source and
+    /// off the request path, so its health turns Failing until data is accepted again.
+    fn note_source_rejection(&self, resolved: &ResolvedIngestKey, reason: String) {
+        let Some(source) = &resolved.source else {
+            return;
+        };
+        if self.recent_key_rejections.contains_key(&source.id) {
+            return;
+        }
+        let store = Arc::clone(&self.store);
+        let recent = self.recent_key_rejections.clone();
+        let key_id = source.id.clone();
+        let span = tracing::info_span!(parent: None, "record_source_rejection");
+        span.follows_from(Span::current().id());
+        tokio::spawn(
+            async move {
+                if !recent.entry(key_id.clone()).or_insert(()).await.is_fresh() {
+                    return;
+                }
+                if let Err(error) = store
+                    .record_source_rejected(&key_id, current_time_millis(), &reason)
+                    .await
+                {
+                    debug!(key_id, error, "Failed to record source rejection");
+                }
+            }
+            .instrument(span),
+        );
+    }
+
     #[hotpath::measure]
     async fn resolve_ingest_key(&self, raw_key: &str) -> Result<Option<ResolvedIngestKey>, String> {
         // Recorded on `ingest.authenticate` when this runs under the HTTP path;
@@ -7928,6 +7987,31 @@ impl KeyStore for PostgresKeyStore {
             .map_err(|error| format!("postgres record_source_used failed: {error}"))
     }
 
+    async fn record_source_rejected(
+        &self,
+        key_id: &str,
+        now_ms: i64,
+        reason: &str,
+    ) -> Result<(), String> {
+        let client = self.client().await?;
+        client
+            .execute(
+                "UPDATE sources \
+                 SET last_rejected_at = to_timestamp($1::bigint / 1000.0), last_rejection = $2 \
+                 WHERE id = $3",
+                &[&now_ms, &reason, &key_id],
+            )
+            .instrument(postgres_client_span(
+                "record_source_rejected",
+                "UPDATE",
+                "sources",
+                &self.target,
+            ))
+            .await
+            .map(|_| ())
+            .map_err(|error| format!("postgres record_source_rejected failed: {error}"))
+    }
+
     async fn fetch_integration_source_id(
         &self,
         org_id: &str,
@@ -8151,6 +8235,15 @@ impl KeyStore for StaticKeyStore {
     }
 
     async fn record_source_used(&self, _key_id: &str, _now_ms: i64) -> Result<(), String> {
+        Ok(())
+    }
+
+    async fn record_source_rejected(
+        &self,
+        _key_id: &str,
+        _now_ms: i64,
+        _reason: &str,
+    ) -> Result<(), String> {
         Ok(())
     }
 
@@ -9343,6 +9436,8 @@ mod tests {
         sources: std::sync::Mutex<std::collections::HashMap<String, SourceRow>>,
         /// Key id of every `record_source_used` call.
         source_uses: std::sync::Mutex<Vec<String>>,
+        /// (key id, reason) of every `record_source_rejected` call.
+        source_rejections: std::sync::Mutex<Vec<(String, String)>>,
         /// `sources` rows that are not token sources: (org id, id, is_default, integration).
         source_rows: std::sync::Mutex<Vec<(String, String, bool, Option<(&'static str, String)>)>>,
         source_row_fetches: AtomicU64,
@@ -9468,6 +9563,18 @@ mod tests {
         }
         async fn record_source_used(&self, key_id: &str, _now_ms: i64) -> Result<(), String> {
             self.source_uses.lock().unwrap().push(key_id.to_owned());
+            Ok(())
+        }
+        async fn record_source_rejected(
+            &self,
+            key_id: &str,
+            _now_ms: i64,
+            reason: &str,
+        ) -> Result<(), String> {
+            self.source_rejections
+                .lock()
+                .unwrap()
+                .push((key_id.to_owned(), reason.to_owned()));
             Ok(())
         }
         async fn fetch_integration_source_id(
@@ -9644,6 +9751,7 @@ mod tests {
                 .build(),
             routing,
             recent_key_uses: recent_key_uses_cache(),
+            recent_key_rejections: recent_key_rejections_cache(),
             source_claims: source_claims_cache(Duration::from_mins(1)),
         }
     }
@@ -9887,6 +9995,7 @@ mod tests {
                     .build(),
                 routing: Arc::clone(&routing),
                 recent_key_uses: recent_key_uses_cache(),
+                recent_key_rejections: recent_key_rejections_cache(),
                 source_claims: source_claims_cache(Duration::from_mins(1)),
             },
             org_inflight_limiter: OrgInFlightLimiter::new(100),
@@ -13030,6 +13139,7 @@ mod tests {
                 last_known: DashMap::new(),
             }),
             recent_key_uses: recent_key_uses_cache(),
+            recent_key_rejections: recent_key_rejections_cache(),
             source_claims: source_claims_cache(Duration::from_mins(1)),
         };
         let resolved = resolver
@@ -13083,6 +13193,12 @@ mod tests {
     async fn recorded_key_uses(store: &FakeKeyStore) -> Vec<String> {
         tokio::time::sleep(Duration::from_millis(100)).await;
         store.source_uses.lock().unwrap().clone()
+    }
+
+    /// Waits for the spawned `last_rejected_at` writes to settle, then reads them.
+    async fn recorded_rejections(store: &FakeKeyStore) -> Vec<(String, String)> {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        store.source_rejections.lock().unwrap().clone()
     }
 
     #[tokio::test]
@@ -13177,6 +13293,14 @@ mod tests {
             "This ingest key is not allowed to send traces"
         );
         assert_eq!(error_kind, "forbidden");
+        // The refusal is stamped on the source, so its health turns Failing.
+        assert_eq!(
+            recorded_rejections(&store).await,
+            vec![(
+                SOURCE_UUID.to_owned(),
+                "Sent traces, which this source does not allow".to_owned()
+            )]
+        );
         let error = rejected(
             resolve_replay_key(&state, &bearer_headers(raw_key), &[SourceSignal::Events]).await,
             "product events are not allowed",
@@ -13212,6 +13336,8 @@ mod tests {
             "gRPC shares the key's bucket",
         );
         assert_eq!(status.code(), tonic::Code::ResourceExhausted);
+        // Later refusals inside the minute are not written again.
+        assert_eq!(recorded_rejections(&store).await.len(), 1);
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }

@@ -7,7 +7,7 @@ import type { V2GcpConnector } from "@maple/domain/http/v2"
 import { ERROR_RATE_WARN } from "@maple/ui/lib/error-rate"
 import type { Tone } from "@maple/ui/lib/tone"
 
-import { GCP_METRICS_STATUS, gcpMetricsState } from "@/components/integrations/gcp-connector-state"
+import { GCP_METRICS_STATUS, gcpMetricsState } from "../../integrations/gcp-connector-state"
 import type { GcpCloudSqlInstance } from "./inventory"
 import {
 	GCP_MIN_EVENTS,

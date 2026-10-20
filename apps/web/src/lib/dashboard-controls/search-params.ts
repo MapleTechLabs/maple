@@ -1,4 +1,3 @@
-import { Schema } from "effect"
 import { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
 
 // Cross-widget dashboard controls live in the URL so a view is shareable and
@@ -17,49 +16,6 @@ import { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
 export const VARIABLE_PARAM_PREFIX = "var-"
 
 export type VariableSearchParams = Record<`${typeof VARIABLE_PARAM_PREFIX}${string}`, unknown>
-
-/**
- * Schema fragment that retains `var-*` keys on a route's search. Values are
- * `Unknown` on purpose: TanStack JSON-parses each search value, and a
- * hand-edited URL must never crash the route — non-strings are coerced or
- * ignored when read.
- */
-export const variableSearchRest = Schema.Record(
-	Schema.TemplateLiteral([VARIABLE_PARAM_PREFIX, Schema.String]),
-	Schema.Unknown,
-)
-
-/**
- * Per-viewer view state. `Schema.optional` rather than `optionalKey` because
- * these are search params, where `undefined` is a real JS value.
- *
- * All of them are flat scalars rather than JSON blobs: these end up in URLs
- * people paste to each other, and a hand-editable `?tab=overview:latency` is
- * both readable and impossible to fail parsing.
- */
-export const dashboardViewParamsSchema = {
-	/** Free-text dashboard filter clause, in the `@maple/domain` where-clause grammar. */
-	filter: Schema.optional(Schema.String),
-	/** Comma-joined section ids forced collapsed, overriding each section's stored default. */
-	collapsed: Schema.optional(Schema.String),
-	/** Comma-joined section ids forced expanded. Wins over `collapsed`. */
-	expanded: Schema.optional(Schema.String),
-	/** Comma-joined `sectionId:tabId` pairs. An absent section falls back to its first tab. */
-	tab: Schema.optional(Schema.String),
-	/** Widget deep link: expand the owning section, switch to its tab, scroll to it, flash it. */
-	widget: Schema.optional(Schema.String),
-	/**
-	 * Auto-refresh cadence in seconds, overriding the dashboard's saved default
-	 * for this viewer only. `0` is a real value meaning "explicitly off", so a
-	 * viewer can silence a board that auto-refreshes for everyone else.
-	 *
-	 * The only numeric control param: written as a number so the URL reads
-	 * `?refresh=30` rather than the `?refresh="30"` TanStack emits to preserve
-	 * string-ness. The string arm keeps a hand-edited quoted form working, and
-	 * anything unparseable falls back rather than failing the route.
-	 */
-	refresh: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
-}
 
 export interface DashboardViewParams {
 	filter?: string

@@ -1,5 +1,5 @@
 // A Google Cloud workload's detail page: its signal strips on one time axis, the figures beside
-// them and in the rail, and when the trace-gap callout shows. Pure (no React, no atoms).
+// them and in the rail, and when the trace-gap callout shows. Pure.
 
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import type { ServiceOverview } from "@maple/query-engine"
@@ -14,7 +14,7 @@ import {
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { utilizationLevel, type UtilizationLevel } from "@maple/ui/lib/utilization"
 
-import { formatValueWithUnit, type ChartUnit } from "../chart-utils"
+import { formatValueWithUnit, type ChartUnit } from "../chart-units"
 import {
 	GCP_INFRA_CHARTS,
 	gcpBuckets,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { ServiceEndpoint } from "@/api/warehouse/service-endpoints"
+import type { ServiceEndpoint } from "@maple/web-data/warehouse/service-endpoints"
 import { groupEndpoints, leafLabel, looksLikeProbe, looksUnrouted } from "./endpoint-grouping"
 
 const endpoint = (method: string, route: string, calls = 100, errors = 0): ServiceEndpoint => ({

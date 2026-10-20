@@ -4,7 +4,7 @@
  * variable between arms is the charting library.
  *
  * Shaped like `ServiceDetailTimeSeriesPoint` as consumed by the three `/`
- * overview charts (see `apps/web/src/routes/index.tsx`).
+ * overview charts.
  */
 
 export interface OverviewBenchRow extends Record<string, unknown> {

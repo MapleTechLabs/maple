@@ -1,6 +1,14 @@
 import type * as React from "react"
 import { formatPercent } from "../../lib/format"
 import { cn } from "../../lib/utils"
+import {
+	deltaBadStyles,
+	deltaEmptyStyles,
+	deltaGoodStyles,
+	deltaMutedStyles,
+	deltaStyles,
+	deltaSuffixStyles,
+} from "./delta.styles"
 
 /** Relative change from `previous` to `current`, or null when there is no baseline. */
 export function relativeChange(current: number, previous: number): number | null {
@@ -47,7 +55,7 @@ export function Delta({
 				: null
 
 	if (change === null || !Number.isFinite(change)) {
-		return <span className={cn("tabular-nums text-muted-foreground/60", className)}>–</span>
+		return <span className={cn(deltaEmptyStyles, className)}>–</span>
 	}
 
 	const flat = Math.abs(change) < flatThreshold
@@ -58,12 +66,8 @@ export function Delta({
 	return (
 		<span
 			className={cn(
-				"inline-flex items-center gap-1 tabular-nums",
-				flat || (!good && muteWorse)
-					? "text-muted-foreground/70"
-					: good
-						? "text-severity-info"
-						: "text-severity-error",
+				deltaStyles,
+				flat || (!good && muteWorse) ? deltaMutedStyles : good ? deltaGoodStyles : deltaBadStyles,
 				className,
 			)}
 			title={`${flat ? "Flat" : rose ? "Up" : "Down"} ${magnitude} vs the previous period`}
@@ -71,7 +75,7 @@ export function Delta({
 		>
 			<span aria-hidden>{flat ? "→" : rose ? "↑" : "↓"}</span>
 			{magnitude}
-			{suffix ? <span className="text-muted-foreground/50">{suffix}</span> : null}
+			{suffix ? <span className={deltaSuffixStyles}>{suffix}</span> : null}
 		</span>
 	)
 }

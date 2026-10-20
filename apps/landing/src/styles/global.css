@@ -695,7 +695,7 @@
    dot + label + req/s · err% · avg metrics, smoothstep edges rendered
    as multi-layer SVG (glow / tube / core / flowing dashes), dot-grid
    background. The flow keyframe is the same 1.5s linear cadence as
-   the product (apps/web/src/styles.css).
+   the product (apps/web/src/theme.css).
    ────────────────────────────────────────────────────────────── */
 @keyframes service-map-flow {
 	to {

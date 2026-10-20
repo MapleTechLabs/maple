@@ -77,13 +77,3 @@ export interface ReplayEngine {
 export interface ReplayEngineFactory {
 	create(input: ReplayEngineCreateInput): ReplayEngine
 }
-
-/**
- * Which engine plays a session's chunks.
- *
- * Carried by the `maple.session.replay_format` resource attribute so the player
- * can pick an engine from session metadata alone, without downloading a chunk
- * to find out. An absent attribute means `rrweb` — every session recorded
- * before the marker existed is a browser recording.
- */
-export type ReplayFormat = "rrweb" | "video"

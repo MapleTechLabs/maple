@@ -70,6 +70,7 @@ const toSourceHealth = (health: SourceHealthResult) =>
 		status: health.status,
 		lastDataAt: isoOrNull(health.lastDataAt),
 		problem: health.problem,
+		resources: health.resources ?? null,
 	})
 
 // Pull sources pass the integration's health; everything else reads the gateway's last_used_at.
@@ -82,6 +83,7 @@ const rowToSource = (row: SourceRow, now: number, pullHealth?: SourceHealthResul
 		platform: row.platform,
 		isDefault: row.isDefault,
 		keyPrefix: row.keyPrefix,
+		integrationId: row.integrationId,
 		status,
 		allowedSignals: row.allowedSignals,
 		rateLimitRps: row.rateLimitRps,
@@ -94,7 +96,7 @@ const rowToSource = (row: SourceRow, now: number, pullHealth?: SourceHealthResul
 		rolledAt: isoOrNull(row.rolledAt),
 		createdAt: toIso(row.createdAt),
 		updatedAt: toIso(row.updatedAt),
-		health: toSourceHealth(pullHealth ?? pushSourceHealth({ status, lastUsedAt: row.lastUsedAt }, now)),
+		health: toSourceHealth(pullHealth ?? pushSourceHealth({ ...row, status }, now)),
 	})
 }
 
@@ -121,6 +123,10 @@ const normalizeSignals = Effect.fnUntraced(function* (signals: ReadonlyArray<Sou
 	if (unique.length === 0) return yield* invalid("Allow at least one signal, or null for every signal")
 	return unique
 })
+
+/** The same signal set, in any order; `null` (every signal) only equals `null`. */
+const sameSignals = (a: ReadonlyArray<SourceSignal> | null, b: ReadonlyArray<SourceSignal> | null): boolean =>
+	a === null || b === null ? a === b : a.length === b.length && a.every((signal) => b.includes(signal))
 
 const normalizeRateLimit = Effect.fnUntraced(function* (rps: number | null) {
 	if (rps === null) return null
@@ -442,6 +448,14 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 				return yield* tokenSourceOnly(existing, "take ingest rules")
 			}
 			const now = yield* Clock.currentTimeMillis
+			const allowedSignals =
+				request.allowedSignals === undefined ? undefined : yield* normalizeSignals(request.allowedSignals)
+			const rateLimitRps =
+				request.rateLimitRps === undefined ? undefined : yield* normalizeRateLimit(request.rateLimitRps)
+			// Only a real change of signals or rate limit can lift a refusal.
+			const clearsRejection =
+				(allowedSignals !== undefined && !sameSignals(allowedSignals, existing.allowedSignals)) ||
+				(rateLimitRps !== undefined && rateLimitRps !== existing.rateLimitRps)
 			const row = yield* updateRow(orgId, sourceId, {
 				updatedAt: now,
 				updatedBy: userId,
@@ -450,14 +464,8 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 					request.description === undefined
 						? undefined
 						: yield* normalizeDescription(request.description),
-				allowedSignals:
-					request.allowedSignals === undefined
-						? undefined
-						: yield* normalizeSignals(request.allowedSignals),
-				rateLimitRps:
-					request.rateLimitRps === undefined
-						? undefined
-						: yield* normalizeRateLimit(request.rateLimitRps),
+				allowedSignals,
+				rateLimitRps,
 				resourceAttributes:
 					request.resourceAttributes === undefined
 						? undefined
@@ -466,6 +474,8 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 					request.expiresAtMs === undefined
 						? undefined
 						: yield* normalizeExpiry(request.expiresAtMs, now, existing.expiresAt),
+				lastRejectedAt: clearsRejection ? null : undefined,
+				lastRejection: clearsRejection ? null : undefined,
 			})
 			// Integration sources take their health from the integration, as `get` reads it.
 			return row.integrationId === null ? rowToSource(row, now) : yield* get(orgId, sourceId)
@@ -526,6 +536,9 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 				rolledAt: now,
 				updatedAt: now,
 				updatedBy: userId,
+				// The old token's refusals say nothing about the new one.
+				lastRejectedAt: null,
+				lastRejection: null,
 			})
 			return new SourceWithSecret({ source: rowToSource(row, now), secret })
 		})

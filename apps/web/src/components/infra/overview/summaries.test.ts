@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest"
 
-import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
-import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
-import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
+import type { CloudflareZoneRow } from "@maple/web-data/warehouse/cloudflare-infra"
+import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
+import type { PlanetScaleDatabaseStat } from "@maple/web-data/warehouse/service-map"
 import type { VercelInfraProject } from "@maple/domain/http"
 
 import { gcpFleet } from "../gcp/tabs"
-import type { HostRow } from "../host-table"
+import type { ListHostsResponse } from "@maple/domain/http"
 import {
 	summarizeCloudflare,
 	summarizeGcp,
@@ -16,6 +16,8 @@ import {
 	summarizeRailway,
 	summarizeVercel,
 } from "./summaries"
+
+type HostRow = ListHostsResponse["data"][number]
 
 const END = "2026-10-04T12:00:00Z"
 

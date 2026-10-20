@@ -1,4 +1,4 @@
-import { toIsoBucket } from "@/api/warehouse/timeseries-utils"
+import { toIsoBucket } from "@maple/web-data/warehouse/timeseries-utils"
 
 /**
  * One x axis for series that came from different endpoints.

@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { gcpSetupPlan } from "@maple/domain/gcp"
 import { V2GcpConnector } from "@maple/domain/http/v2"
 
-import { GCP_SETUP_FIXTURES } from "@/lab/gcp-setup-fixtures"
+import { GCP_SETUP_FIXTURES } from "../../lab/gcp-setup-fixtures"
 
 import { gcpAgentPrompt, gcpManualSteps, gcpRemovalList } from "./gcp-setup-steps"
 

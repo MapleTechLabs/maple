@@ -19,6 +19,19 @@ describe("pushSourceHealth", () => {
 	] as const)("%s with last data %s is %s", (status, lastUsedAt, expected) => {
 		expect(pushSourceHealth({ status, lastUsedAt }, now).status).toBe(expected)
 	})
+
+	it("fails while a refusal is under 15 minutes old, even with data still accepted", () => {
+		const refused = { status: "active" as const, lastUsedAt: now - 60_000, lastRejection: "Rate limited" }
+		expect(pushSourceHealth({ ...refused, lastRejectedAt: now - 5 * 60_000 }, now)).toEqual({
+			status: "failing",
+			lastDataAt: now - 60_000,
+			problem: "Rate limited",
+		})
+		expect(pushSourceHealth({ ...refused, lastRejectedAt: now - 20 * 60_000 }, now).status).toBe("healthy")
+		expect(pushSourceHealth({ ...refused, status: "paused", lastRejectedAt: now - 60_000 }, now).status).toBe(
+			"paused",
+		)
+	})
 })
 
 describe("integrationSourceHealth", () => {
@@ -49,7 +62,12 @@ describe("integrationSourceHealth", () => {
 				},
 			],
 		})
-		expect(health).toEqual({ status: "stale", lastDataAt: now - HOUR, problem: "1 of 2 stale" })
+		expect(health).toEqual({
+			status: "stale",
+			lastDataAt: now - HOUR,
+			problem: "1 of 2 stale",
+			resources: { total: 2, unhealthy: 1 },
+		})
 	})
 
 	it("is disconnected once the integration is gone", () => {
@@ -129,6 +147,7 @@ describe("githubInstallationHealth", () => {
 			status: "healthy",
 			lastDataAt: now - HOUR,
 			problem: null,
+			resources: { total: 2, unhealthy: 0 },
 		})
 		expect(githubInstallationHealth(entry, "globex")).toEqual({
 			status: "failing",

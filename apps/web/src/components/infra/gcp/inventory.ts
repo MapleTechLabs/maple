@@ -1,6 +1,6 @@
 // How a workload of the metric tables and a resource of the inventory find each other, and where
 // a workload links to. A match is by identity only: asset type, project, name and, where the
-// workload has one, location. Pure (no React, no atoms).
+// workload has one, location. Pure.
 
 import {
 	GCP_INFRA_SERVICES,
@@ -12,8 +12,8 @@ import {
 } from "@maple/domain/gcp-infra"
 import type { GcpCloudSqlSettings, GcpResource } from "@maple/domain/http"
 
-import { appendWhereFilter } from "@/components/metrics/metric-breakdown"
-import { encodeLogAttributeFilter } from "@/lib/logs/log-attribute-filters"
+import { appendWhereFilter } from "../../metrics/where-filter"
+import { encodeLogAttributeFilter } from "../../../lib/logs/log-attribute-filters"
 
 import { gcpWorkloadLocation, gcpWorkloadProject } from "./tabs"
 

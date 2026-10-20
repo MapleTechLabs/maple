@@ -129,7 +129,11 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 								? "No integration is connected to this organization."
 								: `${filter} is not connected to this organization.`,
 						hints: [
-							"Connect one in Settings → Integrations. Each feeds:",
+							filter === undefined
+								? "Connect data integrations in Sources, chat and alert connectors in Settings → Integrations. Each feeds:"
+								: filter === "chat"
+									? "Connect it in Settings → Integrations. Each feeds:"
+									: "Connect it in Sources. Each feeds:",
 							...available.map((a) => `${a.provider}: ${a.feeds.join("; ")}`),
 						],
 					},

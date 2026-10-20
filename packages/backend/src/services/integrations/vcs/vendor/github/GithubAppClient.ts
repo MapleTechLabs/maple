@@ -6,6 +6,8 @@ import type { HttpClientResponse } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { githubWebBaseUrl } from "./github-hosts"
 import { timestampMs } from "@maple/backend/platform/time"
+import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
+import { type InstallationToken, SharedInstallationTokens } from "../../installation-tokens"
 
 // GitHub App REST client. Vendor-specific: mints a short-lived App JWT (RS256,
 // Web Crypto), exchanges it for per-installation tokens, and calls the GitHub
@@ -114,6 +116,9 @@ const MAX_INLINE_RATE_LIMIT_RETRIES = 5
 // Retire a cached token this early so it never expires mid-request. Tokens last
 // ~1h, so the extra minute just costs an occasional re-mint.
 const INSTALLATION_TOKEN_EXPIRY_SKEW_MS = 60_000
+// A cached token that lacks `actions: read` is re-minted once it is this old, so a permission
+// accepted since the mint applies within minutes, not when the token expires.
+const PERMISSION_DENIAL_RECHECK_MS = 5 * 60_000
 
 // A GitHub rate-limit response is a 429, or a 403 that carries `retry-after` /
 // reports zero remaining (the secondary-limit shape). Plain 403s (permissions)
@@ -152,12 +157,6 @@ const GithubInstallationTokenResponse = Schema.Struct({
 	// accepted is absent, so its calls would 403.
 	permissions: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 })
-
-interface InstallationToken {
-	readonly token: string
-	readonly expiresAtMs: number
-	readonly permissions: Readonly<Record<string, string>> | undefined
-}
 
 // `GET /app/installations/{id}` (App-JWT auth): the installed account + which
 // repositories the installation can see. Used by the dashboard connect flow to
@@ -584,6 +583,17 @@ const pemToPkcs8 = (pem: string): ArrayBuffer => {
 	return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
 }
 
+/** GitHub answers 401 to a revoked or expired token; some endpoints answer 403 "Bad credentials". */
+const rejectsCredentials = (response: HttpClientResponse.HttpClientResponse) =>
+	response.status === 401
+		? Effect.succeed(true)
+		: response.status === 403
+			? response.text.pipe(
+					Effect.map((body) => body.includes("Bad credentials")),
+					Effect.orElseSucceed(() => false),
+				)
+			: Effect.succeed(false)
+
 interface GithubRequestInit {
 	readonly method?: "GET" | "POST" | "PATCH" | "DELETE"
 	readonly headers: Readonly<Record<string, string>>
@@ -603,9 +613,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			const env = yield* Env
 			const httpClient = yield* HttpClient.HttpClient
 
-			// Reuse one token per installation instead of minting a fresh one per repo.
-			// Tokens last ~1h; cache is per-isolate (externalInstallationId → token + expiry).
-			const installationTokens = new Map<string, InstallationToken>()
+			// Reuse one token per installation instead of minting a fresh one per repo. Tokens last
+			// ~1h. A Worker provides one store for the isolate so the cache outlives one event.
+			const installationTokens =
+				(yield* SharedInstallationTokens) ?? (yield* makeExpiringStore<InstallationToken>())
 
 			// Every GitHub REST call goes through here so the dependency is a real
 			// Client-kind span: `peer.service` is what draws the GitHub node/edge on
@@ -642,6 +653,13 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					Effect.mapError((cause) => new GithubAppError({ message: errorMessage, cause })),
 				)
 				yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+				// A cached installation token GitHub rejects is evicted, so the next call re-mints and
+				// sees the installation-gone answer the mint gives. The body read is memoized.
+				const sent = init?.headers["authorization"]
+				if (sent?.startsWith("token ") === true && (yield* rejectsCredentials(response))) {
+					yield* installationTokens.removeWhere(({ token }) => sent === `token ${token}`)
+					yield* Effect.annotateCurrentSpan({ "vcs.provider.token_evicted": true })
+				}
 				return response
 			})
 
@@ -773,11 +791,13 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				externalInstallationId: string,
 			) {
 				// Return a cached token if it's still good, so we don't re-mint per repo.
-				const now = yield* Clock.currentTimeMillis
-				const cached = installationTokens.get(externalInstallationId)
-				if (cached !== undefined && cached.expiresAtMs - INSTALLATION_TOKEN_EXPIRY_SKEW_MS > now) {
+				const cached = yield* installationTokens.get(
+					externalInstallationId,
+					INSTALLATION_TOKEN_EXPIRY_SKEW_MS,
+				)
+				if (Option.isSome(cached)) {
 					yield* Effect.annotateCurrentSpan({ "vcs.provider.token_cache": "hit" })
-					return cached
+					return cached.value
 				}
 				yield* Effect.annotateCurrentSpan({ "vcs.provider.token_cache": "miss" })
 
@@ -815,10 +835,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				const minted: InstallationToken = {
 					token: decoded.token,
 					expiresAtMs: timestampMs(decoded.expires_at),
+					mintedAtMs: yield* Clock.currentTimeMillis,
 					permissions: decoded.permissions,
 				}
 				if (Number.isFinite(minted.expiresAtMs)) {
-					installationTokens.set(externalInstallationId, minted)
+					yield* installationTokens.set(externalInstallationId, minted, minted.expiresAtMs)
 				}
 				return minted
 			})
@@ -828,15 +849,19 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			// Job logs need `actions: read`. An installation that has not accepted it gets a 403 on
 			// every log download, so callers skip the download. No permissions listed: assume granted.
-			const canReadActions = (externalInstallationId: string) =>
-				installationToken(externalInstallationId).pipe(
-					Effect.map(
-						({ permissions }) =>
-							permissions === undefined ||
-							permissions["actions"] === "read" ||
-							permissions["actions"] === "write",
-					),
-				)
+			const grantsActions = ({ permissions }: InstallationToken) =>
+				permissions === undefined ||
+				permissions["actions"] === "read" ||
+				permissions["actions"] === "write"
+			const canReadActions = Effect.fnUntraced(function* (externalInstallationId: string) {
+				const token = yield* installationToken(externalInstallationId)
+				const now = yield* Clock.currentTimeMillis
+				if (grantsActions(token) || now - token.mintedAtMs < PERMISSION_DENIAL_RECHECK_MS) {
+					return grantsActions(token)
+				}
+				yield* installationTokens.remove(externalInstallationId)
+				return grantsActions(yield* installationToken(externalInstallationId))
+			})
 
 			const authedGet = (_config: ResolvedAppConfig, token: string, url: string) =>
 				rateLimitedFetch(

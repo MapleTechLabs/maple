@@ -7,6 +7,11 @@ import type { CSSProperties, ReactNode } from "react"
 import { Skeleton } from "./skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./table"
 import { cn } from "../../lib/utils"
+import {
+	tableSkeletonBarStyles,
+	tableSkeletonDefaultBarStyles,
+	tableSkeletonStyles,
+} from "./table-skeleton.styles"
 
 export interface TableSkeletonColumn {
 	header?: ReactNode
@@ -36,8 +41,6 @@ export interface TableSkeletonProps {
 	rowClassName?: string
 }
 
-const DEFAULT_SKELETON = "w-24"
-
 export function TableSkeleton({
 	columns,
 	rows = 8,
@@ -50,7 +53,7 @@ export function TableSkeleton({
 		typeof columns === "number" ? Array.from({ length: columns }, () => ({})) : columns
 
 	return (
-		<div className={cn("rounded-md border overflow-auto", className)}>
+		<div className={cn(tableSkeletonStyles, className)}>
 			<Table className={tableClassName}>
 				{showHeader && (
 					<TableHeader>
@@ -78,7 +81,10 @@ export function TableSkeleton({
 								<TableCell key={colIndex} className={column.cellClassName}>
 									{column.skeleton !== null && (
 										<Skeleton
-											className={cn("h-4", column.skeleton ?? DEFAULT_SKELETON)}
+											className={cn(
+												tableSkeletonBarStyles,
+												column.skeleton ?? tableSkeletonDefaultBarStyles,
+											)}
 										/>
 									)}
 								</TableCell>

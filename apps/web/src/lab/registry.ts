@@ -3,30 +3,22 @@
  *
  * Two families live here: **labs** are visual galleries that render a component
  * family over fixture data (widgets, provenance nodes, trace views), **benches**
- * are the synthetic perf harnesses the Playwright gates in `perf/` drive. All of
- * them are 404 in production builds — the `/lab` layout route throws `notFound()`
- * outside `import.meta.env.DEV` — and everything under `src/lab/` is forbidden
- * from the startup bundle by `perf/check-bundle-budget.ts`.
+ * are synthetic perf harnesses. Each has a lazy module in `entries/`, so none of
+ * them reaches the startup bundle.
  *
- * `registry.test.ts` asserts this list and the route tree agree, so adding a
- * file under `src/routes/lab/` without an entry here fails the test rather than
- * silently missing from the `/lab` index page.
- *
- * Deliberately dependency-free at runtime: `src/lib/public-routes.ts` imports it
- * and `main.tsx` needs that before the router exists. The route-tree import is
- * type-only so a typo in `path` is a typecheck error, not a dead link.
+ * `registry.test.ts` asserts this list and `entries/` agree, so adding an entry
+ * module without a line here fails the test rather than silently missing from
+ * the `/lab` index page.
  */
-import type { FileRoutesByTo } from "@/routeTree.gen"
-
 export const LAB_ROOT = "/lab"
 
-export type LabPath = Extract<keyof FileRoutesByTo, `${typeof LAB_ROOT}/${string}`>
+export type LabPath = `${typeof LAB_ROOT}/${string}`
 
 export interface LabEntry {
 	path: LabPath
 	title: string
 	description: string
-	/** Gallery of a component family (`lab`) or a Playwright perf harness (`bench`). */
+	/** Gallery of a component family (`lab`) or a perf harness (`bench`). */
 	kind: "lab" | "bench"
 	/**
 	 * `none`: renders from fixtures with no API and no session, so the auth gate
@@ -255,6 +247,54 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Time range picker",
 		description:
 			"The header time range picker over local state, with the timezone selector and a strip of timestamps that re-render in the chosen zone.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/buttons",
+		title: "Kit: buttons",
+		description:
+			"Every @maple/ui button variant and size, icon buttons, toggles, toggle groups, copy and refresh buttons, filter chips, badges, status dots, kbd and inline code.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/forms",
+		title: "Kit: forms",
+		description:
+			"Inputs in every size and state, textarea, input group, field with description and error, checkbox, radio, switch, native select, closed pickers and the OTP field.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/overlays",
+		title: "Kit: overlays",
+		description:
+			"One @maple/ui overlay rendered open per ?item= (dialog, sheet, menus, popovers, pickers, command palette, each toast type).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/display",
+		title: "Kit: display",
+		description:
+			"Cards, panels, alerts, empty states, items, list rows, key values, meters, stat figures, skeletons, tables, tabs and separators.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/content",
+		title: "Kit: content",
+		description:
+			"Page header, eyebrow, breadcrumb, avatar, spinner, marker, message, bubble, trace, truncation, setting rows, scroll area and calendar.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/navigation",
+		title: "Kit: navigation",
+		description:
+			"The sidebar expanded and collapsed with groups, badges and sub menus, resizable panels and the navigation menu.",
 		kind: "lab",
 		session: "none",
 	},

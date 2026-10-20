@@ -5,22 +5,6 @@
 // answers that per panel via `ignoredFilters`; this module holds the labels and
 // the URL <-> request plumbing both pages share.
 
-import { Schema } from "effect"
-import { OptionalStringArrayParam } from "@/lib/search-params"
-
-/** URL search-param fields. Spread into a route's `validateSearch` schema. */
-export const cloudflareFilterSearchFields = {
-	hosts: OptionalStringArrayParam,
-	cacheStatuses: OptionalStringArrayParam,
-	statusClasses: OptionalStringArrayParam,
-	paths: OptionalStringArrayParam,
-	pathContains: Schema.optional(Schema.String),
-	countries: OptionalStringArrayParam,
-	methods: OptionalStringArrayParam,
-	protocols: OptionalStringArrayParam,
-	deviceTypes: OptionalStringArrayParam,
-}
-
 export interface CloudflareFilters {
 	hosts?: ReadonlyArray<string>
 	cacheStatuses?: ReadonlyArray<string>
