@@ -85,23 +85,42 @@ const withDefaults = (settings: PrReviewOrgSettings, defaults: PrReviewRepositor
 const enqueueSave = (model: Model, purpose: SavePurpose, label: string, settings: PrReviewOrgSettings): Return => {
 	const next: Model = { ...model, localSettings: settings }
 	return model.savingSettings === null
-		? { model: { ...next, savingSettings: purpose }, commands: [SaveSettings({ purpose, label, settings })] }
+		? {
+				model: { ...next, savingSettings: purpose, sentSettings: settings },
+				commands: [SaveSettings({ purpose, label, settings })],
+			}
 		: { model: { ...next, queuedSaves: [...model.queuedSaves.filter((queued) => queued.purpose !== purpose), { purpose, label }] } }
 }
 
 /**
- * A settings save settled: a failed field goes back to the server's, the next queued save is
- * sent with everything this tab wrote, and once none is left the settings are read again.
+ * A settings save settled: a failed field goes back to the last confirmed value, the next queued
+ * save is sent with everything this tab wrote, and once none is left the settings are read again.
  */
 const settleSave = (model: Model, context: PageContext, purpose: SavePurpose, isFailure: boolean): Return => {
-	const server = Option.getOrElse(settingsOf(model), () => new PrReviewOrgSettings({}))
+	const read = Option.getOrElse(settingsOf(model), () => new PrReviewOrgSettings({}))
+	const confirmed = isFailure ? (model.confirmedSettings ?? read) : (model.sentSettings ?? read)
 	const local = baseSettings(model)
-	const kept = !isFailure ? local : purpose === "model" ? withModel(local, server.model) : withDefaults(local, server.defaults)
+	const kept = !isFailure
+		? local
+		: purpose === "model"
+			? withModel(local, confirmed.model)
+			: withDefaults(local, confirmed.defaults)
 	const [head, ...rest] = model.queuedSaves
 	return head === undefined
-		? readSettings({ ...model, localSettings: kept, savingSettings: null }, context, "Supersede")
+		? readSettings(
+				{ ...model, localSettings: kept, savingSettings: null, sentSettings: null, confirmedSettings: confirmed },
+				context,
+				"Supersede",
+			)
 		: {
-				model: { ...model, localSettings: kept, savingSettings: head.purpose, queuedSaves: rest },
+				model: {
+					...model,
+					localSettings: kept,
+					savingSettings: head.purpose,
+					queuedSaves: rest,
+					sentSettings: kept,
+					confirmedSettings: confirmed,
+				},
 				commands: [SaveSettings({ purpose: head.purpose, label: head.label, settings: kept })],
 			}
 }
@@ -188,6 +207,8 @@ export const init = (_route: unknown, context: PageContext, carried: Carried = n
 		isSavingModel: false,
 		localSettings: null,
 		savingSettings: null,
+		sentSettings: null,
+		confirmedSettings: null,
 		queuedSaves: [],
 		defaultsForm: null,
 		repoList: initRepoList(),
@@ -314,7 +335,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const settings = Keyed.accept(model.settings, key, result)
 			// The server has caught up with this tab's writes once none is in flight.
 			const isSettled = settings !== model.settings && model.savingSettings === null && AsyncData.isSuccess(settings.data)
-			const next = settingsArrived({ ...model, settings, localSettings: isSettled ? null : model.localSettings })
+			const next = settingsArrived({
+				...model,
+				settings,
+				localSettings: isSettled ? null : model.localSettings,
+				confirmedSettings: isSettled ? null : model.confirmedSettings,
+			})
 			// `RepositoriesSection` mounts with the settings: the repositories are read then.
 			return Option.isSome(settingsOf(next)) && AsyncData.isIdle(next.githubStatus.data)
 				? readStatus(next, context, "Load")

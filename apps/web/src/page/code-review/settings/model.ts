@@ -31,6 +31,9 @@ export const Model = Schema.Struct({
 	localSettings: Schema.NullOr(PrReviewOrgSettings),
 	/** The settings row is written whole, so saves run one at a time: the one in flight, then the queue. */
 	savingSettings: Schema.NullOr(SavePurpose),
+	/** The settings the save in flight sent, and the last ones the server confirmed (null: the read). */
+	sentSettings: Schema.NullOr(PrReviewOrgSettings),
+	confirmedSettings: Schema.NullOr(PrReviewOrgSettings),
 	queuedSaves: Schema.Array(Schema.Struct({ purpose: SavePurpose, label: Schema.String })),
 	/** Built from the first settings answer, then kept in step with refetches. */
 	defaultsForm: Schema.NullOr(RulesForm.Model),
