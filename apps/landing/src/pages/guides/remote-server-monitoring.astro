@@ -581,7 +581,7 @@ const articleJsonLd = {
                     <p>
                         When an alert fires, a minute in a shell answers what a chart can't. These commands ship with most distributions:
                     </p>
-                    <LanguageTabs tabs={sshTabs.map(({ id, label }) => ({ id, label }))} label="Resource">
+                    <LanguageTabs tabs={sshTabs.map(({ id, label }) => ({ id, label }))} label="Resource" group="maple-guide-remote-resource">
                         {sshTabs.map((t) => (
                             <LanguageTab id={t.id}>
                                 <pre><code set:html={highlight(t.code, "shell")} /></pre>
@@ -742,7 +742,7 @@ const articleJsonLd = {
                     <p>
                         Threshold rules don't need the no-data switch, so one rule covers every server. Return a <code>group</code> column and Maple opens one incident per host. Set <strong>Reduce buckets by</strong> Maximum and <strong>Min samples</strong> 1; utilization is a ratio from 0 to 1.
                     </p>
-                    <LanguageTabs tabs={thresholdRules.map(({ id, label }) => ({ id, label }))} label="Rule">
+                    <LanguageTabs tabs={thresholdRules.map(({ id, label }) => ({ id, label }))} label="Rule" group="maple-guide-remote-rule">
                         {thresholdRules.map((r) => (
                             <LanguageTab id={r.id}>
                                 <pre><code set:html={highlight(r.sql, "sql")} /></pre>
