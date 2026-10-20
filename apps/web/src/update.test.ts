@@ -15,6 +15,7 @@ import * as SignIn from "./page/sign-in"
 import { AppRoute } from "./route"
 import * as Shell from "./shell"
 import * as Toast from "./ui/toast"
+import type { ClerkSnapshot } from "./platform/clerk"
 import { settle, update } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -98,5 +99,54 @@ describe("telemetry identity", () => {
 		})
 		const again = update(loaded.model, Message.ChangedClerkSession({ snapshot }))
 		expect(commandsOf(again).map(({ name }) => name)).not.toContain("IdentifySession")
+	})
+})
+
+describe("re-render on change only", () => {
+	const snapshotOf = (organizationName: string): ClerkSnapshot => ({
+		maybeUserId: Option.some(UserId.make("user_ada")),
+		maybeOrgId: Option.some(orgId),
+		maybeUser: Option.some({ fullName: "Ada Lovelace", email: "ada@acme.test", imageUrl: "" }),
+		maybeOrganization: Option.some({
+			id: orgId,
+			name: organizationName,
+			imageUrl: "",
+			homeRegion: "us",
+			isServedHere: true,
+			isRegionOpen: false,
+			flags: { aiAutoTriage: false, releases: false },
+		}),
+		memberships: [],
+	})
+	const loadedHome = () =>
+		update(base(AppRoute.Home({ search: {} })), Message.CompletedLoadClerk({ snapshot: snapshotOf("Acme") })).model
+
+	test("a Clerk emit that changed nothing (a token refresh) keeps the model and runs nothing", () => {
+		const model = loadedHome()
+		const refreshed = update(model, Message.ChangedClerkSession({ snapshot: snapshotOf("Acme") }))
+		expect(refreshed.model).toBe(model)
+		expect(refreshed.commands ?? []).toEqual([])
+	})
+
+	test("a Clerk emit with a renamed org stores the new snapshot", () => {
+		const renamed = update(loadedHome(), Message.ChangedClerkSession({ snapshot: snapshotOf("Acme Labs") }))
+		expect(renamed.model.clerkSnapshot?.maybeOrganization).toEqual(
+			Option.some(expect.objectContaining({ name: "Acme Labs" })),
+		)
+	})
+
+	test("a Clerk emit without a user signs the session out", () => {
+		const signedOut = update(
+			loadedHome(),
+			Message.ChangedClerkSession({ snapshot: { ...snapshotOf("Acme"), maybeUserId: Option.none() } }),
+		)
+		expect(signedOut.model.session).toEqual(Session.SignedOut())
+	})
+
+	test("a shell message that changes no state keeps the root model, so the app does not re-render", () => {
+		const model = base(AppRoute.Logs({ search: {} }))
+		const visible = update(model, Message.GotShellMessage({ message: Shell.Message.BecameTabVisible() }))
+		expect(visible.model).toBe(model)
+		expect(commandsOf(visible).map(({ name }) => name)).toEqual(["CheckDeployedCommit"])
 	})
 })
