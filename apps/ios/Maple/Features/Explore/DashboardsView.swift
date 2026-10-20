@@ -469,13 +469,21 @@ private struct WidgetBreakdown: View {
 	let unit: String?
 
 	private var items: [(String, Double)] {
-		rows.compactMap { row -> (String, Double)? in
-			guard let name = row["name"]?.string else { return nil }
-			let value = row["value"]?.number
-				?? row.keys.sorted().lazy.filter { $0 != "name" }.compactMap { row[$0]?.number }.first
-				?? 0
-			return (name, value)
+		var result: [(String, Double)] = []
+		for row in rows {
+			guard let name = row["name"]?.string else { continue }
+			result.append((name, Self.value(of: row)))
 		}
+		return result
+	}
+
+	/// `value`, else the first numeric column by name, else 0.
+	private static func value(of row: [String: JSONValue]) -> Double {
+		if let value = row["value"]?.number { return value }
+		for key in row.keys.sorted() where key != "name" {
+			if let number = row[key]?.number { return number }
+		}
+		return 0
 	}
 
 	var body: some View {
