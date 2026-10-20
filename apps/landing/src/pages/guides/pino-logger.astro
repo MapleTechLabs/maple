@@ -7,83 +7,80 @@ import Breadcrumb from "../../components/Breadcrumb.astro";
 import FAQ from "../../components/FAQ.astro";
 import SeoHead from "../../components/SeoHead.astro";
 import TableOfContents from "../../components/TableOfContents.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { highlight } from "../../lib/guide-highlight";
+import LanguageTabs from "../../components/docs/LanguageTabs.astro";
+import LanguageTab from "../../components/docs/LanguageTab.astro";
 
-const pageTitle = "Pino Logger for Node.js: Levels, pino-pretty, Transports and Trace IDs";
+const pageTitle = "Pino logger for Node.js: setup, levels, trace IDs | Maple";
 const pageDescription =
-    "Use the Pino logger in Node.js: log levels, child loggers, redaction, pino-pretty, transports, Express, Fastify, Pino vs Winston and trace IDs in logs.";
+    "Set up the Pino logger in Node.js: log levels, child loggers, redaction, pino-pretty, transports, pino-http and Fastify, and trace IDs with OpenTelemetry.";
 const published = "2026-10-19";
-const updatedLabel = "October 19, 2026";
+const updatedLabel = "October 20, 2026";
+const author = CONTRIBUTORS.jeremyfunk;
+const authorUrl = `https://github.com/${author.github}`;
 
 const toc = [
-    ["what-is-pino", "Pino in brief"],
-    ["install", "Install and first log"],
-    ["log-levels", "Log levels"],
-    ["child-loggers", "Child loggers"],
-    ["redaction", "Redaction"],
-    ["serializers", "Serializers"],
-    ["pino-pretty", "pino-pretty"],
-    ["transports", "Transports"],
-    ["destinations", "Async and sync"],
-    ["express-fastify", "Express and Fastify"],
-    ["pino-vs-winston", "Pino vs Winston"],
-    ["opentelemetry", "Trace IDs with OpenTelemetry"],
-] as const;
-const tocHeadings = toc.map(([slug, text]) => ({ depth: 2, slug, text }));
+    { depth: 2, slug: "what-is-pino", text: "Pino in brief" },
+    { depth: 2, slug: "setup", text: "Install and log" },
+    { depth: 3, slug: "first-log", text: "The first log line" },
+    { depth: 3, slug: "log-levels", text: "Log levels" },
+    { depth: 3, slug: "child-loggers", text: "Child loggers" },
+    { depth: 2, slug: "production", text: "Configure for production" },
+    { depth: 3, slug: "redaction", text: "Redaction and serializers" },
+    { depth: 3, slug: "pino-pretty", text: "pino-pretty" },
+    { depth: 3, slug: "transports", text: "Transports" },
+    { depth: 3, slug: "destinations", text: "Sync, async and buffered" },
+    { depth: 2, slug: "http", text: "HTTP request logs" },
+    { depth: 2, slug: "opentelemetry", text: "Trace IDs and Maple" },
+    { depth: 3, slug: "otel-setup", text: "Start the SDK" },
+    { depth: 3, slug: "correlated", text: "The correlated line" },
+    { depth: 3, slug: "maple", text: "Find the logs in Maple" },
+    { depth: 2, slug: "pino-vs-winston", text: "Pino vs Winston" },
+];
+const sectionNav = toc.filter((h) => h.depth === 2);
 
-const faqs = [
-    {
-        question: "What is Pino?",
-        answer:
-            "Pino is an open-source (MIT) logger for Node.js that writes each log record as one line of JSON. It keeps work on the main thread small: records are serialized quickly and written through a fast stream, while formatting and shipping logs to other systems run in transports on worker threads. Fastify uses Pino as its built-in logger.",
-    },
-    {
-        question: "Pino vs Winston: which should I use?",
-        answer:
-            "Pick Pino when you want JSON logs with low overhead and plan to process them elsewhere, which is the usual setup for services in containers. Pick Winston when you want flexible formatting and many output targets configured inside the process, and per-call overhead matters less. Both have OpenTelemetry instrumentations that add trace IDs to records.",
-    },
-    {
-        question: "How do I pretty print Pino logs?",
-        answer:
-            "Install pino-pretty as a dev dependency. Either pipe the output through it (node app.js | npx pino-pretty) or set transport: { target: \"pino-pretty\" } in the logger options only when NODE_ENV is development. Keep production output as plain JSON so log tooling can parse it.",
-    },
-    {
-        question: "How do I set the Pino log level?",
-        answer:
-            "Pass level in the options, for example pino({ level: process.env.LOG_LEVEL ?? \"info\" }). The default is info. You can change it at runtime with logger.level = \"debug\", and give a child logger its own level with logger.child(bindings, { level: \"warn\" }).",
-    },
-    {
-        question: "How do I add trace IDs to Pino logs?",
-        answer:
-            "Run your app with the OpenTelemetry Node.js SDK and its auto-instrumentations. The pino instrumentation adds trace_id, span_id and trace_flags to every record written inside an active span, and also sends the record to the OpenTelemetry log SDK, so a configured OTLP log exporter ships it with the trace context attached. No change to your logging calls is needed.",
-    },
-    {
-        question: "Is Pino synchronous or asynchronous?",
-        answer:
-            "The default destination writes to stdout without blocking. Records are not buffered, so each call is written right away, and Pino flushes what is pending when the process exits normally. pino.destination({ minLength: 4096 }) adds buffering for more throughput; sync: true makes every write blocking, which is the recommended setting on AWS Lambda.",
-    },
+// One color per place a log line passes through, used by the diagram, badges and code.
+const stages = {
+    main: { name: "Main thread", color: "var(--chart-1)" },
+    worker: { name: "Worker thread", color: "var(--chart-2)" },
+    destination: { name: "Destination", color: "var(--chart-3)" },
+    otel: { name: "OpenTelemetry", color: "var(--chart-5)" },
+} as const;
+
+const levels = [
+    { name: "fatal", value: "60", use: "The process is about to exit.", tone: "var(--destructive)" },
+    { name: "error", value: "50", use: "A request or job failed and someone may need to act.", tone: "var(--destructive)" },
+    { name: "warn", value: "40", use: "Something went wrong and the code recovered: a retry, a fallback.", tone: "var(--warning)" },
+    { name: "info", value: "30", use: "The default. Lifecycle events and one line per unit of work.", tone: "var(--foreground)" },
+    { name: "debug", value: "20", use: "Detail you turn on while investigating.", tone: "var(--muted-foreground)" },
+    { name: "trace", value: "10", use: "Very verbose output, usually only on your machine.", tone: "var(--muted-foreground)" },
 ];
 
-const installSnippet = `npm install pino
-npm install --save-dev pino-pretty`;
-
-const firstLogSnippet = `// app.mjs
-import pino from "pino"
-
-const logger = pino()
-
-logger.info("server started")
+const firstLogBody = `logger.info("server started")
 logger.info({ port: 3000 }, "listening")
 logger.info("user %s signed in after %d ms", "ada", 42)
 logger.error(new Error("connection refused"), "payment provider unreachable")`;
 
-const firstLogOutput = `{"level":30,"time":1792429189089,"pid":4812,"hostname":"api-1","msg":"server started"}
-{"level":30,"time":1792429189089,"pid":4812,"hostname":"api-1","port":3000,"msg":"listening"}
-{"level":30,"time":1792429189089,"pid":4812,"hostname":"api-1","msg":"user ada signed in after 42 ms"}
-{"level":50,"time":1792429189089,"pid":4812,"hostname":"api-1","err":{"type":"Error","message":"connection refused","stack":"Error: connection refused\\n    at file:///srv/app.mjs:9:14 ..."},"msg":"payment provider unreachable"}`;
+const firstLogTabs = [
+    { id: "esm", label: "ES modules", run: "node app.mjs", code: `// app.mjs\nimport pino from "pino"\n\nconst logger = pino()\n\n${firstLogBody}` },
+    { id: "commonjs", label: "CommonJS", run: "node app.cjs", code: `// app.cjs\nconst pino = require("pino")\n\nconst logger = pino()\n\n${firstLogBody}` },
+    {
+        id: "typescript",
+        label: "TypeScript",
+        run: "node app.ts   # Node 22.18+, in a package with \"type\": \"module\"",
+        code: `// app.ts\nimport pino, { type Logger } from "pino"\n\nconst logger: Logger = pino()\n\n${firstLogBody}`,
+    },
+];
+
+const firstLogOutput = `{"level":30,"time":1792513464618,"pid":4812,"hostname":"api-1","msg":"server started"}
+{"level":30,"time":1792513464619,"pid":4812,"hostname":"api-1","port":3000,"msg":"listening"}
+{"level":30,"time":1792513464619,"pid":4812,"hostname":"api-1","msg":"user ada signed in after 42 ms"}
+{"level":50,"time":1792513464619,"pid":4812,"hostname":"api-1","err":{"type":"Error","message":"connection refused","stack":"Error: connection refused\\n    at file:///srv/app.mjs:8:14 ..."},"msg":"payment provider unreachable"}`;
 
 const levelSnippet = `const logger = pino({ level: process.env.LOG_LEVEL ?? "info" })
 
-logger.debug("dropped, because debug is below info")
+logger.debug("dropped: debug is below info")
 
 logger.level = "debug" // change it at runtime, for example from an admin endpoint
 logger.debug("written now")
@@ -98,30 +95,27 @@ const billing = logger.child({ module: "billing" })
 const log = billing.child({ requestId: "req_8f2c" })
 
 log.warn({ invoiceId: "inv_1042" }, "invoice overdue")
-// {"level":40,...,"module":"billing","requestId":"req_8f2c","invoiceId":"inv_1042","msg":"invoice overdue"}
 
 const db = logger.child({ module: "db" }, { level: "warn" })
 db.info("not written: this child only logs warn and above")`;
+
+const childOutput = `{"level":40,"time":1792513481449,"pid":4812,"hostname":"api-1","module":"billing","requestId":"req_8f2c","invoiceId":"inv_1042","msg":"invoice overdue"}`;
 
 const redactSnippet = `const logger = pino({
   redact: {
     paths: ["password", "req.headers.authorization", 'req.headers["x-api-key"]', "cards[*].number"],
     censor: "[REDACTED]",
   },
-})
-
-logger.info({ password: "hunter2", cards: [{ number: "4242424242424242", brand: "visa" }] }, "signup")
-// {"level":30,...,"password":"[REDACTED]","cards":[{"number":"[REDACTED]","brand":"visa"}],"msg":"signup"}`;
-
-const serializerSnippet = `const logger = pino({
   serializers: {
-    err: pino.stdSerializers.err,
     user: (user) => ({ id: user.id, plan: user.plan }),
   },
 })
 
-logger.info({ user: { id: "u_1", plan: "pro", email: "ada@example.com" } }, "loaded user")
-// {"level":30,...,"user":{"id":"u_1","plan":"pro"},"msg":"loaded user"}`;
+logger.info({ password: "hunter2", cards: [{ number: "4242424242424242", brand: "visa" }] }, "signup")
+logger.info({ user: { id: "u_1", plan: "pro", email: "ada@example.com" } }, "loaded user")`;
+
+const redactOutput = `{"level":30,...,"password":"[REDACTED]","cards":[{"number":"[REDACTED]","brand":"visa"}],"msg":"signup"}
+{"level":30,...,"user":{"id":"u_1","plan":"pro"},"msg":"loaded user"}`;
 
 const prettySnippet = `const logger = pino({
   level: process.env.LOG_LEVEL ?? "info",
@@ -134,10 +128,11 @@ const prettySnippet = `const logger = pino({
       : undefined,
 })`;
 
-const prettyCliSnippet = `node app.mjs | npx pino-pretty -c -t "SYS:HH:MM:ss" -i pid,hostname`;
+// pino-pretty's terminal output, colored the way it prints.
+const prettyOutput = `<span class="tok-comment">[18:24:50]</span> <span class="tok-level">INFO</span>: <span class="tok-labels">listening</span>
+    <span class="tok-name">port</span>: <span class="tok-value">3000</span>`;
 
-const prettyOutput = `[19:03:29] INFO: listening
-    port: 3000`;
+const prettyCli = `node app.mjs | npx pino-pretty -c -t "SYS:HH:MM:ss" -i pid,hostname`;
 
 const transportSnippet = `const transport = pino.transport({
   targets: [
@@ -151,15 +146,25 @@ const logger = pino({ level: "debug" }, transport)
 logger.debug("only in the file")
 logger.info({ orderId: "ord_77" }, "in the terminal and in the file")`;
 
-const destinationSnippet = `// Buffer 4 KiB before each write: more throughput, and a crash can lose the last buffer.
+const destinationSnippet = `// Collect 4 KiB before each write: more throughput, and a crash can lose the last buffer.
 const logger = pino(pino.destination({ dest: "./logs/app.log", minLength: 4096, mkdir: true }))
 
 // Block on every write: nothing is pending when the function returns.
 const lambdaLogger = pino(pino.destination({ sync: true }))`;
 
-const expressInstallSnippet = `npm install express pino pino-http`;
+const writeModes = [
+    { setting: "Default destination", runs: stages.main, behaviour: "Hands each line to stdout without blocking or buffering", when: "Most services" },
+    { setting: "minLength: 4096", runs: stages.main, behaviour: "Collects 4 KiB, then writes", when: "Very high volume, where losing the last buffer on a crash is acceptable" },
+    { setting: "sync: true", runs: stages.main, behaviour: "Blocks until each write completes", when: "AWS Lambda and other runtimes that freeze the process after a response" },
+    { setting: "pino.transport()", runs: stages.worker, behaviour: "Formatting and I/O move to a worker", when: "Pretty printing, several files, sending over the network" },
+];
 
-const expressSnippet = `// server.mjs
+const httpTabs = [
+    {
+        id: "express",
+        label: "Express",
+        install: "npm install express pino pino-http",
+        code: `// server.mjs
 import express from "express"
 import pino from "pino"
 import { pinoHttp } from "pino-http"
@@ -173,6 +178,7 @@ const app = express()
 app.use(
   pinoHttp({
     logger,
+    quietReqLogger: true,
     customLogLevel: (req, res, err) =>
       err || res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info",
   }),
@@ -183,9 +189,14 @@ app.get("/orders/:id", (req, res) => {
   res.json({ id: req.params.id })
 })
 
-app.listen(3000, () => logger.info({ port: 3000 }, "listening"))`;
-
-const fastifySnippet = `// server.mjs
+app.listen(3000, () => logger.info({ port: 3000 }, "listening"))`,
+        note: "<code>pino-http</code> writes one <code>request completed</code> line per request with the request, the status code and <code>responseTime</code> in milliseconds. Its default request serializer includes every header, which is why the logger redacts <code>authorization</code> and <code>cookie</code>. <code>quietReqLogger</code> keeps the lines your handlers write down to a <code>reqId</code> instead of the whole request, and <code>customLogLevel</code> logs 4xx as <code>warn</code> and 5xx as <code>error</code>. The older <code>express-pino-logger</code> package is deprecated in favour of <code>pino-http</code>.",
+    },
+    {
+        id: "fastify",
+        label: "Fastify",
+        install: "npm install fastify",
+        code: `// server.mjs
 import Fastify from "fastify"
 
 const app = Fastify({
@@ -197,9 +208,12 @@ app.get("/orders/:id", async (request) => {
   return { id: request.params.id }
 })
 
-await app.listen({ port: 3000 })`;
+await app.listen({ port: 3000 })`,
+        note: "Fastify depends on Pino and builds the logger from its <code>logger</code> option, which takes <code>true</code> or any Pino options, including <code>redact</code> and <code>transport</code>. It writes <code>incoming request</code> and <code>request completed</code> lines with a <code>reqId</code>, and its default request serializer logs no headers. To pass a Pino instance you created yourself, Fastify 5 has a separate <code>loggerInstance</code> option.",
+    },
+];
 
-const otelInstallSnippet = `npm install @opentelemetry/api \\
+const otelInstall = `npm install @opentelemetry/api \\
   @opentelemetry/sdk-node \\
   @opentelemetry/auto-instrumentations-node \\
   @opentelemetry/instrumentation \\
@@ -250,19 +264,70 @@ process.on("SIGTERM", () => {
   sdk.shutdown().finally(() => process.exit(0))
 })`;
 
-const runSnippet = `node --import ./tracing.mjs server.mjs`;
+const disableSendingSnippet = `instrumentations: [
+  getNodeAutoInstrumentations({
+    "@opentelemetry/instrumentation-pino": { disableLogSending: true },
+  }),
+],`;
 
-const correlatedOutput = `{"level":30,"time":1792429242653,"pid":4812,"hostname":"api-1","req":{"id":1,"method":"GET","url":"/orders/42",...},"trace_id":"e08d88aa5e99a090233a81b18df248dc","span_id":"5dc79b621fed8db5","trace_flags":"01","orderId":"42","msg":"loading order"}`;
+const correlatedOutput = `{"level":30,"time":1792513527238,"pid":4812,"hostname":"api-1","reqId":1,"trace_id":"0c8fecc47de79cc6181bbc93a912d762","span_id":"22497105575e6deb","trace_flags":"01","orderId":"42","msg":"loading order"}`;
+
+const winston = [
+    ["Default output", "One JSON object per line", "Whatever <code>format</code> builds; JSON is one option"],
+    ["Levels", "trace 10 up to fatal 60", "npm levels: error 0 down to silly 6"],
+    ["Formatting", "Outside the process: pino-pretty or your log tooling", "In the process with <code>format.combine()</code>"],
+    ["Transports", "Worker threads via <code>pino.transport()</code>", "Streams on the main thread (Console, File, Http)"],
+    ["Redaction", "Built-in <code>redact</code> option", "A custom format"],
+    ["OpenTelemetry", "Instrumentation adds trace IDs and sends records", "Instrumentation adds trace IDs; sending needs <code>@opentelemetry/winston-transport</code>"],
+];
+
+const faqs = [
+    {
+        question: "What is Pino in Node.js?",
+        answer:
+            "Pino is an open-source (MIT) logger for Node.js that writes each log entry as one line of JSON. It keeps the work on the main thread small, and moves pretty printing and shipping to transports that run in worker threads. Fastify uses Pino as its built-in logger.",
+    },
+    {
+        question: "Pino vs Winston: which should I use?",
+        answer:
+            "Pick Pino when your logs are JSON that something outside the process collects, which is the usual setup in containers, and per-call cost matters. Pick Winston when the process itself must write several formats to several destinations, or your codebase already relies on its format pipeline. Both have OpenTelemetry instrumentations that add trace IDs.",
+    },
+    {
+        question: "How do I pretty print Pino logs?",
+        answer:
+            "Install pino-pretty as a dev dependency. Either pipe the output through it (node app.mjs | npx pino-pretty) or set transport: { target: \"pino-pretty\" } in the logger options only when NODE_ENV is development. Keep production output as JSON so log tooling can read the fields.",
+    },
+    {
+        question: "How do I set the Pino log level?",
+        answer:
+            "Pass level in the options, for example pino({ level: process.env.LOG_LEVEL ?? \"info\" }). The default is info. You can change it at runtime with logger.level = \"debug\", and give a child logger its own level with logger.child(bindings, { level: \"warn\" }).",
+    },
+    {
+        question: "Does Pino work with TypeScript?",
+        answer:
+            "Yes. Pino ships its own type definitions, so import pino, { type Logger } from \"pino\" works without an @types package. The Logger type is what you use for function parameters that take a logger or a child logger.",
+    },
+    {
+        question: "How do I add trace IDs to Pino logs?",
+        answer:
+            "Run your app with the OpenTelemetry Node.js SDK and its auto-instrumentations. The pino instrumentation adds trace_id, span_id and trace_flags to every line written inside an active span, and sends each record to the OpenTelemetry log SDK, which exports it over OTLP. Your logging calls stay the same.",
+    },
+    {
+        question: "Is Pino synchronous or asynchronous?",
+        answer:
+            "The default destination writes to stdout without blocking and without buffering, and Pino flushes what is pending when the process exits normally. pino.destination({ minLength: 4096 }) adds a buffer for more throughput. sync: true blocks on every write, which Pino recommends for AWS Lambda.",
+    },
+];
 
 const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
 const articleJsonLd = {
     "@context": "https://schema.org",
     "@type": "TechArticle",
-    headline: "Pino logger for Node.js: setup, levels, transports and trace IDs",
+    headline: "Pino logger for Node.js",
     description: pageDescription,
     datePublished: published,
-    dateModified: published,
-    author: { "@type": "Organization", name: "Maple" },
+    dateModified: "2026-10-20",
+    author: { "@type": "Person", name: author.name, url: authorUrl },
     publisher: {
         "@type": "Organization",
         name: "Maple",
@@ -280,7 +345,7 @@ const articleJsonLd = {
         items={[
             { label: "Home", href: "/" },
             { label: "Guides", href: "/guides" },
-            { label: "Pino logger for Node.js" },
+            { label: "Pino logger" },
         ]}
     />
 
@@ -292,343 +357,352 @@ const articleJsonLd = {
                 style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
             >
             </div>
-            <div class="relative mx-auto grid max-w-6xl gap-12 px-6 pb-16 pt-20 md:pb-24 md:pt-28 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.75fr)] lg:items-center lg:gap-16">
-                <div>
-                    <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
-                        <span class="border border-primary/40 px-2 py-1 text-primary">Node.js logging</span>
-                        <span>13 min read</span>
-                    </div>
-                    <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
-                        Pino logger for Node.js: setup, levels, transports and trace IDs
-                    </h1>
-                    <p class="mt-7 max-w-[62ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
-                        A working Pino 10 setup: levels, child loggers, redaction, pino-pretty, transports, Express and Fastify, and the OpenTelemetry instrumentation that stamps each log line with the trace it belongs to.
-                    </p>
-                    <div class="mt-7 flex flex-wrap gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
-                        <span>By Maple</span>
-                        <time datetime={published}>Updated {updatedLabel}</time>
-                    </div>
+            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-20 md:pt-28">
+                <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                    <span class="border border-primary/40 px-2 py-1 text-primary">Logging</span>
+                    <span>9 min read</span>
                 </div>
-
-                <div class="rounded-xl border border-border bg-bg-deep p-4 shadow-2xl shadow-black/20 md:p-5" aria-label="Pino at a glance">
-                    <div class="flex items-center justify-between border-b border-border pb-3 font-mono text-[10px] text-fg-muted">
-                        <span>pino / at a glance</span>
-                        <span class="text-primary">v10</span>
-                    </div>
-                    <ol class="divide-y divide-border">
-                        {[
-                            ["01", "Output", "One JSON object per line", "NDJSON on stdout"],
-                            ["02", "Levels", "trace 10 to fatal 60", "default info"],
-                            ["03", "Context", "logger.child({ requestId })", "bindings on every line"],
-                            ["04", "Secrets", "redact: [\"req.headers.authorization\"]", "built in"],
-                            ["05", "Shipping", "pino.transport() in a worker", "off the main thread"],
-                            ["06", "Trace IDs", "OpenTelemetry pino instrumentation", "trace_id, span_id"],
-                        ].map(([number, label, headline, detail]) => (
-                            <li class="grid grid-cols-[2rem_1fr] gap-3 py-3.5">
-                                <span class="font-mono text-[10px] text-primary">{number}</span>
-                                <div>
-                                    <div class="flex items-baseline justify-between gap-3">
-                                        <span class="text-xs font-medium text-fg">{label}</span>
-                                        <span class="font-mono text-[9px] text-fg-muted">{detail}</span>
-                                    </div>
-                                    <p class="mt-1 font-mono text-[11px] leading-relaxed text-fg-muted">{headline}</p>
-                                </div>
-                            </li>
-                        ))}
-                    </ol>
+                <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                    Pino logger for Node.js
+                </h1>
+                <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
+                    Set up Pino, configure it for production, log HTTP requests, and tie every line to the trace it came from.
+                </p>
+                <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                    <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                        <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <span>By {author.name}</span>
+                    </a>
+                    <time datetime="2026-10-20">Updated {updatedLabel}</time>
                 </div>
             </div>
         </header>
 
         <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
             <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
-                {toc.map(([id, label]) => (
-                    <a href={`#${id}`} class="transition-colors hover:text-primary">{label}</a>
+                {sectionNav.map((h) => (
+                    <a href={`#${h.slug}`} class="transition-colors hover:text-primary">{h.text}</a>
                 ))}
             </div>
         </nav>
 
         <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
             <aside class="hidden lg:block">
-                <TableOfContents headings={tocHeadings} class="sticky top-28" />
+                <TableOfContents headings={toc} class="sticky top-28" />
             </aside>
 
             <article class="pino-guide min-w-0">
                 <section id="what-is-pino" class="scroll-mt-24">
-                    <p class="guide-eyebrow">01 · Definition</p>
+                    <p class="guide-eyebrow"><span>01</span> · Definition</p>
                     <h2>Pino, the JSON logger for Node.js</h2>
 
                     <div class="guide-answer">
-                        <p>
-                            <strong>Pino</strong> is an MIT-licensed logger for Node.js that writes every record as a single line of JSON. It does as little as possible on the thread that serves requests: it serializes the record, writes it to a fast stream, and leaves pretty printing, file rotation and shipping to <strong>transports</strong> that run on worker threads.
-                        </p>
+                        <p><strong>Pino</strong> is a logger for Node.js that writes each log entry as one line of JSON. It is built to add as little work as possible to the code that serves your requests.</p>
                     </div>
 
                     <p>
-                        That design suits services that run in containers or on platforms that collect stdout. The application emits structured JSON, and something outside the hot path decides how to format or forward it. Fastify ships Pino as its built-in logger, and <code>pino-http</code> adds request logging to Express, Koa and plain <code>http</code> servers.
+                        JSON lines suit services that run in containers or on platforms that collect stdout: whatever reads the output can filter on fields instead of matching text. Pino is MIT-licensed, Fastify uses it as its built-in logger, and <code>pino-http</code> adds request logging to Express and plain <code>http</code> servers.
                     </p>
                     <p>
-                        Pino ships its own TypeScript definitions, so <code>import pino, &#123; type Logger &#125; from "pino"</code> works without an <code>@types</code> package.
+                        Every call takes the same path. On the thread that runs your code, Pino drops calls below the configured level and turns the rest into a JSON line. Where the line goes next depends on your setup:
                     </p>
+
+                    <figure class="flow" aria-label="The path of a Pino log line. Your code calls logger.info. On the main thread, Pino checks the level and writes one JSON line. By default the line goes straight to a destination such as stdout or a file. With pino.transport it goes to a worker thread, which formats it and writes it to a terminal or file. With the OpenTelemetry pino instrumentation, the same line also goes to the OpenTelemetry log SDK, which batches records and exports them to Maple at /v1/logs.">
+                        <svg viewBox="0 0 760 290" aria-hidden="true">
+                            <defs>
+                                {Object.entries(stages).map(([key, s]) => (
+                                    <marker id={`flow-arrow-${key}`} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                                        <path d="M0,0 L8,4 L0,8 z" style={`fill: ${s.color}`} />
+                                    </marker>
+                                ))}
+                            </defs>
+
+                            <rect x="0" y="105" width="140" height="80" rx="8" class="flow__box" />
+                            <text x="70" y="139" text-anchor="middle" class="flow__title">Your code</text>
+                            <text x="70" y="161" text-anchor="middle" class="flow__mono">logger.info()</text>
+                            <line x1="140" y1="145" x2="180" y2="145" marker-end="url(#flow-arrow-main)" class="flow__line" style={`--stage: ${stages.main.color}`} />
+
+                            <rect x="186" y="95" width="140" height="100" rx="8" class="flow__box flow__box--stage" style={`--stage: ${stages.main.color}`} />
+                            <text x="256" y="124" text-anchor="middle" class="flow__title">Pino</text>
+                            <text x="256" y="143" text-anchor="middle" class="flow__mono flow__mono--stage" style={`--stage: ${stages.main.color}`}>main thread</text>
+                            <text x="256" y="165" text-anchor="middle" class="flow__mono">level check</text>
+                            <text x="256" y="181" text-anchor="middle" class="flow__mono">-&gt; one JSON line</text>
+
+                            <line x1="332" y1="112" x2="470" y2="48" marker-end="url(#flow-arrow-destination)" class="flow__line" style={`--stage: ${stages.destination.color}`} />
+                            <text x="382" y="68" text-anchor="middle" class="flow__mono">default</text>
+                            <rect x="476" y="18" width="140" height="58" rx="8" class="flow__box flow__box--stage" style={`--stage: ${stages.destination.color}`} />
+                            <text x="546" y="43" text-anchor="middle" class="flow__title">Destination</text>
+                            <text x="546" y="63" text-anchor="middle" class="flow__mono">stdout or a file</text>
+
+                            <line x1="332" y1="145" x2="470" y2="145" marker-end="url(#flow-arrow-worker)" class="flow__line" style={`--stage: ${stages.worker.color}`} />
+                            <text x="401" y="137" text-anchor="middle" class="flow__mono">or pino.transport()</text>
+                            <rect x="476" y="116" width="140" height="58" rx="8" class="flow__box flow__box--stage" style={`--stage: ${stages.worker.color}`} />
+                            <text x="546" y="141" text-anchor="middle" class="flow__title">Transport</text>
+                            <text x="546" y="161" text-anchor="middle" class="flow__mono flow__mono--stage" style={`--stage: ${stages.worker.color}`}>worker thread</text>
+                            <line x1="616" y1="145" x2="650" y2="145" marker-end="url(#flow-arrow-destination)" class="flow__line" style={`--stage: ${stages.destination.color}`} />
+                            <rect x="656" y="116" width="104" height="58" rx="8" class="flow__box flow__box--stage" style={`--stage: ${stages.destination.color}`} />
+                            <text x="708" y="141" text-anchor="middle" class="flow__title">Destination</text>
+                            <text x="708" y="161" text-anchor="middle" class="flow__mono">pretty, file</text>
+
+                            <line x1="332" y1="178" x2="470" y2="244" marker-end="url(#flow-arrow-otel)" class="flow__line flow__line--dashed" style={`--stage: ${stages.otel.color}`} />
+                            <text x="372" y="236" text-anchor="middle" class="flow__mono">and, with</text>
+                            <text x="372" y="251" text-anchor="middle" class="flow__mono">OpenTelemetry</text>
+                            <rect x="476" y="216" width="140" height="58" rx="8" class="flow__box flow__box--stage" style={`--stage: ${stages.otel.color}`} />
+                            <text x="546" y="241" text-anchor="middle" class="flow__title">OTel log SDK</text>
+                            <text x="546" y="261" text-anchor="middle" class="flow__mono">batches records</text>
+                            <line x1="616" y1="245" x2="650" y2="245" marker-end="url(#flow-arrow-otel)" class="flow__line" style={`--stage: ${stages.otel.color}`} />
+                            <rect x="656" y="216" width="104" height="58" rx="8" class="flow__box flow__box--filled" style={`--stage: ${stages.otel.color}`} />
+                            <text x="708" y="241" text-anchor="middle" class="flow__title">Maple</text>
+                            <text x="708" y="261" text-anchor="middle" class="flow__mono">/v1/logs</text>
+                        </svg>
+                    </figure>
+                    <p class="guide-caption">A destination and a transport are alternatives. The OpenTelemetry path is added on top of either one, so the line still reaches stdout or your transport.</p>
                 </section>
 
-                <section id="install" class="scroll-mt-24">
-                    <p class="guide-eyebrow">02 · Setup</p>
-                    <h2>Install Pino and write the first log line</h2>
-                    <pre><code>{installSnippet}</code></pre>
-                    <p>
-                        <code>pino-pretty</code> is only for reading logs in a terminal, so it goes in dev dependencies. The logger itself needs no configuration to start:
-                    </p>
-                    <pre><code>{firstLogSnippet}</code></pre>
-                    <pre><code>{firstLogOutput}</code></pre>
-                    <p>
-                        Each logging method takes an optional object first and a message second. The object's keys are merged into the top level of the record, which is what makes the output searchable by field later. Strings after the message fill <code>%s</code>, <code>%d</code> and <code>%o</code> placeholders. An <code>Error</code> passed first is serialized under <code>err</code> with its type, message and stack.
-                    </p>
-                    <p>
-                        Put the data in the object rather than in the message. <code>logger.info(&#123; orderId &#125;, "order created")</code> gives you a field to filter on; <code>logger.info(`order $&#123;orderId&#125; created`)</code> gives you a string you have to parse back.
-                    </p>
-                </section>
+                <section id="setup" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>02</span> · Setup</p>
+                    <h2>Install Pino and write the first logs</h2>
 
-                <section id="log-levels" class="scroll-mt-24">
-                    <p class="guide-eyebrow">03 · Levels</p>
-                    <h2>Pino log levels and how to set the level</h2>
+                    <h3 id="first-log" class="scroll-mt-24">The first log line</h3>
+                    <p>Pino is one package and needs no configuration to start:</p>
+                    <pre><code set:html={highlight("npm install pino", "shell")} /></pre>
+                    <LanguageTabs label="Module format" tabs={firstLogTabs.map(({ id, label }) => ({ id, label }))}>
+                        {firstLogTabs.map((t) => (
+                            <LanguageTab id={t.id}>
+                                <p class="client-install"><span>Run</span><code>{t.run}</code></p>
+                                <pre><code set:html={highlight(t.code, "javascript")} /></pre>
+                            </LanguageTab>
+                        ))}
+                    </LanguageTabs>
+                    <div class="code-file code-file--output"><p class="code-file__name">Output</p><pre><code set:html={highlight(firstLogOutput, "json")} /></pre></div>
                     <p>
-                        Pino writes the level as a number. A logger drops every call below its configured level before doing any serialization work, so a disabled <code>debug</code> call costs almost nothing.
+                        Each method takes an optional object first and the message second. The object's keys become top-level fields of the line, which is what lets you filter on <code>port</code> later. Arguments after the message fill <code>%s</code>, <code>%d</code> and <code>%o</code> placeholders, and an <code>Error</code> passed first is written under <code>err</code> with its type, message and stack.
+                    </p>
+                    <p>
+                        Put data in the object, not in the message. <code>logger.info(&#123; orderId &#125;, "order created")</code> gives you an <code>orderId</code> field to search; a template string gives you text to parse back.
                     </p>
 
-                    <div class="guide-table-wrap">
+                    <h3 id="log-levels" class="scroll-mt-24">Pino log levels</h3>
+                    <p>
+                        Pino writes the level as a number. A call below the logger's level returns before any serialization, so a disabled <code>debug</code> call costs almost nothing.
+                    </p>
+                    <div class="guide-table">
                         <table>
                             <thead>
                                 <tr><th>Level</th><th>Value</th><th>Use it for</th></tr>
                             </thead>
                             <tbody>
-                                <tr><td><code>fatal</code></td><td>60</td><td>The process is about to exit.</td></tr>
-                                <tr><td><code>error</code></td><td>50</td><td>A request or job failed and someone may need to act.</td></tr>
-                                <tr><td><code>warn</code></td><td>40</td><td>Something unexpected that the code recovered from: a retry, a fallback, a slow dependency.</td></tr>
-                                <tr><td><code>info</code></td><td>30</td><td>The default. Lifecycle events and one line per unit of work.</td></tr>
-                                <tr><td><code>debug</code></td><td>20</td><td>Detail you turn on while investigating.</td></tr>
-                                <tr><td><code>trace</code></td><td>10</td><td>Very verbose output, usually only in local development.</td></tr>
-                                <tr><td><code>silent</code></td><td>Infinity</td><td>Disables logging entirely, for example in tests.</td></tr>
+                                {levels.map((l) => (
+                                    <tr>
+                                        <td><span class="level-badge" style={`--tone: ${l.tone}`}>{l.name}</span></td>
+                                        <td class="mono">{l.value}</td>
+                                        <td>{l.use}</td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>
-
-                    <pre><code>{levelSnippet}</code></pre>
                     <p>
-                        Read the level from an environment variable so you can raise it for one deploy without a code change. Guard expensive arguments with <code>isLevelEnabled()</code>: the call is skipped when the level is off, but its arguments are still evaluated. If you need different names, <code>customLevels</code> adds levels with your own numbers.
+                        The default is <code>info</code>, and <code>silent</code> turns logging off, for example in tests. Read the level from an environment variable so one deploy can run at <code>debug</code> without a code change:
+                    </p>
+                    <pre><code set:html={highlight(levelSnippet, "javascript")} /></pre>
+                    <p>
+                        A disabled call still evaluates its arguments, so wrap expensive ones in <code>isLevelEnabled()</code>. The <code>customLevels</code> option adds levels with your own names and numbers.
+                    </p>
+
+                    <h3 id="child-loggers" class="scroll-mt-24">Child loggers</h3>
+                    <p>
+                        <code>logger.child(bindings)</code> returns a logger that adds the same fields to every line it writes. Pino serializes the bindings once, when the child is created, so a child per request is cheap.
+                    </p>
+                    <pre><code set:html={highlight(childSnippet, "javascript")} /></pre>
+                    <div class="code-file code-file--output"><p class="code-file__name">Output</p><pre><code set:html={highlight(childOutput, "json")} /></pre></div>
+                    <p>
+                        The usual pattern is one child per request or job, carrying a request ID or tenant, passed to the code that handles it. The second argument to <code>child()</code> overrides <code>level</code>, <code>redact</code>, <code>serializers</code> or <code>msgPrefix</code> for that child only.
                     </p>
                 </section>
 
-                <section id="child-loggers" class="scroll-mt-24">
-                    <p class="guide-eyebrow">04 · Context</p>
-                    <h2>Child loggers and bindings</h2>
-                    <p>
-                        <code>logger.child(bindings)</code> returns a logger that adds the same fields to every record it writes. Pino serializes the bindings once, when the child is created, so per-request children are cheap.
-                    </p>
-                    <pre><code>{childSnippet}</code></pre>
-                    <p>
-                        The usual pattern is one child per request or per job, carrying a request ID, tenant or job name, passed down to whatever code handles that unit of work. <code>pino-http</code> and Fastify create that child for you as <code>req.log</code> and <code>request.log</code>. The second argument to <code>child()</code> can override <code>level</code>, <code>redact</code>, <code>serializers</code> and <code>msgPrefix</code> for that child only.
-                    </p>
-                </section>
+                <section id="production" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>03</span> · Production</p>
+                    <h2>Configure Pino for production</h2>
 
-                <section id="redaction" class="scroll-mt-24">
-                    <p class="guide-eyebrow">05 · Secrets</p>
-                    <h2>Redact passwords, tokens and card numbers</h2>
+                    <h3 id="redaction" class="scroll-mt-24">Redact secrets and trim objects</h3>
                     <p>
-                        The <code>redact</code> option replaces values at the paths you list before the line is written. Paths use JavaScript dot and bracket notation, <code>[*]</code> matches every array element or key, and keys with hyphens need brackets.
+                        <code>redact</code> replaces values at the paths you list before the line is written. Paths use dot and bracket notation, <code>[*]</code> matches every array element, and keys with hyphens need brackets. A <strong>serializer</strong> is a function keyed by a top-level field name: when a line has that field, Pino writes the function's return value instead of the object.
                     </p>
-                    <pre><code>{redactSnippet}</code></pre>
+                    <pre><code set:html={highlight(redactSnippet, "javascript")} /></pre>
+                    <div class="code-file code-file--output"><p class="code-file__name">Output</p><pre><code set:html={highlight(redactOutput, "json")} /></pre></div>
                     <p>
-                        The default censor is <code>"[Redacted]"</code>. Set <code>remove: true</code> to drop the key instead, or pass a function as <code>censor</code> to mask part of a value. Pino's documentation warns never to build redaction paths from user input. Redaction only covers the paths you list, so a token logged under a new key name goes out in clear text; keeping whole request bodies out of logs is the safer default.
+                        The default censor is <code>"[Redacted]"</code>; <code>remove: true</code> drops the key instead. Redaction only covers the paths you list, so a token under a new key name goes out in clear text. Logging whole request bodies is the larger risk, and a serializer that picks a few fields avoids it. <code>pino.stdSerializers</code> provides <code>err</code>, <code>req</code> and <code>res</code>; <code>err</code> is on by default.
                     </p>
-                </section>
 
-                <section id="serializers" class="scroll-mt-24">
-                    <p class="guide-eyebrow">06 · Serializers</p>
-                    <h2>Serializers decide how objects are written</h2>
+                    <h3 id="pino-pretty" class="scroll-mt-24">pino-pretty in development only</h3>
                     <p>
-                        A serializer is a function keyed by a top-level property name. Whenever a record has that key, Pino writes the function's return value instead of the original object. It is the place to turn a large domain object into the handful of fields you want to search on.
+                        <code>pino-pretty</code> turns JSON lines into colored, readable ones. Install it with <code>npm install --save-dev pino-pretty</code> and load it as a transport only when <code>NODE_ENV</code> is <code>development</code>, so a production install without dev dependencies never asks for it:
                     </p>
-                    <pre><code>{serializerSnippet}</code></pre>
+                    <pre><code set:html={highlight(prettySnippet, "javascript")} /></pre>
+                    <div class="code-file code-file--output"><p class="code-file__name">Output</p><pre><code set:html={prettyOutput} /></pre></div>
+                    <p>Or leave the code alone and pipe the output through the CLI, which takes the same options as flags:</p>
+                    <pre><code set:html={highlight(prettyCli, "shell")} /></pre>
                     <p>
-                        <code>pino.stdSerializers</code> provides <code>err</code>, <code>req</code> and <code>res</code>. <code>err</code> is on by default and also runs when you pass an <code>Error</code> as the first argument. Serializers must return something JSON-serializable and must not throw. They only match top-level keys, and for child bindings they run once at creation time, not on every call.
+                        The pino-pretty README advises against running it in production: keep production output as JSON so the tool that collects it can read the fields.
                     </p>
-                </section>
 
-                <section id="pino-pretty" class="scroll-mt-24">
-                    <p class="guide-eyebrow">07 · Development</p>
-                    <h2>Pretty print Pino logs with pino-pretty</h2>
+                    <h3 id="transports" class="scroll-mt-24"><span class="stage-dot" style={`--stage: ${stages.worker.color}`}></span>Transports run in a worker thread</h3>
                     <p>
-                        Raw NDJSON is hard to scan in a terminal. <code>pino-pretty</code> turns it into colored, indented lines. Load it as a transport only when <code>NODE_ENV</code> is <code>development</code>, so a production install without dev dependencies never asks for it:
+                        A <strong>transport</strong> is a module that receives Pino's lines and writes them somewhere. <code>pino.transport()</code> starts it in a worker thread, so formatting and network I/O don't compete with request handling. With <code>targets</code>, one logger feeds several transports, each with its own minimum level:
                     </p>
-                    <pre><code>{prettySnippet}</code></pre>
-                    <pre><code>{prettyOutput}</code></pre>
-                    <p>
-                        Or leave the code alone and pipe the output through the CLI, which takes the same options as flags:
-                    </p>
-                    <pre><code>{prettyCliSnippet}</code></pre>
-                    <p>
-                        The pino-pretty README recommends against using it in production. Production output should stay JSON, so whatever collects it can parse fields instead of matching text. <code>logger.flush()</code> also does not flush pino-pretty's own buffer, which matters if you rely on the last lines before a crash.
-                    </p>
-                </section>
-
-                <section id="transports" class="scroll-mt-24">
-                    <p class="guide-eyebrow">08 · Transports</p>
-                    <h2>Pino transports and worker threads</h2>
-                    <p>
-                        A transport is a module that receives Pino's JSON lines and writes them somewhere. <code>pino.transport()</code> starts it in a worker thread, so formatting and network I/O do not compete with request handling. With <code>targets</code>, one logger fans out to several transports, each with its own minimum level.
-                    </p>
-                    <pre><code>{transportSnippet}</code></pre>
-                    <ul>
-                        <li><code>target</code> is a package name (<code>pino-pretty</code>, <code>pino/file</code>, which ships with Pino) or an absolute path to your own module.</li>
-                        <li>A target without a <code>level</code> defaults to <code>info</code>. The logger's own level still applies first, so set it to the lowest level any target needs.</li>
-                        <li><code>options</code> is copied to the worker with the structured clone algorithm, so it cannot contain functions.</li>
-                        <li>Pass a transport either as the <code>transport</code> option or as the second argument to <code>pino()</code>. Passing both a <code>transport</code> option and a destination throws.</li>
-                        <li>Pino flushes the worker on a normal exit. An <code>'error'</code> event from a transport is fatal, according to the Pino docs, and the process should be terminated.</li>
+                    <pre><code set:html={highlight(transportSnippet, "javascript")} /></pre>
+                    <ul class="guide-list">
+                        <li><code>target</code> is a package name or an absolute path to your own module. <code>pino/file</code> ships with Pino.</li>
+                        <li>A target without a <code>level</code> gets <code>info</code>. The logger's level applies first, so set it to the lowest level any target needs: <code>debug</code> in the example.</li>
+                        <li><code>options</code> is copied to the worker, so it cannot contain functions.</li>
+                        <li>Pino flushes the worker on a normal exit. The Pino docs treat an <code>'error'</code> event from a transport as fatal.</li>
                     </ul>
-                    <p>
-                        <code>pino-opentelemetry-transport</code> is one of these transports: it converts lines to OpenTelemetry log records inside the worker. The instrumentation route in the <a href="#opentelemetry">OpenTelemetry section</a> covers most apps with less setup, because it also adds the trace context.
-                    </p>
-                </section>
 
-                <section id="destinations" class="scroll-mt-24">
-                    <p class="guide-eyebrow">09 · Performance</p>
-                    <h2>Asynchronous and synchronous destinations</h2>
+                    <h3 id="destinations" class="scroll-mt-24">Sync, async and buffered writes</h3>
                     <p>
-                        Without a transport, Pino writes to a destination built on <code>sonic-boom</code>. The default one writes to stdout without blocking and without buffering: each call is handed to the file descriptor right away, and Pino flushes anything pending when the process exits normally. <code>pino.destination()</code> lets you change both.
+                        Without a transport, Pino writes on the main thread through a destination built on <code>sonic-boom</code>. <code>pino.destination()</code> changes where it writes and when:
                     </p>
-                    <pre><code>{destinationSnippet}</code></pre>
-                    <div class="guide-table-wrap">
+                    <pre><code set:html={highlight(destinationSnippet, "javascript")} /></pre>
+                    <div class="guide-table">
                         <table>
                             <thead>
-                                <tr><th>Setting</th><th>Behaviour</th><th>Use it when</th></tr>
+                                <tr><th>Setting</th><th>Runs on</th><th>Behaviour</th><th>Use it when</th></tr>
                             </thead>
                             <tbody>
-                                <tr><td>Default (<code>sync: false</code>, <code>minLength: 0</code>)</td><td>Non-blocking, written immediately</td><td>Most services</td></tr>
-                                <tr><td><code>minLength: 4096</code></td><td>Collects 4 KiB before each write</td><td>Very high log volume, where losing the last buffer on a crash is acceptable</td></tr>
-                                <tr><td><code>sync: true</code></td><td>Blocks until each write completes</td><td>AWS Lambda and other runtimes that freeze the process after a response</td></tr>
-                                <tr><td><code>pino.transport()</code></td><td>Worker thread does formatting and I/O</td><td>Pretty printing, files with several levels, sending to a network service</td></tr>
+                                {writeModes.map((w) => (
+                                    <tr>
+                                        <td>{w.setting.includes(":") || w.setting.includes("(") ? <code class="nowrap">{w.setting}</code> : w.setting}</td>
+                                        <td><span class="stage-badge" style={`--stage: ${w.runs.color}`}>{w.runs.name}</span></td>
+                                        <td>{w.behaviour}</td>
+                                        <td>{w.when}</td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>
                     <p>
-                        Pino's documentation notes that buffered asynchronous logging in Lambda tends to delay or lose messages, because the runtime freezes before the buffer is written.
+                        Pino's docs note that buffered logging in Lambda tends to delay or lose lines, because the runtime freezes the process before the buffer is written.
                     </p>
                 </section>
 
-                <section id="express-fastify" class="scroll-mt-24">
-                    <p class="guide-eyebrow">10 · HTTP servers</p>
-                    <h2>Pino with Express (pino-http) and Fastify</h2>
-                    <h3>Express with pino-http</h3>
-                    <pre><code>{expressInstallSnippet}</code></pre>
-                    <pre><code>{expressSnippet}</code></pre>
+                <section id="http" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>04</span> · HTTP</p>
+                    <h2>Log HTTP requests with pino-http or Fastify</h2>
                     <p>
-                        <code>pino-http</code> writes one <code>request completed</code> line per request with the method, URL, status code and <code>responseTime</code> in milliseconds. It also attaches a child logger as <code>req.log</code> carrying a request <code>id</code>, so every line a handler writes can be tied to the request. <code>customLogLevel</code> logs 4xx responses as <code>warn</code> and 5xx as <code>error</code>; without it every response is <code>info</code>. The older <code>express-pino-logger</code> package is deprecated in favour of <code>pino-http</code>.
+                        A request log needs one line per request with its status and duration, plus a per-request child logger so every line a handler writes carries the same request ID. Express gets both from <code>pino-http</code>; Fastify has them built in.
                     </p>
+                    <LanguageTabs label="Framework" tabs={httpTabs.map(({ id, label }) => ({ id, label }))}>
+                        {httpTabs.map((t) => (
+                            <LanguageTab id={t.id}>
+                                <p class="client-install"><span>Install</span><code>{t.install}</code></p>
+                                <pre><code set:html={highlight(t.code, "javascript")} /></pre>
+                                <p class="tab-note" set:html={t.note} />
+                            </LanguageTab>
+                        ))}
+                    </LanguageTabs>
                     <p>
-                        The default request serializer includes every request header, which is why the logger above redacts <code>authorization</code> and <code>cookie</code>. Add any other header that carries a credential, such as an API key header.
+                        Both servers write the handler's line with the request ID and the <code>orderId</code> field. The next section adds the trace ID to that same line.
+                    </p>
+                </section>
+
+                <section id="opentelemetry" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>05</span> · Correlation</p>
+                    <h2>Trace IDs and Pino logs in Maple</h2>
+                    <p>
+                        A line that says <code>payment provider unreachable</code> is more useful when you can open the request it came from. The OpenTelemetry pino instrumentation does two things, with no change to your logging calls:
+                    </p>
+                    <ul class="guide-list">
+                        <li>Lines written inside an active span get <span class="trace-field">trace_id</span>, <span class="trace-field">span_id</span> and <span class="trace-field">trace_flags</span> fields.</li>
+                        <li>Pino's output is split in two: one copy goes to your destination or transport as before, the other to the OpenTelemetry log SDK, which batches the records and exports them over OTLP. This needs Pino 7 or later.</li>
+                    </ul>
+
+                    <h3 id="otel-setup" class="scroll-mt-24"><span class="stage-dot" style={`--stage: ${stages.otel.color}`}></span>Start the OpenTelemetry SDK</h3>
+                    <p>
+                        The instrumentation is part of <code>@opentelemetry/auto-instrumentations-node</code>, so the standard Node.js SDK setup turns it on. Install the SDK packages:
+                    </p>
+                    <pre><code set:html={highlight(otelInstall, "shell")} /></pre>
+                    <p>
+                        Create <code>tracing.mjs</code> next to <code>server.mjs</code>. It starts the SDK before your code loads Pino, which is what lets the instrumentation patch it. <code>MAPLE_KEY</code> is an ingest key from Maple, covered in the <a href="#maple">Maple steps</a> below.
+                    </p>
+                    <pre><code set:html={highlight(tracingSnippet, "javascript")} /></pre>
+                    <div class="guide-callout">
+                        <p class="guide-kicker">Check the BatchLogRecordProcessor signature</p>
+                        <p>
+                            Current <code>@opentelemetry/sdk-logs</code> releases take an options object, <code>new BatchLogRecordProcessor(&#123; exporter &#125;)</code>. Older releases took the exporter as the first argument. Passing an exporter to a release that expects the object raises no error, and no log record leaves the process, so check the installed <code>.d.ts</code> if logs never arrive.
+                        </p>
+                    </div>
+                    <p>
+                        An ingest key can only write telemetry to your organization; it cannot read data. To keep it out of source anyway, the SDK can take its whole configuration from the standard <code>OTEL_*</code> variables, as in <a href="/docs/guides/instrumentation-nodejs#environment-variables">the Node.js guide's environment variables section</a>.
                     </p>
 
-                    <h3>Fastify</h3>
-                    <pre><code>{fastifySnippet}</code></pre>
+                    <h3 id="correlated" class="scroll-mt-24">The same line, with a trace ID</h3>
+                    <p>Load <code>tracing.mjs</code> ahead of either server from the HTTP section:</p>
+                    <pre><code set:html={highlight("node --import ./tracing.mjs server.mjs", "shell")} /></pre>
+                    <div class="code-file code-file--output"><p class="code-file__name">Output</p><pre><code set:html={highlight(correlatedOutput, "json")} /></pre></div>
                     <p>
-                        Fastify creates the Pino logger itself from the <code>logger</code> option, which accepts <code>true</code> or any Pino options, including <code>redact</code> and <code>transport</code>. It logs <code>incoming request</code> and <code>request completed</code> with a <code>reqId</code>, and <code>request.log</code> is the per-request child. To pass a Pino instance you created yourself, Fastify 5 uses the separate <code>loggerInstance</code> option.
+                        Stdout now carries the trace context. The exported copy uses Pino's level name as the severity text, with the matching OpenTelemetry severity number, and your fields, such as <code>orderId</code> and <code>reqId</code>, become log attributes. It leaves out <code>pid</code>, <code>hostname</code> and the trace fields, which the resource and the record's trace context already carry. Lines written outside a span, such as the startup <code>listening</code> line, are exported without a trace ID.
                     </p>
+                    <p>
+                        The export receives every line the logger writes, whatever the per-target levels of a <code>pino.transport()</code>. To keep the trace IDs and ship logs another way, turn log sending off in <code>tracing.mjs</code>:
+                    </p>
+                    <pre><code set:html={highlight(disableSendingSnippet, "javascript")} /></pre>
+
+                    <h3 id="maple" class="scroll-mt-24">Find the logs in Maple</h3>
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div><h4>Create an ingest key</h4><p>Open <strong>Settings → Ingestion</strong> and copy the private key (<code>maple_sk_...</code>). Use it as <code>MAPLE_KEY</code> in <code>tracing.mjs</code>, and switch <code>MAPLE_ENDPOINT</code> to the EU host if your organization is in the EU region.</p></div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div><h4>Filter the Logs page</h4><p>Start the server with the SDK and send it a few requests. In <strong>Logs</strong>, filter <strong>Service</strong> to <code>orders-api</code>. The <strong>Severity</strong> filter lists Pino's level names. Paste a trace ID into the search box to see every line from one request.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/pino-logger-01-logs.webp" data-zoomable alt="The Logs page filtered to the orders-api service, listing Pino lines such as loading order and request completed with their time, service and message, next to the severity and service filters." width="2400" height="1200" loading="lazy" /></figure></div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div><h4>Open a line</h4><p>Click a <code>loading order</code> row, then <strong>Open detail</strong>. <strong>Attributes</strong> shows <code>orderId</code> and <code>reqId</code>, and the meta strip shows the <code>trace:</code> link and span ID.</p>
+                                <figure class="guide-figure guide-figure--narrow"><img src="/screenshots/guides/pino-logger-02-log-detail.webp" data-zoomable alt="The detail sheet of a loading order log line: the message, a meta strip with the timestamp, trace link and span ID, and log attributes orderId 42 and reqId 1." width="1024" height="1400" loading="lazy" /></figure></div>
+                        </li>
+                        <li>
+                            <span>04</span>
+                            <div><h4>Move to the trace</h4><p>Click the <code>trace:</code> link to open the request's spans at the log's timestamp. From a trace, <strong>View Logs</strong> goes the other way.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/pino-logger-03-trace.webp" data-zoomable alt="The trace of a GET /orders/:id request in orders-api: the HTTP server span and the Express or Fastify spans below it, opened from the log line's trace link." width="2400" height="1100" loading="lazy" /></figure></div>
+                        </li>
+                    </ol>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Set it up in Maple</p>
+                        <h3>Send your Node.js telemetry</h3>
+                        <p>The SDK setup, environment variables and troubleshooting are in the docs.</p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/docs/guides/instrumentation-nodejs#log-correlation" class="guide-button guide-button--primary">Node.js instrumentation</a>
+                            <a href="/docs/explore/logs" class="guide-button">Logs in Maple</a>
+                        </div>
+                    </div>
                 </section>
 
                 <section id="pino-vs-winston" class="scroll-mt-24">
-                    <p class="guide-eyebrow">11 · Comparison</p>
+                    <p class="guide-eyebrow"><span>06</span> · Comparison</p>
                     <h2>Pino vs Winston</h2>
                     <p>
-                        Winston is the other widely used Node.js logger. Both are MIT-licensed and both work with OpenTelemetry. They differ mostly in where the formatting and shipping work happens.
+                        Winston is the other widely used Node.js logger. Both are MIT-licensed and both work with OpenTelemetry. They differ mostly in where formatting and shipping happen.
                     </p>
-                    <div class="guide-table-wrap">
+                    <div class="guide-table">
                         <table>
                             <thead>
                                 <tr><th></th><th>Pino</th><th>Winston</th></tr>
                             </thead>
                             <tbody>
-                                <tr><td>Default output</td><td>NDJSON, one object per line</td><td>Set by <code>format</code>; JSON is one of many formats</td></tr>
-                                <tr><td>Levels</td><td>trace 10, debug 20, info 30, warn 40, error 50, fatal 60</td><td>npm levels: error 0, warn 1, info 2, http 3, verbose 4, debug 5, silly 6</td></tr>
-                                <tr><td>Formatting</td><td>Outside the app: pino-pretty, or your log tooling</td><td>In-process with composable <code>format.combine()</code></td></tr>
-                                <tr><td>Transports</td><td>Worker threads via <code>pino.transport()</code></td><td>Run in the main thread (Console, File, Http, Stream, community)</td></tr>
-                                <tr><td>Child loggers</td><td><code>logger.child()</code>, bindings serialized once</td><td><code>logger.child()</code> merges default metadata</td></tr>
-                                <tr><td>Redaction</td><td>Built-in <code>redact</code> option</td><td>Write a custom format</td></tr>
-                                <tr><td>HTTP request logging</td><td>Fastify's built-in logger; <code>pino-http</code> for Express</td><td>Middleware such as <code>express-winston</code></td></tr>
-                                <tr><td>OpenTelemetry</td><td>Instrumentation adds trace context and sends records to the log SDK</td><td>Instrumentation adds trace context; sending needs <code>@opentelemetry/winston-transport</code></td></tr>
+                                {winston.map(([row, pino, win]) => (
+                                    <tr><td><strong>{row}</strong></td><td set:html={pino} /><td set:html={win} /></tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>
                     <p>
-                        Choose Pino when logs are JSON headed for a collector and you want the smallest per-call cost; Pino publishes its own benchmarks against other loggers. Choose Winston when the process itself must write several formats to several destinations, or an existing codebase already depends on its format pipeline. Moving between them is mostly mechanical, because both take a metadata object and a message, though Pino puts the object first.
+                        Choose Pino when logs are JSON headed for a collector and per-call cost matters; Pino publishes its own benchmarks against other loggers. Choose Winston when the process itself must write several formats to several destinations, or an existing codebase depends on its format pipeline. Moving between them is mostly mechanical: both take a metadata object and a message, and Pino puts the object first.
                     </p>
-                </section>
-
-                <section id="opentelemetry" class="scroll-mt-24">
-                    <p class="guide-eyebrow">12 · Correlation</p>
-                    <h2>Add trace IDs to Pino logs with OpenTelemetry</h2>
-                    <p>
-                        A log line that says <code>payment provider unreachable</code> is more useful when you can open the request it came from. The OpenTelemetry pino instrumentation handles both sides without changes to your logging calls:
-                    </p>
-                    <ul>
-                        <li>Log correlation: records written inside an active span get <code>trace_id</code>, <code>span_id</code> and <code>trace_flags</code> fields in the JSON line.</li>
-                        <li>Log sending: each record also goes to the OpenTelemetry log SDK, which exports it over OTLP with the trace context, level and fields attached. This needs Pino 7 or later.</li>
-                    </ul>
-                    <p>
-                        The instrumentation is part of <code>@opentelemetry/auto-instrumentations-node</code>, so the standard Node.js SDK setup turns it on. Install the SDK packages:
-                    </p>
-                    <pre><code>{otelInstallSnippet}</code></pre>
-                    <p>
-                        Create <code>tracing.mjs</code>. It starts the SDK before your application code loads Pino, which is what lets the instrumentation patch it:
-                    </p>
-                    <pre><code>{tracingSnippet}</code></pre>
-                    <p>
-                        An ingest key can only write telemetry to your organization; it cannot read data. To keep it out of source anyway, the SDK can take its whole configuration from the standard <code>OTEL_*</code> variables, as shown in <a href="/docs/guides/instrumentation-nodejs#environment-variables">the Node.js guide's environment variables section</a>.
-                    </p>
-                    <div class="guide-callout">
-                        <p class="guide-kicker">Check the BatchLogRecordProcessor signature</p>
-                        <p>
-                            Current <code>@opentelemetry/sdk-logs</code> releases take an options object, <code>new BatchLogRecordProcessor(&#123; exporter &#125;)</code>. Older releases took the exporter as the first argument. Passing an exporter to a release that expects the object raises no error and no log record leaves the process, so check the installed <code>.d.ts</code> if logs never arrive.
-                        </p>
-                    </div>
-                    <p>
-                        Load it ahead of the app. The Express server from the previous section needs no other change:
-                    </p>
-                    <pre><code>{runSnippet}</code></pre>
-                    <pre><code>{correlatedOutput}</code></pre>
-                    <p>
-                        Stdout now carries the trace ID, and the same record is exported to <code>/v1/logs</code> with Pino's level label as severity text and the matching OpenTelemetry severity number. Your own fields, such as <code>orderId</code>, become log attributes. The exported record drops the <code>trace_id</code>, <code>span_id</code>, <code>pid</code> and <code>hostname</code> fields from its attributes, because the trace context and resource carry them. Records written outside a span, such as the startup <code>listening</code> line, are still exported, just without a trace ID.
-                    </p>
-                    <p>
-                        Log sending forwards everything the logger writes after its own level filter, independent of any per-target levels in a <code>pino.transport()</code>. To keep only correlation and ship logs another way, configure the instrumentation with <code>disableLogSending: true</code> in <code>getNodeAutoInstrumentations(&#123; "@opentelemetry/instrumentation-pino": &#123; disableLogSending: true &#125; &#125;)</code>.
-                    </p>
-
-                    <div class="guide-maple">
-                        <p class="guide-kicker">Pino logs in Maple</p>
-                        <h3>Send them to Maple and jump from a log line to its trace</h3>
-                        <ol class="guide-steps">
-                            <li>
-                                <span>01</span>
-                                <div><h3>Create an ingest key</h3><p>In Maple, open <strong>Settings &gt; Ingestion</strong> and copy the private key (<code>maple_sk_...</code>). Use it as <code>MAPLE_KEY</code> in <code>tracing.mjs</code>, and switch <code>MAPLE_ENDPOINT</code> to the EU host if your organization is in the EU region.</p></div>
-                            </li>
-                            <li>
-                                <span>02</span>
-                                <div><h3>Start the app with the SDK</h3><p>Run <code>node --import ./tracing.mjs server.mjs</code> and send it a few requests. The pino instrumentation sends each record through the log exporter, and the trace exporter sends the spans.</p></div>
-                            </li>
-                            <li>
-                                <span>03</span>
-                                <div><h3>Open the Logs page</h3><p>Records appear in <strong>Logs</strong> with a <strong>Severity</strong> filter built from Pino's levels and a <strong>Service</strong> filter from <code>service.name</code>. Paste a trace ID into the search box to see every line from one request.</p></div>
-                            </li>
-                            <li>
-                                <span>04</span>
-                                <div><h3>Move to the trace</h3><p>Open a record and click its <code>trace:</code> link to see the request's spans at the log's timestamp. From a trace, <strong>View Logs</strong> goes the other way.</p></div>
-                            </li>
-                        </ol>
-                        <div class="mt-6 flex flex-wrap gap-3">
-                            <a href="/docs/guides/instrumentation-nodejs#log-correlation" class="guide-button guide-button--primary">Node.js instrumentation guide</a>
-                            <a href="/docs/explore/logs" class="guide-button">Logs in Maple</a>
-                        </div>
-                    </div>
                 </section>
 
                 <section class="guide-sources">
@@ -657,35 +731,86 @@ const articleJsonLd = {
 </Layout>
 
 <style is:global>
+    .pino-guide { max-width: 46rem; font-family: var(--font-display); }
     .pino-guide section + section { margin-top: 5.5rem; }
     .pino-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
-    .pino-guide h2 { max-width: 22ch; margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
-    .pino-guide h3 { margin: 2.5rem 0 0.8rem; font-family: var(--font-display); font-size: 1.15rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
-    .pino-guide > section > p:not(.guide-eyebrow, .guide-kicker), .pino-guide .guide-answer p { max-width: 70ch; margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .pino-guide .guide-eyebrow span { color: var(--primary); }
+    .pino-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .pino-guide h3 { display: flex; align-items: center; gap: 0.6rem; margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .pino-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
+    .pino-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .pino-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .pino-guide strong { font-weight: 600; color: var(--foreground); }
     .pino-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
-    .pino-guide pre { max-width: 100%; margin: 1.5rem 0 1.75rem; overflow-x: auto; border: 1px solid var(--border); border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
-    .pino-guide > section > ul { display: grid; gap: 0.65rem; max-width: 70ch; margin: 1.3rem 0 1.6rem; padding-left: 1.1rem; list-style: disc; color: var(--muted-foreground); font-size: 14px; line-height: 1.7; }
-    .pino-guide > section > ul li::marker { color: var(--primary); }
+    .pino-guide pre { margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
     .pino-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .pino-guide a:not(.guide-button):hover { color: var(--foreground); }
-    .pino-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1.25rem 1.35rem; }
-    .pino-guide .guide-answer p { margin: 0; font-size: 16px; color: var(--foreground); }
-    .pino-guide .guide-table-wrap { max-width: 100%; overflow-x: auto; }
-    .pino-guide table { width: 100%; min-width: 620px; margin: 1.6rem 0 2rem; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
-    .pino-guide th { border-bottom: 1px solid var(--border); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--foreground); }
-    .pino-guide td { border-bottom: 1px solid var(--border); padding: 0.9rem; vertical-align: top; }
+    .pino-guide .guide-caption { margin: 0.7rem 0 0; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
+    .pino-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .pino-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
     .pino-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
-    .pino-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: var(--bg-deep); padding: 1.25rem 1.35rem; }
-    .pino-guide .guide-callout p:not(.guide-kicker) { max-width: 68ch; margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
-    .pino-guide .guide-steps { margin: 1.5rem 0 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .pino-guide .guide-list { display: grid; gap: 0.6rem; margin: 1.25rem 0 1.5rem; padding-left: 1.1rem; list-style: disc; font-size: 15px; line-height: 1.65; color: color-mix(in oklab, var(--foreground) 80%, var(--background)); }
+    .pino-guide .guide-list li::marker { color: var(--primary); }
+
+    /* One color per stage a log line passes through: set --stage on the element. */
+    .pino-guide .stage-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in oklab, var(--stage) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--stage) 14%, transparent); padding: 0.15rem 0.6rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: color-mix(in oklab, var(--stage) 70%, var(--foreground)); white-space: nowrap; }
+    .pino-guide .stage-dot { width: 0.6rem; height: 0.6rem; flex: none; border-radius: 999px; background: var(--stage); box-shadow: 0 0 0 4px color-mix(in oklab, var(--stage) 18%, transparent); }
+    .pino-guide .trace-field { font-family: var(--font-mono); font-size: 13px; color: color-mix(in oklab, var(--chart-5) 80%, var(--foreground)); }
+    .pino-guide .level-badge { display: inline-flex; border: 1px solid color-mix(in oklab, var(--tone) 40%, transparent); border-radius: 0.3rem; background: color-mix(in oklab, var(--tone) 12%, transparent); padding: 0.1rem 0.5rem; font-family: var(--font-mono); font-size: 11px; color: color-mix(in oklab, var(--tone) 80%, var(--foreground)); }
+
+    .flow { margin: 1.75rem 0 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
+    .flow svg { display: block; width: 100%; min-width: 600px; height: auto; }
+    .flow__box { fill: var(--background); stroke: var(--border); }
+    .flow__box--stage { stroke: color-mix(in oklab, var(--stage) 65%, transparent); }
+    .flow__box--filled { fill: color-mix(in oklab, var(--stage) 16%, var(--background)); stroke: var(--stage); }
+    .flow__title { fill: var(--foreground); font-family: var(--font-display); font-size: 14px; font-weight: 550; }
+    .flow__mono { fill: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; }
+    .flow__mono--stage { fill: color-mix(in oklab, var(--stage) 75%, var(--foreground)); }
+    .flow__line { stroke: var(--stage); stroke-width: 1.5; }
+    .flow__line--dashed { stroke-dasharray: 4 3; }
+
+    /* Code: syntax stays muted; OpenTelemetry trace fields use the OpenTelemetry color from the diagram. */
+    .pino-guide .tok-comment { color: var(--muted-foreground); }
+    .pino-guide .tok-fn { color: color-mix(in oklab, var(--muted-foreground) 70%, var(--foreground)); font-style: italic; }
+    .pino-guide .tok-labels { color: color-mix(in oklab, var(--chart-4) 65%, var(--foreground)); }
+    .pino-guide .tok-value { color: var(--foreground); }
+    .pino-guide .tok-name { color: color-mix(in oklab, var(--foreground) 70%, var(--background)); }
+    .pino-guide .tok-level { color: var(--success); }
+    .pino-guide .tok-trace { border-radius: 0.2rem; background: color-mix(in oklab, var(--chart-5) 16%, transparent); color: color-mix(in oklab, var(--chart-5) 85%, var(--foreground)); }
+
+    .pino-guide .code-file { margin: 1.25rem 0 1.5rem; }
+    .pino-guide .code-file__name { margin: 0; width: fit-content; border: 1px solid var(--border); border-bottom: 0; border-radius: 0.5rem 0.5rem 0 0; background: var(--bg-elevated); padding: 0.3rem 0.75rem; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-foreground); }
+    .pino-guide .code-file pre { margin: 0; border-top-left-radius: 0; }
+    .pino-guide .code-file--output pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11.5px; }
+    .pino-guide td.mono { font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
+    .pino-guide code.nowrap { white-space: nowrap; }
+    .pino-guide .lt { margin: 1.5rem 0; }
+    .pino-guide .lt pre { margin: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
+    .pino-guide .client-install { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 0; border: 1px solid var(--border); border-bottom: 0; background: var(--bg-elevated); padding: 0.55rem 1.1rem; }
+    .pino-guide .client-install span { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .pino-guide .client-install code { border: 0 !important; background: transparent !important; padding: 0 !important; font-size: 11.5px; }
+    .pino-guide .tab-note { margin: 1rem 0 0; font-size: 15px; line-height: 1.7; color: color-mix(in oklab, var(--foreground) 80%, var(--background)); }
+
+    .pino-guide .guide-table { margin: 1.75rem 0 2rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
+    .pino-guide table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .pino-guide th { border-bottom: 1px solid var(--border); background: var(--bg-deep); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .pino-guide td { border-bottom: 1px solid var(--border); padding: 0.8rem 0.9rem; vertical-align: middle; }
+    .pino-guide td + td { border-left: 1px solid var(--border); }
+    .pino-guide tbody tr:last-child td { border-bottom: 0; }
+
+    .pino-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: color-mix(in oklab, var(--warning) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .pino-guide .guide-callout .guide-kicker { color: var(--warning); }
+    .pino-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .pino-guide .guide-steps { margin: 1.75rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
     .pino-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.2rem 0; }
-    .pino-guide .guide-steps > li > span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
-    .pino-guide .guide-steps h3, .pino-guide .guide-steps p { margin: 0; }
-    .pino-guide .guide-steps h3 { font-size: 1rem; }
-    .pino-guide .guide-steps p { margin-top: 0.45rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
-    .pino-guide .guide-maple { margin-top: 3.5rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
-    .pino-guide .guide-maple > h3 { margin: 0.55rem 0 0.8rem; font-size: 1.35rem; }
+    .pino-guide .guide-steps > li > span { display: grid; width: 1.9rem; height: 1.9rem; place-items: center; border: 1px solid color-mix(in oklab, var(--primary) 45%, transparent); border-radius: 0.4rem; background: color-mix(in oklab, var(--primary) 12%, transparent); font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
+    .pino-guide .guide-steps > li > div { min-width: 0; }
+    .pino-guide .guide-steps p { margin: 0.4rem 0 0; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+    .pino-guide .guide-figure { margin: 1rem 0 0; }
+    .pino-guide .guide-figure--narrow { max-width: 22rem; }
+    .pino-guide .guide-figure img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 0.6rem; background: var(--bg-deep); }
+    .pino-guide .guide-maple { margin-top: 3rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .pino-guide .guide-maple h3 { margin: 0.55rem 0 0.6rem; font-size: 1.35rem; }
+    .pino-guide .guide-maple > p:not(.guide-kicker) { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
     .pino-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
     .pino-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
     .pino-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
