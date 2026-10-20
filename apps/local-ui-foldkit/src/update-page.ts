@@ -1,5 +1,5 @@
 import type { Resources } from "./platform/resources"
-import * as Dialog from "@maple/web-foldkit/ui/dialog"
+import * as Dialog from "@maple/web/ui/dialog"
 import { AsyncData, Command } from "foldkit"
 import { Option } from "effect"
 import { FetchSignalPresence, GoBack, Navigate, ProbeServer, RememberRange } from "./command"

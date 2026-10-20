@@ -1,19 +1,19 @@
-import { computeServiceShares, type ServiceShare } from "@maple/web-foldkit/page/traces/detail/derive"
-import type { SpanNodeData, TraceData } from "@maple/web-foldkit/page/traces/detail/trace-data"
+import { computeServiceShares, type ServiceShare } from "@maple/web/page/traces/detail/derive"
+import type { SpanNodeData, TraceData } from "@maple/web/page/traces/detail/trace-data"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { countLabel, formatDuration, formatPercent } from "@maple/ui/lib/format"
 import { getHttpInfo, httpStatusTone } from "@maple/ui/lib/http"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { statFigure } from "@maple/web-foldkit/ui/stat-figure"
-import { statusDot } from "@maple/web-foldkit/ui/status-dot"
-import { traceIdBadge } from "@maple/web-foldkit/ui/trace-badges"
-import { serviceDot } from "@maple/web-foldkit/ui/values"
+import { statFigure } from "@maple/web/ui/stat-figure"
+import { statusDot } from "@maple/web/ui/status-dot"
+import { traceIdBadge } from "@maple/web/ui/trace-badges"
+import { serviceDot } from "@maple/web/ui/values"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Message } from "./message"
 
 // The @maple/ui `TraceAnatomyStrip` as local mode renders it: no start time, no commit.
-// copied: the spectrum bar of apps/web-foldkit/src/page/traces/detail/view-summary.ts.
+// copied: the spectrum bar of apps/web/src/page/traces/detail/view-summary.ts.
 
 /** An Error status, or an HTTP status in the critical band, anywhere in the trace (as on web). */
 export const traceHasError = (trace: TraceData): boolean =>

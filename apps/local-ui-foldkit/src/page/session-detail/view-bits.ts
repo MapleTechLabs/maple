@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import { badge } from "@maple/web-foldkit/ui/display"
-import { statusDot } from "@maple/web-foldkit/ui/status-dot"
+import { badge } from "@maple/web/ui/display"
+import { statusDot } from "@maple/web/ui/status-dot"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // The small pieces of `SessionDetailView`: status badge, stat tiles and cards.

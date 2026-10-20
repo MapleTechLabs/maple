@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { tableRow } from "@maple/web-foldkit/ui/table"
+import { tableRow } from "@maple/web/ui/table"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // apps/local-ui/src/components/row-link.tsx: a row that navigates is a real link, its first cell's

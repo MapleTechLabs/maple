@@ -1,4 +1,4 @@
-import * as ToggleGroup from "@maple/web-foldkit/ui/toggle-group"
+import * as ToggleGroup from "@maple/web/ui/toggle-group"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

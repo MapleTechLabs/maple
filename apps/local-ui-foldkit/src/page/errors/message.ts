@@ -1,6 +1,6 @@
 import { CachedOf } from "../../data/cached"
-import * as CopyButton from "@maple/web-foldkit/ui/copy-button"
-import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
+import * as CopyButton from "@maple/web/ui/copy-button"
+import * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/local-query"

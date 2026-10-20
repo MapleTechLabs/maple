@@ -1,5 +1,5 @@
 import { DateTime, Option } from "effect"
-import { ResolveThemeColors } from "@maple/web-foldkit/charts/theme-colors"
+import { ResolveThemeColors } from "@maple/web/charts/theme-colors"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../contract"

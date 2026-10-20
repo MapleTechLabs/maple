@@ -1,4 +1,4 @@
-import * as ServiceMap from "@maple/web-foldkit/service-map/map/service-map"
+import * as ServiceMap from "@maple/web/service-map/map/service-map"
 import { Option } from "effect"
 import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"

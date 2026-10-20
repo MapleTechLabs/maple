@@ -1,4 +1,4 @@
-import { splitOnMatches } from "@maple/web-foldkit/ui/logs/highlight"
+import { splitOnMatches } from "@maple/web/ui/logs/highlight"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 /**

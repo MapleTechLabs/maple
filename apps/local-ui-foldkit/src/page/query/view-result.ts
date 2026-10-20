@@ -1,7 +1,7 @@
 import { DISPLAY_ROW_LIMIT, formatCell, inferColumns, isNumericColumn, truncateCell } from "@maple/local-ui/lib/query-console"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { icon } from "@maple/web-foldkit/ui/icon"
+import { icon } from "@maple/web/ui/icon"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { ResultRow } from "./model"
 

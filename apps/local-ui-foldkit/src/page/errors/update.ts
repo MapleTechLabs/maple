@@ -1,7 +1,7 @@
 import type { Cached } from "../../data/cached"
 import type { Resources } from "../../platform/resources"
 import { snapToMinute, WIDEST_RANGE } from "@maple/local-ui/lib/time"
-import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
+import * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { Option, Record, Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { accept, idle, acceptCached } from "../../data/slot"

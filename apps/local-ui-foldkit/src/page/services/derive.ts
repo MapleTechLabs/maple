@@ -1,4 +1,4 @@
-import type { FilterOption } from "@maple/web-foldkit/ui/filters/filter-section"
+import type { FilterOption } from "@maple/web/ui/filters/filter-section"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Catalog, Model, ServiceCatalogEntry } from "./model"

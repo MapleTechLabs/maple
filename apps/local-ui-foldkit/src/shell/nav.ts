@@ -1,4 +1,4 @@
-import type { IconName } from "@maple/web-foldkit/ui/icon"
+import type { IconName } from "@maple/web/ui/icon"
 import { AppRoute } from "../route"
 
 // apps/local-ui/src/components/app-sidebar.tsx: grouped and iconed like apps/web's sidebar.

@@ -17,7 +17,7 @@
 		"@maple/local-ui": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"@maple/ui": "workspace:*",
-		"@maple/web-foldkit": "workspace:*",
+		"@maple/web": "workspace:*",
 		"@tanstack/charts": "catalog:charts",
 		"@tanstack/charts-scales": "catalog:charts",
 		"effect": "catalog:effect",

@@ -1,5 +1,5 @@
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
-import { Snapshot, ViewPrefs } from "@maple/web-foldkit/service-map/map/state"
+import { Snapshot, ViewPrefs } from "@maple/web/service-map/map/state"
 import { Clock, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { withCache } from "../../data/cached"

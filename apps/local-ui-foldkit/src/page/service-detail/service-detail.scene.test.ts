@@ -1,4 +1,4 @@
-import { ResolveThemeColors, ThemeMessage } from "@maple/web-foldkit/charts/theme-colors"
+import { ResolveThemeColors, ThemeMessage } from "@maple/web/charts/theme-colors"
 import { Option } from "effect"
 import { click, expect as expectView, expectOutMessage, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"

@@ -1,5 +1,5 @@
 import type { Resources } from "../../platform/resources"
-import * as ServiceMap from "@maple/web-foldkit/service-map/map/service-map"
+import * as ServiceMap from "@maple/web/service-map/map/service-map"
 import { Option } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { type PageContext, PageOutMessage } from "../contract"

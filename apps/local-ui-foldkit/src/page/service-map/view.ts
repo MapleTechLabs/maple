@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { serviceMapLoading } from "@maple/web-foldkit/service-map/map/loading"
+import { serviceMapLoading } from "@maple/web/service-map/map/loading"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

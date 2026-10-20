@@ -1,5 +1,5 @@
-import { skeleton, skeletonList } from "@maple/web-foldkit/ui/skeleton"
-import { traceIdBadge } from "@maple/web-foldkit/ui/trace-badges"
+import { skeleton, skeletonList } from "@maple/web/ui/skeleton"
+import { traceIdBadge } from "@maple/web/ui/trace-badges"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyState } from "../kit/view-states"
 import type { Message } from "./message"

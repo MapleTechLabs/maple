@@ -1,4 +1,4 @@
-import { icon } from "@maple/web-foldkit/ui/icon"
+import { icon } from "@maple/web/ui/icon"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 /** `NoEdgesNotice`: services are on the map but none called another; say what draws an edge. */

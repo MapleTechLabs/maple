@@ -1,6 +1,6 @@
 import type { Resources } from "../../platform/resources"
 import { boundsForRange, resolveRange, type TimeBounds } from "@maple/local-ui/lib/time"
-import { buildSourceGraph, type SourceGraph } from "@maple/web-foldkit/service-map/map/graph"
+import { buildSourceGraph, type SourceGraph } from "@maple/web/service-map/map/graph"
 import { Option } from "effect"
 import type { Command } from "foldkit"
 import { keyOf, request } from "../../data/slot"

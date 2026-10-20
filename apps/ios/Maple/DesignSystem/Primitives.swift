@@ -145,7 +145,7 @@ struct LatencyBaseline {
 	}
 }
 
-/// Service health, from `apps/web-foldkit/src/components/dashboard/service-health.ts`.
+/// Service health, from `apps/web/src/components/dashboard/service-health.ts`.
 /// The thresholds below are that file's, and changing one without the other
 /// puts the phone and the dashboard into disagreement about the same service.
 enum ServiceHealth {

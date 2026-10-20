@@ -1,7 +1,7 @@
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { TONE_BORDER, TONE_SOFT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { statusDot } from "@maple/web-foldkit/ui/status-dot"
+import { statusDot } from "@maple/web/ui/status-dot"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { MISSES_BEFORE_DOWN, type ServerState } from "../server/state"

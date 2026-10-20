@@ -1,5 +1,5 @@
 import { SpanId, TraceId } from "@maple/domain"
-import type { TraceData } from "@maple/web-foldkit/page/traces/detail/trace-data"
+import type { TraceData } from "@maple/web/page/traces/detail/trace-data"
 import { Option, Schema } from "effect"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"

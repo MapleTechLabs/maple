@@ -1,6 +1,6 @@
 import { DOCS_LOCAL_MODE_SEND_TELEMETRY } from "@maple/local-ui/lib/links"
-import { copyableField } from "@maple/web-foldkit/ui/copyable-field"
-import * as CopyButton from "@maple/web-foldkit/ui/copy-button"
+import { copyableField } from "@maple/web/ui/copyable-field"
+import * as CopyButton from "@maple/web/ui/copy-button"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type Copies, copyOf } from "./copies"
 

@@ -192,6 +192,6 @@ time is excluded; these numbers do not claim GitHub end-to-end latency.
 ## Type-aware lint memory
 
 `bun run lint` runs three oxlint passes in a row (`lint:core`, then `lint:foldkit` for
-apps/web-foldkit and apps/local-ui-foldkit). One pass over everything peaked at about 16 GB
+apps/web and apps/local-ui-foldkit). One pass over everything peaked at about 16 GB
 locally, and on the 16 GB runner the effect-lint job was killed with SIGTERM after about three
-minutes. Split, the largest pass (apps/web-foldkit) peaks at about 13.5 GB.
+minutes. Split, the largest pass (apps/web) peaks at about 13.5 GB.

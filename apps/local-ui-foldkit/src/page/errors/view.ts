@@ -1,6 +1,6 @@
 import { formatErrorRate } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { icon } from "@maple/web-foldkit/ui/icon"
+import { icon } from "@maple/web/ui/icon"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"

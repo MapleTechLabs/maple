@@ -3,7 +3,7 @@ import { formatErrorRate, formatRate } from "@maple/ui/lib/format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { ServiceMapEdgeRow } from "@maple/ui/components/service-map/service-map-types"
-import { HEALTH_TONE } from "@maple/web-foldkit/service-map/map/node-card"
+import { HEALTH_TONE } from "@maple/web/service-map/map/node-card"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { hrefFor } from "../../route"
 

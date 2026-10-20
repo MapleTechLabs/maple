@@ -1,4 +1,4 @@
-import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
+import * as FilterSections from "@maple/web/ui/filters/filter-sections"
 import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
 import { Copies } from "../kit/copies"

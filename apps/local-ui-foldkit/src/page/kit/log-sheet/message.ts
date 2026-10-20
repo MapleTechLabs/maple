@@ -1,7 +1,7 @@
-import * as AttributesPanel from "@maple/web-foldkit/ui/attributes/attributes-panel"
-import * as CopyButton from "@maple/web-foldkit/ui/copy-button"
-import * as Dialog from "@maple/web-foldkit/ui/dialog"
-import * as Tabs from "@maple/web-foldkit/ui/tabs"
+import * as AttributesPanel from "@maple/web/ui/attributes/attributes-panel"
+import * as CopyButton from "@maple/web/ui/copy-button"
+import * as Dialog from "@maple/web/ui/dialog"
+import * as Tabs from "@maple/web/ui/tabs"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 

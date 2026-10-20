@@ -1,6 +1,6 @@
 import type { TimeFormat } from "../kit/local-time"
 import { cn } from "@maple/ui/lib/utils"
-import { spinner } from "@maple/web-foldkit/ui/spinner"
+import { spinner } from "@maple/web/ui/spinner"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "./message"

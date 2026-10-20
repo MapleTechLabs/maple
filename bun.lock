@@ -259,7 +259,7 @@
         "@maple/local-ui": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "@maple/ui": "workspace:*",
-        "@maple/web-foldkit": "workspace:*",
+        "@maple/web": "workspace:*",
         "@tanstack/charts": "catalog:charts",
         "@tanstack/charts-scales": "catalog:charts",
         "effect": "catalog:effect",
@@ -314,8 +314,8 @@
         "vitest": "catalog:",
       },
     },
-    "apps/web-foldkit": {
-      "name": "@maple/web-foldkit",
+    "apps/web": {
+      "name": "@maple/web",
       "dependencies": {
         "@clerk/themes": "^2.4.57",
         "@effect/platform-browser": "4.0.4",
@@ -1669,9 +1669,9 @@
 
     "@maple/unitflow": ["@maple/unitflow@workspace:lib/unitflow"],
 
-    "@maple/web-data": ["@maple/web-data@workspace:packages/web-data"],
+    "@maple/web": ["@maple/web@workspace:apps/web"],
 
-    "@maple/web-foldkit": ["@maple/web-foldkit@workspace:apps/web-foldkit"],
+    "@maple/web-data": ["@maple/web-data@workspace:packages/web-data"],
 
     "@maple/widgets": ["@maple/widgets@workspace:packages/widgets"],
 

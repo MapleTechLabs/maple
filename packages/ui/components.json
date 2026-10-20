@@ -5,7 +5,7 @@
 	"tsx": true,
 	"tailwind": {
 		"config": "",
-		"css": "../../apps/web-foldkit/src/theme.css",
+		"css": "../../apps/web/src/theme.css",
 		"baseColor": "zinc",
 		"cssVariables": true,
 		"prefix": ""

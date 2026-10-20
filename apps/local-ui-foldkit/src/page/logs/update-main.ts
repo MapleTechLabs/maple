@@ -1,6 +1,6 @@
 import { snapToMinute, WIDEST_RANGE } from "@maple/local-ui/lib/time"
-import * as FilterSections from "@maple/web-foldkit/ui/filters/filter-sections"
-import * as ToggleGroup from "@maple/web-foldkit/ui/toggle-group"
+import * as FilterSections from "@maple/web/ui/filters/filter-sections"
+import * as ToggleGroup from "@maple/web/ui/toggle-group"
 import { Option, Result } from "effect"
 import { Command } from "foldkit"
 import { accept } from "../../data/slot"

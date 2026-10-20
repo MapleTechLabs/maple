@@ -1,6 +1,6 @@
-import * as AttributesPanel from "@maple/web-foldkit/ui/attributes/attributes-panel"
-import * as Dialog from "@maple/web-foldkit/ui/dialog"
-import * as Tabs from "@maple/web-foldkit/ui/tabs"
+import * as AttributesPanel from "@maple/web/ui/attributes/attributes-panel"
+import * as Dialog from "@maple/web/ui/dialog"
+import * as Tabs from "@maple/web/ui/tabs"
 import { Option, Schema } from "effect"
 import { Copies } from "../copies"
 

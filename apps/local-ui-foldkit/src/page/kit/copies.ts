@@ -1,4 +1,4 @@
-import * as CopyButton from "@maple/web-foldkit/ui/copy-button"
+import * as CopyButton from "@maple/web/ui/copy-button"
 import { Option, Record, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 

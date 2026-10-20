@@ -1,5 +1,5 @@
-import type { SpanNodeData } from "@maple/web-foldkit/page/traces/detail/trace-data"
-import { middleTruncate } from "@maple/web-foldkit/ui/middle-truncate"
+import type { SpanNodeData } from "@maple/web/page/traces/detail/trace-data"
+import { middleTruncate } from "@maple/web/ui/middle-truncate"
 import { calculateSelfTime, getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration, formatPercent } from "@maple/ui/lib/format"
 import { getHttpInfo, httpStatusTone } from "@maple/ui/lib/http"

@@ -1,7 +1,7 @@
 import { parseClickHouseDateTime } from "@maple/local-ui/lib/time"
 import { formatDuration } from "@maple/ui/lib/format"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
-import { spinner } from "@maple/web-foldkit/ui/spinner"
+import { spinner } from "@maple/web/ui/spinner"
 import type { DateTime } from "effect"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"

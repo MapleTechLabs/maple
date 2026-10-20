@@ -1,5 +1,5 @@
-import * as ServiceMap from "@maple/web-foldkit/service-map/map/service-map"
-import { Snapshot, ViewPrefs } from "@maple/web-foldkit/service-map/map/state"
+import * as ServiceMap from "@maple/web/service-map/map/service-map"
+import { Snapshot, ViewPrefs } from "@maple/web/service-map/map/state"
 import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
 import { Copies } from "../kit/copies"
