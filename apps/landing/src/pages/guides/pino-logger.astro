@@ -657,17 +657,17 @@ const articleJsonLd = {
                         <li>
                             <span>02</span>
                             <div><h4>Filter the Logs page</h4><p>Start the server with the SDK and send it a few requests. In <strong>Logs</strong>, filter <strong>Service</strong> to <code>orders-api</code>. The <strong>Severity</strong> filter lists Pino's level names. Paste a trace ID into the search box to see every line from one request.</p>
-                                <figure class="guide-figure"><img src="/screenshots/guides/pino-logger-01-logs.webp" data-zoomable alt="The Logs page filtered to the orders-api service, listing Pino lines such as loading order and request completed with their time, service and message, next to the severity and service filters." width="2400" height="1200" loading="lazy" /></figure></div>
+                                <figure class="guide-figure"><img src="/screenshots/guides/pino-logger-01-logs.webp" data-zoomable alt="The Logs page filtered to the orders-api service, listing Pino's loading order and request completed lines with their time, level and attributes, next to the severity and service filters." width="2362" height="1330" loading="lazy" /></figure></div>
                         </li>
                         <li>
                             <span>03</span>
                             <div><h4>Open a line</h4><p>Click a <code>loading order</code> row, then <strong>Open detail</strong>. <strong>Attributes</strong> shows <code>orderId</code> and <code>reqId</code>, and the meta strip shows the <code>trace:</code> link and span ID.</p>
-                                <figure class="guide-figure guide-figure--narrow"><img src="/screenshots/guides/pino-logger-02-log-detail.webp" data-zoomable alt="The detail sheet of a loading order log line: the message, a meta strip with the timestamp, trace link and span ID, and log attributes orderId 42 and reqId 1." width="1024" height="1400" loading="lazy" /></figure></div>
+                                <figure class="guide-figure guide-figure--narrow"><img src="/screenshots/guides/pino-logger-02-log-detail.webp" data-zoomable alt="The detail sheet of a loading order log line: the message, a meta strip with the timestamp, trace link and span ID, and log attributes orderId 42 and reqId." width="1342" height="690" loading="lazy" /></figure></div>
                         </li>
                         <li>
                             <span>04</span>
                             <div><h4>Move to the trace</h4><p>Click the <code>trace:</code> link to open the request's spans at the log's timestamp. From a trace, <strong>View Logs</strong> goes the other way.</p>
-                                <figure class="guide-figure"><img src="/screenshots/guides/pino-logger-03-trace.webp" data-zoomable alt="The trace of a GET /orders/:id request in orders-api: the HTTP server span and the Express or Fastify spans below it, opened from the log line's trace link." width="2400" height="1100" loading="lazy" /></figure></div>
+                                <figure class="guide-figure"><img src="/screenshots/guides/pino-logger-03-trace.webp" data-zoomable alt="The trace of a GET /orders/:id request in orders-api, opened from the log line's trace link: the HTTP server span with the Express middleware and request handler spans below it." width="2334" height="1022" loading="lazy" /></figure></div>
                         </li>
                     </ol>
 
