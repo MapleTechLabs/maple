@@ -14,6 +14,7 @@ import {
 	OrgClickHouseSettings,
 } from "@maple/db/tables"
 import { Array as Arr, ConfigProvider, Effect, Layer, Metric, Schema, Tracer } from "effect"
+import type { Types } from "effect"
 import * as CloudflareAnalyticsMetrics from "@maple/backend/observability/CloudflareAnalyticsMetrics"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { TestClock } from "effect/testing"
@@ -1495,6 +1496,79 @@ describe("CloudflareAnalyticsService", () => {
 		}).pipe(
 			Effect.provide(makeLayer(testDb, captured, { graphqlErrors: [{ message: "quota exceeded" }] })),
 		)
+	})
+
+	it.effect("each tick reports onto the grant's source, and a reconnect clears a revoked grant", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const fetchOptions: Types.Mutable<FetchOptions> = {
+			graphqlErrors: [{ message: "quota exceeded" }],
+		}
+		const readSource = Effect.promise(() =>
+			queryFirstRow<{
+				last_poll_ok_at: Date | null
+				last_poll_error: string | null
+				disconnected_at: Date | null
+				poll_resources: { total: number; unhealthy: number } | null
+			}>(
+				testDb,
+				"SELECT last_poll_ok_at, last_poll_error, disconnected_at, poll_resources FROM sources WHERE platform = 'cloudflare'",
+			),
+		)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			yield* seedStateRow({
+				dataset: "http_requests",
+				zoneId: ZONE_ID,
+				zoneName: ZONE_NAME,
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
+			})
+			yield* seedStateRow({
+				dataset: "workers_invocations",
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
+			})
+			const service = yield* CloudflareAnalyticsService
+			yield* service.pollOrg(ORG)
+			const failed = yield* readSource
+			assert.include(failed!.last_poll_error ?? "", "quota exceeded")
+			assert.isNull(failed!.last_poll_ok_at)
+			assert.isAbove(failed!.poll_resources?.total ?? 0, 1)
+			assert.strictEqual(failed!.poll_resources?.unhealthy, failed!.poll_resources?.total)
+
+			fetchOptions.graphqlErrors = undefined
+			yield* TestClock.adjust("5 minutes")
+			yield* service.pollOrg(ORG)
+			const healthy = yield* readSource
+			assert.isNull(healthy!.last_poll_error)
+			assert.isNotNull(healthy!.last_poll_ok_at)
+			assert.deepStrictEqual(healthy!.poll_resources, {
+				total: failed!.poll_resources?.total ?? 0,
+				unhealthy: 0,
+			})
+
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(OAuthConnections)
+						.set({ revokedAt: T0 })
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
+			)
+			yield* service.pollOrg(ORG)
+			const revoked = yield* readSource
+			assert.isNotNull(revoked!.disconnected_at)
+			assert.match(revoked!.last_poll_error ?? "", /Reconnect Cloudflare/)
+
+			yield* service.resetOrgState(ORG)
+			yield* TestClock.adjust("5 minutes")
+			yield* service.pollOrg(ORG)
+			const reconnected = yield* readSource
+			assert.isNull(reconnected!.disconnected_at)
+			assert.isNull(reconnected!.last_poll_error)
+		}).pipe(Effect.provide(makeLayer(testDb, captured, fetchOptions)))
 	})
 
 	it.effect("pollOrg surfaces a zone authz failure as an observable failure, not just a DB write", () => {

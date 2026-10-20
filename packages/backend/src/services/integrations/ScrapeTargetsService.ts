@@ -61,7 +61,12 @@ import {
 	deleteSourcesOf,
 	ensureIntegrationSource,
 	integrationSourceName,
+	type PollOutcome,
+	reportPoll,
 } from "@maple/backend/services/org/integration-sources"
+import type { MapleDb } from "@maple/db/client"
+import { scrapeResource } from "@maple/domain/integration-inventory"
+import type { SourceId } from "@maple/domain/primitives"
 
 type ScrapeTargetSet = PG.UpdateSetOf<typeof ScrapeTargets>
 type MutableScrapeTargetSet = { -readonly [K in keyof ScrapeTargetSet]: ScrapeTargetSet[K] }
@@ -1156,6 +1161,72 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				return rows.filter((row) => row.sourceId === null || !pausedIds.has(row.sourceId))
 			})
 
+			/**
+			 * Reports a batch onto each target's source with the error the target itself stores, named
+			 * when the source has several targets; failing or behind targets count as unhealthy.
+			 */
+			const reportSources = Effect.fnUntraced(function* (
+				db: MapleDb,
+				batchTargets: ReadonlyArray<{ readonly id: ScrapeTargetId; readonly sourceId: SourceId | null }>,
+			) {
+				const [first, ...rest] = Arr.dedupe(
+					batchTargets.flatMap((target) => (target.sourceId === null ? [] : [target.sourceId])),
+				)
+				if (first === undefined) return
+				const siblings = yield* db.run(
+					PG.from(ScrapeTargets)
+						.select(
+							"id",
+							"name",
+							"url",
+							"serviceName",
+							"managedBy",
+							"sourceId",
+							"scrapeIntervalSeconds",
+							"lastScrapeAt",
+							"lastScrapeError",
+						)
+						.where(($) => [$.sourceId.in_(first, ...rest), $.enabled.eq(true)]),
+				)
+				const now = yield* Clock.currentTimeMillis
+				// A PlanetScale connection's targets leave its source to the connection's own poller.
+				const managed = new Set(
+					siblings.flatMap((target) =>
+						target.managedBy === null || target.sourceId === null ? [] : [target.sourceId],
+					),
+				)
+				yield* Effect.forEach(
+					[first, ...rest].filter((sourceId) => !managed.has(sourceId)),
+					(sourceId) => {
+						// Each target's stored state after this batch, so a sibling's earlier failure still counts.
+						const targets = siblings.filter((target) => target.sourceId === sourceId)
+						const several = targets.length >= 2
+						const resources = several
+							? {
+									total: targets.length,
+									unhealthy: targets.filter((target) => {
+										const { status } = scrapeResource(target, now, "scrape target")
+										return status === "failing" || status === "stale"
+									}).length,
+								}
+							: undefined
+						const failing = targets.find((target) => target.lastScrapeError !== null)
+						const outcome: PollOutcome =
+							failing === undefined || failing.lastScrapeError === null
+								? { _tag: "Ok", resources }
+								: {
+										_tag: "Failed",
+										error: several
+											? `${failing.name}: ${failing.lastScrapeError}`
+											: failing.lastScrapeError,
+										resources,
+									}
+						return reportPoll(db, sourceId, outcome, now)
+					},
+					{ discard: true },
+				)
+			})
+
 			const recordScrapeResults = Effect.fn("ScrapeTargetsService.recordScrapeResults")(function* (
 				results: ReadonlyArray<{
 					readonly targetId: ScrapeTargetId
@@ -1202,18 +1273,27 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 								FROM (VALUES ${values}) AS v(id, last_scrape_at, set_scrape_at, last_scrape_error, updated_at, reported_at)
 								WHERE t.id = v.id AND t.updated_at <= v.reported_at`)
 
+							const [firstTargetId, ...restTargetIds] = [...summaryByTarget.keys()]
+							if (firstTargetId === undefined) return
+							const targetRows = yield* db.run(
+								PG.from(ScrapeTargets)
+									.select("id", "orgId", "sourceId")
+									.where(($) => [$.id.in_(firstTargetId, ...restTargetIds)]),
+							)
+							// Best effort: a failed health report must not fail the scrape report.
+							yield* reportSources(db, targetRows).pipe(
+								Effect.catch((error) =>
+									Effect.logWarning("scrape source health report failed").pipe(
+										Effect.annotateLogs({ error: error.message }),
+									),
+								),
+							)
+
 							if (!recordChecks) return
 
 							// Durable check history: one row per scheduled scrape attempt.
 							// Results for deleted targets are skipped (the FK would reject
 							// them anyway).
-							const [firstTargetId, ...restTargetIds] = [...summaryByTarget.keys()]
-							if (firstTargetId === undefined) return
-							const targetRows = yield* db.run(
-								PG.from(ScrapeTargets)
-									.select("id", "orgId")
-									.where(($) => [$.id.in_(firstTargetId, ...restTargetIds)]),
-							)
 							const orgIdByTarget = new Map(targetRows.map((row) => [row.id, row.orgId]))
 
 							const checkRows = results.flatMap((result) => {

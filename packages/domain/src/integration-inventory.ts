@@ -2,6 +2,12 @@
 // fills `IntegrationInventoryInputs` (narrow column projections, epoch ms), then
 // `buildIntegrationInventory` derives every status, same shape as `./setup-audit`.
 
+import {
+	SOURCE_HEALTH_STATUSES,
+	type SourceHealthResult,
+	type SourceHealthStatus,
+	worstSourceStatus,
+} from "./source-health"
 import { redactUrlSecrets } from "./url-redaction"
 
 export const INTEGRATION_PROVIDERS = [
@@ -14,23 +20,20 @@ export const INTEGRATION_PROVIDERS = [
 ] as const
 export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number]
 
-/** Worst first: a provider takes the worst status of itself and its resources. */
-export const INTEGRATION_STATUSES = ["disconnected", "failing", "stale", "pending", "healthy"] as const
-export type IntegrationStatus = (typeof INTEGRATION_STATUSES)[number]
+/** Worst first: a provider takes the worst status of its sources and resources. Same as a source's. */
+export const INTEGRATION_STATUSES = SOURCE_HEALTH_STATUSES
+export type IntegrationStatus = SourceHealthStatus
 
 const STATUS_RANK = {
 	disconnected: 0,
 	failing: 1,
 	stale: 2,
-	pending: 3,
-	healthy: 4,
+	paused: 3,
+	pending: 4,
+	healthy: 5,
 } satisfies Record<IntegrationStatus, number>
 
-export const worstStatus = (statuses: ReadonlyArray<IntegrationStatus>): IntegrationStatus =>
-	statuses.reduce<IntegrationStatus>(
-		(worst, s) => (STATUS_RANK[s] < STATUS_RANK[worst] ? s : worst),
-		"healthy",
-	)
+export const worstStatus = worstSourceStatus
 
 /** The alerting pollers tick every 5 minutes; six missed ticks is no longer a blip. */
 const POLLER_STALE_MS = 30 * 60 * 1000
@@ -550,3 +553,23 @@ export const buildIntegrationInventory = (
 		})),
 	}
 }
+
+/**
+ * A provider reads as the worst of its sources and its own resources, so `list_integrations`
+ * never reads better than Sources.
+ */
+export const withSourceHealth = (
+	inventory: IntegrationInventory,
+	sources: ReadonlyArray<{ readonly platform: string; readonly health: SourceHealthResult }>,
+): IntegrationInventory => ({
+	...inventory,
+	integrations: inventory.integrations.map((entry) => {
+		const own = sources.filter((source) => source.platform === entry.provider)
+		if (own.length === 0) return entry
+		const status = worstStatus([entry.status, ...own.map((source) => source.health.status)])
+		const problem =
+			own.find((source) => source.health.status === status)?.health.problem ?? entry.problem
+		return { ...entry, status, problem: status === "healthy" ? null : problem }
+	}),
+})
+

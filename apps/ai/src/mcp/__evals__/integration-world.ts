@@ -246,6 +246,44 @@ export const seedIntegrationWorld = async (rt: EvalRuntime) => {
 		 WHERE t.managed_by = 'planetscale:' || c.id`,
 		[],
 	)
+
+	// What each poller last reported for this world, as `reportPoll` writes it.
+	await sql(
+		`UPDATE sources s SET last_poll_at = t.last_scrape_at,
+			last_poll_ok_at = CASE WHEN t.last_scrape_error IS NULL THEN t.last_scrape_at END,
+			last_poll_error = t.last_scrape_error
+		 FROM scrape_targets t WHERE t.source_id = s.id AND s.platform = 'prometheus'`,
+		[],
+	)
+	const reported = (platform: string, okMinutesAgo: number, error: string | null, total: number, unhealthy: number) =>
+		sql(
+			`UPDATE sources SET last_poll_at = $2, last_poll_ok_at = $2, last_poll_error = $3,
+				poll_resources = $4::jsonb WHERE platform = $1`,
+			[platform, at(okMinutesAgo), error, JSON.stringify({ total, unhealthy })],
+		)
+	await reported(
+		"github",
+		3,
+		"acme/api: Not Found: the GitHub App installation no longer has access to this repository",
+		2,
+		1,
+	)
+	await reported(
+		"cloudflare",
+		2,
+		`${INTEGRATION_WORLD.failingZone}: authentication error (10000): the token lacks Analytics:Read on this zone`,
+		4,
+		1,
+	)
+	// `shop / preview` is four hours behind while the poll itself works: stale, not failing.
+	await reported("railway", 2, null, 3, 1)
+	await reported(
+		"planetscale",
+		4,
+		"maple-analytics: PlanetScale API returned HTTP 404 for deploy-requests: the database's branch was renamed",
+		3,
+		1,
+	)
 }
 
 // ---------------------------------------------------------------------------------------------

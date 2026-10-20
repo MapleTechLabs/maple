@@ -1590,6 +1590,54 @@ describe("VcsRepository", () => {
 		}).pipe(Effect.provide(repoLayer(testDb)))
 	})
 
+	it.effect("reports repository syncs and installation status on the installation's source", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sourceState = Effect.promise(() =>
+			queryFirstRow<{
+				last_poll_ok_at: Date | null
+				last_poll_error: string | null
+				disconnected_at: Date | null
+				poll_resources: { total: number; unhealthy: number } | null
+			}>(
+				testDb,
+				`SELECT s.last_poll_ok_at, s.last_poll_error, s.disconnected_at, s.poll_resources
+				 FROM vcs_installations i JOIN sources s ON s.id = i.source_id
+				 WHERE i.external_installation_id = '42'`,
+			),
+		).pipe(Effect.map((row) => row!))
+		return Effect.gen(function* () {
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_health")
+			yield* repo.upsertInstallation({ orgId, ...installationSeed("42", "100") })
+			yield* upsertReposFor(repo, "42", [
+				repoFixture({ externalRepoId: "7", fullName: "octo/a", name: "a" }),
+				repoFixture({ externalRepoId: "8", fullName: "octo/b", name: "b" }),
+			])
+			const a = yield* repoFor(repo, orgId, "7")
+			const b = yield* repoFor(repo, orgId, "8")
+
+			yield* repo.updateRepoSyncStatus(a.id, { status: "ready", syncedAt: 1 })
+			const ok = yield* sourceState
+			assert.isNotNull(ok.last_poll_ok_at)
+			assert.isNull(ok.last_poll_error)
+			assert.deepStrictEqual(ok.poll_resources, { total: 2, unhealthy: 0 })
+
+			yield* repo.markRepoSyncError(b.id, "upstream unavailable")
+			const failed = yield* sourceState
+			assert.strictEqual(failed.last_poll_error, "octo/b: upstream unavailable")
+			assert.deepStrictEqual(failed.poll_resources, { total: 2, unhealthy: 1 })
+
+			// A suspension disconnects the source, and reactivating reconnects it at once: an
+			// installation without repositories has no sync that would.
+			yield* markInstStatusFor(repo, "42", "suspended")
+			assert.isNotNull((yield* sourceState).disconnected_at)
+			yield* markInstStatusFor(repo, "42", "active")
+			const recovered = yield* sourceState
+			assert.isNull(recovered.disconnected_at)
+			assert.isNull(recovered.last_poll_error)
+		}).pipe(Effect.provide(repoLayer(testDb)))
+	})
+
 	// A SHA persisted in any case is normalized to lowercase (the GitCommitSha decode
 	// lowercases on the write path), so an uppercase push and a lowercase lookup never
 	// split into two rows.

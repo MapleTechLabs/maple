@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { buildIntegrationInventory, type IntegrationInventoryInputs } from "./integration-inventory"
+import {
+	buildIntegrationInventory,
+	type IntegrationInventoryInputs,
+	withSourceHealth,
+} from "./integration-inventory"
 
 const NOW = Date.UTC(2026, 9, 15, 12, 0, 0)
 const MINUTE = 60_000
@@ -260,3 +264,37 @@ describe("buildIntegrationInventory", () => {
 		})
 	})
 })
+
+describe("withSourceHealth", () => {
+	const inventory = build({ oauthConnections: [cloudflareGrant] })
+
+	it("reads a provider as the worst of its sources, with that source's problem", () => {
+		const cloudflare = withSourceHealth(inventory, [
+			{ platform: "cloudflare", health: { status: "healthy", lastDataAt: NOW, problem: null } },
+			{
+				platform: "cloudflare",
+				health: { status: "failing", lastDataAt: NOW, problem: "Zone analytics need a permission" },
+			},
+			{ platform: "railway", health: { status: "disconnected", lastDataAt: null, problem: "Revoked" } },
+		]).integrations.find((entry) => entry.provider === "cloudflare")
+		expect(cloudflare).toMatchObject({ status: "failing", problem: "Zone analytics need a permission" })
+	})
+
+	it("never reads a provider better than its own resources", () => {
+		const failingZone = build({
+			oauthConnections: [cloudflareGrant],
+			cloudflareStates: [
+				zone("shop.example.com", { lastSuccessAt: null, lastErrorAt: NOW - MINUTE, lastError: "denied" }),
+			],
+		})
+		const cloudflare = withSourceHealth(failingZone, [
+			{ platform: "cloudflare", health: { status: "healthy", lastDataAt: NOW, problem: null } },
+		]).integrations.find((entry) => entry.provider === "cloudflare")
+		expect(cloudflare?.status).toBe("failing")
+	})
+
+	it("leaves a provider without sources as its resources say", () => {
+		expect(withSourceHealth(inventory, [])).toEqual(inventory)
+	})
+})
+

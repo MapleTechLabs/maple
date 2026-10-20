@@ -528,6 +528,56 @@ describe("RailwayMetricsService", () => {
 		})
 	})
 
+	it.effect("each tick reports onto the source and a reconnect clears a rejected token", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		const readSource = () =>
+			Effect.promise(() =>
+				queryFirstRow<{
+					last_poll_ok_at: Date | null
+					last_poll_error: string | null
+					disconnected_at: Date | null
+				}>(
+					testDb,
+					"SELECT s.last_poll_ok_at, s.last_poll_error, s.disconnected_at FROM sources s JOIN railway_connections c ON c.source_id = s.id",
+				),
+			)
+		const behindAndUnleased = Effect.promise(() =>
+			queryFirstRow(testDb, "UPDATE railway_connections SET lease_until = NULL RETURNING id"),
+		).pipe(Effect.andThen(resetWatermarks(testDb)))
+		return Effect.gen(function* () {
+			const okStub = stubFetch(calls)
+			const connect = RailwayMetricsService.use((railway) => railway.connect(orgId, userId, "rw_token_123"))
+			yield* run(testDb, okStub, connect)
+			const healthy = yield* readSource()
+			assert.isNotNull(healthy!.last_poll_ok_at)
+			assert.isNull(healthy!.last_poll_error)
+
+			yield* behindAndUnleased
+			const refusedStub = stubFetch(calls, { ingestStatus: 403 })
+			yield* run(testDb, refusedStub, RailwayMetricsService.use((railway) => railway.pollOrg(orgId)))
+			const failed = yield* readSource()
+			const connection = yield* Effect.promise(() =>
+				queryFirstRow<{ last_error: string | null }>(testDb, "SELECT last_error FROM railway_connections"),
+			)
+			assert.isNotNull(failed!.last_poll_error)
+			assert.strictEqual(failed!.last_poll_error, connection!.last_error)
+			assert.isNull(failed!.disconnected_at)
+
+			yield* behindAndUnleased
+			const revokedStub = stubFetch(calls, { railway: "unauthorized" })
+			yield* run(testDb, revokedStub, RailwayMetricsService.use((railway) => railway.pollOrg(orgId)))
+			const rejected = yield* readSource()
+			assert.isNotNull(rejected!.disconnected_at)
+			assert.match(rejected!.last_poll_error ?? "", /Reconnect Railway/)
+
+			yield* run(testDb, stubFetch(calls), connect)
+			const reconnected = yield* readSource()
+			assert.isNull(reconnected!.disconnected_at)
+			assert.isNull(reconnected!.last_poll_error)
+		})
+	})
+
 	it.effect("discovery follows the projects cursor across pages", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls: StubCalls = { railway: [], ingest: [] }

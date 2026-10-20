@@ -132,6 +132,25 @@ const connect = (orgId: string) =>
 		yield* connections.finalizeOrgSelection(asOrgId(orgId), { organization: "acme" })
 	})
 
+interface SourcePollState {
+	readonly last_poll_at: Date | null
+	readonly last_poll_ok_at: Date | null
+	readonly last_poll_error: string | null
+	readonly disconnected_at: Date | null
+	readonly last_inventory_error: string | null
+}
+
+/** The poll state on the org's connection source, beside the connection's own error. */
+const sourcePollState = (testDb: TestDb, orgId: string) =>
+	Effect.promise(() =>
+		queryFirstRow<SourcePollState>(
+			testDb,
+			`SELECT s.last_poll_at, s.last_poll_ok_at, s.last_poll_error, s.disconnected_at, c.last_inventory_error
+			 FROM planetscale_connections c JOIN sources s ON s.id = c.source_id WHERE c.org_id = $1`,
+			[orgId],
+		),
+	).pipe(Effect.map((row) => row!))
+
 describe("PlanetScaleService", () => {
 	it.effect("pollAllOrgs refreshes inventory and lists databases", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -529,6 +548,36 @@ describe("PlanetScaleService", () => {
 				),
 			)
 			assert.isNotNull(connection?.last_inventory_error)
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
+		)
+	})
+
+	it.effect("reports each inventory tick on the connection's source", () => {
+		const testDb = createTestDb(trackedDbs)
+		const stub = stubApi({
+			databases: [{ id: "db_1", name: "main-db" }],
+			branchesByDatabase: { "main-db": [{ id: "br_1", name: "main", production: true }] },
+		})
+
+		return Effect.gen(function* () {
+			yield* connect("org_1")
+			const service = yield* PlanetScaleService
+			yield* service.pollAllOrgs()
+			const ok = yield* sourcePollState(testDb, "org_1")
+			assert.isNotNull(ok.last_poll_ok_at)
+			assert.isNull(ok.last_poll_error)
+
+			// The next refresh fails: the source records the connection's own error.
+			yield* (yield* PlanetScaleOAuthService).disconnect(asOrgId("org_1"))
+			yield* TestClock.adjust("2 hours")
+			assert.strictEqual((yield* service.pollAllOrgs()).failures, 1)
+			const failed = yield* sourcePollState(testDb, "org_1")
+			assert.isNotNull(failed.last_poll_error)
+			assert.strictEqual(failed.last_poll_error, failed.last_inventory_error)
+			assert.strictEqual(failed.last_poll_ok_at?.getTime(), ok.last_poll_ok_at?.getTime())
+			assert.isNull(failed.disconnected_at)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
 			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
@@ -1315,6 +1364,8 @@ describe("PlanetScaleService rejected tokens", () => {
 			assert.strictEqual(calls.refreshes, 1)
 			const grant = yield* oauth.grantStatus(asOrgId("org_1"))
 			assert.isNotNull(grant.revokedAt)
+			// The source says it needs a reconnect, not that a read failed.
+			assert.isNotNull((yield* sourcePollState(testDb, "org_1")).disconnected_at)
 
 			// The stamped grant is skipped outright: no token handed out, no API call.
 			const rejectedBefore = calls.rejected

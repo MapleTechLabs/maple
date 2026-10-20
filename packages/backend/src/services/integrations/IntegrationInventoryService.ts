@@ -11,17 +11,21 @@ import {
 	RailwayConnections,
 	RailwayEnvironments,
 	ScrapeTargets,
+	Sources,
 	VcsInstallations,
 	VcsRepositories,
 } from "@maple/db/tables"
 import {
 	buildIntegrationInventory,
 	type IntegrationInventory,
+	withSourceHealth,
 } from "@maple/domain/integration-inventory"
 import type { OrgId } from "@maple/domain/primitives"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { readTurnedOff } from "@maple/backend/services/org/integration-sources"
+import { sourceRowHealth } from "@maple/backend/services/org/source-rows"
 
 export class IntegrationInventoryUnavailableError extends Schema.TaggedError<IntegrationInventoryUnavailableError>()(
 	"@maple/backend/services/IntegrationInventoryUnavailableError",
@@ -161,6 +165,11 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 							.select("connector", "name", "createdAt")
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
+					sources: db.run(
+						PG.from(Sources)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.kind.eq("integration")]),
+					),
 				},
 				{ concurrency: "unbounded" },
 			),
@@ -168,7 +177,7 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 
 		const now = yield* Clock.currentTimeMillis
 		const planetscale = rows.planetscaleConnections[0]
-		return buildIntegrationInventory(
+		const inventory = buildIntegrationInventory(
 			{
 				oauthConnections: rows.oauthConnections,
 				vcsInstallations: rows.vcsInstallations,
@@ -198,6 +207,14 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 				chatWorkspaces: rows.chatWorkspaces,
 			},
 			now,
+		)
+		const turnedOff = yield* dbExecute((db) => readTurnedOff(db, orgId))
+		return withSourceHealth(
+			inventory,
+			rows.sources.map((source) => ({
+				platform: source.platform,
+				health: sourceRowHealth(source, now, turnedOff.get(source.id)),
+			})),
 		)
 	})
 

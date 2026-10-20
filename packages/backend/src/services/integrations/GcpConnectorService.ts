@@ -34,6 +34,7 @@ import {
 	deleteSourcesOf,
 	ensureIntegrationSource,
 	integrationSourceName,
+	reportPoll,
 } from "@maple/backend/services/org/integration-sources"
 
 export interface GcpConnector {
@@ -503,6 +504,10 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 										.set({ ...changes, updatedAt })
 										.where(($) => [$.id.eq(connectorId)]),
 								)
+								// Metrics switched off: the last read's error no longer describes the source.
+								if (current.metricsEnabled && !flags.metricsEnabled) {
+									yield* reportPoll(db, current.sourceId, { _tag: "Ok" }, updatedAt)
+								}
 							}
 							return { row: { ...current, ...changes }, invalid }
 						}),

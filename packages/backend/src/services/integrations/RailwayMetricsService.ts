@@ -17,6 +17,7 @@ import {
 	RailwayIntegrationStatus,
 	UserId,
 } from "@maple/domain/http"
+import { pollStatus } from "@maple/domain/integration-inventory"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	RailwayConnections,
@@ -37,6 +38,8 @@ import {
 	ensureIntegrationSource,
 	integrationSourceName,
 	isSourcePaused,
+	type PollOutcome,
+	reportPoll,
 	stampedSourceId,
 } from "@maple/backend/services/org/integration-sources"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
@@ -79,6 +82,11 @@ const decodeServices = Schema.decodeUnknownOption(
 
 const SYSTEM_USER_ID = decodeUserId("system-railway-metrics")
 
+/** An environment with no good poll in this long reads stale, the same window as the inventory. */
+const ENVIRONMENT_STALE_MS = 30 * 60_000
+
+const TOKEN_REJECTED_REASON = "Railway rejected the token. Reconnect Railway with a new token."
+
 const toPersistenceError = makePersistenceErrorMapper(IntegrationsPersistenceError, "Railway database error")
 
 const floorToSample = (ms: number) => ms - (ms % SAMPLE_MS)
@@ -105,6 +113,8 @@ interface RailwayPollTally {
 	readonly rowsIngested: number
 	readonly lastError: string | null
 	readonly stopped: boolean
+	/** Railway rejected the token mid-pass; the source already reads disconnected. */
+	readonly rejected: boolean
 }
 
 export interface RailwayPollOrgSummary {
@@ -193,6 +203,29 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 							.set(set)
 							.where(($) => [$.id.eq(rowId)]),
 					),
+				)
+
+			/** Best effort: a failed health report must not fail the tick it describes. */
+			const reportTick = (sourceId: RailwayConnectionRow["sourceId"], outcome: PollOutcome, now: number) =>
+				dbExecute((db) => reportPoll(db, sourceId, outcome, now)).pipe(
+					Effect.catchTag("@maple/http/errors/IntegrationsPersistenceError", (error) =>
+						Effect.logWarning("railway source health report failed").pipe(
+							Effect.annotateLogs({ sourceId, error: error.message }),
+						),
+					),
+				)
+
+			/** Enabled environments, and how many failed or fell behind, as the inventory counts them. */
+			const environmentHealth = (orgId: OrgId, now: number) =>
+				loadEnvironments(orgId).pipe(
+					Effect.map((rows) => {
+						const enabled = rows.filter((row) => row.enabled)
+						const unhealthy = enabled.filter((row) => {
+							const status = pollStatus(row, now, ENVIRONMENT_STALE_MS)
+							return status === "failing" || status === "stale"
+						})
+						return { total: enabled.length, unhealthy: unhealthy.length }
+					}),
 				)
 
 			const decryptToken = (connection: RailwayConnectionRow) =>
@@ -560,7 +593,15 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 							lastError: message,
 							lastErrorAt: now,
 							updatedAt: now,
-						})
+						}).pipe(
+							Effect.andThen(
+								reportTick(
+									claimed.sourceId,
+									{ _tag: "Disconnected", reason: TOKEN_REJECTED_REASON },
+									now,
+								),
+							),
+						)
 
 					const needsDiscovery =
 						claimed.discoveredAt === null || now - claimed.discoveredAt >= DISCOVERY_TTL_MS
@@ -600,8 +641,8 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 						return { ...skip("ingest key unavailable"), callsMade: discoveryCalls }
 					const sourceId = stampedSourceId(claimed.sourceId)
 
-					const environments = (yield* loadEnvironments(orgId))
-						.filter((row) => row.enabled)
+					const enabled = (yield* loadEnvironments(orgId)).filter((row) => row.enabled)
+					const environments = enabled
 						.map((row) => ({ row, window: nextWindow(row.watermarkAt, now) }))
 						.filter((item) => item.window !== null)
 						// Most-behind first, so a tight call budget still spreads across environments.
@@ -615,8 +656,9 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 						rowsIngested: 0,
 						lastError: discoveryError,
 						stopped: false,
+						rejected: false,
 					}
-					const { callsMade, failures, rowsIngested, lastError } = yield* Effect.reduce(
+					const { callsMade, failures, rowsIngested, lastError, rejected } = yield* Effect.reduce(
 						environments,
 						() => initial,
 						(tally, { row, window }) =>
@@ -658,7 +700,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 										if (error._tag === "@maple/backend/integrations/RailwayApiError") {
 											if (error.kind === "unauthorized") {
 												yield* markAuthFailed(error.message)
-												return { ...failed, stopped: true }
+												return { ...failed, stopped: true, rejected: true }
 											}
 											if (error.kind === "rate_limited") {
 												const retryMs = (error.retryAfterSeconds ?? 0) * 1000
@@ -699,6 +741,16 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 									updatedAt: now,
 								},
 					)
+					const resources = enabled.length >= 2 ? yield* environmentHealth(orgId, now) : undefined
+					if (!rejected) {
+						yield* reportTick(
+							claimed.sourceId,
+							lastError === null
+								? { _tag: "Ok", resources }
+								: { _tag: "Failed", error: lastError.slice(0, 500), resources },
+							now,
+						)
+					}
 					yield* Effect.annotateCurrentSpan({
 						"maple.railway.calls_made": callsMade,
 						"maple.railway.rows_ingested": rowsIngested,
