@@ -1,4 +1,4 @@
-import type { AlertsLabFixture } from "@maple/web/lab/alerts-fixture"
+import type { AlertsLabFixture } from "../alerts-fixture"
 import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 import { cn } from "@maple/ui/lib/utils"
 import { Submodel } from "foldkit"

@@ -17,7 +17,7 @@ import {
 } from "../../kit/display-sections-more"
 import { kitPage, kitSection } from "../../kit/kit-layout"
 
-// Port of `/lab/kit/display` (apps/web/src/lab/kit/display.tsx): surfaces, data display and
+// `/lab/kit/display`: surfaces, data display and
 // loading states. Both tab strips and the trace id copy button are live Submodels.
 
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
@@ -31,7 +31,7 @@ const Model = Schema.Struct({
 })
 type Model = typeof Model.Type
 
-// Base UI ids in legacy render order: the first Tabs takes `_r_0_`..`_r_3_`, the second `_r_4_`..`_r_7_`.
+// Base UI ids in render order: the first Tabs takes `_r_0_`..`_r_3_`, the second `_r_4_`..`_r_7_`.
 const init = (): Update.Return<Model, Message> => ({
 	model: {
 		defaultTabs: Tabs.init({ idBase: 0, values: ["overview", "traces", "logs"], selected: "overview" }),

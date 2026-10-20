@@ -1,8 +1,6 @@
-import { deriveHostStatus, severityLevel } from "@maple/web/components/infra/format"
+import { deriveHostStatus, severityLevel } from "../../../../components/infra/format"
 import type { HostScope } from "./message"
 import type { HostRow } from "./model"
-
-// copied: `hostPeak`, `hostInScope`, `countHostScopes` (host-summary-band.tsx, a React module).
 
 export const hostPeak = (host: HostRow): number => Math.max(host.cpuPct, host.memoryPct, host.diskPct)
 

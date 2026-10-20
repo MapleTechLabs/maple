@@ -5,12 +5,12 @@ import {
 	gcpLineRows,
 	type GcpChart,
 	type GcpChartWindow,
-} from "@maple/web/components/infra/gcp/charts"
+} from "../../../../components/infra/gcp/charts"
 import {
 	gcpStripDomain,
 	gcpWorkloadStrips,
 	type GcpStripSummary,
-} from "@maple/web/components/infra/gcp/workload-signals"
+} from "../../../../components/infra/gcp/workload-signals"
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"
@@ -28,8 +28,7 @@ import type { BucketPoint } from "../data"
 import { MountLinkedCursor } from "./command"
 import { Message, type Model } from "./model"
 
-// `CorrelationStrips` (components/infra/service-lens/correlation-strips.tsx) as the workload's
-// signals, and `GcpWorkloadCharts` (components/infra/gcp/gcp-workload-charts.tsx).
+// `CorrelationStrips` as the workload's signals, and `GcpWorkloadCharts`.
 
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>

@@ -38,7 +38,7 @@ import {
 	LOCAL_SCHEMA_V32,
 	LOCAL_SCHEMA_V33,
 	LOCAL_SCHEMA_V34,
-	LOCAL_SCHEMA_V35,
+	LOCAL_SCHEMA_V36,
 	SCHEMA_DIGEST,
 	SCHEMA_FINGERPRINT,
 } from "../src/server/schema-identity"
@@ -103,11 +103,11 @@ const [v10ToV11ProductEventsModule] = localStoreMigrations.filter(
 )
 
 describe("current local schema identity", () => {
-	it("matches the generated v35 revision and keeps the issue-297 identity frozen", () => {
+	it("matches the generated v36 revision and keeps the issue-297 identity frozen", () => {
 		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
-		expect(SCHEMA_FINGERPRINT).toBe("7f3cd8b20c0429de")
+		expect(SCHEMA_FINGERPRINT).toBe("852eff8639a658be")
 		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
-		expect(SCHEMA_DIGEST).toBe("7f3cd8b20c0429de801f4abe52c70d71fcc66551745477d14a2be5c036905bdd")
+		expect(SCHEMA_DIGEST).toBe("852eff8639a658be84edd508d37fe94c155657dd20b83087ebc3ac66fba864ae")
 		// oxlint-disable-next-line test-slop/no-constant-pin -- frozen identity that stores already on disk carry
 		expect(ISSUE_297_TARGET_SCHEMA_PROJECT_REVISION).toBe(
 			"506bc745f7a7eca202ec905a6403a6815e86413faf0cd3cbbf73881023edce91",
@@ -115,8 +115,8 @@ describe("current local schema identity", () => {
 		expect(CURRENT_SCHEMA_PROJECT_REVISION).toMatch(/^[0-9a-f]{64}$/)
 		expect(LOCAL_SCHEMA_MANIFEST.objects.length).toBeGreaterThan(60)
 		// oxlint-disable-next-line test-slop/no-constant-pin -- anchor that local-schema:bump rewrites on every bump
-		expect(CURRENT_LOCAL_SCHEMA.version).toBe(35)
-		expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V35)
+		expect(CURRENT_LOCAL_SCHEMA.version).toBe(36)
+		expect(CURRENT_LOCAL_SCHEMA).toEqual(LOCAL_SCHEMA_V36)
 		const logs = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === "logs")
 		expect(logs?.columns.some((column) => column.name.startsWith("idx_"))).toBe(false)
 		expect(logs?.indexes).toContain("idx_lower_body")
@@ -397,7 +397,7 @@ describe("local migration registry", () => {
 				// One past the current tip — bump alongside LOCAL_SCHEMA_VERSION, or this
 				// stops testing the future-store guard and starts testing the
 				// unknown-fingerprint one.
-				{ ...CURRENT_LOCAL_SCHEMA, version: 36, fingerprint: "future", digest: SCHEMA_DIGEST },
+				{ ...CURRENT_LOCAL_SCHEMA, version: 37, fingerprint: "future", digest: SCHEMA_DIGEST },
 				CURRENT_LOCAL_SCHEMA,
 			),
 		).toThrow(/newer than this build/)
@@ -551,6 +551,7 @@ describe("local migration registry", () => {
 			"local-0032-to-0033-trace-index",
 			"local-0033-to-0034-traces-trace-key",
 			"local-0034-to-0035-drop-trace-detail-spans",
+			"local-0035-to-0036-aligned-ttls",
 		]
 		const versions = (id: string) => {
 			const match = /^local-(\d{4})-to-(\d{4})-[a-z0-9]+(-[a-z0-9]+)*$/.exec(id)
@@ -587,12 +588,13 @@ describe("local migration registry", () => {
 			// Every count check compares against a key the source measured.
 			const measured = new Set(step.counts?.measure.map(([key]) => key))
 			for (const check of step.counts?.checks ?? []) expect(measured.has(check.key)).toBe(true)
-			// Every statement is idempotent, so a resumed apply lands where it left off.
+			// Every statement is idempotent, so a resumed apply lands where it left off. MODIFY TTL
+			// sets a fixed expression, so re-running it changes nothing.
 			for (const statement of stepStatements([
 				...(step.beforeBootstrap ?? []),
 				...(step.afterBootstrap ?? []),
 			]))
-				expect(statement).toMatch(/IF (NOT )?EXISTS|^DELETE FROM |^INSERT INTO /)
+				expect(statement).toMatch(/IF (NOT )?EXISTS|^DELETE FROM |^INSERT INTO | MODIFY TTL /)
 		}
 	})
 
@@ -1537,6 +1539,7 @@ describe("v10 -> v11 product events module", () => {
 			"local-0032-to-0033-trace-index",
 			"local-0033-to-0034-traces-trace-key",
 			"local-0034-to-0035-drop-trace-detail-spans",
+			"local-0035-to-0036-aligned-ttls",
 		])
 		expect(chain[0]?.to).toEqual(LOCAL_SCHEMA_V11)
 		// The dropped table is declared, and the backfilled ones say what they

@@ -22,7 +22,7 @@ import { generateWidgetId, withAddedWidget } from "../../dashboards/kit/layout"
 import { createPayload } from "../../dashboards/kit/portable"
 import { awaitTxid, mutateDashboard, readDocument } from "../../dashboards/kit/store"
 
-// `AddToDashboardDialog` (apps/web/src/components/metrics/metric-graduation-actions.tsx): the
+// The add-to-dashboard dialog: the
 // explorer's query as a chart widget on an existing dashboard, or on a new one created with it.
 
 const DashboardChoice = Schema.Struct({ id: Schema.String, name: Schema.String, widgetCount: Schema.Number })
@@ -81,7 +81,7 @@ export const AddWidget = Command.define("AddMetricWidgetToDashboard", {
 			const id = generateWidgetId(yield* Clock.currentTimeMillis, yield* Random.next)
 			const widget = widgetOf(draft, crypto.randomUUID())
 			// `addWidget` throws when the board is not readable; the write itself is not awaited:
-			// legacy navigates on the optimistic update and lets the store report a failed persist.
+			// it navigates on the optimistic update and lets the store report a failed persist.
 			yield* readDocument(orgId, dashboardId)
 			yield* Effect.forkDetach(
 				mutateDashboard(orgId, dashboardId, (document, nowIso) =>

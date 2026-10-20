@@ -6,7 +6,7 @@ import { ThemeColors } from "../../../charts/theme-colors"
 import { TimeWindow } from "../../../data/time-range"
 import { ChartModels, SeriesResult, SeriesSlots } from "../../infra/kit/series"
 
-// `InfraCorrelationPanel` (apps/web/src/components/infra/infra-correlation-panel.tsx): the pod,
+// The infra correlation panel: the pod,
 // node, container or host charts of the record a log sheet or span panel shows.
 
 const Attributes = Schema.Record(Schema.String, Schema.String)

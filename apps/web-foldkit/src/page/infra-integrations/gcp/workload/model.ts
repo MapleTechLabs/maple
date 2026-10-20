@@ -10,7 +10,7 @@ import { InfraGcpResourceSearch } from "../../../../route/search"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { BucketPoint, FleetRead, OverviewRow, Resources, ServiceId, Statement, TraceSide } from "../data"
 
-// `/infra/gcp/$service/$name` (apps/web/src/routes/infra/gcp/$service/$name.tsx).
+// `/infra/gcp/$service/$name`.
 
 export const Model = Schema.Struct({
 	service: ServiceId,

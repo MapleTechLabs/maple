@@ -24,7 +24,7 @@ import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
 import { isServiceChart, serviceChart, serviceLegend } from "./tiles-service"
 
-// `makeChartWidget` (dashboard-builder/widgets/make-chart-widget.tsx): one factory for every widget
+// `makeChartWidget`: one factory for every widget
 // that mounts a registry chart, each branch handing its chart only the settings it declares.
 // TODO(chart-axes): line/area/bar thresholds, log scale and soft bounds are not drawn yet.
 

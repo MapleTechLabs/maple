@@ -1,8 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// Port of `SeriesLegend` (apps/web/src/components/common/series-legend.tsx).
-
 export type SeriesLegendSwatch = "dot" | "square" | "line" | "dashed"
 
 export interface SeriesLegendItem {
@@ -10,7 +8,7 @@ export interface SeriesLegendItem {
 	readonly label?: Html | string
 	readonly title?: string
 	readonly color?: string
-	/** The value, as React's children: a number renders as its own text node. */
+	/** The value: a number renders as its own text node. */
 	readonly value?: Html | string | number
 	readonly swatch?: SeriesLegendSwatch
 }

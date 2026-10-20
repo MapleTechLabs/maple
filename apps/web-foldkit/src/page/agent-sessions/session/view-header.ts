@@ -14,7 +14,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `SessionHeader` (session-detail/session-header.tsx): what ran, when, on what.
+// The session header: what ran, when, on what.
 
 type H = HtmlBuilder<Message>
 

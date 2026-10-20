@@ -1,4 +1,4 @@
-import { metricsNeverCollected } from "@maple/web/components/integrations/planetscale-setup-steps"
+import { metricsNeverCollected } from "../../../../components/integrations/planetscale-setup-steps"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import * as Keyed from "../../../../data/keyed"

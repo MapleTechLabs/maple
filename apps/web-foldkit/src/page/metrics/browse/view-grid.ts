@@ -23,7 +23,7 @@ import {
 import { Message } from "./message"
 import type { Model, SparklinePoint } from "./model"
 
-// `MetricPreviewGrid` and `MetricPreviewCard` (components/metrics/metric-preview-grid.tsx, metric-preview-card.tsx).
+// The metric preview grid and its cards.
 
 type H = HtmlBuilder<Message>
 

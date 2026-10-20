@@ -21,9 +21,9 @@ import { statusDot } from "../../../ui/status-dot"
 import { serviceDot } from "../../../ui/values"
 import { relativeTime } from "../../kit/relative-time"
 
-// `AnomalyRow` (apps/web/src/components/anomalies/anomaly-row.tsx).
+// `AnomalyRow`: one anomaly in a list.
 
-/** `shortIssueId` (components/errors/issue-id.ts): the first seven hex digits, upper case. */
+/** `shortIssueId`: the first seven hex digits, upper case. */
 export const shortIssueId = (id: string): string => id.replace(/-/g, "").slice(0, 7).toUpperCase()
 
 export const anomalyHref = (incidentId: AnomalyIncidentId) => hrefOf(AppRoute.Anomaly({ incidentId }))

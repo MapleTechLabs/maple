@@ -1,4 +1,4 @@
-import { gcpLogFilterChoice } from "@maple/web/components/integrations/gcp-connector-state"
+import { gcpLogFilterChoice } from "../../components/integrations/gcp-connector-state"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Message as IntegrationsMessage } from "../../page/integrations/message"

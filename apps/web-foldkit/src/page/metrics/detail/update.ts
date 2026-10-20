@@ -195,7 +195,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 	}
 }
 
-/** The select and comboboxes show what the URL and the summary say (legacy's controlled values). */
+/** The select and comboboxes show what the URL and the summary say. */
 const syncControls = (model: Model): Model => {
 	const summary = summaryOf(model)
 	const aggregation = summary === null ? model.aggregationSelect.value : draftOf(model, summary).aggregation

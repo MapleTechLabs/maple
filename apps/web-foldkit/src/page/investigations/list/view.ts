@@ -52,7 +52,7 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `InvestigationsHub` (apps/web/src/routes/investigations/index.tsx) and `InvestigationTable`.
+// `InvestigationsHub` and `InvestigationTable`: the investigations list page.
 
 type H = HtmlBuilder<Message>
 

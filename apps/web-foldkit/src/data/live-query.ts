@@ -25,8 +25,7 @@ export const releaseLiveQuery = ({ collection, subscription }: LiveQuery): Effec
 /**
  * `useLiveQuery` as a Subscription stream (Hazel `apps/web-foldkit/src/data/live-query.ts`):
  * emits the full result once the live query is ready and again after every change, and cleans
- * the live query up when the Subscription's dependencies change or it is torn down. The query
- * builder is the same one apps/web passes to `useLiveQuery`, so filters and order match exactly.
+ * the live query up when the Subscription's dependencies change or it is torn down.
  */
 export const liveQueryStream = <TContext extends Context, Message>(
 	query: (q: InitialQueryBuilder) => QueryBuilder<TContext>,

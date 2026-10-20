@@ -1,7 +1,7 @@
 import { Clock, Effect, Option, Schema } from "effect"
 import { browserZone, readSupportedTimeZones, SYSTEM_VALUE } from "../../platform/time-zone"
 
-// copied: the zone list logic of `TimezoneSelect` (apps/web/src/components/time-range-picker/timezone-select.tsx).
+// The zone list logic of the timezone select.
 
 /** One option: `__system__` or an IANA zone, with what it shows frozen at the list's open. */
 export const ZoneRow = Schema.Struct({
@@ -17,7 +17,7 @@ export const ZoneRow = Schema.Struct({
 })
 export type ZoneRow = typeof ZoneRow.Type
 
-/** An unknown zone throws in the constructor; legacy then shows `UTC` / `--:--`. */
+/** An unknown zone throws in the constructor; it then shows `UTC` / `--:--`. */
 const offsetFormatter = Option.liftThrowable(
 	(timeZone: string) => new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" }),
 )
@@ -87,7 +87,7 @@ export const zoneRows = (zones: ReadonlyArray<string>, browser: string, atMs: nu
 	return [rowOf(SYSTEM_VALUE, browser, atMs, true, false), rowOf("UTC", "UTC", atMs, true, false), ...sorted]
 }
 
-/** The list as it opens: `now` frozen per open, as legacy's `onOpenChange` sets it. */
+/** The list as it opens: `now` frozen per open. */
 export const readZoneRows: Effect.Effect<ReadonlyArray<ZoneRow>> = Effect.map(
 	Effect.all([readSupportedTimeZones, browserZone, Clock.currentTimeMillis]),
 	([zones, browser, nowMs]) => zoneRows(zones, browser, nowMs),

@@ -7,7 +7,7 @@ import { InfraSearch } from "../../../route/search"
 import * as Frame from "../kit/frame"
 import * as InstallModal from "../kit/install-modal"
 
-// `/infra` (apps/web/src/routes/infra/index.tsx): the overview, one summary per source.
+// `/infra`: the overview, one summary per source.
 
 export const SOURCE_IDS = ["hosts", "containers", "kubernetes", "cloudflare", "railway", "planetscale", "gcp"] as const
 export const SourceId = Schema.Literals(SOURCE_IDS)
@@ -16,7 +16,7 @@ export type SourceId = typeof SourceId.Type
 const FleetScope = Schema.Literals(["saturated", "elevated", "stale"])
 const GcpService = Schema.Literals(GCP_INFRA_SERVICE_IDS)
 
-/** `FindingTarget` (components/infra/overview/summaries.ts). */
+/** `FindingTarget`. */
 export const FindingTarget = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("hosts"), scope: FleetScope }),
 	Schema.Struct({ kind: Schema.Literal("host"), hostName: Schema.String }),

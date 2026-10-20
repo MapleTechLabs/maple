@@ -9,7 +9,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { peekPosition, traceHrefFrom } from "./peek"
 
-// `TracePeekSheet`'s frame (components/traces/trace-peek-sheet.tsx): the sheet, the trace page's
+// The trace peek sheet's frame: the sheet, the trace page's
 // peek body, and the footer that walks the list and opens the page.
 
 type H = HtmlBuilder<Message>

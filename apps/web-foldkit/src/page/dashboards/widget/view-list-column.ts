@@ -12,7 +12,7 @@ import { ProductEdit } from "./product-edit"
 import { listAlignSelectId, listUnitSelectId } from "./product-selects"
 import { pageSelect } from "./view-select"
 
-// `DraggableColumnRow` (list-config-panel.tsx): grip, field (with its suggestions while focused),
+// `DraggableColumnRow`: grip, field (with its suggestions while focused),
 // header, unit, alignment and remove. The grip drags (`MountListColumnDrag`) or moves by arrow key.
 
 type H = HtmlBuilder<Message>

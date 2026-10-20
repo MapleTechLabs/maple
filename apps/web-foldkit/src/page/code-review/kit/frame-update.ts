@@ -131,7 +131,7 @@ export const updateFrame = (
 ): FrameReturn =>
 	FrameMessage.match<FrameReturn>(message, {
 		// Reload only re-resolves (unsnapped): a window that moved is a new key, an unchanged one
-		// is the retained answer, as legacy's `PageRefreshProvider` does.
+		// is the retained answer.
 		CompletedResolveWindow: ({ window, nowMs }) => ({
 			frame: { ...frame, window, nowMs },
 			commands: [],

@@ -15,7 +15,7 @@ import * as Dialog from "../../ui/dialog"
 import * as Field from "../../ui/field"
 import { Message } from "./message"
 
-// `PlanetScaleIntegrationCard` and its parts (components/integrations/planetscale-*.tsx): state and IO.
+// `PlanetScaleIntegrationCard` and its parts: state and IO.
 
 export const PlanetscaleCardModel = Schema.Struct({
 	/** `PlanetScaleOrgPicker`, inline while the org is pending, in a dialog to change it. */
@@ -68,8 +68,8 @@ export const initPlanetscaleCard = (): PlanetscaleCardModel => ({
 export const SECRET_PREFIX = "pscale_tkn_"
 
 /**
- * `normalizeTokenPaste` (planetscale-metrics-token-form.tsx, a React module): an `id:secret` line
- * fills both fields, and a bare secret pasted into the id field goes to the secret.
+ * `normalizeTokenPaste`: an `id:secret` line fills both fields, and a bare secret pasted into the id
+ * field goes to the secret.
  */
 export const normalizeTokenPaste = (
 	field: "id" | "secret",

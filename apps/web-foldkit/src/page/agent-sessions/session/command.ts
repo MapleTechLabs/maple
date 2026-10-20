@@ -17,7 +17,7 @@ export const PAGE_SIZE = 2_000
 export const MIN_PAGE_SIZE = 250
 
 /**
- * The read's bounds, snapped to the 15s grid as the legacy cache key snaps them; absent keys without
+ * The read's bounds, snapped to the 15s grid like the cache key; absent keys without
  * a window (an explicit undefined would encode as null).
  */
 const sessionInput = (sessionId: string, window: TimeWindow | null) =>

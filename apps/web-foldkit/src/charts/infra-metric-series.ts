@@ -1,7 +1,7 @@
 import {
 	transformRows as transformRowsWith,
 	type TransformedPoint,
-} from "@maple/web/components/infra/chart-units"
+} from "../components/infra/chart-units"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 
 // What `InfraMetricChart`'s callers read besides `chart-units`: the long-form pivot, colours and
@@ -12,7 +12,7 @@ export {
 	chartBucketSeconds,
 	formatValueWithUnit,
 	UNNAMED_SERIES_KEY,
-} from "@maple/web/components/infra/chart-units"
+} from "../components/infra/chart-units"
 
 export type InfraPoint = TransformedPoint
 

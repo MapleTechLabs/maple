@@ -11,7 +11,7 @@ import type { QuickPickItem } from "./quick-pick"
 import { SEVERITY_LABEL, SEVERITY_ORDER, severityIcon } from "./severity"
 import { WORKFLOW_LABEL, workflowRingIcon } from "./workflow"
 
-// `SeverityPicker` and `StatePicker` (components/errors/issue-pickers.tsx): their triggers and the
+// The severity and state pickers: their triggers and the
 // rows their `QuickPickMenu` offers.
 
 export type PickerKind = "severity" | "state"

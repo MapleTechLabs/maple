@@ -20,7 +20,7 @@ import type { Message } from "./message"
 import type { Model } from "./model"
 import { entryPlate } from "./view-entry"
 
-// `IntegrationsSummary` and `IntegrationCatalog` (integration-catalog.tsx).
+// `IntegrationsSummary` and `IntegrationCatalog`.
 
 type H = HtmlBuilder<Message>
 type Select = (id: IntegrationId) => Message

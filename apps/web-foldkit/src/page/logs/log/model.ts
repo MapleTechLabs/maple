@@ -5,7 +5,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import { LogRecord } from "../../../ui/logs/log-row-view"
 import * as LogDetail from "../detail"
 
-// `/logs/$logId` (apps/web/src/routes/logs/$logId.tsx): one log's shareable page.
+// `/logs/$logId`: one log's shareable page.
 
 const LogKey = Schema.Struct({
 	timestamp: Schema.String,

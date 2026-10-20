@@ -9,7 +9,7 @@ import { Frame, FrameMessage } from "../kit/frame"
 import { ResponseCache } from "../kit/page-steps"
 import { ReviewSheet, SheetMessage } from "../kit/review-sheet"
 
-// `/code-review/pull-requests` (routes/code-review/pull-requests.tsx) and its review sheet.
+// `/code-review/pull-requests` and its review sheet.
 
 export const Model = Schema.Struct({
 	search: CodeReviewPullRequestsSearch,

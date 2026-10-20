@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { chartEmpty } from "../../../ui/chart-state"
 import { panel, panelHeader, panelTitle } from "../../../ui/panel"
 
-// `ChartCard` and `ChartCardMessage` (apps/web/src/components/common/chart-card.tsx).
+// `ChartCard` and `ChartCardMessage`.
 
 /** Every infra detail chart plots at this height, so a grid of them never staggers. */
 export const CHART_HEIGHT = 200

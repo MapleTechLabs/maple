@@ -1,4 +1,4 @@
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
 import { Option } from "effect"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import { bootSplash } from "./layout/boot-splash"

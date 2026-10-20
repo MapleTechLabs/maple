@@ -13,7 +13,7 @@ import * as Select from "../../../ui/select"
 import * as RulesForm from "../rules-form/form"
 import { RepoFilter, RepoListState } from "./repositories"
 
-// `/code-review/settings` (code-review-settings.tsx): the review model, the default rules and the
+// `/code-review/settings`: the review model, the default rules and the
 // repositories, each repository's own rules in a dialog.
 
 export const Model = Schema.Struct({

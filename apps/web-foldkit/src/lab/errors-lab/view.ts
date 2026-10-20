@@ -1,6 +1,6 @@
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { buildErrorsLabFixture } from "@maple/web/lab/errors-fixture"
+import { buildErrorsLabFixture } from "../errors-fixture"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { dashboardPage } from "../../page/kit/dashboard-page"
@@ -13,7 +13,7 @@ import { isMounted } from "../../ui/overlay/transition"
 import { labSignals } from "./hub-step"
 import { LAB_STATES, LAB_WIDTHS, type LabState, Message, type Model } from "./model"
 
-// apps/web `lab/errors-lab.tsx`: `LabControls`, `LabStatStrip` and `ErrorsHubView` over the fixture.
+// `LabControls`, `LabStatStrip` and `ErrorsHubView` over the fixture.
 // Shell-free (the entry wraps it), so scene tests can render it.
 
 type Option<T> = Readonly<{ value: T; label: string }>

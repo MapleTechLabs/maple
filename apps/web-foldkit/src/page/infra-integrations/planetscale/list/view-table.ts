@@ -25,7 +25,7 @@ import {
 } from "../metrics"
 import { Message, type SortKey } from "./model"
 
-// `PlanetScaleDatabaseTable` and its loading state (components/infra/planetscale/planetscale-database-table.tsx).
+// `PlanetScaleDatabaseTable` and its loading state.
 
 type H = HtmlBuilder<Message>
 

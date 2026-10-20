@@ -4,7 +4,7 @@ import {
 	getLapsedPlan,
 	getPastDueSubscription,
 	getQuotaStatus,
-} from "@maple/web/lib/billing/plan-gating"
+} from "../lib/billing/plan-gating"
 import { Effect, Option } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -17,7 +17,7 @@ import { iconButton } from "../ui/icon-button"
 import { icon } from "../ui/icon"
 import { Message } from "./message"
 
-// The Clerk-mode billing banners of `DashboardLayout.Body` (apps/web/src/components/billing):
+// The Clerk-mode billing banners above the page body:
 // subscription ended, payment failed and the usage quota, all read from the Autumn customer.
 
 /** `useSessionDismiss("quota-banner-approaching")`. */
@@ -136,7 +136,7 @@ const quota = (h: H, customer: BillingCustomer, isApproachingDismissed: boolean)
 	]
 }
 
-/** The three banners in legacy's order; nothing before the customer is known. */
+/** The three banners in order; nothing before the customer is known. */
 export const billingBanners = (
 	h: H,
 	maybeCustomer: Option.Option<BillingCustomer>,

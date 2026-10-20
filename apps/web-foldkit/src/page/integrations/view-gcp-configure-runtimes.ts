@@ -1,7 +1,7 @@
 import type { GcpLogRuntime } from "@maple/domain/primitives"
 import { cn } from "@maple/ui/lib/utils"
 import { fieldDescriptionStyles, fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
-import { GCP_LOG_RUNTIMES } from "@maple/web/components/integrations/gcp-connector-state"
+import { GCP_LOG_RUNTIMES } from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "../../ui/alert"
 import { button } from "../../ui/button"

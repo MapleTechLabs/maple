@@ -2,14 +2,14 @@ import {
 	applyWhereClauseSuggestion,
 	getWhereClauseAutocomplete,
 	type WhereClauseAutocompleteResult,
-} from "@maple/web/lib/query-builder/where-clause-autocomplete"
+} from "../../lib/query-builder/where-clause-autocomplete"
 import type { QueryBuilderDataSource } from "@maple/query-model"
 import { Effect, Option, Schema, Stream } from "effect"
 import { Dom } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 
-// `useWhereClauseAutocomplete` + `WhereClauseEditor`'s suggestion list, shared by every where editor
-// (apps/web/src/hooks/use-where-clause-autocomplete.ts, components/query-builder/where-clause-editor.tsx).
+// The where clause autocomplete and its suggestion list, shared by every where editor
+// (see lib/query-builder/where-clause-autocomplete.ts).
 
 /** The textarea's box when the caret last moved: the fixed listbox is anchored to it. */
 export const AnchorRect = Schema.Struct({
@@ -95,7 +95,7 @@ export const listboxEvents = (element: Element, textareaId: string): Stream.Stre
 
 /**
  * `handleApplySuggestion`: the applied text in the textarea and the caret after the insert, before
- * the key's keyup reads the caret back (React's controlled value lands in the same task).
+ * the key's keyup reads the caret back (the value lands in the same task).
  */
 export const placeCaret = (id: string, value: string, cursor: number) =>
 	Effect.sync(() => {

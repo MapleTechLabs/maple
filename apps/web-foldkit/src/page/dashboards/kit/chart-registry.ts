@@ -13,7 +13,7 @@ import {
 } from "@maple/ui/components/charts/_shared/sample-data"
 
 // The id-to-category half of `chartRegistry` (packages/ui/src/components/charts/registry.ts), which
-// also lazily imports every React chart. `toPanelType` (apps/web/src/lib/query-builder/panel-types.ts).
+// also lazily imports every React chart. Also `toPanelType`.
 
 export type ChartCategory =
 	| "bar"

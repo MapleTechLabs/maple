@@ -23,8 +23,6 @@ import { type Facet, Message } from "./message"
 import type { LogsFacets, Model } from "./model"
 import { searchInput } from "../../../ui/search-input"
 
-// `LogsFilterSidebar` (apps/web/src/components/logs/logs-filter-sidebar.tsx).
-
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
 const EXCLUDED_OF = {

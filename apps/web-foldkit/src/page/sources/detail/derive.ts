@@ -1,7 +1,7 @@
 import type { V2Source, V2SourceUsage } from "@maple/domain/http/v2"
 import { DateTime, Option } from "effect"
 
-// `usageRows` (components/sources/usage-chart.tsx) and the overview's metrics-only set.
+// `usageRows` and the overview's metrics-only set.
 
 const HOUR_MS = 3_600_000
 

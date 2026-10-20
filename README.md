@@ -67,7 +67,7 @@ claude mcp add --transport http maple https://api.maple.dev/mcp
 
 | Path                        | What lives there                                                         |
 | --------------------------- | ------------------------------------------------------------------------ |
-| `apps/web`                  | Dashboard (TanStack Start, React 19, Vite)                               |
+| `apps/web-foldkit`          | Dashboard (Foldkit, Vite)                                                |
 | `apps/api`                  | Effect HTTP API, auth and OAuth                                          |
 | `apps/ai`                   | MCP server, chat agent and investigations                                |
 | `apps/ingest`               | OTLP ingest gateway: key auth, org enrichment, forwarding                |
@@ -110,7 +110,7 @@ bun dev api web
 A single non-Worker app can also run on its raw port, outside the stack:
 
 ```bash
-bun --filter=@maple/web dev
+bun --filter=@maple/web-foldkit dev
 ```
 
 ### Validate
@@ -207,7 +207,7 @@ Setup note: the machine identity must have a **GitHub OIDC** auth method configu
 Runtime API URL behavior:
 
 - Deploy-time web builds resolve `VITE_API_BASE_URL` from the Cloudflare api worker domain (`api.maple.dev` in `prd`, worker.dev URL for `pr-*`).
-- Local `bun --filter=@maple/web dev` can still use root `.env` `VITE_API_BASE_URL` for local API routing.
+- Local `bun --filter=@maple/web-foldkit dev` can still use root `.env` `VITE_API_BASE_URL` for local API routing.
 
 ## Environment
 
@@ -284,7 +284,7 @@ Start apps:
 
 ```bash
 bun --filter=@maple/api dev
-bun --filter=@maple/web dev
+bun --filter=@maple/web-foldkit dev
 ```
 
 Validate behavior:

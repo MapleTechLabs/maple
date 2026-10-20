@@ -1,5 +1,5 @@
-import { variableValuesFromSearch } from "@maple/web/lib/dashboard-controls/search-params"
-import { resolveSectionView } from "@maple/web/lib/dashboards/section-view-state"
+import { variableValuesFromSearch } from "../../lib/dashboard-controls/search-params"
+import { resolveSectionView } from "../../lib/dashboards/section-view-state"
 import { describe, expect, test } from "vitest"
 import { Message } from "../../page/dashboards/view/message"
 import { optionsByNameOf, variablesOf } from "../../page/dashboards/view/plan"

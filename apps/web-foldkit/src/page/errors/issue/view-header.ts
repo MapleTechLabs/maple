@@ -2,7 +2,7 @@ import type { AnomalyIncidentDocument, ErrorIssueDocument, ErrorIssueId } from "
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
 import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
-import { liveInvestigationSummary, resolveSignalState } from "@maple/web/lib/models/error-signal"
+import { liveInvestigationSummary, resolveSignalState } from "../../../lib/models/error-signal"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
@@ -20,7 +20,7 @@ import * as MenuView from "../../../ui/menu-view"
 import { openAnomalyBadge } from "./view-anomalies"
 import type { Model } from "./model"
 
-// `IssueHeader` (components/errors/issue-header.tsx) over `DetailHeader`, and `IssueTabs`.
+// The issue header over `DetailHeader`, and the issue tabs.
 
 type H = HtmlBuilder<Message>
 

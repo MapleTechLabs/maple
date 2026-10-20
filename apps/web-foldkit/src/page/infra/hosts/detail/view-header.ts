@@ -1,4 +1,4 @@
-import { severityLevel } from "@maple/web/components/infra/format"
+import { severityLevel } from "../../../../components/infra/format"
 import { formatLoad, formatPercent } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
@@ -13,8 +13,7 @@ import { hostStatusBadge } from "../../kit/status"
 import { Message } from "./message"
 import type { HostSummary } from "./model"
 
-// `HostDetailHeader` / `HostDetailHeaderLoading` (components/infra/host-detail-header.tsx) and
-// `HeroChip` (components/common/page-hero.tsx).
+// `HostDetailHeader` / `HostDetailHeaderLoading` and `HeroChip`.
 
 type H = HtmlBuilder<Message>
 

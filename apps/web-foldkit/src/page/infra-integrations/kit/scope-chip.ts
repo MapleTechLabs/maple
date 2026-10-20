@@ -2,8 +2,8 @@ import { cn } from "@maple/ui/lib/utils"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 
-// `ScopeChip` (apps/web/src/components/infra/primitives/scope-chip.tsx): what a panel is scoped to.
-// With an explanation it is a tooltip trigger; the page's Tooltip renders the explanation.
+// `ScopeChip`: what a panel is scoped to. With an explanation it is a tooltip trigger; the page's Tooltip
+// renders the explanation.
 
 export type ScopeChipOptions = Readonly<{
 	tone?: "default" | "muted"

@@ -37,8 +37,8 @@ const rowsOf = (scroller: HTMLElement): ReadonlyArray<HTMLElement> =>
 	Array.from(scroller.querySelectorAll<HTMLElement>("[role='log'] > [data-index]"))
 
 /**
- * `useVirtualizer` from apps/web's `LogsTableView`, on @tanstack/virtual-core directly: the same
- * options, the same adaptive row estimate and the same measuring of every mounted row. The window
+ * The logs table's virtualizer on @tanstack/virtual-core: an adaptive row estimate and measuring
+ * of every mounted row. The window
  * reaches the Model only when it changes, not on every scroll event.
  */
 type VirtualizeMessage = typeof Message.ChangedVirtualWindow.Type | typeof Message.ChangedScrolledAway.Type
@@ -80,8 +80,8 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<VirtualizeMessage> =>
 					observeElementRect,
 					observeElementOffset,
 					scrollToFn: elementScroll,
-					// React renders a scroll synchronously (flushSync) and batches every other change, including
-					// those raised while rows are measured, until the measuring is done.
+					// A scroll emits synchronously; every other change, including those raised while rows are
+					// measured, is batched until the measuring is done.
 					onChange: (instance: Virtualizer<HTMLElement, HTMLElement>, sync: boolean) => {
 						if (sync && !state.isMeasuring) return emitWindow(instance)
 						if (state.isEmitScheduled) return
@@ -94,7 +94,7 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<VirtualizeMessage> =>
 				})
 				const virtualizer = new Virtualizer<HTMLElement, HTMLElement>(options())
 
-				// apps/web's `measureElement` wrapper: measure, then feed the adaptive estimate.
+				// Measure, then feed the adaptive estimate.
 				const measure = (node: HTMLElement) => {
 					state.isMeasuring = true
 					virtualizer.measureElement(node)
@@ -134,7 +134,7 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<VirtualizeMessage> =>
 						next.wrap !== state.layout.wrap || next.comfortable !== state.layout.comfortable
 					state.layout = next
 					virtualizer.setOptions(options())
-					// React reads the window in render, before its layout effect re-measures: only the rows
+					// The window is read before rows re-measure: only the rows
 					// that window keeps (overscan shrinks when wrapping) are measured, against the old sizes.
 					const kept = new Set(virtualizer.getVirtualItems().map((item) => item.index))
 					rowObserver.disconnect()

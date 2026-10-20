@@ -12,7 +12,7 @@ import {
 	gcpWorkloadProject,
 	gcpWorkloadSearch,
 	gcpWorkloadTone,
-} from "@maple/web/components/infra/gcp/tabs"
+} from "../../components/infra/gcp/tabs"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { emptyMessage } from "../../ui/empty"
@@ -28,7 +28,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { fleetOf, gcpTitles, inventoryOf, logTiles, metricsTiles } from "./view-gcp-band"
 
-// `Workloads`, `Resources` and `GcpUsageBand` (components/integrations/gcp-usage-cards.tsx).
+// `Workloads`, `Resources` and `GcpUsageBand`.
 
 type H = HtmlBuilder<Message>
 

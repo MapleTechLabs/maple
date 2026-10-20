@@ -1,4 +1,4 @@
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
 import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
 import { Option } from "effect"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"

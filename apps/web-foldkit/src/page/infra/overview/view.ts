@@ -20,7 +20,7 @@ import { DEFAULT_PRESET } from "./update"
 import { needsAttention } from "./view-findings"
 import { sourcesTable } from "./view-sources"
 
-// `InfraOverviewPage` (apps/web/src/routes/infra/index.tsx).
+// `InfraOverviewPage`.
 
 type H = HtmlBuilder<Message>
 

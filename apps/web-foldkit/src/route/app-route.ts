@@ -5,7 +5,7 @@ import * as Search from "./search"
 
 const WorkloadKind = Search.InfraKubernetesWorkloadParams.fields.kind
 
-/** Every user-facing route of apps/web (`routeTree.gen.ts` minus `/lab`), with its search. */
+/** Every user-facing route (minus `/lab`), with its search. */
 export const AppRoute = defineRouteUnion({
 	Home: { search: Search.HomeSearch },
 	Account: { search: Search.AccountSearch },
@@ -104,5 +104,5 @@ export const AppRoute = defineRouteUnion({
 export type AppRoute = typeof AppRoute.Type
 export type RouteTag = AppRoute["_tag"]
 
-/** Paths that render without a session (`isPublicPath` in apps/web/src/lib/public-routes.ts). */
+/** Paths that render without a session. */
 export const isPublicRoute = AppRoute.isAnyOf(["SignIn", "SignUp", "OrgRequired", "Unsubscribe", "Share"])

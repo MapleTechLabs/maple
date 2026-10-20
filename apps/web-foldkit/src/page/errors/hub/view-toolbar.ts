@@ -1,7 +1,7 @@
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { HUB_SORTS, SEVERITY_FILTERS, type SeverityFilter } from "@maple/web/lib/errors/hub-params"
+import { HUB_SORTS, SEVERITY_FILTERS, type SeverityFilter } from "../../../lib/errors/hub-params"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as SelectView from "../../../ui/select-view"
@@ -13,7 +13,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { searchInput } from "../../../ui/search-input"
 
-// `ErrorsStatStrip`, `ListToolbar`, `ToolbarSearch` and the sort and severity selects (errors-hub-view.tsx).
+// The errors stat strip, list toolbar, search and the sort and severity selects.
 
 type H = HtmlBuilder<Message>
 

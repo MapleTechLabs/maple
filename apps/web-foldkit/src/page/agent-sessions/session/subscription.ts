@@ -7,7 +7,7 @@ import { Message } from "./message"
 import type { SpanKey } from "./navigation"
 import type { Model, SessionView } from "./model"
 
-// `useAppHotkey("session.view*")` (session-views.tsx): 1/2/3/4 switch views from anywhere on the page.
+// The `session.view*` hotkeys: 1/2/3/4 switch views from anywhere on the page.
 
 const VIEW_KEYS = new Map<string, SessionView>([
 	["1", "overview"],

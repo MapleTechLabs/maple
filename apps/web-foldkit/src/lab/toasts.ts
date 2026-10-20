@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Toast from "../ui/toast"
 import * as ToastView from "../ui/toast-view"
 
-// apps/web's root `ToastProvider` wraps every lab page too: a lab Model holds `toasts` and its
+// Every lab page has the app's toasts too: a lab Model holds `toasts` and its
 // view renders the page inside `#app` with both Notifications regions after it.
 
 export const initLabToasts = (): Toast.Model => Toast.init("lab-toasts")

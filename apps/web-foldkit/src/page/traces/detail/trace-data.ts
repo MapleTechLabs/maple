@@ -65,7 +65,7 @@ export const SpanEvents = Schema.Record(Schema.String, Schema.Array(TimelineEven
 export type SpanEvents = typeof SpanEvents.Type
 
 /**
- * The legacy helpers take mutable `SpanNode`s; the Model's tree is readonly. They never mutate
+ * The trace helpers take mutable `SpanNode`s; the Model's tree is readonly. They never mutate
  * what they are given, so the tree is copied once at the boundary into their shape.
  */
 export const toSpanNode = (node: SpanNodeData): SpanNode => ({

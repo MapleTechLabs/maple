@@ -10,7 +10,7 @@ import * as Setup from "../kit/setup"
 import { DataIntegration } from "../../integrations/embed"
 import { Model as IntegrationModel } from "../../integrations/model"
 
-// `/sources/new` (apps/web/src/routes/sources/new.tsx): pick a platform, name it, copy the token.
+// `/sources/new`: pick a platform, name it, copy the token.
 
 /** The create's answer: the source and its one-time token, held in memory only. */
 export const Created = Schema.Struct({ source: V2Source, secret: Schema.String })

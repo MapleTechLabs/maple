@@ -1,6 +1,6 @@
 import type { ErrorIssueDocument } from "@maple/domain/http"
-import { attributeIssues, previousSha, shortReleaseLabel } from "@maple/web/components/releases/release-model"
-import { errorIssueFromV2 } from "@maple/web/lib/services/error-issues"
+import { attributeIssues, previousSha, shortReleaseLabel } from "../../../components/releases/release-model"
+import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -22,7 +22,8 @@ import type { Model } from "./model"
 import { changesetState, overlaysOf, serviceBody, serviceButton } from "./view-service"
 import { type Clock, deploySummary, deployServices, issueList, releaseChangeset } from "./view-sections"
 
-// `ReleaseDetailPage` (apps/web/src/routes/releases/$commitSha.tsx): `ReleaseDeployOverview`, or with `?service=` the service body (view-service.ts).
+// The release detail page: the deploy overview, or with `?service=` the service body
+// (view-service.ts).
 
 type H = HtmlBuilder<Message>
 

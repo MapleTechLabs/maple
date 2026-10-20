@@ -1,4 +1,4 @@
-import { normalizeEvents } from "@maple/web/components/replays/replay-events"
+import { normalizeEvents } from "../../../components/replays/replay-events"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import {

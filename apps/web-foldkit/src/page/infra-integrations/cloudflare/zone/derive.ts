@@ -1,10 +1,10 @@
-import { classifyZone, type ZoneHealth } from "@maple/web/components/infra/cloudflare/list-model"
+import { classifyZone, type ZoneHealth } from "../../../../components/infra/cloudflare/list-model"
 import {
 	type CloudflareFilterKey,
 	type CloudflareFilters,
 	filtersFromSearch,
-} from "@maple/web/components/infra/cloudflare/filters"
-import { zoneSignalTotals } from "@maple/web/components/infra/cloudflare/zone-signals"
+} from "../../../../components/infra/cloudflare/filters"
+import { zoneSignalTotals } from "../../../../components/infra/cloudflare/zone-signals"
 import { AsyncData } from "foldkit"
 import { chartBucketSeconds } from "../../../../charts/infra-metric-series"
 import type { TimeWindow } from "../../../../data/time-range"
@@ -36,7 +36,7 @@ export type DimensionDef = Readonly<{
 	liveDimension?: "host" | "path"
 }>
 
-/** `DIMENSIONS` (cloudflare-breakdown-panel.tsx). */
+/** `DIMENSIONS`. */
 export const DIMENSIONS: ReadonlyArray<DimensionDef> = [
 	{ id: "path", tab: "Paths", column: "Path", noun: "paths", filterKey: "paths", liveDimension: "path" },
 	{ id: "host", tab: "Hosts", column: "Host", noun: "hosts", filterKey: "hosts", liveDimension: "host" },
@@ -176,7 +176,7 @@ const ZONE_HEALTH_DOT = {
 	lowVolume: "bg-muted-foreground",
 } as const satisfies Record<ZoneHealth, string>
 
-/** `zoneSeverityClass` (cloudflare-zone-signals.tsx): the header dot. */
+/** `zoneSeverityClass`: the header dot. */
 export const severityOf = (model: Model): string | null => {
 	const detail = dataOf(model.detail.data)
 	if (detail === null) return null

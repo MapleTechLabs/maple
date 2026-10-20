@@ -1,6 +1,5 @@
 /**
- * apps/web's idle TTLs for the reads that go through `ReadCache`: the family's `staleTime`
- * (`lib/services/atoms/warehouse-query-atoms.ts`) or the retained query's `timeToLive`.
+ * Idle TTLs for the reads that go through `ReadCache`.
  */
 export const IdleTtl = {
 	/** `getSpanHierarchyResultAtom`. */

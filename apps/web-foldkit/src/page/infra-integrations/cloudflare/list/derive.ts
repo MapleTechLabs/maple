@@ -2,13 +2,13 @@ import {
 	type CloudflareAccount,
 	cloudflareAccounts,
 	zoneAccountIds,
-} from "@maple/web/components/infra/cloudflare/accounts"
+} from "../../../../components/infra/cloudflare/accounts"
 import {
 	CLOUDFLARE_VIEWS,
 	type CloudflareView,
 	mergeWorkerRows,
 	type WorkerListRow,
-} from "@maple/web/components/infra/cloudflare/list-model"
+} from "../../../../components/infra/cloudflare/list-model"
 import { AsyncData } from "foldkit"
 import type { PlatformResources, QueueRow, Usage, ZoneBucket, ZoneRow } from "../data"
 import { ingestPhaseOf } from "../ingest"
@@ -50,7 +50,7 @@ export type ListData = Readonly<{
 	workerRows: ReadonlyArray<WorkerListRow> | null
 }>
 
-/** `CloudflareData`'s reads: null while loading (a failed read stays loading, as legacy). */
+/** `CloudflareData`'s reads: null while loading (a failed read stays loading). */
 export const listDataOf = (model: Model): ListData => {
 	const timeseries = dataOf(model.timeseries.data)
 	const platform = dataOf(model.platform.data)

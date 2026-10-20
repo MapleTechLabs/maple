@@ -1,4 +1,4 @@
-import { formatValueWithUnit } from "@maple/web/components/infra/chart-units"
+import { formatValueWithUnit } from "../../../components/infra/chart-units"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../../charts/chart"
@@ -10,8 +10,8 @@ import { chartError, chartLoading } from "../../../ui/chart-state"
 import type { SeriesSlot } from "./series"
 import { seriesLegend } from "../../kit/series-legend"
 
-// `K8sMetricChartView` and the detail-chart wrappers around it (components/infra/k8s-detail-chart.tsx,
-// container-detail-chart.tsx): one metric at a time, 280 tall, chip legend, in a `ChartCard`.
+// `K8sMetricChartView` and the detail-chart wrappers around it: one metric at a time, 280 tall, chip legend,
+// in a `ChartCard`.
 
 export const K8S_CHART_HEIGHT = 280
 

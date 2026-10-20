@@ -1,5 +1,5 @@
 import * as Animation from "@foldkit/ui/animation"
-import { ingestUrl } from "@maple/web/lib/services/common/ingest-url"
+import { ingestUrl } from "../lib/services/common/ingest-url"
 import { click, Command, expect, given, Mount, role, scene, selector, text } from "foldkit/scene"
 import { describe, expect as expectVitest, test } from "vitest"
 import * as Popover from "../ui/popover"

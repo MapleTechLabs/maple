@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 
-// `useSettingsDraft` (apps/web/src/components/settings/settings-draft.ts) as pure state: the
-// user's edits over a saved value, plus the save in flight. `saved` is always passed in.
+// A settings draft as pure state: the user's edits over a saved value, plus the save in flight. `saved` is
+// always passed in.
 
 export const DraftState = <S extends Schema.Top>(value: S) =>
 	Schema.Struct({

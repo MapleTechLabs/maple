@@ -7,7 +7,7 @@ import type { ZoneRow } from "../data"
 import type { ZoneRailDns } from "./derive"
 import { Message, type Model, type ZoneTab } from "./model"
 
-// `CloudflareZoneRail` (components/infra/cloudflare/cloudflare-zone-rail.tsx).
+// `CloudflareZoneRail`.
 
 type H = HtmlBuilder<Message>
 

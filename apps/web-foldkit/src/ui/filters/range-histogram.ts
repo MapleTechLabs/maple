@@ -25,7 +25,7 @@ const Bound = Schema.Struct({ from: Schema.Number, to: Schema.Number, unbounded:
 /** A count bucket's last member is `to - 1`: the bound a selection writes. */
 const lastOfBound = (bound: typeof Bound.Type, isCount: boolean): number => (isCount ? bound.to - 1 : bound.to)
 
-/** Pointer capture on the bars, like the legacy pointer handlers. */
+/** Pointer capture on the bars. */
 export const MountRangeHistogram = Mount.defineStream("MountRangeHistogram", {
 	args: { bounds: Schema.Array(Bound), isCount: Schema.Boolean },
 	messages: [

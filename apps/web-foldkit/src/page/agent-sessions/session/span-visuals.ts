@@ -1,7 +1,7 @@
 import type { AgentTimeKind, AiSpanCategory } from "@maple/agent-sessions"
 import type { IconName } from "../../../ui/icon"
 
-// copied: session-detail/span-visuals.ts (React icon components there, icon names here): one token
+// Span visuals, as icon names: one token
 // per kind of work, read by the time breakdown, the waterfall and the flow.
 
 const NO_WORK_FILL = "bg-muted-foreground/40"

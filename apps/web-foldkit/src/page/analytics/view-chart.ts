@@ -3,7 +3,7 @@ import {
 	type AnalyticsMetricKey,
 	type AnalyticsMetricSource,
 	findMetric,
-} from "@maple/web/components/analytics/metrics"
+} from "../../components/analytics/metrics"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
@@ -15,7 +15,7 @@ import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
 import { CHART_HEIGHT, chartCard, chartCardMessage } from "../infra-integrations/kit/chart-card"
 import { seriesLegend } from "../kit/series-legend"
 
-// `AnalyticsTrafficChart` (components/analytics/analytics-traffic-chart.tsx): the card, its legend
+// `AnalyticsTrafficChart`: the card, its legend
 // when paired, and the plot. The definition is `charts/definitions/analytics-traffic.ts`.
 
 export const TRAFFIC_TOKENS = ["--border", "--background", "--primary", "--chart-2"]

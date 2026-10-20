@@ -9,7 +9,7 @@ import { statRailItem } from "../../../kit/stat-rail"
 import type { RailwayServiceRow } from "../model"
 import { fleetSync } from "./derive"
 
-// `RailwayFleetBand` and `RailwayFleetBandLoading` (components/infra/railway/railway-service-table.tsx).
+// `RailwayFleetBand` and `RailwayFleetBandLoading`.
 
 /** `FLEET_BAND_BOXED`: a band standing alone on a page body. */
 export const FLEET_BAND_BOXED = "overflow-hidden rounded-md border"

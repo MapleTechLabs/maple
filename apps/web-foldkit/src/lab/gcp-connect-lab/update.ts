@@ -125,7 +125,7 @@ export const init = (flags: GcpLabFlags): Return =>
 		"new",
 	)
 
-/** A run fixture's Back, "Try again" and "I've removed them" are legacy's `noop`s. */
+/** A run fixture's Back, "Try again" and "I've removed them" do nothing. */
 const isFixtureNoop = (message: IntegrationsMessage): boolean =>
 	message._tag === "ClickedGcpRunEdit" ||
 	message._tag === "ClickedGcpConfigureScriptRetry" ||
@@ -142,7 +142,7 @@ const hubMessage = (model: Model, message: IntegrationsMessage): Return => {
 		return hubMessage(model, IntegrationsMessage.ClosedGcpConfigure())
 	const next = hubStep(model.hub, message)
 	const configure = next.hub.gcpCard.configure
-	// A run fixture keeps its script, whatever the step would read: legacy passes it as a prop.
+	// A run fixture keeps its script, whatever the step would read.
 	const hub =
 		pinned === null || configure === null
 			? next.hub
@@ -156,7 +156,7 @@ const hubMessage = (model: Model, message: IntegrationsMessage): Return => {
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
-		// Legacy's group is multiple: pressing the current state again changes nothing.
+		// The group is multiple: pressing the current state again changes nothing.
 		GotStateGroupMessage: ({ message: inner }) => {
 			const step = ToggleGroup.update(model.stateGroup, inner)
 			const commands = Command.mapMessages(step.commands ?? [], (child) =>

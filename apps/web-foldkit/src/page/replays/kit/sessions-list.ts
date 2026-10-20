@@ -1,6 +1,6 @@
 import { countLabel, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { SESSION_TAG_DOTS, SESSION_TAG_LABELS } from "@maple/web/components/replays/session-tags"
+import { SESSION_TAG_DOTS, SESSION_TAG_LABELS } from "../../../components/replays/session-tags"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
 import { skeleton } from "../../../ui/skeleton"
@@ -10,10 +10,10 @@ import { sessionListRow } from "./session-list-row"
 import { COLUMNS, columnHeader, type SessionsListOptions } from "./sessions-parts"
 import { KEYS_ATTRIBUTE, keysValue, type VirtualWindow } from "./virtualize"
 
-// `SessionsList` (components/replays/sessions-list.tsx). Rows render in flow: the virtualizer's
+// The sessions list. Rows render in flow: the virtualizer's
 // absolute rows stack to the same offsets once every row is in view.
 
-/** `DisclosureChevron` (components/common/disclosure-chevron.tsx), direction right. */
+/** A disclosure chevron, direction right. */
 const disclosureChevron = <M>(h: HtmlBuilder<M>, isOpen: boolean, size: number): Html =>
 	icon(h, "ChevronRightIcon", {
 		size,
@@ -63,7 +63,7 @@ export const itemKey = (item: SessionListItem): string =>
 	item.kind === "quiet" ? `quiet:${item.key}` : item.session.sessionId
 
 /**
- * The column header and the virtual window's rows, absolutely placed like legacy's. `virtualize` is
+ * The column header and the virtual window's rows, absolutely placed. `virtualize` is
  * the caller's Mount (`virtualizeSessions`) that reports the window. The caller renders the footer.
  */
 export const sessionsList = <M>(

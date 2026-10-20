@@ -5,7 +5,7 @@ import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
 import * as Dialog from "../../../ui/dialog"
 
-// `ToolErrorModal`'s state (agent-sessions/tools/tool-error-modal.tsx and the route's `ErrorModal`):
+// The tool error modal's state:
 // one error group of the tool in full, open while `?error=` names a row the Errors table holds.
 
 export const ToolErrorSessionRow = Schema.Struct({

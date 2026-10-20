@@ -48,7 +48,7 @@ const toSeries = (response: { readonly data: SeriesData["rows"]; readonly unit: 
 	unit: response.unit,
 })
 
-/** The legacy chart's own read, in its field order (the key and payload match it). */
+/** Each chart's own read, in its field order. */
 const load = (request: SeriesRequest) => {
 	switch (request._tag) {
 		case "container": {

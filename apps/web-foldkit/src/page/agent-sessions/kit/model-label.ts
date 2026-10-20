@@ -4,7 +4,7 @@ import { icon, iconColor } from "../../../ui/icon"
 import { type DetectedModel, modelTitle } from "./detected-models"
 import { modelVendorColor, modelVendorIcon } from "./vendor"
 
-/** `ModelLabel` (components/agent-sessions/model-label.tsx): the vendor's mark and the model's name. */
+/** The vendor's mark and the model's name. */
 export const modelLabel = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{

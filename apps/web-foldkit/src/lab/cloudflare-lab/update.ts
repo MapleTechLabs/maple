@@ -56,7 +56,7 @@ export const init = (flags: Flags): Return => {
 	}
 }
 
-/** Legacy keeps one `ListPage` across the list pages and remounts the zone and Worker pages. */
+/** One `ListPage` is kept across the list pages; the zone and Worker pages start fresh. */
 const showPage = (model: Model, page: LabPage): Model => {
 	if (page === model.page) return model
 	if (page === "zone") return { ...model, page, zone: pinZone(remount(initZone().model, model.zone)) }
@@ -99,7 +99,7 @@ export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		ClickedLabPage: ({ page }) => ({ model: showPage(model, page) }),
 		GotListMessage: ({ message: inner }) => listStep(model, inner),
-		// Legacy's "Zone view" pivot is fixed on Traffic (`onChange={() => undefined}`).
+		// The "Zone view" pivot is fixed on Traffic.
 		GotZoneMessage: ({ message: inner }) => {
 			if (inner._tag === "ClickedTab") return { model }
 			const next = ZoneUpdate.update(model.zone, inner, LAB_CONTEXT)

@@ -1,8 +1,8 @@
-import { dependencyDrillWhereClause } from "@maple/web/components/services/dependency-drill"
+import { dependencyDrillWhereClause } from "../../../components/services/dependency-drill"
 import type { DependencyKind } from "./derive-panels"
 import type { DependencyBundle } from "./model-tabs"
 
-// The rows, host folding and summary of `ServiceDependenciesTab` (service-dependencies-tab.tsx).
+// The rows, host folding and summary of the Dependencies tab.
 
 export type DependencyRow = Readonly<{
 	id: string

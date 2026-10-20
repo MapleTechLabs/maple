@@ -8,7 +8,7 @@ import { Model as IntegrationsModel } from "../../page/integrations/model"
 import * as ToggleGroup from "../../ui/toggle-group"
 import { LAB_STATES } from "./fixture"
 
-// `/lab/gcp-connect` (apps/web `lab/gcp-connect-lab.tsx`): every step and run state of the Google
+// `/lab/gcp-connect`: every step and run state of the Google
 // Cloud connect dialog over fixture connectors. The dialog is the integrations page's own.
 
 export const LabState = Schema.Literals(LAB_STATES)
@@ -20,7 +20,7 @@ export const Model = Schema.Struct({
 	stateGroup: ToggleGroup.Model,
 	/** The page's Model; the dialog is open while its `gcpCard.configure` is set. */
 	hub: IntegrationsModel,
-	/** A run state's script read, held as legacy's `script` prop; null on the interactive states. */
+	/** A run state's script read, held fixed; null on the interactive states. */
 	pinnedScripts: Schema.NullOr(KeyedSchema(V2GcpSetupScripts, LoadFailure)),
 })
 export type Model = typeof Model.Type

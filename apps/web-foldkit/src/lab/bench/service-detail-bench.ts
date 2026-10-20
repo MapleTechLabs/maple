@@ -6,7 +6,7 @@ import { ResolveThemeColors } from "../../charts/theme-colors"
 import { CHART_TOKENS, metricsGridOf } from "../../page/services/detail/view-charts"
 import { isReady, Message, type Model } from "./chart-bench"
 
-// apps/web `lab/bench/service-detail-chart-bench.tsx` (`/lab/bench/service-detail` and
+// `/lab/bench/service-detail` and
 // `/lab/bench/overview`): the service-detail chart grid over synthetic rows.
 
 const BUCKET_COUNT = 145

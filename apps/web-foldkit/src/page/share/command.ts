@@ -16,7 +16,7 @@ export const ResolveClock = Command.define("ResolveShareClock", {
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedResolveClock({ nowMs })),
 })
 
-/** A Reload re-resolves a relative window at the current time (legacy's `useMemo` on `refreshTick`). */
+/** A Reload re-resolves a relative window at the current time. */
 export const ResolveReloadClock = Command.define("ResolveShareReloadClock", {
 	messages: [Message.CompletedResolveReloadClock],
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedResolveReloadClock({ nowMs })),
@@ -95,7 +95,7 @@ export const ResolveShare = Command.define("ResolveShare", {
 		),
 })
 
-/** One frame after the tiles reported, like React committing the batched `setOptions`. */
+/** One frame after the tiles reported, so their batched options flush together. */
 export const WaitFlushFrame = Command.define("WaitShareFlushFrame", {
 	messages: [Message.CompletedFlushFrame],
 	execute: Effect.callback<typeof Message.CompletedFlushFrame.Type>((resume) => {

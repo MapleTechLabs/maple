@@ -1,5 +1,5 @@
 import { buildTimeseriesQuerySpec, createQueryDraft } from "@maple/query-engine/query-builder"
-import { getListPerformanceHints } from "@maple/web/lib/query-builder/performance-hints"
+import { getListPerformanceHints } from "../../../lib/query-builder/performance-hints"
 import { AsyncData } from "foldkit"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -23,7 +23,7 @@ import { ProductEdit } from "./product-edit"
 import { product } from "./view-product"
 import { listColumnRow } from "./view-list-column"
 
-// `ListConfigPanel` (dashboard-builder/config/list-config-panel.tsx) and its Run preview row.
+// `ListConfigPanel` and its Run preview row.
 
 type H = HtmlBuilder<Message>
 

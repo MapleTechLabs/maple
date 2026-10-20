@@ -7,7 +7,7 @@ import { view } from "./view"
 
 /**
  * `/infra/kubernetes/services` and `/infra/kubernetes/services/$serviceName`: the service lens. One
- * instance spans both, so picking a service keeps the rail (legacy reads it from cached atoms).
+ * instance spans both, so picking a service keeps the rail.
  */
 export const page = definePage(
 	"InfraKubernetesServiceLens",

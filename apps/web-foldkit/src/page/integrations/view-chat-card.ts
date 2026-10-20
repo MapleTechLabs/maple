@@ -22,7 +22,7 @@ import { chatConnectorStatus } from "./update-chat"
 import { chatCardLoading, identityRow, monoGlyph } from "./view-chat"
 import { entryBrand } from "./view-entry"
 
-// `ChatIntegrationCard` (components/integrations/chat-integration-card.tsx).
+// `ChatIntegrationCard`.
 // TODO(clerk): `useIsOrgAdmin` (self-hosted is the root admin) and `WorkspaceSettings`, which renders
 // nothing until a manifest declares settings fields (none does).
 

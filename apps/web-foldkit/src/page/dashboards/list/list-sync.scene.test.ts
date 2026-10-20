@@ -11,7 +11,7 @@ import { subscriptions } from "./subscription"
 import { init, isReadOnly, rowMenuIdOf, update } from "./update"
 import { view as pageView } from "./view"
 
-// A live list that never answers, and the list's write feedback (legacy routes/dashboards/index.tsx).
+// A live list that never answers, and the list's write feedback.
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }

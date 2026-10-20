@@ -17,8 +17,6 @@ import { MountFilterRail } from "./command"
 import { type FilterParam, Message } from "./message"
 import type { Model } from "./model"
 
-// `ErrorsFilterSidebar` (apps/web/src/components/errors/errors-filter-sidebar.tsx).
-
 type H = HtmlBuilder<Message>
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })

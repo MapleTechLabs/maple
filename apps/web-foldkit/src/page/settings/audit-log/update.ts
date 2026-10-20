@@ -1,6 +1,6 @@
 import { AuditActorType, AuditOutcome } from "@maple/domain/http"
 import type { V2AuditLogEntry } from "@maple/domain/http/v2"
-/** `AUDIT_LOG_PAGE_LIMIT` (audit-log-atoms.ts, a React module). */
+/** Entries per audit log page. */
 const AUDIT_LOG_PAGE_LIMIT = 50
 import {
 	AUDIT_RANGE_PRESETS,
@@ -8,11 +8,11 @@ import {
 	type AuditLogFilters,
 	auditLogSearchFrom,
 	parseAuditLogSearch,
-} from "@maple/web/components/settings/audit-log-filters"
+} from "../../../components/settings/audit-log-filters"
 import { Clock, Effect, Option, Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { clerkTry, currentClerkOrganization } from "../../../platform/clerk"
 import { memberDisplayName } from "../kit/members"

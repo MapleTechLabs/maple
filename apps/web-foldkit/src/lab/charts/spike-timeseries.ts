@@ -8,7 +8,7 @@ import {
 	TIMESERIES_PARTIAL_ROWS,
 	TIMESERIES_SPIKE_ROWS,
 	type TimeseriesSpikeRow,
-} from "@maple/web/lab/charts/timeseries-data"
+} from "./timeseries-data"
 import { areaY, type ChartPoint, type ChartValue, defineChart, lineY } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { scaleTime } from "d3-scale"
@@ -23,8 +23,7 @@ import {
 } from "../../charts/definitions/plot-constants"
 import { type SpikeSpec, mutedOf, MUTED_OPACITY } from "./spike-spec"
 
-// `LineSpike` / `LineLegendSpike` and `AreaSpike` / `AreaLegendSpike`
-// (apps/web/src/lab/charts/{line,area}-spike.tsx), definition half. Code copied, constants unchanged.
+// `LineSpike` / `LineLegendSpike` and `AreaSpike` / `AreaLegendSpike`, definition half.
 
 type Point = ChartPoint<TimeseriesSpikeRow, ChartValue, number>
 

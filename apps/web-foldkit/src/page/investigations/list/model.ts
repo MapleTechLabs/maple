@@ -7,7 +7,7 @@ import * as Select from "../../../ui/select"
 import * as Tabs from "../../../ui/tabs"
 import { SignalPresenceData } from "../../kit/signal-presence"
 
-// `/investigations` (apps/web/src/routes/investigations/index.tsx and components/investigations/).
+// `/investigations`.
 
 /** One page of `investigations.list`. */
 export const InvestigationPage = Schema.Struct({

@@ -4,8 +4,8 @@ import {
 	hasAnomalyFilters,
 	matchesAnomalyFilters,
 	type AnomalyFilters,
-} from "@maple/web/lib/anomalies/anomaly-filters"
-import { anomalyIncidentFromV2 } from "@maple/web/lib/services/anomalies"
+} from "../../../lib/anomalies/anomaly-filters"
+import { anomalyIncidentFromV2 } from "../../../lib/services/anomalies"
 import { SIGNAL_LABEL } from "@maple/web-data/anomalies/format"
 import { AsyncData } from "foldkit"
 import type { AnomaliesSearch } from "../../../route/search"

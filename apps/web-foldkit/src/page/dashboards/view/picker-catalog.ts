@@ -13,7 +13,7 @@ import {
 	type WidgetPresetDefinition,
 } from "@maple/web-data/dashboards/widget-presets"
 
-// `WidgetPicker`'s catalog (dashboard-builder/config/chart-picker.tsx): the three chart styles,
+// The widget picker's catalog: the three chart styles,
 // then one section per widget type that ships presets, in Type-picker order.
 
 export type PreviewKind = "chart" | "stat" | "rows" | "markdown"

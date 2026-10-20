@@ -7,7 +7,7 @@ import { ChatSubject } from "../kit/subject"
 import { TabsState } from "../kit/tab-store"
 import * as Conversation from "../conversation/model"
 
-// `/chat` (apps/web routes/chat.tsx, components/chat/chat-page.tsx + `useChatTabs`).
+// `/chat`: the conversation rail and its open tabs.
 
 export { ChatTab, TabsState } from "../kit/tab-store"
 

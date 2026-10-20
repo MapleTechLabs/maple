@@ -10,8 +10,8 @@ import {
 	type ReleaseGroup,
 	type ReleaseIssueCounts,
 	type ReleaseServiceImpact,
-} from "@maple/web/components/releases/release-model"
-import { errorIssueFromV2 } from "@maple/web/lib/services/error-issues"
+} from "../../../components/releases/release-model"
+import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { AsyncData } from "foldkit"
 import type { ReleasesSearch } from "../../../route/search"
 import { commitRangesKey, commitsQueryKey } from "../kit"

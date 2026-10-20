@@ -1,4 +1,4 @@
-import { ANALYTICS_METRICS, findMetric } from "@maple/web/components/analytics/metrics"
+import { ANALYTICS_METRICS, findMetric } from "../../components/analytics/metrics"
 import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
@@ -11,8 +11,7 @@ import type { BuiltChart } from "./built-chart"
 import { verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 
-// Port of `AnalyticsTrafficChart`'s definition (apps/web/src/components/analytics/analytics-traffic-chart.tsx),
-// constants unchanged. Colours arrive resolved in the spec; series arrive in paint order.
+// The analytics traffic chart's definition. Colours arrive resolved in the spec; series arrive in paint order.
 
 type TrafficSpec = Extract<ChartSpec, { readonly _tag: "AnalyticsTraffic" }>
 type SeriesKey = "primary" | "companion"

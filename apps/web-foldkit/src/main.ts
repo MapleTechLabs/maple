@@ -1,4 +1,4 @@
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
 import { Effect, Option, Schema } from "effect"
 import type { Runtime } from "foldkit"
 import type { Url } from "foldkit/url"

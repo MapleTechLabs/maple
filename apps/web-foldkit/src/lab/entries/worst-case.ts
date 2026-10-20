@@ -3,8 +3,8 @@ import { Flags, Model } from "../worst-case-lab/model"
 import { init, update, worstCaseFlags } from "../worst-case-lab/update"
 import { view } from "../worst-case-lab/view"
 
-// `/lab/worst-case` (apps/web `lab/worst-case-lab.tsx`): product components over worst-case data,
-// a bare page as legacy's route renders it.
+// `/lab/worst-case`: product components over worst-case data,
+// a bare page.
 
 export const lab = defineLabWithFlags("Worst case", {
 	Model,

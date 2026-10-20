@@ -11,7 +11,7 @@ import * as RulesView from "../kit/rules-view"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `CreateSourceForm` (apps/web/src/components/sources/create-source-form.tsx): step 2.
+// `CreateSourceForm`: step 2.
 
 type H = HtmlBuilder<Message>
 

@@ -25,8 +25,6 @@ import { detailPanelHeader, edgeRow, healthTone, metricTile, metricValue, sample
 import { infrastructureTab } from "./view-service-infra"
 import * as ServiceMap from "../../service-map/map/service-map"
 
-// `ServiceDetailPanel` (components/service-map/service-map-view.tsx).
-
 type H = HtmlBuilder<Message>
 
 export type ServicePanelInputs = Readonly<{

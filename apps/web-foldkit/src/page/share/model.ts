@@ -8,7 +8,7 @@ import { ShareSearch } from "../../route/search"
 import * as Menu from "../../ui/menu"
 import { TableSort } from "../dashboards/kit/tiles"
 
-// `/share/$token` (apps/web/src/routes/share/$token.tsx, hooks/use-share-dashboard.ts).
+// `/share/$token`.
 
 /** `ShareWidgetSchema`: a redacted widget, no stored query. */
 export const ShareWidget = Schema.Struct({
@@ -61,7 +61,7 @@ export const Resolve = Schema.Union([
 ])
 export type Resolve = typeof Resolve.Type
 
-/** `ReadyData` (dashboards/kit/widget-data.ts): rows, or one value. */
+/** `ReadyData`: rows, or one value. */
 const ReadyDataSchema = Schema.Union([
 	Schema.TaggedStruct("Rows", { rows: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)) }),
 	Schema.TaggedStruct("Value", { value: Schema.Unknown }),
@@ -112,7 +112,7 @@ export const Model = Schema.Struct({
 	/** The request key each widget was last fetched under (`requested`). */
 	requested: Schema.Record(Schema.String, Schema.String),
 	isFlushScheduled: Schema.Boolean,
-	/** Batches after the one in flight; legacy awaits each before sending the next. */
+	/** Batches after the one in flight; each is awaited before the next is sent. */
 	queuedBatches: Schema.Array(QueuedBatch),
 	states: Schema.Record(Schema.String, WidgetState),
 	gridWidth: Schema.Number,

@@ -13,7 +13,7 @@ import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as DestinationDialog from "../destination/dialog"
 
-// The `/alerts` hub (apps/web/src/routes/alerts/index.tsx, components/alerts/overview/).
+// The `/alerts` hub.
 
 /** `useAlertDestinationsList` / the overview collections: `null` until the first live snapshot. */
 const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
@@ -30,9 +30,9 @@ export const Model = Schema.Struct({
 	destinations: Rows(AlertDestinationRowSchema),
 	/** `alertDeliveries.list({ limit: 100 })`, newest first. */
 	deliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
-	/** The Routing tab's own `retainedQueryV2("alertDeliveries", "list")`, a second read in apps/web. */
+	/** The Routing tab's own `alertDeliveries.list` read, separate from `deliveries`. */
 	routingDeliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
-	/** `session.roles` has root or org:admin; `false` until the session answers, as legacy's `orElse`. */
+	/** `session.roles` has root or org:admin; `false` until the session answers. */
 	isAdmin: Schema.Boolean,
 	/** Rules tab: the search box and "Show all". */
 	rulesQuery: Schema.String,

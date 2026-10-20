@@ -1,7 +1,7 @@
 import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
-import { getActiveInfraCorrelations } from "@maple/web/components/infra/infra-correlations"
+import { getActiveInfraCorrelations } from "../../../../components/infra/infra-correlations"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -18,8 +18,6 @@ import type { Model } from "./model"
 import { getCloudPlatform } from "./platform"
 import { cacheSummary, formatTimestamp, panelHeader, platformSummary, summaryStats } from "./view-header"
 import { spanLogs, tabsView } from "./view-tabs"
-
-// `SpanDetailPanel` (apps/web/src/components/traces/span-detail-panel.tsx).
 
 export type ViewInputs = Readonly<{ timeZone: string }>
 

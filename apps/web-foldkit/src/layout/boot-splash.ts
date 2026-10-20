@@ -3,7 +3,7 @@ import { MAPLE_MARK_PATH } from "../ui/icons.generated"
 
 const TRACKS = [1, 2, 3, 4, 5]
 
-/** `<BootSplash>` (apps/web/src/components/boot-splash.tsx): shown while the session resolves. */
+/** The boot splash: shown while the session resolves. */
 export const bootSplash = <Message>(h: HtmlBuilder<Message>): Html =>
 	h.main(
 		[

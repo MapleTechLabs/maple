@@ -11,7 +11,6 @@ const SECONDS_PER_FILE = new Map([
 	["@maple/api", 2.3],
 	["@maple/backend", 1.6],
 	["@maple/ai", 1.1],
-	["@maple/web", 0.55],
 	["@maple/query-engine", 0.45],
 	["@maple/ui", 0.45],
 	["@maple/domain", 0.4],

@@ -4,7 +4,7 @@ import type { VariableValues } from "@maple/query-engine"
 import { cn } from "@maple/ui/lib/utils"
 import { fieldDescriptionStyles, fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
 import { skeletonStyles } from "@maple/ui/styles/ui/skeleton"
-import { CANONICAL_COLS, colsForWidth } from "@maple/web/components/dashboard-builder/canvas/grid-breakpoints"
+import { CANONICAL_COLS, colsForWidth } from "../../../components/dashboard-builder/canvas/grid-breakpoints"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../../charts/chart"
@@ -31,7 +31,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { MAX_PREVIEW_WIDGETS } from "./update"
 
-// `TemplateDetailPanel` and `TemplateLivePreview` (dashboard-builder/templates/).
+// `TemplateDetailPanel` and `TemplateLivePreview`: a template's details and live preview.
 
 type H = HtmlBuilder<Message>
 

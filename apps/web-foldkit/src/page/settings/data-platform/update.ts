@@ -17,7 +17,7 @@ const settle = <A, B>(toMessage: (result: Result.Result<A, ReturnType<typeof toL
 /** "Total in the DB": fixed bounds keep the key stable and cover all stored data. */
 const ALL_TIME = {
 	startTime: snapTimestamp("2000-01-01 00:00:00"),
-	// The atom key snaps to 15 s, and legacy decodes the snapped key back into the request.
+	// Both bounds snap to 15 s, and the request carries the snapped values.
 	endTime: snapTimestamp("2099-12-31 23:59:59"),
 }
 

@@ -1,0 +1,38 @@
+/**
+ * Product events for the dashboard, recorded through Maple's own SDK.
+ *
+ * `track()` lands as a `session_events` row with `Type='custom'`, so an
+ * activation milestone shows up inline in the session transcript next to the
+ * clicks and network calls around it — not in a separate analytics silo. The
+ * session already carries the Clerk user and org (see `platform/session-identity.ts`)
+ * and a visitor id shared with `maple.dev`, so these events join back to the
+ * marketing visit that produced the signup.
+ *
+ * Names are `object_action` and live in the union below: the warehouse column is
+ * a free-form String, so nothing downstream would catch `dashboard_created` and
+ * `created_dashboard` both existing.
+ */
+
+export type ProductEvent =
+	| "onboarding_step_completed"
+	/** The org admin redeemed the onboarding-checklist credit from the top bar. */
+	| "onboarding_reward_claimed"
+	| "integration_connected"
+	| "alert_rule_created"
+	| "api_key_created"
+	| "dashboard_created"
+	| "chat_message_sent"
+	/** A member asked for a Slack Connect invite to the org's shared channel with the Maple team. */
+	| "support_channel_invite_sent"
+	/**
+	 * Client-side intent signal fired right before the Stripe redirect. The
+	 * server-side `plan_started` (Autumn webhook / inline attach) is the truth for
+	 * "started a plan"; this only exists to size checkout drop-off.
+	 */
+	| "plan_checkout_started"
+	/**
+	 * The buyer came back from Stripe. `confirmed` says whether the plan was
+	 * visible by the time we stopped waiting — a `false` is a Stripe→Autumn sync
+	 * slower than `CHECKOUT_CONFIRM_TIMEOUT_MS`, or an abandoned checkout.
+	 */
+	| "plan_checkout_returned"

@@ -5,7 +5,7 @@ import * as TagEditor from "../kit/tag-editor"
 import * as Menu from "../../../ui/menu"
 import * as Combobox from "../../../ui/combobox"
 
-// The dashboards list (apps/web/src/routes/dashboards/index.tsx, dashboard-builder/list/*).
+// The dashboards list.
 
 /** `dashboardGlyph`: what the row's icon says the dashboard reads. */
 export const Glyph = Schema.Literals([

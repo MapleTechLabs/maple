@@ -1,4 +1,4 @@
-import { toOrgRole } from "@maple/web/components/settings/org-membership"
+import { toOrgRole } from "../../../components/settings/org-membership"
 import { Array, Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"

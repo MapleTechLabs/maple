@@ -2,7 +2,7 @@ import type { AnomalyIncidentDocument, ErrorIssueDocument } from "@maple/domain/
 import { cn } from "@maple/ui/lib/utils"
 import * as A from "@maple/ui/styles/ui/autocomplete"
 import { commandEmptyStyles, commandItemStyles, commandListStyles } from "@maple/ui/styles/ui/command"
-import { errorIssueFromV2 } from "@maple/web/lib/services/error-issues"
+import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "../../../ui/combobox"
@@ -16,7 +16,7 @@ import { shortIssueId } from "../kit/row"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `AnomalyLinkIssueDialog` (apps/web/src/components/anomalies/anomaly-link-issue-dialog.tsx): a command
+// `AnomalyLinkIssueDialog`: a command
 // dialog over the service's issues, filtered here (`filter={null}`), the linked one left out.
 
 type H = HtmlBuilder<Message>
@@ -139,7 +139,7 @@ export const linkIssueDialog = (h: H, model: Model, incident: AnomalyIncidentDoc
 		view: dialogView,
 		viewInputs: {
 			hasTrigger: false,
-			// Legacy's controlled dialog has no trigger: closing leaves focus on the body.
+			// The dialog has no trigger: closing leaves focus on the body.
 			isReturningFocus: false,
 			toView: ({ portal }) => portal,
 			toContent: () =>

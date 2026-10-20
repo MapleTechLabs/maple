@@ -1,7 +1,6 @@
-import type { BranchCandidate } from "@maple/web/components/infra/planetscale/branch-selection"
+import type { BranchCandidate } from "../../../components/infra/planetscale/branch-selection"
 
-// copied: the pure half of apps/web/src/components/infra/planetscale/filters.ts (its module imports
-// `@/lib/search-params`). The search fields themselves are in `route/search.ts`.
+// PlanetScale list filters. The search fields themselves are in `route/search.ts`.
 
 export interface PlanetScaleFilters {
 	readonly branches?: ReadonlyArray<string>

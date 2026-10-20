@@ -135,7 +135,7 @@ export const Message = defineMessageUnion({
 	FailedLoadChartRuntime: { reason: Schema.String },
 	GotSparklineMessage: { message: Chart.Message },
 	ClickedTarget: { id: ScrapeTargetId },
-	/** A press inside a row's switch or menu cell, which legacy keeps from selecting the row. */
+	/** A press inside a row's switch or menu cell, which does not select the row. */
 	ClickedTargetControls: {},
 	CompletedFetchChecks: {
 		key: Schema.String,
@@ -222,7 +222,7 @@ export const Message = defineMessageUnion({
 	ClickedGcpScriptToggle: {},
 	ClickedGcpScriptRetry: {},
 	ClickedGcpConfigure: { target: ConfigureTarget },
-	/** Cancel, Close and Done: the wizard unmounts at once, as legacy's `target = null`. */
+	/** Cancel, Close and Done: the wizard unmounts at once. */
 	ClosedGcpConfigure: {},
 	GotGcpConfigureDialogMessage: { message: Dialog.Message },
 	GotGcpScopeTypeMessage: { message: ToggleGroup.Message },

@@ -9,7 +9,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { NOISE_CONTROL_CLASS, numberField } from "./view-fields"
 
-// `RuleNoiseSection` (components/alerts/rule-noise-section.tsx): how an open incident behaves.
+// `RuleNoiseSection`: how an open incident behaves.
 
 type H = HtmlBuilder<Message>
 

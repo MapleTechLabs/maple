@@ -41,7 +41,7 @@ export const sidebarShortcut: Stream.Stream<Message> = Dom.streamFromEventFilter
 
 /**
  * `GlobalShortcuts`' document keydown: Mod+K opens the palette anywhere; `?`, `T` and `/` only
- * outside fields and dialogs, and not after an element handled the key (legacy's stopPropagation).
+ * outside fields and dialogs, and not after an element handled the key (stopped propagation).
  */
 export const globalShortcuts: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 	target: () => document,

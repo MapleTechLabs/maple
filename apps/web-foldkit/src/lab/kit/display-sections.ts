@@ -20,7 +20,7 @@ import { icon } from "../../ui/icon"
 import { badge } from "../../ui/display"
 import { kitSection } from "./kit-layout"
 
-// The first half of apps/web/src/lab/kit/display.tsx: surfaces, alerts, empty states and rows.
+// The first half of `/lab/kit/display`: surfaces, alerts, empty states and rows.
 
 export const ALERT_VARIANTS = ["default", "info", "ok", "warn", "crit", "done"] as const
 export const ROWS = [

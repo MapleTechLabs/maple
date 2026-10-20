@@ -11,12 +11,12 @@ import {
 } from "../../page/code-review/settings/repositories"
 import { defineLab } from "../define"
 
-// `/lab/code-review-repos` (apps/web/src/routes/lab/code-review-repos.tsx): the repository picker
+// `/lab/code-review-repos`: the repository picker
 // over 246 fixture repositories.
-// TODO(lab-toggle): legacy's switch calls `githubSetPrReview` for these fixture ids; here it flips
-// locally (the fixture repositories exist nowhere to write to).
+// TODO(lab-toggle): the switch flips locally; the fixture repositories exist nowhere to write to
+// (`githubSetPrReview`).
 
-// copied: the fixture from the lab route (a React module).
+// The fixture repositories.
 const NAMES = [
 	"web",
 	"api",

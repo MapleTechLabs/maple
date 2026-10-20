@@ -1,4 +1,4 @@
-import type { ProductEvent } from "@maple/web/lib/analytics"
+import type { ProductEvent } from "../lib/analytics"
 import { Effect } from "effect"
 import type { SessionIdentity } from "../platform/session-identity"
 
@@ -10,7 +10,7 @@ export type { ProductEvent }
 const sdk = Effect.tryPromise(() => import("@maple-dev/effect-sdk/client"))
 
 /**
- * `trackProduct` (apps/web/src/lib/analytics.ts): a `custom` session event on the session the
+ * `trackProduct` (apps/web-foldkit/src/lib/analytics.ts): a `custom` session event on the session the
  * Foldkit telemetry started. Never fails: the engine queues events until that session's sink runs.
  */
 export const trackProduct = (event: ProductEvent, props?: Readonly<Record<string, unknown>>) =>

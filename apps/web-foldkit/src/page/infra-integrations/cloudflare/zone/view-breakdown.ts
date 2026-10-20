@@ -1,4 +1,4 @@
-import type { CloudflareFilters } from "@maple/web/components/infra/cloudflare/filters"
+import type { CloudflareFilters } from "../../../../components/infra/cloudflare/filters"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { EMPTY_VALUE, formatBytes, formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
@@ -19,8 +19,8 @@ import { type BreakdownSortKey, Message, type Model } from "./model"
 import { SCOPE_IDS } from "./view-sections"
 import { panelScope, type Trigger } from "./view-scope"
 
-// `CloudflareBreakdownPanel` (components/infra/cloudflare/cloudflare-breakdown-panel.tsx): one ranked
-// table per dimension, rows filter the page, and a live Cloudflare lookup for the long tail.
+// `CloudflareBreakdownPanel`: one ranked table per dimension, rows filter the page, and a live Cloudflare
+// lookup for the long tail.
 
 type H = HtmlBuilder<Message>
 
@@ -38,7 +38,7 @@ const formatCollectedFrom = (iso: string, timeZone: string): string | null =>
 		? null
 		: new Intl.DateTimeFormat("en-US", { timeZone, month: "short", day: "numeric" }).format(new Date(iso))
 
-/** `shareBar` (primitives/share-bar.ts): the row's background filled to its share. */
+/** `shareBar`: the row's background filled to its share. */
 const shareBarStyle = (share: number): Readonly<Record<string, string>> | undefined => {
 	const pct = Math.min(100, share * 100)
 	if (!Number.isFinite(pct) || pct < 0.5) return undefined

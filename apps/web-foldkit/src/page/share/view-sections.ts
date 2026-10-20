@@ -6,8 +6,8 @@ import { icon } from "../../ui/icon"
 import { iconButton } from "../../ui/icon-button"
 import { Message } from "./message"
 
-// `DashboardSectionView` with `readOnly` (sections/dashboard-section.tsx): the chevron, the title
-// and the tabs, no editing; the classes are the editable header's (dashboards/view/view-sections.ts).
+// `DashboardSectionView` with `readOnly`: the chevron, the title and the tabs, no editing; the classes are
+// the editable header's.
 
 type H = HtmlBuilder<Message>
 

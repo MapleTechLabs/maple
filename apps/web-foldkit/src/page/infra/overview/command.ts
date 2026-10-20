@@ -1,5 +1,5 @@
-import { gcpFleet } from "@maple/web/components/infra/gcp/tabs"
-import { HOST_LIST_LIMIT } from "@maple/web/components/infra/host-scopes"
+import { gcpFleet } from "../../../components/infra/gcp/tabs"
+import { HOST_LIST_LIMIT } from "../../../components/infra/host-scopes"
 import {
 	summarizeCloudflare,
 	summarizeContainers,
@@ -8,7 +8,7 @@ import {
 	summarizePlanetScale,
 	summarizePods,
 	summarizeRailway,
-} from "@maple/web/components/infra/overview/summaries"
+} from "../../../components/infra/overview/summaries"
 import { getCloudflareZones } from "@maple/web-data/warehouse/cloudflare-infra"
 import { getGcpInfraFleet } from "@maple/web-data/warehouse/gcp-infra"
 import { containersSummary, listHosts, podsSummary } from "@maple/web-data/warehouse/infra"
@@ -22,7 +22,7 @@ import { TimeWindow } from "../../../data/time-range"
 import { Message } from "./message"
 import { SourceId, type SourceReading } from "./model"
 
-// The `*Data` components of components/infra/overview/infra-overview.tsx: one read per source.
+// One read per source.
 
 const reading = (summary: SourceReading["summary"]): SourceReading => ({ summary })
 

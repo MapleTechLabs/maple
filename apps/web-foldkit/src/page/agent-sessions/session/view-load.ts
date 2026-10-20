@@ -9,7 +9,7 @@ import type { LoadProgress } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `SessionLoadIndicator` (session-detail/session-load-indicator.tsx): how far a large session has loaded.
+// The session load indicator: how far a large session has loaded.
 
 type H = HtmlBuilder<Message>
 

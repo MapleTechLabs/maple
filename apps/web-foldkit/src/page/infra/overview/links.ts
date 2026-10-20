@@ -1,9 +1,9 @@
-import { gcpWorkloadSearch } from "@maple/web/components/infra/gcp/tabs"
+import { gcpWorkloadSearch } from "../../../components/infra/gcp/tabs"
 import { AppRoute, hrefOf } from "../../../route"
 import type { TimeSearch } from "../kit/view-tabs"
 import type { FindingTarget, SourceId } from "./model"
 
-// `FindingLink` and `SourceLink` (components/infra/overview/infra-overview.tsx), as hrefs.
+// `FindingLink` and `SourceLink`, as hrefs.
 
 export const findingHref = (target: FindingTarget, time: TimeSearch): string => {
 	switch (target.kind) {

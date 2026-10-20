@@ -26,7 +26,7 @@ import type { Model } from "./model"
 
 export type Return = PageReturn<Model, Message>
 
-// The page's requests: one `Keyed` slot per legacy atom read (S6), and its navigation.
+// The page's requests: one `Keyed` slot per read (S6), and its navigation.
 
 type Step = Readonly<{
 	patch: Partial<Model>
@@ -195,7 +195,7 @@ export const databaseSteps = (model: Model, context: PageContext, mode: RequestM
 	]
 }
 
-/** Every query the page reads for the resolved windows, keyed like apps/web's atoms. */
+/** Every query the page reads for the resolved windows, keyed by its inputs. */
 export const requestAll = (model: Model, context: PageContext, mode: RequestMode): Return =>
 	applySteps(model, [
 		facetsStep(model, context, mode),

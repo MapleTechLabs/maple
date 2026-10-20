@@ -28,7 +28,7 @@ const factValue = (facts: V2Investigation["snapshot"]["facts"], label: string): 
 
 const factKey = (label: string): string => label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")
 
-/** `contextFromInvestigation` (investigation-view.tsx): the subject as the chat knows it. */
+/** `contextFromInvestigation`: the subject as the chat knows it. */
 export const contextOf = (investigation: V2Investigation): InvestigationContext => {
 	const { subject, snapshot } = investigation
 	const kind =

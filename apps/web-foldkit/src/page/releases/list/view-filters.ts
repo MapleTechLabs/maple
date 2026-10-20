@@ -1,4 +1,4 @@
-import { isReleaseHealth, RELEASE_HEALTH_ORDER } from "@maple/web/components/releases/release-model"
+import { isReleaseHealth, RELEASE_HEALTH_ORDER } from "../../../components/releases/release-model"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as FilterSections from "../../../ui/filters/filter-sections"
@@ -17,7 +17,7 @@ import { facetsOf, hasFilters } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `ReleasesFilterSidebar` (apps/web/src/components/releases/releases-filter-sidebar.tsx): every facet
+// The releases filter sidebar: every facet
 // derives from the releases read the table uses.
 
 type H = HtmlBuilder<Message>

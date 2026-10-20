@@ -39,7 +39,7 @@ export interface AreaChartInputs {
 	readonly theme: ThemeColors
 	readonly unit?: string | undefined
 	readonly timeZone?: string | undefined
-	/** The clock the in-flight tail is judged against (`Date.now()` in the React chart). */
+	/** The clock the in-flight tail is judged against. */
 	readonly nowMs: number
 	readonly className?: string
 	readonly showTooltip?: boolean

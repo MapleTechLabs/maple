@@ -26,7 +26,7 @@ type NewRoute = Extract<AppRoute, { readonly _tag: "SourcesNew" }>
 
 const navigate = (url: string): PageOutMessage => PageOutMessage.RequestedNavigation({ url, isReplace: false })
 
-/** Step 2's form, fresh: legacy mounts a new `CreateSourceForm` per platform pick. */
+/** Step 2's form, fresh for each platform pick. */
 const withForm = (model: Model, platform: PushSourcePlatform | null): Model => ({
 	...model,
 	platform,

@@ -5,8 +5,8 @@ import {
 	NEW_ISSUE_SLACK_MS,
 	shortReleaseLabel,
 	type ReleaseServiceImpact,
-} from "@maple/web/components/releases/release-model"
-import { errorIssueFromV2 } from "@maple/web/lib/services/error-issues"
+} from "../../../components/releases/release-model"
+import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -38,8 +38,7 @@ import {
 import { releaseComparison, releaseVersionsRail } from "./view-comparison"
 import { type ChangesetState, type Clock, issueList, releaseChangeset, sectionCard } from "./view-sections"
 
-// `ReleaseBody` / `ReleaseBodyLoaded` (routes/releases/$commitSha.tsx with `?service=`) and
-// `ReleaseIssuesPanel` (components/releases/release-issues-panel.tsx).
+// The release body for one service (`?service=`) and its issues panel.
 
 type H = HtmlBuilder<Message>
 

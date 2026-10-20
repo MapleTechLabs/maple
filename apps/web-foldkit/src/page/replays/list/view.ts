@@ -39,8 +39,6 @@ import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { filtersRail } from "./view-filters"
 
-// `ReplaysPage` (apps/web/src/routes/replays/index.tsx).
-
 type H = HtmlBuilder<Message>
 
 const AUTO_LOAD_MIN_ROWS = 25

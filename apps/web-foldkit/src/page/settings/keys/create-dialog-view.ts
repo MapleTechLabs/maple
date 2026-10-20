@@ -76,7 +76,7 @@ const expirationField = (h: H, model: Model): Html => {
 		viewInputs: {
 			entries: EXPIRATION_OPTIONS.map((item): SelectView.SelectEntry => ({ _tag: "Item", item })),
 			className: "w-full",
-			// Legacy names it through the field label (`aria-labelledby`); same accessible name.
+			// The accessible name matches the field label.
 			ariaLabel: "Expiration",
 			renderValue: (value) => [EXPIRATION_OPTIONS.find((option) => option.value === value)?.label ?? value],
 			toView: (parts) => field(h, { state }, [fieldLabel(h, { ids: fieldIds, state }, "Expiration"), ...parts]),

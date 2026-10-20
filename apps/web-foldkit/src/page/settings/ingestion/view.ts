@@ -1,8 +1,8 @@
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
-import { docsUrl } from "@maple/web/lib/docs"
-import { ingestUrl } from "@maple/web/lib/services/common/ingest-url"
+import { docsUrl } from "../../../lib/docs"
+import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
@@ -19,7 +19,7 @@ import { credentialRow, ingestKeyRows } from "./view-keys"
 import { connectInstructions, frameworkIconStrip, frameworkPicker } from "./view-setup"
 import { deleteMappingDialog, mappingsSection, recommendationsSection } from "./view-rules"
 
-// `IngestionSection` (apps/web/src/components/settings/ingestion-section.tsx).
+// `IngestionSection`.
 
 type H = HtmlBuilder<Message>
 

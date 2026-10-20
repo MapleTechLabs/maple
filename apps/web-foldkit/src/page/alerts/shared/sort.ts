@@ -1,8 +1,6 @@
 import type { AlertIncidentDocument } from "@maple/domain/http"
 import { isoMs } from "./time"
 
-// copied: `sortIncidents` (components/alerts/overview/shared.tsx, a React module).
-
 const SEVERITY_RANK = new Map<string, number>([
 	["critical", 0],
 	["warning", 1],

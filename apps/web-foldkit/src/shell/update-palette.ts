@@ -11,7 +11,7 @@ import { SHORTCUTS_DIALOG_ID } from "./palette/shortcuts-view"
 import * as Palette from "./palette/update"
 
 // `GlobalShortcuts`: the palette and the shortcuts dialog mount on open and unmount on close, so
-// neither plays an exit transition (legacy renders them only while their flag is set).
+// neither plays an exit transition.
 
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 

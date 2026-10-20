@@ -13,7 +13,7 @@ import * as Dialog from "../../../ui/dialog"
 import { getReview, listCiRuns } from "./api"
 import { ResponseCache } from "./page-steps"
 
-// `ReviewDetailSheet` (components/code-review/review-detail-sheet.tsx) with its `PullRequestCiRuns`:
+// `ReviewDetailSheet` with its `PullRequestCiRuns`:
 // one review opened from a list, driven by the route's `review` param.
 
 export const ReviewSheet = Schema.Struct({

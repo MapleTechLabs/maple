@@ -1,4 +1,4 @@
-import { formatCores, shareOfLimit } from "@maple/web/components/infra/railway/format"
+import { formatCores, shareOfLimit } from "../../../../components/infra/railway/format"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -22,7 +22,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { CHART_IDS, DEFAULT_PRESET } from "./update"
 
-// `RailwayServicePage` (apps/web/src/routes/infra/railway/$serviceId.tsx).
+// `RailwayServicePage`.
 
 type H = HtmlBuilder<Message>
 type Pick = (row: RailwayServiceTimeseriesRow) => number

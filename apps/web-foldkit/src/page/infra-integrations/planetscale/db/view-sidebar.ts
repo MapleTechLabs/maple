@@ -1,4 +1,4 @@
-import type { BranchCandidate } from "@maple/web/components/infra/planetscale/branch-selection"
+import type { BranchCandidate } from "../../../../components/infra/planetscale/branch-selection"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as FilterSections from "../../../../ui/filters/filter-sections"
 import { filterSection } from "../../../../ui/filters/filter-section"
@@ -20,7 +20,7 @@ import {
 } from "../filters"
 import { Message, type Model } from "./model"
 
-// `PlanetScaleFilterSidebar` (components/infra/planetscale/planetscale-filter-sidebar.tsx).
+// `PlanetScaleFilterSidebar`.
 
 type H = HtmlBuilder<Message>
 

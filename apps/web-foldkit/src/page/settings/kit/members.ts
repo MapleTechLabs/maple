@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "../../../ui/alert"
 import { icon } from "../../../ui/icon"
 
-// `memberDisplayName` and `AdminOnlyNotice` (apps/web/src/components/settings/admin-only-notice.tsx).
+// `memberDisplayName` and `AdminOnlyNotice`.
 
 interface MemberName {
 	readonly firstName?: string | null

@@ -182,7 +182,7 @@ describe("destination dialog", () => {
 		const chat = (message: ChatConnect.Message) => (model: typeof unlinked) =>
 			update(model, Message.GotChatConnectMessage({ message })).model
 		const started = chat(ChatConnect.Message.SucceededStart({ attempt }))(connecting)
-		// The install's reactivity keys re-read the connectors, as legacy's mutation does.
+		// The install's reactivity keys re-read the connectors.
 		const startStep = update(connecting, Message.GotChatConnectMessage({ message: ChatConnect.Message.SucceededStart({ attempt }) }))
 		expect(names(startStep.commands)).toEqual(["FetchChatConnectors"])
 		// Slack's consent page severs the opener: the popup reads closed while the user still authorizes.

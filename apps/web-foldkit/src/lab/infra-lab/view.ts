@@ -1,4 +1,4 @@
-import { buildInfraLabFixture, type InfraLabFixture } from "@maple/web/lab/infra-fixture"
+import { buildInfraLabFixture, type InfraLabFixture } from "../infra-fixture"
 import { RailwayIntegrationStatus } from "@maple/domain/http"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

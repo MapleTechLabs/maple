@@ -4,8 +4,8 @@ import {
 	CloudflareConnectedAccountStatus,
 	CloudflareIntegrationStatus,
 } from "@maple/domain/http"
-import { cloudflareAccounts } from "@maple/web/components/infra/cloudflare/accounts"
-import { mergeWorkerRows } from "@maple/web/components/infra/cloudflare/list-model"
+import { cloudflareAccounts } from "../../components/infra/cloudflare/accounts"
+import { mergeWorkerRows } from "../../components/infra/cloudflare/list-model"
 import {
 	DEMO_ACCOUNT_STATUSES,
 	DEMO_DURABLE_OBJECTS,
@@ -23,7 +23,7 @@ import {
 	MAPLE_DEV_PATHS,
 	MAPLE_DEV_ROW,
 	MAPLE_DEV_STATUS,
-} from "@maple/web/lab/cloudflare-fixture"
+} from "../cloudflare-fixture"
 import { Schema } from "effect"
 import { AsyncData, type Command } from "foldkit"
 import type { Keyed } from "../../data/keyed"
@@ -33,7 +33,7 @@ import type { ListFrame } from "../../page/infra-integrations/cloudflare/list/vi
 import type { Model as WorkerModel } from "../../page/infra-integrations/cloudflare/worker/model"
 import type { Model as ZoneModel } from "../../page/infra-integrations/cloudflare/zone/model"
 
-// apps/web `lab/cloudflare-fixture.ts` as the Cloudflare pages' slots: a copy of production data.
+// The Cloudflare fixture as the Cloudflare pages' slots: a copy of production data.
 
 /** The pages run against a fixture org; their fetch Commands are dropped, so it is never asked. */
 export const LAB_CONTEXT: PageContext = {
@@ -44,7 +44,7 @@ export const LAB_CONTEXT: PageContext = {
 
 export const ACCOUNT_NAME = "Maki Account"
 
-/** The window the fixtures cover (legacy's breakdown `startTime`/`endTime`). */
+/** The window the fixtures cover (the breakdown's `startTime`/`endTime`). */
 const WINDOW = { startTime: "2026-10-14 00:00:00", endTime: "2026-10-14 12:00:00" }
 
 const loaded = <A, E>(data: A): Keyed<A, E> => ({ key: null, data: AsyncData.Success({ data }) })
@@ -112,7 +112,7 @@ const WORKER_STATUS = new CloudflareIntegrationStatus({
 	workers: null,
 })
 
-/** Legacy's rail gets `dns={{ queries: 4_400_000, alwaysNxdomain: 4 }}`: names that only NXDOMAIN. */
+/** The rail's DNS: 4.4M queries, 4 names that only NXDOMAIN. */
 const MAPLE_DEV_DNS = {
 	buckets: [{ bucket: "2026-10-14 00:00:00", responseCode: "NOERROR", queries: 4_400_000 }],
 	names: ["a", "b", "c", "d"].map((name) => ({
@@ -123,7 +123,7 @@ const MAPLE_DEV_DNS = {
 	ignoredFilters: [],
 }
 
-/** `ZonePage`'s reads, held whatever the page asked for (legacy passes them as props). */
+/** `ZonePage`'s reads, held whatever the page asked for. */
 export const pinZone = (model: ZoneModel): ZoneModel => ({
 	...model,
 	window: WINDOW,
@@ -146,7 +146,7 @@ export const pinZone = (model: ZoneModel): ZoneModel => ({
 /** `WorkerPage`'s reads: maple-api's rollup, outcomes and releases. */
 export const pinWorker = (model: WorkerModel): WorkerModel => ({
 	...model,
-	// Legacy's lab snaps deploys to 30-minute buckets from 00:00; a 48h window is what buckets so.
+	// Deploys snap to 30-minute buckets from 00:00; a 48h window is what buckets so.
 	window: { startTime: WINDOW.startTime, endTime: "2026-10-16 00:00:00" },
 	nowMs: DEMO_NOW,
 	status: loaded(WORKER_STATUS),

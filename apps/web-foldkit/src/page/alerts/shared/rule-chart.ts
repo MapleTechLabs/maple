@@ -38,7 +38,7 @@ import { chartEmpty, chartError, chartLoading } from "../../../ui/chart-state"
 import { seriesLegend } from "../../kit/series-legend"
 import { isoMs } from "./time"
 
-// The view half of `AlertRuleChart` (apps/web/src/components/alerts/alert-rule-chart.tsx); the
+// The view half of the alert rule chart; the
 // definition is `charts/definitions/alert-rule.ts`, built by the chart Mount from the spec here.
 
 /** The tokens the chart and its chrome read off the theme (`PAINT_COLORS` plus the frame). */

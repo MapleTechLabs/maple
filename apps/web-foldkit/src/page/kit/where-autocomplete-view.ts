@@ -1,4 +1,4 @@
-import type { WhereClauseAutocompleteSuggestion } from "@maple/web/lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteSuggestion } from "../../lib/query-builder/where-clause-autocomplete"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
@@ -7,7 +7,7 @@ import { type AnchorRect, listboxStyle } from "./where-autocomplete"
 
 // `WhereClauseEditor`'s suggestion list and key handling, generic over the owner's Message.
 
-/** The suggestion list, fixed under (or over) the textarea like legacy's body portal. */
+/** The suggestion list, fixed under (or over) the textarea. */
 export const suggestionListbox = <M>(
 	h: HtmlBuilder<M>,
 	inputs: Readonly<{

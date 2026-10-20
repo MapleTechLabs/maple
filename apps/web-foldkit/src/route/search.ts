@@ -1,5 +1,4 @@
-// Mirrors every `validateSearch` schema of apps/web/src/routes, so this app accepts the same URLs.
-// Keep in sync by hand: the legacy route files are .tsx and cannot be imported here.
+// The search schema of every route. Shapes match the URLs already in use, so existing links decode.
 import { Schema } from "effect"
 import {
 	AiSessionSortDir,
@@ -17,8 +16,7 @@ import {
 import { PushSourcePlatform } from "@maple/domain/primitives"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 
-// apps/web/src/lib/search-params.ts
-// Readonly here: legacy marks these `mutable` only for its React call sites.
+// apps/web-foldkit/src/lib/search-params.ts
 const StringArray = Schema.Array(Schema.String)
 const StringArrayFromJsonString = Schema.fromJsonString(Schema.Array(Schema.String))
 
@@ -33,14 +31,14 @@ export const OptionalStringArrayParam = Schema.optional(
 const BooleanParam = Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam]))
 const NumberParam = Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam]))
 
-// apps/web/src/components/time-range-picker/search.ts
+// Time range
 export const TimeRangeSearchFields = {
 	startTime: Schema.optional(Schema.String),
 	endTime: Schema.optional(Schema.String),
 	timePreset: Schema.optional(Schema.String),
 }
 
-// apps/web/src/lib/dashboard-controls/search-params.ts
+// apps/web-foldkit/src/lib/dashboard-controls/search-params.ts
 export const VARIABLE_PARAM_PREFIX = "var-"
 
 export const variableSearchRest = Schema.Record(
@@ -57,7 +55,7 @@ export const dashboardViewParamsSchema = {
 	refresh: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
 }
 
-// apps/web/src/lib/agent-sessions/tool-analytics.ts + tool-search.ts
+// Agent tool analytics and search
 const TOOL_METRICS = ["calls", "sessions", "error_rate", "duration"] as const
 const TOOL_PERCENTILES = ["p50", "p90", "p95"] as const
 
@@ -75,7 +73,7 @@ const ToolAnalyticsSearchFields = {
 	variant: Schema.optional(Schema.String),
 }
 
-// apps/web/src/components/analytics/filters.ts
+// apps/web-foldkit/src/components/analytics/filters.ts
 const analyticsFilterSearchFields = {
 	host: Schema.optional(Schema.String),
 	pagePath: Schema.optional(Schema.String),
@@ -93,7 +91,7 @@ const analyticsFilterSearchFields = {
 	eventName: Schema.optional(Schema.String),
 }
 
-// apps/web/src/components/code-review/code-review-search.ts
+// Code review
 const CodeReviewSearchFields = {
 	repo: Schema.optional(VcsRepositoryId),
 	author: Schema.optional(Schema.String),
@@ -121,7 +119,7 @@ const CodeReviewCiSearchFields = {
 	result: Schema.optional(CiRunResult),
 }
 
-// apps/web/src/components/infra/cloudflare/filters.ts + list-model.ts
+// apps/web-foldkit/src/components/infra/cloudflare/filters.ts + list-model.ts
 const cloudflareFilterSearchFields = {
 	hosts: OptionalStringArrayParam,
 	cacheStatuses: OptionalStringArrayParam,
@@ -139,7 +137,7 @@ const ZONE_SCOPES = ["serving5xx", "mostly4xx", "lowVolume"] as const
 const WORKER_SCOPES = ["erroring", "slow", "cpuHeavy"] as const
 const ZONE_TABS = ["traffic", "dns", "security"] as const
 
-// apps/web/src/components/infra/planetscale/filters.ts
+// PlanetScale filters
 const planetscaleFilterSearchFields = {
 	branches: OptionalStringArrayParam,
 	branchStates: OptionalStringArrayParam,
@@ -147,13 +145,13 @@ const planetscaleFilterSearchFields = {
 	branchContains: Schema.optional(Schema.String),
 }
 
-// apps/web/src/lib/errors/hub-params.ts
+// apps/web-foldkit/src/lib/errors/hub-params.ts
 const HUB_VIEWS = ["open", "closed", "all"] as const
 const LEGACY_HUB_VIEWS = ["triage", "active", "resolved"] as const
 const HUB_SORTS = ["last_seen", "volume", "severity"] as const
 const SEVERITY_FILTERS = ["all", "critical", "high", "medium", "low", "unset"] as const
 
-// Tab sets from account-nav.tsx, settings-nav.tsx (+ settings.tsx legacy), issue-tabs.tsx, investigation-tabs.tsx
+// Tab sets of the account, settings (plus retired settings tabs), issue and investigation navs
 export const accountTabValues = [
 	"profile",
 	"emails",
@@ -197,7 +195,7 @@ const SortDirParam = Schema.optional(Schema.Literals(["asc", "desc"]))
 const ContainsMatchMode = Schema.optional(Schema.Literals(["contains"]))
 const WorkloadKindLiteral = Schema.Literals(["deployment", "statefulset", "daemonset", "job"])
 
-// No validateSearch in legacy: `beforeLoad` reads the raw values.
+// Not validated: the redirect reads the raw values.
 export const ErrorIssuesSearch = Schema.Struct({
 	workflowState: Schema.optional(Schema.Unknown),
 	severity: Schema.optional(Schema.Unknown),
@@ -229,13 +227,12 @@ export const CliLoginSearch = Schema.Struct({
 	user_code: Schema.optional(Schema.String),
 })
 
-// Legacy validateSearch is a function keeping `tab` only when it is a string; beforeLoad redirects to /integrations.
-// Legacy validates with a plain function that maps a non-string `tab` to undefined.
+// Keeps `tab` only when it is a string; the route redirects to /integrations.
 export const ConnectorsSearch = Schema.Struct({
 	tab: Schema.optional(Schema.Unknown),
 })
 
-// Legacy validateSearch is a function keeping `tab` only when it is a string; beforeLoad redirects to /settings.
+// Keeps `tab` only when it is a string; the route redirects to /settings.
 export const DeveloperSearch = Schema.Struct({
 	tab: Schema.optional(Schema.Unknown),
 })
@@ -340,7 +337,7 @@ export const DashboardSearch = Schema.StructWithRest(
 	[variableSearchRest],
 )
 
-// apps/web/src/routes/sources/new.tsx, $sourceId.tsx (`SOURCE_TABS`, components/sources/source-tabs.ts)
+// Sources: new and detail (`SOURCE_TABS`)
 export const SourcesNewSearch = Schema.Struct({
 	platform: Schema.optional(PushSourcePlatform),
 	/** A data integration's connect step. A plain string: OAuth callbacks return here, so an unknown id falls back to the picker. */
@@ -847,7 +844,7 @@ export const InfraKubernetesWorkloadSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// Path params of /infra/kubernetes/workloads/$kind/$workloadName (legacy `params.parse`).
+// Path params of /infra/kubernetes/workloads/$kind/$workloadName.
 export const InfraKubernetesWorkloadParams = Schema.Struct({
 	kind: WorkloadKindLiteral,
 	workloadName: Schema.String,

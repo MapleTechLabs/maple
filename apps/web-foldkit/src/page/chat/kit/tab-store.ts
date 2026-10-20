@@ -1,6 +1,6 @@
 import { Effect, Option, Schema } from "effect"
 
-// `useChatTabs`' storage (apps/web hooks/use-chat-tabs.ts): `maple-chat-tabs:<orgId>` and the
+// The chat tabs' storage: `maple-chat-tabs:<orgId>` and the
 // global sheet's `maple-chat-sheet-tab:<orgId>`, in localStorage. Effects, run from Commands.
 
 export const ChatTab = Schema.Struct({

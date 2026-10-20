@@ -3,7 +3,7 @@ import { button } from "../../../ui/button"
 import * as CopyButton from "../../../ui/copy-button"
 import * as Popover from "../../../ui/popover"
 
-// `ErrorDetailsPopover` (dashboard-builder/widgets/widget-shell.tsx): the card clamps a failed tile's
+// `ErrorDetailsPopover`: the card clamps a failed tile's
 // message to two lines; the full SQL or ClickHouse message lives behind "Details", with a copy button.
 
 export type ErrorDetailsInputs<M> = Readonly<{

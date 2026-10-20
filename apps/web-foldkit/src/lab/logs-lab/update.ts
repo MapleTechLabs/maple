@@ -1,10 +1,10 @@
-import { buildLogsLabFixture } from "@maple/web/lab/logs-fixture"
+import { buildLogsLabFixture } from "../logs-fixture"
 import {
 	addLogAttributeFilter,
 	type LogAttributeFilter,
 	decodeLogAttributeFilters,
 	matchesLogAttributeFilters,
-} from "@maple/web/lib/logs/log-attribute-filters"
+} from "../../lib/logs/log-attribute-filters"
 import { Duration, Effect, Option, Schema } from "effect"
 import { Command, Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"
@@ -105,7 +105,7 @@ const addFilter =
 		replaceRows(modifyFields(model, { attrs: (attrs) => addLogAttributeFilter(attrs, filter) }))
 
 const streamOutMessage = LogsStream.OutMessage.match<Step>({
-	// Opens `LogDetailSheet` in apps/web; the sheet is not ported yet.
+	// TODO(log-detail): open the log detail sheet.
 	OpenedLog: () => unchanged,
 	ChangedInspecting:
 		({ isInspecting, isScrolledAway }) =>

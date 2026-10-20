@@ -17,8 +17,7 @@ import {
 import { Message } from "./message"
 import type { ConnectForm } from "./model"
 
-// `RailwayIntegrationCard`'s not-connected branch and `RailwayTokenForm` in connect mode
-// (apps/web/src/components/integrations/railway-integration-card.tsx).
+// `RailwayIntegrationCard`'s not-connected branch and `RailwayTokenForm` in connect mode.
 
 /** The form's Messages, so the infra page and the integration card share it. */
 export type TokenFormConfig<M> = Readonly<{

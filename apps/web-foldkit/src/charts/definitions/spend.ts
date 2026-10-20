@@ -12,7 +12,7 @@ import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip } from "./plot-constants"
 
-// Port of `SpendChart`'s `definition` memo (apps/web/src/components/settings/spend-chart.tsx).
+// The spend chart's definition.
 
 type SpendSpec = Extract<ChartSpec, { readonly _tag: "SpendCumulative" }>
 type Point = SpendSpec["points"][number]

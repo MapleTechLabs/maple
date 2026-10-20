@@ -9,7 +9,7 @@ import { ALERT_TEMPLATES } from "../shared/templates"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `RuleTemplatesOverlay` (components/alerts/rule-templates-overlay.tsx): the first-touch picker.
+// `RuleTemplatesOverlay`: the first-touch picker.
 
 type H = HtmlBuilder<Message>
 

@@ -25,7 +25,7 @@ import { icon, type IconName } from "./icon"
 /**
  * `useCopy` + `<CopyButton>`: copy writes the clipboard, holds `copied`/`error` for the timeout,
  * then falls back to `idle`. A newer copy bumps `generation` so an older reset is dropped.
- * TODO(toast): legacy also toasts on copy; toasts are not ported yet.
+ * TODO(toast): also toast on copy.
  */
 
 export const CopyStatus = Schema.Literals(["idle", "copied", "error"])

@@ -1,8 +1,8 @@
 import { formatCurrency } from "@maple/domain/format"
 import type { BillingInvoice, CatalogPlan } from "@maple/domain/http"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
-import { formatAddressLines } from "@maple/web/lib/billing/billing-profile"
-import { planDisplayName } from "@maple/web/lib/billing/plans"
+import { formatAddressLines } from "../../../lib/billing/billing-profile"
+import { planDisplayName } from "../../../lib/billing/plans"
 import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -20,7 +20,7 @@ import { Message, type Model } from "./model"
 
 type H = HtmlBuilder<Message>
 
-// `InvoicesSection` and `BillingDetailsSection` (apps/web/src/components/settings/).
+// `InvoicesSection` and `BillingDetailsSection` (apps/web-foldkit/src/components/settings/).
 
 /** The compact list's length for admins; the rest live behind "View all" (the portal). */
 const RECENT_INVOICES = 4

@@ -5,7 +5,7 @@ import { readSessionToken } from "../platform/auth-api"
 import type { Resources } from "../platform/resources"
 import * as Shell from "../shell"
 
-// apps/web renders shell lab pages inside the real `DashboardLayout`: the same Shell Submodel the
+// Shell lab pages render inside the real shell: the same Shell Submodel the
 // app root keeps, booted for the session's org, with the frame around the page and its overlays.
 
 export const LabShellFlags = Schema.Struct({
@@ -22,7 +22,7 @@ export type LabShellFlags = typeof LabShellFlags.Type
 const Claims = Schema.fromJsonString(Schema.Struct({ org_id: Schema.String }))
 const decodeClaims = Schema.decodeUnknownOption(Claims)
 
-/** The org of the stored self-hosted token, read from its claims (legacy's session org). */
+/** The org of the stored self-hosted token, read from its claims. */
 const orgOfToken = (token: string): Effect.Effect<Option.Option<string>> =>
 	Effect.try(() => atob((token.split(".")[1] ?? "").replaceAll("-", "+").replaceAll("_", "/"))).pipe(
 		Effect.map((json) => Option.map(decodeClaims(json), (claims) => claims.org_id)),

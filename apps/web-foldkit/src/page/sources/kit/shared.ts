@@ -11,7 +11,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import { SOURCE_TABS, type SourceTab } from "../../../route/search"
 import { statusRank } from "./status"
 
-// apps/web/src/components/sources/shared.ts and `orderSources` (sources-table.tsx).
+// Shared source constants and `orderSources`.
 
 export const SIGNALS: ReadonlyArray<{ value: SourceSignal; label: string; hint: string }> = [
 	{ value: "traces", label: "Traces", hint: "/v1/traces" },
@@ -59,7 +59,7 @@ export const orderSources = (sources: ReadonlyArray<V2Source>): ReadonlyArray<V2
 	...sources.filter((source) => !source.is_default).toSorted((a, b) => statusRank(a) - statusRank(b)),
 ]
 
-/** `/sources/$sourceId` in its public id form; the overview tab drops `tab`, as legacy's links do. */
+/** `/sources/$sourceId` in its public id form; the overview tab drops `tab`. */
 export const sourceHref = (source: V2Source, tab: SourceTab = "overview"): string =>
 	hrefOf(
 		AppRoute.Source({

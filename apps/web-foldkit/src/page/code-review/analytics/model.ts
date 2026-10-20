@@ -10,7 +10,7 @@ import * as Select from "../../../ui/select"
 import { Frame } from "../kit/frame"
 import { ResponseCache } from "../kit/page-steps"
 
-// `/code-review` (routes/code-review/index.tsx, components/code-review/code-review-analytics.tsx).
+// `/code-review`: the analytics tab.
 
 export const Model = Schema.Struct({
 	search: CodeReviewSearch,

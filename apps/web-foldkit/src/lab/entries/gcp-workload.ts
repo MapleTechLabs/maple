@@ -3,7 +3,7 @@ import { gcpWorkloadLabFlags, init, update } from "../gcp-workload-lab/update"
 import { breadcrumbs, overlay, view } from "../gcp-workload-lab/view"
 import { defineShellLab } from "../shell-lab"
 
-// `/lab/gcp-workload` (apps/web `lab/gcp-workload-lab.tsx`): the Google Cloud workload page,
+// `/lab/gcp-workload`: the Google Cloud workload page,
 // whole, over fixture series: a Cloud Run burst and a Cloud SQL instance, inside the real shell.
 
 export const lab = defineShellLab("Google Cloud workload", {

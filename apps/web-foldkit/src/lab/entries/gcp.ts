@@ -4,7 +4,7 @@ import { init, update } from "../gcp-filter-lab/update"
 import { view } from "../gcp-filter-lab/view"
 import { defineShellLab } from "../shell-lab"
 
-// `/lab/gcp` (apps/web `lab/gcp-lab.tsx`): the Google Cloud log filter field in each of its states.
+// `/lab/gcp`: the Google Cloud log filter field in each of its states.
 
 const NoFlags = Schema.Struct({})
 

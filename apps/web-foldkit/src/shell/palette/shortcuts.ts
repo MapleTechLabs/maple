@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-// apps/web/src/lib/shortcuts.ts: the registry the shortcuts dialog renders, with the display tokens
+// The registry the shortcuts dialog renders, with the display tokens
 // of `@tanstack/hotkeys` (`parseHotkey`, `MODIFIER_ORDER`, the symbol tables) for its few combos.
 
 export const Platform = Schema.Literals(["mac", "windows", "linux"])

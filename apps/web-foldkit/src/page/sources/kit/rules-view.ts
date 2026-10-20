@@ -22,7 +22,7 @@ import {
 } from "./rules"
 import { MODE_LABELS, SIGNALS } from "./shared"
 
-// `RulesFields` and `AttributeRows` (apps/web/src/components/sources/rules-fields.tsx, attribute-rows.tsx).
+// `RulesFields` and `AttributeRows`.
 
 export type RulesViewConfig<P> = Readonly<{
 	model: Model

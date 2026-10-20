@@ -1,7 +1,7 @@
 import { auditActionLabel, auditResourceLabel } from "@maple/domain/audit-actions"
 import { encodePublicId, PublicIdPrefixes, type V2AuditChanges, type V2AuditLogEntry } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
-import type { AuditResourceLink } from "@maple/web/components/settings/audit-log-resource"
+import type { AuditResourceLink } from "../../../components/settings/audit-log-resource"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -15,7 +15,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from ".
 import { Message, type Model } from "./model"
 import { ACTOR_BADGES, SOURCE_LABELS } from "./view"
 
-// `AuditLogDetail` and its parts (audit-log-section.tsx).
+// `AuditLogDetail` and its parts.
 
 type H = HtmlBuilder<Message>
 

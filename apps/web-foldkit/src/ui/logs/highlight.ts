@@ -5,7 +5,7 @@ const MAX_MATCHES = 40
 
 /**
  * Occurrences of `query` in `text` as alternating plain/match segments: one case-insensitive
- * substring, like the backend's `Body ILIKE`. Copied from apps/web's `highlighted-text.tsx`.
+ * substring, like the backend's `Body ILIKE`.
  */
 export const splitOnMatches = (
 	text: string,

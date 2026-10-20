@@ -1,4 +1,4 @@
-import { LOGS_TABLE_BENCH_ROWS } from "@maple/web/lab/bench/logs-table-bench-fixture"
+import { LOGS_TABLE_BENCH_ROWS } from "../../lab/bench/logs-table-bench-fixture"
 import type { HtmlBuilder } from "foldkit/html"
 import {
 	all,

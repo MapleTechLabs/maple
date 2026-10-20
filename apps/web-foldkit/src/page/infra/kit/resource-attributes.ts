@@ -9,8 +9,7 @@ import { detailRailMetaRow } from "../../../ui/detail-rail"
 import { icon, type IconName } from "../../../ui/icon"
 import { skeleton } from "../../../ui/skeleton"
 
-// `ResourceAttributesCard` / `ResourceAttributesCardSkeleton` (primitives/resource-attributes-card.tsx)
-// and `DetailRail.MetaRow` (packages/ui/src/components/detail-rail.tsx) with its copy buttons.
+// `ResourceAttributesCard` / `ResourceAttributesCardSkeleton` and `DetailRail.MetaRow` with its copy buttons.
 // TODO(tooltip): a row's `tooltip` renders its trigger; the hover popup is not wired yet.
 
 /** Copy status per row label: each row's `CopyButton` keeps its own `useCopy` state. */

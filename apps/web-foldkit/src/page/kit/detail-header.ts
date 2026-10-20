@@ -4,7 +4,7 @@ import { eyebrow } from "../../ui/eyebrow"
 import { pageTitle } from "../../ui/page-layout"
 import { skeleton } from "../../ui/skeleton"
 
-// `DetailHeader`'s title side and `DetailHeaderSkeleton` (apps/web/src/components/common/detail-header.tsx).
+// `DetailHeader`'s title side and `DetailHeaderSkeleton`.
 // The page passes the result as `dashboardPage`'s `titleContent`, its actions as `actions`.
 
 type Children = ReadonlyArray<Html | string>

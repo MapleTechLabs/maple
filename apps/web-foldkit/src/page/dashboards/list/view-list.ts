@@ -22,7 +22,7 @@ import { isReadOnly, rowMenuIdOf } from "./update"
 import { deleteDialog } from "./view-dialogs"
 import { tagFilterView } from "./view-tag-filter"
 
-// `DashboardList` (apps/web/src/components/dashboard-builder/list/dashboard-list.tsx).
+// `DashboardList`: the dashboards as rows.
 
 type H = HtmlBuilder<Message>
 

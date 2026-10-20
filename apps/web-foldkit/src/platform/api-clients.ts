@@ -1,8 +1,8 @@
 import { MapleAiApi, MapleApi, MapleInternalApi } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { transformMapleApiClient } from "@maple/web/lib/services/common/api-client-transform"
-import { apiBaseUrl } from "@maple/web/lib/services/common/api-base-url"
-import { withRequestTimeout } from "@maple/web/lib/services/common/http-client"
+import { transformMapleApiClient } from "../lib/services/common/api-client-transform"
+import { apiBaseUrl } from "../lib/services/common/api-base-url"
+import { withRequestTimeout } from "../lib/services/common/http-client"
 import { Context, Effect, Layer, Option } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
@@ -10,7 +10,7 @@ import { MapleAuthApi } from "./auth-api"
 import { SessionBearer } from "./session-bearer"
 
 /**
- * apps/web's `MapleFetchHttpClientLive` as an Effect layer: requests to the API carry the session
+ * The API HTTP client: requests to the API carry the session
  * bearer, and every request has the same 45 s deadline.
  */
 const MapleHttpClientLive = Layer.effect(

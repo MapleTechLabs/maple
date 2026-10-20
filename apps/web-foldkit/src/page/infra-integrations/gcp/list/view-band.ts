@@ -5,13 +5,13 @@ import {
 	type GcpSubscriptionScope,
 	type GcpWorkloadScope,
 	type RowRules,
-} from "@maple/web/components/infra/gcp/list-model"
+} from "../../../../components/infra/gcp/list-model"
 import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
 
-// copied: the band specs and `GcpHealthDot` of components/infra/gcp/gcp-bands.tsx (a React module).
+// The band specs and `GcpHealthDot`.
 
 interface CellSpec {
 	readonly label: string

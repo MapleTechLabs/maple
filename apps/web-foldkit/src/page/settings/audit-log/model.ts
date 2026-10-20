@@ -7,8 +7,8 @@ import * as CopyButton from "../../../ui/copy-button"
 import * as Popover from "../../../ui/popover"
 import * as Select from "../../../ui/select"
 
-// `AuditLogSection` (apps/web/src/components/settings/audit-log-section.tsx). Filters live in the
-// `/settings` search; the page passes them in and a change comes back as a navigation.
+// `AuditLogSection`. Filters live in the `/settings` search; the page passes them in and a change comes back
+// as a navigation.
 
 /** One `auditLog.list` request, as `auditLogPageAtom` keys it. */
 export const PageRequest = Schema.Struct({

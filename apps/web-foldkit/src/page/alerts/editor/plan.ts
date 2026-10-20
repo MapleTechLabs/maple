@@ -81,7 +81,7 @@ export const planPreviews = (model: Model, context: PageContext): Planned => {
 				}),
 			})
 		}
-	// The saved rule's replay is the draft's first preview: one retained atom in legacy, never refetched.
+	// The saved rule's replay is the draft's first preview: one retained read, never refetched.
 	const savedPayload = model.savedForm === null ? Option.none() : previewPayload(model.savedForm, window)
 	const savedKey = Option.map(savedPayload, (payload) =>
 		requestKey(context.orgId, "alertRules.preview", payload),

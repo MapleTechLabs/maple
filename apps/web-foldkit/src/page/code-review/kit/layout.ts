@@ -10,7 +10,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 import type { WindowSearch } from "./frame"
 
-// `CodeReviewLayout`, `CodeReviewTabs` and `NothingInWindow` (components/code-review/code-review-layout.tsx).
+// `CodeReviewLayout`, `CodeReviewTabs` and `NothingInWindow`.
 
 export type CodeReviewTab = "analytics" | "pull-requests" | "ci" | "issues" | "settings"
 

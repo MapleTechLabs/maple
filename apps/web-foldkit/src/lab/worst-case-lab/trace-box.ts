@@ -8,7 +8,7 @@ import type { Resources } from "../../platform/resources"
 import * as TraceFlow from "../../service-map/trace-flow/trace-flow"
 import * as Tabs from "../../ui/tabs"
 
-// `TraceBox` (apps/web `lab/worst-case-lab.tsx`): a controlled `TraceViewTabs` over one trace, its
+// `TraceBox`: a controlled `TraceViewTabs` over one trace, its
 // own tab and selected span, the way `/lab/timeline` hosts the trace page's Submodels.
 
 export const TAB_VALUES = ["waterfall", "timeline", "flow"]

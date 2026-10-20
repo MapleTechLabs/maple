@@ -12,7 +12,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../../data/load-failure"
 import * as Select from "../../../ui/select"
 
-// `AutomationSection` and `EscalationPolicySection` (apps/web/src/components/settings/).
+// `AutomationSection` and `EscalationPolicySection` (apps/web-foldkit/src/components/settings/).
 
 export const ConfidenceChoice = Schema.Literals(["any", "low", "medium", "high"])
 export type ConfidenceChoice = typeof ConfidenceChoice.Type

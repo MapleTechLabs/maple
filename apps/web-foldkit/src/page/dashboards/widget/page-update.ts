@@ -84,7 +84,7 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 	return { ...planned, commands: [...commands, ...(planned.commands ?? []), save] }
 }
 
-/** The Custom picker: a picked preset or range is the widget's own window, as legacy's `onChange`. */
+/** The Custom picker: a picked preset or range is the widget's own window. */
 const rangePickerStep = (model: Model, context: PageContext, message: TimeRangePicker.Message): Return => {
 	const next = TimeRangePicker.update(model.rangePicker, message)
 	const commands = Command.mapMessages(next.commands ?? [], (inner) => Message.GotRangePickerMessage({ message: inner }))
@@ -217,7 +217,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedSortColumn: ({ field, isText }) => sortStep(model, field, isText),
 		GotTimePickerMessage: ({ message: inner }) => timePickerStep(model, context, inner),
 		GotRangePickerMessage: ({ message: inner }) => rangePickerStep(model, context, inner),
-		// Legacy raises the store's persistence banner; the editor has none, so the failure toasts.
+		// The editor has no persistence banner, so the failure toasts.
 		CompletedSaveTimeRange: ({ error }) => (error === null ? { model } : { model, outMessage: errorToast(error) }),
 		GotSourceTabsMessage: ({ message: inner }) => tabsStep(model, context, inner),
 		GotSelectMessage: ({ id, message: inner }) => selectStep(model, context, id, inner),

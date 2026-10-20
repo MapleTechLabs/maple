@@ -195,7 +195,7 @@ export const FetchCommitDetail = Command.define("FetchServicesCommitDetail", {
 		),
 })
 
-// copied: `firstLine` (commit-sha-hover-card.tsx, a React module).
+// The first line of a commit message.
 const firstLine = (message: string): string => {
 	const index = message.indexOf("\n")
 	return (index === -1 ? message : message.slice(0, index)).trim()
@@ -213,7 +213,7 @@ export const MountEmptyState = Mount.define("MountServicesEmptyState", {
 		}),
 })
 
-/** Where a click in the table goes: a service link is the link's alone (legacy `stopPropagation`). */
+/** Where a click in the table goes: a service link is the link's alone (the row ignores it). */
 export const tableLinkClick = (
 	click: Readonly<{ href: string | null; button: number; hasModifier: boolean }>,
 ): "Row" | "Browser" | "Navigate" =>

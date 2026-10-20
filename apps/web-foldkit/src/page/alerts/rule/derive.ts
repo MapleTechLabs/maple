@@ -111,7 +111,7 @@ export const chartChecksOf = (
 export const payloadOf = (model: Model, rule: AlertRuleDocument | null): Option.Option<V2AlertRulePreviewParams> =>
 	rule === null || model.window === null ? Option.none() : previewPayload(ruleToFormState(rule), model.window)
 
-/** The picker's label: a preset's, else the range (zone-aware formatting not ported). */
+/** The picker's label: a preset's, else the range (not yet zone-aware). */
 export const rangeLabelOf = (model: Model): string =>
 	model.search.startTime !== undefined && model.search.endTime !== undefined
 		? `${model.search.startTime} - ${model.search.endTime}`

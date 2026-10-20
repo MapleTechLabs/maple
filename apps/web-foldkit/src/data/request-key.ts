@@ -1,7 +1,7 @@
 import { encodeOrgScopedKey } from "@maple/web-data/lib/cache-key"
 
 /**
- * The identity of one data request: org, operation and input, as apps/web's atom keys encode it
+ * The identity of one data request: org, operation and input
  * (`encodeOrgScopedKey`: org, NUL, the sorted and 15 s-snapped input). A result Message carries the
  * key it was requested under; `update` drops it unless it still matches the slot, so a slow
  * answer for an old filter, window or org never lands.

@@ -11,7 +11,7 @@ import { init, update } from "../logs-lab/update"
 import { view } from "../logs-lab/view"
 
 /**
- * `/lab/logs`: the logs stream over apps/web's production-like fixture, with the lab's toggles for
+ * `/lab/logs`: the logs stream over a production-like fixture, with the lab's toggles for
  * wrap, density, search and pinned columns, and a live tail that reveals held-back rows on reload.
  */
 const toShell = (message: Shell.Message) => Message.GotShellMessage({ message })

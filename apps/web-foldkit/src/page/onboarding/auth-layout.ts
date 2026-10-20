@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// `<AuthLayout>` (apps/web/src/components/layout/auth-layout.tsx): the centred brand card of the
-// signed-out and interstitial screens (CLI login, MCP consent, unsubscribe, org required).
+// `<AuthLayout>`: the centred brand card of the signed-out and interstitial screens (CLI login, MCP consent,
+// unsubscribe, org required).
 
 const GRID_STYLE = {
 	"background-image": [

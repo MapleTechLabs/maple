@@ -152,7 +152,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	}
 }
 
-/** A new search: inputs that legacy keys on the URL value (`TextFilter`, `ToolbarSearch`) resync. */
+/** A new search: inputs keyed on the URL value (text filters, the toolbar search) resync. */
 /** The route loader warms the first page and the facets (`listReplaysResultAtom`, `replaysFacetsResultAtom`). */
 export const preload = (route: { readonly search: Search }, context: PageContext, nowMs: number) => {
 	const { model } = init(route, context)

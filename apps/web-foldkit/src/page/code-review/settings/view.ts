@@ -27,7 +27,7 @@ import {
 	MODEL_OPTIONS,
 } from "./update"
 
-// `CodeReviewSettingsView` (components/code-review/code-review-settings.tsx).
+// `CodeReviewSettingsView`: the code review settings page.
 
 type H = HtmlBuilder<Message>
 

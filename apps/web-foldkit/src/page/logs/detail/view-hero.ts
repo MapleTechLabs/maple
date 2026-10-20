@@ -1,7 +1,7 @@
 import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { getSeverityColor, SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
-import { highlightCode } from "@maple/web/lib/sugar-high"
+import { highlightCode } from "../../../lib/sugar-high"
 import { Option } from "effect"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { tryParseJson } from "../../../ui/attributes/attribute-row"
@@ -14,8 +14,6 @@ import { serviceDot } from "../../../ui/values"
 import { severityLabel } from "./derive"
 import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
-
-// `LogHeroHeader` (apps/web/src/components/logs/log-hero-header.tsx).
 
 type H = HtmlBuilder<Message>
 

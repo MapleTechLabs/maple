@@ -3,10 +3,9 @@ import { button } from "../../ui/button"
 import { icon } from "../../ui/icon"
 import { refreshButton } from "../../ui/refresh-button"
 
-// `TimeRangeHeaderControls` (apps/web/src/components/time-range-picker/time-range-header-controls.tsx):
-// the picker trigger, the reset for a custom range, and Reload.
+// The time range header controls: the picker trigger, the reset for a custom range, and Reload.
 
-// copied: `PRESET_OPTIONS` labels and `presetLabel` (apps/web/src/lib/time-utils.ts reads timezone atoms).
+// `PRESET_OPTIONS` labels and `presetLabel`.
 const PRESET_LABELS = new Map<string, string>([
 	["5m", "Last 5 minutes"],
 	["15m", "Last 15 minutes"],
@@ -68,7 +67,7 @@ export const timeControls = <M>(h: HtmlBuilder<M>, options: TimeControlsOptions<
 	const startTime = options.search.startTime ?? options.window?.startTime
 	const endTime = options.search.endTime ?? options.window?.endTime
 	const hasCustomRange = preset === undefined && startTime !== undefined
-	// TODO(range-label): an absolute range shows `formatTimeRangeDisplay` (zone-aware) in legacy.
+	// TODO(range-label): an absolute range should show `formatTimeRangeDisplay` (zone-aware).
 	const label = preset !== undefined ? presetLabel(preset) : `${startTime ?? ""} - ${endTime ?? ""}`
 	return h.div(
 		[h.Class("flex flex-wrap items-center gap-2")],

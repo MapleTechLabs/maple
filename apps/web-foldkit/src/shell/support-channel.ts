@@ -8,7 +8,7 @@ import { MapleApiV2Client } from "../platform/api-clients"
 import type { Resources } from "../platform/resources"
 import * as Dialog from "../ui/dialog"
 
-// `SupportChannelDialog` + `SupportChannelBody` (apps/web/src/components/support): the shared Slack
+// The support channel dialog: the shared Slack
 // channel with the Maple team, read when the dialog opens; one button creates it or invites you.
 
 export const ChannelData = AsyncData.Schema(V2SupportChannel, LoadFailure)

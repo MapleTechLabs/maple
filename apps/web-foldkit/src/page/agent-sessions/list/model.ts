@@ -14,7 +14,7 @@ import { SignalPresenceData } from "../../kit/signal-presence"
 import { Detections } from "../kit/detected-models"
 import { VirtualWindow } from "../kit/virtualize"
 
-// `/agent-sessions` (apps/web/src/routes/agent-sessions/index.tsx and its list, toolbar and rail).
+// `/agent-sessions`: the list, toolbar and rail.
 
 export type SessionRow = typeof AiSessionListItem.Type
 

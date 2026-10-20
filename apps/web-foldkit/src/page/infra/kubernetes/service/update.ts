@@ -45,7 +45,7 @@ const overviewStep: RequestStep = (model, context, window, mode) => {
 	)
 }
 
-/** `listPods` re-keys once the workload lands; until then it asks for the unscoped page, like legacy. */
+/** `listPods` re-keys once the workload lands; until then it asks for the unscoped page. */
 const podsStep: RequestStep = (model, context, window, mode) => {
 	if (model.serviceName === null) return { patch: {}, commands: [] }
 	const workload = linkedWorkload(model)
@@ -66,7 +66,7 @@ const podsStep: RequestStep = (model, context, window, mode) => {
 	)
 }
 
-/** The CPU series needs the workload; legacy's empty-name request is not sent (excluded by the scenario). */
+/** The CPU series needs the workload; no request goes out with an empty workload name. */
 const cpuStep: RequestStep = (model, context, window, mode) => {
 	const workload = linkedWorkload(model)
 	if (workload === null) return { patch: {}, commands: [] }
@@ -159,7 +159,7 @@ const lensHref = (serviceName: string | null, search: Search) =>
 		? hrefOf(AppRoute.InfraKubernetesServices({ search }))
 		: hrefOf(AppRoute.InfraKubernetesService({ serviceName, search }))
 
-/** A pick keeps the rail (legacy's cached atoms) and starts the lens body afresh. */
+/** A pick keeps the rail and starts the lens body afresh. */
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	const serviceName = route.serviceName ?? null
 	if (lensHref(model.serviceName, model.search) === lensHref(serviceName, route.search)) return { model }

@@ -1,8 +1,7 @@
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema } from "effect"
 
-// copied: apps/web/src/atoms/timezone-preference-atoms.ts (`getEffectiveTimezone`); that module
-// builds an effect-atom KVS, so it cannot be imported here.
+// The stored time zone preference.
 export const TIMEZONE_STORAGE_KEY = "maple.preferences.timezone"
 export const SYSTEM_VALUE = "__system__"
 const DEFAULT_TIMEZONE = "UTC"
@@ -33,7 +32,7 @@ export const readSelectedTimeZone: Effect.Effect<Option.Option<string>> = Effect
 	return (yield* isValidZone(stored.value)) ? stored : Option.none()
 })
 
-/** The stored zone preference resolved like legacy: system, or an invalid zone, means the browser's. */
+/** The stored zone preference resolved: system, or an invalid zone, means the browser's. */
 export const readEffectiveTimeZone: Effect.Effect<string> = Effect.flatMap(readSelectedTimeZone, (selected) =>
 	Option.match(selected, { onNone: () => browserZone, onSome: Effect.succeed }),
 )

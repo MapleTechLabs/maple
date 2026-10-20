@@ -11,7 +11,7 @@ import * as Toast from "../../ui/toast"
 import * as ToggleGroup from "../../ui/toggle-group"
 import { TableSort } from "../../page/dashboards/kit/tiles"
 
-// `/lab/widgets` (apps/web/src/lab/widget-lab/widget-lab.tsx): every dashboard tile over fixtures.
+// `/lab/widgets`: every dashboard tile over fixtures.
 
 export const Model = Schema.Struct({
 	shell: Shell.Model,
@@ -31,7 +31,7 @@ export const Model = Schema.Struct({
 	menuId: Schema.NullOr(Schema.String),
 	menu: Menu.Model,
 	tableSorts: Schema.Record(Schema.String, TableSort),
-	/** The session org: the dashboards collection syncs for it, as the legacy module graph starts it. */
+	/** The session org: the dashboards collection syncs for it. */
 	orgId: Schema.NullOr(Schema.String),
 })
 export type Model = typeof Model.Type
@@ -49,7 +49,7 @@ export const Message = defineMessageUnion({
 	GotDetailsMessage: { slot: Schema.String, message: Popover.Message },
 	GotMenuMessage: { slot: Schema.String, message: Menu.Message },
 	ClickedSortColumn: { slot: Schema.String, field: Schema.String, isText: Schema.Boolean },
-	/** A widget action (`labActions`): legacy logs it; the lab has nothing to do. */
+	/** A widget action (`labActions`): the lab has nothing to do. */
 	ClickedWidgetAction: { action: Schema.String },
 	UpdatedDashboards: { orgId: Schema.String },
 })

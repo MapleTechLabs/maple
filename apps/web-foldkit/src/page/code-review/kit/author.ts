@@ -2,7 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { avatarFallback } from "../../../ui/display"
 
-// `AuthorAvatar` and `AuthorLabel` (components/code-review/author-avatar.tsx).
+// `AuthorAvatar` and `AuthorLabel`.
 // TODO(avatar-image): the GitHub `<login>.png` image is not loaded yet; Base UI shows the initial
 // until it loads, which is what every capture sees (other origins are blocked).
 

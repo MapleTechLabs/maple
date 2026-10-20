@@ -3,7 +3,7 @@ import {
 	CATEGORY_LABELS,
 	FINDING_STATUS_LABELS,
 	SEVERITY_LABELS,
-} from "@maple/web/components/code-review/code-review-format"
+} from "../../../components/code-review/code-review-format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -23,7 +23,7 @@ import { type FilterKey, Message, type Model } from "./model"
 import { DEFAULT_PRESET, MAX_ROWS } from "./update"
 import { findingsList } from "./view-list"
 
-// `CodeReviewIssuesPage` (routes/code-review/issues.tsx).
+// The code review issues page.
 
 type H = HtmlBuilder<Message>
 

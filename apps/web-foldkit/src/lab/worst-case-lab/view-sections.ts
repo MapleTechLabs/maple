@@ -1,5 +1,5 @@
-import { legend, releaseImpact, toolTable } from "@maple/web/lab/worst-case-fixture"
-import { verdict } from "@maple/web/lab/worst-case-docs"
+import { legend, releaseImpact, toolTable } from "../worst-case-fixture"
+import { verdict } from "../worst-case-docs"
 import type { Html } from "foldkit/html"
 import { dataTable } from "../../page/chat/kit/view-data-table"
 import { verdictCard } from "../../page/investigations/detail/view-verdict"
@@ -10,7 +10,7 @@ import * as TraceBox from "./trace-box"
 import * as TraceBoxView from "./trace-box-view"
 import { type H, narrow, wcSection } from "./view-parts"
 
-// `TraceSection`, `LegendSection`, `ToolTableSection` and `VerdictSection` (apps/web `lab/`).
+// `TraceSection`, `LegendSection`, `ToolTableSection` and `VerdictSection`.
 
 const traceBox = (
 	h: H,
@@ -33,7 +33,7 @@ const traceBox = (
 /** Selecting the deepest span expands its whole ancestor chain: the "expand all" of a chain. */
 export const traceSection = (h: H, model: Model): Html =>
 	wcSection(h, "wc-trace", "Trace: 60-deep chain, deepest span selected", [
-		// Slots keyed by mode, as legacy's `key={`w-${mode}`}` remounts the boxes.
+		// Slots keyed by mode, so a mode change remounts the boxes.
 		...traceBox(h, `wc-trace-w-${model.mode}`, model.waterfallBox, (message) =>
 			Message.GotWaterfallBoxMessage({ message }),
 		),

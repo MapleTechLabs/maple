@@ -8,7 +8,7 @@ import * as Frame from "../../kit/frame"
 import { ChartModels, SeriesSlots } from "../../kit/series"
 import { PodMetric, PodSummary, RestartRows } from "../pod-data"
 
-// `/infra/kubernetes/pods/$podName` (apps/web/src/routes/infra/kubernetes/pods/$podName.tsx).
+// `/infra/kubernetes/pods/$podName`.
 
 export const Model = Schema.Struct({
 	podName: Schema.String,

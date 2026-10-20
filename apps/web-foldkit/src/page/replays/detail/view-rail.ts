@@ -28,8 +28,8 @@ import type { EventFilter, EventRow, Model, RailTab, ReplayDetail, TraceSummary 
 import { sessionTab } from "./view-session"
 import { noLinkedTraces } from "./view-timeline"
 
-// `SessionRail` (components/replays/session-events-panel.tsx): Events, Traces and Session tabs.
-// TODO(rail-virtualize): the event list renders every row (legacy virtualizes long sessions).
+// The session rail: Events, Traces and Session tabs.
+// TODO(rail-virtualize): the event list renders every row; long sessions should virtualize.
 // TODO(event-legend): the kind legend's popover (hover or click on the info mark) is not ported.
 
 type H = HtmlBuilder<Message>

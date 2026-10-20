@@ -2,7 +2,7 @@ import { Flags, flags, init, Message, Model, update } from "../service-map-3d-la
 import { view } from "../service-map-3d-lab/view"
 import { defineShellLab } from "../shell-lab"
 
-// `/lab/service-map-3d` (apps/web `lab/service-map-3d/index.tsx`) inside the real shell.
+// `/lab/service-map-3d` inside the real shell.
 
 export const lab = defineShellLab("Service map 3D", {
 	Model,

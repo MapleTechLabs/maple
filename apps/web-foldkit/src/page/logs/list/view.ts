@@ -1,4 +1,4 @@
-import { resolveRefreshIntervalSeconds } from "@maple/web/lib/dashboard-controls/search-params"
+import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/search-params"
 import { shortId } from "@maple/ui/lib/ids"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
@@ -24,8 +24,6 @@ import { filtersRail } from "./view-filters"
 import { emptyState } from "./view-empty"
 import { toolbar } from "./view-toolbar"
 import { VOLUME_THEME_TOKENS, volumeChart } from "./view-volume"
-
-// `LogsPage` (apps/web/src/routes/logs/index.tsx) and `LogsTable` (components/logs/logs-table.tsx).
 
 /** `LoadingState`: forty compact placeholder rows (a shorter row makes the list jump on load). */
 const loadingState = (h: HtmlBuilder<Message>): Html =>

@@ -1,10 +1,10 @@
-import { ONBOARDING_INTENT_IDS, ONBOARDING_INTENTS, type OnboardingIntent } from "@maple/web/lib/onboarding-intent"
+import { ONBOARDING_INTENT_IDS, ONBOARDING_INTENTS, type OnboardingIntent } from "../../lib/onboarding-intent"
 import {
 	ONBOARDING_ROLE_IDS,
 	ONBOARDING_ROLES,
 	type OnboardingRole,
 	ROLE_DETAIL_MAX_LENGTH,
-} from "@maple/web/lib/onboarding-role"
+} from "../../lib/onboarding-role"
 import { Option } from "effect"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"

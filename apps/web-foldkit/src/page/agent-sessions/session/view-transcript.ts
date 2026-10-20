@@ -23,7 +23,7 @@ import { continuedKeys, transcriptRows } from "./transcript-rows"
 import { COLUMN } from "./transcript-shell"
 import { emptyTurnRow, turnChapter } from "./transcript-turns"
 
-// `SessionTranscript` (session-detail/session-transcript.tsx): the session as a conversation.
+// The session transcript: the session as a conversation.
 
 type H = HtmlBuilder<Message>
 

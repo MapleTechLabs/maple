@@ -34,8 +34,7 @@ import { provenanceCanvas, provenanceLoading } from "./view-canvas"
 import { evidenceTab, followUpComposer, impactStrip, investigationMeta, signalsCard, type TipTrigger } from "./view-sections"
 import { verdictCard } from "./view-verdict"
 
-// `InvestigationPage` (apps/web/src/routes/investigations/$id.tsx) and `InvestigationView`,
-// `InvestigationHeader`, `InvestigationTabs` (components/investigations/).
+// The investigation page: `InvestigationView`, `InvestigationHeader`, `InvestigationTabs`.
 
 type H = HtmlBuilder<Message>
 

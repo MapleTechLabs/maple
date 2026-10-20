@@ -6,7 +6,7 @@ import type { ConfigureModel, SetupMethod } from "./gcp-configure-schema"
 import { Message } from "./message"
 import { GCP_TITLE, SMALL } from "./view-gcp-parts"
 
-// `GcpMethodChoice` (components/integrations/gcp-setup-methods.tsx): one row per way to connect.
+// `GcpMethodChoice`: one row per way to connect.
 
 type H = HtmlBuilder<Message>
 type Row = "script" | "manual" | "code"

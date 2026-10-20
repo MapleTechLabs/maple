@@ -9,10 +9,10 @@ import { Message } from "./message"
 
 /**
  * Everything the shell loads at boot, over the S1 API clients. The data layer (S6) is designed in
- * parallel, so the loaders stay here, one Command per legacy request, each reporting one Message.
+ * parallel, so the loaders stay here, one Command per request, each reporting one Message.
  */
 
-/** Every failure collapses like legacy's `orElse`: the nav shows what it would without the answer. */
+/** Every failure collapses to a fallback: the nav shows what it would without the answer. */
 const failed =
 	<A>(message: A) =>
 	<B, E, R>(effect: Effect.Effect<B, E, R>): Effect.Effect<A | B, never, R> =>

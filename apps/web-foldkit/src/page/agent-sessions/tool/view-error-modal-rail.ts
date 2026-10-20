@@ -1,4 +1,4 @@
-import { unwrapToolErrorText, type VariantDifference } from "@maple/web/lib/agent-sessions/tool-error-display"
+import { unwrapToolErrorText, type VariantDifference } from "../../../lib/agent-sessions/tool-error-display"
 import { sessionRowId } from "@maple/agent-sessions"
 import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { cn } from "@maple/ui/lib/utils"
@@ -119,7 +119,7 @@ export const sessionLink = (
 ): Html =>
 	h.a(
 		[
-			// `{ tool, view, span }` in that order, as the legacy link writes it.
+			// `{ tool, view, span }` in that order.
 			h.Href(
 				`${hrefOf(AppRoute.AgentSession({ sessionId: options.sessionId, search: {} }))}${orderedSearch([
 					["tool", options.tool],

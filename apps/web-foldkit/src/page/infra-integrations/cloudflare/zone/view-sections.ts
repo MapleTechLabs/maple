@@ -1,4 +1,4 @@
-import type { CloudflareFilters } from "@maple/web/components/infra/cloudflare/filters"
+import type { CloudflareFilters } from "../../../../components/infra/cloudflare/filters"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
@@ -16,8 +16,7 @@ import type { ZoneDns, ZoneSecurity } from "../data"
 import { Message, type Model } from "./model"
 import { panelScope, type Trigger } from "./view-scope"
 
-// `CloudflareZoneDnsSection`, `CloudflareZoneSecuritySection` and their `StackedBreakdownChart`
-// (components/infra/cloudflare/cloudflare-zone-{dns,security,detail-charts}.tsx).
+// `CloudflareZoneDnsSection`, `CloudflareZoneSecuritySection` and their `StackedBreakdownChart`.
 
 type H = HtmlBuilder<Message>
 

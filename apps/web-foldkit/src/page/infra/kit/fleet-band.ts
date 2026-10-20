@@ -7,7 +7,7 @@ import { segmentedBar } from "../../../ui/meter"
 import { skeleton } from "../../../ui/skeleton"
 import { statRailItem } from "../../kit/stat-rail"
 
-// `FleetBand` and `FleetBandLoading` (apps/web/src/components/infra/primitives/fleet-band.tsx).
+// `FleetBand` and `FleetBandLoading`.
 
 /** A band standing alone on a page body rather than flush under a shell's header. */
 export const FLEET_BAND_BOXED = "overflow-hidden rounded-md border"

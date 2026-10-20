@@ -6,7 +6,7 @@ export const DASHBOARD_FAVORITES_KEY = "maple.dashboards.favorites"
 
 /**
  * Fired on `window` after the dashboards list writes the favorites, so the Pinned group follows
- * the star the way legacy's shared atom does (a same-tab write fires no `storage` event).
+ * the star (a same-tab write fires no `storage` event).
  */
 export const DASHBOARD_FAVORITES_EVENT = "maple:dashboard-favorites-changed"
 

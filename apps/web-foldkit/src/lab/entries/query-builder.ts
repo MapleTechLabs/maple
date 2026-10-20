@@ -4,7 +4,7 @@ import { init, update } from "../query-builder-lab/update"
 import { view } from "../query-builder-lab/view"
 import { defineShellLab } from "../shell-lab"
 
-// `/lab/query-builder` (apps/web `routes/lab/query-builder.tsx`): the query builder MVP over the
+// `/lab/query-builder`: the query builder MVP over the
 // session's org, inside the real shell.
 // TODO(lab-query-builder): the where clause autocomplete listbox and `sessionTimeRangeSearchMiddleware`.
 

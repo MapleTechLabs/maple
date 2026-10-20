@@ -18,7 +18,7 @@ import { panelHeader } from "../../../ui/panel"
 import { seriesLegend } from "../../kit/series-legend"
 import type { ToolMetric, ToolPercentile, ToolSeriesPoint } from "./model"
 
-// `ToolSeriesChart` (agent-sessions/tools/tool-series-chart.tsx) in its bare `ChartCard`.
+// A tool series chart in a bare `ChartCard`.
 
 const PLOT_HEIGHT = 220
 const CHART_EMPTY_MESSAGE = "No data for this metric in the selected window."

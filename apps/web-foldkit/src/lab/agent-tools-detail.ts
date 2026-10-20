@@ -17,7 +17,7 @@ import { BUCKET_MS, BUCKETS, buildToolCells, toolFixtureFacets } from "./agent-t
 import { buildToolDetailFixture, buildToolErrorDetailFixture, buildToolErrorsFixture } from "./agent-tools-detail-fixture"
 
 // The tools lab's "detail" view: the tool detail page and its error modal over the fixture week,
-// its reads answered in place and its URL the lab's state, as `agent-tools-lab.tsx` drives them.
+// its reads answered in place and its URL the lab's state.
 
 type PageCommand = Command.Command<ToolMessage, never, Resources>
 export type DetailStep = Readonly<{ model: ToolModel; commands?: ReadonlyArray<PageCommand>; outMessage?: PageOutMessage }>
@@ -150,7 +150,7 @@ const answerModal = (command: PageCommand, model: ToolModel): Option.Option<Tool
 	}
 }
 
-/** The fixture's own week: `range` is `now - 56 buckets .. now`, as the legacy lab draws it. */
+/** The fixture's own week: `range` is `now - 56 buckets .. now`. */
 const fixtureWindow = (command: PageCommand): PageCommand =>
 	command.name === "ResolveAgentToolWindow"
 		? Command.mapMessage(command, (message) =>

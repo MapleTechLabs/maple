@@ -1,4 +1,4 @@
-import type { InfraCorrelation } from "@maple/web/components/infra/infra-correlations"
+import type { InfraCorrelation } from "../../../components/infra/infra-correlations"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../../charts/chart"
@@ -10,7 +10,7 @@ import { k8sChart } from "../../infra/kit/k8s-chart"
 import { Message, type Model } from "./model"
 import { chartIdOf } from "./update"
 
-// `renderCharts`: each group's charts, as the legacy detail-chart components draw them.
+// `renderCharts`: each group's charts, drawn as the detail charts.
 
 type H = HtmlBuilder<Message>
 

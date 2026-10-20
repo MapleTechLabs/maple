@@ -8,7 +8,7 @@ import { InfraContainerSearch } from "../../../../route/search"
 import * as Frame from "../../kit/frame"
 import { ChartModels, SeriesSlots } from "../../kit/series"
 
-// `/infra/containers/$containerName` (apps/web/src/routes/infra/containers/$containerName.tsx).
+// `/infra/containers/$containerName`.
 
 export const ContainerSummary = ContainerDetailSummaryResponse.fields.data
 export type ContainerSummary = ContainerDetailSummaryResponse["data"]

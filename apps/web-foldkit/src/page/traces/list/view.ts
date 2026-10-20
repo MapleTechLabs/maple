@@ -20,8 +20,6 @@ import { DEFAULT_PRESET } from "./update"
 import { filtersRail } from "./view-filters"
 import { tracesTable } from "./view-table"
 
-// `TracesPage` (apps/web/src/routes/traces/index.tsx).
-
 /**
  * `AdvancedFilterDialog`'s trigger.
  */

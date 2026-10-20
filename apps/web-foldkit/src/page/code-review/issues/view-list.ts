@@ -4,7 +4,7 @@ import {
 	FINDING_STATUS_LABELS,
 	SEVERITY_LABELS,
 	SEVERITY_TONE,
-} from "@maple/web/components/code-review/code-review-format"
+} from "../../../components/code-review/code-review-format"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -17,7 +17,7 @@ import { panel } from "../../../ui/panel"
 import * as Tooltip from "../../../ui/tooltip"
 import { Message, type Model } from "./model"
 
-// `FindingRow` (routes/code-review/issues.tsx) under one `RelativeTime` tooltip.
+// `FindingRow` under one `RelativeTime` tooltip.
 
 type H = HtmlBuilder<Message>
 

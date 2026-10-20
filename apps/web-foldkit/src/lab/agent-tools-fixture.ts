@@ -1,5 +1,5 @@
-// copied: apps/web/src/lab/agent-tools-fixture.ts, the overview half (`buildToolCells`,
-// `buildToolAnalyticsFixture`, `toolFixtureFacets`); apps/web's view types are restated here.
+// The tool analytics fixture, overview half (`buildToolCells`, `buildToolAnalyticsFixture`,
+// `toolFixtureFacets`), with its view types restated here.
 
 import type { AiToolsSeriesKind } from "@maple/domain/http"
 import {

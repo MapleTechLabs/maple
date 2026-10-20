@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { SpanEvents, SpanNodeData } from "../trace-data"
 
 // The Timeline tab (packages/ui/src/components/traces/trace-timeline.tsx). The viewport lives in
-// the Model and reaches the DOM as the rows container's `--vp0`/`--vpk`, as legacy's controller writes.
+// the Model and reaches the DOM as the rows container's `--vp0`/`--vpk`.
 
 export const Viewport = Schema.Struct({ startMs: Schema.Number, endMs: Schema.Number })
 export type Viewport = typeof Viewport.Type

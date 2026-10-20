@@ -6,7 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { filterChip } from "../../../ui/filter-chip"
 import { searchInput } from "../../../ui/search-input"
 
-// `ReplaysToolbar` (components/replays/replays-toolbar.tsx): the URL search and the triage chips.
+// The replays toolbar: the URL search and the triage chips.
 // TODO(tooltip): the chips' hover tooltips.
 
 export type ReplaysToolbarOptions<M> = Readonly<{

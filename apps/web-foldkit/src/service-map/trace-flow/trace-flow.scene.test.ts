@@ -1,4 +1,4 @@
-import { FLOW_LAB_TRACE } from "@maple/web/lab/flow-fixture"
+import { FLOW_LAB_TRACE } from "../../lab/flow-fixture"
 import { Option } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 import { click, expect, given, hover, Mount, role, scene, selector, testId, within } from "foldkit/scene"

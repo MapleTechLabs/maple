@@ -13,7 +13,7 @@ import type { Model } from "./model"
 import { headerActions, issueTabs } from "./view-header"
 import { factLane, factStrip, issueField } from "./view-overview"
 
-// `IssueDetailSkeleton` (components/errors/issue-detail-skeleton.tsx) and the not-found state.
+// The issue detail skeleton and the not-found state.
 
 type H = HtmlBuilder<Message>
 

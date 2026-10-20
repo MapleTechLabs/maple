@@ -6,7 +6,7 @@ import type { PageContext } from "../../contract"
 import type { Model, SourceId, SourceSummary } from "./model"
 import { SOURCE_IDS } from "./model"
 
-// `SourceState` and `presentSources` (components/infra/overview/infra-overview.tsx).
+// `SourceState` and `presentSources`.
 
 export type SourceState =
 	| { readonly status: "loading" }

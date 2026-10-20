@@ -20,7 +20,7 @@ import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
 import * as Toast from "../../ui/toast"
 import { labSessions } from "../replays/fixture"
 
-// `/lab/replays` (apps/web/src/lab/replays-list-lab.tsx): the `/replays` list over a day of mostly
+// `/lab/replays`: the `/replays` list over a day of mostly
 // bots, bounces and idle tabs, without a warehouse behind it.
 
 const WIDTHS = [
@@ -82,7 +82,7 @@ const updateState = (model: Model, message: Message): Model =>
 				? model.expanded.filter((other) => other !== key)
 				: [...model.expanded, key],
 		}),
-		// TODO(lab-navigation): legacy navigates to `/replays/$sessionId`; the lab has no router.
+		// TODO(lab-navigation): navigate to `/replays/$sessionId`; the lab has no router.
 		ClickedSession: () => model,
 		ChangedSearch: ({ value }) => ({ ...model, query: value }),
 		GotToastMessage: () => model,

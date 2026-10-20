@@ -9,8 +9,8 @@ import { relativeTime } from "../../../kit/relative-time"
 import { hostStatusBadge } from "../../kit/status"
 import type { PodRow } from "../pod-data"
 
-// `SheetDetailHeader` (components/common/sheet-detail-header.tsx) as the peek uses it: the "Pod"
-// eyebrow, the mono title with its status, and the workload chips.
+// `SheetDetailHeader` as the peek uses it: the "Pod" eyebrow, the mono title with its status, and
+// the workload chips.
 
 export type HeaderInputs = Readonly<{ dialogId: string; referenceTime: string; nowMs: number; timeZone: string }>
 

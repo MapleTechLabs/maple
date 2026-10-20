@@ -1,4 +1,4 @@
-import type { ErrorSignal } from "@maple/web/lib/models/error-signal"
+import type { ErrorSignal } from "../../../lib/models/error-signal"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { toLoadFailure } from "../../../data/load-failure"

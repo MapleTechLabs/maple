@@ -2,7 +2,7 @@ import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage
 import { GcpResourcesResponse } from "@maple/domain/http"
 import { V2GcpSetupScripts } from "@maple/domain/http/v2"
 import { GcpConnectorId } from "@maple/domain/primitives"
-import { gcpLogVolume } from "@maple/web/components/integrations/gcp-usage"
+import { gcpLogVolume } from "../../components/integrations/gcp-usage"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { Effect, Option, Schema } from "effect"
@@ -20,7 +20,7 @@ import { Message } from "./message"
 import { ConfigureModel } from "./gcp-configure-schema"
 import { LogVolume, RemovedConnector } from "./gcp-schema"
 
-// `GcpIntegrationCard` and `GcpUsageBand` (components/integrations/gcp-*.tsx): state and reads.
+// `GcpIntegrationCard` and `GcpUsageBand`: state and reads.
 
 export { RemovedConnector } from "./gcp-schema"
 
@@ -180,7 +180,7 @@ export const WriteRemoved = Command.define("WriteGcpRemovedConnectors", {
 	messages: [Message.CompletedWriteGcpRemoved],
 	execute: ({ orgId, removed }) =>
 		Effect.sync(() => {
-			// Best effort, like the legacy atom: private mode and blocked site data throw here.
+			// Best effort: private mode and blocked site data throw here.
 			writeLocalStorage(storageKey(orgId), encodeRemoved(removed))
 			return Message.CompletedWriteGcpRemoved()
 		}),

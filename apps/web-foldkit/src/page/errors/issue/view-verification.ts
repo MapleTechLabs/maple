@@ -11,7 +11,7 @@ import { icon } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
 import { sectionHeading } from "../../kit/section-heading"
 
-// `IssueVerificationCard` (components/errors/issue-verification-card.tsx): the post-merge fix check.
+// The issue verification card: the post-merge fix check.
 
 type Status = ErrorIssueVerificationDocument["status"]
 const IN_FLIGHT_SOFT = "bg-severity-debug/12 text-severity-debug"

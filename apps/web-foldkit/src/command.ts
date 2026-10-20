@@ -17,7 +17,7 @@ import { SessionTimeRange } from "./route/session-time-range"
 import { identifySession } from "./data/analytics"
 import { SessionIdentity } from "./platform/session-identity"
 
-/** How long a signed-out Clerk answer may still turn into a session on a hard refresh (main.tsx). */
+/** How long a signed-out Clerk answer may still turn into a session on a hard refresh. */
 const AUTH_SETTLE_TIMEOUT = Duration.seconds(2)
 
 /** `retryOrgCollections`: a fresh collection set; every live query moves onto it. */

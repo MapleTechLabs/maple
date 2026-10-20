@@ -12,7 +12,7 @@ import type { SeriesSlot } from "../../page/infra/kit/series"
 import { chartLoading } from "../../ui/chart-state"
 import { isReady, Message, type Model, toChart } from "./chart-bench"
 
-// apps/web `lab/bench/infra-chart-bench.tsx` (`/lab/bench/infra`): the host and k8s detail
+// `/lab/bench/infra`: the host and k8s detail
 // ChartViews in one linked-cursor group, over synthetic rows.
 
 const BUCKET_COUNT = 145

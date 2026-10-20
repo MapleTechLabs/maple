@@ -1,6 +1,6 @@
-import { HUB_SORTS, HUB_VIEWS, SEVERITY_FILTERS } from "@maple/web/lib/errors/hub-params"
+import { HUB_SORTS, HUB_VIEWS, SEVERITY_FILTERS } from "../../../lib/errors/hub-params"
 import type { IssueKind } from "@maple/domain/http"
-import { sparkFingerprintHashes } from "@maple/web/lib/models/error-signal"
+import { sparkFingerprintHashes } from "../../../lib/models/error-signal"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
@@ -559,7 +559,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
-		// TODO(retry): legacy reloads the whole window here; this refetches page one instead.
+		// TODO(retry): this should reload the whole window; it refetches page one instead.
 		ClickedRetry: () => retryFirstPage(model),
 		ClickedLoadMore: () => loadMore(model, context),
 		ToggledFilterOption: ({ param, name }) => navigate(model, toggledFilter(model, param, name)),

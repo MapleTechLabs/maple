@@ -15,7 +15,7 @@ import type { TaskPart, ToolPart } from "./ui-message"
 import { agentPresentation } from "./view-cards"
 import { type PanelHost, runningClock } from "./view-tool"
 
-// `TaskCard` (apps/web components/chat/task-card.tsx): one sub-agent run as a line that opens its
+// `TaskCard`: one sub-agent run as a line that opens its
 // sheet: the question in full, the answer, and whatever of the child's own steps reached the parent.
 
 /** What a task row needs from its host: its sheet, and how the answer and steps are drawn. */

@@ -21,7 +21,7 @@ import type { Resources } from "../../../platform/resources"
 import { defineLabWithFlags } from "../../define"
 
 /**
- * `/lab/bench/dashboard-grid` (apps/web's `DashboardGridBench`): the dashboard grid in edit mode
+ * `/lab/bench/dashboard-grid`: the dashboard grid in edit mode
  * over a `?n=`-widget board (default 50), each tile ~150 elements standing in for a chart. Writes
  * stay local: a layout commit moves the board here instead of reaching the API.
  */
@@ -158,7 +158,7 @@ const lazyTile = createKeyedLazy()
 
 /** `BenchTile`: a header with the drag grip and ~140 bars in place of a chart. */
 const benchTile = (h: HtmlBuilder<Message>, widget: Widget): Html => {
-	// The bench's render counter (legacy `contentRenderCount`), read by the harness.
+	// The bench's render counter, read by the harness.
 	performance.mark(TILE_RENDER_MARK)
 	const title = widget.display.title ?? widget.id
 	return h.div(

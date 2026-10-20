@@ -1,4 +1,4 @@
-import { docsUrl } from "@maple/web/lib/docs"
+import { docsUrl } from "../../../lib/docs"
 import { cn } from "@maple/ui/lib/utils"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { AsyncData, Submodel } from "foldkit"
@@ -21,7 +21,7 @@ import {
 	maskToken,
 } from "./install-snippets"
 
-// `InstallHostModal`'s dialog (install-modal.tsx). Rendered only while open or closing.
+// `InstallHostModal`'s dialog. Rendered only while open or closing.
 
 type H = HtmlBuilder<Message>
 

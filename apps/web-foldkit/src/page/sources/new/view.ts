@@ -12,7 +12,7 @@ import { integrationStep, isIntegrationConnected } from "./view-integration"
 import { integrationMeta, platformPicker } from "./view-picker"
 import { tokenStep } from "./view-token"
 
-// `NewSourcePage` (apps/web/src/routes/sources/new.tsx).
+// `NewSourcePage`.
 
 type H = HtmlBuilder<Message>
 

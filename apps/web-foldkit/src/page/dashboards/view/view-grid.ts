@@ -1,7 +1,7 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import type { GridItem } from "@maple/grid-engine"
 import { cn } from "@maple/ui/lib/utils"
-import { GRID_ROW_HEIGHT } from "@maple/web/components/dashboard-builder/canvas/grid-breakpoints"
+import { GRID_ROW_HEIGHT } from "../../../components/dashboard-builder/canvas/grid-breakpoints"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { GRID_INSTRUCTIONS_ID } from "../kit/tile-shell"
 import { MeasureGrid, WatchGridHandles, WatchWidget } from "./command"
@@ -12,11 +12,10 @@ import { isEditing } from "./update"
 import { viewTile } from "./view-widgets"
 import type { VariableValues } from "@maple/query-engine"
 import { sectionView } from "./view-sections"
-import { resolveSectionView } from "@maple/web/lib/dashboards/section-view-state"
+import { resolveSectionView } from "../../../lib/dashboards/section-view-state"
 import { containerKeyFor } from "@maple/domain/http"
 
-// `DashboardSections` + `DashboardGrid` (dashboard-builder/sections/dashboard-sections.tsx,
-// canvas/dashboard-canvas.tsx): one measured container, CSS Grid placement per stored layout.
+// The dashboard sections and grid: one measured container, CSS Grid placement per stored layout.
 
 type H = HtmlBuilder<Message>
 type Widget = DashboardDocument["widgets"][number]

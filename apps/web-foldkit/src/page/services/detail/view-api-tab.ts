@@ -1,4 +1,4 @@
-import { ENDPOINTS_LIMIT, isTruncated } from "@maple/web/components/services/service-endpoints"
+import { ENDPOINTS_LIMIT, isTruncated } from "../../../components/services/service-endpoints"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { formatErrorRate, formatLatency, formatNumber, formatRate } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"

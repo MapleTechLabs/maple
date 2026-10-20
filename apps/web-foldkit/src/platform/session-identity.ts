@@ -1,7 +1,7 @@
 import { Option, Schema } from "effect"
 import type { ClerkSnapshot } from "./clerk"
 
-// `ClerkAuthBridge`'s `identify()` (apps/web/src/lib/services/common/clerk-auth-bridge.tsx): the
+// The session identity: the
 // session and its product events carry the signed-in user and their org.
 
 export const SessionIdentity = Schema.Struct({

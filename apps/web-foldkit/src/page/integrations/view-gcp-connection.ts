@@ -15,7 +15,7 @@ import {
 	gcpScopeLabel,
 	gcpScriptNeeded,
 	gcpSetupRunning,
-} from "@maple/web/components/integrations/gcp-connector-state"
+} from "../../components/integrations/gcp-connector-state"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
 import { badge } from "../../ui/display"
@@ -32,8 +32,7 @@ import type { Model } from "./model"
 import { gcpInfraHref, gcpLogsHref } from "./update-gcp"
 import { gcpCommand } from "./view-gcp-parts"
 
-// `GcpConnection`, `connectionIssues`, `signalText`, `Signal` and `Fact`
-// (components/integrations/gcp-integration-card.tsx).
+// `GcpConnection`, `connectionIssues`, `signalText`, `Signal` and `Fact`.
 
 type H = HtmlBuilder<Message>
 type Children = ReadonlyArray<Html | string>

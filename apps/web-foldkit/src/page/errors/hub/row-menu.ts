@@ -1,5 +1,5 @@
 import { allowedTransitionsForAll, type ErrorIssueDocument, type WorkflowState } from "@maple/domain/http"
-import { agentPromptFromIssue } from "@maple/web/components/errors/agent-debug-prompt"
+import { agentPromptFromIssue } from "../../../components/errors/agent-debug-prompt"
 import { Command, type Update } from "foldkit"
 import type { HtmlBuilder } from "foldkit/html"
 import * as ContextMenu from "../../../ui/context-menu"
@@ -13,7 +13,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { startHubWrite } from "./selection"
 
-// `IssueContextMenu` (components/errors/issue-context-menu.tsx): a row's right-click menu.
+// The issue context menu: a row's right-click menu.
 
 type Return = PageReturn<Model, Message>
 

@@ -11,7 +11,7 @@ import { tableSkeleton } from "../../ui/table-skeleton"
 import { ROWS } from "./display-sections"
 import { kitRow, kitSection } from "./kit-layout"
 
-// The second half of apps/web/src/lab/kit/display.tsx: values, loading states and tables.
+// The second half of `/lab/kit/display`: values, loading states and tables.
 
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 const BARS = [3, 5, 4, 8, 6, 9, 12, 7, 5, 6, 10, 14, 11, 8, 6, 4]

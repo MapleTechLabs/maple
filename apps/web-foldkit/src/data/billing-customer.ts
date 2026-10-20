@@ -11,7 +11,7 @@ const sameToken = (a: Option.Option<string>, b: Option.Option<string>): boolean 
 
 /**
  * `billingCustomerAtom`: one `GET /internal/billing/customer` per session token (so per org), shared
- * by the root's plan gate, `/settings` and `/integrations`, as one atom is in apps/web. `refresh` is
+ * by the root's plan gate, `/settings` and `/integrations`. `refresh` is
  * the atom's reactivity key: a plan change, a cap save or Retry reads it again.
  */
 export class BillingCustomerCache extends Context.Service<

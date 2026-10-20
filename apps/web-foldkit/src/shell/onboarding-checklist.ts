@@ -10,7 +10,7 @@ import { MapleApiV2Client } from "../platform/api-clients"
 import type { Resources } from "../platform/resources"
 import * as Popover from "../ui/popover"
 
-// `OnboardingChecklistButton` (apps/web/src/components/header/onboarding-checklist-button.tsx):
+// The onboarding checklist button:
 // the Clerk top bar's reward pill, its one-time pointer and the checklist popover with the claim.
 
 export const Model = Schema.Struct({

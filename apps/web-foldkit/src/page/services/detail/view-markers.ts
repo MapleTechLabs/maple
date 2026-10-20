@@ -4,7 +4,7 @@ import type { PlotGeometry } from "../../../charts/chart"
 import { truncatedText } from "../../../ui/truncated-text"
 import type { MarkerLayout } from "./derive-markers"
 
-// `CommitMarkersOverlay` / `MarkerGroup` (components/vcs/commit-markers/commit-markers-layer.tsx), idle.
+// Commit markers over a chart, idle.
 // TODO(marker-cards): hovering a dash or label (active styling, the commit card after 1.5 s / 400 ms)
 // is not ported; the markers render in their idle state.
 

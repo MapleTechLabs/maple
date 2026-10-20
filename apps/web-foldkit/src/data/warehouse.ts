@@ -10,8 +10,7 @@ import { makeExecuteBatcher } from "./execute-batcher"
 
 /**
  * `@maple/web-data`'s warehouse services over this app's clients. One instance per runtime, so
- * Commands on separate fibers share one batch window, as every apps/web atom shares its module
- * batcher. Query functions (`@maple/web-data/warehouse/*`) run as Commands against it.
+ * Commands on separate fibers share one batch window. Query functions (`@maple/web-data/warehouse/*`) run as Commands against it.
  */
 const WarehouseExecutorLive = Layer.effect(
 	WarehouseExecutor,

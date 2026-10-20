@@ -9,7 +9,7 @@ import { ConnectProvider } from "./connect"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { navShell } from "../settings/kit/nav-shell"
-import { isClerkAuthEnabled } from "@maple/web/lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { visibleSections } from "../settings/nav"
 import { settingsNavVisibility } from "./derive"
 import { entryGlyph } from "./view-entry"
@@ -24,7 +24,7 @@ import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
 import { integrationCatalog, integrationsSummary } from "./view-hub"
 
-// `IntegrationsPage` (apps/web/src/routes/integrations.tsx).
+// `IntegrationsPage`.
 
 type H = HtmlBuilder<Message>
 

@@ -6,11 +6,11 @@ import { button } from "../../ui/button"
 import { field, fieldError, fieldLabel, input, type FieldIds, type FieldState } from "../../ui/field"
 import { Message, type Model, SignInFailure, Submission } from "./sign-in"
 
-// NOTE: the ids React's `useId` gives this field in apps/web, kept so the two DOMs diff clean.
-// Base UI's `dirty` compares with the initial value, which is always empty here.
+// NOTE: fixed ids for the password field. Base UI's `dirty` compares with the initial value, which is
+// always empty here.
 const PASSWORD_FIELD: FieldIds = { control: "base-ui-_r_0_", label: "base-ui-_r_1_", error: "base-ui-_r_5_" }
 
-/** apps/web's `getErrorMessage`: the API's message, or the browser's fetch failure text. */
+/** The API's message, or the browser's fetch failure text. */
 const failureMessage = (failure: SignInFailure): string =>
 	SignInFailure.match(failure, {
 		Rejected: ({ message }) => message,
@@ -68,7 +68,7 @@ const passwordField = (model: Model, h: HtmlBuilder<Message>): Html => {
 	])
 }
 
-/** `SelfHostedSignInPage` (apps/web/src/routes/sign-in.tsx). */
+/** `SelfHostedSignInPage`. */
 export const view = Submodel.defineView<Model, Message>((model, h) =>
 	accountLayout(h, [
 		h.div(

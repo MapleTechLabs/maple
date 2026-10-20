@@ -7,7 +7,7 @@ import { CONFIGURE_DIALOG_ID } from "./gcp-configure"
 import type { Message } from "./message"
 import { GCP_LINK } from "./view-gcp-parts"
 
-// `GcpExternalLink`, `Mono`, `Chip`, `FooterNote`, `Stepper` and `ConfigureHeader` (gcp-configure.tsx).
+// `GcpExternalLink`, `Mono`, `Chip`, `FooterNote`, `Stepper` and `ConfigureHeader`.
 
 type H = HtmlBuilder<Message>
 type Children = ReadonlyArray<Html | string>

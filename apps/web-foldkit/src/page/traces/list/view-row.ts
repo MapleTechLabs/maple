@@ -19,9 +19,9 @@ import { tableCell } from "../../../ui/table"
 import { Message } from "./message"
 import type { TraceRow } from "./model"
 
-// One `TracesTableView` row (apps/web/src/components/traces/traces-table.tsx).
+// One row of the traces table.
 
-/** `formatTimestampInTimezone` (apps/web/src/lib/timezone-format.ts imports timezone atoms). */
+/** The row's timestamp formats in the page's time zone. */
 export interface TimeFormat {
 	readonly row: Intl.DateTimeFormat
 	readonly withYear: Intl.DateTimeFormat

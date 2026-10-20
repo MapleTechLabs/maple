@@ -1,6 +1,6 @@
 import type { CodeReviewCiAnalytics, CodeReviewCiTotals } from "@maple/domain/http"
-import { rateChange, successRate } from "@maple/web/components/code-review/ci/ci-format"
-import { bucketIso, formatCount, formatSpan } from "@maple/web/components/code-review/code-review-format"
+import { rateChange, successRate } from "../../../components/code-review/ci/ci-format"
+import { bucketIso, formatCount, formatSpan } from "../../../components/code-review/code-review-format"
 import { EMPTY_VALUE, formatDuration, formatPercent } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AreaChart from "../../../charts/area-chart"
@@ -14,7 +14,7 @@ import { changeOf } from "../analytics/view-stats"
 import { analyticsPanel, chartFrame } from "../kit/analytics-panel"
 import { Message, type Model } from "./model"
 
-// `HeadlineStrip`, `RunsCard`, `DurationCard` and `CiAnalyticsSkeleton` (ci-analytics.tsx).
+// `HeadlineStrip`, `RunsCard`, `DurationCard` and `CiAnalyticsSkeleton`.
 
 type H = HtmlBuilder<Message>
 

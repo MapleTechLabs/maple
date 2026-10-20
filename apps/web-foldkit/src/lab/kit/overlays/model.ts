@@ -1,4 +1,4 @@
-import { OVERLAY_ITEMS } from "@maple/web/lab/kit/overlay-items"
+import { OVERLAY_ITEMS } from "../overlay-items"
 import { Option, Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Combobox from "../../../ui/combobox"
@@ -70,7 +70,6 @@ export const toastTypeOf = (item: OverlayItem): Option.Option<Toast.ToastType> =
 		? Schema.decodeUnknownOption(Toast.ToastType)(item.slice("toast-".length))
 		: Option.none()
 
-// apps/web/src/lab/kit/overlays-menus.tsx `TOAST_COPY`
 export const TOAST_COPY = {
 	default: { title: "Dashboard saved", description: "Checkout latency is up to date." },
 	success: { title: "Schema applied", description: "All 14 tables are on the latest version." },

@@ -8,7 +8,7 @@ import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 import { SortState } from "../../../kit/table-sort"
 
-// `/infra/kubernetes/workloads` (apps/web/src/routes/infra/kubernetes/workloads/index.tsx).
+// `/infra/kubernetes/workloads`.
 
 export const WorkloadRows = ListWorkloadsResponse.fields.data
 export type WorkloadRow = ListWorkloadsResponse["data"][number]

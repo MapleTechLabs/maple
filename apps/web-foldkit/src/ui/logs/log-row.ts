@@ -56,7 +56,7 @@ const SEVERITY_ROW = new Map([
 const QUIET_SEVERITIES = new Set(["DEBUG", "TRACE"])
 const PINNED_COL_WIDTH = "150px"
 
-// apps/web/src/components/logs/logs-table.tsx (LogRow, ROW_ACTION_CLASS, RowAction)
+// Row and row action classes
 const ROW_CLASS =
 	"hover:bg-muted/50 data-[expanded]:bg-muted/40 data-[focused]:bg-muted/70 data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
 const EXPAND_BUTTON_CLASS =
@@ -140,7 +140,7 @@ const chipButton = <Message>(
 		],
 	)
 
-/** One stream row, absolutely placed at its virtual `start` (apps/web's `LogRow`). */
+/** One stream row, absolutely placed at its virtual `start`. */
 export const logRow = <Message>(
 	h: HtmlBuilder<Message>,
 	events: RowEvents<Message>,

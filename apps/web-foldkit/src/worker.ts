@@ -2,9 +2,6 @@
  * The dashboard's Worker at `app.maple.dev` (and every region and stage), built by
  * `Cloudflare.Website.Vite`: one `vite build` for client and server. `VITE_*` env keys are
  * inlined into the client; other keys are Worker bindings.
- *
- * `MAPLE_WEB_APP` picks the build: `foldkit` (this app, the default) or `react` (apps/web).
- * Setting it to `react` and redeploying is the rollback; the Worker, domain and env are the same.
  */
 import {
 	ApiWorker,
@@ -16,36 +13,17 @@ import {
 import { plainFrom, selfObservabilityEnv } from "@maple/infra/env"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
-import { API_PROXY_PREFIX } from "../../web/src/api-proxy.ts"
+import { API_PROXY_PREFIX } from "./api-proxy.ts"
 
-// Both run apps/web's Worker entry (web-foldkit's re-exports it), so `/_api`, OG images and headers match.
 // `memo.include` also hashes the `@maple/*` sources; `lockfile` is restated because `include` drops it.
-const WEB_APPS = {
-	foldkit: {
-		rootDir: new URL("..", import.meta.url).pathname,
-		include: [
-			"**/*",
-			"../web/src/**",
-			"../web/public/**",
-			"../web/vite-plugin-version-manifest.ts",
-			"../../packages/*/src/**",
-			"../../lib/*/src/**",
-		],
-	},
-	react: {
-		rootDir: new URL("../../web", import.meta.url).pathname,
-		include: ["**/*", "../../packages/*/src/**", "../../lib/*/src/**"],
-	},
-} as const
+const MEMO_INCLUDE = ["**/*", "../../packages/*/src/**", "../../lib/*/src/**"]
 
 const props = Effect.gen(function* () {
 	const { stage, region, domains, urls } = yield* MapleStack
 	const api = yield* ApiWorker
-	const app =
-		(yield* plainFrom(["MAPLE_WEB_APP"], "foldkit")) === "react" ? WEB_APPS.react : WEB_APPS.foldkit
 	return {
 		name: resolveWorkerName("web", stage, region),
-		rootDir: app.rootDir,
+		rootDir: new URL("..", import.meta.url).pathname,
 		main: "src/worker-entry.ts",
 		assets: {
 			// Deep links serve the shell in place; otherwise hard reloads 307 to "/".
@@ -53,7 +31,7 @@ const props = Effect.gen(function* () {
 			// Or the SPA fallback answers the API proxy.
 			runWorkerFirst: [API_PROXY_PREFIX, `${API_PROXY_PREFIX}/*`],
 		},
-		memo: { include: [...app.include], lockfile: true },
+		memo: { include: MEMO_INCLUDE, lockfile: true },
 		placement: resolveWorkerPlacement(region),
 		workersDev: true,
 		domain: domains.web,

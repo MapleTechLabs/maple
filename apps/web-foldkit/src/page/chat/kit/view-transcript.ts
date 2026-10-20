@@ -36,7 +36,7 @@ import {
 import type { ToolPart, UIMessage, UIMessagePart } from "./ui-message"
 import { type PanelHost, runningClock, toolNodes, toolStandalone } from "./view-tool"
 
-// `ChatTranscript` (apps/web components/chat/chat-transcript.tsx): the scrolling thread.
+// The transcript: the scrolling thread.
 
 export type MarkdownCache = Readonly<Record<string, { readonly document: MarkdownDocument | null; readonly isStale: boolean }>>
 
@@ -137,7 +137,7 @@ export const statusMarker = <M>(h: HtmlBuilder<M>, label = "Thinking…", clockM
 		],
 	)
 
-/** Keyed by message id (React's `key`), so the scroller sees rows added, never patched in place. */
+/** Keyed by message id, so the scroller sees rows added, never patched in place. */
 const scrollerItem = <M>(h: HtmlBuilder<M>, id: string, isAnchor: boolean, children: ReadonlyArray<Html>): Html =>
 	h.keyed("div")(
 		id,

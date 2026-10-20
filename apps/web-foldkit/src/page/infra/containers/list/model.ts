@@ -11,7 +11,7 @@ import * as FilterSections from "../../../../ui/filters/filter-sections"
 import * as Frame from "../../kit/frame"
 import * as InstallModal from "../../kit/install-modal"
 
-// `/infra/containers` (apps/web/src/routes/infra/containers/index.tsx).
+// `/infra/containers`.
 
 export const ContainersPage = Schema.Struct(ListContainersResponse.fields)
 export type ContainersPage = typeof ContainersPage.Type

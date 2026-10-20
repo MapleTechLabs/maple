@@ -1,7 +1,7 @@
 import type { DependencyBundle } from "./model-tabs"
 import type { Release } from "./model"
 
-// Pure halves of the Overview panels (service-recent-deploys.tsx, service-dependency-strip.tsx).
+// Pure halves of the Overview panels (recent deploys, dependency strip).
 
 export type DeployEntry = Readonly<{
 	sha: string

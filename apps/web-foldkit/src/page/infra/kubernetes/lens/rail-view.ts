@@ -1,5 +1,5 @@
-import { severityLevel } from "@maple/web/components/infra/format"
-import { BAR_VALUE_TONE } from "@maple/web/components/infra/severity-tokens"
+import { severityLevel } from "../../../../components/infra/format"
+import { BAR_VALUE_TONE } from "../../../../components/infra/severity-tokens"
 import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
@@ -13,8 +13,7 @@ import { serviceDot } from "../../../../ui/values"
 import type { TimeSearch } from "../../kit/view-tabs"
 import type { Model } from "./rail"
 
-// `ServiceLensRail` (components/infra/service-lens/service-lens-rail.tsx) and the rail rows
-// `useServiceLensRail` folds out of the join.
+// `ServiceLensRail` and the rail rows `useServiceLensRail` folds out of the join.
 
 export type RailService = Readonly<{ serviceName: string; podCount: number; avgCpuLimitUtilization: number | null }>
 

@@ -5,9 +5,9 @@ import { ProductEdit } from "./product-edit"
 
 type Moved = ReturnType<typeof Message.ChangedProduct>
 
-// `Reorder.Group` / `Reorder.Item` with drag controls (list-config-panel.tsx): a pointer drag that
+// Column reordering: a pointer drag that
 // starts on a row's grip lifts the row and follows the pointer; each sibling centre it crosses is
-// a `MovedListColumn`, as `onReorder` fires live.
+// a `MovedListColumn`, sent live.
 
 export const ROW_ATTRIBUTE = "list-column-row"
 export const GRIP_ATTRIBUTE = "list-column-grip"

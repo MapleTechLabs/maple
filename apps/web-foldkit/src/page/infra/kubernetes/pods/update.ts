@@ -1,4 +1,4 @@
-import { podKey } from "@maple/web/components/infra/pod-restarts"
+import { podKey } from "../../../../components/infra/pod-restarts"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../../data/keyed"
 import { requestKey } from "../../../../data/request-key"
@@ -126,7 +126,7 @@ const facetsStep: RequestStep = (model, context, window, mode) =>
 
 const toPeek = (message: PeekMessage.Message) => Message.GotPeekMessage({ message })
 
-/** The peek resolves against the page on screen (`peekIndex` in legacy). */
+/** The peek resolves against the page on screen. */
 export const peekOf = (model: Model) =>
 	PeekUpdate.resolvePeek(AsyncData.getOrElse(model.pods.data, () => null)?.data ?? [], model.search.peek)
 

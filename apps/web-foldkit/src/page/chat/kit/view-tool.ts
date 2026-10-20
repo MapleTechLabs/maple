@@ -11,7 +11,7 @@ import { extractOutputText, extractStructuredData, inputRecord, type StructuredP
 import { deriveToolStatus, type ToolStatus } from "./transcript-rows"
 import type { ToolPart } from "./ui-message"
 
-// `Tool`, `ToolRow` and `ToolGroup` (apps/web components/ai-elements/tool.tsx, tool-group.tsx).
+// `Tool`, `ToolRow` and `ToolGroup`: a tool call's row and a run of them grouped.
 /** What a tool row needs from its host: whether a panel is open, and the Message that toggles it. */
 export type PanelHost<M> = Readonly<{
 	isOpen: (id: string) => boolean

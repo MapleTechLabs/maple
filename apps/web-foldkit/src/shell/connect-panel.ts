@@ -9,7 +9,7 @@ import { readEffectiveTimeZone } from "../platform/time-zone"
 import * as CopyButton from "../ui/copy-button"
 import * as Popover from "../ui/popover"
 
-// `ConnectButton` (apps/web/src/components/header/connect-button.tsx): the top bar's popover with
+// The Connect button: the top bar's popover with
 // the ingest endpoint and keys, the live connection pill and the MCP card.
 
 export const POPOVER_ID = "shell-connect"

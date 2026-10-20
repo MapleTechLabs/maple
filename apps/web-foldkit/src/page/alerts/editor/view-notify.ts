@@ -15,7 +15,7 @@ import { destinationTarget } from "./derive"
 import { Message, type Tier } from "./message"
 import type { Model } from "./model"
 
-// `DestinationList` and `AddDestinationMenu` (components/alerts/notifications-section.tsx).
+// `DestinationList` and `AddDestinationMenu`: a tier's destinations and the menu that adds one.
 
 type H = HtmlBuilder<Message>
 

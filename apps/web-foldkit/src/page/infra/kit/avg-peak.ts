@@ -1,6 +1,6 @@
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 
-// `AvgPeak` (primitives/avg-peak.tsx): avg → peak in one cell, the breakdown as its tooltip body.
+// `AvgPeak`: avg → peak in one cell, the breakdown as its tooltip body.
 
 export type AvgPeakOptions = Readonly<{
 	avg: number

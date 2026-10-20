@@ -15,7 +15,7 @@ import * as Select from "../../../ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { MetricRow } from "../shared"
 
-// `/metrics/$metricName` (apps/web/src/routes/metrics/$metricName.tsx and components/metrics/metric-detail.tsx).
+// `/metrics/$metricName`.
 
 export const AttributeKeyRow = Schema.Struct({ attributeKey: Schema.String, usageCount: Schema.Number })
 export type AttributeKeyRow = typeof AttributeKeyRow.Type
@@ -28,7 +28,7 @@ export type TimeseriesRows = typeof TimeseriesRows.Type
 export const BreakdownRow = Schema.Struct({ name: Schema.String, value: Schema.Number })
 export type BreakdownRow = typeof BreakdownRow.Type
 
-/** The `AutocompleteValuesProvider` lookups: fetched like legacy, read by the where-clause editor. */
+/** The autocomplete value lookups, read by the where-clause editor. */
 export { AutocompleteLookup } from "../../kit/autocomplete-lookups"
 
 export const Model = Schema.Struct({

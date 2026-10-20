@@ -4,7 +4,7 @@ import {
 	gcpCollectLock,
 	gcpLogFilterChoice,
 	gcpScriptNeeded,
-} from "@maple/web/components/integrations/gcp-connector-state"
+} from "../../components/integrations/gcp-connector-state"
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import { Option } from "effect"
@@ -174,7 +174,7 @@ export const openConfigure = (model: Model, target: ConfigureTarget): Return => 
 
 export const closedConfigure = (model: Model): Return => updateGcpCard(model, { configure: null })
 
-/** The X and Escape close the wizard outright, as legacy's `onOpenChange(false)`. */
+/** The X and Escape close the wizard outright. */
 export const gotConfigureDialog = (model: Model, message: Dialog.Message): Return => {
 	const configure = model.gcpCard.configure
 	if (configure === null) return { model }

@@ -9,14 +9,14 @@ export interface WindowRequest {
 	readonly startTime?: string | undefined
 	readonly endTime?: string | undefined
 	readonly preset: string
-	/** False after an explicit refresh: legacy re-resolves against the real clock then. */
+	/** False after an explicit refresh, which re-resolves against the real clock. */
 	readonly snap: boolean
 	readonly timeZone?: string | undefined
 }
 
 /**
- * apps/web's `resolveEffectiveTimeRange` plus the 15 s key snap legacy applies when it decodes an
- * atom key back into the request, so the window sent is byte-identical to its execute-batch payload.
+ * Resolves the effective time range, snapped to 15 s like the request key, so equal keys send
+ * byte-identical windows.
  */
 export const resolveWindow = (request: WindowRequest, nowMs: number): TimeWindow => {
 	const window = resolveTimeRangeAt(nowMs, request.startTime, request.endTime, request.preset, {

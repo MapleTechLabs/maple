@@ -1,10 +1,10 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// `<MessageResponse mode="static" lightweight>` (components/ai-elements/message-response.tsx) for
-// the review report's text: Streamdown's root with the same classes, one `<p>` per paragraph.
+// Static lightweight markdown for the review report's text: Streamdown's root classes, one `<p>`
+// per paragraph.
 // TODO(markdown): lists, code, emphasis and links inside a report render as plain paragraphs;
-// Streamdown's element markup is not ported yet.
+// Streamdown's element markup is not drawn yet.
 
 const MESSAGE_RESPONSE_CLASSES = cn(
 	"size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",

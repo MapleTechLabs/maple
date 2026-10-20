@@ -1,4 +1,4 @@
-// The list filters riding on the trace page's URL (legacy `buildBackToTracesHref(searchStr)`):
+// The list filters riding on the trace page's URL, for the way back to /traces:
 // everything but the page's own `spanId`, `t` and `view`, kept verbatim.
 
 const OWN_PARAMS = ["spanId", "t", "view"]

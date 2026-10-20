@@ -110,7 +110,7 @@ export const timePickerStep = (model: Model, message: TimeRangePicker.Message): 
 	const next = TimeRangePicker.update(model.timePicker, message)
 	const commands = Command.mapMessages(next.commands ?? [], (inner) => Message.GotTimePickerMessage({ message: inner }))
 	const lifted = { ...model, timePicker: next.model }
-	// TODO(alert-preview): legacy keeps a custom preview window too; only presets are stored here.
+	// TODO(alert-preview): keep a custom preview window too; only presets are stored here.
 	if (next.outMessage?._tag !== "SelectedPreset") return { model: lifted, commands }
 	// The clock read resolves the new preset into the preview window.
 	return {

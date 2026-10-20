@@ -25,7 +25,7 @@ import { statTile, thresholdColor } from "./tiles-stat"
 
 export { formatStatValue } from "./tiles-stat"
 
-// The tiles (dashboard-builder/widgets/*): stat, gauge, table, list and note here, every registry
+// The tiles: stat, gauge, table, list and note here, every registry
 // chart through `chartWidgetTile` (./tiles-chart.ts).
 
 /** What a tile reads of its widget; a share's redacted widget satisfies it too. */

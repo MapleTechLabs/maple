@@ -1,8 +1,7 @@
 /**
- * `window.__logsBench` from apps/web's `LogsTableBench`, for `perf/logs.perf.spec.ts`: the same
- * 121-step scroll, frame and long-task sampling. React's Profiler has no Foldkit counterpart, so
- * `reactCommits` counts DOM commits (mutation batches under the stream) and `reactDurationMs` is
- * left at 0; script time comes from the CDP metrics the perf runner records for both apps.
+ * `window.__logsBench` for `perf/logs.perf.spec.ts`: a 121-step scroll, frame and long-task
+ * sampling. `reactCommits` counts DOM commits (mutation batches under the stream) and
+ * `reactDurationMs` stays 0; script time comes from the CDP metrics the perf runner records.
  */
 export interface LogsBenchMetrics {
 	readonly frames: number

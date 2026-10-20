@@ -11,7 +11,7 @@ import * as FilterSections from "../../ui/filters/filter-sections"
 import { SignalPresenceData } from "../kit/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 
-// `/analytics` (apps/web/src/routes/analytics/index.tsx, components/analytics/).
+// `/analytics`.
 
 export type Search = typeof AnalyticsSearch.Type
 

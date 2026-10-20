@@ -2,7 +2,7 @@ import {
 	CLOUDFLARE_VIEWS,
 	WORKER_SCOPES,
 	ZONE_SCOPES,
-} from "@maple/web/components/infra/cloudflare/list-model"
+} from "../../../../components/infra/cloudflare/list-model"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "../../../../charts/chart"
@@ -17,7 +17,7 @@ import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { sortStateOf } from "../../../kit/table-sort"
 import { PlatformResources, Status, Usage, WorkerRow, ZoneBucket, ZoneRow } from "../data"
 
-// `/infra/cloudflare` (apps/web/src/routes/infra/cloudflare/index.tsx).
+// `/infra/cloudflare`.
 
 export const View = Schema.Literals(CLOUDFLARE_VIEWS)
 export type View = typeof View.Type

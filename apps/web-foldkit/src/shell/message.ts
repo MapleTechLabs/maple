@@ -95,7 +95,7 @@ export const Message = defineMessageUnion({
 	CompletedDismissQuotaBanner: {},
 	/** The sidebar's Search row (`openCommandPalette`). */
 	ClickedSearch: {},
-	/** Mod+K, anywhere: opens the palette (legacy's toggle nets out while it is open). */
+	/** Mod+K, anywhere: opens the palette (a no-op while it is open). */
 	PressedPaletteShortcut: {},
 	/** `?`, `T` and `/` outside fields and dialogs (`GlobalShortcuts`). */
 	PressedShortcutsKey: {},

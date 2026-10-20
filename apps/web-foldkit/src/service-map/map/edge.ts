@@ -154,7 +154,7 @@ const edgeLabel = <M>(h: HtmlBuilder<M>, data: ServiceEdgeData | undefined, x: n
 	)
 }
 
-/** The edge's `<g>` children; `index` keeps gradient ids unique (React used `useId`). */
+/** The edge's `<g>` children; `index` keeps gradient ids unique. */
 export const serviceMapEdge = <M>(
 	h: HtmlBuilder<M>,
 	edge: {

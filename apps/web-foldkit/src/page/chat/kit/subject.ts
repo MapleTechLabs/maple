@@ -1,10 +1,10 @@
-import { narrowAlertSignal } from "@maple/web/components/ai-triage/breach"
-import { type AlertContext, decodeAlertContextFromSearchParam, signalLabel } from "@maple/web/components/chat/alert-context"
+import { narrowAlertSignal } from "../../../components/ai-triage/breach"
+import { type AlertContext, decodeAlertContextFromSearchParam, signalLabel } from "../../../components/chat/alert-context"
 import { Option, Schema } from "effect"
 
-// `/chat`'s explicit subjects (apps/web routes/chat.tsx): `?mode=alert&alert=` (an alert notification's
-// investigation, components/chat/alert-context.ts + investigation-context.ts) and
-// `?mode=widget-fix&widget=` (widget-fix-context.ts). The modules use `@/` paths, so the parts are copied.
+// `/chat`'s explicit subjects: `?mode=alert&alert=` (an alert notification's investigation, see
+// components/chat/alert-context.ts and page/investigations/detail/investigation-context.ts) and
+// `?mode=widget-fix&widget=`.
 
 const Fact = Schema.Struct({ key: Schema.String, label: Schema.String, value: Schema.String })
 
@@ -82,7 +82,7 @@ export const alertContextToInvestigation = (alert: AlertContext): InvestigationC
 	}
 }
 
-// copied: `fromBase64Url` (lib/base64url.ts), as an Option.
+// `fromBase64Url` (as in lib/base64url.ts), as an Option.
 const fromBase64Url = (input: string): Option.Option<string> =>
 	Option.liftThrowable(() => {
 		const base64 = input.replace(/-/g, "+").replace(/_/g, "/")

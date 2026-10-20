@@ -87,7 +87,7 @@ const buildSessionData = (model: Model): SessionData => {
 	}
 }
 
-// A pure cache, as legacy's `useMemo` over the spans: the pages in hand are immutable, so their
+// A pure cache over the spans: the pages in hand are immutable, so their
 // identities key the result and a scroll or tooltip step reuses it instead of rebuilding the turns.
 const built = new WeakMap<object, WeakMap<object, Readonly<{ key: string | null; data: SessionData }>>>()
 

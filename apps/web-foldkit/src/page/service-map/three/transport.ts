@@ -1,7 +1,6 @@
-// copied: apps/web/src/components/service-map/three/factory-transport.tsx (R3F JSX as three construction).
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
-import { beltInk, fade, type InkPalette } from "@maple/web/components/service-map/three/appearance"
-import { beltGeometry, type FactoryLink } from "@maple/web/components/service-map/three/factory-routing"
+import { beltInk, fade, type InkPalette } from "../../../components/service-map/three/appearance"
+import { beltGeometry, type FactoryLink } from "../../../components/service-map/three/factory-routing"
 import * as THREE from "three"
 import {
 	type Child,
@@ -24,7 +23,7 @@ interface TransportProps {
 	readonly palette: InkPalette
 }
 
-/** A canvas texture built once per scope under `key` (legacy's module caches). */
+/** A canvas texture built once per scope under `key`. */
 function cachedTexture(scope: Scope, key: string, build: () => THREE.Texture) {
 	const cached = scope.textures.get(key)
 	if (cached) return cached

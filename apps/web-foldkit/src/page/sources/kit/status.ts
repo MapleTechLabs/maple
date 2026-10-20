@@ -4,7 +4,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { statusDot } from "../../../ui/status-dot"
 
-// `SourceStatusBadge` (apps/web/src/components/sources/source-status.tsx).
+// `SourceStatusBadge`.
 
 export type SourceStatus = V2Source["health"]["status"]
 

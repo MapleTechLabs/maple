@@ -17,7 +17,7 @@ import type { Model } from "./model"
 import { disclosureChevron } from "./view-kit"
 import { sectionHeading } from "../../kit/section-heading"
 
-// `SessionChecks` (session-detail/session-checks.tsx): the verdict, what needs attention, the rest.
+// The session checks: the verdict, what needs attention, the rest.
 // TODO(tooltip): the coverage signals' explanations are drawn as their triggers.
 
 type H = HtmlBuilder<Message>

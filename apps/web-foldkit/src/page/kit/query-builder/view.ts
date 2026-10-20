@@ -5,7 +5,7 @@ import {
 	queryBadgeColor,
 } from "@maple/query-engine/query-builder"
 import { QUERY_BUILDER_DATA_SOURCES } from "@maple/query-model"
-import type { WhereClauseAutocompleteValues } from "@maple/web/lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { Submodel } from "foldkit"
@@ -21,7 +21,7 @@ import { Message, type Model } from "./panel"
 import { type MetricOption, metricsBody } from "./metrics-body"
 import { addOnSections, ADD_ON_KEYS, addOnToggles, panelSelect, textInput, whereClauseEditor } from "./parts"
 
-// `QueryPanel` and `QueryPanelShell` (dashboard-builder/config/query-panel.tsx, query-panel-shell.tsx).
+// `QueryPanel` and `QueryPanelShell`: one query's builder panel and its frame.
 
 type H = HtmlBuilder<Message>
 

@@ -5,7 +5,7 @@ import { DashboardRowSchema, type DashboardRow } from "@maple/web-data/collectio
 import { Effect, type ManagedRuntime, Option, Schema } from "effect"
 import type { MapleApiV2Client } from "../../platform/api-clients"
 
-// apps/web/src/lib/collections/dashboards.ts: the per-org `dashboards` collection, whose writes
+// The per-org `dashboards` collection, whose writes
 // go through the v2 API and return the Postgres txid TanStack DB awaits on the shape stream.
 
 const decodeDocument = Schema.decodeUnknownOption(DashboardDocument)

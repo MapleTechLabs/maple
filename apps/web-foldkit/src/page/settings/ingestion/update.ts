@@ -198,7 +198,7 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 				? { model }
 				: { model: { ...model, isRolling: true }, commands: [RollIngestKey({ kind: model.rollType })] },
 		CompletedRollKey: ({ kind, result }) => {
-			// The dialog closes either way, like legacy's `setRollOpen(false)` after the toast.
+			// The dialog closes either way, after the toast.
 			const closed = liftRollDialog({ ...model, isRolling: false }, Dialog.close(model.rollDialog))
 			return Result.match(result, {
 				onSuccess: () => ({

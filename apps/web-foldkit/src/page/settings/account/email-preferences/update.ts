@@ -12,8 +12,7 @@ import { DigestDraft, Message, type Model, type ScheduleField } from "./model"
 
 type Return = PageReturn<Model, Message>
 
-// `digest-preferences.ts` (apps/web/src/components/account): days, hours, defaults and the
-// set-like draft comparison.
+// Digest preferences: days, hours, defaults and the set-like draft comparison.
 
 /** Monday first, as people read a week; values are `Date#getDay` numbers (0 = Sunday). */
 export const DIGEST_DAYS = [

@@ -162,7 +162,7 @@ export const computeTimeAxisTicks = (
 	const from = viewport.startMs - traceStartMs
 	const to = viewport.endMs - traceStartMs
 	const first = Math.ceil(from / intervalMs) * intervalMs
-	// Same accumulation as legacy (`t += intervalMs`), so float drift lands identically.
+	// Accumulates (`t += intervalMs`) rather than multiplying, so float drift stays stable.
 	const ticks = Array.from({ length: 512 }).reduce<{ list: Array<number>; t: number; done: boolean }>(
 		(acc) => {
 			if (acc.done || acc.t > to) return { ...acc, done: true }
@@ -202,7 +202,7 @@ export const virtualRange = (count: number, scrollTop: number, height: number): 
 	return Array.from({ length: to - from + 1 }, (_, i) => from + i)
 }
 
-// copied: `collectMinimapSpans` (trace-timeline-minimap.tsx).
+// copied: `collectMinimapSpans` (packages/ui trace-timeline-minimap.tsx).
 
 export interface MinimapSpan {
 	readonly spanId: string
@@ -245,7 +245,7 @@ export const collectMinimapSpans = (
 			isError,
 		}
 	})
-	// Errors last, painted on top of same-position siblings (a stable sort, like legacy's).
+	// Errors last, painted on top of same-position siblings (a stable sort).
 	return {
 		spans: [...spans].sort((a, b) => Number(a.isError) - Number(b.isError)),
 		maxDepth: nodes.reduce((max, node) => Math.max(max, node.depth), 0),

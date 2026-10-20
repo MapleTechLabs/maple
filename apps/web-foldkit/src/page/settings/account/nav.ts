@@ -1,7 +1,7 @@
 import { accountTabValues } from "../../../route/search"
 import type { NavShellSection } from "../kit/nav-shell"
 
-// `accountNavSections` (apps/web/src/components/account/account-nav.tsx).
+// `accountNavSections`.
 
 export type AccountTab = (typeof accountTabValues)[number]
 

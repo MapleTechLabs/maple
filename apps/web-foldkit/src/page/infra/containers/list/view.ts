@@ -24,7 +24,7 @@ import { DEFAULT_PRESET, filtersOf, pageIndexOf, sortOf } from "./update"
 import { filtersRail } from "./view-filters"
 import { containerTable, containerTableLoading } from "./view-table"
 
-// `ContainersPage` (apps/web/src/routes/infra/containers/index.tsx).
+// `ContainersPage`.
 
 type H = HtmlBuilder<Message>
 

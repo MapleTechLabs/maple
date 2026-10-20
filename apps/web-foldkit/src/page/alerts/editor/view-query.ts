@@ -19,7 +19,7 @@ import type { Model } from "./model"
 import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "../../../ui/input-group"
 import { rawQueryEditor } from "./view-sql"
 
-// `RuleQuerySection` (components/alerts/rule-query-section.tsx): Built-in, the query builder's
+// `RuleQuerySection`: Built-in, the query builder's
 // `QueryPanel`, or SQL, over the same draft.
 
 type H = HtmlBuilder<Message>

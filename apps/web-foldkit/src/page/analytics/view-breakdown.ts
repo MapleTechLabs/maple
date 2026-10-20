@@ -20,7 +20,7 @@ import type { Model, PanelState } from "./model"
 import { panelOf } from "./update"
 import { analyticsRowIcon, dimensionHasIcons } from "./view-icons"
 
-// `AnalyticsBreakdownPanel` (components/analytics/analytics-breakdown-panel.tsx).
+// `AnalyticsBreakdownPanel`: one breakdown card.
 
 type H = HtmlBuilder<Message>
 type SortKey = "name" | "count" | "views"

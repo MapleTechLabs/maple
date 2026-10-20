@@ -1,4 +1,4 @@
-import type { AccountTone, CloudflareAccount } from "@maple/web/components/infra/cloudflare/accounts"
+import type { AccountTone, CloudflareAccount } from "../../../../components/infra/cloudflare/accounts"
 import { formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
@@ -9,8 +9,8 @@ import * as MenuView from "../../../../ui/menu-view"
 import { Message } from "./model"
 import { ALL_ACCOUNTS, MANAGE_ACCOUNTS } from "./update"
 
-// Multi-account Cloudflare (components/infra/cloudflare/cloudflare-accounts-ui.tsx): these only render
-// with two or more accounts; a single-account org keeps a plain chip.
+// Multi-account Cloudflare: these only render with two or more accounts; a single-account org keeps
+// a plain chip.
 
 type H = HtmlBuilder<Message>
 
@@ -26,7 +26,7 @@ const TONE_TEXT = {
 } as const satisfies Record<AccountTone, string>
 
 /**
- * `CloudflareAccountMenu`. TODO(menu): legacy radio items carry a health dot and a second line
+ * `CloudflareAccountMenu`. TODO(menu): each account wants a health dot and a second line
  * (zones, health); the menu's radio entries are text, so both ride in the label.
  */
 export const accountMenu = (

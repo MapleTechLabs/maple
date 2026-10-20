@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { AccountUser } from "../user"
 
-// The Password tab (`PasswordSection`, apps/web/src/components/account/password-section.tsx).
+// The Password tab.
 
 export const PasswordField = Schema.Literals(["current", "next", "confirm"])
 export type PasswordField = typeof PasswordField.Type

@@ -1,5 +1,5 @@
-import type { ReleaseServiceImpact } from "@maple/web/components/releases/release-model"
-import { deriveReleaseImpacts } from "@maple/web/components/releases/release-model"
+import type { ReleaseServiceImpact } from "../../../components/releases/release-model"
+import { deriveReleaseImpacts } from "../../../components/releases/release-model"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { ChartRuntime, LoadChartRuntime } from "../../../charts/chart-runtime"
@@ -16,7 +16,7 @@ import { FetchChangeset, FetchMarkerCommit, FetchReleaseDetail, FetchServiceIssu
 import { Message } from "./message"
 import type { Model, ReleaseDetail } from "./model"
 
-// `ReleaseBody` (routes/releases/$commitSha.tsx with `?service=`): the version this one replaced is
+// The release body for one service (`?service=`): the version this one replaced is
 // read off the list first, then the detail bundle, then what mounts with it (issues, changeset,
 // the markers' commits).
 
