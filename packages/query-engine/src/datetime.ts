@@ -1032,8 +1032,9 @@ export const ALERT_TICK_SECONDS = 60
  *     (`ErrorsService`'s cutoff floors to the minute and subtracts one more).
  *  2. SHARING — every rule in a tick computed its own `now`, so rules over the
  *     identical query still produced distinct windows and distinct cache keys.
- *     Snapping makes a tick's rules agree, which is what lets the `qe-evaluate`
- *     entry be reused by, say, warn-at-100 and page-at-500 on one signal.
+ *     Snapping makes a tick's rules agree, which is what lets the in-tick
+ *     bucket memo (`withAlertEvaluationScope`) serve, say, warn-at-100 and
+ *     page-at-500 on one signal from one read.
  *
  * Costs up to one tick of extra lag, which is bounded by the tick period the
  * scheduler already imposes.
