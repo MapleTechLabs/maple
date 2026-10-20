@@ -14,7 +14,7 @@ import { githubStatusOf } from "./update-github"
 import { CAPABILITIES, CAPABILITY_IDS } from "./gcp-configure-copy"
 import { runConfirmed } from "./gcp-configure-derive"
 import { configureConnector } from "./update-gcp-configure"
-import { pollTicks } from "../../data/poll"
+import { pollTicks, whenPresent } from "../../data/poll"
 
 const one = (message: Message): Stream.Stream<Message> => Stream.make(message)
 
@@ -264,8 +264,8 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 			},
 		),
 		/**
-		 * `FORCE_POLL_WINDOW_MS`: the poll after a branch change stops on its own, with one last
-		 * read so a window spent in a hidden tab still lands the change.
+		 * `FORCE_POLL_WINDOW_MS`: the poll after a branch change stops on its own, with one last read
+		 * once the tab is back, so a window spent hidden or offline still lands the change.
 		 */
 		githubForcePoll: entry(
 			{ version: Schema.NullOr(Schema.Number) },
@@ -277,7 +277,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					version === null
 						? Stream.empty
 						: Stream.flatMap(after(FORCE_POLL_WINDOW_MS, () => Message.EndedGithubForcePoll({ version })), (ended) =>
-								Stream.make(Message.TickedGithubPoll(), ended),
+								Stream.flatMap(whenPresent(), () => Stream.make(Message.TickedGithubPoll(), ended)),
 							),
 			},
 		),

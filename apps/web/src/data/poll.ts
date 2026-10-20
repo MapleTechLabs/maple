@@ -29,6 +29,13 @@ const browserPresence: Presence = {
 	),
 }
 
+/** Emits once the tab is present: at once if it is, else on the first return. */
+export const whenPresent = (presence: Presence = browserPresence): Stream.Stream<void> =>
+	Stream.concat(Stream.succeed(undefined), presence.changes).pipe(
+		Stream.filter(() => presence.isPresent()),
+		Stream.take(1),
+	)
+
 type Signal = "Tick" | "Change"
 
 type PollState = Readonly<{ isMissed: boolean; caughtUpAtMs: number | null }>

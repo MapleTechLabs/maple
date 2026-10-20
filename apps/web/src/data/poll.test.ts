@@ -1,7 +1,7 @@
 import { Effect, Queue, Ref, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
-import { pollTicks, type Presence } from "./poll"
+import { pollTicks, type Presence, whenPresent } from "./poll"
 
 /** A presence the test flips, with the change events it would dispatch. */
 const fakePresence = Effect.gen(function* () {
@@ -95,6 +95,26 @@ describe("pollTicks", () => {
 				expect(yield* Ref.get(ticks)).toBe(1)
 				yield* TestClock.adjust("8 seconds")
 				expect(yield* Ref.get(ticks)).toBe(2)
+			}),
+		))
+})
+
+describe("whenPresent", () => {
+	test("emits at once when present, else only on the first return", () =>
+		run(
+			Effect.gen(function* () {
+				const { presence, set } = yield* fakePresence
+				expect(yield* Stream.runCollect(whenPresent(presence))).toEqual([undefined])
+				yield* set(false)
+				const waits = yield* Ref.make(0)
+				yield* Effect.forkChild(Stream.runForEach(whenPresent(presence), () => Ref.update(waits, (n) => n + 1)))
+				yield* Effect.yieldNow
+				expect(yield* Ref.get(waits)).toBe(0)
+				yield* set(true)
+				yield* set(false)
+				yield* set(true)
+				yield* Effect.yieldNow
+				expect(yield* Ref.get(waits)).toBe(1)
 			}),
 		))
 })
