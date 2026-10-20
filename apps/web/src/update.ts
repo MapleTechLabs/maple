@@ -287,7 +287,7 @@ const writePage =
 			followed.model.preload,
 			pageIdentity(transition.slot),
 			transition.commands,
-			Preload.liveKeysOf(transition.slot?.model),
+			() => Preload.liveKeysOf(transition.slot?.model),
 		)
 		return {
 			model: modifyFields(followed.model, {
