@@ -201,7 +201,7 @@ const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: 
 				tableHeader(h, [
 					tableRow(h, [
 						tableHead(h, ["Source"]),
-						tableHead(h, ["Status"], "w-36 sm:w-48"),
+						tableHead(h, ["Status"], "w-36 sm:w-72"),
 						tableHead(h, ["Last data"], "hidden w-28 sm:table-cell"),
 						tableHead(h, ["Via"], "hidden w-44 sm:table-cell"),
 						tableHead(h, [], "w-10"),
