@@ -2,8 +2,14 @@ import { Effect, Option, Schema } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { readViewport } from "../xyflow/attach"
-import { compileTracks, type EdgeParticleSpec, MAX_TOTAL_PARTICLES, type Track } from "./particle-tracks"
+import { VIEWPORT_ATTRIBUTE } from "../xyflow/attach"
+import {
+	compileTracks,
+	type EdgeParticleSpec,
+	MAX_TOTAL_PARTICLES,
+	type PathCache,
+	type Track,
+} from "./particle-tracks"
 
 // `ServiceMapParticleCanvas`: one canvas, one rAF loop, a global particle budget. The edges
 // it animates arrive as `data-tracks` (the view's serialized geometry); the camera is read
@@ -27,8 +33,33 @@ const decodeSpecs = Schema.decodeUnknownOption(
 	),
 )
 
-const readCamera = (renderer: Element | null) =>
-	(renderer === null ? undefined : readViewport(renderer)) ?? { x: 0, y: 0, zoom: 1 }
+type Camera = { x: number; y: number; zoom: number }
+
+/**
+ * The renderer's camera (`readViewport`) without a per-frame DOM query: the leaf is looked up
+ * again only once detached, and its attribute parsed only when it changed.
+ */
+const cameraReader = (canvas: HTMLCanvasElement) => {
+	const state: { leaf: Element | null; raw: string | null; camera: Camera } = {
+		leaf: null,
+		raw: null,
+		camera: { x: 0, y: 0, zoom: 1 },
+	}
+	return (): Camera => {
+		if (state.leaf === null || !state.leaf.isConnected)
+			state.leaf =
+				canvas.parentElement?.querySelector(".react-flow__renderer .react-flow__viewport-portal") ??
+				null
+		const raw = state.leaf?.getAttribute(VIEWPORT_ATTRIBUTE) ?? null
+		if (raw !== state.raw) {
+			state.raw = raw
+			const parts = (raw ?? "").split(",").map(Number)
+			if (parts.length === 3 && parts.every(Number.isFinite))
+				state.camera = { x: parts[0], y: parts[1], zoom: parts[2] }
+		}
+		return state.camera
+	}
+}
 
 const drawFrame = (
 	ctx: CanvasRenderingContext2D,
@@ -38,10 +69,10 @@ const drawFrame = (
 	size: { cssW: number; cssH: number; dpr: number },
 	scratch: { x: Float32Array; y: Float32Array; r: Float32Array },
 	nowMs: number,
-) => {
+): boolean => {
 	ctx.setTransform(1, 0, 0, 1, 0, 0)
 	ctx.clearRect(0, 0, canvas.width, canvas.height)
-	if (tracks.length === 0) return
+	if (tracks.length === 0) return false
 	const { x: tx, y: ty, zoom } = camera
 	const { dpr } = size
 	ctx.setTransform(zoom * dpr, 0, 0, zoom * dpr, tx * dpr, ty * dpr)
@@ -91,13 +122,15 @@ const drawFrame = (
 		ctx.fill()
 	}
 	ctx.globalAlpha = 1
+	return count > 0
 }
 
 /** Starts the rAF loop; recompiles tracks when `data-tracks` changes; stops on unmount. */
 const animate = (canvas: HTMLCanvasElement) => {
 	const ctx = canvas.getContext("2d")
 	if (ctx === null) return () => {}
-	const renderer = canvas.parentElement?.querySelector(".react-flow__renderer") ?? null
+	const readCamera = cameraReader(canvas)
+	const pathCache: PathCache = new Map()
 	const scratch = {
 		x: new Float32Array(MAX_TOTAL_PARTICLES),
 		y: new Float32Array(MAX_TOTAL_PARTICLES),
@@ -118,9 +151,10 @@ const animate = (canvas: HTMLCanvasElement) => {
 			decodeSpecs(canvas.getAttribute(TRACKS_ATTRIBUTE) ?? "[]"),
 			() => [],
 		)
-		return compileTracks(specs)
+		return compileTracks(specs, pathCache)
 	}
-	const state = { tracks: compile(), raf: 0 }
+	// `painted`: an empty map clears once, then idles instead of clearing a blank canvas every frame.
+	const state = { tracks: compile(), raf: 0, painted: true }
 	const retrack = new MutationObserver(() => {
 		state.tracks = compile()
 	})
@@ -130,7 +164,8 @@ const animate = (canvas: HTMLCanvasElement) => {
 	resize()
 	const loop = (now: number) => {
 		state.raf = requestAnimationFrame(loop)
-		drawFrame(ctx, canvas, state.tracks, readCamera(renderer), size, scratch, now)
+		if (state.tracks.length === 0 && !state.painted) return
+		state.painted = drawFrame(ctx, canvas, state.tracks, readCamera(), size, scratch, now)
 	}
 	state.raf = requestAnimationFrame(loop)
 	return () => {

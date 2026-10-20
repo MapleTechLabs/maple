@@ -5,7 +5,10 @@ import { IngestKeyEncryptionError, IngestKeyPersistenceError, OrgId, UserId } fr
 import { hashIngestKey } from "@maple/db"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
+import type { OrgIngestKeyRow } from "@maple/db/tables"
+import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
 import { OrgIngestKeysService } from "./OrgIngestKeysService"
+import { SharedIngestKeysMemo } from "./shared-ingest-keys-memo"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -316,6 +319,27 @@ describe("OrgIngestKeysService", () => {
 			assert.instanceOf(failure, IngestKeyPersistenceError)
 		}),
 	)
+
+	it.effect("a shared memo carries an org's keys from one service instance to the next", () => {
+		const testDb = createTestDb(trackedDbs)
+		const second = makeStatementRecorder()
+		return Effect.gen(function* () {
+			const shared = Layer.succeed(SharedIngestKeysMemo, yield* makeExpiringStore<OrgIngestKeyRow>())
+			const getOrCreate = OrgIngestKeysService.use((keys) =>
+				keys.getOrCreate(asOrgId("org_a"), asUserId("user_a")),
+			)
+			// Two builds of the layer, as two queue batches in one isolate build theirs.
+			const first = yield* getOrCreate.pipe(
+				Effect.provide(makeLayer(testDb).pipe(Layer.provide(shared))),
+			)
+			const again = yield* getOrCreate.pipe(
+				Effect.withTracer(second.tracer),
+				Effect.provide(makeLayer(testDb).pipe(Layer.provide(shared))),
+			)
+			assert.deepStrictEqual(again, first)
+			assert.deepStrictEqual(second.verbs(), [])
+		})
+	})
 
 	it.effect("getOrCreateMany resolves every org with one SELECT and creates only missing rows", () => {
 		const testDb = createTestDb(trackedDbs)

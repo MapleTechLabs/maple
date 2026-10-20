@@ -1,6 +1,9 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import type { WorkflowJobAnnotation, WorkflowJobJob, WorkflowRunJob } from "@maple/domain/http"
-import { OrgId } from "@maple/domain/http"
+import { OrgId, UserId } from "@maple/domain/http"
+import type { OrgIngestKeyRow } from "@maple/db/tables"
+import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
+import { SharedIngestKeysMemo } from "@maple/backend/services/org/shared-ingest-keys-memo"
 import { ConfigProvider, Effect, Exit, Layer, Schema, Stream, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -140,6 +143,13 @@ const sinkLayer = (testDb: TestDb, fetchStub: typeof fetch) =>
 	CiTraceSinkWith.pipe(
 		Layer.provide(Layer.mergeAll(FetchHttpClient.layer, OrgIngestKeysService.layer)),
 		Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchStub)),
+		Layer.provide(testDb.layer),
+		Layer.provide(Env.layer),
+		Layer.provide(makeConfig()),
+	)
+
+const keysLayer = (testDb: TestDb) =>
+	OrgIngestKeysService.layer.pipe(
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(makeConfig()),
@@ -528,6 +538,37 @@ describe("CiTraceService", () => {
 			assert.isTrue(Exit.isFailure(emit.status.exit))
 			assert.strictEqual(emit.attributes.get("maple.cicd.outcome"), "ingest_failed")
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [402]))))
+	})
+
+	it.live("after a key rotation elsewhere, drops the stale memoized key and sends once more", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			// The isolate memo the queue consumer shares across batches.
+			const memo = Layer.succeed(SharedIngestKeysMemo, yield* makeExpiringStore<OrgIngestKeyRow>())
+			const batch = sinkLayer(testDb, recordingFetch(calls, [200, 401, 200])).pipe(Layer.provide(memo))
+			const emitJob = WorkflowEventSink.use((sink) => sink.onWorkflowJob(orgId, job, []))
+			yield* emitJob.pipe(Effect.provide(batch))
+			// The rotation runs in another graph with its own memo, as the HTTP route does.
+			const rotated = yield* OrgIngestKeysService.use((keys) =>
+				keys.rerollPublic(orgId, Schema.decodeUnknownSync(UserId)("user_rotates")),
+			).pipe(Effect.provide(keysLayer(testDb)))
+			yield* emitJob.pipe(Effect.provide(batch))
+			assert.deepStrictEqual(
+				calls.map((call) => call.authorization),
+				[calls[0]!.authorization, calls[0]!.authorization, `Bearer ${rotated.publicKey}`],
+			)
+			assert.notStrictEqual(rotated.publicKey, calls[0]!.authorization?.slice("Bearer ".length))
+		})
+	})
+
+	it.live("does not re-read the key or resend after a 403", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			yield* WorkflowEventSink.use((sink) => sink.onWorkflowJob(orgId, job, []))
+			assert.strictEqual(calls.length, 1)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [403, 200]))))
 	})
 
 	it.live("writes a job's log as records on the step span that was running at each line", () => {

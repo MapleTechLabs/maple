@@ -10,6 +10,7 @@ import { Effect, Layer, Stream } from "effect"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { AuditEventsDlq, AuditEventsQueue, PlanetScaleWebhookQueue, VcsSyncQueue } from "../resources/queues"
 import type { ApiPortsLayer } from "./bindings"
+import type { VcsSyncIsolateCaches } from "@maple/backend/services/integrations/vcs/vcs-sync-isolate-caches"
 import { runEvent } from "./events"
 import { auditEventsModule, planetScaleWebhookModule } from "./modules"
 import { consumeVcsSyncBatch } from "./vcs-sync"
@@ -42,12 +43,16 @@ const auditEventsConsumer = (deadLetterQueue: string | undefined): Cloudflare.Qu
  * so the deploy migrates their state rows instead of re-creating the
  * consumers; drop it once every stage has deployed past it.
  */
-export const registerQueueConsumers = (ports: ApiPortsLayer, env: Record<string, unknown>) =>
+export const registerQueueConsumers = (
+	ports: ApiPortsLayer,
+	env: Record<string, unknown>,
+	vcsSyncCaches: VcsSyncIsolateCaches,
+) =>
 	Effect.gen(function* () {
 		// Handed to the placed fetch handler over the self binding (`./vcs-sync.ts`), inline without it.
 		yield* Cloudflare.Queues.consumeQueueMessages(yield* VcsSyncQueue, VCS_SYNC_CONSUMER, (stream) =>
 			Effect.flatMap(Stream.runCollect(stream), (messages) =>
-				consumeVcsSyncBatch(ports, env, messages),
+				consumeVcsSyncBatch(ports, env, vcsSyncCaches, messages),
 			),
 		).pipe(renamedFrom({ fqn: "vcs-sync-consumer" }))
 		yield* Cloudflare.Queues.consumeQueueMessages(

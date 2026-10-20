@@ -57,8 +57,6 @@ describe("authorizeTickRequest", () => {
 			expect(tick).toEqual({
 				cron: "0 * * * *",
 				lane: "service_map_rollup",
-				colo: "unknown",
-				placement: "none",
 			})
 		}),
 	)

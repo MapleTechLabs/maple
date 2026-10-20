@@ -83,8 +83,10 @@ const hash01 = (value: string): number => {
 	return (Math.abs(h) % 1000) / 1000
 }
 
+type Sampled = Pick<Track, "points" | "segments" | "minX" | "minY" | "maxX" | "maxY">
+
 /** Equal-distance samples along one SVG path, measured with a detached `<path>`. */
-const samplePath = (d: string) => {
+const samplePath = (d: string): Sampled | null => {
 	const element = document.createElementNS("http://www.w3.org/2000/svg", "path")
 	element.setAttribute("d", d)
 	const length = element.getTotalLength()
@@ -107,13 +109,22 @@ const samplePath = (d: string) => {
 	return { points, segments, minX, minY, maxX, maxY }
 }
 
-export const compileTracks = (specs: ReadonlyArray<EdgeParticleSpec>): ReadonlyArray<Track> => {
+/** Samples by path string, so a drag re-samples only the edges whose geometry moved. */
+export type PathCache = Map<string, Sampled | null>
+
+export const compileTracks = (
+	specs: ReadonlyArray<EdgeParticleSpec>,
+	cache: PathCache = new Map(),
+): ReadonlyArray<Track> => {
 	const budget = allocateParticleBudget(specs)
-	return specs.flatMap((spec) => {
+	const livePaths = new Set<string>()
+	const tracks = specs.flatMap((spec) => {
+		livePaths.add(spec.path)
 		const count = budget.get(spec.id) ?? 0
 		if (count <= 0 || !spec.path) return []
-		const sampled = samplePath(spec.path)
-		if (sampled === null) return []
+		if (!cache.has(spec.path)) cache.set(spec.path, samplePath(spec.path))
+		const sampled = cache.get(spec.path)
+		if (sampled === null || sampled === undefined) return []
 		return [
 			{
 				...sampled,
@@ -125,4 +136,7 @@ export const compileTracks = (specs: ReadonlyArray<EdgeParticleSpec>): ReadonlyA
 			},
 		]
 	})
+	// Layouts and drags keep minting paths; keep only the ones still on the map.
+	for (const path of cache.keys()) if (!livePaths.has(path)) cache.delete(path)
+	return tracks
 }
