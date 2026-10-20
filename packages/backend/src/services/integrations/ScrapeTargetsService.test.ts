@@ -140,6 +140,35 @@ describe("ScrapeTargetsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("listAllEnabled leaves out a target whose source is paused", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const create = (name: string) =>
+				service.create(
+					asOrgId("org_1"),
+					new CreateScrapeTargetRequest({
+						name,
+						url: `https://${name}.example.com/metrics`,
+						scrapeIntervalSeconds: asScrapeIntervalSeconds(15),
+					}),
+				)
+			const paused = yield* create("paused")
+			const live = yield* create("live")
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"UPDATE sources SET paused_at = now() WHERE id = (SELECT source_id FROM scrape_targets WHERE id = $1)",
+					[paused.id],
+				),
+			)
+			assert.deepStrictEqual(
+				(yield* service.listAllEnabled()).map((row) => row.id),
+				[live.id],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("listAllEnabled lists a target whose stored labels are malformed, labels as stored", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

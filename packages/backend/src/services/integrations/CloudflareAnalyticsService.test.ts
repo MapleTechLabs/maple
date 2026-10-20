@@ -670,6 +670,29 @@ describe("CloudflareAnalyticsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 
+	it.effect("pollOrg reads nothing while the source is paused and resumes from now", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			const service = yield* CloudflareAnalyticsService
+			yield* service.pollOrg(ORG)
+			const ingested = captured.length
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE sources SET paused_at = now() WHERE platform = 'cloudflare'", []),
+			)
+			yield* TestClock.adjust("1 hour")
+
+			const summary = yield* service.pollOrg(ORG)
+			assert.deepStrictEqual([summary.skipped, summary.callsMade], ["source paused", 0])
+			assert.strictEqual(captured.length, ingested)
+			// The paused hour is never read: the head moved to the new horizon, floor(now - 10min, 5min).
+			const horizon = Date.parse("2026-07-02T12:50:00Z")
+			assert.isTrue((yield* loadStateRows).every((row) => row.watermarkAt === horizon))
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
 	it.effect("pollOrg discovers zones, emits metrics to the gateway, and advances watermarks", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []

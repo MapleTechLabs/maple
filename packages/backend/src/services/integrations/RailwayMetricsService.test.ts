@@ -280,6 +280,45 @@ describe("RailwayMetricsService", () => {
 		)
 	})
 
+	it.effect("a paused source reads nothing and resumes from now", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		return run(
+			testDb,
+			stubFetch(calls),
+			Effect.gen(function* () {
+				const railway = yield* RailwayMetricsService
+				yield* railway.connect(orgId, userId, "rw_token_123")
+				yield* resetWatermarks(testDb)
+				yield* Effect.promise(() =>
+					queryFirstRow(
+						testDb,
+						"UPDATE sources SET paused_at = now() WHERE kind = 'integration' RETURNING id",
+					),
+				)
+				const before = { railway: calls.railway.length, ingest: calls.ingest.length }
+
+				const summary = yield* railway.pollOrg(orgId)
+				assert.strictEqual(summary.skipped, "source paused")
+				assert.deepStrictEqual(
+					{ railway: calls.railway.length, ingest: calls.ingest.length },
+					before,
+				)
+				const environment = yield* Effect.promise(() =>
+					queryFirstRow<{ watermark_at: Date }>(
+						testDb,
+						"SELECT watermark_at FROM railway_environments WHERE environment_id = 'env_prod'",
+					),
+				)
+				// Nothing of the paused window is read after a resume.
+				assert.strictEqual(
+					new Date(environment!.watermark_at).getTime(),
+					Date.UTC(2026, 9, 3, 12, 28, 0),
+				)
+			}),
+		)
+	})
+
 	it.effect("connect rejects a token Railway does not accept", () => {
 		const testDb = createTestDb(trackedDbs)
 		const stub = stubFetch({ railway: [], ingest: [] }, { railway: "unauthorized" })
