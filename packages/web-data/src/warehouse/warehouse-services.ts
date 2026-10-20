@@ -6,7 +6,7 @@ import type { HttpApiClient } from "effect/http-api"
 
 /**
  * The services every warehouse query function needs. Each app provides them from its own
- * clients: apps/web from its atom clients and module batcher, web-foldkit from its resources.
+ * clients: apps/web from its resources.
  */
 
 /** Joins one execute request to the app's shared execute-batch window. */

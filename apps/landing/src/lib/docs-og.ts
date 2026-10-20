@@ -1,7 +1,7 @@
 /**
  * The social card for a docs page, rendered at build time.
  *
- * Same engine as the app's share cards (`apps/web-foldkit/src/og`): takumi lays out a
+ * Same engine as the app's share cards (`apps/web/src/og`): takumi lays out a
  * node tree and rasterises it, here through the Node wasm build since the docs
  * are prerendered. The look follows `/og-docs.png` (made by
  * `scripts/generate-og.mjs`) so a docs link unfurls like the rest of the site,

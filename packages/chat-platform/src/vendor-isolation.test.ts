@@ -45,12 +45,12 @@ const GUARDED_FILES = [
 	"apps/api/src/routes/v2/integrations-chat.http.ts",
 	"apps/api/src/routes/chat-integration.http.ts",
 	// The dashboard's integrations page: the catalog and the chat card, dialog and callback.
-	"apps/web-foldkit/src/page/integrations/catalog.ts",
-	"apps/web-foldkit/src/page/integrations/chat.ts",
-	"apps/web-foldkit/src/page/integrations/chat-callback.ts",
-	"apps/web-foldkit/src/page/integrations/update-chat.ts",
-	"apps/web-foldkit/src/page/integrations/view-chat.ts",
-	"apps/web-foldkit/src/page/integrations/view-chat-card.ts",
+	"apps/web/src/page/integrations/catalog.ts",
+	"apps/web/src/page/integrations/chat.ts",
+	"apps/web/src/page/integrations/chat-callback.ts",
+	"apps/web/src/page/integrations/update-chat.ts",
+	"apps/web/src/page/integrations/view-chat.ts",
+	"apps/web/src/page/integrations/view-chat-card.ts",
 ]
 
 const VENDORS = ["discord", "slack", "teams", "telegram", "whatsapp"]
