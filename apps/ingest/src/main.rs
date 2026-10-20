@@ -865,8 +865,6 @@ struct CloudflareConnectorResolver {
 
 const CLOUDFLARE_CONNECTORS_TABLE: &str = "cloudflare_logpush_connectors";
 const GCP_CONNECTORS_TABLE: &str = "gcp_connectors";
-/// `sources.platform` of a GCP connector's integration source.
-const GCP_SOURCE_PLATFORM: &str = "gcp";
 
 /// How often one connector's health columns are rewritten per outcome. Pub/Sub
 /// pushes one log entry per request, so an unthrottled write is one UPDATE per
@@ -983,15 +981,7 @@ trait KeyStore: Send + Sync {
         reason: &str,
     ) -> Result<(), String>;
 
-    /// The source created for one integration; `None` until the API creates it.
-    async fn fetch_integration_source_id(
-        &self,
-        org_id: &str,
-        platform: &'static str,
-        integration_id: &str,
-    ) -> Result<Option<PullSourceRow>, String>;
-
-    /// The subset of `source_ids` (uuids) that are the org's integration ("pull")
+    /// The subset of `source_ids` (uuids) that are the org's `kind = 'integration'`
     /// sources, the only ones a default-key sender may claim. One round trip.
     async fn claimable_source_ids(
         &self,
@@ -1081,6 +1071,16 @@ struct PullSourceRow {
     pause: PauseWindow,
 }
 
+impl PullSourceRow {
+    /// A connector's source to stamp and its pause window; none is never paused.
+    fn stamped(row: Option<Self>) -> (Option<SourceRef>, PauseWindow) {
+        row.and_then(|row| Some((SourceRef::from_id(row.id)?, row.pause)))
+            .map_or((None, PauseWindow::default()), |(source, pause)| {
+                (Some(source), pause)
+            })
+    }
+}
+
 #[derive(Clone, Debug)]
 struct SourceRow {
     key: KeyRow,
@@ -1096,6 +1096,8 @@ struct ConnectorRow {
     dataset: String,
     self_managed: bool,
     clickhouse_ready: bool,
+    /// The connector's `sources` row, joined through `source_id`.
+    source: Option<PullSourceRow>,
 }
 
 #[derive(Clone, Debug)]
@@ -1108,6 +1110,8 @@ struct GcpConnectorRow {
     applied_logs_enabled: Option<bool>,
     self_managed: bool,
     clickhouse_ready: bool,
+    /// The connector's `sources` row, joined through `source_id`.
+    source: Option<PullSourceRow>,
 }
 
 #[derive(Clone, Debug)]
@@ -1156,6 +1160,10 @@ struct CloudflareConnectorIdentity {
     zone_name: String,
     dataset: String,
     secret_key_id: String,
+    /// The connector's source, stamped on its logs.
+    source: Option<SourceRef>,
+    /// That source's pause window, judged per push so a timed pause ends on time.
+    source_pause: PauseWindow,
 }
 
 impl CloudflareConnectorIdentity {
@@ -1169,6 +1177,8 @@ impl CloudflareConnectorIdentity {
             secret_key_id: self.secret_key_id,
             self_managed: routing.self_managed,
             clickhouse_ready: routing.clickhouse_ready,
+            source: self.source,
+            source_pause: self.source_pause,
         }
     }
 }
@@ -1455,6 +1465,9 @@ struct ResolvedCloudflareConnector {
     // to the self-managed pool when the owning org has BYO Tinybird active.
     self_managed: bool,
     clickhouse_ready: bool,
+    source: Option<SourceRef>,
+    /// A paused source's batches are acked and dropped.
+    source_pause: PauseWindow,
 }
 
 struct ResolvedGcpConnector {
@@ -1467,6 +1480,16 @@ struct ResolvedGcpConnector {
     /// The integration source's pause window: a paused source's entries are acked and dropped.
     source_pause: PauseWindow,
     key: ResolvedIngestKey,
+}
+
+/// What an accepted Cloudflare Logpush request did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LogpushOutcome {
+    Accepted,
+    /// Cloudflare's destination-validation ping when the job is created.
+    Validation,
+    /// The connector's source is paused: acked, nothing stored or billed.
+    SourcePaused,
 }
 
 /// What an acked GCP push did.
@@ -3219,7 +3242,7 @@ impl opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::Tra
         let mut decoded = DecodedPayload::Traces(inner);
         let (admission, claims) =
             admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
-        let (kept_claim, decoded_bytes) = (claims.kept_claim, claims.metered_bytes(decoded_bytes));
+        let decoded_bytes = claims.metered_bytes(decoded_bytes);
         accept_grpc_decoded(
             &self.state,
             Signal::Traces,
@@ -3227,7 +3250,7 @@ impl opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::Tra
             &resolved,
             admission,
             decoded_bytes,
-            kept_claim,
+            &claims,
         )
         .await?;
         Ok(tonic::Response::new(
@@ -3255,7 +3278,7 @@ impl opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsS
         let mut decoded = DecodedPayload::Logs(inner);
         let (admission, claims) =
             admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
-        let (kept_claim, decoded_bytes) = (claims.kept_claim, claims.metered_bytes(decoded_bytes));
+        let decoded_bytes = claims.metered_bytes(decoded_bytes);
         accept_grpc_decoded(
             &self.state,
             Signal::Logs,
@@ -3263,7 +3286,7 @@ impl opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsS
             &resolved,
             admission,
             decoded_bytes,
-            kept_claim,
+            &claims,
         )
         .await?;
         Ok(tonic::Response::new(
@@ -3293,7 +3316,7 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
         let mut decoded = DecodedPayload::Metrics(inner);
         let (admission, claims) =
             admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
-        let (kept_claim, decoded_bytes) = (claims.kept_claim, claims.metered_bytes(decoded_bytes));
+        let decoded_bytes = claims.metered_bytes(decoded_bytes);
         accept_grpc_decoded(
             &self.state,
             Signal::Metrics,
@@ -3301,7 +3324,7 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
             &resolved,
             admission,
             decoded_bytes,
-            kept_claim,
+            &claims,
         )
         .await?;
         Ok(tonic::Response::new(
@@ -3342,7 +3365,7 @@ async fn accept_grpc_decoded(
     resolved: &ResolvedIngestKey,
     admission: KeyAdmission,
     decoded_bytes: usize,
-    kept_claim: bool,
+    claims: &ClaimOutcome,
 ) -> Result<(), tonic::Status> {
     // The sentinel token is a PUBLIC constant, so anything it carries is
     // attacker-authored and must never be stored. Discarded here for the same
@@ -3377,7 +3400,10 @@ async fn accept_grpc_decoded(
 
     match result {
         Ok(_) => {
-            state.resolver.note_source_use(resolved, kept_claim);
+            state.resolver.note_source_use(resolved, claims.kept_claim);
+            state
+                .resolver
+                .note_claimed_source_use(&claims.claimed_sources);
             if resolved.org_id != SENTINEL_ORG_ID {
                 if let Some(usage) = &state.usage_metrics {
                     usage.record(
@@ -4846,14 +4872,20 @@ async fn handle_cloudflare_logpush(
     let duration = start.elapsed();
 
     match result {
-        Ok((response, item_count, org_id, is_validation)) => {
+        Ok((response, item_count, org_id, outcome)) => {
             let status_code = response.status().as_u16();
+            let is_validation = outcome == LogpushOutcome::Validation;
             span_handle.record("http.response.status_code", status_code);
             span_handle.record("otel.status_code", "Ok");
             span_handle.record("maple.ingest.item_count", item_count);
             span_handle.record("maple.cloudflare.is_validation", is_validation);
+            if outcome == LogpushOutcome::SourcePaused {
+                span_handle.record("maple.ingest.reject_reason", "source_paused");
+            }
             metrics::request_completed("logs", "ok", "none", duration.as_secs_f64());
-            metrics::cloudflare_batch("http_requests", is_validation);
+            if outcome != LogpushOutcome::SourcePaused {
+                metrics::cloudflare_batch("http_requests", is_validation);
+            }
             debug!(
                 status = status_code,
                 duration_ms = duration_millis(duration),
@@ -5123,6 +5155,9 @@ async fn handle_signal_inner(
     let response = response_result.map_err(|error| (error, "forward"))?;
     if response.status().is_success() {
         state.resolver.note_source_use(&resolved_key, kept_claim);
+        state
+            .resolver
+            .note_claimed_source_use(&claims.claimed_sources);
     }
 
     Ok((
@@ -5145,7 +5180,7 @@ async fn handle_cloudflare_logpush_inner(
     secret: Option<&str>,
     headers: &HeaderMap,
     body: Bytes,
-) -> Result<(Response, usize, String, bool), (ApiError, &'static str)> {
+) -> Result<(Response, usize, String, LogpushOutcome), (ApiError, &'static str)> {
     let secret = secret
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -5186,6 +5221,21 @@ async fn handle_cloudflare_logpush_inner(
         key_id = %resolved.secret_key_id,
         "Authenticated Cloudflare Logpush connector"
     );
+    // A paused source: acked like a paused GCP connector, nothing stored or billed.
+    if resolved.source_pause.is_paused(current_time_millis()) {
+        metrics::source_paused_drop(&resolved.org_id, Signal::Logs.path());
+        debug!(
+            org_id = %resolved.org_id,
+            connector_id = %resolved.connector_id,
+            "Cloudflare Logpush source paused; batch acked and dropped"
+        );
+        return Ok((
+            StatusCode::OK.into_response(),
+            0,
+            resolved.org_id.clone(),
+            LogpushOutcome::SourcePaused,
+        ));
+    }
     let _org_inflight_permit = state
         .org_inflight_limiter
         .try_acquire(&resolved.org_id)
@@ -5283,7 +5333,7 @@ async fn handle_cloudflare_logpush_inner(
                 StatusCode::OK.into_response(),
                 0,
                 resolved.org_id.clone(),
-                true,
+                LogpushOutcome::Validation,
             ))
         }
         ParsedCloudflarePayload::Records(records) => {
@@ -5298,7 +5348,7 @@ async fn handle_cloudflare_logpush_inner(
                 self_managed: resolved.self_managed,
                 clickhouse_ready: resolved.clickhouse_ready,
                 source: None,
-                default_source: None,
+                default_source: resolved.source.clone(),
             };
             let decoded = DecodedPayload::Logs(request);
             let response = match process_decoded_payload(
@@ -5325,6 +5375,7 @@ async fn handle_cloudflare_logpush_inner(
                 .cloudflare_resolver
                 .record_success(&resolved.connector_id)
                 .await;
+            state.resolver.note_source_use(&resolved_key, false);
 
             if resolved.org_id != SENTINEL_ORG_ID {
                 if let Some(usage) = &state.usage_metrics {
@@ -5344,7 +5395,12 @@ async fn handle_cloudflare_logpush_inner(
                 }
             }
 
-            Ok((response, item_count, resolved.org_id.clone(), false))
+            Ok((
+                response,
+                item_count,
+                resolved.org_id.clone(),
+                LogpushOutcome::Accepted,
+            ))
         }
     }
 }
@@ -5845,7 +5901,7 @@ fn build_cloudflare_logs_request(
 }
 
 fn build_cloudflare_resource_attributes(resolved: &ResolvedCloudflareConnector) -> Vec<KeyValue> {
-    vec![
+    let mut attributes = vec![
         string_attribute("maple_org_id", &resolved.org_id),
         string_attribute("maple_ingest_source", CLOUDFLARE_LOGPUSH_SOURCE),
         string_attribute("maple_ingest_key_type", IngestKeyType::Connector.as_str()),
@@ -5854,7 +5910,11 @@ fn build_cloudflare_resource_attributes(resolved: &ResolvedCloudflareConnector) 
         string_attribute("cloudflare.zone_name", &resolved.zone_name),
         string_attribute("maple_cloudflare_connector_id", &resolved.connector_id),
         string_attribute("service.name", &resolved.service_name),
-    ]
+    ];
+    if let Some(source) = &resolved.source {
+        attributes.push(string_attribute(SOURCE_ID_ATTRIBUTE, &source.public_id));
+    }
+    attributes
 }
 
 fn build_cloudflare_log_record(
@@ -6127,8 +6187,10 @@ fn decode_otlp_payload(
 }
 
 /// What `verify_claims_and_enrich` found in a payload's `maple_source_id` claims.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct ClaimOutcome {
+    /// `sources.id` of each verified, unpaused claim; their resources were kept.
+    claimed_sources: Vec<String>,
     /// A resource carried a verified claim of its own (a poller's batch), paused or
     /// not, so the batch never counts as default-source use.
     kept_claim: bool,
@@ -6193,6 +6255,11 @@ async fn verify_claims_and_enrich(
     }
     enrich_decoded_payload(decoded, resolved_key, &verified.active);
     ClaimOutcome {
+        claimed_sources: verified
+            .active
+            .iter()
+            .filter_map(|claim| sources::source_uuid_from_public_id(claim))
+            .collect(),
         kept_claim: !verified.active.is_empty() || dropped,
         all_paused,
         retained,
@@ -6912,8 +6979,8 @@ impl IngestKeyResolver {
         paused
     }
 
-    /// Stamps `last_used_at` for the source whose data was accepted (token or
-    /// default), at most once per write interval and off the request path. A batch
+    /// Stamps `last_used_at` for the source whose data was accepted (token, default
+    /// or a connector's), at most once per write interval and off the request path. A batch
     /// that kept a verified claim (a poller) does not count as default-source use.
     fn note_source_use(&self, resolved: &ResolvedIngestKey, kept_claim: bool) {
         if kept_claim {
@@ -6927,6 +6994,18 @@ impl IngestKeyResolver {
         } else {
             SOURCE_USE_WRITE_INTERVAL
         };
+        self.record_source_use(source_id, interval);
+    }
+
+    /// Stamps `last_used_at` for each verified integration source a batch kept data for.
+    fn note_claimed_source_use(&self, source_ids: &[String]) {
+        for source_id in source_ids {
+            self.record_source_use(source_id, SOURCE_USE_WRITE_INTERVAL);
+        }
+    }
+
+    /// Writes `last_used_at` off the request path, at most once per `interval` per source.
+    fn record_source_use(&self, source_id: &str, interval: Duration) {
         // Most requests land inside the window; skip them without spawning.
         if self.recent_key_uses.contains_key(source_id) {
             return;
@@ -7086,6 +7165,7 @@ impl CloudflareConnectorResolver {
         };
 
         let routing = OrgRouting::from_connector_row(&row);
+        let (source, source_pause) = PullSourceRow::stamped(row.source);
         let identity = CloudflareConnectorIdentity {
             connector_id: connector_id.to_owned(),
             org_id: row.org_id.clone(),
@@ -7093,6 +7173,8 @@ impl CloudflareConnectorResolver {
             zone_name: row.zone_name,
             dataset: row.dataset,
             secret_key_id: secret_hash.chars().take(16).collect(),
+            source,
+            source_pause,
         };
 
         self.cache.insert(cache_key, identity.clone()).await;
@@ -7169,29 +7251,6 @@ impl GcpConnectorResolver {
         }
     }
 
-    /// The connector's integration source, cached with the connector identity.
-    /// `None` until the API creates it, or if the lookup fails: that never fails auth.
-    async fn integration_source(
-        &self,
-        org_id: &str,
-        connector_id: &str,
-    ) -> Option<(SourceRef, PauseWindow)> {
-        match self
-            .store
-            .fetch_integration_source_id(org_id, GCP_SOURCE_PLATFORM, connector_id)
-            .await
-        {
-            Ok(row) => row.and_then(|row| Some((SourceRef::from_id(row.id)?, row.pause))),
-            Err(error) => {
-                warn!(
-                    org_id,
-                    connector_id, error, "Integration source lookup failed; stamping none"
-                );
-                None
-            }
-        }
-    }
-
     /// Whether this connector may write another setup report in this window.
     async fn take_setup_report_slot(&self, connector_id: &str) -> bool {
         let count = self
@@ -7229,14 +7288,14 @@ impl GcpConnectorResolver {
             self_managed: row.self_managed,
             clickhouse_ready: row.clickhouse_ready,
         };
-        let source = self.integration_source(&row.org_id, connector_id).await;
+        let (source, source_pause) = PullSourceRow::stamped(row.source);
         let identity = GcpConnectorIdentity {
             org_id: row.org_id,
             secret_key_id: cache_key.1.chars().take(16).collect(),
             logs_enabled: row.logs_enabled,
             confirms_log_forwarding: false,
-            source_pause: source.as_ref().map(|(_, pause)| *pause).unwrap_or_default(),
-            source: source.map(|(source, _)| source),
+            source,
+            source_pause,
         };
 
         self.cache.insert(cache_key, identity.clone()).await;
@@ -7292,7 +7351,7 @@ impl GcpConnectorResolver {
             return Ok(None);
         };
 
-        let source = self.integration_source(&row.org_id, connector_id).await;
+        let (source, source_pause) = PullSourceRow::stamped(row.source);
         let routing = OrgRouting {
             self_managed: row.self_managed,
             clickhouse_ready: row.clickhouse_ready,
@@ -7303,8 +7362,8 @@ impl GcpConnectorResolver {
             secret_key_id: push.email.chars().take(16).collect(),
             logs_enabled: row.logs_enabled,
             confirms_log_forwarding: row.applied_logs_enabled.is_none(),
-            source_pause: source.as_ref().map(|(_, pause)| *pause).unwrap_or_default(),
-            source: source.map(|(source, _)| source),
+            source,
+            source_pause,
         };
         self.cache.insert(cache_key, identity.clone()).await;
         self.routing
@@ -7521,8 +7580,27 @@ fn gcp_connector_columns() -> String {
     format!(
         "c.org_id, c.project_id, c.logs_enabled, c.applied_logs_enabled, \
          COALESCE(s.sync_status = 'connected', false) AS self_managed, \
-         COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready"
+         COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready, \
+         {CONNECTOR_SOURCE_COLUMNS}"
     )
+}
+
+/// A connector `c`'s own source, read in the connector's query: all null without one.
+const CONNECTOR_SOURCE_JOIN: &str =
+    "LEFT JOIN sources src ON src.id = c.source_id AND src.org_id = c.org_id";
+const CONNECTOR_SOURCE_COLUMNS: &str = "src.id AS source_id, \
+    (EXTRACT(EPOCH FROM src.paused_at) * 1000)::bigint AS source_paused_at_ms, \
+    (EXTRACT(EPOCH FROM src.paused_until) * 1000)::bigint AS source_paused_until_ms";
+
+fn connector_source(row: &tokio_postgres::Row) -> Option<PullSourceRow> {
+    let id: Option<String> = row.get("source_id");
+    id.map(|id| PullSourceRow {
+        id,
+        pause: PauseWindow {
+            paused_at_ms: row.get("source_paused_at_ms"),
+            paused_until_ms: row.get("source_paused_until_ms"),
+        },
+    })
 }
 
 /// A `PullSourceRow`'s columns over `sources`.
@@ -7550,6 +7628,7 @@ fn gcp_connector_row(row: &tokio_postgres::Row) -> GcpConnectorRow {
         applied_logs_enabled: row.get("applied_logs_enabled"),
         self_managed: row.get("self_managed"),
         clickhouse_ready: row.get("clickhouse_ready"),
+        source: connector_source(row),
     }
 }
 
@@ -7787,7 +7866,7 @@ impl KeyStore for PostgresKeyStore {
                     ds.id AS default_source_id \
              FROM org_ingest_keys k \
              LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
-             LEFT JOIN sources ds ON ds.org_id = k.org_id AND ds.is_default \
+             LEFT JOIN sources ds ON ds.org_id = k.org_id AND ds.kind = 'default' \
              WHERE k.{hash_column} = $2 LIMIT 1"
         );
         let client = self.client().await?;
@@ -7889,9 +7968,11 @@ impl KeyStore for PostgresKeyStore {
         let sql = format!(
             "SELECT c.org_id, c.service_name, c.zone_name, c.dataset, \
                     COALESCE(s.sync_status = 'connected', false) AS self_managed, \
-                    COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready \
+                    COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready, \
+                    {CONNECTOR_SOURCE_COLUMNS} \
              FROM cloudflare_logpush_connectors c \
              LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id \
+             {CONNECTOR_SOURCE_JOIN} \
              WHERE c.id = $2 AND c.secret_hash = $3 AND c.enabled = true LIMIT 1"
         );
         let rows = client
@@ -7914,6 +7995,7 @@ impl KeyStore for PostgresKeyStore {
             dataset: row.get("dataset"),
             self_managed: row.get("self_managed"),
             clickhouse_ready: row.get("clickhouse_ready"),
+            source: connector_source(&row),
         }))
     }
 
@@ -7930,6 +8012,7 @@ impl KeyStore for PostgresKeyStore {
             "SELECT {columns} \
              FROM gcp_connectors c \
              LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id \
+             {CONNECTOR_SOURCE_JOIN} \
              WHERE c.id = $2 AND c.secret_hash = $3 LIMIT 1"
         );
         let rows = client
@@ -7956,6 +8039,7 @@ impl KeyStore for PostgresKeyStore {
             "SELECT {columns} \
              FROM gcp_connectors c \
              LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id \
+             {CONNECTOR_SOURCE_JOIN} \
              WHERE c.id = $2 LIMIT 1"
         );
         let rows = client
@@ -8141,32 +8225,6 @@ impl KeyStore for PostgresKeyStore {
             .map_err(|error| format!("postgres record_source_rejected failed: {error}"))
     }
 
-    async fn fetch_integration_source_id(
-        &self,
-        org_id: &str,
-        platform: &'static str,
-        integration_id: &str,
-    ) -> Result<Option<PullSourceRow>, String> {
-        let client = self.client().await?;
-        let rows = client
-            .query(
-                &format!(
-                    "SELECT {PULL_SOURCE_COLUMNS} FROM sources \
-                     WHERE org_id = $1 AND platform = $2 AND integration_id = $3 LIMIT 1"
-                ),
-                &[&org_id, &platform, &integration_id],
-            )
-            .instrument(postgres_client_span(
-                "fetch_integration_source_id",
-                "SELECT",
-                "sources",
-                &self.target,
-            ))
-            .await
-            .map_err(|error| format!("postgres fetch_integration_source_id failed: {error}"))?;
-        rows.first().map(pull_source_row).transpose()
-    }
-
     async fn claimable_source_ids(
         &self,
         org_id: &str,
@@ -8177,7 +8235,7 @@ impl KeyStore for PostgresKeyStore {
             .query(
                 &format!(
                     "SELECT {PULL_SOURCE_COLUMNS} FROM sources \
-                     WHERE org_id = $1 AND id = ANY($2) AND integration_id IS NOT NULL"
+                     WHERE org_id = $1 AND id = ANY($2) AND kind = 'integration'"
                 ),
                 &[&org_id, &source_ids],
             )
@@ -8378,15 +8436,6 @@ impl KeyStore for StaticKeyStore {
         _reason: &str,
     ) -> Result<(), String> {
         Ok(())
-    }
-
-    async fn fetch_integration_source_id(
-        &self,
-        _org_id: &str,
-        _platform: &'static str,
-        _integration_id: &str,
-    ) -> Result<Option<PullSourceRow>, String> {
-        Ok(None)
     }
 
     async fn claimable_source_ids(
@@ -9400,6 +9449,8 @@ mod tests {
             secret_key_id: "secret".to_owned(),
             self_managed: false,
             clickhouse_ready: false,
+            source: None,
+            source_pause: PauseWindow::default(),
         };
         let record = serde_json::from_str::<JsonMap<String, JsonValue>>(
             r#"{
@@ -9538,14 +9589,16 @@ mod tests {
         source_uses: std::sync::Mutex<Vec<String>>,
         /// (key id, reason) of every `record_source_rejected` call.
         source_rejections: std::sync::Mutex<Vec<(String, String)>>,
-        /// `sources` rows that are not token sources: (org id, id, is_default, integration).
-        source_rows: std::sync::Mutex<Vec<(String, String, bool, Option<(&'static str, String)>)>>,
+        /// `sources` rows: (org id, id, kind).
+        source_rows: std::sync::Mutex<Vec<(String, String, &'static str)>>,
+        /// Connector id to its `source_id`, joined as the connector queries join it.
+        connector_sources: std::sync::Mutex<std::collections::HashMap<String, String>>,
         source_row_fetches: AtomicU64,
         /// Pause windows of `source_rows`, by source id; absent means not paused.
         source_pauses: std::sync::Mutex<std::collections::HashMap<String, PauseWindow>>,
         /// The source ids each `claimable_source_ids` call asked about.
         claim_lookups: std::sync::Mutex<Vec<Vec<String>>>,
-        /// Fails the source lookups (claims, integration sources).
+        /// Fails the source claim lookups.
         source_errors: AtomicBool,
         connectors: std::sync::Mutex<std::collections::HashMap<(String, String), ConnectorRow>>,
         gcp_connectors:
@@ -9648,7 +9701,7 @@ mod tests {
                     .lock()
                     .unwrap()
                     .iter()
-                    .find(|row| row.0 == key.org_id && row.2)
+                    .find(|row| row.0 == key.org_id && row.2 == "default")
                     .map(|row| row.1.clone());
                 OrgKeyRow {
                     key,
@@ -9679,30 +9732,6 @@ mod tests {
                 .push((key_id.to_owned(), reason.to_owned()));
             Ok(())
         }
-        async fn fetch_integration_source_id(
-            &self,
-            org_id: &str,
-            platform: &'static str,
-            integration_id: &str,
-        ) -> Result<Option<PullSourceRow>, String> {
-            self.source_row_fetches.fetch_add(1, Ordering::Relaxed);
-            if self.source_errors.load(Ordering::Relaxed) {
-                return Err("source lookup failed".to_owned());
-            }
-            Ok(self
-                .source_rows
-                .lock()
-                .unwrap()
-                .iter()
-                .find(|row| {
-                    row.0 == org_id
-                        && row
-                            .3
-                            .as_ref()
-                            .is_some_and(|(p, id)| *p == platform && id == integration_id)
-                })
-                .map(|row| self.pull_source_row(&row.1)))
-        }
         async fn claimable_source_ids(
             &self,
             org_id: &str,
@@ -9718,7 +9747,9 @@ mod tests {
                 .lock()
                 .unwrap()
                 .iter()
-                .filter(|row| row.0 == org_id && row.3.is_some() && source_ids.contains(&row.1))
+                .filter(|row| {
+                    row.0 == org_id && row.2 == "integration" && source_ids.contains(&row.1)
+                })
                 .map(|row| self.pull_source_row(&row.1))
                 .collect())
         }
@@ -9728,36 +9759,42 @@ mod tests {
             secret_hash: &str,
         ) -> Result<Option<ConnectorRow>, String> {
             self.connector_fetches.fetch_add(1, Ordering::Relaxed);
-            Ok(self
+            let row = self
                 .connectors
                 .lock()
                 .unwrap()
                 .get(&(connector_id.to_owned(), secret_hash.to_owned()))
-                .cloned())
+                .cloned();
+            Ok(row.map(|row| ConnectorRow {
+                source: self.joined_source(connector_id, &row.org_id),
+                ..row
+            }))
         }
         async fn fetch_gcp_connector(
             &self,
             connector_id: &str,
             secret_hash: &str,
         ) -> Result<Option<GcpConnectorRow>, String> {
-            Ok(self
+            let row = self
                 .gcp_connectors
                 .lock()
                 .unwrap()
                 .get(&(connector_id.to_owned(), secret_hash.to_owned()))
-                .cloned())
+                .cloned();
+            Ok(row.map(|row| self.with_joined_source(connector_id, row)))
         }
         async fn fetch_gcp_connector_by_id(
             &self,
             connector_id: &str,
         ) -> Result<Option<GcpConnectorRow>, String> {
-            Ok(self
+            let row = self
                 .gcp_connectors
                 .lock()
                 .unwrap()
                 .iter()
                 .find(|((id, _), _)| id == connector_id)
-                .map(|(_, row)| row.clone()))
+                .map(|(_, row)| row.clone());
+            Ok(row.map(|row| self.with_joined_source(connector_id, row)))
         }
         async fn fetch_sampling_policy(
             &self,
@@ -11090,6 +11127,7 @@ mod tests {
                 dataset: "http_requests".to_owned(),
                 self_managed: false,
                 clickhouse_ready: false,
+                source: None,
             },
         );
         let routing = make_routing_resolver(Arc::clone(&store), Duration::from_millis(5));
@@ -11196,6 +11234,7 @@ mod tests {
                     applied_logs_enabled,
                     self_managed: true,
                     clickhouse_ready: true,
+                    source: None,
                 },
             );
         }
@@ -11807,7 +11846,7 @@ mod tests {
             &sentinel,
             KeyAdmission::Ingest,
             decoded_bytes,
-            false,
+            &ClaimOutcome::default(),
         )
         .await
         .expect("a sentinel export must look successful to the client");
@@ -11836,7 +11875,7 @@ mod tests {
             &resolved,
             KeyAdmission::Ingest,
             real_bytes,
-            false,
+            &ClaimOutcome::default(),
         )
         .await
         .expect("a real export is accepted");
@@ -11948,6 +11987,7 @@ mod tests {
                     dataset: "http_requests".to_owned(),
                     self_managed: false,
                     clickhouse_ready: false,
+                    source: None,
                 },
             );
         }
@@ -11987,14 +12027,13 @@ mod tests {
         assert_eq!(error_kind, "billing_limit");
 
         // An allowed org's validation ping and log batch both pass the gate.
-        let (response, _, _, is_validation) =
-            push("connector_allowed", false, br#"{"content":"tests"}"#)
-                .await
-                .expect("a validation ping is accepted");
+        let (response, _, _, outcome) = push("connector_allowed", false, br#"{"content":"tests"}"#)
+            .await
+            .expect("a validation ping is accepted");
         assert_eq!(response.status(), StatusCode::OK);
-        assert!(is_validation);
+        assert_eq!(outcome, LogpushOutcome::Validation);
 
-        let (response, item_count, org_id, is_validation) = push(
+        let (response, item_count, org_id, outcome) = push(
             "connector_allowed",
             false,
             b"{\"ClientRequestHost\":\"example.com\",\"EdgeResponseStatus\":200}\n\
@@ -12004,7 +12043,7 @@ mod tests {
         .expect("a log batch is accepted");
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!((item_count, org_id.as_str()), (2, "org_logpush_allowed"));
-        assert!(!is_validation);
+        assert_eq!(outcome, LogpushOutcome::Accepted);
         tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
             .await
             .expect("an allowed batch is forwarded")
@@ -13366,19 +13405,44 @@ mod tests {
     }
 
     impl FakeKeyStore {
-        fn insert_source_row(
-            &self,
-            org_id: &str,
-            id: &str,
-            is_default: bool,
-            integration: Option<(&'static str, &str)>,
-        ) {
-            self.source_rows.lock().unwrap().push((
-                org_id.to_owned(),
-                id.to_owned(),
-                is_default,
-                integration.map(|(platform, id)| (platform, id.to_owned())),
-            ));
+        /// A `sources` row of `kind`: "default", "token" or "integration".
+        fn insert_source_row(&self, org_id: &str, id: &str, kind: &'static str) {
+            self.source_rows
+                .lock()
+                .unwrap()
+                .push((org_id.to_owned(), id.to_owned(), kind));
+        }
+
+        /// Sets a connector's `source_id`.
+        fn link_connector_source(&self, connector_id: &str, source_id: &str) {
+            self.connector_sources
+                .lock()
+                .unwrap()
+                .insert(connector_id.to_owned(), source_id.to_owned());
+        }
+
+        /// The connector's source as the `LEFT JOIN sources` reads it: same org only.
+        fn joined_source(&self, connector_id: &str, org_id: &str) -> Option<PullSourceRow> {
+            let source_id = self
+                .connector_sources
+                .lock()
+                .unwrap()
+                .get(connector_id)
+                .cloned()?;
+            let exists = self
+                .source_rows
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|row| row.0 == org_id && row.1 == source_id);
+            exists.then(|| self.pull_source_row(&source_id))
+        }
+
+        fn with_joined_source(&self, connector_id: &str, row: GcpConnectorRow) -> GcpConnectorRow {
+            GcpConnectorRow {
+                source: self.joined_source(connector_id, &row.org_id),
+                ..row
+            }
         }
 
         fn pause_source(&self, id: &str, paused_at_ms: i64, paused_until_ms: Option<i64>) {
@@ -13416,8 +13480,8 @@ mod tests {
                 ..org_key
             },
         );
-        store.insert_source_row("org_with_default", DEFAULT_SOURCE_UUID, true, None);
-        store.insert_source_row("org_with_default", INTEGRATION_SOURCE_UUID, false, None);
+        store.insert_source_row("org_with_default", DEFAULT_SOURCE_UUID, "default");
+        store.insert_source_row("org_with_default", INTEGRATION_SOURCE_UUID, "token");
         let resolver = make_resolver(Arc::clone(&store));
 
         for _ in 0..3 {
@@ -13448,15 +13512,10 @@ mod tests {
     #[tokio::test]
     async fn source_claims_verify_pull_sources_of_the_org_and_cache_both_answers() {
         let store = Arc::new(FakeKeyStore::default());
-        store.insert_source_row(
-            "org_a",
-            INTEGRATION_SOURCE_UUID,
-            false,
-            Some(("railway", "rw_1")),
-        );
+        store.insert_source_row("org_a", INTEGRATION_SOURCE_UUID, "integration");
         // A push (token) source of the org itself is not claimable.
-        store.insert_source_row("org_a", SOURCE_UUID, false, None);
-        store.insert_source_row("org_b", DEFAULT_SOURCE_UUID, false, Some(("gcp", "g_1")));
+        store.insert_source_row("org_a", SOURCE_UUID, "token");
+        store.insert_source_row("org_b", DEFAULT_SOURCE_UUID, "integration");
         let resolver = make_resolver(Arc::clone(&store));
         let own = public_id(INTEGRATION_SOURCE_UUID);
         let claims = vec![
@@ -13491,12 +13550,7 @@ mod tests {
     #[tokio::test]
     async fn source_claims_are_deduped_and_capped_in_one_lookup() {
         let store = Arc::new(FakeKeyStore::default());
-        store.insert_source_row(
-            "org_a",
-            INTEGRATION_SOURCE_UUID,
-            false,
-            Some(("railway", "r")),
-        );
+        store.insert_source_row("org_a", INTEGRATION_SOURCE_UUID, "integration");
         let resolver = make_resolver(Arc::clone(&store));
         let own = public_id(INTEGRATION_SOURCE_UUID);
         let mut claims = vec![own.clone(), own.clone()];
@@ -13530,12 +13584,7 @@ mod tests {
     #[tokio::test]
     async fn a_cached_claim_of_a_timed_pause_resumes_at_its_deadline() {
         let store = Arc::new(FakeKeyStore::default());
-        store.insert_source_row(
-            "org_a",
-            INTEGRATION_SOURCE_UUID,
-            false,
-            Some(("railway", "r")),
-        );
+        store.insert_source_row("org_a", INTEGRATION_SOURCE_UUID, "integration");
         store.pause_source(
             INTEGRATION_SOURCE_UUID,
             1,
@@ -13562,12 +13611,7 @@ mod tests {
     #[tokio::test]
     async fn source_claim_lookup_errors_leave_claims_unverified_and_uncached() {
         let store = Arc::new(FakeKeyStore::default());
-        store.insert_source_row(
-            "org_a",
-            INTEGRATION_SOURCE_UUID,
-            false,
-            Some(("railway", "r")),
-        );
+        store.insert_source_row("org_a", INTEGRATION_SOURCE_UUID, "integration");
         let resolver = make_resolver(Arc::clone(&store));
         let own = public_id(INTEGRATION_SOURCE_UUID);
 
@@ -13592,25 +13636,11 @@ mod tests {
     async fn gcp_connectors_carry_their_integration_source_when_it_exists() {
         let (state, store, queue_dir) =
             gcp_logpush_state("gcp-integration-source", "http://127.0.0.1:1").await;
-        store.insert_source_row(
-            "org_gcp",
-            INTEGRATION_SOURCE_UUID,
-            false,
-            Some(("gcp", "gcp_conn_1")),
-        );
-        // Same integration id under another platform or org must not match.
-        store.insert_source_row(
-            "org_gcp",
-            SOURCE_UUID,
-            false,
-            Some(("railway", "gcp_conn_off")),
-        );
-        store.insert_source_row(
-            "org_other",
-            DEFAULT_SOURCE_UUID,
-            false,
-            Some(("gcp", "gcp_conn_off")),
-        );
+        store.insert_source_row("org_gcp", INTEGRATION_SOURCE_UUID, "integration");
+        store.link_connector_source("gcp_conn_1", INTEGRATION_SOURCE_UUID);
+        // A `source_id` naming another org's source joins nothing.
+        store.insert_source_row("org_other", DEFAULT_SOURCE_UUID, "integration");
+        store.link_connector_source("gcp_conn_off", DEFAULT_SOURCE_UUID);
 
         let with_source = state
             .gcp_resolver
@@ -13635,29 +13665,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_failed_integration_source_lookup_does_not_fail_gcp_auth() {
-        let (state, store, queue_dir) =
-            gcp_logpush_state("gcp-integration-source-error", "http://127.0.0.1:1").await;
-        store.insert_source_row(
-            "org_gcp",
-            INTEGRATION_SOURCE_UUID,
-            false,
-            Some(("gcp", "gcp_conn_1")),
-        );
-        store.source_errors.store(true, Ordering::Relaxed);
-
-        let resolved = state
-            .gcp_resolver
-            .resolve_connector("gcp_conn_1", "gcp-secret")
-            .await
-            .expect("a source lookup error is not an auth error")
-            .expect("connector resolves");
-        assert_eq!(resolved.key.source_public_id(), None);
-
-        drop(std::fs::remove_dir_all(&queue_dir));
-    }
-
-    #[tokio::test]
     async fn default_source_use_is_held_longer_and_skipped_for_claimed_batches() {
         let store = Arc::new(FakeKeyStore::default());
         store.insert_private(
@@ -13668,7 +13675,7 @@ mod tests {
                 clickhouse_ready: false,
             },
         );
-        store.insert_source_row("org_default_use", DEFAULT_SOURCE_UUID, true, None);
+        store.insert_source_row("org_default_use", DEFAULT_SOURCE_UUID, "default");
         let resolver = make_resolver(Arc::clone(&store));
         let resolved = resolver
             .resolve_ingest_key("maple_sk_default_use")
@@ -13713,14 +13720,9 @@ mod tests {
                 clickhouse_ready: false,
             },
         );
-        store.insert_source_row("org_default_e2e", DEFAULT_SOURCE_UUID, true, None);
-        store.insert_source_row(
-            "org_default_e2e",
-            INTEGRATION_SOURCE_UUID,
-            false,
-            Some(("railway", "rw_1")),
-        );
-        store.insert_source_row("org_someone_else", SOURCE_UUID, false, None);
+        store.insert_source_row("org_default_e2e", DEFAULT_SOURCE_UUID, "default");
+        store.insert_source_row("org_default_e2e", INTEGRATION_SOURCE_UUID, "integration");
+        store.insert_source_row("org_someone_else", SOURCE_UUID, "token");
         let state = test_app_state(
             Arc::clone(&store),
             queue_dir.clone(),
@@ -13780,8 +13782,11 @@ mod tests {
                 default_id,
             ]
         );
-        // The batch kept a poller's claim, so it does not keep the default source fresh.
-        assert!(recorded_key_uses(&store).await.is_empty());
+        // The batch kept a poller's claim: its source is used, the default source is not.
+        assert_eq!(
+            recorded_key_uses(&store).await,
+            vec![INTEGRATION_SOURCE_UUID.to_owned()]
+        );
 
         let (response, ..) = handle_signal_inner(
             &state,
@@ -13794,7 +13799,10 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             recorded_key_uses(&store).await,
-            vec![DEFAULT_SOURCE_UUID.to_owned()]
+            vec![
+                INTEGRATION_SOURCE_UUID.to_owned(),
+                DEFAULT_SOURCE_UUID.to_owned()
+            ]
         );
 
         drop(std::fs::remove_dir_all(&queue_dir));
@@ -13814,14 +13822,9 @@ mod tests {
                 clickhouse_ready: false,
             },
         );
-        store.insert_source_row("org_paused", DEFAULT_SOURCE_UUID, true, None);
-        store.insert_source_row(
-            "org_paused",
-            INTEGRATION_SOURCE_UUID,
-            false,
-            Some(("railway", "rw_1")),
-        );
-        store.insert_source_row("org_paused", SOURCE_UUID, false, Some(("gcp", "g_1")));
+        store.insert_source_row("org_paused", DEFAULT_SOURCE_UUID, "default");
+        store.insert_source_row("org_paused", INTEGRATION_SOURCE_UUID, "integration");
+        store.insert_source_row("org_paused", SOURCE_UUID, "integration");
         // One paused until resumed; one whose timed pause already ended.
         store.pause_source(INTEGRATION_SOURCE_UUID, 1, None);
         store.pause_source(SOURCE_UUID, 1, Some(2));
@@ -13897,6 +13900,7 @@ mod tests {
             "a paused source's batch must not be forwarded"
         );
         // A poller's batch, even with unclaimed resources beside a paused claim, is not default use.
+        // Only the unpaused claim whose data was kept counts as used.
         handle_signal_inner(
             &state,
             &test_headers(raw_key),
@@ -13905,7 +13909,10 @@ mod tests {
         )
         .await
         .expect("default key traffic is accepted");
-        assert!(recorded_key_uses(&store).await.is_empty());
+        assert_eq!(
+            recorded_key_uses(&store).await,
+            vec![SOURCE_UUID.to_owned()]
+        );
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
@@ -13923,14 +13930,14 @@ mod tests {
             clickhouse_ready: false,
         };
         store.insert_private(raw_key, key);
-        store.insert_source_row(org, DEFAULT_SOURCE_UUID, true, None);
-        store.insert_source_row(org, INTEGRATION_SOURCE_UUID, false, Some(("railway", "p")));
+        store.insert_source_row(org, DEFAULT_SOURCE_UUID, "default");
+        store.insert_source_row(org, INTEGRATION_SOURCE_UUID, "integration");
         store.pause_source(INTEGRATION_SOURCE_UUID, 1, None);
         let others: Vec<String> = (0..MAX_SOURCE_CLAIMS)
             .map(|_| uuid::Uuid::new_v4().to_string())
             .collect();
         for id in &others {
-            store.insert_source_row(org, id, false, Some(("railway", "o")));
+            store.insert_source_row(org, id, "integration");
         }
         let state = test_app_state(
             Arc::clone(&store),
@@ -14010,12 +14017,8 @@ mod tests {
     async fn gcp_logpush_acks_and_drops_while_the_integration_source_is_paused() {
         let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
         let (state, store, queue_dir) = gcp_logpush_state("gcp-logpush-paused", &ch_url).await;
-        store.insert_source_row(
-            "org_gcp",
-            INTEGRATION_SOURCE_UUID,
-            false,
-            Some(("gcp", "gcp_conn_1")),
-        );
+        store.insert_source_row("org_gcp", INTEGRATION_SOURCE_UUID, "integration");
+        store.link_connector_source("gcp_conn_1", INTEGRATION_SOURCE_UUID);
         store.pause_source(INTEGRATION_SOURCE_UUID, 1, None);
 
         let dropped = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_LOG_ENTRY).await;
@@ -14030,6 +14033,216 @@ mod tests {
 
         drop(std::fs::remove_dir_all(queue_dir));
     }
+    #[tokio::test]
+    async fn source_claims_are_accepted_only_for_integration_sources() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_source_row("org_kinds", DEFAULT_SOURCE_UUID, "default");
+        store.insert_source_row("org_kinds", SOURCE_UUID, "token");
+        store.insert_source_row("org_kinds", INTEGRATION_SOURCE_UUID, "integration");
+        let resolver = make_resolver(Arc::clone(&store));
+
+        let verified = resolver
+            .verify_source_claims(
+                "org_kinds",
+                vec![
+                    public_id(DEFAULT_SOURCE_UUID),
+                    public_id(SOURCE_UUID),
+                    public_id(INTEGRATION_SOURCE_UUID),
+                ],
+            )
+            .await;
+        assert_eq!(verified.active, vec![public_id(INTEGRATION_SOURCE_UUID)]);
+        assert!(verified.paused.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_verified_claim_records_use_for_its_source_once_per_interval() {
+        let (forward_url, _forward_rx) = spawn_capturing_logs_collector().await;
+        let queue_dir = unique_main_test_dir("claimed-source-use");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_claimed_source_use";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_claimed_use".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        store.insert_source_row("org_claimed_use", DEFAULT_SOURCE_UUID, "default");
+        store.insert_source_row("org_claimed_use", INTEGRATION_SOURCE_UUID, "integration");
+        // A token source claimed with the default key is not verified, so not used.
+        store.insert_source_row("org_claimed_use", SOURCE_UUID, "token");
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+        let mut request = test_log_request("claimed use");
+        let template = request.resource_logs[0].clone();
+        request.resource_logs = [INTEGRATION_SOURCE_UUID, SOURCE_UUID]
+            .iter()
+            .map(|id| {
+                let mut resource_logs = template.clone();
+                let resource = resource_logs.resource.as_mut().expect("resource");
+                resource
+                    .attributes
+                    .push(string_attribute("maple_source_id", &public_id(id)));
+                resource_logs
+            })
+            .collect();
+        let body = Bytes::from(request.encode_to_vec());
+
+        for _ in 0..2 {
+            let (response, ..) =
+                handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Signal::Logs)
+                    .await
+                    .expect("default key traffic is accepted");
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+        assert_eq!(
+            recorded_key_uses(&store).await,
+            vec![INTEGRATION_SOURCE_UUID.to_owned()]
+        );
+        assert_eq!(
+            state
+                .resolver
+                .recent_key_uses
+                .get(INTEGRATION_SOURCE_UUID)
+                .await,
+            Some(SOURCE_USE_WRITE_INTERVAL)
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    /// Two Cloudflare Logpush connectors of one org: `cf_with_source`, linked to
+    /// `INTEGRATION_SOURCE_UUID`, and `cf_without_source`, whose org has no OAuth link.
+    async fn cloudflare_logpush_state(
+        name: &str,
+    ) -> (
+        AppState,
+        Arc<FakeKeyStore>,
+        PathBuf,
+        tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+    ) {
+        let (forward_url, forward_rx) = spawn_capturing_logs_collector().await;
+        let queue_dir = unique_main_test_dir(name);
+        let store = Arc::new(FakeKeyStore::default());
+        for connector_id in ["cf_with_source", "cf_without_source"] {
+            store.insert_connector(
+                connector_id,
+                "connector-secret",
+                ConnectorRow {
+                    org_id: "org_cf_source".to_owned(),
+                    service_name: "cloudflare/example.com".to_owned(),
+                    zone_name: "example.com".to_owned(),
+                    dataset: "http_requests".to_owned(),
+                    self_managed: false,
+                    clickhouse_ready: false,
+                    source: None,
+                },
+            );
+        }
+        store.insert_source_row("org_cf_source", INTEGRATION_SOURCE_UUID, "integration");
+        store.link_connector_source("cf_with_source", INTEGRATION_SOURCE_UUID);
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+        (state, store, queue_dir, forward_rx)
+    }
+
+    const CLOUDFLARE_BATCH: &[u8] =
+        b"{\"ClientRequestHost\":\"example.com\",\"EdgeResponseStatus\":200}\n";
+
+    async fn cloudflare_push(
+        state: &AppState,
+        connector_id: &str,
+    ) -> Result<(Response, usize, String, LogpushOutcome), (ApiError, &'static str)> {
+        handle_cloudflare_logpush_inner(
+            state,
+            connector_id,
+            Some("connector-secret"),
+            &HeaderMap::new(),
+            Bytes::from_static(CLOUDFLARE_BATCH),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn cloudflare_logpush_stamps_and_uses_its_connector_source_only_when_it_has_one() {
+        let (state, store, queue_dir, mut forward_rx) =
+            cloudflare_logpush_state("cloudflare-logpush-source").await;
+
+        let mut stamped = Vec::new();
+        for connector_id in ["cf_with_source", "cf_without_source"] {
+            let (response, item_count, _, outcome) = cloudflare_push(&state, connector_id)
+                .await
+                .expect("a log batch is accepted");
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!((item_count, outcome), (1, LogpushOutcome::Accepted));
+            let forwarded = tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+                .await
+                .expect("the batch is forwarded")
+                .expect("forward channel should stay open");
+            let forwarded =
+                ExportLogsServiceRequest::decode(forwarded).expect("forwarded protobuf");
+            let resource = forwarded.resource_logs[0]
+                .resource
+                .as_ref()
+                .expect("resource");
+            stamped.push(string_attributes(&resource.attributes).remove("maple_source_id"));
+        }
+        assert_eq!(
+            stamped,
+            vec![Some(public_id(INTEGRATION_SOURCE_UUID)), None]
+        );
+        assert_eq!(
+            recorded_key_uses(&store).await,
+            vec![INTEGRATION_SOURCE_UUID.to_owned()]
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn cloudflare_logpush_acks_and_drops_while_its_source_is_paused() {
+        let (state, store, queue_dir, mut forward_rx) =
+            cloudflare_logpush_state("cloudflare-logpush-paused").await;
+        store.pause_source(INTEGRATION_SOURCE_UUID, 1, None);
+
+        let (response, item_count, org_id, outcome) = cloudflare_push(&state, "cf_with_source")
+            .await
+            .expect("a paused source's batch is acked");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            (item_count, org_id.as_str(), outcome),
+            (0, "org_cf_source", LogpushOutcome::SourcePaused)
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), forward_rx.recv())
+                .await
+                .is_err(),
+            "nothing may be stored while the source is paused"
+        );
+        assert!(recorded_key_uses(&store).await.is_empty());
+        assert_eq!(store.connector_successes.load(Ordering::Relaxed), 0);
+
+        // The org's other connector has no source, so it is not paused with it.
+        let (_, item_count, _, outcome) = cloudflare_push(&state, "cf_without_source")
+            .await
+            .expect("a log batch is accepted");
+        assert_eq!((item_count, outcome), (1, LogpushOutcome::Accepted));
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
     #[test]
     fn fleet_size_defaults_to_one_and_refuses_zero() {
         assert_eq!(parse_fleet_size(None), Ok(1));
