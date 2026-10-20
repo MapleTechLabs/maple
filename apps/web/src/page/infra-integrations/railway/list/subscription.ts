@@ -1,10 +1,11 @@
-import { Duration, Effect, Option, Schema, Stream } from "effect"
+import { Duration, Option, Schema, Stream } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import type { Resources } from "../../../../platform/resources"
 import type { PageSubscriptionInput } from "../../../contract"
 import { unsyncedEnvironments } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { pollTicks } from "../../../../data/poll"
 
 /** Re-reads while the page is empty, so a just-connected account fills in without a reload. */
 const EMPTY_REFRESH = Duration.seconds(15)
@@ -29,12 +30,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				}),
 				dependenciesToStream: ({ isEmpty: empty, includeStatus }) =>
 					empty
-						? Stream.fromEffectRepeat(
-								Effect.as(
-									Effect.sleep(EMPTY_REFRESH),
-									Message.TickedEmptyRefresh({ includeStatus }),
-								),
-							)
+						? Stream.map(pollTicks(EMPTY_REFRESH), () => Message.TickedEmptyRefresh({ includeStatus }))
 						: Stream.empty,
 			},
 		),

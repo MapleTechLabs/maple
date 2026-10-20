@@ -1,4 +1,4 @@
-import { Effect, Option, Queue, Schema, Stream } from "effect"
+import { Duration, Effect, Option, Queue, Schema, Stream } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import { derivePlanetScaleSetup } from "../../components/integrations/planetscale-setup-steps"
 import { gcpConnectionState } from "../../components/integrations/gcp-connector-state"
@@ -14,6 +14,7 @@ import { githubStatusOf } from "./update-github"
 import { CAPABILITIES, CAPABILITY_IDS } from "./gcp-configure-copy"
 import { runConfirmed } from "./gcp-configure-derive"
 import { configureConnector } from "./update-gcp-configure"
+import { pollTicks, whenPresent } from "../../data/poll"
 
 const one = (message: Message): Stream.Stream<Message> => Stream.make(message)
 
@@ -127,14 +128,8 @@ const popupFlow = ({ provider, attempt }: ConnectAttempt) =>
 const GITHUB_POLL_MS = 3_000
 const FORCE_POLL_WINDOW_MS = 10_000
 
-/** A `setInterval` as a stream. */
-const every = (millis: number, message: () => Message) =>
-	Stream.callback<Message>((queue) =>
-		Effect.acquireRelease(
-			Effect.sync(() => setInterval(() => Queue.offerUnsafe(queue, message()), millis)),
-			(interval) => Effect.sync(() => clearInterval(interval)),
-		).pipe(Effect.andThen(Effect.never)),
-	)
+/** A status poll: paused while the tab is hidden or offline, one catch-up tick on return. */
+const every = (millis: number, message: () => Message) => Stream.map(pollTicks(Duration.millis(millis)), message)
 
 const after = (millis: number, message: () => Message) =>
 	Stream.callback<Message>((queue) =>
@@ -268,7 +263,10 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					isPolling ? every(GITHUB_POLL_MS, () => Message.TickedGithubPoll()) : Stream.empty,
 			},
 		),
-		/** `FORCE_POLL_WINDOW_MS`: the poll after a branch change stops on its own. */
+		/**
+		 * `FORCE_POLL_WINDOW_MS`: the poll after a branch change stops on its own, with one last read
+		 * once the tab is back, so a window spent hidden or offline still lands the change.
+		 */
 		githubForcePoll: entry(
 			{ version: Schema.NullOr(Schema.Number) },
 			{
@@ -278,7 +276,9 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: ({ version }) =>
 					version === null
 						? Stream.empty
-						: after(FORCE_POLL_WINDOW_MS, () => Message.EndedGithubForcePoll({ version })),
+						: Stream.flatMap(after(FORCE_POLL_WINDOW_MS, () => Message.EndedGithubForcePoll({ version })), (ended) =>
+								Stream.flatMap(whenPresent(), () => Stream.make(Message.TickedGithubPoll(), ended)),
+							),
 			},
 		),
 		/** `useCloudflareIngestPhase`: status and usage every 30 s while a fresh connection settles. */

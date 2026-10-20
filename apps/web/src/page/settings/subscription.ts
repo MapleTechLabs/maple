@@ -13,6 +13,7 @@ import { Message as AutomationMessage } from "./automation/model"
 import { destinationRows } from "../alerts/shared/collections"
 import { rowToAlertDestinationDocument } from "@maple/web-data/collections/alerts"
 import type { Model } from "./model"
+import { pollTicks } from "../../data/poll"
 
 /**
  * Tabs that read the `api_keys` shape: Keys lists them, the audit log names their actors, and an
@@ -77,8 +78,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 			modelToDependencies: ({ model }) => ({ isPolling: model.tab?._tag === "Ingestion" }),
 			dependenciesToStream: ({ isPolling }) =>
 				isPolling
-					? Stream.tick(INGEST_POLL).pipe(
-							Stream.drop(1),
+					? pollTicks(INGEST_POLL).pipe(
 							Stream.map(() => Message.GotIngestionMessage({ message: IngestionMessage.TickedPoll() })),
 						)
 					: Stream.empty,
@@ -93,8 +93,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 			}),
 			dependenciesToStream: ({ isPolling }) =>
 				isPolling
-					? Stream.tick("2 seconds").pipe(
-							Stream.drop(1),
+					? pollTicks("2 seconds").pipe(
 							Stream.map(() => Message.GotDataPlatformMessage({ message: DataPlatformMessage.TickedApplyPoll() })),
 						)
 					: Stream.empty,
