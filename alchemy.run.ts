@@ -210,8 +210,16 @@ const MapleStackLive = Layer.effect(
 	Effect.gen(function* () {
 		// The stage string (`prd`, `prd-eu`) names the instance; alchemy keys state by it.
 		const deployment = yield* parseMapleDeploymentEffect(yield* Alchemy.Stage)
-		const domains = resolveMapleDomains(deployment)
-		const profile = resolveMapleProfile(deployment)
+		// The `preview:web` label: Workers and seeded branches only, no AWS (docs/pr-previews.md).
+		const webOnlyPreview =
+			deployment.stage.kind === "pr" &&
+			(yield* optionalPlain("MAPLE_PREVIEW_WEB_ONLY")).MAPLE_PREVIEW_WEB_ONLY === "1"
+		const allDomains = resolveMapleDomains(deployment)
+		// Without ingest and Electric their hostnames would resolve nowhere.
+		const domains = webOnlyPreview
+			? { web: allDomains.web, api: allDomains.api, sync: allDomains.sync }
+			: allDomains
+		const profile = resolveMapleProfile(deployment, { webOnlyPreview })
 		const context: MapleStackContext = {
 			...deployment,
 			domains,

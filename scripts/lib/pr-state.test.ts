@@ -4,6 +4,7 @@ import { previewStateOf } from "./pr-state.ts"
 describe("previewStateOf", () => {
 	test("an open PR keeps its preview only while it carries the label", () => {
 		expect(previewStateOf({ state: "open", labels: [{ name: "bug" }, { name: "preview" }] })).toBe("live")
+		expect(previewStateOf({ state: "open", labels: [{ name: "preview:web" }] })).toBe("live")
 		expect(previewStateOf({ state: "open", labels: [{ name: "preview:collector" }] })).toBe("retired")
 		expect(previewStateOf({ state: "open", labels: [] })).toBe("retired")
 	})
