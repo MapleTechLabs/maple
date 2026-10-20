@@ -269,7 +269,7 @@ WHERE $__orgFilter AND $__timeFilter(TimeUnix)
   AND MetricName = 'system.filesystem.utilization'
   AND Attributes['mode'] = 'rw'
 GROUP BY bucket, group`,
-        settings: "<strong>Window (min)</strong> 5, <strong>Condition</strong> <code>&gt;</code>, <strong>Threshold</strong> <code>0.9</code>. The fullest writable mount on each host. <code>mode = 'rw'</code> drops read-only mounts such as snap images, which always read 100%.",
+        settings: "<strong>Window</strong> 5 min, <strong>Alert when the value</strong> is above, <strong>Threshold</strong> <code>0.9</code>. The fullest writable mount on each host. <code>mode = 'rw'</code> drops read-only mounts such as snap images, which always read 100%.",
     },
     {
         id: "rule-memory",
@@ -282,7 +282,7 @@ WHERE $__orgFilter AND $__timeFilter(TimeUnix)
   AND MetricName = 'system.memory.utilization'
   AND Attributes['state'] = 'used'
 GROUP BY bucket, group`,
-        settings: "<strong>Window (min)</strong> 5, <strong>Condition</strong> <code>&gt;</code>, <strong>Threshold</strong> <code>0.9</code>. The metric has one point per state (used, free, cached, buffered and slab), so filter to <code>used</code>.",
+        settings: "<strong>Window</strong> 5 min, <strong>Alert when the value</strong> is above, <strong>Threshold</strong> <code>0.9</code>. The metric has one point per state (used, free, cached, buffered and slab), so filter to <code>used</code>.",
     },
     {
         id: "rule-cpu",
@@ -295,7 +295,7 @@ WHERE $__orgFilter AND $__timeFilter(TimeUnix)
   AND MetricName = 'system.cpu.utilization'
   AND Attributes['state'] = 'idle'
 GROUP BY bucket, group`,
-        settings: "<strong>Window (min)</strong> 15, <strong>Condition</strong> <code>&gt;</code>, <strong>Threshold</strong> <code>0.9</code>. Busy time is one minus idle time. The longer window keeps short spikes, such as a nightly backup, from paging.",
+        settings: "<strong>Window</strong> 15 min, <strong>Alert when the value</strong> is above, <strong>Threshold</strong> <code>0.9</code>. Busy time is one minus idle time. The longer window keeps short spikes, such as a nightly backup, from paging.",
     },
 ];
 
@@ -687,11 +687,11 @@ const articleJsonLd = {
                         </table>
                     </div>
 
-                    <figure class="guide-figure"><img src="/screenshots/guides/remote-server-monitoring-01-hosts.webp" data-zoomable alt="The Hosts page listing several servers with status, CPU, memory and disk usage, load and last seen, one of them marked Ended." width="2400" height="1300" loading="lazy" /></figure>
+                    <figure class="guide-figure"><img src="/screenshots/guides/remote-server-monitoring-01-hosts.webp" data-zoomable alt="The Hosts page with the fleet summary above a table of eight servers: each host's OS and architecture, CPU, memory and disk usage bars, 15-minute load and last-seen time, with web-04 marked Ended." width="2340" height="1490" loading="lazy" /></figure>
                     <p>
                         Click a host for CPU, memory, filesystem per mount, network per interface and load over time, next to its <code>os.type</code> and <code>host.arch</code>. Add the <code>ec2</code>, <code>gcp</code> or <code>azure</code> detector to <code>resource_detection</code> and the page also shows <code>cloud.provider</code> and <code>cloud.region</code>.
                     </p>
-                    <figure class="guide-figure"><img src="/screenshots/guides/remote-server-monitoring-02-host-detail.webp" data-zoomable alt="One host's detail page: CPU, memory, filesystem per mountpoint, network and 15-minute load charts with the host's os.type and host.arch." width="2400" height="1500" loading="lazy" /></figure>
+                    <figure class="guide-figure"><img src="/screenshots/guides/remote-server-monitoring-02-host-detail.webp" data-zoomable alt="The detail page of host db-01, marked Active: CPU, memory, disk and 15-minute load figures, the CPU and memory charts, and the host's os.type linux and host.arch amd64." width="2340" height="1576" loading="lazy" /></figure>
                     <p>
                         The system logs are on the <a href="/docs/explore/logs">Logs</a> page under the service <code>system-logs</code>. For Windows servers, the <a href="/guides/windows-server-monitoring">Windows server monitoring guide</a> sets up the same Collector.
                     </p>
@@ -714,16 +714,16 @@ const articleJsonLd = {
                         A Maple <a href="/docs/alerting/alert-rules">alert rule</a> checks a value every minute over a rolling window and opens an incident after two breaching checks in a row. Most rules skip a window with no data, so a server that stops sending never trips them. A rule with <strong>Alert when there is no data</strong> switched on counts an empty window as a breach. The switch is off for rules split into one incident per group, because a group that stops reporting keeps its open incident and a healthy one never opens one.
                     </p>
                     <p>
-                        The rules below use the <strong>Raw SQL</strong> signal, which runs ClickHouse SQL against the <code>metrics_gauge</code> table. <code>$__orgFilter</code> and <code>$__timeFilter</code> are required; the <a href="/docs/reference/sql">SQL reference</a> lists every macro. Open <strong>Alerts</strong>, click <strong>New rule</strong>, choose <strong>Start blank</strong>, and set the signal to <strong>Raw SQL</strong>.
+                        The rules below use the <strong>SQL</strong> signal, which runs ClickHouse SQL against the <code>metrics_gauge</code> table. <code>$__orgFilter</code> and <code>$__timeFilter</code> are required; the <a href="/docs/reference/sql">SQL reference</a> lists every macro. Open <strong>Alerts</strong>, click <strong>New rule</strong>, choose <strong>Start blank</strong>, and set the signal to <strong>SQL</strong>.
                     </p>
 
                     <h3 id="heartbeat" class="scroll-mt-24">Heartbeat rule per server</h3>
                     <pre><code set:html={highlight(heartbeatSql, "sql")} /></pre>
                     <ol class="guide-steps">
-                        <li><span>01</span><div><h4>Threshold</h4><p><strong>Reduce buckets by</strong> Sum, <strong>Condition</strong> <code>&lt;</code>, <strong>Threshold</strong> <code>1</code>.</p></div></li>
-                        <li><span>02</span><div><h4>Evaluation timing</h4><p><strong>Window (min)</strong> 5 and <strong>Min samples</strong> 1. Each row counts as one sample, so the form's default of 50 would skip every check.</p></div></li>
+                        <li><span>01</span><div><h4>Threshold</h4><p><strong>Reduce each window by</strong> Sum, <strong>Alert when the value</strong> is below, <strong>Threshold</strong> <code>1</code>.</p></div></li>
+                        <li><span>02</span><div><h4>How it is checked</h4><p><strong>Window</strong> 5 min and <strong>Minimum samples</strong> 1. Each row counts as one sample, so the form's default of 50 would skip every check.</p></div></li>
                         <li><span>03</span><div><h4>No data</h4><p>Switch <strong>Alert when there is no data</strong> on. When <code>web-01</code> goes quiet, the query returns no rows, and that counts as a breach.</p>
-                            <figure class="guide-figure"><img src="/screenshots/guides/remote-server-monitoring-03-heartbeat-rule.webp" data-zoomable alt="The alert rule form with the Raw SQL signal and the heartbeat query, condition below 1, a 5 minute window, Min samples 1 and Alert when there is no data switched on." width="2400" height="1400" loading="lazy" /></figure></div></li>
+                            <figure class="guide-figure"><img src="/screenshots/guides/remote-server-monitoring-03-heartbeat-rule.webp" data-zoomable alt="The alert rule form with the SQL signal and the heartbeat query for web-01, Reduce each window by Sum, is below 1, a 5 minute window, Minimum samples 1 and Alert when there is no data switched on." width="2330" height="2227" loading="lazy" /></figure></div></li>
                     </ol>
                     <p>
                         The incident opens six to seven minutes after the server's last report. To keep one rule per server in step with your inventory, create them from your config management with the <a href="/docs/alerting/alert-rules#create-a-rule-over-the-api">alert rules API</a>.
@@ -735,12 +735,12 @@ const articleJsonLd = {
                     </p>
                     <pre><code set:html={highlight(fleetSql, "sql")} /></pre>
                     <p>
-                        Set <strong>Reduce buckets by</strong> Minimum, <strong>Condition</strong> <code>&lt;</code>, <strong>Threshold</strong> the number of servers, <strong>Min samples</strong> 1, and <strong>Alert when there is no data</strong> on. The incident says that a server went quiet, not which one; the Hosts page filtered to <strong>Ended</strong> names it. Raise the threshold when you add a server.
+                        Set <strong>Reduce each window by</strong> Minimum, <strong>Alert when the value</strong> is below, <strong>Threshold</strong> the number of servers, <strong>Minimum samples</strong> 1, and <strong>Alert when there is no data</strong> on. The incident says that a server went quiet, not which one; the Hosts page filtered to <strong>Ended</strong> names it. Raise the threshold when you add a server.
                     </p>
 
                     <h3 id="thresholds" class="scroll-mt-24">Disk, memory and CPU per host</h3>
                     <p>
-                        Threshold rules don't need the no-data switch, so one rule covers every server. Return a <code>group</code> column and Maple opens one incident per host. Set <strong>Reduce buckets by</strong> Maximum and <strong>Min samples</strong> 1; utilization is a ratio from 0 to 1.
+                        Threshold rules don't need the no-data switch, so one rule covers every server. Return a <code>group</code> column and Maple opens one incident per host. Set <strong>Reduce each window by</strong> Maximum and <strong>Minimum samples</strong> 1; utilization is a ratio from 0 to 1.
                     </p>
                     <LanguageTabs tabs={thresholdRules.map(({ id, label }) => ({ id, label }))} label="Rule" group="maple-guide-remote-rule">
                         {thresholdRules.map((r) => (
