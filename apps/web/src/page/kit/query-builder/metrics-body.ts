@@ -1,3 +1,4 @@
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import { getMetricsAggregations } from "@maple/query-engine/query-builder"
 import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -75,7 +76,12 @@ const breakdown = (h: H, model: Model, query: MetricsQuery, keys: ReadonlyArray<
 		view: ComboboxView.view,
 		toParentMessage: (message) => Message.GotMetricBreakdownMessage({ queryId: query.id, message }),
 		viewInputs: {
-			items: [NONE, "service.name", ...keys.map((key) => `attr.${key}`)],
+			items: [
+				NONE,
+				// Google Cloud metrics carry no service.name.
+				...(isGcpMetricType(query.metricName) ? [] : ["service.name"]),
+				...keys.map((key) => `attr.${key}`),
+			],
 			placeholder: "Search fields...",
 			emptyText: "",
 			highlightsSelected: true,

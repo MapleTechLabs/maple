@@ -1,3 +1,4 @@
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import { Option } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as AddToDashboard from "./add-to-dashboard"
@@ -79,8 +80,21 @@ export const summaryOf = (model: Model): CatalogSummary | null =>
 export const draftOf = (model: Model, summary: CatalogSummary) =>
 	buildMetricExplorerDraft(summary, model.search)
 
-/** `MetricBreakdown`'s key: the URL's `bd`, else `service.name`. */
-export const breakdownKeyOf = (search: Search): string => search.bd ?? SERVICE_KEY
+/**
+ * `MetricBreakdown`'s key: the URL's `bd`, else `service.name`. Google Cloud metrics have no
+ * `service.name`: they break down by their first label, unknown until the labels load.
+ */
+export const breakdownKeyOf = (
+	model: Pick<Model, "metricName" | "search" | "attributeKeys">,
+): string | undefined => {
+	const chosen = model.search.bd
+	if (!isGcpMetricType(model.metricName)) return chosen ?? SERVICE_KEY
+	if (chosen !== undefined && chosen !== SERVICE_KEY) return chosen
+	return Option.match(AsyncData.getData(model.attributeKeys.data), {
+		onNone: () => undefined,
+		onSome: (rows) => rows[0]?.attributeKey,
+	})
+}
 
 type Step<A, E> = Readonly<{ slot: Keyed.Keyed<A, E>; commands: Commands }>
 
@@ -138,10 +152,6 @@ const requestContent = (model: Model, context: PageContext, mode: RequestMode): 
 	const draft = draftOf(model, summary)
 	const keysInput = { ...window, metricName: summary.metricName, metricType: summary.metricType }
 	const chartInput = { ...window, query: chartQuery(draft) }
-	const breakdownInput = {
-		...window,
-		query: buildBreakdownDraft(draft, breakdownGroupBy(breakdownKeyOf(model.search))),
-	}
 	const attributeKeys = keyed(
 		model.attributeKeys,
 		requestKey(org, "getMetricAttributeKeys", { data: keysInput }),
@@ -155,12 +165,22 @@ const requestContent = (model: Model, context: PageContext, mode: RequestMode): 
 		mode,
 		(key) => FetchTimeseries({ key, input: chartInput }),
 	)
-	const breakdown = keyed(
-		model.breakdown,
-		requestKey(org, "getQueryBuilderBreakdown", { data: { ...window, queries: [breakdownInput.query] } }),
-		mode,
-		(key) => FetchBreakdown({ key, input: breakdownInput }),
-	)
+	const breakdownKey = breakdownKeyOf({ ...model, attributeKeys: attributeKeys.slot })
+	const breakdownInput =
+		breakdownKey === undefined
+			? undefined
+			: { ...window, query: buildBreakdownDraft(draft, breakdownGroupBy(breakdownKey)) }
+	const breakdown =
+		breakdownInput === undefined
+			? { slot: model.breakdown, commands: [] }
+			: keyed(
+					model.breakdown,
+					requestKey(org, "getQueryBuilderBreakdown", {
+						data: { ...window, queries: [breakdownInput.query] },
+					}),
+					mode,
+					(key) => FetchBreakdown({ key, input: breakdownInput }),
+				)
 	return {
 		model: {
 			...syncControls(model),
@@ -203,7 +223,7 @@ const syncControls = (model: Model): Model => {
 		model.search.groupBy === undefined || model.search.groupBy === ""
 			? GROUP_BY_NONE_LABEL
 			: model.search.groupBy
-	const breakdownKey = breakdownKeyOf(model.search)
+	const breakdownKey = breakdownKeyOf(model) ?? ""
 	const syncCombobox = (combobox: Combobox.Model, value: string): Combobox.Model =>
 		combobox.isOpen || combobox.selected[0] === value
 			? combobox
@@ -286,7 +306,7 @@ export const init = (route: Route, context: PageContext): Return => {
 			selected: [route.search.groupBy ?? GROUP_BY_NONE_LABEL],
 		}),
 		breakdownCombobox: Combobox.init("metric-breakdown-key", "single", {
-			selected: [breakdownKeyOf(route.search)],
+			selected: [breakdownKeyOf({ ...route, attributeKeys: Keyed.idle() }) ?? ""],
 		}),
 		copyLink: CopyButton.init(),
 		addToDashboard: AddToDashboard.init(),
@@ -423,9 +443,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						},
 					}
 		},
-		CompletedFetchAttributeKeys: ({ key, result }) => ({
-			model: { ...model, attributeKeys: Keyed.accept(model.attributeKeys, key, result) },
-		}),
+		CompletedFetchAttributeKeys: ({ key, result }) => {
+			const next = { ...model, attributeKeys: Keyed.accept(model.attributeKeys, key, result) }
+			// A Google metric's breakdown key is its first label, so the keys' arrival requests it.
+			return isGcpMetricType(model.metricName) ? requestContent(next, context, "Load") : { model: next }
+		},
 		CompletedFetchTimeseries: ({ key, result }) => ({
 			model: { ...model, timeseries: Keyed.accept(model.timeseries, key, result) },
 		}),

@@ -1,3 +1,4 @@
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import { validateCssColor } from "@maple/ui/lib/sanitizers"
 import { Option } from "effect"
 import { AsyncData as FoldkitAsyncData } from "foldkit"
@@ -114,11 +115,14 @@ const sparkline = (h: H, theme: ThemeColors, entry: PreviewEntry, values: Readon
 const previewCard = (h: H, theme: ThemeColors, entry: PreviewEntry, sparklines: PageSparklines): Html => {
 	const points = sparklines.pointsByMetric.get(entryKey(entry.metricName, entry.metricType)) ?? []
 	const values = sparklineValues(entry.metricType, points).map(finiteOrZero)
-	const status = sparklines.isLoading
-		? "Loading…"
-		: sparklines.failedTypes.has(entry.metricType)
-			? "Preview unavailable"
-			: "Not enough datapoints for a preview"
+	const isGcp = isGcpMetricType(entry.metricName)
+	const status = isGcp
+		? "Read live from Google Cloud: open to chart"
+		: sparklines.isLoading
+			? "Loading…"
+			: sparklines.failedTypes.has(entry.metricType)
+				? "Preview unavailable"
+				: "Not enough datapoints for a preview"
 	return h.button(
 		[
 			h.Key(entryKey(entry.metricName, entry.metricType)),
@@ -134,11 +138,18 @@ const previewCard = (h: H, theme: ThemeColors, entry: PreviewEntry, sparklines: 
 			h.div(
 				[h.Class("flex w-full items-start justify-between gap-2")],
 				[
-					truncatedText(h, {
-						text: entry.metricName,
-						mono: true,
-						className: "text-xs font-medium",
-					}),
+					// Google metric types share a long domain prefix: cut the start, keep the path.
+					isGcp
+						? truncatedText(
+								h,
+								{
+									text: entry.metricName,
+									mono: true,
+									className: "text-xs font-medium [direction:rtl] text-left",
+								},
+								[h.bdi([h.Dir("ltr")], [entry.metricName])],
+							)
+						: truncatedText(h, { text: entry.metricName, mono: true, className: "text-xs font-medium" }),
 					metricTypeBadge(h, entry.metricType),
 				],
 			),
