@@ -148,7 +148,10 @@ Test with `bun run --cwd apps/sandbox verify:image` (needs Docker); it catches w
 ## PR previews
 
 A PR labelled `preview` deploys the full stack to `app-pr-<n>.maple.dev` / `api-pr-<n>.maple.dev`
-on the Clerk development instance (`docs/pr-previews.md`). To sign in to one:
+on the Clerk development instance (`docs/pr-previews.md`). Default to `preview:web` for dashboard,
+API or AI changes: it deploys only the Workers on the same seeded data, faster and without a VPC.
+Use `preview` only to test ingest, Electric live sync, landing, or a connect flow that sends
+telemetry. To sign in to either:
 
 ```bash
 infisical run --env dev -- bun run preview:signin <n>   # one-shot signed-in link, valid 2 minutes
