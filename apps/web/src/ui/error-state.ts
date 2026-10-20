@@ -1,9 +1,17 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Effect, Queue, Stream } from "effect"
+import { Clock, Effect, Queue, Random, Schema, Stream } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { LoadFailure } from "../data/load-failure"
+import {
+	isExhausted,
+	postponed,
+	probed,
+	RESUME_WINDOW_MS,
+	resume,
+	type RetryBudget,
+} from "./auto-retry-budget"
 import { button } from "./button"
 
 // The error state. The failure is already the
@@ -114,46 +122,62 @@ const signalBreakTick = <M>(h: HtmlBuilder<M>): Html =>
 
 const alertRegion = <M>(h: HtmlBuilder<M>) => [h.Role("alert"), h.AriaLive("polite"), h.AriaAtomic(true)]
 
-const POLL_DELAYS_MS = [5_000, 10_000, 20_000, 30_000]
-const MAX_POLL_ATTEMPTS = 6
-
 const AutoRetryMessage = defineMessageUnion({ ElapsedAutoRetry: {} })
+
+/** One backoff per page and retry Message, shared by every mount that retries the same thing. */
+const budgets = new Map<string, RetryBudget>()
 
 /** `useNetworkAutoRetry`: jittered backoff probes, plus the `online` and visibility events. */
 export const MountNetworkAutoRetry = Mount.defineStream("MountNetworkAutoRetry", {
+	args: { retryKey: Schema.String },
 	messages: [AutoRetryMessage.ElapsedAutoRetry],
-	execute: () =>
+	execute: ({ retryKey }) =>
 		Stream.callback<typeof AutoRetryMessage.ElapsedAutoRetry.Type>((queue) =>
 			Effect.acquireRelease(
-				Effect.sync(() => {
-					const state = { attempt: 0, timeout: 0 }
-					const probe = () => Queue.offerUnsafe(queue, AutoRetryMessage.ElapsedAutoRetry())
-					const schedule = () => {
-						if (state.attempt >= MAX_POLL_ATTEMPTS) return
-						const base = POLL_DELAYS_MS[Math.min(state.attempt, POLL_DELAYS_MS.length - 1)] ?? 30_000
-						state.timeout = window.setTimeout(
-							() => {
-								if (!document.hidden && navigator.onLine !== false) {
-									probe()
-									state.attempt += 1
-								}
-								schedule()
-							},
-							base * (0.9 + Math.random() * 0.2),
-						)
-					}
-					const onVisibilityChange = () => {
-						if (!document.hidden && navigator.onLine !== false) probe()
-					}
-					window.addEventListener("online", probe)
-					document.addEventListener("visibilitychange", onVisibilityChange)
-					schedule()
-					return () => {
-						window.removeEventListener("online", probe)
-						document.removeEventListener("visibilitychange", onVisibilityChange)
-						window.clearTimeout(state.timeout)
-					}
-				}),
+				Effect.flatMap(Effect.all([Clock.currentTimeMillis, Random.next]), ([now, jitter]) =>
+					Effect.sync(() => {
+						const key = `${location.pathname} ${retryKey}`
+						budgets.forEach((budget, other) => {
+							if (now - budget.touchedAt >= RESUME_WINDOW_MS) budgets.delete(other)
+						})
+						budgets.set(key, resume(budgets.get(key), now, jitter))
+						const state = { timeout: 0 }
+						const probe = () => Queue.offerUnsafe(queue, AutoRetryMessage.ElapsedAutoRetry())
+						const schedule = () => {
+							const budget = budgets.get(key)
+							if (budget === undefined || isExhausted(budget)) return
+							state.timeout = window.setTimeout(
+								() => {
+									const due = budgets.get(key)
+									const at = Date.now()
+									if (due !== undefined && at >= due.nextAt) {
+										const isUp = !document.hidden && navigator.onLine !== false
+										budgets.set(
+											key,
+											isUp
+												? probed(due, at, Math.random())
+												: postponed(due, at, Math.random()),
+										)
+										if (isUp) probe()
+									}
+									schedule()
+								},
+								Math.max(0, budget.nextAt - Date.now()),
+							)
+						}
+						const onVisibilityChange = () => {
+							if (!document.hidden && navigator.onLine !== false) probe()
+						}
+						window.addEventListener("online", probe)
+						document.addEventListener("visibilitychange", onVisibilityChange)
+						schedule()
+						return () => {
+							window.removeEventListener("online", probe)
+							document.removeEventListener("visibilitychange", onVisibilityChange)
+							window.clearTimeout(state.timeout)
+						}
+					}),
+				),
 				(release) => Effect.sync(release),
 			),
 		),
@@ -168,7 +192,14 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 	// TODO(auto-retry-exhausted): drop the "Retrying" note after the sixth probe.
 	const autoRetry =
 		onRetry !== undefined && canRetry && failure.retryable
-			? [h.OnMount(Mount.mapMessage(MountNetworkAutoRetry(), () => onRetry))]
+			? [
+					h.OnMount(
+						Mount.mapMessage(
+							MountNetworkAutoRetry({ retryKey: JSON.stringify(onRetry) }),
+							() => onRetry,
+						),
+					),
+				]
 			: []
 	const message = autoRetry.length > 0 ? `${failure.message} Retrying automatically…` : failure.message
 	const retry = (variant: "ghost" | "outline", className?: string) =>

@@ -62,8 +62,7 @@ const loaded = (rows: ReadonlyArray<HealthSnapshot>): Model => {
 
 const themeResolved = () =>
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
-const cursorMounted = () =>
-	Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor())
+const cursorMounted = () => Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor())
 
 describe("overview", () => {
 	test("entry reads the clock and hint; downstream queries wait for facets", () => {
@@ -107,6 +106,21 @@ describe("overview", () => {
 		expect(AsyncData.isFailure(failed.model.overviewSeries.data)).toBe(true)
 		const retried = pageUpdate(failed.model, Message.ClickedRetry({ target: "Overview" }))
 		expect(names(retried.commands)).toEqual(["FetchOverviewTimeSeries"])
+	})
+
+	test("a second card's retry while the first is in flight requests nothing", () => {
+		const model = withFacets(entered().model, []).model
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchOverviewSeries({
+				key: model.overviewSeries.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		const first = pageUpdate(failed, Message.ClickedRetry({ target: "Overview" }))
+		const second = pageUpdate(first.model, Message.ClickedRetry({ target: "Overview" }))
+		expect(names(second.commands)).toEqual([])
+		expect(second.model).toEqual(first.model)
 	})
 
 	test("an answer for a superseded environment is dropped", () => {
