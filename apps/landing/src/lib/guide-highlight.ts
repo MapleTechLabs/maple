@@ -1,7 +1,7 @@
 // Tiny highlighter for guide code blocks. The token classes match the colors a
 // guide uses in its diagrams (metric name, labels, value), so a block reads the
 // same way as the annotated example above it. Style the `tok-*` classes on the page.
-export type GuideLang = "exposition" | "promql" | "yaml" | "python" | "typescript" | "go" | "rust" | "java" | "csharp";
+export type GuideLang = "exposition" | "promql" | "yaml" | "console" | "python" | "typescript" | "go" | "rust" | "java" | "csharp";
 
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const span = (cls: string, text: string) => `<span class="tok-${cls}">${escape(text)}</span>`;
@@ -71,11 +71,22 @@ const python = (code: string) =>
     tokenize(code, [
         [/#.*/y, (m) => span("comment", m[0])],
         [/"[^"\n]*"/y, (m) => span("labels", m[0])],
-        [/\b(?:from|import|def|with|as|return)\b/y, (m) => span("fn", m[0])],
+        [/\b(?:from|import|def|with|as|return|if|else|for|in|not|is|None|True|False|lambda|try|except|raise)\b/y, (m) => span("fn", m[0])],
         [/\b(?:Counter|Gauge|Histogram|Summary)\b/y, (m) => span("name", m[0])],
         [/\b\d+(?:\.\d+)?\b/y, (m) => span("value", m[0])],
         [/[a-zA-Z_]\w*/y, (m) => escape(m[0])],
     ]);
+
+// Terminal sessions: "$ command  # note" lines; every other line is program output.
+const consoleSession = (code: string) =>
+    code
+        .split("\n")
+        .map((line) => {
+            const cmd = /^(\$ )(.*?)(\s+#.*)?$/.exec(line);
+            if (!cmd) return escape(line);
+            return span("comment", cmd[1]) + span("fn", cmd[2]) + (cmd[3] ? span("comment", cmd[3]) : "");
+        })
+        .join("\n");
 
 // Brace languages share one tokenizer: comments, strings, keywords, the metric
 // classes (orange, like metric names), numbers.
@@ -99,4 +110,4 @@ const java = braces("import|public|static|final|class|void|new|try|throws");
 const csharp = braces("using|var|new|await");
 
 export const highlight = (code: string, lang: GuideLang) =>
-    ({ exposition, promql, yaml, python, typescript, go, rust, java, csharp })[lang](code);
+    ({ exposition, promql, yaml, console: consoleSession, python, typescript, go, rust, java, csharp })[lang](code);
