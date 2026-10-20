@@ -1542,6 +1542,14 @@ impl DecodedPayload {
         }
     }
 
+    fn encoded_len(&self) -> usize {
+        match self {
+            Self::Traces(request) => request.encoded_len(),
+            Self::Logs(request) => request.encoded_len(),
+            Self::Metrics(request) => request.encoded_len(),
+        }
+    }
+
     fn resource_count(&self) -> usize {
         match self {
             Self::Traces(request) => request.resource_spans.len(),
@@ -3209,8 +3217,9 @@ impl opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::Tra
         // `decoded_payload.len()`.
         let decoded_bytes = inner.encoded_len();
         let mut decoded = DecodedPayload::Traces(inner);
-        let (admission, kept_claim) =
+        let (admission, claims) =
             admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
+        let (kept_claim, decoded_bytes) = (claims.kept_claim, claims.metered_bytes(decoded_bytes));
         accept_grpc_decoded(
             &self.state,
             Signal::Traces,
@@ -3244,8 +3253,9 @@ impl opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsS
         let inner = request.into_inner();
         let decoded_bytes = inner.encoded_len();
         let mut decoded = DecodedPayload::Logs(inner);
-        let (admission, kept_claim) =
+        let (admission, claims) =
             admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
+        let (kept_claim, decoded_bytes) = (claims.kept_claim, claims.metered_bytes(decoded_bytes));
         accept_grpc_decoded(
             &self.state,
             Signal::Logs,
@@ -3281,8 +3291,9 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
         let inner = request.into_inner();
         let decoded_bytes = inner.encoded_len();
         let mut decoded = DecodedPayload::Metrics(inner);
-        let (admission, kept_claim) =
+        let (admission, claims) =
             admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
+        let (kept_claim, decoded_bytes) = (claims.kept_claim, claims.metered_bytes(decoded_bytes));
         accept_grpc_decoded(
             &self.state,
             Signal::Metrics,
@@ -3308,17 +3319,18 @@ async fn admit_grpc_claims(
     admission: KeyAdmission,
     decoded: &mut DecodedPayload,
     resolved: &ResolvedIngestKey,
-) -> (KeyAdmission, bool) {
+) -> (KeyAdmission, ClaimOutcome) {
     // A paused source's export reaches here empty (see `grpc_admission`).
     if admission != KeyAdmission::Ingest {
-        return (admission, false);
+        return (admission, ClaimOutcome::default());
     }
     let claims = verify_claims_and_enrich(state, decoded, resolved).await;
-    if claims.all_paused {
-        (KeyAdmission::Drop, false)
+    let admission = if claims.all_paused {
+        KeyAdmission::Drop
     } else {
-        (admission, claims.kept_claim)
-    }
+        admission
+    };
+    (admission, claims)
 }
 
 /// Accept a decoded export, already authenticated and entitlement-gated by
@@ -5095,7 +5107,8 @@ async fn handle_signal_inner(
     debug!(item_count, "Payload enriched");
     metrics::items_accepted(signal.path(), item_count as u64);
 
-    let decoded_bytes = decoded_payload.len();
+    // Only the share left after dropping paused pull sources' resources is metered.
+    let decoded_bytes = claims.metered_bytes(decoded_payload.len());
 
     let response_result = process_decoded_payload(
         state,
@@ -6121,6 +6134,22 @@ struct ClaimOutcome {
     kept_claim: bool,
     /// Every resource named a paused source and was dropped: answer success, write nothing.
     all_paused: bool,
+    /// Encoded size of the payload (before, after) dropping paused resources, so
+    /// only the retained share is metered. `None` when nothing was dropped.
+    retained: Option<(usize, usize)>,
+}
+
+impl ClaimOutcome {
+    /// `original` bytes scaled to the share left after the drop; unchanged when none was.
+    fn metered_bytes(&self, original: usize) -> usize {
+        match self.retained {
+            Some((before, after)) if before > 0 => {
+                let scaled = original as u128 * after as u128 / before as u128;
+                usize::try_from(scaled).unwrap_or(original)
+            }
+            _ => original,
+        }
+    }
 }
 
 /// Checks the sender's own `maple_source_id` values against the org, drops the
@@ -6131,7 +6160,8 @@ async fn verify_claims_and_enrich(
     resolved_key: &ResolvedIngestKey,
 ) -> ClaimOutcome {
     let claims = claimed_source_ids(decoded, resolved_key);
-    let verified = if claims.is_empty() {
+    let overflow = overflow_source_claims(decoded, &claims);
+    let mut verified = if claims.is_empty() {
         VerifiedClaims::default()
     } else {
         state
@@ -6139,8 +6169,21 @@ async fn verify_claims_and_enrich(
             .verify_source_claims(&resolved_key.org_id, claims)
             .await
     };
+    // Claims past the cap get no store lookup (it bounds the query), but one the
+    // cache knows as paused is still dropped, so the cap is no way around a pause.
+    if !overflow.is_empty() {
+        let paused = state
+            .resolver
+            .cached_paused_claims(&resolved_key.org_id, overflow)
+            .await;
+        verified.paused.extend(paused);
+    }
+    let before = (!verified.paused.is_empty()).then(|| decoded.encoded_len());
     let dropped = drop_paused_resources(decoded, &verified.paused);
     let all_paused = dropped && decoded.resource_count() == 0;
+    let retained = before
+        .filter(|_| dropped)
+        .map(|before| (before, decoded.encoded_len()));
     if dropped {
         metrics::source_paused_drop(&resolved_key.org_id, decoded.signal().path());
         if all_paused {
@@ -6152,6 +6195,7 @@ async fn verify_claims_and_enrich(
     ClaimOutcome {
         kept_claim: !verified.active.is_empty() || dropped,
         all_paused,
+        retained,
     }
 }
 
@@ -6322,6 +6366,35 @@ fn claimed_source_ids(decoded: &DecodedPayload, resolved_key: &ResolvedIngestKey
     if !resolved_key.accepts_source_claims() {
         return Vec::new();
     }
+    let mut claims: Vec<String> = Vec::new();
+    for claim in sized_source_claims(decoded) {
+        if !claims.iter().any(|seen| seen == claim) {
+            claims.push(claim.to_owned());
+            // Claims past the cap are never looked up, so they stay unverified.
+            if claims.len() == MAX_SOURCE_CLAIMS {
+                break;
+            }
+        }
+    }
+    claims
+}
+
+/// Distinct claims past the `MAX_SOURCE_CLAIMS` cap, i.e. not in `looked_up`.
+/// Empty unless the cap was reached.
+fn overflow_source_claims(decoded: &DecodedPayload, looked_up: &[String]) -> Vec<String> {
+    if looked_up.len() < MAX_SOURCE_CLAIMS {
+        return Vec::new();
+    }
+    let mut seen = std::collections::HashSet::new();
+    sized_source_claims(decoded)
+        .filter(|claim| !looked_up.iter().any(|known| known == claim) && seen.insert(*claim))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Each resource's `maple_source_id`, skipping any longer than a valid id:
+/// those are never decoded or cached, so they stay unverified.
+fn sized_source_claims(decoded: &DecodedPayload) -> impl Iterator<Item = &str> {
     let resources: Vec<Option<&Resource>> = match decoded {
         DecodedPayload::Traces(request) => request
             .resource_spans
@@ -6339,23 +6412,11 @@ fn claimed_source_ids(decoded: &DecodedPayload, resolved_key: &ResolvedIngestKey
             .map(|r| r.resource.as_ref())
             .collect(),
     };
-    let mut claims: Vec<String> = Vec::new();
-    for claim in resources
+    resources
         .into_iter()
         .flatten()
         .filter_map(|resource| source_id_claim(&resource.attributes))
-        // Longer than any valid id: never decoded or cached, so it stays unverified.
         .filter(|claim| claim.len() <= MAX_PUBLIC_ID_LEN)
-    {
-        if !claims.iter().any(|seen| seen == claim) {
-            claims.push(claim.to_owned());
-            // Claims past the cap are never looked up, so they stay unverified.
-            if claims.len() == MAX_SOURCE_CLAIMS {
-                break;
-            }
-        }
-    }
-    claims
 }
 
 fn enrich_resource_attributes(
@@ -6833,6 +6894,22 @@ impl IngestKeyResolver {
                 .await;
         }
         verified
+    }
+
+    /// The `claims` the cache already knows as paused pull sources of the org. No
+    /// store lookup, so claims past the cap stay bounded yet cannot bypass a pause.
+    async fn cached_paused_claims(&self, org_id: &str, claims: Vec<String>) -> Vec<String> {
+        let now_ms = current_time_millis();
+        let mut paused = Vec::new();
+        for claim in claims {
+            let cache_key = (org_id.to_owned(), claim);
+            if let Some(SourceClaim::Claimable(pause)) = self.source_claims.get(&cache_key).await {
+                if pause.is_paused(now_ms) {
+                    paused.push(cache_key.1);
+                }
+            }
+        }
+        paused
     }
 
     /// Stamps `last_used_at` for the source whose data was accepted (token or
@@ -13829,6 +13906,102 @@ mod tests {
         .await
         .expect("default key traffic is accepted");
         assert!(recorded_key_uses(&store).await.is_empty());
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn paused_drops_meter_only_the_rest_and_the_claim_cap_is_no_bypass() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let queue_dir = unique_main_test_dir("paused-pull-metering");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_paused_pull_metering";
+        let org = "org_paused_meter";
+        let key = KeyRow {
+            org_id: org.to_owned(),
+            self_managed: false,
+            clickhouse_ready: false,
+        };
+        store.insert_private(raw_key, key);
+        store.insert_source_row(org, DEFAULT_SOURCE_UUID, true, None);
+        store.insert_source_row(org, INTEGRATION_SOURCE_UUID, false, Some(("railway", "p")));
+        store.pause_source(INTEGRATION_SOURCE_UUID, 1, None);
+        let others: Vec<String> = (0..MAX_SOURCE_CLAIMS)
+            .map(|_| uuid::Uuid::new_v4().to_string())
+            .collect();
+        for id in &others {
+            store.insert_source_row(org, id, false, Some(("railway", "o")));
+        }
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+        let paused = Some(public_id(INTEGRATION_SOURCE_UUID));
+        let send = |claims: Vec<Option<String>>| {
+            let mut request = test_log_request("metering");
+            let template = request.resource_logs[0].clone();
+            request.resource_logs = claims
+                .iter()
+                .map(|claim| {
+                    let mut resource_logs = template.clone();
+                    if let Some(claim) = claim {
+                        let resource = resource_logs.resource.as_mut().expect("resource");
+                        resource
+                            .attributes
+                            .push(string_attribute("maple_source_id", claim));
+                    }
+                    resource_logs
+                })
+                .collect();
+            let body = request.encode_to_vec();
+            let state = &state;
+            async move {
+                let len = body.len();
+                let (.., metered) = handle_signal_inner(
+                    state,
+                    &test_headers(raw_key),
+                    Bytes::from(body),
+                    Signal::Logs,
+                )
+                .await
+                .expect("default key traffic is accepted");
+                (len, metered)
+            }
+        };
+        async fn forwarded_resources(
+            rx: &mut tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+        ) -> usize {
+            let body = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+                .await
+                .expect("forwarded")
+                .expect("forward channel should stay open");
+            ExportLogsServiceRequest::decode(body)
+                .expect("protobuf")
+                .resource_logs
+                .len()
+        }
+
+        // Nothing dropped: metered exactly as received.
+        let (len, metered) = send(vec![None]).await;
+        assert_eq!(metered, len);
+        assert_eq!(forwarded_resources(&mut forward_rx).await, 1);
+        // Half dropped: only the retained share is metered.
+        let (len, metered) = send(vec![paused.clone(), None]).await;
+        assert!(metered > 0 && metered < len, "{metered} of {len}");
+        assert_eq!(forwarded_resources(&mut forward_rx).await, 1);
+
+        // The paused claim comes after the cap's worth of others: still dropped.
+        let mut claims: Vec<Option<String>> = others.iter().map(|id| Some(public_id(id))).collect();
+        claims.extend([paused, None]);
+        let (len, metered) = send(claims).await;
+        assert!(metered < len);
+        assert_eq!(
+            forwarded_resources(&mut forward_rx).await,
+            MAX_SOURCE_CLAIMS + 1
+        );
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
