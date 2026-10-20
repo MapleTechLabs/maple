@@ -155,7 +155,12 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				toolbar(h, model, counts),
 				panel(h, {}, [
 					isFailed
-						? errorState(h, { failure: toLoadFailure(SYNC_UNAVAILABLE), title: "Failed to load keys", className: "py-12" })
+						? errorState(h, {
+								failure: toLoadFailure(SYNC_UNAVAILABLE),
+								title: "Failed to load keys",
+								onRetry: Message.ClickedRetryLoad(),
+								className: "py-12",
+							})
 						: isLoading
 							? skeletonList(h, { rows: 3, rowClassName: "h-[52px]", gap: "2", className: "p-4" })
 							: counts.visible.length === 0

@@ -109,6 +109,11 @@ export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		UpdatedApiKeys: ({ rows }) => ({ model: { ...model, apiKeys: rows, isLoadFailed: false } }),
 		FailedLoadApiKeys: () => ({ model: { ...model, isLoadFailed: true } }),
+		// `retryOrgCollections`: a stopped shape syncs again only on fresh collections.
+		ClickedRetryLoad: () => ({
+			model: { ...model, isLoadFailed: false },
+			outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
+		}),
 		ClickedTypeFilter: ({ type }) => ({ model: { ...model, typeFilter: type } }),
 		GotStatusSelectMessage: ({ message: child }) => {
 			const step = Select.update(model.statusSelect, child)

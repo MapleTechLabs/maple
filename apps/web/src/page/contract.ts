@@ -76,6 +76,8 @@ export const PageOutMessage = defineMessageUnion({
 		followUpToast: Schema.optionalKey(
 			Schema.Struct({ type: ToastType, title: Schema.String, description: Schema.String }),
 		),
+		/** A confirmed checkout's URL cleanup: the root re-reads the app's customer too. */
+		refreshesCustomer: Schema.optionalKey(Schema.Boolean),
 	},
 	/** The org-global namespace pin (the shell's org menu owns it): set, or cleared with `None`. */
 	RequestedNamespacePin: { maybeNamespace: Schema.Option(Schema.String) },

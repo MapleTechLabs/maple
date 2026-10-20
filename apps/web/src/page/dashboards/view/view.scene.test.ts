@@ -111,6 +111,19 @@ describe("dashboard view", () => {
 		expect(slots.map(([, slot]) => slot.data._tag)).toEqual(["Refreshing"])
 	})
 
+	test("a tile whose query changed loads afresh instead of showing the old query's data", () => {
+		const revealed = pageUpdate(ready(), Message.RevealedWidget({ widgetId: "total-errors" })).model
+		const firstKey = Object.keys(revealed.requests)[0] ?? ""
+		const answered = pageUpdate(revealed, Message.CompletedFetchWidget({ key: firstKey, result: Result.succeed({ data: [] }) })).model
+		const changed = Schema.decodeUnknownSync(DashboardDocument)({
+			...Schema.encodeSync(DashboardDocument)(document),
+			widgets: [{ ...stat("total-errors", "totalErrors"), dataSource: { kind: "route", endpoint: "errors_by_type" } }],
+		})
+		const replanned = pageUpdate(answered, Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(changed) }))
+		expect(names(replanned.commands)).toContain(FetchWidget.name)
+		expect(Object.values(replanned.model.requests).map((slot) => slot.data._tag)).toEqual(["Loading"])
+	})
+
 	test("an auto-refresh keeps a stat's sparkline data on screen while both refresh", () => {
 		const sparkline = { enabled: true, dataSource: { kind: "route", endpoint: "errors_by_type" } }
 		const withSparkline = Schema.decodeUnknownSync(DashboardDocument)({

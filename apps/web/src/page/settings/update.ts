@@ -400,15 +400,19 @@ const liftKeys = (model: Model, current: KeysModel.Model, message: KeysMessage.M
 	}
 }
 
-/** `useCheckoutReturn` settled: drop `checkout=complete` from the URL without a history entry. */
-const clearCheckoutMarker = (model: Model) =>
+/**
+ * `useCheckoutReturn` settled: drop `checkout=complete` from the URL without a history entry. A
+ * confirmed plan also has the root re-read the app's customer (plan gate, quota banners).
+ */
+const clearCheckoutMarker = (model: Model, isConfirmed: boolean) =>
 	PageOutMessage.RequestedNavigation({
 		url: hrefOf(AppRoute.Settings({ search: withoutCheckoutReturn(model.search) })),
 		isReplace: true,
+		refreshesCustomer: isConfirmed,
 	})
 
 /** Lifts a Billing step: its commands, a stale customer read, and the cleared checkout marker. */
-const liftBilling = (model: Model, { step, isCustomerStale, isCheckoutSettled }: Billing.Step): Return => {
+const liftBilling = (model: Model, { step, isCustomerStale, checkout }: Billing.Step): Return => {
 	const next = putTab(model, { _tag: "Billing", model: step.model })
 	// `BILLING_CUSTOMER_KEY`: a cap save, the portal, a plan change or Retry read the customer again.
 	return {
@@ -419,9 +423,13 @@ const liftBilling = (model: Model, { step, isCustomerStale, isCheckoutSettled }:
 			...Command.mapMessages(step.commands ?? [], (child) => Message.GotBillingMessage({ message: child })),
 			...(isCustomerStale ? [FetchSettingsCustomer({ refresh: true })] : []),
 		],
-		outMessage: isCustomerStale
-			? withCustomerRefresh(step.outMessage)
-			: (step.outMessage ?? (isCheckoutSettled === true ? clearCheckoutMarker(model) : undefined)),
+		// A checkout poll re-reads only this page's copy; the app's waits for the confirmed plan.
+		outMessage:
+			checkout === "Confirmed" || checkout === "TimedOut"
+				? (step.outMessage ?? clearCheckoutMarker(model, checkout === "Confirmed"))
+				: isCustomerStale && checkout === undefined
+					? withCustomerRefresh(step.outMessage)
+					: step.outMessage,
 	}
 }
 
@@ -543,7 +551,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		GotKeysMessage: ({ message: inner }) => {
 			const tab = tabNamed(model, "Keys")
-			return tab === undefined ? { model } : liftKeys(model, tab.model, inner)
+			if (tab === undefined) return { model }
+			// A retry re-arms the page's load watcher over the reconnected collections.
+			const next = inner._tag === "ClickedRetryLoad" ? { ...model, isApiKeysLoadFailed: false } : model
+			return liftKeys(next, tab.model, inner)
 		},
 		UpdatedApiKeys: ({ orgId, rows }) => {
 			if (orgId !== context.orgId) return { model }

@@ -92,15 +92,20 @@ type PlanState = Readonly<{
 const requestKeyOf = (gate: WidgetGate | null | undefined): string | null =>
 	gate?._tag === "Request" ? gate.request.key : null
 
+/** The previous key whose data may stand in for a new one: only when just the window moved. */
+const carriedKeyOf = (gate: Extract<WidgetGate, { _tag: "Request" }>, previous: WidgetGate | null | undefined) =>
+	previous?._tag === "Request" && previous.request.shape === gate.request.shape ? previous.request.key : null
+
 /**
  * Asks for a gate's request unless this pass already did, or the key is held and fresh. A new key
- * starts from the tile's previous key, so its data shows as refreshing rather than a skeleton.
+ * for the same query over a new window starts from the tile's previous key, so its data shows as
+ * refreshing; a different query starts loading.
  */
 const ask = (state: PlanState, gate: WidgetGate | null, previous: WidgetGate | null | undefined, mode: Keyed.RequestMode): PlanState => {
 	if (gate === null || gate._tag !== "Request") return state
 	const { key, endpoint, params } = gate.request
 	if (state.asked.includes(key)) return state
-	const previousKey = requestKeyOf(previous)
+	const previousKey = carriedKeyOf(gate, previous)
 	const seed = state.requests[key] ?? (previousKey === null ? undefined : state.requests[previousKey]) ?? Keyed.idle()
 	return Option.match(Keyed.request(seed, key, mode), {
 		onNone: () => state,

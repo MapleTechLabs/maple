@@ -357,14 +357,21 @@ export const revisit = (model: Model): Return => {
 	// A later page still in flight would append to a refreshed page 1, so that list waits for it.
 	const isPaging = <A, E>(data: AsyncData.AsyncData<{ readonly isFetchingMore: boolean } & A, E>) =>
 		Option.exists(AsyncData.getData(data), (list) => list.isFetchingMore)
+	// Each page-1 read takes a new generation, so an older read can never land over a newer one.
 	const members = isPaging(model.members)
 		? { data: model.members, commands: [] }
-		: revisitData(model.members, () => FetchMembers({ page: 1, generation: model.membersGeneration }))
+		: revisitData(model.members, () => FetchMembers({ page: 1, generation: model.membersGeneration + 1 }))
 	const invitations = isPaging(model.invitations)
 		? { data: model.invitations, commands: [] }
-		: revisitData(model.invitations, () => FetchInvitations({ page: 1, generation: model.invitationsGeneration }))
+		: revisitData(model.invitations, () => FetchInvitations({ page: 1, generation: model.invitationsGeneration + 1 }))
 	return {
-		model: { ...model, members: members.data, invitations: invitations.data },
+		model: {
+			...model,
+			members: members.data,
+			invitations: invitations.data,
+			membersGeneration: model.membersGeneration + (members.commands.length === 0 ? 0 : 1),
+			invitationsGeneration: model.invitationsGeneration + (invitations.commands.length === 0 ? 0 : 1),
+		},
 		// The organization may have been renamed on General meanwhile.
 		commands: [
 			...members.commands,

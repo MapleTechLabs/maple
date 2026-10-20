@@ -4,7 +4,7 @@ import { expect as expectView, given, scene, selector, withViewInputs } from "fo
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import { Message, type Model } from "./model"
-import { init, update } from "./update"
+import { init, revisit, update } from "./update"
 import { view } from "./view"
 
 const member = (id: string) => ({ id, name: id, identifier: `${id}@acme.test`, imageUrl: "", role: "org:member", createdAtMs: 0, isCurrentUser: false })
@@ -45,6 +45,29 @@ describe("members paging under a mutation", () => {
 		const data = AsyncData.getOrElse(stale.members, () => null)
 		expect(data?.rows).toHaveLength(10)
 		expect(data?.isFetchingMore).toBe(false)
+	})
+})
+
+describe("members revisits after a failure", () => {
+	test("two quick revisits read page 1 twice and only the newer answer lands", () => {
+		const failure = Result.fail(toLoadFailure(new Error("down")))
+		const failed = update(init(true).model, Message.CompletedFetchMembers({ page: 1, generation: 0, result: failure })).model
+		const generationOf = (step: ReturnType<typeof revisit>) =>
+			step.commands?.find((command) => command.name === "FetchClerkMemberships")?.args?.generation
+		const first = revisit(failed)
+		const second = revisit(first.model)
+		expect(generationOf(second)).not.toBe(generationOf(first))
+		const newer = { rows: [member("user_new")], total: 1 }
+		const landed = update(
+			second.model,
+			Message.CompletedFetchMembers({ page: 1, generation: second.model.membersGeneration, result: Result.succeed(newer) }),
+		).model
+		const older = { rows: [member("user_old")], total: 1 }
+		const late = update(
+			landed,
+			Message.CompletedFetchMembers({ page: 1, generation: first.model.membersGeneration, result: Result.succeed(older) }),
+		).model
+		expect(AsyncData.getOrElse(late.members, () => null)?.rows.map((row) => row.id)).toEqual(["user_new"])
 	})
 })
 

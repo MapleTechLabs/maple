@@ -305,8 +305,11 @@ const writePage =
 				...Option.match(transition.outMessage, {
 					onNone: () => [],
 					onSome: PageOutMessage.match({
-						RequestedNavigation: ({ url, isReplace }) => [
+						RequestedNavigation: ({ url, isReplace, refreshesCustomer }) => [
 							navigateTo(model, url, isReplace),
+							...(refreshesCustomer === true && model.customer.orgId !== null
+								? [LoadCustomer({ orgId: model.customer.orgId, refresh: true })]
+								: []),
 						],
 						RequestedNamespacePin: () => [],
 						RequestedSidebarToggle: () => [],
