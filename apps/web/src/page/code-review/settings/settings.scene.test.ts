@@ -8,7 +8,7 @@ import { emptyRetained } from "../kit/retained"
 import { context, githubStatusOf, names, NOW } from "../kit/test-fixtures"
 import * as RulesForm from "../rules-form/form"
 import { Message, type Model } from "./model"
-import { init, update } from "./update"
+import { init, retainedOf, update } from "./update"
 import { view as pageView } from "./view"
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -174,6 +174,19 @@ describe("code review settings, entered from another tab", () => {
 
 	test("the handed-over status pins the reviewed repositories on entry", () => {
 		expect(carried().model.repoList.pinned).toEqual([WEB])
+	})
+
+	test("a status re-read after a switch is still handed over to the next entry", () => {
+		const saved = pageUpdate(
+			loaded().model,
+			Message.CompletedSetPrReview({ repositoryId: INFRA, fullName: "acme-shop/infra", isEnabled: true, result: Result.void }),
+		).model
+		const reread = pageUpdate(
+			saved,
+			Message.CompletedFetchStatus({ key: saved.githubStatus.key ?? "", result: Result.succeed(status) }),
+		).model
+		const entered = init({}, context, { retained: { ...emptyRetained, ...retainedOf(reread, NOW) }, nowMs: NOW })
+		expect(entered.model.repoList.pinned).toEqual([WEB])
 	})
 })
 

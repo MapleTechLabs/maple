@@ -66,7 +66,10 @@ export const KIND_DOT = {
 export const HistoryState = Schema.Struct({
 	isOpen: Schema.Boolean,
 	versions: VersionsData.schema,
-	/** Bumped per version-list read, so an older list landing last is dropped. */
+	/**
+	 * Bumped per version-list read, so an older list landing last is dropped. A counter, not a
+	 * `Keyed` slot: the read has no org-scoped request key and reopening resets to `Loading`.
+	 */
 	versionsGeneration: Schema.Number,
 	previewed: Schema.NullOr(VersionRow),
 	snapshot: SnapshotData.schema,

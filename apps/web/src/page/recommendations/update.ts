@@ -25,21 +25,15 @@ type RecommendationRoute = Extract<AppRoute, { readonly _tag: "Recommendation" }
 
 const LIST_QUERY = { query: { limit: 100 } }
 
-/** `Supersede`: the re-read after a write, which a read already in flight cannot swallow. */
-type LoadMode = Keyed.RequestMode | "Supersede"
-
-const requestIn = <A, E>(slot: Keyed.Keyed<A, E>, key: string, mode: LoadMode): Option.Option<Keyed.Keyed<A, E>> =>
-	mode === "Supersede" ? Option.some(Keyed.supersede(slot, key)) : Keyed.request(slot, key, mode)
-
 /** Requests the list (and the mappings when asked) under `mode`. */
-const load = (model: Model, context: PageContext, mode: LoadMode, withMappings: boolean) => {
+const load = (model: Model, context: PageContext, mode: Keyed.ReadMode, withMappings: boolean) => {
 	const listKey = requestKey(context.orgId, "instrumentationRecommendations.list", LIST_QUERY)
 	const mappingsKey = requestKey(context.orgId, "attributeMappings.list", LIST_QUERY)
-	const list = requestIn(model.list, listKey, mode)
-	const mappings = withMappings ? requestIn(model.mappings, mappingsKey, mode) : Option.none()
+	const list = Keyed.requestFor(model.list, listKey, mode)
+	const mappings = withMappings ? Keyed.requestFor(model.mappings, mappingsKey, mode) : Option.none()
 	const commands: Commands = [
-		...Option.toArray(Option.map(list, (slot) => FetchRecommendations({ key: slot.key ?? listKey }))),
-		...Option.toArray(Option.map(mappings, (slot) => FetchAttributeMappings({ key: slot.key ?? mappingsKey }))),
+		...Option.toArray(Option.map(list, (slot) => FetchRecommendations({ key: slot.key }))),
+		...Option.toArray(Option.map(mappings, (slot) => FetchAttributeMappings({ key: slot.key }))),
 	]
 	return {
 		model: {

@@ -36,6 +36,8 @@ export const Model = Schema.Struct({
 	services: Schema.Array(ServiceRow),
 	/** `useEffectiveTimeRange(.., "1h")`: resolved on open and again on each 15 s poll. */
 	window: Schema.NullOr(TimeWindow),
+	/** An overview read is out: a poll waits for it, so a slow answer still matches `window`. */
+	isOverviewInFlight: Schema.Boolean,
 	copies: Schema.Struct({
 		endpoint: CopyButton.Model,
 		publicKey: CopyButton.Model,
@@ -63,6 +65,7 @@ export const init = (): Model => ({
 	keys: { _tag: "Loading" },
 	services: [],
 	window: null,
+	isOverviewInFlight: false,
 	copies: initCopies(),
 	isPublicKeyVisible: false,
 	isPrivateKeyVisible: false,
@@ -74,7 +77,7 @@ export const Message = defineMessageUnion({
 	FailedLoadKeys: { orgId: Schema.String },
 	ResolvedWindow: { orgId: Schema.String, window: TimeWindow },
 	SucceededLoadOverview: { orgId: Schema.String, window: TimeWindow, services: Schema.Array(ServiceRow) },
-	FailedLoadOverview: { orgId: Schema.String, window: TimeWindow },
+	FailedLoadOverview: {},
 	/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the panel is open and the tab shown. */
 	TickedPoll: {},
 	GotCopyMessage: { field: CopyField, message: CopyButton.Message },
@@ -127,7 +130,7 @@ export const FetchOverview = Command.define("FetchConnectOverview", {
 					})),
 				}),
 			),
-			Effect.orElseSucceed(() => Message.FailedLoadOverview({ orgId, window })),
+			Effect.orElseSucceed(() => Message.FailedLoadOverview()),
 		),
 })
 
@@ -158,7 +161,7 @@ const popoverStep = (model: Model, message: Popover.Message, context: Context): 
 	// The retained keys answer a reopen in the same org; a failure or another org reads again.
 	const keys: Keys = isSameOrg ? model.keys : { _tag: "Loading" }
 	return {
-		model: { ...model, popover: next.model, orgId, keys, services: [], window: null },
+		model: { ...model, popover: next.model, orgId, keys, services: [], window: null, isOverviewInFlight: false },
 		commands: [
 			...commands,
 			...(keys._tag === "Ready" ? [] : [FetchKeys({ orgId })]),
@@ -196,18 +199,20 @@ export const update = (model: Model, message: Message, context: Context): Update
 		ResolvedWindow: ({ orgId, window }) =>
 			model.orgId === orgId && model.popover.isOpen
 				? {
-						model: { ...model, window },
+						model: { ...model, window, isOverviewInFlight: true },
 						commands: [
 							FetchOverview({ orgId, window, pinnedNamespace: context.pinnedNamespace }),
 						],
 					}
 				: { model },
 		SucceededLoadOverview: ({ orgId, window, services }) =>
-			isCurrent(model, orgId, window) ? { model: { ...model, services } } : { model },
+			isCurrent(model, orgId, window)
+				? { model: { ...model, services, isOverviewInFlight: false } }
+				: { model },
 		// One failed poll keeps the services already found, so the pill does not un-detect them.
-		FailedLoadOverview: () => ({ model }),
+		FailedLoadOverview: () => ({ model: { ...model, isOverviewInFlight: false } }),
 		TickedPoll: () =>
-			model.popover.isOpen && model.window !== null && model.orgId !== null
+			model.popover.isOpen && model.window !== null && model.orgId !== null && !model.isOverviewInFlight
 				? { model, commands: [ResolveWindow({ orgId: model.orgId })] }
 				: { model },
 		GotCopyMessage: ({ field, message: child }) => copyStep(model, field, child),

@@ -41,7 +41,7 @@ const toast = (model: Model, type: "success" | "error", title: string, descripti
 })
 
 const refreshTargets = (model: Model, context: PageContext): Return =>
-	requestStatus(model, context, "scrapeTargets", "Refresh")
+	requestStatus(model, context, "scrapeTargets", "Supersede")
 
 /** The prometheus targets (`sourceFilter`), as the list read answered them. */
 export const prometheusTargets = (model: Model): ReadonlyArray<V2ScrapeTarget> =>

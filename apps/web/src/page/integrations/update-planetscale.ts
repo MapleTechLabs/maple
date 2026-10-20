@@ -39,8 +39,8 @@ export const planetscaleStatusOf = (model: Model) =>
 /** A write's `planetscaleIntegration` `reactivityKeys` (the target list carries no key). */
 const refreshAfterWrite = (model: Model, context: PageContext): Return =>
 	chain(model, [
-		(next) => requestStatus(next, context, "planetscale", "Refresh"),
-		(next) => requestStatus(next, context, "planetscaleDatabases", "Refresh"),
+		(next) => requestStatus(next, context, "planetscale", "Supersede"),
+		(next) => requestStatus(next, context, "planetscaleDatabases", "Supersede"),
 	])
 
 export const requestOrganizations = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {

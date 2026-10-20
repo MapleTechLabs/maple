@@ -159,11 +159,17 @@ const rankingStep =
 		)
 	}
 
+/** The ranking's filters without its window: a new window alone keeps the ranked rows usable. */
+const rankingFiltersOf = (search: Model["search"]): string =>
+	JSON.stringify([search.service ? search.service : null, search.env ? search.env : null])
+
 /** The ranked hashes the list waits for: `Some(null)` when not ranking, `None` until ready. */
 const rankedHashes = (model: Model): Option.Option<ReadonlyArray<string> | null> => {
 	if (sortOf(model.search) !== "volume") return Option.some(null)
-	// Retained rows answer the previous filters' key: wait for the current key's ranking.
-	if (model.ranking.retained === true) return Option.none()
+	// A ranking retained from other filters ranks the wrong issues: wait for the current one.
+	if (model.ranking.retained === true && model.rankedFilters !== rankingFiltersOf(model.search)) {
+		return Option.none()
+	}
 	return AsyncData.getData(model.ranking.data)
 }
 
@@ -340,6 +346,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		environments: Keyed.idle(),
 		isFilterRailMounted: false,
 		ranking: Keyed.idle(),
+		rankedFilters: null,
 		listKey: null,
 		pages: [],
 		volume: Keyed.idle(),
@@ -512,7 +519,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: settled(model, "environments", Keyed.accept(model.environments, key, result)),
 		}),
 		CompletedFetchRanking: ({ key, result }) =>
-			follow({ ...model, ranking: Keyed.accept(model.ranking, key, result) }, context),
+			follow(
+				{
+					...model,
+					ranking: Keyed.accept(model.ranking, key, result),
+					rankedFilters: key === model.ranking.key ? rankingFiltersOf(model.search) : model.rankedFilters,
+				},
+				context,
+			),
 		CompletedFetchPage: ({ key, result }) =>
 			follow(
 				{

@@ -111,32 +111,24 @@ export const currentModel = (settings: PrReviewOrgSettings) =>
 		? settings.model
 		: DEFAULT_MODEL
 
-/** `Supersede`: the re-read after a write, which a read already in flight cannot swallow. */
-type ReadMode = Keyed.RequestMode | "Supersede"
-
 /** Reads `slot` under `key` in `mode`; `Some` is the slot and its fetch. */
 const read = <A>(
 	slot: Keyed.Keyed<A, LoadFailure>,
 	key: string,
-	mode: ReadMode,
+	mode: Keyed.ReadMode,
 	fetch: (key: string) => Command.Command<Message, never, Resources>,
-) => {
-	if (mode === "Supersede") {
-		const next = Keyed.supersede(slot, key)
-		return { slot: next, commands: [fetch(next.key ?? key)] }
-	}
-	return Option.match(Keyed.request(slot, key, mode), {
+) =>
+	Option.match(Keyed.requestFor(slot, key, mode), {
 		onNone: () => ({ slot, commands: [] }),
-		onSome: (next) => ({ slot: next, commands: [fetch(key)] }),
+		onSome: (next) => ({ slot: next, commands: [fetch(next.key)] }),
 	})
-}
 
-const readSettings = (model: Model, context: PageContext, mode: ReadMode): Return => {
+const readSettings = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
 	const step = read(model.settings, settingsKey(context), mode, (key) => FetchSettings({ key }))
 	return { model: { ...model, settings: step.slot }, commands: step.commands }
 }
 
-const readStatus = (model: Model, context: PageContext, mode: ReadMode): Return => {
+const readStatus = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
 	const step = read(model.githubStatus, statusKey(context), mode, (key) => FetchStatus({ key }))
 	return { model: { ...model, githubStatus: step.slot }, commands: step.commands }
 }
@@ -145,7 +137,7 @@ const readConfig = (
 	model: Model,
 	context: PageContext,
 	repositoryId: VcsRepositoryId,
-	mode: ReadMode,
+	mode: Keyed.ReadMode,
 ): Return => {
 	const step = read(model.repoConfig, configKey(context, repositoryId), mode, (key) =>
 		FetchRepoConfig({ key, repositoryId }),
@@ -499,10 +491,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	})
 
 /** What this tab hands the next one: the GitHub status, with no clock of its own to stamp it. */
-export const retainedOf = (model: Model, nowMs: number): Partial<Retained> =>
-	Option.match(AsyncData.getData(model.githubStatus.data), {
+export const retainedOf = (model: Model, nowMs: number): Partial<Retained> => {
+	const key = model.githubStatus.key
+	if (key === null) return {}
+	return Option.match(AsyncData.getData(model.githubStatus.data), {
 		onNone: () => ({}),
-		onSome: (status) => ({
-			githubStatus: { [model.githubStatus.key ?? ""]: { value: status, usedAtMs: nowMs } },
-		}),
+		// Stored under the plain key: a post-write re-read's key carries a generation.
+		onSome: (status) => ({ githubStatus: { [Keyed.baseKey(key)]: { value: status, usedAtMs: nowMs } } }),
 	})
+}

@@ -150,13 +150,13 @@ const liftDialog =
 const liftDisconnect = liftDialog("disconnectDialog", (message) => Message.GotDisconnectDialogMessage({ message }))
 const liftApply = liftDialog("applyDialog", (message) => Message.GotApplyDialogMessage({ message }))
 
-/** `onChanged`: the connection and the diff are read again. */
 /** One more apply-status read, numbered so its answer can be ordered against the others. */
 const fetchApplyStatus = (model: Model): Return => {
 	const sequence = model.applyStatusSent + 1
 	return { model: { ...model, applyStatusSent: sequence }, commands: [FetchApplyStatus({ sequence })] }
 }
 
+/** `onChanged`: the connection and the diff are read again. */
 const refreshConnection = (model: Model): Return => ({
 	model: { ...model, settings: refresh(model.settings), diff: refresh(model.diff) },
 	commands: [FetchSettings(), FetchDiff()],

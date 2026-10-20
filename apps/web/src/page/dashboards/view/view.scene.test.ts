@@ -111,6 +111,31 @@ describe("dashboard view", () => {
 		expect(slots.map(([, slot]) => slot.data._tag)).toEqual(["Refreshing"])
 	})
 
+	test("an auto-refresh keeps a stat's sparkline data on screen while both refresh", () => {
+		const sparkline = { enabled: true, dataSource: { kind: "route", endpoint: "errors_by_type" } }
+		const withSparkline = Schema.decodeUnknownSync(DashboardDocument)({
+			...Schema.encodeSync(DashboardDocument)(document),
+			widgets: [{ ...stat("total-errors", "totalErrors"), display: { title: "total-errors", sparkline } }],
+		})
+		const entered = pageUpdate(ready(), Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(withSparkline) })).model
+		const revealed = pageUpdate(entered, Message.RevealedWidget({ widgetId: "total-errors" })).model
+		const statKey = Object.keys(revealed.requests)[0] ?? ""
+		const answer = (model: Model, key: string) =>
+			pageUpdate(model, Message.CompletedFetchWidget({ key, result: Result.succeed({ data: [{ totalErrors: 5 }] }) }))
+		const withStat = answer(revealed, statKey)
+		expect(names(withStat.commands)).toEqual([FetchWidget.name])
+		const sparkKey = Object.keys(withStat.model.requests).find((key) => key !== statKey) ?? ""
+		const settled = answer(withStat.model, sparkKey).model
+		const ticked = pageUpdate(settled, Message.TickedAutoRefresh()).model
+		const refreshed = pageUpdate(ticked, Message.CompletedReadClock({ nowMs: NOW + 60_000 }))
+		expect(names(refreshed.commands)).toEqual([FetchWidget.name, FetchWidget.name])
+		const gate = refreshed.model.widgets["total-errors"]?.sparkGate
+		const nextSparkKey = gate?._tag === "Request" ? gate.request.key : ""
+		expect(nextSparkKey).not.toBe(sparkKey)
+		expect(refreshed.model.requests[nextSparkKey]?.data._tag).toBe("Refreshing")
+		expect(Object.keys(refreshed.model.requests)).toHaveLength(2)
+	})
+
 	test("picking a preset re-plans the tiles and saves the range to the board", () => {
 		const revealed = pageUpdate(ready(), Message.RevealedWidget({ widgetId: "total-errors" })).model
 		const picked = pageUpdate(

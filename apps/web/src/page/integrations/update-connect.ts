@@ -1,10 +1,11 @@
 import { Schema } from "effect"
+import type * as Keyed from "../../data/keyed"
 import { PageOutMessage, type PageContext, type PageReturn } from "../contract"
 import { integrationOfSearch } from "./catalog"
 import { ConnectProvider, type ConnectModel, PROVIDERS } from "./connect"
 import type { Message } from "./message"
 import type { Model, Statuses } from "./model"
-import { chain, requestStatus, type StatusMode } from "./update-status"
+import { chain, requestStatus } from "./update-status"
 import { TrackConnected } from "./command"
 import * as Cloudflare from "./update-cloudflare"
 
@@ -36,7 +37,7 @@ export const refreshProvider = (
 	model: Model,
 	context: PageContext,
 	provider: ConnectProvider,
-	mode: StatusMode = "Refresh",
+	mode: Keyed.ReadMode = "Supersede",
 ): Return => requestStatus(model, context, STATUS_OF[provider], mode)
 
 export const clickedConnect = (model: Model): Return => {
@@ -63,7 +64,7 @@ export const succeededStart = (model: Model, context: PageContext, attempt: numb
 				// PlanetScale's start invalidates every `planetscaleIntegration` read, the inventory too.
 				(next) =>
 					active.provider === "planetscale"
-						? requestStatus(next, context, "planetscaleDatabases", "Refresh")
+						? requestStatus(next, context, "planetscaleDatabases", "Supersede")
 						: { model: next },
 			])
 		: { model }
@@ -89,7 +90,7 @@ export const blockedPopup = (model: Model, context: PageContext, attempt: number
 export const polled = (model: Model, context: PageContext, attempt: number): Return => {
 	const active = model.connect.active
 	return active !== null && active.attempt === attempt
-		? refreshProvider(model, context, active.provider, "Poll")
+		? refreshProvider(model, context, active.provider, "Refresh")
 		: { model }
 }
 

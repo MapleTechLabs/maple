@@ -425,11 +425,13 @@ const liftBilling = (model: Model, { step, isCustomerStale, isCheckoutSettled }:
 	}
 }
 
-/** A toasted billing change (cap save, plan attach) is the app's too: the root re-reads its customer. */
-const withCustomerRefresh = (out: PageOutMessage | undefined): PageOutMessage | undefined =>
-	out !== undefined && out._tag === "RequestedToast"
-		? PageOutMessage.RequestedCustomerRefresh({ toast: { type: out.type, title: out.title, description: out.description } })
-		: out
+/** A stale customer is the app's too: the root re-reads it and shows the step's toast, if any. */
+const withCustomerRefresh = (out: PageOutMessage | undefined): PageOutMessage =>
+	PageOutMessage.RequestedCustomerRefresh(
+		out !== undefined && out._tag === "RequestedToast"
+			? { toast: { type: out.type, title: out.title, description: out.description } }
+			: {},
+	)
 
 /** The Billing tab waiting on a checkout return reads every customer answer for the plan. */
 const settleCheckout = ({ model, commands, outMessage }: Return): Return => {

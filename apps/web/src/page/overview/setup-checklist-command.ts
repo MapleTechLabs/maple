@@ -47,7 +47,7 @@ export const FetchSetupOverview = Command.define("FetchSetupChecklistOverview", 
 					})),
 				}),
 			),
-			Effect.orElseSucceed(() => Message.FailedLoadOverview({ window })),
+			Effect.orElseSucceed(() => Message.FailedLoadOverview()),
 		),
 })
 

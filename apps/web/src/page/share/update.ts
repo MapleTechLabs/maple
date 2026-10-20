@@ -99,8 +99,9 @@ const flush = (model: Model): Return => {
 				),
 			},
 			queuedBatches: [...liveBatches(model.queuedBatches, requested), ...rest],
+			sentBatchId: first === undefined ? model.sentBatchId : model.sentBatchId + 1,
 		},
-		commands: first === undefined ? [] : [FetchBatch({ token: model.token, ...first })],
+		commands: first === undefined ? [] : [FetchBatch({ token: model.token, batchId: model.sentBatchId + 1, ...first })],
 	}
 }
 
@@ -128,6 +129,7 @@ export const init = (route: Route): Return => ({
 		requested: {},
 		isFlushScheduled: false,
 		queuedBatches: [],
+		sentBatchId: 0,
 		states: {},
 		gridWidth: 0,
 		charts: {},
@@ -174,8 +176,10 @@ export const update = (model: Model, message: Message): Return =>
 		},
 		MeasuredGrid: ({ width }) => ({ model: { ...model, gridWidth: width } }),
 		CompletedFlushFrame: () => flush({ ...model, isFlushScheduled: false }),
-		CompletedFetchBatch: ({ keys, states, variables }) => {
-			const [next, ...rest] = liveBatches(model.queuedBatches, model.requested)
+		CompletedFetchBatch: ({ batchId, keys, states, variables }) => {
+			// Only the batch sent last advances the queue, so a reload's batches never overlap.
+			const isCurrent = batchId === model.sentBatchId
+			const [next, ...rest] = isCurrent ? liveBatches(model.queuedBatches, model.requested) : []
 			// A widget the answer left out settles as a failure instead of loading forever.
 			const missing: WidgetState = { _tag: "Error", message: DATA_UNAVAILABLE_MESSAGE, kind: "runtime" }
 			const settled = { ...Object.fromEntries(Object.keys(keys).map((widgetId) => [widgetId, missing])), ...states }
@@ -183,7 +187,8 @@ export const update = (model: Model, message: Message): Return =>
 			return {
 			model: {
 				...model,
-				queuedBatches: rest,
+				queuedBatches: isCurrent ? rest : model.queuedBatches,
+				sentBatchId: next === undefined ? model.sentBatchId : model.sentBatchId + 1,
 				// A batch whose widgets all moved on is skipped whole, its variables included.
 				variables: isLive && variables !== undefined ? variables : model.variables,
 				states: {
@@ -193,7 +198,7 @@ export const update = (model: Model, message: Message): Return =>
 					),
 				},
 			},
-			commands: next === undefined ? [] : [FetchBatch({ token: model.token, ...next })],
+			commands: next === undefined ? [] : [FetchBatch({ token: model.token, batchId: model.sentBatchId + 1, ...next })],
 			}
 		},
 		ClickedReload: () => ({ model, commands: [ResolveReloadClock()] }),

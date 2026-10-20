@@ -62,7 +62,7 @@ const outcome = (
 		? chain(model, [
 				(next) =>
 					titles.success === undefined ? { model: next } : toast(next, "success", titles.success),
-				(next) => requestStatus(next, context, "chat", "Refresh"),
+				(next) => requestStatus(next, context, "chat", "Supersede"),
 			])
 		: toast(model, "error", titles.error, failure.message)
 
@@ -75,7 +75,7 @@ export const clickedInstall = (model: Model): Return => {
 /** Success keeps the card busy: the browser is already leaving for the platform. */
 export const completedInstall = (model: Model, context: PageContext, failure: LoadFailure | null): Return =>
 	failure === null
-		? requestStatus(model, context, "chat", "Refresh")
+		? requestStatus(model, context, "chat", "Supersede")
 		: outcome(withCard(model, { busy: null }), context, failure, {
 				error: `Failed to start the ${platformOf(model)} install`,
 			})
@@ -102,7 +102,7 @@ export const completedIdentity = (
 ): Return =>
 	kind === "link"
 		? failure === null
-			? requestStatus(model, context, "chat", "Refresh")
+			? requestStatus(model, context, "chat", "Supersede")
 			: outcome(withCard(model, { identityBusy: false }), context, failure, {
 					error: "Failed to start the account link",
 				})

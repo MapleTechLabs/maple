@@ -181,6 +181,21 @@ describe("errors hub", () => {
 		expect(reranked.model.listKey).toContain('"fingerprint_hash":"3"')
 	})
 
+	test("a Reload under the volume sort keeps the ranked rows on screen while the ranking re-reads", () => {
+		const model = windowed({ sort: "volume" })
+		const ranked = pageUpdate(
+			model,
+			Message.CompletedFetchRanking({ key: model.ranking.key ?? "", result: Result.succeed(["1", "2"]) }),
+		).model
+		const listed = withPage(ranked, [issue()])
+		expect(listed.pages).toHaveLength(1)
+		const later = { startTime: "2026-09-30 12:05:00", endTime: "2026-10-01 12:05:00" }
+		const reloaded = pageUpdate(listed, Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Refresh" }))
+		expect(names(reloaded.commands)).toContain("FetchErrorsRanking")
+		expect(reloaded.model.listKey).toBe(listed.listKey)
+		expect(reloaded.model.pages).toEqual(listed.pages)
+	})
+
 	test("rows render as links to the issue, newest first", () => {
 		scene(
 			{ update: pageUpdate, view },

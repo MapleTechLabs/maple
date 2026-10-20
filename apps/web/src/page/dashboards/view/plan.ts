@@ -123,7 +123,8 @@ const referencedRequests = (state: PlanState): Model["requests"] => {
 
 /**
  * `StatSparklineLoader` mounts inside the stat's ready frame, so its series is asked for only once
- * the stat itself has data, at the series' own default resolution.
+ * the stat itself has data, at the series' own default resolution. While the stat is loading again
+ * the previous series gate is kept, so its data survives pruning until replaced or disabled.
  */
 const sparklineGate = (
 	context: PageContext,
@@ -131,12 +132,15 @@ const sparklineGate = (
 	window: ReturnType<typeof windowOf>,
 	requests: Model["requests"],
 	gate: WidgetGate,
+	previous: WidgetGate | null | undefined,
 	variables: ReturnType<typeof variablesOf>,
 ): WidgetGate | null => {
 	const sparkline = widget.display.sparkline
 	if (widget.visualization !== "stat" || sparkline?.enabled !== true || sparkline.dataSource === undefined)
 		return null
-	if (dataStateOf(requests, widget, gate)._tag !== "Ready") return null
+	const state = dataStateOf(requests, widget, gate)._tag
+	if (state === "Loading") return previous ?? null
+	if (state !== "Ready") return null
 	return planWidget({
 		orgId: context.orgId,
 		dataSource: sparkline.dataSource,
@@ -180,9 +184,12 @@ export const replan = (
 			variables,
 			isNarrowed: slot.isNarrowed === true,
 		})
-		const sparkGate = sparklineGate(context, widget, window, state.requests, gate, variables)
-		const widgets = { ...state.widgets, [widget.id]: { ...slot, gate, sparkGate } }
-		return ask(ask({ ...state, widgets }, gate, slot.gate, mode), sparkGate, slot.sparkGate, mode)
+		// The stat is asked for first, so its refreshing data gates the sparkline on the new key.
+		const asked = ask(state, gate, slot.gate, mode)
+		const sparkGate = sparklineGate(context, widget, window, asked.requests, gate, slot.sparkGate, variables)
+		const kept = sparkGate !== null && sparkGate === slot.sparkGate
+		const widgets = { ...asked.widgets, [widget.id]: { ...slot, gate, sparkGate } }
+		return kept ? { ...asked, widgets } : ask({ ...asked, widgets }, sparkGate, slot.sparkGate, mode)
 	}, initial)
 	return {
 		model: { ...withOptions, widgets: planned.widgets, requests: referencedRequests(planned) },

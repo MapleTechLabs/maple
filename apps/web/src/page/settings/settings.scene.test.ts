@@ -193,4 +193,11 @@ describe("settings page", () => {
 			PageOutMessage.RequestedCustomerRefresh({ toast: { type: "success", title: "Logs cap saved", description: "" } }),
 		)
 	})
+
+	test("a customer re-read without a toast still re-reads the app's customer", () => {
+		const billing: Model = { ...mcpLoaded(), tab: { _tag: "Billing", model: Billing.init(true, false).model } }
+		const retried = pageUpdate(billing, Message.GotBillingMessage({ message: BillingMessage.ClickedRetryCustomer() }))
+		expect(names(retried.commands)).toContain("FetchSettingsCustomer")
+		expect(retried.outMessage).toEqual(PageOutMessage.RequestedCustomerRefresh({}))
+	})
 })

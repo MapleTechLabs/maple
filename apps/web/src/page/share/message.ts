@@ -14,6 +14,8 @@ export const Message = defineMessageUnion({
 	/** The frame the tiles reported in has passed: send what changed, in batches of four. */
 	CompletedFlushFrame: {},
 	CompletedFetchBatch: {
+		/** The `sentBatchId` the batch went out under; only the latest one advances the queue. */
+		batchId: Schema.Number,
 		/** The request key each widget in the batch was sent under; a newer key drops it. */
 		keys: Schema.Record(Schema.String, Schema.String),
 		states: Schema.Record(Schema.String, WidgetState),

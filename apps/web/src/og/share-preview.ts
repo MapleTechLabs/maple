@@ -93,8 +93,9 @@ export const fetchShareOgMeta = async (api: ApiTarget, token: string): Promise<S
 	let meta: ShareOgMeta | undefined
 	try {
 		const response = await postJson(api, "/v2/share/og-meta", { token })
-		// Only "no such public link" (404) is a cacheable negative; a 429 or 5xx is retried next load.
-		if (!response.ok && response.status !== 404) return undefined
+		// A 4xx (no such public link) is a cacheable negative; a 429 or 5xx is retried next load.
+		const isNegative = response.status >= 400 && response.status < 500 && response.status !== 429
+		if (!response.ok && !isNegative) return undefined
 		meta = response.ok ? ((await response.json()) as ShareOgMeta) : undefined
 	} catch {
 		// A timeout or a network failure is not cached: the next request should

@@ -32,7 +32,7 @@ const toast = (model: Model, type: "success" | "error", title: string, descripti
 })
 
 const refresh = (model: Model, context: PageContext): Return =>
-	requestStatus(model, context, "github", "Refresh")
+	requestStatus(model, context, "github", "Supersede")
 
 export const githubStatusOf = (model: Model) =>
 	Option.getOrNull(AsyncData.getData(model.statuses.github.data))

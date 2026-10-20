@@ -38,40 +38,28 @@ const OPERATIONS = {
 export const statusKey = (context: PageContext, name: keyof Statuses) =>
 	requestKey(context.orgId, OPERATIONS[name], {})
 
-/**
- * `Refresh` is a write's `reactivityKeys`: it asks again even while a read is in flight, since that
- * read may predate the write. `Poll` is a timer's refresh and joins a read in flight.
- */
-export type StatusMode = Keyed.RequestMode | "Poll"
-
 const step = <A, E>(
 	model: Model,
 	slot: Keyed.Keyed<A, E>,
 	key: string,
-	mode: StatusMode,
+	mode: Keyed.ReadMode,
 	set: (statuses: Statuses, next: Keyed.Keyed<A, E>) => Statuses,
 	command: (slotKey: string) => AnyCommand,
-): Return => {
-	// A write's re-read supersedes a read in flight, so a pre-write answer cannot land last.
-	const next =
-		mode === "Refresh"
-			? Option.some(Keyed.supersede(slot, key))
-			: Keyed.request(slot, key, mode === "Load" ? "Load" : "Refresh")
-	return Option.match(next, {
+): Return =>
+	Option.match(Keyed.requestFor(slot, key, mode), {
 		onNone: () => ({ model }),
 		onSome: (requested) => ({
 			model: { ...model, statuses: set(model.statuses, requested) },
-			commands: [command(requested.key ?? key)],
+			commands: [command(requested.key)],
 		}),
 	})
-}
 
-/** Requests one status read; a write's `reactivityKeys` refresh it with `Refresh`. */
+/** Requests one status read; a write's `reactivityKeys` re-read it with `Supersede`, a timer with `Refresh`. */
 export const requestStatus = (
 	model: Model,
 	context: PageContext,
 	name: keyof Statuses,
-	mode: StatusMode,
+	mode: Keyed.ReadMode,
 ): Return => {
 	const key = statusKey(context, name)
 	const refresh = mode !== "Load"

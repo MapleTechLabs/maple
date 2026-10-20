@@ -62,7 +62,7 @@ describe("connect panel scene", () => {
 			Command.resolve(ResolveWindow({ orgId: ORG }), Message.ResolvedWindow({ orgId: ORG, window })),
 			Command.resolve(
 				FetchOverview({ orgId: ORG, window, pinnedNamespace: "prod" }),
-				Message.FailedLoadOverview({ orgId: ORG, window }),
+				Message.FailedLoadOverview(),
 			),
 			expect(role("link", { name: "Settings → Ingestion" })).toHaveAttr("href", "/settings?tab=ingestion"),
 			expect(text("Waiting for telemetry")).toExist(),
@@ -77,7 +77,18 @@ describe("connect panel update", () => {
 		const opened = update(open(init()).model, Message.ResolvedWindow({ orgId: ORG, window }), context).model
 		const stale = update(opened, Message.SucceededLoadKeys({ orgId: "org_b", publicKey: "pk", privateKey: "sk" }), context)
 		expectVitest(stale.model.keys).toEqual({ _tag: "Loading" })
-		const polled = update(opened, Message.TickedPoll(), context)
+		const answered = update(opened, Message.SucceededLoadOverview({ orgId: ORG, window, services: [] }), context).model
+		const polled = update(answered, Message.TickedPoll(), context)
+		expectVitest(polled.commands?.map((command) => command.name)).toEqual(["ResolveConnectWindow"])
+	})
+
+	test("a poll during a slow overview read waits for it, and the slow answer lands", () => {
+		const opened = update(open(init()).model, Message.ResolvedWindow({ orgId: ORG, window }), context).model
+		expectVitest(update(opened, Message.TickedPoll(), context).commands ?? []).toEqual([])
+		const services = [{ serviceName: "checkout", spanCount: 3 }]
+		const landed = update(opened, Message.SucceededLoadOverview({ orgId: ORG, window, services }), context).model
+		expectVitest(landed.services).toEqual(services)
+		const polled = update(landed, Message.TickedPoll(), context)
 		expectVitest(polled.commands?.map((command) => command.name)).toEqual(["ResolveConnectWindow"])
 	})
 
@@ -97,7 +108,7 @@ describe("connect panel update", () => {
 		const opened = update(open(init()).model, Message.ResolvedWindow({ orgId: ORG, window }), context).model
 		const services = [{ serviceName: "checkout", spanCount: 3 }]
 		const found = update(opened, Message.SucceededLoadOverview({ orgId: ORG, window, services }), context).model
-		const failed = update(found, Message.FailedLoadOverview({ orgId: ORG, window }), context)
+		const failed = update(found, Message.FailedLoadOverview(), context)
 		expectVitest(failed.model.services).toEqual(services)
 	})
 

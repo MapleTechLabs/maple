@@ -110,13 +110,14 @@ const BatchRequest = Schema.Struct({ widgetId: Schema.String, key: Schema.String
 export const FetchBatch = Command.define("FetchShareWidgetBatch", {
 	args: {
 		token: Schema.String,
+		batchId: Schema.Number,
 		startTime: Schema.String,
 		endTime: Schema.String,
 		variableValues: Schema.Record(Schema.String, Schema.String),
 		requests: Schema.Array(BatchRequest),
 	},
 	messages: [Message.CompletedFetchBatch],
-	execute: ({ token, startTime, endTime, variableValues, requests }) => {
+	execute: ({ token, batchId, startTime, endTime, variableValues, requests }) => {
 		const keys = Object.fromEntries(requests.map((request) => [request.widgetId, request.key]))
 		const failAll = (message: string) =>
 			Object.fromEntries(
@@ -148,11 +149,12 @@ export const FetchBatch = Command.define("FetchShareWidgetBatch", {
 						: { _tag: "Error", message: result.message, kind: result.reason === "unsupported" ? "range" : "runtime" },
 				]),
 			)
-			return Message.CompletedFetchBatch({ keys, states, variables: response.variables })
+			return Message.CompletedFetchBatch({ batchId, keys, states, variables: response.variables })
 		}).pipe(
 			Effect.catch((error) =>
 				Effect.succeed(
 					Message.CompletedFetchBatch({
+						batchId,
 						keys,
 						states: failAll(
 							Option.getOrElse(Option.map(decodeMessage(error), (envelope) => envelope.error.message), () => DATA_UNAVAILABLE_MESSAGE),

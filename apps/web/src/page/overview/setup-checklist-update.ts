@@ -39,6 +39,7 @@ export const init = (storageKey: string): Return => ({
 		keys: { _tag: "Loading" },
 		services: [],
 		window: null,
+		isOverviewInFlight: false,
 		isSendingTest: false,
 		copies: { endpoint: CopyButton.init(), privateKey: CopyButton.init() },
 		isPrivateKeyVisible: false,
@@ -60,13 +61,18 @@ export const frameworkOf = (state: QuickStartState): string =>
 export const realServices = (model: Model): ReadonlyArray<ServiceRow> =>
 	model.services.filter((row) => !row.serviceName.startsWith("demo-"))
 
-const fetchOverview = (model: Model, pinnedNamespace: string | null) =>
-	model.window === null ? [] : [FetchSetupOverview({ window: model.window, pinnedNamespace })]
+const fetchOverview = (model: Model, pinnedNamespace: string | null): Return =>
+	model.window === null
+		? { model }
+		: {
+				model: { ...model, isOverviewInFlight: true },
+				commands: [FetchSetupOverview({ window: model.window, pinnedNamespace })],
+			}
 
 /** The page resolved its clock: snapped on entry, unsnapped after a Reload (`refreshVersion`). */
 export const windowResolved = (model: Model, window: TimeWindow, pinnedNamespace: string | null): Return => {
 	const next = { ...model, window }
-	return { model: next, commands: isMounted(next) ? fetchOverview(next, pinnedNamespace) : [] }
+	return isMounted(next) ? fetchOverview(next, pinnedNamespace) : { model: next }
 }
 
 const saveState = (model: Model, state: QuickStartState): Return => ({
@@ -124,20 +130,21 @@ export const update = (model: Model, message: Message, context: SetupContext): R
 	return Message.match<Return>(message, {
 		ReadState: ({ state }) => {
 			const next = { ...model, state }
+			if (!isMounted(next)) return { model: next }
 			// The card mounts: `useIngestConnection` reads the keys and the overview.
-			return isMounted(next)
-				? { model: next, commands: [FetchSetupKeys(), ...fetchOverview(next, pinnedNamespace)] }
-				: { model: next }
+			const overview = fetchOverview(next, pinnedNamespace)
+			return { model: overview.model, commands: [FetchSetupKeys(), ...(overview.commands ?? [])] }
 		},
 		SucceededLoadKeys: ({ publicKey, privateKey }) => ({
 			model: { ...model, keys: { _tag: "Ready", publicKey, privateKey } },
 		}),
 		FailedLoadKeys: () => ({ model: { ...model, keys: { _tag: "Failed" } } }),
 		SucceededLoadOverview: ({ window, services }) =>
-			isWindow(model, window) ? { model: { ...model, services } } : { model },
+			isWindow(model, window) ? { model: { ...model, services, isOverviewInFlight: false } } : { model },
 		// One failed poll keeps the services already found, so the card does not un-detect them.
-		FailedLoadOverview: () => ({ model }),
-		TickedPoll: () => ({ model, commands: resolvePoll }),
+		FailedLoadOverview: () => ({ model: { ...model, isOverviewInFlight: false } }),
+		// A tick during a slow read waits for it: a new window would drop its answer.
+		TickedPoll: () => (model.isOverviewInFlight ? { model } : { model, commands: resolvePoll }),
 		ResolvedPollWindow: ({ window }) => windowResolved(model, window, pinnedNamespace),
 		ClickedToggleExpanded: () =>
 			model.state === null

@@ -204,8 +204,8 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 							}
 						: { model: loaded }
 				},
-				// Not an empty thread: sends stay blocked (a first send would re-wrap the context) until a retry reads it.
-			onFailure: (error) => ({ model: { ...model, historyError: error } }),
+				// Unknown, not empty: sends stay blocked until a retry reads it.
+				onFailure: (error) => ({ model: { ...model, historyError: error } }),
 			})
 		},
 		ClickedRetryHistory: () =>
