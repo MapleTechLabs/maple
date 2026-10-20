@@ -195,6 +195,12 @@ describe("integration sources", () => {
 		)
 		expect(step.model.connection?.prometheusCard.selectedId).toBe("0199a0e1-0000-7000-8000-0000000000aa")
 		expect(names(step.commands)).toContain("FetchScrapeTargetChecks")
+		// Off the Connection tab the target is let go, so its checks stop polling.
+		const away = routeChanged(step.model, route(), context).model
+		expect(away.connection?.prometheusCard.selectedId).toBeNull()
+		expect(routeChanged(away, route("connection"), context).model.connection?.prometheusCard.selectedId).toBe(
+			"0199a0e1-0000-7000-8000-0000000000aa",
+		)
 	})
 
 	test("deleting the source's own target leaves for the list; another write re-reads it", () => {
