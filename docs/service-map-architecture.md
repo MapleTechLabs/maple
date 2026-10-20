@@ -176,7 +176,7 @@ particles, `buildFlowElements`, the ELK layout, declutter, and
 Hosts supply the rows, where drag positions and prefs are stored, and the
 selected-node panel. The dashboard's `/service-map` page (`apps/web/src/page/service-map/`) wires the warehouse bundle,
 per-org atoms, the 3D renderer and the integration panels. Maple Local
-(`apps/local-ui/src/views/service-map-view.tsx`) wires chDB queries and browser
+(`apps/local-ui/src/page/service-map/`) wires chDB queries and browser
 storage.
 
 In local mode the `maple start` server fills `service_map_edges_hourly` itself

@@ -1,6 +1,6 @@
 import { JSON_TOKEN_COLOR, parseErrorBody, splitErrorText, tokenizeJson } from "@maple/ui/lib/error-body"
 import { cn } from "@maple/ui/lib/utils"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { copyButton, type CopyStatus } from "./copy-button"
 import { eyebrow } from "./eyebrow"
 import { icon } from "./icon"
@@ -21,8 +21,13 @@ export type ErrorSectionOptions<M> = Readonly<{
 	onToggle: M
 	bodyStatus: CopyStatus
 	onCopyBody: M
-	/** The "Copy as prompt" control, when the caller gives one. */
-	prompt?: Readonly<{ status: CopyStatus; onCopy: M; tooltipId?: string }>
+	/** The "Copy as prompt" control, when the caller gives one. `trigger`: a live Tooltip's trigger attributes. */
+	prompt?: Readonly<{
+		status: CopyStatus
+		onCopy: M
+		tooltipId?: string
+		trigger?: ReadonlyArray<ChildAttribute>
+	}>
 }>
 
 export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOptions<M>): Html => {
@@ -75,14 +80,18 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 									idleIcon: "SparkleIcon",
 									className:
 										"ml-auto size-5 shrink-0 rounded text-severity-error/70 hover:bg-severity-error/10 hover:text-severity-error sm:size-5",
-									slot: prompt.tooltipId === undefined ? undefined : "tooltip-trigger",
+									slot:
+										prompt.tooltipId === undefined && prompt.trigger === undefined
+											? undefined
+											: "tooltip-trigger",
 									attributes: [
-										...(prompt.tooltipId === undefined
-											? []
-											: [
-													h.DataAttribute("base-ui-tooltip-trigger", ""),
-													h.Id(prompt.tooltipId),
-												]),
+										...(prompt.trigger ??
+											(prompt.tooltipId === undefined
+												? []
+												: [
+														h.DataAttribute("base-ui-tooltip-trigger", ""),
+														h.Id(prompt.tooltipId),
+													])),
 										h.OnClick(prompt.onCopy, { propagation: "Stop" }),
 									],
 								}),

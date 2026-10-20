@@ -51,9 +51,6 @@
 			"entry": ["src/worker.ts", "alchemy.run.ts"],
 			"ignoreDependencies": ["cloudflare"]
 		},
-		"apps/local-ui": {
-			"entry": ["src/worker.ts"]
-		},
 		// Run by path: the browser e2e suite (`e2e run`, `test:e2e`).
 		"apps/web": {
 			// `src/worker-entry.ts` is named by string in `src/worker.ts`.
@@ -63,18 +60,16 @@
 				"e2e/tests/**/*.e2e.ts"
 			]
 		},
-		// local-ui-foldkit renders apps/web's source modules (ui, charts), so their runtime
-		// packages and the stylesheet's fonts and Tailwind must resolve from this app too.
-		"apps/local-ui-foldkit": {
+		// local-ui renders apps/web's source modules (ui, charts), so their runtime packages
+		// must resolve from this app too.
+		// `src/worker-entry.ts` is named by string in `src/worker.ts`.
+		"apps/local-ui": {
+			"entry": ["src/worker.ts", "src/worker-entry.ts"],
 			"ignoreDependencies": [
 				"@floating-ui/dom",
 				"@foldkit/ui",
-				"@fontsource-variable/geist",
-				"@fontsource-variable/geist-mono",
 				"@tanstack/charts",
-				"@tanstack/charts-scales",
-				"sugar-high",
-				"tw-animate-css"
+				"@tanstack/charts-scales"
 			]
 		},
 		"apps/cli": {
