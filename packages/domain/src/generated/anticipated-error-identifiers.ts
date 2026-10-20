@@ -113,6 +113,8 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/v1/V1RequestValidationError",
 	"@maple/http/v2/CursorInvalidError",
 	"@maple/http/v2/CursorSortMismatchError",
+	"@maple/http/v2/ErrorIssueLeaseConflictError",
+	"@maple/http/v2/ErrorIssueTransitionConflictError",
 	"@maple/http/v2/InsufficientPermissionsError",
 	"@maple/http/v2/InsufficientScopeError",
 	"@maple/http/v2/InvalidCredentialsError",
