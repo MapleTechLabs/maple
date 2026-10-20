@@ -33,6 +33,9 @@ export const ALERTING_SCHEDULE = {
 		],
 		deadline: "270 seconds",
 	},
+	// Offset by two minutes: `*/5` is at the six-lane limit, and a fire of its own keeps the
+	// Vercel poller off the Railway and Cloudflare pollers' minute.
+	"2-59/5 * * * *": { lanes: ["vercel"], deadline: "270 seconds" },
 	"*/15 * * * *": { lanes: ["digest"], deadline: "10 minutes" },
 	"0 * * * *": { lanes: ["service_map_rollup"], deadline: "15 minutes" },
 } as const satisfies Record<string, CronSchedule>

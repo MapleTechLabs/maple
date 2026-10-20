@@ -75,6 +75,7 @@ mod claude_code;
 mod cloudflare_ai_gateway;
 mod facts;
 mod usage;
+mod vercel_ai_gateway;
 
 pub const ATTR_NAMESPACE: &str = "maple_ai.";
 pub const VENDOR_ID_ATTR: &str = "maple_ai.vendor.id";
@@ -177,6 +178,12 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                 if classification.vendor == cloudflare_ai_gateway::VENDOR_ID {
                     cloudflare_ai_gateway::normalize(span);
                 }
+                if classification.vendor == vercel_ai_gateway::VENDOR_ID {
+                    if !vercel_ai_gateway::is_request(span) {
+                        continue;
+                    }
+                    vercel_ai_gateway::normalize(span);
+                }
                 let mut stamps = facts::stamps(span, classification.vendor);
                 // One reserve, not a doubling realloc per push that each copy
                 // every existing KeyValue.
@@ -232,11 +239,13 @@ fn owned_string_attribute(key: &str, value: String) -> KeyValue {
 struct ResourceFacts<'a> {
     mastra_sdk: bool,
     effect_sdk: bool,
+    vercel_ai_gateway: bool,
     service_name: &'a str,
 }
 
 fn resource_facts(attrs: &[KeyValue]) -> ResourceFacts<'_> {
     let mut facts = ResourceFacts::default();
+    let mut service_namespace = "";
     for attr in attrs {
         match attr.key.as_str() {
             "telemetry.sdk.name" => match value_str(attr) {
@@ -247,9 +256,12 @@ fn resource_facts(attrs: &[KeyValue]) -> ResourceFacts<'_> {
             "service.name" if facts.service_name.is_empty() => {
                 facts.service_name = value_str(attr);
             }
+            "service.namespace" => service_namespace = value_str(attr),
             _ => {}
         }
     }
+    facts.vercel_ai_gateway = facts.service_name == vercel_ai_gateway::SERVICE_NAME
+        && service_namespace == vercel_ai_gateway::SERVICE_NAMESPACE;
     facts
 }
 
@@ -975,6 +987,13 @@ static VENDORS: &[Vendor] = &[
         detect: detect_cloudflare_ai_gateway,
         session_keys: cloudflare_ai_gateway::SESSION_KEYS,
     },
+    // Ahead of `vercel_ai_sdk`: the gateway is told apart by its resource,
+    // whatever scope its spans use.
+    Vendor {
+        id: vercel_ai_gateway::VENDOR_ID,
+        detect: detect_vercel_ai_gateway,
+        session_keys: CONVERSATION_ID_ONLY,
+    },
     Vendor {
         id: "openrouter",
         detect: detect_openrouter,
@@ -1224,6 +1243,12 @@ fn detect_cloudflare_ai_gateway(c: &Ctx) -> bool {
     // Scope `ai` is shared with the Vercel AI SDK, so the gateway is told
     // apart by its span name, which nothing else emits.
     c.span_name == cloudflare_ai_gateway::SPAN_NAME
+}
+
+fn detect_vercel_ai_gateway(c: &Ctx) -> bool {
+    // Every span of the gateway's own trace; `stamp_trace_request` keeps
+    // only the request span, so its provider attempts never count twice.
+    c.resource.vercel_ai_gateway
 }
 
 fn detect_openrouter(c: &Ctx) -> bool {

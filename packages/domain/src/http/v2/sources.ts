@@ -126,7 +126,7 @@ export const V2Source = Schema.Struct({
 	}),
 	platform: SourcePlatform.annotate({
 		description:
-			"What sends the data. Push platforms (`opentelemetry`, `nodejs`, `kubernetes`, …) send with the source's own token; pull platforms (`prometheus`, `cloudflare`, `gcp`, `railway`, `planetscale`, `github`) are integrations Maple collects from.",
+			"What sends the data. Push platforms (`opentelemetry`, `nodejs`, `kubernetes`, …) send with the source's own token; pull platforms (`prometheus`, `cloudflare`, `gcp`, `railway`, `vercel`, `planetscale`, `github`) are integrations Maple collects from.",
 		examples: ["nodejs"],
 	}),
 	is_default: Schema.Boolean.annotate({

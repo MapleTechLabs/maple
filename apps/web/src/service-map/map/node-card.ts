@@ -24,6 +24,7 @@ export const PLATFORM_ICON = {
 	kubernetes: { icon: "KubernetesIcon", label: "Kubernetes", branded: true },
 	cloudflare: { icon: "CloudflareBrandIcon", label: "Cloudflare Workers", branded: true },
 	gcp: { icon: "GoogleCloudIcon", label: "Google Cloud", branded: true },
+	vercel: { icon: "VercelIcon", label: "Vercel", branded: false },
 	lambda: { icon: "AwsLambdaIcon", label: "AWS Lambda", branded: true },
 	web: { icon: "GlobeIcon", label: "Web (browser)", branded: false },
 	unknown: { icon: "ServerIcon", label: "Unknown runtime", branded: false },

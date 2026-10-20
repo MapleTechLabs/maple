@@ -122,6 +122,8 @@ export const AuditResources = {
 	 */
 	telemetry: { verbs: ["read", "sql_executed"] },
 	/** Org-singleton BYO-ClickHouse connection; holds warehouse credentials. */
+	/** Org-singleton Vercel team connection; the team and what the drains forward are in `metadata`. */
+	vercel_integration: { verbs: ["connected", "updated", "disconnected"] },
 	warehouse_settings: { verbs: ["updated", "deleted", "schema_applied"] },
 	/** Short-lived device credentials for the mobile widget; keyed by installation. */
 	widget_credential: { verbs: ["minted", "revoked"] },
@@ -169,6 +171,7 @@ export const AuditResourceLabels = {
 	session_replay: "Session replay",
 	support_channel: "Support channel",
 	telemetry: "Telemetry",
+	vercel_integration: "Vercel integration",
 	warehouse_settings: "Warehouse connection",
 	widget_credential: "Widget credential",
 } as const satisfies Record<AuditResourceType, string>
@@ -260,6 +263,9 @@ export const AuditActionLabels = {
 	"support_channel.invite_sent": "Sent support channel invite",
 	"telemetry.read": "Read telemetry",
 	"telemetry.sql_executed": "Ran SQL query",
+	"vercel_integration.connected": "Connected Vercel",
+	"vercel_integration.updated": "Updated Vercel forwarding",
+	"vercel_integration.disconnected": "Disconnected Vercel",
 	"warehouse_settings.updated": "Updated warehouse connection",
 	"warehouse_settings.deleted": "Disconnected warehouse",
 	"warehouse_settings.schema_applied": "Applied warehouse schema",

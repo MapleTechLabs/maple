@@ -17,6 +17,7 @@ const cronCases = [
 			"prReviewPostMerge",
 		],
 	],
+	["2-59/5 * * * *", ["vercel"]],
 	["*/15 * * * *", ["digest"]],
 	["0 * * * *", ["serviceMapRollup"]],
 	["* * * * *", ["alert", "error", "escalation", "fixVerification"]],
@@ -41,6 +42,7 @@ const recordingTicks = (
 		prReviewPostMerge: tick("prReviewPostMerge"),
 		railwayMetrics: tick("railwayMetrics"),
 		serviceMapRollup: tick("serviceMapRollup"),
+		vercel: tick("vercel"),
 		...overrides,
 	}
 }

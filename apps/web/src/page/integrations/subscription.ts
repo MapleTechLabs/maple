@@ -14,6 +14,8 @@ import { githubStatusOf } from "./update-github"
 import { CAPABILITIES, CAPABILITY_IDS } from "./gcp-configure-copy"
 import { runConfirmed } from "./gcp-configure-derive"
 import { configureConnector } from "./update-gcp-configure"
+import { vercelStatusOf } from "./update-vercel"
+import { isVercelSettling, VERCEL_SETTLING_REFRESH_MS } from "./vercel"
 
 const one = (message: Message): Stream.Stream<Message> => Stream.make(message)
 
@@ -150,6 +152,12 @@ const isRailwaySettling = (model: Model): boolean => {
 	if (integrationOfSearch(model.search.integration) !== "railway") return false
 	const status = Option.getOrNull(AsyncData.getData(model.statuses.railway.data))
 	return status !== null && status.connected && !status.authFailed && unsyncedEnvironments(status) > 0
+}
+
+const isVercelPolling = (model: Model): boolean => {
+	if (integrationOfSearch(model.search.integration) !== "vercel") return false
+	const status = vercelStatusOf(model)
+	return status !== null && isVercelSettling(status, model.nowMs)
 }
 
 const isAwaitingFirstScrape = (model: Model): boolean => {
@@ -318,6 +326,15 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				modelToDependencies: ({ model }) => ({ isSettling: isRailwaySettling(model) }),
 				dependenciesToStream: ({ isSettling }) =>
 					isSettling ? every(15_000, () => Message.TickedRailwaySettle()) : Stream.empty,
+			},
+		),
+		/** `useIntervalRefresh(refreshStatus, { intervalMs: 15_000, enabled: settling })`, the usage too. */
+		vercelSettle: entry(
+			{ isSettling: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ isSettling: isVercelPolling(model) }),
+				dependenciesToStream: ({ isSettling }) =>
+					isSettling ? every(VERCEL_SETTLING_REFRESH_MS, () => Message.TickedVercelSettle()) : Stream.empty,
 			},
 		),
 		/** `useIntervalRefresh(refreshStatus, { intervalMs: 5_000, enabled: awaitingFirstScrape })`. */

@@ -13,6 +13,8 @@ import {
 	ScrapeTargets,
 	VcsInstallations,
 	VcsRepositories,
+	VercelConnections,
+	VercelProjects,
 } from "@maple/db/tables"
 import {
 	buildIntegrationInventory,
@@ -121,6 +123,37 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 							)
 							.where(($) => [$.orgId.eq(orgId), $.enabled.eq(true)]),
 					),
+					vercelConnections: db.run(
+						PG.from(VercelConnections)
+							.select(
+								"teamName",
+								"authFailedAt",
+								"logsEnabled",
+								"tracesEnabled",
+								"logDrainState",
+								"traceDrainState",
+								"lastSuccessAt",
+								"lastErrorAt",
+								"lastError",
+								"createdAt",
+							)
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
+					vercelProjects: db.run(
+						PG.from(VercelProjects)
+							.select(() => ({ count: PG.count() }))
+							.where(($) => [
+								$.orgId.eq(orgId),
+								// Only the current connection's: rows a disconnect raced with do not count.
+								PG.inSubquery(
+									$.connectionId,
+									PG.from(VercelConnections)
+										.select("id")
+										.where(($c) => [$c.orgId.eq(orgId)]),
+								),
+							]),
+					),
 					planetscaleConnections: db.run(
 						PG.from(PlanetscaleConnections)
 							.select(
@@ -181,6 +214,8 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 					...env,
 					serviceCount: Object.keys(Option.getOrElse(decodeServices(servicesJson), () => ({}))).length,
 				})),
+				vercelConnection: rows.vercelConnections[0] ?? null,
+				vercelProjectCount: rows.vercelProjects[0]?.count ?? 0,
 				planetscaleConnection:
 					planetscale === undefined
 						? null

@@ -3,6 +3,7 @@ import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { lastHourWindow, loadInfraPresence } from "../data/infra-surfaces"
 import { IntegrationStatuses } from "../data/integration-statuses"
+import { MapleInternalApiClient } from "../platform/api-clients"
 import { loadServicesFacets } from "../data/services-facets-probe"
 import { SessionTenant } from "../data/session-tenant"
 import { Message } from "./message"
@@ -44,7 +45,7 @@ export const LoadInfraPresence = Command.define("LoadInfraPresence", {
 const integrationMessages = [Message.SucceededLoadIntegration, Message.FailedLoadIntegration] as const
 const orgArgs = { orgId: Schema.String }
 
-/** The four integration statuses `useInfraSurfaces` mounts in the sidebar (connected or not). */
+/** The integration statuses `useInfraSurfaces` mounts in the sidebar (connected or not). */
 export const LoadCloudflareStatus = Command.define("LoadCloudflareStatus", {
 	args: orgArgs,
 	messages: integrationMessages,
@@ -63,6 +64,16 @@ export const LoadRailwayStatus = Command.define("LoadRailwayStatus", {
 			const status = yield* (yield* IntegrationStatuses).railway({ orgId })
 			return Message.SucceededLoadIntegration({ orgId, integration: "railway", isConnected: status.connected })
 		}).pipe(failed(Message.FailedLoadIntegration({ orgId, integration: "railway" }))),
+})
+
+export const LoadVercelStatus = Command.define("LoadVercelStatus", {
+	args: orgArgs,
+	messages: integrationMessages,
+	execute: ({ orgId }) =>
+		Effect.gen(function* () {
+			const status = yield* (yield* MapleInternalApiClient).integrations.vercelStatus()
+			return Message.SucceededLoadIntegration({ orgId, integration: "vercel", isConnected: status.connected })
+		}).pipe(failed(Message.FailedLoadIntegration({ orgId, integration: "vercel" }))),
 })
 
 export const LoadPlanetscaleStatus = Command.define("LoadPlanetscaleStatus", {

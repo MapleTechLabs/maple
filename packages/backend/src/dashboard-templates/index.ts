@@ -18,6 +18,7 @@ import { redisTemplate } from "./database/redis"
 import { cloudflareTemplate } from "./infrastructure/cloudflare"
 import { gcpTemplate } from "./infrastructure/gcp"
 import { planetscaleTemplate } from "./infrastructure/planetscale"
+import { vercelTemplate } from "./infrastructure/vercel"
 import { hostMetricsTemplate } from "./infrastructure/host-metrics"
 import { kubernetesClusterTemplate } from "./infrastructure/kubernetes-cluster"
 import { dockerContainersTemplate } from "./infrastructure/docker-containers"
@@ -48,6 +49,7 @@ export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 	cloudflareTemplate,
 	planetscaleTemplate,
 	gcpTemplate,
+	vercelTemplate,
 	hostMetricsTemplate,
 	kubernetesClusterTemplate,
 	kubernetesPodTemplate,

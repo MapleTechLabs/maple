@@ -4,6 +4,7 @@ import {
 	GithubIntegrationStatus,
 	HazelIntegrationStatus,
 	RailwayIntegrationStatus,
+	VercelIntegrationStatus,
 } from "@maple/domain/http"
 import {
 	V2ChatConnectorList,
@@ -25,6 +26,7 @@ import { RailwayCardModel } from "./railway"
 import { PlanetscaleCardModel } from "./planetscale"
 import { GcpCardModel } from "./gcp"
 import { ConnectModel } from "./connect"
+import { VercelCardModel } from "./vercel-schema"
 
 // `/integrations`: the hub and every integration's page.
 
@@ -34,6 +36,7 @@ const keyed = <A, AI>(schema: Schema.Codec<A, AI>) => KeyedSchema(schema, LoadFa
 export const Statuses = Schema.Struct({
 	cloudflare: keyed(CloudflareIntegrationStatus),
 	railway: keyed(RailwayIntegrationStatus),
+	vercel: keyed(VercelIntegrationStatus),
 	planetscale: keyed(V2PlanetScaleIntegration),
 	planetscaleDatabases: keyed(V2PlanetScaleDatabaseList),
 	gcp: keyed(V2GcpIntegration),
@@ -62,6 +65,7 @@ export const Model = Schema.Struct({
 	cloudflareCard: CloudflareCardModel,
 	prometheusCard: PrometheusCardModel,
 	railwayCard: RailwayCardModel,
+	vercelCard: VercelCardModel,
 	planetscaleCard: PlanetscaleCardModel,
 	gcpCard: GcpCardModel,
 })

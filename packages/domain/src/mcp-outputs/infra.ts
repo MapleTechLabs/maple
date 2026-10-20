@@ -12,6 +12,7 @@ export const InfraKind = Schema.Literals([
 	"cloudflare_workers",
 	"railway_services",
 	"planetscale_databases",
+	"vercel_projects",
 ])
 export type InfraKind = typeof InfraKind.Type
 
@@ -25,6 +26,7 @@ export const InfraEntityKind = Schema.Literals([
 	"cloudflare_worker",
 	"railway_service",
 	"planetscale_database",
+	"vercel_project",
 ])
 export type InfraEntityKind = typeof InfraEntityKind.Type
 
@@ -87,6 +89,8 @@ export const InfraEntityRow = Schema.Struct({
 	originP95Ms: Schema.optionalKey(Schema.Number),
 	cpuTimeP50Ms: Schema.optionalKey(Schema.Number),
 	cpuTimeP99Ms: Schema.optionalKey(Schema.Number),
+	/** Vercel projects: error and fatal log records in the window. */
+	errorLogs: Schema.optionalKey(Schema.Number),
 	// PlanetScale databases.
 	connections: Schema.optionalKey(Schema.Number),
 	connectionsPeak: Schema.optionalKey(Schema.Number),

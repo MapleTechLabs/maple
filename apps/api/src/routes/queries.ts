@@ -29,6 +29,9 @@ import type {
 	RailwayInfraServiceTimeseriesRequest,
 	ServiceCloudflareStatsRequest,
 	SpanDetailRequest,
+	VercelInfraProjectDetailRequest,
+	VercelInfraProjectsRequest,
+	VercelInfraTimeseriesRequest,
 	TraceSpanEventsRequest,
 	WorkloadInfraTimeseriesRequest,
 } from "@maple/domain/http"
@@ -292,6 +295,107 @@ const railwayInfraServiceTimeseries = defineQuery({
 			environmentId: payload.environmentId,
 			serviceId: payload.serviceId,
 		}),
+})
+
+const vercelWindow = (payload: { startTime: string; endTime: string }, orgId: OrgId) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+})
+
+const vercelBucketed = (payload: VercelInfraTimeseriesRequest, orgId: OrgId) => ({
+	...vercelWindow(payload, orgId),
+	bucketSeconds: Math.max(60, Math.floor(payload.bucketSeconds)),
+})
+
+const vercelInfraProjectRequests = defineQuery({
+	id: "vercelInfraProjectRequests",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraProjectsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.vercelProjectRequestsSQL(), vercelWindow(payload, orgId)),
+})
+
+const vercelInfraProjectLatency = defineQuery({
+	id: "vercelInfraProjectLatency",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraProjectsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.vercelProjectLatencySQL(), vercelWindow(payload, orgId)),
+})
+
+const vercelInfraRequestTimeseries = defineQuery({
+	id: "vercelInfraRequestTimeseries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.vercelRequestTimeseriesSQL({ projectId: payload.projectId }),
+			vercelBucketed(payload, orgId),
+		),
+})
+
+const vercelInfraTopPaths = defineQuery({
+	id: "vercelInfraTopPaths",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraProjectDetailRequest, orgId: OrgId) =>
+		CH.compile(Integrations.vercelProjectTopPathsSQL(), {
+			...vercelWindow(payload, orgId),
+			projectId: payload.projectId,
+		}),
+})
+
+const vercelInfraTopErrors = defineQuery({
+	id: "vercelInfraTopErrors",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraProjectDetailRequest, orgId: OrgId) =>
+		CH.compile(Integrations.vercelProjectTopErrorsSQL(), {
+			...vercelWindow(payload, orgId),
+			projectId: payload.projectId,
+		}),
+})
+
+const vercelAiGatewaySummary = defineQuery({
+	id: "vercelAiGatewaySummary",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.vercelAiGatewaySummarySQL({ projectId: payload.projectId }),
+			vercelWindow(payload, orgId),
+		),
+})
+
+const vercelAiGatewayByModel = defineQuery({
+	id: "vercelAiGatewayByModel",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.vercelAiGatewayByModelSQL({ projectId: payload.projectId }),
+			vercelWindow(payload, orgId),
+		),
+})
+
+const vercelAiGatewayByProject = defineQuery({
+	id: "vercelAiGatewayByProject",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.vercelAiGatewayByProjectSQL(), vercelWindow(payload, orgId)),
+})
+
+const vercelAiGatewayTimeseries = defineQuery({
+	id: "vercelAiGatewayTimeseries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.vercelAiGatewayTimeseriesSQL({ projectId: payload.projectId }),
+			vercelBucketed(payload, orgId),
+		),
 })
 
 // A small read of the hourly catalog that decides which tabs /infra/gcp shows.
@@ -890,6 +994,15 @@ export const Queries = {
 	planetscaleInfraTimeseries,
 	railwayInfraServices,
 	railwayInfraServiceTimeseries,
+	vercelInfraProjectRequests,
+	vercelInfraProjectLatency,
+	vercelInfraRequestTimeseries,
+	vercelInfraTopPaths,
+	vercelInfraTopErrors,
+	vercelAiGatewaySummary,
+	vercelAiGatewayByModel,
+	vercelAiGatewayByProject,
+	vercelAiGatewayTimeseries,
 	gcpInfraPresence,
 	gcpInfraMetrics,
 	gcpInfraTimeseries,

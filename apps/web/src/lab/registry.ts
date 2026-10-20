@@ -32,7 +32,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/infra",
 		title: "Infrastructure",
 		description:
-			"The infra overview, hosts list and Railway list over fixture rows, no warehouse needed.",
+			"The infra overview, hosts list, Railway list and the Vercel list, AI Gateway and project pages over fixture rows, no warehouse needed.",
 		kind: "lab",
 		session: "none",
 	},
@@ -65,6 +65,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Google Cloud connections",
 		description:
 			"A Google Cloud connection in each state, healthy to failing, over fixture connectors, no API needed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/vercel",
+		title: "Vercel integration",
+		description:
+			"Integrations → Vercel not connected, the connect steps, and a connected team healthy, with a broken drain and with a rejected token, over fixtures.",
 		kind: "lab",
 		session: "none",
 	},

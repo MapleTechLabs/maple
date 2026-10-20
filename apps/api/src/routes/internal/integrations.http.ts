@@ -40,6 +40,8 @@ import {
 	VcsCommitRangeResponse,
 	VcsCommitRangesResponse,
 	VcsPullRequestsResponse,
+	VercelDeploymentsResponse,
+	VercelDisconnectResponse,
 } from "@maple/domain/http"
 import { EdgeCacheService } from "@maple/cache"
 import { Effect, Option, Schema } from "effect"
@@ -57,6 +59,8 @@ import {
 } from "@maple/backend/services/integrations/cloudflare-analytics/queries"
 import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
@@ -120,6 +124,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const cloudflare = yield* CloudflareOAuthService
 		const cloudflareAnalytics = yield* CloudflareAnalyticsService
 		const railway = yield* RailwayMetricsService
+		const vercel = yield* VercelIntegrationService
 		const gcp = yield* GcpConnectorService
 		const edgeCache = yield* EdgeCacheService
 		const env = yield* Env
@@ -465,6 +470,87 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
 						return new RailwayDisconnectResponse(yield* railway.disconnect(tenant.orgId))
+					}),
+				)
+				.handle("vercelStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* vercel.getStatus(tenant.orgId)
+					}),
+				)
+				.handle("vercelDiscover", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						return yield* vercel.discover(payload.token, payload.teamId)
+					}),
+				)
+				.handle("vercelConnect", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const status = yield* vercel.connect(tenant.orgId, tenant.userId, payload)
+						yield* recordHttpAudit("vercel_integration.connected", {
+							metadata: {
+								teamId: payload.teamId,
+								projectScope: payload.projectScope,
+								projectCount: payload.projectIds.length,
+								samplingRate: payload.samplingRate,
+								logsEnabled: payload.logsEnabled,
+								tracesEnabled: payload.tracesEnabled,
+							},
+						})
+						return status
+					}),
+				)
+				.handle("vercelSettings", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const status = yield* vercel.updateSettings(tenant.orgId, payload)
+						yield* recordHttpAudit("vercel_integration.updated", {
+							metadata: {
+								projectScope: status.projectScope,
+								projectCount: status.projectIds.length,
+								samplingRate: status.samplingRate,
+								logsEnabled: status.logsEnabled,
+								tracesEnabled: status.tracesEnabled,
+							},
+						})
+						return status
+					}),
+				)
+				.handle("vercelSync", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						// Spends the token's per-user Vercel rate limit, so it is an admin action like connect.
+						yield* requireAdmin(tenant.roles)
+						return yield* vercel.sync(tenant.orgId)
+					}),
+				)
+				.handle("vercelDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const result = yield* vercel.disconnect(tenant.orgId)
+						if (result.disconnected) {
+							yield* recordHttpAudit("vercel_integration.disconnected", {
+								metadata: { drainsRemoved: result.drainsRemoved },
+							})
+						}
+						return new VercelDisconnectResponse(result)
+					}),
+				)
+				.handle("vercelDeployments", ({ query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return new VercelDeploymentsResponse({
+							deployments: yield* vercel.deployments(
+								tenant.orgId,
+								query.projectId,
+								query.limit ?? 20,
+							),
+						})
 					}),
 				)
 				.handle("gcpResources", ({ query }) =>

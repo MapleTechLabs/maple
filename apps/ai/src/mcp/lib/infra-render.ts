@@ -29,6 +29,7 @@ export const KIND_NOUN = {
 	cloudflare_workers: "Cloudflare Workers",
 	railway_services: "Railway services",
 	planetscale_databases: "PlanetScale databases",
+	vercel_projects: "Vercel projects",
 } as const satisfies Record<InfraKind, string>
 
 /** The `inspect_infra` kind for a `list_infra` kind. */
@@ -42,6 +43,7 @@ export const ENTITY_KIND = {
 	cloudflare_workers: "cloudflare_worker",
 	railway_services: "railway_service",
 	planetscale_databases: "planetscale_database",
+	vercel_projects: "vercel_project",
 } as const satisfies Record<InfraKind, string>
 
 /** Bytes as KiB..TiB, for bandwidth and memory. */
@@ -100,9 +102,9 @@ const pressureText = (kind: InfraKind, resource: string, level: number): string 
 
 /** Every resource at 60% or more, worst first, under the label of the worst. */
 export const statusOf = (row: InfraEntityRow, kind: InfraKind): string => {
-	if (kind === "cloudflare_zones" || kind === "cloudflare_workers") {
+	if (kind === "cloudflare_zones" || kind === "cloudflare_workers" || kind === "vercel_projects") {
 		const rate = row.errorRate ?? 0
-		const what = kind === "cloudflare_zones" ? "5xx" : "errors"
+		const what = kind === "cloudflare_workers" ? "errors" : "5xx"
 		return rate >= ERROR_RATE_HIGH
 			? `HIGH ${what}: ${pct(rate)}`
 			: rate >= ERROR_RATE_HOT
@@ -323,6 +325,20 @@ export const kindTable = (section: InfraKindSection): DocBlock => {
 					status(r),
 				]),
 			)
+		case "vercel_projects":
+			return doc.table(
+				["Project", "Requests", "5xx rate", "4xx", "Cache hit", "Error logs", "Status", "Last seen"],
+				rows.map((r) => [
+					tableCell(r.name),
+					count(r.requests),
+					pct(r.errorRate),
+					count(r.errors4xx),
+					pct(r.cacheHitRate),
+					count(r.errorLogs),
+					status(r),
+					r.lastSeen ?? "",
+				]),
+			)
 	}
 }
 
@@ -343,6 +359,8 @@ export const KIND_METRICS = {
 		"Metrics: railway.cpu.usage/limit (vCPU), railway.memory.usage/limit (bytes), railway.network.io, railway.disk.usage, polled from Railway per replica. Chart per service with group_by service.name.",
 	planetscale_databases:
 		"Metrics: planetscale_pods_cpu_util_percentages, planetscale_pods_mem_util_percentages, planetscale_volume_*_bytes, connection and replica-lag gauges, scraped from PlanetScale's Prometheus endpoint per database and branch.",
+	vercel_projects:
+		"Logs: the Vercel log drain's records (resource cloud.provider=vercel, vercel.project.id, service.name = the project name); a request is a record with http.request.method, its status in http.response.status_code, its cache result in vercel.cache. Read them with search_logs service=<project>.",
 } as const satisfies Record<InfraKind, string>
 
 /** What the CPU and memory percentages of a kind are measured against. */
@@ -361,6 +379,8 @@ export const KIND_BASIS = {
 		"CPU and memory are summed across replicas, against the service's limits; status uses the window peak.",
 	planetscale_databases:
 		"CPU and memory are the busiest pod's peak; storage is the fullest branch. Branches include short-lived pr-* ones, so a spike may be one of those.",
+	vercel_projects:
+		"Totals over the window from the Vercel log drain (after its sampling rate); most 5xx first. Status flags a 5xx rate of 1% or more.",
 } as const satisfies Record<InfraKind, string>
 
 export const summaryLine = (section: InfraKindSection, status?: string): string => {

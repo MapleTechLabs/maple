@@ -1,6 +1,12 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { RailwayConnections, RailwayEnvironments, ScrapeTargets } from "@maple/db/tables"
+import {
+	RailwayConnections,
+	RailwayEnvironments,
+	ScrapeTargets,
+	VercelConnections,
+	VercelProjects,
+} from "@maple/db/tables"
 import { OrgId, ScrapeTargetId } from "@maple/domain/primitives"
 import { Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
@@ -80,5 +86,58 @@ describe("IntegrationInventoryService", () => {
 		}).pipe(
 			Effect.provide(IntegrationInventoryService.layer.pipe(Layer.provideMerge(testDb.layer))),
 		)
+	})
+
+	it.effect("reports a Vercel drain the poller found missing and counts only the connection's projects", () => {
+		const testDb = createTestDb(createdDbs)
+		const orgId = asOrgId("org_v")
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			const database = yield* Database
+			yield* database.execute((db) =>
+				Effect.all([
+					db.run(
+						PG.insertInto(VercelConnections).values({
+							id: "vc_1",
+							orgId,
+							teamId: "team_1",
+							teamSlug: "acme",
+							teamName: "Acme",
+							tokenCiphertext: "c",
+							tokenIv: "i",
+							tokenTag: "t",
+							connectedByUserId: "user_1",
+							projectScope: "all",
+							logDrainId: null,
+							traceDrainId: "drn_1",
+							logDrainState: { status: "missing", lastError: "Drain not found" },
+							traceDrainState: { status: "enabled", lastError: null },
+							lastSuccessAt: NOW - 60_000,
+							createdAt: NOW,
+							updatedAt: NOW,
+						}),
+					),
+					db.run(
+						PG.insertInto(VercelProjects).values(
+							["p1", "p2", "p3"].map((projectId) => ({
+								id: `row_${projectId}`,
+								orgId,
+								// p3 is left from an earlier connection.
+								connectionId: projectId === "p3" ? "vc_0" : "vc_1",
+								projectId,
+								name: projectId,
+								createdAt: NOW,
+								updatedAt: NOW,
+							})),
+						),
+					),
+				]),
+			)
+			const inventory = yield* (yield* IntegrationInventoryService).list(orgId)
+			const vercel = inventory.integrations.find((i) => i.provider === "vercel")
+			assert.strictEqual(vercel?.account, "Acme (2 projects)")
+			assert.strictEqual(vercel?.status, "failing")
+			assert.strictEqual(vercel?.resources[0]?.lastError, "Drain not found")
+		}).pipe(Effect.provide(IntegrationInventoryService.layer.pipe(Layer.provideMerge(testDb.layer))))
 	})
 })

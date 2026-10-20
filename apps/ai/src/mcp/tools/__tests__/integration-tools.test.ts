@@ -49,7 +49,7 @@ describe("list_integrations", () => {
 		expect(byProvider.get("prometheus")?.resources.map((r) => r.name)).toEqual([
 			INTEGRATION_WORLD.failingScrapeTarget,
 		])
-		expect(output.available.map((a) => a.provider)).toEqual(["chat"])
+		expect(output.available.map((a) => a.provider)).toEqual(["vercel", "chat"])
 		expect(markdown(result)).toContain("no successful update for 4 h")
 	})
 
@@ -160,6 +160,19 @@ describe("compare_commits", () => {
 		})
 		expect(result.isError).toBe(true)
 		expect(markdown(result)).toContain("full 40-character commit SHA")
+	})
+})
+
+describe("sync_vercel", () => {
+	it("is refused for a member who is not an org admin", async () => {
+		const result = await runToolDirect(member, "sync_vercel", {})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("only org admins")
+	})
+
+	it("says where to connect Vercel when it is not connected", async () => {
+		const result = await runToolDirect(admin, "sync_vercel", {})
+		expect(markdown(result)).toContain("Vercel is not connected")
 	})
 })
 

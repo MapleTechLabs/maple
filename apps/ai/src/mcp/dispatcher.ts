@@ -25,6 +25,7 @@ import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-reque
 
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
@@ -272,6 +273,7 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	SetupAuditService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,
+	VercelIntegrationService.layer,
 	WarehouseQueryService.layer,
 ).pipe(
 	Layer.provide(

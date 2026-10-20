@@ -5,6 +5,7 @@
 import type { CloudflareZoneRow } from "@maple/web-data/warehouse/cloudflare-infra"
 import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
 import type { PlanetScaleDatabaseStat } from "@maple/web-data/warehouse/service-map"
+import type { VercelInfraProject } from "@maple/domain/http"
 import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { countLabel, formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
 
@@ -31,6 +32,7 @@ export type SourceId =
 	| "kubernetes"
 	| "cloudflare"
 	| "railway"
+	| "vercel"
 	| "planetscale"
 	| "gcp"
 
@@ -44,6 +46,7 @@ export type FindingTarget =
 	| { kind: "pods"; scope: "saturated" | "elevated" | "unbounded" }
 	| { kind: "zone"; zoneName: string }
 	| { kind: "railway"; serviceId: string; environmentId: string }
+	| { kind: "vercel"; projectId: string }
 	| { kind: "planetscale"; database: string }
 	| { kind: "gcp"; service: GcpInfraServiceId; keys: ReadonlyArray<string> }
 	| { kind: "gcpService"; service: GcpInfraServiceId }
@@ -290,6 +293,52 @@ export function summarizeRailway(services: ReadonlyArray<RailwayServiceRow>): So
 			saturated.length + elevated > 0
 				? `${countLabel(saturated.length + elevated, "service")} above 60% of limit`
 				: "all under 60% of limit",
+		headlineTone: worstTone(findings),
+		findings,
+	}
+}
+
+/** Projects with fewer requests than this can't move a 5xx rate meaningfully. */
+const MIN_PROJECT_REQUESTS = 100
+
+const projectErrorRate = (project: VercelInfraProject) =>
+	project.requests > 0 ? project.requests5xx / project.requests : 0
+
+export function summarizeVercel(projects: ReadonlyArray<VercelInfraProject>): SourceSummary {
+	const erroring = projects
+		.filter(
+			(project) =>
+				project.requests >= MIN_PROJECT_REQUESTS &&
+				errorRateLevel(projectErrorRate(project)) !== "neutral",
+		)
+		.sort((a, b) => projectErrorRate(b) - projectErrorRate(a))
+	const crit = erroring.filter((project) => errorRateLevel(projectErrorRate(project)) === "crit").length
+	const findings: Finding[] = erroring.slice(0, MAX_FINDINGS_PER_SOURCE).map((project) => {
+		const name = project.projectName || project.projectId
+		return {
+			key: `vercel:${project.projectId}`,
+			source: "vercel",
+			tone: errorRateLevel(projectErrorRate(project)) === "crit" ? "crit" : "warn",
+			subject: name,
+			title: `${name} returning ${formatErrorRate(projectErrorRate(project))} 5xx`,
+			detail: `${formatNumber(project.requests)} requests, ${formatNumber(project.errorLogs)} error logs`,
+			target: { kind: "vercel", projectId: project.projectId },
+		}
+	})
+	let requests = 0
+	let requests5xx = 0
+	for (const project of projects) {
+		requests += project.requests
+		requests5xx += project.requests5xx
+	}
+	return {
+		resources: countLabel(projects.length, "project"),
+		segments: [
+			{ key: "ok", count: okCount(projects.length, erroring.length) },
+			{ key: "elevated", count: erroring.length - crit },
+			{ key: "saturated", count: crit },
+		],
+		headline: `${formatNumber(requests)} requests, ${formatErrorRate(requests > 0 ? requests5xx / requests : 0)} 5xx`,
 		headlineTone: worstTone(findings),
 		findings,
 	}

@@ -15,6 +15,7 @@ import type { IntegrationInventoryService } from "@maple/backend/services/integr
 import type { SourcesService } from "@maple/backend/services/org/SourcesService"
 import type { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import type { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
+import type { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
 import type { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import type { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import type { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
@@ -51,6 +52,7 @@ export type McpToolRuntimeRequirements =
 	| SetupAuditService
 	| VcsCommitService
 	| VcsSourceService
+	| VercelIntegrationService
 	| WarehouseQueryService
 
 /** Every service a raw registered MCP handler may require. */

@@ -1,6 +1,6 @@
 // @maple/query-engine-integrations
 //
-// Query builders for third-party integrations (Cloudflare, PlanetScale) and for
+// Query builders for third-party integrations (Cloudflare, PlanetScale, Railway, Vercel) and for
 // product surfaces that read telemetry to back one specific feature rather than
 // a general signal.
 //
@@ -18,3 +18,4 @@ export * from "./gcp/index"
 export * from "./planetscale/index"
 export * from "./product/index"
 export * from "./railway/index"
+export * from "./vercel/index"

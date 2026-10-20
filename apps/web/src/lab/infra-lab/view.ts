@@ -1,4 +1,7 @@
 import { buildInfraLabFixture, type InfraLabFixture } from "../infra-fixture"
+import * as BarChart from "../../charts/bar-chart"
+import { INFRA_CHART_TOKENS } from "../../charts/infra-metric-series"
+import { ResolveThemeColors } from "../../charts/theme-colors"
 import { RailwayIntegrationStatus } from "@maple/domain/http"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -14,9 +17,16 @@ import { sourceRow } from "../../page/infra/overview/view-sources"
 import type * as RailwayList from "../../page/infra-integrations/railway/list/message"
 import type { Model as RailwayModel } from "../../page/infra-integrations/railway/list/model"
 import { servicesList } from "../../page/infra-integrations/railway/list/view"
+import * as VercelList from "../../page/infra-integrations/vercel/list/model"
+import { listBody } from "../../page/infra-integrations/vercel/list/view"
+import * as VercelProject from "../../page/infra-integrations/vercel/project/model"
+import { projectPage } from "../../page/infra-integrations/vercel/project/view"
+import { barChartSlot } from "../../page/infra-integrations/vercel/view-parts"
+import { pickTimeSearch } from "../../page/infra/kit/view-tabs"
 import { sectionHeading } from "../../page/kit/section-heading"
 import { sortRowsBy } from "../../page/kit/table-sort"
 import { eyebrow } from "../../ui/eyebrow"
+import { VERCEL_STATUS } from "../vercel-infra-fixtures"
 import { Message, type Model } from "./update"
 
 type H = HtmlBuilder<Message>
@@ -37,7 +47,7 @@ const overview = (h: H, fixture: InfraLabFixture): Html => {
 	return frame(h, "/infra overview", [
 		pageHero(h, {
 			title: "Infrastructure",
-			description: "6 sources reporting. What needs a look comes first.",
+			description: "7 sources reporting. What needs a look comes first.",
 		}),
 		h.div(
 			[h.Class("space-y-3")],
@@ -143,10 +153,65 @@ const railway = (h: H, model: Model, fixture: InfraLabFixture): Html =>
 		}),
 	])
 
+type VercelInputs = Readonly<{ timeZone: string }>
+
+/** `VercelListPage` over the fixtures, in the view its search names. */
+const vercelListView = Submodel.defineView<VercelList.Model, VercelList.Message, VercelInputs>((list, inputs, h) =>
+	listBody(h, list, {
+		status: VERCEL_STATUS,
+		time: pickTimeSearch(list.search),
+		clock: { nowMs: list.nowMs, timeZone: inputs.timeZone },
+		bar: barChartSlot(
+			h,
+			list,
+			(chartId, message) => VercelList.Message.GotChartMessage({ chartId, message }),
+			inputs.timeZone,
+		),
+	}),
+)
+
+const vercelProjectView = Submodel.defineView<VercelProject.Model, VercelProject.Message, VercelInputs>(
+	(project, inputs, h) => h.div([h.Class("space-y-6")], projectPage(h, project, inputs.timeZone)),
+)
+
+const vercel = (h: H, model: Model): ReadonlyArray<Html> => [
+	frame(h, "/infra/vercel", [
+		h.submodel({
+			slotId: "lab-vercel-projects",
+			model: model.vercelProjects,
+			view: vercelListView,
+			viewInputs: { timeZone: model.timeZone },
+			toParentMessage: (message: VercelList.Message) =>
+				Message.GotVercelListMessage({ view: "projects", message }),
+		}),
+	]),
+	frame(h, "/infra/vercel?view=aiGateway", [
+		h.submodel({
+			slotId: "lab-vercel-ai-gateway",
+			model: model.vercelAiGateway,
+			view: vercelListView,
+			viewInputs: { timeZone: model.timeZone },
+			toParentMessage: (message: VercelList.Message) =>
+				Message.GotVercelListMessage({ view: "aiGateway", message }),
+		}),
+	]),
+	frame(h, "/infra/vercel/$projectId", [
+		h.submodel({
+			slotId: "lab-vercel-project",
+			model: model.vercelProject,
+			view: vercelProjectView,
+			viewInputs: { timeZone: model.timeZone },
+			toParentMessage: (message: VercelProject.Message) => Message.GotVercelProjectMessage({ message }),
+		}),
+	]),
+]
+
+const THEME_TOKENS = [...INFRA_CHART_TOKENS, "--chart-2", ...BarChart.BAR_CHART_TOKENS]
+
 export const view = (model: Model, h: H): Html => {
 	const fixture = buildInfraLabFixture(model.nowMs)
 	return h.div(
-		[h.Class("mx-auto max-w-6xl space-y-16 p-8")],
-		[overview(h, fixture), hosts(h, model, fixture), railway(h, model, fixture)],
+		[h.Class("mx-auto max-w-6xl space-y-16 p-8"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
+		[overview(h, fixture), hosts(h, model, fixture), railway(h, model, fixture), ...vercel(h, model)],
 	)
 }

@@ -87,7 +87,7 @@ export const pushSourceHealth = (source: PushSourceState, now: number): SourceHe
 
 const fromIntegrationStatus = (status: IntegrationStatus): SourceHealthStatus => status
 
-/** A provider-wide integration (Cloudflare, Railway, PlanetScale, GitHub) as one source. */
+/** A provider-wide integration (Cloudflare, Railway, Vercel, PlanetScale, GitHub) as one source. */
 export const integrationSourceHealth = (entry: IntegrationEntry | undefined): SourceHealthResult => {
 	if (entry === undefined) {
 		return { status: "disconnected", lastDataAt: null, problem: "The integration is no longer connected" }

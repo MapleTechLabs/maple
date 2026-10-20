@@ -22,6 +22,7 @@ import {
 	LoadNamespaces,
 	LoadPlanetscaleStatus,
 	LoadRailwayStatus,
+	LoadVercelStatus,
 	LoadTenant,
 } from "./data"
 import { DismissQuotaBanner, OpenCustomerPortal } from "./billing-banners"
@@ -99,7 +100,7 @@ const requestSidebarData = (model: Model): UpdateReturn => {
 	}
 }
 
-/** `useInfraSurfaces`: the last hour's presence probe and the four integration statuses, once. */
+/** `useInfraSurfaces`: the last hour's presence probe and the integration statuses, once. */
 const requestInfraSurfaces = (model: Model): UpdateReturn =>
 	Option.match(model.maybeOrgId, {
 		onNone: () => ({ model }),
@@ -113,6 +114,7 @@ const requestInfraSurfaces = (model: Model): UpdateReturn =>
 							LoadCloudflareStatus({ orgId }),
 							LoadPlanetscaleStatus({ orgId }),
 							LoadRailwayStatus({ orgId }),
+							LoadVercelStatus({ orgId }),
 							LoadGcpStatus({ orgId }),
 						],
 					},

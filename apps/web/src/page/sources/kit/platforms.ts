@@ -43,6 +43,7 @@ export const PLATFORMS = {
 	},
 	gcp: { label: "Google Cloud", description: "Logs, metrics and resources", icon: "GoogleCloudIcon" },
 	railway: { label: "Railway", description: "Service metrics", icon: "RailwayIcon" },
+	vercel: { label: "Vercel", description: "Logs, traces and deployments", icon: "VercelIcon" },
 	planetscale: { label: "PlanetScale", description: "Database metrics", icon: "PlanetScaleIcon" },
 	github: { label: "GitHub", description: "Repositories, CI and deploys", icon: "GithubIcon" },
 } as const satisfies Record<SourcePlatform, PlatformMeta>

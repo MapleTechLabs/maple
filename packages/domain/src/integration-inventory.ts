@@ -8,6 +8,7 @@ export const INTEGRATION_PROVIDERS = [
 	"github",
 	"cloudflare",
 	"railway",
+	"vercel",
 	"planetscale",
 	"prometheus",
 	"chat",
@@ -99,6 +100,18 @@ export interface IntegrationInventoryInputs {
 			readonly serviceCount: number
 		}
 	>
+	readonly vercelConnection:
+		| (PollState & {
+				readonly teamName: string
+				readonly authFailedAt: number | null
+				readonly logsEnabled: boolean
+				readonly tracesEnabled: boolean
+				readonly logDrainState: VercelDrainSnapshot | null
+				readonly traceDrainState: VercelDrainSnapshot | null
+				readonly createdAt: number
+		  })
+		| null
+	readonly vercelProjectCount: number
 	readonly planetscaleConnection: {
 		readonly psOrganization: string
 		readonly detectedPermissions: Readonly<Record<string, boolean>> | null
@@ -128,6 +141,12 @@ export interface IntegrationInventoryInputs {
 		readonly name: string
 		readonly createdAt: number
 	}>
+}
+
+/** What the poller last saw of one Vercel drain. */
+export interface VercelDrainSnapshot {
+	readonly status: string
+	readonly lastError: string | null
 }
 
 export interface IntegrationResource {
@@ -172,6 +191,11 @@ export const INTEGRATION_FEEDS = {
 		"Hyperdrive origins resolved on the service map",
 	],
 	railway: ["per-service CPU, memory, network and disk metrics"],
+	vercel: [
+		"function, edge, build and request logs through a log drain",
+		"deployment and AI Gateway traces through a trace drain",
+		"project and deployment inventory (list_infra kind=vercel_projects)",
+	],
 	planetscale: [
 		"database metrics through a managed Prometheus scrape",
 		"query insights and deploy-request events",
@@ -381,6 +405,60 @@ const railway = (inputs: IntegrationInventoryInputs, now: number): IntegrationEn
 	})
 }
 
+const vercel = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
+	const connection = inputs.vercelConnection
+	if (connection === null) return null
+	const drain = (
+		name: string,
+		enabled: boolean,
+		state: VercelDrainSnapshot | null,
+	): ReadonlyArray<IntegrationResource> => {
+		if (!enabled) return []
+		// "unknown": Vercel's answer carried no status; the next check reads it.
+		const unchecked = state === null || state.status === "unknown"
+		const status: IntegrationStatus = unchecked
+			? "pending"
+			: state.status === "enabled"
+				? "healthy"
+				: "failing"
+		return [
+			{
+				kind: "drain",
+				name,
+				status,
+				lastSuccessAt: null,
+				lastError: status === "failing" ? (state?.lastError ?? `drain ${state?.status}`) : null,
+				note: unchecked ? "not checked yet" : null,
+			},
+		]
+	}
+	const connectionStatus = pollStatus(connection, now, POLLER_STALE_MS)
+	const own =
+		connection.authFailedAt !== null
+			? {
+					status: "disconnected" as const,
+					problem: "Vercel rejected the access token; save a new one in Settings → Integrations.",
+				}
+			: connectionStatus === "failing" || connectionStatus === "stale"
+				? {
+						status: connectionStatus,
+						problem:
+							connectionStatus === "failing"
+								? `Sync failing: ${connection.lastError ?? "unknown error"}`
+								: "The project and drain check has not succeeded recently.",
+					}
+				: undefined
+	return entry("vercel", now, {
+		account: `${connection.teamName} (${inputs.vercelProjectCount} project${inputs.vercelProjectCount === 1 ? "" : "s"})`,
+		connectedAt: connection.createdAt,
+		own,
+		resources: [
+			...drain("logs", connection.logsEnabled, connection.logDrainState),
+			...drain("traces", connection.tracesEnabled, connection.traceDrainState),
+		],
+	})
+}
+
 const planetscale = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
 	const oauth = oauthFor(inputs, "planetscale")
 	const connection = inputs.planetscaleConnection
@@ -537,6 +615,7 @@ export const buildIntegrationInventory = (
 		github(inputs, now),
 		cloudflare(inputs, now),
 		railway(inputs, now),
+		vercel(inputs, now),
 		planetscale(inputs, now),
 		prometheus(inputs, now),
 		chat(inputs, now),

@@ -44,6 +44,7 @@ const INTEGRATION_FOR_CHECK = new Map<string, string>([
 	["CFG-INTEG-04", "railway"],
 	["CFG-INTEG-05", "planetscale"],
 	["CFG-INTEG-06", "cloudflare"],
+	["CFG-INTEG-07", "vercel"],
 	["CFG-SCRAPE-01", "prometheus"],
 ])
 

@@ -13,6 +13,7 @@ export const NavSurface = Schema.Literals([
 	"cloudflare",
 	"planetscale",
 	"railway",
+	"vercel",
 	"gcp",
 ])
 export type NavSurface = typeof NavSurface.Type
@@ -81,6 +82,7 @@ const infrastructureItem: NavItem = {
 			surfaces: ["planetscale"],
 		},
 		{ title: "Railway", href: "/infra/railway", icon: "RailwayIcon", surfaces: ["railway"] },
+		{ title: "Vercel", href: "/infra/vercel", icon: "VercelIcon", surfaces: ["vercel"] },
 		{ title: "Google Cloud", href: "/infra/gcp", icon: "GoogleCloudIcon", surfaces: ["gcp"] },
 	],
 }

@@ -28,6 +28,7 @@ import {
 	LoadNamespaces,
 	LoadPlanetscaleStatus,
 	LoadRailwayStatus,
+	LoadVercelStatus,
 } from "./data"
 import { Menu, Message, OutMessage } from "./message"
 import { DashboardsData, init, type Model, NamespacesData } from "./model"
@@ -140,12 +141,20 @@ describe("sidebar collapse", () => {
 			given(signedIn({ isMobile: true })),
 			expect(sidebar).toBeAbsent(),
 			...open(),
-			Command.expectExact(LoadInfraPresence, LoadCloudflareStatus, LoadPlanetscaleStatus, LoadRailwayStatus, LoadGcpStatus),
+			Command.expectExact(
+				LoadInfraPresence,
+				LoadCloudflareStatus,
+				LoadPlanetscaleStatus,
+				LoadRailwayStatus,
+				LoadVercelStatus,
+				LoadGcpStatus,
+			),
 			Command.resolveAll(
 				[LoadInfraPresence, Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: [] })],
 				[LoadCloudflareStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "cloudflare", isConnected: false })],
 				[LoadPlanetscaleStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "planetscale", isConnected: false })],
 				[LoadRailwayStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "railway", isConnected: false })],
+				[LoadVercelStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "vercel", isConnected: false })],
 				[LoadGcpStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "gcp", isConnected: false })],
 			),
 			...close(),
@@ -163,6 +172,7 @@ describe("sidebar collapse", () => {
 			"LoadCloudflareStatus",
 			"LoadPlanetscaleStatus",
 			"LoadRailwayStatus",
+			"LoadVercelStatus",
 			"LoadGcpStatus",
 		])
 		expectVitest(asked.model.hasRequestedSidebarData).toBe(false)
@@ -307,11 +317,11 @@ describe("in-place org change", () => {
 		const onA = {
 			...signedIn({ maybeOrgId: Option.some("org_a") }),
 			namespaces: NamespacesData.Success({ data: ["a-only"] }),
-			integrations: { cloudflare: true, railway: true, planetscale: false, gcp: false },
+			integrations: { cloudflare: true, railway: true, vercel: false, planetscale: false, gcp: false },
 		}
 		const onB = enter("org_b")(onA).model
 		expectVitest(onB.namespaces._tag).toBe("Idle")
-		expectVitest(onB.integrations).toEqual({ cloudflare: false, railway: false, planetscale: false, gcp: false })
+		expectVitest(onB.integrations).toEqual({ cloudflare: false, railway: false, vercel: false, planetscale: false, gcp: false })
 		const lateNamespaces = update(onB, Message.SucceededLoadNamespaces({ orgId: "org_a", namespaces: ["a-only"] }))
 		expectVitest(lateNamespaces.model.namespaces._tag).toBe("Idle")
 		const lateStatus = update(
@@ -360,12 +370,13 @@ describe("infrastructure section", () => {
 			given(
 				signedIn({
 					infraPresence: { _tag: "Success", data: ["hosts"] },
-					integrations: { cloudflare: true, railway: false, planetscale: false, gcp: false },
+					integrations: { cloudflare: true, railway: false, vercel: true, planetscale: false, gcp: false },
 				}),
 			),
 			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
 			expect(role("link", { name: "Hosts" })).toExist(),
 			expect(role("link", { name: "Cloudflare" })).toExist(),
+			expect(role("link", { name: "Vercel" })).toHaveAttr("href", "/infra/vercel"),
 			expect(role("link", { name: "Kubernetes" })).toBeAbsent(),
 			expect(role("link", { name: "Railway" })).toBeAbsent(),
 		)

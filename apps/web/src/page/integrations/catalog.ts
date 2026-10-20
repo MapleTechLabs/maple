@@ -14,6 +14,7 @@ export type IntegrationId =
 	| "planetscale"
 	| "gcp"
 	| "railway"
+	| "vercel"
 	| "warpstream"
 	| "hazel"
 	| "github"
@@ -24,6 +25,7 @@ export const HAZEL_ACCENT = "#F46F0F"
 export const CLOUDFLARE_ACCENT = "#F38020"
 export const RAILWAY_ACCENT = "#0B0D0E"
 export const GCP_ACCENT = "#4285F4"
+export const VERCEL_ACCENT = "#000000"
 
 /** A generated icon, or a chat connector's manifest mark (rendered from its path data). */
 export type EntryIcon =
@@ -126,6 +128,17 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: named("RailwayIcon"),
 		accent: RAILWAY_ACCENT,
 		iconClassName: "text-foreground",
+	},
+	{
+		id: "vercel",
+		category: "infrastructure",
+		isNew: true,
+		name: "Vercel",
+		description: "Paste a Vercel token to drain request logs, traces and AI Gateway usage from a team.",
+		icon: named("VercelIcon"),
+		accent: VERCEL_ACCENT,
+		iconClassName: "text-foreground",
+		docsUrl: docsUrl("vercel"),
 	},
 	{
 		id: "warpstream",

@@ -12,11 +12,13 @@ import {
 	summarizePlanetScale,
 	summarizePods,
 	summarizeRailway,
+	summarizeVercel,
 } from "../components/infra/overview/summaries"
+import { VERCEL_PROJECTS } from "./vercel-infra-fixtures"
 
 /**
- * `/lab/infra`'s rows: a host fleet, Railway services in two environments, Cloudflare zones and
- * PlanetScale databases, all relative to `nowMs`.
+ * `/lab/infra`'s rows: a host fleet, Railway services in two environments, Cloudflare zones,
+ * PlanetScale databases and Vercel projects, all relative to `nowMs`.
  */
 type HostRow = ListHostsResponse["data"][number]
 
@@ -202,6 +204,7 @@ export function buildInfraLabFixture(nowMs: number): InfraLabFixture {
 			],
 			["cloudflare", summarizeCloudflare(zones)],
 			["railway", summarizeRailway(railway)],
+			["vercel", summarizeVercel(VERCEL_PROJECTS)],
 			["planetscale", summarizePlanetScale(databases)],
 		],
 	}

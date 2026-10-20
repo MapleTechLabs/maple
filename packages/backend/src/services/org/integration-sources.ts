@@ -7,6 +7,7 @@ import {
 	ScrapeTargets,
 	Sources,
 	VcsInstallations,
+	VercelConnections,
 } from "@maple/db/tables"
 import type { IntegrationInventory, IntegrationProvider } from "@maple/domain/integration-inventory"
 import {
@@ -33,6 +34,7 @@ export const integrationSourceName = {
 	gcp: (connector: { readonly scopeId: string }) => `Google Cloud ${connector.scopeId}`,
 	railway: (connection: { readonly workspaceNames: string | null }) =>
 		connection.workspaceNames ?? "Railway",
+	vercel: (connection: { readonly teamName: string }) => connection.teamName,
 	planetscale: (organization: string | undefined) =>
 		organization === undefined ? "PlanetScale" : `PlanetScale ${organization}`,
 	cloudflare: (connection: { readonly externalAccountName: string | null }) =>
@@ -144,6 +146,11 @@ export const readIntegrationLinks = Effect.fnUntraced(function* (db: MapleDb, or
 					.select("id", "workspaceNames")
 					.where(($) => [$.orgId.eq(orgId)]),
 			),
+			vercel: db.run(
+				PG.from(VercelConnections)
+					.select("id", "teamName")
+					.where(($) => [$.orgId.eq(orgId)]),
+			),
 			planetscale: db.run(
 				PG.from(PlanetscaleConnections)
 					.select("id", "psOrganization")
@@ -187,6 +194,12 @@ export const readIntegrationLinks = Effect.fnUntraced(function* (db: MapleDb, or
 			integrationId: connection.id,
 			name: integrationSourceName.railway(connection),
 			health: providerHealth("railway"),
+		})),
+		...rows.vercel.map((connection) => ({
+			platform: "vercel" as const,
+			integrationId: connection.id,
+			name: integrationSourceName.vercel(connection),
+			health: providerHealth("vercel"),
 		})),
 		...rows.planetscale.map((connection) => ({
 			platform: "planetscale" as const,

@@ -784,7 +784,7 @@ const inventoryFindings = (
 		}))
 	// A provider-wide problem the resources do not explain (a pending setup step, a rejected token).
 	// A revoked OAuth grant is CFG-INTEG-01's finding already.
-	const revoked = entry.status === "disconnected" && provider !== "railway"
+	const revoked = entry.status === "disconnected" && provider !== "railway" && provider !== "vercel"
 	const own =
 		only === undefined && !revoked && entry.problem !== null && resources.length === 0
 			? [{ kind: "integration" as const, name: provider, note: briefError(entry.problem) }]
@@ -914,6 +914,23 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 			return affected.length === 0
 				? PASS
 				: fail(`${plural(affected.length, "Logpush job")} reported an error.`, affected)
+		},
+	},
+	{
+		id: "CFG-INTEG-07",
+		category: "integrations",
+		title: "Vercel drains are forwarding",
+		severity: "warn",
+		fixHint:
+			"Settings → Integrations → Vercel: save a new access token if Vercel rejected it; a missing or errored drain is re-created on the next sync, and drains need a Pro or Enterprise team.",
+		evaluate: ({ config }) => {
+			const affected = inventoryFindings(config.integrationInventory, "vercel")
+			return affected.length === 0
+				? PASS
+				: fail(
+						`Vercel has ${plural(affected.length, "problem")}: logs or traces from the affected drains are not arriving.`,
+						affected,
+					)
 		},
 	},
 	{

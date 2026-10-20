@@ -54,7 +54,7 @@ describe("workloads", () => {
 		).model
 		const reporting: PageContext = {
 			...context,
-			infra: { presence: ["k8sPods"], integrations: { cloudflare: false, railway: false, planetscale: false, gcp: false } },
+			infra: { presence: ["k8sPods"], integrations: { cloudflare: false, railway: false, vercel: false, planetscale: false, gcp: false } },
 		}
 		scene(
 			{ update: pageUpdate, view: withViewInputs(pageView, { context: reporting })() },

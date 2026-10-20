@@ -32,6 +32,7 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"register_agent",
 	// integrations
 	"sync_railway",
+	"sync_vercel",
 	"create_scrape_target",
 	"update_scrape_target",
 	"delete_scrape_target",

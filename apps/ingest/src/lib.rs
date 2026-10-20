@@ -10,4 +10,5 @@ pub mod r2;
 pub mod session_analytics;
 pub mod telemetry;
 pub mod usage_metrics;
+pub mod vercel_logs;
 pub mod wal_store;

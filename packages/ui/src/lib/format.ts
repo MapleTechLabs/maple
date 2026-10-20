@@ -4,7 +4,7 @@ import { toEpochMs } from "./time-format"
 
 // Imported, not re-exported straight through: the formatters below CALL these,
 // and a bare `export … from` binds nothing in this module's scope.
-import { formatDuration, formatNumber } from "@maple/domain/format"
+import { formatCurrency, formatDuration, formatNumber } from "@maple/domain/format"
 
 export { formatDuration, formatNumber }
 
@@ -338,6 +338,12 @@ export const formatValueByUnit: (num: number, unit?: string) => string = (num, u
 		// dashboards, and switching them to a 1024 base would silently rewrite
 		// every one of those readouts (1_000_000 → "976.6 KB" instead of "1.0 MB").
 		Match.when("bytes", () => formatStorageBytes(num)),
+		// Spend per bucket is often a fraction of a cent, which two decimals print as "$0.00".
+		Match.when("usd", () =>
+			num !== 0 && Math.abs(num) < 0.01
+				? num.toLocaleString("en-US", { style: "currency", currency: "USD", maximumSignificantDigits: 2 })
+				: formatCurrency(num, "usd"),
+		),
 		Match.orElse(() => formatNumber(num)),
 	)
 

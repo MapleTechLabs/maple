@@ -31,12 +31,14 @@ export type OpenMenu = typeof OpenMenu.Type
 export const Integrations = Schema.Struct({
 	cloudflare: Schema.Boolean,
 	railway: Schema.Boolean,
+	vercel: Schema.Boolean,
 	planetscale: Schema.Boolean,
 	gcp: Schema.Boolean,
 })
 export const NO_INTEGRATIONS: typeof Integrations.Type = {
 	cloudflare: false,
 	railway: false,
+	vercel: false,
 	planetscale: false,
 	gcp: false,
 }
