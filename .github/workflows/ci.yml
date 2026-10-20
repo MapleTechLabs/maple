@@ -192,7 +192,7 @@ jobs:
                   bun turbo build --filter=@maple-dev/alchemy
                   --filter=@maple-dev/browser
                   --filter=@maple-dev/effect-sdk --filter=@maple/landing
-                  --filter=@maple/local-ui --concurrency=2
+                  --filter=@maple/local-ui --filter=@maple/web --concurrency=2
 
             # Read-only over the build above: nothing here may run turbo with its
             # dependency graph, or a cache restore rewrites dist/ under the others.
@@ -217,6 +217,12 @@ jobs:
                     if: ${{ matrix.shard == 'quality' }}
                     run: bun run size
                     working-directory: packages/browser
+
+                  # Startup gzip budget, and no lazy-only code in the startup graph.
+                  - name: Web bundle budget
+                    if: ${{ matrix.shard == 'quality' }}
+                    run: bun run check:bundle
+                    working-directory: apps/web
 
                   # `turbo typecheck` does not cover tsconfig.alchemy.json.
                   - name: Typecheck Alchemy entrypoints

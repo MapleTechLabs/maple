@@ -8,7 +8,8 @@
 		"test": "vitest run --passWithNoTests",
 		"typecheck": "tsrs --noEmit",
 		"test:e2e": "cd e2e && e2e run",
-		"og:fonts": "bun scripts/build-og-fonts.ts"
+		"og:fonts": "bun scripts/build-og-fonts.ts",
+		"check:bundle": "bun perf/check-bundle-budget.ts"
 	},
 	"dependencies": {
 		"@clerk/themes": "^2.4.57",
