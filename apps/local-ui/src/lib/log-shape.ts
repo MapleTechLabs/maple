@@ -37,7 +37,7 @@ export function normalizeLog(row: LogsListOutput): LocalLog {
 	}
 }
 
-/** Stable identity for a log row (selection, React keys). */
+/** Stable identity for a log row (selection, keyed rows). */
 export function logKey(log: LocalLog): string {
 	return `${log.timestamp}|${log.serviceName}|${log.traceId}|${log.spanId}|${log.recordIdentity}`
 }

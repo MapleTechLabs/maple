@@ -1,40 +1,24 @@
-import { defineConfig } from "vite"
-import viteReact from "@vitejs/plugin-react"
+import { foldkit } from "@foldkit/vite-plugin"
 import tailwindcss from "@tailwindcss/vite"
+import { defineConfig } from "vite"
 
-// The local Maple binary (`maple start`) serves this SPA from its own origin and
-// owns the query and OTLP endpoints. In dev we run Vite standalone and proxy
-// both route families to the running binary (default OTLP/HTTP port 4318).
+// The `maple` binary serves the static build and owns `/local/*` and `/v1/*`; in dev Vite
+// proxies both to a running binary. `dist/` is deployed to local.maple.dev and embedded in
+// the binary (scripts/gen-ui-embed.ts, apps/ingest/ui-dist).
 const LOCAL_BINARY_URL = process.env.MAPLE_LOCAL_URL ?? "http://127.0.0.1:4318"
 
-export default defineConfig({
-	plugins: [tailwindcss(), viteReact()],
-	// `@maple/ui` and this app each resolve their own `react`/`react-dom` copy in
-	// the monorepo; dedupe so Base UI components (Popover, etc.) share a single
-	// React instance — otherwise hooks throw "more than one copy of React".
-	resolve: {
-		dedupe: ["react", "react-dom"],
-		tsconfigPaths: true,
-	},
-	// Emit a static SPA. `dist/` is both deployed to local.maple.dev (the default
-	// UI) and inlined into the `maple` binary as the `--offline` fallback (via
-	// scripts/gen-ui-embed.ts → apps/cli/src/server/ui-embed.gen.ts).
-	build: {
-		outDir: "dist",
-		emptyOutDir: true,
-	},
+export default defineConfig(({ command }) => ({
+	resolve: { tsconfigPaths: true },
+	plugins: [
+		tailwindcss(),
+		// The DevTools MCP relay only exists on the dev server.
+		foldkit(command === "serve" ? {} : { devToolsMcpPort: false }),
+	],
+	build: { outDir: "dist", emptyOutDir: true },
 	server: {
 		proxy: {
-			"/local": {
-				target: LOCAL_BINARY_URL,
-				changeOrigin: true,
-			},
-			// Keep the connection hint same-origin in dev: exporters can post to
-			// Vite's displayed origin and reach the binary just like /local/query.
-			"/v1": {
-				target: LOCAL_BINARY_URL,
-				changeOrigin: true,
-			},
+			"/local": { target: LOCAL_BINARY_URL, changeOrigin: true },
+			"/v1": { target: LOCAL_BINARY_URL, changeOrigin: true },
 		},
 	},
-})
+}))
