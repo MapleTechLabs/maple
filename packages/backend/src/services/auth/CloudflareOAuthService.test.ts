@@ -4,7 +4,13 @@ import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { CloudflareOAuthService, type CloudflareOAuthServiceApi } from "./CloudflareOAuthService"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 
 const trackedDbs: TestDb[] = []
 
@@ -511,6 +517,53 @@ describe("CloudflareOAuthService", () => {
 				Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts, counters)),
 			),
 		)
+	})
+
+	it.effect("connects as one Cloudflare source that Logpush jobs send as, removed on disconnect", () => {
+		const testDb = createTestDb(trackedDbs)
+		const accounts = [{ id: "acc_1", name: "Acme Inc", type: "standard" }]
+		const owners = () =>
+			Effect.promise(() =>
+				testDb.pglite.query<{ source: string; name: string; connection: string | null; logpush: string | null }>(
+					`SELECT s.id AS source, s.name,
+						(SELECT c.source_id FROM oauth_connections c WHERE c.org_id = 'org_a') AS connection,
+						(SELECT l.source_id FROM cloudflare_logpush_connectors l WHERE l.id = 'lp_1') AS logpush
+					FROM sources s WHERE s.kind = 'integration'`,
+				),
+			).pipe(Effect.map((result) => result.rows))
+		return Effect.gen(function* () {
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO cloudflare_logpush_connectors (id, org_id, name, zone_name, service_name, secret_ciphertext,
+						secret_iv, secret_tag, secret_hash, secret_rotated_at, created_at, updated_at, created_by, updated_by)
+					VALUES ('lp_1', 'org_a', 'Zone', 'acme.com', 'edge', 'x', 'x', 'x', 'h', now(), now(), now(), 'u', 'u')`,
+				),
+			)
+			const service = yield* CloudflareOAuthService
+			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
+				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
+			})
+			yield* service.completeConnect("auth-code", state)
+			const [connected] = yield* owners()
+			assert.deepStrictEqual(connected, {
+				source: connected!.source,
+				name: "Acme Inc",
+				connection: connected!.source,
+				logpush: connected!.source,
+			})
+
+			yield* service.disconnect(asOrgId("org_a"))
+			assert.deepStrictEqual(yield* owners(), [])
+			// The Logpush job keeps running, unlinked.
+			const job = yield* Effect.promise(() =>
+				queryFirstRow<{ source_id: string | null }>(
+					testDb,
+					"SELECT source_id FROM cloudflare_logpush_connectors WHERE id = 'lp_1'",
+				),
+			)
+			assert.deepStrictEqual(job, { source_id: null })
+		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
 	})
 
 	it.effect("disconnect on a non-connected org reports nothing removed", () => {

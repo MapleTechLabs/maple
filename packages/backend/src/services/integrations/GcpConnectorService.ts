@@ -30,6 +30,11 @@ import { gcpSetupPlan } from "@maple/domain/gcp"
 import { renderGcpAlchemy } from "./gcp/alchemy"
 import { gcpLogFilter, renderGcpCleanupScript, renderGcpSetupScript } from "./gcp/setup-scripts"
 import { renderGcpTerraform } from "./gcp/terraform"
+import {
+	deleteSourcesOf,
+	ensureIntegrationSource,
+	integrationSourceName,
+} from "@maple/backend/services/org/integration-sources"
 
 export interface GcpConnector {
 	readonly id: GcpConnectorId
@@ -387,26 +392,48 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 					secretAad(id),
 				)
 				const now = yield* Clock.currentTimeMillis
+				// The connector and the source it sends as land together.
 				const [row] = yield* dbExecute((db) =>
-					db.run(
-						PG.insertInto(GcpConnectors)
-							.values({
-								id,
+					db.transaction(
+						Effect.gen(function* () {
+							const [inserted] = yield* db.run(
+								PG.insertInto(GcpConnectors)
+									.values({
+										id,
+										orgId,
+										...input,
+										// What is created off is known not to exist; switching it on later resets this to null.
+										appliedLogsEnabled: input.logsEnabled ? null : false,
+										appliedMetricsEnabled: input.metricsEnabled ? null : false,
+										secretCiphertext: encrypted.ciphertext,
+										secretIv: encrypted.iv,
+										secretTag: encrypted.tag,
+										secretHash: hashIngestKey(secret, lookupHmacKey),
+										createdBy: userId,
+										createdAt: now,
+										updatedAt: now,
+									})
+									.onConflictDoNothing({ target: ["orgId", "scopeType", "scopeId"] })
+									.returning(),
+							)
+							if (inserted === undefined) return []
+							const sourceId = yield* ensureIntegrationSource(
+								db,
 								orgId,
-								...input,
-								// What is created off is known not to exist; switching it on later resets this to null.
-								appliedLogsEnabled: input.logsEnabled ? null : false,
-								appliedMetricsEnabled: input.metricsEnabled ? null : false,
-								secretCiphertext: encrypted.ciphertext,
-								secretIv: encrypted.iv,
-								secretTag: encrypted.tag,
-								secretHash: hashIngestKey(secret, lookupHmacKey),
-								createdBy: userId,
-								createdAt: now,
-								updatedAt: now,
-							})
-							.onConflictDoNothing({ target: ["orgId", "scopeType", "scopeId"] })
-							.returning(),
+								{
+									platform: "gcp",
+									integrationId: id,
+									name: integrationSourceName.gcp(inserted),
+								},
+								now,
+							)
+							return yield* db.run(
+								PG.update(GcpConnectors)
+									.set({ sourceId })
+									.where(($) => [$.id.eq(id)])
+									.returning(),
+							)
+						}),
 					),
 				)
 				if (row === undefined) {
@@ -577,11 +604,18 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				connectorId: GcpConnectorId,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.gcp.connector_id": connectorId })
+				// Its source goes with it.
 				const [row] = yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(GcpConnectors)
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(connectorId)])
-							.returning(),
+					db.transaction(
+						Effect.gen(function* () {
+							const deleted = yield* db.run(
+								PG.deleteFrom(GcpConnectors)
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(connectorId)])
+									.returning(),
+							)
+							yield* deleteSourcesOf(db, orgId, deleted)
+							return deleted
+						}),
 					),
 				)
 				if (row === undefined) return yield* notFound()

@@ -39,6 +39,7 @@ const created = (lastUsedAt: string | null = null) =>
 		name: "Node.js",
 		description: null,
 		platform: "nodejs",
+		kind: "token",
 		is_default: false,
 		key_prefix: "maple_src_Q7xZa",
 		integration_id: null,

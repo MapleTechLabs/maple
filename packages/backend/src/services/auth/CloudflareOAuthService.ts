@@ -9,10 +9,11 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OAuthAuthStates } from "@maple/db/tables"
+import { CloudflareLogpushConnectors, OAuthAuthStates } from "@maple/db/tables"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { listAccounts } from "@maple/backend/services/integrations/CloudflareApi"
+import { integrationSourceName } from "@maple/backend/services/org/integration-sources"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
 import { makeOAuthConnectionHelpers, OAUTH_STATE_TTL_MS } from "./oauth/connection-helpers"
@@ -199,6 +200,17 @@ export class CloudflareOAuthService extends Context.Service<
 			providerLabel: "Cloudflare",
 			database,
 			env,
+			source: {
+				platform: "cloudflare",
+				name: integrationSourceName.cloudflare,
+				// Logpush jobs set up before the connection send as it from now on.
+				link: (db, orgId, sourceId) =>
+					db.run(
+						PG.update(CloudflareLogpushConnectors)
+							.set({ sourceId })
+							.where(($) => [$.orgId.eq(orgId), $.sourceId.isNull()]),
+					),
+			},
 		})
 
 		/** Best-effort token revocation on disconnect — failures are logged, never surfaced. */

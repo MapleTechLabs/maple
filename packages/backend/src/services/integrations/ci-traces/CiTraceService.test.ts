@@ -235,14 +235,22 @@ describe("CiTraceService", () => {
 		const calls: Array<IngestCall> = []
 		const logCalls: Array<OtlpLogsRequest> = []
 		return Effect.gen(function* () {
-			yield* Effect.promise(() =>
-				executeSql(
+			// With its source, as VcsRepository.upsertInstallation writes it.
+			yield* Effect.promise(async () => {
+				await executeSql(
+					testDb,
+					`INSERT INTO sources (id, org_id, name, platform, kind, integration_id, created_at, updated_at)
+					VALUES (gen_random_uuid()::text, 'org_ci', 'GitHub octo', 'github', 'integration',
+						'00000000-0000-4000-8000-000000000042', now(), now())`,
+				)
+				await executeSql(
 					testDb,
 					`INSERT INTO vcs_installations (id, org_id, provider, external_installation_id, account_login,
-						account_type, external_account_id, installed_by_user_id, created_at, updated_at)
-					VALUES ('00000000-0000-4000-8000-000000000042', 'org_ci', 'github', '42', 'octo', 'Organization', '1', 'user_1', now(), now())`,
-				),
-			)
+						account_type, external_account_id, installed_by_user_id, created_at, updated_at, source_id)
+					SELECT '00000000-0000-4000-8000-000000000042', 'org_ci', 'github', '42', 'octo', 'Organization',
+						'1', 'user_1', now(), now(), id FROM sources WHERE platform = 'github'`,
+				)
+			})
 			const sink = yield* WorkflowEventSink
 			yield* sink.onWorkflowRun(orgId, run)
 			yield* sink.onWorkflowJobLog(orgId, job, Stream.fromIterable([stamped(123, "hello")]))

@@ -253,6 +253,33 @@ describe("RailwayMetricsService", () => {
 		)
 	})
 
+	it.effect("a reconnect keeps the connection's source and disconnect removes it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		const sourceIds = () =>
+			Effect.promise(() =>
+				testDb.pglite.query<{ id: string }>(
+					"SELECT s.id FROM sources s JOIN railway_connections c ON c.source_id = s.id",
+				),
+			).pipe(Effect.map((result) => result.rows.map((row) => row.id)))
+		return run(
+			testDb,
+			stubFetch(calls),
+			Effect.gen(function* () {
+				const railway = yield* RailwayMetricsService
+				yield* railway.connect(orgId, userId, "rw_token_123")
+				const first = yield* sourceIds()
+				assert.lengthOf(first, 1)
+				yield* railway.connect(orgId, userId, "rw_token_456")
+				assert.deepStrictEqual(yield* sourceIds(), first)
+
+				yield* railway.disconnect(orgId)
+				const left = yield* Effect.promise(() => testDb.pglite.query("SELECT id FROM sources WHERE kind = 'integration'"))
+				assert.deepStrictEqual(left.rows, [])
+			}),
+		)
+	})
+
 	it.effect("connect rejects a token Railway does not accept", () => {
 		const testDb = createTestDb(trackedDbs)
 		const stub = stubFetch({ railway: [], ingest: [] }, { railway: "unauthorized" })

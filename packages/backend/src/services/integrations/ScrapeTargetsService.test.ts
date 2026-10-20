@@ -99,7 +99,7 @@ describe("ScrapeTargetsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("sourceIds gives each target its pull source, stable across calls", () => {
+	it.effect("creates each target with its own source and deletes the source with it", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const service = yield* ScrapeTargetsService
@@ -112,39 +112,30 @@ describe("ScrapeTargetsService", () => {
 						scrapeIntervalSeconds: asScrapeIntervalSeconds(15),
 					}),
 				)
-			const plain = yield* create("org_1", "node")
-			const managed = yield* create("org_1", "branches")
+			const node = yield* create("org_1", "node")
 			const other = yield* create("org_2", "node")
-			yield* Effect.promise(() =>
-				executeSql(
-					testDb,
-					"UPDATE scrape_targets SET managed_by = 'planetscale:conn_1', discovery_config_json = $1::jsonb WHERE id = $2",
-					[JSON.stringify({ organization: "acme" }), managed.id],
-				),
+			const sources = () =>
+				Effect.promise(() =>
+					testDb.pglite.query<{ org_id: string; kind: string; platform: string; name: string; target: string }>(
+						`SELECT s.org_id, s.kind, s.platform, s.name, t.id AS target
+						FROM sources s JOIN scrape_targets t ON t.source_id = s.id ORDER BY s.org_id`,
+					),
+				)
+			assert.deepStrictEqual(
+				(yield* sources()).rows.map((row) => [row.org_id, row.kind, row.platform, row.name, row.target]),
+				[
+					["org_1", "integration", "prometheus", "node", node.id],
+					["org_2", "integration", "prometheus", "node", other.id],
+				],
 			)
-			const rows = yield* service.listAllEnabled()
-			const first = yield* service.sourceIds(rows)
-			const second = yield* service.sourceIds(rows)
-			assert.deepStrictEqual([...second.entries()].sort(), [...first.entries()].sort())
-			assert.strictEqual(first.size, 3)
-			const ids = [plain.id, managed.id, other.id].map((id) => first.get(id))
-			assert.isTrue(ids.every((id) => id?.startsWith("src_")))
-			assert.strictEqual(new Set(ids).size, 3)
-			const sources = yield* Effect.promise(() =>
-				testDb.pglite.query<{
-					org_id: string
-					platform: string
-					integration_id: string
-					name: string
-				}>("SELECT org_id, platform, integration_id, name FROM sources ORDER BY org_id, name"),
+
+			yield* service.delete(asOrgId("org_1"), node.id)
+			const left = yield* Effect.promise(() =>
+				testDb.pglite.query<{ org_id: string }>("SELECT org_id FROM sources"),
 			)
 			assert.deepStrictEqual(
-				sources.rows.map((row) => [row.org_id, row.platform, row.integration_id, row.name]),
-				[
-					["org_1", "planetscale", "conn_1", "PlanetScale acme"],
-					["org_1", "prometheus", plain.id, "node"],
-					["org_2", "prometheus", other.id, "node"],
-				],
+				left.rows.map((row) => row.org_id),
+				["org_2"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})

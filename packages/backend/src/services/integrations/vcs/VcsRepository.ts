@@ -41,6 +41,11 @@ import {
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import {
+	deleteSourcesOf,
+	ensureIntegrationSource,
+	integrationSourceName,
+} from "@maple/backend/services/org/integration-sources"
 
 // Postgres caps bind parameters at 65535. Chunk unbounded `in_(...)` filters
 // and bulk inserts so a large installation (every repo/commit at once) stays well
@@ -295,41 +300,70 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		) {
 			const now = yield* Clock.currentTimeMillis
 			const id = newInstallationId()
+			// A GitHub installation sends CI traces as its own source, created with the row.
 			const rows = yield* dbRead("vcs_installations")((db) =>
-				db.run(
-					PG.insertInto(VcsInstallations)
-						// `status`/`suspended_at` are omitted: a new row takes the schema
-						// default ("active"), and on conflict they are left untouched so a
-						// reconcile can't un-suspend. Status is owned by markInstallationStatus.
-						.values({
-							id,
-							orgId: input.orgId,
-							provider: input.provider,
-							externalInstallationId: input.externalInstallationId,
-							accountLogin: input.accountLogin,
-							accountType: input.accountType,
-							externalAccountId: input.externalAccountId,
-							accountAvatarUrl: input.accountAvatarUrl,
-							repositorySelection: input.repositorySelection,
-							installedByUserId: input.installedByUserId,
-							createdAt: now,
-							updatedAt: now,
-						})
-						.onConflictDoUpdate({
-							target: ["provider", "externalInstallationId"],
-							// Ownership columns (org_id, installed_by_user_id, created_at) and
-							// status/suspended_at are immutable on conflict; only mutable
-							// provider metadata is refreshed.
-							set: (_, excluded) => ({
-								accountLogin: excluded.accountLogin,
-								accountType: excluded.accountType,
-								externalAccountId: excluded.externalAccountId,
-								accountAvatarUrl: excluded.accountAvatarUrl,
-								repositorySelection: excluded.repositorySelection,
-								updatedAt: excluded.updatedAt,
-							}),
-						})
-						.returning(),
+				db.transaction(
+					Effect.gen(function* () {
+						const [upserted] = yield* db.run(
+							PG.insertInto(VcsInstallations)
+								// `status`/`suspended_at` are omitted: a new row takes the schema
+								// default ("active"), and on conflict they are left untouched so a
+								// reconcile can't un-suspend. Status is owned by markInstallationStatus.
+								.values({
+									id,
+									orgId: input.orgId,
+									provider: input.provider,
+									externalInstallationId: input.externalInstallationId,
+									accountLogin: input.accountLogin,
+									accountType: input.accountType,
+									externalAccountId: input.externalAccountId,
+									accountAvatarUrl: input.accountAvatarUrl,
+									repositorySelection: input.repositorySelection,
+									installedByUserId: input.installedByUserId,
+									createdAt: now,
+									updatedAt: now,
+								})
+								.onConflictDoUpdate({
+									target: ["provider", "externalInstallationId"],
+									// Ownership columns (org_id, installed_by_user_id, created_at) and
+									// status/suspended_at are immutable on conflict; only mutable
+									// provider metadata is refreshed.
+									set: (_, excluded) => ({
+										accountLogin: excluded.accountLogin,
+										accountType: excluded.accountType,
+										externalAccountId: excluded.externalAccountId,
+										accountAvatarUrl: excluded.accountAvatarUrl,
+										repositorySelection: excluded.repositorySelection,
+										updatedAt: excluded.updatedAt,
+									}),
+								})
+								.returning(),
+						)
+						if (
+							upserted === undefined ||
+							upserted.sourceId !== null ||
+							upserted.provider !== "github"
+						) {
+							return [upserted]
+						}
+						const sourceId = yield* ensureIntegrationSource(
+							db,
+							// On a conflict the row keeps its org; the source belongs with the row.
+							upserted.orgId,
+							{
+								platform: "github",
+								integrationId: upserted.id,
+								name: integrationSourceName.github(upserted),
+							},
+							now,
+						)
+						return yield* db.run(
+							PG.update(VcsInstallations)
+								.set({ sourceId })
+								.where(($) => [$.id.eq(upserted.id)])
+								.returning(),
+						)
+					}),
 				),
 			)
 
@@ -1097,12 +1131,12 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
-						yield* db.run(
-							PG.deleteFrom(VcsInstallations).where(($) => [
-								$.orgId.eq(orgId),
-								$.id.eq(installationId),
-							]),
+						const installations = yield* db.run(
+							PG.deleteFrom(VcsInstallations)
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId)])
+								.returning("sourceId"),
 						)
+						yield* deleteSourcesOf(db, orgId, installations)
 						const repoRows = yield* db.run(
 							PG.from(VcsRepositories)
 								.select("id")

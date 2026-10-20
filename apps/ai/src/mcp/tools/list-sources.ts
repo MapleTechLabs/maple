@@ -2,7 +2,7 @@ import { McpQueryError, type McpToolRegistrar } from "./types"
 import { truncate } from "../lib/format"
 import { Clock, Effect, Schema } from "effect"
 import { ListSourcesOutput } from "@maple/domain/mcp-outputs"
-import { isPushSourcePlatform, SourcePlatform } from "@maple/domain/primitives"
+import { SourcePlatform } from "@maple/domain/primitives"
 import { SOURCE_HEALTH_STATUSES } from "@maple/domain/source-health"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
@@ -47,8 +47,7 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 					id: publicSourceId(source.id),
 					name: source.name,
 					platform: source.platform,
-					delivery: isPushSourcePlatform(source.platform) ? ("push" as const) : ("pull" as const),
-					isDefault: source.isDefault,
+					kind: source.kind,
 					status: source.health.status,
 					lastDataAt: source.health.lastDataAt,
 					problem: source.health.problem,
@@ -73,14 +72,16 @@ export function registerListSourcesTool(server: McpToolRegistrar) {
 					blocks: [],
 				}
 			}
-			const unhealthyPull = output.sources.some((s) => s.delivery === "pull" && s.status !== "healthy")
+			const unhealthyPull = output.sources.some(
+				(s) => s.kind === "integration" && s.status !== "healthy",
+			)
 			return {
 				title: "Sources",
 				blocks: [
 					doc.table(
 						["Source", "Platform", "Status", "Last data", "Id", "Problem"],
 						output.sources.map((s) => [
-							s.isDefault ? `${s.name} (default keys)` : s.name,
+							s.kind === "default" ? `${s.name} (default keys)` : s.name,
 							s.platform,
 							s.status,
 							s.lastDataAt ?? "never",

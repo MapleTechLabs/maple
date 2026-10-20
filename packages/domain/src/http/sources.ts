@@ -3,6 +3,7 @@ import {
 	IsoDateTimeString,
 	PushSourcePlatform,
 	SourceId,
+	SourceKind,
 	SourcePlatform,
 	SourceResourceAttribute,
 	SourceSignal,
@@ -49,6 +50,7 @@ export class Source extends Schema.Class<Source>("Source")({
 	name: Schema.String,
 	description: Schema.NullOr(Schema.String),
 	platform: SourcePlatform,
+	kind: SourceKind,
 	isDefault: Schema.Boolean,
 	/** Null for the default source (it uses the org's public/private pair) and pull sources. */
 	keyPrefix: Schema.NullOr(Schema.String),

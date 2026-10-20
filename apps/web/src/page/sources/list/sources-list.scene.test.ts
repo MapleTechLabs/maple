@@ -37,6 +37,7 @@ const source = (index: number, fields: Readonly<Record<string, unknown>> = {}) =
 		name: `Source ${index}`,
 		description: null,
 		platform: "nodejs",
+		kind: "token",
 		is_default: false,
 		key_prefix: "maple_src_Q7xZa",
 		integration_id: null,
@@ -58,6 +59,7 @@ const source = (index: number, fields: Readonly<Record<string, unknown>> = {}) =
 const defaultSource = source(1, {
 	name: "Default",
 	platform: "opentelemetry",
+	kind: "default",
 	is_default: true,
 	key_prefix: null,
 })
@@ -149,7 +151,7 @@ describe("integrations on the sources list", () => {
 	const rows = [
 		defaultSource,
 		source(2, { name: "Checkout" }),
-		source(3, { name: "node-exporter", platform: "prometheus", key_prefix: null }),
+		source(3, { name: "node-exporter", platform: "prometheus", kind: "integration", key_prefix: null }),
 		source(4, { name: "GitHub acme", platform: "github", key_prefix: null }),
 	]
 

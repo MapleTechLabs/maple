@@ -24,9 +24,7 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import {
-	ensureIntegrationSource,
-	integrationSourceName,
-	stampableSourceId,
+	stampedSourceId,
 } from "@maple/backend/services/org/integration-sources"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import {
@@ -454,24 +452,6 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					}),
 				)
 
-			// The connector's pull source as its `src_` id; a failed lookup sends without it.
-			const resolveSourceId = (connector: GcpConnectorRow, now: number) =>
-				stampableSourceId(
-					dbExecute((db) =>
-						ensureIntegrationSource(
-							db,
-							connector.orgId,
-							{
-								platform: "gcp",
-								integrationId: connector.id,
-								name: integrationSourceName.gcp(connector),
-							},
-							now,
-						),
-					),
-					{ orgId: connector.orgId, platform: "gcp" },
-				)
-
 			/** One connector: its inventory sync when due, then its metrics window. */
 			const pollConnector = Effect.fn("GcpMetricsService.pollConnector")(
 				function* (connector: GcpConnectorRow, tick: Tick) {
@@ -496,7 +476,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					}
 					const ingestKey = (yield* ingestKeys.getOrCreate(connector.orgId, SYSTEM_USER_ID))
 						.publicKey
-					const sourceId = yield* resolveSourceId(connector, tick.now)
+					const sourceId = stampedSourceId(connector.sourceId)
 
 					// The metrics get a full budget, whatever sign-in and the inventory sync took.
 					const startedAt = yield* Clock.currentTimeMillis
