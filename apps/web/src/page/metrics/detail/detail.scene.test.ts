@@ -90,6 +90,25 @@ describe("metric detail", () => {
 		])
 	})
 
+	test("a Google Cloud metric breaks down by its first label once the labels load", () => {
+		const metricName = "cloudsql.googleapis.com/database/cpu/utilization"
+		const resolved = pageUpdate(
+			init({ metricName, search: {} }, context).model,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+		).model
+		const catalog = withCatalog(resolved, [{ ...row("google-cloud", "gauge"), metricName }])
+		expect(names(catalog.commands)).toEqual(["FetchMetricAttributeKeys", "FetchMetricTimeseries"])
+		const labels = pageUpdate(
+			catalog.model,
+			Message.CompletedFetchAttributeKeys({
+				key: catalog.model.attributeKeys.key ?? "",
+				result: Result.succeed([{ attributeKey: "database_id", usageCount: 0 }]),
+			}),
+		)
+		expect(names(labels.commands)).toEqual(["FetchMetricBreakdown"])
+		expect(labels.model.breakdown.key).toContain("attr.database_id")
+	})
+
 	test("counters default to rate and everything else to avg", () => {
 		const sum = withCatalog(windowed(), [row("checkout-api", "sum", true)]).model
 		const histogram = withCatalog(windowed(), [row("checkout-api")]).model

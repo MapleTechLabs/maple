@@ -75,12 +75,14 @@ export class WarehouseInvalidInputError extends Schema.TaggedError<WarehouseInva
 	{
 		operation: Schema.String,
 		message: Schema.String,
+		/** The failed query's own title, when the API gave one. */
+		title: Schema.optional(Schema.String),
 	},
 ) {
 	readonly error = makeClientErrorBody({
 		_tag: this._tag,
 		code: "warehouse_input_invalid",
-		title: "Invalid query",
+		title: this.title ?? "Invalid query",
 		message: this.message,
 		retryable: false,
 		recovery: "fix_request",
@@ -280,13 +282,14 @@ export function runWarehouseQueryV2<A, E>(
 export function querySetFailure(
 	operation: string,
 	message: string,
+	title?: string,
 ): Effect.Effect<never, WarehouseInvalidInputError | WarehouseUnreachableError> {
 	return Effect.flatMap(
 		isApiBlipping,
 		(blipping): Effect.Effect<never, WarehouseInvalidInputError | WarehouseUnreachableError> =>
 			blipping
 				? Effect.fail(new WarehouseUnreachableError({ operation, message }))
-				: invalidWarehouseInput(operation, message),
+				: Effect.fail(new WarehouseInvalidInputError({ operation, message, title })),
 	)
 }
 

@@ -326,6 +326,7 @@ export const TelemetryServiceStubsLayer = Layer.mergeAll(
 		evaluate: die,
 		evaluateSeries: die,
 		cachedDirect: die,
+		listGcpMetrics: die,
 	}),
 )
 

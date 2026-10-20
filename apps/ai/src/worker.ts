@@ -62,6 +62,8 @@ const configuredEnv = ({ stage, region, domains, profile }: MapleStackContext) =
 		// The source and sandbox tools resolve repositories through the GitHub App, so
 		// they need its reader credentials here too, not only on api.
 		githubAppSourceEnv,
+		// Tools that query Google Cloud metrics read them live; unset leaves them unavailable.
+		optionalSecret("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
 		// Required wherever a sandbox Worker deploys: without it every sandbox call is refused.
 		...(profile.deploys.sandbox ? [requireSecretEntry("SANDBOX_INTERNAL_SERVICE_TOKEN")] : []),
 		// Dev-only escape hatch from per-org BYO rows (see apps/api/src/resources/env.ts).

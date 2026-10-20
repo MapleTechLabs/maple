@@ -21,6 +21,13 @@ describe("routes", () => {
 		expect(hrefOf(route)).toBe("/services/checkout%20api")
 	})
 
+	test("a Google Cloud metric type keeps its slashes in one path segment", () => {
+		const metricName = "cloudsql.googleapis.com/database/cpu/utilization"
+		const href = "/metrics/cloudsql.googleapis.com%2Fdatabase%2Fcpu%2Futilization"
+		expect(parse(href)).toMatchObject({ _tag: "Metric", metricName })
+		expect(hrefOf(parse(href))).toBe(href)
+	})
+
 	test("a literal sibling wins over a param route", () => {
 		expect(parse("/infra/hosts")._tag).toBe("InfraHosts")
 		expect(parse("/alerts/create")._tag).toBe("AlertsCreate")

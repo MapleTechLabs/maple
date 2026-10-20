@@ -1,3 +1,4 @@
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
@@ -111,7 +112,12 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 				],
 				`${MD_CELL} overflow-hidden`,
 			),
-			tableCell(h, [formatNumber(metric.dataPointCount)], `${MD_CELL} font-mono text-xs`),
+			tableCell(
+				h,
+				// Google metrics are read live: Maple stores no datapoints for them.
+				[isGcpMetricType(metric.metricName) ? EMPTY_VALUE : formatNumber(metric.dataPointCount)],
+				`${MD_CELL} font-mono text-xs`,
+			),
 			tableCell(
 				h,
 				[relativeTime(h, { value: metric.lastSeen, nowMs: model.nowMs, timeZone, tooltip: "title" })],

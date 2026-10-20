@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { HttpTaggedError, publicHttpErrorDefinitionFor } from "./error-policy"
+import { gcpLiveQueryHttpErrors } from "./gcp-live-query-errors"
 import {
 	OrgClickHouseSettingsEncryptionError,
 	OrgClickHouseSettingsPersistenceError,
@@ -330,10 +331,14 @@ export const warehouseSettingsRouteHttpErrors = [
 /** Errors unique to minting an org-scoped token for user-authored raw SQL. */
 export const warehouseTokenRouteHttpErrors = [TinybirdOrgTokenConfigError, TinybirdOrgTokenMintError] as const
 
-/** Normal reads resolve saved settings but never mint a raw-SQL token. */
+/**
+ * Normal reads resolve saved settings but never mint a raw-SQL token. A metrics read on a
+ * Cloud Monitoring metric type is answered live from Google, so its failures ride here too.
+ */
 export const warehouseReadHttpErrors = [
 	...managedWarehouseHttpErrors,
 	...warehouseSettingsRouteHttpErrors,
+	...gcpLiveQueryHttpErrors,
 ] as const
 
 /** Failures that can escape compiled or raw execution into public v2 query routes. */

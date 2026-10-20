@@ -10,7 +10,7 @@ import {
 	runTimeseriesQuerySet,
 } from "@maple/query-engine/query-set"
 import { decodeInput, invalidWarehouseInput, querySetFailure } from "./effect-utils"
-import { makeWarehouseExecutor } from "./query-set-executor"
+import { makeWarehouseExecutor, recordingFailureTitle } from "./query-set-executor"
 
 /**
  * The browser-side adapter for `runTimeseriesQuerySet`.
@@ -118,7 +118,8 @@ const getQueryBuilderTimeseriesEffect = Effect.fn("QueryEngine.getQueryBuilderTi
 	const input = yield* decodeInput(QueryBuilderTimeseriesInputSchema, data, "getQueryBuilderTimeseries")
 	const strategy = resolveStrategy(input)
 
-	const outcome = yield* runTimeseriesQuerySet(yield* executor, {
+	const run = recordingFailureTitle(yield* executor)
+	const outcome = yield* runTimeseriesQuerySet(run.executor, {
 		querySet: {
 			queries: input.queries,
 			...(!(input.formulas === undefined) ? { formulas: input.formulas } : undefined),
@@ -148,7 +149,11 @@ const getQueryBuilderTimeseriesEffect = Effect.fn("QueryEngine.getQueryBuilderTi
 							rows: [],
 							diagnostics: emptyTimeseriesResponse(input).diagnostics,
 						} satisfies TimeseriesQuerySetResult)
-					: querySetFailure("getQueryBuilderTimeseries", error.message),
+					: querySetFailure(
+							"getQueryBuilderTimeseries",
+							error.message,
+							run.failureTitle(error.message),
+						),
 		}),
 	)
 

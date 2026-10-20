@@ -1,5 +1,6 @@
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import type { MetricsQueryDraft } from "@maple/query-engine/query-builder"
-import { countLabel, formatNumber } from "@maple/ui/lib/format"
+import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -159,7 +160,8 @@ const attributeKeyNames = (model: Model): ReadonlyArray<string> =>
 
 /** `MetricBreakdown`: top values of one attribute; each bar narrows the where clause. */
 export const metricBreakdown = (h: H, model: Model, draft: MetricsQueryDraft): Html => {
-	const filterKey = breakdownGroupBy(breakdownKeyOf(model.search))
+	const key = breakdownKeyOf(model)
+	const isGcp = isGcpMetricType(model.metricName)
 	return panel(h, {}, [
 		panelHeader(h, {
 			title: `Top values · ${breakdownAggregation(draft.aggregation)} per value`,
@@ -169,7 +171,7 @@ export const metricBreakdown = (h: H, model: Model, draft: MetricsQueryDraft): H
 				view: comboboxView,
 				toParentMessage: toBreakdownKey,
 				viewInputs: {
-					items: [SERVICE_KEY, ...attributeKeyNames(model)],
+					items: [...(isGcp ? [] : [SERVICE_KEY]), ...attributeKeyNames(model)],
 					placeholder: "Break down by...",
 					emptyText: "",
 					className: "h-7 w-52 text-xs",
@@ -177,9 +179,20 @@ export const metricBreakdown = (h: H, model: Model, draft: MetricsQueryDraft): H
 				},
 			}),
 		}),
-		h.div([h.Class("p-3")], [breakdownBars(h, model, filterKey)]),
+		h.div(
+			[h.Class("p-3")],
+			[key === undefined ? breakdownKeysState(h, model) : breakdownBars(h, model, breakdownGroupBy(key))],
+		),
 	])
 }
+
+/** A Google metric's breakdown before it has a label to break down by. */
+const breakdownKeysState = (h: H, model: Model): Html =>
+	AsyncData.matchData(model.attributeKeys.data, {
+		onEmpty: () => skeletonList(h, { rows: 5, rowClassName: "h-6", gap: "2" }),
+		onFailure: (failure) => errorState(h, { failure, title: "Failed to load labels", variant: "inline" }),
+		onData: () => emptyMessage(h, {}, ["No labels to break down by in the selected range."]),
+	})
 
 const attributesList = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.attributeKeys.data, {
@@ -207,10 +220,15 @@ const attributesList = (h: H, model: Model): Html =>
 								],
 								[
 									h.span([h.Class("truncate font-mono")], [row.attributeKey]),
-									h.span(
-										[h.Class("shrink-0 font-mono text-muted-foreground")],
-										[formatNumber(row.usageCount)],
-									),
+									// Google metrics are read live: no usage count per label.
+									...(isGcpMetricType(model.metricName)
+										? []
+										: [
+												h.span(
+													[h.Class("shrink-0 font-mono text-muted-foreground")],
+													[formatNumber(row.usageCount)],
+												),
+											]),
 								],
 							),
 						),
@@ -245,7 +263,10 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 			],
 		),
 		keyValueList(h, { className: "gap-2" }, [
-			keyValue(h, { label: "Datapoints in range", mono: true }, [formatNumber(summary.dataPointCount)]),
+			keyValue(h, { label: "Datapoints in range", mono: true }, [
+				// Google metrics are read live: Maple stores no datapoints for them.
+				isGcpMetricType(summary.metricName) ? EMPTY_VALUE : formatNumber(summary.dataPointCount),
+			]),
 			keyValue(h, { label: "First seen", mono: true }, [formatSeen(summary.firstSeen, timeZone)]),
 			keyValue(h, { label: "Last seen", mono: true }, [formatSeen(summary.lastSeen, timeZone)]),
 		]),

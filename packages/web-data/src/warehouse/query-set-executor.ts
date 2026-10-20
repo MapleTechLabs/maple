@@ -36,3 +36,24 @@ export const makeWarehouseExecutor = (
 			}).pipe(Effect.provide(context)),
 		describeError: (error) => displayError(error).message,
 	}))
+
+/**
+ * `executor` for one run that remembers each failure's own title. The runner reports a failed
+ * query as text; `failureTitle(reported)` gives the title of the failure that text came from, so
+ * the chart's error card says e.g. "Google Cloud metrics are not available", not "Invalid query".
+ */
+export const recordingFailureTitle = (executor: QuerySetExecutor<QuerySetExecuteError>) => {
+	const failures: Array<{ readonly message: string; readonly title: string }> = []
+	return {
+		executor: {
+			...executor,
+			describeError: (error: QuerySetExecuteError) => {
+				const message = executor.describeError(error)
+				failures.push({ message, title: displayError(error).title })
+				return message
+			},
+		} satisfies QuerySetExecutor<QuerySetExecuteError>,
+		failureTitle: (reported: string) =>
+			failures.find((failure) => reported.includes(failure.message))?.title,
+	}
+}

@@ -1,3 +1,4 @@
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import { QUERY_BUILDER_METRIC_TYPES, toQueryBuilderMetricType } from "@maple/query-model"
 import { getMetricAttributeKeys, listMetrics } from "@maple/web-data/warehouse/metrics"
 import { Effect, Schema } from "effect"
@@ -30,7 +31,9 @@ export const FetchMetricOptions = Command.define("FetchWidgetEditorMetricOptions
 					}))
 					.filter((option, index, all) => all.findIndex((other) => other.value === option.value) === index),
 				// `toNames`: trimmed, non-empty, each once.
+				// Google Cloud metrics carry no service.name to filter on.
 				services: response.data
+					.filter((row) => !isGcpMetricType(row.metricName))
 					.map((row) => row.serviceName.trim())
 					.filter((name, index, all) => name !== "" && all.indexOf(name) === index),
 			})),

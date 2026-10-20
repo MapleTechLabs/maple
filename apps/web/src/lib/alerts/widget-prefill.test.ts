@@ -195,6 +195,37 @@ describe("createWidgetAlertPrefill", () => {
 	})
 })
 
+describe("createWidgetAlertPrefill on a Google Cloud metric", () => {
+	const metricsChart = (metricName: string) =>
+		createWidgetAlertPrefill(
+			{
+				id: "w1",
+				dataSource: {
+					endpoint: "custom_query_builder_timeseries",
+					params: {
+						queries: [
+							builderQuery({
+								dataSource: "metrics",
+								aggregation: "avg",
+								metricName,
+								metricType: "gauge",
+							}),
+						],
+					},
+				},
+			},
+			defaultRuleForm(),
+		).form.minimumSampleCount
+
+	it("needs one sample, since a window holds a few dozen at most", () => {
+		expect(metricsChart("cloudsql.googleapis.com/database/cpu/utilization")).toBe("1")
+	})
+
+	it("keeps the default for a warehouse metric", () => {
+		expect(metricsChart("http.server.duration")).toBe(defaultRuleForm().minimumSampleCount)
+	})
+})
+
 describe("resolveWidgetAlertPrefill", () => {
 	it("returns a blank alert with a notice when the dashboard id is missing", () => {
 		const result = resolveWidgetAlertPrefill({

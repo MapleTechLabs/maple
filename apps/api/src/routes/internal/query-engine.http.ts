@@ -1484,8 +1484,15 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("listMetrics", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.listMetrics, tenant, payload)
-						return new ListMetricsResponse({ data: rows })
+						const [rows, gcpRows] = yield* Effect.all(
+							[
+								runQuery(Queries.listMetrics, tenant, payload),
+								queryEngine.listGcpMetrics(tenant, payload),
+							],
+							{ concurrency: "unbounded" },
+						)
+						// One page of `limit`: the table reads `limit + 1` rows to tell whether more exist.
+						return new ListMetricsResponse({ data: [...rows, ...gcpRows].slice(0, payload.limit ?? 100) })
 					}),
 				)
 				.handle("metricsSummary", ({ payload }) =>

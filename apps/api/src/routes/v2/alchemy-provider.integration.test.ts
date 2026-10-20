@@ -50,6 +50,7 @@ import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthServic
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { GcpLiveMetricsService } from "@maple/backend/services/integrations/GcpLiveMetricsService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AllV2GroupLayersLive,
@@ -105,6 +106,7 @@ const makeHarness = () => {
 	const edgeCacheLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
 	const bucketCacheLive = BucketCacheService.layer.pipe(Layer.provide(edgeCacheLive))
 	const queryEngineLive = Layer.effect(QueryEngineService, QueryEngineService.make).pipe(
+		Layer.provide(Layer.mock(GcpLiveMetricsService, {})),
 		Layer.provide(warehouseLive),
 		Layer.provide(edgeCacheLive),
 		Layer.provide(bucketCacheLive),

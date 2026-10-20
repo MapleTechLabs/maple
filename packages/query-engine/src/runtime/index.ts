@@ -1,4 +1,5 @@
 export * from "./query-engine"
+export * from "./live-metrics"
 export * from "./raw-sql"
 export * from "./cache-policy"
 export * from "./query-definition-runner"

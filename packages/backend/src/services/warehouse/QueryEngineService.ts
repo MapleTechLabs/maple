@@ -1,5 +1,6 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { Clock, Context, Effect, Layer, Metric, type Schema } from "effect"
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import { QueryEngineExecuteResponse, type QueryEngineExecuteRequest } from "@maple/query-engine"
 import type { QueryEngineTimeoutError } from "@maple/domain/http"
 import {
@@ -41,6 +42,12 @@ import {
 import { EdgeCacheService } from "@maple/cache"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import * as QueryEngineMetrics from "@maple/backend/observability/QueryEngineMetrics"
+import { GcpLiveMetricsService } from "@maple/backend/services/integrations/GcpLiveMetricsService"
+import {
+	listGcpMetricCatalog,
+	type GcpMetricCatalogRequest,
+	type GcpMetricCatalogRow,
+} from "@maple/backend/services/warehouse/gcp-metric-catalog"
 
 // QueryEngineService — caching + orchestration. The pure lowering (validation,
 // QuerySpec → CH, evaluate/raw-SQL) lives in `@maple/query-engine/runtime`; this
@@ -89,6 +96,11 @@ export interface QueryEngineServiceApi {
 		/** How the value crosses the cache's JSON round trip, when plain JSON would change it. */
 		schema?: Schema.Codec<A, unknown, never, never>,
 	) => Effect.Effect<A, E | QueryEngineTimeoutError>
+	/** Google Cloud metrics as `listMetrics` rows, for discovery surfaces to append to theirs. */
+	readonly listGcpMetrics: (
+		tenant: TenantContext,
+		request: GcpMetricCatalogRequest,
+	) => Effect.Effect<ReadonlyArray<GcpMetricCatalogRow>>
 }
 export class QueryEngineService extends Context.Service<QueryEngineService, QueryEngineServiceApi>()(
 	"@maple/api/services/QueryEngineService",
@@ -97,9 +109,10 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 			const warehouse = yield* WarehouseQueryService
 			const edgeCache = yield* EdgeCacheService
 			const bucketCache = yield* BucketCacheService
-			const executeImpl = makeQueryEngineExecute(warehouse)
-			const evaluateImpl = makeQueryEngineEvaluate(warehouse)
-			const evaluateSeriesImpl = makeQueryEngineEvaluateSeries(warehouse)
+			const gcp = yield* GcpLiveMetricsService
+			const executeImpl = makeQueryEngineExecute(warehouse, gcp)
+			const evaluateImpl = makeQueryEngineEvaluate(warehouse, gcp)
+			const evaluateSeriesImpl = makeQueryEngineEvaluateSeries(warehouse, gcp)
 
 			// A request that has moved onto a registry definition. `apply` keeps the
 			// definition and its input paired under one type parameter, so the cache
@@ -339,6 +352,13 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 
 						if (!bucketCache.enabled) return yield* useBlobPath("bucket_cache_disabled")
 						if (request.query.kind !== "timeseries") return yield* useBlobPath("not_timeseries")
+						// Google settles recent points minutes late; settled-bucket caching would freeze gaps.
+						if (
+							request.query.source === "metrics" &&
+							isGcpMetricType(request.query.filters.metricName)
+						) {
+							return yield* useBlobPath("gcp_live")
+						}
 
 						const startEpochMs = toEpochMs(request.startTime)
 						const endEpochMs = toEpochMs(request.endTime)
@@ -491,11 +511,18 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 				evaluate: cachedEvaluate,
 				evaluateSeries,
 				cachedDirect,
+				listGcpMetrics: (tenant, request) => listGcpMetricCatalog(gcp, tenant, request),
 			} satisfies QueryEngineServiceApi
 		}),
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, BucketCacheService.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				WarehouseQueryService.layer,
+				BucketCacheService.layer,
+				GcpLiveMetricsService.layer,
+			),
+		),
 	)
 }

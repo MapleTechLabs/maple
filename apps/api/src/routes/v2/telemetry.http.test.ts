@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId, WarehouseQueryError } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { QueryEngineExecuteResponse, type QueryEngineExecuteRequest } from "@maple/query-engine"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
+import { ConfigProvider, Context, DateTime, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
@@ -296,6 +296,7 @@ const queryEngineStub = {
 	evaluate: () => Effect.die(new Error("not used")),
 	evaluateSeries: () => Effect.die(new Error("not used")),
 	cachedDirect: (_tenant, _route, _payload, effect) => effect,
+	listGcpMetrics: () => Effect.succeed([]),
 } satisfies QueryEngineServiceApi
 
 const makeHarness = (
@@ -694,6 +695,39 @@ describe("v2 telemetry reads over HTTP", () => {
 		expect(baselineSql).toContain("'2026-07-08 12:00:00'")
 		expect(baselineSql).toContain("'2026-07-15 12:00:00'")
 		expect(baselineSql).not.toMatch(/'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+'/)
+		await harness.dispose()
+	})
+
+	it("leaves Google Cloud metrics out of /v2/metrics, so its pages stay the warehouse's", async () => {
+		let gcpReads = 0
+		const queryEngine: QueryEngineServiceApi = {
+			...queryEngineStub,
+			listGcpMetrics: () => {
+				gcpReads += 1
+				return Effect.succeed([
+					{
+						metricName: "cloudsql.googleapis.com/database/cpu/utilization",
+						metricType: "gauge",
+						serviceName: "Google Cloud",
+						metricDescription: "CPU utilization",
+						metricUnit: "10^2.%",
+						dataPointCount: 0,
+						firstSeen: DateTime.makeUnsafe("2026-07-14T11:00:00Z"),
+						lastSeen: DateTime.makeUnsafe("2026-07-15T12:00:00Z"),
+						isMonotonic: 0,
+					},
+				])
+			},
+		}
+		const harness = makeHarness(warehouseStub, queryEngine)
+		const key = await harness.bootstrapKey()
+
+		const metrics = await harness.request("GET", `/v2/metrics?${windowQuery}&search=cpu`, key.secret)
+		expect(metrics.status).toBe(200)
+		expect(metrics.body.data.map((metric: { name: string }) => metric.name)).toEqual([
+			"http.server.duration",
+		])
+		expect(gcpReads).toBe(0)
 		await harness.dispose()
 	})
 

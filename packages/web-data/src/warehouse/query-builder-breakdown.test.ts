@@ -3,6 +3,13 @@ import { describe, expect, it } from "vitest"
 
 import { QuerySetNoDataError } from "@maple/query-engine/query-set"
 import * as breakdownModule from "./query-builder-breakdown"
+import { makeWarehouseExecutor, recordingFailureTitle } from "./query-set-executor"
+import { WarehouseExecutor } from "./warehouse-services"
+import {
+	GcpLiveQueryRejectedError,
+	GcpLiveQueryUnavailableError,
+} from "@maple/domain/http/gcp-live-query-errors"
+import { displayError } from "../lib/error-messages"
 
 /**
  * The timeseries adapter stopped failing on an empty window — an empty window is
@@ -35,5 +42,34 @@ describe("empty window", () => {
 		)
 
 		expect(Exit.isFailure(exit)).toBe(true)
+	})
+})
+
+describe("a failed query's title", () => {
+	it("titles the chart error with the reported failure's own title", async () => {
+		const executor = Effect.runSync(
+			makeWarehouseExecutor("test").pipe(
+				Effect.provideService(WarehouseExecutor, { enqueue: () => Effect.die("not called") }),
+			),
+		)
+		const run = recordingFailureTitle(executor)
+		// The runner describes each failed query as text; the reported text picks the title.
+		run.executor.describeError(
+			new GcpLiveQueryRejectedError({
+				message: "Label region cannot be compared with gt.",
+				reason: "invalid_query",
+			}),
+		)
+		const unavailable = "Connect Google Cloud with metrics on to query Google Cloud metrics."
+		run.executor.describeError(new GcpLiveQueryUnavailableError({ message: unavailable }))
+		const error = await Effect.runPromise(
+			Effect.flip(
+				breakdownModule.__testables.onNoData(
+					new QuerySetNoDataError({ message: unavailable, details: [unavailable] }),
+					run.failureTitle(unavailable),
+				),
+			),
+		)
+		expect(displayError(error).title).toBe("Google Cloud metrics are not available")
 	})
 })

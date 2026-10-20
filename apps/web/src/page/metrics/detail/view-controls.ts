@@ -1,3 +1,4 @@
+import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import { getMetricsAggregations, type QueryBuilderMetricType } from "@maple/query-engine/query-builder"
 import { cn } from "@maple/ui/lib/utils"
 import {
@@ -190,7 +191,12 @@ export const queryControls = (
 			view: comboboxView,
 			toParentMessage: toGroupBy,
 			viewInputs: {
-				items: [GROUP_BY_NONE_LABEL, SERVICE_KEY, ...scopedKeys(model).map((key) => `attr.${key}`)],
+				items: [
+					GROUP_BY_NONE_LABEL,
+					// Google Cloud metrics carry no service.name.
+					...(isGcpMetricType(model.metricName) ? [] : [SERVICE_KEY]),
+					...scopedKeys(model).map((key) => `attr.${key}`),
+				],
 				placeholder: "Search fields...",
 				emptyText: "",
 				className: "h-8 w-52 text-xs",
