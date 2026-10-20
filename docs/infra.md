@@ -393,7 +393,7 @@ What each kind of Worker keeps beside the module:
   would bind it as a secret. Every Postgres layer reads the `MapleDbConnection` port
   (`packages/backend/src/platform/bindings.ts`), never the env.
 
-**web** is a `Cloudflare.Website.Vite` Worker (`apps/web-foldkit/src/worker.ts`). Alchemy owns its
+**web** is a `Cloudflare.Website.Vite` Worker (`apps/web/src/worker.ts`). Alchemy owns its
 vite build and its dev server, and the deployed entry is `src/worker-entry.ts`. Its props bind
 the api Worker as `API`, handed over as `ApiWorker`. It carries no `WorkerTelemetry`.
 
