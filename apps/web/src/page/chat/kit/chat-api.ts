@@ -104,14 +104,15 @@ export const tailEvents = (sessionId: string, cursor: number): Stream.Stream<Tai
 					: Stream.unwrap(Effect.as(Effect.sleep(300 * (failures + 1)), connection(failures + 1)))
 			const connection = (failures: number): Stream.Stream<TailOutput, never, MapleSyncHttpClient> =>
 				Stream.unwrap(
-					Effect.map(Effect.all([Ref.get(seq), Clock.currentTimeMillis]), ([from, openedAt]) =>
+					// When the response arrived; a close before it counts as quick.
+					Effect.map(Effect.all([Ref.get(seq), Ref.make(Number.POSITIVE_INFINITY)]), ([from, openedAt]) =>
 						attempt(from, failures, openedAt),
 					),
 				)
 			const attempt = (
 				from: number,
 				failures: number,
-				openedAt: number,
+				openedAt: Ref.Ref<number>,
 			): Stream.Stream<TailOutput, never, MapleSyncHttpClient> =>
 				Stream.unwrap(
 					Effect.gen(function* () {
@@ -121,6 +122,7 @@ export const tailEvents = (sessionId: string, cursor: number): Stream.Stream<Tai
 							return yield* new ChatRequestError({
 								message: `Chat stream request failed: ${response.status}`,
 							})
+						yield* Ref.set(openedAt, yield* Clock.currentTimeMillis)
 						return response.stream.pipe(
 							Stream.decodeText(),
 							Stream.mapAccum(
@@ -160,7 +162,7 @@ export const tailEvents = (sessionId: string, cursor: number): Stream.Stream<Tai
 							Effect.gen(function* () {
 								if (yield* Ref.get(ended)) return Stream.empty
 								const delivered = (yield* Ref.get(seq)) !== from
-								const lived = (yield* Clock.currentTimeMillis) - openedAt
+								const lived = (yield* Clock.currentTimeMillis) - (yield* Ref.get(openedAt))
 								return delivered || lived >= QUICK_CLOSE_MS
 									? connection(0)
 									: retry(failures, "Lost connection to chat.")
