@@ -656,12 +656,12 @@ const articleJsonLd = {
                                 <li>
                                     <span>01</span>
                                     <div><h4>Start the Collector at a site</h4><p>Run the config from section 03 with the site's <code>SITE_ID</code> and your key. The gateway appears under <strong>Infrastructure → Hosts</strong> within about a minute, keyed on <code>host.name</code>, with CPU, memory and disk.</p>
-                                        <figure class="guide-figure"><img src="/screenshots/guides/edge-observability-01-hosts.webp" data-zoomable alt="The Hosts page listing the edge gateway gw-0142 as Active, with its CPU, memory and disk usage." width="2400" height="1100" loading="lazy" /></figure></div>
+                                        <figure class="guide-figure"><img src="/screenshots/guides/edge-observability-01-hosts.webp" data-zoomable alt="The Hosts page row for the edge gateway gw-0142: Linux, arm64, CPU, memory and disk usage bars, 15-minute load and last-seen time." width="2340" height="324" loading="lazy" /></figure></div>
                                 </li>
                                 <li>
                                     <span>02</span>
                                     <div><h4>Filter by site</h4><p>In <strong>Explore → Traces</strong>, click <strong>Advanced Filter</strong> and enter <code>resource.acme.site.id = "store-0142"</code> to see one site's traces. Every span's <strong>Resource Attributes</strong> list the site ID and region.</p>
-                                        <figure class="guide-figure"><img src="/screenshots/guides/edge-observability-02-site-filter.webp" data-zoomable alt="The traces list filtered by resource.acme.site.id = store-0142, showing traces from the site's pos-api service." width="2400" height="1200" loading="lazy" /></figure></div>
+                                        <figure class="guide-figure"><img src="/screenshots/guides/edge-observability-02-site-filter.webp" data-zoomable alt="The traces list with the advanced filter resource.acme.site.id = &quot;store-0142&quot; applied: every trace comes from the site's pos-api service." width="1814" height="1250" loading="lazy" /></figure></div>
                                 </li>
                                 <li>
                                     <span>03</span>
