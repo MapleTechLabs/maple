@@ -206,7 +206,6 @@ export const LOCAL_SCHEMA_V31 = localSchemaIdentity(31)
 export const LOCAL_SCHEMA_V32 = localSchemaIdentity(32)
 export const LOCAL_SCHEMA_V33 = localSchemaIdentity(33)
 export const LOCAL_SCHEMA_V34 = localSchemaIdentity(34)
-export const LOCAL_SCHEMA_V35 = localSchemaIdentity(35)
 export const LOCAL_SCHEMA_V36 = localSchemaIdentity(36)
 
 export const CURRENT_LOCAL_SCHEMA: LocalSchemaIdentity = Object.freeze({
