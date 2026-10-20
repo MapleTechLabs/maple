@@ -80,7 +80,7 @@ export function navigationSpanAt(epochMs: number): Span | undefined {
 
 /** End the open navigation as interrupted: something other than its route finishing ended it. */
 function interruptNavigation(): void {
-	navigation?.span.setAttribute("app.navigation.interrupted", true)
+	navigation?.span.setAttribute("maple.navigation.interrupted", true)
 	navigation?.span.end()
 	navigation = undefined
 }

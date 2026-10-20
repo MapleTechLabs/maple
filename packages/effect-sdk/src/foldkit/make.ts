@@ -105,9 +105,9 @@ const parseAppConfig = <Config extends object>(app: Config): FoldkitAppConfig =>
 
 export interface MapleFoldkitConfig extends MapleClientFlushableConfig {
 	/**
-	 * Which Command args become span attributes. Default `"ids"`: args whose key
-	 * ends in `Id`/`Ids`, booleans and nulls export, every other value exports as
-	 * `[redacted]`. `{ allow: ["channelId", "provider"] }` adds keys by name.
+	 * Which Command args become span attributes, as `maple.foldkit.arg.<key>`. Default
+	 * `"ids"`: args whose key ends in `Id`/`Ids`, booleans and nulls export, every
+	 * other value exports as `[redacted]`. `{ allow: ["channelId", "provider"] }` adds keys by name.
 	 */
 	readonly commandArgs?: CommandArgsPolicy | undefined
 	/**
@@ -141,6 +141,9 @@ export interface MapleFoldkit extends FlushableTelemetry {
 	 */
 	readonly instrument: <Config extends object>(config: Config) => Config
 }
+
+/** Command args export as `maple.foldkit.arg.<key>`. */
+const ARG_PREFIX = "maple.foldkit.arg."
 
 const DEFAULT_SLOW = { Update: 16, View: 50, Patch: 50 } satisfies SlowThresholds
 
@@ -201,7 +204,13 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 		navigationId: number | undefined,
 	): FoldkitCommand => {
 		tracing.registerCommand(command.name)
-		const args = { ...scrubArgs(command.args), "maple.foldkit.message": tag }
+		// Namespaced, so an app's `orgId` or `limit` arg never collides with a semconv or backend key.
+		const args = {
+			...Object.fromEntries(
+				Object.entries(scrubArgs(command.args)).map(([key, value]) => [`${ARG_PREFIX}${key}`, value]),
+			),
+			"maple.foldkit.message": tag,
+		}
 		if (navigationId === undefined) return { ...command, args }
 		return {
 			...command,

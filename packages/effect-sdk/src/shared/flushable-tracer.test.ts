@@ -481,6 +481,23 @@ describe("makeSpanBuffer raw HTTP client spans", () => {
 			const span = clientSpan(buffer.drain())
 			assert.strictEqual(span?.status.code, 2 /* Error */)
 			assert.isTrue(hasException(span))
+			assert.deepStrictEqual(
+				span?.attributes.find((attribute) => attribute.key === "error.type")?.value,
+				{ stringValue: "TransportError" },
+			)
+		}),
+	)
+
+	it.effect("names a failed span's error.type after the error it failed with", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer()
+			yield* runSpan(buffer, Effect.fail(new ReportableError()))
+			const [span] = buffer.drain()
+			assert.strictEqual(span?.status.code, 2 /* Error */)
+			assert.deepStrictEqual(
+				span?.attributes.find((attribute) => attribute.key === "error.type")?.value,
+				{ stringValue: "ReportableError" },
+			)
 		}),
 	)
 })

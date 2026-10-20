@@ -6,6 +6,7 @@
 import {
 	ApiWorker,
 	MapleStack,
+	resolveDeploymentEnvironment,
 	resolveRegionAppUrls,
 	resolveWorkerName,
 	resolveWorkerPlacement,
@@ -72,6 +73,8 @@ const props = Effect.gen(function* () {
 				["VITE_MAPLE_INGEST_KEY", "MAPLE_OTEL_PUBLIC_INGEST_KEY"],
 				"",
 			),
+			// Browser telemetry's `deployment.environment.name`, matching the Worker's (`pr-<n>` on previews).
+			VITE_MAPLE_ENVIRONMENT: resolveDeploymentEnvironment(stage),
 			// Stamped onto browser telemetry as `vcs.ref.head.revision` / `service.version`.
 			VITE_COMMIT_SHA: yield* plainFrom(["VITE_COMMIT_SHA", "COMMIT_SHA", "GITHUB_SHA"], ""),
 		},

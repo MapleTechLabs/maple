@@ -97,7 +97,7 @@ export const makeFoldkitTracing = (options: CommandTracingOptions) => {
 		if (navigation.quietTimer !== undefined) clearTimeout(navigation.quietTimer)
 		if (latestNavigation === navigation) latestNavigation = undefined
 		if (navigation.span === undefined) return
-		if (interrupted) navigation.span.attribute("app.navigation.interrupted", true)
+		if (interrupted) navigation.span.attribute("maple.navigation.interrupted", true)
 		navigation.span.end(endTime, Exit.void)
 	}
 

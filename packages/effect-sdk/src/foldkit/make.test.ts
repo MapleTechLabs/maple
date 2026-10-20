@@ -94,6 +94,50 @@ describe("MapleFoldkit.make", () => {
 		await maple.dispose()
 	})
 
+	it("exports a Command's args under its own namespace and marks a page load cut short", async () => {
+		const { target, maple, spans } = setup()
+		const app = maple.instrument({
+			resources: Layer.empty,
+			init: (_flags: undefined, _url: { readonly pathname: string }) => ({
+				model: {},
+				commands: [
+					{
+						name: "LoadServices",
+						args: { orgId: "org_1", filter: "checkout" },
+						effect: Effect.succeed({ _tag: "LoadedServices" }).pipe(
+							Effect.withSpan("http.client GET"),
+						),
+					},
+				],
+			}),
+		})
+		const { commands } = app.init(undefined, { pathname: "/services" })
+		await Promise.all(
+			commands.map((command) =>
+				Effect.runPromise(
+					command.effect.pipe(
+						Effect.withSpan(command.name, { attributes: command.args }),
+						Effect.provide(app.resources),
+					),
+				),
+			),
+		)
+		target.dispatchEvent(new Event("pagehide"))
+		await settle()
+		const attributesOf = (name: string) =>
+			Object.fromEntries(
+				(spans().find((span) => span.name === name)?.attributes ?? []).map((a) => [a.key, a.value]),
+			)
+		const command = attributesOf("LoadServices")
+		expect(command["maple.foldkit.arg.orgId"]).toEqual({ stringValue: "org_1" })
+		expect(command["maple.foldkit.arg.filter"]).toEqual({ stringValue: "[redacted]" })
+		expect(command["orgId"]).toBeUndefined()
+		expect(attributesOf("pageload /services")["maple.navigation.interrupted"]).toEqual({
+			boolValue: true,
+		})
+		await maple.dispose()
+	})
+
 	it("sends a navigation still open at dispose with the final flush", async () => {
 		const { maple, spans } = setup()
 		const app = maple.instrument({
