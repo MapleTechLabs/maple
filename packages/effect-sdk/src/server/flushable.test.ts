@@ -157,8 +157,8 @@ describe("MapleFlush.make (server)", () => {
 			const span = body.resourceSpans[0].scopeSpans[0].spans.find((s) => s.name === "slow-op")
 			expect(span, "slow-op span should be present in the export").toBeDefined()
 			assert.strictEqual(span!.status.code, 1)
-			assert.strictEqual(span!.status.message, "Interrupted")
-			const interrupted = span!.attributes.find((a) => a.key === "status.interrupted")
+			assert.strictEqual(span!.status.message, undefined)
+			const interrupted = span!.attributes.find((a) => a.key === "maple.interrupted")
 			assert.strictEqual(interrupted?.value.boolValue, true)
 		}),
 	)

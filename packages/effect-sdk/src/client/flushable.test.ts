@@ -299,7 +299,8 @@ describe("MapleFlush.make (client)", () => {
 		expect(attrMap["user_agent.original"]).toBe("TestAgent/1.0")
 		expect(attrMap["browser.language"]).toBe("en-GB")
 		// Intl is always present in node/browsers; just assert it's a non-empty string.
-		expect(typeof attrMap["browser.timezone"]).toBe("string")
+		expect(typeof attrMap["maple.browser.timezone"]).toBe("string")
+		expect(attrMap["telemetry.sdk.language"]).toBe("webjs")
 	})
 
 	it("links the active replay session: records the trace id + stamps session.id", async () => {

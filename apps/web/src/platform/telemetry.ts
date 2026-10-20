@@ -20,7 +20,8 @@ const maple = MapleFoldkit.make({
 	serviceName: "maple-web",
 	endpoint: selfIngestUrl,
 	ingestKey: import.meta.env.VITE_MAPLE_INGEST_KEY,
-	environment: import.meta.env.MODE,
+	// The stage's name (`production`, `pr-<n>`, `development`); a preview build's MODE is `production` too.
+	environment: import.meta.env.VITE_MAPLE_ENVIRONMENT || import.meta.env.MODE,
 	serviceVersion: import.meta.env.VITE_COMMIT_SHA,
 	attributes: {
 		"service.namespace": "core",

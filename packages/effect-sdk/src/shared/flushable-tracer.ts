@@ -331,6 +331,23 @@ const isClientStatus4xx = (self: SpanImpl, exit: Exit.Exit<unknown, unknown>): b
 	return typeof code === "number" && code >= 400 && code < 500
 }
 
+// Semconv `error.type` for a failed span that has none: the HTTP status code when the response
+// was the failure, else the HttpClientError reason (`TransportError`) or the error's own name.
+const errorTypeOf = (self: SpanImpl, exit: Exit.Exit<unknown, unknown>): string => {
+	const code = self.attributes.get("http.response.status_code")
+	if (typeof code === "number" && code >= 400) return String(code)
+	if (exit._tag === "Success") return "_OTHER"
+	const [reason] = exit.cause.reasons
+	if (reason !== undefined && Cause.isFailReason(reason)) {
+		const error = reason.error
+		if (Predicate.isTagged(error, "HttpClientError") && Predicate.hasProperty(error, "reason")) {
+			const tag = Predicate.hasProperty(error.reason, "_tag") ? error.reason._tag : undefined
+			if (typeof tag === "string") return tag
+		}
+	}
+	return Cause.prettyErrors(exit.cause)[0]?.name || "_OTHER"
+}
+
 const makeOtlpSpan = (
 	self: SpanImpl,
 	filter: SpanFilter,
@@ -375,11 +392,9 @@ const makeOtlpSpan = (
 	} else if (status.exit._tag === "Success") {
 		otelStatus = constOtelStatusSuccess
 	} else if (Cause.hasInterruptsOnly(status.exit.cause)) {
-		otelStatus = { code: StatusCode.Ok, message: "Interrupted" }
-		attributes.push(
-			{ key: "span.label", value: { stringValue: "⚠︎ Interrupted" } },
-			{ key: "status.interrupted", value: { boolValue: true } },
-		)
+		// Cancelled, not failed. A status description is reserved for `Error`, so the attribute says it.
+		otelStatus = constOtelStatusSuccess
+		attributes.push({ key: "maple.interrupted", value: { boolValue: true } })
 	} else if (
 		renderedServerError(self) === undefined &&
 		isFullyAnticipated(status.exit.cause, filter.isAnticipated)
@@ -422,6 +437,10 @@ const makeOtlpSpan = (
 				})
 			}
 		}
+	}
+
+	if (otelStatus.code === StatusCode.Error && !self.attributes.has("error.type")) {
+		attributes.push({ key: "error.type", value: { stringValue: errorTypeOf(self, status.exit) } })
 	}
 
 	return {

@@ -139,7 +139,7 @@ describe("startNavigation / endNavigation", () => {
 		expect(spanNames()).toEqual(["pageload /projects/:id", "navigate /settings"])
 		expect(named("pageload /projects/:id").attributes["url.path"]).toBe("/projects/8f2a")
 		expect(named("navigate /settings").attributes["url.path"]).toBe("/settings")
-		expect(named("navigate /settings").attributes["app.navigation.interrupted"]).toBeUndefined()
+		expect(named("navigate /settings").attributes["maple.navigation.interrupted"]).toBeUndefined()
 	})
 
 	it("keeps the generic name when ended without a route", async () => {
@@ -173,9 +173,9 @@ describe("startNavigation / endNavigation", () => {
 		await stop()
 
 		expect(spanNames()).toEqual(["pageload /a", "navigate", "navigate /fast"])
-		expect(named("navigate").attributes["app.navigation.interrupted"]).toBe(true)
+		expect(named("navigate").attributes["maple.navigation.interrupted"]).toBe(true)
 		expect(named("navigate").attributes["url.path"]).toBe("/slow")
-		expect(named("navigate /fast").attributes["app.navigation.interrupted"]).toBeUndefined()
+		expect(named("navigate /fast").attributes["maple.navigation.interrupted"]).toBeUndefined()
 	})
 
 	it("redacts credentials in the path like any other URL attribute", async () => {
@@ -203,7 +203,7 @@ describe("startNavigation / endNavigation", () => {
 
 		// Exported by the page-exit flush itself, not by shutdown
 		await vi.waitFor(() => expect(spanNames()).toEqual(["pageload"]))
-		expect(named("pageload").attributes["app.navigation.interrupted"]).toBe(true)
+		expect(named("pageload").attributes["maple.navigation.interrupted"]).toBe(true)
 		expect(() => MapleBrowser.endNavigation("/checkout")).not.toThrow()
 		await stop()
 		expect(spanNames()).toEqual(["pageload"])
@@ -682,7 +682,7 @@ describe("shutdown", () => {
 		await stop()
 
 		expect(spanNames()).toEqual(["pageload"])
-		expect(named("pageload").attributes["app.navigation.interrupted"]).toBe(true)
+		expect(named("pageload").attributes["maple.navigation.interrupted"]).toBe(true)
 		// Ended and cleared: nothing left to end
 		expect(() => MapleBrowser.endNavigation("/a")).not.toThrow()
 

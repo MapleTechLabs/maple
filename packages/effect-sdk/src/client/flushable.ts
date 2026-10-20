@@ -31,8 +31,7 @@ import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
 import { type CaptureExceptionOptions, makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
 import type { MapleSpanOptions } from "../shared/span-options.js"
-import { browserDocument, browserNavigator } from "./browser-globals.js"
-import { trySyncOrUndefined } from "../shared/try-sync.js"
+import { browserDocument, browserNavigator, browserResourceAttributes } from "./browser-globals.js"
 import { type ClientReplayConfig, startClientSession } from "./replay-loader.js"
 import { withSessionLink } from "./session-link.js"
 import type { PrivacyOptions } from "./track.js"
@@ -168,22 +167,10 @@ const postOtlp = (url: string, headers: Record<string, string>, body: unknown) =
 
 const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<string, unknown> => {
 	const attributes: Record<string, unknown> = {
+		...browserResourceAttributes(),
 		"maple.sdk.type": "client",
 		"service.instance.id": browserInstanceId,
 	} satisfies Record<string, unknown>
-	const nav = browserNavigator()
-	if (nav) {
-		// `user_agent.original` is the semconv key; `browser.user_agent` was
-		// deprecated in favour of it.
-		if (nav.userAgent) attributes["user_agent.original"] = nav.userAgent
-		if (nav.language) attributes["browser.language"] = nav.language
-	}
-	if (typeof Intl !== "undefined") {
-		// A locale-stripped build throws from `DateTimeFormat` rather than
-		// reporting an unknown zone.
-		const timezone = trySyncOrUndefined(() => Intl.DateTimeFormat().resolvedOptions().timeZone)
-		if (timezone) attributes["browser.timezone"] = timezone
-	}
 	if (config.environment) {
 		// Dual-emit: legacy key (pre-extracted by Tinybird MVs) + the canonical
 		// resource attribute. Keep both until the MVs coalesce them.
