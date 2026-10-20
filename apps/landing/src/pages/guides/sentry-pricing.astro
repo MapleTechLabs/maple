@@ -523,14 +523,14 @@ const articleJsonLd = {
                         </div>
                     </figure>
 
-                    <h3 id="small-team" class="scroll-mt-24">Small team on Team: about {usd(small.total)}</h3>
+                    <h3 id="small-team" class="scroll-mt-24">Small team on Team: about {usd(small.total)} a month</h3>
                     <p>
                         Five developers with one web app and one API: 150,000 errors, 20 million spans, 2,000 replays, 15 GB of logs, five cron jobs and three uptime checks a month.
                     </p>
                     <div class="guide-table">
                         <table>
                             <thead>
-                                <tr><th>Line</th><th>Calculation</th><th>Cost</th></tr>
+                                <tr><th>Line</th><th>Calculation</th><th>Per month</th></tr>
                             </thead>
                             <tbody>
                                 {small.lines.map((l) => (
@@ -541,14 +541,14 @@ const articleJsonLd = {
                         </table>
                     </div>
 
-                    <h3 id="mid-team" class="scroll-mt-24">Mid-sized team on Business: about {usd(mid.total)}</h3>
+                    <h3 id="mid-team" class="scroll-mt-24">Mid-sized team on Business: about {usd(mid.total)} a month</h3>
                     <p>
                         Twenty-five engineers across several services, on Business for SAML single sign-on: 1 million errors, 200 million spans, 50,000 replays, 100 GB of logs, 5 GB of attachments, 20 cron monitors and 10 uptime monitors.
                     </p>
                     <div class="guide-table">
                         <table>
                             <thead>
-                                <tr><th>Line</th><th>Calculation</th><th>Business</th><th>Same volume on Team</th></tr>
+                                <tr><th>Line</th><th>Calculation</th><th>Business, per month</th><th>Same volume on Team</th></tr>
                             </thead>
                             <tbody>
                                 {mid.lines.map((l, i) => (
