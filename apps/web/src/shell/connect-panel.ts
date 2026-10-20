@@ -77,7 +77,7 @@ export const Message = defineMessageUnion({
 	FailedLoadKeys: { orgId: Schema.String },
 	ResolvedWindow: { orgId: Schema.String, window: TimeWindow },
 	SucceededLoadOverview: { orgId: Schema.String, window: TimeWindow, services: Schema.Array(ServiceRow) },
-	FailedLoadOverview: {},
+	FailedLoadOverview: { orgId: Schema.String, window: TimeWindow },
 	/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the panel is open and the tab shown. */
 	TickedPoll: {},
 	GotCopyMessage: { field: CopyField, message: CopyButton.Message },
@@ -130,7 +130,7 @@ export const FetchOverview = Command.define("FetchConnectOverview", {
 					})),
 				}),
 			),
-			Effect.orElseSucceed(() => Message.FailedLoadOverview()),
+			Effect.orElseSucceed(() => Message.FailedLoadOverview({ orgId, window })),
 		),
 })
 
@@ -210,7 +210,8 @@ export const update = (model: Model, message: Message, context: Context): Update
 				? { model: { ...model, services, isOverviewInFlight: false } }
 				: { model },
 		// One failed poll keeps the services already found, so the pill does not un-detect them.
-		FailedLoadOverview: () => ({ model: { ...model, isOverviewInFlight: false } }),
+		FailedLoadOverview: ({ orgId, window }) =>
+			isCurrent(model, orgId, window) ? { model: { ...model, isOverviewInFlight: false } } : { model },
 		TickedPoll: () =>
 			model.popover.isOpen && model.window !== null && model.orgId !== null && !model.isOverviewInFlight
 				? { model, commands: [ResolveWindow({ orgId: model.orgId })] }

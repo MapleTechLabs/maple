@@ -144,7 +144,10 @@ describe("overview setup checklist", () => {
 
 	test("a failed poll keeps the services already found", () => {
 		const found = withServices(entered(true).read.model, ["checkout"])
-		const failed = pageUpdate(found, setup(SetupMessage.FailedLoadOverview()))
+		const failed = pageUpdate(
+			found,
+			setup(SetupMessage.FailedLoadOverview({ window: found.setup?.window ?? { startTime: "", endTime: "" } })),
+		)
 		expect(failed.model.setup?.services).toEqual([{ serviceName: "checkout", spanCount: 10 }])
 	})
 

@@ -62,7 +62,7 @@ describe("connect panel scene", () => {
 			Command.resolve(ResolveWindow({ orgId: ORG }), Message.ResolvedWindow({ orgId: ORG, window })),
 			Command.resolve(
 				FetchOverview({ orgId: ORG, window, pinnedNamespace: "prod" }),
-				Message.FailedLoadOverview(),
+				Message.FailedLoadOverview({ orgId: ORG, window }),
 			),
 			expect(role("link", { name: "Settings → Ingestion" })).toHaveAttr("href", "/settings?tab=ingestion"),
 			expect(text("Waiting for telemetry")).toExist(),
@@ -108,8 +108,16 @@ describe("connect panel update", () => {
 		const opened = update(open(init()).model, Message.ResolvedWindow({ orgId: ORG, window }), context).model
 		const services = [{ serviceName: "checkout", spanCount: 3 }]
 		const found = update(opened, Message.SucceededLoadOverview({ orgId: ORG, window, services }), context).model
-		const failed = update(found, Message.FailedLoadOverview(), context)
+		const failed = update(found, Message.FailedLoadOverview({ orgId: ORG, window }), context)
 		expectVitest(failed.model.services).toEqual(services)
+	})
+
+	test("a failure for an earlier window does not end the read in flight", () => {
+		const opened = update(open(init()).model, Message.ResolvedWindow({ orgId: ORG, window }), context).model
+		const later = { startTime: "2026-01-01 01:00:00", endTime: "2026-01-01 02:00:00" }
+		const stale = update(opened, Message.FailedLoadOverview({ orgId: ORG, window: later }), context)
+		expectVitest(stale.model.isOverviewInFlight).toBe(true)
+		expectVitest(update(stale.model, Message.TickedPoll(), context).commands ?? []).toEqual([])
 	})
 
 	test("a reopen in the same org keeps the keys it read and does not read them again", () => {

@@ -142,7 +142,8 @@ export const update = (model: Model, message: Message, context: SetupContext): R
 		SucceededLoadOverview: ({ window, services }) =>
 			isWindow(model, window) ? { model: { ...model, services, isOverviewInFlight: false } } : { model },
 		// One failed poll keeps the services already found, so the card does not un-detect them.
-		FailedLoadOverview: () => ({ model: { ...model, isOverviewInFlight: false } }),
+		FailedLoadOverview: ({ window }) =>
+			isWindow(model, window) ? { model: { ...model, isOverviewInFlight: false } } : { model },
 		// A tick during a slow read waits for it: a new window would drop its answer.
 		TickedPoll: () => (model.isOverviewInFlight ? { model } : { model, commands: resolvePoll }),
 		ResolvedPollWindow: ({ window }) => windowResolved(model, window, pinnedNamespace),

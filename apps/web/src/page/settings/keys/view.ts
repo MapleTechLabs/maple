@@ -15,7 +15,7 @@ import { segmentedSelect } from "../../../ui/segmented-select"
 import * as SelectView from "../../../ui/select-view"
 import { skeletonList } from "../../../ui/skeleton"
 import { errorState } from "../../../ui/error-state"
-import { toLoadFailure } from "../../../data/load-failure"
+import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
 import { settingsSection, settingsSections } from "../kit/section"
 import * as CreateDialogView from "./create-dialog-view"
 import { Message } from "./message"
@@ -133,7 +133,14 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 	)
 
 /** `SyncUnavailable`: the `api_keys` stream stopped before its first answer. */
-const SYNC_UNAVAILABLE = { message: "Live sync is unavailable, so keys couldn’t be loaded. Reload to try again." }
+const SYNC_UNAVAILABLE = makeClientErrorBody({
+	_tag: "@maple/web/errors/SyncUnavailable",
+	code: "sync_unavailable",
+	title: "Failed to load keys",
+	message: "Live sync is unavailable, so keys couldn’t be loaded. Try again.",
+	retryable: false,
+	recovery: "retry",
+})
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const rows = buildKeyRows({ apiKeys: model.apiKeys ?? [], now: inputs.nowMs })
@@ -156,7 +163,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				panel(h, {}, [
 					isFailed
 						? errorState(h, {
-								failure: toLoadFailure(SYNC_UNAVAILABLE),
+								failure: SYNC_UNAVAILABLE,
 								title: "Failed to load keys",
 								onRetry: Message.ClickedRetryLoad(),
 								className: "py-12",

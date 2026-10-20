@@ -190,6 +190,7 @@ describe("settings page", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			expectView(text("Failed to load keys")).toExist(),
+			expectView(text("Live sync is unavailable, so keys couldn’t be loaded. Try again.")).toExist(),
 		)
 		const answered = pageUpdate(failed, Message.UpdatedApiKeys({ orgId: context.orgId, rows: [] })).model
 		scene({ update: pageUpdate, view }, given(answered), expectView(text("Failed to load keys")).not.toExist())

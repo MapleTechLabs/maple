@@ -48,7 +48,7 @@ export const Message = defineMessageUnion({
 	SucceededLoadKeys: { publicKey: Schema.String, privateKey: Schema.String },
 	FailedLoadKeys: {},
 	SucceededLoadOverview: { window: TimeWindow, services: Schema.Array(ServiceRow) },
-	FailedLoadOverview: {},
+	FailedLoadOverview: { window: TimeWindow },
 	/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the card is mounted. */
 	TickedPoll: {},
 	/** A poll or a sent test event read the clock: the last hour up to now. */
