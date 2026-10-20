@@ -7,104 +7,235 @@ import Breadcrumb from "../../components/Breadcrumb.astro";
 import FAQ from "../../components/FAQ.astro";
 import SeoHead from "../../components/SeoHead.astro";
 import TableOfContents from "../../components/TableOfContents.astro";
+import LanguageTabs from "../../components/docs/LanguageTabs.astro";
+import LanguageTab from "../../components/docs/LanguageTab.astro";
 import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { highlight, type GuideLang } from "../../lib/guide-highlight";
 
-const pageTitle = "Windows server monitoring tools: built-in, open source and OpenTelemetry";
+const pageTitle = "Windows server monitoring tools, counters and setup | Maple";
 const pageDescription =
-    "Windows server monitoring tools compared by type, the Performance Monitor counters worth watching, and a working OpenTelemetry Collector setup for metrics and event logs.";
+    "The Windows server monitoring tools to know, the counters and thresholds worth watching, and an OpenTelemetry Collector setup for metrics and event logs.";
 const published = "2026-10-19";
-const updatedLabel = "October 19, 2026";
+const updatedLabel = "October 20, 2026";
 const author = CONTRIBUTORS.jeremyfunk;
 const authorUrl = `https://github.com/${author.github}`;
 
-const counters: { area: string; counter: string; watch: string; metric: string }[] = [
-    { area: "CPU", counter: "\\Processor(_Total)\\% Processor Time", watch: "Above 80 to 90% for several minutes", metric: "system.cpu.utilization" },
-    { area: "CPU", counter: "\\System\\Processor Queue Length", watch: "More than about 2 waiting threads per core, sustained", metric: "windows.system.processor_queue_length" },
-    { area: "Memory", counter: "\\Memory\\Available MBytes", watch: "Less than about 10% of physical RAM", metric: "system.memory.utilization" },
-    { area: "Memory", counter: "\\Memory\\Committed Bytes and \\Memory\\Commit Limit", watch: "Committed bytes approaching the limit", metric: "windows.memory.committed, windows.memory.commit_limit" },
-    { area: "Memory", counter: "\\Memory\\Pages/sec", watch: "High and sustained while available memory is low", metric: "windows.memory.pages_per_sec" },
-    { area: "Memory", counter: "\\Paging File(_Total)\\% Usage", watch: "Steady growth week over week", metric: "system.paging.usage" },
-    { area: "Disk", counter: "\\PhysicalDisk(*)\\Avg. Disk sec/Read and sec/Write", watch: "Above about 20 ms, sustained", metric: "windows.disk.latency" },
-    { area: "Disk", counter: "\\PhysicalDisk(*)\\Current Disk Queue Length", watch: "A queue that does not drain between samples", metric: "windows.disk.queue_length" },
-    { area: "Disk", counter: "\\LogicalDisk(*)\\% Free Space", watch: "Below 10 to 15% on any volume", metric: "system.filesystem.utilization" },
-    { area: "Network", counter: "\\Network Interface(*)\\Bytes Total/sec", watch: "Close to the adapter's Current Bandwidth", metric: "system.network.io" },
-    { area: "Network", counter: "\\Network Interface(*)\\Packets Received Errors", watch: "Any count that keeps rising", metric: "system.network.errors" },
-    { area: "Process", counter: "\\Process(*)\\Working Set and Handle Count", watch: "One process that grows and never gives memory or handles back", metric: "process.memory.usage, process.handles" },
-    { area: "IIS", counter: "\\Web Service(_Total)\\Current Connections", watch: "A jump with no matching rise in requests", metric: "iis.connection.active" },
+const toc = [
+    { depth: 2, slug: "what-to-watch", text: "Counters to watch" },
+    { depth: 3, slug: "commit-charge", text: "Commit charge" },
+    { depth: 3, slug: "disk-latency", text: "Disk latency" },
+    { depth: 3, slug: "event-ids", text: "Event IDs" },
+    { depth: 2, slug: "built-in", text: "Built-in tools" },
+    { depth: 2, slug: "tool-types", text: "Types of tools" },
+    { depth: 3, slug: "open-source", text: "Open source" },
+    { depth: 3, slug: "choosing", text: "Choosing one" },
+    { depth: 2, slug: "collector", text: "OpenTelemetry setup" },
+    { depth: 3, slug: "install", text: "Install" },
+    { depth: 3, slug: "config", text: "Config" },
+    { depth: 3, slug: "ingest-key", text: "Ingest key" },
+    { depth: 3, slug: "event-log-collection", text: "Event logs" },
+    { depth: 2, slug: "maple", text: "In Maple" },
+    { depth: 3, slug: "per-server-alerts", text: "One alert per server" },
 ];
+const sectionNav = toc.filter((h) => h.depth === 2);
 
-const builtInTools: [string, string][] = [
-    ["Task Manager", "Live CPU, memory, disk and network per process, and a Services tab. Nothing is kept once you close it."],
-    ["Resource Monitor", "Per-process disk I/O with file names and response times, network activity per process, and handle searches. Run resmon.exe."],
-    ["Performance Monitor", "Live charts of any counter, plus data collector sets that log counters to disk on a schedule. Run perfmon.exe."],
-    ["Event Viewer", "The System, Application and Security logs with filters on level, source and event ID. Custom views save a filter."],
-    ["Windows Admin Center", "A browser-based console for one server or many, with performance charts, events, services and processes."],
-    ["PowerShell", "Get-Counter, Get-WinEvent and Get-Service return the same data as objects you can script, schedule and compare."],
-];
-
-const toolTypes: { type: string; examples: string; fits: string; gaps: string }[] = [
+// One color per resource, reused by the cards, the event table, the Collector
+// diagram and the counter paths and receiver names in the code blocks.
+const resources = [
     {
-        type: "Built into Windows",
-        examples: "Performance Monitor, Event Viewer, Resource Monitor, Windows Admin Center",
-        fits: "Investigating one server while you are logged in to it",
-        gaps: "No alerting across servers, little history unless you set up collector sets",
+        id: "cpu",
+        name: "CPU",
+        color: "var(--chart-2)",
+        signals: [
+            { path: "\\Processor(_Total)\\% Processor Time", watch: "Above 85% for 10 minutes", metric: "system.cpu.utilization" },
+            { path: "\\System\\Processor Queue Length", watch: "More than 2 threads per core, sustained", metric: "windows.system.processor_queue_length" },
+        ],
     },
     {
-        type: "Microsoft management products",
-        examples: "System Center Operations Manager, Azure Monitor",
-        fits: "Estates already standardized on System Center or Azure",
-        gaps: "Agents, management packs or workspaces to operate and license",
+        id: "memory",
+        name: "Memory",
+        color: "var(--chart-5)",
+        signals: [
+            { path: "\\Memory\\Available MBytes", watch: "Below 10% of physical RAM", metric: "system.memory.utilization" },
+            { path: "\\Memory\\% Committed Bytes In Use", watch: "Above 90%", metric: "windows.memory.committed_percent" },
+            { path: "\\Memory\\Pages/sec", watch: "High while available memory is low", metric: "windows.memory.pages_per_sec" },
+        ],
     },
     {
-        type: "Open-source agents",
-        examples: "OpenTelemetry Collector, windows_exporter, Telegraf, Zabbix agent, NSClient++",
-        fits: "Sending Windows data to the backend you already run for other systems",
-        gaps: "You choose the counters, the storage and the alert rules yourself",
+        id: "disk",
+        name: "Disk",
+        color: "var(--chart-3)",
+        signals: [
+            { path: "\\PhysicalDisk(*)\\Avg. Disk sec/Read, sec/Write", watch: "Above 20 ms, sustained", metric: "windows.disk.latency" },
+            { path: "\\PhysicalDisk(*)\\Current Disk Queue Length", watch: "A queue that never drains", metric: "windows.disk.queue_length" },
+            { path: "\\LogicalDisk(*)\\% Free Space", watch: "Below 10% on any volume", metric: "system.filesystem.utilization" },
+        ],
     },
     {
-        type: "Commercial monitoring suites",
-        examples: "SolarWinds Server & Application Monitor, Paessler PRTG, ManageEngine Applications Manager, Datadog",
-        fits: "Teams that want packaged templates for Windows roles and a vendor to call",
-        gaps: "Pricing per server, sensor or host; check the vendor's current terms",
+        id: "network",
+        name: "Network",
+        color: "var(--chart-4)",
+        signals: [
+            { path: "\\Network Interface(*)\\Bytes Total/sec", watch: "Above 70% of the adapter's Current Bandwidth", metric: "system.network.io" },
+            { path: "\\Network Interface(*)\\Packets Received Errors", watch: "Any count that keeps rising", metric: "system.network.errors" },
+        ],
     },
+    {
+        id: "services",
+        name: "Services",
+        color: "oklch(0.8 0.14 95)",
+        signals: [
+            { path: "Service state", watch: "An Automatic service that is not Running", metric: "windows.service.status" },
+            { path: "System log, event 7031 or 7034", watch: "A service that crashed", metric: "log record" },
+        ],
+    },
+    {
+        id: "events",
+        name: "Event logs",
+        color: "var(--chart-error)",
+        signals: [
+            { path: "System and Application logs", watch: "Critical and Error events", metric: "log record" },
+            { path: "Security log, event 4625", watch: "A burst of failed logons", metric: "log record" },
+        ],
+    },
+] as const;
+type ResourceId = (typeof resources)[number]["id"];
+const color = Object.fromEntries(resources.map((r) => [r.id, r.color])) as Record<ResourceId, string>;
+const resourceName = Object.fromEntries(resources.map((r) => [r.id, r.name])) as Record<ResourceId, string>;
+
+// Counter paths (PowerShell strings) and Collector keys take their resource's color.
+const counterObjects: [string, ResourceId][] = [
+    ["Processor", "cpu"],
+    ["System", "cpu"],
+    ["Memory", "memory"],
+    ["PhysicalDisk", "disk"],
+    ["LogicalDisk", "disk"],
+    ["Network Interface", "network"],
+];
+const yamlKeys: [RegExp, ResourceId][] = [
+    [/^cpu$/, "cpu"],
+    [/^memory$/, "memory"],
+    [/^(disk|filesystem)$/, "disk"],
+    [/^network$/, "network"],
+    [/^windows_service$/, "services"],
+    [/^windows_event_log\//, "events"],
+];
+const tint = (html: string) =>
+    html
+        .replace(/<span class="tok-labels">(["'])\\([^\\(<]+)/g, (match, quote: string, object: string) => {
+            const id = counterObjects.find(([name]) => name === object)?.[1];
+            return id ? `<span class="tok-labels" style="--type: ${color[id]}">${quote}\\${object}` : match;
+        })
+        .replace(/<span class="tok-name">([\w/]+)<\/span>:/g, (match, key: string) => {
+            const id = yamlKeys.find(([re]) => re.test(key))?.[1];
+            return id ? `<span class="tok-name" style="--type: ${color[id]}">${key}</span>:` : match;
+        });
+const code = (source: string, lang: GuideLang) => tint(highlight(source, lang));
+
+const eventIds: { log: string; id: string; meaning: string; resource: ResourceId }[] = [
+    { log: "System", id: "41, 6008", meaning: "The server restarted without a clean shutdown", resource: "events" },
+    { log: "System", id: "1074", meaning: "A user or process started a restart or shutdown", resource: "events" },
+    { log: "System", id: "7031, 7034", meaning: "A service terminated unexpectedly", resource: "services" },
+    { log: "System", id: "2004", meaning: "Resource Exhaustion Detector: low on virtual memory", resource: "memory" },
+    { log: "Application", id: "1000", meaning: "An application crashed", resource: "events" },
+    { log: "Security", id: "4625", meaning: "A logon attempt failed", resource: "events" },
+    { log: "Security", id: "4740", meaning: "An account was locked out", resource: "events" },
+    { log: "Security", id: "1102", meaning: "The audit log was cleared", resource: "events" },
 ];
 
-const eventIds: [string, string, string][] = [
-    ["System", "41, 6008", "The server restarted without a clean shutdown"],
-    ["System", "1074", "A user or process started a restart or shutdown"],
-    ["System", "7031, 7034", "A service terminated unexpectedly"],
-    ["System", "2004", "Resource Exhaustion Detector: the system is low on virtual memory"],
-    ["Application", "1000", "An application crashed"],
-    ["Security", "4625", "A logon attempt failed"],
-    ["Security", "4740", "An account was locked out"],
-    ["Security", "1102", "The audit log was cleared"],
-];
-
-const getCounterExample = `# One counter, sampled every 5 seconds for a minute
+const getCounterExample = `# CPU, sampled every 5 seconds for a minute
 Get-Counter '\\Processor(_Total)\\% Processor Time' -SampleInterval 5 -MaxSamples 12
 
-# Commit charge against the commit limit
-Get-Counter '\\Memory\\Committed Bytes', '\\Memory\\Commit Limit', '\\Memory\\% Committed Bytes In Use'
+# Commit charge and disk latency, one sample
+Get-Counter '\\Memory\\% Committed Bytes In Use', '\\PhysicalDisk(*)\\Avg. Disk sec/Read'
 
-# Disk latency for every physical disk
-Get-Counter '\\PhysicalDisk(*)\\Avg. Disk sec/Read', '\\PhysicalDisk(*)\\Avg. Disk sec/Write'
-
-# Every counter in a set
-(Get-Counter -ListSet Memory).Counter`;
-
-const logmanExample = `logman create counter Baseline -f bin -si 00:00:15 -o C:\\PerfLogs\\Baseline ^
-  -c "\\Processor(_Total)\\% Processor Time" "\\Memory\\Available MBytes" ^
-     "\\Memory\\Committed Bytes" "\\PhysicalDisk(*)\\Avg. Disk sec/Transfer"
-logman start Baseline`;
-
-const eventsAndServicesExample = `# Critical and error events in the System log, last 24 hours
-Get-WinEvent -FilterHashtable @{ LogName = 'System'; Level = 1, 2; StartTime = (Get-Date).AddDays(-1) }
+# The same counters from another server
+Get-Counter '\\Memory\\Available MBytes' -ComputerName web-01
 
 # Automatic services that are not running
 Get-Service | Where-Object { $_.StartType -eq 'Automatic' -and $_.Status -ne 'Running' }
 
-# The ten processes that have used the most CPU time
-Get-Process | Sort-Object CPU -Descending | Select-Object -First 10 Name, Id, CPU, WS`;
+# Critical and Error events in the System log, last 24 hours
+Get-WinEvent -FilterHashtable @{ LogName = 'System'; Level = 1, 2; StartTime = (Get-Date).AddDays(-1) }`;
+
+const logmanExample = `logman create counter Baseline -f bin -si 00:00:15 -o C:\\PerfLogs\\Baseline \`
+  -c '\\Processor(_Total)\\% Processor Time' '\\Memory\\Available MBytes' \`
+     '\\Memory\\% Committed Bytes In Use' '\\PhysicalDisk(*)\\Avg. Disk sec/Transfer'
+logman start Baseline`;
+
+const builtInTools = [
+    {
+        id: "task-manager",
+        label: "Task Manager",
+        open: "Ctrl+Shift+Esc",
+        body: "The <strong>Performance</strong> tab charts CPU, memory, each disk and each adapter for the last 60 seconds. Under Memory, <strong>Committed</strong> shows the commit charge against the commit limit. <strong>Details</strong> sorts processes by CPU or memory, and <strong>Services</strong> shows which services are stopped.",
+        limit: "Live only. Nothing is kept once you close it.",
+    },
+    {
+        id: "resource-monitor",
+        label: "Resource Monitor",
+        open: "resmon.exe",
+        body: "Per-process detail Task Manager lacks: the <strong>Disk</strong> tab lists the files each process is reading and writing with their response time in milliseconds, <strong>Memory</strong> shows hard faults per second per process, and <strong>Network</strong> lists TCP connections per process. <strong>Associated Handles</strong> on the CPU tab finds the process holding a file open.",
+        limit: "Live only, on the machine you are logged in to.",
+    },
+    {
+        id: "perfmon",
+        label: "Performance Monitor",
+        open: "perfmon.exe",
+        body: "Charts any counter, local or remote: click the green plus and pick an object such as <strong>Memory</strong> and a counter. A <strong>data collector set</strong> logs counters to a <code>.blg</code> file at a fixed interval, which gives you a baseline of normal to compare against during an incident. Create one under <strong>Data Collector Sets → User Defined</strong>, or with <code>logman</code>:",
+        limit: "History only for the sets you create. No alert notifications.",
+    },
+    {
+        id: "powershell",
+        label: "PowerShell",
+        open: "Get-Counter, Get-Service, Get-WinEvent",
+        body: "The same counters, services and events as objects you can script, schedule and run against other servers. Works in Windows PowerShell 5.1 and PowerShell 7 on Windows.",
+        limit: "History and alerting are whatever your script builds.",
+    },
+];
+
+const toolTypes: { type: string; examples: string; fits: string; tradeoffs: string }[] = [
+    {
+        type: "Built into Windows",
+        examples: "Task Manager, Resource Monitor, Performance Monitor, Event Viewer, Windows Admin Center",
+        fits: "Investigating one server while you are on it",
+        tradeoffs: "No alerts across servers; history only from data collector sets",
+    },
+    {
+        type: "Microsoft management products",
+        examples: "Azure Monitor, System Center Operations Manager",
+        fits: "Estates already standardized on Azure or System Center",
+        tradeoffs: "Agents, management packs or workspaces to run and license",
+    },
+    {
+        type: "Open-source agents",
+        examples: "NSClient++, OpenTelemetry Collector, Telegraf, windows_exporter, Zabbix agent",
+        fits: "Sending Windows data to a backend you already run for other systems",
+        tradeoffs: "You pick the counters, the storage and the alert rules",
+    },
+    {
+        type: "Commercial monitoring suites",
+        examples: "Datadog, ManageEngine Applications Manager, Paessler PRTG, SolarWinds Server & Application Monitor",
+        fits: "Teams that want ready-made templates for Windows roles and vendor support",
+        tradeoffs: "Priced per server, sensor or host; check the vendor's current terms",
+    },
+];
+
+const choosing = [
+    ["All six resources", "CPU, memory with commit charge, disk latency, network, service states and event logs."],
+    ["History you can compare", "Enough retention to set this week next to last month, so a slow leak shows up as a trend."],
+    ["Alerts per server", "One incident for the server that is in trouble, not an average across the fleet that never crosses the line."],
+    ["Fits what you already run", "Windows servers alerting through the same rules and on-call rotation as your Linux hosts and applications."],
+    ["Deployment", "An MSI you can push with Group Policy or your configuration tool, running as a service with a known footprint."],
+    ["Pricing unit", "Per host, per sensor, per counter or per GB ingested. The unit decides what a hundred more servers cost."],
+];
+
+const receivers: { name: string; reads: string; body: string; covers: ResourceId[] }[] = [
+    { name: "hostmetrics", reads: "System APIs", body: "CPU, memory, disk, filesystem, network, page file and load, with the same metric names as on Linux. Load is computed from the processor queue length.", covers: ["cpu", "memory", "disk", "network"] },
+    { name: "windows_perf_counters", reads: "Performance counters", body: "Any Performance Monitor counter you list, under a metric name you choose. Here: commit charge, disk latency and the queue lengths.", covers: ["cpu", "memory", "disk"] },
+    { name: "windows_service", reads: "Service Control Manager", body: "<code>windows.service.status</code> per listed service: 4 is Running, 1 is Stopped. Alpha stability.", covers: ["services"] },
+    { name: "windows_event_log", reads: "Event log", body: "One channel or an XML query; each event becomes a log record with its level mapped to a severity.", covers: ["events"] },
+];
 
 const installExample = `$v = '0.163.1'
 $msi = "$env:TEMP\\otelcol-contrib.msi"
@@ -137,25 +268,13 @@ receivers:
       disk: {}
       network: {}
       paging: {}
-      process:
-        include:
-          names: [w3wp.exe, sqlservr.exe] # the processes you care about
-          match_type: strict
-        mute_process_name_error: true
-        metrics:
-          process.handles:
-            enabled: true
 
   windows_perf_counters:
     collection_interval: 30s
     metrics:
-      windows.memory.committed:
-        description: Memory\\Committed Bytes
-        unit: By
-        gauge:
-      windows.memory.commit_limit:
-        description: Memory\\Commit Limit
-        unit: By
+      windows.memory.committed_percent:
+        description: Memory\\% Committed Bytes In Use
+        unit: "%"
         gauge:
       windows.memory.pages_per_sec:
         description: Memory\\Pages/sec
@@ -176,10 +295,8 @@ receivers:
     perfcounters:
       - object: Memory
         counters:
-          - name: Committed Bytes
-            metric: windows.memory.committed
-          - name: Commit Limit
-            metric: windows.memory.commit_limit
+          - name: "% Committed Bytes In Use"
+            metric: windows.memory.committed_percent
           - name: Pages/sec
             metric: windows.memory.pages_per_sec
       - object: PhysicalDisk
@@ -203,9 +320,6 @@ receivers:
   windows_service:
     collection_interval: 1m
     include_services: [W3SVC, WinRM] # the services this server must keep running
-
-  iis: # remove on servers without IIS
-    collection_interval: 30s
 
   windows_event_log/system:
     channel: system
@@ -247,7 +361,7 @@ service:
   extensions: [file_storage]
   pipelines:
     metrics:
-      receivers: [hostmetrics, windows_perf_counters, windows_service, iis]
+      receivers: [hostmetrics, windows_perf_counters, windows_service]
       processors: [resourcedetection, batch]
       exporters: [otlphttp/maple]
     logs:
@@ -275,46 +389,36 @@ WHERE $__orgFilter AND $__timeFilter(TimeUnix)
 GROUP BY bucket, group
 ORDER BY bucket`;
 
-const toc = [
-    ["counters", "Counters to watch"],
-    ["built-in", "Built-in tools"],
-    ["tool-types", "Types of tools"],
-    ["collector", "OpenTelemetry setup"],
-    ["event-logs", "Event logs"],
-    ["maple", "In Maple"],
-] as const;
-const tocHeadings = toc.map(([slug, text]) => ({ depth: 2, slug, text }));
-
 const faqs = [
+    {
+        question: "What are the best Windows server monitoring tools?",
+        answer:
+            "It depends on what the rest of your monitoring runs on. For one server, the built-in Performance Monitor, Resource Monitor and Event Viewer are enough to diagnose a problem. For a fleet, pick an agent that sends counters, service states and event logs to the backend you already use for other systems, so Windows servers alert through the same rules. Estates standardized on Microsoft often use Azure Monitor or System Center Operations Manager; commercial suites add ready-made templates for Windows roles.",
+    },
+    {
+        question: "Are there free or open-source Windows server monitoring tools?",
+        answer:
+            "Windows includes Task Manager, Resource Monitor, Performance Monitor, Event Viewer and PowerShell's Get-Counter, and Windows Admin Center is a free download. Open-source agents include the OpenTelemetry Collector, the Prometheus windows_exporter, Telegraf, the Zabbix agent and NSClient++. The agents need a backend that stores the data and runs the alerts.",
+    },
     {
         question: "How do I monitor a Windows server?",
         answer:
-            "Decide on a short list of signals: CPU and processor queue, available memory and commit charge, disk latency and free space, network errors, the services the server must keep running, and the System and Application event logs. Check them by hand with Performance Monitor and Event Viewer. To keep history and get alerts, run an agent such as the OpenTelemetry Collector as a Windows service and send the data to a monitoring backend.",
-    },
-    {
-        question: "What are the best free Windows server monitoring tools?",
-        answer:
-            "Windows itself includes Performance Monitor, Resource Monitor, Event Viewer and PowerShell's Get-Counter, and Windows Admin Center is a free download for Windows Server. Open-source agents include the OpenTelemetry Collector, the Prometheus windows_exporter, Telegraf and the Zabbix agent. The built-in tools cover one server at a time; the agents need a backend that stores the data and runs alerts.",
+            "Pick the signals first: CPU and processor queue, available memory and commit charge, disk latency and free space, network errors, the services the server must keep running, and the System and Application event logs. Check them by hand with Performance Monitor and Event Viewer. For history and alerts, run an agent such as the OpenTelemetry Collector as a Windows service and send the data to a monitoring backend.",
     },
     {
         question: "Which Performance Monitor counters matter most on Windows Server?",
         answer:
-            "Start with Processor(_Total)\\% Processor Time and System\\Processor Queue Length for CPU, Memory\\Available MBytes and Memory\\Committed Bytes against Memory\\Commit Limit for memory, PhysicalDisk\\Avg. Disk sec/Read and sec/Write for disk latency, LogicalDisk\\% Free Space, and Network Interface\\Bytes Total/sec. Add role counters such as Web Service\\Current Connections for IIS.",
+            "Processor(_Total)\\% Processor Time and System\\Processor Queue Length for CPU, Memory\\Available MBytes and Memory\\% Committed Bytes In Use for memory, PhysicalDisk\\Avg. Disk sec/Read and sec/Write for disk latency, LogicalDisk\\% Free Space, and Network Interface\\Bytes Total/sec. Add role counters such as Web Service\\Current Connections on IIS.",
     },
     {
-        question: "How do I monitor Windows event logs?",
+        question: "How do I monitor Windows services?",
         answer:
-            "Event Viewer and Get-WinEvent read the logs on one machine. To collect them centrally, use Windows Event Forwarding or an agent. The OpenTelemetry Collector's windows_event_log receiver reads a channel such as System or Application, or an XML query that selects specific event IDs, and sends each event as an OpenTelemetry log record with its level mapped to a severity.",
-    },
-    {
-        question: "How do I get an alert when CPU is high on a Windows server?",
-        answer:
-            "Collect system.cpu.utilization with the OpenTelemetry Collector's hostmetrics receiver, then alert on its idle share: when the average for state idle stays below 0.1, the CPU has been more than 90% busy. In Maple, open the metric on the Metrics page, filter attr.state to idle, choose Create alert, set the condition to below 0.1 over a 10-minute window, and lower Min samples so a window with 20 data points is evaluated.",
+            "Get-Service shows the state of every service on one machine. To alert on it, collect the state on a schedule: the OpenTelemetry Collector's windows_service receiver reports windows.service.status for each listed service, where 4 means Running. Alert when the value for a service drops below 4, and watch the System log for events 7031 and 7034, which record a service crashing.",
     },
     {
         question: "Does the OpenTelemetry Collector run on Windows Server?",
         answer:
-            "Yes. The opentelemetry-collector-releases project publishes MSI installers for the contrib distribution. The installer registers a Windows service named otelcol-contrib that runs as LocalSystem and reads config.yaml from C:\\Program Files\\OpenTelemetry Collector.",
+            "Yes. The opentelemetry-collector-releases project publishes MSI installers for the Contrib distribution. The installer registers a Windows service named otelcol-contrib that runs as LocalSystem and reads config.yaml from C:\\Program Files\\OpenTelemetry Collector.",
     },
 ];
 
@@ -322,10 +426,10 @@ const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev"
 const articleJsonLd = {
     "@context": "https://schema.org",
     "@type": "TechArticle",
-    headline: "Windows server monitoring tools and setup with OpenTelemetry",
+    headline: "Windows server monitoring tools",
     description: pageDescription,
     datePublished: published,
-    dateModified: published,
+    dateModified: "2026-10-20",
     author: { "@type": "Person", name: author.name, url: authorUrl },
     publisher: {
         "@type": "Organization",
@@ -356,125 +460,144 @@ const articleJsonLd = {
                 style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
             >
             </div>
-            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-24 md:pt-28">
-                <div>
-                    <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
-                        <span class="border border-primary/40 px-2 py-1 text-primary">Infrastructure</span>
-                        <span>12 min read</span>
-                    </div>
-                    <h1 class="mt-6 max-w-[22ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
-                        Windows server monitoring tools and an OpenTelemetry setup
-                    </h1>
-                    <p class="mt-7 max-w-[62ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
-                        The Performance Monitor counters and event IDs worth watching, the tools Windows ships with, the kinds of monitoring tools you can add, and a Collector config that sends host metrics, perf counters, service states and event logs to one backend.
-                    </p>
-                    <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
-                        <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
-                            <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
-                            <span>By {author.name}</span>
-                        </a>
-                        <time datetime={published}>Updated {updatedLabel}</time>
-                    </div>
+            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-20 md:pt-28">
+                <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                    <span class="border border-primary/40 px-2 py-1 text-primary">Infrastructure</span>
+                    <span>11 min read</span>
+                </div>
+                <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                    Windows server monitoring tools
+                </h1>
+                <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
+                    The counters worth watching, the tools that read them, and an OpenTelemetry Collector setup that sends them all to one place.
+                </p>
+                <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                    <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                        <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <span>By {author.name}</span>
+                    </a>
+                    <time datetime="2026-10-20">Updated {updatedLabel}</time>
                 </div>
             </div>
         </header>
 
         <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
             <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
-                {toc.map(([id, label]) => (
-                    <a href={`#${id}`} class="transition-colors hover:text-primary">{label}</a>
+                {sectionNav.map((h) => (
+                    <a href={`#${h.slug}`} class="transition-colors hover:text-primary">{h.text}</a>
                 ))}
             </div>
         </nav>
 
         <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
             <aside class="hidden lg:block">
-                <TableOfContents headings={tocHeadings} class="sticky top-28" />
+                <TableOfContents headings={toc} class="sticky top-28" />
             </aside>
 
             <article class="win-guide min-w-0">
-                <section id="counters" class="scroll-mt-24">
-                    <p class="guide-eyebrow"><span>01</span> · Counters</p>
-                    <h2>Windows server performance monitoring: the counters to watch</h2>
+                <section id="what-to-watch" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>01</span> · What to watch</p>
+                    <h2>Counters to watch on a Windows server</h2>
 
                     <div class="guide-answer">
-                        <p>
-                            <strong>Windows server monitoring</strong> means collecting a server's performance counters, service states and event logs on a schedule, keeping the history, and alerting when a value stays outside its normal range. Every tool on this page reads the same sources: the Performance Data Helper counters, the Service Control Manager and the Windows event log.
-                        </p>
+                        <p><strong>Windows server monitoring</strong> means checking a server's CPU, memory, disks, network, services and event logs on a schedule, keeping the history, and getting an alert when something stays outside its normal range.</p>
                     </div>
 
                     <p>
-                        A server that is slow or failing almost always shows it in a handful of counters. The table lists them with a rule of thumb for each and the metric name each one gets in the <a href="#collector">Collector setup</a> further down. Treat the thresholds as starting points; a database server that runs at 85% CPU every night is normal for that server.
+                        Windows measures all of it already. <strong>Performance counters</strong> are the numbers Windows keeps for every part of the system, named like <code>\Memory\Available MBytes</code>: an object, then a counter. Services report their state to the <strong>Service Control Manager</strong>, and everything else that happens lands in the <strong>event log</strong>. Every monitoring tool reads these sources; tools differ in how they collect, store and alert on them.
+                    </p>
+                    <p>
+                        A slow or failing server shows it in a handful of signals. Treat the thresholds as starting points: a database server that runs at 90% CPU every night is normal for that server.
                     </p>
 
+                    <div class="resource-grid">
+                        {resources.map((r) => (
+                            <div class="resource-card" style={`--type: ${r.color}`}>
+                                <span class="type-badge">{r.name}</span>
+                                <dl>
+                                    {r.signals.map((s) => (
+                                        <div>
+                                            <dt><code>{s.path}</code></dt>
+                                            <dd>{s.watch}</dd>
+                                        </div>
+                                    ))}
+                                </dl>
+                            </div>
+                        ))}
+                    </div>
+                    <p class="guide-caption">Each card's color marks the same resource in the tables, the Collector diagram and the code on this page.</p>
+
+                    <h3 id="commit-charge" class="scroll-mt-24"><span class="type-dot" style={`--type: ${color.memory}`}></span>Commit charge, not only free RAM</h3>
+                    <p>
+                        Windows backs every committed allocation with RAM or the page file. The most it can commit is the <strong>commit limit</strong>: physical memory plus the current page file size. When the commit charge reaches the limit and the page file cannot grow, allocations fail. Processes crash with out-of-memory errors and the System log records event 2004, even while <code>Available MBytes</code> still shows free RAM. <code>% Committed Bytes In Use</code> is the charge as a share of the limit.
+                    </p>
+
+                    <h3 id="disk-latency" class="scroll-mt-24"><span class="type-dot" style={`--type: ${color.disk}`}></span>Disk latency, not disk busy time</h3>
+                    <p>
+                        <code>% Disk Time</code> can read above 100% on RAID arrays and SANs and says little about whether requests are slow. <code>Avg. Disk sec/Read</code> and <code>Avg. Disk sec/Write</code> measure how long each request took, queueing included. Local SSDs answer in a few milliseconds. Latency above about 20 ms with a queue that never drains points at storage.
+                    </p>
+
+                    <h3 id="event-ids" class="scroll-mt-24"><span class="type-dot" style={`--type: ${color.events}`}></span>Event IDs worth an alert</h3>
+                    <p>
+                        Counters do not tell you that a server rebooted or a service crashed. These events do:
+                    </p>
                     <div class="guide-table">
                         <table>
                             <thead>
-                                <tr><th>Area</th><th>Performance Monitor counter</th><th>Investigate when</th><th>OpenTelemetry metric</th></tr>
+                                <tr><th>Log</th><th>Event ID</th><th>Meaning</th><th>Resource</th></tr>
                             </thead>
                             <tbody>
-                                {counters.map((row) => (
+                                {eventIds.map((e) => (
                                     <tr>
-                                        <td class="guide-table__key">{row.area}</td>
-                                        <td><code>{row.counter}</code></td>
-                                        <td>{row.watch}</td>
-                                        <td><code>{row.metric}</code></td>
+                                        <td>{e.log}</td>
+                                        <td><code>{e.id}</code></td>
+                                        <td>{e.meaning}</td>
+                                        <td><span class="type-badge" style={`--type: ${color[e.resource]}`}>{resourceName[e.resource]}</span></td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
-
-                    <h3>Commit charge and the commit limit</h3>
-                    <p>
-                        Windows backs every committed allocation with either RAM or the page file. The total that can be committed is the <strong>Commit Limit</strong>: physical memory plus the current page file size. When <strong>Committed Bytes</strong> reaches the limit and the page file cannot grow, allocations fail. Processes crash with out-of-memory errors and the System log records event 2004 from the Resource Exhaustion Detector, even though <strong>Available MBytes</strong> may still show free RAM. Watch committed bytes as a share of the commit limit next to available memory.
-                    </p>
-
-                    <h3>Disk latency over disk busy time</h3>
-                    <p>
-                        <strong>% Disk Time</strong> can read above 100% on arrays and SANs and says little about whether requests are slow. <strong>Avg. Disk sec/Read</strong> and <strong>Avg. Disk sec/Write</strong> measure how long each request took, including time spent queued in the storage driver. Local SSDs normally answer in a few milliseconds. Latency that stays above about 20 ms on a general-purpose server, together with a queue length that never drains, points at storage as the bottleneck.
-                    </p>
-
-                    <h3>Services, processes and IIS</h3>
-                    <p>
-                        Counters do not tell you that a service stopped. Track the state of the services each server exists to run (IIS's <code>W3SVC</code>, <code>MSSQLSERVER</code>, your own), and watch event IDs 7031 and 7034 for services that crash and restart. On a web server, add IIS connections and request queue counts, and per-process memory and handle counts for the worker processes (<code>w3wp.exe</code>), where slow leaks show up first.
-                    </p>
                 </section>
 
                 <section id="built-in" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>02</span> · Built in</p>
-                    <h2>Built-in Windows server monitoring tools</h2>
+                    <h2>Built-in Windows monitoring tools</h2>
                     <p>
-                        Windows Server ships with enough to diagnose a problem on one machine. None of these tools alerts you across a fleet, and only Performance Monitor's data collector sets keep history without extra setup.
+                        Windows Server ships with enough to diagnose a problem on one machine. Each tool reads the same counters at a different depth:
                     </p>
 
-                    <div class="guide-checklist">
-                        {builtInTools.map(([title, body], index) => (
-                            <div><span>{String(index + 1).padStart(2, "0")}</span><div><h3>{title}</h3><p>{body}</p></div></div>
+                    <LanguageTabs tabs={builtInTools.map(({ id, label }) => ({ id, label }))} label="Built-in tool" group="maple-guide-windows-tool">
+                        {builtInTools.map((t) => (
+                            <LanguageTab id={t.id}>
+                                <div class="tool-panel">
+                                    <p class="tool-panel__open"><span>Open</span><code>{t.open}</code></p>
+                                    <p set:html={t.body} />
+                                    {t.id === "perfmon" && <pre><code set:html={code(logmanExample, "powershell")} /></pre>}
+                                    {t.id === "powershell" && <pre><code set:html={code(getCounterExample, "powershell")} /></pre>}
+                                    <p class="tool-panel__limit">{t.limit}</p>
+                                </div>
+                            </LanguageTab>
                         ))}
+                    </LanguageTabs>
+
+                    <p>
+                        <strong>Event Viewer</strong> (<code>eventvwr.msc</code>) reads the System, Application and Security logs and saves filters on level, source and event ID as custom views. <strong>Windows Admin Center</strong> is a free browser-based console from Microsoft that connects to many servers and shows each one's performance charts, events, services and processes.
+                    </p>
+
+                    <div class="guide-callout">
+                        <p class="guide-kicker">The gap they leave</p>
+                        <p>
+                            None of the built-in tools sends you a notification when a counter on one of twenty servers crosses a line, and only data collector sets keep history. Every other type of tool on this page adds those two things.
+                        </p>
                     </div>
-
-                    <h3>Read counters with Get-Counter</h3>
-                    <p>
-                        <code>Get-Counter</code> reads the same counters as Performance Monitor from a PowerShell prompt, locally or with <code>-ComputerName</code> against a remote server. It works in Windows PowerShell 5.1 and in PowerShell 7 on Windows.
-                    </p>
-                    <pre><code>{getCounterExample}</code></pre>
-
-                    <h3>Keep a baseline with a data collector set</h3>
-                    <p>
-                        A data collector set logs counters to a file at a fixed interval, which gives you a record of normal to compare against during an incident. Create one in Performance Monitor under <strong>Data Collector Sets → User Defined</strong>, or from a command prompt with <code>logman</code>. Open the resulting <code>.blg</code> file in Performance Monitor to chart it.
-                    </p>
-                    <pre><code>{logmanExample}</code></pre>
-
-                    <h3>Events, services and processes from PowerShell</h3>
-                    <pre><code>{eventsAndServicesExample}</code></pre>
                 </section>
 
                 <section id="tool-types" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>03</span> · Tool types</p>
                     <h2>Types of Windows server monitoring tools</h2>
                     <p>
-                        Windows server monitoring software falls into the groups below. They read the same counters and logs; the differences are in how the data is collected, where it is stored, who maintains the templates and how it is priced.
+                        Windows server monitoring software falls into the groups below. They read the same counters and logs; they differ in how the data is collected, where it is stored, who maintains the templates and how it is priced. Examples are listed alphabetically.
                     </p>
 
                     <div class="guide-table">
@@ -488,154 +611,198 @@ const articleJsonLd = {
                                         <td class="guide-table__key">{row.type}</td>
                                         <td>{row.examples}</td>
                                         <td>{row.fits}</td>
-                                        <td>{row.gaps}</td>
+                                        <td>{row.tradeoffs}</td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
 
-                    <h3>Open-source Windows server monitoring tools</h3>
+                    <h3 id="open-source" class="scroll-mt-24">Open-source Windows server monitoring tools</h3>
                     <p>
-                        The open-source agents differ mostly in the format they emit. <a href="https://github.com/prometheus-community/windows_exporter" target="_blank" rel="noopener noreferrer">windows_exporter</a> serves Windows metrics in the Prometheus format on port 9182 for a Prometheus server to scrape. <a href="https://github.com/influxdata/telegraf/tree/master/plugins/inputs/win_perf_counters" target="_blank" rel="noopener noreferrer">Telegraf's win_perf_counters input</a> reads arbitrary counters for InfluxDB and other outputs. The <a href="https://www.zabbix.com/documentation/current/en/manual/concepts/agent" target="_blank" rel="noopener noreferrer">Zabbix agent</a> and <a href="https://nsclient.org/" target="_blank" rel="noopener noreferrer">NSClient++</a> report to Zabbix and Nagios-compatible servers.
+                        The open-source agents differ mostly in the format they send. <a href="https://github.com/prometheus-community/windows_exporter" target="_blank" rel="noopener noreferrer">windows_exporter</a> serves metrics in the Prometheus format on port 9182 for a Prometheus server to scrape. <a href="https://github.com/influxdata/telegraf/tree/master/plugins/inputs/win_perf_counters" target="_blank" rel="noopener noreferrer">Telegraf's win_perf_counters input</a> reads any counter for InfluxDB and other outputs. The <a href="https://www.zabbix.com/documentation/current/en/manual/concepts/agent" target="_blank" rel="noopener noreferrer">Zabbix agent</a> and <a href="https://nsclient.org/" target="_blank" rel="noopener noreferrer">NSClient++</a> report to Zabbix and Nagios-compatible servers.
                     </p>
                     <p>
-                        The OpenTelemetry Collector Contrib distribution covers metrics and event logs in one agent and sends them over OTLP, which most observability backends accept. It can also scrape a local windows_exporter with its Prometheus receiver if you already run one. The rest of this guide uses it.
+                        The <strong>OpenTelemetry Collector</strong> covers counters, service states and event logs in one agent and sends them over OTLP, the OpenTelemetry protocol most observability backends accept. The rest of this guide uses it.
                     </p>
 
-                    <h3>Choosing between them</h3>
-                    <p>
-                        If the rest of your monitoring already runs on one backend, pick the agent that feeds it, so Windows servers alert through the same rules and on-call rotation as everything else. If Windows servers are the whole estate and you want templates for Active Directory, Exchange or SQL Server out of the box, a commercial suite or System Center Operations Manager saves the work of choosing counters yourself.
-                    </p>
+                    <h3 id="choosing" class="scroll-mt-24">Checklist for choosing a tool</h3>
+                    <div class="guide-checklist">
+                        {choosing.map(([title, body], index) => (
+                            <div><span>{String(index + 1).padStart(2, "0")}</span><div><h4>{title}</h4><p>{body}</p></div></div>
+                        ))}
+                    </div>
                 </section>
 
                 <section id="collector" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>04</span> · Setup</p>
-                    <h2>Monitor Windows Server with the OpenTelemetry Collector</h2>
+                    <h2>Windows Server monitoring with OpenTelemetry</h2>
                     <p>
-                        These receivers in the Contrib distribution cover a Windows server between them:
+                        The OpenTelemetry Collector runs on the server as a Windows service. Its Windows receivers read those sources, and one exporter sends the results to a backend over HTTPS:
                     </p>
 
-                    <div class="guide-signal-list">
-                        <div><span>hostmetrics</span><p>CPU, memory, disk, filesystem, network, page file, load and per-process metrics, with the same metric names as on Linux. On Windows, load averages are computed from the Processor Queue Length counter.</p></div>
-                        <div><span>perf counters</span><p><code>windows_perf_counters</code> reads any Performance Monitor counter you list and names the metric. Used here for commit charge, disk latency and queue lengths.</p></div>
-                        <div><span>services</span><p><code>windows_service</code> reports <code>windows.service.status</code> for each listed service: 4 is running, 1 is stopped. Alpha stability.</p></div>
-                        <div><span>event log</span><p><code>windows_event_log</code> reads one channel or an XML query and sends each event as a log record, with the event level mapped to a severity.</p></div>
+                    <figure class="flow" aria-label="Data flow. On the Windows server, system APIs and performance counters feed the hostmetrics and windows_perf_counters receivers, the Service Control Manager feeds windows_service, and the event log feeds windows_event_log. The Collector sends hostmetrics data to the Maple Hosts page, counters and service states to the Metrics page, and events to the Logs page.">
+                        <svg viewBox="0 0 760 240" aria-hidden="true">
+                            <defs>
+                                <marker id="flow-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+                                    <path d="M0,0 L8,4 L0,8 z" class="flow__head" />
+                                </marker>
+                            </defs>
+                            <rect x="0" y="30" width="190" height="196" rx="8" class="flow__box" />
+                            <text x="16" y="54" class="flow__title">Windows Server</text>
+                            <rect x="12" y="68" width="166" height="68" rx="6" class="flow__pill" />
+                            <text x="95" y="98" text-anchor="middle" class="flow__label">System APIs and</text>
+                            <text x="95" y="114" text-anchor="middle" class="flow__label">performance counters</text>
+                            <rect x="12" y="144" width="166" height="30" rx="6" class="flow__pill" />
+                            <text x="95" y="163" text-anchor="middle" class="flow__label">Service Control Manager</text>
+                            <rect x="12" y="182" width="166" height="30" rx="6" class="flow__pill" />
+                            <text x="95" y="201" text-anchor="middle" class="flow__label">Event log</text>
+
+                            <rect x="250" y="30" width="270" height="196" rx="8" class="flow__box flow__box--collector" />
+                            <text x="266" y="54" class="flow__title">otelcol-contrib service</text>
+                            {receivers.map((r, i) => {
+                                const y = 68 + i * 38;
+                                return (
+                                    <g>
+                                        <rect x="262" y={y} width="246" height="30" rx="6" class="flow__pill" />
+                                        <text x="274" y={y + 19} class="flow__mono">{r.name}</text>
+                                        {r.covers.map((id, j) => (
+                                            <circle cx={494 - (r.covers.length - 1 - j) * 12} cy={y + 15} r="4" style={`fill: ${color[id]}`} />
+                                        ))}
+                                    </g>
+                                );
+                            })}
+
+                            <line x1="178" y1="102" x2="260" y2="83" marker-end="url(#flow-arrow)" class="flow__line" />
+                            <line x1="178" y1="102" x2="260" y2="121" marker-end="url(#flow-arrow)" class="flow__line" />
+                            <line x1="178" y1="159" x2="260" y2="159" marker-end="url(#flow-arrow)" class="flow__line" />
+                            <line x1="178" y1="197" x2="260" y2="197" marker-end="url(#flow-arrow)" class="flow__line" />
+
+                            <text x="549" y="73" text-anchor="middle" class="flow__mono flow__mono--accent">OTLP</text>
+                            <rect x="580" y="30" width="180" height="196" rx="8" class="flow__box" />
+                            <text x="596" y="54" class="flow__title">Maple</text>
+                            <rect x="592" y="68" width="156" height="30" rx="6" class="flow__pill" />
+                            <text x="670" y="87" text-anchor="middle" class="flow__label">Hosts</text>
+                            <rect x="592" y="106" width="156" height="68" rx="6" class="flow__pill" />
+                            <text x="670" y="144" text-anchor="middle" class="flow__label">Metrics</text>
+                            <rect x="592" y="182" width="156" height="30" rx="6" class="flow__pill" />
+                            <text x="670" y="201" text-anchor="middle" class="flow__label">Logs</text>
+
+                            <line x1="508" y1="83" x2="590" y2="83" marker-end="url(#flow-arrow)" class="flow__line flow__line--out" />
+                            <line x1="508" y1="121" x2="590" y2="121" marker-end="url(#flow-arrow)" class="flow__line flow__line--out" />
+                            <line x1="508" y1="159" x2="590" y2="159" marker-end="url(#flow-arrow)" class="flow__line flow__line--out" />
+                            <line x1="508" y1="197" x2="590" y2="197" marker-end="url(#flow-arrow)" class="flow__line flow__line--out" />
+                        </svg>
+                    </figure>
+                    <p class="guide-caption">The dots on each receiver are the resources it covers. Every metric, including the hostmetrics ones behind the Hosts page, can also be charted on the Metrics page.</p>
+
+                    <div class="receiver-list">
+                        {receivers.map((r) => (
+                            <div>
+                                <p class="receiver-list__name"><code>{r.name}</code>{r.covers.map((id) => <span class="type-dot" style={`--type: ${color[id]}`} title={resourceName[id]}></span>)}</p>
+                                <p set:html={r.body} />
+                            </div>
+                        ))}
                     </div>
 
                     <p>
-                        Older releases use the earlier component names: <code>windowseventlog</code> before v0.150, <code>windowsservice</code> before v0.154 and <code>windowsperfcounters</code> before v0.160. v0.163 still accepts the old names as deprecated aliases.
+                        Older Collector releases use earlier names for these receivers: <code>windowseventlog</code> before v0.150, <code>windowsservice</code> before v0.154 and <code>windowsperfcounters</code> before v0.160. v0.163 still accepts the old names as deprecated aliases.
                     </p>
 
-                    <h3>1. Install the Collector as a Windows service</h3>
+                    <h3 id="install" class="scroll-mt-24">1. Install the Collector as a Windows service</h3>
                     <p>
-                        The <a href="https://github.com/open-telemetry/opentelemetry-collector-releases/releases" target="_blank" rel="noopener noreferrer">opentelemetry-collector-releases</a> project publishes an MSI for the Contrib distribution. It installs to <code>C:\Program Files\OpenTelemetry Collector</code> and registers an automatic-start service named <code>otelcol-contrib</code> that runs as LocalSystem, which can read the Security log. From an elevated PowerShell prompt:
+                        The <a href="https://github.com/open-telemetry/opentelemetry-collector-releases/releases" target="_blank" rel="noopener noreferrer">opentelemetry-collector-releases</a> project publishes an MSI for the Contrib distribution, the build that includes the Windows receivers. It installs to <code>C:\Program Files\OpenTelemetry Collector</code> and registers an automatic-start service named <code>otelcol-contrib</code> that runs as LocalSystem, an account that can read the Security log. From an elevated PowerShell prompt:
                     </p>
-                    <pre><code>{installExample}</code></pre>
+                    <pre><code set:html={code(installExample, "powershell")} /></pre>
 
-                    <h3>2. Write the config</h3>
+                    <h3 id="config" class="scroll-mt-24">2. Write the config</h3>
                     <p>
-                        Replace <code>C:\Program Files\OpenTelemetry Collector\config.yaml</code> with the file below. It sends everything to Maple; for another backend, change the exporter.
+                        Replace <code>config.yaml</code> in the install folder with this file. It sends everything to Maple; for another backend, change the exporter. Keys are colored by the resource they collect.
                     </p>
-                    <pre><code>{collectorConfig}</code></pre>
+                    <div class="code-file">
+                        <p class="code-file__name">C:\Program Files\OpenTelemetry Collector\config.yaml</p>
+                        <pre><code set:html={code(collectorConfig, "yaml")} /></pre>
+                    </div>
 
                     <ul class="guide-notes">
-                        <li>The three <code>*.utilization</code> metrics are off by default in <code>hostmetrics</code>. Turn them on if your backend expects percentages rather than raw usage.</li>
+                        <li>The three <code>*.utilization</code> metrics are off by default in <code>hostmetrics</code>. Maple's Hosts page reads them, and they give percentages rather than raw byte counts.</li>
                         <li><code>resourcedetection</code> adds <code>host.name</code>, <code>os.type</code> and <code>host.arch</code> to every metric and log, so data from many servers stays separable.</li>
-                        <li><code>file_storage</code> keeps the event log receivers' bookmarks on disk, so a restart resumes where it stopped instead of skipping or re-reading events.</li>
-                        <li><code>exclude_providers</code> drops the Collector's own messages, which the service writes to the Application log.</li>
-                        <li>A Performance Monitor counter that does not exist on a server logs a warning at startup and the Collector keeps running. Remove the <code>iis</code> receiver on servers without IIS.</li>
+                        <li>A counter that does not exist on a server logs a warning at startup and the Collector keeps running. On IIS servers, add the <code>iis</code> receiver to the metrics pipeline for connection and request counts.</li>
                     </ul>
 
-                    <h3>3. Give the service its ingest key and restart</h3>
+                    <h3 id="ingest-key" class="scroll-mt-24">3. Give the service its ingest key and restart</h3>
                     <p>
-                        The service reads <code>MAPLE_INGEST_KEY</code> from its environment. Set it on the service's registry key rather than as a machine-wide variable, which a running Service Control Manager does not pick up until a reboot. Then validate the file and restart:
+                        The config reads <code>MAPLE_INGEST_KEY</code> from the environment. Set it on the service's registry key: a new machine-wide variable is not passed to services until the Service Control Manager restarts, which in practice means a reboot. Then validate the file and restart:
                     </p>
-                    <pre><code>{serviceEnvExample}</code></pre>
+                    <pre><code set:html={code(serviceEnvExample, "powershell")} /></pre>
                     <p>
                         If the service stops again right away, the reason is in <strong>Event Viewer → Windows Logs → Application</strong> under the source <code>otelcol-contrib</code>.
                     </p>
-                </section>
 
-                <section id="event-logs" class="scroll-mt-24">
-                    <p class="guide-eyebrow"><span>05</span> · Event logs</p>
-                    <h2>Monitoring Windows event logs</h2>
+                    <h3 id="event-log-collection" class="scroll-mt-24"><span class="type-dot" style={`--type: ${color.events}`}></span>Event log collection</h3>
                     <p>
-                        The System and Application logs are small enough to collect in full. The Security log on a domain controller or a busy file server can produce thousands of events a minute, so the config above selects only failed logons, lockouts and audit log clears with an XML query. Extend the <code>Select</code> element with the event IDs your security team reviews.
-                    </p>
-
-                    <div class="guide-table">
-                        <table>
-                            <thead>
-                                <tr><th>Log</th><th>Event ID</th><th>Meaning</th></tr>
-                            </thead>
-                            <tbody>
-                                {eventIds.map(([log, id, meaning]) => (
-                                    <tr>
-                                        <td class="guide-table__key">{log}</td>
-                                        <td><code>{id}</code></td>
-                                        <td>{meaning}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <p>
-                        Each event arrives with a structured body: the channel, provider, event ID, level, rendered message and the event's own data fields. Critical maps to <code>FATAL</code>, Error to <code>ERROR</code>, Warning to <code>WARN</code> and Information to <code>INFO</code>, so a backend can count errors by level without parsing the message.
+                        The System and Application logs are small enough to collect in full. The Security log on a domain controller or a busy file server can write thousands of events a minute, so the config selects only failed logons, lockouts and audit log clears with an XML query. Add the event IDs your security team reviews to its <code>Select</code> element.
                     </p>
                     <p>
-                        For events from many servers without an agent on each, Windows Event Forwarding can collect them on one collector server first. The receiver also has a <code>remote</code> option that reads a channel from another machine over RPC.
+                        Each event arrives with the channel, provider, event ID, level, rendered message and its own data fields. Critical becomes <code>FATAL</code>, Error <code>ERROR</code>, Warning <code>WARN</code> and Information <code>INFO</code>, so a backend can count errors by severity without parsing the message. <code>file_storage</code> keeps each receiver's position on disk, so a restart resumes where it stopped, and <code>exclude_providers</code> drops the Collector's own messages from the Application log.
                     </p>
                 </section>
 
                 <section id="maple" class="scroll-mt-24">
-                    <p class="guide-eyebrow"><span>06</span> · In Maple</p>
-                    <h2>Windows hosts, counters and event logs in Maple</h2>
+                    <p class="guide-eyebrow"><span>05</span> · In Maple</p>
+                    <h2>Windows servers in Maple</h2>
                     <p>
-                        With the config above pointed at Maple, each part of the data lands on a different page.
+                        With the config pointed at Maple, each kind of data lands on its own page.
                     </p>
 
                     <ol class="guide-steps">
                         <li>
                             <span>01</span>
-                            <div><h3>The server appears under Infrastructure → Hosts</h3><p>The Hosts page lists every machine that sends <code>hostmetrics</code> data, keyed on <code>host.name</code>, with CPU, memory and disk usage, 15-minute load and last-seen time. A host's detail page charts CPU, memory, filesystem per mountpoint, network per device and load. It needs the three <code>*.utilization</code> metrics turned on, as they are in the config.</p></div>
+                            <div><h4>Find the server under Infrastructure → Hosts</h4><p>Every machine that sends <code>hostmetrics</code> data is listed by <code>host.name</code>, with CPU, memory and disk usage, 15-minute load and last-seen time. A host's page charts CPU, memory, filesystem per mountpoint, network per device and load.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/windows-server-monitoring-01-hosts.webp" data-zoomable alt="The Hosts page listing a Windows server as Active, with its CPU, memory and disk usage, 15-minute load and last-seen time." width="2368" height="1180" loading="lazy" /></figure></div>
                         </li>
                         <li>
                             <span>02</span>
-                            <div><h3>Perf counters and service states are on the Metrics page</h3><p>Search for <code>windows.</code> to find the counter metrics and <code>windows.service.status</code>. Open one to chart it with an aggregation, filter by an attribute such as <code>attr.direction = "read"</code>, break it down by <code>attr.name</code> or <code>attr.instance</code>, and add it to a dashboard.</p></div>
+                            <div><h4>Chart counters and service states on the Metrics page</h4><p>Search for <code>windows.</code> to find the counter metrics and <code>windows.service.status</code>. Open one, choose an aggregation, filter by an attribute such as <code>attr.direction = "read"</code>, group by <code>attr.name</code> or <code>attr.instance</code>, and add it to a dashboard.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/windows-server-monitoring-02-service-status.webp" data-zoomable alt="The Metrics page charting windows.service.status grouped by attr.name, with W3SVC and WinRM at 4 (Running)." width="2368" height="1180" loading="lazy" /></figure></div>
                         </li>
                         <li>
                             <span>03</span>
-                            <div><h3>Events are on the Logs page</h3><p>Filter <strong>Service</strong> to <code>windows-eventlog</code>, then by <strong>Severity</strong>. Search for an event ID or a provider name as text. A record's detail sheet shows the host it came from.</p></div>
+                            <div><h4>Read events on the Logs page</h4><p>Filter <strong>Service</strong> to <code>windows-eventlog</code>, then by <strong>Severity</strong>. Search for an event ID or a provider name as text. A record's detail sheet shows the host it came from.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/windows-server-monitoring-03-event-logs.webp" data-zoomable alt="The Logs page filtered to the windows-eventlog service and ERROR severity, with one event's detail sheet open showing its host and event ID." width="2368" height="1180" loading="lazy" /></figure></div>
                         </li>
                         <li>
                             <span>04</span>
-                            <div><h3>Alert on high CPU</h3><p>Open <code>system.cpu.utilization</code>, set the aggregation to <code>avg</code> and the filter to <code>attr.state = "idle"</code>, then click <strong>Create alert</strong>. Fire when the value is below <code>0.1</code> over a 10-minute window: less than 10% idle means more than 90% busy. Metric rules count data points as samples, and a 30-second interval gives 20 per host in 10 minutes, so lower <strong>Min samples</strong> from its default of 50.</p></div>
+                            <div><h4>Alert on high CPU</h4><p>Open <code>system.cpu.utilization</code>, set the aggregation to <code>avg</code> and the filter to <code>attr.state = "idle"</code>, then click <strong>Create alert</strong>. Fire when the value is below <code>0.15</code> over a 10-minute window: less than 15% idle is more than 85% busy. Metric rules count data points as samples, and this filter gives one per CPU core every 30 seconds, so a 2-core server sends 40 in 10 minutes. Lower <strong>Min samples</strong> from its default of 50 to match your smallest server.</p></div>
                         </li>
                         <li>
                             <span>05</span>
-                            <div><h3>Alert on a stopped service</h3><p>Open <code>windows.service.status</code> with <code>attr.name = "W3SVC"</code> and <code>max</code>, create an alert, lower <strong>Min samples</strong> to 1 and fire when the value is below <code>4</code>. If the Collector itself stops, the rule sees no data; turn on <strong>Alert when there is no data</strong> to catch that too.</p></div>
+                            <div><h4>Alert on a stopped service</h4><p>Open <code>windows.service.status</code> with <code>attr.name = "W3SVC"</code> and the aggregation <code>min</code>, so one stopped copy on any server pulls the value down. Create an alert that fires below <code>4</code>, with <strong>Min samples</strong> at 1. If the Collector itself stops, the rule sees no data; turn on <strong>Alert when there is no data</strong> to catch that too.</p></div>
                         </li>
                     </ol>
 
+                    <h3 id="per-server-alerts" class="scroll-mt-24">One alert per server</h3>
+                    <p>
+                        A metric query rule can group by <code>service.name</code> or a data point attribute, but <code>host.name</code> is a resource attribute, so the CPU rule above evaluates the average of every server that sends the metric. For one incident per server, write the rule as <strong>Raw SQL</strong> and return a <code>group</code> column:
+                    </p>
+                    <pre><code set:html={code(perHostCpuSql, "sql")} /></pre>
+                    <p>
+                        Set the condition to below <code>0.15</code> and <strong>Reduce buckets by</strong> to <strong>Average</strong>. The <code>samples</code> column is what <strong>Min samples</strong> sums; without it, every row counts as one sample.
+                    </p>
                     <div class="guide-callout">
-                        <p class="guide-kicker">One rule, many servers</p>
+                        <p class="guide-kicker">A silent server does not fire a grouped rule</p>
                         <p>
-                            A metric query rule averages every host that sends the metric. For one incident per server, write the rule as Raw SQL and return a <code>group</code> column. This query reports the idle share per host; set the condition to below <code>0.1</code> and <strong>Reduce buckets by</strong> to <strong>Average</strong>.
+                            <strong>Alert when there is no data</strong> is not available on grouped rules, and a Raw SQL rule with a <code>group</code> column only counts as empty when no server returns rows at all. A server whose Collector stops drops out of the results: no new incident opens for it, and an open one stays open until its data returns. Watch for it on the Hosts page, where a host with no report for 5 minutes shows <strong>Ended</strong>.
                         </p>
-                        <pre><code>{perHostCpuSql}</code></pre>
                     </div>
 
                     <div class="guide-maple">
                         <p class="guide-kicker">Set it up in Maple</p>
-                        <h3>Send a Windows server's metrics to the Hosts page</h3>
-                        <p>
-                            The Hosts docs have the minimal <code>hostmetrics</code> config, the metrics each column reads, the host status rules and troubleshooting for hosts that do not appear.
-                        </p>
+                        <h3>Send a Windows server to the Hosts page</h3>
+                        <p>The Hosts docs have the minimal <code>hostmetrics</code> config, the metrics each column reads, the status rules and troubleshooting for hosts that do not appear.</p>
                         <div class="mt-6 flex flex-wrap gap-3">
                             <a href="/docs/infrastructure/hosts" class="guide-button guide-button--primary">Set up host monitoring</a>
-                            <a href="/docs/alerting/alert-rules" class="guide-button">Create alert rules</a>
+                            <a href="/docs/alerting/alert-rules" class="guide-button">Alert rules</a>
                         </div>
                     </div>
                 </section>
@@ -655,7 +822,7 @@ const articleJsonLd = {
                         <li><a href="https://learn.microsoft.com/en-us/archive/blogs/askcore/measuring-disk-latency-with-windows-performance-monitor-perfmon" target="_blank" rel="noopener noreferrer">Microsoft archive: Measuring disk latency with Performance Monitor</a></li>
                         <li><a href="https://learn.microsoft.com/en-us/system-center/scom/welcome" target="_blank" rel="noopener noreferrer">Microsoft Learn: System Center Operations Manager</a></li>
                         <li><a href="https://learn.microsoft.com/en-us/azure/azure-monitor/vm/monitor-virtual-machine" target="_blank" rel="noopener noreferrer">Microsoft Learn: Monitor virtual machines with Azure Monitor</a></li>
-                        <li><a href="https://www.solarwinds.com/server-application-monitor" target="_blank" rel="noopener noreferrer">SolarWinds Server &amp; Application Monitor</a> · <a href="https://www.paessler.com/prtg" target="_blank" rel="noopener noreferrer">Paessler PRTG</a> · <a href="https://www.manageengine.com/products/applications_manager/" target="_blank" rel="noopener noreferrer">ManageEngine Applications Manager</a> · <a href="https://www.datadoghq.com/" target="_blank" rel="noopener noreferrer">Datadog</a> (verified October 19, 2026)</li>
+                        <li><a href="https://www.datadoghq.com/" target="_blank" rel="noopener noreferrer">Datadog</a> · <a href="https://www.manageengine.com/products/applications_manager/" target="_blank" rel="noopener noreferrer">ManageEngine Applications Manager</a> · <a href="https://www.paessler.com/prtg" target="_blank" rel="noopener noreferrer">Paessler PRTG</a> · <a href="https://www.solarwinds.com/server-application-monitor" target="_blank" rel="noopener noreferrer">SolarWinds Server &amp; Application Monitor</a> (verified October 20, 2026)</li>
                         <li><a href="/docs/infrastructure/hosts">Maple docs: Hosts</a></li>
                         <li><a href="/docs/explore/metrics">Maple docs: Metrics</a></li>
                         <li><a href="/docs/explore/logs">Maple docs: Logs</a></li>
@@ -672,53 +839,97 @@ const articleJsonLd = {
 </Layout>
 
 <style is:global>
-    .win-guide { max-width: 46rem; }
+    .win-guide { max-width: 46rem; font-family: var(--font-display); }
     .win-guide section + section { margin-top: 5.5rem; }
     .win-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
     .win-guide .guide-eyebrow span { color: var(--primary); }
     .win-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
-    .win-guide h3 { margin: 2.5rem 0 0.8rem; font-family: var(--font-display); font-size: 1.15rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
-    .win-guide > section > p:not(.guide-eyebrow, .guide-kicker), .win-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .win-guide h3 { display: flex; align-items: center; gap: 0.6rem; margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .win-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
+    .win-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .win-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .win-guide strong { font-weight: 600; color: var(--foreground); }
     .win-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); overflow-wrap: anywhere; }
-    .win-guide pre { max-width: 100%; margin: 1.5rem 0 1.75rem; overflow-x: auto; border: 1px solid var(--border); border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
+    .win-guide pre { margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: color-mix(in oklab, var(--foreground) 80%, var(--background)); }
     .win-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .win-guide a:not(.guide-button):hover { color: var(--foreground); }
-    .win-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); background: color-mix(in oklab, var(--primary) 7%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
-    .win-guide .guide-answer p { margin: 0; font-size: 16px; color: var(--foreground); }
-    .win-guide .guide-table { margin: 1.6rem 0 2rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
-    .win-guide table { width: 100%; min-width: 680px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .win-guide .guide-caption { margin: 0.7rem 0 0; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
+    .win-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .win-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
+    .win-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+
+    /* One color per resource: set --type on the element. */
+    .win-guide .type-badge { display: inline-flex; align-items: center; gap: 0.4rem; border: 1px solid color-mix(in oklab, var(--type) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--type) 14%, transparent); padding: 0.15rem 0.6rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: color-mix(in oklab, var(--type) 70%, var(--foreground)); white-space: nowrap; }
+    .win-guide .type-dot { display: inline-block; width: 0.6rem; height: 0.6rem; flex: none; border-radius: 999px; background: var(--type); box-shadow: 0 0 0 4px color-mix(in oklab, var(--type) 18%, transparent); }
+
+    .resource-grid { display: grid; gap: 0.75rem; margin: 2rem 0 0; }
+    .resource-card { border: 1px solid color-mix(in oklab, var(--type) 30%, var(--border)); border-radius: 0.75rem; background: linear-gradient(180deg, color-mix(in oklab, var(--type) 9%, var(--bg-deep)), var(--bg-deep)); padding: 1rem 1.1rem 1.1rem; }
+    .resource-card dl { display: grid; gap: 0.75rem; margin: 0.9rem 0 0; }
+    .resource-card dt code { border: 0 !important; background: transparent !important; padding: 0 !important; font-size: 11px !important; color: color-mix(in oklab, var(--type) 60%, var(--foreground)) !important; }
+    .resource-card dd { margin: 0.15rem 0 0; font-size: 13px; line-height: 1.5; color: var(--muted-foreground); }
+
+    .win-guide .lt { margin: 1.5rem 0 2rem; }
+    .win-guide .tool-panel { border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.1rem 1.25rem; }
+    .win-guide .tool-panel > p { margin: 0 0 0.9rem; font-size: 14px; line-height: 1.7; color: var(--muted-foreground); }
+    .win-guide .tool-panel__open { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+    .win-guide .tool-panel__open span, .win-guide .tool-panel__limit { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .win-guide .tool-panel > p.tool-panel__limit { margin: 0; font-size: 10px; line-height: 1.5; color: var(--warning); }
+    .win-guide .tool-panel pre { margin: 0 0 0.9rem; background: var(--background); }
+
+    .flow { margin: 2rem 0 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
+    .flow svg { display: block; width: 100%; min-width: 620px; height: auto; }
+    .flow__box { fill: var(--background); stroke: var(--border); }
+    .flow__box--collector { stroke: color-mix(in oklab, var(--primary) 60%, transparent); }
+    .flow__pill { fill: var(--bg-elevated); stroke: var(--border); }
+    .flow__title { fill: var(--foreground); font-family: var(--font-display); font-size: 14px; font-weight: 550; }
+    .flow__label { fill: var(--foreground); font-family: var(--font-display); font-size: 12px; }
+    .flow__mono { fill: var(--foreground); font-family: var(--font-mono); font-size: 11px; }
+    .flow__mono--accent { fill: var(--primary); }
+    .flow__line { stroke: color-mix(in oklab, var(--muted-foreground) 70%, transparent); stroke-width: 1.5; }
+    .flow__line--out { stroke: var(--primary); }
+    .flow__head { fill: var(--primary); }
+
+    .receiver-list { display: grid; gap: 1px; margin: 1.75rem 0 2rem; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .receiver-list > div { background: var(--background); padding: 0.9rem 1.15rem; }
+    .receiver-list p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .receiver-list .receiver-list__name { display: flex; align-items: center; gap: 0.55rem; margin-bottom: 0.35rem; }
+
+    .win-guide .code-file { margin: 1.25rem 0; }
+    .win-guide .code-file__name { margin: 0; width: fit-content; max-width: 100%; border: 1px solid var(--border); border-bottom: 0; border-radius: 0.5rem 0.5rem 0 0; background: var(--bg-elevated); padding: 0.35rem 0.8rem; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); overflow-wrap: anywhere; }
+    .win-guide .code-file pre { margin: 0; border-top-left-radius: 0; }
+    .win-guide .tok-comment { color: var(--muted-foreground); }
+    .win-guide .tok-name { color: var(--foreground); }
+    .win-guide .tok-fn { color: var(--primary); }
+    .win-guide .tok-labels { color: color-mix(in oklab, var(--primary) 30%, var(--foreground)); }
+    .win-guide .tok-value { color: color-mix(in oklab, var(--primary) 60%, var(--foreground)); }
+    .win-guide .tok-name[style], .win-guide .tok-labels[style] { color: color-mix(in oklab, var(--type) 80%, var(--foreground)); }
+
+    .win-guide .guide-table { margin: 1.75rem 0 2rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
+    .win-guide table { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
     .win-guide th { border-bottom: 1px solid var(--border); background: var(--bg-deep); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
-    .win-guide td { border-bottom: 1px solid var(--border); padding: 0.9rem; vertical-align: top; }
+    .win-guide td { border-bottom: 1px solid var(--border); padding: 0.8rem 0.9rem; vertical-align: middle; }
     .win-guide td + td { border-left: 1px solid var(--border); }
     .win-guide td code { font-size: 11px; }
     .win-guide tbody tr:last-child td { border-bottom: 0; }
     .win-guide .guide-table__key { color: var(--foreground); }
-    .win-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+
     .win-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: color-mix(in oklab, var(--warning) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
     .win-guide .guide-callout .guide-kicker { color: var(--warning); }
     .win-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
     .win-guide .guide-notes { margin: 0 0 2rem; padding-left: 1.1rem; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
     .win-guide .guide-notes li + li { margin-top: 0.5rem; }
-    .win-guide .guide-steps { margin: 2rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
-    .win-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.35rem 0; }
+    .win-guide .guide-steps { margin: 1.75rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .win-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.2rem 0; }
     .win-guide .guide-steps > li > span { display: grid; width: 1.9rem; height: 1.9rem; place-items: center; border: 1px solid color-mix(in oklab, var(--primary) 45%, transparent); border-radius: 0.4rem; background: color-mix(in oklab, var(--primary) 12%, transparent); font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
-    .win-guide .guide-steps h3, .win-guide .guide-steps p { margin: 0; }
-    .win-guide .guide-steps h3 { font-size: 1rem; }
-    .win-guide .guide-steps p { margin-top: 0.45rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
-    .win-guide .guide-signal-list { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
-    .win-guide .guide-signal-list > div { display: grid; grid-template-columns: 7rem 1fr; gap: 1rem; background: var(--background); padding: 1.1rem 1.25rem; }
-    .win-guide .guide-signal-list span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--primary); }
-    .win-guide .guide-signal-list p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
-    .win-guide .guide-checklist { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .win-guide .guide-steps p { margin: 0.4rem 0 0; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+    .win-guide .guide-figure { margin: 1rem 0 0; }
+    .win-guide .guide-figure img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 0.6rem; background: var(--bg-deep); }
+    .win-guide .guide-checklist { display: grid; gap: 1px; margin: 1.5rem 0 2rem; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
     .win-guide .guide-checklist > div { display: grid; grid-template-columns: 2rem 1fr; gap: 0.8rem; background: var(--background); padding: 1.15rem 1.25rem; }
     .win-guide .guide-checklist span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 9px; color: var(--primary); }
-    .win-guide .guide-checklist h3, .win-guide .guide-checklist p { margin: 0; }
-    .win-guide .guide-checklist h3 { font-size: 0.95rem; }
-    .win-guide .guide-checklist p { margin-top: 0.35rem; font-size: 12px; line-height: 1.6; color: var(--muted-foreground); }
-    .win-guide .guide-maple { margin-top: 3.5rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
-    .win-guide .guide-maple h3 { margin: 0.55rem 0 0.8rem; font-size: 1.35rem; }
-    .win-guide .guide-maple > p:not(.guide-kicker) { max-width: none; margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .win-guide .guide-checklist p { margin: 0.35rem 0 0; font-size: 12.5px; line-height: 1.6; color: var(--muted-foreground); }
+    .win-guide .guide-maple { margin-top: 3rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .win-guide .guide-maple h3 { margin: 0.55rem 0 0.6rem; font-size: 1.35rem; }
+    .win-guide .guide-maple > p:not(.guide-kicker) { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
     .win-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
     .win-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
     .win-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
@@ -727,6 +938,7 @@ const articleJsonLd = {
     .win-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
     .win-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
     @media (min-width: 640px) {
+        .resource-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .win-guide .guide-checklist { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .win-guide .guide-maple { padding: 2rem; }
     }

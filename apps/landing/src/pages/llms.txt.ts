@@ -109,7 +109,7 @@ export const GET: APIRoute = ({ site }) => {
 		`- [What is observability?](${url("/observability")})`,
 		`- [What is OpenTelemetry?](${url("/opentelemetry")})`,
 		`- [Best open-source observability tools](${url("/best-open-source-observability-tools")})`,
-		`- [Windows server monitoring tools and an OpenTelemetry setup](${url("/guides/windows-server-monitoring")})`,
+		`- [Windows server monitoring tools](${url("/guides/windows-server-monitoring")})`,
 		"",
 
 		"## Maple API",

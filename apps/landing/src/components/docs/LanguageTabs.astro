@@ -16,13 +16,16 @@ interface Tab {
 interface Props {
     tabs: Tab[];
     label?: string;
+    // Storage key for the remembered pick. Groups that are not languages pass
+    // their own, so a click doesn't overwrite the site-wide language choice.
+    group?: string;
 }
 
-const { tabs, label = "Language" } = Astro.props;
+const { tabs, label = "Language", group = "maple-docs-language" } = Astro.props;
 const hasLogo = (id: string): id is LogoId => (LOGO_IDS as readonly string[]).includes(id);
 ---
 
-<div class="lt" data-lang-tabs="maple-docs-language">
+<div class="lt" data-lang-tabs={group}>
     <div class="lt__rail" role="tablist" aria-label={label}>
         {tabs.map((tab, index) => (
             <button

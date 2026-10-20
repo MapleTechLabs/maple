@@ -1,7 +1,7 @@
 // Tiny highlighter for guide code blocks. The token classes match the colors a
 // guide uses in its diagrams (metric name, labels, value), so a block reads the
 // same way as the annotated example above it. Style the `tok-*` classes on the page.
-export type GuideLang = "exposition" | "promql" | "yaml" | "python" | "typescript" | "go" | "rust" | "java" | "csharp";
+export type GuideLang = "exposition" | "promql" | "yaml" | "python" | "typescript" | "go" | "rust" | "java" | "csharp" | "powershell" | "sql";
 
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const span = (cls: string, text: string) => `<span class="tok-${cls}">${escape(text)}</span>`;
@@ -62,7 +62,7 @@ const exposition = (code: string) =>
 const yaml = (code: string) =>
     tokenize(code, [
         [/#.*/y, (m) => span("comment", m[0])],
-        [/(?<=^|\n)(\s*-?\s*)([\w.-]+)(:)/y, (m) => escape(m[1]) + span("name", m[2]) + escape(m[3])],
+        [/(?<=^|\n)(\s*-?\s*)([\w./-]+)(:)/y, (m) => escape(m[1]) + span("name", m[2]) + escape(m[3])],
         [/"[^"\n]*"/y, (m) => span("labels", m[0])],
         [/\b\d+[a-z]*\b/y, (m) => span("value", m[0])],
     ]);
@@ -98,5 +98,28 @@ const rust = braces("use|fn|let|mut|for|in");
 const java = braces("import|public|static|final|class|void|new|try|throws");
 const csharp = braces("using|var|new|await");
 
+// PowerShell: cmdlets as functions, quoted strings (counter paths) as labels,
+// variables as names. Backtick escapes stay inside their string.
+const powershell = (code: string) =>
+    tokenize(code, [
+        [/#.*/y, (m) => span("comment", m[0])],
+        [/'[^'\n]*'|"(?:[^"`\n]|`.)*"/y, (m) => span("labels", m[0])],
+        [/\$(?:env:)?\w+/y, (m) => span("name", m[0])],
+        [/\b[A-Z][a-z]+-[A-Z][A-Za-z]+\b/y, (m) => span("fn", m[0])],
+        [/\b\d+(?:\.\d+)?\b/y, (m) => span("value", m[0])],
+        [/[-\w]+/y, (m) => escape(m[0])],
+    ]);
+
+// SQL: keywords and functions, Maple's $__ macros as names, strings as labels.
+const sql = (code: string) =>
+    tokenize(code, [
+        [/--.*/y, (m) => span("comment", m[0])],
+        [/'[^'\n]*'/y, (m) => span("labels", m[0])],
+        [/\$__\w+/y, (m) => span("name", m[0])],
+        [/\b(?:SELECT|FROM|WHERE|AND|OR|NOT|AS|GROUP|BY|ORDER|LIMIT|IN|avg|sum|min|max|count|toString)\b/iy, (m) => span("fn", m[0])],
+        [/\b\d+(?:\.\d+)?\b/y, (m) => span("value", m[0])],
+        [/\w+/y, (m) => escape(m[0])],
+    ]);
+
 export const highlight = (code: string, lang: GuideLang) =>
-    ({ exposition, promql, yaml, python, typescript, go, rust, java, csharp })[lang](code);
+    ({ exposition, promql, yaml, python, typescript, go, rust, java, csharp, powershell, sql })[lang](code);
