@@ -116,7 +116,7 @@ and `bun run tinybird:manifest` after editing either, or CI's drift gate fails.
 See [`warehouse-rollups.md`](warehouse-rollups.md) for when a materialized view is the
 right answer and which tier a query should read.
 
-Every stored table is partitioned by date and carries a TTL, tiered by how raw the data is:
+Every stored table carries a TTL, tiered by how raw the data is. All but `identity_links` and `service_usage` are partitioned by date (most by day, `service_overview_hourly`, `service_operations_hourly`, `error_fingerprints_minutely` and `audit_log` by month), and migration 0045 sets `ttl_only_drop_parts = 1` on those, so eviction drops whole parts instead of rewriting them:
 
 | Retention     | Tables                                                                                                                                                                                                  |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -129,7 +129,7 @@ Adjust by writing a follow-up migration if your retention requirements differ.
 
 > **Changing a TTL requires an `ALTER`, not just a datasource edit.** Migration 0001 re-exports the generated snapshot, and every statement in it is `CREATE TABLE IF NOT EXISTS`. On a cluster whose tables already exist, re-running it is a no-op and the old TTL survives. Editing `datasources.ts` alone therefore changes **new installs only**. Ship a paired `ALTER TABLE … MODIFY TTL` delta (see `0009_one_year_service_history.ts`) or existing clusters silently keep the previous retention. This exact gap let a production cluster accumulate 3× its intended trace volume until the disk filled.
 >
-> When lowering a TTL, set `ttl_only_drop_parts = 1` **first**. These tables partition on the same expression their TTL keys off, so expired parts are always wholly expired. The setting turns eviction into a whole-partition drop instead of a multi-TiB part rewrite.
+> Key a TTL off the same `toDate(...)` expression the table partitions on, so a part's rows expire together. With `ttl_only_drop_parts = 1` a part is dropped only once all of its rows have expired, so a monthly partition can outlive the TTL by up to a month. Without the setting, a TTL that cuts through a part makes ClickHouse rewrite the part to delete some of its rows, which on raw tables is a multi-TiB rewrite. If you run a cluster provisioned before migration 0045 and plan to lower a TTL, apply 0045 first.
 
 ## Ingest options
 
