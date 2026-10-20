@@ -112,3 +112,70 @@ describe("handleRequest API proxy", () => {
 		expect(forwarded[0]?.headers.get("traceparent")).toBe(`00-${browserTraceId}-${client?.spanId}-01`)
 	})
 })
+
+describe("handleRequest hashed assets", () => {
+	const envServing = (response: () => Response): WebWorkerEnv => ({
+		ASSETS: { fetch: async () => response() },
+	})
+
+	it("caches a built file for a year: its hashed name never changes meaning", async () => {
+		const response = await handleRequest(
+			new Request("https://app.maple.test/assets/index-abc123.js"),
+			envServing(
+				() =>
+					new Response("export {}", {
+						headers: { "content-type": "text/javascript", etag: '"e1"' },
+					}),
+			),
+		)
+		expect(response.status).toBe(200)
+		expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable")
+		expect(response.headers.get("etag")).toBe('"e1"')
+		expect(await response.text()).toBe("export {}")
+	})
+
+	it("404s uncached when the assets layer answers a missing file with the SPA shell", async () => {
+		const response = await handleRequest(
+			new Request("https://app.maple.test/assets/from-an-old-deploy.js"),
+			envServing(() => new Response("<html></html>", { headers: { "content-type": "text/html" } })),
+		)
+		expect(response.status).toBe(404)
+		expect(response.headers.get("cache-control")).toBe("no-store")
+	})
+
+	it("404s uncached when the assets layer 404s", async () => {
+		const response = await handleRequest(
+			new Request("https://app.maple.test/assets/gone.css"),
+			envServing(() => new Response(null, { status: 404 })),
+		)
+		expect(response.status).toBe(404)
+		expect(response.headers.get("cache-control")).toBe("no-store")
+	})
+
+	it("keeps a revalidation answer a 304", async () => {
+		const response = await handleRequest(
+			new Request("https://app.maple.test/assets/index-abc123.js", {
+				headers: { "if-none-match": '"e1"' },
+			}),
+			envServing(() => new Response(null, { status: 304, headers: { etag: '"e1"' } })),
+		)
+		expect(response.status).toBe(304)
+		expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable")
+	})
+
+	it("leaves the shell revalidated on every load, so a deploy is picked up", async () => {
+		const response = await handleRequest(
+			new Request("https://app.maple.test/"),
+			envServing(
+				() =>
+					new Response("<html></html>", {
+						headers: {
+							"content-type": "text/html",
+							"cache-control": "public, max-age=0, must-revalidate",
+						},
+					}),
+			),
+		)
+		expect(response.headers.get("cache-control")).toBe("public, max-age=0, must-revalidate")
+	})
+})
