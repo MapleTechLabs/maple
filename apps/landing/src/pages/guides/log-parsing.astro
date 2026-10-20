@@ -650,12 +650,12 @@ const articleJsonLd = {
                         <li>
                             <span>02</span>
                             <div><h4>Read the parsed attributes</h4><p>Open <strong>Logs</strong> and pick <code>nginx</code> under <strong>Service</strong>. Excluding <code>INFO</code> under <strong>Severity</strong> leaves the 4xx and 5xx responses. Open a record: its <strong>Attributes</strong> tab lists the parsed fields under <strong>Log Attributes</strong>.</p>
-                                <figure class="guide-figure guide-figure--narrow"><img src="/screenshots/guides/log-parsing-01-attributes.webp" data-zoomable alt="The log detail sheet for a POST /api/checkout request that returned 502, with Log Attributes client.address, http.request.method, url.path, http.response.status_code 502, http.response.body.size and user_agent.original." width="1024" height="1280" loading="lazy" /></figure></div>
+                                <figure class="guide-figure guide-figure--narrow"><img src="/screenshots/guides/log-parsing-01-attributes.webp" data-zoomable alt="The detail sheet of the nginx POST /api/checkout record that returned 502, at ERROR, with Log Attributes http.request.method POST, http.response.body.size 157, http.response.status_code 502, url.path /api/checkout, client.address, log.file.name and user_agent.original." width="1342" height="1454" loading="lazy" /></figure></div>
                         </li>
                         <li>
                             <span>03</span>
                             <div><h4>Pin fields as columns</h4><p>Use <strong>Columns</strong> in the table toolbar to pin <code>url.path</code> and <code>http.response.status_code</code> next to the message. Pinned columns are saved in the URL, so the view can be shared. For charts, a dashboard's Query Builder over <strong>Logs</strong> can group by <code>attr.url.path</code> (<a href="/docs/dashboards/build-dashboards">Build dashboards</a>).</p>
-                                <figure class="guide-figure"><img src="/screenshots/guides/log-parsing-02-columns.webp" data-zoomable alt="The Logs page filtered to the nginx service with INFO excluded, and url.path and http.response.status_code pinned as columns next to each message." width="2368" height="1180" loading="lazy" /></figure></div>
+                                <figure class="guide-figure"><img src="/screenshots/guides/log-parsing-02-columns.webp" data-zoomable alt="The Logs page filtered to the nginx service with INFO excluded, leaving the WARN and ERROR records, and url.path and http.response.status_code pinned as columns next to each message." width="2362" height="1830" loading="lazy" /></figure></div>
                         </li>
                     </ol>
                     <p>
