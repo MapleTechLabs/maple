@@ -264,7 +264,11 @@ final class HomeModel {
 			newIssues: previous?.newIssues,
 			activeIssues: previous?.activeIssues,
 			openAnomalies: previous?.openAnomalies,
-			previousServices: previous?.previousServices,
+			// Only a board loaded moments ago still describes the hour before this one;
+			// a cache-seeded baseline would divide against the wrong window.
+			previousServices: previous.flatMap {
+				now.timeIntervalSince($0.loadedAt) < 5 * 60 ? $0.previousServices : nil
+			},
 			loadedAt: now
 		)
 	}

@@ -43,8 +43,20 @@ public struct WaterfallRow: Identifiable, Hashable, Sendable {
 		var visited = Set<Int>()
 		// Pushed in reverse so the earliest child pops first.
 		var stack: [(index: Int, depth: Int)] = roots.sorted(by: byStart).reversed().map { ($0, 0) }
-		while let (index, depth) = stack.popLast() {
-			// A parent cycle in bad data would otherwise loop forever.
+		// Spans in a parent cycle are reachable from no root; once the roots are
+		// done, the earliest unvisited span starts a new walk so none are dropped.
+		lazy var unrooted = spans.indices.sorted(by: byStart)
+		var nextUnrooted = unrooted.startIndex
+		while true {
+			if stack.isEmpty {
+				while nextUnrooted < unrooted.endIndex, visited.contains(unrooted[nextUnrooted]) {
+					nextUnrooted += 1
+				}
+				guard nextUnrooted < unrooted.endIndex else { break }
+				stack.append((unrooted[nextUnrooted], 0))
+			}
+			guard let (index, depth) = stack.popLast() else { break }
+			// Guards the walk inside a cycle from revisiting a span.
 			guard visited.insert(index).inserted else { continue }
 			let span = spans[index]
 			rows.append(
