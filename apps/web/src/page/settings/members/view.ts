@@ -189,7 +189,8 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 const membersSection = (h: H, model: Model, inputs: Inputs): Html => {
 	const data = AsyncData.getOrElse(model.members, () => null)
 	const rows = data?.rows ?? []
-	const isLoading = rows.length === 0 && (AsyncData.isLoading(model.members) || AsyncData.isRefreshing(model.members))
+	// Only before the first answer: a loaded list, even an empty one, stays while it reads again.
+	const isLoading = rows.length === 0 && AsyncData.isLoading(model.members)
 	return settingsSection(
 		h,
 		{

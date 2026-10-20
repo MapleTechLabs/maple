@@ -368,7 +368,7 @@ const listBody = (h: H, model: Model, inputs: ViewInputs, isFiltered: boolean): 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const filters = parseAuditLogSearch(inputs.search)
 	const isFailed = model.failure !== null
-	const isWaiting = model.isWaiting
+	const isWaiting = model.isWaiting && !model.isQuiet
 	const view = model.view
 	return settingsSection(
 		h,

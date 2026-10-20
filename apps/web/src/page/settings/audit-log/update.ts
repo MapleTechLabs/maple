@@ -113,7 +113,7 @@ const FetchAuditMembers = Command.define("FetchAuditLogMembers", {
 /** `resolvedSince`: `null` starts the list's window afresh; a later page or a retry passes its own. */
 const fetch = (model: Model, request: PageRequest, search: SettingsSearch, resolvedSince: string | null = null): Return => ({
 	// A cursor-less request starts a list; a later page keeps the filters it continues.
-	model: { ...model, request, base: request.cursor === undefined ? request : model.base, isWaiting: true, failure: null },
+	model: { ...model, request, base: request.cursor === undefined ? request : model.base, isWaiting: true, isQuiet: false, failure: null },
 	commands: [FetchAuditPage({ request, presetMs: presetMsOf(parseAuditLogSearch(search).range), resolvedSince })],
 })
 
@@ -123,6 +123,7 @@ export const init = (search: SettingsSearch): Return => {
 			request: {},
 			base: {},
 			isWaiting: true,
+			isQuiet: false,
 			failure: null,
 			view: null,
 			pinnedUntil: null,
@@ -165,12 +166,12 @@ const navigateFilters = (model: Model, search: SettingsSearch, filters: AuditLog
 const toggled = (values: ReadonlyArray<string>, value: string) =>
 	values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value]
 
-/** Back on the tab: its first page reads again behind the list, undimmed, as nobody asked for it. */
+/** Back on the tab: its first page reads again behind the list, quietly, as nobody asked for it. */
 export const revisit = (model: Model, search: SettingsSearch): Return => {
 	const filters = parseAuditLogSearch(search)
 	const request = baseRequestOf(filters)
 	return {
-		model: { ...model, request, base: request, pinnedUntil: null, failure: null },
+		model: { ...model, request, base: request, pinnedUntil: null, isWaiting: true, isQuiet: model.view !== null, failure: null },
 		commands: [FetchAuditPage({ request, presetMs: presetMsOf(filters.range), resolvedSince: null })],
 	}
 }
@@ -187,6 +188,7 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 						...model,
 						resolvedSince,
 						isWaiting: false,
+						isQuiet: false,
 						failure: null,
 						view: {
 							entries: request.cursor === undefined ? page.data : dedupeById(model.view?.entries ?? [], page.data),
@@ -195,7 +197,7 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 						},
 					},
 				}),
-				onFailure: (failure) => ({ model: { ...model, resolvedSince, isWaiting: false, failure } }),
+				onFailure: (failure) => ({ model: { ...model, resolvedSince, isWaiting: false, isQuiet: false, failure } }),
 			})
 		},
 		ClickedRefresh: () => fetch({ ...model, pinnedUntil: null }, baseRequestOf(filters), search),

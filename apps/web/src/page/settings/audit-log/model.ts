@@ -47,6 +47,8 @@ export const Model = Schema.Struct({
 	/** The filters the list was started for (no cursor, no pinned ceiling). */
 	base: PageRequest,
 	isWaiting: Schema.Boolean,
+	/** The read in flight is a revisit's: it holds Load more but nothing dims or spins. */
+	isQuiet: Schema.Boolean,
 	failure: Schema.NullOr(LoadFailure),
 	view: Schema.NullOr(ListView),
 	/** Frozen on the first Load more so later offsets address a list that cannot grow. */

@@ -334,13 +334,19 @@ const pickedRowAction = (model: Model, menuId: string, value: string): Return =>
 	})
 }
 
-/** Back on the tab: the first pages of members and invitations stay up while they load again. */
+/** Back on the tab: members, invitations and the organization's name stay up while they load again. */
 export const revisit = (model: Model): Return => {
 	const members = revisitData(model.members, () => FetchMembers({ page: 1 }))
 	const invitations = revisitData(model.invitations, () => FetchInvitations({ page: 1 }))
 	return {
 		model: { ...model, members: members.data, invitations: invitations.data },
-		commands: [...members.commands, ...invitations.commands],
+		// The organization may have been renamed on General meanwhile.
+		commands: [
+			...members.commands,
+			...invitations.commands,
+			FetchOrganization(),
+			...(model.isAdmin ? [] : [FetchAdminName()]),
+		],
 	}
 }
 
