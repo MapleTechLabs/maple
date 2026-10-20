@@ -36,8 +36,10 @@ export const Model = Schema.Struct({
 	services: Schema.Array(ServiceRow),
 	/** `useEffectiveTimeRange(.., "1h")`: resolved on open and again on each 15 s poll. */
 	window: Schema.NullOr(TimeWindow),
-	/** An overview read is out: a poll waits for it, so a slow answer still matches `window`. */
+	/** An overview read is out: a poll waits for it, so a slow answer still lands. */
 	isOverviewInFlight: Schema.Boolean,
+	/** The overview read sent last, across openings; only its answer counts. */
+	overviewRequest: Schema.Number,
 	copies: Schema.Struct({
 		endpoint: CopyButton.Model,
 		publicKey: CopyButton.Model,
@@ -66,6 +68,7 @@ export const init = (): Model => ({
 	services: [],
 	window: null,
 	isOverviewInFlight: false,
+	overviewRequest: 0,
 	copies: initCopies(),
 	isPublicKeyVisible: false,
 	isPrivateKeyVisible: false,
@@ -76,8 +79,8 @@ export const Message = defineMessageUnion({
 	SucceededLoadKeys: { orgId: Schema.String, publicKey: Schema.String, privateKey: Schema.String },
 	FailedLoadKeys: { orgId: Schema.String },
 	ResolvedWindow: { orgId: Schema.String, window: TimeWindow },
-	SucceededLoadOverview: { orgId: Schema.String, window: TimeWindow, services: Schema.Array(ServiceRow) },
-	FailedLoadOverview: { orgId: Schema.String, window: TimeWindow },
+	SucceededLoadOverview: { orgId: Schema.String, request: Schema.Number, services: Schema.Array(ServiceRow) },
+	FailedLoadOverview: { orgId: Schema.String, request: Schema.Number },
 	/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the panel is open and the tab shown. */
 	TickedPoll: {},
 	GotCopyMessage: { field: CopyField, message: CopyButton.Message },
@@ -114,23 +117,28 @@ export const ResolveWindow = Command.define("ResolveConnectWindow", {
 
 /** `getServiceOverviewResultAtom({ data: { startTime, endTime } })`, the pin applied ("top"). */
 export const FetchOverview = Command.define("FetchConnectOverview", {
-	args: { orgId: Schema.String, window: TimeWindow, pinnedNamespace: Schema.NullOr(Schema.String) },
+	args: {
+		orgId: Schema.String,
+		window: TimeWindow,
+		request: Schema.Number,
+		pinnedNamespace: Schema.NullOr(Schema.String),
+	},
 	messages: [Message.SucceededLoadOverview, Message.FailedLoadOverview],
-	execute: ({ orgId, window, pinnedNamespace }) =>
+	execute: ({ orgId, window, request, pinnedNamespace }) =>
 		getServiceOverview({
 			data: pinnedNamespace === null ? window : { ...window, namespaces: [pinnedNamespace] },
 		}).pipe(
 			Effect.map((response) =>
 				Message.SucceededLoadOverview({
 					orgId,
-					window,
+					request,
 					services: response.data.map((row) => ({
 						serviceName: String(row.serviceName),
 						spanCount: row.spanCount ?? 0,
 					})),
 				}),
 			),
-			Effect.orElseSucceed(() => Message.FailedLoadOverview({ orgId, window })),
+			Effect.orElseSucceed(() => Message.FailedLoadOverview({ orgId, request })),
 		),
 })
 
@@ -151,7 +159,13 @@ const popoverStep = (model: Model, message: Popover.Message, context: Context): 
 	const isClosing = model.popover.isOpen && !next.model.isOpen
 	if (isClosing) {
 		return {
-			model: { ...init(), popover: next.model, orgId: model.orgId, keys: model.keys },
+			model: {
+				...init(),
+				popover: next.model,
+				orgId: model.orgId,
+				keys: model.keys,
+				overviewRequest: model.overviewRequest,
+			},
 			commands,
 		}
 	}
@@ -170,11 +184,8 @@ const popoverStep = (model: Model, message: Popover.Message, context: Context): 
 	}
 }
 
-const isCurrent = (model: Model, orgId: string, window: TimeWindow) =>
-	model.orgId === orgId &&
-	model.window !== null &&
-	model.window.startTime === window.startTime &&
-	model.window.endTime === window.endTime
+const isCurrent = (model: Model, orgId: string, request: number) =>
+	model.orgId === orgId && model.overviewRequest === request
 
 const copyStep = (model: Model, field: CopyField, message: CopyButton.Message): UpdateReturn => {
 	const next = CopyButton.update(model.copies[field], message)
@@ -199,19 +210,24 @@ export const update = (model: Model, message: Message, context: Context): Update
 		ResolvedWindow: ({ orgId, window }) =>
 			model.orgId === orgId && model.popover.isOpen
 				? {
-						model: { ...model, window, isOverviewInFlight: true },
+						model: { ...model, window, isOverviewInFlight: true, overviewRequest: model.overviewRequest + 1 },
 						commands: [
-							FetchOverview({ orgId, window, pinnedNamespace: context.pinnedNamespace }),
+							FetchOverview({
+								orgId,
+								window,
+								request: model.overviewRequest + 1,
+								pinnedNamespace: context.pinnedNamespace,
+							}),
 						],
 					}
 				: { model },
-		SucceededLoadOverview: ({ orgId, window, services }) =>
-			isCurrent(model, orgId, window)
+		SucceededLoadOverview: ({ orgId, request, services }) =>
+			isCurrent(model, orgId, request)
 				? { model: { ...model, services, isOverviewInFlight: false } }
 				: { model },
 		// One failed poll keeps the services already found, so the pill does not un-detect them.
-		FailedLoadOverview: ({ orgId, window }) =>
-			isCurrent(model, orgId, window) ? { model: { ...model, isOverviewInFlight: false } } : { model },
+		FailedLoadOverview: ({ orgId, request }) =>
+			isCurrent(model, orgId, request) ? { model: { ...model, isOverviewInFlight: false } } : { model },
 		TickedPoll: () =>
 			model.popover.isOpen && model.window !== null && model.orgId !== null && !model.isOverviewInFlight
 				? { model, commands: [ResolveWindow({ orgId: model.orgId })] }
