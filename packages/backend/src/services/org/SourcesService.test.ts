@@ -384,6 +384,15 @@ describe("SourcesService", () => {
 			// Data accepted after the refusal: the newest attempt decides.
 			yield* stamp("last_used_at", 3_000)
 			assert.strictEqual((yield* keys.get(orgA, created.source.id)).health.status, "healthy")
+
+			// A new refusal, then a new token or new rules: the old refusal no longer applies.
+			yield* stamp("last_rejected_at", 4_000)
+			assert.strictEqual((yield* keys.get(orgA, created.source.id)).health.status, "failing")
+			yield* keys.roll(orgA, user, created.source.id)
+			assert.strictEqual((yield* keys.get(orgA, created.source.id)).health.status, "healthy")
+			yield* stamp("last_rejected_at", 5_000)
+			yield* keys.update(orgA, user, created.source.id, new UpdateSourceRequest({ rateLimitRps: 500 }))
+			assert.strictEqual((yield* keys.get(orgA, created.source.id)).health.status, "healthy")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

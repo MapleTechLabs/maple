@@ -444,6 +444,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 				return yield* tokenSourceOnly(existing, "take ingest rules")
 			}
 			const now = yield* Clock.currentTimeMillis
+			const clearsRejection = request.allowedSignals !== undefined || request.rateLimitRps !== undefined
 			const row = yield* updateRow(orgId, sourceId, {
 				updatedAt: now,
 				updatedBy: userId,
@@ -468,6 +469,9 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 					request.expiresAtMs === undefined
 						? undefined
 						: yield* normalizeExpiry(request.expiresAtMs, now, existing.expiresAt),
+				// New signals or a new rate limit may lift the refusal; the next one is recorded again.
+				lastRejectedAt: clearsRejection ? null : undefined,
+				lastRejection: clearsRejection ? null : undefined,
 			})
 			// Integration sources take their health from the integration, as `get` reads it.
 			return row.integrationId === null ? rowToSource(row, now) : yield* get(orgId, sourceId)
@@ -528,6 +532,9 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 				rolledAt: now,
 				updatedAt: now,
 				updatedBy: userId,
+				// The old token's refusals say nothing about the new one.
+				lastRejectedAt: null,
+				lastRejection: null,
 			})
 			return new SourceWithSecret({ source: rowToSource(row, now), secret })
 		})
