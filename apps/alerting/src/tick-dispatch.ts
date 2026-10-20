@@ -95,10 +95,6 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 export interface PlacedTick {
 	readonly cron: string
 	readonly lane: TickLane
-	/** The data center that ran the handler, e.g. `IAD`. */
-	readonly colo: string
-	/** Cloudflare's `cf-placement` header, e.g. `remote-IAD` or `local-FRA`. */
-	readonly placement: string
 }
 
 /** Validates a request to the tick route against `env`'s internal token and the schedule. */
@@ -123,10 +119,5 @@ export const authorizeTickRequest = Effect.fnUntraced(function* (
 	if (cron === null || lane === null || !isLaneOf(cron, lane)) {
 		return yield* new TickRequestRefused({ message: "Unknown cron or lane", status: 400 })
 	}
-	return {
-		cron,
-		lane,
-		colo: typeof request.cf?.colo === "string" ? request.cf.colo : "unknown",
-		placement: request.headers.get("cf-placement") ?? "none",
-	} satisfies PlacedTick
+	return { cron, lane } satisfies PlacedTick
 })
