@@ -481,8 +481,8 @@ const articleJsonLd = {
                             <span>01</span>
                             <div>
                                 <h4>Alert on what users feel</h4>
-                                <p>On the <strong>Alerts</strong> page, click <strong>New rule</strong> and start from a template such as <strong>High error rate</strong> (above 5% over a 5-minute window) or <strong>Slow P95 latency</strong>. Set <strong>Severity</strong> to <strong>Critical</strong> or <strong>Warning</strong>; Maple shows it on the incident and in every notification. Pick a past range and click <strong>Test rule</strong> to replay the rule: the chart shades where it would have held an incident open, so you can check it would have caught your last outage.</p>
-                                <figure class="guide-figure"><img src="/screenshots/guides/incident-response-01-rule.webp" data-zoomable alt="A new alert rule from the High error rate template: error rate above 5% over 5 minutes, severity Critical, with the Test rule preview shading the span where the rule would have fired." width="2368" height="1400" loading="lazy" /></figure>
+                                <p>On the <strong>Alerts</strong> page, click <strong>New rule</strong> and start from a template such as <strong>High error rate</strong> (above 5% over a 5-minute window) or <strong>Slow P95 latency</strong>. Set <strong>Severity</strong> to <strong>Critical</strong> or <strong>Warning</strong>; Maple shows it on the incident and in every notification. Pick a past range and click <strong>Dry run</strong> to replay the rule: the chart shades where it would have held an incident open, so you can check it would have caught your last outage.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/incident-response-01-rule.webp" data-zoomable alt="A new alert rule from the High error rate template: error rate above 5% over a 5 minute window, severity Critical, with the Dry run preview over the last hour shading the span where the rule would have fired for checkout." width="2316" height="2016" loading="lazy" /></figure>
                             </div>
                         </li>
                         <li>
@@ -496,8 +496,8 @@ const articleJsonLd = {
                             <span>03</span>
                             <div>
                                 <h4>Open the incident from the notification</h4>
-                                <p>Maple checks each rule once a minute and opens an <a href="/docs/alerting/incidents">incident</a> after <strong>Breaches to fire</strong> breaching checks in a row (2 by default). The notification shows the value, the threshold and the window, and links to the alert in Maple and to Maple AI. Open incidents are listed under <strong>Active incidents</strong> on <strong>Alerts → Overview</strong>. If the service stops sending telemetry, the incident shows <strong>Waiting on data</strong> and stays open instead of resolving on an empty window.</p>
-                                <figure class="guide-figure"><img src="/screenshots/guides/incident-response-02-active-incident.webp" data-zoomable alt="Alerts overview with one firing incident in the Active incidents table: severity Critical, rule High error rate, group checkout, its current value, duration and last notified time." width="2368" height="900" loading="lazy" /></figure>
+                                <p>Maple checks each rule once a minute and opens an <a href="/docs/alerting/incidents">incident</a> after <strong>Breaches to fire</strong> breaching checks in a row (2 by default). The notification shows the value, the threshold and the window, and links to the alert in Maple and to Maple AI. Open incidents are listed under <strong>Open</strong> on the <strong>Alerts</strong> inbox, with the current value against the threshold and how long each has been open. If the service stops sending telemetry, the incident shows <strong>Waiting on data</strong> and stays open instead of resolving on an empty window.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/incident-response-02-active-incident.webp" data-zoomable alt="The Alerts inbox with one firing incident under Open: severity Critical, rule High error rate, group checkout, its current value against the 0.05 threshold and how long it has been open." width="2330" height="324" loading="lazy" /></figure>
                             </div>
                         </li>
                         <li>
@@ -505,7 +505,7 @@ const articleJsonLd = {
                             <div>
                                 <h4>Use the history in the postmortem</h4>
                                 <p>The incident resolves after <strong>Healthy to resolve</strong> healthy checks in a row and sends a resolve notification. The rule's <strong>History</strong> tab lists its past incidents with <strong>Total triggered</strong> and <strong>Avg resolution</strong>. On the <a href="/docs/reference/mcp">MCP server</a>, <code>list_alert_incidents</code> and <code>get_incident_timeline</code> return the same data to an AI assistant drafting the postmortem.</p>
-                                <figure class="guide-figure"><img src="/screenshots/guides/incident-response-03-history.webp" data-zoomable alt="The History tab of the High error rate rule: past incidents with their open and resolve times, plus Total triggered and Avg resolution." width="2368" height="1100" loading="lazy" /></figure>
+                                <figure class="guide-figure"><img src="/screenshots/guides/incident-response-03-history.webp" data-zoomable alt="The History tab of the High error rate rule: Total triggered 3 and Avg resolution 6.5m, then each incident for checkout with its state, values, trigger time and duration." width="2330" height="1230" loading="lazy" /></figure>
                             </div>
                         </li>
                     </ol>
