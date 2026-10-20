@@ -759,17 +759,17 @@ const articleJsonLd = {
                         <li>
                             <span>01</span>
                             <div><h4>Find the server under Infrastructure → Hosts</h4><p>Every machine that sends <code>hostmetrics</code> data is listed by <code>host.name</code>, with CPU, memory and disk usage, 15-minute load and last-seen time. A host's page charts CPU, memory, filesystem per mountpoint, network per device and load.</p>
-                                <figure class="guide-figure"><img src="/screenshots/guides/windows-server-monitoring-01-hosts.webp" data-zoomable alt="The Hosts page listing a Windows server as Active, with its CPU, memory and disk usage, 15-minute load and last-seen time." width="2368" height="1180" loading="lazy" /></figure></div>
+                                <figure class="guide-figure"><img src="/screenshots/guides/windows-server-monitoring-01-hosts.webp" data-zoomable alt="The Hosts page row for the Windows server WIN-IIS01: Windows, amd64, CPU, memory and disk usage bars, 15-minute load and last-seen time." width="2340" height="324" loading="lazy" /></figure></div>
                         </li>
                         <li>
                             <span>02</span>
                             <div><h4>Chart counters and service states on the Metrics page</h4><p>Search for <code>windows.</code> to find the counter metrics and <code>windows.service.status</code>. Open one, choose an aggregation, filter by an attribute such as <code>attr.direction = "read"</code>, group by <code>attr.name</code> or <code>attr.instance</code>, and add it to a dashboard.</p>
-                                <figure class="guide-figure"><img src="/screenshots/guides/windows-server-monitoring-02-service-status.webp" data-zoomable alt="The Metrics page charting windows.service.status grouped by attr.name, with W3SVC and WinRM at 4 (Running)." width="2368" height="1180" loading="lazy" /></figure></div>
+                                <figure class="guide-figure"><img src="/screenshots/guides/windows-server-monitoring-02-service-status.webp" data-zoomable alt="The Metrics page for windows.service.status with the min aggregation, grouped by attr.name: W3SVC and WinRM flat at 4 (Running) over the last hour." width="2340" height="1340" loading="lazy" /></figure></div>
                         </li>
                         <li>
                             <span>03</span>
                             <div><h4>Read events on the Logs page</h4><p>Filter <strong>Service</strong> to <code>windows-eventlog</code>, then by <strong>Severity</strong>. Search for an event ID or a provider name as text. A record's detail sheet shows the host it came from.</p>
-                                <figure class="guide-figure"><img src="/screenshots/guides/windows-server-monitoring-03-event-logs.webp" data-zoomable alt="The Logs page filtered to the windows-eventlog service and ERROR severity, with one event's detail sheet open showing its host and event ID." width="2368" height="1180" loading="lazy" /></figure></div>
+                                <figure class="guide-figure"><img src="/screenshots/guides/windows-server-monitoring-03-event-logs.webp" data-zoomable alt="The detail sheet of an ERROR record from the windows-eventlog service: System channel event 7031, the World Wide Web Publishing Service terminating unexpectedly, with host.name WIN-IIS01 under Resource attributes." width="1344" height="2036" loading="lazy" /></figure></div>
                         </li>
                         <li>
                             <span>04</span>
