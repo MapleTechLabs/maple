@@ -170,7 +170,7 @@ extension FixtureAPI {
 
 	func logVolume(_ search: LogSearch, targetPoints: Int) async throws -> [Double] {
 		try await pause()
-		return (0..<targetPoints).map { index in
+		return (0..<targetPoints).map { index -> Double in
 			let base = 120 + 40 * sin(Double(index) / 4)
 			return (index > targetPoints - 8 ? base * 2.4 : base).rounded()
 		}
@@ -246,13 +246,13 @@ extension FixtureAPI {
 		let points = 24
 		let buckets = (0..<points).map { stamp(-Double(points - $0) * 3_600) }
 		func series(_ build: (Int) -> [String: Double]) -> JSONValue {
-			.object(["data": .array(buckets.enumerated().map { index, bucket in
+			.object(["data": .array(buckets.enumerated().map { index, bucket -> JSONValue in
 				var row: [String: JSONValue] = ["bucket": .string(bucket)]
 				for (key, value) in build(index) { row[key] = .number(value) }
 				return .object(row)
 			})])
 		}
-		return widgetIds.map { id in
+		return widgetIds.map { id -> WidgetOutcome in
 			let response: JSONValue? =
 				switch id {
 				case "w_req": series { ["value": 4_800 + Double(($0 * 53) % 900)] }

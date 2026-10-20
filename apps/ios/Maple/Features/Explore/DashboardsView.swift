@@ -405,7 +405,7 @@ private struct WidgetLineChart: View {
 	private var points: [Point] {
 		rows.flatMap { row -> [Point] in
 			guard let bucket = row["bucket"]?.string, let date = Self.parseBucket(bucket) else { return [] }
-			return row.compactMap { key, value in
+			return row.compactMap { key, value -> Point? in
 				guard key != "bucket", let number = value.number else { return nil }
 				return Point(series: key, date: date, value: number)
 			}
@@ -469,7 +469,7 @@ private struct WidgetBreakdown: View {
 	let unit: String?
 
 	private var items: [(String, Double)] {
-		rows.compactMap { row in
+		rows.compactMap { row -> (String, Double)? in
 			guard let name = row["name"]?.string else { return nil }
 			let value = row["value"]?.number
 				?? row.keys.sorted().lazy.filter { $0 != "name" }.compactMap { row[$0]?.number }.first
