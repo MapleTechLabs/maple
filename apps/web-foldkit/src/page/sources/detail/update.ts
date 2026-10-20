@@ -253,11 +253,14 @@ const save = (model: Model): Return => {
 
 /**
  * A write in the Connection tab changes this source too: deleting its own target leaves for the
- * list (the source goes with it), any other write re-reads the list so status and name follow.
+ * list (the source goes with it); a toggle, edit or disconnect re-reads it so the header follows.
  */
 const afterConnectionWrite = (model: Model, child: IntegrationMessage, step: Return, context: PageContext): Return => {
 	const isWrite =
-		child._tag === "CompletedTargetDelete" || child._tag === "CompletedToggle" || child._tag === "CompletedSave"
+		child._tag === "CompletedTargetDelete" ||
+		child._tag === "CompletedToggle" ||
+		child._tag === "CompletedSave" ||
+		child._tag === "CompletedDisconnect"
 	if (!isWrite || child.failure !== null) return step
 	const own = Option.match(sourceOf(model), { onNone: () => null, onSome: scrapeTargetIdOf })
 	if (child._tag === "CompletedTargetDelete" && own !== null && child.id === own) {

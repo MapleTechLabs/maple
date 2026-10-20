@@ -34,5 +34,7 @@ export const Model = Schema.Struct({
 	integration: Schema.NullOr(DataIntegration),
 	/** The integrations module: the picker's connected badges, then the chosen integration's card. */
 	integrations: IntegrationModel,
+	/** A target was added in this visit: WarpStream's step is done (its targets read as Prometheus ones). */
+	hasAddedTarget: Schema.Boolean,
 })
 export type Model = typeof Model.Type

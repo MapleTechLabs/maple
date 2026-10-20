@@ -217,4 +217,21 @@ describe("connect a source", () => {
 		expect(step.model.integration).toBe("cloudflare")
 		expect(names(step.commands)).toContain("FetchSourcesList")
 	})
+
+	test("WarpStream finishes once a target is added in this visit, and links to the list", () => {
+		const entered = init(integrationRoute("warpstream"), context).model
+		expect(entered.hasAddedTarget).toBe(false)
+		const added = pageUpdate(
+			entered,
+			Message.GotIntegrationsMessage({
+				message: IntegrationMessage.CompletedSave({ isEdit: false, id: null, failure: null }),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(added),
+			expectView(text("Step 3 of 3 · Collecting")).toExist(),
+			expectView(role("link", { name: "View sources" })).toExist(),
+		)
+	})
 })

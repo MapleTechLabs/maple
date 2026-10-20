@@ -364,7 +364,9 @@ export const scrapeTargetsSection = (
 	})
 	function list(): Html {
 		return targets.length === 0
-			? emptyState(h)
+			? focusId === null
+				? emptyState(h)
+				: h.p([h.Class("text-muted-foreground text-sm")], ["This scrape target no longer exists."])
 			: h.div(
 					[h.Class("grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]")],
 					[

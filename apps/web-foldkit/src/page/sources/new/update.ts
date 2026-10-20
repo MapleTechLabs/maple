@@ -89,6 +89,7 @@ export const init = (route: NewRoute, context: PageContext): Return => {
 			tokenCopy: CopyButton.init(),
 			integration,
 			integrations: embedded.model,
+			hasAddedTarget: false,
 		},
 		platform,
 	)
@@ -184,7 +185,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			outMessage: navigate(hrefOf(Routes.SourcesNew({ search: { integration } }))),
 		}),
 		GotIntegrationsMessage: ({ message: child }) => {
-			const step = liftIntegrations(model, Integrations.update(model.integrations, child, context))
+			const added = child._tag === "CompletedSave" && !child.isEdit && child.failure === null
+			const step = liftIntegrations(
+				added ? { ...model, hasAddedTarget: true } : model,
+				Integrations.update(model.integrations, child, context),
+			)
 			const integration = model.integration
 			// The connect just finished: the reconcile has made its source, so read the list again.
 			return integration !== null &&
