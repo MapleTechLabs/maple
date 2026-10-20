@@ -150,6 +150,7 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 	const exportFn = (span: SpanImpl, connectionLost?: () => string | undefined) => {
 		if (disabled) return
 		if (connectionLost !== undefined && connectionLost() === undefined && isTransportFailure(span)) {
+			if (buffer.length + unsettled.length >= MAX_BUFFER) return
 			unsettled.push([span, connectionLost])
 			if (unsettled.length === 1) setTimeout(settle, 0)
 			return

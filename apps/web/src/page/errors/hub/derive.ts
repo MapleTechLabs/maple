@@ -168,7 +168,8 @@ export type ListStatus = "loading" | "failed" | "ready"
 
 /** The volume sort's ranking failed: no list page can be asked until it is retried. */
 export const rankingFailed = (model: Model): boolean =>
-	sortOf(model.search) === "volume" && AsyncData.isFailure(model.ranking.data)
+	sortOf(model.search) === "volume" &&
+	(AsyncData.isFailure(model.ranking.data) || AsyncData.isStale(model.ranking.data))
 
 export const listStatusOf = (model: Model): ListStatus => {
 	if (rankingFailed(model)) return "failed"

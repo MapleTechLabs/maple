@@ -53,7 +53,9 @@ export const request = <A, E>(
 	if (slot.key !== null && baseKey(slot.key) === baseKey(key)) {
 		const transition =
 			mode === "Load" ? AsyncData.loadIfMissing(slot.data) : AsyncData.revalidateOrLoad(slot.data)
-		return Option.map(transition, (data) => withRetained(key, data, slot.retained === true))
+		// The slot's own key, generation included, so a read it superseded stays dropped.
+		const current = slot.key
+		return Option.map(transition, (data) => withRetained(current, data, slot.retained === true))
 	}
 	const sameOrg = slot.key !== null && orgOfKey(slot.key) === orgOfKey(key)
 	return Option.some(
