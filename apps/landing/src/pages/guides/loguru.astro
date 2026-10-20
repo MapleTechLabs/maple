@@ -878,12 +878,12 @@ const articleJsonLd = {
                         <li>
                             <span>02</span>
                             <div><h4>Find the lines</h4><p>Open <strong>Logs</strong> and filter by <strong>Service</strong> or <strong>Severity</strong> in the sidebar. Paste a trace ID into <strong>Search</strong> to list every line from one request.</p>
-                                <figure class="guide-figure"><img src="/screenshots/guides/loguru-01-logs.webp" data-zoomable alt="The Logs page filtered to the checkout service by a trace ID chip, listing the INFO, SUCCESS and WARN lines one request wrote through Loguru." width="2368" height="1180" loading="lazy" /></figure></div>
+                                <figure class="guide-figure"><img src="/screenshots/guides/loguru-01-logs.webp" data-zoomable alt="The Logs page filtered to the checkout service and one trace ID, listing the four lines one POST /checkout request wrote through Loguru: two INFO, one WARN and one SUCCESS." width="2362" height="1105" loading="lazy" /></figure></div>
                         </li>
                         <li>
                             <span>03</span>
                             <div><h4>Open a record</h4><p>Click a row, then <strong>Open detail</strong>. Bound values such as <code>order_id</code> and the <code>code.*</code> attributes are under <strong>Log Attributes</strong>, and the <code>trace:</code> link opens the request the line belongs to.</p>
-                                <figure class="guide-figure"><img src="/screenshots/guides/loguru-02-log-detail.webp" data-zoomable alt="A log detail sheet for Charging card: the trace link and span ID in the meta strip, and Log Attributes order_id, code.file.path, code.function.name and code.line.number." width="1400" height="1400" loading="lazy" /></figure></div>
+                                <figure class="guide-figure"><img src="/screenshots/guides/loguru-02-log-detail.webp" data-zoomable alt="The log detail sheet for Charging card: the trace link and span ID in the meta strip, and Log Attributes code.file.path, code.function.name, code.line.number and order_id." width="1342" height="866" loading="lazy" /></figure></div>
                         </li>
                     </ol>
 
