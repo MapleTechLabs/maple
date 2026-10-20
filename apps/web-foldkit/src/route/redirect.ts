@@ -1,6 +1,7 @@
 import { Option, Schema } from "effect"
 import { AppRoute } from "./app-route"
 import { hrefOf } from "./routers"
+import { DATA_INTEGRATIONS } from "./data-integrations"
 import { ErrorsSearch } from "./search"
 
 /** Where a route sends the browser instead of rendering, and whether it replaces history. */
@@ -34,16 +35,7 @@ const errorsSearchOf = ({ search }: typeof AppRoute.ErrorIssues.Type): typeof Er
 	)
 }
 
-/** Integrations that bring data in; their pages moved under Sources (`page/integrations/embed.ts`). */
-const DATA_INTEGRATIONS: ReadonlySet<string> = new Set([
-	"cloudflare",
-	"prometheus",
-	"planetscale",
-	"gcp",
-	"railway",
-	"warpstream",
-	"github",
-])
+const DATA_INTEGRATION_IDS: ReadonlySet<string> = new Set(DATA_INTEGRATIONS)
 
 const redirect = (to: AppRoute, isReplace: boolean) =>
 	Option.some(Redirect.make({ url: hrefOf(to), isReplace }))
@@ -62,7 +54,7 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 				),
 			/** Old links and OAuth returns to a data integration's page open its step under Sources. */
 			Integrations: ({ search }) =>
-				search.integration !== undefined && DATA_INTEGRATIONS.has(search.integration)
+				search.integration !== undefined && DATA_INTEGRATION_IDS.has(search.integration)
 					? redirect(AppRoute.SourcesNew({ search: { integration: search.integration } }), true)
 					: Option.none(),
 			Developer: ({ search }) =>

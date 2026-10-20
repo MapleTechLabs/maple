@@ -1,6 +1,7 @@
 import { Option } from "effect"
 import { fromString } from "foldkit/url"
 import { describe, expect, test } from "vitest"
+import { DATA_INTEGRATIONS } from "./data-integrations"
 import { AppRoute, hrefOf, routeRedirect, urlToAppRoute } from "./index"
 
 const parse = (path: string) => urlToAppRoute(Option.getOrThrow(fromString(`http://maple.test${path}`)))
@@ -56,6 +57,10 @@ describe("routes", () => {
 			Option.some({ url: "/sources/new?integration=prometheus", isReplace: false }),
 		)
 		expect(routeRedirect(parse("/integrations?integration=chat-slack"))).toEqual(Option.none())
+		for (const integration of DATA_INTEGRATIONS)
+			expect(routeRedirect(parse(`/integrations?integration=${integration}`))).toEqual(
+				Option.some({ url: `/sources/new?integration=${integration}`, isReplace: true }),
+			)
 		expect(routeRedirect(parse("/integrations"))).toEqual(Option.none())
 	})
 

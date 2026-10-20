@@ -67,7 +67,7 @@ export const cardView = (
 		case "planetscale":
 			return [planetscaleCard(h, model, timeZone)]
 		case "gcp":
-			return [gcpCard(h, model, timeZone)]
+			return [gcpCard(h, model, timeZone, focusId)]
 		case "prometheus":
 		case "warpstream":
 			return focusId === null

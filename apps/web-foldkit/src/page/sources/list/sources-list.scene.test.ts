@@ -174,4 +174,13 @@ describe("integrations on the sources list", () => {
 			expectView(role("link", { name: "Checkout" })).not.toExist(),
 		)
 	})
+
+	test("a filter that hides every source says so", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded([defaultSource, source(2, { name: "Checkout" })])),
+			click(role("button", { name: /^Integrations/ })),
+			expectView(text("No sources match these filters.")).toExist(),
+		)
+	})
 })

@@ -18,7 +18,7 @@ import { detailActions, detailTitle } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 import { platformMeta, platformTile } from "../kit/platforms"
-import { effectiveTab, hasToken, integrationPlatformOf, scrapeTargetIdOf, sourceHref, tabsOf } from "../kit/shared"
+import { effectiveTab, hasToken, integrationPlatformOf, focusIdOf, sourceHref, tabsOf } from "../kit/shared"
 import { actionsEmbed, cardEmbed } from "../../integrations/embed"
 import { sourceStatusBadge } from "../kit/status"
 import { Message } from "./message"
@@ -100,7 +100,7 @@ const connectionPart = (
 		slotId: `source-connection-${part}`,
 		model: model.connection,
 		view: part === "card" ? cardEmbed : actionsEmbed,
-		viewInputs: { integration: platform, timeZone, focusId: scrapeTargetIdOf(source) },
+		viewInputs: { integration: platform, timeZone, focusId: focusIdOf(source) },
 		toParentMessage: (message) => Message.GotConnectionMessage({ message }),
 	})
 }
