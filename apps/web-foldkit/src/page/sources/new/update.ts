@@ -187,16 +187,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			outMessage: navigate(hrefOf(Routes.SourcesNew({ search: { integration } }))),
 		}),
 		GotIntegrationsMessage: ({ message: child }) => {
+			const integration = model.integration
 			const added = child._tag === "CompletedSave" && !child.isEdit && child.failure === null
 			const step = liftIntegrations(
-				added ? { ...model, hasAddedTarget: true } : model,
+				added && integration === "warpstream" ? { ...model, hasAddedTarget: true } : model,
 				Integrations.update(model.integrations, child, context),
 			)
-			const integration = model.integration
-			// The connect just finished: the reconcile has made its source, so read the list again.
+			// A connect just finished or a target was added: its source is new, so read the list again.
 			return integration !== null &&
-				!isIntegrationConnected(model, integration) &&
-				isIntegrationConnected(step.model, integration)
+				(added || (!isIntegrationConnected(model, integration) && isIntegrationConnected(step.model, integration)))
 				? merge(step, readList(step.model, context, true))
 				: step
 		},

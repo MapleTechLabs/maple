@@ -234,4 +234,16 @@ describe("connect a source", () => {
 			expectView(role("link", { name: "View sources" })).toExist(),
 		)
 	})
+
+	test("a target added on another integration's step re-reads the list but does not finish WarpStream", () => {
+		const entered = init(integrationRoute("prometheus"), context).model
+		const added = pageUpdate(
+			entered,
+			Message.GotIntegrationsMessage({
+				message: IntegrationMessage.CompletedSave({ isEdit: false, id: null, failure: null }),
+			}),
+		)
+		expect(added.model.hasAddedTarget).toBe(false)
+		expect(names(added.commands)).toContain("FetchSourcesList")
+	})
 })
