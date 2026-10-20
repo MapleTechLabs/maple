@@ -6,6 +6,7 @@ import { join } from "node:path"
 interface ManifestChunk {
 	file: string
 	imports?: string[]
+	isDynamicEntry?: boolean
 }
 
 const DIST = join(import.meta.dirname, "..", "dist")
@@ -53,6 +54,10 @@ const forbiddenStartupPatterns = [
 const forbidden = [...staticGraph].filter((key) =>
 	forbiddenStartupPatterns.some((pattern) => pattern.test(key)),
 )
+// A lazy module that turns static is merged into a startup chunk and loses its manifest key, so
+// each pattern must still name a lazy chunk of its own.
+const lazyKeys = Object.keys(manifest).filter((key) => manifest[key]!.isDynamicEntry && !staticGraph.has(key))
+const missingLazy = forbiddenStartupPatterns.filter((pattern) => !lazyKeys.some((key) => pattern.test(key)))
 
 console.log(
 	`Initial static JS: ${(gzipBytes / 1024).toFixed(1)} KB gzip across ${chunks.length} chunks (budget: ${budgetLabel})`,
@@ -66,6 +71,11 @@ for (const chunk of chunks.sort((a, b) => b.gzipBytes - a.gzipBytes).slice(0, ov
 
 if (forbidden.length > 0) {
 	throw new Error(`Lazy-only code leaked into startup:\n${forbidden.join("\n")}`)
+}
+if (missingLazy.length > 0) {
+	throw new Error(
+		`No lazy chunk matches these patterns any more (now static, or renamed):\n${missingLazy.join("\n")}`,
+	)
 }
 if (gzipBytes > maxGzipBytes) {
 	throw new Error(`Initial static JS is ${(gzipBytes / 1024).toFixed(1)} KB gzip; budget is ${budgetLabel}`)
