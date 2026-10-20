@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
 	applyWhereClauseSuggestion,
 	getWhereClauseAutocomplete,
-} from "@/lib/query-builder/where-clause-autocomplete"
+} from "./where-clause-autocomplete"
 
 describe("where clause autocomplete", () => {
 	it("suggests keys at an empty query", () => {

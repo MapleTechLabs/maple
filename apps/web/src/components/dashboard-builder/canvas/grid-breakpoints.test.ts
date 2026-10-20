@@ -6,7 +6,7 @@ import {
 	projectLayout,
 	tierForWidth,
 	type PlacedWidget,
-} from "@/components/dashboard-builder/canvas/grid-breakpoints"
+} from "./grid-breakpoints"
 
 // No cast: placement reads `id` and `layout`, and nothing else. That is the
 // whole reason a redacted share widget can go through the same projection as a

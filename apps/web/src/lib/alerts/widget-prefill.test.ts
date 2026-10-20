@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { buildRuleCreateParamsV2, defaultRuleForm } from "@/lib/alerts/form-utils"
+import { buildRuleCreateParamsV2, defaultRuleForm } from "@maple/web-data/alerts/form-utils"
 import { createWidgetAlertPrefill, resolveWidgetAlertPrefill } from "./widget-prefill"
 
 function builderQuery(overrides: Record<string, unknown> = {}) {

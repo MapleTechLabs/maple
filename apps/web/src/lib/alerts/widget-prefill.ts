@@ -1,6 +1,6 @@
 import type { QueryBuilderQueryDraftPayload } from "@maple/domain/http"
 
-import { normalizeRuleQueryDraft, rawSqlHasValueColumn, type RuleFormState } from "@/lib/alerts/form-utils"
+import { normalizeRuleQueryDraft, rawSqlHasValueColumn, type RuleFormState } from "@maple/web-data/alerts/form-utils"
 import { buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 import { isGcpMetricType } from "@maple/domain/gcp-live-metrics"
 import { SERIES_REDUCER_TO_ALERT_REDUCER, toQueryBuilderDataSource } from "@maple/query-model"

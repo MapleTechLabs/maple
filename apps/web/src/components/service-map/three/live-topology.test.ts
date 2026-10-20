@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
-import type { Edge, Node } from "@xyflow/react"
+import type { EdgeBase, NodeBase } from "@xyflow/system"
 import type { ServiceNodeData, ServiceEdgeData } from "@maple/ui/components/service-map/service-map-utils"
 import { liveTopology } from "./live-topology"
 
-const node = (id: string, data: Partial<ServiceNodeData> = {}): Node<ServiceNodeData> => ({
+const node = (id: string, data: Partial<ServiceNodeData> = {}): NodeBase<ServiceNodeData> => ({
 	id,
 	position: { x: 0, y: 0 },
 	data: {
@@ -23,7 +23,7 @@ const edge = (
 	source: string,
 	target: string,
 	data: Partial<ServiceEdgeData> = {},
-): Edge<ServiceEdgeData> => ({
+): EdgeBase<ServiceEdgeData> => ({
 	id: `${source}->${target}`,
 	source,
 	target,

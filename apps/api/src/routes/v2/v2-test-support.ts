@@ -18,6 +18,8 @@ import { MobileDevicesService } from "@maple/backend/services/push/MobileDevices
 import { McpConnectionsService } from "@maple/backend/services/auth/McpConnectionsService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { SourcesService } from "@maple/backend/services/org/SourcesService"
+import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
@@ -42,6 +44,7 @@ import { HttpV2ApiKeysLive } from "./api-keys.http"
 import { HttpV2AttributeMappingsLive } from "./attribute-mappings.http"
 import { HttpV2DashboardsLive } from "./dashboards.http"
 import { HttpV2IngestKeysLive } from "./ingest-keys.http"
+import { HttpV2SourcesLive } from "./sources.http"
 import { HttpV2ChatIntegrationsLive } from "./integrations-chat.http"
 import { HttpV2GcpIntegrationsLive } from "./integrations-gcp.http"
 import { HttpV2PlanetScaleIntegrationsLive } from "./integrations.http"
@@ -138,6 +141,7 @@ const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatW
 		HttpV2AlertDestinationsLive,
 		HttpV2AlertIncidentsLive,
 		HttpV2IngestKeysLive,
+		HttpV2SourcesLive,
 		HttpV2ErrorIssuesLive,
 		HttpV2AttributeMappingsLive,
 		// Real service, no stub: it needs only the Database every harness already
@@ -340,6 +344,21 @@ export const SignalPresenceServiceStubLayer = Layer.succeed(SignalPresenceServic
 	read: die,
 })
 
+/** Inert sources services for harnesses that never touch `/v2/sources`. */
+export const SourcesServiceStubsLayer = Layer.mergeAll(
+	Layer.succeed(SourcesService, {
+		list: die,
+		get: die,
+		create: die,
+		update: die,
+		pause: die,
+		resume: die,
+		roll: die,
+		delete: die,
+	}),
+	Layer.succeed(SourceUsageService, { read: die }),
+)
+
 /** Inert config-resource services for harnesses that never touch those groups. */
 export const ConfigResourceServiceStubsLayer = Layer.mergeAll(
 	Layer.succeed(IngestAttributeMappingService, {
@@ -351,10 +370,12 @@ export const ConfigResourceServiceStubsLayer = Layer.mergeAll(
 	Layer.succeed(OrgIngestKeysService, {
 		getOrCreate: die,
 		getOrCreateMany: die,
+		forget: die,
 		rerollPublic: die,
 		rerollPrivate: die,
 		resolveIngestKey: die,
 	}),
+	SourcesServiceStubsLayer,
 	Layer.succeed(RecommendationIssueService, {
 		listReconciled: die,
 		dismiss: die,
@@ -374,6 +395,7 @@ export const ConfigResourceServiceStubsLayer = Layer.mergeAll(
 		recordScrapeResults: die,
 		listChecks: die,
 		probe: die,
+		sourceIds: die,
 	}),
 	Phase1ResourceStubsLayer,
 	WarehouseServiceStubLayer,

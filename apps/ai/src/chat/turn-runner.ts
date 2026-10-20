@@ -54,7 +54,7 @@ import { agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { runChatTurn, type ChatRunOutcome } from "./run"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { toTenantContext, withConnectorActor } from "./turn-actor"
+import { toTenantContext, turnTenant } from "./turn-actor"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { trackAiCredits, trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
 
@@ -313,7 +313,25 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			const conversations = yield* PrReviewConversationService
 			// Shared by the kickoff's clone, every pass of the turn and its review_files children.
 			const toolExecutor = yield* withSandboxBreaker(yield* McpToolExecutor)
-			const runTenant = yield* withConnectorActor(tenant, origin)
+			const runTenant = yield* turnTenant(tenant, origin).pipe(
+				// The asker's linked Maple user may not read this org: nothing runs, and the message
+				// is the only thing that tells them why.
+				Effect.catchTag("@maple/ai/LinkedUserNotPermitted", (refusal) =>
+					Effect.sync(() => {
+						observability.outcome = "error"
+						observability.failureReason = `LinkedUserNotPermitted:${refusal.reason}`
+						input.session.append({
+							type: "turn-end",
+							messageId: input.messageId,
+							reason: "error",
+							error: refusal.message,
+						})
+						recordedTerminal = true
+						return undefined
+					}),
+				),
+			)
+			if (runTenant === undefined) return yield* annotateTurn()
 			if (prReviewId !== undefined && input.abandoned === true) {
 				observability.outcome = "abandoned"
 				yield* reviews

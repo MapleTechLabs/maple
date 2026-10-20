@@ -14,12 +14,17 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, Schema } from "effect"
 import { AuthorizationUnavailableError, ErrorPersistenceError, RoleName } from "@maple/domain/http"
-import { CONNECTOR_TENANT_USER_ID, type ChatConnectorOrigin } from "@maple/domain/chat-session"
+import {
+	CONNECTOR_TENANT_USER_ID,
+	connectorTurnTenant,
+	type ChatConnectorOrigin,
+} from "@maple/domain/chat-session"
 import { ActorId, OrgId, UserId } from "@maple/domain/primitives"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { auditAttribution } from "@maple/backend/services/audit/audit-access"
 import { resolveTenant } from "./apply-proposal"
+import { toTenantContext, turnTenant } from "./turn-actor"
 
 const ORG = Schema.decodeSync(OrgId)("org_1")
 const ADA = Schema.decodeSync(UserId)("user_ada")
@@ -137,7 +142,7 @@ describe("whose authority an approval runs under", () => {
 				Effect.flip,
 			)
 
-			assert.strictEqual(failure._tag, "@maple/ai/ApproverNotPermitted")
+			assert.strictEqual(failure._tag, "@maple/ai/LinkedUserNotPermitted")
 		}),
 	)
 
@@ -160,7 +165,7 @@ describe("whose authority an approval runs under", () => {
 			)
 
 			// "Could not find out" is not "allowed": a blip must not downgrade the approval.
-			assert.strictEqual(failure._tag, "@maple/ai/ApproverNotPermitted")
+			assert.strictEqual(failure._tag, "@maple/ai/LinkedUserNotPermitted")
 		}),
 	)
 
@@ -186,6 +191,72 @@ describe("whose authority an approval runs under", () => {
 				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(CONNECTOR_ACTOR))),
 			)
 
+			assert.strictEqual(tenant.actorId, CONNECTOR_ACTOR)
+		}),
+	)
+})
+
+describe("whose authority a connector turn reads under", () => {
+	const asking = (actingUserId?: UserId): ChatConnectorOrigin => ({
+		...APPROVER,
+		...(actingUserId === undefined ? undefined : { actingUserId }),
+	})
+	const run = (origin: ChatConnectorOrigin) =>
+		turnTenant(toTenantContext(connectorTurnTenant(ORG), origin), origin)
+
+	it.effect("reads as the linked asker, under the roles they hold now", () =>
+		Effect.gen(function* () {
+			const tenant = yield* run(asking(ADA)).pipe(
+				Effect.provide(
+					Layer.mergeAll(
+						memberships(() => Effect.succeed(Option.some({ orgId: ORG, role: MEMBER }))),
+						noActors,
+					),
+				),
+			)
+
+			assert.strictEqual(tenant.userId, ADA)
+			assert.deepStrictEqual(tenant.roles, [MEMBER])
+			assert.isUndefined(tenant.actorId)
+		}),
+	)
+
+	it.effect("refuses a linked asker who left the organization", () =>
+		Effect.gen(function* () {
+			const failure = yield* run(asking(ADA)).pipe(
+				Effect.provide(
+					Layer.mergeAll(
+						memberships(() => Effect.succeed(Option.none())),
+						noActors,
+					),
+				),
+				Effect.flip,
+			)
+
+			assert.strictEqual(failure._tag, "@maple/ai/LinkedUserNotPermitted")
+			assert.strictEqual(failure.reason, "not_a_member")
+		}),
+	)
+
+	it.effect("refuses a linked id that does not decode, rather than reading as the connector", () =>
+		Effect.gen(function* () {
+			const failure = yield* run({ ...APPROVER, actingUserId: "" }).pipe(
+				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(CONNECTOR_ACTOR))),
+				Effect.flip,
+			)
+
+			assert.strictEqual(failure._tag, "@maple/ai/LinkedUserNotPermitted")
+		}),
+	)
+
+	it.effect("reads as the connector, with no roles, when nobody is named", () =>
+		Effect.gen(function* () {
+			const tenant = yield* run(asking()).pipe(
+				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(CONNECTOR_ACTOR))),
+			)
+
+			assert.strictEqual(tenant.userId, CONNECTOR_TENANT_USER_ID)
+			assert.deepStrictEqual(tenant.roles, [])
 			assert.strictEqual(tenant.actorId, CONNECTOR_ACTOR)
 		}),
 	)

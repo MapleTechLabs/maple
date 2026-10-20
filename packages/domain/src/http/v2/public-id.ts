@@ -36,6 +36,7 @@ export const PublicIdPrefixes = {
 	scrapeTarget: "scrp",
 	recommendation: "rec",
 	ingestKey: "ingk",
+	source: "src",
 	attributeMapping: "amap",
 	sessionReplay: "srep",
 	mobileDevice: "mdev",

@@ -85,7 +85,7 @@ describe("traceSpanStatsByTraceIdsQuery", () => {
 			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
 		)
 		expect(sql).toMatch(
-			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \('t1', 't2'\)\)/,
+			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \('t1', 't2'\)\s+AND trace_index\.Bucket >= toStartOfFiveMinutes\(toDateTime64\(subtractHours\(/,
 		)
 		expect(sql).toContain("count() AS spanCount")
 		expect(sql).toContain("AS services")
@@ -404,6 +404,13 @@ describe("traceListQuery", () => {
 		expect(sql).toMatch(
 			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \(SELECT traceId FROM \(/,
 		)
+		// Bounded to the padded window: unbounded, the lookup probes every retained partition.
+		expect(sql).toContain(
+			"trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2024-01-01 00:00:00'), 1), 9))",
+		)
+		expect(sql).toContain(
+			"trace_index.Bucket <= toDateTime64(addHours(toDateTime('2024-01-02 00:00:00'), 1), 9)",
+		)
 		expect(sql).toContain("TraceId AS traceId")
 		expect(sql).toContain("GROUP BY traceId")
 		expect(sql).toContain("count() AS spanCount")
@@ -664,7 +671,7 @@ describe("spanSearchQuery", () => {
 			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
 		)
 		expect(sql).toMatch(
-			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId = 'trace_123'\)/,
+			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId = 'trace_123'\s+AND trace_index\.Bucket >= toStartOfFiveMinutes\(toDateTime64\('2024-01-01 00:00:00', 9\)\)\s+AND trace_index\.Bucket <= toDateTime64\('2024-01-02 00:00:00', 9\)\)/,
 		)
 		expect(sql).toContain("TraceId = 'trace_123'")
 		expect(sql).toContain("SpanName = 'GET /users'")

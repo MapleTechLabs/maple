@@ -53,6 +53,24 @@ const spanKey = (key: string, usageCount = 100) => ({ scope: "span", key, usageC
 const resourceKey = (key: string, usageCount = 100) => ({ scope: "resource", key, usageCount })
 
 /** A fully healthy telemetry snapshot — every telemetry check passes against it. */
+/** Rootless rows as the query returns them: each carries the org-wide totals of all the rows. */
+const withOrgTotals = (
+	rows: ReadonlyArray<{
+		readonly entryService: string
+		readonly traceCount: number
+		readonly rootlessCount: number
+		readonly sampledRootlessCount: number
+	}>,
+) => {
+	const sum = (pick: (row: (typeof rows)[number]) => number) => rows.reduce((total, row) => total + pick(row), 0)
+	const totals = {
+		orgTraceCount: sum((row) => row.traceCount),
+		orgRootlessCount: sum((row) => row.rootlessCount),
+		orgSampledRootlessCount: sum((row) => row.sampledRootlessCount),
+	}
+	return rows.map((row) => ({ ...row, ...totals }))
+}
+
 const healthyWarehouse: WarehouseAuditInputs = {
 	lookbackHours: 24,
 	logCorrelationHours: 6,
@@ -113,7 +131,7 @@ const healthyWarehouse: WarehouseAuditInputs = {
 				sampleTraceIds: [],
 			},
 		],
-		rootless: [{ entryService: "api", traceCount: 800, rootlessCount: 3, sampledRootlessCount: 0 }],
+		rootless: withOrgTotals([{ entryService: "api", traceCount: 10_000, rootlessCount: 1, sampledRootlessCount: 0 }]),
 	},
 }
 
@@ -277,7 +295,7 @@ describe("runSetupAudit — baseline", () => {
 						sampledOrphanCount: 0,
 						sampleTraceIds: [],
 					})),
-					rootless: [
+					rootless: withOrgTotals([
 						{ entryService: "api", traceCount: 800, rootlessCount: 0, sampledRootlessCount: 0 },
 						...each((i) => ({
 							entryService: `svc-${i}`,
@@ -285,7 +303,7 @@ describe("runSetupAudit — baseline", () => {
 							rootlessCount: 400,
 							sampledRootlessCount: 0,
 						})),
-					],
+					]),
 				},
 			}
 			return runSetupAudit({ now: NOW, config, warehouse: telemetry }).checks
@@ -603,7 +621,13 @@ describe("CFG-ANOM-01 — anomaly detection", () => {
 describe("CFG-SAMP-01 — sampling is understood", () => {
 	it("passes at a ratio of exactly 1", () => {
 		const report = runSetupAudit(
-			inputs({ samplingPolicy: { traceSampleRatio: 1, alwaysKeepErrorSpans: true } }),
+			inputs({
+				samplingPolicy: {
+					traceSampleRatio: 1,
+					alwaysKeepErrorSpans: true,
+					alwaysKeepSlowSpansMs: null,
+				},
+			}),
 		)
 		expect(check(report, "CFG-SAMP-01").status).toBe("pass")
 	})
@@ -614,7 +638,13 @@ describe("CFG-SAMP-01 — sampling is understood", () => {
 
 	it("reports the ratio as a percentage and notes that errors are kept", () => {
 		const report = runSetupAudit(
-			inputs({ samplingPolicy: { traceSampleRatio: 0.1, alwaysKeepErrorSpans: true } }),
+			inputs({
+				samplingPolicy: {
+					traceSampleRatio: 0.1,
+					alwaysKeepErrorSpans: true,
+					alwaysKeepSlowSpansMs: null,
+				},
+			}),
 		)
 		const result = check(report, "CFG-SAMP-01")
 		expect(result.status).toBe("fail")
@@ -624,7 +654,13 @@ describe("CFG-SAMP-01 — sampling is understood", () => {
 
 	it("warns harder when error spans are sampled too", () => {
 		const report = runSetupAudit(
-			inputs({ samplingPolicy: { traceSampleRatio: 0.05, alwaysKeepErrorSpans: false } }),
+			inputs({
+				samplingPolicy: {
+					traceSampleRatio: 0.05,
+					alwaysKeepErrorSpans: false,
+					alwaysKeepSlowSpansMs: null,
+				},
+			}),
 		)
 		expect(check(report, "CFG-SAMP-01").detail).toContain("errors can be missed entirely")
 	})
@@ -1441,51 +1477,130 @@ describe("trace completeness", () => {
 	})
 
 	describe("TRC-02 — rootless traces", () => {
-		it("flags one service whose traces lack a root", () => {
-			const report = traces({
-				rootless: [
-					{ entryService: "api", traceCount: 800, rootlessCount: 3, sampledRootlessCount: 0 },
-					{
-						entryService: "checkout",
-						traceCount: 800,
-						rootlessCount: 400,
-						sampledRootlessCount: 0,
-					},
-				],
+		const rootless = (
+			...rows: ReadonlyArray<
+				readonly [service: string, traces: number, rootless: number, sampled?: number]
+			>
+		) =>
+			traces({
+				rootless: withOrgTotals(
+					rows.map(([entryService, traceCount, rootlessCount, sampledRootlessCount = 0]) => ({
+						entryService,
+						traceCount,
+						rootlessCount,
+						sampledRootlessCount,
+					})),
+				),
 			})
-			const result = check(report, "TRC-02")
-			expect(result.status).toBe("fail")
-			expect(result.affected).toHaveLength(1)
-			expect(result.affected[0]?.name).toBe("checkout")
+
+		it("passes with a single trace that lacks a root", () => {
+			expect(check(rootless(["api", 9_000, 1]), "TRC-02").status).toBe("pass")
 		})
 
-		it("collapses a near-total, uniform rate into one upstream finding", () => {
-			const report = traces({
-				rootless: [
-					{ entryService: "api", traceCount: 800, rootlessCount: 800, sampledRootlessCount: 0 },
-					{
-						entryService: "checkout",
-						traceCount: 800,
-						rootlessCount: 796,
-						sampledRootlessCount: 0,
-					},
-				],
-			})
+		it("is info for two or more rootless traces at or below 0.1%", () => {
+			const report = rootless(["api", 9_000, 10], ["web", 1_000, 0])
 			const result = check(report, "TRC-02")
 			expect(result.status).toBe("fail")
-			expect(result.affected).toEqual([])
-			expect(result.detail).toContain("created upstream of your instrumented services")
+			expect(result.severity).toBe("info")
+			expect(result.detail).toContain("0.1% of traces have no root span: 10 of 10000 traces")
+			expect(report.summary.info).toBe(1)
 		})
 
-		it("does not treat a partially-affected org as systemic", () => {
-			const report = traces({
-				rootless: [
-					{ entryService: "api", traceCount: 800, rootlessCount: 800, sampledRootlessCount: 0 },
-					{ entryService: "checkout", traceCount: 800, rootlessCount: 0, sampledRootlessCount: 0 },
-				],
-			})
+		it("warns above 0.1% of traces, measured across the whole org", () => {
+			// 0.5% of api's own traces, but 0.25% of the org's: the org-wide rate picks the tier.
+			const report = rootless(["api", 4_000, 20], ["web", 4_000, 0])
 			const result = check(report, "TRC-02")
+			expect(result.status).toBe("fail")
+			expect(result.severity).toBe("warn")
+			expect(result.detail).toContain("0.25% of traces have no root span: 20 of 8000 traces")
 			expect(result.affected.map((entity) => entity.name)).toEqual(["api"])
+			expect(result.affected[0]?.note).toBe("0.5% of traces starting here have no root (20 of 4000)")
+			expect(report.summary.warn).toBe(1)
+		})
+
+		it("is critical above 1% of traces", () => {
+			const report = rootless(["worker", 500, 500], ["api", 5_000, 30], ["cli", 40_000, 3])
+			const result = check(report, "TRC-02")
+			expect(result.severity).toBe("critical")
+			expect(result.detail).toContain("1.2% of traces")
+			expect(result.affected.map((entity) => entity.name)).toEqual(["worker", "api", "cli"])
+			expect(report.summary.critical).toBe(1)
+			expect(report.summary.warn).toBe(0)
+		})
+
+		it("keeps its base severity while passing", () => {
+			expect(check(rootless(["api", 1_000, 0]), "TRC-02").severity).toBe("warn")
+		})
+
+		it("never escalates past info below 50 traces", () => {
+			expect(check(rootless(["api", 40, 40]), "TRC-02").severity).toBe("info")
+		})
+
+		it("does not blame upstream when no service has 50 traces", () => {
+			const result = check(rootless(["api", 40, 40]), "TRC-02")
+			expect(result.detail).toContain("100% of traces have no root span: 40 of 40 traces")
+		})
+
+		it("does not blame upstream when the row cap cut services it cannot see", () => {
+			const api = {
+				entryService: "api",
+				traceCount: 9_800,
+				rootlessCount: 9_800,
+				sampledRootlessCount: 0,
+				orgTraceCount: 10_000,
+				orgRootlessCount: 9_800,
+				orgSampledRootlessCount: 0,
+			}
+			const result = check(traces({ rootless: [api] }), "TRC-02")
+			expect(result.detail).toContain("98% of traces have no root span: 9800 of 10000 traces")
+		})
+
+		it("rates the whole org, including services past the row cap", () => {
+			// The query returned only api; the org totals also count 90,000 healthy traces it cut.
+			const api = {
+				entryService: "api",
+				traceCount: 10_000,
+				rootlessCount: 200,
+				sampledRootlessCount: 0,
+				orgTraceCount: 100_000,
+				orgRootlessCount: 200,
+				orgSampledRootlessCount: 0,
+			}
+			const report = traces({ rootless: [api] })
+			const result = check(report, "TRC-02")
+			expect(result.severity).toBe("warn")
+			expect(result.detail).toContain("0.2% of traces have no root span: 200 of 100000 traces")
+		})
+
+		it("does not count traces whose root the sampler dropped", () => {
+			expect(check(rootless(["api", 1_000, 50, 50]), "TRC-02").status).toBe("pass")
+		})
+
+		it("says when the counts come from a trace sample", () => {
+			const report = traces({
+				traceSampleModulus: 4,
+				rootless: withOrgTotals([
+					{ entryService: "api", traceCount: 1_000, rootlessCount: 5, sampledRootlessCount: 0 },
+				]),
+			})
+			expect(check(report, "TRC-02").detail).toContain("(1 in 4 sampled)")
+		})
+
+		it("warns, not escalates, at exactly 1% of traces", () => {
+			expect(check(rootless(["api", 1_000, 10]), "TRC-02").severity).toBe("warn")
+		})
+
+		it("blames upstream when every service's traces arrive without a root", () => {
+			const result = check(rootless(["api", 800, 800], ["checkout", 800, 796]), "TRC-02")
+			expect(result.severity).toBe("critical")
+			expect(result.detail).toContain("created upstream of your instrumented services")
+			expect(result.affected.map((entity) => entity.name)).toEqual(["api", "checkout"])
+		})
+
+		it("names the service when one dominant service is the whole problem", () => {
+			const result = check(rootless(["gateway-fronted", 9_700, 9_700], ["billing", 300, 0]), "TRC-02")
+			expect(result.detail).toContain("97% of traces have no root span")
+			expect(result.affected.map((entity) => entity.name)).toEqual(["gateway-fronted"])
 		})
 	})
 })

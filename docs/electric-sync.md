@@ -265,9 +265,9 @@ never reads the shared one, so a preview can never proxy shapes at another stage
    `CREATE/ALTER PUBLICATION` and `pg_publication_tables`, so the guard the early
    migrations carry protects nothing, and it is exactly what hid the EU failure.
 2. Add the shape to the whitelist in `apps/electric-sync/src/shapes/registry.ts`.
-3. Add a collection under `apps/web/src/lib/collections/` via
-   `createEffectCollection`. Model it on `dashboards.ts` for a write vertical or
-   `alerts.ts` for a read-only one: an identity `Schema.Struct` row schema that
+3. Add a collection in `apps/web/src/data/collections/` via
+   `createEffectCollection`. Model it on `dashboards.ts` for a write vertical or the
+   `alertRules` collection in `org-collections.ts` for a read-only one: an identity `Schema.Struct` row schema that
    mirrors the table columns, plus a `timestamptz` parser normalizing to ISO.
    Register it in `org-collections.ts` (constructor + `cleanup()`), and point the
    consumer read at the collection.

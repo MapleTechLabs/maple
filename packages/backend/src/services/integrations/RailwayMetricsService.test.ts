@@ -6,6 +6,8 @@ import { OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { publicSourceId } from "@maple/backend/services/org/integration-sources"
+import { SourceId } from "@maple/domain/primitives"
 import { nextWindow, RailwayMetricsService } from "./RailwayMetricsService"
 
 const now = Date.UTC(2026, 9, 3, 12, 30, 30)
@@ -116,6 +118,21 @@ const decodeRequestBody = Schema.decodeUnknownSync(
 	),
 )
 
+const IngestPayload = Schema.Struct({
+	resourceMetrics: Schema.Array(
+		Schema.Struct({
+			resource: Schema.Struct({
+				attributes: Schema.Array(
+					Schema.Struct({
+						key: Schema.String,
+						value: Schema.Struct({ stringValue: Schema.String }),
+					}),
+				),
+			}),
+		}),
+	),
+})
+
 const json = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
@@ -123,9 +140,10 @@ const stubFetch = (calls: StubCalls, options: StubOptions = {}) => {
 	const stub = (async (input: string | URL | Request, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
 		const headers = new Headers(init?.headers)
-		const body = decodeRequestBody(await new Response(init?.body ?? null).text())
+		const text = await new Response(init?.body ?? null).text()
+		const body = decodeRequestBody(text)
 		if (new URL(url).host === "ingest.test") {
-			calls.ingest.push({ body, authorization: headers.get("authorization") })
+			calls.ingest.push({ body: text, authorization: headers.get("authorization") })
 			return json({}, options.ingestStatus ?? 200)
 		}
 		const query = body.query ?? ""
@@ -263,6 +281,27 @@ describe("RailwayMetricsService", () => {
 				yield* railway.connect(orgId, userId, "rw_token_123")
 				assert.strictEqual(calls.ingest.length, 1)
 				assert.match(calls.ingest[0]!.authorization ?? "", /^Bearer maple_pk_/)
+				const source = yield* Effect.promise(() =>
+					queryFirstRow<{ id: string; name: string }>(
+						testDb,
+						"SELECT id, name FROM sources WHERE platform = 'railway'",
+					),
+				)
+				assert.isDefined(source)
+				const payload = Schema.decodeUnknownSync(Schema.fromJsonString(IngestPayload))(
+					calls.ingest[0]!.body,
+				)
+				const stamped = payload.resourceMetrics.map(
+					(resource) =>
+						resource.resource.attributes.find((attr) => attr.key === "maple_source_id")?.value
+							.stringValue,
+				)
+				assert.isAbove(stamped.length, 0)
+				const expected = publicSourceId(Schema.decodeUnknownSync(SourceId)(source!.id))
+				assert.deepStrictEqual(
+					stamped,
+					stamped.map(() => expected),
+				)
 
 				const environment = yield* Effect.promise(() =>
 					queryFirstRow<{ watermark_at: Date }>(

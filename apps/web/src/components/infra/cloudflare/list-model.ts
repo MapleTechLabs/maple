@@ -4,7 +4,7 @@ import type {
 	CloudflareDurableObjectRow,
 	CloudflareWorkerRow,
 	CloudflareZoneRow,
-} from "@/api/warehouse/cloudflare-infra"
+} from "@maple/web-data/warehouse/cloudflare-infra"
 
 // Here, not beside the list views: the route's search schema needs it, and it loads at startup.
 export const CLOUDFLARE_VIEWS = ["zones", "workers", "queues"] as const

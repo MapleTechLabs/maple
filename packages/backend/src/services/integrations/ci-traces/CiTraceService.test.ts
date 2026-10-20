@@ -1,10 +1,21 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import type { WorkflowJobAnnotation, WorkflowJobJob, WorkflowRunJob } from "@maple/domain/http"
-import { OrgId } from "@maple/domain/http"
+import { OrgId, UserId } from "@maple/domain/http"
+import type { OrgIngestKeyRow } from "@maple/db/tables"
+import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
+import { SharedIngestKeysMemo } from "@maple/backend/services/org/shared-ingest-keys-memo"
 import { ConfigProvider, Effect, Exit, Layer, Schema, Stream, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
+import { publicSourceId } from "@maple/backend/services/org/integration-sources"
+import { SourceId } from "@maple/domain/primitives"
 import { WorkflowEventSink } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { CiTraceSinkWith } from "./CiTraceService"
@@ -137,6 +148,13 @@ const sinkLayer = (testDb: TestDb, fetchStub: typeof fetch) =>
 		Layer.provide(makeConfig()),
 	)
 
+const keysLayer = (testDb: TestDb) =>
+	OrgIngestKeysService.layer.pipe(
+		Layer.provide(testDb.layer),
+		Layer.provide(Env.layer),
+		Layer.provide(makeConfig()),
+	)
+
 const run: WorkflowRunJob = {
 	kind: "workflow-run",
 	provider: "github",
@@ -212,6 +230,54 @@ const attr = (attributes: OtlpRequest["resourceSpans"][number]["resource"]["attr
 }
 
 describe("CiTraceService", () => {
+	it.live("stamps the installation's pull source on CI spans and logs", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		const logCalls: Array<OtlpLogsRequest> = []
+		return Effect.gen(function* () {
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO vcs_installations (id, org_id, provider, external_installation_id, account_login,
+						account_type, external_account_id, installed_by_user_id, created_at, updated_at)
+					VALUES ('00000000-0000-4000-8000-000000000042', 'org_ci', 'github', '42', 'octo', 'Organization', '1', 'user_1', now(), now())`,
+				),
+			)
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowRun(orgId, run)
+			yield* sink.onWorkflowJobLog(orgId, job, Stream.fromIterable([stamped(123, "hello")]))
+
+			const source = yield* Effect.promise(() =>
+				queryFirstRow<{ id: string; name: string }>(
+					testDb,
+					"SELECT id, name FROM sources WHERE platform = 'github' AND integration_id = '00000000-0000-4000-8000-000000000042'",
+				),
+			)
+			assert.strictEqual(source!.name, "GitHub octo")
+			const expected = publicSourceId(Schema.decodeUnknownSync(SourceId)(source!.id))
+			assert.strictEqual(
+				attr(calls[0]!.body.resourceSpans[0]!.resource.attributes, "maple_source_id"),
+				expected,
+			)
+			assert.strictEqual(
+				logCalls[0]!.resourceLogs[0]!.resource.attributes.find((kv) => kv.key === "maple_source_id")
+					?.value.stringValue,
+				expected,
+			)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [200], logCalls))))
+	})
+
+	it.live("sends CI spans without a source when the installation is unknown", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			const sink = yield* WorkflowEventSink
+			yield* sink.onWorkflowRun(orgId, run)
+			assert.lengthOf(calls, 1)
+			assert.isUndefined(attr(calls[0]!.body.resourceSpans[0]!.resource.attributes, "maple_source_id"))
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls))))
+	})
+
 	it.live("writes a run and its job into one trace: run → job → steps", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls: Array<IngestCall> = []
@@ -472,6 +538,37 @@ describe("CiTraceService", () => {
 			assert.isTrue(Exit.isFailure(emit.status.exit))
 			assert.strictEqual(emit.attributes.get("maple.cicd.outcome"), "ingest_failed")
 		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [402]))))
+	})
+
+	it.live("after a key rotation elsewhere, drops the stale memoized key and sends once more", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			// The isolate memo the queue consumer shares across batches.
+			const memo = Layer.succeed(SharedIngestKeysMemo, yield* makeExpiringStore<OrgIngestKeyRow>())
+			const batch = sinkLayer(testDb, recordingFetch(calls, [200, 401, 200])).pipe(Layer.provide(memo))
+			const emitJob = WorkflowEventSink.use((sink) => sink.onWorkflowJob(orgId, job, []))
+			yield* emitJob.pipe(Effect.provide(batch))
+			// The rotation runs in another graph with its own memo, as the HTTP route does.
+			const rotated = yield* OrgIngestKeysService.use((keys) =>
+				keys.rerollPublic(orgId, Schema.decodeUnknownSync(UserId)("user_rotates")),
+			).pipe(Effect.provide(keysLayer(testDb)))
+			yield* emitJob.pipe(Effect.provide(batch))
+			assert.deepStrictEqual(
+				calls.map((call) => call.authorization),
+				[calls[0]!.authorization, calls[0]!.authorization, `Bearer ${rotated.publicKey}`],
+			)
+			assert.notStrictEqual(rotated.publicKey, calls[0]!.authorization?.slice("Bearer ".length))
+		})
+	})
+
+	it.live("does not re-read the key or resend after a 403", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<IngestCall> = []
+		return Effect.gen(function* () {
+			yield* WorkflowEventSink.use((sink) => sink.onWorkflowJob(orgId, job, []))
+			assert.strictEqual(calls.length, 1)
+		}).pipe(Effect.provide(sinkLayer(testDb, recordingFetch(calls, [403, 200]))))
 	})
 
 	it.live("writes a job's log as records on the step span that was running at each line", () => {

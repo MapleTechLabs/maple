@@ -264,7 +264,7 @@ const isRevoked = (oauth: IntegrationInventoryInputs["oauthConnections"][number]
 
 const revokedProblem = (label: string) => ({
 	status: "disconnected" as const,
-	problem: `${label} revoked Maple's access; reconnect it in Settings → Integrations.`,
+	problem: `${label} revoked Maple's access; reconnect it in Sources.`,
 })
 
 const github = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
@@ -294,7 +294,7 @@ const github = (inputs: IntegrationInventoryInputs, now: number): IntegrationEnt
 			active.length === 0
 				? {
 						status: "disconnected",
-						problem: `The GitHub App installation is ${installations.map((i) => i.status).join(", ")}; reinstall it in Settings → Integrations.`,
+						problem: `The GitHub App installation is ${installations.map((i) => i.status).join(", ")}; reinstall it in Sources.`,
 					}
 				: undefined,
 		resources,
@@ -365,7 +365,7 @@ const railway = (inputs: IntegrationInventoryInputs, now: number): IntegrationEn
 		connection.authFailedAt !== null
 			? {
 					status: "disconnected" as const,
-					problem: "Railway rejected the API token; save a new one in Settings → Integrations.",
+					problem: "Railway rejected the API token; save a new one in Sources.",
 				}
 			: connectionStatus === "failing"
 				? {
@@ -394,7 +394,7 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 				: {
 						status: "pending",
 						problem:
-							"Authorized, but no PlanetScale organization is selected yet; pick one in Settings → Integrations.",
+							"Authorized, but no PlanetScale organization is selected yet; pick one in Sources.",
 					},
 			resources: [],
 		})
@@ -435,7 +435,7 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 						status: "failing" as const,
 						problem: `The grant lacks ${missing
 							.map((permission) => `${permission} (${permissionFeed(permission)})`)
-							.join(", ")}; reconnect PlanetScale in Settings → Integrations with it granted.`,
+							.join(", ")}; reconnect PlanetScale in Sources with it granted.`,
 					}
 				: connection.lastInventoryAt === null
 					? { status: "pending" as const, problem: "The first database inventory has not run yet." }
@@ -458,7 +458,7 @@ const PLANETSCALE_PERMISSION_FEEDS = [
 const permissionFeed = (permission: string) =>
 	PLANETSCALE_PERMISSION_FEEDS.find(([key]) => key === permission)?.[1] ?? "unknown use"
 
-const scrapeResource = (
+export const scrapeResource = (
 	target: IntegrationInventoryInputs["scrapeTargets"][number],
 	now: number,
 	kind: string,

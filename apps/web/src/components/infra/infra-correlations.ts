@@ -8,15 +8,15 @@
 // existing infra detail routes.
 //
 // This is the SINGLE source of truth for both the tab-visibility gate and the
-// panel renderer, so the two never drift. Keep it React-free — it is unit
-// tested directly.
+// panel renderer, so the two never drift. Keep it pure: it is unit tested
+// directly.
 
 import type {
 	ContainerInfraMetric,
 	HostInfraMetric,
 	NodeInfraMetric,
 	PodInfraMetric,
-} from "@/api/warehouse/infra"
+} from "@maple/web-data/warehouse/infra"
 
 interface InfraCorrelationBase {
 	/** Display heading for the group ("Container" | "Pod" | "Node" | "Host"). */

@@ -1,5 +1,5 @@
-import type { ServicePlatform } from "@/api/warehouse/service-map"
-import type { Node3D, Node3DKind, Edge3D, Topology3D } from "@/components/service-map/three/types"
+import type { ServicePlatform } from "@maple/web-data/warehouse/service-map"
+import type { Node3D, Node3DKind, Edge3D, Topology3D } from "../../components/service-map/three/types"
 
 /** Example topology used only by the 3D lab and tests. */
 const service = (

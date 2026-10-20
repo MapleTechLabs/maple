@@ -77,6 +77,8 @@ const makeHarness = Effect.fnUntraced(function* (rowCount: number) {
 				delete: die,
 				deleteManaged: die,
 				listAllEnabled: () => Effect.succeed(rows),
+				// Only the first row resolves a source; the rest must send without one.
+				sourceIds: (listed) => Effect.succeed(new Map([[listed[0]!.id, "src_first"]])),
 				authHeaders: die,
 				recordScrapeResults: die,
 				listChecks: die,
@@ -102,6 +104,7 @@ const makeHarness = Effect.fnUntraced(function* (rowCount: number) {
 							),
 						),
 					),
+				forget: die,
 				rerollPublic: die,
 				rerollPrivate: die,
 				resolveIngestKey: die,
@@ -155,6 +158,8 @@ describe("GET /api/internal/scrape-targets", () => {
 				harness.rows.map((row) => row.id),
 			)
 			assert.strictEqual(response.body[1]?.ingestKey, "maple_pk_org_1")
+			assert.strictEqual(response.body[0]?.sourceId, "src_first")
+			assert.isUndefined(response.body[1]?.sourceId)
 		}),
 	)
 })

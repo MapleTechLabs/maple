@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import type { PlanetScaleBranchStat } from "@/api/warehouse/service-map"
+import type { PlanetScaleBranchStat } from "@maple/web-data/warehouse/service-map"
 import {
 	absenceReason,
 	defaultBranch,

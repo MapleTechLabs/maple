@@ -1,5 +1,5 @@
 // Infrastructure -> Google Cloud: the page's views, what each service's columns read, and how the
-// metric points of a service fold into one table row per workload. Pure (no React, no atoms).
+// metric points of a service fold into one table row per workload. Pure.
 
 import { GCP_INFRA_ROW_LIMIT, GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import type { V2GcpConnector } from "@maple/domain/http/v2"
@@ -13,7 +13,7 @@ import {
 	formatNumber,
 	formatPercent,
 } from "@maple/ui/lib/format"
-import { gcpMetricsState } from "@/components/integrations/gcp-connector-state"
+import { gcpMetricsState } from "../../integrations/gcp-connector-state"
 
 /** One metric and label value of one workload: `total` over `samples` points. */
 export interface GcpMetricValue {
@@ -248,7 +248,7 @@ export function gcpWorkload(
 	}
 }
 
-/** A workload's identity values as one string: a map key, a React key. */
+/** A workload's identity values as one string: a map key, a render key. */
 export const gcpWorkloadId = (keys: ReadonlyArray<string>): string => keys.join("\u0000")
 
 /** Points that carry their workload's `keys`, grouped by workload in the order they first appear. */
@@ -281,9 +281,6 @@ export interface GcpFleetService {
 	/** The service's query failed: its workloads are unknown, not absent. */
 	readonly failed: boolean
 }
-
-/** Stable empty fallback so memos don't recompute on every render. */
-export const NO_GCP_FLEET: ReadonlyArray<GcpFleetService> = []
 
 export const gcpFleet = (
 	services: ReadonlyArray<{

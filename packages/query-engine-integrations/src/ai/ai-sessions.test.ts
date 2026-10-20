@@ -755,7 +755,8 @@ describe("aiSessionDetailsQuery", () => {
 
 	it("reads the index over the page's bounds and the spans over one slice of them", () => {
 		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
-		const [fanOut, detection] = sql.split("TraceId IN (SELECT")
+		const [fanOut, rest] = sql.split("TraceId IN (SELECT")
+		const [detection, traceIndexBounds] = rest.split("AND trace_index.Bucket >=")
 
 		// `traces` is PARTITION BY toDate(Timestamp), so this predicate
 		// is the only thing that prunes partitions there — and the bounds are one
@@ -771,6 +772,8 @@ describe("aiSessionDetailsQuery", () => {
 		expect(detection).toContain(`Timestamp >= '${FAN_OUT_START}'`)
 		expect(detection).toContain(`Timestamp <= '${FAN_OUT_END}'`)
 		expect(detection).not.toContain(SPANS_START)
+		// The trace_index seek is bounded to the same slice as the span read.
+		expect(traceIndexBounds).toContain(SPANS_START)
 	})
 
 	it("takes no window param from the caller at all", () => {
@@ -1311,7 +1314,9 @@ describe("aiTraceSpansQuery", () => {
 		expect(sql).toContain(
 			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
 		)
-		expect(sql).toContain(`trace_index.TraceId = '${TRACE_ID}')`)
+		expect(sql).toMatch(
+			new RegExp(`trace_index\\.TraceId = '${TRACE_ID}'\\s+AND trace_index\\.Bucket >=`),
+		)
 		expect(sql).not.toContain("TraceId IN (SELECT")
 		// The projection still names the key; only the predicate is gone.
 		expect(sql).not.toContain("SpanAttributes['maple_ai.session.id']")

@@ -233,7 +233,9 @@ describe("errorDetailTracesQuery", () => {
 		expect(sql).toMatch(
 			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \(SELECT/,
 		)
-		expect(sql).toContain("AS matching_traces))")
+		expect(sql).toMatch(
+			/AS matching_traces\)\s+AND trace_index\.Bucket >= toStartOfFiveMinutes\(toDateTime64\(/,
+		)
 		expect(sql).toContain("GROUP BY TraceId")
 		expect(sql).toContain("GROUP BY traceId")
 		expect(sql).toContain("groupUniqArray(traces.ServiceName)")

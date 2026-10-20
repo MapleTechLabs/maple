@@ -227,10 +227,11 @@ export const jobLogRecords = <E, R>(
 export const workflowJobLogsToOtlp = (
 	job: WorkflowJobJob,
 	records: ReadonlyArray<OtlpLogRecord>,
+	sourceId?: string,
 ): OtlpLogsPayload => ({
 	resourceLogs: [
 		{
-			resource: { attributes: resourceOf(job.repoFullName, job.url) },
+			resource: { attributes: resourceOf(job.repoFullName, job.url, sourceId) },
 			scopeLogs: [{ scope: { name: SCOPE_NAME }, logRecords: records }],
 		},
 	],

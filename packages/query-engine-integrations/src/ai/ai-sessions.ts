@@ -134,7 +134,14 @@ import {
 	type ColumnAccessor,
 	type CompiledQueryRowSchema,
 } from "@maple-dev/effect-orm/clickhouse"
-import { AiTraceIndex, Traces, exactDateTime64, inTraces, orgIdParam } from "@maple/query-engine/ch/tables"
+import {
+	AiTraceIndex,
+	Traces,
+	exactDateTime64,
+	inTraces,
+	orgIdParam,
+	paramTraceWindow,
+} from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import {
 	AI_SESSION_SPANS_MAX_SPANS,
@@ -1031,7 +1038,7 @@ export function aiSessionDetailsQuery(opts: AiSessionDetailsOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTime("spansStart")),
 			$.Timestamp.lte(param.dateTime("spansEnd")),
-			inTraces((id) => inSubquery(id, pageTraceIds)),
+			inTraces((id) => inSubquery(id, pageTraceIds), paramTraceWindow("spansStart", "spansEnd")),
 		])
 		.groupBy("traceId")
 
@@ -1416,7 +1423,7 @@ export function aiTraceWindowQuery() {
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.TraceId.eq(param.string("traceId")),
-			inTraces((id) => id.eq(param.string("traceId"))),
+			inTraces((id) => id.eq(param.string("traceId")), undefined),
 		])
 		.format("JSON")
 }
@@ -1545,7 +1552,7 @@ export function aiSessionSpansQuery(opts: AiSessionSpansOpts = {}) {
 				$.OrgId.eq(orgIdParam),
 				$.Timestamp.gte(param.dateTime("startTime")),
 				$.Timestamp.lte(param.dateTime("endTime")),
-				inTraces((id) => inSubquery(id, sessionTraceIds)),
+				inTraces((id) => inSubquery(id, sessionTraceIds), paramTraceWindow()),
 				scopePredicate($, opts.scope),
 				opts.after === undefined ? undefined : afterCursor($, opts.after),
 			])
@@ -1621,8 +1628,8 @@ export function aiTraceSpansQuery(opts: AiTraceSpansOpts = {}) {
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
 			traceIds === undefined
-				? inTraces((id) => id.eq(param.string("traceId")))
-				: inTraces((id) => CH.inList(id, traceIds)),
+				? inTraces((id) => id.eq(param.string("traceId")), paramTraceWindow())
+				: inTraces((id) => CH.inList(id, traceIds), paramTraceWindow()),
 			scopePredicate($, opts.scope),
 			opts.after === undefined ? undefined : afterCursor($, opts.after),
 		])
@@ -1910,7 +1917,7 @@ export function aiSessionSummaryQuery() {
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
-			inTraces((id) => inSubquery(id, sessionTraceIdsSubquery())),
+			inTraces((id) => inSubquery(id, sessionTraceIdsSubquery()), paramTraceWindow()),
 		])
 		.groupBy("turnKey")
 		.orderBy(["startTime", "asc"])
@@ -1926,7 +1933,7 @@ export function aiTraceSummaryQuery() {
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
-			inTraces((id) => id.eq(param.string("traceId"))),
+			inTraces((id) => id.eq(param.string("traceId")), paramTraceWindow()),
 		])
 		.groupBy("turnKey")
 		.orderBy(["startTime", "asc"])
@@ -1942,7 +1949,7 @@ export function aiSessionTotalsQuery() {
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
-			inTraces((id) => inSubquery(id, sessionTraceIdsSubquery())),
+			inTraces((id) => inSubquery(id, sessionTraceIdsSubquery()), paramTraceWindow()),
 		])
 		.format("JSON")
 }
@@ -1955,7 +1962,7 @@ export function aiTraceTotalsQuery() {
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
-			inTraces((id) => id.eq(param.string("traceId"))),
+			inTraces((id) => id.eq(param.string("traceId")), paramTraceWindow()),
 		])
 		.format("JSON")
 }

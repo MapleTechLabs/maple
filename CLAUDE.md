@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Maple is an OpenTelemetry observability platform: TanStack Start (React 19, Vite) + Effect on the
+Maple is an OpenTelemetry observability platform: a Foldkit (Vite) dashboard + Effect on the
 backend, ClickHouse/Tinybird as the warehouse, PlanetScale Postgres for relational state.
 
 ## Workspace layout
@@ -17,7 +17,7 @@ backend, ClickHouse/Tinybird as the warehouse, PlanetScale Postgres for relation
 ```bash
 bun dev                        # full alchemy dev stack at https://[<worktree>.]<app>.localhost
 bun dev api web                # subset
-bun --filter=@maple/web dev    # single app, raw port
+bun --filter=@maple/web dev   # single app, raw port
 bun run test                   # Vitest via turbo (NOT `bun test`)
 bun typecheck
 bun run tinybird:manifest      # after editing datasources.ts
@@ -107,13 +107,14 @@ truthiness.
   spans. Custom attributes use `maple.*`.
 - **Self-tracing:** the API traces itself through ingest; keep `withTracerDisabledWhen()` and avoid
   spans on hot paths like token validation.
-- **UI:** shadcn/Base UI + Tailwind 4, Recharts, Nucleo icons. Port icons into
-  `apps/web/src/components/icons/` from the local Nucleo DB:
+- **UI:** the dashboard (`apps/web`) and Maple Local (`apps/local-ui`) are Foldkit + `@foldkit/ui` +
+  Tailwind 4, Nucleo icons.
+  Add icons to `apps/web/src/ui/icons.generated.ts` (element trees) from the local Nucleo DB:
   ```bash
   sqlite3 "~/Library/Application Support/Nucleo/icons/data.sqlite3" \
     "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"
   ```
-- `@/` resolves to each app's source. `src/routeTree.gen.ts` is generated.
+- `@/` resolves to each app's source.
 - **Tests:** assert behavior, not source. `test-slop/*` rules (`scripts/oxlint-plugins/test-slop.mjs`)
   ban constant-vs-literal pins, existence-only/does-not-throw tests, Tailwind class pins and tests that
   read source files. Import and architecture boundaries are `no-restricted-imports` overrides in

@@ -102,6 +102,7 @@ const makeHarness = (
 		deliveryTimeoutMs: () => 15_000,
 		schedulerTickBudgetMs: () => 25_000,
 		schedulerEvalTimeoutMs: () => 15_000,
+		schedulerSpreadMs: () => 0,
 	})
 	const hazelOAuthLive =
 		hazelOAuthService === undefined

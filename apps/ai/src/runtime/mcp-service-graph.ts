@@ -33,9 +33,10 @@ export const ChatApplyServicesLive = Layer.mergeAll(
 /** What a chat turn's runtime needs beyond the tools: the two completion tools' services. */
 export const InvestigationServicesLive = Layer.mergeAll(
 	McpServicesLive,
-	// The turn resolves its own actor before the run: a connector turn acts as the connector's
-	// agent, which the toolkit and the audit log both read off the tenant.
+	// The turn resolves its own actor before the run: a connector turn acts as the linked Maple
+	// user under their current roles, or as the connector's agent when nobody is linked.
 	ErrorActorsService.layer,
+	OrgMembershipService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
 	InvestigationService.layer.pipe(Layer.provide(Env.layer)),
 	// The review reads production telemetry through the warehouse, which caches at the edge.
 	PrReviewService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),

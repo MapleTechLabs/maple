@@ -1,5 +1,5 @@
 import { afterEach, assert, beforeAll, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Fiber, Layer, Logger, References, Tracer } from "effect"
+import { ConfigProvider, Effect, Exit, Fiber, Layer, Logger, References, Schema, Tracer } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { GCP_ASSET_TYPES, GCP_METRIC_GROUPS } from "@maple/domain/gcp-metrics"
@@ -12,6 +12,8 @@ import {
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { publicSourceId } from "@maple/backend/services/org/integration-sources"
+import { SourceId } from "@maple/domain/primitives"
 import type { OtlpMetricsPayload } from "./cloudflare-analytics/otlp"
 import { GcpMetricsService, MAX_PAGES_PER_METRIC, MAX_RESOURCE_PAGES, nextWindow } from "./GcpMetricsService"
 
@@ -587,6 +589,17 @@ describe("GcpMetricsService", () => {
 					"cloud.provider": "gcp",
 					"cloud.account.id": "acme-prod",
 				})
+				// The connector's pull source rides on every resource.
+				const source = yield* Effect.promise(() =>
+					queryFirstRow<{ id: string }>(
+						testDb,
+						`SELECT id FROM sources WHERE platform = 'gcp' AND integration_id = '${CONNECTOR_A}'`,
+					),
+				)
+				assert.strictEqual(
+					attributes.maple_source_id,
+					publicSourceId(Schema.decodeUnknownSync(SourceId)(source!.id)),
+				)
 				const metric = resource.scopeMetrics[0].metrics[0]
 				assert.strictEqual(metric.name, "gcp.cloud_run.requests")
 				assert.strictEqual(metric.sum.aggregationTemporality, 1)
