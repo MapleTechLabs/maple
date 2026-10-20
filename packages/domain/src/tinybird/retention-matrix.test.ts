@@ -40,6 +40,7 @@ const RETENTION_DAYS = {
 	service_overview_spans: 30,
 	service_platforms_hourly: 365,
 	service_usage: 365,
+	source_usage_hourly: 90,
 	session_events: 30,
 	session_replay_events: 30,
 	session_replays: 30,

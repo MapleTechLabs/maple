@@ -686,12 +686,14 @@ export {
 	type OperationTrafficOutput,
 } from "./queries/pr-review"
 
-// Queries: source usage (hourly spans and logs per source)
+// Queries: source usage (hourly volume and estimated bytes per source)
 export {
-	SOURCE_ID_ATTRIBUTE,
-	sourceUsageQuery,
-	sourceUsageRowSchema,
-	type SourceUsageOutput,
+	sourceUsageHourlyQuery,
+	sourceUsageHourlyRowSchema,
+	sourceUsageTotalsQuery,
+	sourceUsageTotalsRowSchema,
+	type SourceUsageHourlyOutput,
+	type SourceUsageTotalsOutput,
 } from "./queries/source-usage"
 
 // Queries — CI pipeline runs (GitHub Actions traces)

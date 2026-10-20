@@ -1289,6 +1289,24 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 
+	// SourceUsageService: the sources list totals and one source's hourly chart.
+	{
+		module: "source-usage",
+		name: "sourceUsageTotalsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.sourceUsageTotalsQuery(), window),
+	},
+	{
+		module: "source-usage",
+		name: "sourceUsageHourlyQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.sourceUsageHourlyQuery(), {
+				...window,
+				sourceId: "src_aXunrkWtzvXSkw9Z2smcft",
+			}),
+	},
+
 	// apps/cli `serviceHasTelemetry`: the `-s <name>` typo check.
 	{
 		module: "services",

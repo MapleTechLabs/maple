@@ -355,7 +355,7 @@ export const SourcesServiceStubsLayer = Layer.mergeAll(
 		roll: die,
 		delete: die,
 	}),
-	Layer.succeed(SourceUsageService, { read: die }),
+	Layer.succeed(SourceUsageService, { read: die, summary: die }),
 )
 
 /** Inert config-resource services for harnesses that never touch those groups. */

@@ -248,6 +248,14 @@ export const V2SourcePauseParams = Schema.Struct({
 })
 export type V2SourcePauseParams = Schema.Schema.Type<typeof V2SourcePauseParams>
 
+const spansField = Schema.Number.annotate({ description: "Spans stored from this source." })
+const logsField = Schema.Number.annotate({ description: "Log records stored from this source." })
+const metricsField = Schema.Number.annotate({ description: "Metric data points stored from this source." })
+const bytesField = Schema.Number.annotate({
+	description:
+		"Estimated bytes stored from this source across all signals. An estimate of stored size, not billed usage.",
+})
+
 export const V2SourceUsage = Schema.Struct({
 	object: Schema.Literal("source_usage"),
 	window_start: Timestamp,
@@ -257,22 +265,77 @@ export const V2SourceUsage = Schema.Struct({
 			hour: Timestamp.annotate({ description: "Start of the hour." }),
 			spans: Schema.Number.annotate({ description: "Spans stored from this source in the hour." }),
 			logs: Schema.Number.annotate({ description: "Log records stored from this source in the hour." }),
+			metrics: Schema.Number.annotate({
+				description: "Metric data points stored from this source in the hour.",
+			}),
+			bytes: Schema.Number.annotate({
+				description: "Estimated bytes stored from this source in the hour, across all signals.",
+			}),
 		}),
 	).annotate({ description: "Hours with data, oldest first. Hours without data are omitted." }),
 }).annotate({
 	identifier: "SourceUsage",
 	title: "Source usage",
-	description: "Hourly span and log counts stored from a source over the last 24 hours.",
+	description:
+		"Hourly span, log and metric data point counts and estimated stored bytes from a source, over 24 whole hours ending with the current one.",
 	examples: [
 		wireExample({
 			object: "source_usage",
 			window_start: "2026-07-14T10:00:00.000Z",
-			window_end: "2026-07-15T10:00:00.000Z",
-			buckets: [{ hour: "2026-07-15T09:00:00.000Z", spans: 51234, logs: 12873 }],
+			window_end: "2026-07-15T09:42:00.000Z",
+			buckets: [
+				{
+					hour: "2026-07-15T09:00:00.000Z",
+					spans: 51234,
+					logs: 12873,
+					metrics: 8400,
+					bytes: 23891200,
+				},
+			],
 		}),
 	],
 })
 export type V2SourceUsage = Schema.Schema.Type<typeof V2SourceUsage>
+
+export const V2SourceUsageSummary = Schema.Struct({
+	object: Schema.Literal("source_usage_summary"),
+	window_start: Timestamp,
+	window_end: Timestamp,
+	data: Schema.Array(
+		Schema.Struct({
+			source_id: SourcePublicId,
+			spans: spansField,
+			logs: logsField,
+			metrics: metricsField,
+			bytes: bytesField,
+		}),
+	).annotate({
+		description:
+			"One entry per source with data in the window, largest first. Sources without data are omitted.",
+	}),
+}).annotate({
+	identifier: "SourceUsageSummary",
+	title: "Source usage summary",
+	description:
+		"Span, log and metric data point counts and estimated stored bytes per source, over 24 whole hours ending with the current one.",
+	examples: [
+		wireExample({
+			object: "source_usage_summary",
+			window_start: "2026-07-14T10:00:00.000Z",
+			window_end: "2026-07-15T09:42:00.000Z",
+			data: [
+				{
+					source_id: "src_aXunrkWtzvXSkw9Z2smcft",
+					spans: 1203400,
+					logs: 302877,
+					metrics: 201600,
+					bytes: 551203840,
+				},
+			],
+		}),
+	],
+})
+export type V2SourceUsageSummary = Schema.Schema.Type<typeof V2SourceUsageSummary>
 
 export const V2SourceDeleteResponse = Schema.Struct({
 	id: SourcePublicId,
@@ -322,6 +385,20 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 				summary: "Create a source",
 				description:
 					"Creates a push source and returns it **with its one-time `secret`**, the token its senders use as their ingest key. Requires an org-admin role and the `sources:write` scope.",
+			}),
+		),
+	)
+	// The router matches static `/usage` before `/:id`; sources.http.test.ts pins it.
+	.add(
+		HttpApiEndpoint.get("usageSummary", "/usage", {
+			success: V2SourceUsageSummary,
+			error: [V2InsufficientPermissions.schema, ...sourceErrors, ...V2WarehouseReadErrors],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "getSourcesUsage",
+				summary: "Retrieve usage for all sources",
+				description:
+					"Returns span, log and metric data point counts and estimated stored bytes per source, over 24 whole hours ending with the current one. Sources without data in the window are omitted. Requires an org-admin role and the `sources:read` scope.",
 			}),
 		),
 	)
@@ -412,7 +489,7 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 				identifier: "getSourceUsage",
 				summary: "Retrieve source usage",
 				description:
-					"Returns hourly span and log counts stored from the source over the last 24 hours. Requires an org-admin role and the `sources:read` scope.",
+					"Returns hourly span, log and metric data point counts and estimated stored bytes from the source, over 24 whole hours ending with the current one. Requires an org-admin role and the `sources:read` scope.",
 			}),
 		),
 	)
