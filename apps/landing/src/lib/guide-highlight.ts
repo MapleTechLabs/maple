@@ -1,7 +1,7 @@
 // Tiny highlighter for guide code blocks. The token classes match the colors a
 // guide uses in its diagrams (metric name, labels, value), so a block reads the
 // same way as the annotated example above it. Style the `tok-*` classes on the page.
-export type GuideLang = "exposition" | "promql" | "yaml" | "python" | "typescript" | "go" | "rust" | "java" | "csharp";
+export type GuideLang = "exposition" | "promql" | "nrql" | "yaml" | "python" | "typescript" | "go" | "rust" | "java" | "csharp";
 
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const span = (cls: string, text: string) => `<span class="tok-${cls}">${escape(text)}</span>`;
@@ -43,6 +43,16 @@ const promql = (code: string) =>
         [promqlFunctions, (m) => span("fn", m[0])],
         [/\b\d+(?:\.\d+)?\b/y, (m) => span("value", m[0])],
         [/[a-zA-Z_:][\w:]*/y, (m) => span("name", m[0])],
+    ]);
+
+// New Relic Query Language: clauses and functions as fn, event types and
+// attributes as names, quoted values as labels.
+const nrql = (code: string) =>
+    tokenize(code, [
+        [/'[^'\n]*'/y, (m) => span("labels", m[0])],
+        [/\b(?:FROM|SELECT|WHERE|FACET|SINCE|UNTIL|TIMESERIES|LIMIT|AND|OR|AS|ago|months?|days?|hours?|sum|latest|count|average|max|min|uniqueCount|rate)\b/y, (m) => span("fn", m[0])],
+        [/\b\d+(?:\.\d+)?\b/y, (m) => span("value", m[0])],
+        [/[a-zA-Z_][\w.]*/y, (m) => span("name", m[0])],
     ]);
 
 const exposition = (code: string) =>
@@ -99,4 +109,4 @@ const java = braces("import|public|static|final|class|void|new|try|throws");
 const csharp = braces("using|var|new|await");
 
 export const highlight = (code: string, lang: GuideLang) =>
-    ({ exposition, promql, yaml, python, typescript, go, rust, java, csharp })[lang](code);
+    ({ exposition, promql, nrql, yaml, python, typescript, go, rust, java, csharp })[lang](code);

@@ -7,48 +7,93 @@ import Breadcrumb from "../../components/Breadcrumb.astro";
 import FAQ from "../../components/FAQ.astro";
 import SeoHead from "../../components/SeoHead.astro";
 import TableOfContents from "../../components/TableOfContents.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { highlight } from "../../lib/guide-highlight";
 import { estimateMaple, estimateVendor } from "../../lib/vendor-pricing";
 
-const pageTitle = "New Relic Pricing 2026: Plans, Free Tier, Per-User and Per-GB Costs";
+const pageTitle = "New Relic pricing: plans, free tier and costs | Maple";
 const pageDescription =
-    "New Relic pricing explained: the free tier's 100 GB and one full user, Standard, Pro and Enterprise plans, user and data rates, Data Plus and a cost example.";
+    "New Relic pricing explained: the free tier's 100 GB, Standard, Pro and Enterprise plans, per-user and per-GB rates, and a worked monthly bill.";
 const published = "2026-10-19";
-const updatedLabel = "October 19, 2026";
-const verified = "2026-10-19";
+const updated = "2026-10-20";
+const updatedLabel = "October 20, 2026";
+const author = CONTRIBUTORS.jeremyfunk;
+const authorUrl = `https://github.com/${author.github}`;
 
 const toc = [
-    ["model", "The pricing model"],
-    ["plans", "Plans"],
-    ["users", "User types"],
-    ["free-tier", "Free tier"],
-    ["data", "Data ingest"],
-    ["compute", "Compute pricing"],
-    ["example", "Cost example"],
-    ["reduce", "Reducing the bill"],
-    ["dynatrace", "Dynatrace vs New Relic"],
-] as const;
-const tocHeadings = toc.map(([slug, text]) => ({ depth: 2, slug, text }));
+    { depth: 2, slug: "model", text: "The pricing model" },
+    { depth: 2, slug: "plans", text: "Plans" },
+    { depth: 3, slug: "standard-ceiling", text: "Standard's five-user limit" },
+    { depth: 3, slug: "terms", text: "Pay-as-you-go or commit" },
+    { depth: 2, slug: "free-tier", text: "Free tier" },
+    { depth: 3, slug: "past-100-gb", text: "Past 100 GB" },
+    { depth: 3, slug: "free-trial", text: "Free trial" },
+    { depth: 2, slug: "rates", text: "User types and data rates" },
+    { depth: 3, slug: "user-types", text: "User types" },
+    { depth: 3, slug: "data-options", text: "Original Data or Data Plus" },
+    { depth: 3, slug: "compute", text: "Compute pricing" },
+    { depth: 2, slug: "example", text: "Cost example" },
+    { depth: 3, slug: "dynatrace", text: "Dynatrace vs New Relic" },
+    { depth: 2, slug: "reduce", text: "Lowering the bill" },
+    { depth: 3, slug: "collector", text: "Filter in a Collector" },
+];
+const sectionNav = toc.filter((h) => h.depth === 2);
 
-// Rates the shared estimator does not model, from newrelic.com/pricing (verified 2026-10-19).
+// One color per billing meter, used by the formula, the meter chart, the
+// user-type badges and the cost bars.
+const meters = {
+    full: { name: "Full platform user", color: "var(--chart-p99)" },
+    core: { name: "Core user", color: "var(--chart-5)" },
+    data: { name: "Data past 100 GB", color: "var(--chart-2)" },
+    free: { name: "Free", color: "var(--chart-3)" },
+};
+
+// Rates the shared estimator does not model, from newrelic.com/pricing.
 const CORE_USER = 49;
 const DATA_PLUS_PER_GB = 0.6;
 const PRO_MONTHLY_PER_USER = 418.8;
 
-const usd = (amount: number) => {
-    const cents = Math.round(amount * 100) / 100;
-    return `$${cents.toLocaleString("en-US", { minimumFractionDigits: Number.isInteger(cents) ? 0 : 2, maximumFractionDigits: 2 })}`;
-};
+const usd = (amount: number) =>
+    `$${amount.toLocaleString("en-US", { minimumFractionDigits: Number.isInteger(amount) ? 0 : 2, maximumFractionDigits: 2 })}`;
 
 const dataGb = 800;
+const billableGb = dataGb - 100;
 const allFull = estimateVendor("new-relic", { fullUsers: 12, dataVolume: dataGb });
 const mixed = estimateVendor("new-relic", { fullUsers: 4, dataVolume: dataGb });
 const [allFullUsers, allFullData] = allFull.breakdown;
 const [mixedFullUsers, mixedData] = mixed.breakdown;
 const coreCost = 8 * CORE_USER;
 const mixedTotal = mixed.total + coreCost;
-const dataPlusCost = (dataGb - 100) * DATA_PLUS_PER_GB;
+const dataPlusCost = billableGb * DATA_PLUS_PER_GB;
 const proMonthlyUsers = 12 * PRO_MONTHLY_PER_USER;
 const maple = estimateMaple("new-relic", { fullUsers: 12, dataVolume: dataGb });
+
+const scenarios = [
+    {
+        label: "A",
+        title: "12 full platform users, Pro annual",
+        total: allFull.total,
+        parts: [
+            { meter: meters.full, value: allFullUsers.value, detail: allFullUsers.detail },
+            { meter: meters.data, value: allFullData.value, detail: `${billableGb} GB × $0.40` },
+        ],
+    },
+    {
+        label: "B",
+        title: "4 full platform + 8 core users, Standard",
+        total: mixedTotal,
+        parts: [
+            { meter: meters.full, value: mixedFullUsers.value, detail: mixedFullUsers.detail },
+            { meter: meters.core, value: coreCost, detail: `8 × $${CORE_USER}` },
+            { meter: meters.data, value: mixedData.value, detail: `${billableGb} GB × $0.40` },
+        ],
+    },
+];
+const maxTotal = Math.max(...scenarios.map((s) => s.total));
+const seatShareA = Math.round((allFullUsers.value / allFull.total) * 100);
+
+// The free-tier meter: 4 px per GB from x = 110.
+const gbX = (gb: number) => 110 + gb * 4;
 
 const ingestQuery = `FROM NrConsumption SELECT sum(GigabytesIngested)
 WHERE productLine = 'DataPlatform'
@@ -56,6 +101,9 @@ SINCE 3 months ago FACET usageMetric TIMESERIES 1 day`;
 
 const userQuery = `FROM NrMTDConsumption SELECT latest(FullPlatformUsersBillable),
   latest(CoreUsersBillable) SINCE 3 hours ago`;
+
+const alertQuery = `FROM NrMTDConsumption SELECT latest(GigabytesIngested)
+WHERE productLine = 'DataPlatform'`;
 
 const collectorConfig = `receivers:
   otlp:
@@ -96,27 +144,32 @@ const faqs = [
     {
         question: "Is New Relic free?",
         answer:
-            "Yes, there is a permanent free tier with no credit card and no time limit. It includes 100 GB of data ingest a month, one full platform user, unlimited basic users, at least 8 days of default retention and 500 synthetic checks. Paid plans start once you need more data or more full platform or core users.",
+            "Yes. The free tier has no time limit and needs no credit card. Each month it includes 100 GB of data ingest, one full platform user, unlimited basic users, at least 8 days of retention and 500 synthetic checks. You pay once you need more data or more full platform or core users.",
     },
     {
-        question: "How is a full platform user billed?",
+        question: "How much does New Relic cost per month?",
         answer:
-            "Per user per calendar month, at the highest user type the person held that month. On Standard the first full platform user is $10 and each additional one is $99, up to five. On Pro each is $349 a month on an annual commitment or $418.80 a month pay-as-you-go. Enterprise is quoted by sales. A user counts as billable once added, even before they log in.",
+            "Users plus data. On Standard, the first full platform user is $10 and each additional one $99, up to five. On Pro each full platform user is $349 a month on an annual term or $418.80 month to month. Core users are $49 on any paid plan, and every GB past the first 100 is $0.40. A 12-person team sending 800 GB pays about $979 a month with 4 full platform and 8 core users on Standard, or $4,468 with all 12 on Pro.",
     },
     {
         question: "What happens past 100 GB on the New Relic free tier?",
         answer:
-            "At 85% of the 100 GB you get an email and an in-app alert. Once a Free account passes 100 GB in a month, New Relic stops ingesting data and you lose access to the platform until you upgrade or the next month starts. On paid plans the first 100 GB is still free and every GB after it is billed at $0.40 (Original Data) or $0.60 (Data Plus).",
+            "New Relic sends an email and an in-app alert at 85% of the 100 GB. Once a Free account passes 100 GB in a calendar month, data ingest stops and you lose access to the platform until you upgrade or the first day of the next month. On a paid plan the first 100 GB stays free and every GB after it is billed.",
     },
     {
         question: "Is there a New Relic free trial?",
         answer:
-            "New Relic does not advertise a time-limited trial of its paid plans. The free tier takes its place: it does not expire and includes one full platform user, so you can try the curated APM, infrastructure and browser views on 100 GB a month before paying.",
+            "New Relic does not advertise a time-limited trial of Standard or Pro. The free tier does not expire and includes one full platform user, so one person can use the APM, infrastructure and browser views on up to 100 GB a month before paying.",
+    },
+    {
+        question: "Does New Relic charge per host?",
+        answer:
+            "No. Hosts, agents and containers are not counted. A host costs only the data it sends, so 10 hosts and 1,000 hosts pay the same user fees.",
     },
     {
         question: "Is New Relic cheaper than Dynatrace?",
         answer:
-            "It depends on the workload. New Relic charges per full platform user and per GB, with hosts free. Dynatrace charges per host or memory-GiB-hour and per GiB of logs and traces, with no per-user fee, under an annual commitment. A small team monitoring many hosts usually pays less on New Relic; a large team on few hosts often pays less on Dynatrace. Price your own host count, team size and data volume on both.",
+            "It depends on team size and host count. New Relic bills per full platform user and per GB, with hosts free. Dynatrace bills per host (by memory for full-stack monitoring) and per GiB of logs and traces, with no user fee, under an annual commitment. A small team on many hosts usually pays less on New Relic; a large team on few hosts often pays less on Dynatrace.",
     },
 ];
 
@@ -124,11 +177,11 @@ const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev"
 const articleJsonLd = {
     "@context": "https://schema.org",
     "@type": "TechArticle",
-    headline: "New Relic pricing: plans, free tier and what a team pays",
+    headline: "New Relic pricing, explained",
     description: pageDescription,
     datePublished: published,
-    dateModified: published,
-    author: { "@type": "Organization", name: "Maple" },
+    dateModified: updated,
+    author: { "@type": "Person", name: author.name, url: authorUrl },
     publisher: {
         "@type": "Organization",
         name: "Maple",
@@ -158,327 +211,413 @@ const articleJsonLd = {
                 style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
             >
             </div>
-            <div class="relative mx-auto grid max-w-6xl gap-12 px-6 pb-16 pt-20 md:pb-24 md:pt-28 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.75fr)] lg:items-center lg:gap-16">
-                <div>
-                    <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
-                        <span class="border border-primary/40 px-2 py-1 text-primary">Pricing</span>
-                        <span>11 min read</span>
-                    </div>
-                    <h1 class="mt-6 max-w-[16ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
-                        New Relic pricing: plans, free tier and what a team pays
-                    </h1>
-                    <p class="mt-7 max-w-[62ch] text-[15px] leading-[1.75] text-fg-muted md:text-base">
-                        New Relic bills two things: the users who need its full product, and every GB you send past the first 100 a month. Hosts, agents and containers are not counted. This guide covers the published rates, the free tier's limits, and what a 12-person team pays.
-                    </p>
-                    <div class="mt-7 flex flex-wrap gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
-                        <span>By Maple</span>
-                        <time datetime={published}>Updated {updatedLabel}</time>
-                        <span>Prices last verified {verified}</span>
-                    </div>
+            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-20 md:pt-28">
+                <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                    <span class="border border-primary/40 px-2 py-1 text-primary">Pricing</span>
+                    <span>9 min read</span>
                 </div>
-
-                <div class="rounded-xl border border-border bg-bg-deep p-4 shadow-2xl shadow-black/20 md:p-5" aria-label="New Relic pricing at a glance">
-                    <div class="flex items-center justify-between border-b border-border pb-3 font-mono text-[10px] text-fg-muted">
-                        <span>new relic / list prices</span>
-                        <span class="text-primary">USD / month</span>
-                    </div>
-                    <ol class="divide-y divide-border">
-                        {[
-                            ["01", "Free tier", "100 GB, 1 full platform user", "$0, no expiry"],
-                            ["02", "Data", "$0.40/GB past 100 GB", "$0.60 with Data Plus"],
-                            ["03", "Full platform user", "Standard $10 first, $99 after", "Pro $349 annual"],
-                            ["04", "Core user", "$49 on any paid plan", "logs, errors, IDE"],
-                            ["05", "Basic user", "Unlimited", "$0"],
-                        ].map(([number, label, headline, detail]) => (
-                            <li class="grid grid-cols-[2rem_1fr] gap-3 py-3.5">
-                                <span class="font-mono text-[10px] text-primary">{number}</span>
-                                <div>
-                                    <div class="flex items-baseline justify-between gap-3">
-                                        <span class="text-xs font-medium text-fg">{label}</span>
-                                        <span class="font-mono text-[9px] text-fg-muted">{detail}</span>
-                                    </div>
-                                    <p class="mt-1 text-[11px] leading-relaxed text-fg-muted">{headline}</p>
-                                </div>
-                            </li>
-                        ))}
-                    </ol>
+                <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                    New Relic pricing, explained
+                </h1>
+                <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
+                    How users and gigabytes add up to a monthly bill, what the free tier covers, and what a 12-person team pays.
+                </p>
+                <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                    <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                        <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <span>By {author.name}</span>
+                    </a>
+                    <time datetime={updated}>Updated {updatedLabel}</time>
+                    <span>Prices verified on newrelic.com/pricing, {updatedLabel}</span>
                 </div>
             </div>
         </header>
 
         <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
             <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
-                {toc.map(([id, label]) => (
-                    <a href={`#${id}`} class="transition-colors hover:text-primary">{label}</a>
+                {sectionNav.map((h) => (
+                    <a href={`#${h.slug}`} class="transition-colors hover:text-primary">{h.text}</a>
                 ))}
             </div>
         </nav>
 
         <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
             <aside class="hidden lg:block">
-                <TableOfContents headings={tocHeadings} class="sticky top-28" />
+                <TableOfContents headings={toc} class="sticky top-28" />
             </aside>
 
             <article class="nr-guide min-w-0">
                 <section id="model" class="scroll-mt-24">
-                    <p class="guide-eyebrow">01 · Pricing model</p>
-                    <h2>The New Relic pricing model: users plus GB ingested</h2>
+                    <p class="guide-eyebrow"><span>01</span> · Pricing model</p>
+                    <h2>The New Relic pricing model</h2>
 
                     <div class="guide-answer">
-                        <p>
-                            A New Relic bill is <strong>billable users</strong> plus <strong>data ingested</strong> beyond a free <strong>100 GB per month</strong>. Full platform users cost $10 to $418.80 a month each depending on plan and term, core users $49, basic users nothing. Data costs <strong>$0.40 per GB</strong>, or $0.60 with Data Plus. Prices last verified {verified}.
-                        </p>
+                        <p>New Relic charges for two things: the people who use it and the data you send it. The first 100 GB of data each month is free, and every GB after that costs $0.40.</p>
                     </div>
 
                     <p>
-                        The bill has four inputs. The <strong>edition</strong> (Free, Standard, Pro or Enterprise) sets the per-user price and the support level. <strong>Users</strong> are billed by type, and only core and full platform users cost money. <strong>GB ingested</strong> is the data New Relic stores after your trimming and transformation rules run, rounded up to the next whole GB each month. <strong>Add-ons</strong> cover extra retention, synthetic checks beyond the included amount ($0.005 per check), the EU data center and Advanced Compute features.
+                        People are billed by <strong>user type</strong>. Only two of the three types cost money, and the most expensive one, the full platform user, changes price with your plan. The plan, called an <strong>edition</strong> (Free, Standard, Pro or Enterprise), also sets the support level and how many full platform users you can add.
+                    </p>
+
+                    <figure class="formula" aria-label="The monthly bill is full platform users times $10 to $418.80 each, plus core users times $49, plus every GB past the first 100 times $0.40. Basic users, hosts, agents, containers and the first 100 GB cost nothing.">
+                        <div class="formula__row" aria-hidden="true">
+                            <div class="formula__term" style={`--meter: ${meters.full.color}`}>
+                                <span class="formula__label">Full platform users</span>
+                                <strong>× $10 to $418.80</strong>
+                                <span class="formula__note">by edition and term</span>
+                            </div>
+                            <span class="formula__op">+</span>
+                            <div class="formula__term" style={`--meter: ${meters.core.color}`}>
+                                <span class="formula__label">Core users</span>
+                                <strong>× $49</strong>
+                                <span class="formula__note">paid editions only</span>
+                            </div>
+                            <span class="formula__op">+</span>
+                            <div class="formula__term" style={`--meter: ${meters.data.color}`}>
+                                <span class="formula__label">GB past the first 100</span>
+                                <strong>× $0.40</strong>
+                                <span class="formula__note">$0.60 with Data Plus</span>
+                            </div>
+                            <span class="formula__op">=</span>
+                            <div class="formula__term formula__term--total">
+                                <span class="formula__label">Monthly bill</span>
+                                <strong>USD</strong>
+                                <span class="formula__note">plus add-ons</span>
+                            </div>
+                        </div>
+                        <p class="formula__free" aria-hidden="true" style={`--meter: ${meters.free.color}`}><span>$0</span> Basic users, hosts, agents, containers and the first 100 GB</p>
+                    </figure>
+
+                    <p>
+                        Hosts are not counted at all. A fleet of 10 hosts and a fleet of 1,000 pay the same user fees and differ only in the GB they send. GB ingested is measured after your drop rules run and is rounded up to the next whole GB each month.
                     </p>
                     <p>
-                        There is no per-host or per-CPU charge. Running 10 or 1,000 hosts costs the same in licenses; the difference shows up only in the GB they send. The model favors small teams running large fleets, and costs the most where many engineers need the APM views.
-                    </p>
-                    <p>
-                        A second model, <strong>Data + Core Compute</strong>, replaces user licenses with a charge for the compute each query and page load consumes. It is covered in <a href="#compute">compute pricing</a> below.
+                        Smaller charges sit on top: synthetic checks past the included 500 cost $0.005 each, storing data in the EU region adds $0.05 per GB, and extended retention and Advanced Compute are add-ons. Pro and Enterprise accounts can also swap user fees for compute pricing, covered under <a href="#compute">compute pricing</a>.
                     </p>
                 </section>
 
                 <section id="plans" class="scroll-mt-24">
-                    <p class="guide-eyebrow">02 · Editions</p>
+                    <p class="guide-eyebrow"><span>02</span> · Editions</p>
                     <h2>New Relic plans: Free, Standard, Pro and Enterprise</h2>
                     <p>
-                        All four editions include unlimited basic users and the same first 100 GB of free data each month. They differ in how many full platform users you can add, what each costs, and the support and compliance terms.
+                        Every edition includes unlimited basic users and the same free 100 GB a month. They differ in the price and number of full platform users, and in support and compliance terms.
                     </p>
 
-                    <div class="overflow-x-auto">
+                    <div class="guide-table">
                         <table>
                             <thead>
-                                <tr><th>Edition</th><th>Full platform user</th><th>Core user</th><th>Data past 100 GB</th><th>Limits and terms</th></tr>
+                                <tr><th>Edition</th><th>Full platform user</th><th>Core user</th><th>Data past 100 GB</th><th>Terms</th></tr>
                             </thead>
                             <tbody>
-                                <tr><td><strong>Free</strong></td><td>1 user, $0</td><td>Not available</td><td>Ingest stops at 100 GB</td><td>No credit card, no expiry, at least 8 days of retention, 500 synthetic checks</td></tr>
-                                <tr><td><strong>Standard</strong></td><td>$10 for the first, $99 each after</td><td>$49</td><td>$0.40/GB, $0.60 Data Plus</td><td>Up to 5 full platform users, pay-as-you-go, ticket support with a 2 business day response</td></tr>
-                                <tr><td><strong>Pro</strong></td><td>$349 annual, $418.80 monthly</td><td>$49</td><td>$0.40/GB, $0.60 Data Plus</td><td>Unlimited users, commitment discounts, 2 hour response for critical issues, optional compute pricing</td></tr>
-                                <tr><td><strong>Enterprise</strong></td><td>Contact sales</td><td>$49</td><td>Contact sales</td><td>1 hour critical response, FedRAMP Moderate and HIPAA eligibility with Data Plus, custom pricing</td></tr>
+                                <tr><td><strong>Free</strong></td><td>1 user, $0</td><td>Not offered</td><td>Ingest stops</td><td>No credit card, no expiry</td></tr>
+                                <tr><td><strong>Standard</strong></td><td>$10 first, $99 each after, 5 max</td><td>$49</td><td>$0.40/GB</td><td>Pay-as-you-go, ticket support</td></tr>
+                                <tr><td><strong>Pro</strong></td><td>$349 annual, $418.80 monthly</td><td>$49</td><td>$0.40/GB</td><td>Unlimited users, commitment discounts</td></tr>
+                                <tr><td><strong>Enterprise</strong></td><td>Contact sales</td><td>$49</td><td>Contact sales</td><td>FedRAMP and HIPAA eligibility, custom terms</td></tr>
                             </tbody>
                         </table>
                     </div>
 
+                    <h3 id="standard-ceiling" class="scroll-mt-24">Standard's five-user limit</h3>
                     <p>
-                        Standard's five-user ceiling decides most upgrades. A sixth engineer who needs APM moves the whole account to Pro, and the per-user price jumps from $99 to $349. Five Standard users cost $406 a month; six Pro users cost $2,094 on an annual term.
+                        Standard allows five full platform users. A sixth person who needs the APM views moves the account to Pro, where every full platform user costs $349 instead of $99. Five Standard users cost $406 a month; six Pro users on an annual term cost $2,094.
                     </p>
                     <p>
-                        Pay-as-you-go on Standard and Pro is billed at the end of each calendar month with no commitment beyond it. Pro and Enterprise customers can sign a commitment contract for volume discounts, and New Relic says unused committed funds roll over for up to 12 months. New Relic also runs discount programs for startups and nonprofits.
-                    </p>
-                </section>
-
-                <section id="users" class="scroll-mt-24">
-                    <p class="guide-eyebrow">03 · Seats</p>
-                    <h2>User types: basic, core and full platform</h2>
-                    <p>
-                        The user type controls what a person sees and what they cost. New Relic's docs describe it as a billing decision; roles still control permissions.
+                        The limit counts full platform users only. Core and basic users are unlimited on Standard, which is why the cheaper option in the <a href="#example">cost example</a> stays on Standard with 12 people.
                     </p>
 
-                    <div class="guide-signal-list">
-                        <div><span>Basic</span><p><strong>Free, unlimited.</strong> Set up instrumentation, run NRQL queries, build custom dashboards, create basic alerts, and search and view logs. No access to the curated APM, browser, mobile or infrastructure UIs.</p></div>
-                        <div><span>Core</span><p><strong>$49 a month on paid plans.</strong> Everything a basic user has, plus the full logs UI, errors inbox, the CodeStream IDE extension, apps from the app catalog, and account and billing administration. Still no curated APM views.</p></div>
-                        <div><span>Full platform</span><p><strong>$10 to $418.80 a month depending on edition.</strong> Every feature, including the curated APM, infrastructure, Kubernetes, browser, mobile and synthetics experiences.</p></div>
-                    </div>
-
-                    <h3>How users are counted</h3>
+                    <h3 id="terms" class="scroll-mt-24">Pay-as-you-go or a commitment</h3>
                     <p>
-                        Billing runs per calendar month in UTC, and each person is billed at the <strong>highest user type they held during that month</strong>. Promoting someone to full platform for one afternoon of incident work bills a full month. A user is billable as soon as they are added, whether or not they have logged in, and two accounts with the same email count once. On committed contracts, a user who goes through two downgrade and upgrade cycles in a contract year is billed as full platform for the rest of that year.
+                        Standard and Pro can run pay-as-you-go: New Relic bills at the end of each calendar month, with no commitment past it. Pro's annual price is 17% below its monthly price. Pro and Enterprise customers can also sign a commitment contract for volume discounts. New Relic runs programs for startups and nonprofits and does not publish their discounts.
                     </p>
                 </section>
 
                 <section id="free-tier" class="scroll-mt-24">
-                    <p class="guide-eyebrow">04 · Free tier</p>
-                    <h2>The New Relic free tier and its limits</h2>
+                    <p class="guide-eyebrow"><span>03</span> · Free tier</p>
+                    <h2>The New Relic free tier</h2>
                     <p>
-                        New Relic's free tier is permanent and needs no credit card. Each month it includes:
+                        The free tier is permanent and needs no credit card. Each month it includes:
                     </p>
 
                     <div class="guide-checklist">
                         {[
-                            ["100 GB of data ingest", "Logs, metrics, traces and events combined, measured after your drop and transformation rules."],
-                            ["1 full platform user", "Access to every curated view, so one person can evaluate the full product."],
-                            ["Unlimited basic users", "Dashboards, NRQL queries and basic alerts for the rest of the team."],
-                            ["At least 8 days of retention", "The Original Data default. Some data types keep longer, for example logs at 30 days."],
-                            ["500 synthetic checks", "Each synthetic monitor run counts as one check."],
-                            ["Hosts and agents", "No limit on how many you instrument; only the data counts."],
+                            ["100 GB of data ingest", "Logs, metrics, traces and events combined, counted after your drop rules."],
+                            ["1 full platform user", "One person gets every curated view, including APM, infrastructure and browser monitoring."],
+                            ["Unlimited basic users", "Everyone else can query data, build dashboards and set basic alerts."],
+                            ["At least 8 days of retention", "The default for most data types. Some keep data longer."],
+                            ["500 synthetic checks", "Each run of a synthetic monitor is one check."],
+                            ["Any number of hosts", "Instrument as many as you like; only their data counts."],
                         ].map(([title, body], index) => (
-                            <div><span>{String(index + 1).padStart(2, "0")}</span><div><h3>{title}</h3><p>{body}</p></div></div>
+                            <div><span>{String(index + 1).padStart(2, "0")}</span><div><h4>{title}</h4><p>{body}</p></div></div>
                         ))}
                     </div>
 
-                    <h3>Past 100 GB on the free tier</h3>
+                    <h3 id="past-100-gb" class="scroll-mt-24">Past 100 GB</h3>
                     <p>
-                        At 85% of the allowance New Relic sends an email and an in-app alert. Once a Free account passes 100 GB in a calendar month, <strong>ingest stops and you lose access to the platform</strong> until you upgrade or the first day of the next month. A spike in logs late in the month can leave you without telemetry for days, so set a usage alert well before 85% (the queries are in <a href="#reduce">reducing the bill</a>).
+                        The same 100 GB allowance behaves differently on the free tier and on a paid plan once a month's data runs past it:
                     </p>
 
-                    <h3>No separate free trial</h3>
+                    <figure class="meter" aria-label="Data ingested during a month, from 0 to 140 GB. At 85 GB New Relic sends an email and an in-app alert. On the free tier, ingest and platform access stop at 100 GB. On a paid plan, data past 100 GB keeps flowing and is billed at $0.40 per GB.">
+                        <svg viewBox="0 0 700 172" aria-hidden="true">
+                            <text x="0" y="66" class="meter__lane">Free</text>
+                            <rect x={gbX(0)} y="48" width={gbX(100) - gbX(0)} height="26" rx="4" class="meter__free" />
+                            <text x={(gbX(0) + gbX(100)) / 2} y="66" text-anchor="middle" class="meter__inbar">100 GB included</text>
+                            <rect x={gbX(100)} y="44" width="4" height="34" rx="1" class="meter__stop" />
+                            <text x={gbX(100) + 14} y="66" class="meter__mono meter__mono--stop">ingest and access stop</text>
+
+                            <text x="0" y="114" class="meter__lane">Paid plans</text>
+                            <rect x={gbX(0)} y="96" width={gbX(100) - gbX(0)} height="26" rx="4" class="meter__free" />
+                            <text x={(gbX(0) + gbX(100)) / 2} y="114" text-anchor="middle" class="meter__inbar">100 GB included</text>
+                            <rect x={gbX(100) + 2} y="96" width={gbX(140) - gbX(100) - 2} height="26" rx="4" class="meter__billed" />
+                            <text x={(gbX(100) + gbX(140)) / 2 + 1} y="114" text-anchor="middle" class="meter__inbar">$0.40 per GB</text>
+
+                            <line x1={gbX(85)} y1="30" x2={gbX(85)} y2="132" class="meter__alert" />
+                            <text x={gbX(85)} y="20" text-anchor="middle" class="meter__mono meter__mono--alert">85 GB: email and in-app alert</text>
+
+                            <line x1={gbX(0)} y1="140" x2={gbX(140)} y2="140" class="meter__axis" />
+                            {[0, 85, 100, 140].map((gb) => (
+                                <g>
+                                    <line x1={gbX(gb)} y1="140" x2={gbX(gb)} y2="145" class="meter__axis" />
+                                    <text x={gbX(gb)} y="160" text-anchor="middle" class="meter__mono">{gb} GB</text>
+                                </g>
+                            ))}
+                        </svg>
+                    </figure>
+                    <p class="guide-caption">One calendar month of ingest. The allowance resets on the first day of each month.</p>
+
                     <p>
-                        New Relic does not advertise a time-limited trial of Standard or Pro. The free tier is the evaluation path: it includes one full platform user, so the curated views are available from day one.
+                        On the free tier, passing 100 GB stops ingest <strong>and</strong> locks you out of the platform until you upgrade or the month ends. A burst of debug logs in the third week can leave you without data or dashboards for the rest of the month. Alert on your own usage well before New Relic's 85% email; the query is under <a href="#measure">measure ingest and seats</a>.
+                    </p>
+
+                    <h3 id="free-trial" class="scroll-mt-24">Is there a free trial?</h3>
+                    <p>
+                        New Relic does not advertise a time-limited trial of Standard or Pro. The free tier takes its place: its one full platform user sees the same curated views a paid user does, on up to 100 GB a month, with no end date.
                     </p>
                 </section>
 
-                <section id="data" class="scroll-mt-24">
-                    <p class="guide-eyebrow">05 · Data</p>
-                    <h2>Data ingest: Original Data vs Data Plus</h2>
-                    <p>
-                        Every account picks one data option. Both start billing after the same free 100 GB.
-                    </p>
+                <section id="rates" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>04</span> · Rates</p>
+                    <h2>User types and data rates</h2>
 
-                    <div class="overflow-x-auto">
+                    <h3 id="user-types" class="scroll-mt-24">Basic, core and full platform users</h3>
+                    <p>
+                        A user type decides which parts of New Relic a person can open and what they cost. Roles still control permissions; the type only changes access to features and the bill.
+                    </p>
+                    <div class="user-types">
+                        <div class="user-types__row" style="--meter: var(--muted-foreground)">
+                            <span class="meter-badge">Basic · $0</span>
+                            <p>Unlimited. Set up instrumentation, run NRQL queries, build custom dashboards and basic alerts. No curated APM, browser, mobile or infrastructure views.</p>
+                        </div>
+                        <div class="user-types__row" style={`--meter: ${meters.core.color}`}>
+                            <span class="meter-badge">Core · $49</span>
+                            <p>Paid editions only. Adds the logs UI, errors inbox, the CodeStream IDE extension, and user and billing management. Still no curated APM views.</p>
+                        </div>
+                        <div class="user-types__row" style={`--meter: ${meters.full.color}`}>
+                            <span class="meter-badge">Full platform · $10 to $418.80</span>
+                            <p>Every feature, including APM, infrastructure, Kubernetes, browser, mobile and synthetics. The price depends on edition and term.</p>
+                        </div>
+                    </div>
+
+                    <div class="guide-callout">
+                        <p class="guide-kicker">How New Relic counts users</p>
+                        <p>
+                            Billing runs per calendar month in UTC, and each person pays for the <strong>highest type they held that month</strong>. Promoting someone to full platform for one afternoon of incident work bills them for the whole month. A user is billable from the moment they are added, before their first login, and accounts with the same email count once. On a commitment contract, a full platform user downgraded and upgraded again twice in a contract year stays billed as full platform for the rest of that year.
+                        </p>
+                    </div>
+
+                    <h3 id="data-options" class="scroll-mt-24">Original Data or Data Plus</h3>
+                    <p>
+                        Each account picks one data option, and both bill from the 101st GB.
+                    </p>
+                    <div class="guide-table">
                         <table>
                             <thead>
                                 <tr><th></th><th>Original Data</th><th>Data Plus</th></tr>
                             </thead>
                             <tbody>
-                                <tr><td>Price per GB past 100 GB (Standard, Pro)</td><td>$0.40</td><td>$0.60</td></tr>
-                                <tr><td>Retention</td><td>Default, at least 8 days</td><td>Up to 90 days more than the default</td></tr>
+                                <tr><td>Per GB past 100 GB</td><td>$0.40</td><td>$0.60</td></tr>
+                                <tr><td>Retention</td><td>At least 8 days by default</td><td>Up to 90 days more</td></tr>
                                 <tr><td>Compliance</td><td>Standard</td><td>FedRAMP Moderate and HIPAA eligibility on Enterprise</td></tr>
-                                <tr><td>Extras</td><td>None</td><td>Advanced log obfuscation, enhanced streaming and historical data export</td></tr>
-                                <tr><td>EU data center</td><td>+$0.05/GB</td><td>+$0.05/GB</td></tr>
+                                <tr><td>Extras</td><td>None</td><td>Log obfuscation, streaming and historical data export</td></tr>
                             </tbody>
                         </table>
                     </div>
+                    <p>
+                        Data Plus costs 50% more per GB, so it pays off when you need the retention or the compliance eligibility. Some data never counts toward GB ingested: basic alerting data, aggregated infrastructure data and dimensional metrics, golden metrics, synthetic check results, and New Relic's own usage and audit events.
+                    </p>
 
+                    <h3 id="compute" class="scroll-mt-24">Compute pricing (CCUs)</h3>
                     <p>
-                        Data Plus raises every GB by 50%, so it pays off only when you need the longer retention or the compliance eligibility. Teams that only want longer retention can buy the extended retention add-on instead, and logs can go to Live Archives for up to seven years.
+                        Pro and Enterprise can replace user fees with <strong>Core Compute</strong>. You still pay for data, plus <strong>compute capacity units (CCUs)</strong>: the capacity each successful action you run consumes, such as loading a page or running a query. Every user gets full platform access. Requests that fail on New Relic's side and queries that analyze your own usage are free. New Relic does not publish a per-CCU price, and its billing docs list Core Compute as a public preview arranged through an account executive.
                     </p>
                     <p>
-                        Some data does not count toward GB ingested, including aggregated infrastructure data, dimensional and golden metrics, synthetic check results and New Relic's own usage events. New Relic does not charge for data egress or rehydration.
-                    </p>
-                </section>
-
-                <section id="compute" class="scroll-mt-24">
-                    <p class="guide-eyebrow">06 · Compute</p>
-                    <h2>Compute-based pricing (CCUs)</h2>
-                    <p>
-                        On Pro and Enterprise, New Relic offers a consumption model that drops user licenses entirely. You pay for data ingest as usual, plus <strong>compute capacity units (CCUs)</strong>: the capacity consumed by each successful customer-initiated action, such as loading a page or running a query. Every user gets full platform access. Failed requests caused by New Relic errors and queries that analyze your own usage are not charged.
-                    </p>
-                    <p>
-                        New Relic does not publish a per-CCU price; it varies by edition and is quoted by sales. Its billing docs list Core Compute as in preview, available through an account executive. Budgets with threshold alerts are available to cap spend.
-                    </p>
-                    <p>
-                        <strong>Advanced Compute</strong> is a separate add-on, billed in advanced CCUs, for the AI, automation and security features such as New Relic AI and workflow automation. It applies under either model, and even basic users can generate Advanced Compute charges.
+                        <strong>Advanced Compute</strong> is a separate add-on, billed in advanced CCUs, for New Relic's AI, automation and security features. It applies on either model, and basic users can run up charges with it too.
                     </p>
                 </section>
 
                 <section id="example" class="scroll-mt-24">
-                    <p class="guide-eyebrow">07 · Worked example</p>
+                    <p class="guide-eyebrow"><span>05</span> · Worked example</p>
                     <h2>New Relic cost: a worked monthly example</h2>
                     <p>
-                        A team of 12 engineers sends {dataGb} GB of logs, traces and metrics a month to New Relic's US region on Original Data. Hosts are free, so only the users and the 700 billable GB matter. The user mix changes the bill more than anything else.
+                        A team of 12 engineers sends {dataGb} GB of logs, traces and metrics a month to the US region on Original Data. Hosts cost nothing, so the bill comes from the users and the {billableGb} GB past the free 100. Two ways to staff the same team:
                     </p>
 
-                    <div class="overflow-x-auto">
-                        <table>
-                            <thead>
-                                <tr><th>Line item</th><th>A: all 12 on full platform (Pro, annual)</th><th>B: 4 full platform + 8 core (Standard)</th></tr>
-                            </thead>
-                            <tbody>
-                                <tr><td>Full platform users</td><td>{allFullUsers.detail} = {usd(allFullUsers.value)}</td><td>{mixedFullUsers.detail} = {usd(mixedFullUsers.value)}</td></tr>
-                                <tr><td>Core users</td><td>None</td><td>8 × ${CORE_USER} = {usd(coreCost)}</td></tr>
-                                <tr><td>Data ingest</td><td>700 GB × $0.40 = {usd(allFullData.value)}</td><td>700 GB × $0.40 = {usd(mixedData.value)}</td></tr>
-                                <tr><td><strong>Monthly total</strong></td><td><strong>{usd(allFull.total)}</strong></td><td><strong>{usd(mixedTotal)}</strong></td></tr>
-                            </tbody>
-                        </table>
-                    </div>
+                    <figure class="bars" aria-label={`Monthly cost of two options. Option A, 12 full platform users on Pro annual: ${usd(allFull.total)}, of which ${usd(allFullUsers.value)} is users and ${usd(allFullData.value)} is data. Option B, 4 full platform users and 8 core users on Standard: ${usd(mixedTotal)}, of which ${usd(mixedFullUsers.value)} is full platform users, ${usd(coreCost)} core users and ${usd(mixedData.value)} data.`}>
+                        <div class="bars__legend" aria-hidden="true">
+                            {[meters.full, meters.core, meters.data].map((m) => (
+                                <span style={`--meter: ${m.color}`}><i></i>{m.name}</span>
+                            ))}
+                        </div>
+                        <div class="bars__rows" aria-hidden="true">
+                            {scenarios.map((s) => (
+                                <div class="bars__row">
+                                    <div class="bars__head">
+                                        <span><strong>{s.label}</strong> {s.title}</span>
+                                        <strong class="bars__total">{usd(s.total)}</strong>
+                                    </div>
+                                    <div class="bars__track">
+                                        {s.parts.map((p) => (
+                                            <span class="bars__seg" style={`--meter: ${p.meter.color}; width: ${(p.value / maxTotal) * 100}%`}></span>
+                                        ))}
+                                    </div>
+                                    <div class="bars__parts">
+                                        {s.parts.map((p) => (
+                                            <span style={`--meter: ${p.meter.color}`}><i></i>{p.detail} = {usd(p.value)}</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <figcaption>Both bars on one scale. The data cost is the same {usd(allFullData.value)} in both; in option A, users are {seatShareA}% of the bill.</figcaption>
+                    </figure>
 
                     <p>
-                        Option B stays on Standard because its five-user limit applies to full platform users, and only four people hold one. It works when the eight core users can live without the curated APM and infrastructure views, which in practice means the people not on call.
+                        Option B stays on Standard because the five-user limit counts only full platform users. It works if the eight core users can do without the curated APM and infrastructure views, which usually means the people who are not on call.
                     </p>
 
                     <h3>How the total moves</h3>
-                    <div class="guide-signal-list">
-                        <div><span>Data Plus</span><p>700 GB × $0.60 = {usd(dataPlusCost)} instead of {usd(allFullData.value)}, adding {usd(dataPlusCost - allFullData.value)} to either option.</p></div>
-                        <div><span>Pro monthly</span><p>Option A without an annual commitment: 12 × $418.80 = {usd(proMonthlyUsers)} for users, {usd(proMonthlyUsers - allFullUsers.value)} more a month.</p></div>
-                        <div><span>A 13th user</span><p>On option A, another {usd(allFullUsers.value / 12)} a month. Doubling data to 1,600 GB adds {usd(800 * 0.4)}.</p></div>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Change</th><th>Effect</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Switch to Data Plus</td><td>{billableGb} GB × $0.60 = {usd(dataPlusCost)}, {usd(dataPlusCost - allFullData.value)} more on either option</td></tr>
+                                <tr><td>Option A month to month</td><td>12 × $418.80 = {usd(proMonthlyUsers)} for users, {usd(proMonthlyUsers - allFullUsers.value)} more</td></tr>
+                                <tr><td>A 13th full platform user on A</td><td>$349 more</td></tr>
+                                <tr><td>Double the data to 1,600 GB</td><td>{usd(800 * 0.4)} more</td></tr>
+                            </tbody>
+                        </table>
                     </div>
-
                     <p>
-                        For comparison, the same {dataGb} GB on Maple's Startup plan is estimated at {usd(maple.total)} a month, with no per-user fee: $39 including 100 GB per signal, then $0.30 per GB, assuming the volume splits evenly across logs, traces and metrics. The <a href="/compare/new-relic">Maple vs New Relic comparison</a> has a calculator for your own numbers, and <a href="/pricing">Maple pricing</a> lists the plan.
-                    </p>
-                </section>
-
-                <section id="reduce" class="scroll-mt-24">
-                    <p class="guide-eyebrow">08 · Cost control</p>
-                    <h2>Ways to reduce a New Relic bill</h2>
-
-                    <h3>Measure ingest and seats first</h3>
-                    <p>
-                        New Relic records its own usage in the <code>NrConsumption</code> and <code>NrMTDConsumption</code> event types, which do not count toward ingest. This query from New Relic's docs breaks daily GB down by source:
-                    </p>
-                    <pre><code>{ingestQuery}</code></pre>
-                    <p>And this one returns the month-to-date billable user counts:</p>
-                    <pre><code>{userQuery}</code></pre>
-                    <p>
-                        Put an alert on the first query at a daily GB rate that would cross your budget, or 85 GB for the month on the free tier.
+                        For comparison, the same {dataGb} GB on Maple's Startup plan comes to about {usd(maple.total)} a month with no per-user fee: $39 including 100 GB per signal, then $0.30 per GB, assuming the volume splits evenly across logs, traces and metrics. The <a href="/compare/new-relic">Maple vs New Relic comparison</a> has a calculator for your own numbers.
                     </p>
 
-                    <h3>Review who holds full platform seats</h3>
+                    <h3 id="dynatrace" class="scroll-mt-24">Dynatrace vs New Relic pricing</h3>
                     <p>
-                        Seats usually outweigh data, as the worked example shows. Downgrade people who only read dashboards to basic, and people who mostly work in logs and errors to core. Because the highest type in a month is what gets billed, make the change at the start of a month, and on a committed contract keep each person's type stable to avoid the two-cycle rule.
+                        The two vendors bill different things. New Relic counts people and GB and ignores hosts. Dynatrace counts hosts and GiB of logs and traces, charges nothing per user, and sells through an annual minimum commitment.
                     </p>
-
-                    <h3>Drop data before it is billed</h3>
-                    <p>
-                        Ingest is measured after New Relic's processing rules, so dropped data is never billed. NRQL drop rules reached end of life on June 30, 2026, and <strong>Pipeline Control</strong> replaces them: cloud rules drop data inside New Relic, and the gateway runs in your own Kubernetes cluster and filters data before it leaves your network. Dropped data cannot be recovered.
-                    </p>
-                    <p>
-                        If you already send OpenTelemetry, the Collector can do the same filtering in your own infrastructure. This configuration drops logs below INFO and sends traces and logs to New Relic's OTLP endpoint. It also sends a copy to Maple, which lets you compare bills on identical data before deciding anything; remove the Maple exporter if you only want the filter.
-                    </p>
-                    <pre><code>{collectorConfig}</code></pre>
-                    <p>
-                        Other levers on the same pipeline: sample traces (see <a href="/docs/concepts/sampling-throughput">how Maple keeps throughput accurate under sampling</a>), drop high-cardinality attributes you never query, and stop shipping health check spans and debug logs from production.
-                    </p>
-
-                    <h3>Commit once usage is stable</h3>
-                    <p>
-                        Pro's annual price is 17% below its monthly price ($349 vs $418.80 per full platform user), and commitment contracts add volume discounts on top. Commit only after a few months of measured usage, since the commitment is owed whether you use it or not.
-                    </p>
-                </section>
-
-                <section id="dynatrace" class="scroll-mt-24">
-                    <p class="guide-eyebrow">09 · Comparison</p>
-                    <h2>Dynatrace vs New Relic pricing</h2>
-                    <p>
-                        The two vendors bill on different units. New Relic counts people and GB and ignores hosts. Dynatrace counts hosts (by memory size for full-stack monitoring) and GiB of logs and traces, has no per-user fee, and sells through the Dynatrace Platform Subscription, an annual minimum commitment drawn down at rate-card prices.
-                    </p>
-
-                    <div class="overflow-x-auto">
+                    <div class="guide-table">
                         <table>
                             <thead>
                                 <tr><th></th><th>New Relic</th><th>Dynatrace</th></tr>
                             </thead>
                             <tbody>
-                                <tr><td>Users</td><td>$10 to $418.80 per full platform user</td><td>No per-user charge</td></tr>
-                                <tr><td>Hosts</td><td>Free</td><td>Full-Stack $58/mo per 8 GiB host ($0.01 per memory-GiB-hour); Infrastructure $29/mo per host</td></tr>
-                                <tr><td>Logs</td><td>$0.40/GB past 100 GB free, queries included</td><td>$0.20/GiB to ingest, $0.0007/GiB-day to retain, $0.0035/GiB scanned to query</td></tr>
-                                <tr><td>Traces</td><td>Same $0.40/GB pool</td><td>$0.20/GiB to ingest, plus retention and query</td></tr>
-                                <tr><td>Free option</td><td>Permanent free tier</td><td>15-day free trial</td></tr>
-                                <tr><td>Commitment</td><td>Optional (pay-as-you-go on Standard and Pro)</td><td>Annual minimum spend</td></tr>
+                                <tr><td>Users</td><td>$10 to $418.80 per full platform user</td><td>No per-user fee</td></tr>
+                                <tr><td>Hosts</td><td>Free</td><td>$58/mo per 8 GiB full-stack host, $29/mo infrastructure-only</td></tr>
+                                <tr><td>Logs and traces</td><td>$0.40/GB past 100 GB, queries included</td><td>$0.20/GiB to ingest, plus retention and query fees for logs</td></tr>
+                                <tr><td>Free option</td><td>Permanent free tier</td><td>15-day trial</td></tr>
+                                <tr><td>Commitment</td><td>Optional</td><td>Annual minimum spend</td></tr>
                             </tbody>
                         </table>
                     </div>
-
                     <p>
-                        Before data, five full platform users on New Relic Standard cost $406 a month, while 100 Full-Stack hosts of 8 GiB on Dynatrace cost $5,800. Flip the team: 40 Pro users cost $13,960 a month, and 20 Dynatrace hosts cost $1,160. Small teams on large fleets tend to pay less on New Relic, and large teams on small fleets on Dynatrace. The <a href="/guides/dynatrace-pricing">Dynatrace pricing guide</a> breaks down the rate card and the platform subscription.
+                        Before data, five Standard users on New Relic cost $406 a month, while 100 full-stack hosts of 8 GiB on Dynatrace cost $5,800. Swap the sizes and the order flips: 40 Pro users cost $13,960, and 20 Dynatrace hosts cost $1,160. The <a href="/guides/dynatrace-pricing">Dynatrace pricing guide</a> covers its rate card in detail.
                     </p>
                 </section>
 
+                <section id="reduce" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>06</span> · Cost control</p>
+                    <h2>Lowering a New Relic bill</h2>
+                    <p>
+                        Seats move the bill more than data does, so start with who holds which user type, then cut data you never query.
+                    </p>
+
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div>
+                                <h4 id="measure" class="scroll-mt-24">Measure ingest and seats</h4>
+                                <p>New Relic records its own usage in the <code>NrConsumption</code> and <code>NrMTDConsumption</code> event types, which do not count toward ingest. Run these in the New Relic query builder. Daily GB by source over three months:</p>
+                                <pre><code set:html={highlight(ingestQuery, "nrql")} /></pre>
+                                <p>Billable users so far this month:</p>
+                                <pre><code set:html={highlight(userQuery, "nrql")} /></pre>
+                                <p>GB ingested so far this month. Put an alert condition on it at your budget, or at 70 GB on the free tier:</p>
+                                <pre><code set:html={highlight(alertQuery, "nrql")} /></pre>
+                            </div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div>
+                                <h4>Move people to cheaper user types</h4>
+                                <p>Downgrade people who only read dashboards to basic, and people who mostly work in logs and errors to core. Because a month bills at the highest type held, make changes on the first of the month, and on a commitment contract avoid the second downgrade-upgrade cycle.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div>
+                                <h4>Drop data before it is billed</h4>
+                                <p>Ingest is measured after New Relic's processing, so dropped data is never billed. Since August 31, 2026, <strong>Pipeline Control</strong> cloud rules have replaced NRQL drop rules for this inside New Relic, and its gateway can filter in your own Kubernetes cluster. Dropped data cannot be recovered.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>04</span>
+                            <div>
+                                <h4>Commit once usage is stable</h4>
+                                <p>An annual Pro term saves $69.80 per full platform user a month, and commitment contracts add volume discounts. The commitment is owed whether you use it or not, so sign after a few months of measured usage.</p>
+                            </div>
+                        </li>
+                    </ol>
+
+                    <h3 id="collector" class="scroll-mt-24">Filter in an OpenTelemetry Collector</h3>
+                    <p>
+                        If your services already export OpenTelemetry, an <a href="https://opentelemetry.io/docs/collector/" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector</a> running in your infrastructure can drop data before it reaches any vendor. This configuration receives OTLP from your services on the Collector's default ports (4317 for gRPC, 4318 for HTTP), drops logs below INFO, and exports traces and logs to New Relic's OTLP endpoint with your license key:
+                    </p>
+                    <div class="code-file">
+                        <p class="code-file__name">otel-collector.yaml</p>
+                        <pre><code set:html={highlight(collectorConfig, "yaml")} /></pre>
+                    </div>
+                    <p>
+                        The <code>otlphttp/maple</code> exporter sends a copy of the same data to Maple, so you can compare what each vendor would bill for identical traffic. Delete it, and its name in both <code>exporters</code> lists, if you only want the filter. Sampling traces and dropping attributes nobody queries cut ingest the same way; <a href="/docs/concepts/sampling-throughput">sampling and throughput</a> covers how Maple keeps request rates accurate under sampling.
+                    </p>
+                    <p>
+                        After a few days of dual export, <strong>Settings → Billing &amp; usage</strong> in Maple shows the GB each signal sent this cycle against the plan's included 100 GB, next to the <code>NrConsumption</code> numbers from the first query:
+                    </p>
+                    <figure class="guide-figure"><img src="/screenshots/guides/new-relic-pricing-01-billing-usage.webp" data-zoomable alt="Maple's Billing and usage settings: logs, traces and metrics each with GB used this cycle against 100 GB included, and the overage per signal." width="2000" height="1000" loading="lazy" /></figure>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Send to Maple</p>
+                        <h3>Point an OTLP exporter at Maple</h3>
+                        <p>Ingest keys, regions and the endpoint are in the docs; pricing is per GB with no seat fees.</p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/docs/getting-started/quickstart" class="guide-button guide-button--primary">Quickstart</a>
+                            <a href="/docs/reference/ingest" class="guide-button">Ingest API</a>
+                            <a href="/pricing" class="guide-button">Maple pricing</a>
+                        </div>
+                    </div>
+                </section>
+
                 <section class="guide-sources">
-                    <p class="guide-eyebrow">Sources, last verified {verified}</p>
+                    <p class="guide-eyebrow">Sources, last verified {updatedLabel}</p>
                     <ul>
-                        <li><a href="https://newrelic.com/pricing" target="_blank" rel="noopener noreferrer">New Relic: pricing (newrelic.com/pricing)</a></li>
+                        <li><a href="https://newrelic.com/pricing" target="_blank" rel="noopener noreferrer">New Relic: pricing</a></li>
                         <li><a href="https://newrelic.com/pricing/compute" target="_blank" rel="noopener noreferrer">New Relic: compute pricing</a></li>
                         <li><a href="https://docs.newrelic.com/docs/accounts/accounts-billing/new-relic-one-pricing-billing/new-relic-one-pricing-billing/" target="_blank" rel="noopener noreferrer">New Relic docs: pricing and billing</a></li>
                         <li><a href="https://docs.newrelic.com/docs/accounts/accounts-billing/new-relic-one-user-management/user-type/" target="_blank" rel="noopener noreferrer">New Relic docs: user types</a></li>
                         <li><a href="https://docs.newrelic.com/docs/accounts/accounts-billing/new-relic-one-pricing-billing/usage-queries-alerts/" target="_blank" rel="noopener noreferrer">New Relic docs: usage queries and alerts</a></li>
-                        <li><a href="https://docs.newrelic.com/docs/new-relic-control/pipeline-control/overview/" target="_blank" rel="noopener noreferrer">New Relic docs: Pipeline Control</a></li>
+                        <li><a href="https://docs.newrelic.com/eol/2025/05/drop-rule-filter/" target="_blank" rel="noopener noreferrer">New Relic docs: NRQL drop rules end of life</a></li>
                         <li><a href="https://docs.newrelic.com/docs/opentelemetry/best-practices/opentelemetry-otlp/" target="_blank" rel="noopener noreferrer">New Relic docs: OTLP endpoint</a></li>
                         <li><a href="https://www.dynatrace.com/pricing/" target="_blank" rel="noopener noreferrer">Dynatrace: pricing</a></li>
-                        <li><a href="/docs/getting-started/quickstart">Maple docs: quickstart</a></li>
+                        <li><a href="/docs/reference/ingest">Maple docs: Ingest API</a></li>
                     </ul>
                 </section>
             </article>
@@ -491,39 +630,114 @@ const articleJsonLd = {
 </Layout>
 
 <style is:global>
+    .nr-guide { max-width: 46rem; font-family: var(--font-display); }
     .nr-guide section + section { margin-top: 5.5rem; }
     .nr-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
-    .nr-guide h2 { max-width: 21ch; margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
-    .nr-guide h3 { margin: 2.5rem 0 0.8rem; font-family: var(--font-display); font-size: 1.15rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
-    .nr-guide > section > p:not(.guide-eyebrow, .guide-kicker), .nr-guide .guide-answer p { max-width: 70ch; margin: 0 0 1.15rem; font-size: 15px; line-height: 1.8; color: var(--muted-foreground); }
+    .nr-guide .guide-eyebrow span { color: var(--primary); }
+    .nr-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .nr-guide h3 { margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .nr-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
+    .nr-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .nr-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .nr-guide strong { font-weight: 600; color: var(--foreground); }
     .nr-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
-    .nr-guide pre { max-width: 100%; margin: 1.5rem 0 1.75rem; overflow-x: auto; border: 1px solid var(--border); border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
+    .nr-guide pre { margin: 1rem 0 1.25rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
     .nr-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .nr-guide a:not(.guide-button):hover { color: var(--foreground); }
-    .nr-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); background: var(--bg-deep); padding: 1.25rem 1.35rem; }
-    .nr-guide .guide-answer p { margin: 0; font-size: 16px; color: var(--foreground); }
-    .nr-guide table { width: 100%; min-width: 620px; margin: 1.6rem 0 2rem; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
-    .nr-guide th { border-bottom: 1px solid var(--border); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--foreground); }
-    .nr-guide td { border-bottom: 1px solid var(--border); padding: 0.9rem; vertical-align: top; }
+    .nr-guide .guide-caption { margin: 0.7rem 0 1.5rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
+    .nr-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .nr-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
     .nr-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
-    .nr-guide .guide-signal-list { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
-    .nr-guide .guide-signal-list > div { display: grid; grid-template-columns: 7rem 1fr; gap: 1rem; background: var(--background); padding: 1.1rem 1.25rem; }
-    .nr-guide .guide-signal-list span { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--primary); }
-    .nr-guide .guide-signal-list p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+
+    /* Code: keywords in the accent, names in teal; neither color is a billing meter. */
+    .nr-guide .tok-comment { color: var(--muted-foreground); }
+    .nr-guide .tok-fn { color: var(--primary); }
+    .nr-guide .tok-name { color: color-mix(in oklab, var(--chart-4) 80%, var(--foreground)); }
+    .nr-guide .tok-labels, .nr-guide .tok-value { color: color-mix(in oklab, var(--foreground) 80%, var(--background)); }
+    .nr-guide .code-file { margin: 1.25rem 0; }
+    .nr-guide .code-file__name { margin: 0; width: fit-content; border: 1px solid var(--border); border-bottom: 0; border-radius: 0.5rem 0.5rem 0 0; background: var(--bg-elevated); padding: 0.35rem 0.8rem; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
+    .nr-guide .code-file pre { margin: 0; border-top-left-radius: 0; }
+
+    /* One color per billing meter: set --meter on the element. */
+    .nr-guide .meter-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in oklab, var(--meter) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--meter) 14%, transparent); padding: 0.15rem 0.6rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: color-mix(in oklab, var(--meter) 70%, var(--foreground)); white-space: nowrap; }
+
+    .formula { margin: 2rem 0; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
+    .formula__row { display: grid; gap: 0.5rem; align-items: stretch; }
+    .formula__term { display: grid; align-content: start; gap: 0.2rem; border: 1px solid color-mix(in oklab, var(--meter, var(--border)) 45%, var(--border)); border-top: 2px solid var(--meter, var(--foreground)); border-radius: 0.5rem; background: color-mix(in oklab, var(--meter, var(--background)) 8%, var(--background)); padding: 0.75rem 0.85rem; }
+    .formula__term--total { --meter: var(--foreground); background: var(--background); }
+    .formula__label { font-size: 13px; font-weight: 550; color: var(--foreground); }
+    .formula__term strong { font-family: var(--font-mono); font-size: 14px; color: color-mix(in oklab, var(--meter) 70%, var(--foreground)); }
+    .formula__note { font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
+    .formula__op { align-self: center; justify-self: center; font-family: var(--font-mono); font-size: 16px; color: var(--muted-foreground); }
+    .formula__free { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem; margin: 1rem 0 0; border-top: 1px dashed var(--border); padding-top: 0.9rem; font-size: 13px; color: var(--muted-foreground); }
+    .formula__free span { font-family: var(--font-mono); font-size: 13px; color: var(--meter); }
+
+    .meter { margin: 1.5rem 0 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
+    .meter svg { display: block; width: 100%; min-width: 560px; height: auto; }
+    .meter__lane { fill: var(--foreground); font-family: var(--font-display); font-size: 13px; font-weight: 550; }
+    .meter__free { fill: color-mix(in oklab, var(--chart-3) 55%, transparent); }
+    .meter__billed { fill: color-mix(in oklab, var(--chart-2) 70%, transparent); }
+    .meter__stop { fill: var(--destructive); }
+    .meter__inbar { fill: var(--foreground); font-family: var(--font-mono); font-size: 11px; }
+    .meter__mono { fill: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; }
+    .meter__mono--stop { fill: color-mix(in oklab, var(--destructive) 75%, var(--foreground)); }
+    .meter__mono--alert { fill: var(--warning); }
+    .meter__alert { stroke: var(--warning); stroke-width: 1.5; stroke-dasharray: 4 3; }
+    .meter__axis { stroke: var(--border); }
+
+    .user-types { display: grid; gap: 1px; margin: 1.5rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .user-types__row { display: grid; gap: 0.6rem; border-left: 2px solid var(--meter); background: var(--background); padding: 1rem 1.15rem; }
+    .user-types__row .meter-badge { justify-self: start; }
+    .user-types__row p { margin: 0; font-size: 14px; line-height: 1.65; color: var(--muted-foreground); }
+
+    .bars { margin: 1.75rem 0; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
+    .bars__legend, .bars__parts { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
+    .bars__legend i, .bars__parts i { display: inline-block; width: 0.55rem; height: 0.55rem; margin-right: 0.4rem; border-radius: 2px; background: var(--meter); }
+    .bars__rows { display: grid; gap: 1.4rem; margin-top: 1.25rem; }
+    .bars__row { display: grid; gap: 0.5rem; }
+    .bars__head { display: flex; justify-content: space-between; gap: 1rem; font-size: 14px; color: var(--muted-foreground); }
+    .bars__head strong { color: var(--foreground); }
+    .bars__total { font-family: var(--font-mono); font-size: 14px; }
+    .bars__track { display: flex; gap: 2px; height: 1.4rem; }
+    .bars__seg { display: block; height: 100%; border-radius: 3px; background: color-mix(in oklab, var(--meter) 75%, transparent); }
+    .bars figcaption { margin-top: 1.25rem; border-top: 1px dashed var(--border); padding-top: 0.9rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+
+    .nr-guide .guide-table { margin: 1.5rem 0 1.75rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
+    .nr-guide table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .nr-guide th { border-bottom: 1px solid var(--border); background: var(--bg-deep); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .nr-guide td { border-bottom: 1px solid var(--border); padding: 0.8rem 0.9rem; vertical-align: top; }
+    .nr-guide td + td { border-left: 1px solid var(--border); }
+    .nr-guide tbody tr:last-child td { border-bottom: 0; }
+
+    .nr-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: color-mix(in oklab, var(--warning) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .nr-guide .guide-callout .guide-kicker { color: var(--warning); }
+    .nr-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .nr-guide .guide-steps { margin: 1.75rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .nr-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.2rem 0; }
+    .nr-guide .guide-steps > li > span { display: grid; width: 1.9rem; height: 1.9rem; place-items: center; border: 1px solid color-mix(in oklab, var(--primary) 45%, transparent); border-radius: 0.4rem; background: color-mix(in oklab, var(--primary) 12%, transparent); font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
+    .nr-guide .guide-steps p { margin: 0.4rem 0 0; font-size: 14px; line-height: 1.65; color: var(--muted-foreground); }
     .nr-guide .guide-checklist { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
     .nr-guide .guide-checklist > div { display: grid; grid-template-columns: 2rem 1fr; gap: 0.8rem; background: var(--background); padding: 1.15rem 1.25rem; }
-    .nr-guide .guide-checklist span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 9px; color: var(--primary); }
-    .nr-guide .guide-checklist h3, .nr-guide .guide-checklist p { margin: 0; }
-    .nr-guide .guide-checklist h3 { font-size: 0.95rem; }
-    .nr-guide .guide-checklist p { margin-top: 0.35rem; font-size: 12px; line-height: 1.6; color: var(--muted-foreground); }
+    .nr-guide .guide-checklist span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 9px; color: var(--chart-3); }
+    .nr-guide .guide-checklist p { margin: 0.35rem 0 0; font-size: 12.5px; line-height: 1.6; color: var(--muted-foreground); }
+    .nr-guide .guide-figure { margin: 1rem 0 0; }
+    .nr-guide .guide-figure img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 0.6rem; background: var(--bg-deep); }
+    .nr-guide .guide-maple { margin-top: 3rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .nr-guide .guide-maple h3 { margin: 0.55rem 0 0.6rem; font-size: 1.35rem; }
+    .nr-guide .guide-maple > p:not(.guide-kicker) { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .nr-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+    .nr-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
+    .nr-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+    .nr-guide .guide-button--primary:hover { background: color-mix(in oklab, var(--primary) 82%, black); }
     .nr-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
     .nr-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
     .nr-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
     @media (min-width: 640px) {
+        .formula__row { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 0.8fr); }
         .nr-guide .guide-checklist { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .user-types__row { grid-template-columns: 13rem 1fr; align-items: start; }
+        .nr-guide .guide-maple { padding: 2rem; }
     }
     @media (prefers-reduced-motion: reduce) {
-        .nr-guide a { transition: none; }
+        .nr-guide a, .nr-guide .guide-button { transition: none; }
     }
 </style>
