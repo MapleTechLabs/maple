@@ -963,12 +963,12 @@ const articleJsonLd = {
                         <li>
                             <span>02</span>
                             <div><h4>Check the service map</h4><p>The <a href="/docs/explore/service-map">Service Map</a> draws an edge when a <code>Client</code> or <code>Producer</code> span in one service has a <code>Server</code> or <code>Consumer</code> child in another. With the context injected into the message, the queue hop draws an edge from checkout to fulfillment. A missing edge between two services you know talk to each other is a dropped <code>traceparent</code>.</p>
-                                <figure class="guide-figure"><img src="/screenshots/guides/microservices-monitoring-01-service-map.webp" data-zoomable alt="The Service Map focused on the checkout service: edges from checkout to payments, inventory and fulfillment, each node showing requests per second, error percentage and average latency." width="2400" height="1300" loading="lazy" /></figure></div>
+                                <figure class="guide-figure"><img src="/screenshots/guides/microservices-monitoring-01-service-map.webp" data-zoomable alt="The Service Map focused on checkout with one hop: api calls checkout, and checkout has edges to payments, inventory and fulfillment, each node showing requests per second, error percentage and average latency." width="2240" height="856" loading="lazy" /></figure></div>
                         </li>
                         <li>
                             <span>03</span>
                             <div><h4>Follow one request</h4><p>On <a href="/docs/explore/traces">Traces</a>, filter by service and <strong>Has Error</strong>, then open a trace. The waterfall shows each service's spans under their caller, including the consumer span after the queue. <strong>View Logs</strong> opens the logs written during that trace.</p>
-                                <figure class="guide-figure"><img src="/screenshots/guides/microservices-monitoring-02-trace.webp" data-zoomable alt="A checkout trace in the waterfall view: the api, checkout, payments and inventory spans, the checkout send orders producer span, and the fulfillment process orders consumer span in the same trace." width="2400" height="1300" loading="lazy" /></figure></div>
+                                <figure class="guide-figure"><img src="/screenshots/guides/microservices-monitoring-02-trace.webp" data-zoomable alt="A GET /checkout trace in the waterfall view: the api, checkout, payments and inventory spans, the checkout send orders Producer span, and the fulfillment process orders Consumer span in the same trace." width="2336" height="1160" loading="lazy" /></figure></div>
                         </li>
                         <li>
                             <span>04</span>
