@@ -8,11 +8,13 @@ import {
 	summarizePlanetScale,
 	summarizePods,
 	summarizeRailway,
+	summarizeVercel,
 } from "../../../components/infra/overview/summaries"
 import { getCloudflareZones } from "@maple/web-data/warehouse/cloudflare-infra"
 import { getGcpInfraFleet } from "@maple/web-data/warehouse/gcp-infra"
 import { containersSummary, listHosts, podsSummary } from "@maple/web-data/warehouse/infra"
 import { getRailwayServices } from "@maple/web-data/warehouse/railway-infra"
+import { getVercelProjects } from "@maple/web-data/warehouse/vercel-infra"
 import { getServiceMapPlanetScale } from "@maple/web-data/warehouse/service-map"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
@@ -48,6 +50,10 @@ const read = (source: SourceId, window: TimeWindow) => {
 		case "railway":
 			return Effect.map(getRailwayServices({ data }), ({ services }) =>
 				reading(summarizeRailway(services)),
+			)
+		case "vercel":
+			return Effect.map(getVercelProjects({ data }), ({ projects }) =>
+				reading(summarizeVercel(projects)),
 			)
 		case "planetscale":
 			return Effect.map(getServiceMapPlanetScale({ data }), ({ databases }) =>

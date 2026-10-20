@@ -276,8 +276,8 @@ export const VERCEL_API_DETAIL = new VercelInfraProjectDetailResponse({
 		requests: Number(requests),
 		requests4xx: Math.round(Number(requests) * 0.015),
 		requests5xx: Math.round(Number(requests) * Number(share5xx)),
-		cacheHits: Math.round(Number(requests) * Number(cached)),
-		// A path Vercel never caches reports no cache status at all.
+		// `cached` is the hit rate over cache lookups; a path Vercel never caches reports no lookups.
+		cacheHits: Math.round(Number(requests) * 0.9 * Number(cached)),
 		cacheLookups: Number(cached) === 0 ? 0 : Math.round(Number(requests) * 0.9),
 	})),
 	errors: [

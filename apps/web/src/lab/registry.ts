@@ -32,7 +32,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/infra",
 		title: "Infrastructure",
 		description:
-			"The infra overview, hosts list and Railway list over fixture rows, no warehouse needed.",
+			"The infra overview, hosts list, Railway list and the Vercel list, AI Gateway and project pages over fixture rows, no warehouse needed.",
 		kind: "lab",
 		session: "none",
 	},

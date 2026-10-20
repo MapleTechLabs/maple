@@ -47,6 +47,7 @@ export const loadInfraPresence = (orgId: string, window: TimeWindow, options?: {
 export interface IntegrationFlags {
 	readonly cloudflare: boolean
 	readonly railway: boolean
+	readonly vercel: boolean
 	readonly planetscale: boolean
 	readonly gcp: boolean
 }
@@ -57,6 +58,6 @@ export const infraSurfacesOf = (
 	integrations: IntegrationFlags,
 ): ReadonlySet<NavSurface> | null => {
 	if (presence === null) return null
-	const connected = (["cloudflare", "planetscale", "railway", "gcp"] as const).filter((id) => integrations[id])
+	const connected = (["cloudflare", "planetscale", "railway", "vercel", "gcp"] as const).filter((id) => integrations[id])
 	return new Set<NavSurface>([...presence, ...connected])
 }

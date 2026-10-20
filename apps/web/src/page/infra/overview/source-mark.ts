@@ -12,6 +12,7 @@ export const SOURCE_TITLE = {
 	kubernetes: "Kubernetes",
 	cloudflare: "Cloudflare",
 	railway: "Railway",
+	vercel: "Vercel",
 	planetscale: "PlanetScale",
 	gcp: "Google Cloud",
 } satisfies Record<SourceId, string>
@@ -22,6 +23,7 @@ const SOURCE_ICON = {
 	kubernetes: "KubernetesIcon",
 	cloudflare: "CloudflareBrandIcon",
 	railway: "RailwayIcon",
+	vercel: "VercelIcon",
 	planetscale: "PlanetScaleIcon",
 	gcp: "GoogleCloudIcon",
 } satisfies Record<SourceId, IconName>

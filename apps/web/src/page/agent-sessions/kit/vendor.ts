@@ -23,6 +23,7 @@ const VENDOR_ICONS = new Map<string, IconName>([
 	["semantic_kernel", "MicrosoftIcon"],
 	["smolagents", "HuggingFaceIcon"],
 	["spring_ai", "SpringIcon"],
+	["vercel_ai_gateway", "VercelIcon"],
 	["vercel_ai_sdk", "VercelIcon"],
 ])
 

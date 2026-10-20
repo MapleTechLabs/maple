@@ -12,8 +12,20 @@ export interface DisconnectSpec {
 	readonly description: string
 	readonly confirmLabel: string
 	readonly success: string
+	/** The success toast's type and description when the disconnect left something to clean up. */
+	readonly successType?: "warning"
+	readonly successDescription?: string
 	readonly error: string
 	readonly refresh: ReadonlyArray<StatusName>
+}
+
+const VERCEL_DISCONNECT: DisconnectSpec = {
+	title: "Disconnect Vercel?",
+	description: "",
+	confirmLabel: "Disconnect",
+	success: "Vercel disconnected",
+	error: "Failed to disconnect Vercel",
+	refresh: ["vercel"],
 }
 
 export const DISCONNECTS = new Map<string, DisconnectSpec>([
@@ -52,6 +64,18 @@ export const DISCONNECTS = new Map<string, DisconnectSpec>([
 			refresh: ["railway"],
 		},
 	],
+	["vercel", VERCEL_DISCONNECT],
+	[
+		/** Disconnected, but Maple could not delete the drains on Vercel. */
+		"vercel-drains-left",
+		{
+			...VERCEL_DISCONNECT,
+			success: "Remove the drains on Vercel",
+			successType: "warning",
+			successDescription:
+				"Maple couldn't delete them. Delete Maple logs and Maple traces in the team's drain settings.",
+		},
+	],
 	[
 		"planetscale",
 		{
@@ -77,24 +101,34 @@ export const DISCONNECTS = new Map<string, DisconnectSpec>([
 	]),
 ])
 
+/** The disconnect; answers the `DISCONNECTS` key its toast and refreshes come from. */
 const mutation = (integration: string) =>
 	Effect.gen(function* () {
 		const internal = yield* MapleInternalApiClient
 		const v2 = yield* MapleApiV2Client
 		switch (integration) {
 			case "hazel":
-				return yield* Effect.asVoid(internal.integrations.hazelDisconnect())
+				yield* internal.integrations.hazelDisconnect()
+				return integration
 			case "github":
-				return yield* Effect.asVoid(internal.integrations.githubDisconnect())
+				yield* internal.integrations.githubDisconnect()
+				return integration
 			case "planetscale":
-				return yield* Effect.asVoid(v2.planetscaleIntegration.disconnect())
+				yield* v2.planetscaleIntegration.disconnect()
+				return integration
 			case "railway":
-				return yield* Effect.asVoid(internal.integrations.railwayDisconnect())
+				yield* internal.integrations.railwayDisconnect()
+				return integration
+			case "vercel": {
+				const result = yield* internal.integrations.vercelDisconnect()
+				return result.drainsRemoved ? integration : "vercel-drains-left"
+			}
 			case "cloudflare":
 			case "cloudflare-multi":
-				return yield* Effect.asVoid(internal.integrations.cloudflareDisconnect())
+				yield* internal.integrations.cloudflareDisconnect()
+				return integration
 			default:
-				return yield* Effect.void
+				return integration
 		}
 	})
 
@@ -106,7 +140,7 @@ export const Disconnect = Command.define("DisconnectIntegration", {
 			Effect.match({
 				onFailure: (error) =>
 					Message.CompletedDisconnect({ integration, failure: toLoadFailure(error) }),
-				onSuccess: () => Message.CompletedDisconnect({ integration, failure: null }),
+				onSuccess: (reported) => Message.CompletedDisconnect({ integration: reported, failure: null }),
 			}),
 		),
 })

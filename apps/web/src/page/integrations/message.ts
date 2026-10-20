@@ -8,6 +8,12 @@ import {
 	RailwayIntegrationStatus,
 	ScrapeTargetId,
 	VcsRepositoryId,
+	VercelAiGatewayResponse,
+	VercelDiscoverResponse,
+	VercelInfraProjectsResponse,
+	VercelInfraRequestTimeseriesResponse,
+	VercelIntegrationStatus,
+	VercelProjectScope,
 } from "@maple/domain/http"
 import {
 	V2ChatConnectorList,
@@ -28,6 +34,7 @@ import { LoadFailure } from "../../data/load-failure"
 import * as CopyButton from "../../ui/copy-button"
 import * as Dialog from "../../ui/dialog"
 import * as Popover from "../../ui/popover"
+import * as RadioGroup from "../../ui/radio-group"
 import * as Field from "../../ui/field"
 import * as Menu from "../../ui/menu"
 import * as Select from "../../ui/select"
@@ -38,10 +45,12 @@ import { ConnectProvider } from "./connect"
 import { FleetRead } from "../infra-integrations/gcp/data"
 import { Capability, GcpFlags, SetupMethod } from "./gcp-configure-schema"
 import { ConfigureTarget, LogVolume, RemovedConnector } from "./gcp-schema"
+import { VercelConfigureTarget, VercelSignal } from "./vercel-schema"
 
 export const StatusName = Schema.Literals([
 	"cloudflare",
 	"railway",
+	"vercel",
 	"planetscale",
 	"planetscaleDatabases",
 	"gcp",
@@ -61,6 +70,7 @@ export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number },
 	CompletedLoadCloudflare: result(CloudflareIntegrationStatus),
 	CompletedLoadRailway: result(RailwayIntegrationStatus),
+	CompletedLoadVercel: result(VercelIntegrationStatus),
 	CompletedLoadPlanetscale: result(V2PlanetScaleIntegration),
 	CompletedLoadPlanetscaleDatabases: result(V2PlanetScaleDatabaseList),
 	CompletedLoadGcp: result(V2GcpIntegration),
@@ -179,6 +189,45 @@ export const Message = defineMessageUnion({
 	ClickedRailwayRotateCancel: {},
 	/** Every 15 s while environments wait for their first sync. */
 	TickedRailwaySettle: {},
+	CompletedLoadVercelProjects: result(VercelInfraProjectsResponse),
+	CompletedLoadVercelTimeseries: result(VercelInfraRequestTimeseriesResponse),
+	CompletedLoadVercelGateway: result(VercelAiGatewayResponse),
+	ClickedVercelRetryUsage: {},
+	/** Every 15 s while a fresh connection waits for its first sync. */
+	TickedVercelSettle: {},
+	ClickedVercelSync: {},
+	CompletedVercelSync: { failure: Schema.NullOr(LoadFailure) },
+	/** An issue alert's "Re-apply drains": an empty settings save. */
+	ClickedVercelReapply: {},
+	ClickedVercelConfigure: { target: VercelConfigureTarget },
+	GotVercelConfigureDialogMessage: { message: Dialog.Message },
+	GotVercelTokenMessage: { message: Field.Message },
+	/** The token step's form submit: look the token up, or save it as the new token. */
+	SubmittedVercelToken: {},
+	CompletedVercelDiscover: {
+		forTeam: Schema.NullOr(Schema.String),
+		response: Schema.NullOr(VercelDiscoverResponse),
+		error: Schema.NullOr(Schema.String),
+	},
+	GotVercelTeamMessage: { message: RadioGroup.Message },
+	SubmittedVercelTeam: {},
+	ClickedVercelConfigureBack: {},
+	ToggledVercelSignal: { signal: VercelSignal },
+	ChangedVercelScope: { scope: VercelProjectScope },
+	ToggledVercelProject: { id: Schema.String },
+	ChangedVercelProjectQuery: { value: Schema.String },
+	ChangedVercelSampling: { value: Schema.String },
+	SubmittedVercelConnect: {},
+	CompletedVercelConnect: {
+		mode: Schema.Literals(["connect", "token"]),
+		teamName: Schema.NullOr(Schema.String),
+		error: Schema.NullOr(Schema.String),
+	},
+	/** The settings step's "Save and apply": straight to Vercel, or through the confirmation. */
+	ClickedVercelSave: {},
+	GotVercelConfirmDialogMessage: { message: Dialog.Message },
+	ConfirmedVercelSave: {},
+	CompletedVercelSave: { isReapply: Schema.Boolean, error: Schema.NullOr(Schema.String) },
 	CompletedFetchOrganizations: result(V2PlanetScaleOrganizationList),
 	CompletedFetchWebhookConfig: result(V2PlanetScaleWebhookConfig),
 	ClickedChangeOrganization: {},

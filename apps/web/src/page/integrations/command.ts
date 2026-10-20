@@ -58,6 +58,20 @@ export const LoadRailway = Command.define("LoadIntegrationsRailwayStatus", {
 		),
 })
 
+/** `vercelStatusAtom`. */
+export const LoadVercel = Command.define("LoadIntegrationsVercelStatus", {
+	args: Args,
+	messages: [Message.CompletedLoadVercel],
+	execute: ({ key }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			return yield* client.integrations.vercelStatus()
+		}).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedLoadVercel({ key, result })),
+		),
+})
+
 export const LoadPlanetscale = Command.define("LoadIntegrationsPlanetscaleStatus", {
 	args: RefreshArgs,
 	messages: [Message.CompletedLoadPlanetscale],
