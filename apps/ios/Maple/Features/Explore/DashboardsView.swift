@@ -109,6 +109,8 @@ final class DashboardDetailModel {
 	private var windowSeeded = false
 
 	func select(_ window: TimeWindow) {
+		// A pick wins over the board's saved range, even before the first load lands.
+		windowSeeded = true
 		guard window != self.window else { return }
 		self.window = window
 		Task { await loader.load(.replace) }
