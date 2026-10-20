@@ -80,6 +80,8 @@ const applyShareOgMeta = async (
 }
 
 const IMMUTABLE = "public, max-age=31536000, immutable"
+/** The file's bytes or a revalidation of them; an error status must not be pinned for a year. */
+const CACHEABLE_STATUSES = new Set([200, 206, 304])
 
 /**
  * A missing hashed file (a tab from before a deploy) gets a 404, never the SPA shell
@@ -90,6 +92,7 @@ const serveHashedAsset = async (request: Request, env: WebWorkerEnv): Promise<Re
 	if (response.status === 404 || isHtmlResponse(response)) {
 		return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } })
 	}
+	if (!CACHEABLE_STATUSES.has(response.status)) return response
 	const headers = new Headers(response.headers)
 	headers.set("Cache-Control", IMMUTABLE)
 	return new Response(response.body, { status: response.status, statusText: response.statusText, headers })

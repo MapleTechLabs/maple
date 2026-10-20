@@ -179,3 +179,13 @@ describe("handleRequest hashed assets", () => {
 		expect(response.headers.get("cache-control")).toBe("public, max-age=0, must-revalidate")
 	})
 })
+
+describe("handleRequest hashed asset errors", () => {
+	it("passes an error from the assets layer through without the year-long header", async () => {
+		const response = await handleRequest(new Request("https://app.maple.test/assets/index-abc123.js"), {
+			ASSETS: { fetch: async () => new Response("boom", { status: 500 }) },
+		})
+		expect(response.status).toBe(500)
+		expect(response.headers.get("cache-control")).toBeNull()
+	})
+})
