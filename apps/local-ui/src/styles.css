@@ -10,6 +10,7 @@
 
 @source "../../../packages/ui/src";
 @source "./";
+@source "../../web/src";
 
 /* Sugar High syntax highlighting (app-local, same values as apps/web) */
 :root {
