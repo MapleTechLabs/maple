@@ -54,22 +54,14 @@
 		// Run by path: the browser e2e suite (`e2e run`, `test:e2e`).
 		"apps/web": {
 			// `src/worker-entry.ts` is named by string in `src/worker.ts`.
-			"entry": [
-				"src/worker-entry.ts",
-				"e2e/e2e.config.ts",
-				"e2e/tests/**/*.e2e.ts"
-			]
+			"entry": ["src/worker-entry.ts", "e2e/e2e.config.ts", "e2e/tests/**/*.e2e.ts"]
 		},
 		// local-ui renders apps/web's source modules (ui, charts), so their runtime packages
 		// must resolve from this app too.
 		// `src/worker-entry.ts` is named by string in `src/worker.ts`.
 		"apps/local-ui": {
 			"entry": ["src/worker.ts", "src/worker-entry.ts"],
-			"ignoreDependencies": [
-				"@floating-ui/dom",
-				"@tanstack/charts",
-				"@tanstack/charts-scales"
-			]
+			"ignoreDependencies": ["@floating-ui/dom", "@tanstack/charts", "@tanstack/charts-scales"]
 		},
 		"apps/cli": {
 			"entry": [
@@ -89,8 +81,6 @@
 			"ignore": ["src/generated/**"],
 			"ignoreDependencies": ["tailwindcss"]
 		},
-		// fumapress reads press.config.tsx and src/app.css by convention, and Base UI
-		// arrives through fumadocs-ui's preset; knip sees no import edge to either.
 		"lib/ai-model-catalog": {
 			"entry": ["scripts/**/*.ts"]
 		},

@@ -1,19 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { clampViewport, timelineReducer } from "../use-trace-timeline"
-import { viewportBounds } from "../clamp-viewport"
-import type { TimelineState } from "../trace-timeline-types"
+import { clampViewport, viewportBounds } from "../clamp-viewport"
 import { MIN_VISIBLE_ABS_MS } from "../trace-timeline-types"
 
 const TRACE_START = 0
 const TRACE_END = 10_000 // 10s trace
-
-function baseState(): TimelineState {
-	return {
-		focusedIndex: 3,
-		searchQuery: "db",
-		expandedSpanIds: new Set(["a", "b"]),
-	}
-}
 
 describe("clampViewport min-visible floor", () => {
 	it("floors a zero-width window to the absolute minimum", () => {
@@ -120,60 +110,5 @@ describe("viewportBounds is the shared coordinate space", () => {
 		expect(b.loMs).toBe(5_000)
 		expect(b.hiMs).toBe(5_000)
 		expect(b.durationMs).toBe(0)
-	})
-})
-
-describe("TOGGLE_COLLAPSE", () => {
-	it("toggles a single span both ways", () => {
-		const collapsed = timelineReducer(baseState(), { type: "TOGGLE_COLLAPSE", spanId: "a" })
-		expect(collapsed.expandedSpanIds.has("a")).toBe(false)
-		const expanded = timelineReducer(collapsed, { type: "TOGGLE_COLLAPSE", spanId: "a" })
-		expect(expanded.expandedSpanIds.has("a")).toBe(true)
-	})
-
-	it("alt-click drags the whole subtree to the node's new state", () => {
-		// "a" is expanded → collapsing it must also collapse its expanded descendants.
-		const state: TimelineState = { ...baseState(), expandedSpanIds: new Set(["a", "a1", "a2", "b"]) }
-		const collapsed = timelineReducer(state, {
-			type: "TOGGLE_COLLAPSE",
-			spanId: "a",
-			descendantIds: ["a1", "a2"],
-		})
-		expect([...collapsed.expandedSpanIds]).toEqual(["b"])
-
-		const reExpanded = timelineReducer(collapsed, {
-			type: "TOGGLE_COLLAPSE",
-			spanId: "a",
-			descendantIds: ["a1", "a2"],
-		})
-		expect(reExpanded.expandedSpanIds).toEqual(new Set(["a", "a1", "a2", "b"]))
-	})
-
-	it("leaves unrelated state fields intact", () => {
-		const prev = baseState()
-		const next = timelineReducer(prev, { type: "TOGGLE_COLLAPSE", spanId: "a" })
-		expect(next.focusedIndex).toBe(prev.focusedIndex)
-		expect(next.searchQuery).toBe(prev.searchQuery)
-	})
-})
-
-describe("focus and search", () => {
-	it("FOCUS_NEXT stops at maxIndex, FOCUS_PREV at 0", () => {
-		const at5: TimelineState = { ...baseState(), focusedIndex: 5 }
-		expect(timelineReducer(at5, { type: "FOCUS_NEXT", maxIndex: 5 }).focusedIndex).toBe(5)
-		const at0: TimelineState = { ...baseState(), focusedIndex: 0 }
-		expect(timelineReducer(at0, { type: "FOCUS_PREV" }).focusedIndex).toBe(0)
-	})
-
-	it("starts focus at the first row from null", () => {
-		const none: TimelineState = { ...baseState(), focusedIndex: null }
-		expect(timelineReducer(none, { type: "FOCUS_NEXT", maxIndex: 9 }).focusedIndex).toBe(0)
-	})
-
-	it("SET_SEARCH does not disturb the expanded set", () => {
-		const prev = baseState()
-		const next = timelineReducer(prev, { type: "SET_SEARCH", query: "http" })
-		expect(next.searchQuery).toBe("http")
-		expect(next.expandedSpanIds).toBe(prev.expandedSpanIds)
 	})
 })

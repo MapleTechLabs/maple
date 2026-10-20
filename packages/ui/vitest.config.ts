@@ -1,9 +1,7 @@
-import tailwindcss from "@tailwindcss/vite"
 import { playwright } from "@vitest/browser-playwright"
 import { defineConfig } from "vitest/config"
 
 export default defineConfig({
-	plugins: [tailwindcss()],
 	resolve: { dedupe: ["react", "react-dom"] },
 	test: {
 		projects: [
