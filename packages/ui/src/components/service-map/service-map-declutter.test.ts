@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { Edge, Node } from "@xyflow/react"
+import type { EdgeBase as Edge, NodeBase as Node } from "@xyflow/system"
 import { applyDeclutter, DECLUTTER_OFF, type DeclutterState } from "./service-map-declutter"
 import {
 	edgeIdFor,

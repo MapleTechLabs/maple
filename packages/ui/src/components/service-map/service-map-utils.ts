@@ -1,4 +1,4 @@
-import type { Node, Edge } from "@xyflow/react"
+import type { EdgeBase as Edge, NodeBase as Node } from "@xyflow/system"
 import { HYPERDRIVE_DB_NAMESPACE } from "@maple/domain/tinybird/db-query-shape-sql"
 import { getServiceColor, getValueHue } from "../../lib/colors"
 import { type ErrorRateLevel, errorRateLevel } from "../../lib/error-rate"

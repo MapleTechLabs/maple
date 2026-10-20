@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { Edge, Node } from "@xyflow/react"
+import type { EdgeBase as Edge, NodeBase as Node } from "@xyflow/system"
 import { buildElkGraph } from "./service-map-elk"
 import { DEFAULT_LAYOUT_CONFIG, type ServiceEdgeData, type ServiceNodeData } from "./service-map-utils"
 
