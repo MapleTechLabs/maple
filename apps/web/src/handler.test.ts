@@ -188,4 +188,18 @@ describe("handleRequest hashed asset errors", () => {
 		expect(response.status).toBe(500)
 		expect(response.headers.get("cache-control")).toBeNull()
 	})
+
+	it("keeps an HTML error page's own status instead of calling it missing", async () => {
+		const response = await handleRequest(new Request("https://app.maple.test/assets/index-abc123.js"), {
+			ASSETS: {
+				fetch: async () =>
+					new Response("<html>boom</html>", {
+						status: 503,
+						headers: { "content-type": "text/html" },
+					}),
+			},
+		})
+		expect(response.status).toBe(503)
+		expect(response.headers.get("cache-control")).toBeNull()
+	})
 })

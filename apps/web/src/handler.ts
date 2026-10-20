@@ -89,7 +89,7 @@ const CACHEABLE_STATUSES = new Set([200, 206, 304])
  */
 const serveHashedAsset = async (request: Request, env: WebWorkerEnv): Promise<Response> => {
 	const response = await env.ASSETS.fetch(request)
-	if (response.status === 404 || isHtmlResponse(response)) {
+	if (response.status === 404 || (response.status === 200 && isHtmlResponse(response))) {
 		return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } })
 	}
 	if (!CACHEABLE_STATUSES.has(response.status)) return response
