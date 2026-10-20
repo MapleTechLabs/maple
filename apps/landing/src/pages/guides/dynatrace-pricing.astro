@@ -52,22 +52,22 @@ const HOURS = 730;
 const usd = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const rateCard: { meter: Meter; capability: string; price: string; month?: string }[] = [
-    { meter: "hosts", capability: "Full-Stack Monitoring", price: "$0.01 per memory-GiB-hour", month: "$58.40 per 8 GiB host" },
-    { meter: "hosts", capability: "Infrastructure Monitoring", price: "$0.04 per host-hour, any size", month: "$29.20 per host" },
-    { meter: "hosts", capability: "Foundation & Discovery", price: "$0.01 per host-hour, any size", month: "$7.30 per host" },
-    { meter: "hosts", capability: "Database Monitoring", price: "$0.11 per database-instance-hour", month: "$80.30 per instance" },
-    { meter: "hosts", capability: "Kubernetes Platform Monitoring", price: "$0.002 per pod-hour, any size", month: "$1.46 per pod" },
-    { meter: "hosts", capability: "Code Monitoring", price: "$0.005 per container-hour", month: "$3.65 per container" },
+    { meter: "hosts", capability: "Full-Stack Monitoring", price: "$0.01 per memory-GiB-hour", month: "$58.40 a month for an 8 GiB host" },
+    { meter: "hosts", capability: "Infrastructure Monitoring", price: "$0.04 per host-hour, any size", month: "$29.20 a month per host" },
+    { meter: "hosts", capability: "Foundation & Discovery", price: "$0.01 per host-hour, any size", month: "$7.30 a month per host" },
+    { meter: "hosts", capability: "Database Monitoring", price: "$0.11 per database-instance-hour", month: "$80.30 a month per instance" },
+    { meter: "hosts", capability: "Kubernetes Platform Monitoring", price: "$0.002 per pod-hour, any size", month: "$1.46 a month per pod" },
+    { meter: "hosts", capability: "Code Monitoring", price: "$0.005 per container-hour", month: "$3.65 a month per container" },
     { meter: "data", capability: "Logs: ingest & process", price: "$0.20 per GiB" },
     { meter: "data", capability: "Logs: retain", price: "$0.0007 per GiB-day" },
     { meter: "data", capability: "Logs: query", price: "$0.0035 per GiB scanned" },
     { meter: "data", capability: "Logs: retain with included queries", price: "$0.02 per GiB-day" },
     { meter: "data", capability: "Traces and events: ingest / retain / query", price: "$0.20 per GiB / $0.0007 per GiB-day / $0.0035 per GiB scanned" },
     { meter: "data", capability: "Metrics: ingest & process", price: "$0.15 per 100,000 data points", month: "queries included" },
-    { meter: "frontEnd", capability: "Real User Monitoring", price: "$0.00225 per session", month: "$2.25 per 1,000" },
-    { meter: "frontEnd", capability: "RUM with Session Replay", price: "$0.0045 per replay capture", month: "$4.50 per 1,000" },
-    { meter: "frontEnd", capability: "Browser monitor or clickpath", price: "$0.0045 per synthetic action", month: "$4.50 per 1,000" },
-    { meter: "frontEnd", capability: "HTTP monitor", price: "$0.001 per synthetic request", month: "$1 per 1,000" },
+    { meter: "frontEnd", capability: "Real User Monitoring", price: "$0.00225 per session", month: "$2.25 per 1,000 sessions" },
+    { meter: "frontEnd", capability: "RUM with Session Replay", price: "$0.0045 per replay capture", month: "$4.50 per 1,000 replays" },
+    { meter: "frontEnd", capability: "Browser monitor or clickpath", price: "$0.0045 per synthetic action", month: "$4.50 per 1,000 actions" },
+    { meter: "frontEnd", capability: "HTTP monitor", price: "$0.001 per synthetic request", month: "$1 per 1,000 requests" },
 ];
 
 // Full-Stack cost per host by RAM, against the flat Infrastructure and Foundation prices.
@@ -315,7 +315,7 @@ const articleJsonLd = {
                     <div class="guide-table">
                         <table>
                             <thead>
-                                <tr><th>Meter</th><th>Capability</th><th>List price</th><th>All month</th></tr>
+                                <tr><th>Meter</th><th>Capability</th><th>List price</th><th>In practice</th></tr>
                             </thead>
                             <tbody>
                                 {rateCard.map((r) => (
@@ -344,10 +344,10 @@ const articleJsonLd = {
                                 <div class="host-chart__row">
                                     <span class="host-chart__label">{h.gib} GiB{h.gib < h.billed && <em>billed as 4</em>}</span>
                                     <span class="host-chart__track"><span class="host-chart__bar" style={`width: ${(h.month / hostMax) * 100}%`}></span></span>
-                                    <span class="host-chart__amount">{usd(h.month)}</span>
+                                    <span class="host-chart__amount">{usd(h.month)}<small>/mo</small></span>
                                 </div>
                             ))}
-                            <span class="host-chart__mark host-chart__mark--infra" style={`left: calc(var(--label-w) + (100% - var(--label-w) - var(--amount-w)) * ${infraMonth / hostMax})`}><span>Infrastructure {usd(infraMonth)}</span></span>
+                            <span class="host-chart__mark host-chart__mark--infra" style={`left: calc(var(--label-w) + (100% - var(--label-w) - var(--amount-w)) * ${infraMonth / hostMax})`}><span>Infrastructure {usd(infraMonth)}/mo</span></span>
                         </div>
                         <figcaption>Full-Stack per month by host memory. The dashed line is Infrastructure Monitoring, the same {usd(infraMonth)} for any size host. At the 4 GiB minimum the two cost the same; every GiB above it widens the gap.</figcaption>
                     </figure>
@@ -397,7 +397,7 @@ const articleJsonLd = {
                         <div class="bill-bar__legend" aria-hidden="true">
                             {(Object.keys(meters) as Meter[]).map((m) => {
                                 const sum = bill.filter((b) => b.meter === m).reduce((s, b) => s + b.amount, 0);
-                                return <span style={`--meter: ${meters[m].color}`}><i></i>{meters[m].name} {usd(sum)} · {Math.round((sum / billTotal) * 100)}%</span>;
+                                return <span style={`--meter: ${meters[m].color}`}><i></i>{meters[m].name} {usd(sum)}/mo · {Math.round((sum / billTotal) * 100)}%</span>;
                             })}
                         </div>
                     </figure>
@@ -405,7 +405,7 @@ const articleJsonLd = {
                     <div class="guide-table">
                         <table>
                             <thead>
-                                <tr><th>Line</th><th>Calculation</th><th>Monthly</th></tr>
+                                <tr><th>Line</th><th>Calculation</th><th>Per month</th></tr>
                             </thead>
                             <tbody>
                                 {bill.map((b) => (
@@ -417,7 +417,7 @@ const articleJsonLd = {
                                 ))}
                             </tbody>
                             <tfoot>
-                                <tr><td>Total at list price</td><td>{usd(billTotal * 12)} a year</td><td class="num">{usd(billTotal)}</td></tr>
+                                <tr><td>Total at list price</td><td>{usd(billTotal * 12)} a year</td><td class="num">{usd(billTotal)} a month</td></tr>
                             </tfoot>
                         </table>
                     </div>
@@ -494,7 +494,7 @@ const articleJsonLd = {
                             <tbody>
                                 <tr><td>Hosts</td><td>$0.01 per GiB-hour (Full-Stack), $0.04 per host-hour (Infrastructure)</td><td>No host charge on the default model; compute-based pricing is quoted by sales</td></tr>
                                 <tr><td>Data</td><td>Logs and traces $0.20 per GiB, plus retain and query</td><td>100 GB a month free, then $0.40 per GB (or $0.60 with Data Plus)</td></tr>
-                                <tr><td>Users</td><td>No per-seat fees</td><td>Core $49. Full platform: Standard $10 for the first, $99 after, 5 at most; Pro $349 on annual commitment</td></tr>
+                                <tr><td>Users</td><td>No per-seat fees</td><td>Per user per month: core $49; full platform on Standard $10 for the first user, then $99 each (5 users at most); Pro $349 on an annual commitment</td></tr>
                                 <tr><td>Free option</td><td>15-day trial</td><td>Free tier with one full platform user</td></tr>
                                 <tr><td>Commitment</td><td>Minimum annual spend, amount not published</td><td>Standard is monthly pay-as-you-go</td></tr>
                             </tbody>
@@ -521,9 +521,8 @@ const articleJsonLd = {
                         <pre><code set:html={highlight(mapleExporterConfig, "yaml")} /></pre>
                     </div>
                     <p>
-                        After a few days, <strong>Settings → Billing</strong> shows the GB each signal used this cycle against what the plan includes, next to Dynatrace's consumption for the same traffic in Account Management.
+                        After a few days, compare the GB each signal sent to Maple with Dynatrace's consumption for the same traffic in Account Management.
                     </p>
-                    <figure class="guide-figure"><img src="/screenshots/guides/dynatrace-pricing-01-billing-usage.webp" data-zoomable alt="Maple's Settings, Billing page: usage this cycle for logs, traces and metrics in GB against the 100 GB each the plan includes, with the overage cap per signal." width="2000" height="1100" loading="lazy" /></figure>
 
                     <div class="guide-maple">
                         <p class="guide-kicker">Try it with your own telemetry</p>
@@ -594,7 +593,7 @@ const articleJsonLd = {
     .meter-strip > div { border: 1px solid color-mix(in oklab, var(--meter) 30%, var(--border)); border-radius: 0.75rem; background: linear-gradient(180deg, color-mix(in oklab, var(--meter) 9%, var(--bg-deep)), var(--bg-deep)); padding: 1rem 1.1rem; }
     .meter-strip p { margin: 0.7rem 0 0; font-size: 13px; line-height: 1.55; color: var(--muted-foreground); }
 
-    .host-chart { --label-w: 5.5rem; --amount-w: 4.5rem; margin: 2rem 0 1.75rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 2rem 1.25rem 1rem; }
+    .host-chart { --label-w: 5.5rem; --amount-w: 5.75rem; margin: 2rem 0 1.75rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 2rem 1.25rem 1rem; }
     .host-chart__rows { position: relative; display: grid; gap: 0.55rem; }
     .host-chart__row { display: grid; grid-template-columns: var(--label-w) 1fr var(--amount-w); align-items: center; }
     .host-chart__label { display: grid; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
@@ -602,6 +601,7 @@ const articleJsonLd = {
     .host-chart__track { height: 0.9rem; border-radius: 0.25rem; background: color-mix(in oklab, var(--chart-1) 8%, transparent); }
     .host-chart__bar { display: block; height: 100%; border-radius: inherit; background: color-mix(in oklab, var(--chart-1) 78%, transparent); }
     .host-chart__amount { text-align: right; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
+    .host-chart__amount small { margin-left: 0.15em; font-size: 10px; color: var(--muted-foreground); }
     .host-chart__mark { position: absolute; top: -0.6rem; bottom: -0.3rem; width: 0; border-left: 1.5px dashed var(--foreground); opacity: 0.75; }
     .host-chart__mark span { position: absolute; top: -1.1rem; left: 0.35rem; white-space: nowrap; font-family: var(--font-mono); font-size: 10px; color: var(--foreground); }
     .host-chart figcaption { margin-top: 1.1rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
