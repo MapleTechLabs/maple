@@ -4,6 +4,7 @@ import { Option, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import * as Keyed from "../../../../data/keyed"
 import * as Field from "../../../../ui/field"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import type { RailwayServiceRow } from "../model"
@@ -207,6 +208,25 @@ describe("railway list", () => {
 		expect(Option.map(AsyncData.getData(late.status.data), (current) => current.connected)).toEqual(
 			Option.some(true),
 		)
+	})
+
+	test("a status poll after a connect lands, and the pre-connect read still cannot", () => {
+		const connected = pageUpdate(withStatus(false), Message.SucceededConnect({ status: status(true) })).model
+		const polled = pageUpdate(connected, Message.TickedEmptyRefresh({ includeStatus: true }))
+		const [load] = polled.commands ?? []
+		expect(load?.name).toBe("LoadRailwayStatus")
+		const pollKey = polled.model.status.key ?? ""
+		expect(load?.args).toMatchObject({ key: pollKey })
+		const late = pageUpdate(
+			polled.model,
+			Message.CompletedLoadStatus({ key: Keyed.baseKey(connected.status.key ?? ""), result: Result.succeed(status(false)) }),
+		).model
+		expect(late.status).toEqual(polled.model.status)
+		const landed = pageUpdate(
+			late,
+			Message.CompletedLoadStatus({ key: pollKey, result: Result.succeed(status(true)) }),
+		).model
+		expect(AsyncData.isSuccess(landed.status.data)).toBe(true)
 	})
 
 	test("a successful connect shows the services the token can see", () => {

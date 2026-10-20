@@ -57,7 +57,7 @@ const requestStatus = (model: Model, context: PageContext, mode: Keyed.RequestMo
 		onNone: () => ({ model }),
 		onSome: (status) => ({
 			model: { ...model, status },
-			commands: [LoadStatus({ key, refresh: mode === "Refresh" })],
+			commands: [LoadStatus({ key: status.key, refresh: mode === "Refresh" })],
 		}),
 	})
 }

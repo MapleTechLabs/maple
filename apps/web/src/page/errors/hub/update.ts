@@ -82,7 +82,7 @@ const keyed = <A, E>(
 ): Step =>
 	Option.match(Keyed.request(slot, key, mode), {
 		onNone: () => NO_STEP,
-		onSome: (next) => ({ patch: write(next), commands: [fetch(key)] }),
+		onSome: (next) => ({ patch: write(next), commands: [fetch(next.key)] }),
 	})
 
 /** Applies steps in order, each seeing the Model the previous one left. */
