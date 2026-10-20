@@ -165,6 +165,10 @@ const navigateFilters = (model: Model, search: SettingsSearch, filters: AuditLog
 const toggled = (values: ReadonlyArray<string>, value: string) =>
 	values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value]
 
+/** Back on the tab: the list stays up (dimmed) while its first page reads again, as Refresh does. */
+export const revisit = (model: Model, search: SettingsSearch): Return =>
+	fetch({ ...model, pinnedUntil: null }, baseRequestOf(parseAuditLogSearch(search)), search)
+
 export const update = (model: Model, message: Message, search: SettingsSearch): Return => {
 	const filters = parseAuditLogSearch(search)
 	return Message.match<Return>(message, {

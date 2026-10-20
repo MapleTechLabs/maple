@@ -3,6 +3,7 @@ import { AsyncData, Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { PageReturn } from "../../contract"
+import { revisitData } from "../kit/revisit"
 import { Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -21,6 +22,12 @@ export const init = (): Return => ({
 	model: { audit: AsyncData.Loading(), isPassingOpen: false },
 	commands: [FetchSetupAudit()],
 })
+
+/** Back on the tab: the last report stays up while the audit runs again. */
+export const revisit = (model: Model): Return => {
+	const audit = revisitData(model.audit, FetchSetupAudit)
+	return { model: { ...model, audit: audit.data }, commands: audit.commands }
+}
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {

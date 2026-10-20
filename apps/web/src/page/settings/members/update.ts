@@ -13,6 +13,7 @@ import * as Field from "../../../ui/field"
 import * as Menu from "../../../ui/menu"
 import * as Select from "../../../ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
+import { revisitData } from "../kit/revisit"
 import { memberDisplayName } from "../kit/members"
 import { type InvitationRow, type MemberRow, Message, type Model, OrgRole } from "./model"
 
@@ -331,6 +332,16 @@ const pickedRowAction = (model: Model, menuId: string, value: string): Return =>
 							commands: [ResendInvitation({ id: row.id, email: row.email, role: toOrgRole(row.role) })],
 						},
 	})
+}
+
+/** Back on the tab: the first pages of members and invitations stay up while they load again. */
+export const revisit = (model: Model): Return => {
+	const members = revisitData(model.members, () => FetchMembers({ page: 1 }))
+	const invitations = revisitData(model.invitations, () => FetchInvitations({ page: 1 }))
+	return {
+		model: { ...model, members: members.data, invitations: invitations.data },
+		commands: [...members.commands, ...invitations.commands],
+	}
 }
 
 export const update = (model: Model, message: Message): Return =>

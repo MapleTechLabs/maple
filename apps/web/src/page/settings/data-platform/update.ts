@@ -7,6 +7,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import * as Dialog from "../../../ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
+import { revisitData } from "../kit/revisit"
 import { type ConnectionDraft, Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -155,6 +156,17 @@ const withCommands = (step: Return, commands: ReadonlyArray<Return["commands"]>)
 	...step,
 	commands: [...(step.commands ?? []), ...commands.flatMap((list) => list ?? [])],
 })
+
+/** Back on the tab: the connection, drift and usage stay up while they load again. */
+export const revisit = (model: Model): Return => {
+	const settings = revisitData(model.settings, FetchSettings)
+	const diff = revisitData(model.diff, FetchDiff)
+	const usage = revisitData(model.usage, FetchUsage)
+	return {
+		model: { ...model, settings: settings.data, diff: diff.data, usage: usage.data },
+		commands: [...settings.commands, ...diff.commands, ...usage.commands],
+	}
+}
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {

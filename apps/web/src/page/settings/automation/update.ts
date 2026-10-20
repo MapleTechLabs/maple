@@ -13,6 +13,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import * as Select from "../../../ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
+import { revisitData } from "../kit/revisit"
 import { SEVERITY_ORDER } from "../../errors/kit/severity"
 import { ConfidenceChoice, DecisionSource, Message, type Model, type PolicyDraft, type RuleDraft } from "./model"
 
@@ -114,6 +115,16 @@ const edit = (model: Model, change: (draft: PolicyDraft) => PolicyDraft): Return
 	model.draft === null || !model.isAdmin || model.isSaving
 		? { model }
 		: { model: { ...model, draft: change(model.draft), isDirty: true, revision: model.revision + 1 } }
+
+/** Back on the tab: the policy and attempts stay up while they load again; an unsaved draft is kept. */
+export const revisit = (model: Model): Return => {
+	const policy = revisitData(model.policy, FetchEscalationPolicy)
+	const attempts = revisitData(model.attempts, FetchRecentEscalations)
+	return {
+		model: { ...model, policy: policy.data, attempts: attempts.data },
+		commands: [...policy.commands, ...attempts.commands],
+	}
+}
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {

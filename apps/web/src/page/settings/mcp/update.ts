@@ -1,6 +1,7 @@
 import { Array, Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { PageOutMessage, type PageReturn } from "../../contract"
+import { revisitData } from "../kit/revisit"
 import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
 import * as Tabs from "../../../ui/tabs"
@@ -55,6 +56,16 @@ const liftCreateKey = (model: Model, step: ReturnType<typeof CreateKey.update>):
 			out?._tag === "RequestedToast"
 				? PageOutMessage.RequestedToast({ type: out.type, title: out.title, description: out.description })
 				: undefined,
+	}
+}
+
+/** Back on the tab: connections and tools stay up while they load again. */
+export const revisit = (model: Model): Return => {
+	const connections = revisitData(model.connections, FetchConnections)
+	const tools = revisitData(model.tools, FetchTools)
+	return {
+		model: { ...model, connections: connections.data, tools: tools.data },
+		commands: [...connections.commands, ...tools.commands],
 	}
 }
 

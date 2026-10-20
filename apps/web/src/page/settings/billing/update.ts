@@ -21,6 +21,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { MapleApiClient, MapleInternalApiClient } from "../../../platform/api-clients"
 import * as Dialog from "../../../ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
+import { revisitData } from "../kit/revisit"
 import * as Details from "./details/update"
 import { CAP_INPUT_ID, Message, type Model, SpendFeatureId } from "./model"
 
@@ -244,6 +245,26 @@ const saveCap = (model: Model, customer: BillingCustomer | null, nowMs: number):
 	if (featureId === null || !parsed.valid || model.isSavingCap) return { model }
 	const label = spendModelOf(model, customer, nowMs)?.features.find((feature) => feature.featureId === featureId)?.label ?? ""
 	return { model: { ...model, isSavingCap: true }, commands: [SaveCap({ featureId, label, overageLimit: parsed.cap })] }
+}
+
+/** Back on the tab: plans, usage, spend, invoices and details stay up while they load again. */
+export const revisit = (model: Model): Return => {
+	const plans = revisitData(model.plans, FetchPlans)
+	const usage = revisitData(model.usage, FetchUsage)
+	const daily = revisitData(model.daily, FetchDaily)
+	const invoices = revisitData(model.invoices, FetchInvoices)
+	const profile = revisitData(model.profile, FetchProfile)
+	return {
+		model: {
+			...model,
+			plans: plans.data,
+			usage: usage.data,
+			daily: daily.data,
+			invoices: invoices.data,
+			profile: profile.data,
+		},
+		commands: [...plans.commands, ...usage.commands, ...daily.commands, ...invoices.commands, ...profile.commands],
+	}
 }
 
 export const update = (model: Model, message: Message, customer: BillingCustomer | null, nowMs: number): Step =>

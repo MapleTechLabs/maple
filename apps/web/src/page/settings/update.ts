@@ -82,6 +82,24 @@ const tabTag = (tab: SettingsTab): TabModel["_tag"] => TAB_TAGS.get(tab) ?? "Unp
 const isTabCurrent = (current: TabModel | null, tab: SettingsTab): boolean =>
 	current !== null && current._tag === tabTag(tab) && (current._tag !== "Unported" || current.tab === tab)
 
+type TabOf<T extends TabModel["_tag"]> = Extract<TabModel, { readonly _tag: T }>
+
+/** The open tab or a kept one: a kept tab still takes the answers to what it asked for. */
+const tabNamed = <T extends TabModel["_tag"]>(model: Model, tag: T): TabOf<T> | undefined =>
+	[model.tab, ...model.kept].find((tab): tab is TabOf<T> => tab !== null && tab._tag === tag)
+
+/** Writes a tab back where it lives: open, or kept. */
+const putTab = (model: Model, tab: TabModel): Model =>
+	model.tab !== null && model.tab._tag === tab._tag
+		? { ...model, tab }
+		: { ...model, kept: model.kept.map((kept) => (kept._tag === tab._tag ? tab : kept)) }
+
+/** Closes the open tab, keeping its state for a return. */
+const leaveTab = (model: Model): Model =>
+	model.tab === null || model.tab._tag === "Unported"
+		? { ...model, tab: null }
+		: { ...model, tab: null, kept: [...model.kept.filter((kept) => kept._tag !== model.tab?._tag), model.tab] }
+
 const sessionOf = (model: Model) => ({
 	isAdmin: visibilityOf(model).isAdmin,
 	userId: AsyncData.getOrElse(AsyncData.map(model.session, (session) => session.userId), () => null),
@@ -181,11 +199,101 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 	}
 }
 
-/** Mounts the active tab's section once the nav can resolve it, dropping the previous one. */
+/** A kept tab back on screen: its data stays while it reads again. */
+const revisitTab = (model: Model, kept: TabModel, context: PageContext): Return => {
+	switch (kept._tag) {
+		case "Ingestion": {
+			const step = Ingestion.revisit(kept.model, ingestionOptionsOf(model, context))
+			return {
+				model: { ...model, tab: { _tag: "Ingestion", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotIngestionMessage({ message })),
+			}
+		}
+		case "Mcp": {
+			const step = Mcp.revisit(kept.model)
+			return {
+				model: { ...model, tab: { _tag: "Mcp", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotMcpMessage({ message })),
+			}
+		}
+		case "Keys":
+			// The key list lives on the page, which kept reading it.
+			return { model: { ...model, tab: { _tag: "Keys", model: { ...kept.model, apiKeys: model.apiKeys } } } }
+		case "SetupHealth": {
+			const step = SetupHealth.revisit(kept.model)
+			return {
+				model: { ...model, tab: { _tag: "SetupHealth", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotSetupHealthMessage({ message })),
+			}
+		}
+		case "Ai": {
+			const step = Ai.revisit(kept.model)
+			return {
+				model: { ...model, tab: { _tag: "Ai", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAiMessage({ message })),
+			}
+		}
+		case "Automation": {
+			const step = Automation.revisit(kept.model)
+			return {
+				model: { ...model, tab: { _tag: "Automation", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAutomationMessage({ message })),
+			}
+		}
+		case "AuditLog": {
+			const step = AuditLog.revisit(kept.model, model.search)
+			return {
+				model: { ...model, tab: { _tag: "AuditLog", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAuditLogMessage({ message })),
+			}
+		}
+		case "DataPlatform": {
+			const step = DataPlatform.revisit(kept.model)
+			return {
+				model: { ...model, tab: { _tag: "DataPlatform", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDataPlatformMessage({ message })),
+			}
+		}
+		case "General": {
+			const step = General.revisit(kept.model)
+			return {
+				model: { ...model, tab: { _tag: "General", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotGeneralMessage({ message })),
+			}
+		}
+		case "Members": {
+			const step = Members.revisit(kept.model)
+			return {
+				model: { ...model, tab: { _tag: "Members", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotMembersMessage({ message })),
+			}
+		}
+		case "Billing": {
+			const step = Billing.revisit(kept.model)
+			return {
+				model: { ...model, tab: { _tag: "Billing", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotBillingMessage({ message })),
+			}
+		}
+		case "Unported":
+			return { model: { ...model, tab: kept } }
+	}
+}
+
+/** Opens `tab`, keeping the one left: a kept tab comes back with its data, any other starts fresh. */
+const enterTab = (model: Model, tab: SettingsTab, context: PageContext): Return => {
+	const left = leaveTab(model)
+	const returning = left.kept.find((kept) => isTabCurrent(kept, tab))
+	return returning === undefined
+		? initTab(left, tab, context)
+		: revisitTab({ ...left, kept: left.kept.filter((kept) => kept !== returning) }, returning, context)
+}
+
+/** Mounts the active tab's section once the nav can resolve it, keeping the previous one. */
 const syncTab = (model: Model, context: PageContext): Return => {
-	if (isSettingsLoading(model)) return { model: { ...model, tab: null } }
+	if (isSettingsLoading(model)) return { model: leaveTab(model) }
 	const tab = activeTabOf(model)
-	if (!isTabCurrent(model.tab, tab)) return initTab(model, tab, context)
+	if (!isTabCurrent(model.tab, tab)) return enterTab(model, tab, context)
 	// The audit log's filters live in the search: a change restarts its list.
 	if (model.tab !== null && model.tab._tag === "AuditLog") {
 		const step = AuditLog.searchChanged(model.tab.model, model.search)
@@ -241,6 +349,7 @@ export const init = (route: SettingsRoute, context: PageContext): Return => {
 			customer: AsyncData.Loading(),
 			apiKeys: null,
 			tab: null,
+			kept: [],
 		},
 		context,
 	)
@@ -261,7 +370,7 @@ const liftIngestion = (
 ): Return => {
 	const step = Ingestion.update(current, message, ingestionOptionsOf(model, context))
 	return {
-		model: { ...model, tab: { _tag: "Ingestion", model: step.model } },
+		model: putTab(model, { _tag: "Ingestion", model: step.model }),
 		commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotIngestionMessage({ message: inner })),
 		outMessage: step.outMessage,
 	}
@@ -270,7 +379,7 @@ const liftIngestion = (
 const liftMcp = (model: Model, current: McpModel.Model, message: McpMessage.Message): Return => {
 	const step = Mcp.update(current, message)
 	return {
-		model: { ...model, tab: { _tag: "Mcp", model: step.model } },
+		model: putTab(model, { _tag: "Mcp", model: step.model }),
 		commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotMcpMessage({ message: inner })),
 		outMessage: step.outMessage,
 	}
@@ -279,7 +388,7 @@ const liftMcp = (model: Model, current: McpModel.Model, message: McpMessage.Mess
 const liftKeys = (model: Model, current: KeysModel.Model, message: KeysMessage.Message): Return => {
 	const step = Keys.update(current, message)
 	return {
-		model: { ...model, tab: { _tag: "Keys", model: step.model } },
+		model: putTab(model, { _tag: "Keys", model: step.model }),
 		commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotKeysMessage({ message: inner })),
 		outMessage: step.outMessage,
 	}
@@ -294,7 +403,7 @@ const clearCheckoutMarker = (model: Model) =>
 
 /** Lifts a Billing step: its commands, a stale customer read, and the cleared checkout marker. */
 const liftBilling = (model: Model, { step, isCustomerStale, isCheckoutSettled }: Billing.Step): Return => {
-	const next = { ...model, tab: { _tag: "Billing", model: step.model } } as const
+	const next = putTab(model, { _tag: "Billing", model: step.model })
 	// `BILLING_CUSTOMER_KEY`: a cap save, the portal, a plan change or Retry read the customer again.
 	return {
 		model: isCustomerStale
@@ -325,76 +434,84 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchCustomer: ({ result }) =>
 			settleCheckout(syncTab({ ...model, customer: AsyncData.settle(model.customer, result) }, context)),
 		GotSetupHealthMessage: ({ message: inner }) => {
-			if (model.tab === null || model.tab._tag !== "SetupHealth") return { model }
-			const step = SetupHealth.update(model.tab.model, inner)
+			const tab = tabNamed(model, "SetupHealth")
+			if (tab === undefined) return { model }
+			const step = SetupHealth.update(tab.model, inner)
 			return {
-				model: { ...model, tab: { _tag: "SetupHealth", model: step.model } },
+				model: putTab(model, { _tag: "SetupHealth", model: step.model }),
 				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotSetupHealthMessage({ message: child })),
 			}
 		},
 		GotAiMessage: ({ message: inner }) => {
-			if (model.tab === null || model.tab._tag !== "Ai") return { model }
-			const step = Ai.update(model.tab.model, inner)
+			const tab = tabNamed(model, "Ai")
+			if (tab === undefined) return { model }
+			const step = Ai.update(tab.model, inner)
 			return {
-				model: { ...model, tab: { _tag: "Ai", model: step.model } },
+				model: putTab(model, { _tag: "Ai", model: step.model }),
 				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotAiMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},
 		GotAutomationMessage: ({ message: inner }) => {
-			if (model.tab === null || model.tab._tag !== "Automation") return { model }
-			const step = Automation.update(model.tab.model, inner)
+			const tab = tabNamed(model, "Automation")
+			if (tab === undefined) return { model }
+			const step = Automation.update(tab.model, inner)
 			return {
-				model: { ...model, tab: { _tag: "Automation", model: step.model } },
+				model: putTab(model, { _tag: "Automation", model: step.model }),
 				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotAutomationMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},
 		GotAuditLogMessage: ({ message: inner }) => {
-			if (model.tab === null || model.tab._tag !== "AuditLog") return { model }
-			const step = AuditLog.update(model.tab.model, inner, model.search)
+			const tab = tabNamed(model, "AuditLog")
+			if (tab === undefined) return { model }
+			const step = AuditLog.update(tab.model, inner, model.search)
 			return {
-				model: { ...model, tab: { _tag: "AuditLog", model: step.model } },
+				model: putTab(model, { _tag: "AuditLog", model: step.model }),
 				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotAuditLogMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},
 		GotDataPlatformMessage: ({ message: inner }) => {
-			if (model.tab === null || model.tab._tag !== "DataPlatform") return { model }
-			const step = DataPlatform.update(model.tab.model, inner)
+			const tab = tabNamed(model, "DataPlatform")
+			if (tab === undefined) return { model }
+			const step = DataPlatform.update(tab.model, inner)
 			return {
-				model: { ...model, tab: { _tag: "DataPlatform", model: step.model } },
+				model: putTab(model, { _tag: "DataPlatform", model: step.model }),
 				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotDataPlatformMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},
 		GotGeneralMessage: ({ message: inner }) => {
-			if (model.tab === null || model.tab._tag !== "General") return { model }
-			const step = General.update(model.tab.model, inner)
+			const tab = tabNamed(model, "General")
+			if (tab === undefined) return { model }
+			const step = General.update(tab.model, inner)
 			return {
-				model: { ...model, tab: { _tag: "General", model: step.model } },
+				model: putTab(model, { _tag: "General", model: step.model }),
 				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotGeneralMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},
 		GotMembersMessage: ({ message: inner }) => {
-			if (model.tab === null || model.tab._tag !== "Members") return { model }
-			const step = Members.update(model.tab.model, inner)
+			const tab = tabNamed(model, "Members")
+			if (tab === undefined) return { model }
+			const step = Members.update(tab.model, inner)
 			return {
-				model: { ...model, tab: { _tag: "Members", model: step.model } },
+				model: putTab(model, { _tag: "Members", model: step.model }),
 				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotMembersMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},
 		GotBillingMessage: ({ message: inner }) => {
-			if (model.tab === null || model.tab._tag !== "Billing") return { model }
+			const tab = tabNamed(model, "Billing")
+			if (tab === undefined) return { model }
 			const customer = AsyncData.getOrElse(model.customer, () => null)
-			return liftBilling(model, Billing.update(model.tab.model, inner, customer, model.nowMs))
+			return liftBilling(model, Billing.update(tab.model, inner, customer, model.nowMs))
 		},
-		GotIngestionMessage: ({ message: inner }) =>
-			model.tab !== null && model.tab._tag === "Ingestion"
-				? liftIngestion(model, model.tab.model, inner, context)
-				: { model },
+		GotIngestionMessage: ({ message: inner }) => {
+			const tab = tabNamed(model, "Ingestion")
+			return tab === undefined ? { model } : liftIngestion(model, tab.model, inner, context)
+		},
 		ClickedTab: ({ tab }) => ({
 			model,
 			outMessage: PageOutMessage.RequestedNavigation({
@@ -402,10 +519,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				isReplace: false,
 			}),
 		}),
-		GotMcpMessage: ({ message: inner }) =>
-			model.tab !== null && model.tab._tag === "Mcp" ? liftMcp(model, model.tab.model, inner) : { model },
-		GotKeysMessage: ({ message: inner }) =>
-			model.tab !== null && model.tab._tag === "Keys" ? liftKeys(model, model.tab.model, inner) : { model },
+		GotMcpMessage: ({ message: inner }) => {
+			const tab = tabNamed(model, "Mcp")
+			return tab === undefined ? { model } : liftMcp(model, tab.model, inner)
+		},
+		GotKeysMessage: ({ message: inner }) => {
+			const tab = tabNamed(model, "Keys")
+			return tab === undefined ? { model } : liftKeys(model, tab.model, inner)
+		},
 		UpdatedApiKeys: ({ orgId, rows }) => {
 			if (orgId !== context.orgId) return { model }
 			const apiKeys = rows.map(rowToV2ApiKey)

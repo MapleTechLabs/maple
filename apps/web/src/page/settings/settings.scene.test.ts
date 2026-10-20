@@ -9,7 +9,7 @@ import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import * as McpMessage from "./mcp/message"
 import type { Model } from "./model"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const context: PageContext = { orgId: Schema.decodeSync(OrgId)("org_parity"), pinnedNamespace: null, timeZone: "UTC" }
@@ -19,6 +19,8 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 
 const entered = (search: Model["search"] = {}) => init({ _tag: "Settings", search }, context)
 const mcp = (message: McpMessage.Message) => Message.GotMcpMessage({ message })
+const toTab = (model: Model, tab: NonNullable<Model["search"]["tab"]>) =>
+	routeChanged(model, { _tag: "Settings", search: { tab } }, context)
 
 const tools = [
 	{ name: "update_dashboard", title: "Update", description: "Change a dashboard's widgets.", readOnly: false, destructive: false },
@@ -114,5 +116,30 @@ describe("settings page", () => {
 			click(role("button", { name: "Audit log" })),
 			expectOutMessage(PageOutMessage.RequestedNavigation({ url: "/settings?tab=audit-log", isReplace: false })),
 		)
+	})
+
+	// The flicker: every tab switch rebuilt the tab from Loading, so a revisit painted skeletons over
+	// data shown a moment ago until the reads answered again.
+	test("coming back to a tab shows its data at once while it reads again", () => {
+		const back = toTab(toTab(mcpLoaded(), "setup-health").model, "mcp")
+		expect(names(back.commands)).toEqual(["FetchMcpConnections", "FetchMcpTools"])
+		scene(
+			{ update: pageUpdate, view },
+			given(back.model),
+			indicatorMeasured(),
+			expectView(text("david@acme.com")).toExist(),
+			expectView(role("heading", { name: "Tools · 2" })).toExist(),
+		)
+	})
+
+	test("a tab left mid-read takes the answer, and coming back does not ask twice", () => {
+		const opened = toTab(mcpLoaded(), "setup-health").model
+		const fresh = toTab({ ...opened, kept: [] }, "mcp").model
+		const away = toTab(fresh, "setup-health").model
+		const answered = pageUpdate(away, mcp(McpMessage.Message.CompletedFetchConnections({ result: Result.succeed([connection]) })))
+		const back = toTab(answered.model, "mcp")
+		// Connections answered while away and revalidate; the tools read is still in flight.
+		expect(names(back.commands)).toEqual(["FetchMcpConnections"])
+		scene({ update: pageUpdate, view }, given(back.model), indicatorMeasured(), expectView(text("david@acme.com")).toExist())
 	})
 })
