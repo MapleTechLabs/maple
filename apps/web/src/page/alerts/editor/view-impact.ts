@@ -6,9 +6,9 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../ui/eyebrow"
 import { skeleton } from "../../../ui/skeleton"
-import { previewIssue, previewStateOf, type PreviewState } from "../shared/preview"
+import { previewIssue, previewStateOf } from "../shared/preview"
 import { isoMs } from "../shared/time"
-import { openIncidentsOf, windowMsOf } from "./derive-rows"
+import { draftPreviewOf, openIncidentsOf, windowMsOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import type { Message } from "./message"
 import type { Model } from "./model"
@@ -37,13 +37,20 @@ const figure = (h: H, before: string, after: string, caption: string, tone: "goo
 		],
 	)
 
+/** What the comparison block reads off the Model. */
+export type ImpactView = Pick<
+	Model,
+	"savedForm" | "savedPreview" | "preview" | "previewWindow" | "incidents" | "editingRuleId"
+>
+
 /** The comparison block, once the draft differs from the saved rule (`comparison !== null`). */
-export const editImpact = (h: H, model: Model, form: RuleForm, draft: PreviewState): ReadonlyArray<Html> => {
+export const editImpact = (h: H, model: ImpactView, form: RuleForm): Html => {
 	const saved = model.savedForm
-	if (saved === null) return []
+	if (saved === null) return null
 	const changes = diffRuleForms(saved, form)
-	if (changes.length === 0) return []
-	const isChanged = isEvaluationChanged(model)
+	if (changes.length === 0) return null
+	const draft = draftPreviewOf(model, form)
+	const isChanged = isEvaluationChanged({ savedForm: saved, form })
 	const replay = isChanged
 		? previewStateOf(model.savedPreview, true, previewIssue(saved))
 		: { preview: draft.preview, isLoading: false, error: null }
@@ -53,61 +60,59 @@ export const editImpact = (h: H, model: Model, form: RuleForm, draft: PreviewSta
 	const delta = after.breachCount - before.breachCount
 	const display = displaySignalType(form)
 	const domain = windowMsOf(model)
-	return [
-		h.div(
-			[h.Class("space-y-3 border-b px-4 pt-3 pb-4")],
-			[
-				eyebrow(h, { variant: "label" }, [
-					"Before and after · ",
-					String(changes.length),
-					" unsaved ",
-					changes.length === 1 ? "change" : "changes",
-				]),
-				replay.isLoading || draft.isLoading
-					? skeleton(h, "h-14 w-full")
-					: h.div(
-							[h.Class("flex flex-wrap gap-x-10 gap-y-3")],
-							[
-								figure(
-									h,
-									String(before.breachCount),
-									`${after.breachCount} ${after.breachCount === 1 ? "alert" : "alerts"}`,
-									delta === 0
-										? "Same number of alerts in this window"
-										: `${Math.abs(delta)} ${delta < 0 ? "fewer" : "more"} than the saved rule`,
-									delta < 0 ? "good" : delta > 0 ? "warn" : "neutral",
-								),
-								figure(
-									h,
-									formatBreachDuration(before.longestRunMs),
-									formatBreachDuration(after.longestRunMs),
-									"longest time firing",
-									"neutral",
-								),
-							],
-						),
-				h.div(
-					[h.Class("space-y-1")],
-					[fireRail(h, "before", replay.preview, domain, "muted"), fireRail(h, "after", draft.preview, domain, "crit")],
-				),
-				h.ul(
-					[h.Class("flex flex-wrap gap-1.5 text-xs")],
-					changes.map((change) =>
-						h.li(
-							[h.Key(change.field), h.Class("rounded-sm border bg-muted/30 px-2 py-1")],
-							[
-								h.span([h.Class("text-muted-foreground")], [change.field, " "]),
-								h.span([h.Class("font-mono text-muted-foreground line-through")], [change.before]),
-								h.span([h.Class("text-muted-foreground")], [" → "]),
-								h.span([h.Class("font-mono")], [change.after]),
-							],
-						),
+	return h.div(
+		[h.Class("space-y-3 border-b px-4 pt-3 pb-4")],
+		[
+			eyebrow(h, { variant: "label" }, [
+				"Before and after · ",
+				String(changes.length),
+				" unsaved ",
+				changes.length === 1 ? "change" : "changes",
+			]),
+			replay.isLoading || draft.isLoading
+				? skeleton(h, "h-14 w-full")
+				: h.div(
+						[h.Class("flex flex-wrap gap-x-10 gap-y-3")],
+						[
+							figure(
+								h,
+								String(before.breachCount),
+								`${after.breachCount} ${after.breachCount === 1 ? "alert" : "alerts"}`,
+								delta === 0
+									? "Same number of alerts in this window"
+									: `${Math.abs(delta)} ${delta < 0 ? "fewer" : "more"} than the saved rule`,
+								delta < 0 ? "good" : delta > 0 ? "warn" : "neutral",
+							),
+							figure(
+								h,
+								formatBreachDuration(before.longestRunMs),
+								formatBreachDuration(after.longestRunMs),
+								"longest time firing",
+								"neutral",
+							),
+						],
+					),
+			h.div(
+				[h.Class("space-y-1")],
+				[fireRail(h, "before", replay.preview, domain, "muted"), fireRail(h, "after", draft.preview, domain, "crit")],
+			),
+			h.ul(
+				[h.Class("flex flex-wrap gap-1.5 text-xs")],
+				changes.map((change) =>
+					h.li(
+						[h.Key(change.field), h.Class("rounded-sm border bg-muted/30 px-2 py-1")],
+						[
+							h.span([h.Class("text-muted-foreground")], [change.field, " "]),
+							h.span([h.Class("font-mono text-muted-foreground line-through")], [change.before]),
+							h.span([h.Class("text-muted-foreground")], [" → "]),
+							h.span([h.Class("font-mono")], [change.after]),
+						],
 					),
 				),
-				...clearedBlock(h, cleared, display),
-			],
-		),
-	]
+			),
+			...clearedBlock(h, cleared, display),
+		],
+	)
 }
 
 const clearedBlock = (

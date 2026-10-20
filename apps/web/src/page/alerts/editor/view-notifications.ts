@@ -1,6 +1,7 @@
 import { ALERT_TEMPLATE_VARIABLES } from "@maple/domain/http"
 import { comparatorSupportsTiers } from "@maple/web-data/alerts/form-utils"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { Struct } from "effect"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { card } from "../../../ui/card"
 import { badge } from "../../../ui/display"
@@ -9,17 +10,26 @@ import { icon } from "../../../ui/icon"
 import { inlineCode } from "../../../ui/inline-code"
 import { statusDot } from "../../../ui/status-dot"
 import { textarea } from "../../../ui/textarea"
+import { stableSlice } from "../../kit/stable-slice"
 import { destinationsOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { fieldStateOf, idsOf } from "./view-fields"
-import { destinationList } from "./view-notify"
+import { destinationList, type NotifyView } from "./view-notify"
 
 // `NotificationsSection`: who gets notified, per tier,
 // and the optional message template.
 
 type H = HtmlBuilder<Message>
+
+/** What the section reads off the Model and the draft. */
+type NotificationsView = NotifyView &
+	Pick<Model, "destinations" | "isSendingTest" | "isMessageTemplateOpen" | "mountedForm">
+type NotificationsForm = Pick<
+	RuleForm,
+	"comparator" | "escalation" | "destinationIds" | "notificationTitle" | "notificationBody"
+>
 
 const TITLE_PLACEHOLDER = "{{ event.emoji }} {{ rule.name }} — {{ event.label }}"
 const BODY_PLACEHOLDER = [
@@ -34,7 +44,7 @@ const tierHeading = (h: H, severity: "warning" | "critical", text: string): Html
 	)
 
 /** `MessageTemplate`: collapsed until opened, or open when the rule has one. */
-const messageTemplate = (h: H, model: Model, form: RuleForm): Html => {
+const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm): Html => {
 	const hasTemplate = form.notificationTitle.length > 0 || form.notificationBody.length > 0
 	const isOpen = model.isMessageTemplateOpen
 	const titleState = fieldStateOf(form.notificationTitle, model.mountedForm?.notificationTitle)
@@ -111,8 +121,7 @@ const messageTemplate = (h: H, model: Model, form: RuleForm): Html => {
 	)
 }
 
-/** "Who gets notified": one list per tier, Send test while anything is selected, and the template. */
-export const notificationsSection = (h: H, model: Model, form: RuleForm): Html => {
+const notifications = (h: H, model: NotificationsView, form: NotificationsForm): Html => {
 	const destinations = destinationsOf(model)
 	const escalation = comparatorSupportsTiers(form.comparator) ? form.escalation : null
 	const isAnySelected = destinations.some(
@@ -194,3 +203,27 @@ const variables = (h: H): Html =>
 			),
 		],
 	)
+
+// Rebuilt on its own fields and the draft's delivery fields only: typing a name skips it.
+const slot = createLazy()
+const viewOf = stableSlice((model: Model) =>
+	Struct.pick(model, [
+		"destinations",
+		"isSendingTest",
+		"isMessageTemplateOpen",
+		"mountedForm",
+		"isAdmin",
+		"connectors",
+		"menus",
+		"chatConnect",
+		"chatConnectMenuId",
+		"brokenLogos",
+	]),
+)
+const formOf = stableSlice((form: RuleForm) =>
+	Struct.pick(form, ["comparator", "escalation", "destinationIds", "notificationTitle", "notificationBody"]),
+)
+
+/** "Who gets notified": one list per tier, Send test while anything is selected, and the template. */
+export const notificationsSection = (h: H, model: Model, form: RuleForm): Html =>
+	slot(notifications, [h, viewOf(model), formOf(form)])

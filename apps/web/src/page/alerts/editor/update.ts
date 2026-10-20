@@ -10,6 +10,7 @@ import { FocusSqlCaret, InsertSqlToken, ReloadPage } from "./command"
 import { SQL_TEXTAREA_ID } from "./view-sql"
 import { chatConnectStep, connectorsAnswered, liftDialog, menuStep, removeDestination } from "./dest-steps"
 import { suggestedName } from "./derive"
+import { tagSuggestionsOf } from "./derive-rows"
 import * as F from "./form-steps"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -25,10 +26,17 @@ const ofOrg = (model: Model, context: PageContext, orgId: string, step: () => Re
 /** The clock read: the provider's 24h window (once) and the preview's lookback. */
 const readClock = (model: Model, context: PageContext, nowMs: number): Return => {
 	const resolve = (preset: string) => resolveWindow({ preset, snap: true, timeZone: context.timeZone }, nowMs)
+	const previewWindow = resolve(model.previewPreset)
 	const windows: Model = {
 		...model,
 		autocompleteWindow: model.autocompleteWindow ?? resolve(AUTOCOMPLETE_PRESET),
-		previewWindow: resolve(model.previewPreset),
+		// The same snapped window keeps its reference, so the chart is not rebuilt for it.
+		previewWindow:
+			model.previewWindow !== null &&
+			model.previewWindow.startTime === previewWindow.startTime &&
+			model.previewWindow.endTime === previewWindow.endTime
+				? model.previewWindow
+				: previewWindow,
 	}
 	const looked = planAutocomplete(windows, context)
 	const previewed = planPreviews(looked.model, context)
@@ -39,7 +47,10 @@ const closeTemplates = (model: Model): Return => liftTemplates(model, Dialog.clo
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		UpdatedRules: ({ orgId, rows }) => ofOrg(model, context, orgId, () => followRows({ ...model, rules: rows }, context)),
+		UpdatedRules: ({ orgId, rows }) =>
+			ofOrg(model, context, orgId, () =>
+				followRows({ ...model, rules: rows, tagSuggestions: tagSuggestionsOf(rows, model.tagSuggestions) }, context),
+			),
 		UpdatedRuleStates: ({ orgId, rows }) => ofOrg(model, context, orgId, () => ({ model: { ...model, states: rows } })),
 		UpdatedIncidents: ({ orgId, rows }) => ofOrg(model, context, orgId, () => ({ model: { ...model, incidents: rows } })),
 		UpdatedDestinations: ({ orgId, rows }) =>

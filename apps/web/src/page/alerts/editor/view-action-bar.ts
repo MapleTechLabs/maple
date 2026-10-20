@@ -1,8 +1,11 @@
+import { diffRuleForms } from "@maple/web-data/alerts/preview-insights"
 import { cn } from "@maple/ui/lib/utils"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { Struct } from "effect"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
 import * as Tooltip from "../../../ui/tooltip"
+import { stableSlice } from "../../kit/stable-slice"
 import { alertsHref } from "../shared/links"
 import { describeRuleCondition, validationIssues } from "./derive"
 import type { RuleForm } from "./form"
@@ -17,8 +20,11 @@ type H = HtmlBuilder<Message>
 
 const MAX_VISIBLE_ISSUES = 3
 
+/** What the bar reads off the Model. */
+type BarView = Pick<Model, "issuesTooltip" | "isSaving" | "editingRuleId" | "savedForm">
+
 /** The "details" trigger and its tooltip: every issue, one per line. */
-const issuesDetails = (h: H, model: Model, issues: ReadonlyArray<string>): Html =>
+const issuesDetails = (h: H, model: BarView, issues: ReadonlyArray<string>): Html =>
 	h.submodel({
 		slotId: "alert-rule-issues-tooltip",
 		model: model.issuesTooltip,
@@ -49,7 +55,7 @@ const issuesDetails = (h: H, model: Model, issues: ReadonlyArray<string>): Html 
 	})
 
 /** `ValidationSummary`. */
-const validationSummary = (h: H, model: Model, issues: ReadonlyArray<string>): Html => {
+const validationSummary = (h: H, model: BarView, issues: ReadonlyArray<string>): Html => {
 	if (issues.length === 0)
 		return h.span(
 			[h.Class("flex items-center gap-1.5 text-xs text-severity-info")],
@@ -68,8 +74,9 @@ const validationSummary = (h: H, model: Model, issues: ReadonlyArray<string>): H
 	)
 }
 
-/** `changeCount`: unsaved field changes while editing, `null` on a new rule. */
-export const actionBar = (h: H, model: Model, form: RuleForm, changeCount: number | null): Html => {
+const bar = (h: H, model: BarView, form: RuleForm): Html => {
+	// Unsaved field changes while editing, `null` on a new rule.
+	const changeCount = model.savedForm === null ? null : diffRuleForms(model.savedForm, form).length
 	const issues = validationIssues(form)
 	const isEditing = model.editingRuleId !== null
 	const summary = describeRuleCondition(form)
@@ -143,3 +150,11 @@ export const actionBar = (h: H, model: Model, form: RuleForm, changeCount: numbe
 		],
 	)
 }
+
+const slot = createLazy()
+const viewOf = stableSlice((model: Model) =>
+	Struct.pick(model, ["issuesTooltip", "isSaving", "editingRuleId", "savedForm"]),
+)
+
+/** `RuleActionBar`. */
+export const actionBar = (h: H, model: Model, form: RuleForm): Html => slot(bar, [h, viewOf(model), form])

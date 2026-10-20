@@ -2,7 +2,7 @@ import type { AlertSeverity } from "@maple/domain/http"
 import { alertEvaluationIntervalMinutes } from "@maple/query-engine/datetime"
 import { comparatorSupportsTiers, isRangeComparator, thresholdUnitLabel } from "@maple/web-data/alerts/form-utils"
 import { cn } from "@maple/ui/lib/utils"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { card } from "../../../ui/card"
 import { eyebrow } from "../../../ui/eyebrow"
@@ -10,6 +10,8 @@ import { field, fieldLabel } from "../../../ui/field"
 import { icon } from "../../../ui/icon"
 import * as RadioGroup from "../../../ui/radio-group"
 import { statusDot } from "../../../ui/status-dot"
+import type * as Select from "../../../ui/select"
+import { stableSlice } from "../../kit/stable-slice"
 import { COMPARATOR_WORDS, comparatorWords, recoveryLabel } from "./derive"
 import type { RuleForm } from "./form"
 import { Message, type TextField } from "./message"
@@ -20,6 +22,11 @@ import { formSelect } from "./view-select"
 // `RuleConditionFields`: the rule's condition row.
 
 type H = HtmlBuilder<Message>
+
+const COMPARATOR_SELECT_ID = "rule-comparator"
+
+/** What the card reads off the Model: the dirty and saved values, and the comparator select's state. */
+type ConditionView = Pick<Model, "mountedForm" | "savedForm"> & Readonly<{ comparatorSelect: Select.Model | undefined }>
 
 /** `COMPARATOR_ITEMS`, in `comparatorLabels` order. */
 const COMPARATOR_ITEMS = [...COMPARATOR_WORDS].map(([value, label]) => ({ value, label }))
@@ -106,14 +113,14 @@ const tierLabel = (h: H, severity: AlertSeverity): Html => {
 const wasOf = (saved: RuleForm | null, form: RuleForm, pick: (form: RuleForm) => string): string | null =>
 	saved !== null && pick(saved).trim() !== pick(form).trim() ? pick(saved) : null
 
-const comparatorRow = (h: H, model: Model, form: RuleForm, saved: RuleForm | null): Html => {
+const comparatorRow = (h: H, model: ConditionView, form: RuleForm, saved: RuleForm | null): Html => {
 	const comparatorWas = wasOf(saved, form, (f) => f.comparator)
 	const ids = idsOf("rule-comparator", false)
 	const state = fieldStateOf(form.comparator, undefined)
 	return h.div(
 		[h.Class("grid items-start gap-4 p-4 md:grid-cols-3")],
 		[
-			formSelect(h, model, "rule-comparator", form.comparator, COMPARATOR_ITEMS, {
+			formSelect(h, model.comparatorSelect, COMPARATOR_SELECT_ID, form.comparator, COMPARATOR_ITEMS, {
 				className: cn("h-9 w-full", comparatorWas !== null && "border-severity-warn/60"),
 				ariaLabel: "Condition",
 				labelledBy: ids.label,
@@ -142,7 +149,7 @@ const comparatorRow = (h: H, model: Model, form: RuleForm, saved: RuleForm | nul
 type FieldValues = Readonly<{ value: string; mounted: string | undefined; previous: string | null }>
 
 const valuesOf =
-	(model: Model, form: RuleForm, saved: RuleForm | null) =>
+	(model: ConditionView, form: RuleForm, saved: RuleForm | null) =>
 	(pick: (form: RuleForm) => string): FieldValues => ({
 		value: pick(form),
 		mounted: model.mountedForm === null ? undefined : pick(model.mountedForm),
@@ -205,7 +212,7 @@ const windowDescription = (windowMinutes: string): string => {
 	return `Each check looks at this much data, checked every ${every === 1 ? "minute" : `${every} min`}.`
 }
 
-const checksSection = (h: H, model: Model, form: RuleForm, saved: RuleForm | null): Html => {
+const checksSection = (h: H, model: ConditionView, form: RuleForm, saved: RuleForm | null): Html => {
 	const values = valuesOf(model, form, saved)
 	return h.div(
 		[h.Class("space-y-3 border-t p-4")],
@@ -260,8 +267,7 @@ const checksSection = (h: H, model: Model, form: RuleForm, saved: RuleForm | nul
 	)
 }
 
-/** The condition card under the chart; `saved` is the rule being edited. */
-export const conditionFields = (h: H, model: Model, form: RuleForm): Html =>
+const condition = (h: H, model: ConditionView, form: RuleForm): Html =>
 	card(
 		h,
 		[
@@ -272,7 +278,7 @@ export const conditionFields = (h: H, model: Model, form: RuleForm): Html =>
 		"gap-0 p-0",
 	)
 
-const thresholdsSection = (h: H, model: Model, form: RuleForm, saved: RuleForm | null): Html => {
+const thresholdsSection = (h: H, model: ConditionView, form: RuleForm, saved: RuleForm | null): Html => {
 	const isRange = isRangeComparator(form.comparator)
 	const isTiered = comparatorSupportsTiers(form.comparator)
 	const escalation = isTiered ? form.escalation : null
@@ -346,3 +352,15 @@ const thresholdsSection = (h: H, model: Model, form: RuleForm, saved: RuleForm |
 	)
 }
 
+
+const slot = createLazy()
+const viewOf = stableSlice(
+	(model: Model): ConditionView => ({
+		mountedForm: model.mountedForm,
+		savedForm: model.savedForm,
+		comparatorSelect: model.selects[COMPARATOR_SELECT_ID],
+	}),
+)
+
+/** The condition card under the chart; `form` is the evaluated draft (`evaluatedFormOf`). */
+export const conditionFields = (h: H, model: Model, form: RuleForm): Html => slot(condition, [h, viewOf(model), form])

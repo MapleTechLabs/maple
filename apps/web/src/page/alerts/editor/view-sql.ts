@@ -9,6 +9,7 @@ import { button } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { inlineCode } from "../../../ui/inline-code"
+import type * as Select from "../../../ui/select"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -18,6 +19,11 @@ import { formSelect } from "./view-select"
 // (`RawQueryEditor`).
 
 type H = HtmlBuilder<Message>
+
+export const REDUCER_SELECT_ID = "rule-raw-reducer"
+
+/** What the editor reads off the Model: the collapse and the reducer select's state. */
+export type SqlView = Pick<Model, "isSqlCollapsed"> & Readonly<{ reducerSelect: Select.Model | undefined }>
 
 export const SQL_TEXTAREA_ID = "alert-rule-sql"
 
@@ -31,7 +37,7 @@ const MACRO_HINTS: ReadonlyArray<string> = [
 
 const REDUCER_OPTIONS = Object.entries(RAW_QUERY_REDUCER_LABELS).map(([value, label]) => ({ value, label }))
 
-const header = (h: H, model: Model, sql: string): Html => {
+const header = (h: H, model: SqlView, sql: string): Html => {
 	const issue = rawSqlIssue(sql)
 	return h.div(
 		[h.Class("flex items-center gap-2 px-3 py-2 bg-muted/30")],
@@ -136,7 +142,7 @@ const macros = (h: H): Html =>
 	)
 
 /** `RawQueryEditor`: the SQL panel, the reducer, and the sample-count warning. */
-export const rawQueryEditor = (h: H, model: Model, form: RuleForm): Html => {
+export const rawQueryEditor = (h: H, model: SqlView, form: RuleForm): Html => {
 	const sampleWarning = rawAlertSampleCountWarning(form.rawQuerySql, Number(form.minimumSampleCount) || 0)
 	return h.div(
 		[h.Class("space-y-2")],
@@ -164,7 +170,7 @@ export const rawQueryEditor = (h: H, model: Model, form: RuleForm): Html => {
 					),
 				],
 			),
-			formSelect(h, model, "rule-raw-reducer", form.rawQueryReducer, REDUCER_OPTIONS, {
+			formSelect(h, model.reducerSelect, REDUCER_SELECT_ID, form.rawQueryReducer, REDUCER_OPTIONS, {
 				className: "h-8 w-40",
 				toView: (parts) =>
 					h.div(

@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button } from "../../../ui/button"
 import * as DialogView from "../../../ui/dialog-view"
@@ -75,10 +75,10 @@ const tiles = (h: H): ReadonlyArray<Html> => [
 	),
 ]
 
-export const templatesOverlay = (h: H, model: Model): Html =>
+const overlay = (h: H, templates: Model["templates"]): Html =>
 	h.submodel({
 		slotId: "alert-rule-templates",
-		model: model.templates,
+		model: templates,
 		view: DialogView.view,
 		viewInputs: {
 			hasTrigger: false,
@@ -87,11 +87,11 @@ export const templatesOverlay = (h: H, model: Model): Html =>
 			toView: ({ portal }) => portal,
 			toContent: () => [
 				DialogView.dialogHeader(h, "dialog", [
-					DialogView.dialogTitle(h, "dialog", model.templates.id, "Start with a template"),
+					DialogView.dialogTitle(h, "dialog", templates.id, "Start with a template"),
 					DialogView.dialogDescription(
 						h,
 						"dialog",
-						model.templates.id,
+						templates.id,
 						"These cover the most common alerts. Pick one — every field stays editable after.",
 					),
 				]),
@@ -110,3 +110,8 @@ export const templatesOverlay = (h: H, model: Model): Html =>
 		},
 		toParentMessage: (message) => Message.GotTemplatesMessage({ message }),
 	})
+
+const slot = createLazy()
+
+/** The picker, rebuilt only when its dialog changes. */
+export const templatesOverlay = (h: H, model: Model): Html => slot(overlay, [h, model.templates])

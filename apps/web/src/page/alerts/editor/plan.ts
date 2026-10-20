@@ -54,7 +54,7 @@ export const planAutocomplete = (model: Model, context: PageContext): Planned =>
 }
 
 /** Whether the saved rule evaluates differently from the draft (`evaluationChanged`). */
-export const isEvaluationChanged = (model: Model): boolean =>
+export const isEvaluationChanged = (model: Pick<Model, "savedForm" | "form">): boolean =>
 	model.savedForm !== null &&
 	model.form !== null &&
 	previewIdentityKey(model.savedForm) !== previewIdentityKey(model.form)
