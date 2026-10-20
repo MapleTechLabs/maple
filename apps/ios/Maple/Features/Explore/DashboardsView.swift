@@ -276,7 +276,7 @@ private struct DashboardContent: View {
 						ForEach(widgets) { widget in
 							StatTile(
 								label: widget.title,
-								value: board.data[widget.id].flatMap(\.number).map { WidgetFormat.value($0, unit: widget.unit) } ?? "—"
+								value: board.data[widget.id].flatMap(\.number).map { WidgetFormat.stat($0, widget: widget) } ?? "—"
 							)
 						}
 					}
@@ -311,6 +311,11 @@ enum WidgetFormat {
 		case "bytes": bytes(value)
 		default: Format.count(value)
 		}
+	}
+
+	/// `formatStatValue`: the unit formatting wrapped in the widget's prefix and suffix.
+	static func stat(_ value: Double, widget: MobileWidget) -> String {
+		(widget.prefix ?? "") + Self.value(value, unit: widget.unit) + (widget.suffix ?? "")
 	}
 
 	/// `percentText`: one decimal, with more digits only for a tiny nonzero value.
