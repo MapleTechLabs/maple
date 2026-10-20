@@ -239,18 +239,23 @@ const availableStrip = (h: H, sources: ReadonlyArray<V2Source>): Html | null => 
 	)
 }
 
-/** "1.2 GB stored in the last 24h", across every source, beside the filters. */
-const orgTotal = (h: H, usage: UsageBySource, isUnavailable: boolean): Html | null => {
+/** "1.2 GB stored in the last 24h" beside the filters: listed sources only, so a deleted one stops counting. */
+const orgTotal = (
+	h: H,
+	sources: ReadonlyArray<V2Source>,
+	usage: UsageBySource,
+	isUnavailable: boolean,
+): Html | null => {
 	if (usage === null || isUnavailable) return null
-	const totals = [...usage.values()].reduce(
-		(sum, entry) => ({
+	const totals = sources.reduce((sum, source) => {
+		const entry = usage.get(source.id) ?? NO_VOLUME
+		return {
 			spans: sum.spans + entry.spans,
 			logs: sum.logs + entry.logs,
 			metrics: sum.metrics + entry.metrics,
 			bytes: sum.bytes + entry.bytes,
-		}),
-		NO_VOLUME,
-	)
+		}
+	}, NO_VOLUME)
 	return h.span(
 		[h.Class("text-muted-foreground ml-auto text-xs tabular-nums"), h.Title(signalCounts(totals))],
 		[h.span([h.Class("text-foreground font-medium")], [volumeSize(totals)]), " stored in the last 24h"],
@@ -267,7 +272,7 @@ const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: 
 	const strip = availableStrip(h, sources)
 	const usage = usageBySource(model)
 	const isUnavailable = AsyncData.isFailure(model.usage.data)
-	const total = orgTotal(h, usage, isUnavailable)
+	const total = orgTotal(h, sources, usage, isUnavailable)
 	return h.div(
 		[h.Class("flex flex-col gap-4")],
 		[

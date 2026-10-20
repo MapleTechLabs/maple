@@ -9,6 +9,7 @@ import {
 import { Result, Schema } from "effect"
 import { click, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { SourceId } from "@maple/domain/primitives"
 import { toLoadFailure } from "../../../data/load-failure"
 import { orderSources } from "../kit/shared"
 import { type PageContext, PageOutMessage } from "../../contract"
@@ -187,6 +188,16 @@ describe("integrations on the sources list", () => {
 					logs: 0,
 					metrics: 4000,
 					bytes: 600_000,
+				},
+				// A source deleted since: still in the rollup, left out of the total.
+				{
+					source_id: encodeSourceId(
+						Schema.decodeSync(SourceId)("0199a0e1-0000-7000-8000-0000000000ff"),
+					),
+					spans: 9,
+					logs: 0,
+					metrics: 0,
+					bytes: 9_000_000,
 				},
 			],
 		})
