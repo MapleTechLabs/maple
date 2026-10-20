@@ -96,8 +96,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use sha2::Sha256;
 use sources::{
-    OverrideMode, SourceConfigRow, SourcePolicy, SourceRateLimiter, SourceRef, SourceSignal,
-    MAX_PUBLIC_ID_LEN, SOURCE_ID_ATTRIBUTE, SOURCE_TOKEN_PREFIX,
+    OverrideMode, PauseWindow, SourceConfigRow, SourcePolicy, SourceRateLimiter, SourceRef,
+    SourceSignal, MAX_PUBLIC_ID_LEN, SOURCE_ID_ATTRIBUTE, SOURCE_TOKEN_PREFIX,
 };
 use tower_http::cors::{Any, CorsLayer};
 use tracing::Instrument;
@@ -796,7 +796,7 @@ struct IngestKeyResolver {
     recent_key_rejections: Cache<String, ()>,
     /// (org id, claim as received) to whether it names one of the org's pull sources,
     /// for `maple_source_id` values sent with the default keys.
-    source_claims: Cache<(String, String), bool>,
+    source_claims: Cache<(String, String), SourceClaim>,
 }
 
 /// How often one token source's `last_used_at` is rewritten per gateway instance.
@@ -820,7 +820,22 @@ impl moka::Expiry<String, Duration> for SourceUseExpiry {
     }
 }
 
-fn source_claims_cache(ttl: Duration) -> Cache<(String, String), bool> {
+/// A cached answer for one `maple_source_id` claim. The pause window is kept
+/// rather than a verdict, so a timed pause ends at its deadline while cached.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SourceClaim {
+    Unclaimable,
+    Claimable(PauseWindow),
+}
+
+/// Verified claims split by whether their source is paused right now.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct VerifiedClaims {
+    active: Vec<String>,
+    paused: Vec<String>,
+}
+
+fn source_claims_cache(ttl: Duration) -> Cache<(String, String), SourceClaim> {
     Cache::builder()
         .time_to_live(ttl)
         .max_capacity(50_000)
@@ -974,7 +989,7 @@ trait KeyStore: Send + Sync {
         org_id: &str,
         platform: &'static str,
         integration_id: &str,
-    ) -> Result<Option<String>, String>;
+    ) -> Result<Option<PullSourceRow>, String>;
 
     /// The subset of `source_ids` (uuids) that are the org's integration ("pull")
     /// sources, the only ones a default-key sender may claim. One round trip.
@@ -982,7 +997,7 @@ trait KeyStore: Send + Sync {
         &self,
         org_id: &str,
         source_ids: &[String],
-    ) -> Result<Vec<String>, String>;
+    ) -> Result<Vec<PullSourceRow>, String>;
 
     async fn fetch_connector(
         &self,
@@ -1056,6 +1071,14 @@ struct OrgKeyRow {
     key: KeyRow,
     /// `sources.id` of the org's default source; `None` if it has none.
     default_source_id: Option<String>,
+}
+
+/// An integration ("pull") source and its pause window.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PullSourceRow {
+    /// The `sources.id` uuid.
+    id: String,
+    pause: PauseWindow,
 }
 
 #[derive(Clone, Debug)]
@@ -1158,6 +1181,8 @@ struct GcpConnectorIdentity {
     confirms_log_forwarding: bool,
     /// The connector's integration source, stamped on its logs.
     source: Option<SourceRef>,
+    /// That source's pause window, judged per push so a timed pause ends on time.
+    source_pause: PauseWindow,
 }
 
 impl GcpConnectorIdentity {
@@ -1165,6 +1190,7 @@ impl GcpConnectorIdentity {
         ResolvedGcpConnector {
             logs_enabled: self.logs_enabled,
             confirms_log_forwarding: self.confirms_log_forwarding,
+            source_pause: self.source_pause,
             key: ResolvedIngestKey {
                 org_id: self.org_id,
                 key_type: IngestKeyType::Connector,
@@ -1438,6 +1464,8 @@ struct ResolvedGcpConnector {
     /// with Terraform, which sends no report. The push itself proves the sink,
     /// topic and subscription are in place.
     confirms_log_forwarding: bool,
+    /// The integration source's pause window: a paused source's entries are acked and dropped.
+    source_pause: PauseWindow,
     key: ResolvedIngestKey,
 }
 
@@ -1451,6 +1479,8 @@ enum GcpPushOutcome {
     /// A setup script run saying what it applied: recorded on the connector,
     /// not a log.
     SetupReport,
+    /// The connector's integration source is paused.
+    SourcePaused,
 }
 
 #[derive(Clone, Copy)]
@@ -1504,6 +1534,22 @@ enum DecodedPayload {
 }
 
 impl DecodedPayload {
+    fn signal(&self) -> Signal {
+        match self {
+            Self::Traces(_) => Signal::Traces,
+            Self::Logs(_) => Signal::Logs,
+            Self::Metrics(_) => Signal::Metrics,
+        }
+    }
+
+    fn resource_count(&self) -> usize {
+        match self {
+            Self::Traces(request) => request.resource_spans.len(),
+            Self::Logs(request) => request.resource_logs.len(),
+            Self::Metrics(request) => request.resource_metrics.len(),
+        }
+    }
+
     fn item_count(&self) -> usize {
         match self {
             Self::Traces(request) => count_trace_items(request),
@@ -3163,9 +3209,8 @@ impl opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::Tra
         // `decoded_payload.len()`.
         let decoded_bytes = inner.encoded_len();
         let mut decoded = DecodedPayload::Traces(inner);
-        // A paused source's export reaches here empty (see `grpc_admission`).
-        let kept_claim = admission == KeyAdmission::Ingest
-            && verify_claims_and_enrich(&self.state, &mut decoded, &resolved).await;
+        let (admission, kept_claim) =
+            admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
         accept_grpc_decoded(
             &self.state,
             Signal::Traces,
@@ -3199,9 +3244,8 @@ impl opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsS
         let inner = request.into_inner();
         let decoded_bytes = inner.encoded_len();
         let mut decoded = DecodedPayload::Logs(inner);
-        // A paused source's export reaches here empty (see `grpc_admission`).
-        let kept_claim = admission == KeyAdmission::Ingest
-            && verify_claims_and_enrich(&self.state, &mut decoded, &resolved).await;
+        let (admission, kept_claim) =
+            admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
         accept_grpc_decoded(
             &self.state,
             Signal::Logs,
@@ -3237,9 +3281,8 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
         let inner = request.into_inner();
         let decoded_bytes = inner.encoded_len();
         let mut decoded = DecodedPayload::Metrics(inner);
-        // A paused source's export reaches here empty (see `grpc_admission`).
-        let kept_claim = admission == KeyAdmission::Ingest
-            && verify_claims_and_enrich(&self.state, &mut decoded, &resolved).await;
+        let (admission, kept_claim) =
+            admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
         accept_grpc_decoded(
             &self.state,
             Signal::Metrics,
@@ -3255,6 +3298,26 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
                 partial_success: None,
             },
         ))
+    }
+}
+
+/// Verifies a gRPC export's source claims; a batch of only paused pull sources
+/// becomes a `Drop`, so the client still gets an OK reply.
+async fn admit_grpc_claims(
+    state: &AppState,
+    admission: KeyAdmission,
+    decoded: &mut DecodedPayload,
+    resolved: &ResolvedIngestKey,
+) -> (KeyAdmission, bool) {
+    // A paused source's export reaches here empty (see `grpc_admission`).
+    if admission != KeyAdmission::Ingest {
+        return (admission, false);
+    }
+    let claims = verify_claims_and_enrich(state, decoded, resolved).await;
+    if claims.all_paused {
+        (KeyAdmission::Drop, false)
+    } else {
+        (admission, claims.kept_claim)
     }
 }
 
@@ -5015,7 +5078,17 @@ async fn handle_signal_inner(
         parse_span.record("maple.ingest.item_count", decoded.item_count());
         decoded
     };
-    let kept_claim = verify_claims_and_enrich(state, &mut decoded, &resolved_key).await;
+    let claims = verify_claims_and_enrich(state, &mut decoded, &resolved_key).await;
+    if claims.all_paused {
+        // Like a paused token source: success to the sender, nothing written or billed.
+        return Ok((
+            StatusCode::OK.into_response(),
+            0,
+            resolved_key.org_id.clone(),
+            0,
+        ));
+    }
+    let kept_claim = claims.kept_claim;
     let item_count = decoded.item_count();
 
     Span::current().record("maple.ingest.item_count", item_count);
@@ -5358,6 +5431,11 @@ async fn handle_gcp_logpush(
                     span_handle.record("maple.gcp.setup_report", true);
                     metrics::request_completed("logs", "ok", "none", duration);
                 }
+                GcpPushOutcome::SourcePaused => {
+                    span_handle.record("otel.status_code", "Ok");
+                    span_handle.record("maple.ingest.reject_reason", "source_paused");
+                    metrics::request_completed("logs", "ok", "none", duration);
+                }
             }
             response
         }
@@ -5504,6 +5582,15 @@ async fn handle_gcp_logpush_inner(
             connector_id, "GCP log forwarding is off; entry acked and dropped"
         );
         return Ok((StatusCode::OK.into_response(), GcpPushOutcome::LogsDisabled));
+    }
+    // A paused integration source: acked like a paused token source, nothing stored or billed.
+    if resolved.source_pause.is_paused(current_time_millis()) {
+        metrics::source_paused_drop(org_id, Signal::Logs.path());
+        debug!(
+            org_id,
+            connector_id, "GCP integration source paused; entry acked and dropped"
+        );
+        return Ok((StatusCode::OK.into_response(), GcpPushOutcome::SourcePaused));
     }
 
     let _org_inflight_permit = state
@@ -6026,24 +6113,73 @@ fn decode_otlp_payload(
     }
 }
 
-/// Checks the sender's own `maple_source_id` values against the org, then enriches.
-/// True when a resource kept a verified claim of its own.
+/// What `verify_claims_and_enrich` found in a payload's `maple_source_id` claims.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ClaimOutcome {
+    /// A resource carried a verified claim of its own (a poller's batch), paused or
+    /// not, so the batch never counts as default-source use.
+    kept_claim: bool,
+    /// Every resource named a paused source and was dropped: answer success, write nothing.
+    all_paused: bool,
+}
+
+/// Checks the sender's own `maple_source_id` values against the org, drops the
+/// resources of paused pull sources, then enriches what is left.
 async fn verify_claims_and_enrich(
     state: &AppState,
     decoded: &mut DecodedPayload,
     resolved_key: &ResolvedIngestKey,
-) -> bool {
+) -> ClaimOutcome {
     let claims = claimed_source_ids(decoded, resolved_key);
-    let verified_claims = if claims.is_empty() {
-        Vec::new()
+    let verified = if claims.is_empty() {
+        VerifiedClaims::default()
     } else {
         state
             .resolver
             .verify_source_claims(&resolved_key.org_id, claims)
             .await
     };
-    enrich_decoded_payload(decoded, resolved_key, &verified_claims);
-    !verified_claims.is_empty()
+    let dropped = drop_paused_resources(decoded, &verified.paused);
+    let all_paused = dropped && decoded.resource_count() == 0;
+    if dropped {
+        metrics::source_paused_drop(&resolved_key.org_id, decoded.signal().path());
+        if all_paused {
+            Span::current().record("maple.ingest.reject_reason", "source_paused");
+        }
+        debug!(org_id = %resolved_key.org_id, all_paused, "Paused pull source; resources dropped");
+    }
+    enrich_decoded_payload(decoded, resolved_key, &verified.active);
+    ClaimOutcome {
+        kept_claim: !verified.active.is_empty() || dropped,
+        all_paused,
+    }
+}
+
+/// Removes every resource whose `maple_source_id` is one of `paused`. True when any was.
+fn drop_paused_resources(decoded: &mut DecodedPayload, paused: &[String]) -> bool {
+    if paused.is_empty() {
+        return false;
+    }
+    let keep = |resource: Option<&Resource>| {
+        resource
+            .and_then(|resource| source_id_claim(&resource.attributes))
+            .is_none_or(|claim| !paused.iter().any(|id| id == claim))
+    };
+    let before = decoded.resource_count();
+    match decoded {
+        DecodedPayload::Traces(request) => {
+            request.resource_spans.retain(|r| keep(r.resource.as_ref()));
+        }
+        DecodedPayload::Logs(request) => {
+            request.resource_logs.retain(|r| keep(r.resource.as_ref()));
+        }
+        DecodedPayload::Metrics(request) => {
+            request
+                .resource_metrics
+                .retain(|r| keep(r.resource.as_ref()));
+        }
+    }
+    decoded.resource_count() < before
 }
 
 /// Stamps the tenant and source onto a decoded payload. `verified_claims` are the
@@ -6632,8 +6768,17 @@ impl IngestKeyResolver {
     /// The claimed `src_` ids that name one of the org's pull sources. Only the
     /// first `MAX_SOURCE_CLAIMS` distinct claims count; uncached ones are checked in
     /// one query. Answers are cached; a store error leaves the rest unverified.
-    async fn verify_source_claims(&self, org_id: &str, claims: Vec<String>) -> Vec<String> {
-        let mut verified = Vec::new();
+    /// Pause is judged against the current clock, not when the answer was cached.
+    async fn verify_source_claims(&self, org_id: &str, claims: Vec<String>) -> VerifiedClaims {
+        let now_ms = current_time_millis();
+        let mut verified = VerifiedClaims::default();
+        let mut keep = |claim: String, pause: PauseWindow| {
+            if pause.is_paused(now_ms) {
+                verified.paused.push(claim);
+            } else {
+                verified.active.push(claim);
+            }
+        };
         // (claim as received, its uuid) for claims the cache has no answer for.
         let mut unknown: Vec<(String, String)> = Vec::new();
         let mut seen: Vec<String> = Vec::new();
@@ -6647,11 +6792,15 @@ impl IngestKeyResolver {
             seen.push(claim.clone());
             let cache_key = (org_id.to_owned(), claim);
             match self.source_claims.get(&cache_key).await {
-                Some(true) => verified.push(cache_key.1),
-                Some(false) => {}
+                Some(SourceClaim::Claimable(pause)) => keep(cache_key.1, pause),
+                Some(SourceClaim::Unclaimable) => {}
                 None => match sources::source_uuid_from_public_id(&cache_key.1) {
                     Some(uuid) => unknown.push((cache_key.1, uuid)),
-                    None => self.source_claims.insert(cache_key, false).await,
+                    None => {
+                        self.source_claims
+                            .insert(cache_key, SourceClaim::Unclaimable)
+                            .await;
+                    }
                 },
             }
         }
@@ -6670,12 +6819,17 @@ impl IngestKeyResolver {
             }
         };
         for (claim, uuid) in unknown {
-            let claimable = found.contains(&uuid);
-            if claimable {
-                verified.push(claim.clone());
+            let answer = found
+                .iter()
+                .find(|row| row.id == uuid)
+                .map_or(SourceClaim::Unclaimable, |row| {
+                    SourceClaim::Claimable(row.pause)
+                });
+            if let SourceClaim::Claimable(pause) = answer {
+                keep(claim.clone(), pause);
             }
             self.source_claims
-                .insert((org_id.to_owned(), claim), claimable)
+                .insert((org_id.to_owned(), claim), answer)
                 .await;
         }
         verified
@@ -6940,13 +7094,17 @@ impl GcpConnectorResolver {
 
     /// The connector's integration source, cached with the connector identity.
     /// `None` until the API creates it, or if the lookup fails: that never fails auth.
-    async fn integration_source(&self, org_id: &str, connector_id: &str) -> Option<SourceRef> {
+    async fn integration_source(
+        &self,
+        org_id: &str,
+        connector_id: &str,
+    ) -> Option<(SourceRef, PauseWindow)> {
         match self
             .store
             .fetch_integration_source_id(org_id, GCP_SOURCE_PLATFORM, connector_id)
             .await
         {
-            Ok(id) => id.and_then(SourceRef::from_id),
+            Ok(row) => row.and_then(|row| Some((SourceRef::from_id(row.id)?, row.pause))),
             Err(error) => {
                 warn!(
                     org_id,
@@ -7000,7 +7158,8 @@ impl GcpConnectorResolver {
             secret_key_id: cache_key.1.chars().take(16).collect(),
             logs_enabled: row.logs_enabled,
             confirms_log_forwarding: false,
-            source,
+            source_pause: source.as_ref().map(|(_, pause)| *pause).unwrap_or_default(),
+            source: source.map(|(source, _)| source),
         };
 
         self.cache.insert(cache_key, identity.clone()).await;
@@ -7067,7 +7226,8 @@ impl GcpConnectorResolver {
             secret_key_id: push.email.chars().take(16).collect(),
             logs_enabled: row.logs_enabled,
             confirms_log_forwarding: row.applied_logs_enabled.is_none(),
-            source,
+            source_pause: source.as_ref().map(|(_, pause)| *pause).unwrap_or_default(),
+            source: source.map(|(source, _)| source),
         };
         self.cache.insert(cache_key, identity.clone()).await;
         self.routing
@@ -7286,6 +7446,23 @@ fn gcp_connector_columns() -> String {
          COALESCE(s.sync_status = 'connected', false) AS self_managed, \
          COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready"
     )
+}
+
+/// A `PullSourceRow`'s columns over `sources`.
+const PULL_SOURCE_COLUMNS: &str = "id, \
+    (EXTRACT(EPOCH FROM paused_at) * 1000)::bigint AS paused_at_ms, \
+    (EXTRACT(EPOCH FROM paused_until) * 1000)::bigint AS paused_until_ms";
+
+fn pull_source_row(row: &tokio_postgres::Row) -> Result<PullSourceRow, String> {
+    let decode_error =
+        |error: tokio_postgres::Error| format!("postgres pull source row decode failed: {error}");
+    Ok(PullSourceRow {
+        id: row.try_get("id").map_err(decode_error)?,
+        pause: PauseWindow {
+            paused_at_ms: row.try_get("paused_at_ms").map_err(decode_error)?,
+            paused_until_ms: row.try_get("paused_until_ms").map_err(decode_error)?,
+        },
+    })
 }
 
 fn gcp_connector_row(row: &tokio_postgres::Row) -> GcpConnectorRow {
@@ -7892,12 +8069,14 @@ impl KeyStore for PostgresKeyStore {
         org_id: &str,
         platform: &'static str,
         integration_id: &str,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<PullSourceRow>, String> {
         let client = self.client().await?;
         let rows = client
             .query(
-                "SELECT id FROM sources \
-                 WHERE org_id = $1 AND platform = $2 AND integration_id = $3 LIMIT 1",
+                &format!(
+                    "SELECT {PULL_SOURCE_COLUMNS} FROM sources \
+                     WHERE org_id = $1 AND platform = $2 AND integration_id = $3 LIMIT 1"
+                ),
                 &[&org_id, &platform, &integration_id],
             )
             .instrument(postgres_client_span(
@@ -7908,19 +8087,21 @@ impl KeyStore for PostgresKeyStore {
             ))
             .await
             .map_err(|error| format!("postgres fetch_integration_source_id failed: {error}"))?;
-        Ok(rows.first().map(|row| row.get("id")))
+        rows.first().map(pull_source_row).transpose()
     }
 
     async fn claimable_source_ids(
         &self,
         org_id: &str,
         source_ids: &[String],
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<Vec<PullSourceRow>, String> {
         let client = self.client().await?;
         let rows = client
             .query(
-                "SELECT id FROM sources \
-                 WHERE org_id = $1 AND id = ANY($2) AND integration_id IS NOT NULL",
+                &format!(
+                    "SELECT {PULL_SOURCE_COLUMNS} FROM sources \
+                     WHERE org_id = $1 AND id = ANY($2) AND integration_id IS NOT NULL"
+                ),
                 &[&org_id, &source_ids],
             )
             .instrument(postgres_client_span(
@@ -7931,7 +8112,7 @@ impl KeyStore for PostgresKeyStore {
             ))
             .await
             .map_err(|error| format!("postgres claimable_source_ids failed: {error}"))?;
-        Ok(rows.iter().map(|row| row.get("id")).collect())
+        rows.iter().map(pull_source_row).collect()
     }
 
     async fn record_connector_success(
@@ -8127,7 +8308,7 @@ impl KeyStore for StaticKeyStore {
         _org_id: &str,
         _platform: &'static str,
         _integration_id: &str,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<PullSourceRow>, String> {
         Ok(None)
     }
 
@@ -8135,7 +8316,7 @@ impl KeyStore for StaticKeyStore {
         &self,
         _org_id: &str,
         _source_ids: &[String],
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<Vec<PullSourceRow>, String> {
         Ok(Vec::new())
     }
 
@@ -9283,6 +9464,8 @@ mod tests {
         /// `sources` rows that are not token sources: (org id, id, is_default, integration).
         source_rows: std::sync::Mutex<Vec<(String, String, bool, Option<(&'static str, String)>)>>,
         source_row_fetches: AtomicU64,
+        /// Pause windows of `source_rows`, by source id; absent means not paused.
+        source_pauses: std::sync::Mutex<std::collections::HashMap<String, PauseWindow>>,
         /// The source ids each `claimable_source_ids` call asked about.
         claim_lookups: std::sync::Mutex<Vec<Vec<String>>>,
         /// Fails the source lookups (claims, integration sources).
@@ -9424,7 +9607,7 @@ mod tests {
             org_id: &str,
             platform: &'static str,
             integration_id: &str,
-        ) -> Result<Option<String>, String> {
+        ) -> Result<Option<PullSourceRow>, String> {
             self.source_row_fetches.fetch_add(1, Ordering::Relaxed);
             if self.source_errors.load(Ordering::Relaxed) {
                 return Err("source lookup failed".to_owned());
@@ -9441,13 +9624,13 @@ mod tests {
                             .as_ref()
                             .is_some_and(|(p, id)| *p == platform && id == integration_id)
                 })
-                .map(|row| row.1.clone()))
+                .map(|row| self.pull_source_row(&row.1)))
         }
         async fn claimable_source_ids(
             &self,
             org_id: &str,
             source_ids: &[String],
-        ) -> Result<Vec<String>, String> {
+        ) -> Result<Vec<PullSourceRow>, String> {
             self.source_row_fetches.fetch_add(1, Ordering::Relaxed);
             self.claim_lookups.lock().unwrap().push(source_ids.to_vec());
             if self.source_errors.load(Ordering::Relaxed) {
@@ -9459,7 +9642,7 @@ mod tests {
                 .unwrap()
                 .iter()
                 .filter(|row| row.0 == org_id && row.3.is_some() && source_ids.contains(&row.1))
-                .map(|row| row.1.clone())
+                .map(|row| self.pull_source_row(&row.1))
                 .collect())
         }
         async fn fetch_connector(
@@ -13120,6 +13303,24 @@ mod tests {
                 integration.map(|(platform, id)| (platform, id.to_owned())),
             ));
         }
+
+        fn pause_source(&self, id: &str, paused_at_ms: i64, paused_until_ms: Option<i64>) {
+            self.source_pauses.lock().unwrap().insert(
+                id.to_owned(),
+                PauseWindow {
+                    paused_at_ms: Some(paused_at_ms),
+                    paused_until_ms,
+                },
+            );
+        }
+
+        fn pull_source_row(&self, id: &str) -> PullSourceRow {
+            let pauses = self.source_pauses.lock().unwrap();
+            PullSourceRow {
+                id: id.to_owned(),
+                pause: pauses.get(id).copied().unwrap_or_default(),
+            }
+        }
     }
 
     #[tokio::test]
@@ -13191,7 +13392,10 @@ mod tests {
 
         for _ in 0..2 {
             assert_eq!(
-                resolver.verify_source_claims("org_a", claims.clone()).await,
+                resolver
+                    .verify_source_claims("org_a", claims.clone())
+                    .await
+                    .active,
                 vec![own.clone()]
             );
         }
@@ -13201,7 +13405,8 @@ mod tests {
         assert_eq!(
             resolver
                 .verify_source_claims("org_b", vec![public_id(DEFAULT_SOURCE_UUID)])
-                .await,
+                .await
+                .active,
             vec![public_id(DEFAULT_SOURCE_UUID)]
         );
     }
@@ -13221,7 +13426,10 @@ mod tests {
         claims.extend((0..2_000).map(|_| public_id(&uuid::Uuid::new_v4().to_string())));
 
         assert_eq!(
-            resolver.verify_source_claims("org_a", claims.clone()).await,
+            resolver
+                .verify_source_claims("org_a", claims.clone())
+                .await
+                .active,
             vec![own.clone()]
         );
         let lookups = store.claim_lookups.lock().unwrap().clone();
@@ -13237,8 +13445,41 @@ mod tests {
         assert!(resolver
             .verify_source_claims("org_a", late)
             .await
+            .active
             .is_empty());
         assert_eq!(store.claim_lookups.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_cached_claim_of_a_timed_pause_resumes_at_its_deadline() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_source_row(
+            "org_a",
+            INTEGRATION_SOURCE_UUID,
+            false,
+            Some(("railway", "r")),
+        );
+        store.pause_source(
+            INTEGRATION_SOURCE_UUID,
+            1,
+            Some(current_time_millis() + 150),
+        );
+        let resolver = make_resolver(Arc::clone(&store));
+        let own = public_id(INTEGRATION_SOURCE_UUID);
+
+        let verified = resolver
+            .verify_source_claims("org_a", vec![own.clone()])
+            .await;
+        assert_eq!(verified.paused, vec![own.clone()]);
+        assert!(verified.active.is_empty());
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let verified = resolver
+            .verify_source_claims("org_a", vec![own.clone()])
+            .await;
+        assert_eq!(verified.active, vec![own]);
+        assert!(verified.paused.is_empty());
+        // Judged from the cached window: no second lookup.
+        assert_eq!(store.source_row_fetches.load(Ordering::Relaxed), 1);
     }
 
     #[tokio::test]
@@ -13257,12 +13498,14 @@ mod tests {
         assert!(resolver
             .verify_source_claims("org_a", vec![own.clone()])
             .await
+            .active
             .is_empty());
         store.source_errors.store(false, Ordering::Relaxed);
         assert_eq!(
             resolver
                 .verify_source_claims("org_a", vec![own.clone()])
-                .await,
+                .await
+                .active,
             vec![own]
         );
         assert_eq!(store.source_row_fetches.load(Ordering::Relaxed), 2);
@@ -13480,6 +13723,140 @@ mod tests {
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
+    #[tokio::test]
+    async fn paused_pull_source_claims_drop_only_their_resources() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let queue_dir = unique_main_test_dir("paused-pull-source");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_paused_pull_source";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_paused".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        store.insert_source_row("org_paused", DEFAULT_SOURCE_UUID, true, None);
+        store.insert_source_row(
+            "org_paused",
+            INTEGRATION_SOURCE_UUID,
+            false,
+            Some(("railway", "rw_1")),
+        );
+        store.insert_source_row("org_paused", SOURCE_UUID, false, Some(("gcp", "g_1")));
+        // One paused until resumed; one whose timed pause already ended.
+        store.pause_source(INTEGRATION_SOURCE_UUID, 1, None);
+        store.pause_source(SOURCE_UUID, 1, Some(2));
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+        let request_with = |claims: &[Option<String>]| {
+            let mut request = test_log_request("paused");
+            let template = request.resource_logs[0].clone();
+            request.resource_logs = claims
+                .iter()
+                .map(|claim| {
+                    let mut resource_logs = template.clone();
+                    if let Some(claim) = claim {
+                        let resource = resource_logs.resource.as_mut().expect("resource");
+                        resource
+                            .attributes
+                            .push(string_attribute("maple_source_id", claim));
+                    }
+                    resource_logs
+                })
+                .collect();
+            Bytes::from(request.encode_to_vec())
+        };
+        let paused = Some(public_id(INTEGRATION_SOURCE_UUID));
+
+        let (response, ..) = handle_signal_inner(
+            &state,
+            &test_headers(raw_key),
+            request_with(&[paused.clone(), Some(public_id(SOURCE_UUID)), None]),
+            Signal::Logs,
+        )
+        .await
+        .expect("default key traffic is accepted");
+        assert_eq!(response.status(), StatusCode::OK);
+        let forwarded = tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+            .await
+            .expect("the kept resources are forwarded")
+            .expect("forward channel should stay open");
+        let forwarded = ExportLogsServiceRequest::decode(forwarded).expect("forwarded protobuf");
+        let stamped: Vec<String> = forwarded
+            .resource_logs
+            .iter()
+            .map(|resource_logs| {
+                let resource = resource_logs.resource.as_ref().expect("resource");
+                string_attributes(&resource.attributes)["maple_source_id"].clone()
+            })
+            .collect();
+        assert_eq!(
+            stamped,
+            vec![public_id(SOURCE_UUID), public_id(DEFAULT_SOURCE_UUID)]
+        );
+
+        // Only paused resources: success to the sender, nothing forwarded.
+        let (response, item_count, ..) = handle_signal_inner(
+            &state,
+            &test_headers(raw_key),
+            request_with(&[paused.clone(), paused.clone()]),
+            Signal::Logs,
+        )
+        .await
+        .expect("a paused source's batch is acked");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(item_count, 0);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), forward_rx.recv())
+                .await
+                .is_err(),
+            "a paused source's batch must not be forwarded"
+        );
+        // A poller's batch, even with unclaimed resources beside a paused claim, is not default use.
+        handle_signal_inner(
+            &state,
+            &test_headers(raw_key),
+            request_with(&[paused, None]),
+            Signal::Logs,
+        )
+        .await
+        .expect("default key traffic is accepted");
+        assert!(recorded_key_uses(&store).await.is_empty());
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn gcp_logpush_acks_and_drops_while_the_integration_source_is_paused() {
+        let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
+        let (state, store, queue_dir) = gcp_logpush_state("gcp-logpush-paused", &ch_url).await;
+        store.insert_source_row(
+            "org_gcp",
+            INTEGRATION_SOURCE_UUID,
+            false,
+            Some(("gcp", "gcp_conn_1")),
+        );
+        store.pause_source(INTEGRATION_SOURCE_UUID, 1, None);
+
+        let dropped = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_LOG_ENTRY).await;
+        assert_eq!(dropped.status(), StatusCode::OK);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), ch_rx.recv())
+                .await
+                .is_err(),
+            "nothing may be stored while the source is paused"
+        );
+        assert!(recorded_key_uses(&store).await.is_empty());
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
     #[test]
     fn fleet_size_defaults_to_one_and_refuses_zero() {
         assert_eq!(parse_fleet_size(None), Ok(1));
