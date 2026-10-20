@@ -623,12 +623,12 @@ const articleJsonLd = {
                         <li>
                             <span>01</span>
                             <div><h4>Errors come from your traces</h4><p>Maple fingerprints every error span by service, exception type, top stack frames and message, and groups the occurrences into an issue with a triage workflow. A fixed issue that fires again from a newer build is marked <strong>Regressed</strong>.</p>
-                                <figure class="guide-figure"><img src="/screenshots/guides/sentry-pricing-01-errors.webp" data-zoomable alt="The Maple Errors page listing issues with their service, occurrence count and workflow state." width="2368" height="1180" loading="lazy" /></figure></div>
+                                <figure class="guide-figure"><img src="/screenshots/guides/sentry-pricing-01-errors.webp" data-zoomable alt="The Maple Errors page listing open issues with their exception type and message, 24-hour trend, event count, service and Triage status." width="1810" height="930" loading="lazy" /></figure></div>
                         </li>
                         <li>
                             <span>02</span>
-                            <div><h4>Replays link to backend traces</h4><p>The <code>@maple-dev/browser</code> SDK tags every span and replay event with the same <code>session.id</code>. A replay's <strong>Traces</strong> tab lists the backend traces from that session, and a trace links back with <strong>View Session Replay</strong>. <code>replay.sampleRate</code> sets the share of sessions recorded.</p>
-                                <figure class="guide-figure"><img src="/screenshots/guides/sentry-pricing-02-replay-traces.webp" data-zoomable alt="A Maple session replay playing, with the Traces tab open beside the player listing the backend traces from that session." width="2368" height="1180" loading="lazy" /></figure></div>
+                            <div><h4>Errors and replays link to traces</h4><p>Each issue's <strong>Occurrences</strong> tab lists its latest error events with the trace each one came from. In the browser, the <code>@maple-dev/browser</code> SDK tags every span and replay event with the same <code>session.id</code>, so a replay's <strong>Traces</strong> tab lists the backend traces from that session, and a trace links back with <strong>View Session Replay</strong>. <code>replay.sampleRate</code> sets the share of sessions recorded.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/sentry-pricing-02-occurrences.webp" data-zoomable alt="The Occurrences tab of a PaymentDeclinedError issue from the checkout service: its latest error events, each with its time, service, message and trace ID." width="1760" height="1772" loading="lazy" /></figure></div>
                         </li>
                     </ol>
 
