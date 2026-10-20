@@ -8,6 +8,7 @@ export const DOCS = {
 	quickstart: "/docs/getting-started/quickstart",
 	otelConventions: "/docs/concepts/otel-conventions",
 	samplingThroughput: "/docs/concepts/sampling-throughput",
+	missingRootSpans: "/docs/concepts/missing-root-spans",
 	retention: "/docs/reference/retention",
 	traces: "/docs/explore/traces",
 	logs: "/docs/explore/logs",

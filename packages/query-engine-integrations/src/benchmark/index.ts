@@ -1019,7 +1019,10 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		module: "setup-audit",
 		name: "auditRootlessTracesSQL",
 		label: "default",
-		compile: () => Effect.runSync(CH.auditRootlessTracesSQL(traceWindow)),
+		compile: () =>
+			Effect.runSync(
+				CH.auditRootlessTracesSQL(traceWindow, { keepErrorSpans: true, slowSpanNs: 2_000_000_000 }),
+			),
 	},
 ]
 
