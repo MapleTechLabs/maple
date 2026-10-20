@@ -212,7 +212,11 @@ const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: 
 					shown.map((source) => sourceRow(h, source, nowMs)),
 				),
 			]),
-			...(added.length === 0 ? [emptyState(h)] : []),
+			...(added.length === 0
+				? [emptyState(h)]
+				: shown.length === 0
+					? [h.p([h.Class("text-muted-foreground px-1 text-sm")], ["No sources match these filters."])]
+					: []),
 			...(strip === null ? [] : [strip]),
 		],
 	)

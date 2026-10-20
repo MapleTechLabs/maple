@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { DATA_INTEGRATIONS } from "../../route/data-integrations"
 import { Submodel } from "foldkit"
 import { icon } from "../../ui/icon"
 import type { PageContext, PageReturn } from "../contract"
@@ -12,16 +13,7 @@ import { cloudflareHeaderActions } from "./view-cloudflare"
 
 // The integrations page module, embedded by Sources: the connect step and a source's Connection tab.
 
-/** Integrations that bring data in; they live under Sources. Chat and alert connectors stay in Settings. */
-export const DATA_INTEGRATIONS = [
-	"cloudflare",
-	"prometheus",
-	"planetscale",
-	"gcp",
-	"railway",
-	"warpstream",
-	"github",
-] as const
+export { DATA_INTEGRATIONS }
 export const DataIntegration = Schema.Literals(DATA_INTEGRATIONS)
 export type DataIntegration = typeof DataIntegration.Type
 export const isDataIntegration = Schema.is(DataIntegration)

@@ -1,4 +1,4 @@
-import { ScrapeTargetPublicId, SourcePublicId, type V2Source } from "@maple/domain/http/v2"
+import { GcpConnectorPublicId, ScrapeTargetPublicId, SourcePublicId, type V2Source } from "@maple/domain/http/v2"
 import {
 	isPushSourcePlatform,
 	type PullSourcePlatform,
@@ -106,3 +106,11 @@ export const scrapeTargetIdOf = (source: V2Source): ScrapeTargetId | null =>
 	source.platform !== "prometheus" || source.integration_id === null
 		? null
 		: Option.getOrNull(decodeScrapeTargetId(source.integration_id))
+
+const decodeGcpConnectorId = Schema.decodeUnknownOption(GcpConnectorPublicId)
+
+/** The record an integration source's card focuses on: its scrape target or Google Cloud connector. */
+export const focusIdOf = (source: V2Source): string | null =>
+	source.platform === "gcp" && source.integration_id !== null
+		? Option.getOrNull(decodeGcpConnectorId(source.integration_id))
+		: scrapeTargetIdOf(source)
