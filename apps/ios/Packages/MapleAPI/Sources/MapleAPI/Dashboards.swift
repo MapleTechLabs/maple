@@ -378,8 +378,11 @@ public enum WidgetData: Hashable, Sendable {
 	/// The number a stat tile shows.
 	public var number: Double? {
 		if case .value(let value) = self { return value.number }
+		// Keys sorted, not dictionary order, so the same payload gives the same number every launch.
 		if case .rows(let rows) = self, let first = rows.first {
-			return first.filter { $0.key != "bucket" }.values.compactMap(\.number).first
+			for key in first.keys.sorted() where key != "bucket" {
+				if let number = first[key]?.number { return number }
+			}
 		}
 		return nil
 	}

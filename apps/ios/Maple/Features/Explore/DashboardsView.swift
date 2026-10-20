@@ -108,6 +108,12 @@ final class DashboardDetailModel {
 	private let api: any MapleAPI
 	private var windowSeeded = false
 
+	func select(_ window: TimeWindow) {
+		guard window != self.window else { return }
+		self.window = window
+		Task { await loader.load(.replace) }
+	}
+
 	init(dashboardID: String, api: any MapleAPI, session: SessionController) {
 		self.dashboardID = dashboardID
 		self.api = api
@@ -197,7 +203,8 @@ struct DashboardDetailView: View {
 			if let model {
 				@Bindable var model = model
 				ToolbarItem(placement: .topBarTrailing) {
-					TimeWindowMenu(window: $model.window)
+					// Reloads only on a user pick; seeding the board's saved range must not refetch it.
+					TimeWindowMenu(window: Binding(get: { model.window }, set: { model.select($0) }))
 				}
 			}
 		}
@@ -207,9 +214,6 @@ struct DashboardDetailView: View {
 				? model! : DashboardDetailModel(dashboardID: dashboardID, api: session.api, session: session)
 			self.model = model
 			await model.loader.loadIfNeeded()
-		}
-		.onChange(of: model?.window) { _, _ in
-			Task { await model?.loader.load(.replace) }
 		}
 	}
 }
@@ -467,7 +471,9 @@ private struct WidgetBreakdown: View {
 	private var items: [(String, Double)] {
 		rows.compactMap { row in
 			guard let name = row["name"]?.string else { return nil }
-			let value = row["value"]?.number ?? row.filter { $0.key != "name" }.values.compactMap(\.number).first ?? 0
+			let value = row["value"]?.number
+				?? row.keys.sorted().lazy.filter { $0 != "name" }.compactMap { row[$0]?.number }.first
+				?? 0
 			return (name, value)
 		}
 	}

@@ -76,7 +76,7 @@ struct TracesExploreView: View {
 				.task(id: model.queryKey) {
 					await model.loader.load(model.loader.state.hasContent ? .replace : .initial)
 				}
-				.task { await model.services.load(api: model.api, window: model.window.resolve()) }
+				.task(id: model.window) { await model.services.load(api: model.api, window: model.window) }
 			}
 		}
 		.padding(.top, 10)

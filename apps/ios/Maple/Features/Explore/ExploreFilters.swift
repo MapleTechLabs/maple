@@ -35,11 +35,14 @@ struct FilterChip: View {
 @Observable
 final class ServiceOptions {
 	private(set) var names: [String] = []
+	private var loadedFor: TimeWindow?
 
-	func load(api: any MapleAPI, window: ResolvedTimeWindow) async {
-		guard names.isEmpty else { return }
-		let page = try? await api.services(window: window, limit: 100)
-		names = (page?.items ?? []).map(\.name).sorted()
+	/// Once per window: switching to a longer window offers the services only it saw.
+	func load(api: any MapleAPI, window: TimeWindow) async {
+		guard loadedFor != window else { return }
+		guard let page = try? await api.services(window: window.resolve(), limit: 100) else { return }
+		names = page.items.map(\.name).sorted()
+		loadedFor = window
 	}
 }
 

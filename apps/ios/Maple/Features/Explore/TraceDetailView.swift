@@ -188,6 +188,7 @@ private struct SpanSheet: View {
 
 	@Environment(SessionController.self) private var session
 	@State private var logs: [LogRecord]?
+	@State private var logsFailed = false
 
 	var body: some View {
 		ScrollView {
@@ -224,7 +225,16 @@ private struct SpanSheet: View {
 
 				VStack(alignment: .leading, spacing: 10) {
 					SectionLabel("Logs")
-					if let logs {
+					if logsFailed {
+						HStack(spacing: 12) {
+							Text("Couldn't load this span's logs.")
+								.font(Typo.small)
+								.foregroundStyle(Token.mutedForeground)
+							Button("Try again") { Task { await loadLogs() } }
+								.font(Typo.smallMedium)
+								.foregroundStyle(Token.foreground)
+						}
+					} else if let logs {
 						if logs.isEmpty {
 							Text("No logs on this span.")
 								.font(Typo.small)
@@ -244,14 +254,24 @@ private struct SpanSheet: View {
 			}
 			.padding(16)
 		}
-		.task {
-			let window = ResolvedTimeWindow.parse(span.startTime).map {
-				ResolvedTimeWindow(start: $0.addingTimeInterval(-300), end: $0.addingTimeInterval(900))
-			} ?? TimeWindow.last24Hours.resolve()
-			let page = try? await session.api.searchLogs(
+		.task { await loadLogs() }
+	}
+
+	/// A failure is kept apart from "no logs", so a broken fetch never reads as an empty span.
+	private func loadLogs() async {
+		logsFailed = false
+		logs = nil
+		let window = ResolvedTimeWindow.parse(span.startTime).map {
+			ResolvedTimeWindow(start: $0.addingTimeInterval(-300), end: $0.addingTimeInterval(900))
+		} ?? TimeWindow.last24Hours.resolve()
+		do {
+			let page = try await session.api.searchLogs(
 				LogSearch(window: window, traceId: span.traceId), limit: 100, cursor: nil
 			)
-			logs = (page?.items ?? []).filter { $0.spanId == nil || $0.spanId == span.id }
+			logs = page.items.filter { $0.spanId == nil || $0.spanId == span.id }
+		} catch is CancellationError {
+		} catch {
+			logsFailed = true
 		}
 	}
 }

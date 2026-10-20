@@ -66,22 +66,31 @@ final class IssuesListModel {
 
 	var canLoadMore: Bool { hasMore }
 
+	/// Set when a row action fails; the list shows it as an alert.
+	var actionError: String?
+
 	/// A row action from the list, swapped in place with the issue the server
 	/// returns, so the row's badges change without refetching the page.
 	func perform(_ action: IssueAction, on id: String) async {
 		let generation = loader.generation
-		let updated: ErrorIssue? =
-			switch action {
-			case .resolve: try? await api.transitionIssue(id: id, to: .done, note: nil)
-			case .ignore: try? await api.transitionIssue(id: id, to: .wontfix, note: nil)
-			case .reopen: try? await api.transitionIssue(id: id, to: .todo, note: nil)
-			case .claim: try? await api.claimIssue(id: id)
-			case .release: try? await api.releaseIssue(id: id)
-			case .severity(let severity): try? await api.setIssueSeverity(id: id, severity: severity)
+		do {
+			let updated: ErrorIssue =
+				switch action {
+				case .resolve: try await api.transitionIssue(id: id, to: .done, note: nil)
+				case .ignore: try await api.transitionIssue(id: id, to: .wontfix, note: nil)
+				case .reopen: try await api.transitionIssue(id: id, to: .todo, note: nil)
+				case .claim: try await api.claimIssue(id: id)
+				case .release: try await api.releaseIssue(id: id)
+				case .severity(let severity): try await api.setIssueSeverity(id: id, severity: severity)
+				}
+			loader.update(ifGeneration: generation) { issues in
+				issues.map { $0.id == id ? updated : $0 }
 			}
-		guard let updated else { return }
-		loader.update(ifGeneration: generation) { issues in
-			issues.map { $0.id == id ? updated : $0 }
+		} catch is CancellationError {
+		} catch let error as MapleAPIError {
+			actionError = error.message
+		} catch {
+			actionError = "Couldn't update the issue. Try again."
 		}
 	}
 }
@@ -110,14 +119,21 @@ struct IssuesListContent: View {
 					}
 					.buttonStyle(RowButtonStyle())
 					.contextMenu {
-						Button("Resolve", systemImage: "checkmark") {
-							Task { await model.perform(.resolve, on: issue.id) }
-						}
-						Button(issue.claimedAt == nil ? "Claim" : "Release", systemImage: "person") {
-							Task { await model.perform(issue.claimedAt == nil ? .claim : .release, on: issue.id) }
-						}
-						Button("Ignore", systemImage: "eye.slash") {
-							Task { await model.perform(.ignore, on: issue.id) }
+						// Offered by state, as the detail screen's action bar does.
+						if issue.workflowState.isClosed {
+							Button("Reopen", systemImage: "arrow.uturn.backward") {
+								Task { await model.perform(.reopen, on: issue.id) }
+							}
+						} else {
+							Button("Resolve", systemImage: "checkmark") {
+								Task { await model.perform(.resolve, on: issue.id) }
+							}
+							Button(issue.claimedAt == nil ? "Claim" : "Release", systemImage: "person") {
+								Task { await model.perform(issue.claimedAt == nil ? .claim : .release, on: issue.id) }
+							}
+							Button("Ignore", systemImage: "eye.slash") {
+								Task { await model.perform(.ignore, on: issue.id) }
+							}
 						}
 					}
 					Hairline()
@@ -140,6 +156,14 @@ struct IssuesListContent: View {
 		}
 		.task {
 			await model.loader.loadIfNeeded()
+		}
+		.alert(
+			"Couldn't update",
+			isPresented: Binding(get: { model.actionError != nil }, set: { if !$0 { model.actionError = nil } })
+		) {
+			Button("OK", role: .cancel) {}
+		} message: {
+			Text(model.actionError ?? "")
 		}
 		.mapleScreen(Screen.issues)
 	}

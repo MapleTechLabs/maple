@@ -48,6 +48,11 @@ final class IssueDetailModel {
 	}
 }
 
+extension WorkflowState {
+	/// Done, cancelled or won't fix: the states Reopen applies to.
+	var isClosed: Bool { [.done, .cancelled, .wontfix].contains(self) }
+}
+
 enum IssueAction: Hashable {
 	case resolve
 	case ignore
@@ -332,9 +337,7 @@ private struct IssueActionBar: View {
 	let pending: IssueAction?
 	let perform: (IssueAction) -> Void
 
-	private var isClosed: Bool {
-		[.done, .cancelled, .wontfix].contains(issue.workflowState)
-	}
+	private var isClosed: Bool { issue.workflowState.isClosed }
 
 	var body: some View {
 		HStack(spacing: 8) {

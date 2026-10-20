@@ -89,4 +89,9 @@ struct WidgetDataTests {
 		#expect(row["name"] == .string("a"))
 		#expect(row["none"] == .null)
 	}
+
+	@Test func untransformedStatPicksTheSameColumnEveryTime() throws {
+		let data = WidgetData(response: try json(#"{"data":[{"bucket":"b1","zeta":9,"alpha":2,"mid":5}]}"#), transform: nil)
+		#expect(data.number == 2)
+	}
 }
