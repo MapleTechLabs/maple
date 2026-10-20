@@ -61,18 +61,23 @@ extension FixtureAPI {
 
 	private func largeTrace(id: String, spans count: Int) -> TraceDetail {
 		let start = Date().addingTimeInterval(-120)
-		let spans = (0..<count).map { index in
-			TraceSpan(
-				attributes: .init(additionalProperties: ["db.statement": "SELECT * FROM items WHERE id = \(index)"]),
+		let services = ["web", "checkout-api", "payments", "catalog", "auth", "search"]
+		let spans: [TraceSpan] = (0..<count).map { index in
+			let service: String = services[index % services.count]
+			let statement: String = "SELECT * FROM items WHERE id = " + String(index)
+			let parent: String? = index == 0 ? nil : String(format: "%016x", (index - 1) / 8 + 1)
+			let startTime: String = ResolvedTimeWindow.format(start.addingTimeInterval(Double(index) / 10_000))
+			return TraceSpan(
+				attributes: TraceSpan.AttributesPayload(additionalProperties: ["db.statement": statement]),
 				durationMs: Double(count - index) / 10,
 				id: String(format: "%016x", index + 1),
 				kind: "Internal",
-				name: "span \(index)",
+				name: "span " + String(index),
 				object: .span,
-				parentSpanId: index == 0 ? nil : String(format: "%016x", (index - 1) / 8 + 1),
-				resourceAttributes: .init(additionalProperties: ["service.name": "svc-\(index % 9)"]),
-				serviceName: ["web", "checkout-api", "payments", "catalog", "auth", "search"][index % 6],
-				startTime: ResolvedTimeWindow.format(start.addingTimeInterval(Double(index) / 10_000)),
+				parentSpanId: parent,
+				resourceAttributes: TraceSpan.ResourceAttributesPayload(additionalProperties: ["service.name": service]),
+				serviceName: service,
+				startTime: startTime,
 				statusCode: index % 97 == 0 ? "Error" : "Ok",
 				traceId: id
 			)

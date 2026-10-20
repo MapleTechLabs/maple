@@ -9,22 +9,7 @@ import Testing
 struct RenderPathBenchmarks {
 	private static func trace(spans count: Int, fanout: Int) -> TraceDetail {
 		let start = Date(timeIntervalSince1970: 1_800_000_000)
-		let spans = (0..<count).map { index in
-			TraceSpan(
-				attributes: .init(additionalProperties: ["http.route": "/r/\(index % 50)"]),
-				durationMs: Double(count - index),
-				id: String(format: "%016x", index + 1),
-				kind: "Internal",
-				name: "span \(index)",
-				object: .span,
-				parentSpanId: index == 0 ? nil : String(format: "%016x", (index - 1) / fanout + 1),
-				resourceAttributes: .init(additionalProperties: ["service.name": "svc-\(index % 12)"]),
-				serviceName: "svc-\(index % 12)",
-				startTime: ResolvedTimeWindow.format(start.addingTimeInterval(Double(index) / 1000)),
-				statusCode: index % 97 == 0 ? "Error" : "Ok",
-				traceId: "t"
-			)
-		}
+		let spans: [TraceSpan] = (0..<count).map { index in span(index, of: count, fanout: fanout, start: start) }
 		return TraceDetail(
 			durationMs: Double(count),
 			endTime: ResolvedTimeWindow.format(start.addingTimeInterval(Double(count) / 1000)),
@@ -35,6 +20,34 @@ struct RenderPathBenchmarks {
 			spans: spans.reversed(),
 			startTime: ResolvedTimeWindow.format(start),
 			truncated: false
+		)
+	}
+
+	/// Typed step by step: one literal call with interpolations everywhere was
+	/// too slow for the CI runner's type checker.
+	private static func span(_ index: Int, of count: Int, fanout: Int, start: Date) -> TraceSpan {
+		let id: String = String(format: "%016x", index + 1)
+		let parent: String? = index == 0 ? nil : String(format: "%016x", (index - 1) / fanout + 1)
+		let service: String = "svc-" + String(index % 12)
+		let route: String = "/r/" + String(index % 50)
+		let offset: Double = Double(index) / 1000
+		let startTime: String = ResolvedTimeWindow.format(start.addingTimeInterval(offset))
+		let status: String = index % 97 == 0 ? "Error" : "Ok"
+		let attributes = TraceSpan.AttributesPayload(additionalProperties: ["http.route": route])
+		let resource = TraceSpan.ResourceAttributesPayload(additionalProperties: ["service.name": service])
+		return TraceSpan(
+			attributes: attributes,
+			durationMs: Double(count - index),
+			id: id,
+			kind: "Internal",
+			name: "span " + String(index),
+			object: .span,
+			parentSpanId: parent,
+			resourceAttributes: resource,
+			serviceName: service,
+			startTime: startTime,
+			statusCode: status,
+			traceId: "t"
 		)
 	}
 
