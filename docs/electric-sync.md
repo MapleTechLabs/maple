@@ -28,7 +28,7 @@ The reusable machinery lives in two workspace libraries:
 ## How it fits together
 
 ```
-Browser (apps/web-foldkit)
+Browser (apps/web)
   TanStack DB collections, one set per active org
     read:  ShapeStream → GET {VITE_ELECTRIC_SYNC_URL}/api/sync/shape?shape=<name>&offset=…&handle=…
            (mapleSyncFetch in lib/collections/shape-fetch.ts injects the Clerk / self-hosted bearer)
@@ -265,7 +265,7 @@ never reads the shared one, so a preview can never proxy shapes at another stage
    `CREATE/ALTER PUBLICATION` and `pg_publication_tables`, so the guard the early
    migrations carry protects nothing, and it is exactly what hid the EU failure.
 2. Add the shape to the whitelist in `apps/electric-sync/src/shapes/registry.ts`.
-3. Add a collection in `apps/web-foldkit/src/data/collections/` via
+3. Add a collection in `apps/web/src/data/collections/` via
    `createEffectCollection`. Model it on `dashboards.ts` for a write vertical or the
    `alertRules` collection in `org-collections.ts` for a read-only one: an identity `Schema.Struct` row schema that
    mirrors the table columns, plus a `timestamptz` parser normalizing to ISO.

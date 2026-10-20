@@ -42,7 +42,7 @@ Prefer this shape over a new unauthenticated group. If a future surface needs an
 
 The frontend halves of that move are easy to get wrong in ways nothing type-checks:
 
-- `apps/web-foldkit/src/lib/services/common/api-client-transform.ts` scopes the billing 401-retry by URL. It now matches **both** `/internal/billing/` and `/api/billing/`, because the authenticated operations and the public plan catalog ended up on different prefixes. Dropping either reinstates the hard 401 that the retry exists to prevent.
+- `apps/web/src/lib/services/common/api-client-transform.ts` scopes the billing 401-retry by URL. It now matches **both** `/internal/billing/` and `/api/billing/`, because the authenticated operations and the public plan catalog ended up on different prefixes. Dropping either reinstates the hard 401 that the retry exists to prevent.
 - `MapleInternalAtomClient` gained `retainedInternalQuery`, the `/internal` twin of `retainedQuery`, so the migrated settings panels keep unmount-surviving retention instead of flashing a skeleton on every visit. Its cache identity is prefixed `internal:` so a group name present on both clients cannot share a retention slot. Warehouse reads still go through `runWarehouseQuery` and must **not** be wrapped in it as well.
 
 The following raw routes are intentional end-state routes:

@@ -11,10 +11,10 @@ resize and keyboard rearranging. It replaced react-grid-layout 2.3.0 (and its `r
 | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
 | `lib/grid-engine/src/layout.ts`                                                | Pure layout ops: `normalizeLayout`, `compact`, `moveItem`, `resizeItem`, `nudgeItem`, clamping, `changedItems` |
 | `lib/grid-engine/src/geometry.ts`                                              | Cells <-> px: `itemRect`, `cellAt`, `sizeAt`                                                                   |
-| `apps/web-foldkit/src/page/dashboards/view/grid.ts`, `view-grid.ts`            | The canvas grid per container: normalizes the stored layout, places cells with `grid-column`/`grid-row`        |
-| `apps/web-foldkit/src/page/dashboards/view/gesture.ts`, `keyboard-move.ts`     | Pointer drag and resize, keyboard rearranging                                                                  |
-| `apps/web-foldkit/src/page/dashboards/view/layout-commit.ts`                   | The single commit on drop                                                                                      |
-| `apps/web-foldkit/src/components/dashboard-builder/canvas/grid-breakpoints.ts` | Tiers and `projectLayout` (Maple's responsive policy, not grid mechanics)                                      |
+| `apps/web/src/page/dashboards/view/grid.ts`, `view-grid.ts`            | The canvas grid per container: normalizes the stored layout, places cells with `grid-column`/`grid-row`        |
+| `apps/web/src/page/dashboards/view/gesture.ts`, `keyboard-move.ts`     | Pointer drag and resize, keyboard rearranging                                                                  |
+| `apps/web/src/page/dashboards/view/layout-commit.ts`                   | The single commit on drop                                                                                      |
+| `apps/web/src/components/dashboard-builder/canvas/grid-breakpoints.ts` | Tiers and `projectLayout` (Maple's responsive policy, not grid mechanics)                                      |
 
 ## Rules worth knowing
 
@@ -48,7 +48,7 @@ resize and keyboard rearranging. It replaced react-grid-layout 2.3.0 (and its `r
 | Engine invariants (fast-check): no overlaps, in bounds, packed, idempotent, identity kept, settles | `lib/grid-engine/test/properties.test.ts`                   | `bun run --cwd lib/grid-engine test`                               |
 | Frozen react-grid-layout answers                                                                   | `lib/grid-engine/test/golden.test.ts`                       | same                                                               |
 | Geometry by hand and round-trip                                                                    | `lib/grid-engine/test/geometry.test.ts`                     | same                                                               |
-| Dashboard view: grid, narrow tiers, sections, share, history (Scene tests)                         | `apps/web-foldkit/src/page/dashboards/view/*.scene.test.ts` | `bunx vitest run src/page/dashboards/view` (in `apps/web-foldkit`) |
+| Dashboard view: grid, narrow tiers, sections, share, history (Scene tests)                         | `apps/web/src/page/dashboards/view/*.scene.test.ts` | `bunx vitest run src/page/dashboards/view` (in `apps/web`) |
 
 ## Measured against react-grid-layout
 

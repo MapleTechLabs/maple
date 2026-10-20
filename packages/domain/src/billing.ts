@@ -3,7 +3,7 @@ import { Predicate } from "effect"
 /**
  * Shared billing gate — the single source of truth for "is this an actively
  * selected paid plan?", used by both the web redirect gate
- * (apps/web-foldkit/src/lib/billing/plan-gating.ts) and the API customer-cache TTL
+ * (apps/web/src/lib/billing/plan-gating.ts) and the API customer-cache TTL
  * (apps/api/src/routes/autumn.http.ts) so the two can't drift. Structurally
  * typed so `autumn-js` stays out of `@maple/domain`; Autumn's `Subscription`
  * shape satisfies it.
