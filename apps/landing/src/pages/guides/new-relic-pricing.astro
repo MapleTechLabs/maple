@@ -116,7 +116,7 @@ processors:
     error_mode: ignore
     logs:
       log_record:
-        - severity_number < SEVERITY_NUMBER_INFO
+        - severity_number != SEVERITY_NUMBER_UNSPECIFIED and severity_number < SEVERITY_NUMBER_INFO
   batch:
 
 exporters:
@@ -580,7 +580,7 @@ const articleJsonLd = {
 
                     <h3 id="collector" class="scroll-mt-24">Filter in an OpenTelemetry Collector</h3>
                     <p>
-                        If your services already export OpenTelemetry, an <a href="https://opentelemetry.io/docs/collector/" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector</a> running in your infrastructure can drop data before it reaches any vendor. This configuration receives OTLP from your services on the Collector's default ports (4317 for gRPC, 4318 for HTTP), drops logs below INFO, and exports traces and logs to New Relic's OTLP endpoint with your license key:
+                        If your services already export OpenTelemetry, an <a href="https://opentelemetry.io/docs/collector/" target="_blank" rel="noopener noreferrer">OpenTelemetry Collector</a> running in your infrastructure can drop data before it reaches any vendor. This configuration receives OTLP from your services on the Collector's default ports (4317 for gRPC, 4318 for HTTP), drops DEBUG and TRACE logs (logs with no severity set pass through), and exports traces and logs to New Relic's OTLP endpoint with your license key:
                     </p>
                     <div class="code-file">
                         <p class="code-file__name">otel-collector.yaml</p>
