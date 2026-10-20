@@ -76,7 +76,7 @@ const resources = [
         name: "Network",
         color: "var(--chart-4)",
         signals: [
-            { path: "\\Network Interface(*)\\Bytes Total/sec", watch: "Above 70% of the adapter's Current Bandwidth", metric: "system.network.io" },
+            { path: "\\Network Interface(*)\\Bytes Total/sec", watch: "Above 70% of Current Bandwidth, which counts bits: multiply bytes by 8 first", metric: "system.network.io" },
             { path: "\\Network Interface(*)\\Packets Received Errors", watch: "Any count that keeps rising", metric: "system.network.errors" },
         ],
     },
