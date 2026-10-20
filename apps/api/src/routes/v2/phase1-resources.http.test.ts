@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Ref, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import {
@@ -19,6 +19,7 @@ import {
 	ErrorIssueDocument,
 	ErrorIssueId,
 	ErrorIssueNotFoundError,
+	ErrorIssueTransitionError,
 	ErrorPersistenceError,
 	ErrorIssueSampleTrace,
 	ErrorIssueEnvironment,
@@ -57,6 +58,7 @@ import { SharedDashboardService } from "@maple/backend/services/dashboards/Share
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
+import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
@@ -328,6 +330,9 @@ const errorIssueDetailFixture = new ErrorIssueDetailResponse({
 })
 
 const die = () => Effect.die(new Error("not exercised in this test harness"))
+const dieSync = (): never => {
+	throw new Error("not exercised in this test harness")
+}
 
 /** Empty warehouse — enough to exercise the session_replays envelope + 404 paths. */
 const warehouseStub = makeWarehouseServiceStub({
@@ -401,6 +406,18 @@ const makeHarness = (
 				return Effect.fail(new ErrorPersistenceError({ message: "database unavailable" }))
 		}
 	}
+	// One issue whose workflow actions mutate it, so a test can read the change back.
+	const storedIssue = Ref.makeUnsafe(errorIssueFixture)
+	const issueActions: Array<Record<string, unknown>> = []
+	const ensuredUsers: Array<string> = []
+	const requireStoredIssue = (
+		issueId: ErrorIssueId,
+	): Effect.Effect<ErrorIssueDocument, ErrorIssueNotFoundError> =>
+		issueId === errorIssueFixture.id
+			? Ref.get(storedIssue)
+			: Effect.fail(ErrorIssueNotFoundError.forIssue(issueId))
+	const updateStoredIssue = (patch: Partial<ErrorIssueDocument>) =>
+		Ref.updateAndGet(storedIssue, (current) => new ErrorIssueDocument({ ...current, ...patch }))
 	const startInvestigation = () => {
 		switch (investigationStartMode) {
 			case "unavailable":
@@ -513,17 +530,79 @@ const makeHarness = (
 		}),
 		// The anomalies group still exercises the issue-link audit mutation.
 		Layer.succeed(ErrorsService, {
-			transitionIssue: die,
-			claimIssue: die,
+			transitionIssue: (_org, actorId, issueId, toState, opts) =>
+				Effect.gen(function* () {
+					const current = yield* requireStoredIssue(issueId)
+					// `wontfix` stands in for a move the workflow refuses.
+					if (toState === "wontfix") {
+						return yield* Effect.fail(
+							new ErrorIssueTransitionError({
+								message: `Cannot move from ${current.workflowState} to ${toState}`,
+								issueId,
+								fromState: current.workflowState,
+								toState,
+							}),
+						)
+					}
+					issueActions.push({ action: "transition", actorId, opts })
+					return yield* updateStoredIssue({ workflowState: toState, notes: opts?.note ?? null })
+				}),
+			claimIssue: (_org, actorId, issueId, leaseDurationMs) =>
+				requireStoredIssue(issueId).pipe(
+					Effect.tap(() =>
+						Effect.sync(() => issueActions.push({ action: "claim", actorId, leaseDurationMs })),
+					),
+					Effect.andThen(
+						updateStoredIssue({
+							workflowState: "in_progress",
+							leaseHolder: actorFixture,
+							claimedAt: decodeIso("2026-07-15T10:00:00.000Z"),
+						}),
+					),
+				),
 			proposeFix: die,
 			recordAnomalyLinkEvent: () => Effect.void,
 			runTick: die,
+		}),
+		Layer.succeed(ErrorIssueWorkflowService, {
+			rowToIssue: dieSync,
+			requireIssue: die,
+			issuesWithOpenIncidents: die,
+			hydrateIssueRows: die,
+			hydrateIssue: die,
+			recordEvent: die,
+			buildEvent: dieSync,
+			applyTransition: die,
+			heartbeatIssue: die,
+			releaseIssue: (_org, actorId, issueId, opts) =>
+				Effect.gen(function* () {
+					const current = yield* requireStoredIssue(issueId)
+					issueActions.push({ action: "release", actorId, opts })
+					return yield* updateStoredIssue({
+						workflowState: opts?.transitionTo ?? current.workflowState,
+						leaseHolder: null,
+						claimedAt: null,
+					})
+				}),
+			assignIssue: die,
+			setSeverity: (_org, actorId, issueId, severity, opts) =>
+				requireStoredIssue(issueId).pipe(
+					Effect.tap(() =>
+						Effect.sync(() => issueActions.push({ action: "severity", actorId, opts })),
+					),
+					Effect.andThen(
+						updateStoredIssue({ severity, severitySource: severity === null ? null : "manual" }),
+					),
+				),
+			commentOnIssue: die,
+			listIssueEvents: die,
 		}),
 		Layer.succeed(ErrorActorsService, {
 			registerAgent: die,
 			listAgents: die,
 			lookupActor: die,
-			ensureUserActor: () => Effect.succeed(actorFixture),
+			ensureUserActor: (_org, userId) =>
+				Effect.sync(() => ensuredUsers.push(userId)).pipe(Effect.as(actorFixture)),
 			actorExists: die,
 			ensureSystemActor: die,
 			ensureAgentActor: die,
@@ -611,6 +690,8 @@ const makeHarness = (
 		bootstrapKey,
 		lastIssueListCall: () => lastIssueListCall,
 		lastIssueDetailCall: () => lastIssueDetailCall,
+		issueActions: () => issueActions,
+		ensuredUsers: () => ensuredUsers,
 		dispose: async () => {
 			await disposeHandler()
 			await runtime.dispose()
@@ -703,6 +784,72 @@ describe("v2 error_issues over HTTP", () => {
 		const missing = await harness.request("GET", `/v2/error_issues/${missingId}`, { token: key.secret })
 		expect(missing.status).toBe(404)
 		expect(missing.body.error.code).toBe("error_issue_not_found")
+		await harness.dispose()
+	})
+
+	it("triages an issue as the caller: transition, claim, severity, release", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["error_issues:write"])
+		const call = (method: string, action: string, body: unknown) =>
+			harness.request(method, `/v2/error_issues/${ISS_ID}/${action}`, { token: key.secret, body })
+
+		const transitioned = await call("POST", "transitions", { to_state: "todo", note: "looking" })
+		expect(transitioned.status).toBe(200)
+		expect(transitioned.body).toMatchObject({
+			id: ISS_ID,
+			object: "error_issue",
+			workflow_state: "todo",
+			notes: "looking",
+		})
+
+		const claimed = await call("POST", "claim", { lease_duration_seconds: 600 })
+		expect(claimed.status).toBe(200)
+		expect(claimed.body).toMatchObject({ workflow_state: "in_progress", lease_holder: { id: ACTOR_ID } })
+
+		const severity = await call("PUT", "severity", { severity: "low" })
+		expect(severity.status).toBe(200)
+		expect(severity.body).toMatchObject({ severity: "low", severity_source: "manual" })
+
+		const released = await call("POST", "release", { transition_to: "in_review" })
+		expect(released.status).toBe(200)
+		expect(released.body).toMatchObject({ workflow_state: "in_review", lease_holder: null })
+
+		// Every action ran as the caller's user actor, with the wire fields translated.
+		expect(harness.issueActions()).toEqual([
+			{ action: "transition", actorId: actorFixture.id, opts: { note: "looking" } },
+			{ action: "claim", actorId: actorFixture.id, leaseDurationMs: 600_000 },
+			{ action: "severity", actorId: actorFixture.id, opts: { source: "manual" } },
+			{ action: "release", actorId: actorFixture.id, opts: { transitionTo: "in_review" } },
+		])
+		expect(harness.ensuredUsers()).toHaveLength(4)
+		await harness.dispose()
+	})
+
+	it("maps refused transitions to 409, missing issues to 404, and needs write scope", async () => {
+		const harness = makeHarness()
+		const reader = await harness.bootstrapKey(["error_issues:read"])
+		const readOnly = await harness.request("POST", `/v2/error_issues/${ISS_ID}/claim`, {
+			token: reader.secret,
+			body: {},
+		})
+		expect(readOnly.status).toBe(403)
+
+		const key = await harness.bootstrapKey(["error_issues:write"])
+		const refused = await harness.request("POST", `/v2/error_issues/${ISS_ID}/transitions`, {
+			token: key.secret,
+			body: { to_state: "wontfix" },
+		})
+		expect(refused.status).toBe(409)
+		expect(refused.body.error.code).toBe("error_issue_transition_invalid")
+
+		const missingId = encodePublicId("iss", "99999999-9999-4999-8999-999999999991")
+		const missing = await harness.request("PUT", `/v2/error_issues/${missingId}/severity`, {
+			token: key.secret,
+			body: { severity: null },
+		})
+		expect(missing.status).toBe(404)
+		expect(missing.body.error.code).toBe("error_issue_not_found")
+		expect(harness.issueActions()).toEqual([])
 		await harness.dispose()
 	})
 

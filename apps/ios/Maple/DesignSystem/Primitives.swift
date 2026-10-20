@@ -439,6 +439,8 @@ struct StatTile: View {
 	let label: String
 	let value: String
 	var tint: Color = Token.foreground
+	/// The web's `+6.2% vs previous hour` line. Nil hides it.
+	var delta: StatDelta? = nil
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 8) {
@@ -451,10 +453,19 @@ struct StatTile: View {
 				.foregroundStyle(tint)
 				.lineLimit(1)
 				.minimumScaleFactor(0.7)
+			if let delta {
+				Text(delta.text)
+					.font(Typo.micro)
+					.tabularNumbers()
+					.foregroundStyle(delta.tint)
+					.lineLimit(1)
+					.minimumScaleFactor(0.8)
+			}
 		}
-		.frame(maxWidth: .infinity, alignment: .leading)
 		.padding(.horizontal, 16)
 		.padding(.vertical, 14)
+		// Fill the grid row, so a tile without a delta matches its neighbour.
+		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 		.background(Token.card)
 	}
 }

@@ -20,11 +20,11 @@ struct AlertsHubView: View {
 			ZStack {
 				Token.background.ignoresSafeArea()
 				VStack(spacing: 0) {
-					SegmentedControl(selection: $navigation.alertsSegment)
-						.padding(.horizontal, 16)
-						.padding(.top, 8)
-						.padding(.bottom, 10)
-					Hairline()
+					UnderlineTabs(
+						options: AlertsSegment.allCases.map { ($0, $0.title) },
+						selection: $navigation.alertsSegment
+					)
+					.padding(.top, 4)
 					if let models {
 						switch navigation.alertsSegment {
 						case .incidents: IncidentsListView(model: models.incidents)
@@ -38,7 +38,7 @@ struct AlertsHubView: View {
 					}
 				}
 			}
-			.navigationTitle("Alerts")
+			.navigationTitle("Triage")
 			.navigationBarTitleDisplayMode(.large)
 			.toolbar {
 				ToolbarItem(placement: .topBarLeading) {

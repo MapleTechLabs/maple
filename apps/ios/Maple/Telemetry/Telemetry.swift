@@ -182,6 +182,11 @@ enum Screen {
 	static let issueDetail = "Issue"
 	static let anomalies = "Anomalies"
 	static let anomalyDetail = "Anomaly"
+	static let traces = "Traces"
+	static let traceDetail = "Trace"
+	static let logs = "Logs"
+	static let dashboards = "Dashboards"
+	static let dashboardDetail = "Dashboard"
 	static let notificationSettings = "Notification Settings"
 	static let organizationPicker = "Organization Picker"
 }

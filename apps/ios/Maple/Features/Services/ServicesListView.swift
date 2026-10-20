@@ -231,8 +231,9 @@ private struct ServiceRow: View {
 						.lineLimit(1)
 				}
 
+				PercentileTriplet(p50: service.p50LatencyMs, p95: service.p95LatencyMs, p99: service.p99LatencyMs)
+
 				HStack(spacing: 12) {
-					Stat(label: "p95", value: Format.latency(service.p95LatencyMs), tint: Tone.latency(service.p95LatencyMs, scale: .p95))
 					Stat(label: "thru", value: Format.throughput(service.throughput), tint: Token.foreground)
 					if openIssues > 0 {
 						Stat(label: "open", value: "\(openIssues)", tint: Token.destructive)

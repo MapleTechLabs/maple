@@ -1318,6 +1318,1785 @@
         "title": "Breakdown item",
         "type": "object"
       },
+      "Dashboard": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/_maple_DashboardId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "object": {
+            "enum": [
+              "dashboard"
+            ],
+            "type": "string"
+          },
+          "refresh_interval_seconds": {
+            "$ref": "#/components/schemas/_maple_DashboardRefreshIntervalSeconds"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardSection"
+            },
+            "type": "array"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "time_range": {
+            "$ref": "#/components/schemas/DashboardTimeRange"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "variables": {
+            "items": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "default_value": {
+                      "type": "string"
+                    },
+                    "include_all": {
+                      "type": "boolean"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "$ref": "#/components/schemas/_maple_DashboardVariableName"
+                    },
+                    "source": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "facet": {
+                              "enum": [
+                                "service",
+                                "environment",
+                                "span_name",
+                                "http_method",
+                                "http_status_code",
+                                "log_severity"
+                              ],
+                              "type": "string"
+                            },
+                            "kind": {
+                              "enum": [
+                                "facet"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "facet"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "attribute_key": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "enum": [
+                                "attribute"
+                              ],
+                              "type": "string"
+                            },
+                            "scope": {
+                              "enum": [
+                                "span",
+                                "resource"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "scope",
+                            "attribute_key"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "attribute_key": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "enum": [
+                                "metric"
+                              ],
+                              "type": "string"
+                            },
+                            "metric_names": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "maxItems": 20,
+                              "minItems": 1,
+                              "type": "array"
+                            },
+                            "metric_type": {
+                              "enum": [
+                                "sum",
+                                "gauge",
+                                "histogram",
+                                "exponential_histogram"
+                              ],
+                              "type": "string"
+                            },
+                            "scope": {
+                              "enum": [
+                                "metric",
+                                "resource"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "metric_type",
+                            "metric_names",
+                            "scope",
+                            "attribute_key"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "type": {
+                      "enum": [
+                        "query"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type",
+                    "source"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "default_value": {
+                      "type": "string"
+                    },
+                    "include_all": {
+                      "type": "boolean"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "$ref": "#/components/schemas/_maple_DashboardVariableName"
+                    },
+                    "options": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "type": {
+                      "enum": [
+                        "custom"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type",
+                    "options"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "default_value": {
+                      "type": "string"
+                    },
+                    "include_all": {
+                      "type": "boolean"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "$ref": "#/components/schemas/_maple_DashboardVariableName"
+                    },
+                    "type": {
+                      "enum": [
+                        "textbox"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "widgets": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "data_source": {
+                  "$ref": "#/components/schemas/DashboardWidgetDataSource"
+                },
+                "display": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "chart_id": {
+                      "type": "string"
+                    },
+                    "chart_presentation": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "compare_to_previous_period": {
+                          "type": "boolean"
+                        },
+                        "fill_nulls": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "enum": [
+                                false
+                              ],
+                              "type": "boolean"
+                            }
+                          ]
+                        },
+                        "legend": {
+                          "enum": [
+                            "visible",
+                            "hidden",
+                            "right"
+                          ],
+                          "type": "string"
+                        },
+                        "series_stats": {
+                          "type": "boolean"
+                        },
+                        "show_points": {
+                          "type": "boolean"
+                        },
+                        "tooltip": {
+                          "enum": [
+                            "visible",
+                            "hidden"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "color_overrides": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "columns": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "align": {
+                            "enum": [
+                              "left",
+                              "center",
+                              "right"
+                            ],
+                            "type": "string"
+                          },
+                          "field": {
+                            "type": "string"
+                          },
+                          "header": {
+                            "type": "string"
+                          },
+                          "hidden": {
+                            "type": "boolean"
+                          },
+                          "thresholds": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "color": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "value",
+                                "color"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "unit": {
+                            "type": "string"
+                          },
+                          "width": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "header"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "curve_type": {
+                      "enum": [
+                        "linear",
+                        "monotone"
+                      ],
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "funnel": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "breakdown_by": {
+                          "type": "string"
+                        },
+                        "filters": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "browser_name": {
+                              "type": "string"
+                            },
+                            "country": {
+                              "type": "string"
+                            },
+                            "device_type": {
+                              "type": "string"
+                            },
+                            "host": {
+                              "type": "string"
+                            },
+                            "language": {
+                              "type": "string"
+                            },
+                            "os_name": {
+                              "type": "string"
+                            },
+                            "page_path": {
+                              "type": "string"
+                            },
+                            "referrer_host": {
+                              "type": "string"
+                            },
+                            "utm_campaign": {
+                              "type": "string"
+                            },
+                            "utm_medium": {
+                              "type": "string"
+                            },
+                            "utm_source": {
+                              "type": "string"
+                            },
+                            "visitor_type": {
+                              "enum": [
+                                "new",
+                                "returning"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "key_by": {
+                          "enum": [
+                            "person",
+                            "visitor",
+                            "user",
+                            "session"
+                          ],
+                          "type": "string"
+                        },
+                        "show_step_percent": {
+                          "type": "boolean"
+                        },
+                        "steps": {
+                          "items": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "attributeEquals": {
+                                    "additionalProperties": {
+                                      "type": "string"
+                                    },
+                                    "type": "object"
+                                  },
+                                  "eventName": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "enum": [
+                                      "event"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "eventName"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "host": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "enum": [
+                                      "page"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "pagePath": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "pagePath"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "dimension": {
+                                    "enum": [
+                                      "referrerHost",
+                                      "utmSource",
+                                      "utmMedium",
+                                      "utmCampaign",
+                                      "country",
+                                      "host"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "enum": [
+                                      "session"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "value": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "dimension",
+                                  "value"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "type": "array"
+                        },
+                        "variant": {
+                          "enum": [
+                            "bars",
+                            "dropoff"
+                          ],
+                          "type": "string"
+                        },
+                        "window_seconds": {
+                          "type": "number"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "gauge": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "max": {
+                          "type": "number"
+                        },
+                        "min": {
+                          "type": "number"
+                        },
+                        "style": {
+                          "enum": [
+                            "radial",
+                            "bar"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "heatmap": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "color_scale": {
+                          "enum": [
+                            "amber",
+                            "blues",
+                            "reds",
+                            "viridis",
+                            "magma",
+                            "cividis"
+                          ],
+                          "type": "string"
+                        },
+                        "scale_type": {
+                          "enum": [
+                            "linear",
+                            "log"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "histogram": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "bucket_count": {
+                          "type": "number"
+                        },
+                        "bucket_width": {
+                          "type": "number"
+                        },
+                        "log_scale_y": {
+                          "type": "boolean"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "list_data_source": {
+                      "type": "string"
+                    },
+                    "list_limit": {
+                      "type": "number"
+                    },
+                    "list_root_only": {
+                      "type": "boolean"
+                    },
+                    "list_where_clause": {
+                      "type": "string"
+                    },
+                    "markdown": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "content": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "content"
+                      ],
+                      "type": "object"
+                    },
+                    "paths": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "anchor": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "attributeEquals": {
+                                  "additionalProperties": {
+                                    "type": "string"
+                                  },
+                                  "type": "object"
+                                },
+                                "eventName": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "enum": [
+                                    "event"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "eventName"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "host": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "enum": [
+                                    "page"
+                                  ],
+                                  "type": "string"
+                                },
+                                "pagePath": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "pagePath"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "branches": {
+                          "type": "number"
+                        },
+                        "depth": {
+                          "type": "number"
+                        },
+                        "direction": {
+                          "enum": [
+                            "after",
+                            "before"
+                          ],
+                          "type": "string"
+                        },
+                        "exclude": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "filters": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "browser_name": {
+                              "type": "string"
+                            },
+                            "country": {
+                              "type": "string"
+                            },
+                            "device_type": {
+                              "type": "string"
+                            },
+                            "host": {
+                              "type": "string"
+                            },
+                            "language": {
+                              "type": "string"
+                            },
+                            "os_name": {
+                              "type": "string"
+                            },
+                            "page_path": {
+                              "type": "string"
+                            },
+                            "referrer_host": {
+                              "type": "string"
+                            },
+                            "utm_campaign": {
+                              "type": "string"
+                            },
+                            "utm_medium": {
+                              "type": "string"
+                            },
+                            "utm_source": {
+                              "type": "string"
+                            },
+                            "visitor_type": {
+                              "enum": [
+                                "new",
+                                "returning"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "include": {
+                          "enum": [
+                            "all",
+                            "events",
+                            "pages"
+                          ],
+                          "type": "string"
+                        },
+                        "key_by": {
+                          "enum": [
+                            "person",
+                            "visitor",
+                            "user",
+                            "session"
+                          ],
+                          "type": "string"
+                        },
+                        "window_seconds": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "anchor"
+                      ],
+                      "type": "object"
+                    },
+                    "pie": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "donut": {
+                          "type": "boolean"
+                        },
+                        "inner_radius": {
+                          "type": "number"
+                        },
+                        "show_labels": {
+                          "type": "boolean"
+                        },
+                        "show_percent": {
+                          "type": "boolean"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "prefix": {
+                      "type": "string"
+                    },
+                    "series_mapping": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "sparkline": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "data_source": {
+                          "$ref": "#/components/schemas/DashboardWidgetDataSource"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled"
+                      ],
+                      "type": "object"
+                    },
+                    "stacked": {
+                      "type": "boolean"
+                    },
+                    "suffix": {
+                      "type": "string"
+                    },
+                    "thresholds": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "color": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "value",
+                          "color"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "unit": {
+                      "type": "string"
+                    },
+                    "x_axis": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "label": {
+                          "type": "string"
+                        },
+                        "unit": {
+                          "type": "string"
+                        },
+                        "visible": {
+                          "type": "boolean"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "y_axis": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "fit_y_axis_to_data": {
+                          "type": "boolean"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "log_scale": {
+                          "type": "boolean"
+                        },
+                        "max": {
+                          "type": "number"
+                        },
+                        "min": {
+                          "type": "number"
+                        },
+                        "soft_max": {
+                          "type": "number"
+                        },
+                        "soft_min": {
+                          "type": "number"
+                        },
+                        "unit": {
+                          "type": "string"
+                        },
+                        "visible": {
+                          "type": "boolean"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "layout": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "h": {
+                      "type": "number"
+                    },
+                    "max_h": {
+                      "type": "number"
+                    },
+                    "max_w": {
+                      "type": "number"
+                    },
+                    "min_h": {
+                      "type": "number"
+                    },
+                    "min_w": {
+                      "type": "number"
+                    },
+                    "w": {
+                      "type": "number"
+                    },
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "w",
+                    "h"
+                  ],
+                  "type": "object"
+                },
+                "section_id": {
+                  "type": "string"
+                },
+                "tab_id": {
+                  "type": "string"
+                },
+                "time_range": {
+                  "$ref": "#/components/schemas/DashboardTimeRange"
+                },
+                "visualization": {
+                  "enum": [
+                    "chart",
+                    "hbar",
+                    "stat",
+                    "gauge",
+                    "table",
+                    "list",
+                    "pie",
+                    "histogram",
+                    "heatmap",
+                    "funnel",
+                    "paths",
+                    "markdown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "visualization",
+                "data_source",
+                "display",
+                "layout"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "name",
+          "tags",
+          "time_range",
+          "widgets",
+          "sections",
+          "variables",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "DashboardList": {
+        "additionalProperties": false,
+        "description": "Cursor-paginated list envelope wrapping a page of objects.",
+        "properties": {
+          "data": {
+            "description": "The page of objects, in the ordering documented by the endpoint.",
+            "items": {
+              "$ref": "#/components/schemas/Dashboard"
+            },
+            "type": "array"
+          },
+          "has_more": {
+            "description": "Whether more objects exist after this page. When `true`, use `next_cursor` to fetch them.",
+            "examples": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "description": "Cursor for the next page, or `null` on the last page. Pass it back as the `cursor` query param.",
+            "examples": [
+              "off_1k"
+            ],
+            "type": "string"
+          },
+          "object": {
+            "description": "Always `\"list\"` for a list response.",
+            "enum": [
+              "list"
+            ],
+            "examples": [
+              "list"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "data",
+          "has_more"
+        ],
+        "title": "List",
+        "type": "object"
+      },
+      "DashboardSection": {
+        "additionalProperties": false,
+        "description": "A collapsible group of widgets. A section with one tab renders as a plain header; two or more render a tab bar. Widgets join a section by setting `section_id` and `tab_id`.",
+        "properties": {
+          "collapsed": {
+            "type": "boolean"
+          },
+          "collapsible": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "tabs": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "title"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "tabs"
+        ],
+        "title": "Dashboard section",
+        "type": "object"
+      },
+      "DashboardTimeRange": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "enum": [
+                  "relative"
+                ],
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "value"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "end_time": {
+                "type": "string"
+              },
+              "start_time": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "absolute"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "start_time",
+              "end_time"
+            ],
+            "type": "object"
+          }
+        ],
+        "title": "Dashboard time range"
+      },
+      "DashboardWidgetData": {
+        "additionalProperties": false,
+        "description": "Per-widget data for one batch, in request order, plus the resolved variable values.",
+        "properties": {
+          "object": {
+            "enum": [
+              "dashboard_widget_data"
+            ],
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardWidgetDataOutcome"
+            },
+            "type": "array"
+          },
+          "variables": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "object",
+          "results",
+          "variables"
+        ],
+        "title": "Dashboard widget data",
+        "type": "object"
+      },
+      "DashboardWidgetDataOutcome": {
+        "additionalProperties": false,
+        "description": "One widget's result. A widget that cannot be served fails inside the 200 so its neighbours still render.",
+        "properties": {
+          "data": {},
+          "message": {
+            "type": "string"
+          },
+          "narrowed_to_seconds": {
+            "type": "number"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "reason": {
+            "enum": [
+              "unsupported",
+              "not_found",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "widget_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "widget_id",
+          "ok"
+        ],
+        "title": "Dashboard widget data outcome",
+        "type": "object"
+      },
+      "DashboardWidgetDataParams": {
+        "additionalProperties": false,
+        "properties": {
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardWidgetDataRequest"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "type": "array"
+          },
+          "time_range": {
+            "$ref": "#/components/schemas/DashboardTimeRange"
+          },
+          "variable_values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "requests",
+          "time_range"
+        ],
+        "title": "Dashboard widget data parameters",
+        "type": "object"
+      },
+      "DashboardWidgetDataRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "max_data_points": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "primary",
+              "sparkline"
+            ],
+            "type": "string"
+          },
+          "widget_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "widget_id"
+        ],
+        "title": "Dashboard widget data request",
+        "type": "object"
+      },
+      "DashboardWidgetDataSource": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "columns": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "comparison": {
+                "type": "object"
+              },
+              "default_limit": {
+                "type": "number"
+              },
+              "formulas": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "kind": {
+                "enum": [
+                  "query"
+                ],
+                "type": "string"
+              },
+              "limit": {
+                "type": "number"
+              },
+              "queries": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "result_shape": {
+                "enum": [
+                  "timeseries",
+                  "breakdown",
+                  "list"
+                ],
+                "type": "string"
+              },
+              "transform": {
+                "additionalProperties": false,
+                "properties": {
+                  "compute_ratio": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "denominator_names": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "numerator_name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "numerator_name",
+                      "denominator_names"
+                    ],
+                    "type": "object"
+                  },
+                  "field_map": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "flatten_series": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "value_field": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "value_field"
+                    ],
+                    "type": "object"
+                  },
+                  "hide_series": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "base_names": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "base_names"
+                    ],
+                    "type": "object"
+                  },
+                  "limit": {
+                    "type": "number"
+                  },
+                  "reduce_to_value": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "aggregate": {
+                        "enum": [
+                          "first",
+                          "sum",
+                          "count",
+                          "avg",
+                          "max",
+                          "min"
+                        ],
+                        "type": "string"
+                      },
+                      "field": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field"
+                    ],
+                    "type": "object"
+                  },
+                  "sort_by": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "direction": {
+                        "enum": [
+                          "asc",
+                          "desc"
+                        ],
+                        "type": "string"
+                      },
+                      "field": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "direction"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "kind",
+              "result_shape",
+              "queries"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "display_type": {
+                "type": "string"
+              },
+              "granularity_seconds": {
+                "type": "number"
+              },
+              "kind": {
+                "enum": [
+                  "raw_sql"
+                ],
+                "type": "string"
+              },
+              "sql": {
+                "type": "string"
+              },
+              "transform": {
+                "additionalProperties": false,
+                "properties": {
+                  "compute_ratio": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "denominator_names": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "numerator_name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "numerator_name",
+                      "denominator_names"
+                    ],
+                    "type": "object"
+                  },
+                  "field_map": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "flatten_series": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "value_field": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "value_field"
+                    ],
+                    "type": "object"
+                  },
+                  "hide_series": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "base_names": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "base_names"
+                    ],
+                    "type": "object"
+                  },
+                  "limit": {
+                    "type": "number"
+                  },
+                  "reduce_to_value": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "aggregate": {
+                        "enum": [
+                          "first",
+                          "sum",
+                          "count",
+                          "avg",
+                          "max",
+                          "min"
+                        ],
+                        "type": "string"
+                      },
+                      "field": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field"
+                    ],
+                    "type": "object"
+                  },
+                  "sort_by": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "direction": {
+                        "enum": [
+                          "asc",
+                          "desc"
+                        ],
+                        "type": "string"
+                      },
+                      "field": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "direction"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "kind",
+              "sql"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "endpoint": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "route"
+                ],
+                "type": "string"
+              },
+              "params": {
+                "type": "object"
+              },
+              "transform": {
+                "additionalProperties": false,
+                "properties": {
+                  "compute_ratio": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "denominator_names": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "numerator_name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "numerator_name",
+                      "denominator_names"
+                    ],
+                    "type": "object"
+                  },
+                  "field_map": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "flatten_series": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "value_field": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "value_field"
+                    ],
+                    "type": "object"
+                  },
+                  "hide_series": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "base_names": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "base_names"
+                    ],
+                    "type": "object"
+                  },
+                  "limit": {
+                    "type": "number"
+                  },
+                  "reduce_to_value": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "aggregate": {
+                        "enum": [
+                          "first",
+                          "sum",
+                          "count",
+                          "avg",
+                          "max",
+                          "min"
+                        ],
+                        "type": "string"
+                      },
+                      "field": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field"
+                    ],
+                    "type": "object"
+                  },
+                  "sort_by": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "direction": {
+                        "enum": [
+                          "asc",
+                          "desc"
+                        ],
+                        "type": "string"
+                      },
+                      "field": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "direction"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "kind",
+              "endpoint"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "static"
+                ],
+                "type": "string"
+              },
+              "transform": {
+                "additionalProperties": false,
+                "properties": {
+                  "compute_ratio": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "denominator_names": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "numerator_name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "numerator_name",
+                      "denominator_names"
+                    ],
+                    "type": "object"
+                  },
+                  "field_map": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "flatten_series": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "value_field": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "value_field"
+                    ],
+                    "type": "object"
+                  },
+                  "hide_series": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "base_names": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "base_names"
+                    ],
+                    "type": "object"
+                  },
+                  "limit": {
+                    "type": "number"
+                  },
+                  "reduce_to_value": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "aggregate": {
+                        "enum": [
+                          "first",
+                          "sum",
+                          "count",
+                          "avg",
+                          "max",
+                          "min"
+                        ],
+                        "type": "string"
+                      },
+                      "field": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field"
+                    ],
+                    "type": "object"
+                  },
+                  "sort_by": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "direction": {
+                        "enum": [
+                          "asc",
+                          "desc"
+                        ],
+                        "type": "string"
+                      },
+                      "field": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "direction"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          }
+        ],
+        "title": "Dashboard widget data source"
+      },
       "Environment": {
         "additionalProperties": false,
         "description": "One deployment environment telemetry has been observed in.",
@@ -1617,6 +3396,18 @@
         "title": "Error issue actor",
         "type": "object"
       },
+      "ErrorIssueClaimParams": {
+        "additionalProperties": false,
+        "properties": {
+          "lease_duration_seconds": {
+            "maximum": 7200,
+            "minimum": 60,
+            "type": "integer"
+          }
+        },
+        "title": "Error issue claim parameters",
+        "type": "object"
+      },
       "ErrorIssueDetail": {
         "additionalProperties": false,
         "description": "The issue resource with its requested timeseries window, sample traces, incidents, and the environments it was seen in.",
@@ -1841,6 +3632,19 @@
         "title": "Error issue list",
         "type": "object"
       },
+      "ErrorIssueReleaseParams": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "type": "string"
+          },
+          "transition_to": {
+            "$ref": "#/components/schemas/_maple_WorkflowState"
+          }
+        },
+        "title": "Error issue release parameters",
+        "type": "object"
+      },
       "ErrorIssueSampleTrace": {
         "additionalProperties": false,
         "properties": {
@@ -1935,6 +3739,20 @@
         "title": "Error issue service count list",
         "type": "object"
       },
+      "ErrorIssueSeverityParams": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/_maple_IssueSeverity"
+          }
+        },
+        "title": "Error issue severity parameters",
+        "type": "object"
+      },
       "ErrorIssueTimeseriesPoint": {
         "additionalProperties": false,
         "properties": {
@@ -1949,6 +3767,25 @@
           "bucket",
           "count"
         ],
+        "type": "object"
+      },
+      "ErrorIssueTransitionParams": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "type": "string"
+          },
+          "snooze_until": {
+            "type": "string"
+          },
+          "to_state": {
+            "$ref": "#/components/schemas/_maple_WorkflowState"
+          }
+        },
+        "required": [
+          "to_state"
+        ],
+        "title": "Error issue transition parameters",
         "type": "object"
       },
       "LiveActivity": {
@@ -2043,6 +3880,338 @@
           "push_token"
         ],
         "title": "Live Activity registration",
+        "type": "object"
+      },
+      "Log": {
+        "additionalProperties": false,
+        "description": "An OpenTelemetry log record.",
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/LogId"
+          },
+          "log_attributes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "object": {
+            "enum": [
+              "log"
+            ],
+            "type": "string"
+          },
+          "resource_attributes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "severity_number": {
+            "type": "number"
+          },
+          "severity_text": {
+            "type": "string"
+          },
+          "span_id": {
+            "$ref": "#/components/schemas/_maple_SpanId"
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "trace_id": {
+            "$ref": "#/components/schemas/_maple_TraceId"
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "timestamp",
+          "severity_text",
+          "severity_number",
+          "service_name",
+          "body",
+          "log_attributes",
+          "resource_attributes"
+        ],
+        "title": "Log",
+        "type": "object"
+      },
+      "LogFilters": {
+        "additionalProperties": false,
+        "properties": {
+          "attributes": {
+            "items": {
+              "$ref": "#/components/schemas/AttributeFilter"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "body_search": {
+            "minLength": 1,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "type": "string"
+          },
+          "deployment_environment": {
+            "minLength": 1,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "type": "string"
+          },
+          "minimum_severity": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "resource_attributes": {
+            "items": {
+              "$ref": "#/components/schemas/AttributeFilter"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "service_name": {
+            "$ref": "#/components/schemas/_maple_ServiceName"
+          },
+          "service_namespace": {
+            "minLength": 1,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "type": "string"
+          },
+          "severity": {
+            "minLength": 1,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "type": "string"
+          },
+          "span_id": {
+            "$ref": "#/components/schemas/_maple_SpanId"
+          },
+          "trace_id": {
+            "$ref": "#/components/schemas/_maple_TraceId"
+          }
+        },
+        "title": "Log filters",
+        "type": "object"
+      },
+      "LogId": {
+        "description": "Opaque, prefixed public object ID (e.g. `log_YofPTrK9782DWwcnXhpcCw`). A reversible base58 encoding of the internal ID — treat it as an opaque string.",
+        "examples": [
+          "log_YofPTrK9782DWwcnXhpcCw"
+        ],
+        "format": "maple.public_id",
+        "title": "Public ID",
+        "type": "string"
+      },
+      "LogList": {
+        "additionalProperties": false,
+        "description": "Cursor-paginated list envelope wrapping a page of objects.",
+        "properties": {
+          "data": {
+            "description": "The page of objects, in the ordering documented by the endpoint.",
+            "items": {
+              "$ref": "#/components/schemas/Log"
+            },
+            "type": "array"
+          },
+          "has_more": {
+            "description": "Whether more objects exist after this page. When `true`, use `next_cursor` to fetch them.",
+            "examples": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "description": "Cursor for the next page, or `null` on the last page. Pass it back as the `cursor` query param.",
+            "examples": [
+              "off_1k"
+            ],
+            "type": "string"
+          },
+          "object": {
+            "description": "Always `\"list\"` for a list response.",
+            "enum": [
+              "list"
+            ],
+            "examples": [
+              "list"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "data",
+          "has_more"
+        ],
+        "title": "Log list",
+        "type": "object"
+      },
+      "LogSearchParams": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "end_time": "2026-07-15T13:00:00.000Z",
+            "filters": {
+              "body_search": "checkout",
+              "minimum_severity": 17,
+              "service_name": "api"
+            },
+            "limit": 20,
+            "start_time": "2026-07-15T12:00:00.000Z"
+          }
+        ],
+        "properties": {
+          "cursor": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/LogFilters"
+          },
+          "limit": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "start_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_time",
+          "end_time"
+        ],
+        "title": "Log search parameters",
+        "type": "object"
+      },
+      "LogTimeseriesParams": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "aggregation": "count",
+            "end_time": "2026-07-15T13:00:00.000Z",
+            "filters": {
+              "minimum_severity": 17
+            },
+            "group_by": "severity",
+            "start_time": "2026-07-15T12:00:00.000Z"
+          }
+        ],
+        "properties": {
+          "aggregation": {
+            "enum": [
+              "count"
+            ],
+            "type": "string"
+          },
+          "bucket_seconds": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/LogFilters"
+          },
+          "group_by": {
+            "enum": [
+              "service",
+              "severity"
+            ],
+            "type": "string"
+          },
+          "series_limit": {
+            "exclusiveMinimum": 0,
+            "maximum": 100,
+            "type": "integer"
+          },
+          "start_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_time",
+          "end_time",
+          "aggregation"
+        ],
+        "title": "Log timeseries parameters",
+        "type": "object"
+      },
+      "LogTimeseriesResult": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "aggregation": "count",
+            "bucket_seconds": 60,
+            "end_time": "2026-07-15T13:00:00.000Z",
+            "group_by": null,
+            "object": "log_timeseries",
+            "series": [
+              {
+                "group": null,
+                "points": [
+                  {
+                    "timestamp": "2026-07-15T12:00:00.000Z",
+                    "value": 10
+                  }
+                ]
+              }
+            ],
+            "start_time": "2026-07-15T12:00:00.000Z"
+          }
+        ],
+        "properties": {
+          "aggregation": {
+            "enum": [
+              "count"
+            ],
+            "type": "string"
+          },
+          "bucket_seconds": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "group_by": {
+            "type": "string"
+          },
+          "object": {
+            "enum": [
+              "log_timeseries"
+            ],
+            "type": "string"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/TimeseriesSeries"
+            },
+            "type": "array"
+          },
+          "start_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "aggregation",
+          "start_time",
+          "end_time",
+          "bucket_seconds",
+          "series"
+        ],
+        "title": "Log timeseries result",
         "type": "object"
       },
       "MapleErrorEnvelope": {
@@ -2659,6 +4828,75 @@
         "title": "Service overview point",
         "type": "object"
       },
+      "Span": {
+        "additionalProperties": false,
+        "description": "An OpenTelemetry span.",
+        "properties": {
+          "attributes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "duration_ms": {
+            "type": "number"
+          },
+          "id": {
+            "$ref": "#/components/schemas/_maple_SpanId"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "object": {
+            "enum": [
+              "span"
+            ],
+            "type": "string"
+          },
+          "parent_span_id": {
+            "$ref": "#/components/schemas/_maple_SpanId"
+          },
+          "resource_attributes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string"
+          },
+          "status_code": {
+            "type": "string"
+          },
+          "status_message": {
+            "type": "string"
+          },
+          "trace_id": {
+            "$ref": "#/components/schemas/_maple_TraceId"
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "trace_id",
+          "name",
+          "service_name",
+          "kind",
+          "start_time",
+          "duration_ms",
+          "status_code",
+          "attributes",
+          "resource_attributes"
+        ],
+        "title": "Span",
+        "type": "object"
+      },
       "TimeseriesSeries": {
         "additionalProperties": false,
         "properties": {
@@ -2693,6 +4931,58 @@
           "value"
         ],
         "title": "Timeseries value point",
+        "type": "object"
+      },
+      "Trace": {
+        "additionalProperties": false,
+        "description": "A trace and its spans.",
+        "properties": {
+          "duration_ms": {
+            "type": "number"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/_maple_TraceId"
+          },
+          "object": {
+            "enum": [
+              "trace"
+            ],
+            "type": "string"
+          },
+          "service_count": {
+            "type": "number"
+          },
+          "span_count": {
+            "type": "number"
+          },
+          "spans": {
+            "items": {
+              "$ref": "#/components/schemas/Span"
+            },
+            "type": "array"
+          },
+          "start_time": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "start_time",
+          "end_time",
+          "duration_ms",
+          "span_count",
+          "service_count",
+          "truncated",
+          "spans"
+        ],
+        "title": "Trace",
         "type": "object"
       },
       "TraceBreakdownParams": {
@@ -2892,6 +5182,178 @@
           }
         },
         "title": "Trace filters",
+        "type": "object"
+      },
+      "TraceList": {
+        "additionalProperties": false,
+        "description": "Cursor-paginated list envelope wrapping a page of objects.",
+        "properties": {
+          "data": {
+            "description": "The page of objects, in the ordering documented by the endpoint.",
+            "items": {
+              "$ref": "#/components/schemas/TraceSummary"
+            },
+            "type": "array"
+          },
+          "has_more": {
+            "description": "Whether more objects exist after this page. When `true`, use `next_cursor` to fetch them.",
+            "examples": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "description": "Cursor for the next page, or `null` on the last page. Pass it back as the `cursor` query param.",
+            "examples": [
+              "off_1k"
+            ],
+            "type": "string"
+          },
+          "object": {
+            "description": "Always `\"list\"` for a list response.",
+            "enum": [
+              "list"
+            ],
+            "examples": [
+              "list"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "data",
+          "has_more"
+        ],
+        "title": "Trace list",
+        "type": "object"
+      },
+      "TraceSearchParams": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "end_time": "2026-07-15T13:00:00.000Z",
+            "filters": {
+              "attributes": [
+                {
+                  "key": "http.route",
+                  "operator": "contains",
+                  "value": "/checkout"
+                }
+              ],
+              "has_error": true,
+              "service_name": "api"
+            },
+            "limit": 20,
+            "start_time": "2026-07-15T12:00:00.000Z"
+          }
+        ],
+        "properties": {
+          "cursor": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/TraceFilters"
+          },
+          "limit": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "start_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_time",
+          "end_time"
+        ],
+        "title": "Trace search parameters",
+        "type": "object"
+      },
+      "TraceSummary": {
+        "additionalProperties": false,
+        "description": "A root-based summary returned by trace search.",
+        "examples": [
+          {
+            "deployment_environment": "production",
+            "duration_ms": 42.5,
+            "http_method": "GET",
+            "http_route": "/checkout",
+            "http_status_code": "200",
+            "id": "7f3a4b5c6d7e8f901234567890abcdef",
+            "object": "trace",
+            "root_has_error": false,
+            "root_service_name": "api",
+            "root_span_kind": "Server",
+            "root_span_name": "GET /checkout",
+            "root_status_code": "Ok",
+            "service_namespace": "checkout",
+            "start_time": "2026-07-15T12:00:00.000Z"
+          }
+        ],
+        "properties": {
+          "deployment_environment": {
+            "type": "string"
+          },
+          "duration_ms": {
+            "type": "number"
+          },
+          "http_method": {
+            "type": "string"
+          },
+          "http_route": {
+            "type": "string"
+          },
+          "http_status_code": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/_maple_TraceId"
+          },
+          "object": {
+            "enum": [
+              "trace"
+            ],
+            "type": "string"
+          },
+          "root_has_error": {
+            "type": "boolean"
+          },
+          "root_service_name": {
+            "type": "string"
+          },
+          "root_span_kind": {
+            "type": "string"
+          },
+          "root_span_name": {
+            "type": "string"
+          },
+          "root_status_code": {
+            "type": "string"
+          },
+          "service_namespace": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "start_time",
+          "duration_ms",
+          "root_span_name",
+          "root_span_kind",
+          "root_service_name",
+          "root_status_code",
+          "root_has_error"
+        ],
+        "title": "Trace summary",
         "type": "object"
       },
       "TraceTimeseriesParams": {
@@ -3628,6 +6090,33 @@
           "skipped"
         ],
         "title": "Anomaly Triage Status",
+        "type": "string"
+      },
+      "_maple_DashboardId": {
+        "description": "Opaque, prefixed public object ID (e.g. `dash_YofPTrK9782DWwcnXhpcCw`). A reversible base58 encoding of the internal ID — treat it as an opaque string.",
+        "examples": [
+          "dash_YofPTrK9782DWwcnXhpcCw"
+        ],
+        "format": "maple.public_id",
+        "title": "Public ID",
+        "type": "string"
+      },
+      "_maple_DashboardRefreshIntervalSeconds": {
+        "enum": [
+          0,
+          5,
+          10,
+          30,
+          60,
+          300,
+          900
+        ],
+        "title": "Dashboard Refresh Interval Seconds",
+        "type": "number"
+      },
+      "_maple_DashboardVariableName": {
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+        "title": "Dashboard Variable Name",
         "type": "string"
       },
       "_maple_ErrorIncidentId": {
@@ -5219,6 +7708,421 @@
         ]
       }
     },
+    "/v2/dashboards": {
+      "get": {
+        "description": "Returns a cursor-paginated list of dashboards, most recently updated first.",
+        "operationId": "listDashboards",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "description": "Opaque pagination cursor. Pass the `next_cursor` from a previous response to fetch the following page. Omit for the first page.",
+              "examples": [
+                "off_1k"
+              ],
+              "title": "Cursor",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardList"
+                }
+              }
+            },
+            "description": "Cursor-paginated list envelope wrapping a page of objects."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ParameterInvalidError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DashboardStoredConfigInvalidError failure. HTTP 500. | The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DashboardPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List dashboards",
+        "tags": [
+          "Dashboards"
+        ]
+      }
+    },
+    "/v2/dashboards/{id}": {
+      "get": {
+        "description": "Returns a complete dashboard definition by its opaque `dash_` public ID.",
+        "operationId": "getDashboard",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/_maple_DashboardId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dashboard"
+                }
+              }
+            },
+            "description": "A complete Maple dashboard definition, including its widgets and variables."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DashboardNotFoundError failure. HTTP 404."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DashboardStoredConfigInvalidError failure. HTTP 500. | The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DashboardPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Retrieve a dashboard",
+        "tags": [
+          "Dashboards"
+        ]
+      }
+    },
+    "/v2/dashboards/{id}/widget_data": {
+      "post": {
+        "description": "Evaluates up to 4 widgets of a saved dashboard over a time range, from the stored widget definitions, exactly as the dashboard renders them. Read-only; requires `dashboards:read`.",
+        "operationId": "queryDashboardWidgetData",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/_maple_DashboardId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DashboardWidgetDataParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardWidgetData"
+                }
+              }
+            },
+            "description": "Per-widget data for one batch, in request order, plus the resolved variable values."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/ParameterInvalidError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DashboardNotFoundError failure. HTTP 404."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DashboardStoredConfigInvalidError failure. HTTP 500. | The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DashboardPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Query dashboard widget data",
+        "tags": [
+          "Dashboards"
+        ]
+      }
+    },
     "/v2/environments": {
       "get": {
         "description": "Lists the deployment environments observed in an explicit time window, in name order. The list is unpaginated — `has_more` is always false — because an organization has tens of environments, not thousands. Requires `environments:read`.",
@@ -5930,6 +8834,1026 @@
         "summary": "Retrieve an error issue",
         "tags": [
           "Error Issues"
+        ]
+      }
+    },
+    "/v2/error_issues/{id}/claim": {
+      "post": {
+        "description": "Takes the issue's lease as the calling user, so others see it is being worked on. Requires `error_issues:write`.",
+        "operationId": "claimErrorIssue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/_maple_ErrorIssueId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErrorIssueClaimParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorIssue"
+                }
+              }
+            },
+            "description": "A deduplicated error, alert, or integration issue tracked through Maple's workflow."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/ErrorIssueNotFoundError failure. HTTP 404."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ErrorIssueTransitionConflictError failure. HTTP 409. | The @maple/http/v2/ErrorIssueLeaseConflictError failure. HTTP 409."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/ErrorPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Claim an error issue",
+        "tags": [
+          "Error Issues"
+        ]
+      }
+    },
+    "/v2/error_issues/{id}/release": {
+      "post": {
+        "description": "Gives up the calling user's lease, optionally moving the issue to another state. Requires `error_issues:write`.",
+        "operationId": "releaseErrorIssue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/_maple_ErrorIssueId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErrorIssueReleaseParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorIssue"
+                }
+              }
+            },
+            "description": "A deduplicated error, alert, or integration issue tracked through Maple's workflow."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/ErrorIssueNotFoundError failure. HTTP 404."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ErrorIssueTransitionConflictError failure. HTTP 409. | The @maple/http/v2/ErrorIssueLeaseConflictError failure. HTTP 409."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/ErrorPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Release an error issue",
+        "tags": [
+          "Error Issues"
+        ]
+      }
+    },
+    "/v2/error_issues/{id}/severity": {
+      "put": {
+        "description": "Sets or clears the issue's manual severity as the calling user. Requires `error_issues:write`.",
+        "operationId": "setErrorIssueSeverity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/_maple_ErrorIssueId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErrorIssueSeverityParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorIssue"
+                }
+              }
+            },
+            "description": "A deduplicated error, alert, or integration issue tracked through Maple's workflow."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/ErrorIssueNotFoundError failure. HTTP 404."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/ErrorPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set an error issue's severity",
+        "tags": [
+          "Error Issues"
+        ]
+      }
+    },
+    "/v2/error_issues/{id}/transitions": {
+      "post": {
+        "description": "Moves the issue to another workflow state as the calling user, and returns the updated issue. Requires `error_issues:write`.",
+        "operationId": "transitionErrorIssue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/_maple_ErrorIssueId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErrorIssueTransitionParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorIssue"
+                }
+              }
+            },
+            "description": "A deduplicated error, alert, or integration issue tracked through Maple's workflow."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ParameterInvalidError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/ErrorIssueNotFoundError failure. HTTP 404."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ErrorIssueTransitionConflictError failure. HTTP 409. | The @maple/http/v2/ErrorIssueLeaseConflictError failure. HTTP 409."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/ErrorPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Transition an error issue",
+        "tags": [
+          "Error Issues"
+        ]
+      }
+    },
+    "/v2/logs/search": {
+      "post": {
+        "description": "Searches logs in an explicit time window. Requires `logs:read`.",
+        "operationId": "searchLogs",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogSearchParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogList"
+                }
+              }
+            },
+            "description": "Cursor-paginated list envelope wrapping a page of objects."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/CursorInvalidError failure. HTTP 400. | The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/TelemetryRangeTooLargeError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQuotaExceededError failure. HTTP 429. | The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseMalformedQueryError failure. HTTP 500. | The @maple/http/errors/WarehouseScopeError failure. HTTP 500. | The @maple/http/errors/OrgClickHouseSettingsEncryptionError failure. HTTP 500. | The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQueryError failure. HTTP 502. | The @maple/http/errors/WarehouseAuthError failure. HTTP 502. | The @maple/http/errors/WarehouseConfigError failure. HTTP 502. | The @maple/http/errors/WarehouseClientError failure. HTTP 502. | The @maple/http/errors/WarehouseSchemaDriftError failure. HTTP 502. | The @maple/http/errors/WarehouseResultDecodeError failure. HTTP 502. | The @maple/http/errors/OrgClickHouseSettingsStoredConfigInvalidError failure. HTTP 502."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Search logs",
+        "tags": [
+          "Logs"
+        ]
+      }
+    },
+    "/v2/logs/timeseries": {
+      "post": {
+        "description": "Counts logs in chronological buckets. Requires `logs:read`.",
+        "operationId": "queryLogTimeseries",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogTimeseriesParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogTimeseriesResult"
+                }
+              }
+            },
+            "description": "LogTimeseriesResult"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/TelemetryRangeTooLargeError failure. HTTP 400. | The @maple/http/v2/TelemetryBucketCountTooLargeError failure. HTTP 400. | The @maple/http/v2/LogQueryInvalidError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/errors/QueryEngineValidationError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQuotaExceededError failure. HTTP 429. | The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseMalformedQueryError failure. HTTP 500. | The @maple/http/errors/WarehouseScopeError failure. HTTP 500. | The @maple/http/errors/OrgClickHouseSettingsEncryptionError failure. HTTP 500. | The @maple/http/errors/QueryEngineResultMismatchError failure. HTTP 500. | The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQueryError failure. HTTP 502. | The @maple/http/errors/WarehouseAuthError failure. HTTP 502. | The @maple/http/errors/WarehouseConfigError failure. HTTP 502. | The @maple/http/errors/WarehouseClientError failure. HTTP 502. | The @maple/http/errors/WarehouseSchemaDriftError failure. HTTP 502. | The @maple/http/errors/WarehouseResultDecodeError failure. HTTP 502. | The @maple/http/errors/OrgClickHouseSettingsStoredConfigInvalidError failure. HTTP 502."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/QueryEngineTimeoutError failure. HTTP 504. | The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Query log timeseries",
+        "tags": [
+          "Logs"
+        ]
+      }
+    },
+    "/v2/logs/{id}": {
+      "get": {
+        "description": "Returns a log by its opaque `log_…` ID. Requires `logs:read`.",
+        "operationId": "getLog",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/LogId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Log"
+                }
+              }
+            },
+            "description": "An OpenTelemetry log record."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/LogIdInvalidError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/LogNotFoundError failure. HTTP 404."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQuotaExceededError failure. HTTP 429. | The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseMalformedQueryError failure. HTTP 500. | The @maple/http/errors/WarehouseScopeError failure. HTTP 500. | The @maple/http/errors/OrgClickHouseSettingsEncryptionError failure. HTTP 500. | The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQueryError failure. HTTP 502. | The @maple/http/errors/WarehouseAuthError failure. HTTP 502. | The @maple/http/errors/WarehouseConfigError failure. HTTP 502. | The @maple/http/errors/WarehouseClientError failure. HTTP 502. | The @maple/http/errors/WarehouseSchemaDriftError failure. HTTP 502. | The @maple/http/errors/WarehouseResultDecodeError failure. HTTP 502. | The @maple/http/errors/OrgClickHouseSettingsStoredConfigInvalidError failure. HTTP 502."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Retrieve a log",
+        "tags": [
+          "Logs"
         ]
       }
     },
@@ -7285,6 +11209,141 @@
         ]
       }
     },
+    "/v2/traces/search": {
+      "post": {
+        "description": "Searches root traces in an explicit time window. Requires `traces:read`.",
+        "operationId": "searchTraces",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TraceSearchParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceList"
+                }
+              }
+            },
+            "description": "Cursor-paginated list envelope wrapping a page of objects."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/CursorInvalidError failure. HTTP 400. | The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/TelemetryRangeTooLargeError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQuotaExceededError failure. HTTP 429. | The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseMalformedQueryError failure. HTTP 500. | The @maple/http/errors/WarehouseScopeError failure. HTTP 500. | The @maple/http/errors/OrgClickHouseSettingsEncryptionError failure. HTTP 500. | The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQueryError failure. HTTP 502. | The @maple/http/errors/WarehouseAuthError failure. HTTP 502. | The @maple/http/errors/WarehouseConfigError failure. HTTP 502. | The @maple/http/errors/WarehouseClientError failure. HTTP 502. | The @maple/http/errors/WarehouseSchemaDriftError failure. HTTP 502. | The @maple/http/errors/WarehouseResultDecodeError failure. HTTP 502. | The @maple/http/errors/OrgClickHouseSettingsStoredConfigInvalidError failure. HTTP 502."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Search traces",
+        "tags": [
+          "Traces"
+        ]
+      }
+    },
     "/v2/traces/timeseries": {
       "post": {
         "description": "Aggregates traces into chronological series. Requires `traces:read`.",
@@ -7415,6 +11474,302 @@
           }
         ],
         "summary": "Query trace timeseries",
+        "tags": [
+          "Traces"
+        ]
+      }
+    },
+    "/v2/traces/{trace_id}": {
+      "get": {
+        "description": "Returns a trace and its flat parent-linked span collection. Requires `traces:read`.",
+        "operationId": "getTrace",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "trace_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/_maple_TraceId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Trace"
+                }
+              }
+            },
+            "description": "A trace and its spans."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/TraceNotFoundError failure. HTTP 404."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQuotaExceededError failure. HTTP 429. | The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseMalformedQueryError failure. HTTP 500. | The @maple/http/errors/WarehouseScopeError failure. HTTP 500. | The @maple/http/errors/OrgClickHouseSettingsEncryptionError failure. HTTP 500. | The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQueryError failure. HTTP 502. | The @maple/http/errors/WarehouseAuthError failure. HTTP 502. | The @maple/http/errors/WarehouseConfigError failure. HTTP 502. | The @maple/http/errors/WarehouseClientError failure. HTTP 502. | The @maple/http/errors/WarehouseSchemaDriftError failure. HTTP 502. | The @maple/http/errors/WarehouseResultDecodeError failure. HTTP 502. | The @maple/http/errors/OrgClickHouseSettingsStoredConfigInvalidError failure. HTTP 502."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Retrieve a trace",
+        "tags": [
+          "Traces"
+        ]
+      }
+    },
+    "/v2/traces/{trace_id}/spans/{span_id}": {
+      "get": {
+        "description": "Returns one span with complete attribute maps. Requires `traces:read`.",
+        "operationId": "getSpan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "trace_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/_maple_TraceId"
+            }
+          },
+          {
+            "in": "path",
+            "name": "span_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/_maple_SpanId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Span"
+                }
+              }
+            },
+            "description": "An OpenTelemetry span."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/SpanNotFoundError failure. HTTP 404."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQuotaExceededError failure. HTTP 429. | The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseMalformedQueryError failure. HTTP 500. | The @maple/http/errors/WarehouseScopeError failure. HTTP 500. | The @maple/http/errors/OrgClickHouseSettingsEncryptionError failure. HTTP 500. | The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQueryError failure. HTTP 502. | The @maple/http/errors/WarehouseAuthError failure. HTTP 502. | The @maple/http/errors/WarehouseConfigError failure. HTTP 502. | The @maple/http/errors/WarehouseClientError failure. HTTP 502. | The @maple/http/errors/WarehouseSchemaDriftError failure. HTTP 502. | The @maple/http/errors/WarehouseResultDecodeError failure. HTTP 502. | The @maple/http/errors/OrgClickHouseSettingsStoredConfigInvalidError failure. HTTP 502."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Retrieve a span",
         "tags": [
           "Traces"
         ]

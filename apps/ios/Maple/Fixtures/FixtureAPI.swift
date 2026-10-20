@@ -158,7 +158,7 @@ struct FixtureAPI: MapleAPI {
 
 	// MARK: Issues
 
-	private var issues: [ErrorIssue] {
+	var issues: [ErrorIssue] {
 		[
 			issue(
 				id: "iss_checkout_timeout", service: "checkout-api", type: "PaymentGatewayTimeout",
@@ -827,11 +827,11 @@ struct FixtureAPI: MapleAPI {
 
 	// MARK: Helpers
 
-	private func stamp(_ offset: TimeInterval) -> String {
+	func stamp(_ offset: TimeInterval) -> String {
 		ResolvedTimeWindow.format(now.addingTimeInterval(offset))
 	}
 
-	private func pause() async throws {
+	func pause() async throws {
 		try await Task.sleep(for: latency)
 		try Self.failureInjector.throwIfDue()
 	}

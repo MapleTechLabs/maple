@@ -68,6 +68,12 @@ public struct ResolvedTimeWindow: Hashable, Sendable {
 		self.end = end
 	}
 
+	/// The window of the same length ending where this one starts: the
+	/// "vs previous hour" comparison the web's stat tiles draw.
+	public var previous: ResolvedTimeWindow {
+		ResolvedTimeWindow(start: start.addingTimeInterval(-end.timeIntervalSince(start)), end: start)
+	}
+
 	public var startTime: String { Self.format(start) }
 	public var endTime: String { Self.format(end) }
 

@@ -16,6 +16,7 @@ import {
 	PublicIdPrefixes,
 	V2ParameterInvalid,
 	V2ParameterMissing,
+	V2TimeRangeInvalid,
 } from "@maple/domain/http/v2"
 import type {
 	V2Dashboard,
@@ -26,16 +27,19 @@ import type {
 	V2DashboardUpdateParams,
 	V2DashboardVersion,
 	V2DashboardVersionDetail,
+	V2DashboardWidgetDataOutcome,
 } from "@maple/domain/http/v2"
-import type { DashboardShare, DashboardShareMode } from "@maple/domain/http"
+import type { DashboardShare, DashboardShareMode, ShareWidgetDataOutcome } from "@maple/domain/http"
 import type { DashboardId } from "@maple/domain/primitives"
 import { Clock, Effect, Option, Schema } from "effect"
+import { resolveTimeRangeWindow } from "@maple/query-engine"
 import { getTemplateById, listTemplateMetadata } from "@maple/backend/dashboard-templates"
 import type { TemplateParameterValues } from "@maple/backend/dashboard-templates"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
 import { convertPersesDashboardToPortable } from "@maple/backend/services/dashboards/perses-dashboard-import"
 
 const toV2Dashboard = (dashboard: DashboardDocument): V2Dashboard => ({
@@ -64,6 +68,18 @@ const toV2DashboardShare = (share: DashboardShare): V2DashboardShare => ({
 	createdAt: share.createdAt,
 	updatedAt: share.updatedAt,
 })
+
+const toV2WidgetDataOutcome = (outcome: ShareWidgetDataOutcome): V2DashboardWidgetDataOutcome =>
+	outcome.ok
+		? {
+				widget_id: outcome.widgetId,
+				ok: true,
+				data: outcome.data,
+				...(outcome.narrowedToSeconds === undefined
+					? undefined
+					: { narrowed_to_seconds: outcome.narrowedToSeconds }),
+			}
+		: { widget_id: outcome.widgetId, ok: false, reason: outcome.reason, message: outcome.message }
 
 const toV2DashboardMutation = (dashboard: DashboardDocument): V2DashboardMutation => ({
 	...toV2Dashboard(dashboard),
@@ -207,6 +223,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 	Effect.gen(function* () {
 		const persistence = yield* DashboardPersistenceService
 		const shares = yield* SharedDashboardService
+		const widgetData = yield* DashboardWidgetDataService
 
 		// Share management.
 		//
@@ -372,6 +389,55 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 						const dashboard = yield* persistence.get(tenant.orgId, params.id)
 
 						return toV2Dashboard(dashboard)
+					}),
+				)
+				.handle("widgetData", ({ params, payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const document = yield* persistence.get(tenant.orgId, params.id)
+						// Relative ranges resolve and snap the way the web dashboard's picker does.
+						const nowMs = yield* Clock.currentTimeMillis
+						const window = resolveTimeRangeWindow(payload.time_range, { nowMs })
+						if (window === null) {
+							return yield* Effect.fail(
+								V2TimeRangeInvalid.make("time_range could not be resolved.", {
+									param: "time_range",
+								}),
+							)
+						}
+						const { results, variables } = yield* widgetData
+							.resolveBatch(tenant.orgId, document, {
+								requests: payload.requests.map((request) => ({
+									widgetId: request.widget_id,
+									source: request.source ?? "primary",
+									...(request.max_data_points === undefined
+										? undefined
+										: { maxDataPoints: request.max_data_points }),
+								})),
+								window,
+								variableValues: payload.variable_values ?? {},
+							})
+							.pipe(
+								Effect.catchTags({
+									"@maple/http/errors/ShareRangeInvalidError": (error) =>
+										Effect.fail(
+											V2TimeRangeInvalid.make(error.message, { param: "time_range" }),
+										),
+									"@maple/http/errors/ShareVariableInvalidError": (error) =>
+										Effect.fail(
+											V2ParameterInvalid.make(
+												`Value not allowed for dashboard variable '${error.variableName}'.`,
+												{ param: "variable_values" },
+											),
+										),
+								}),
+							)
+
+						return {
+							object: "dashboard_widget_data" as const,
+							results: results.map(toV2WidgetDataOutcome),
+							variables,
+						}
 					}),
 				)
 				.handle("create", ({ payload }) =>

@@ -486,6 +486,92 @@ describe("v2 dashboards over HTTP", () => {
 	})
 })
 
+describe("v2 dashboard widget data", () => {
+	const createBoard = async (harness: Harness, key: string) => {
+		const created = await harness.request("POST", "/v2/dashboards", key, {
+			name: "Checkout",
+			time_range: { type: "relative", value: "12h" },
+			widgets: [
+				{
+					id: "notes",
+					visualization: "stat",
+					data_source: { kind: "static" },
+					display: {},
+					layout: { x: 0, y: 0, w: 3, h: 4 },
+				},
+				{
+					id: "latency",
+					visualization: "chart",
+					data_source: { kind: "route", endpoint: "traces_timeseries" },
+					display: {},
+					layout: { x: 3, y: 0, w: 9, h: 4 },
+				},
+				{
+					id: "empty-query",
+					visualization: "chart",
+					data_source: { kind: "query", result_shape: "timeseries", queries: [] },
+					display: {},
+					layout: { x: 0, y: 4, w: 12, h: 4 },
+				},
+			],
+			variables: [],
+		})
+		expect(created.status).toBe(200)
+		return created.body.id as string
+	}
+
+	it("returns one outcome per requested widget, in order, with a read-only key", async () => {
+		const harness = makeHarness()
+		const writer = await harness.bootstrapKey(["dashboards:write"])
+		const id = await createBoard(harness, writer.secret)
+		const reader = await harness.bootstrapKey(["dashboards:read"])
+
+		const response = await harness.request("POST", `/v2/dashboards/${id}/widget_data`, reader.secret, {
+			requests: [
+				{ widget_id: "notes" },
+				{ widget_id: "latency" },
+				{ widget_id: "empty-query", max_data_points: 120 },
+				{ widget_id: "nope" },
+			],
+			time_range: { type: "relative", value: "1h" },
+		})
+
+		expect(response.status).toBe(200)
+		expect(response.body.object).toBe("dashboard_widget_data")
+		expect(response.body.variables).toEqual({})
+		const [notes, latency, emptyQuery, unknown] = response.body.results
+		// A static tile has nothing to fetch: a success with no data.
+		expect(notes).toEqual({ widget_id: "notes", ok: true, data: null })
+		// A route the server cannot evaluate fails inside the 200; its neighbours still render.
+		expect(latency).toMatchObject({ widget_id: "latency", ok: false, reason: "unsupported" })
+		// The harness query engine refuses to run, so this tile fails, retryably, on its own.
+		expect(emptyQuery).toMatchObject({ widget_id: "empty-query", ok: false, reason: "failed" })
+		expect(unknown).toMatchObject({ widget_id: "nope", ok: false, reason: "not_found" })
+		await harness.dispose()
+	})
+
+	it("rejects an unresolvable range and an unknown dashboard", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const id = await createBoard(harness, key.secret)
+
+		const badRange = await harness.request("POST", `/v2/dashboards/${id}/widget_data`, key.secret, {
+			requests: [{ widget_id: "notes" }],
+			time_range: { type: "relative", value: "sometime" },
+		})
+		expect(badRange.status).toBe(400)
+		expect(badRange.body.error.param).toBe("time_range")
+
+		harness.failDashboardGet("missing")
+		const missing = await harness.request("POST", `/v2/dashboards/${id}/widget_data`, key.secret, {
+			requests: [{ widget_id: "notes" }],
+			time_range: { type: "relative", value: "1h" },
+		})
+		expect(missing.status).toBe(404)
+		await harness.dispose()
+	})
+})
+
 describe("v2 dashboard shares", () => {
 	const createDashboard = async (harness: Harness, key: string) => {
 		const created = await harness.request("POST", "/v2/dashboards", key, {

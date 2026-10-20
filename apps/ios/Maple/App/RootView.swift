@@ -79,9 +79,8 @@ struct RootView: View {
 	}
 }
 
-/// Three tabs, in the order the questions get asked: is anything wrong
-/// (Home), which service (Services), why (Alerts). Everything the web app does
-/// beyond those stays on the web.
+/// Four tabs mirroring the web sidebar: Overview, Services (Monitor), Triage,
+/// Explore (Analyze). Editing and settings stay on the web.
 struct MainTabView: View {
 	@Environment(AppNavigation.self) private var navigation
 	@Environment(SessionController.self) private var session
@@ -95,14 +94,17 @@ struct MainTabView: View {
 	var body: some View {
 		@Bindable var navigation = navigation
 		TabView(selection: $navigation.tab) {
-			Tab("Home", systemImage: "waveform.path.ecg", value: AppTab.home) {
+			Tab("Overview", systemImage: "waveform.path.ecg", value: AppTab.home) {
 				HomeView()
 			}
 			Tab("Services", systemImage: "square.stack.3d.up", value: AppTab.services) {
 				ServicesListView()
 			}
-			Tab("Alerts", systemImage: "bell", value: AppTab.alerts) {
+			Tab("Triage", systemImage: "bell", value: AppTab.alerts) {
 				AlertsHubView()
+			}
+			Tab("Explore", systemImage: "magnifyingglass", value: AppTab.explore) {
+				ExploreView()
 			}
 		}
 		// One PUT per change in (token, org, permission, preferences): the key

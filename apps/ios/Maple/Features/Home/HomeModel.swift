@@ -39,7 +39,30 @@ struct HomeSnapshot: Codable {
 	/// Actionable issues seen in the last 24 hours that are older than that.
 	var activeIssues: Int?
 	var openAnomalies: Int?
+	/// The hour before `services`, for the stat tiles' "vs previous hour" line.
+	/// Second-pass data, and the same `listServices` query on a shifted window.
+	var previousServices: [Service]?
 	var loadedAt: Date
+
+	// MARK: Totals (the stat tiles)
+
+	var totalThroughput: Double { Self.throughput(services) }
+	var errorRate: Double { Self.errorRate(services) }
+	var worstP95: Double { services.map(\.p95LatencyMs).max() ?? 0 }
+	var previousThroughput: Double? { previousServices.map(Self.throughput) }
+	var previousErrorRate: Double? { previousServices.map(Self.errorRate) }
+	var previousWorstP95: Double? { previousServices.flatMap { $0.map(\.p95LatencyMs).max() } }
+
+	private static func throughput(_ services: [Service]) -> Double {
+		services.reduce(0) { $0 + $1.throughput }
+	}
+
+	/// Span-weighted, so a quiet service at 50% does not outweigh a busy one.
+	private static func errorRate(_ services: [Service]) -> Double {
+		let spans = services.reduce(0) { $0 + $1.spanCount }
+		guard spans > 0 else { return 0 }
+		return services.reduce(0) { $0 + $1.errorCount } / spans
+	}
 
 	// MARK: Derived
 
@@ -241,6 +264,11 @@ final class HomeModel {
 			newIssues: previous?.newIssues,
 			activeIssues: previous?.activeIssues,
 			openAnomalies: previous?.openAnomalies,
+			// Only a board loaded moments ago still describes the hour before this one;
+			// a cache-seeded baseline would divide against the wrong window.
+			previousServices: previous.flatMap {
+				now.timeIntervalSince($0.loadedAt) < 5 * 60 ? $0.previousServices : nil
+			},
 			loadedAt: now
 		)
 	}
@@ -251,6 +279,7 @@ final class HomeModel {
 		var newIssues: Int?
 		var activeIssues: Int?
 		var openAnomalies: Int?
+		var previousServices: [Service]?
 		var observations: [String: [Double]] = [:]
 	}
 
@@ -273,6 +302,7 @@ final class HomeModel {
 					status: .open, serviceName: nil, window: nil, limit: 100, cursor: nil
 				)
 				async let observationsTask = Self.observations(for: cards, api: api, since: rates.start)
+				async let previousTask = api.services(window: rates.previous, limit: 100)
 
 				var result = Decorations()
 				if let issues = try? await issuesTask.items {
@@ -288,6 +318,7 @@ final class HomeModel {
 					result.openAnomalies = anomalies.count
 				}
 				result.observations = await observationsTask
+				result.previousServices = try? await previousTask.items
 				return result
 			}
 
@@ -299,6 +330,7 @@ final class HomeModel {
 					next.activeIssues = decorations.activeIssues
 				}
 				if let openAnomalies = decorations.openAnomalies { next.openAnomalies = openAnomalies }
+				if let previous = decorations.previousServices { next.previousServices = previous }
 				for index in next.incidents.indices {
 					if let values = decorations.observations[next.incidents[index].id] {
 						next.incidents[index].observations = values

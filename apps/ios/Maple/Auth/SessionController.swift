@@ -260,7 +260,7 @@ final class SessionController {
 	/// after a network read — by which time the screens have already built.
 	/// Making the value part of what a model *is* rebuilds them when it
 	/// resolves, whatever order the tasks happened to start in.
-	struct DataScope: Equatable {
+	struct DataScope: Hashable {
 		var generation: Int
 		var environment: String?
 	}
