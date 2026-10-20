@@ -339,7 +339,6 @@
         "@types/three": "^0.186.0",
         "ai": "7.0.143",
         "e2e": "0.21.2",
-        "playwright": "catalog:",
         "tailwindcss": "catalog:tailwind",
         "tw-animate-css": "catalog:tailwind",
         "typescript": "catalog:tooling",
