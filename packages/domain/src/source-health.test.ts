@@ -34,6 +34,8 @@ describe("pushSourceHealth", () => {
 		expect(pushSourceHealth({ ...refused, status: "paused", lastRejectedAt: now - HOUR }, now).status).toBe(
 			"paused",
 		)
+		// Within a write interval of the last accepted request: an unrecorded acceptance may follow it.
+		expect(pushSourceHealth({ ...refused, lastRejectedAt: now - 2 * HOUR + 30_000 }, now).status).toBe("healthy")
 	})
 })
 

@@ -370,7 +370,7 @@ describe("SourcesService", () => {
 					),
 				)
 			yield* stamp("last_used_at", 1_000)
-			yield* stamp("last_rejected_at", 2_000)
+			yield* stamp("last_rejected_at", 100_000)
 			yield* Effect.promise(() =>
 				executeSql(testDb, "UPDATE sources SET last_rejection = $1 WHERE id = $2", [
 					"Rate limited at 200 requests per second",
@@ -382,15 +382,18 @@ describe("SourcesService", () => {
 			assert.strictEqual(failing.problem, "Rate limited at 200 requests per second")
 
 			// Data accepted after the refusal: the newest attempt decides.
-			yield* stamp("last_used_at", 3_000)
+			yield* stamp("last_used_at", 200_000)
 			assert.strictEqual((yield* keys.get(orgA, created.source.id)).health.status, "healthy")
 
 			// A new refusal, then a new token or new rules: the old refusal no longer applies.
-			yield* stamp("last_rejected_at", 4_000)
+			yield* stamp("last_rejected_at", 300_000)
 			assert.strictEqual((yield* keys.get(orgA, created.source.id)).health.status, "failing")
 			yield* keys.roll(orgA, user, created.source.id)
 			assert.strictEqual((yield* keys.get(orgA, created.source.id)).health.status, "healthy")
-			yield* stamp("last_rejected_at", 5_000)
+			yield* stamp("last_rejected_at", 400_000)
+			// Saving the same rules lifts nothing; a new rate limit does.
+			yield* keys.update(orgA, user, created.source.id, new UpdateSourceRequest({ rateLimitRps: null }))
+			assert.strictEqual((yield* keys.get(orgA, created.source.id)).health.status, "failing")
 			yield* keys.update(orgA, user, created.source.id, new UpdateSourceRequest({ rateLimitRps: 500 }))
 			assert.strictEqual((yield* keys.get(orgA, created.source.id)).health.status, "healthy")
 		}).pipe(Effect.provide(makeLayer(testDb)))

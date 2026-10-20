@@ -124,6 +124,10 @@ const normalizeSignals = Effect.fnUntraced(function* (signals: ReadonlyArray<Sou
 	return unique
 })
 
+/** The same signal set, in any order; `null` (every signal) only equals `null`. */
+const sameSignals = (a: ReadonlyArray<SourceSignal> | null, b: ReadonlyArray<SourceSignal> | null): boolean =>
+	a === null || b === null ? a === b : a.length === b.length && a.every((signal) => b.includes(signal))
+
 const normalizeRateLimit = Effect.fnUntraced(function* (rps: number | null) {
 	if (rps === null) return null
 	if (rps < 1 || rps > MAX_RATE_LIMIT_RPS) {
@@ -444,7 +448,14 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 				return yield* tokenSourceOnly(existing, "take ingest rules")
 			}
 			const now = yield* Clock.currentTimeMillis
-			const clearsRejection = request.allowedSignals !== undefined || request.rateLimitRps !== undefined
+			const allowedSignals =
+				request.allowedSignals === undefined ? undefined : yield* normalizeSignals(request.allowedSignals)
+			const rateLimitRps =
+				request.rateLimitRps === undefined ? undefined : yield* normalizeRateLimit(request.rateLimitRps)
+			// Only a real change of signals or rate limit can lift a refusal.
+			const clearsRejection =
+				(allowedSignals !== undefined && !sameSignals(allowedSignals, existing.allowedSignals)) ||
+				(rateLimitRps !== undefined && rateLimitRps !== existing.rateLimitRps)
 			const row = yield* updateRow(orgId, sourceId, {
 				updatedAt: now,
 				updatedBy: userId,
@@ -453,14 +464,8 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 					request.description === undefined
 						? undefined
 						: yield* normalizeDescription(request.description),
-				allowedSignals:
-					request.allowedSignals === undefined
-						? undefined
-						: yield* normalizeSignals(request.allowedSignals),
-				rateLimitRps:
-					request.rateLimitRps === undefined
-						? undefined
-						: yield* normalizeRateLimit(request.rateLimitRps),
+				allowedSignals,
+				rateLimitRps,
 				resourceAttributes:
 					request.resourceAttributes === undefined
 						? undefined
@@ -469,7 +474,6 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 					request.expiresAtMs === undefined
 						? undefined
 						: yield* normalizeExpiry(request.expiresAtMs, now, existing.expiresAt),
-				// New signals or a new rate limit may lift the refusal; the next one is recorded again.
 				lastRejectedAt: clearsRejection ? null : undefined,
 				lastRejection: clearsRejection ? null : undefined,
 			})

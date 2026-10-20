@@ -56,13 +56,19 @@ export interface PushSourceState {
 	readonly lastRejection?: string | null
 }
 
-/** Like `pollStatus`, the newest attempt decides: a refusal after the last accepted request is failing. */
+/**
+ * The gateway writes each timestamp at most once a minute per instance, so an accepted request
+ * just after a refusal may not be recorded. A refusal counts once it is a full write interval newer.
+ */
+const REJECTION_MARGIN_MS = 60 * 1000
+
+/** Like `pollStatus`, the newest attempt decides: refusals outlasting the last accepted request are failing. */
 const isRejectedNow = (source: PushSourceState, now: number): boolean => {
 	const rejectedAt = source.lastRejectedAt ?? null
 	return (
 		rejectedAt !== null &&
 		now - rejectedAt <= PUSH_STALE_MS &&
-		(source.lastUsedAt === null || rejectedAt > source.lastUsedAt)
+		(source.lastUsedAt === null || rejectedAt - source.lastUsedAt > REJECTION_MARGIN_MS)
 	)
 }
 

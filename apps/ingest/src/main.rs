@@ -3665,10 +3665,13 @@ async fn authorize_source(
             signal = names.as_str(),
             "Source denied for signal"
         );
-        state.resolver.note_source_rejection(
-            resolved_key,
-            format!("Sent {names}, which this source does not allow"),
-        );
+        // A paused source drops what it is sent; a refusal now would surface only after resume.
+        if !source.is_paused(now_ms) {
+            state.resolver.note_source_rejection(
+                resolved_key,
+                format!("Sent {names}, which this source does not allow"),
+            );
+        }
         return Err(ApiError::tagged(
             StatusCode::FORBIDDEN,
             &INGEST_SIGNAL_NOT_ALLOWED,
