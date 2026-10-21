@@ -78,6 +78,24 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 						: Stream.empty,
 			},
 		),
+		/** Same for the rules: without an end state a stalled sync would leave the page loading for good. */
+		rulesLoadFailed: entry(
+			{ orgId: Schema.String, isWaiting: Schema.Boolean },
+			{
+				modelToDependencies: ({ model, context }) => ({
+					orgId: context.orgId,
+					isWaiting: AsyncData.isLoading(model.rules),
+				}),
+				dependenciesToStream: ({ orgId, isWaiting }) =>
+					isWaiting
+						? collectionLoadFailed(
+								`alert_rules:${orgId}`,
+								() => Message.FailedLoadRules({ orgId }),
+								ENRICHMENT_LOAD_TIMEOUT_MS,
+							)
+						: Stream.empty,
+			},
+		),
 		rules: entry({ orgId: Schema.String }, byOrg(rules)),
 		ruleStates: entry({ orgId: Schema.String }, byOrg(ruleStates)),
 		/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the setup card is mounted. */

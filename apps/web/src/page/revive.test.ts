@@ -8,6 +8,7 @@ import { enterRoute, PageMessage, type PageSlot, parkPages, updatePage } from ".
 import { DEFAULT_QUICK_START_STATE } from "./onboarding/quick-start-state"
 import { IncidentsData, RulesData } from "./overview/model"
 import * as Setup from "./overview/setup-checklist-update"
+import { Message as OverviewMessage } from "./overview/message"
 import { initWith, revive as reviveOverview } from "./overview/update"
 import { Message } from "./services/list/message"
 import type { ServiceRow } from "./services/list/model"
@@ -38,6 +39,14 @@ const row: ServiceRow = {
 
 const stamp = (slot: PageSlot, message: Message): PageMessage => ({
 	_tag: "ServicesList",
+	key: slot.key,
+	orgId: slot.orgId,
+	instance: slot.instance,
+	message,
+})
+
+const stampOverview = (slot: PageSlot, message: OverviewMessage): PageMessage => ({
+	_tag: "Overview",
 	key: slot.key,
 	orgId: slot.orgId,
 	instance: slot.instance,
@@ -156,6 +165,23 @@ describe("reviving a page left earlier", () => {
 		expect(names).toContain("FetchSetupChecklistKeys")
 		expect(names.some((name) => name.includes("ChartRuntime"))).toBe(true)
 		expect(back.model.chartRuntime._tag).toBe("Loading")
+	})
+
+	test("an overview whose live alert sync failed is parked: failure is an end state", () => {
+		const entered = enterRoute(null, home, context, 1).slot
+		const failed = [
+			OverviewMessage.FailedLoadIncidents({ orgId }),
+			OverviewMessage.FailedLoadRules({ orgId }),
+			OverviewMessage.CompletedLoadSignalPresence({ result: Result.succeed({}) }),
+			OverviewMessage.CompletedLoadChartRuntime(),
+		].reduce<PageSlot | null>(
+			(slot, message) =>
+				slot === null ? null : updatePage(slot, stampOverview(slot, message), context).slot,
+			entered,
+		)
+		expect(
+			parkPages([], failed, enterRoute(failed, services, context, 2).slot).map((slot) => slot._tag),
+		).toEqual(["Overview"])
 	})
 
 	test("a page left mid-load is not parked: coming back builds it fresh", () => {
