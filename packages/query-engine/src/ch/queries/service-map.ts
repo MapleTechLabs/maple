@@ -8,6 +8,7 @@
 
 import { finiteOrZero } from "./format"
 import {
+	DB_QUERY_KEY_LAZY_SQL,
 	DB_QUERY_KEY_SQL,
 	DB_QUERY_LABEL_SQL,
 	DB_STATEMENT_SQL,
@@ -1096,15 +1097,14 @@ export function serviceDbTopQueriesSQL(
 /**
  * The slowest client spans of some query keys (`ServiceDbTopQueryOutput.queryKey`) against some
  * databases over the window, each a link to its trace. Raw `traces` over the whole window: the
- * rollup keeps no span ids. The key is derived as in `serviceDbTopQueriesSQL`'s recent branch.
+ * rollup keeps no span ids. The key is `serviceDbTopQueriesSQL`'s, derived lazily.
  */
 export function serviceDbQuerySpansQuery(params: {
 	dbSystem: string
 	dbNamespaces: ReadonlyArray<string>
 	queryKeys: ReadonlyArray<string>
-	limit?: number
+	limit: number
 }) {
-	const limit = Math.min(20, Math.max(1, Math.round(params.limit ?? 5)))
 	return from(Traces)
 		.select(($) => ({
 			traceId: $.TraceId,
@@ -1116,10 +1116,10 @@ export function serviceDbQuerySpansQuery(params: {
 		.where(($) => [
 			...serviceDbRawFilters($, { dbSystem: params.dbSystem }, "fullWindow"),
 			CH.inList(dbNamespaceExpr($), params.dbNamespaces),
-			CH.inList(CH.rawExpr(DB_QUERY_KEY_SQL, T.string), params.queryKeys),
+			CH.inList(CH.rawExpr(DB_QUERY_KEY_LAZY_SQL, T.string), params.queryKeys),
 		])
 		.orderBy(["durationMs", "desc"], ["traceId", "asc"], ["spanId", "asc"])
-		.limit(limit)
+		.limit(params.limit)
 		.format("JSON")
 }
 

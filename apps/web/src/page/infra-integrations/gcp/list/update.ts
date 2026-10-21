@@ -159,7 +159,10 @@ export const routeChanged = (
 		const synced = sync(next, context, "Load")
 		return {
 			model: synced.model,
-			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion)), ...(synced.commands ?? [])],
+			commands: [
+				resolveCommand(next, context, snapModeOf(model.refreshVersion)),
+				...(synced.commands ?? []),
+			],
 		}
 	}
 	return routeWindowStep(model.search, route.search, {

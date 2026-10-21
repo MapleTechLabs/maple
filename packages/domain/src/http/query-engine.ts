@@ -630,7 +630,7 @@ export class GcpCloudSqlStatementSpansRequest extends Schema.Class<GcpCloudSqlSt
 		Schema.isMaxLength(32),
 	),
 	/** Traced query keys (`DB_QUERY_KEY_SQL`) the statement matched. */
-	queryKeys: Schema.Array(Schema.String.check(Schema.isMaxLength(64))).check(
+	queryKeys: Schema.Array(Schema.String.check(Schema.isMaxLength(512))).check(
 		Schema.isMinLength(1),
 		Schema.isMaxLength(16),
 	),

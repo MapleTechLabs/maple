@@ -407,6 +407,11 @@ export const workloadPageView = (
 							where:
 								databases.length === 1 ? `${instanceName} / ${databases[0]}` : instanceName,
 							spans: model.statementSpans.data,
+							// The lab hands the trace side over in `data`, not in its slot.
+							traceSide:
+								data.traceSide === undefined
+									? model.traceSide.data
+									: AsyncData.Success({ data: data.traceSide }),
 							timeSearch,
 							timeZone: options.timeZone,
 						}),

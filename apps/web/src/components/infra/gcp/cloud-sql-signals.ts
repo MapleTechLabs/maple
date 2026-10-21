@@ -186,14 +186,15 @@ export function gcpMatchStatements(
 }
 
 const MIN_PREFIX = 16
+const MAX_PREFIX = 200
 
 /**
- * What a span's `db.query.text` of the statement contains for sure: its text up to the first
- * placeholder, since a span may carry the literals instead. Null when that is too short to tell
- * statements apart.
+ * What a span's `db.query.text` of the statement contains for sure: its first line up to the first
+ * placeholder, since a span may carry the literals instead, capped to keep a link short. Null when
+ * that is too short to tell statements apart.
  */
 export const gcpStatementTextPrefix = (statement: string): string | null => {
-	const prefix = statement.split(/\$\d/)[0]?.replace(/\s+/g, " ").trim() ?? ""
+	const prefix = (statement.split(/\$\d/)[0] ?? "").split("\n")[0]?.trim().slice(0, MAX_PREFIX) ?? ""
 	return prefix.length >= MIN_PREFIX ? prefix : null
 }
 

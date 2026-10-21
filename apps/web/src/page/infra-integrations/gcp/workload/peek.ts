@@ -51,7 +51,7 @@ export const statementSpansInput = (peek: QueryPeek, window: TimeWindow): Statem
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
 /**
- * The Traces list narrowed to the statement: its callers' spans whose text starts like it. A
+ * The Traces list narrowed to the statement: its callers' spans whose text contains its start. A
  * superset of its spans (the text is matched up to the first placeholder), the panel's own list
  * being the exact one.
  */
@@ -65,6 +65,8 @@ export const statementTracesHref = (peek: QueryPeek, timeSearch: TimeSearch): st
 		AppRoute.Traces({
 			search: {
 				...timeSearch,
+				// A query's span is never a trace's root: filter every span.
+				rootOnly: false,
 				services: services.length === 0 ? undefined : [...services],
 				attributeFilters:
 					prefix === null

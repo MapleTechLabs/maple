@@ -4101,7 +4101,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDbQuerySpansQuery:default  [dfac6007]
+-- builder:service-map:serviceDbQuerySpansQuery:default  [274db5ff]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
@@ -4116,10 +4116,10 @@ SELECT
           AND traces.ServiceName != ''
           AND coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql'
           AND if(match(coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']), '^([0-9a-fA-F]{32}|.*[.]hyperdrive[.]local)$'), 'hyperdrive', coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name'])) IN ('orders')
-          AND coalesce(
-  nullIf(SpanAttributes['db.query.fingerprint'], ''),
-  nullIf(SpanAttributes['db.statement.fingerprint'], ''),
-  nullIf(if(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']) != '', toString(cityHash64(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(lower(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement'])), '\'[^\']*\'', '?'), '\\bin\\s*\\([^)]*\\)', 'in (?)'), '[0-9]+(\\.[0-9]+)?', '?'), '\\s+', ' '), '^\\s+|\\s+$', ''))), ''), ''),
+          AND multiIf(
+  SpanAttributes['db.query.fingerprint'] != '', SpanAttributes['db.query.fingerprint'],
+  SpanAttributes['db.statement.fingerprint'] != '', SpanAttributes['db.statement.fingerprint'],
+  coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement']) != '', toString(cityHash64(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(lower(coalesce(nullIf(SpanAttributes['db.query.text'], ''), SpanAttributes['db.statement'])), '\'[^\']*\'', '?'), '\\bin\\s*\\([^)]*\\)', 'in (?)'), '[0-9]+(\\.[0-9]+)?', '?'), '\\s+', ' '), '^\\s+|\\s+$', ''))),
   toString(cityHash64(coalesce(
   nullIf(SpanAttributes['db.query.summary'], ''),
   nullIf(if(SpanAttributes['db.operation.name'] != '', trimBoth(concat(SpanAttributes['db.operation.name'], if(coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace']) != '', concat(' ', coalesce(nullIf(SpanAttributes['db.collection.name'], ''), SpanAttributes['db.namespace'])), ''))), ''), ''),

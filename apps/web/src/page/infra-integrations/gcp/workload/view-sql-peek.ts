@@ -1,22 +1,21 @@
 import { gcpAppWait } from "../../../../components/infra/gcp/cloud-sql-signals"
-import * as SheetStyles from "@maple/ui/styles/ui/sheet"
 import { EMPTY_VALUE, formatLatency, formatNumber, formatPercent } from "@maple/ui/lib/format"
-import { latencyToneClass } from "@maple/ui/lib/latency-tone"
+import { LATENCY_BAR_TONE, latencyLevel, latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
+import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../../../data/load-failure"
 import { AppRoute, hrefOf } from "../../../../route"
 import { linkButton } from "../../../../ui/button"
 import * as CopyButton from "../../../../ui/copy-button"
-import { descriptionId, titleId } from "../../../../ui/dialog"
 import * as DialogView from "../../../../ui/dialog-view"
 import { emptyMessage } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
 import { eyebrow } from "../../../../ui/eyebrow"
 import { icon } from "../../../../ui/icon"
+import { meter } from "../../../../ui/meter"
 import { skeleton } from "../../../../ui/skeleton"
 import { serviceDot } from "../../../../ui/values"
 import { heroChip } from "../../../infra/kit/hero-chip"
@@ -24,6 +23,7 @@ import { statRail, statRailItem } from "../../../kit/stat-rail"
 import type { StatementSpan } from "../data"
 import { Message, type Model } from "./model"
 import { type QueryPeek, statementTracesHref } from "./peek"
+import { appP95Tone, lockTone } from "./view-sql"
 
 // `GcpQueryPeekSheet`: one Query Insights statement, its callers and its slowest traced calls.
 
@@ -35,6 +35,8 @@ export type QueryPeekInputs = Readonly<{
 	/** `instance / database`, the eyebrow's subject. */
 	where: string
 	spans: AsyncData.AsyncData<ReadonlyArray<StatementSpan>, LoadFailure>
+	/** The traces' side of the instance: until it is in, "not traced" would be a guess. */
+	traceSide: AsyncData.AsyncData<unknown, LoadFailure>
 	timeSearch: TimeSearch
 	timeZone: string
 }>
@@ -52,7 +54,8 @@ const sectionHead = (h: H, title: string, hint: string): Html =>
 		],
 	)
 
-const header = (h: H, model: Model, peek: QueryPeek, where: string): Html => {
+const header = (h: H, model: Model, peek: QueryPeek, inputs: QueryPeekInputs): Html => {
+	const where = inputs.where
 	const id = model.queryPeek.id
 	const traced = peek.traced
 	return DialogView.dialogHeader(
@@ -63,13 +66,13 @@ const header = (h: H, model: Model, peek: QueryPeek, where: string): Html => {
 				"Statement",
 				h.span([h.Class("normal-case tracking-normal")], [`· ${where}`]),
 			]),
-			h.h2(
-				[h.Class("sr-only"), h.DataAttribute("slot", "sheet-title"), h.Id(titleId(id))],
-				[`Statement on ${where}`],
-			),
-			h.p(
-				[h.Class(cn(SheetStyles.sheetDescriptionStyles, "sr-only")), h.Id(descriptionId(id))],
-				["Query Insights figures for the statement and the traced calls that ran it"],
+			DialogView.dialogTitle(h, "sheet", id, `Statement on ${where}`, "sr-only"),
+			DialogView.dialogDescription(
+				h,
+				"sheet",
+				id,
+				"Query Insights figures for the statement and the traced calls that ran it",
+				"sr-only",
 			),
 			h.div(
 				[h.Class("relative rounded-md border bg-background/60")],
@@ -101,9 +104,12 @@ const header = (h: H, model: Model, peek: QueryPeek, where: string): Html => {
 					heroChip(h, `hash ${peek.statement.queryHash}`),
 					heroChip(
 						h,
-						traced === undefined
-							? "Query Insights only"
-							: `Query Insights + ${traced.serviceCount} ${traced.serviceCount === 1 ? "service" : "services"} traced`,
+						traced !== undefined
+							? `Query Insights + ${traced.serviceCount} ${traced.serviceCount === 1 ? "service" : "services"} traced`
+							: AsyncData.isSuccess(inputs.traceSide) ||
+								  AsyncData.isRefreshing(inputs.traceSide)
+								? "Query Insights only"
+								: "Query Insights",
 					),
 				],
 			),
@@ -137,16 +143,8 @@ const stats = (h: H, peek: QueryPeek): ReadonlyArray<Html> => {
 				db === null ? EMPTY_VALUE : formatLatency(db),
 				db === null ? undefined : latencyToneClass(db),
 			),
-			item(
-				"App p95",
-				app === undefined ? EMPTY_VALUE : formatLatency(app),
-				app === undefined
-					? "text-muted-foreground"
-					: wait === null
-						? latencyToneClass(app)
-						: TONE_TEXT.crit,
-			),
-			item("Lock wait", formatPercent(statement.lockShare)),
+			item("App p95", app === undefined ? EMPTY_VALUE : formatLatency(app), appP95Tone(db, app)),
+			item("Lock wait", formatPercent(statement.lockShare), lockTone(statement.lockShare)),
 		]),
 		h.div(
 			[h.Class(cn(SUB, "flex flex-wrap gap-x-4 gap-y-1 font-mono"))],
@@ -229,12 +227,7 @@ const callers = (h: H, peek: QueryPeek, timeSearch: TimeSearch): Html => {
 }
 
 const spanRow = (h: H, span: StatementSpan, slowestMs: number, timeZone: string): Html => {
-	const time = new Intl.DateTimeFormat("en-GB", {
-		timeZone,
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-	}).format(new Date(span.timestamp))
+	const time = formatClockInTimezone(span.timestamp, { timeZone })
 	const tone = latencyToneClass(span.durationMs)
 	return h.a(
 		[
@@ -254,20 +247,13 @@ const spanRow = (h: H, span: StatementSpan, slowestMs: number, timeZone: string)
 		[
 			h.span([h.Class("w-16 shrink-0 font-mono text-2xs tabular-nums text-muted-foreground")], [time]),
 			h.span([h.Class("w-28 shrink-0 truncate font-mono text-xs text-foreground")], [span.serviceName]),
-			h.span(
-				[h.AriaHidden(true), h.Class("h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-muted")],
-				[
-					h.span(
-						[
-							h.Class(cn("block h-full rounded-full bg-current", tone)),
-							h.Style({
-								width: `${slowestMs > 0 ? Math.max(4, (span.durationMs / slowestMs) * 100) : 0}%`,
-							}),
-						],
-						[],
-					),
-				],
-			),
+			meter(h, {
+				value: span.durationMs,
+				max: slowestMs,
+				minVisible: 4,
+				fillClassName: LATENCY_BAR_TONE[latencyLevel(span.durationMs)],
+				className: "min-w-0 flex-1",
+			}),
 			h.span(
 				[h.Class(cn("w-14 shrink-0 text-right font-mono text-xs tabular-nums", tone))],
 				[formatLatency(span.durationMs)],
@@ -305,14 +291,7 @@ const slowestCalls = (h: H, inputs: QueryPeekInputs): Html => {
 								),
 							),
 						],
-						spans.map((span) =>
-							spanRow(
-								h,
-								span,
-								Math.max(...spans.map((each) => each.durationMs)),
-								inputs.timeZone,
-							),
-						),
+						spans.map((span) => spanRow(h, span, spans[0]?.durationMs ?? 0, inputs.timeZone)),
 					),
 	})
 	return h.section(
@@ -355,6 +334,15 @@ const notTraced = (h: H): Html =>
 		],
 	)
 
+/** A statement the traces did not match: still loading, failed, or not traced at all. */
+const untraced = (h: H, inputs: QueryPeekInputs): Html =>
+	AsyncData.matchData(inputs.traceSide, {
+		onEmpty: () => skeleton(h, "h-40 w-full rounded-md"),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Failed to load what the traces saw", variant: "inline" }),
+		onData: () => notTraced(h),
+	})
+
 const footer = (h: H, peek: QueryPeek, timeSearch: TimeSearch): Html =>
 	DialogView.dialogFooter(
 		h,
@@ -377,7 +365,7 @@ const footer = (h: H, peek: QueryPeek, timeSearch: TimeSearch): Html =>
 	)
 
 const content = (h: H, model: Model, peek: QueryPeek, inputs: QueryPeekInputs): ReadonlyArray<Html> => [
-	header(h, model, peek, inputs.where),
+	header(h, model, peek, inputs),
 	DialogView.dialogPanel(
 		h,
 		"sheet",
@@ -385,7 +373,7 @@ const content = (h: H, model: Model, peek: QueryPeek, inputs: QueryPeekInputs): 
 		[
 			...stats(h, peek),
 			...(peek.traced === undefined
-				? [notTraced(h)]
+				? [untraced(h, inputs)]
 				: [callers(h, peek, inputs.timeSearch), slowestCalls(h, inputs)]),
 		],
 		"space-y-5",

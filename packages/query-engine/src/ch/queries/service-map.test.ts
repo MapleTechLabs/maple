@@ -16,7 +16,7 @@ import {
 } from "./service-map"
 import { serviceMapEdgesRollupSQL, serviceMapResolutionsRollupSQL } from "./service-map-rollup"
 import { ServiceMapEdgesHourly } from "../tables"
-import { DB_NAMESPACE_ATTR_SQL, DB_QUERY_KEY_SQL } from "@maple/domain/tinybird/db-query-shape-sql"
+import { DB_NAMESPACE_ATTR_SQL, DB_QUERY_KEY_LAZY_SQL } from "@maple/domain/tinybird/db-query-shape-sql"
 import { OrgId } from "@maple/domain"
 
 // The read side must derive `DbNamespace` byte-identically to the write side's
@@ -939,12 +939,12 @@ describe("servicePlatformsSQL", () => {
 // serviceDbQuerySpansQuery
 
 describe("serviceDbQuerySpansQuery", () => {
-	const spans = (limit?: number) =>
+	const spans = () =>
 		serviceDbQuerySpansQuery({
 			dbSystem: "postgresql",
 			dbNamespaces: ["orders", "o'brien"],
 			queryKeys: ["123", "456"],
-			limit,
+			limit: 5,
 		})
 
 	it("reads one org's client spans of the given keys and databases over the whole window", () => {
@@ -959,15 +959,13 @@ describe("serviceDbQuerySpansQuery", () => {
 		expect(sql).toContain("'hyperdrive', coalesce(")
 		expect(sql).toContain(") IN ('orders', 'o\\'brien')")
 		// The key top queries group by, so a listed key finds its spans.
-		expect(sql).toContain(`${DB_QUERY_KEY_SQL} IN ('123', '456')`)
+		expect(sql).toContain(`${DB_QUERY_KEY_LAZY_SQL} IN ('123', '456')`)
 	})
 
-	it("returns the slowest first, five by default and at most twenty", () => {
+	it("returns the slowest first", () => {
 		expect(compileUnsafe(spans(), baseParams).sql).toContain(
 			"ORDER BY durationMs DESC, traceId ASC, spanId ASC\n        LIMIT 5\n",
 		)
-		expect(compileUnsafe(spans(500), baseParams).sql).toContain("LIMIT 20\n")
-		expect(compileUnsafe(spans(0), baseParams).sql).toContain("LIMIT 1\n")
 	})
 
 	it("decodes the span's start to UTC and its duration to milliseconds", () => {

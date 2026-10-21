@@ -1,6 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
+import { toLoadFailure } from "../../../../data/load-failure"
 import * as Dialog from "../../../../ui/dialog"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import { Message, type Model } from "./model"
@@ -166,6 +167,47 @@ describe("gcp workload", () => {
 
 		test("a hash no statement has keeps the sheet closed", () => {
 			expect(peeked("gone").model.queryPeek.isOpen).toBe(false)
+		})
+
+		test("retrying failed calls asks for them again", () => {
+			const opened = peeked("a")
+			const failed = pageUpdate(
+				opened.model,
+				Message.CompletedFetchStatementSpans({
+					key: opened.model.statementSpans.key ?? "",
+					result: Result.fail(toLoadFailure("timed out")),
+				}),
+			).model
+			const retried = pageUpdate(failed, Message.ClickedRetryStatementSpans())
+			expect(names(retried.commands)).toEqual(["FetchGcpCloudSqlStatementSpans"])
+		})
+
+		test("another statement's calls are not shown under the one now peeked", () => {
+			const opened = peeked("a")
+			const answered = pageUpdate(
+				opened.model,
+				Message.CompletedFetchStatementSpans({
+					key: opened.model.statementSpans.key ?? "",
+					result: Result.succeed([
+						{
+							traceId: "t",
+							spanId: "s",
+							serviceName: "checkout-api",
+							timestamp: "2026-10-01T11:30:00Z",
+							durationMs: 900,
+						},
+					]),
+				}),
+			).model
+			const otherWindow = pageUpdate(
+				answered,
+				Message.CompletedResolveWindow({
+					window: { startTime: "2026-10-01 10:00:00", endTime: "2026-10-01 12:00:00" },
+					nowMs: 0,
+					mode: "Load",
+				}),
+			).model
+			expect(otherWindow.statementSpans.data._tag).toBe("Loading")
 		})
 
 		test("escape closes the sheet and drops the peek from the URL in place", () => {

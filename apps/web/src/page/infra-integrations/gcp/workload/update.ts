@@ -85,7 +85,10 @@ const syncPeek = (result: Return, context: PageContext, mode: Keyed.RequestMode 
 	const input = peek === null || model.window === null ? null : statementSpansInput(peek, model.window)
 	if (input === null) return { ...result, model: { ...model, queryPeek: dialog.model }, commands }
 	const key = requestKey(context.orgId, "getGcpCloudSqlStatementSpans", { data: input })
-	const [statementSpans, fetches] = requestSlot(model.statementSpans, key, mode, () =>
+	// Another statement's (or window's) spans are not shown dimmed under this one.
+	const current: Model["statementSpans"] =
+		model.statementSpans.key === key ? model.statementSpans : Keyed.idle()
+	const [statementSpans, fetches] = requestSlot(current, key, mode, () =>
 		FetchStatementSpans({ key, input }),
 	)
 	return {
@@ -330,7 +333,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		AttachedLinkedCursor: () => ({ model }),
 		ClickedRetryTimeseries: () => requestAll(model, context, "Refresh"),
 		ClickedShowAllQueries: () => ({ model: { ...model, showAllQueries: !model.showAllQueries } }),
-		ClickedStatement: ({ queryHash }) => navigate(model, { ...model.search, peek: queryHash }),
+		ClickedStatement: ({ queryHash }) =>
+			navigate({ ...model, copyStatement: CopyButton.init() }, { ...model.search, peek: queryHash }),
 		ClickedRetryStatementSpans: () => syncPeek({ model }, context, "Refresh"),
 		GotQueryPeekMessage: ({ message: inner }) => {
 			const result = Dialog.update(model.queryPeek, inner)

@@ -91,7 +91,10 @@ describe("google cloud list", () => {
 		expect(names(tabbed.commands)).not.toContain("ResolveGcpWindow")
 		expect(tabbed.model.window).toEqual(window)
 		const moved = routeChanged(tabbed.model, { search: { tab: "resources", timePreset: "6h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])?.[0]).toEqual(["ResolveGcpWindow", "Refresh"])
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])?.[0]).toEqual([
+			"ResolveGcpWindow",
+			"Refresh",
+		])
 	})
 
 	test("a connected status reads the fleet; until it lands the page shows its resources", () => {
@@ -167,8 +170,14 @@ describe("google cloud list", () => {
 			last_metrics_received_at: null,
 			last_metrics_error: "permission denied",
 		})
-		const windowed = pageUpdate(init({ search: {} }, context).model, Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" })).model
-		const model = pageUpdate(windowed, Message.CompletedLoadStatus({ key: windowed.status.key ?? "", result: Result.succeed(waiting) })).model
+		const windowed = pageUpdate(
+			init({ search: {} }, context).model,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" }),
+		).model
+		const model = pageUpdate(
+			windowed,
+			Message.CompletedLoadStatus({ key: windowed.status.key ?? "", result: Result.succeed(waiting) }),
+		).model
 		const deps = (next: Model) => ({
 			clock: subscriptions.liveClock.modelToDependencies({ model: next, context }),
 			cadence: subscriptions.statusRefresh.modelToDependencies({ model: next, context }),

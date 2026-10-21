@@ -116,10 +116,17 @@ describe("gcpMatchStatements", () => {
 })
 
 describe("gcpStatementTextPrefix", () => {
-	it("keeps the text before the first placeholder, whitespace collapsed", () => {
-		expect(gcpStatementTextPrefix("SELECT id, status\n  FROM orders WHERE org_id = $1 AND id = $2")).toBe(
-			"SELECT id, status FROM orders WHERE org_id =",
+	it("keeps the first line before the first placeholder, as the span's text has it", () => {
+		expect(gcpStatementTextPrefix("SELECT id, status FROM orders\n  WHERE org_id = $1 AND id = $2")).toBe(
+			"SELECT id, status FROM orders",
 		)
+		expect(gcpStatementTextPrefix("UPDATE orders SET status = $1 WHERE id = $2")).toBe(
+			"UPDATE orders SET status =",
+		)
+	})
+
+	it("caps a long statement so the link stays short", () => {
+		expect(gcpStatementTextPrefix(`SELECT ${"a, ".repeat(200)}b FROM t`)?.length).toBe(200)
 	})
 
 	it("keeps a statement without placeholders whole", () => {

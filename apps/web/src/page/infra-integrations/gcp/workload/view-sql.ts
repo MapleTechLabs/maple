@@ -39,6 +39,18 @@ const LOCK_CRIT = 0.5
 const APP_GAP = 5
 const CHEVRON = "flex w-4 shrink-0 justify-center"
 
+/** The app side's p95, red once it is `APP_GAP` times the database's. */
+export const appP95Tone = (db: number | null, app: number | undefined): string =>
+	app === undefined
+		? "text-muted-foreground"
+		: db !== null && app >= APP_GAP * db
+			? TONE_TEXT.crit
+			: latencyToneClass(app)
+
+/** A statement's share of time waiting on locks. */
+export const lockTone = (share: number): string =>
+	share >= LOCK_CRIT ? TONE_TEXT.crit : share >= LOCK_WARN ? TONE_TEXT.warn : "text-muted-foreground"
+
 const head = (h: H, label: string, width: string, align?: "right", hidden?: string) =>
 	columnHead(h, { label, width, align, hidden })
 
@@ -94,19 +106,7 @@ const statementRow = (
 				[db === null ? EMPTY_VALUE : formatLatency(db)],
 			),
 			h.div(
-				[
-					h.Class(
-						cn(
-							"w-[72px]",
-							NUMBER,
-							app === undefined
-								? "text-muted-foreground"
-								: db !== null && app >= APP_GAP * db
-									? TONE_TEXT.crit
-									: latencyToneClass(app),
-						),
-					),
-				],
+				[h.Class(cn("w-[72px]", NUMBER, appP95Tone(db, app)))],
 				[app === undefined ? EMPTY_VALUE : formatLatency(app)],
 			),
 			h.div(
@@ -121,22 +121,7 @@ const statementRow = (
 				],
 				[rowsPerCall === undefined ? EMPTY_VALUE : formatNumber(Math.round(rowsPerCall))],
 			),
-			h.div(
-				[
-					h.Class(
-						cn(
-							"w-[56px]",
-							NUMBER,
-							row.lockShare >= LOCK_CRIT
-								? TONE_TEXT.crit
-								: row.lockShare >= LOCK_WARN
-									? TONE_TEXT.warn
-									: "text-muted-foreground",
-						),
-					),
-				],
-				[formatPercent(row.lockShare)],
-			),
+			h.div([h.Class(cn("w-[56px]", NUMBER, lockTone(row.lockShare)))], [formatPercent(row.lockShare)]),
 			h.div(
 				[h.Class("hidden w-[112px] items-center gap-2 md:flex")],
 				[
