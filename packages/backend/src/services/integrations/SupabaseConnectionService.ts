@@ -91,9 +91,12 @@ const DRAIN_MISSING = "The log drain was removed in Supabase. Turn it off and on
 const DRAIN_SOURCE_DELETED =
 	"The Maple source this log drain sends as was deleted. Turn it off and on again to recreate it."
 const DRAIN_CONCURRENCY = 3
-/** Marks drains Maple creates, so one it lost track of is never mistaken for a hand-made one. */
-export const MAPLE_DRAIN_DESCRIPTION =
-	"OpenTelemetry logs to Maple, managed by the Maple Supabase integration."
+/**
+ * Marks the drains one Maple org on one deployment creates, so a drain it lost track of is never
+ * taken for a hand-made one, and another org's or deployment's drain is never taken for its own.
+ */
+export const mapleDrainDescription = (orgId: string, ingestHost: string | null) =>
+	`OpenTelemetry logs to Maple, managed by the Maple Supabase integration (${orgId} via ${ingestHost ?? "unknown"}).`
 
 const decodeConnectionId = Schema.decodeUnknownSync(SupabaseConnectionId)
 const decodeProjectId = Schema.decodeUnknownSync(SupabaseProjectId)
@@ -306,14 +309,17 @@ export class SupabaseConnectionService extends Context.Service<
 			)
 
 		/** A listed drain without its secrets; `toMaple` compares the destination host with our ingest. */
+		const isOurs = (orgId: OrgId, drain: SupabaseLogDrain) =>
+			drain.attributes.description === mapleDrainDescription(orgId, ingestHost)
+
 		const summarizeDrain = (
+			orgId: OrgId,
 			drain: SupabaseLogDrain,
 			managedDrainId: string | null,
 		): SupabaseLogDrainSummary => {
 			const destination = logDrainDestination(drain)
 			const backendType = drain.attributes.backend_type
-			const managedByMaple =
-				drain.id === managedDrainId || drain.attributes.description === MAPLE_DRAIN_DESCRIPTION
+			const managedByMaple = drain.id === managedDrainId || isOurs(orgId, drain)
 			return {
 				id: drain.id,
 				name: drain.attributes.name,
@@ -361,16 +367,28 @@ export class SupabaseConnectionService extends Context.Service<
 			)
 		})
 
-		/** Delete Maple-marked drains no row records (a timed-out create, a failed retire); best effort. */
-		const deleteOrphanDrains = (orgId: OrgId, ref: SupabaseProjectRef, orphans: ReadonlyArray<string>) =>
-			Effect.forEach(
-				orphans,
-				(drainId) =>
-					deleteUpstreamDrain(orgId, ref, drainId).pipe(
-						bestEffort("orphan drain delete", orgId, ref),
+		/**
+		 * Delete this org's marked drains that no row records (a timed-out create, a failed retire).
+		 * The recorded id is re-read first, so a concurrent enable's drain is never deleted. Best effort.
+		 */
+		const deleteOrphanDrains = (project: SupabaseProjectRow, candidates: ReadonlyArray<string>) =>
+			Effect.gen(function* () {
+				if (candidates.length === 0) return
+				const [current] = yield* dbExecute((db) =>
+					db.run(
+						PG.from(SupabaseProjects)
+							.select("logDrainId")
+							.where(($) => [$.id.eq(project.id)])
+							.limit(1),
 					),
-				{ discard: true },
-			)
+				)
+				const recorded = current?.logDrainId ?? null
+				yield* Effect.forEach(
+					candidates.filter((drainId) => drainId !== recorded),
+					(drainId) => deleteUpstreamDrain(project.orgId, project.projectRef, drainId),
+					{ discard: true },
+				)
+			}).pipe(bestEffort("orphan drain delete", project.orgId, project.projectRef))
 
 		/**
 		 * Mint the project's token source, then create the drain at Supabase. A failed drain deletes
@@ -392,7 +410,7 @@ export class SupabaseConnectionService extends Context.Service<
 				project.logDrainSourceId !== null
 			if (healthy) return
 			const existing = (yield* listDrains(orgId, ref)).map((drain) =>
-				summarizeDrain(drain, project.logDrainId),
+				summarizeDrain(orgId, drain, project.logDrainId),
 			)
 			const manual = existing.find((drain) => drain.toMaple && !drain.managedByMaple)
 			if (manual !== undefined) {
@@ -403,11 +421,8 @@ export class SupabaseConnectionService extends Context.Service<
 			// What is left of a drain flagged broken goes first, so a re-enable never leaves two.
 			yield* teardownDrain(orgId, project, now)
 			yield* deleteOrphanDrains(
-				orgId,
-				ref,
-				existing
-					.filter((drain) => drain.managedByMaple && drain.id !== project.logDrainId)
-					.map((drain) => drain.id),
+				project,
+				existing.filter((drain) => drain.managedByMaple).map((drain) => drain.id),
 			)
 			const minted = yield* sources
 				.create(orgId, userId, {
@@ -439,7 +454,7 @@ export class SupabaseConnectionService extends Context.Service<
 				.withAccessToken(orgId, (accessToken) =>
 					createLogDrain(httpClient, oauth.apiBaseUrl, accessToken, ref, {
 						name: "Maple",
-						description: MAPLE_DRAIN_DESCRIPTION,
+						description: mapleDrainDescription(orgId, ingestHost),
 						endpoint: ingestLogsUrl,
 						token,
 					}),
@@ -457,14 +472,9 @@ export class SupabaseConnectionService extends Context.Service<
 								listDrains(orgId, ref).pipe(
 									Effect.flatMap((listed) =>
 										deleteOrphanDrains(
-											orgId,
-											ref,
+											project,
 											listed
-												.filter(
-													(drain) =>
-														drain.attributes.description ===
-														MAPLE_DRAIN_DESCRIPTION,
-												)
+												.filter((drain) => isOurs(orgId, drain))
 												.map((drain) => drain.id),
 										),
 									),
@@ -492,7 +502,7 @@ export class SupabaseConnectionService extends Context.Service<
 							logDrainsJson: [
 								// The teardown above deleted any earlier managed drain.
 								...existing.filter((item) => !item.managedByMaple && item.id !== drain.id),
-								summarizeDrain(drain, drain.id),
+								summarizeDrain(orgId, drain, drain.id),
 							],
 							logDrainsCheckedAt: now,
 							logsEnabled: false,
@@ -523,7 +533,7 @@ export class SupabaseConnectionService extends Context.Service<
 				(row) =>
 					Effect.gen(function* () {
 						const drains = (yield* listDrains(orgId, row.projectRef)).map((drain) =>
-							summarizeDrain(drain, row.logDrainId),
+							summarizeDrain(orgId, drain, row.logDrainId),
 						)
 						const drainError = !row.logDrainEnabled
 							? null

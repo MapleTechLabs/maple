@@ -21,7 +21,7 @@ import {
 	fakeProject,
 	makeFakeSupabase,
 } from "./supabase/__fixtures__/fake-supabase-api"
-import { MAPLE_DRAIN_DESCRIPTION, SupabaseConnectionService } from "./SupabaseConnectionService"
+import { mapleDrainDescription, SupabaseConnectionService } from "./SupabaseConnectionService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -616,7 +616,7 @@ describe("SupabaseConnectionService log drains", () => {
 			id: "drain-orphan",
 			attributes: {
 				name: "Maple",
-				description: MAPLE_DRAIN_DESCRIPTION,
+				description: mapleDrainDescription("org_a", "ingest.example.com"),
 				backend_type: "otlp",
 				config: { endpoint: "https://ingest.example.com/v1/logs" },
 			},
@@ -637,6 +637,33 @@ describe("SupabaseConnectionService log drains", () => {
 				status.projects[0]?.logDrains.map((drain) => drain.id),
 				[stored[0]?.id],
 			)
+		}).pipe(Effect.provide(makeLayer(testDb, fake)))
+	})
+
+	it.effect("another org's or deployment's Maple drain is treated as foreign and never swept", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)] })
+		const elsewhere: FakeLogDrain = {
+			id: "drain-other-install",
+			attributes: {
+				name: "Maple",
+				description: mapleDrainDescription("org_other", "ingest.eu.example.com"),
+				backend_type: "otlp",
+				config: { endpoint: "https://ingest.eu.example.com/v1/logs" },
+			},
+		}
+		fake.state.drains.set(REF_A, [elsewhere])
+		return Effect.gen(function* () {
+			const service = yield* SupabaseConnectionService
+			const connected = yield* connect(fake)
+			assert.deepStrictEqual(
+				connected.projects[0]?.logDrains.map((drain) => [drain.managedByMaple, drain.toMaple]),
+				[[false, false]],
+			)
+			yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+			const ids = (fake.state.drains.get(REF_A) ?? []).map((drain) => drain.id)
+			assert.strictEqual(ids.length, 2)
+			assert.include(ids, "drain-other-install")
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})
 
