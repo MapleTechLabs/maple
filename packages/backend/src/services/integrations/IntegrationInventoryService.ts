@@ -157,8 +157,10 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 								"scrapeIntervalSeconds",
 								"lastScrapeAt",
 								"lastScrapeError",
+								"enabled",
 							)
-							.where(($) => [$.orgId.eq(orgId), $.enabled.eq(true)]),
+							// A user's switched-off target is still configured; a managed one waits on its connection.
+							.where(($) => [$.orgId.eq(orgId), PG.or($.enabled.eq(true), $.managedBy.isNull())]),
 					),
 					chatWorkspaces: db.run(
 						PG.from(ChatWorkspaces)

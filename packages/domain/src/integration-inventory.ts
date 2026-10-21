@@ -129,6 +129,8 @@ export interface IntegrationInventoryInputs {
 		readonly scrapeIntervalSeconds: number
 		readonly lastScrapeAt: number | null
 		readonly lastScrapeError: string | null
+		/** False for a target switched off; absent reads as on. */
+		readonly enabled?: boolean
 	}>
 	readonly chatWorkspaces: ReadonlyArray<{
 		readonly connector: string
@@ -473,22 +475,27 @@ export const scrapeResource = (
 	const staleAfterMs = scrapeStaleAfterMs(target.scrapeIntervalSeconds)
 	// A failed scrape leaves lastScrapeAt at the last success and sets the error; a later success clears it.
 	const status: IntegrationStatus =
-		target.lastScrapeError !== null
-			? "failing"
-			: target.lastScrapeAt === null
-				? "pending"
-				: now - target.lastScrapeAt > staleAfterMs
-					? "stale"
-					: "healthy"
+		target.enabled === false
+			? "paused"
+			: target.lastScrapeError !== null
+				? "failing"
+				: target.lastScrapeAt === null
+					? "pending"
+					: now - target.lastScrapeAt > staleAfterMs
+						? "stale"
+						: "healthy"
 	return {
 		kind,
 		name: target.name,
 		status,
 		lastSuccessAt: target.lastScrapeAt,
 		lastError: target.lastScrapeError,
-		note: target.serviceName
-			? `${redactUrlSecrets(target.url)} → service ${target.serviceName}`
-			: redactUrlSecrets(target.url),
+		note:
+			target.enabled === false
+				? "Scraping is turned off"
+				: target.serviceName
+					? `${redactUrlSecrets(target.url)} → service ${target.serviceName}`
+					: redactUrlSecrets(target.url),
 	}
 }
 

@@ -265,6 +265,32 @@ describe("buildIntegrationInventory", () => {
 	})
 })
 
+describe("scrape targets", () => {
+	it("lists a switched-off target as paused instead of dropping the provider", () => {
+		const prometheus = providerOf(
+			{
+				scrapeTargets: [
+					{
+						name: "node",
+						url: "http://node/metrics",
+						serviceName: null,
+						managedBy: null,
+						scrapeIntervalSeconds: 15,
+						lastScrapeAt: null,
+						lastScrapeError: null,
+						enabled: false,
+					},
+				],
+			},
+			"prometheus",
+		)
+		expect(prometheus?.status).toBe("paused")
+		expect(prometheus?.resources.map((resource) => [resource.status, resource.note])).toEqual([
+			["paused", "Scraping is turned off"],
+		])
+	})
+})
+
 describe("withSourceHealth", () => {
 	const inventory = build({ oauthConnections: [cloudflareGrant] })
 
