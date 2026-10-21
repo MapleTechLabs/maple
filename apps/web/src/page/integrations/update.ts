@@ -19,6 +19,8 @@ import { initPrometheusCard } from "./prometheus"
 import { initRailwayCard } from "./railway"
 import { initPlanetscaleCard } from "./planetscale"
 import { initGcpCard } from "./gcp"
+import { initAwsCard } from "./aws"
+import * as Aws from "./update-aws"
 import * as Gcp from "./update-gcp"
 import * as Configure from "./update-gcp-configure"
 import * as Planetscale from "./update-planetscale"
@@ -84,6 +86,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			planetscale: Keyed.idle(),
 			planetscaleDatabases: Keyed.idle(),
 			gcp: Keyed.idle(),
+			aws: Keyed.idle(),
 			hazel: Keyed.idle(),
 			github: Keyed.idle(),
 			chat: Keyed.idle(),
@@ -99,6 +102,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		prometheusCard: initPrometheusCard(),
 		planetscaleCard: initPlanetscaleCard(),
 		gcpCard: initGcpCard(),
+		awsCard: initAwsCard(),
 		railwayCard: initRailwayCard(),
 	}
 	const loaded = chain(model, [
@@ -127,6 +131,7 @@ export const routeChanged = (
 const enterIntegration = (model: Model, context: PageContext): Return => {
 	const integration = integrationOfSearch(model.search.integration)
 	if (integration === "cloudflare") return CloudflareCard.enterCloudflare(model, context)
+	if (integration === "aws") return Aws.enterAws(model, context)
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
 	return { model }
@@ -179,6 +184,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				s.gcp.key === key && Result.isSuccess(result) ? Configure.statusArrived(read).model : read
 			return gcpBand(arrived, context)
 		},
+		CompletedLoadAws: ({ key, result }) =>
+			Aws.statusArrived(
+				accepted(model, { ...s, aws: Keyed.accept(s.aws, key, result) }).model,
+				Aws.connectionsOf(model),
+			),
 		CompletedLoadHazel: ({ key, result }) =>
 			accepted(model, { ...s, hazel: Keyed.accept(s.hazel, key, result) }),
 		CompletedLoadGithub: ({ key, result }) =>
@@ -268,6 +278,29 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRailwayRotate: () => Railway.setRotating(model, true),
 		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
 		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
+		GotAwsAccountIdMessage: ({ message: child }) => Aws.gotAccountId(model, child),
+		SubmittedAwsAccount: () => Aws.submittedAccount(model),
+		SucceededAwsCreate: ({ connection }) => Aws.succeededCreate(model, context, connection),
+		FailedAwsCreate: ({ error }) => Aws.failedCreate(model, error),
+		ClickedAwsAdd: () => Aws.setAdding(model, true),
+		ClickedAwsAddCancel: () => Aws.setAdding(model, false),
+		ClickedAwsSetup: ({ id }) => Aws.openSetup(model, context, id),
+		ClickedAwsSetupClose: () => Aws.closeSetup(model),
+		CompletedLoadAwsSetup: ({ key, result }) => Aws.completedLoadSetup(model, key, result),
+		ClickedAwsSetupMethod: ({ method }) => Aws.setMethod(model, method),
+		ClickedAwsCheck: ({ id }) => Aws.clickedCheck(model, id),
+		TickedAwsPending: () => Aws.tickedPending(model),
+		CompletedAwsCheck: ({ id, quiet, connection, failure }) =>
+			Aws.completedCheck(model, context, id, quiet, connection, failure),
+		GotAwsCopyMessage: ({ id, message: child }) => Aws.gotCopy(model, id, child),
+		ClickedAwsDisconnect: ({ id }) => Aws.clickedDisconnect(model, id),
+		GotAwsDisconnectDialogMessage: ({ message: child }) => Aws.gotDisconnectDialog(model, child),
+		ConfirmedAwsDisconnect: () => Aws.confirmedDisconnect(model),
+		CompletedAwsDisconnect: ({ removed, error }) =>
+			Aws.completedDisconnect(model, context, removed, error),
+		DismissedAwsRemoved: ({ connectionId }) => Aws.dismissedRemoved(model, context, connectionId),
+		CompletedReadAwsRemoved: ({ removed }) => Aws.completedReadRemoved(model, removed),
+		CompletedWriteAwsRemoved: () => ({ model }),
 		CompletedFetchOrganizations: ({ key, result }) =>
 			Planetscale.updateCard(model, {
 				organizations: Keyed.accept(model.planetscaleCard.organizations, key, result),
@@ -324,9 +357,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Gcp.updateGcpCard(model, { inventory: Keyed.accept(model.gcpCard.inventory, key, result) }),
 		GotWorkloadFilterMessage: ({ message: child }) => Gcp.gotWorkloadFilter(model, child),
 		GotGcpMenuMessage: ({ id, message: child }) =>
-			Gcp.gotMenu(model, context, id, child, (next, target) =>
-				Configure.openConfigure(next, target),
-			),
+			Gcp.gotMenu(model, context, id, child, (next, target) => Configure.openConfigure(next, target)),
 		CompletedGcpScripts: ({ key, result }) =>
 			Gcp.updateGcpCard(model, { scripts: Keyed.accept(model.gcpCard.scripts, key, result) }),
 		ClickedGcpScriptToggle: () =>
@@ -370,12 +401,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedGcpMethod: ({ method }) => Configure.clickedMethod(model, method),
 		GotGcpFlavourMessage: ({ message: child }) => Configure.gotFlavour(model, child),
 		ClickedGcpMethodContinue: () => Configure.clickedMethodContinue(model, context),
-		ClickedGcpManualStep: ({ title, firstTitle }) => Configure.clickedManualStep(model, title, firstTitle),
+		ClickedGcpManualStep: ({ title, firstTitle }) =>
+			Configure.clickedManualStep(model, title, firstTitle),
 		ClickedGcpCopyPrompt: ({ prompt }) => Configure.clickedCopyPrompt(model, prompt),
 		CompletedGcpPromptCopy: ({ isCopied }) => Configure.completedPromptCopy(model, isCopied),
 		ClickedGcpPromptBack: () => Configure.clickedPromptBack(model),
 		ClickedGcpConfirmRemoval: () => Configure.clickedConfirmRemoval(model),
-		CompletedGcpConfirmRemoval: ({ failure }) => Configure.completedConfirmRemoval(model, context, failure),
+		CompletedGcpConfirmRemoval: ({ failure }) =>
+			Configure.completedConfirmRemoval(model, context, failure),
 		TickedGcpRefresh: () => {
 			const refreshed = requestStatus(model, context, "gcp", "Refresh")
 			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }

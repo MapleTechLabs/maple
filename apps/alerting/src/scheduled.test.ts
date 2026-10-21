@@ -18,7 +18,7 @@ const cronCases = [
 		],
 	],
 	["*/15 * * * *", ["digest"]],
-	["0 * * * *", ["serviceMapRollup"]],
+	["0 * * * *", ["serviceMapRollup", "awsConnections"]],
 	["* * * * *", ["alert", "error", "escalation", "fixVerification"]],
 ] as const
 
@@ -31,6 +31,7 @@ const recordingTicks = (
 	return {
 		alert: tick("alert"),
 		anomaly: tick("anomaly"),
+		awsConnections: tick("awsConnections"),
 		cloudflareAnalytics: tick("cloudflareAnalytics"),
 		digest: tick("digest"),
 		error: tick("error"),

@@ -14,7 +14,14 @@ import { copyToast } from "../../kit/clipboard"
 import { sourcesListKey, sourceUsageKey } from "../kit/data"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
-import { effectiveTab, fromPublicSourceId, hasToken, integrationPlatformOf, scrapeTargetIdOf } from "../kit/shared"
+import {
+	effectiveTab,
+	focusIdOf,
+	fromPublicSourceId,
+	hasToken,
+	integrationPlatformOf,
+	scrapeTargetIdOf,
+} from "../kit/shared"
 import { initEmbedded } from "../../integrations/embed"
 import * as Integrations from "../../integrations/update"
 import { Message as IntegrationMessage } from "../../integrations/message"
@@ -255,14 +262,39 @@ const save = (model: Model): Return => {
 
 /**
  * A write in the Connection tab changes this source too: deleting its own target leaves for the
- * list (the source goes with it); a toggle, edit or disconnect re-reads it so the header follows.
+ * list (the source goes with it); a toggle, edit, check or disconnect re-reads it so the header
+ * follows.
  */
 const afterConnectionWrite = (model: Model, child: IntegrationMessage, step: Return, context: PageContext): Return => {
+	// Disconnecting its own AWS connection deletes this source; the AWS page shows the stack's cleanup.
+	if (child._tag === "CompletedAwsDisconnect" && child.removed !== null) {
+		const own = Option.match(sourceOf(model), { onNone: () => null, onSome: focusIdOf })
+		if (own !== child.id) return step
+		return {
+			...step,
+			outMessage: PageOutMessage.RequestedNavigation({
+				url: hrefOf(AppRoute.SourcesNew({ search: { integration: "aws" } })),
+				isReplace: true,
+				toast: {
+					type: "success",
+					title: "AWS disconnected",
+					description: "Delete the stack in AWS to remove the role.",
+				},
+			}),
+		}
+	}
+	// An AWS check rewrites the source's health; a background one only matters once it verifies. A
+	// click during a background check makes it the user's, which only the card's model knows.
+	const isAwsCheck =
+		child._tag === "CompletedAwsCheck" &&
+		(child.connection?.verified_at != null ||
+			!(model.connection?.awsCard.checking.find((entry) => entry.id === child.id)?.quiet ?? child.quiet))
 	const isWrite =
 		child._tag === "CompletedTargetDelete" ||
 		child._tag === "CompletedToggle" ||
 		child._tag === "CompletedSave" ||
-		child._tag === "CompletedDisconnect"
+		child._tag === "CompletedDisconnect" ||
+		isAwsCheck
 	if (!isWrite || child.failure !== null) return step
 	const own = Option.match(sourceOf(model), { onNone: () => null, onSome: scrapeTargetIdOf })
 	if (child._tag === "CompletedTargetDelete" && own !== null && child.id === own) {
@@ -277,7 +309,11 @@ const afterConnectionWrite = (model: Model, child: IntegrationMessage, step: Ret
 					})
 		return { ...step, outMessage: leave }
 	}
-	return andThen(step, (next) => loadList(next, context, "Supersede"))
+	// The re-read can be newer than the page clock: read it again so "ago" stays in the past.
+	return andThen(step, (next) => {
+		const reloaded = loadList(next, context, "Supersede")
+		return { ...reloaded, commands: [ReadSourceClock(), ...(reloaded.commands ?? [])] }
+	})
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>

@@ -88,6 +88,19 @@ export const LoadGcp = Command.define("LoadIntegrationsGcpStatus", {
 		),
 })
 
+export const LoadAws = Command.define("LoadIntegrationsAwsStatus", {
+	args: Args,
+	messages: [Message.CompletedLoadAws],
+	execute: ({ key }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			return yield* client.awsIntegration.status()
+		}).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedLoadAws({ key, result })),
+		),
+})
+
 /** `retainedQueryV2("planetscaleIntegration", "databases")`: the poller's inventory. */
 export const LoadPlanetscaleDatabases = Command.define("LoadIntegrationsPlanetscaleDatabases", {
 	args: Args,

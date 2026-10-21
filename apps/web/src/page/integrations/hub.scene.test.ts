@@ -54,6 +54,7 @@ describe("integrations hub", () => {
 			"LoadIntegrationsPlanetscaleStatus",
 			"LoadIntegrationsPlanetscaleDatabases",
 			"LoadIntegrationsGcpStatus",
+			"LoadIntegrationsAwsStatus",
 			"LoadIntegrationsHazelStatus",
 			"LoadIntegrationsGithubStatus",
 			"LoadIntegrationsChatConnectors",

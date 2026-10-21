@@ -20,6 +20,7 @@
 	},
 	"dependencies": {
 		"@clerk/backend": "^3.23.0",
+		"@distilled.cloud/aws": "1.0.0-rc.15",
 		"@distilled.cloud/cloudflare": "1.0.0-rc.15",
 		"@distilled.cloud/core": "1.0.0-rc.15",
 		"@distilled.cloud/planetscale": "1.0.0-rc.15",

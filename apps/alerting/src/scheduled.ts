@@ -22,6 +22,7 @@ import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-reque
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrReviewPostMergeService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
 import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -53,6 +54,7 @@ export const layerTick = (
 		GcpMetricsService.layer,
 		PlanetScaleService.layer,
 		RailwayMetricsService.layer,
+		AwsConnectionService.layer,
 		DigestService.layer,
 		WebAnalyticsDigestService.layer,
 		ErrorsService.layer,
@@ -285,6 +287,19 @@ const planetScaleTick = makeTick(
 			: undefined,
 )
 
+const awsConnectionsTick = makeTick(
+	AwsConnectionService.use((aws) => aws.checkDue()),
+	"aws_connections",
+	(result) =>
+		result.due > 0
+			? {
+					due: result.due,
+					checked: result.checked,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
 const railwayMetricsTick = makeTick(
 	RailwayMetricsService.use((railway) => railway.pollAllOrgs()),
 	"railway_metrics",
@@ -317,6 +332,7 @@ const prReviewPostMergeTick = makeTick(
 export interface ScheduledTickPrograms<R = never> {
 	readonly alert: Effect.Effect<void, never, R>
 	readonly anomaly: Effect.Effect<void, never, R>
+	readonly awsConnections: Effect.Effect<void, never, R>
 	readonly cloudflareAnalytics: Effect.Effect<void, never, R>
 	readonly digest: Effect.Effect<void, never, R>
 	readonly error: Effect.Effect<void, never, R>
@@ -346,6 +362,7 @@ const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect
 		Match.when("pr_review_post_merge", () => ticks.prReviewPostMerge),
 		Match.when("digest", () => ticks.digest),
 		Match.when("service_map_rollup", () => ticks.serviceMapRollup),
+		Match.when("aws_connections", () => ticks.awsConnections),
 		Match.exhaustive,
 	)
 
@@ -384,6 +401,7 @@ export const selectLaneProgram = <R>(
 type ScheduledServices =
 	| AlertsService
 	| AnomalyDetectionService
+	| AwsConnectionService
 	| CloudflareAnalyticsService
 	| DigestService
 	| WebAnalyticsDigestService
@@ -399,6 +417,7 @@ type ScheduledServices =
 export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	alert: alertTick,
 	anomaly: anomalyTick,
+	awsConnections: awsConnectionsTick,
 	cloudflareAnalytics: cloudflareAnalyticsTick,
 	digest: digestTick,
 	error: errorTick,

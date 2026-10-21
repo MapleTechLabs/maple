@@ -35,6 +35,7 @@ import {
 	ErrorIssueVerifications,
 } from "./errors"
 import { IssueEscalationPolicies, IssueEscalations } from "./escalations"
+import { AwsConnections } from "./aws-connections"
 import { GcpConnectors } from "./gcp-connectors"
 import { GcpResources } from "./gcp-resources"
 import { Investigations } from "./investigations"
@@ -92,6 +93,7 @@ export * from "./dashboards"
 export * from "./digest"
 export * from "./errors"
 export * from "./escalations"
+export * from "./aws-connections"
 export * from "./gcp-connectors"
 export * from "./gcp-resources"
 export * from "./investigations"
@@ -155,6 +157,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	IssueEscalations,
 	GcpConnectors,
 	GcpResources,
+	AwsConnections,
 	Investigations,
 	LiveActivities,
 	McpOAuthClients,
