@@ -87,12 +87,17 @@ export const attentionPanel = (h: H, model: Model, strip: HealthStrip | null, ti
 			? [rowsLoading(h, 4)]
 			: [
 					...failures,
-					items.length === 0
-						? panelEmpty(h, ["Nothing needs attention."])
-						: h.ul(
-								[h.AriaLabel("Needs attention")],
-								items.slice(0, MAX_ATTENTION_ITEMS).map((item) => itemRow(h, item, timeZone)),
-							),
+					// After a failed read "nothing" is unknown, so the failure banner stands alone.
+					...(items.length > 0
+						? [
+								h.ul(
+									[h.AriaLabel("Needs attention")],
+									items.slice(0, MAX_ATTENTION_ITEMS).map((item) => itemRow(h, item, timeZone)),
+								),
+							]
+						: failures.length > 0
+							? []
+							: [panelEmpty(h, ["Nothing needs attention."])]),
 				],
 	)
 }

@@ -119,6 +119,25 @@ const withStatus = (connected: boolean): Model => {
 }
 
 describe("supabase list", () => {
+	test("a connected organization without projects shows the empty state, not a fleet verdict", () => {
+		const entered = init({ search: {} }, context).model
+		const windowed = steps(entered, [Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })])
+		const empty = Schema.decodeUnknownSync(SupabaseIntegrationStatus)({
+			...status(true),
+			projects: [],
+		})
+		const loaded = steps(windowed, [
+			Message.CompletedLoadStatus({ key: windowed.status.key ?? "", result: Result.succeed(empty) }),
+			Message.CompletedFetchProjects({ key: windowed.projects.key ?? "", result: Result.succeed([]) }),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			expectView(text("No Supabase projects yet")).toExist(),
+			expectView(text("Every project is healthy")).toBeAbsent(),
+		)
+	})
+
 	test("not connected is the connect on-ramp and reads no advisors", () => {
 		const entered = init({ search: {} }, context).model
 		const windowed = pageUpdate(
