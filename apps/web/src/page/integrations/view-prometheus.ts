@@ -46,6 +46,7 @@ export const AUTH_TYPE_LABELS = {
 	basic: "Basic Auth",
 	token: "Service Token",
 	planetscale_oauth: "PlanetScale OAuth",
+	supabase_oauth: "Supabase OAuth",
 } satisfies { readonly [K in ScrapeAuthType]: string }
 
 export interface ScheduledStatus {

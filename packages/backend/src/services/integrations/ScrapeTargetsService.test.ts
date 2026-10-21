@@ -1,4 +1,5 @@
 import { FetchHttpClient } from "effect/http"
+import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { afterEach, assert, beforeEach, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
@@ -64,6 +65,7 @@ const makeLayer = (testDb: TestDb) => {
 					Layer.provide(oauthLive),
 				),
 				oauthLive,
+				SupabaseOAuthService.layer,
 			),
 		),
 		Layer.provide(testDb.layer),

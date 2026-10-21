@@ -108,6 +108,13 @@ export interface SupabaseOAuthServiceApi {
 		| IntegrationsPersistenceError
 	>
 	/**
+	 * The org's access token, refreshed when it is within a minute of expiry. Managed scrape
+	 * targets resolve this for the scraper's Authorization header on every target-list reconcile.
+	 */
+	readonly getValidAccessToken: (
+		orgId: OrgId,
+	) => Effect.Effect<{ readonly accessToken: string }, SupabaseAccessTokenError>
+	/**
 	 * Run `use` with the org's access token. A 401 forces one refresh and a retry; when the
 	 * fresh token is rejected too, the grant is stamped revoked so discovery stops using it.
 	 */
@@ -282,6 +289,18 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 				}
 			})
 
+			const getValidAccessToken = Effect.fn("SupabaseOAuthService.getValidAccessToken")(function* (
+				orgId: OrgId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				const config = yield* resolveConfig(env)
+				// A stamped grant failed a refresh or had a fresh token rejected; reconnecting clears it.
+				const { accessToken } = yield* oauth.getValidConnectionToken(config, orgId, {
+					failIfRevoked: true,
+				})
+				return { accessToken }
+			})
+
 			const withAccessToken = <A, E>(
 				orgId: OrgId,
 				use: (accessToken: string) => Effect.Effect<A, E | SupabaseApiError>,
@@ -339,6 +358,7 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 				apiBaseUrl,
 				startConnect,
 				completeConnect,
+				getValidAccessToken,
 				withAccessToken,
 				isGrantUsable,
 				disconnect,

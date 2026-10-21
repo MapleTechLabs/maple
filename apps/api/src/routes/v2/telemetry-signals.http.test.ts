@@ -23,6 +23,7 @@ import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
@@ -99,6 +100,16 @@ const planetScaleStubs = Layer.mergeAll(
 		listOrganizations: die,
 		hasConnection: die,
 		connectedByUserId: die,
+		disconnect: die,
+	}),
+	Layer.succeed(SupabaseOAuthService, {
+		isConfigured: false,
+		apiBaseUrl: "https://api.supabase.com",
+		startConnect: die,
+		completeConnect: die,
+		getValidAccessToken: die,
+		withAccessToken: die,
+		isGrantUsable: die,
 		disconnect: die,
 	}),
 )

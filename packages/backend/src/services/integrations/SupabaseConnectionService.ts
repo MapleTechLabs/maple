@@ -1,5 +1,5 @@
 // Supabase integration: binds the one Supabase organization a grant (SupabaseOAuthService) covers,
-// owns its source, and discovers its projects on demand and hourly from the alerting cron.
+// owns its source, discovers its projects and keeps one managed scrape target per project.
 import { randomUUID } from "node:crypto"
 import {
 	IntegrationsNotConnectedError,
@@ -30,6 +30,7 @@ import {
 	upsertWithSource,
 } from "@maple/backend/services/org/integration-sources"
 import { listProjects, type SupabaseOrganization, type SupabaseProject } from "./supabase/api"
+import { deleteSupabaseScrapeTargets, reconcileSupabaseScrapeTargets } from "./supabase/scrape-targets"
 
 /** A discovery holds its lease this long; a crashed run frees the org after it. */
 const LEASE_MS = 5 * 60_000
@@ -168,6 +169,22 @@ export class SupabaseConnectionService extends Context.Service<
 					),
 				),
 			)
+
+		/** Converge the connection's managed scrape targets on its projects, in one transaction. */
+		const reconcileTargets = Effect.fn("SupabaseConnectionService.reconcileTargets")(function* (
+			connection: SupabaseConnectionRow,
+			now: number,
+		) {
+			const summary = yield* dbExecute((db) =>
+				db.transaction(reconcileSupabaseScrapeTargets(db, connection, oauth.apiBaseUrl, now)),
+			)
+			yield* Effect.annotateCurrentSpan({
+				"maple.supabase.targets_created": summary.created,
+				"maple.supabase.targets_updated": summary.updated,
+				"maple.supabase.targets_deleted": summary.deleted,
+			})
+			return summary
+		})
 
 		const getStatus = Effect.fn("SupabaseConnectionService.getStatus")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
@@ -376,6 +393,7 @@ export class SupabaseConnectionService extends Context.Service<
 						listed.success.skipped,
 						now,
 					)
+					yield* reconcileTargets(claimed, now)
 					yield* updateConnection(claimed.id, {
 						lastDiscoveryAt: now,
 						lastDiscoveryError: null,
@@ -476,7 +494,7 @@ export class SupabaseConnectionService extends Context.Service<
 							)
 						}
 						const rebind = { ...binding, lastDiscoveryError: null, updatedAt: now }
-						return yield* upsertWithSource(
+						const connection = yield* upsertWithSource(
 							db,
 							orgId,
 							{ platform: "supabase", name: integrationSourceName.supabase(organization) },
@@ -506,6 +524,11 @@ export class SupabaseConnectionService extends Context.Service<
 									)
 									.pipe(Effect.map(([row]) => row)),
 						)
+						// Drop the old organization's targets with its projects, in this transaction.
+						if (organizationChanged && connection !== undefined) {
+							yield* reconcileSupabaseScrapeTargets(db, connection, oauth.apiBaseUrl, now)
+						}
+						return connection
 					}),
 				),
 			)
@@ -545,11 +568,13 @@ export class SupabaseConnectionService extends Context.Service<
 						.returning("id"),
 				),
 			)
-			if (updated.length === 0) {
+			const connection = yield* loadConnection(orgId)
+			if (updated.length === 0 || connection === null) {
 				return yield* new IntegrationsNotFoundError({
 					message: `No Supabase project ${ref} is connected to this organization`,
 				})
 			}
+			yield* reconcileTargets(connection, now)
 			return yield* getStatus(orgId)
 		})
 
@@ -561,6 +586,18 @@ export class SupabaseConnectionService extends Context.Service<
 			const deleted = yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
+						const connections = yield* db.run(
+							PG.from(SupabaseConnections)
+								.select("id", "orgId")
+								.where(($) => [$.orgId.eq(orgId)]),
+						)
+						yield* Effect.forEach(
+							connections,
+							(connection) => deleteSupabaseScrapeTargets(db, connection),
+							{
+								discard: true,
+							},
+						)
 						yield* db.run(PG.deleteFrom(SupabaseProjects).where(($) => [$.orgId.eq(orgId)]))
 						const rows = yield* db.run(
 							PG.deleteFrom(SupabaseConnections)

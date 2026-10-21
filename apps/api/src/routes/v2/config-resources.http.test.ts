@@ -18,6 +18,7 @@ import { IngestAttributeMappingService } from "@maple/backend/services/org/Inges
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
@@ -86,6 +87,16 @@ const planetScaleStubs = Layer.mergeAll(
 		listOrganizations: die,
 		hasConnection: die,
 		connectedByUserId: die,
+		disconnect: die,
+	}),
+	Layer.succeed(SupabaseOAuthService, {
+		isConfigured: false,
+		apiBaseUrl: "https://api.supabase.com",
+		startConnect: die,
+		completeConnect: die,
+		getValidAccessToken: die,
+		withAccessToken: die,
+		isGrantUsable: die,
 		disconnect: die,
 	}),
 )
