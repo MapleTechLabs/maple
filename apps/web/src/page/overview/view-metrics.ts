@@ -144,6 +144,10 @@ const emptyBody = (model: Model, signal: "traces" | "logs"): CardBody => {
 		: { _tag: "Empty", isPresent: status === "present" }
 }
 
+/** The series come back zero-filled per bucket, so a never-received signal still has rows to draw. */
+const isNeverReceived = (model: Model, signal: "traces" | "logs"): boolean =>
+	presenceOf(model.presence, signal).status === "absent"
+
 /** `OVERVIEW_CHARTS` with the `metrics` memo's data, loading, error, header value and footer. */
 export const gridItems = <M>(
 	h: HtmlBuilder<M>,
@@ -158,7 +162,7 @@ export const gridItems = <M>(
 	const overviewBody = (spec: (rows: ReadonlyArray<FixedMetricRow>) => Spec, ariaLabel: string) =>
 		chart(
 			bodyOf(model.overviewSeries.data, "Overview", (): CardBody =>
-				overviewRows.length === 0
+				overviewRows.length === 0 || isNeverReceived(model, "traces")
 					? emptyBody(model, "traces")
 					: { _tag: "Chart", spec: spec(overviewRows), ariaLabel },
 			),
@@ -184,7 +188,7 @@ export const gridItems = <M>(
 	)
 	const logBody = chart(
 		bodyOf(model.logSeries.data, "LogVolume", (rows): CardBody =>
-			rows.length === 0
+			rows.length === 0 || isNeverReceived(model, "logs")
 				? emptyBody(model, "logs")
 				: {
 						_tag: "Chart",
