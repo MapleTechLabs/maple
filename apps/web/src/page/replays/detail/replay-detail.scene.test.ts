@@ -212,6 +212,11 @@ describe("replay detail", () => {
 		expect(isFigureFullscreen(null)).toBe(false)
 	})
 
+	test("the scrubber spans the whole recording, not just the loaded seed", () => {
+		const ready = pageUpdate(seeded(), Message.ReadiedEngine({ seedVersion: 1, totalMs: 1000 })).model
+		expect(ready.player.totalMs).toBe(2000)
+	})
+
 	test("the seed is cut once per seed version, not re-flattened on every engine tick", () => {
 		const ready = pageUpdate(seeded(), Message.ReadiedEngine({ seedVersion: 1, totalMs: 1000 })).model
 		const ticked = pageUpdate(ready, Message.TickedEngine({ seedVersion: 1, currentMs: 100 })).model
