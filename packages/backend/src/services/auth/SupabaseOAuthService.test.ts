@@ -167,8 +167,7 @@ describe("SupabaseOAuthService", () => {
 		return Effect.gen(function* () {
 			const error = yield* connect(fake).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
-			const grant = yield* (yield* SupabaseOAuthService).grantStatus(ORG)
-			assert.isFalse(grant.connected)
+			assert.isFalse(yield* (yield* SupabaseOAuthService).isGrantUsable(ORG))
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})
 
@@ -205,8 +204,7 @@ describe("SupabaseOAuthService", () => {
 			fake.state.validAccessTokens.clear()
 			const organizations = yield* listWithGrant
 			assert.strictEqual(organizations.length, 1)
-			const grant = yield* (yield* SupabaseOAuthService).grantStatus(ORG)
-			assert.isNull(grant.revokedAt)
+			assert.isTrue(yield* (yield* SupabaseOAuthService).isGrantUsable(ORG))
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})
 
@@ -219,8 +217,7 @@ describe("SupabaseOAuthService", () => {
 			fake.state.refreshRevoked = true
 			const error = yield* listWithGrant.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsRevokedError")
-			const grant = yield* (yield* SupabaseOAuthService).grantStatus(ORG)
-			assert.isNotNull(grant.revokedAt)
+			assert.isFalse(yield* (yield* SupabaseOAuthService).isGrantUsable(ORG))
 
 			const callsBefore = fake.state.calls.length
 			const again = yield* listWithGrant.pipe(Effect.flip)
@@ -238,14 +235,14 @@ describe("SupabaseOAuthService", () => {
 			assert.deepStrictEqual(yield* service.disconnect(ORG), { disconnected: true })
 			const revoke = fake.state.calls.find((call) => call.path === "/v1/oauth/revoke")
 			assert.deepStrictEqual(
-				Schema.decodeUnknownSync(Schema.UnknownFromJsonString)(revoke?.body ?? "{}"),
+				Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(revoke?.body ?? "{}"),
 				{
 					client_id: FAKE_CLIENT_ID,
 					client_secret: FAKE_CLIENT_SECRET,
 					refresh_token: "refresh_1",
 				},
 			)
-			assert.isFalse((yield* service.grantStatus(ORG)).connected)
+			assert.isFalse(yield* service.isGrantUsable(ORG))
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})
 })
