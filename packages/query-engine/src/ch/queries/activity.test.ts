@@ -5,8 +5,8 @@ import { activeOrgsByErrorEventsQuery, activeOrgsByLogsQuery, activeOrgsByTraces
 const params = { startTime: "2026-06-22 05:00:00" }
 
 describe("active-org discovery queries", () => {
-	it("error-events query is cross-org but contains the OrgId guard token", () => {
-		const { sql } = compileUnsafe(activeOrgsByErrorEventsQuery(), params)
+	it("error-events query is declared cross-tenant and groups by org", () => {
+		const { sql, tenantScope } = compileUnsafe(activeOrgsByErrorEventsQuery(), params)
 		expect(sql).toContain("FROM error_events_by_time")
 		expect(sql).toContain("OrgId AS orgId")
 		expect(sql).toContain("Timestamp >= '2026-06-22 05:00:00'")
@@ -15,22 +15,24 @@ describe("active-org discovery queries", () => {
 		expect(sql).not.toContain("OrgId =")
 		// Deliberately cross-org: the executor refuses these on the ordinary read
 		// path, so they must go through `crossOrgQuery`.
-		expect(sql).toContain("OrgId")
+		expect(tenantScope).toBe("cross-tenant")
 	})
 
 	it("traces query scans the hourly MV by Hour", () => {
-		const { sql } = compileUnsafe(activeOrgsByTracesQuery(), params)
+		const { sql, tenantScope } = compileUnsafe(activeOrgsByTracesQuery(), params)
 		expect(sql).toContain("FROM traces_aggregates_hourly")
 		expect(sql).toContain("Hour >= '2026-06-22 05:00:00'")
 		expect(sql).toContain("GROUP BY orgId")
 		expect(sql).not.toContain("OrgId =")
+		expect(tenantScope).toBe("cross-tenant")
 	})
 
 	it("logs query scans the hourly MV by Hour", () => {
-		const { sql } = compileUnsafe(activeOrgsByLogsQuery(), params)
+		const { sql, tenantScope } = compileUnsafe(activeOrgsByLogsQuery(), params)
 		expect(sql).toContain("FROM logs_aggregates_hourly")
 		expect(sql).toContain("Hour >= '2026-06-22 05:00:00'")
 		expect(sql).toContain("GROUP BY orgId")
 		expect(sql).not.toContain("OrgId =")
+		expect(tenantScope).toBe("cross-tenant")
 	})
 })
