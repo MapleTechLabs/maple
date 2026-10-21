@@ -1,7 +1,12 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
-import { loadSupabaseProjects, loadSupabaseStatus } from "../data"
+import {
+	loadSupabaseFleetInsights,
+	loadSupabaseLogIssues,
+	loadSupabaseProjects,
+	loadSupabaseStatus,
+} from "../data"
 import { Message, RequestMode } from "./message"
 
 export const ResolveWindow = Command.define("ResolveSupabaseWindow", {
@@ -36,6 +41,23 @@ export const FetchProjects = Command.define("FetchSupabaseProjects", {
 	messages: [Message.CompletedFetchProjects],
 	execute: ({ key, window }) =>
 		Effect.map(loadSupabaseProjects(window), (result) => Message.CompletedFetchProjects({ key, result })),
+})
+
+export const FetchIssues = Command.define("FetchSupabaseFleetIssues", {
+	args: { key: Schema.String, window: TimeWindow },
+	messages: [Message.CompletedFetchIssues],
+	execute: ({ key, window }) =>
+		Effect.map(loadSupabaseLogIssues(window), (result) => Message.CompletedFetchIssues({ key, result })),
+})
+
+/** Never fails: a project whose advisors fail to read is listed in `failedRefs`. */
+export const FetchInsights = Command.define("FetchSupabaseFleetInsights", {
+	args: { key: Schema.String, refs: Schema.Array(Schema.String) },
+	messages: [Message.CompletedFetchInsights],
+	execute: ({ key, refs }) =>
+		Effect.map(loadSupabaseFleetInsights(refs), (insights) =>
+			Message.CompletedFetchInsights({ key, insights }),
+		),
 })
 
 const RELOAD_SPIN = Duration.millis(600)

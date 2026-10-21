@@ -15,6 +15,7 @@ const GAUGE_ZEROS: Omit<SupabaseProjectGaugeSeriesOutput, "bucket"> = {
 	dbSize: 0,
 	connectionsAvg: 0,
 	connectionsMax: 0,
+	maxConnections: 0,
 	poolerClients: 0,
 	authUsers: 0,
 	authSamples: 0,

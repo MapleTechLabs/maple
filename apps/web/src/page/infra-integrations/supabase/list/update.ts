@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Result } from "effect"
 import { AsyncData } from "foldkit"
 import * as Keyed from "../../../../data/keyed"
 import { requestKey } from "../../../../data/request-key"
@@ -7,10 +7,18 @@ import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { nextSort } from "../../../kit/table-sort"
 import { stepTimePicker, withPreset } from "../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
-import { CompleteReloadSpin, FetchProjects, LoadStatus, ResolveWindow } from "./command"
+import { FLEET_INSIGHTS_LIMIT } from "../data"
+import type { SupabaseStatus } from "../model"
+import {
+	CompleteReloadSpin,
+	FetchInsights,
+	FetchIssues,
+	FetchProjects,
+	LoadStatus,
+	ResolveWindow,
+} from "./command"
 import { Message, type RequestMode } from "./message"
 import type { Model } from "./model"
 
@@ -30,19 +38,57 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 
 const statusKey = (context: PageContext) => requestKey(context.orgId, "integrations.supabaseStatus", {})
 
-const isConnected = (model: Model): boolean =>
+const connectedStatus = (model: Model): SupabaseStatus | null =>
 	Option.match(AsyncData.getData(model.status.data), {
-		onNone: () => false,
-		onSome: (status) => status.connected,
+		onNone: () => null,
+		onSome: (status) => (status.connected ? status : null),
 	})
 
-/** The project metrics load once the status says connected; the key follows the window. */
+const insightRefs = (status: SupabaseStatus): ReadonlyArray<string> =>
+	status.projects.slice(0, FLEET_INSIGHTS_LIMIT).map((project) => project.ref)
+
+/** Metrics and log issues follow the window; advisors follow the first projects' refs. */
 const requestProjects = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.window
-	if (window === null || !isConnected(model)) return { model }
-	const key = requestKey(context.orgId, "getSupabaseProjects", { data: window })
-	const [projects, commands] = requestSlot(model.projects, key, mode, () => FetchProjects({ key, window }))
-	return { model: { ...model, projects }, commands }
+	const status = connectedStatus(model)
+	if (window === null || status === null) return { model }
+	const projectsKey = requestKey(context.orgId, "getSupabaseProjects", { data: window })
+	const issuesKey = requestKey(context.orgId, "getSupabaseLogIssues", { data: window })
+	const refs = insightRefs(status)
+	const insightsKey = requestKey(context.orgId, "getSupabaseFleetInsights", { refs })
+	const [projects, projectFetches] = requestSlot(model.projects, projectsKey, mode, () =>
+		FetchProjects({ key: projectsKey, window }),
+	)
+	const [issues, issueFetches] = requestSlot(model.issues, issuesKey, mode, () =>
+		FetchIssues({ key: issuesKey, window }),
+	)
+	const [insights, insightFetches] = requestSlot(model.insights, insightsKey, mode, () =>
+		FetchInsights({ key: insightsKey, refs }),
+	)
+	return {
+		model: { ...model, projects, issues, insights },
+		commands: [...projectFetches, ...issueFetches, ...insightFetches],
+	}
+}
+
+/** One panel's retry: its slot re-read on its own. */
+const retryIssues = (model: Model, context: PageContext): Return => {
+	const window = model.window
+	if (window === null || connectedStatus(model) === null) return { model }
+	const key = requestKey(context.orgId, "getSupabaseLogIssues", { data: window })
+	const [issues, commands] = requestSlot(model.issues, key, "Refresh", () => FetchIssues({ key, window }))
+	return { model: { ...model, issues }, commands }
+}
+
+const retryInsights = (model: Model, context: PageContext): Return => {
+	const status = connectedStatus(model)
+	if (status === null) return { model }
+	const refs = insightRefs(status)
+	const key = requestKey(context.orgId, "getSupabaseFleetInsights", { refs })
+	const [insights, commands] = requestSlot(model.insights, key, "Refresh", () =>
+		FetchInsights({ key, refs }),
+	)
+	return { model: { ...model, insights }, commands }
 }
 
 const requestStatus = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
@@ -69,7 +115,8 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		nowMs: 0,
 		status: Keyed.idle(),
 		projects: Keyed.idle(),
-		sort: { key: "peak", dir: "desc" },
+		issues: Keyed.idle(),
+		insights: Keyed.idle(),
 		timePicker: TimeRangePicker.init("supabase-time-range"),
 		refreshVersion: 0,
 		isReloading: false,
@@ -108,6 +155,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchProjects: ({ key, result }) => ({
 			model: { ...model, projects: Keyed.accept(model.projects, key, result) },
 		}),
+		CompletedFetchIssues: ({ key, result }) => ({
+			model: { ...model, issues: Keyed.accept(model.issues, key, result) },
+		}),
+		CompletedFetchInsights: ({ key, insights }) => ({
+			model: { ...model, insights: Keyed.accept(model.insights, key, Result.succeed(insights)) },
+		}),
 		TickedWaitingRefresh: () => {
 			const projects = requestProjects(model, context, "Refresh")
 			const status = requestStatus(projects.model, context, "Refresh")
@@ -118,12 +171,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ClickedRetryProjects: () => requestProjects(model, context, "Refresh"),
 		ClickedRetryStatus: () => requestStatus(model, context, "Refresh"),
-		ChangedSearch: ({ value }) =>
-			navigate(model, { ...model.search, q: value === "" ? undefined : value }),
-		ClickedClearSearch: () => navigate(model, { ...model.search, q: undefined }),
-		ClickedSort: ({ key }) => ({
-			model: { ...model, sort: nextSort(model.sort, key, { stringKeys: ["displayName"] }) },
-		}),
+		ClickedRetryIssues: () => retryIssues(model, context),
+		ClickedRetryInsights: () => retryInsights(model, context),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {

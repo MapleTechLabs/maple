@@ -30,6 +30,8 @@ export interface SupabaseProjectRow {
 	/** Postgres backends. */
 	connectionsAvg: number
 	connectionsMax: number
+	/** Postgres' `max_connections`; null when the project never reported it. */
+	maxConnections: number | null
 	/** Edge (API gateway) requests from the polled logs; 0 when logs are off. */
 	requests: number
 	requestsPerMinute: number
@@ -51,6 +53,8 @@ export interface SupabaseProjectTimeseriesRow {
 	dbSize: number
 	connectionsAvg: number
 	connectionsMax: number
+	/** Postgres' `max_connections`; null for a bucket without the sample. */
+	maxConnections: number | null
 	poolerClients: number
 	commitsPerSecond: number
 	rollbacksPerSecond: number
@@ -65,6 +69,12 @@ export interface SupabaseProjectTimeseriesRow {
 	networkTxPerSecond: number
 	diskReadPerSecond: number
 	diskWritePerSecond: number
+}
+
+/** The warehouse reads an unreported limit as 0: no limit is known, not a limit of zero. */
+const positiveOrNull = (value: unknown): number | null => {
+	const number = wireNumber(value)
+	return number > 0 ? number : null
 }
 
 const TimeseriesInputSchema = Schema.Struct({
@@ -104,6 +114,7 @@ export const getSupabaseProjects = Effect.fn("QueryEngine.getSupabaseProjects")(
 			dbSize: wireNumber(row.dbSize),
 			connectionsAvg: wireNumber(row.connectionsAvg),
 			connectionsMax: wireNumber(row.connectionsMax),
+			maxConnections: positiveOrNull(row.maxConnections),
 			requests: wireNumber(row.requests),
 			requestsPerMinute: wireNumber(row.requestsPerMinute),
 			errors5xx: wireNumber(row.errors5xx),
@@ -144,6 +155,7 @@ export const getSupabaseProjectTimeseries = Effect.fn("QueryEngine.getSupabasePr
 			dbSize: wireNumber(row.dbSize),
 			connectionsAvg: wireNumber(row.connectionsAvg),
 			connectionsMax: wireNumber(row.connectionsMax),
+			maxConnections: positiveOrNull(row.maxConnections),
 			poolerClients: wireNumber(row.poolerClients),
 			commitsPerSecond: wireNumber(row.commitsPerSecond),
 			rollbacksPerSecond: wireNumber(row.rollbacksPerSecond),

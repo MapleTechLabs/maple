@@ -1,11 +1,15 @@
 import { OrgId } from "@maple/domain"
-import { SupabaseIntegrationStatus } from "@maple/domain/http"
+import {
+	SupabaseIntegrationStatus,
+	SupabaseLogIssuesResponse,
+	SupabaseProjectInsights,
+} from "@maple/domain/http"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../../contract"
 import type { SupabaseProjectRow } from "../model"
-import { projectViews } from "./derive"
+import { advisorFindings, projectViews } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -21,14 +25,14 @@ const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	(commands ?? []).map(({ name }) => name)
 
-const project = (ref: string, name: string, metricsEnabled: boolean) => ({
+const project = (ref: string, name: string, metricsEnabled: boolean, lifecycle = "ACTIVE_HEALTHY") => ({
 	ref,
 	name,
 	region: "eu-central-1",
-	status: "ACTIVE_HEALTHY",
+	status: lifecycle,
 	metricsEnabled,
 	logDrainEnabled: false,
-	logsEnabled: false,
+	logsEnabled: metricsEnabled,
 	logsLastPolledAt: null,
 	logsError: null,
 	lastSeenAt: NOW,
@@ -48,12 +52,12 @@ const status = (connected: boolean) =>
 			? [
 					project("storefrontaaaaaaaaaa", "storefront", true),
 					project("newprojectaaaaaaaaaa", "new-project", true),
-					project("sandboxaaaaaaaaaaaaa", "sandbox", false),
+					project("sandboxaaaaaaaaaaaaa", "sandbox", false, "INACTIVE"),
 				]
 			: [],
 	})
 
-const row = (projectRef: string): SupabaseProjectRow => ({
+const row = (projectRef: string, overrides: Partial<SupabaseProjectRow> = {}): SupabaseProjectRow => ({
 	projectRef,
 	cpuAvg: 0.2,
 	cpuMax: 0.35,
@@ -65,8 +69,40 @@ const row = (projectRef: string): SupabaseProjectRow => ({
 	dbSize: 10_802_867,
 	connectionsAvg: 5,
 	connectionsMax: 7,
+	maxConnections: 60,
+	requests: 1_000,
+	requestsPerMinute: 2.8,
+	errors5xx: 4,
+	issueCount: 12,
 	lastSeen: "2026-10-01 12:00:00",
+	...overrides,
 })
+
+const lint = (level: "ERROR" | "WARN", title: string) => ({
+	advisor: "security",
+	name: title,
+	title,
+	level,
+	categories: ["SECURITY"],
+	description: "",
+	detail: "",
+	remediation: "",
+	schema: null,
+	object: null,
+	objectType: null,
+	cacheKey: title,
+})
+
+const insights = (projectRef: string) =>
+	Schema.decodeUnknownSync(SupabaseProjectInsights)({
+		projectRef,
+		advisors: { error: [lint("ERROR", "RLS disabled in public")], warn: [], info: [] },
+		advisorsCheckedAt: NOW,
+		advisorsError: null,
+		topQueries: [],
+		queriesCheckedAt: null,
+		queriesError: null,
+	})
 
 const steps = (model: Model, messages: ReadonlyArray<Message>) =>
 	messages.reduce((current, message) => pageUpdate(current, message).model, model)
@@ -101,7 +137,7 @@ describe("supabase list", () => {
 			{ update: pageUpdate, view },
 			given(answered.model),
 			expectView(role("link", { name: "Connect Supabase" })).toExist(),
-			expectView(text("Peak use")).toBeAbsent(),
+			expectView(role("table", { name: "Supabase projects" })).toBeAbsent(),
 		)
 	})
 
@@ -117,23 +153,72 @@ describe("supabase list", () => {
 				result: Result.succeed(status(true)),
 			}),
 		)
-		expect(names(answered.commands)).toEqual(["FetchSupabaseProjects"])
+		const fetched = names(answered.commands)
+		expect(fetched).toContain("FetchSupabaseProjects")
+		expect(fetched).toContain("FetchSupabaseFleetIssues")
+		expect(fetched).toContain("FetchSupabaseFleetInsights")
 	})
 
-	test("each project says whether it is collecting, waiting for a first scrape or switched off", () => {
+	test("each project reads healthy, degraded near its connection limit, or paused", () => {
 		const model = withStatus(true)
 		const loaded = steps(model, [
 			Message.CompletedFetchProjects({
 				key: model.projects.key ?? "",
-				result: Result.succeed([row("storefrontaaaaaaaaaa")]),
+				result: Result.succeed([
+					row("storefrontaaaaaaaaaa"),
+					row("newprojectaaaaaaaaaa", { connectionsMax: 58 }),
+				]),
 			}),
 		])
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded),
-			expectView(role("link", { name: /storefront/ })).toExist(),
-			expectView(text("Waiting for the first scrape")).toExist(),
-			expectView(text("Not collected")).toExist(),
+			expectView(text("1 of 3 healthy")).toExist(),
+			expectView(text("new-project near its connection limit and 1 more")).toExist(),
+			expectView(text("58 / 60")).toExist(),
+			expectView(text("Healthy")).toExist(),
+			expectView(text("Degraded")).toExist(),
+			expectView(text("Paused")).toExist(),
+			expectView(text("Off")).toExist(),
+		)
+	})
+
+	test("the bottom row lists recurring errors across projects and the advisors' findings", () => {
+		const model = withStatus(true)
+		const loaded = steps(model, [
+			Message.CompletedFetchProjects({ key: model.projects.key ?? "", result: Result.succeed([]) }),
+			Message.CompletedFetchIssues({
+				key: model.issues.key ?? "",
+				result: Result.succeed(
+					Schema.decodeUnknownSync(SupabaseLogIssuesResponse)({
+						issues: [
+							{
+								projectRef: "storefrontaaaaaaaaaa",
+								source: "postgres_logs",
+								message: "deadlock detected",
+								count: 14,
+								lastSeen: "2026-10-01T09:41:00Z",
+								maxSeverity: 17,
+							},
+						],
+					}),
+				),
+			}),
+			Message.CompletedFetchInsights({
+				key: model.insights.key ?? "",
+				insights: {
+					insights: [insights("storefrontaaaaaaaaaa")],
+					failedRefs: ["newprojectaaaaaaaaaa"],
+				},
+			}),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			expectView(text("deadlock detected")).toExist(),
+			expectView(text("14×")).toExist(),
+			expectView(text("RLS disabled in public")).toExist(),
+			expectView(text("Advisors could not be read for 1 project.")).toExist(),
 		)
 	})
 })
@@ -146,6 +231,23 @@ describe("projectViews", () => {
 			["newprojectaaaaaaaaaa", "waiting"],
 			["sandboxaaaaaaaaaaaaa", "off"],
 			["goneprojectaaaaaaaaa", "collecting"],
+		])
+	})
+})
+
+describe("advisorFindings", () => {
+	test("puts every project's errors before warnings and names each finding's project", () => {
+		const warned = Schema.decodeUnknownSync(SupabaseProjectInsights)({
+			...Schema.encodeSync(SupabaseProjectInsights)(insights("newprojectaaaaaaaaaa")),
+			advisors: { error: [], warn: [lint("WARN", "Function search_path is mutable")], info: [] },
+		})
+		const findings = advisorFindings(
+			{ insights: [warned, insights("storefrontaaaaaaaaaa")], failedRefs: [] },
+			new Map([["storefrontaaaaaaaaaa", "storefront"]]),
+		)
+		expect(findings.map((finding) => [finding.lint.title, finding.projectName])).toEqual([
+			["RLS disabled in public", "storefront"],
+			["Function search_path is mutable", "newprojectaaaaaaaaaa"],
 		])
 	})
 })

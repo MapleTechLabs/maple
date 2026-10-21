@@ -14,6 +14,7 @@ const gauge = (iso: string, memoryAvg: number) => ({
 	dbSize: 512,
 	connectionsAvg: 5,
 	connectionsMax: 6,
+	maxConnections: 60,
 	poolerClients: 2,
 	authUsers: 3,
 	authSamples: 5,

@@ -1,9 +1,22 @@
 import type { SupabaseProjectRef } from "@maple/domain/primitives"
+import { Option, type Result } from "effect"
+import { AsyncData } from "foldkit"
+import * as Keyed from "../../data/keyed"
 import type { LoadFailure } from "../../data/load-failure"
+import { requestKey } from "../../data/request-key"
+import { resolveWindow } from "../../data/time-range"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
+import type { SupabaseProjectRow } from "../infra-integrations/supabase/model"
+import { integrationOfSearch } from "./catalog"
 import type { Message } from "./message"
 import type { Model } from "./model"
-import { SetSupabaseLogs, SetSupabaseMetrics, type SupabaseCardModel, SyncSupabase } from "./supabase"
+import {
+	LoadSupabaseMetrics,
+	SetSupabaseLogs,
+	SetSupabaseMetrics,
+	type SupabaseCardModel,
+	SyncSupabase,
+} from "./supabase"
 import { requestStatus } from "./update-status"
 
 // The Supabase card's state changes.
@@ -19,6 +32,37 @@ const toast = (model: Model, type: "success" | "error", title: string, descripti
 	model,
 	outMessage: PageOutMessage.RequestedToast({ type, title, description }),
 })
+
+const isConnected = (model: Model): boolean =>
+	Option.match(AsyncData.getData(model.statuses.supabase.data), {
+		onNone: () => false,
+		onSome: (status) => status.connected,
+	})
+
+/** The card's last-hour metrics rows, once the clock is read and the shown card is connected. */
+export const requestMetricsRows = (model: Model, context: PageContext): Return => {
+	if (
+		model.nowMs === 0 ||
+		integrationOfSearch(model.search.integration) !== "supabase" ||
+		!isConnected(model)
+	)
+		return { model }
+	const window = resolveWindow({ preset: "1h", snap: true, timeZone: context.timeZone }, model.nowMs)
+	const key = requestKey(context.orgId, "getSupabaseProjects", { data: window })
+	return Option.match(Keyed.request(model.supabaseCard.metrics, key, "Load"), {
+		onNone: () => ({ model }),
+		onSome: (metrics) => ({
+			model: withCard(model, { metrics }),
+			commands: [LoadSupabaseMetrics({ key: metrics.key, window })],
+		}),
+	})
+}
+
+export const completedMetricsRows = (
+	model: Model,
+	key: string,
+	result: Result.Result<ReadonlyArray<SupabaseProjectRow>, LoadFailure>,
+): Return => ({ model: withCard(model, { metrics: Keyed.accept(model.supabaseCard.metrics, key, result) }) })
 
 export const clickedSync = (model: Model): Return =>
 	model.supabaseCard.isSyncing

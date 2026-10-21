@@ -759,7 +759,6 @@ export const InfraRailwaySearch = Schema.Struct({
 
 // sessionTimeRangeSearchMiddleware()
 export const InfraSupabaseSearch = Schema.Struct({
-	q: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
 })
 

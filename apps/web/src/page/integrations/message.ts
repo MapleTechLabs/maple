@@ -37,6 +37,7 @@ import * as ToggleGroup from "../../ui/toggle-group"
 import * as Chart from "../../charts/chart"
 import { ConnectProvider } from "./connect"
 import { FleetRead } from "../infra-integrations/gcp/data"
+import { SupabaseProjectRow } from "../infra-integrations/supabase/model"
 import { Capability, GcpFlags, SetupMethod } from "./gcp-configure-schema"
 import { ConfigureTarget, LogVolume, RemovedConnector } from "./gcp-schema"
 
@@ -183,6 +184,7 @@ export const Message = defineMessageUnion({
 	/** Every 15 s while environments wait for their first sync. */
 	TickedRailwaySettle: {},
 	ClickedSupabaseSync: {},
+	CompletedLoadSupabaseMetrics: result(Schema.Array(SupabaseProjectRow)),
 	CompletedSupabaseSync: { failure: Schema.NullOr(LoadFailure) },
 	/** A project row's "Collect metrics" switch. */
 	ToggledSupabaseMetrics: { ref: SupabaseProjectRef, enabled: Schema.Boolean },

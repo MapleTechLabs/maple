@@ -4158,6 +4158,7 @@ SELECT
           max(points.dbSize) AS dbSize,
           ifNull(ifNotFinite(avg(points.backends), 0), 0) AS connectionsAvg,
           max(points.backends) AS connectionsMax,
+          max(points.maxConnections) AS maxConnections,
           ifNull(ifNotFinite(avg(points.poolerClients), 0), 0) AS poolerClients,
           max(points.authUsers) AS authUsers,
           sum(points.authSamples) AS authSamples,
@@ -4174,6 +4175,7 @@ SELECT
           sumIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'pg_database_size_bytes' AND metrics_gauge.Attributes['datname'] NOT IN ('template0', 'template1'))) AS dbSize,
           sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backends,
           sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerClients,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'max_connections_connection_count' AND metrics_gauge.Attributes['service_type'] = 'postgresql')) AS maxConnections,
           maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authUsers,
           countIf((metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authSamples,
           sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMax,
@@ -4181,7 +4183,7 @@ SELECT
           sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaiting
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('node_memory_MemTotal_bytes', 'node_memory_MemAvailable_bytes', 'node_filesystem_size_bytes', 'node_filesystem_avail_bytes', 'pg_database_size_bytes', 'pg_stat_database_num_backends', 'pgbouncer_used_clients', 'auth_users_user_count', 'pgrst_db_pool_max', 'pgrst_db_pool_available', 'pgrst_db_pool_waiting')
+          AND metrics_gauge.MetricName IN ('node_memory_MemTotal_bytes', 'node_memory_MemAvailable_bytes', 'node_filesystem_size_bytes', 'node_filesystem_avail_bytes', 'pg_database_size_bytes', 'pg_stat_database_num_backends', 'pgbouncer_used_clients', 'max_connections_connection_count', 'auth_users_user_count', 'pgrst_db_pool_max', 'pgrst_db_pool_available', 'pgrst_db_pool_waiting')
           AND metrics_gauge.Attributes['supabase_project_ref'] = 'abcdefghijklmnopqrst'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
@@ -4202,6 +4204,7 @@ SELECT
           max(points.dbSize) AS dbSize,
           ifNull(ifNotFinite(avg(points.backends), 0), 0) AS connectionsAvg,
           max(points.backends) AS connectionsMax,
+          max(points.maxConnections) AS maxConnections,
           max(points.t) AS lastSeen
         FROM (SELECT
           metrics_gauge.Attributes['supabase_project_ref'] AS projectRef,
@@ -4213,6 +4216,7 @@ SELECT
           sumIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'pg_database_size_bytes' AND metrics_gauge.Attributes['datname'] NOT IN ('template0', 'template1'))) AS dbSize,
           sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backends,
           sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerClients,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'max_connections_connection_count' AND metrics_gauge.Attributes['service_type'] = 'postgresql')) AS maxConnections,
           maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authUsers,
           countIf((metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authSamples,
           sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMax,
@@ -4220,7 +4224,7 @@ SELECT
           sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaiting
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('node_memory_MemTotal_bytes', 'node_memory_MemAvailable_bytes', 'node_filesystem_size_bytes', 'node_filesystem_avail_bytes', 'pg_database_size_bytes', 'pg_stat_database_num_backends', 'pgbouncer_used_clients', 'auth_users_user_count', 'pgrst_db_pool_max', 'pgrst_db_pool_available', 'pgrst_db_pool_waiting')
+          AND metrics_gauge.MetricName IN ('node_memory_MemTotal_bytes', 'node_memory_MemAvailable_bytes', 'node_filesystem_size_bytes', 'node_filesystem_avail_bytes', 'pg_database_size_bytes', 'pg_stat_database_num_backends', 'pgbouncer_used_clients', 'max_connections_connection_count', 'auth_users_user_count', 'pgrst_db_pool_max', 'pgrst_db_pool_available', 'pgrst_db_pool_waiting')
           AND metrics_gauge.Attributes['supabase_project_ref'] != ''
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'

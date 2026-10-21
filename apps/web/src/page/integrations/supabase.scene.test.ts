@@ -9,7 +9,7 @@ import { PageOutMessage, type PageContext } from "../contract"
 import { overviewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { projectStatusLabel } from "./supabase"
+import type { SupabaseProjectRow } from "../infra-integrations/supabase/model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -22,6 +22,28 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 
 const REF = Schema.decodeSync(SupabaseProjectRef)("abcdefghijklmnopqrst")
 const PAUSED_REF = Schema.decodeSync(SupabaseProjectRef)("pausedprojectabcdefg")
+const NOW = Date.parse("2026-10-01T12:00:00Z")
+
+const metricsRow = (projectRef: string, overrides: Partial<SupabaseProjectRow> = {}): SupabaseProjectRow => ({
+	projectRef,
+	cpuAvg: 0.2,
+	cpuMax: 0.3,
+	memoryAvg: 0.5,
+	memoryMax: 0.6,
+	memoryTotal: 2 * 1024 ** 3,
+	diskUsedMax: 0.3,
+	diskSize: 8e9,
+	dbSize: 1e7,
+	connectionsAvg: 10,
+	connectionsMax: 20,
+	maxConnections: 90,
+	requests: 1000,
+	requestsPerMinute: 16,
+	errors5xx: 1,
+	issueCount: 3,
+	lastSeen: "2026-10-01 11:59:37",
+	...overrides,
+})
 
 const status = (overrides: Record<string, unknown> = {}) =>
 	Schema.decodeUnknownSync(SupabaseIntegrationStatus)({
@@ -42,7 +64,7 @@ const status = (overrides: Record<string, unknown> = {}) =>
 				metricsEnabled: true,
 				logDrainEnabled: false,
 				logsEnabled: true,
-				logsLastPolledAt: null,
+				logsLastPolledAt: NOW - 41_000,
 				logsError: "Supabase refused the logs query: Unknown field",
 				lastSeenAt: 1_760_000_000_000,
 			},
@@ -69,6 +91,18 @@ const withStatus = (value: SupabaseIntegrationStatus): Model => {
 		Message.CompletedLoadSupabase({
 			key: model.statuses.supabase.key ?? "",
 			result: Result.succeed(value),
+		}),
+	).model
+}
+
+/** Connected, clock read, and the metrics rows answered. */
+const withMetrics = (rows: ReadonlyArray<SupabaseProjectRow>): Model => {
+	const clocked = pageUpdate(withStatus(status()), Message.CompletedReadClock({ nowMs: NOW })).model
+	return pageUpdate(
+		clocked,
+		Message.CompletedLoadSupabaseMetrics({
+			key: clocked.supabaseCard.metrics.key ?? "",
+			result: Result.succeed(rows),
 		}),
 	).model
 }
@@ -100,9 +134,93 @@ describe("supabase card", () => {
 			{ update: pageUpdate, view },
 			given(withStatus(status())),
 			expectView(text("storefront")).toExist(),
-			expectView(role("switch", { name: "Collect metrics for storefront" })).toExist(),
+			expectView(role("switch", { name: "Collect metrics for storefront" })).toHaveAttr(
+				"aria-checked",
+				"true",
+			),
 			expectView(text("Paused")).toExist(),
 			expectView(role("button", { name: "Sync now" })).toExist(),
+			expectView(
+				text(
+					"Logs are pulled every minute through your grant and count toward ingest. No Supabase add-on needed.",
+				),
+			).toExist(),
+			expectView(role("link", { name: "View in Infrastructure" })).toExist(),
+		)
+	})
+
+	test("the last hour's metrics rows are read once the clock is in and the card is connected", () => {
+		const connected = withStatus(status())
+		const clocked = pageUpdate(connected, Message.CompletedReadClock({ nowMs: NOW }))
+		expect(names(clocked.commands)).toContain("LoadIntegrationsSupabaseMetrics")
+		const disconnected = pageUpdate(
+			withStatus(status({ connected: false, organization: null, projects: [] })),
+			Message.CompletedReadClock({ nowMs: NOW }),
+		)
+		expect(names(disconnected.commands)).not.toContain("LoadIntegrationsSupabaseMetrics")
+	})
+
+	test("last data shows each source's freshness, and a paused project resumes when unpaused", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withMetrics([metricsRow(REF)])),
+			expectView(text("metrics 23s · logs 41s")).toExist(),
+			expectView(text("resumes when unpaused")).toExist(),
+			expectView(text("Healthy")).toExist(),
+		)
+	})
+
+	test("a project near its connection limit reads degraded", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withMetrics([metricsRow(REF, { connectionsMax: 88 })])),
+			expectView(text("Degraded")).toExist(),
+		)
+	})
+
+	test("a switched-on project without metrics waits for its first scrape; a failed read says unavailable", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withMetrics([])),
+			expectView(text("waiting for first scrape · logs 41s")).toExist(),
+		)
+		const clocked = pageUpdate(withStatus(status()), Message.CompletedReadClock({ nowMs: NOW })).model
+		const failed = pageUpdate(
+			clocked,
+			Message.CompletedLoadSupabaseMetrics({
+				key: clocked.supabaseCard.metrics.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("metrics unavailable · logs 41s")).toExist(),
+			expectView(text("storefront")).toExist(),
+		)
+	})
+
+	test("a paused project's switches are disabled; a running project's dispatch their toggles", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus(status())),
+			expectView(role("switch", { name: "Collect metrics for sandbox" })).toBeDisabled(),
+			expectView(role("switch", { name: "Collect logs for sandbox" })).toBeDisabled(),
+			expectView(role("switch", { name: "Collect logs for storefront" })).toBeEnabled(),
+			expectView(role("switch", { name: "Collect logs for storefront" })).toHaveAttr(
+				"aria-checked",
+				"true",
+			),
+		)
+		const sent = pageUpdate(
+			withStatus(status()),
+			Message.ToggledSupabaseMetrics({ ref: REF, enabled: false }),
+		)
+		expect(names(sent.commands)).toEqual(["SetSupabaseProjectMetrics"])
+		scene(
+			{ update: pageUpdate, view },
+			given(sent.model),
+			expectView(role("switch", { name: "Collect metrics for storefront" })).toBeDisabled(),
 		)
 	})
 
@@ -216,14 +334,5 @@ describe("supabase card", () => {
 				description: toLoadFailure("boom").message,
 			}),
 		)
-	})
-})
-
-describe("projectStatusLabel", () => {
-	test("reads Supabase's lifecycle statuses", () => {
-		expect(projectStatusLabel("ACTIVE_HEALTHY")).toBeNull()
-		expect(projectStatusLabel("INACTIVE")).toEqual({ label: "Paused", tone: "warn" })
-		expect(projectStatusLabel("COMING_UP")).toEqual({ label: "Coming up", tone: "warn" })
-		expect(projectStatusLabel("RESTORE_FAILED")).toEqual({ label: "Restore failed", tone: "crit" })
 	})
 })

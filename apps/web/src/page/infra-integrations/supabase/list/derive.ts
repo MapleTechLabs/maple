@@ -1,8 +1,8 @@
-import { sortRowsByField, type Sort } from "../../../kit/table-sort"
-import type { SupabaseProjectRow, SupabaseStatus } from "../model"
-import type { SortKey } from "./model"
+import type { SupabaseAdvisorLint } from "@maple/domain/http"
+import { healthReason, projectHealth, type ProjectHealth } from "../health"
+import type { SupabaseFleetInsights, SupabaseProjectRow, SupabaseStatus } from "../model"
 
-// The pure half of the project table: discovery and metrics joined per project.
+// The pure half of the overview: discovery, metrics and health joined per project.
 
 /**
  * - `collecting`: metrics in this window.
@@ -15,25 +15,12 @@ export interface ProjectView {
 	readonly ref: string
 	readonly displayName: string
 	readonly region: string
-	/** Supabase's lifecycle status, `null` for a project discovery no longer lists. */
-	readonly status: string | null
+	readonly health: ProjectHealth
 	readonly collection: Collection
+	readonly metricsEnabled: boolean
+	readonly logsEnabled: boolean
 	readonly metrics: SupabaseProjectRow | null
-	/** Sort values; -1 sorts a project without metrics below every measured one. */
-	readonly peak: number
-	readonly dbSize: number
-	readonly connectionsMax: number
-	readonly lastSeen: string
 }
-
-const NO_METRIC = -1
-
-const metricsView = (metrics: SupabaseProjectRow | null) => ({
-	peak: metrics === null ? NO_METRIC : Math.max(metrics.cpuMax, metrics.memoryMax, metrics.diskUsedMax),
-	dbSize: metrics?.dbSize ?? NO_METRIC,
-	connectionsMax: metrics?.connectionsMax ?? NO_METRIC,
-	lastSeen: metrics?.lastSeen ?? "",
-})
 
 /** Every discovered project, plus any that still has metrics but left discovery. */
 export const projectViews = (
@@ -48,10 +35,11 @@ export const projectViews = (
 			ref: project.ref,
 			displayName: project.name || project.ref,
 			region: project.region,
-			status: project.status,
+			health: projectHealth(project.status, metrics),
 			collection: metrics !== null ? "collecting" : project.metricsEnabled ? "waiting" : "off",
+			metricsEnabled: project.metricsEnabled,
+			logsEnabled: project.logsEnabled,
 			metrics,
-			...metricsView(metrics),
 		}
 	})
 	const orphaned = rows
@@ -60,35 +48,66 @@ export const projectViews = (
 			ref: row.projectRef,
 			displayName: row.projectRef,
 			region: "",
-			status: null,
+			health: projectHealth(null, row),
 			collection: "collecting",
+			metricsEnabled: true,
+			logsEnabled: row.requests > 0 || row.issueCount > 0,
 			metrics: row,
-			...metricsView(row),
 		}))
 	return [...discovered, ...orphaned]
 }
 
-/** The search box: project name or ref contains the query. */
-export const filterProjects = (
-	projects: ReadonlyArray<ProjectView>,
-	query: string,
-): ReadonlyArray<ProjectView> => {
-	const q = query.trim().toLowerCase()
-	return q === ""
-		? projects
-		: projects.filter((project) => `${project.displayName} ${project.ref}`.toLowerCase().includes(q))
+/** The four tiles above the table. */
+export const fleetSummary = (projects: ReadonlyArray<ProjectView>) => {
+	const rows = projects.flatMap((project) => (project.metrics === null ? [] : [project.metrics]))
+	const sum = (pick: (row: SupabaseProjectRow) => number) =>
+		rows.reduce((total, row) => total + pick(row), 0)
+	const requests = sum((row) => row.requests)
+	const errors5xx = sum((row) => row.errors5xx)
+	const unhealthy = projects.flatMap((project) => {
+		const reason = healthReason(project.displayName, project.health)
+		return reason === null ? [] : [reason]
+	})
+	return {
+		total: projects.length,
+		healthy: projects.length - unhealthy.length,
+		/** Why the first unhealthy project is not healthy, `null` when all are. */
+		firstReason: unhealthy[0] ?? null,
+		unhealthyCount: unhealthy.length,
+		requests,
+		requestsPerMinute: sum((row) => row.requestsPerMinute),
+		errorRate5xx: requests > 0 ? errors5xx / requests : 0,
+		issues: sum((row) => row.issueCount),
+		issueProjects: rows.filter((row) => row.issueCount > 0).length,
+		dbSize: sum((row) => row.dbSize),
+		databases: rows.filter((row) => row.dbSize > 0).length,
+		hasLogs: projects.some((project) => project.logsEnabled),
+	}
 }
 
-export const sortProjects = (
-	projects: ReadonlyArray<ProjectView>,
-	sort: Sort<SortKey>,
-): ReadonlyArray<ProjectView> => sortRowsByField(projects, sort)
+export interface AdvisorFinding {
+	readonly lint: SupabaseAdvisorLint
+	readonly projectRef: string
+	readonly projectName: string
+}
 
-/** Headline numbers for the band above the table. */
-export const fleetSummary = (projects: ReadonlyArray<ProjectView>) => ({
-	total: projects.length,
-	collecting: projects.filter((project) => project.collection === "collecting").length,
-	waiting: projects.filter((project) => project.collection === "waiting").length,
-	totalDbSize: projects.reduce((sum, project) => sum + (project.metrics?.dbSize ?? 0), 0),
-	connections: projects.reduce((sum, project) => sum + (project.metrics?.connectionsAvg ?? 0), 0),
-})
+const LEVEL_RANK = { ERROR: 0, WARN: 1, INFO: 2 } satisfies Record<SupabaseAdvisorLint["level"], number>
+
+/** ERROR and WARN lints of every read project, errors first, each named by its project. */
+export const advisorFindings = (
+	fleet: SupabaseFleetInsights,
+	names: ReadonlyMap<string, string>,
+): ReadonlyArray<AdvisorFinding> =>
+	fleet.insights
+		.flatMap((insights) =>
+			[...insights.advisors.error, ...insights.advisors.warn].map((lint): AdvisorFinding => ({
+				lint,
+				projectRef: insights.projectRef,
+				projectName: names.get(insights.projectRef) ?? insights.projectRef,
+			})),
+		)
+		.toSorted((a, b) => LEVEL_RANK[a.lint.level] - LEVEL_RANK[b.lint.level])
+
+/** Whether any read project's advisors have been checked at least once. */
+export const advisorsChecked = (fleet: SupabaseFleetInsights): boolean =>
+	fleet.insights.some((insights) => insights.advisorsCheckedAt !== null)

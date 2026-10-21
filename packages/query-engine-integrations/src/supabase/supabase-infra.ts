@@ -17,6 +17,8 @@ const SUPABASE_FS_AVAILABLE = "node_filesystem_avail_bytes"
 const SUPABASE_DB_SIZE = "pg_database_size_bytes"
 const SUPABASE_BACKENDS = "pg_stat_database_num_backends"
 const SUPABASE_POOLER_CLIENTS = "pgbouncer_used_clients"
+/** Postgres' `max_connections`, exported once per project with `service_type="postgresql"`. */
+const SUPABASE_MAX_CONNECTIONS = "max_connections_connection_count"
 const SUPABASE_AUTH_USERS = "auth_users_user_count"
 const SUPABASE_POSTGREST_POOL_MAX = "pgrst_db_pool_max"
 const SUPABASE_POSTGREST_POOL_AVAILABLE = "pgrst_db_pool_available"
@@ -52,6 +54,7 @@ const GAUGE_METRIC_NAMES = [
 	SUPABASE_DB_SIZE,
 	SUPABASE_BACKENDS,
 	SUPABASE_POOLER_CLIENTS,
+	SUPABASE_MAX_CONNECTIONS,
 	SUPABASE_AUTH_USERS,
 	SUPABASE_POSTGREST_POOL_MAX,
 	SUPABASE_POSTGREST_POOL_AVAILABLE,
@@ -95,6 +98,10 @@ const gaugePoints = () =>
 		),
 		backends: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_BACKENDS)),
 		poolerClients: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POOLER_CLIENTS)),
+		maxConnections: CH.maxIf(
+			$.Value,
+			$.MetricName.eq(SUPABASE_MAX_CONNECTIONS).and($.Attributes.get("service_type").eq("postgresql")),
+		),
 		// The exporter reports -1 when it cannot count the users.
 		authUsers: CH.maxIf($.Value, $.MetricName.eq(SUPABASE_AUTH_USERS).and($.Value.gte(0))),
 		authSamples: CH.countIf($.MetricName.eq(SUPABASE_AUTH_USERS).and($.Value.gte(0))),
@@ -151,6 +158,8 @@ export interface SupabaseProjectGaugesOutput {
 	readonly dbSize: number
 	readonly connectionsAvg: number
 	readonly connectionsMax: number
+	/** Postgres' `max_connections`; 0 when the project never reported it. */
+	readonly maxConnections: number
 	readonly lastSeen: DateTime.Utc
 }
 
@@ -177,6 +186,7 @@ export function supabaseProjectGaugesSQL() {
 			dbSize: CH.max_($.dbSize),
 			connectionsAvg: finiteOrZero(CH.avg($.backends)),
 			connectionsMax: CH.max_($.backends),
+			maxConnections: CH.max_($.maxConnections),
 			lastSeen: CH.max_($.t),
 		}))
 		.groupBy("projectRef")
@@ -238,6 +248,8 @@ export interface SupabaseProjectGaugeSeriesOutput {
 	readonly dbSize: number
 	readonly connectionsAvg: number
 	readonly connectionsMax: number
+	/** Postgres' `max_connections`; 0 for a bucket without the sample. */
+	readonly maxConnections: number
 	readonly poolerClients: number
 	readonly authUsers: number
 	readonly authSamples: number
@@ -269,6 +281,7 @@ export function supabaseProjectGaugeSeriesSQL() {
 			dbSize: CH.max_($.dbSize),
 			connectionsAvg: finiteOrZero(CH.avg($.backends)),
 			connectionsMax: CH.max_($.backends),
+			maxConnections: CH.max_($.maxConnections),
 			poolerClients: finiteOrZero(CH.avg($.poolerClients)),
 			authUsers: CH.max_($.authUsers),
 			authSamples: CH.sum($.authSamples),

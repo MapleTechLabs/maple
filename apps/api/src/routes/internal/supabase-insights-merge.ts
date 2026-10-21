@@ -29,6 +29,7 @@ const METRIC_ZEROS = {
 	dbSize: 0,
 	connectionsAvg: 0,
 	connectionsMax: 0,
+	maxConnections: 0,
 }
 
 const LOG_ZEROS = { requests: 0, requestsPerMinute: 0, errors5xx: 0, issueCount: 0 }

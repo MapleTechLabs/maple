@@ -40,11 +40,13 @@ describe("supabase infra queries", () => {
 					dbSize: "10802867",
 					connectionsAvg: "5",
 					connectionsMax: "7",
+					maxConnections: "60",
 					lastSeen: "2026-07-02 12:00:00.000",
 				},
 			]),
 		)
 		expect(rows[0]?.memoryTotal).toBe(426192896)
+		expect(rows[0]?.maxConnections).toBe(60)
 		expect(rows[0]?.lastSeen).toEqual(DateTime.makeUnsafe("2026-07-02T12:00:00Z"))
 	})
 

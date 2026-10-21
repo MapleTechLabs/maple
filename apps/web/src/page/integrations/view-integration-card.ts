@@ -4,7 +4,7 @@ import type { Keyed } from "../../data/keyed"
 import type { LoadFailure } from "../../data/load-failure"
 import { button } from "../../ui/button"
 import { errorState } from "../../ui/error-state"
-import { item, itemContent, itemMedia } from "../../ui/item"
+import { item, itemActions, itemContent, itemMedia } from "../../ui/item"
 import { skeleton } from "../../ui/skeleton"
 import { type IntegrationBrand, integrationIconPlate } from "../infra-integrations/kit/integration-empty"
 import { Message, type StatusName } from "./message"
@@ -27,6 +27,10 @@ export type ConnectedIntegrationCardOptions = Readonly<{
 	actions: Html
 	/** The resources table under the card. */
 	table: Html
+	/** Puts the actions at the header's end instead of under the summary. */
+	actionsAtEnd?: boolean
+	/** A note under the table. */
+	footer?: Html
 }>
 
 export const connectedIntegrationCard = (
@@ -48,13 +52,15 @@ export const connectedIntegrationCard = (
 						),
 						h.p([h.Class("text-xs text-muted-foreground")], options.summary),
 						...(options.notice === null ? [] : [options.notice]),
-						options.actions,
+						...(options.actionsAtEnd === true ? [] : [options.actions]),
 						disconnectDialog(h, model, options.integration),
 					],
 					"gap-2",
 				),
+				...(options.actionsAtEnd === true ? [itemActions(h, [options.actions])] : []),
 			]),
 			options.table,
+			...(options.footer === undefined ? [] : [options.footer]),
 		],
 	)
 

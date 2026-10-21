@@ -1,13 +1,19 @@
 import type { SupabaseIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
+import { formatRelativeShortFrom, toEpochMs } from "@maple/ui/lib/time-format"
+import { cn } from "@maple/ui/lib/utils"
+import { Option } from "effect"
+import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { button, linkButton } from "../../ui/button"
+import { button } from "../../ui/button"
 import { badge } from "../../ui/display"
 import { icon } from "../../ui/icon"
 import { switchControl } from "../../ui/switch"
 import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
 import { relativeTime } from "../kit/relative-time"
+import { healthPill, lifecycleOf, projectHealth } from "../infra-integrations/supabase/health"
+import type { SupabaseProjectRow } from "../infra-integrations/supabase/model"
 import {
 	SUPABASE_BRAND,
 	SUPABASE_CONNECT_HINT,
@@ -16,7 +22,6 @@ import {
 } from "../infra-integrations/supabase/connect"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { projectStatusLabel } from "./supabase"
 import {
 	connectedIntegrationCard,
 	disconnectButton,
@@ -42,28 +47,87 @@ const connectButton = (h: H, model: Model, label: string): Html =>
 		[icon(h, "SupabaseIcon"), label],
 	)
 
-const projectRow = (h: H, model: Model, project: Project, timeZone: string): Html => {
-	const pill = projectStatusLabel(project.status)
-	const isPending = model.supabaseCard.pendingRefs.includes(project.ref)
+type Metrics = Model["supabaseCard"]["metrics"]
+
+/** The project's metrics row, or `null` while the rows load, failed, or hold none for it. */
+const metricsRowOf = (metrics: Metrics, ref: string): SupabaseProjectRow | null =>
+	Option.getOrNull(
+		Option.flatMap(AsyncData.getData(metrics.data), (rows) =>
+			Option.fromNullishOr(rows.find((row) => row.projectRef === ref)),
+		),
+	)
+
+/** "metrics 23s · logs 41s": each switched-on source's freshness, or why it has none yet. */
+export const lastDataLabel = (
+	project: Project,
+	metrics: Metrics,
+	row: SupabaseProjectRow | null,
+	nowMs: number,
+): string => {
+	if (lifecycleOf(project.status)._tag === "Paused") return "resumes when unpaused"
+	const metricsPart = !project.metricsEnabled
+		? []
+		: row !== null && row.lastSeen !== ""
+			? [`metrics ${formatRelativeShortFrom(toEpochMs(row.lastSeen), nowMs)}`]
+			: AsyncData.isSuccess(metrics.data)
+				? ["waiting for first scrape"]
+				: AsyncData.isFailure(metrics.data)
+					? ["metrics unavailable"]
+					: []
+	const logsPart = !project.logsEnabled
+		? []
+		: project.logsLastPolledAt === null
+			? ["logs waiting for first poll"]
+			: [`logs ${formatRelativeShortFrom(project.logsLastPolledAt, nowMs)}`]
+	const parts = [...metricsPart, ...logsPart]
+	return parts.length > 0 ? parts.join(" · ") : project.metricsEnabled ? "" : "not collected"
+}
+
+const projectSwitch = (
+	h: H,
+	options: Readonly<{
+		id: string
+		isChecked: boolean
+		isDisabled: boolean
+		label: string
+		onToggle: Message
+	}>,
+): Html =>
+	h.span(
+		[h.Class("flex w-20 shrink-0 justify-end")],
+		switchControl(h, {
+			id: options.id,
+			inputId: `${options.id}-input`,
+			isChecked: options.isChecked,
+			isDisabled: options.isDisabled,
+			ariaLabel: options.label,
+			onToggle: options.onToggle,
+		}),
+	)
+
+const projectRow = (h: H, model: Model, project: Project): Html => {
+	const row = metricsRowOf(model.supabaseCard.metrics, project.ref)
+	const isPaused = lifecycleOf(project.status)._tag === "Paused"
+	const isLocked = isPaused || model.supabaseCard.pendingRefs.includes(project.ref)
 	return h.div(
 		[
 			h.Key(project.ref),
-			h.Class("flex items-center gap-4 border-b border-border/40 px-4 py-2.5 text-sm last:border-0"),
+			h.Class(
+				cn(
+					"flex items-center gap-4 border-b border-border/40 px-4 py-2.5 text-sm last:border-0",
+					isPaused && "opacity-60",
+				),
+			),
 		],
 		[
 			h.span(
 				[h.Class("flex w-0 min-w-48 flex-1 flex-col")],
 				[
+					h.span([h.Class("truncate"), h.Title(project.name)], [project.name]),
 					h.span(
-						[h.Class("flex min-w-0 items-center gap-2")],
-						[
-							h.span([h.Class("truncate"), h.Title(project.name)], [project.name]),
-							...(pill === null
-								? []
-								: [badge(h, { variant: pill.tone, className: "shrink-0" }, [pill.label])]),
-						],
+						[h.Class("truncate font-mono text-2xs text-muted-foreground")],
+						[project.region === "" ? project.ref : `${project.ref} · ${project.region}`],
 					),
-					h.span([h.Class("font-mono text-2xs text-muted-foreground")], [project.ref]),
 					...(project.logsEnabled && project.logsError !== null
 						? [
 								h.span(
@@ -79,64 +143,70 @@ const projectRow = (h: H, model: Model, project: Project, timeZone: string): Htm
 						: []),
 				],
 			),
-			h.span([h.Class("w-32 shrink-0 truncate text-xs text-muted-foreground")], [project.region]),
+			h.span([h.Class("flex w-24 shrink-0")], [healthPill(h, projectHealth(project.status, row))]),
 			h.span(
-				[h.Class("w-28 shrink-0 text-right text-xs text-muted-foreground")],
-				[
-					relativeTime(h, {
-						value: project.lastSeenAt,
-						nowMs: model.nowMs,
-						timeZone,
-						tooltip: "title",
-					}),
-				],
+				[h.Class("w-48 shrink-0 truncate font-mono text-2xs text-muted-foreground")],
+				[lastDataLabel(project, model.supabaseCard.metrics, row, model.nowMs)],
 			),
-			h.span(
-				[h.Class("flex w-28 shrink-0 justify-end")],
-				switchControl(h, {
-					id: `supabase-metrics-${project.ref}`,
-					inputId: `supabase-metrics-input-${project.ref}`,
-					isChecked: project.metricsEnabled,
-					isDisabled: isPending,
-					ariaLabel: `Collect metrics for ${project.name}`,
-					onToggle: Message.ToggledSupabaseMetrics({
-						ref: project.ref,
-						enabled: !project.metricsEnabled,
-					}),
+			projectSwitch(h, {
+				id: `supabase-metrics-${project.ref}`,
+				isChecked: project.metricsEnabled,
+				isDisabled: isLocked,
+				label: `Collect metrics for ${project.name}`,
+				onToggle: Message.ToggledSupabaseMetrics({
+					ref: project.ref,
+					enabled: !project.metricsEnabled,
 				}),
-			),
-			h.span(
-				[h.Class("flex w-24 shrink-0 justify-end")],
-				switchControl(h, {
-					id: `supabase-logs-${project.ref}`,
-					inputId: `supabase-logs-input-${project.ref}`,
-					isChecked: project.logsEnabled,
-					isDisabled: isPending,
-					ariaLabel: `Collect logs for ${project.name}`,
-					onToggle: Message.ToggledSupabaseLogs({
-						ref: project.ref,
-						enabled: !project.logsEnabled,
-					}),
-				}),
-			),
+			}),
+			projectSwitch(h, {
+				id: `supabase-logs-${project.ref}`,
+				isChecked: project.logsEnabled,
+				isDisabled: isLocked,
+				label: `Collect logs for ${project.name}`,
+				onToggle: Message.ToggledSupabaseLogs({ ref: project.ref, enabled: !project.logsEnabled }),
+			}),
 		],
 	)
 }
 
-const projectsTable = (h: H, model: Model, status: SupabaseIntegrationStatus, timeZone: string): Html =>
+const projectsTable = (h: H, model: Model, status: SupabaseIntegrationStatus): Html =>
 	dataTable(
 		h,
 		{ ariaLabel: "Supabase projects" },
 		[
 			columnHead(h, { label: "Project", width: "w-0 min-w-48 flex-1" }),
-			columnHead(h, { label: "Region", width: "w-32" }),
-			columnHead(h, { label: "Last seen", width: "w-28", align: "right" }),
-			columnHead(h, { label: "Collect metrics", width: "w-28", align: "right" }),
-			columnHead(h, { label: "Collect logs", width: "w-24", align: "right" }),
+			columnHead(h, { label: "Status", width: "w-24" }),
+			columnHead(h, { label: "Last data", width: "w-48" }),
+			columnHead(h, { label: "Metrics", width: "w-20", align: "right" }),
+			columnHead(h, { label: "Logs", width: "w-20", align: "right" }),
 		],
 		status.projects.length === 0
 			? [dataTableEmpty(h, ["No projects in this organization yet. Sync after creating one."])]
-			: status.projects.map((project) => projectRow(h, model, project, timeZone)),
+			: status.projects.map((project) => projectRow(h, model, project)),
+	)
+
+const footer = (h: H): Html =>
+	h.div(
+		[
+			h.Class(
+				"flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 text-2xs text-muted-foreground",
+			),
+		],
+		[
+			h.p(
+				[],
+				[
+					"Logs are pulled every minute through your grant and count toward ingest. No Supabase add-on needed.",
+				],
+			),
+			h.a(
+				[
+					h.Href(hrefOf(AppRoute.InfraSupabase({ search: {} }))),
+					h.Class("shrink-0 transition-colors hover:text-foreground"),
+				],
+				["View in Infrastructure"],
+			),
+		],
 	)
 
 const statusBadge = (h: H, status: SupabaseIntegrationStatus): Html =>
@@ -152,11 +222,9 @@ const summaryLine = (
 	status: SupabaseIntegrationStatus,
 	timeZone: string,
 ): ReadonlyArray<Html | string> => {
-	const collecting = status.projects.filter((project) => project.metricsEnabled).length
 	return [
 		status.organization === null ? "" : `${status.organization.name} · `,
 		countLabel(status.projects.length, "project"),
-		` · ${collecting} collecting metrics`,
 		...(status.lastDiscoveryAt !== null
 			? [
 					" · ",
@@ -193,23 +261,16 @@ const actions = (h: H, model: Model, status: SupabaseIntegrationStatus): Html =>
 					},
 					["Reconnect"],
 				)
-			: linkButton(h, { size: "sm", href: hrefOf(AppRoute.InfraSupabase({ search: {} })) }, [
-					"View metrics",
-				]),
-		...(status.revoked
-			? []
-			: [
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isLoading: model.supabaseCard.isSyncing,
-							attributes: [h.OnClick(Message.ClickedSupabaseSync())],
-						},
-						["Sync now"],
-					),
-				]),
+			: button(
+					h,
+					{
+						size: "sm",
+						variant: "outline",
+						isLoading: model.supabaseCard.isSyncing,
+						attributes: [h.OnClick(Message.ClickedSupabaseSync())],
+					},
+					[icon(h, "ArrowRotateAnticlockwiseIcon"), "Sync now"],
+				),
 		disconnectButton(h, model),
 	])
 
@@ -226,7 +287,9 @@ const byStatus = (h: H, model: Model, status: SupabaseIntegrationStatus, timeZon
 		summary: summaryLine(h, model, status, timeZone),
 		notice: notice(h, status),
 		actions: actions(h, model, status),
-		table: projectsTable(h, model, status, timeZone),
+		table: projectsTable(h, model, status),
+		actionsAtEnd: true,
+		footer: footer(h),
 	})
 }
 

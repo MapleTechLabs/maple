@@ -16,6 +16,7 @@ const gauges = {
 	dbSize: 512,
 	connectionsAvg: 4,
 	connectionsMax: 7,
+	maxConnections: 60,
 	lastSeen: at("2026-10-21T12:00:00Z"),
 }
 
@@ -74,6 +75,7 @@ describe("mergeSupabaseProjects", () => {
 				dbSize: 0,
 				connectionsAvg: 0,
 				connectionsMax: 0,
+				maxConnections: 0,
 				requests: 120,
 				requestsPerMinute: 2,
 				errors5xx: 1,
