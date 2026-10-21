@@ -24,10 +24,8 @@ jobs:
     sweep:
         runs-on: ubuntu-latest
         timeout-minutes: 120
-        # STOPGAP: borrows `pr-preview` only so the OIDC subject matches Infisical's allowlist.
-        # Do not add required reviewers to `pr-preview` (cron would park). Fix: allowlist
-        # `repo:<org>/<repo>:ref:refs/heads/main`, then drop this line.
-        environment: pr-preview # stopgap: remove once the ref subject is allowlisted
+        # `maintenance` (main only) carries this job's own Infisical identity, limited to `dev`.
+        environment: maintenance
         env:
             INFISICAL_ENV_SLUG: dev
         steps:
@@ -42,7 +40,7 @@ jobs:
               run: curl https://tinybird.co | sh
 
             # Toolchain, Infisical secrets, AWS OIDC credentials, deps. The deploy role must
-            # trust `repo:<org>/<repo>:environment:pr-preview`, as for deploy-pr-preview.yml.
+            # trust `repo:<org>/<repo>:environment:maintenance`.
             - name: Deploy setup
               id: setup
               uses: ./.github/actions/deploy-setup

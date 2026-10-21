@@ -63,9 +63,8 @@ jobs:
                         || contains(github.event.pull_request.labels.*.name, 'preview:web')))) }}
         runs-on: ubuntu-latest
         timeout-minutes: 45
-        # TODO: `pr-preview` should require reviewer approval before secrets load, but the
-        # cron orphan sweep borrows this environment for Infisical OIDC and would park
-        # waiting. Allowlist the sweep's `ref:refs/heads/main` subject first.
+        # `pr-preview` holds its own Infisical identity, limited to the preview environment, so
+        # PR code can never request `prod`. Nothing else uses it: required reviewers are safe.
         environment:
             name: pr-preview
             url: ${{ steps.deploy.outputs.web_url }}
