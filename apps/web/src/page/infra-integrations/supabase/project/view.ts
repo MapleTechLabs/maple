@@ -4,6 +4,9 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
 import { ResolveThemeColors } from "../../../../charts/theme-colors"
+import { encodeLogAttributeFilter } from "../../../../lib/logs/log-attribute-filters"
+import { AppRoute, hrefOf } from "../../../../route"
+import { linkButton } from "../../../../ui/button"
 import { badge } from "../../../../ui/display"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
@@ -120,14 +123,38 @@ const noMetrics = (h: H, project: DiscoveredProject | null): Html =>
 		actionVariant: "outline",
 	})
 
-/** The hero's chips: region and a pill when Supabase reports the project as not healthy. */
-const heroMeta = (h: H, project: DiscoveredProject | null): ReadonlyArray<Html> | undefined => {
+/** The logs page filtered to this project's polled logs, over the same time range. */
+export const projectLogsHref = (model: Model): string =>
+	hrefOf(
+		AppRoute.Logs({
+			search: {
+				startTime: model.search.startTime,
+				endTime: model.search.endTime,
+				timePreset: model.search.timePreset,
+				services: ["supabase"],
+				attrs: [
+					encodeLogAttributeFilter({
+						source: "resource",
+						key: "supabase.project.ref",
+						value: model.projectRef,
+						negated: false,
+					}),
+				],
+			},
+		}),
+	)
+
+/** The hero's chips: region, a pill when Supabase reports the project as not healthy, and its logs. */
+const heroMeta = (h: H, model: Model, project: DiscoveredProject | null): ReadonlyArray<Html> | undefined => {
 	if (project === null) return undefined
 	const pill = projectStatusLabel(project.status)
 	return [
 		heroChip(h, project.ref),
 		...(project.region === "" ? [] : [heroChip(h, project.region)]),
 		...(pill === null ? [] : [badge(h, { variant: pill.tone }, [pill.label])]),
+		...(project.logsEnabled
+			? [linkButton(h, { size: "sm", variant: "outline", href: projectLogsHref(model) }, ["View logs"])]
+			: []),
 	]
 }
 
@@ -156,7 +183,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						title: titleOf(model),
 						description:
 							"Resources and Postgres health for this Supabase project, scraped every minute.",
-						meta: heroMeta(h, discoveredOf(model)),
+						meta: heroMeta(h, model, discoveredOf(model)),
 					}),
 					...(summary === null ? [] : [stats(h, summary)]),
 					chartsView(h, model, inputs.context.timeZone),

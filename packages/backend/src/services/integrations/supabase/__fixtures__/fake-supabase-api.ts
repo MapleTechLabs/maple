@@ -1,6 +1,6 @@
 /**
- * An in-memory Supabase Management API for tests: OAuth token/revoke plus `/v1/organizations` and
- * `/v1/projects`, with bodies shaped like live responses (2026-10-21). Provided per test through
+ * An in-memory Supabase Management API for tests: OAuth token/revoke, `/v1/organizations`,
+ * `/v1/projects` and the logs endpoint, with bodies shaped like live responses (2026-10-21). Provided per test through
  * `FetchHttpClient.Fetch`; tests steer it by mutating `state` between steps.
  */
 import { createHash } from "node:crypto"
@@ -28,11 +28,46 @@ export const fakeProject = (ref: string, overrides: Record<string, unknown> = {}
 	...overrides,
 })
 
+export interface FakeLogRow {
+	readonly id: string
+	readonly timestamp: string
+	readonly source: string
+	readonly event_message: string
+	readonly log_attributes: Readonly<Record<string, string>>
+}
+
+/** `2026-10-21T17:48:12.0596` and `2026-10-21 17:48:12.059000` alike, as comparable text. */
+const comparableTime = (value: string) => {
+	const [seconds = "", fraction = ""] = value.replace("T", " ").split(".")
+	return `${seconds}.${fraction.padEnd(6, "0")}`
+}
+
+/** Serves the SQL Maple sends: `timestamp >= '..' and timestamp < '..' order by timestamp, id limit N`. */
+const runLogsQuery = (rows: ReadonlyArray<FakeLogRow>, sql: string) => {
+	const from = /timestamp >= '([^']+)'/.exec(sql)?.[1]
+	const to = /timestamp < '([^']+)'/.exec(sql)?.[1]
+	const limit = Number(/limit (\d+)/.exec(sql)?.[1] ?? "100")
+	return rows
+		.filter(
+			(row) =>
+				(from === undefined || comparableTime(row.timestamp) >= comparableTime(from)) &&
+				(to === undefined || comparableTime(row.timestamp) < comparableTime(to)),
+		)
+		.toSorted(
+			(a, b) =>
+				comparableTime(a.timestamp).localeCompare(comparableTime(b.timestamp)) ||
+				a.id.localeCompare(b.id),
+		)
+		.slice(0, limit)
+}
+
 export interface FakeCall {
 	readonly method: string
 	readonly path: string
 	readonly authorization: string | null
 	readonly body: string
+	/** The URL's query string, e.g. a logs query's `sql`. */
+	readonly search: URLSearchParams
 }
 
 export interface FakeSupabaseState {
@@ -50,6 +85,12 @@ export interface FakeSupabaseState {
 	rejectIssuedTokens: boolean
 	/** Forces `/v1/projects` to answer this status (e.g. 429). */
 	projectsStatus: number | null
+	/** Rows of the unified `logs` table, served by the logs endpoint for any project. */
+	logs: Array<FakeLogRow>
+	/** Forces the logs endpoint to answer this status (e.g. 429). */
+	logsStatus: number | null
+	/** Makes the logs endpoint answer 200 `{ "error": ... }`, as it does for a refused query. */
+	logsQueryError: string | null
 	issued: number
 	readonly calls: Array<FakeCall>
 }
@@ -73,6 +114,9 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		refreshRevoked: false,
 		rejectIssuedTokens: false,
 		projectsStatus: null,
+		logs: [],
+		logsStatus: null,
+		logsQueryError: null,
 		issued: 0,
 		calls: [],
 		...initial,
@@ -109,12 +153,14 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		state.validAccessTokens.has((request.headers.get("authorization") ?? "").replace(/^Bearer /, ""))
 
 	const handle = (request: Request, body: string): Response => {
-		const path = new URL(request.url).pathname
+		const url = new URL(request.url)
+		const path = url.pathname
 		state.calls.push({
 			method: request.method,
 			path,
 			authorization: request.headers.get("authorization"),
 			body,
+			search: url.searchParams,
 		})
 		if (path === "/v1/oauth/token" && request.method === "POST") return tokenEndpoint(request, body)
 		if (path === "/v1/oauth/revoke" && request.method === "POST") {
@@ -127,6 +173,15 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 			return state.projectsStatus === null
 				? json(state.projects)
 				: json({ message: "Too many requests" }, state.projectsStatus, { "x-ratelimit-reset": "42" })
+		}
+		if (/^\/v1\/projects\/[a-z]{20}\/analytics\/endpoints\/logs$/.test(path)) {
+			if (state.logsStatus !== null) {
+				return json({ message: "ThrottlerException: Too Many Requests" }, state.logsStatus, {
+					"x-ratelimit-reset": "60",
+				})
+			}
+			if (state.logsQueryError !== null) return json({ error: state.logsQueryError })
+			return json({ result: runLogsQuery(state.logs, url.searchParams.get("sql") ?? "") })
 		}
 		return json({ message: "Not found" }, 404)
 	}

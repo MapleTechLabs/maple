@@ -1,4 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { Schema } from "effect"
 import {
 	OrgId,
 	ScrapeTargetId,
@@ -73,6 +74,18 @@ export const SupabaseProjects = PG.table("supabase_projects", {
 		logDrainEnabled: PG.column(PG.bool, { name: "log_drain_enabled", default: false }),
 		/** Supabase's id for the log drain Maple created on this project. */
 		logDrainId: PG.column(PG.nullable(PG.text), { name: "log_drain_id" }),
+		/** Opt-in: polled logs count against the org's ingest. */
+		logsEnabled: PG.column(PG.bool, { name: "logs_enabled", default: false }),
+		/** Logs before this were sent; the next poll reads from here. */
+		logsWatermarkAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "logs_watermark_at" }),
+		/** Ids already sent within the watermark's millisecond, dropped when the next poll re-reads it. */
+		logsBoundaryIds: PG.column(PG.jsonb(Schema.Array(Schema.String)), {
+			name: "logs_boundary_ids",
+			default: [],
+		}),
+		logsLeaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "logs_lease_until" }),
+		logsLastPolledAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "logs_last_polled_at" }),
+		logsError: PG.column(PG.nullable(PG.text), { name: "logs_error" }),
 		lastSeenAt: PG.column(PG.timestamptzMillis, { name: "last_seen_at" }),
 		removedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "removed_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),

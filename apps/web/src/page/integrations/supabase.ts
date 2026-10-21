@@ -10,7 +10,7 @@ import { Message } from "./message"
 
 export const SupabaseCardModel = Schema.Struct({
 	isSyncing: Schema.Boolean,
-	/** Projects whose "Collect metrics" switch is saving. */
+	/** Projects whose "Collect metrics" or "Collect logs" switch is saving. */
 	pendingRefs: Schema.Array(SupabaseProjectRef),
 })
 export type SupabaseCardModel = typeof SupabaseCardModel.Type
@@ -65,6 +65,25 @@ export const SetSupabaseMetrics = Command.define("SetSupabaseProjectMetrics", {
 				onFailure: (error) =>
 					Message.CompletedSupabaseMetrics({ ref, enabled, failure: toLoadFailure(error) }),
 				onSuccess: () => Message.CompletedSupabaseMetrics({ ref, enabled, failure: null }),
+			}),
+		),
+})
+
+export const SetSupabaseLogs = Command.define("SetSupabaseProjectLogs", {
+	args: { ref: SupabaseProjectRef, enabled: Schema.Boolean },
+	messages: [Message.CompletedSupabaseLogs],
+	execute: ({ ref, enabled }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			yield* client.integrations.supabaseUpdateProject({
+				params: { ref },
+				payload: new SupabaseProjectUpdateRequest({ logsEnabled: enabled }),
+			})
+		}).pipe(
+			Effect.match({
+				onFailure: (error) =>
+					Message.CompletedSupabaseLogs({ ref, enabled, failure: toLoadFailure(error) }),
+				onSuccess: () => Message.CompletedSupabaseLogs({ ref, enabled, failure: null }),
 			}),
 		),
 })

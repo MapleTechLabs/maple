@@ -41,6 +41,9 @@ const status = (overrides: Record<string, unknown> = {}) =>
 				status: "ACTIVE_HEALTHY",
 				metricsEnabled: true,
 				logDrainEnabled: false,
+				logsEnabled: true,
+				logsLastPolledAt: null,
+				logsError: "Supabase refused the logs query: Unknown field",
 				lastSeenAt: 1_760_000_000_000,
 			},
 			{
@@ -50,6 +53,9 @@ const status = (overrides: Record<string, unknown> = {}) =>
 				status: "INACTIVE",
 				metricsEnabled: false,
 				logDrainEnabled: false,
+				logsEnabled: false,
+				logsLastPolledAt: null,
+				logsError: null,
 				lastSeenAt: 1_760_000_000_000,
 			},
 		],
@@ -97,6 +103,41 @@ describe("supabase card", () => {
 			expectView(role("switch", { name: "Collect metrics for storefront" })).toExist(),
 			expectView(text("Paused")).toExist(),
 			expectView(role("button", { name: "Sync now" })).toExist(),
+		)
+	})
+
+	test("each project has a logs switch and shows its last logs error inline", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus(status())),
+			expectView(role("switch", { name: "Collect logs for storefront" })).toExist(),
+			expectView(role("switch", { name: "Collect logs for sandbox" })).toExist(),
+			expectView(text("Supabase refused the logs query: Unknown field", { exact: false })).toExist(),
+		)
+	})
+
+	test("a logs switch shares the project's pending write and toasts on failure", () => {
+		const sent = pageUpdate(
+			withStatus(status()),
+			Message.ToggledSupabaseLogs({ ref: REF, enabled: false }),
+		)
+		expect(names(sent.commands)).toEqual(["SetSupabaseProjectLogs"])
+		expect(
+			names(
+				pageUpdate(sent.model, Message.ToggledSupabaseMetrics({ ref: REF, enabled: false })).commands,
+			),
+		).toEqual([])
+		const failed = pageUpdate(
+			sent.model,
+			Message.CompletedSupabaseLogs({ ref: REF, enabled: false, failure: toLoadFailure("boom") }),
+		)
+		expect(failed.model.supabaseCard.pendingRefs).toEqual([])
+		expect(failed.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "error",
+				title: "Failed to stop collecting logs",
+				description: toLoadFailure("boom").message,
+			}),
 		)
 	})
 

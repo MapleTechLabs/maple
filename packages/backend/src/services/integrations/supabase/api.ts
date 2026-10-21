@@ -77,7 +77,7 @@ const isTransient = (error: SupabaseApiError) =>
 	error.kind === "upstream" && (error.status === undefined || error.status >= 500)
 
 /** Execute one request; any non-2xx becomes a classified {@link SupabaseApiError}. */
-const send = (
+export const send = (
 	httpClient: HttpClient.HttpClient,
 	request: HttpClientRequest.HttpClientRequest,
 	what: string,

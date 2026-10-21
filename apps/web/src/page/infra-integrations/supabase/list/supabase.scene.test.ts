@@ -28,6 +28,9 @@ const project = (ref: string, name: string, metricsEnabled: boolean) => ({
 	status: "ACTIVE_HEALTHY",
 	metricsEnabled,
 	logDrainEnabled: false,
+	logsEnabled: false,
+	logsLastPolledAt: null,
+	logsError: null,
 	lastSeenAt: NOW,
 })
 

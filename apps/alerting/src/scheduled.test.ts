@@ -19,7 +19,7 @@ const cronCases = [
 	],
 	["*/15 * * * *", ["digest"]],
 	["0 * * * *", ["serviceMapRollup", "supabaseDiscovery"]],
-	["* * * * *", ["alert", "error", "escalation", "fixVerification"]],
+	["* * * * *", ["alert", "error", "escalation", "fixVerification", "supabaseLogs"]],
 ] as const
 
 /** Every tick recording its name when it runs, with `overrides` swapped in. */
@@ -42,6 +42,7 @@ const recordingTicks = (
 		railwayMetrics: tick("railwayMetrics"),
 		serviceMapRollup: tick("serviceMapRollup"),
 		supabaseDiscovery: tick("supabaseDiscovery"),
+		supabaseLogs: tick("supabaseLogs"),
 		...overrides,
 	}
 }

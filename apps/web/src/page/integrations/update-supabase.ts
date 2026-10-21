@@ -3,7 +3,7 @@ import type { LoadFailure } from "../../data/load-failure"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import type { Message } from "./message"
 import type { Model } from "./model"
-import { SetSupabaseMetrics, type SupabaseCardModel, SyncSupabase } from "./supabase"
+import { SetSupabaseLogs, SetSupabaseMetrics, type SupabaseCardModel, SyncSupabase } from "./supabase"
 import { requestStatus } from "./update-status"
 
 // The Supabase card's state changes.
@@ -35,13 +35,35 @@ export const completedSync = (model: Model, context: PageContext, failure: LoadF
 }
 
 /** One write per project at a time; a second flip while one saves is ignored. */
-export const toggledMetrics = (model: Model, ref: SupabaseProjectRef, enabled: boolean): Return =>
+const toggled = (
+	model: Model,
+	ref: SupabaseProjectRef,
+	command: ReturnType<typeof SetSupabaseMetrics | typeof SetSupabaseLogs>,
+): Return =>
 	model.supabaseCard.pendingRefs.includes(ref)
 		? { model }
 		: {
 				model: withCard(model, { pendingRefs: [...model.supabaseCard.pendingRefs, ref] }),
-				commands: [SetSupabaseMetrics({ ref, enabled })],
+				commands: [command],
 			}
+
+const completed = (
+	model: Model,
+	context: PageContext,
+	ref: SupabaseProjectRef,
+	failure: LoadFailure | null,
+	failedTitle: string,
+): Return => {
+	const settled = withCard(model, {
+		pendingRefs: model.supabaseCard.pendingRefs.filter((pending) => pending !== ref),
+	})
+	return failure === null
+		? requestStatus(settled, context, "supabase", "Supersede")
+		: toast(settled, "error", failedTitle, failure.message)
+}
+
+export const toggledMetrics = (model: Model, ref: SupabaseProjectRef, enabled: boolean): Return =>
+	toggled(model, ref, SetSupabaseMetrics({ ref, enabled }))
 
 export const completedMetrics = (
 	model: Model,
@@ -49,16 +71,29 @@ export const completedMetrics = (
 	ref: SupabaseProjectRef,
 	enabled: boolean,
 	failure: LoadFailure | null,
-): Return => {
-	const settled = withCard(model, {
-		pendingRefs: model.supabaseCard.pendingRefs.filter((pending) => pending !== ref),
-	})
-	return failure === null
-		? requestStatus(settled, context, "supabase", "Supersede")
-		: toast(
-				settled,
-				"error",
-				enabled ? "Failed to start collecting metrics" : "Failed to stop collecting metrics",
-				failure.message,
-			)
-}
+): Return =>
+	completed(
+		model,
+		context,
+		ref,
+		failure,
+		enabled ? "Failed to start collecting metrics" : "Failed to stop collecting metrics",
+	)
+
+export const toggledLogs = (model: Model, ref: SupabaseProjectRef, enabled: boolean): Return =>
+	toggled(model, ref, SetSupabaseLogs({ ref, enabled }))
+
+export const completedLogs = (
+	model: Model,
+	context: PageContext,
+	ref: SupabaseProjectRef,
+	enabled: boolean,
+	failure: LoadFailure | null,
+): Return =>
+	completed(
+		model,
+		context,
+		ref,
+		failure,
+		enabled ? "Failed to start collecting logs" : "Failed to stop collecting logs",
+	)

@@ -60,6 +60,7 @@ import {
 import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
+import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
 import {
 	SUPABASE_CALLBACK_PATH,
 	SupabaseOAuthService,
@@ -129,6 +130,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const railway = yield* RailwayMetricsService
 		const supabaseOAuth = yield* SupabaseOAuthService
 		const supabase = yield* SupabaseConnectionService
+		const supabaseLogs = yield* SupabaseLogsService
 		const gcp = yield* GcpConnectorService
 		const edgeCache = yield* EdgeCacheService
 		const env = yield* Env
@@ -507,6 +509,9 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
+						if (payload.logsEnabled !== undefined) {
+							yield* supabaseLogs.setLogsEnabled(tenant.orgId, params.ref, payload.logsEnabled)
+						}
 						return yield* supabase.updateProject(tenant.orgId, params.ref, payload)
 					}),
 				)

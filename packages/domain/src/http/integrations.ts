@@ -983,6 +983,11 @@ export class SupabaseProjectStatus extends Schema.Class<SupabaseProjectStatus>("
 	status: Schema.String,
 	metricsEnabled: Schema.Boolean,
 	logDrainEnabled: Schema.Boolean,
+	/** Whether Maple polls this project's logs (opt-in). */
+	logsEnabled: Schema.Boolean,
+	logsLastPolledAt: Schema.NullOr(Schema.Number),
+	/** The last logs poll's error, cleared by the next good poll. */
+	logsError: Schema.NullOr(Schema.String),
 	lastSeenAt: Schema.Number,
 }) {}
 
@@ -1028,6 +1033,7 @@ export class SupabaseProjectUpdateRequest extends Schema.Class<SupabaseProjectUp
 	"SupabaseProjectUpdateRequest",
 )({
 	metricsEnabled: Schema.optionalKey(Schema.Boolean),
+	logsEnabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 export class SupabaseDisconnectResponse extends Schema.Class<SupabaseDisconnectResponse>(

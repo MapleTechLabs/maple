@@ -46,7 +46,7 @@ const TICK_BUDGET_MS = 10 * 60_000
 const ORG_CONCURRENCY = 3
 
 /** Statuses Supabase reports for a project that needs attention. */
-const UNHEALTHY_STATUSES: ReadonlySet<string> = new Set([
+export const UNHEALTHY_STATUSES: ReadonlySet<string> = new Set([
 	"ACTIVE_UNHEALTHY",
 	"INIT_FAILED",
 	"RESTORE_FAILED",
@@ -230,6 +230,9 @@ export class SupabaseConnectionService extends Context.Service<
 								status: row.status,
 								metricsEnabled: row.metricsEnabled,
 								logDrainEnabled: row.logDrainEnabled,
+								logsEnabled: row.logsEnabled,
+								logsLastPolledAt: row.logsLastPolledAt,
+								logsError: row.logsError,
 								lastSeenAt: row.lastSeenAt,
 							}),
 					),
