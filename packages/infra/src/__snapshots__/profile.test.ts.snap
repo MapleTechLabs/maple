@@ -5,6 +5,7 @@ exports[`resolveMapleProfile > pins every deployment's profile 1`] = `
   "dev-alice": {
     "database": "managed",
     "deploys": {
+      "awsIntegrationPrincipal": false,
       "awsSecurityBaseline": "none",
       "collector": false,
       "electric": false,
@@ -39,6 +40,7 @@ exports[`resolveMapleProfile > pins every deployment's profile 1`] = `
   "dev-alice-eu": {
     "database": "managed",
     "deploys": {
+      "awsIntegrationPrincipal": false,
       "awsSecurityBaseline": "none",
       "collector": false,
       "electric": false,
@@ -73,6 +75,7 @@ exports[`resolveMapleProfile > pins every deployment's profile 1`] = `
   "pr-12": {
     "database": "preview",
     "deploys": {
+      "awsIntegrationPrincipal": true,
       "awsSecurityBaseline": "none",
       "collector": false,
       "electric": true,
@@ -107,6 +110,7 @@ exports[`resolveMapleProfile > pins every deployment's profile 1`] = `
   "prd": {
     "database": "ref",
     "deploys": {
+      "awsIntegrationPrincipal": true,
       "awsSecurityBaseline": "account",
       "collector": true,
       "electric": true,
@@ -147,6 +151,7 @@ exports[`resolveMapleProfile > pins every deployment's profile 1`] = `
   "prd-eu": {
     "database": "declared",
     "deploys": {
+      "awsIntegrationPrincipal": true,
       "awsSecurityBaseline": "regional",
       "collector": true,
       "electric": true,

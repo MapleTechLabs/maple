@@ -84,13 +84,16 @@ export const AWS_MODULE_SPECS = {
 
 export const isAwsModuleAvailable = (module: AwsModule) => AWS_MODULE_SPECS[module].available
 
+/** Every connection's role starts with it; Maple's own identity may assume only these roles. */
+export const AWS_ROLE_NAME_PREFIX = "MapleIntegration-"
+
 /**
  * Names of what a connection's setup creates in the customer's account. Derived from the
  * connection id alone, so a caller can never pick the role Maple assumes.
  */
 export const awsConnectionResourceNames = (connectionId: AwsConnectionId) => {
 	const hex = connectionId.replaceAll("-", "").slice(0, 24)
-	const name = `MapleIntegration-${hex}`
+	const name = `${AWS_ROLE_NAME_PREFIX}${hex}`
 	return {
 		roleName: name,
 		stackName: `maple-integration-${hex}`,
