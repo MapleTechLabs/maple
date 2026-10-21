@@ -73,18 +73,19 @@ export const makeExecuteBatcher = <E>(
 				Effect.matchCauseEffect({
 					// Whole-request failure: every query in this batch failed for the same reason. A defect or
 					// interrupt fails them as unanswered, so each tile shows its error instead of awaiting forever.
-					onFailure: (cause) => {
-						const error = Option.getOrElse(
-							Cause.findErrorOption(cause),
-							(): ExecuteFailure<E> =>
-								new MissingBatchResultError({
-									message: "The batch request ended without an answer.",
-								}),
-						)
-						return Effect.forEach(batch, (entry) => Deferred.fail(entry.settled, error), {
-							discard: true,
-						})
-					},
+					onFailure: (cause) =>
+						Option.match(Cause.findErrorOption(cause), {
+							onSome: (error): Effect.Effect<ExecuteFailure<E>> => Effect.succeed(error),
+							onNone: (): Effect.Effect<ExecuteFailure<E>> =>
+								Effect.as(
+									Effect.logError("Execute batch send ended without an answer", cause),
+									new MissingBatchResultError({ message: "The batch request ended without an answer." }),
+								),
+						}).pipe(
+							Effect.flatMap((error) =>
+								Effect.forEach(batch, (entry) => Deferred.fail(entry.settled, error), { discard: true }),
+							),
+						),
 					onSuccess: (outcomes) =>
 						Effect.forEach(batch, (entry, index) => settle(entry, outcomes[index]), {
 							discard: true,
