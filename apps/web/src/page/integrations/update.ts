@@ -297,6 +297,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ToggledSupabaseLogs: ({ ref, enabled }) => Supabase.toggledLogs(model, ref, enabled),
 		CompletedSupabaseLogs: ({ ref, enabled, failure }) =>
 			Supabase.completedLogs(model, context, ref, enabled, failure),
+		ToggledSupabaseLogDrain: ({ ref, enabled }) => Supabase.toggledLogDrain(model, ref, enabled),
+		CompletedSupabaseLogDrain: ({ ref, enabled, failure }) =>
+			Supabase.completedLogDrain(model, context, ref, enabled, failure),
 		CompletedFetchOrganizations: ({ key, result }) =>
 			Planetscale.updateCard(model, {
 				organizations: Keyed.accept(model.planetscaleCard.organizations, key, result),

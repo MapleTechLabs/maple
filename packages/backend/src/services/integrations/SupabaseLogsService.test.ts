@@ -525,4 +525,35 @@ describe("SupabaseLogsService", () => {
 			)
 		},
 	)
+
+	it.effect("polling cannot start while a log drain delivers the project's logs", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeWorld()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connectWithLogs(world)
+				const connection = yield* SupabaseConnectionService
+				const logs = yield* SupabaseLogsService
+				const user = asUserId("user_a")
+				const drained = yield* connection.updateProject(ORG, user, asRef(REF_A), { logDrainEnabled: true })
+				assert.isFalse(drained.projects.find((project) => project.ref === REF_A)?.logsEnabled ?? true)
+
+				const refused = yield* Effect.flip(logs.setLogsEnabled(ORG, asRef(REF_A), true))
+				assert.strictEqual(refused._tag, "@maple/http/errors/IntegrationsValidationError")
+				yield* TestClock.adjust(minute)
+				const calls = logsCalls(world).length
+				yield* logs.pollAllOrgs()
+				assert.strictEqual(logsCalls(world).length, calls)
+
+				// Drain off first, then polling on: the switch back works.
+				yield* connection.updateProject(ORG, user, asRef(REF_A), { logDrainEnabled: false })
+				yield* logs.setLogsEnabled(ORG, asRef(REF_A), true)
+				const status = yield* connection.getStatus(ORG)
+				const project = status.projects.find((item) => item.ref === REF_A)
+				assert.deepStrictEqual([project?.logDrainEnabled, project?.logsEnabled], [false, true])
+			}),
+		)
+	})
 })

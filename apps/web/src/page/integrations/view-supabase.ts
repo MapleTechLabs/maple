@@ -35,6 +35,7 @@ import {
 
 type H = HtmlBuilder<Message>
 type Project = SupabaseIntegrationStatus["projects"][number]
+type Drain = Project["logDrains"][number]
 
 const connectButton = (h: H, model: Model, label: string): Html =>
 	button(
@@ -74,11 +75,13 @@ export const lastDataLabel = (
 				: AsyncData.isFailure(metrics.data)
 					? ["metrics unavailable"]
 					: []
-	const logsPart = !project.logsEnabled
-		? []
-		: project.logsLastPolledAt === null
-			? ["logs waiting for first poll"]
-			: [`logs ${formatRelativeShortFrom(project.logsLastPolledAt, nowMs)}`]
+	const logsPart = project.logDrainEnabled
+		? ["logs via drain"]
+		: !project.logsEnabled
+			? []
+			: project.logsLastPolledAt === null
+				? ["logs waiting for first poll"]
+				: [`logs ${formatRelativeShortFrom(project.logsLastPolledAt, nowMs)}`]
 	const parts = [...metricsPart, ...logsPart]
 	return parts.length > 0 ? parts.join(" · ") : project.metricsEnabled ? "" : "not collected"
 }
@@ -105,6 +108,32 @@ const projectSwitch = (
 		}),
 	)
 
+/** "soc2-archive (datadog, US1)"; a drain to Maple says so instead of naming our host. */
+const drainLabel = (drain: Drain): string =>
+	drain.managedByMaple
+		? "Maple (managed here)"
+		: drain.toMaple
+			? `${drain.name} (already sends to Maple)`
+			: `${drain.name} (${drain.destination === null ? drain.backendType : `${drain.backendType}, ${drain.destination}`})`
+
+/** A drain to Maple set up in Supabase: it already delivers, and a managed one would double it. */
+const manualMapleDrain = (project: Project): Drain | undefined =>
+	project.logDrains.find((drain) => drain.toMaple && !drain.managedByMaple)
+
+const noteLine = (h: H, text: string, tone: "muted" | "error"): Html =>
+	h.span(
+		[
+			h.Class(
+				cn(
+					"line-clamp-1 text-2xs [overflow-wrap:anywhere]",
+					tone === "error" ? "text-severity-error" : "text-muted-foreground",
+				),
+			),
+			h.Title(text),
+		],
+		[text],
+	)
+
 const projectRow = (h: H, model: Model, project: Project): Html => {
 	const row = metricsRowOf(model.supabaseCard.metrics, project.ref)
 	const isPaused = lifecycleOf(project.status)._tag === "Paused"
@@ -112,7 +141,22 @@ const projectRow = (h: H, model: Model, project: Project): Html => {
 	const isLocked = isPaused || pending !== undefined
 	// A flip in flight shows the intended value until the server confirms or refuses it.
 	const metricsEnabled = pending?.kind === "metrics" ? pending.enabled : project.metricsEnabled
-	const logsEnabled = pending?.kind === "logs" ? pending.enabled : project.logsEnabled
+	const drainEnabled = pending?.kind === "drain" ? pending.enabled : project.logDrainEnabled
+	// Turning a drain on stops polling server-side; show that while the write is in flight.
+	const logsEnabled =
+		pending?.kind === "logs" ? pending.enabled : drainEnabled ? false : project.logsEnabled
+	const manual = manualMapleDrain(project)
+	const notes = [
+		...(project.logDrains.length > 0
+			? [noteLine(h, `Drains: ${project.logDrains.map(drainLabel).join(", ")}`, "muted")]
+			: []),
+		...(project.logDrainEnabled && project.logDrainError !== null
+			? [noteLine(h, `Drain: ${project.logDrainError}`, "error")]
+			: []),
+		...(project.logsEnabled && project.logsError !== null
+			? [noteLine(h, `Logs: ${project.logsError}`, "error")]
+			: []),
+	]
 	return h.div(
 		[
 			h.Key(project.ref),
@@ -132,19 +176,7 @@ const projectRow = (h: H, model: Model, project: Project): Html => {
 						[h.Class("truncate font-mono text-2xs text-muted-foreground")],
 						[project.region === "" ? project.ref : `${project.ref} · ${project.region}`],
 					),
-					...(project.logsEnabled && project.logsError !== null
-						? [
-								h.span(
-									[
-										h.Class(
-											"line-clamp-1 text-2xs text-severity-error [overflow-wrap:anywhere]",
-										),
-										h.Title(project.logsError),
-									],
-									["Logs: ", project.logsError],
-								),
-							]
-						: []),
+					...notes,
 				],
 			),
 			h.span(
@@ -170,9 +202,20 @@ const projectRow = (h: H, model: Model, project: Project): Html => {
 			projectSwitch(h, {
 				id: `supabase-logs-${project.ref}`,
 				isChecked: logsEnabled,
-				isDisabled: isLocked,
+				// A drain already delivers the project's logs; polling too would store them twice.
+				isDisabled: isLocked || drainEnabled,
 				label: `Collect logs for ${project.name}`,
 				onToggle: Message.ToggledSupabaseLogs({ ref: project.ref, enabled: !logsEnabled }),
+			}),
+			projectSwitch(h, {
+				id: `supabase-drain-${project.ref}`,
+				isChecked: drainEnabled,
+				isDisabled: isLocked || (manual !== undefined && !drainEnabled),
+				label:
+					manual === undefined
+						? `Send ${project.name}'s logs through a Supabase log drain`
+						: `${project.name} already sends logs to Maple through the drain ${manual.name}`,
+				onToggle: Message.ToggledSupabaseLogDrain({ ref: project.ref, enabled: !drainEnabled }),
 			}),
 		],
 	)
@@ -188,6 +231,7 @@ const projectsTable = (h: H, model: Model, status: SupabaseIntegrationStatus): H
 			columnHead(h, { label: "Last data", width: "w-48" }),
 			columnHead(h, { label: "Metrics", width: "w-20", align: "right" }),
 			columnHead(h, { label: "Logs", width: "w-20", align: "right" }),
+			columnHead(h, { label: "Drain", width: "w-20", align: "right" }),
 		],
 		status.projects.length === 0
 			? [dataTableEmpty(h, ["No projects in this organization yet. Sync after creating one."])]
@@ -205,7 +249,7 @@ const footer = (h: H): Html =>
 			h.p(
 				[],
 				[
-					"Logs are pulled every minute through your grant and count toward ingest. No Supabase add-on needed.",
+					"Logs are pulled every minute through your grant and count toward ingest. A log drain has Supabase push them instead: it needs a Pro plan and Supabase bills it per drain.",
 				],
 			),
 			h.a(

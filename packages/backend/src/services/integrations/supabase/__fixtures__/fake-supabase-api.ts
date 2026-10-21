@@ -1,9 +1,10 @@
 /**
  * An in-memory Supabase Management API for tests: OAuth token/revoke, `/v1/organizations`,
- * `/v1/projects`, the logs endpoint, the advisors and the read-only query endpoint, with bodies shaped like live responses (2026-10-21). Provided per test through
+ * `/v1/projects`, the logs endpoint, the advisors, the read-only query endpoint and the v2 log drain
+ * CRUD, with bodies shaped like live responses (2026-10-21). Provided per test through
  * `FetchHttpClient.Fetch`; tests steer it by mutating `state` between steps.
  */
-import { createHash } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 
 export const FAKE_CLIENT_ID = "6f1c1d1e-0b7a-4d8e-9a51-3c2b1a0f9e88"
 export const FAKE_CLIENT_SECRET = "sba_fake_client_secret"
@@ -70,6 +71,26 @@ export interface FakeCall {
 	readonly search: URLSearchParams
 }
 
+/** A stored `log_drain` resource, as the v2 list returns it (config included, secrets and all). */
+export interface FakeLogDrain {
+	readonly id: string
+	readonly attributes: {
+		readonly name: string
+		readonly description?: string
+		readonly backend_type: string
+		readonly config: Readonly<Record<string, unknown>>
+	}
+}
+
+/** Live-verified Free plan answer to a drain create (2026-10-21). */
+export const PAYMENT_REQUIRED_BODY = {
+	error: {
+		code: "payment_required",
+		message: "Payment Required",
+		description: "This feature requires the Pro, Team, or Enterprise organization plan.",
+	},
+}
+
 export interface FakeSupabaseState {
 	organizations: Array<unknown>
 	projects: Array<unknown>
@@ -99,6 +120,14 @@ export interface FakeSupabaseState {
 	readOnlyRows: Array<unknown>
 	/** Makes the read-only query endpoint answer 400 `{ message }`, as it does for a refused query. */
 	readOnlyError: string | null
+	/** Drains per project ref; seed one to model a drain set up in the Supabase dashboard. */
+	drains: Map<string, Array<FakeLogDrain>>
+	/** Forces drain creates to answer this status (402 answers the live Free plan body). */
+	drainCreateStatus: number | null
+	/** Forces drain listings to answer this status. */
+	drainListStatus: number | null
+	/** Forces drain deletes to answer this status. */
+	drainDeleteStatus: number | null
 	issued: number
 	readonly calls: Array<FakeCall>
 }
@@ -129,6 +158,10 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		advisorsStatus: null,
 		readOnlyRows: [],
 		readOnlyError: null,
+		drains: new Map(),
+		drainCreateStatus: null,
+		drainListStatus: null,
+		drainDeleteStatus: null,
 		issued: 0,
 		calls: [],
 		...initial,
@@ -211,6 +244,34 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 			// Live-verified: a refused statement answers 400 with the Postgres message.
 			if (state.readOnlyError !== null) return json({ message: state.readOnlyError }, 400)
 			return json(state.readOnlyRows, 201)
+		}
+		const drainPath = /^\/v2\/projects\/([a-z]{20})\/analytics\/log-drains(?:\/([^/]+))?$/.exec(path)
+		if (drainPath !== null) return logDrains(request.method, drainPath[1] ?? "", drainPath[2], body)
+		return json({ message: "Not found" }, 404)
+	}
+
+	const logDrains = (method: string, ref: string, id: string | undefined, body: string): Response => {
+		const drains = state.drains.get(ref) ?? []
+		if (id === undefined && method === "GET") {
+			if (state.drainListStatus !== null) return json({ message: "Failed" }, state.drainListStatus)
+			return json({ data: drains.map((drain) => ({ type: "log_drain", ...drain })) })
+		}
+		if (id === undefined && method === "POST") {
+			if (state.drainCreateStatus === 402) return json(PAYMENT_REQUIRED_BODY, 402)
+			if (state.drainCreateStatus !== null) return json({ message: "Failed" }, state.drainCreateStatus)
+			const parsed: { data: { attributes: FakeLogDrain["attributes"] } } = JSON.parse(body)
+			const drain: FakeLogDrain = { id: randomUUID(), attributes: parsed.data.attributes }
+			state.drains.set(ref, [...drains, drain])
+			return json({ data: { type: "log_drain", ...drain } }, 201)
+		}
+		if (id !== undefined && method === "DELETE") {
+			if (state.drainDeleteStatus !== null) return json({ message: "Failed" }, state.drainDeleteStatus)
+			if (!drains.some((drain) => drain.id === id)) return json({ message: "Not found" }, 404)
+			state.drains.set(
+				ref,
+				drains.filter((drain) => drain.id !== id),
+			)
+			return new Response(null, { status: 204 })
 		}
 		return json({ message: "Not found" }, 404)
 	}

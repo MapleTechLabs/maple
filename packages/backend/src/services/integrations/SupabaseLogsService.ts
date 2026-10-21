@@ -7,7 +7,13 @@
  * rate limit is per project, and one slow project must not hold its siblings back). Watermarks
  * only advance past rows ingest accepted.
  */
-import { IntegrationsNotFoundError, IntegrationsPersistenceError, OrgId, UserId } from "@maple/domain/http"
+import {
+	IntegrationsNotFoundError,
+	IntegrationsPersistenceError,
+	IntegrationsValidationError,
+	OrgId,
+	UserId,
+} from "@maple/domain/http"
 import type { SupabaseProjectRef } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -111,7 +117,10 @@ export interface SupabaseLogsServiceApi {
 		orgId: OrgId,
 		ref: SupabaseProjectRef,
 		enabled: boolean,
-	) => Effect.Effect<void, IntegrationsNotFoundError | IntegrationsPersistenceError>
+	) => Effect.Effect<
+		void,
+		IntegrationsNotFoundError | IntegrationsValidationError | IntegrationsPersistenceError
+	>
 	readonly pollOrg: (
 		orgId: OrgId,
 	) => Effect.Effect<SupabaseLogsPollOrgSummary, IntegrationsPersistenceError>
@@ -186,7 +195,8 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 								$.orgId.eq(orgId),
 								$.projectRef.eq(ref),
 								$.removedAt.isNull(),
-								...(enabled ? [$.logsEnabled.eq(false)] : []),
+								// A log drain already delivers this project's logs; polling too would store them twice.
+								...(enabled ? [$.logsEnabled.eq(false), $.logDrainEnabled.eq(false)] : []),
 							])
 							.returning("id"),
 					),
@@ -195,14 +205,20 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 				const existing = yield* dbExecute((db) =>
 					db.run(
 						PG.from(SupabaseProjects)
-							.select("id")
+							.select("id", "logDrainEnabled")
 							.where(($) => [$.orgId.eq(orgId), $.projectRef.eq(ref), $.removedAt.isNull()])
 							.limit(1),
 					),
 				)
-				if (existing.length === 0) {
+				const [project] = existing
+				if (project === undefined) {
 					return yield* new IntegrationsNotFoundError({
 						message: `No Supabase project ${ref} is connected to this organization`,
+					})
+				}
+				if (enabled && project.logDrainEnabled) {
+					return yield* new IntegrationsValidationError({
+						message: `Supabase project ${ref} delivers its logs through a log drain. Turn the drain off to poll instead.`,
 					})
 				}
 			})
