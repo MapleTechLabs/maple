@@ -465,7 +465,14 @@ describe("CancellationReviewService", () => {
 			})
 			assert.deepStrictEqual(request?.sessions?.[0]?.pages, ["/settings/members", "/billing"])
 			assert.deepStrictEqual(request?.sessions?.[0]?.problems, ["SSO is not available on your plan"])
-			assert.strictEqual(request?.auditLog?.[0]?.action, "ingest_key.revoke")
+			assert.deepStrictEqual(request?.auditLog?.[0], {
+				at: new Date(CANCELED_AT - DAY_MS).toISOString(),
+				action: "ingest_key.revoke",
+				actor: "user",
+				outcome: "allowed",
+			})
+			// No person's email reaches the model.
+			assert.notInclude(JSON.stringify(request), "@acme.test")
 			assert.strictEqual(request?.ruleReason, "stopped_sending")
 			// The sessions are read under Maple's own org, never the customer's.
 			assert.isTrue(

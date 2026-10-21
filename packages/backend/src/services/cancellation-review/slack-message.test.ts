@@ -132,6 +132,22 @@ describe("buildCancellationMessage", () => {
 		expect(text(skipped)).not.toContain("Told Stripe")
 	})
 
+	it("cuts free text short enough that Slack never refuses the report", () => {
+		const long = "x".repeat(5_000)
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				stripeFeedback: { feedback: null, comment: long },
+				modelRead: modelRead("override", long, long),
+			}),
+		)
+		const texts = message.blocks.flatMap((block) =>
+			[block.text, ...(Array.isArray(block.elements) ? block.elements : [])].flatMap(
+				(part: { text?: unknown } | undefined) => (typeof part?.text === "string" ? [part.text] : []),
+			),
+		)
+		expect(Math.max(...texts.map((value) => value.length))).toBeLessThan(3_000)
+	})
+
 	it("leads with the org, the plan's remaining access and the rule's reason", () => {
 		const message = buildCancellationMessage(report("pipeline-off"))
 		// The fallback is mrkdwn, where a raw `<!channel>` in an org name would ping; the header is plain text.

@@ -415,20 +415,25 @@ const otherOrgsBlocks = (
 	]
 }
 
+/** Slack refuses a text object past 3000 characters, which would lose the whole report. */
+const MAX_FREE_TEXT = 500
+const clip = (value: string): string =>
+	value.length > MAX_FREE_TEXT ? `${value.slice(0, MAX_FREE_TEXT - 1)}…` : value
+
 /** Stripe's survey answers are snake_case enum values (`too_expensive`); the comment is free text. */
 const stripeFeedbackText = (feedback: CancellationStripeFeedback | null): string | null => {
 	if (feedback === null || (feedback.feedback === null && feedback.comment === null)) return null
 	return [
 		"*Told Stripe:*",
 		...(feedback.feedback === null ? [] : [feedback.feedback.replaceAll("_", " ")]),
-		...(feedback.comment === null ? [] : [`“${escape(feedback.comment)}”`]),
+		...(feedback.comment === null ? [] : [`“${escape(clip(feedback.comment))}”`]),
 	].join(" ")
 }
 
 /** The reason line: the model's when it overrode the rules, which then stay visible beside it. */
 const reasonText = (reason: CancellationReason, modelRead: CancellationModelRead | null): string =>
 	modelRead?.verdict === "override" && modelRead.reason !== null
-		? `*Likely reason:* ${escape(modelRead.reason)}  _(rules said: ${REASON_LABELS[reason]})_`
+		? `*Likely reason:* ${escape(clip(modelRead.reason))}  _(rules said: ${REASON_LABELS[reason]})_`
 		: `*Likely reason:* ${REASON_LABELS[reason]}`
 
 /** `text` is the notification and screen-reader fallback; `blocks` is what the channel shows. */
@@ -448,7 +453,7 @@ export const buildCancellationMessage = (
 	]
 	// `agree` adds nothing: the model only speaks when it has something the rules did not.
 	if (modelRead !== null && modelRead.verdict !== "agree" && modelRead.note !== null) {
-		blocks.push(context(`:robot_face: ${escape(modelRead.note)}`))
+		blocks.push(context(`:robot_face: ${escape(clip(modelRead.note))}`))
 	}
 	const told = stripeFeedbackText(report.stripeFeedback)
 	if (told !== null) blocks.push(context(told))
@@ -473,7 +478,7 @@ export const buildCancellationMessage = (
 	// Unlike the header's plain text, the fallback is mrkdwn: an org name is escaped here.
 	const shownReason =
 		modelRead?.verdict === "override" && modelRead.reason !== null
-			? escape(modelRead.reason)
+			? escape(clip(modelRead.reason))
 			: REASON_LABELS[reason]
 	return { text: `${escape(title(report))} (${shownReason})`, blocks }
 }

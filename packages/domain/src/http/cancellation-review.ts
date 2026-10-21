@@ -127,7 +127,6 @@ export type CancellationStripeFeedback = Schema.Schema.Type<typeof CancellationS
 export const CancellationSessionDigest = Schema.Struct({
 	startedAt: Schema.String,
 	durationMs: Schema.NullOr(Schema.Number),
-	userEmail: Schema.String,
 	/** `engaged`, `glance`, `idle`, `bounce` or `bot`. */
 	quality: Schema.String,
 	pageViews: Schema.Number,
@@ -144,12 +143,13 @@ export type CancellationSessionDigest = Schema.Schema.Type<typeof CancellationSe
 export const CancellationAuditEntry = Schema.Struct({
 	at: Schema.String,
 	action: Schema.String,
+	/** `user`, `api_key`, ...: the kind, never a name or email, which the model has no use for. */
 	actor: Schema.String,
 	outcome: Schema.String,
 })
 export type CancellationAuditEntry = Schema.Schema.Type<typeof CancellationAuditEntry>
 
-/** Everything the model reads next to the rules' conclusion. Nothing in it names the org. */
+/** Everything the model reads next to the rules' conclusion. Nothing in it names the org or a person. */
 export class CancellationModelRequest extends Schema.Class<CancellationModelRequest>(
 	"CancellationModelRequest",
 )({

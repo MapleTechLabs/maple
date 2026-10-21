@@ -39,21 +39,17 @@ const decodeSubscriptions = Schema.decodeUnknownOption(StripeSubscriptions)
 const text = (value: string | null | undefined): string | null => value?.trim() || null
 
 /**
- * The newest cancelled subscription's survey answer and comment. Both null when
- * the customer cancelled without answering, or not through Stripe's portal.
+ * The survey answer and comment of the newest cancelled subscription, the one
+ * being reviewed. Both null when the customer skipped it there or did not
+ * cancel through Stripe's portal; an older subscription's answer is never used.
  */
 export const stripeFeedbackOf = (response: unknown): CancellationStripeFeedback => {
-	const cancelled = Option.getOrUndefined(decodeSubscriptions(response))
-		?.data.filter((sub) => sub.canceledAt != null || sub.cancellationDetails != null)
-		.sort((a, b) => (b.canceledAt ?? b.created) - (a.canceledAt ?? a.created))
-		.find(
-			(sub) =>
-				text(sub.cancellationDetails?.feedback) !== null ||
-				text(sub.cancellationDetails?.comment) !== null,
-		)
+	const newest = Option.getOrUndefined(decodeSubscriptions(response))
+		?.data.filter((sub) => sub.canceledAt != null)
+		.sort((a, b) => (b.canceledAt ?? 0) - (a.canceledAt ?? 0))[0]
 	return {
-		feedback: text(cancelled?.cancellationDetails?.feedback),
-		comment: text(cancelled?.cancellationDetails?.comment),
+		feedback: text(newest?.cancellationDetails?.feedback),
+		comment: text(newest?.cancellationDetails?.comment),
 	}
 }
 
@@ -61,7 +57,6 @@ export interface SessionRow {
 	readonly sessionId: string
 	readonly startTime: DateTime.Utc
 	readonly durationMs: number | null
-	readonly userEmail: string
 	readonly quality: string
 	readonly pageViews: number
 	readonly clickCount: number
@@ -90,7 +85,6 @@ export const digestSession = (
 ): CancellationSessionDigest => ({
 	startedAt: DateTime.formatIso(row.startTime),
 	durationMs: row.durationMs,
-	userEmail: row.userEmail,
 	quality: row.quality,
 	pageViews: row.pageViews,
 	clicks: row.clickCount,
@@ -106,7 +100,6 @@ export const digestSession = (
 export interface AuditRow {
 	readonly action: string
 	readonly actorType: string
-	readonly actorLabel: string | null
 	readonly outcome: string
 	readonly occurredAt: Date
 }
@@ -114,6 +107,6 @@ export interface AuditRow {
 export const auditEntryOf = (row: AuditRow): CancellationAuditEntry => ({
 	at: row.occurredAt.toISOString(),
 	action: row.action,
-	actor: row.actorLabel ?? row.actorType,
+	actor: row.actorType,
 	outcome: row.outcome,
 })

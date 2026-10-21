@@ -3,11 +3,15 @@ import { describe, expect, it } from "vitest"
 import { digestSession, stripeFeedbackOf } from "./evidence"
 
 describe("stripeFeedbackOf", () => {
-	it("reads the newest cancelled subscription the customer answered the survey on", () => {
+	it("reads the newest cancelled subscription's survey", () => {
 		expect(
 			stripeFeedbackOf({
 				data: [
-					{ created: 30, canceledAt: null, cancellationDetails: { feedback: null, comment: null } },
+					{
+						created: 30,
+						canceledAt: null,
+						cancellationDetails: { feedback: "unused", comment: null },
+					},
 					{
 						created: 10,
 						canceledAt: 20,
@@ -23,12 +27,23 @@ describe("stripeFeedbackOf", () => {
 		).toEqual({ feedback: "too_expensive", comment: "Bill doubled" })
 	})
 
-	it("is empty when nobody answered, or Stripe's list is not what it expects", () => {
-		const empty = { feedback: null, comment: null }
+	it("never quotes an older cancellation when the customer skipped the survey this time", () => {
 		expect(
-			stripeFeedbackOf({ data: [{ created: 1, canceledAt: 2, cancellationDetails: { comment: "" } }] }),
-		).toEqual(empty)
-		expect(stripeFeedbackOf({ error: "nope" })).toEqual(empty)
+			stripeFeedbackOf({
+				data: [
+					{
+						created: 10,
+						canceledAt: 20,
+						cancellationDetails: { feedback: "too_expensive", comment: null },
+					},
+					{ created: 30, canceledAt: 40, cancellationDetails: { feedback: null, comment: "" } },
+				],
+			}),
+		).toEqual({ feedback: null, comment: null })
+	})
+
+	it("is empty when Stripe's list is not what it expects", () => {
+		expect(stripeFeedbackOf({ error: "nope" })).toEqual({ feedback: null, comment: null })
 	})
 })
 
@@ -37,7 +52,6 @@ describe("digestSession", () => {
 		sessionId: "s_1",
 		startTime: DateTime.makeUnsafe("2026-10-06T10:00:00Z"),
 		durationMs: 90_000,
-		userEmail: "a@acme.test",
 		quality: "engaged",
 		pageViews: 4,
 		clickCount: 12,

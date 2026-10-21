@@ -84,7 +84,7 @@ After the rules, maple-ai reads the same snapshot with what the rules cannot see
 
 It answers `agree` (the report shows nothing), `context` (a note under the reason) or `override`
 (its reason leads, the rules' stays beside it). It is one structured call on the triage model; no
-answer within 30 s, or no binding, and the report goes out with the rules alone. The answer is
+answer within 8 s, or no binding, and the report goes out with the rules alone. The answer is
 kept in `cancellation_reviews.model_read`, so it can be checked against known reasons later.
 What the customer told Stripe is also shown in the report as is.
 
