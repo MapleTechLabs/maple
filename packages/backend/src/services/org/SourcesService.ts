@@ -19,7 +19,7 @@ import { SourceId, type SourceResourceAttribute, type SourceSignal } from "@mapl
 import { hashIngestKey, parseIngestKeyLookupHmacKey } from "@maple/db"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Sources, type SourceRow } from "@maple/db/tables"
+import { ScrapeTargets, Sources, type SourceRow } from "@maple/db/tables"
 import { Array as Arr, Clock, Context, Effect, Layer, Redacted, Schema } from "effect"
 import {
 	integrationSourceHealth,
@@ -300,15 +300,30 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 						)
 					}
 					if (gone.length > 0) {
-						yield* db.run(
-							PG.deleteFrom(Sources).where(($) => [
-								$.orgId.eq(orgId),
-								PG.inList(
-									$.id,
-									gone.map((row) => row.id),
-								),
-							]),
-						)
+						// A source a scrape target still points at (one PlanetScale adopted) is not gone:
+						// deleting it would cascade into the target.
+						const [first, ...rest] = gone.map((row) => row.id)
+						const kept =
+							first === undefined
+								? []
+								: yield* db.run(
+										PG.from(ScrapeTargets)
+											.select("sourceId")
+											.where(($) => [$.orgId.eq(orgId), $.sourceId.in_(first, ...rest)]),
+									)
+						const keptIds = new Set(kept.map((target) => target.sourceId))
+						const deletable = gone.filter((row) => !keptIds.has(row.id))
+						if (deletable.length > 0) {
+							yield* db.run(
+								PG.deleteFrom(Sources).where(($) => [
+									$.orgId.eq(orgId),
+									PG.inList(
+										$.id,
+										deletable.map((row) => row.id),
+									),
+								]),
+							)
+						}
 					}
 				}),
 			)
