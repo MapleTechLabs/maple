@@ -61,6 +61,7 @@ import {
 	ScrapeTargets,
 	Sources,
 	SupabaseConnections,
+	SupabaseProjectInsights,
 	SupabaseProjects,
 	VcsCommits,
 	PrReviews,
@@ -170,6 +171,7 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	RailwayConnections,
 	RailwayEnvironments,
 	// The Supabase grant itself is in oauth_connections; these hold the org binding and projects.
+	SupabaseProjectInsights,
 	SupabaseProjects,
 	SupabaseConnections,
 	// The org's own OpenRouter key: a recreated org with the same id must not inherit it.
