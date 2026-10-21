@@ -22,6 +22,7 @@ import { ChartSpec, type FixedMetricRow } from "../../charts/chart-spec"
 import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
 import type { LoadFailure } from "../../data/load-failure"
 import { errorState } from "../../ui/error-state"
+import { presenceOf } from "../kit/signal-presence"
 import { Message, type RetryTarget } from "./message"
 import type { Model, OverviewPoint } from "./model"
 import { widgetShell } from "./view-widget"
@@ -55,8 +56,9 @@ type CardBody =
 	| Readonly<{ _tag: "Loading" }>
 	| Readonly<{ _tag: "Failed"; failure: LoadFailure; retry: RetryTarget }>
 	| Readonly<{ _tag: "Chart"; spec: Spec; ariaLabel: string }>
-	/** `item.data.length === 0`: a chart handed no rows draws bare axes and says nothing. */
+	/** No rows: `NeverReceived` when the org has never sent the chart's signal. */
 	| Readonly<{ _tag: "Empty" }>
+	| Readonly<{ _tag: "NeverReceived"; signal: "traces" | "logs" }>
 
 export type GridItem = Readonly<{
 	id: string
@@ -132,7 +134,13 @@ const latencyColors = (context: GridContext) =>
 	Object.fromEntries(LATENCY_SERIES.map((entry) => [entry.key, resolveColor(context.colors, entry.token)]))
 
 const LOADING: CardBody = { _tag: "Loading" }
-const EMPTY: CardBody = { _tag: "Empty" }
+
+/** An empty chart reads presence: a skeleton until it is known, setup copy when never received. */
+const emptyBody = (model: Model, signal: "traces" | "logs"): CardBody => {
+	const { status } = presenceOf(model.presence, signal)
+	if (status === "loading") return LOADING
+	return status === "absent" ? { _tag: "NeverReceived", signal } : { _tag: "Empty" }
+}
 
 /** `OVERVIEW_CHARTS` with the `metrics` memo's data, loading, error, header value and footer. */
 export const gridItems = <M>(
@@ -148,7 +156,9 @@ export const gridItems = <M>(
 	const overviewBody = (spec: (rows: ReadonlyArray<FixedMetricRow>) => Spec, ariaLabel: string) =>
 		chart(
 			bodyOf(model.overviewSeries.data, "Overview", (): CardBody =>
-				overviewRows.length === 0 ? EMPTY : { _tag: "Chart", spec: spec(overviewRows), ariaLabel },
+				overviewRows.length === 0
+					? emptyBody(model, "traces")
+					: { _tag: "Chart", spec: spec(overviewRows), ariaLabel },
 			),
 		)
 	const isOverviewSettled =
@@ -173,7 +183,7 @@ export const gridItems = <M>(
 	const logBody = chart(
 		bodyOf(model.logSeries.data, "LogVolume", (rows): CardBody =>
 			rows.length === 0
-				? EMPTY
+				? emptyBody(model, "logs")
 				: {
 						_tag: "Chart",
 						spec: specOf("Throughput", rows, throughput, context, false, "log-volume"),
@@ -254,6 +264,10 @@ const cardContent = (h: HtmlBuilder<Message>, model: Model, item: GridItem): Htm
 			})
 		case "Empty":
 			return chartEmpty(h, { hint: "Try a wider time range" }, ["No data in this window"])
+		case "NeverReceived":
+			return chartEmpty(h, { hint: "Fills in once Maple receives them" }, [
+				`No ${item.body.signal} yet`,
+			])
 		case "Chart": {
 			const { spec, ariaLabel } = item.body
 			return h.div(

@@ -1,11 +1,12 @@
 import type { ErrorSignal } from "../../../lib/models/error-signal"
+import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { toLoadFailure } from "../../../data/load-failure"
 import { errorState } from "../../../ui/error-state"
 import { skeletonList } from "../../../ui/skeleton"
-import { MountEmptyList, MountRowSelect } from "./command"
-import { type ListStatus, type PagingState, pagingOf } from "./derive"
+import { MountRowSelect } from "./command"
+import { listFailureOf, type ListStatus, type PagingState, pagingOf } from "./derive"
 import { bulkBar } from "./view-bulk"
 import { hubEmpty } from "./view-empty"
 import { Message } from "./message"
@@ -16,7 +17,7 @@ import { type HeaderSelection, type RowState, signalHeader, signalRow, signalRow
 
 type H = HtmlBuilder<Message>
 
-/** `<ErrorState error="...">`: a plain string, shaped the way `ErrorState` reads one. */
+/** The fallback when a failed list carries no error of its own. */
 const LIST_FAILURE = toLoadFailure("The errors list could not be loaded.")
 
 const SKELETON_ROWS = 8
@@ -31,12 +32,12 @@ const loadingBody = (h: H): ReadonlyArray<Html> => [
 	}),
 ]
 
-const failedBody = (h: H): ReadonlyArray<Html> => [
+const failedBody = (h: H, model: Model): ReadonlyArray<Html> => [
 	h.div(
 		[h.Class("p-4")],
 		[
 			errorState(h, {
-				failure: LIST_FAILURE,
+				failure: Option.getOrElse(listFailureOf(model), () => LIST_FAILURE),
 				title: "Failed to load errors",
 				onRetry: Message.ClickedRetry(),
 			}),
@@ -90,10 +91,7 @@ const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> 
 	const { signals } = inputs
 	if (signals.length === 0) {
 		return [
-			h.div(
-				[h.Key("empty"), h.Class("contents"), h.OnMount(MountEmptyList())],
-				[hubEmpty(h, model, inputs.isNarrowed)],
-			),
+			h.div([h.Key("empty"), h.Class("contents")], [hubEmpty(h, model, inputs.isNarrowed)]),
 			...bulkBar(h, model),
 		]
 	}
@@ -129,5 +127,5 @@ export const listBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<
 	inputs.status === "loading"
 		? loadingBody(h)
 		: inputs.status === "failed"
-			? failedBody(h)
+			? failedBody(h, model)
 			: readyBody(h, model, inputs)

@@ -177,20 +177,10 @@ export const MountFilterRail = Mount.define("MountLogsFilterRail", {
 	execute: () => Effect.succeed(Message.MountedFilterRail()),
 })
 
-/** The empty state is on screen: resolves after the frame that painted it. */
-export const MountEmptyState = Mount.define("MountLogsEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyState>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyState()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
-})
-
 /** `useSignalPresence`, sent when the empty state mounts (never with the data). */
 export const LoadSignalPresence = Command.define("LoadLogsSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })

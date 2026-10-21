@@ -46,7 +46,6 @@ export const Message = defineMessageUnion({
 	PaintedTable: {},
 	MountedFilterRail: {},
 	ChangedListWindow: { window: VirtualWindow },
-	PaintedEmptyState: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	ReachedListEnd: {},
 	ClickedReload: {},

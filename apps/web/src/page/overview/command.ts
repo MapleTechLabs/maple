@@ -7,7 +7,7 @@ import {
 import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
 import { getServiceHealthSnapshot } from "@maple/web-data/warehouse/services"
 import { Clock, Duration, Effect, Option, Schema } from "effect"
-import { Command, Mount } from "foldkit"
+import { Command } from "foldkit"
 import { toLoadFailure } from "../../data/load-failure"
 import { loadAnomalyServiceCounts } from "../../data/anomaly-service-counts"
 import { loadServicesFacets } from "../../data/services-facets-probe"
@@ -237,19 +237,9 @@ export const FetchRefinement = Command.define("FetchOverviewThroughputRefinement
 		),
 })
 
-/** The services empty state is on screen: resolves after the frame that painted it. */
-export const MountEmptyState = Mount.define("MountOverviewEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyState>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyState()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
-})
-
 export const LoadSignalPresence = Command.define("LoadOverviewSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })

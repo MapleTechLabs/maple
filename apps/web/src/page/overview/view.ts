@@ -12,7 +12,6 @@ import { signalEmptyState } from "../kit/signal-empty-state"
 import { presenceOf } from "../kit/signal-presence"
 import { timeControls } from "../kit/time-controls"
 import * as TimeRangePicker from "../kit/time-range-picker"
-import { MountEmptyState } from "./command"
 import {
 	defaultPreset,
 	environmentFilter,
@@ -72,21 +71,16 @@ const headerActions = (h: H, model: Model): Html => {
 	})
 }
 
-/** `ServiceHealthList`'s empty state; its presence request is sent once it painted. */
+/** `ServiceHealthList`'s empty state; skeleton until the page-init presence read settles. */
 const servicesEmptyState = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("contents"), h.OnMount(MountEmptyState())],
-		[
-			signalEmptyState(h, {
-				signal: "traces",
-				noun: "services",
-				guideDocs: "services",
-				presence: presenceOf(model.presence, "traces"),
-				nowMs: model.nowMs ?? 0,
-				className: "py-8",
-			}),
-		],
-	)
+	signalEmptyState(h, {
+		signal: "traces",
+		noun: "services",
+		guideDocs: "services",
+		presence: presenceOf(model.presence, "traces"),
+		nowMs: model.nowMs ?? 0,
+		className: "py-8",
+	})
 
 /** The facets failure: the charts still load, so the dropdown says why it is empty. */
 const facetsError = (h: H, model: Model): ReadonlyArray<Html> =>
@@ -156,7 +150,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				healthOverview(h, { model, slice, nowMs }),
 				usageCards(h, model),
 				metricsGrid(h, model, items, isWaiting),
-				healthList(h, { model, slice, nowMs, emptyState: servicesEmptyState(h, model) }),
+				healthList(h, {
+					model,
+					slice,
+					nowMs,
+					emptyState: servicesEmptyState(h, model),
+					isNeverReceived: presenceOf(model.presence, "traces").status === "absent",
+				}),
 			]),
 		],
 	)

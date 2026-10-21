@@ -3,10 +3,10 @@ import { Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import {
 	click,
-	Command,
 	expect as expectView,
 	expectOutMessage,
 	given,
+	label,
 	Mount,
 	role,
 	scene,
@@ -24,8 +24,6 @@ import {
 	FetchFacets,
 	FetchOverview,
 	FetchSparklines,
-	LoadSignalPresence,
-	MountEmptyState,
 	MountTable,
 } from "./command"
 import { Message } from "./message"
@@ -94,6 +92,14 @@ const loaded = (rows: ReadonlyArray<ServiceRow>): Model => {
 
 const themeResolved = () =>
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
+
+const withPresence = (model: Model, status: "present" | "absent"): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedLoadSignalPresence({
+			result: Result.succeed({ traces: { status, lastSeenMs: null } }),
+		}),
+	).model
 
 describe("services list", () => {
 	test("entry resolves the window, then asks every query the page reads under its key", () => {
@@ -220,21 +226,21 @@ describe("services list", () => {
 		)
 	})
 
-	test("an empty org asks for signal presence once the empty state painted, then shows setup", () => {
+	test("an empty org shows a skeleton until presence is known, never the 'No services found' copy", () => {
+		expect(names(init({ search: {} }, context).commands)).toContain("LoadSignalPresence")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([])),
 			themeResolved(),
 			Mount.resolve(MountTable, Message.PaintedTable()),
-			expectView(text("No services found")).toExist(),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Command.resolve(
-				LoadSignalPresence,
-				Message.CompletedLoadSignalPresence({
-					result: Result.succeed({ traces: { status: "absent", lastSeenMs: null } }),
-				}),
-			),
+			expectView(text("No services found")).not.toExist(),
+			expectView(label("Loading")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withPresence(loaded([]), "absent")),
+			themeResolved(),
+			Mount.resolve(MountTable, Message.PaintedTable()),
 			expectView(text("No services yet")).toExist(),
 			expectView(role("link", { name: "Set up tracing" })).toHaveAttr(
 				"href",

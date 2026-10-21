@@ -48,7 +48,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		firstPage: Keyed.idle(),
 		morePages: [],
 		budget: { key: budgetKey, data: AsyncData.Loading() },
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		subject: "",
 		isCreating: false,
 		isOrgAdmin: !isClerkAuthEnabled,
@@ -68,6 +68,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model: loaded.model,
 		commands: [
+			LoadInvestigationsPresence({ orgId: context.orgId }),
 			ReadInvestigationsClock(),
 			...(loaded.commands ?? []),
 			FetchTriageBudget({ key: budgetKey }),
@@ -129,11 +130,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchMorePage: ({ key, cursor, result }) => ({
 			model: {
 				...model,
-				morePages: model.morePages.map((more) => (more.cursor === cursor ? { cursor, page: Keyed.accept(more.page, key, result) } : more)),
+				morePages: model.morePages.map((more) =>
+					more.cursor === cursor ? { cursor, page: Keyed.accept(more.page, key, result) } : more,
+				),
 			},
 		}),
-		CompletedFetchBudget: ({ key, result }) => ({ model: { ...model, budget: Keyed.accept(model.budget, key, result) } }),
-		CompletedReadIsAdmin: ({ orgId, isAdmin }) => (orgId === context.orgId ? { model: { ...model, isOrgAdmin: isAdmin } } : { model }),
+		CompletedFetchBudget: ({ key, result }) => ({
+			model: { ...model, budget: Keyed.accept(model.budget, key, result) },
+		}),
+		CompletedReadIsAdmin: ({ orgId, isAdmin }) =>
+			orgId === context.orgId ? { model: { ...model, isOrgAdmin: isAdmin } } : { model },
 		ClickedRetry: () => loadFirstPage(model, context, "Refresh"),
 		ClickedLoadMore: () => {
 			const cursor = nextCursorOf(model)
@@ -170,13 +176,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedClearFilters: () => navigate(model, { ...model.search, kind: undefined, q: undefined }),
 		ClickedRow: ({ id }) => ({
 			model,
-			outMessage: PageOutMessage.RequestedNavigation({ url: hrefOf(AppRoute.Investigation({ id, search: {} })), isReplace: false }),
+			outMessage: PageOutMessage.RequestedNavigation({
+				url: hrefOf(AppRoute.Investigation({ id, search: {} })),
+				isReplace: false,
+			}),
 		}),
-		PaintedHero: () =>
-			AsyncData.isIdle(model.presence)
-				? { model: { ...model, presence: SignalPresenceData.Loading() }, commands: [LoadInvestigationsPresence()] }
-				: { model },
-		CompletedLoadSignalPresence: ({ result }) => ({ model: { ...model, presence: AsyncData.settle(model.presence, result) } }),
+		CompletedLoadSignalPresence: ({ result }) => ({
+			model: { ...model, presence: AsyncData.settle(model.presence, result) },
+		}),
 		GotTabsMessage: ({ message: inner }) => {
 			const next = Tabs.update(model.tabs, inner)
 			const updated = { ...model, tabs: next.model }

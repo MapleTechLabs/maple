@@ -169,7 +169,12 @@ const renameTab = (model: Model, id: string, title: string, nowMs: number, conte
 		? { model }
 		: saveTabs(
 				model,
-				{ ...model.tabs, tabs: model.tabs.tabs.map((tab) => (tab.id === id ? { ...tab, title, updatedAt: nowMs } : tab)) },
+				{
+					...model.tabs,
+					tabs: model.tabs.tabs.map((tab) =>
+						tab.id === id ? { ...tab, title, updatedAt: nowMs } : tab,
+					),
+				},
 				context,
 			)
 
@@ -267,15 +272,19 @@ export const init = (route: ChatRoute, context: PageContext): Return => {
 		confirmDeleteId: null,
 		referrerPath: null,
 		dismissedContexts: [],
-		presence: SignalPresenceData.Idle(),
-		isPresenceRequested: false,
+		presence: SignalPresenceData.Loading(),
 		knownServices: [],
 		isKnownServicesRequested: false,
 		subject: subjectOfSearch(route.search),
 		search: route.search,
 	}
-	const loaded = withCommands({ model }, [LoadTabs({ orgId: context.orgId })])
-	return shared === null ? loaded : withCommands(startConversations(model, [shared.tabId], context, "shared"), loaded.commands ?? [])
+	const loaded = withCommands({ model }, [
+		LoadTabs({ orgId: context.orgId }),
+		LoadPresence({ orgId: context.orgId }),
+	])
+	return shared === null
+		? loaded
+		: withCommands(startConversations(model, [shared.tabId], context, "shared"), loaded.commands ?? [])
 }
 
 const sameSubject = (a: ChatSubject | null, b: ChatSubject | null): boolean =>
@@ -342,7 +351,8 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		ClickedNewChat: () => closingSheet(model, { model, commands: [CreateTab()] }),
 		PressedNewChatKey: () => (model.shared === null ? { model, commands: [CreateTab()] } : { model }),
 		CreatedTab: ({ id, nowMs }) => createTab(model, id, nowMs, context),
-		ClickedTab: ({ id }) => (model.renamingId === id ? { model } : closingSheet(model, setActive(model, id, context))),
+		ClickedTab: ({ id }) =>
+			model.renamingId === id ? { model } : closingSheet(model, setActive(model, id, context)),
 		ClickedSidebarTrigger: () => ({ model, outMessage: PageOutMessage.RequestedSidebarToggle() }),
 		ClickedSwitchConversation: () => updateConversationSheet(model, Dialog.open(model.conversationSheet)),
 		GotConversationSheetMessage: ({ message: child }) =>
@@ -391,11 +401,9 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 				: liftConversation(model, tabId, Conversation.update(conversation, child, sendContext(model, tabId)))
 		},
 		DismissedContext: ({ id }) =>
-			model.dismissedContexts.includes(id) ? { model } : { model: { ...model, dismissedContexts: [...model.dismissedContexts, id] } },
-		PaintedEmptyState: () =>
-			model.isPresenceRequested
+			model.dismissedContexts.includes(id)
 				? { model }
-				: { model: { ...model, isPresenceRequested: true, presence: SignalPresenceData.Loading() }, commands: [LoadPresence()] },
+				: { model: { ...model, dismissedContexts: [...model.dismissedContexts, id] } },
 		CompletedLoadPresence: ({ result }) => ({
 			model: {
 				...model,
@@ -446,7 +454,9 @@ const followWidgetFix = (result: Return): Return => {
 
 const runningTails = (model: Model): string =>
 	Object.values(model.conversations)
-		.flatMap((conversation) => (conversation.stream === null ? [] : [`${conversation.tabId}:${conversation.stream.generation}`]))
+		.flatMap((conversation) =>
+			conversation.stream === null ? [] : [`${conversation.tabId}:${conversation.stream.generation}`],
+		)
 		.join("|")
 
 /** All tails share one Subscription: when the set changes, each reconnects from what it has folded. */
@@ -470,4 +480,3 @@ const followTails = (before: Model, result: Return): Return =>
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	followTails(model, followWidgetFix(step(model, message, context)))
-

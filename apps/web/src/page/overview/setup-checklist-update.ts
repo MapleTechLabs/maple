@@ -1,6 +1,6 @@
 import type { FrameworkId } from "../../components/quick-start/sdk-snippets"
 import type { OnboardingRole } from "../../lib/onboarding-role"
-import { Command } from "foldkit"
+import { AsyncData, Command } from "foldkit"
 import type { TimeWindow } from "../../data/time-range"
 import { AppRoute, hrefOf } from "../../route"
 import * as CopyButton from "../../ui/copy-button"
@@ -16,7 +16,7 @@ import {
 	SaveSetupState,
 	SendSetupTestEvent,
 } from "./setup-checklist-command"
-import { type CopyField, Message, type Model, type ServiceRow } from "./setup-checklist"
+import { type CopyField, Message, type Model, type ServiceRow, ServicesData } from "./setup-checklist"
 
 type Return = PageReturn<Model, Message>
 
@@ -37,7 +37,7 @@ export const init = (storageKey: string): Return => ({
 		storageKey,
 		state: null,
 		keys: { _tag: "Loading" },
-		services: [],
+		services: ServicesData.Idle(),
 		window: null,
 		isOverviewInFlight: false,
 		isSendingTest: false,
@@ -59,13 +59,19 @@ export const frameworkOf = (state: QuickStartState): string =>
 
 /** `useIngestConnection`: the org's own services; the seeded `demo-` ones do not count. */
 export const realServices = (model: Model): ReadonlyArray<ServiceRow> =>
-	model.services.filter((row) => !row.serviceName.startsWith("demo-"))
+	AsyncData.getOrElse(model.services, (): ReadonlyArray<ServiceRow> => []).filter(
+		(row) => !row.serviceName.startsWith("demo-"),
+	)
 
 const fetchOverview = (model: Model, pinnedNamespace: string | null): Return =>
 	model.window === null
 		? { model }
 		: {
-				model: { ...model, isOverviewInFlight: true },
+				model: {
+					...model,
+					isOverviewInFlight: true,
+					services: AsyncData.hasData(model.services) ? model.services : ServicesData.Loading(),
+				},
 				commands: [FetchSetupOverview({ window: model.window, pinnedNamespace })],
 			}
 
@@ -140,10 +146,28 @@ export const update = (model: Model, message: Message, context: SetupContext): R
 		}),
 		FailedLoadKeys: () => ({ model: { ...model, keys: { _tag: "Failed" } } }),
 		SucceededLoadOverview: ({ window, services }) =>
-			isWindow(model, window) ? { model: { ...model, services, isOverviewInFlight: false } } : { model },
+			isWindow(model, window)
+				? {
+						model: {
+							...model,
+							services: ServicesData.Success({ data: services }),
+							isOverviewInFlight: false,
+						},
+					}
+				: { model },
 		// One failed poll keeps the services already found, so the card does not un-detect them.
-		FailedLoadOverview: ({ window }) =>
-			isWindow(model, window) ? { model: { ...model, isOverviewInFlight: false } } : { model },
+		FailedLoadOverview: ({ window, failure }) =>
+			isWindow(model, window)
+				? {
+						model: {
+							...model,
+							isOverviewInFlight: false,
+							services: AsyncData.hasData(model.services)
+								? model.services
+								: ServicesData.Failure({ error: failure }),
+						},
+					}
+				: { model },
 		// A tick during a slow read waits for it: a new window would drop its answer.
 		TickedPoll: () => (model.isOverviewInFlight ? { model } : { model, commands: resolvePoll }),
 		ResolvedPollWindow: ({ window }) => windowResolved(model, window, pinnedNamespace),

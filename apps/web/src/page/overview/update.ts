@@ -329,7 +329,7 @@ export const initWith =
 			refinement: Keyed.idle(),
 			incidents: IncidentsData.Loading(),
 			rules: RulesData.Loading(),
-			presence: SignalPresenceData.Idle(),
+			presence: SignalPresenceData.Loading(),
 			environmentSelect: Select.init("overview-environment", {
 				value: ALL_ENVIRONMENTS,
 				selectedIndex: 0,
@@ -346,6 +346,7 @@ export const initWith =
 			model,
 			commands: [
 				ReadEntry({ orgId: context.orgId }),
+				LoadSignalPresence({ orgId: context.orgId }),
 				...Command.mapMessages(setup?.commands ?? [], (message) =>
 					Message.GotSetupMessage({ message }),
 				),
@@ -503,14 +504,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model: { ...model, rules: RulesData.Success({ data: enabled }) } }
 				: { model },
 		UpdatedRuleStates: () => ({ model }),
-		// `useSignalPresence` mounts with the empty state, so the "unknown" copy paints first.
-		PaintedEmptyState: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),

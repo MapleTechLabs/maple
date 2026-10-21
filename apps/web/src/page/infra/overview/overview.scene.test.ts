@@ -12,7 +12,12 @@ import { init, update } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const integrations = { cloudflare: true, railway: false, planetscale: false, gcp: false }
-const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC", infra: { presence: null, integrations } }
+const context: PageContext = {
+	orgId,
+	pinnedNamespace: null,
+	timeZone: "UTC",
+	infra: { presence: null, isPresenceFailed: false, integrations },
+}
 const window = { startTime: "2026-10-01 11:00:00", endTime: "2026-10-01 12:00:00" }
 const later = { startTime: "2026-10-01 11:05:00", endTime: "2026-10-01 12:05:00" }
 const NOW = Date.parse("2026-10-01T12:00:00Z")

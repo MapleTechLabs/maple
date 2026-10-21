@@ -1,19 +1,12 @@
 import { OrgId } from "@maple/domain"
 import { V2ErrorIssue } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
-import { Command, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, label, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { MeasureTabIndicator, Message as TabsMessage } from "../../../ui/tabs"
 import { toLoadFailure } from "../../../data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
-import {
-	FetchInvestigations,
-	FetchPage,
-	LoadSignalPresence,
-	MountEmptyList,
-	MountFilterRail,
-	MountRowSelect,
-} from "./command"
+import { FetchInvestigations, FetchPage, MountFilterRail, MountRowSelect } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -88,6 +81,16 @@ const withPage = (model: Model, data: ReadonlyArray<V2ErrorIssue>): Model =>
 		}),
 	).model
 
+const RANKING_FAILURE = { ...toLoadFailure(new Error("boom")), message: "The ranking store timed out." }
+
+const withPresence = (model: Model, status: "present" | "absent"): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedLoadSignalPresence({
+			result: Result.succeed({ traces: { status, lastSeenMs: null } }),
+		}),
+	).model
+
 describe("errors hub", () => {
 	test("entry resolves the day window, then asks the summary, first page and investigations, and the sidebar once it mounts", () => {
 		expect(names(init({ search: {} }, context).commands)).toContain("ResolveErrorsWindow")
@@ -146,7 +149,7 @@ describe("errors hub", () => {
 			model,
 			Message.CompletedFetchRanking({
 				key: model.ranking.key ?? "",
-				result: Result.fail(toLoadFailure(new Error("boom"))),
+				result: Result.fail(RANKING_FAILURE),
 			}),
 		)
 		scene(
@@ -155,6 +158,8 @@ describe("errors hub", () => {
 			measured,
 			railMounted,
 			expectView(text("Failed to load errors")).toExist(),
+			expectView(text(RANKING_FAILURE.message)).toExist(),
+			expectView(text(toLoadFailure("The errors list could not be loaded.").message)).not.toExist(),
 		)
 		const retried = pageUpdate(failed.model, Message.ClickedRetry())
 		expect(names(retried.commands)).toEqual(["FetchErrorsRanking"])
@@ -236,20 +241,21 @@ describe("errors hub", () => {
 		expect(pageUpdate(one, Message.ToggledAllRows()).model.selectedIds).toEqual([])
 	})
 
-	test("an empty org asks for signal presence once the empty list painted, then shows setup", () => {
+	test("an empty org shows a skeleton until presence is known, never the 'No open errors' copy", () => {
+		expect(names(init({ search: {} }, context).commands)).toContain("LoadErrorsSignalPresence")
 		scene(
 			{ update: pageUpdate, view },
 			given(withPage(windowed(), [])),
 			measured,
 			railMounted,
-			expectView(text("No open errors")).toExist(),
-			Mount.resolve(MountEmptyList, Message.PaintedEmptyList()),
-			Command.resolve(
-				LoadSignalPresence,
-				Message.CompletedLoadSignalPresence({
-					result: Result.succeed({ traces: { status: "absent", lastSeenMs: null } }),
-				}),
-			),
+			expectView(text("No open errors")).not.toExist(),
+			expectView(label("Loading")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withPresence(withPage(windowed(), []), "absent")),
+			measured,
+			railMounted,
 			expectView(text("No errors yet")).toExist(),
 		)
 	})

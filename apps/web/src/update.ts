@@ -2,7 +2,7 @@ import { OrgId as OrgIdSchema, type OrgId } from "@maple/domain"
 import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { Option, Schema, Struct } from "effect"
-import { Command, Update } from "foldkit"
+import { AsyncData, Command, Update } from "foldkit"
 import { UrlRequest } from "foldkit/navigation"
 import { Transition } from "foldkit/route"
 import { modifyFields } from "foldkit/struct"
@@ -180,13 +180,17 @@ export const pageContextOf = (model: Model): Option.Option<PageContext> =>
 				? publicContextOf(model, maybeOrgId)
 				: // `WrongRegionScreen` replaces the page, so it reads nothing this region would refuse.
 					Option.filter(maybeOrgId, () => rendersShell(model.route) && !isWrongRegion(model)).pipe(
-				Option.map((orgId) => ({
-					orgId,
-					pinnedNamespace: model.shell.pinnedNamespaces[orgId] ?? null,
-					timeZone: model.timeZone,
-					infra: { presence: presenceOf(model.shell), integrations: model.shell.integrations },
-				})),
-			),
+						Option.map((orgId) => ({
+							orgId,
+							pinnedNamespace: model.shell.pinnedNamespaces[orgId] ?? null,
+							timeZone: model.timeZone,
+							infra: {
+								presence: presenceOf(model.shell),
+								isPresenceFailed: AsyncData.isFailure(model.shell.infraPresence),
+								integrations: model.shell.integrations,
+							},
+						})),
+					),
 	})
 
 /** A page's request the shell answers: the namespace pin, or its own sidebar trigger (`/chat`). */
@@ -644,7 +648,6 @@ const settledCustomer = (model: Model, orgId: string, data: CustomerSlot["data"]
 			}
 		: settled
 }
-
 
 // SESSION TIME RANGE
 

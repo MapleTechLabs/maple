@@ -352,7 +352,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		volume: Keyed.idle(),
 		spark: Keyed.idle(),
 		investigations: Keyed.idle(),
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		selectedIds: [],
 		selectionAnchor: null,
 		focusedId: null,
@@ -377,6 +377,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(context, "Load"),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
@@ -553,13 +554,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const mounted = { ...model, isFilterRailMounted: true }
 			return mounted.window === null ? { model: mounted } : requestAll(mounted, context, mounted.window, "Load")
 		},
-		PaintedEmptyList: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),

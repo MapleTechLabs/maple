@@ -100,10 +100,14 @@ const loadedRail = (h: H, model: Model, facets: WorkloadFacets, label: string): 
 const toInstall = (message: InstallModal.Message) => Message.GotInstallMessage({ message })
 
 /** The sidebar's presence probe (`useInfraSurfaces()`): any Kubernetes surface means the chart is in. */
-const isClusterReporting = (inputs: PageViewInputs): boolean =>
-	(inputs.context.infra?.presence ?? []).some(
-		(surface) => surface === "k8sPods" || surface === "k8sNodes" || surface === "k8sWorkloads",
-	)
+const isClusterReporting = (presence: ReadonlyArray<string>): boolean =>
+	presence.some((surface) => surface === "k8sPods" || surface === "k8sNodes" || surface === "k8sWorkloads")
+
+/** The probe has not answered yet: install advice would flash before the cluster is known. */
+const isProbePending = (inputs: PageViewInputs): boolean =>
+	inputs.context.infra !== undefined &&
+	inputs.context.infra.presence === null &&
+	!inputs.context.infra.isPresenceFailed
 
 const otherKinds = (h: H, kind: WorkloadKind): ReadonlyArray<Html> =>
 	KIND_OPTIONS.filter((option) => option.value !== kind).map((option) =>
@@ -150,9 +154,15 @@ const workloadList = (h: H, model: Model, workloads: ReadonlyArray<WorkloadRow>,
 	const kind = kindOf(model.search)
 	const kindLabel = KIND_OPTIONS.find((option) => option.value === kind)?.label ?? "Deployments"
 	const isWaiting = AsyncData.isRefreshing(model.workloads.data)
-	const hasStructuredFilter = Object.values(filtersOf(model.search)).some((values) => (values?.length ?? 0) > 0)
-	if (workloads.length === 0 && !hasStructuredFilter)
-		return isClusterReporting(inputs) ? emptyKindInWindow(h, kind, kindLabel) : emptyKind(h, model, kind, kindLabel)
+	const hasStructuredFilter = Object.values(filtersOf(model.search)).some(
+		(values) => (values?.length ?? 0) > 0,
+	)
+	if (workloads.length === 0 && !hasStructuredFilter) {
+		if (isProbePending(inputs)) return workloadTableLoading(h)
+		return isClusterReporting(inputs.context.infra?.presence ?? [])
+			? emptyKindInWindow(h, kind, kindLabel)
+			: emptyKind(h, model, kind, kindLabel)
+	}
 	const endTime = model.frame.window?.endTime ?? ""
 	const scoped = workloads.map((workload) => ({ workload, scope: scopeOf(workload, endTime) }))
 	const count = (target: WorkloadScope) => scoped.filter((entry) => entry.scope === target).length

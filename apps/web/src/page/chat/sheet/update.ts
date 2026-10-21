@@ -59,9 +59,16 @@ const liftConversation = (model: Model, step: Conversation.Return): Return => {
 					commands:
 						model.orgId === null
 							? commands
-							: [...commands, RenameStoredTab({ orgId: model.orgId, tabId: model.tabId, title })],
+							: [
+									...commands,
+									RenameStoredTab({ orgId: model.orgId, tabId: model.tabId, title }),
+								],
 				}),
-				RequestedToast: ({ type, title }) => ({ model: next, commands, outMessage: OutMessage.RequestedToast({ type, title }) }),
+				RequestedToast: ({ type, title }) => ({
+					model: next,
+					commands,
+					outMessage: OutMessage.RequestedToast({ type, title }),
+				}),
 			}),
 	})
 	const hasMessages = (step.model.messages.length ?? 0) > 0
@@ -87,9 +94,18 @@ export const update = (model: Model, message: Message, orgId: string | null): Re
 		RequestedOpen: ({ viaKeyboard }) =>
 			orgId === null || model.dialog.isOpen
 				? { model }
-				: withCommands(liftDialog({ ...model, orgId, isInitialFocusPointer: !viaKeyboard }, Dialog.open(model.dialog)), [
-						ReadSheetTab({ orgId }),
-					]),
+				: withCommands(
+						liftDialog(
+							{
+								...model,
+								orgId,
+								isInitialFocusPointer: !viaKeyboard,
+								presence: SignalPresenceData.Loading(),
+							},
+							Dialog.open(model.dialog),
+						),
+						[ReadSheetTab({ orgId }), LoadPresence({ orgId })],
+					),
 		CompletedReadSheetTab: ({ orgId: forOrg, tabId, nowMs, referrerPath }) =>
 			!model.dialog.isOpen || forOrg !== model.orgId
 				? { model }
@@ -105,13 +121,17 @@ export const update = (model: Model, message: Message, orgId: string | null): Re
 		FocusedVisibleTrigger: ({ triggerId }) =>
 			model.isInitialFocusPointer
 				? { model }
-				: updateTooltip(model, Tooltip.Message.CheckedFocusVisible({ triggerId, isFocusVisible: true })),
-		ClickedNewChat: () => (model.orgId === null ? { model } : { model, commands: [CreateSheetTab({ orgId: model.orgId })] }),
+				: updateTooltip(
+						model,
+						Tooltip.Message.CheckedFocusVisible({ triggerId, isFocusVisible: true }),
+					),
+		ClickedNewChat: () =>
+			model.orgId === null ? { model } : { model, commands: [CreateSheetTab({ orgId: model.orgId })] },
 		// A fresh conversation mounts a fresh empty state, which asks for the signal presence again.
 		CreatedSheetTab: ({ orgId: forOrg, tabId, referrerPath }) =>
 			!model.dialog.isOpen || forOrg !== model.orgId
 				? { model }
-				: startConversation({ ...model, isPresenceRequested: false }, forOrg, tabId, referrerPath),
+				: startConversation(model, forOrg, tabId, referrerPath),
 		DismissedContext: ({ id }) =>
 			model.dismissedContexts.includes(id) ? { model } : { model: { ...model, dismissedContexts: [...model.dismissedContexts, id] } },
 		ClickedOpenFullPage: () =>
@@ -124,10 +144,6 @@ export const update = (model: Model, message: Message, orgId: string | null): Re
 			model.conversation === null || model.conversation.tabId !== tabId
 				? { model }
 				: liftConversation(model, Conversation.update(model.conversation, child, sendContext(model))),
-		PaintedEmptyState: () =>
-			model.isPresenceRequested
-				? { model }
-				: { model: { ...model, isPresenceRequested: true, presence: SignalPresenceData.Loading() }, commands: [LoadPresence()] },
 		CompletedLoadPresence: ({ result }) => ({
 			model: {
 				...model,
@@ -151,4 +167,12 @@ export const sessionChanged = (model: Model, orgId: string | null): Return =>
 		? { model }
 		: orgId === null
 			? liftDialog(model, Dialog.close(model.dialog))
-			: { model: { ...initSheet(), dialog: model.dialog, orgId }, commands: [ReadSheetTab({ orgId })] }
+			: {
+					model: {
+						...initSheet(),
+						dialog: model.dialog,
+						orgId,
+						presence: SignalPresenceData.Loading(),
+					},
+					commands: [ReadSheetTab({ orgId }), LoadPresence({ orgId })],
+				}

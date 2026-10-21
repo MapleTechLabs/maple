@@ -10,7 +10,7 @@ import { icon } from "../../../ui/icon"
 import { listFooter } from "../../../ui/list-footer"
 import { statusDot } from "../../../ui/status-dot"
 import { serviceDot } from "../../../ui/values"
-import { docsLink, emptyActions, filteredEmpty } from "../../kit/signal-empty-state"
+import { docsLink, emptyActions, filteredEmpty, presenceLoading } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
 import { anomalyRow } from "../kit/row"
 import { clusterByService, GROUP_LABEL, groupIncidents } from "./derive"
@@ -113,6 +113,7 @@ const PURPOSE =
 
 const quietEmpty = (h: H, model: Model, status: StatusTab, excludedHint: Html | null): Html => {
 	const presence = presenceOf(model.presence, "traces")
+	if (presence.status === "loading") return h.div([h.Class("p-4")], [presenceLoading(h)])
 	return h.div(
 		[h.Class("p-4")],
 		[

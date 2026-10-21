@@ -8,7 +8,7 @@ import * as Menu from "../../../ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { Message as ConversationMessage } from "../conversation/message"
 import { LoadHistory } from "../conversation/command"
-import { CopyShareLink, CreateTab, LoadPresence, MountEmptyState, SaveTabs } from "./command"
+import { CopyShareLink, CreateTab, SaveTabs } from "./command"
 import { Message } from "./message"
 import { MountMessage, MountStopClickPropagation } from "./mounts"
 import { view } from "./view"
@@ -42,7 +42,7 @@ const pickFromMenu = (model: Model, tabId: string, value: string) => {
 
 describe("chat page", () => {
 	test("entry reads the stored tabs, then every tab's conversation reads its history", () => {
-		expect(names(init(route(), context).commands)).toEqual(["LoadChatTabs"])
+		expect(names(init(route(), context).commands)).toEqual(["LoadChatTabs", "LoadChatSignalPresence"])
 		const entered = loaded([tab("default"), tab("t2")])
 		expect(names(entered.commands)).toEqual(["LoadChatHistory", "LoadChatHistory"])
 		expect(Object.keys(entered.model.conversations)).toEqual(["default", "t2"])
@@ -127,19 +127,10 @@ describe("chat page", () => {
 
 	test("a shared link shows that conversation read-only, outside the viewer's own tabs", () => {
 		const shared = init(route({ shared: "t9", title: "Payments" }), context)
-		expect(names(shared.commands)).toEqual(["LoadChatHistory", "LoadChatTabs"])
+		expect(names(shared.commands)).toEqual(["LoadChatHistory", "LoadChatTabs", "LoadChatSignalPresence"])
 		expect(shared.model.conversations.t9?.readOnly).toBe("shared")
 		const loadedShared = step(shared.model, Message.CompletedLoadTabs({ state: { tabs: [tab("default")], activeTabId: "default" }, nowMs: NOW, origin: "", referrerPath: null }))
 		expect(Object.keys(loadedShared.model.conversations)).toEqual(["t9"])
-	})
-
-	test("the empty state's signal presence is asked once, after it painted", () => {
-		const model = loaded().model
-		const painted = step(model, Message.PaintedEmptyState())
-		expect(names(painted.commands)).toEqual(["LoadChatSignalPresence"])
-		expect(step(painted.model, Message.PaintedEmptyState()).commands ?? []).toEqual([])
-		const absent = step(painted.model, Message.CompletedLoadPresence({ result: Result.succeed({ traces: { status: "absent", lastSeenMs: null } }) }))
-		expect(absent.model.presence._tag).toBe("Success")
 	})
 
 	test("the empty state reads trace presence; New chat opens a second conversation beside the first", () => {
@@ -147,15 +138,22 @@ describe("chat page", () => {
 			loaded().model,
 			Message.GotConversationMessage({
 				tabId: "default",
-				message: ConversationMessage.CompletedLoadHistory({ generation: 1, result: Result.succeed({ messages: [], cursor: 0, running: false }) }),
+				message: ConversationMessage.CompletedLoadHistory({
+					generation: 1,
+					result: Result.succeed({ messages: [], cursor: 0, running: false }),
+				}),
+			}),
+		).model
+		const absent = step(
+			ready,
+			Message.CompletedLoadPresence({
+				result: Result.succeed({ traces: { status: "absent", lastSeenMs: null } }),
 			}),
 		).model
 		scene(
 			{ update: step, view: withViewInputs(view, { context })() },
-			given(ready),
+			given(absent),
 			Mount.resolve(MountStopClickPropagation, MountMessage.CompletedMountStopClick()),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Command.resolve(LoadPresence, Message.CompletedLoadPresence({ result: Result.succeed({ traces: { status: "absent", lastSeenMs: null } }) })),
 			expectView(text("Maple AI answers from your telemetry. Send some first.")).toExist(),
 			expectView(role("complementary", { name: "Chat conversations" })).toExist(),
 			expectView(text("Maple AI")).toExist(),
@@ -168,7 +166,6 @@ describe("chat page", () => {
 				ConversationMessage.CompletedLoadHistory({ generation: 1, result: Result.succeed({ messages: [], cursor: 0, running: false }) }),
 			),
 			Mount.resolve(MountStopClickPropagation, MountMessage.CompletedMountStopClick()),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
 			expectView(role("button", { name: "Actions for New Chat" })).toExist(),
 		)
 	})

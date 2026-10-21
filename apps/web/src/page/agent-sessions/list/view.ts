@@ -8,7 +8,7 @@ import { presenceOf } from "../../kit/signal-presence"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { detectLookup } from "../kit/detected-models"
 import { agentSessionsTabs } from "../kit/tabs"
-import { MountEmptyState, MountReachEnd, MountRowClicks, MountTable, VirtualizeSessions } from "./command"
+import { MountReachEnd, MountRowClicks, MountTable, VirtualizeSessions } from "./command"
 import {
 	displayedRows,
 	filterInputs,
@@ -41,7 +41,7 @@ const listArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 			const rows = displayedRows(model, filterKey)
 			if (rows.length === 0) {
 				return h.div(
-					[h.Class("contents"), h.OnMount(MountEmptyState())],
+					[h.Class("contents")],
 					[
 						signalEmptyState(h, {
 							signal: "traces",

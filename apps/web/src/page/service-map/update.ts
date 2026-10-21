@@ -60,7 +60,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		}),
 		timePicker: TimeRangePicker.init("service-map-time-range"),
 		scene3d: Scene3d.init(),
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		refreshVersion: 0,
@@ -69,6 +69,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(model, context, "Load"),
 			ReadStored({ orgId: context.orgId }),
 			Command.mapMessage(LoadChartRuntime(), (message) =>
@@ -331,14 +332,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchBranchStats: ({ key, result }) => ({
 			model: { ...model, branchStats: Keyed.accept(model.branchStats, key, result) },
 		}),
-		// `useSignalPresence` mounts with the empty state, so its first paint is the "unknown" copy.
-		PaintedEmptyState: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),

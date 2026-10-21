@@ -7,7 +7,6 @@ import { skeletonList } from "../../../ui/skeleton"
 import * as TabsView from "../../../ui/tabs-view"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { MountBody } from "./command"
 import {
 	allIncidentsOf,
 	anomalyFilterChips,
@@ -92,7 +91,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	})
 	function loaded(): Html {
 		return h.div(
-			[h.Key("loaded"), h.Class("contents"), h.OnMount(MountBody())],
+			[h.Key("loaded"), h.Class("contents")],
 			[
 				listBody(h, model, {
 					incidents: filtered,

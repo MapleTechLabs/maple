@@ -1,6 +1,6 @@
 import { readChatReferrer } from "../../../components/chat/auto-contexts"
 import { Clock, Effect, Schema } from "effect"
-import { Command, Mount } from "foldkit"
+import { Command } from "foldkit"
 import { writeClipboardFallback } from "@maple/ui/lib/clipboard"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { Message } from "./message"
@@ -71,8 +71,10 @@ export const CopyShareLink = Command.define("CopyChatShareLink", {
 })
 
 export const LoadPresence = Command.define("LoadChatSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadPresence({ result })),
 })
 
 /** `KnownServicesProvider`: the snapped 24 h services facets probe the overview also runs. */
@@ -100,17 +102,5 @@ export const TypeIntoComposer = Command.define("TypeIntoChatComposer", {
 				element.dispatchEvent(new Event("input", { bubbles: true }))
 			}
 			return Message.CompletedFocusComposer()
-		}),
-})
-
-/** The empty state painted: signal presence is only asked for once it shows. */
-export const MountEmptyState = Mount.define("MountChatEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyState>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyState()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
 		}),
 })

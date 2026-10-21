@@ -180,6 +180,12 @@ export const listStatusOf = (model: Model): ListStatus => {
 	return AsyncData.hasData(data) ? "ready" : "loading"
 }
 
+/** What a `failed` list failed with: the ranking's error, else the first page's. */
+export const listFailureOf = (model: Model) =>
+	rankingFailed(model)
+		? AsyncData.getError(model.ranking.data)
+		: Option.flatMap(Option.fromNullishOr(model.pages[0]), (first) => AsyncData.getError(first.page.data))
+
 export type PagingState = "more" | "loading" | "failed" | "end"
 
 /** Where the list stands relative to the pages it has not shown yet. */

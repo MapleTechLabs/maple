@@ -78,8 +78,10 @@ export const RenameStoredTab = Command.define("RenameChatSheetTab", {
 })
 
 export const LoadPresence = Command.define("LoadChatSheetSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadPresence({ result })),
 })
 
 export const LoadKnownServices = Command.define("LoadChatSheetKnownServices", {
@@ -113,16 +115,4 @@ export const MountFocusVisibleTrigger = Mount.defineStream("MountChatSheetFocusV
 				(release) => Effect.sync(release),
 			).pipe(Effect.flatMap(() => Effect.never)),
 		),
-})
-
-/** The empty state painted (`useSignalPresence` asks once it mounts). */
-export const MountEmptyState = Mount.define("MountChatSheetEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyState>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyState()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
 })

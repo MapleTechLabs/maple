@@ -2,7 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
 import { docsLink } from "../../kit/signal-empty-state"
-import type { SignalPresence } from "../../kit/signal-presence"
+import type { PresenceState } from "../../kit/signal-presence"
 
 // The empty state: the opening screen of a fresh
 // conversation, its suggestions as openable rows whose glyph and hue are read from the words.
@@ -37,13 +37,11 @@ export const chatEmptyState = <M>(
 	options: Readonly<{
 		suggestions: ReadonlyArray<string>
 		onSelect: (suggestion: string) => M
-		tracePresence: SignalPresence
-		/** The Mount that asks for the trace presence once the empty state painted. */
-		mount?: Parameters<HtmlBuilder<M>["OnMount"]>[0]
+		tracePresence: PresenceState
 	}>,
 ): Html =>
 	h.div(
-		[h.Class("flex w-full min-w-0 max-w-xl flex-col px-4"), ...(options.mount === undefined ? [] : [h.OnMount(options.mount)])],
+		[h.Class("flex w-full min-w-0 max-w-xl flex-col px-4")],
 		[
 			h.div(
 				[h.Class("flex flex-col items-center gap-2.5 text-center")],

@@ -38,7 +38,6 @@ export const Message = defineMessageUnion({
 	CompletedCopyShareLink: { ok: Schema.Boolean },
 	GotConversationMessage: { tabId: Schema.String, message: ConversationMessage },
 	DismissedContext: { id: Schema.String },
-	PaintedEmptyState: {},
 	CompletedLoadPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	CompletedLoadKnownServices: { services: Schema.Array(Schema.String) },
 	/** `Mod+Shift+O`. */

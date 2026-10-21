@@ -127,7 +127,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		facets: Keyed.idle(),
 		expandedRuns: [],
 		virtualWindow: emptyWindow,
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		query: search.q ?? "",
 		queryGeneration: 0,
 		userText: search.user ?? "",
@@ -144,6 +144,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(model, context, "Load"),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
@@ -191,14 +192,16 @@ export const routeChanged = (model: Model, route: { readonly search: Search }, c
 	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
 	return routeWindowStep(previous, search, {
 		resolve,
-		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+		requestAll: (mode) =>
+			next.window === null ? resolve() : requestAll(next, context, next.window, mode),
 	})
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	model.window === null ? { model } : requestAll(model, context, model.window, "Load")
 
-const draftOfRange = (model: Model, range: Range) => (range === "duration" ? model.durationDraft : model.activeDraft)
+const draftOfRange = (model: Model, range: Range) =>
+	range === "duration" ? model.durationDraft : model.activeDraft
 
 /** Commits a typed range; on blur and Enter the fields are rewritten in canonical form. */
 const commitDraft = (model: Model, range: Range, isRewrite = true): Return => {
@@ -278,10 +281,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ReachedListEnd: () => fetchNext(model),
 		ChangedVirtualWindow: ({ window }) => ({ model: { ...model, virtualWindow: window } }),
 		ClickedLoadMore: () => fetchNext(model),
-		PaintedEmptyState: () =>
-			AsyncData.isIdle(model.presence)
-				? { model: { ...model, presence: SignalPresenceData.Loading() }, commands: [LoadSignalPresence()] }
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),

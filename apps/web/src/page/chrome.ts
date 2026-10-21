@@ -3,6 +3,7 @@ import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, isPublicRoute } from "../route"
 import type { BreadcrumbEntry } from "../shell"
+import { skeleton, skeletonList } from "../ui/skeleton"
 import { pageBody } from "./kit/dashboard-page"
 import { resolveLegacySettingsTab } from "./settings/nav"
 
@@ -35,20 +36,25 @@ export const breadcrumbsOf = (route: AppRoute): ReadonlyArray<BreadcrumbEntry> =
 		() => [{ label: route._tag }],
 	)
 
-/** `PageLayout.Content` for a route without a page: its route tag on the page background. */
-export const placeholderContent = <Message>(h: HtmlBuilder<Message>, route: AppRoute): Html =>
-	pageBody(h, [placeholderMain(h, route)])
-
-const placeholderMain = <Message>(h: HtmlBuilder<Message>, route: AppRoute): Html =>
-	h.main(
-		[h.Class(pageContentStyles), h.DataAttribute("slot", "page-content"), h.Id("main-content")],
-		[
-			h.div(
-				[h.Class("flex flex-col gap-2 p-4")],
-				[
-					h.h1([h.Class("font-display text-xl font-semibold")], [route._tag]),
-					h.p([h.Class("font-mono text-muted-foreground text-xs")], ["Not ported yet"]),
-				],
-			),
-		],
-	)
+/**
+ * `PageLayout.Content` while the page has no slot or context yet (no org open, a plan-gate
+ * redirect in flight): a page skeleton, so nothing but loading ever paints there.
+ */
+export const placeholderContent = <Message>(h: HtmlBuilder<Message>): Html =>
+	pageBody(h, [
+		h.main(
+			[
+				h.Class(pageContentStyles),
+				h.DataAttribute("slot", "page-content"),
+				h.Id("main-content"),
+				h.AriaBusy(true),
+				h.AriaLabel("Loading"),
+			],
+			[
+				h.div(
+					[h.Class("flex flex-col gap-4 p-4")],
+					[skeleton(h, "h-7 w-48"), skeletonList(h, { rows: 6, rowClassName: "h-10", gap: "2" })],
+				),
+			],
+		),
+	])

@@ -155,20 +155,10 @@ export const FetchNextPage = Command.define("FetchTracesNextPage", {
 })
 
 export const LoadSignalPresence = Command.define("LoadTracesSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
-})
-
-/** The empty state is on screen: resolves after the frame that painted it. */
-export const MountEmptyState = Mount.define("MountTracesEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyState>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyState()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
 /** `RangeFilterSection`'s 400 ms pause before typed values commit. */

@@ -16,7 +16,6 @@ import { signalEmptyState } from "../../kit/signal-empty-state"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { METRIC_TYPE_COLORS } from "../shared"
-import { MountEmptyState } from "./command"
 import { toEntries } from "./derive"
 import { type BrowseView, Message } from "./message"
 import type { Model, SummaryRow } from "./model"
@@ -158,7 +157,7 @@ const isFiltered = (model: Model) => (model.search.q ?? "") !== "" || model.sear
 
 const emptyState = (h: H, model: Model): Html =>
 	h.div(
-		[h.Class("contents"), h.OnMount(MountEmptyState())],
+		[h.Class("contents")],
 		[
 			signalEmptyState(h, {
 				signal: "metrics",

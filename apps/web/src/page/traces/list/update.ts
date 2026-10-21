@@ -199,7 +199,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		firstPageCache: {},
 		virtualRows: [],
 		totalSize: 0,
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		filterSections: FilterSections.init(),
 		timePicker: TimeRangePicker.init("traces-time-range"),
 		durationDraft: durationDraftOf(route.search),
@@ -215,6 +215,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		...peeked,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(model, context, "Load"),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
@@ -270,7 +271,8 @@ export const routeChanged = (
 	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
 	return routeWindowStep(model.search, route.search, {
 		resolve,
-		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+		requestAll: (mode) =>
+			next.window === null ? resolve() : requestAll(next, context, next.window, mode),
 	})
 }
 
@@ -388,13 +390,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ChangedVirtualWindow: ({ rows, totalSize }) =>
 			reachEnd({ ...model, virtualRows: rows, totalSize }, context),
-		PaintedEmptyState: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),

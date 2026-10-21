@@ -60,6 +60,7 @@ const renderPage = (
 	pinnedNamespace: PageContext["pinnedNamespace"],
 	timeZone: PageContext["timeZone"],
 	presence: ShellInfraSurfaces["presence"] | undefined,
+	isPresenceFailed: boolean | undefined,
 	integrations: ShellInfraSurfaces["integrations"] | undefined,
 	isMobile: boolean,
 	isBelowSm: boolean,
@@ -73,7 +74,9 @@ const renderPage = (
 				orgId,
 				pinnedNamespace,
 				timeZone,
-				...(presence === undefined || integrations === undefined ? undefined : { infra: { presence, integrations } }),
+				...(presence === undefined || isPresenceFailed === undefined || integrations === undefined
+					? undefined
+					: { infra: { presence, isPresenceFailed, integrations } }),
 			},
 			isMobile,
 			isBelowSm,
@@ -97,6 +100,7 @@ const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosit
 				pinnedNamespace,
 				timeZone,
 				infra?.presence,
+				infra?.isPresenceFailed,
 				infra?.integrations,
 				model.shell.isMobile,
 				model.shell.isBelowSm,
@@ -107,7 +111,7 @@ const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosit
 
 /** The routed page, or the placeholder while the route has no ported page. */
 const pageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosition): Html =>
-	Option.getOrElse(lazyPageView(model, h, position), () => placeholderContent(h, model.route))
+	Option.getOrElse(lazyPageView(model, h, position), () => placeholderContent(h))
 
 /** The routed page's own top-bar actions, if it has any. */
 const topbarActionsView = (model: Model, h: HtmlBuilder<Message>): Html => {

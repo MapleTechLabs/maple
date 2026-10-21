@@ -1,5 +1,5 @@
 import { Clock, Effect, Schema } from "effect"
-import { Command, Mount } from "foldkit"
+import { Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { loadSignalPresences } from "../../kit/signal-presence"
@@ -55,18 +55,8 @@ export const LoadMoreIncidents = Command.define("LoadMoreAnomalyIncidents", {
 })
 
 export const LoadSignalPresence = Command.define("LoadAnomaliesSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
-})
-
-/** The loaded body is on screen: `useSignalPresence` mounts with it. */
-export const MountBody = Mount.define("MountAnomaliesBody", {
-	messages: [Message.PaintedBody],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedBody>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedBody()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
