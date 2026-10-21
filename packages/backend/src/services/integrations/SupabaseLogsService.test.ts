@@ -95,12 +95,15 @@ const makeWorld = () => {
 	})
 	const bodies: Array<typeof IngestBody.Type> = []
 	const authorizations: Array<string | null> = []
-	const ingest = { status: 200, bodies, authorizations }
+	/** `failRequest` answers that request (1-based, counted across ticks) with a 503, once. */
+	const ingest = { status: 200, bodies, authorizations, requests: 0, failRequest: 0 }
 	const fetch: typeof globalThis.fetch = async (input, init) => {
 		const requestInit: RequestInit & { readonly duplex: "half" } = { ...init, duplex: "half" }
 		const request = new Request(input, requestInit)
 		if (new URL(request.url).host !== "ingest.example.com") return supabase.fetch(input, init)
 		const text = await request.text()
+		ingest.requests += 1
+		if (ingest.requests === ingest.failRequest) return new Response("unavailable", { status: 503 })
 		if (ingest.status >= 300) return new Response("unavailable", { status: ingest.status })
 		ingest.bodies.push(decodeIngestBody(text))
 		ingest.authorizations.push(request.headers.get("authorization"))
@@ -373,6 +376,63 @@ describe("SupabaseLogsService", () => {
 				assert.deepStrictEqual(sentRecords(world).map(uidOf), ["a"])
 				const recovered = yield* logsRow(testDb)
 				assert.deepStrictEqual([recovered.watermark, recovered.error], [HORIZON + minute, null])
+			}),
+		)
+	})
+
+	it.effect("a failed chunk resumes after the last accepted one, so no row is sent twice", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeWorld()
+		// Three rows per millisecond, so the first chunk edge (row 250) splits a millisecond.
+		world.supabase.state.logs = Array.from({ length: 600 }, (_, i) =>
+			row(`r-${String(i).padStart(4, "0")}`, ENABLED_FROM + Math.floor(i / 3)),
+		)
+		world.ingest.failRequest = 2
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connectWithLogs(world)
+				const logs = yield* SupabaseLogsService
+				yield* logs.pollAllOrgs()
+				assert.strictEqual(sentRecords(world).length, 250)
+				const failed = yield* logsRow(testDb)
+				assert.strictEqual(failed.watermark, ENABLED_FROM + 83)
+				assert.deepStrictEqual(failed.boundary, ["r-0249"])
+				assert.match(failed.error ?? "", /Supabase logs ingest returned 503/)
+
+				yield* TestClock.adjust(minute)
+				yield* logs.pollAllOrgs()
+				const ids = sentRecords(world).map(uidOf)
+				assert.strictEqual(ids.length, 600)
+				assert.strictEqual(new Set(ids).size, 600)
+				const recovered = yield* logsRow(testDb)
+				assert.deepStrictEqual([recovered.watermark, recovered.error], [HORIZON + minute, null])
+			}),
+		)
+	})
+
+	it.effect("turning logs off and on after an ingest refusal polls on the next tick", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeWorld()
+		world.supabase.state.logs = [row("a", ENABLED_FROM + 1_000)]
+		world.ingest.status = 402
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connectWithLogs(world)
+				const logs = yield* SupabaseLogsService
+				yield* logs.pollAllOrgs()
+				assert.strictEqual(logsCalls(world).length, 1)
+
+				world.ingest.status = 200
+				yield* logs.setLogsEnabled(ORG, asRef(REF_A), false)
+				yield* logs.setLogsEnabled(ORG, asRef(REF_A), true)
+				yield* TestClock.adjust(minute)
+				yield* logs.pollAllOrgs()
+				assert.strictEqual(logsCalls(world).length, 2)
+				assert.deepStrictEqual(sentRecords(world).map(uidOf), ["a"])
 			}),
 		)
 	})

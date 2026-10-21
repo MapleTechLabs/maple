@@ -255,3 +255,18 @@ export const advanceWatermark = (
 		boundaryIds: rows.filter((row) => row.ms === last.ms).map((row) => row.id),
 	}
 }
+
+/**
+ * Where the watermark sits once a page's rows through `lastSent` (in page order) were accepted: its
+ * millisecond, remembering every id read up to it there, the same boundary {@link advanceWatermark} keeps.
+ */
+export const acceptedWatermark = (
+	rows: ReadonlyArray<SupabaseLogRow>,
+	lastSent: SupabaseLogRow,
+): { readonly watermarkAt: number; readonly boundaryIds: ReadonlyArray<string> } => ({
+	watermarkAt: lastSent.ms,
+	boundaryIds: rows
+		.slice(0, rows.indexOf(lastSent) + 1)
+		.filter((row) => row.ms === lastSent.ms)
+		.map((row) => row.id),
+})
