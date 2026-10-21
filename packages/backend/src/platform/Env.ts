@@ -191,6 +191,11 @@ export interface EnvConfig {
 	 * request may only name a subset of them.
 	 */
 	readonly PLANETSCALE_OAUTH_SCOPES: string
+	/** Supabase Management API OAuth app. Both unset: the integration reads as not configured. */
+	readonly SUPABASE_OAUTH_CLIENT_ID: Option.Option<string>
+	readonly SUPABASE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
+	/** Base URL for the Supabase Management API, OAuth endpoints included (overridable for tests). */
+	readonly MAPLE_SUPABASE_API_BASE_URL: string
 }
 
 const portConfig = Config.Number("PORT").pipe(Config.withDefault(3472))
@@ -354,6 +359,9 @@ const envConfig = Config.all({
 		"PLANETSCALE_OAUTH_SCOPES",
 		"user:read_organizations organization:read_organization organization:read_databases organization:read_branches organization:read_backups organization:read_comments organization:read_deploy_requests branch:read_branch",
 	),
+	SUPABASE_OAUTH_CLIENT_ID: optionalString("SUPABASE_OAUTH_CLIENT_ID"),
+	SUPABASE_OAUTH_CLIENT_SECRET: optionalRedacted("SUPABASE_OAUTH_CLIENT_SECRET"),
+	MAPLE_SUPABASE_API_BASE_URL: stringWithDefault("MAPLE_SUPABASE_API_BASE_URL", "https://api.supabase.com"),
 })
 
 const makeEnv = Effect.gen(function* () {

@@ -9,6 +9,11 @@ import {
 	PLANETSCALE_CALLBACK_PATH,
 	PlanetScaleOAuthService,
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
+import {
+	SUPABASE_CALLBACK_PATH,
+	SupabaseOAuthService,
+} from "@maple/backend/services/auth/SupabaseOAuthService"
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
 import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -21,6 +26,7 @@ const HAZEL_MESSAGE_TYPE = "maple:integration:hazel"
 const GITHUB_MESSAGE_TYPE = "maple:integration:github"
 const CLOUDFLARE_MESSAGE_TYPE = "maple:integration:cloudflare"
 const PLANETSCALE_MESSAGE_TYPE = "maple:integration:planetscale"
+const SUPABASE_MESSAGE_TYPE = "maple:integration:supabase"
 
 const escapeHtml = (value: string) =>
 	value
@@ -232,6 +238,8 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 		const cloudflareAnalytics = yield* CloudflareAnalyticsService
 		const planetscaleOAuth = yield* PlanetScaleOAuthService
 		const planetscaleConnection = yield* PlanetScaleConnectionService
+		const supabaseOAuth = yield* SupabaseOAuthService
+		const supabaseConnection = yield* SupabaseConnectionService
 		const env = yield* Env
 
 		const dashboardTargetOrigin = resolveDashboardTargetOrigin(env.MAPLE_APP_BASE_URL)
@@ -680,5 +688,106 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 		})
 
 		yield* router.add("GET", PLANETSCALE_CALLBACK_PATH, handlePlanetScale)
+
+		const supabaseErrorPage = (message: string) =>
+			htmlResponse(
+				renderCallbackPage({
+					status: "error",
+					message,
+					returnTo: null,
+					targetOrigin: dashboardTargetOrigin,
+					messageType: SUPABASE_MESSAGE_TYPE,
+					label: "Supabase",
+				}),
+				400,
+			)
+		// RFC 9207 mix-up defense: Supabase names itself in `iss`; a different issuer is refused.
+		const supabaseIssuer = supabaseOAuth.apiBaseUrl
+
+		const handleSupabase = Effect.fn("IntegrationsCallbackRouter.supabaseOAuthCallback", {
+			kind: "server",
+			attributes: { "http.route": SUPABASE_CALLBACK_PATH, "http.request.method": "GET" },
+		})(
+			function* (req: HttpServerRequest.HttpServerRequest) {
+				const urlOption = Option.liftThrowable(() => new URL(req.url, "http://localhost"))()
+				if (Option.isNone(urlOption)) {
+					return supabaseErrorPage("Malformed callback URL")
+				}
+				const url = urlOption.value
+				const code = url.searchParams.get("code")
+				const state = url.searchParams.get("state")
+				const issuer = url.searchParams.get("iss")
+				const oauthError = url.searchParams.get("error")
+				const oauthErrorDescription = url.searchParams.get("error_description") ?? oauthError
+
+				if (oauthError) {
+					return supabaseErrorPage(oauthErrorDescription || "Supabase returned an error")
+				}
+				if (!code || !state) {
+					return supabaseErrorPage("Missing code or state in callback")
+				}
+				if (issuer !== null && issuer.replace(/\/$/, "") !== supabaseIssuer) {
+					return supabaseErrorPage(
+						"The authorization came from an unexpected issuer. Restart the connect flow.",
+					)
+				}
+
+				return yield* supabaseOAuth.completeConnect(code, state).pipe(
+					// One grant is one Supabase organization: bind it and run a first discovery.
+					Effect.flatMap((result) =>
+						supabaseConnection
+							.finalizeConnect(result.orgId, result.connectedByUserId, result.organization)
+							.pipe(
+								Effect.map(() => ({
+									returnTo: result.returnTo,
+									message: `Connected to ${result.organization.name}. You can close this window and return to Maple.`,
+								})),
+							),
+					),
+					// The callback page reduces failures to short human copy; keep the cause in the log.
+					Effect.tapError((error) =>
+						Effect.logError("Supabase OAuth completeConnect failed", {
+							tag: error._tag,
+							message: error.message,
+						}),
+					),
+					Effect.map(({ returnTo, message }) =>
+						htmlResponse(
+							renderCallbackPage({
+								status: "success",
+								message,
+								returnTo,
+								targetOrigin: dashboardTargetOrigin,
+								messageType: SUPABASE_MESSAGE_TYPE,
+								label: "Supabase",
+							}),
+						),
+					),
+					Effect.catchTags({
+						"@maple/http/errors/IntegrationsConfigurationError": () =>
+							Effect.succeed(
+								supabaseErrorPage("Supabase integration is not configured in Maple"),
+							),
+						"@maple/http/errors/IntegrationsValidationError": (error) =>
+							Effect.succeed(supabaseErrorPage(error.message)),
+						"@maple/http/errors/IntegrationsUpstreamError": (error) =>
+							Effect.succeed(supabaseErrorPage(error.message)),
+						"@maple/http/errors/IntegrationsRevokedError": () =>
+							Effect.succeed(
+								supabaseErrorPage(
+									"Supabase rejected the authorization. Reconnect and try again.",
+								),
+							),
+						"@maple/http/errors/IntegrationsPersistenceError": () =>
+							Effect.succeed(supabaseErrorPage("Failed to complete the Supabase connection")),
+					}),
+				)
+			},
+			Effect.tap((response) =>
+				Effect.annotateCurrentSpan({ "http.response.status_code": response.status }),
+			),
+		)
+
+		yield* router.add("GET", SUPABASE_CALLBACK_PATH, handleSupabase)
 	}),
 )

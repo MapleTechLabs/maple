@@ -26,6 +26,7 @@ import {
 	optionalSecret,
 	planetScaleOAuthEnv,
 	selfObservabilityEnv,
+	supabaseOAuthEnv,
 	tinybirdEnv,
 } from "@maple/infra/env"
 import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
@@ -64,10 +65,11 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
 		optionalSecret("AUTUMN_SECRET_KEY"),
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
-		// Push for incidents, plus OAuth refresh for the Cloudflare and PlanetScale pollers.
+		// Push for incidents, plus OAuth refresh for the Cloudflare, PlanetScale and Supabase pollers.
 		apnsEnv,
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
+		supabaseOAuthEnv,
 		// Sign-in for the Google Cloud metrics poller; unset leaves its tick a no-op.
 		optionalSecret("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
 		// Ticks post pull-request replies through the GitHub App; without it each one fails.

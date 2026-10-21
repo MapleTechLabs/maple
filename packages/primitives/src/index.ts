@@ -104,6 +104,19 @@ export type ScrapeTargetId = Schema.Schema.Type<typeof ScrapeTargetId>
 export const GcpConnectorId = MapleUuidId("@maple/GcpConnectorId", "GCP Connector ID")
 export type GcpConnectorId = Schema.Schema.Type<typeof GcpConnectorId>
 
+export const SupabaseConnectionId = MapleUuidId("@maple/SupabaseConnectionId", "Supabase Connection ID")
+export type SupabaseConnectionId = Schema.Schema.Type<typeof SupabaseConnectionId>
+
+export const SupabaseProjectId = MapleUuidId("@maple/SupabaseProjectId", "Supabase Project ID")
+export type SupabaseProjectId = Schema.Schema.Type<typeof SupabaseProjectId>
+
+/** Supabase's own project identifier: 20 lowercase letters per the Management API spec. */
+export const SupabaseProjectRef = Schema.String.check(Schema.isPattern(/^[a-z]{20}$/u)).pipe(
+	Schema.brand("@maple/SupabaseProjectRef"),
+	Schema.annotate({ identifier: "@maple/SupabaseProjectRef", title: "Supabase Project Ref" }),
+)
+export type SupabaseProjectRef = Schema.Schema.Type<typeof SupabaseProjectRef>
+
 // Google's project id rules. The id is interpolated into a shell script, so nothing looser.
 export const GcpProjectId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/u)).pipe(
 	Schema.brand("@maple/GcpProjectId"),
@@ -292,6 +305,7 @@ export const PULL_SOURCE_PLATFORMS = [
 	"railway",
 	"planetscale",
 	"github",
+	"supabase",
 ] as const
 
 export const PushSourcePlatform = Schema.Literals(PUSH_SOURCE_PLATFORMS).annotate({

@@ -18,7 +18,7 @@ const cronCases = [
 		],
 	],
 	["*/15 * * * *", ["digest"]],
-	["0 * * * *", ["serviceMapRollup"]],
+	["0 * * * *", ["serviceMapRollup", "supabaseDiscovery"]],
 	["* * * * *", ["alert", "error", "escalation", "fixVerification"]],
 ] as const
 
@@ -41,6 +41,7 @@ const recordingTicks = (
 		prReviewPostMerge: tick("prReviewPostMerge"),
 		railwayMetrics: tick("railwayMetrics"),
 		serviceMapRollup: tick("serviceMapRollup"),
+		supabaseDiscovery: tick("supabaseDiscovery"),
 		...overrides,
 	}
 }

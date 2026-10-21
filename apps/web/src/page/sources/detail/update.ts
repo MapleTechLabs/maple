@@ -14,7 +14,7 @@ import { copyToast } from "../../kit/clipboard"
 import { sourcesListKey, sourceUsageKey } from "../kit/data"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
-import { effectiveTab, fromPublicSourceId, hasToken, integrationPlatformOf, scrapeTargetIdOf } from "../kit/shared"
+import { effectiveTab, embeddedIntegrationOf, fromPublicSourceId, hasToken, scrapeTargetIdOf } from "../kit/shared"
 import { initEmbedded } from "../../integrations/embed"
 import * as Integrations from "../../integrations/update"
 import { Message as IntegrationMessage } from "../../integrations/message"
@@ -120,7 +120,7 @@ const liftConnection = (model: Model, step: PageReturn<IntegrationModel, Integra
 const ensureConnection = (model: Model, context: PageContext): Return => {
 	if (model.connection !== null) return { model }
 	const source = Option.getOrNull(sourceOf(model))
-	const platform = source === null ? null : integrationPlatformOf(source)
+	const platform = source === null ? null : embeddedIntegrationOf(source)
 	if (source === null || platform === null) return { model }
 	return andThen(liftConnection(model, initEmbedded(platform, context)), (next) => syncTarget(next, context))
 }

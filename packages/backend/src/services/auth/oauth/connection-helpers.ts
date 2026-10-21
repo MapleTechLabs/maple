@@ -102,6 +102,25 @@ export interface OAuthTokenEndpointConfig {
 	readonly clientId: string
 	/** null for a public (PKCE-only) client. Stays Redacted until the token POST body. */
 	readonly clientSecret: Redacted.Redacted<string> | null
+	/** How a confidential client authenticates (RFC 6749 s2.3.1); defaults to the POST body. */
+	readonly clientAuthentication?: "client_secret_post" | "client_secret_basic"
+	/** A non-RFC status the provider answers for an unknown or rotated-away refresh token (Supabase: 404). */
+	readonly deadRefreshTokenStatus?: number
+}
+
+/** Client credentials for a token-endpoint call: body params plus any Authorization header. */
+const clientCredentials = (
+	config: OAuthTokenEndpointConfig,
+): { readonly params: Record<string, string>; readonly headers: Record<string, string> } => {
+	if (config.clientSecret === null) return { params: { client_id: config.clientId }, headers: {} }
+	const secret = Redacted.value(config.clientSecret)
+	if (config.clientAuthentication === "client_secret_basic") {
+		const basic = Buffer.from(
+			`${encodeURIComponent(config.clientId)}:${encodeURIComponent(secret)}`,
+		).toString("base64")
+		return { params: {}, headers: { authorization: `Basic ${basic}` } }
+	}
+	return { params: { client_id: config.clientId, client_secret: secret }, headers: {} }
 }
 
 export interface MakeOAuthConnectionHelpersOptions {
@@ -351,9 +370,9 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 
 		/** POST an `application/x-www-form-urlencoded` body and return the raw status + text. */
 		const postForm = Effect.fn("OAuthConnectionHelpers.postForm")(
-			function* (url: string, params: Record<string, string>) {
+			function* (url: string, params: Record<string, string>, headers: Record<string, string> = {}) {
 				const request = HttpClientRequest.post(url, {
-					headers: { accept: "application/json" },
+					headers: { accept: "application/json", ...headers },
 				}).pipe(HttpClientRequest.bodyUrlParams(params))
 				const response = yield* httpClient.execute(request)
 				const text = yield* response.text
@@ -391,16 +410,18 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				redirectUri: string,
 				extraParams: Record<string, string> = {},
 			) {
-				const { status, text } = yield* postForm(config.tokenUrl, {
-					grant_type: "authorization_code",
-					code,
-					redirect_uri: redirectUri,
-					client_id: config.clientId,
-					...(config.clientSecret
-						? { client_secret: Redacted.value(config.clientSecret) }
-						: undefined),
-					...extraParams,
-				})
+				const credentials = clientCredentials(config)
+				const { status, text } = yield* postForm(
+					config.tokenUrl,
+					{
+						grant_type: "authorization_code",
+						code,
+						redirect_uri: redirectUri,
+						...credentials.params,
+						...extraParams,
+					},
+					credentials.headers,
+				)
 				if (status < 200 || status >= 300) {
 					return yield* Effect.fail(
 						toUpstreamError(`Token exchange failed: ${text || status}`, status),
@@ -421,12 +442,19 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			config: OAuthTokenEndpointConfig,
 			refreshToken: string,
 		) {
-			const { status, text } = yield* postForm(config.tokenUrl, {
-				grant_type: "refresh_token",
-				refresh_token: refreshToken,
-				client_id: config.clientId,
-				...(config.clientSecret ? { client_secret: Redacted.value(config.clientSecret) } : undefined),
-			})
+			const credentials = clientCredentials(config)
+			const { status, text } = yield* postForm(
+				config.tokenUrl,
+				{ grant_type: "refresh_token", refresh_token: refreshToken, ...credentials.params },
+				credentials.headers,
+			)
+			if (status === config.deadRefreshTokenStatus) {
+				return yield* Effect.fail(
+					new IntegrationsRevokedError({
+						message: `${providerLabel} connection no longer authorized — reconnect required`,
+					}),
+				)
+			}
 			if (status === 400 || status === 401) {
 				const errorCode = oauthErrorCodeOf(text)
 				// Only a decoded `invalid_grant` means revoked: a None (bodyless or
