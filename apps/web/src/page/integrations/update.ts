@@ -187,12 +187,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				s.gcp.key === key && Result.isSuccess(result) ? Configure.statusArrived(read).model : read
 			return gcpBand(arrived, context)
 		},
-		CompletedLoadSupabase: ({ key, result }) =>
-			Supabase.requestMetricsRows(
-				accepted(model, { ...s, supabase: Keyed.accept(s.supabase, key, result) }).model,
+		CompletedLoadSupabase: ({ key, result }) => {
+			const read = accepted(model, { ...s, supabase: Keyed.accept(s.supabase, key, result) }).model
+			// Any answer to the current read retires saved flips; a failed one shows the last known value.
+			return Supabase.requestMetricsRows(
+				s.supabase.key === key ? Supabase.settledStatus(read) : read,
 				context,
 				"Load",
-			),
+			)
+		},
 		CompletedLoadSupabaseMetrics: ({ key, result }) => Supabase.completedMetricsRows(model, key, result),
 		CompletedLoadHazel: ({ key, result }) =>
 			accepted(model, { ...s, hazel: Keyed.accept(s.hazel, key, result) }),

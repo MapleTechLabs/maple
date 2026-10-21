@@ -12,10 +12,23 @@ import { Message } from "./message"
 
 // The Supabase card: state and writes.
 
+export const SupabaseSwitchKind = Schema.Literals(["metrics", "logs"])
+export type SupabaseSwitchKind = typeof SupabaseSwitchKind.Type
+
+/** A switch flip the server has not confirmed: shown in place of the status until the re-read lands. */
+export const PendingSupabaseSwitch = Schema.Struct({
+	ref: SupabaseProjectRef,
+	kind: SupabaseSwitchKind,
+	enabled: Schema.Boolean,
+	/** The write succeeded; the entry waits for the status re-read that carries it. */
+	isSaved: Schema.Boolean,
+})
+export type PendingSupabaseSwitch = typeof PendingSupabaseSwitch.Type
+
 export const SupabaseCardModel = Schema.Struct({
 	isSyncing: Schema.Boolean,
-	/** Projects whose "Collect metrics" or "Collect logs" switch is saving. */
-	pendingRefs: Schema.Array(SupabaseProjectRef),
+	/** At most one per project: a project's switches lock while its write and re-read are in flight. */
+	pending: Schema.Array(PendingSupabaseSwitch),
 	/** The last hour's metrics rows, for each project's health and "Last data". */
 	metrics: KeyedSchema(Schema.Array(SupabaseProjectRow), LoadFailure),
 })
@@ -23,7 +36,7 @@ export type SupabaseCardModel = typeof SupabaseCardModel.Type
 
 export const initSupabaseCard = (): SupabaseCardModel => ({
 	isSyncing: false,
-	pendingRefs: [],
+	pending: [],
 	metrics: idle(),
 })
 

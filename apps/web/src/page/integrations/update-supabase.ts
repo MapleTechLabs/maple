@@ -16,6 +16,7 @@ import {
 	SetSupabaseLogs,
 	SetSupabaseMetrics,
 	type SupabaseCardModel,
+	type SupabaseSwitchKind,
 	SyncSupabase,
 } from "./supabase"
 import { requestStatus } from "./update-status"
@@ -83,12 +84,16 @@ export const completedSync = (model: Model, context: PageContext, failure: LoadF
 const toggled = (
 	model: Model,
 	ref: SupabaseProjectRef,
+	kind: SupabaseSwitchKind,
+	enabled: boolean,
 	command: ReturnType<typeof SetSupabaseMetrics | typeof SetSupabaseLogs>,
 ): Return =>
-	model.supabaseCard.pendingRefs.includes(ref)
+	model.supabaseCard.pending.some((entry) => entry.ref === ref)
 		? { model }
 		: {
-				model: withCard(model, { pendingRefs: [...model.supabaseCard.pendingRefs, ref] }),
+				model: withCard(model, {
+					pending: [...model.supabaseCard.pending, { ref, kind, enabled, isSaved: false }],
+				}),
 				commands: [command],
 			}
 
@@ -99,21 +104,33 @@ const completed = (
 	failure: LoadFailure | null,
 	failedTitle: string,
 ): Return => {
-	const settled = withCard(model, {
-		pendingRefs: model.supabaseCard.pendingRefs.filter((pending) => pending !== ref),
+	if (failure !== null) {
+		// The switch reverts to the server's value.
+		const reverted = withCard(model, {
+			pending: model.supabaseCard.pending.filter((entry) => entry.ref !== ref),
+		})
+		return toast(reverted, "error", failedTitle, failure.message)
+	}
+	const saved = withCard(model, {
+		pending: model.supabaseCard.pending.map((entry) =>
+			entry.ref === ref ? { ...entry, isSaved: true } : entry,
+		),
 	})
-	if (failure !== null) return toast(settled, "error", failedTitle, failure.message)
 	// The rows re-read waits on a fresh clock, so a card open for an hour reads the current window.
-	const reread = requestStatus(settled, context, "supabase", "Supersede")
+	const reread = requestStatus(saved, context, "supabase", "Supersede")
 	return { ...reread, commands: [...(reread.commands ?? []), ReadSupabaseClock()] }
 }
+
+/** The status read that answers a saved write carries its value, so the pending flip retires. */
+export const settledStatus = (model: Model): Model =>
+	withCard(model, { pending: model.supabaseCard.pending.filter((entry) => !entry.isSaved) })
 
 /** A superseding rows read: the window may equal the last one, and that read predates the write. */
 export const completedReadClock = (model: Model, context: PageContext, nowMs: number): Return =>
 	requestMetricsRows({ ...model, nowMs }, context, "Supersede")
 
 export const toggledMetrics = (model: Model, ref: SupabaseProjectRef, enabled: boolean): Return =>
-	toggled(model, ref, SetSupabaseMetrics({ ref, enabled }))
+	toggled(model, ref, "metrics", enabled, SetSupabaseMetrics({ ref, enabled }))
 
 export const completedMetrics = (
 	model: Model,
@@ -131,7 +148,7 @@ export const completedMetrics = (
 	)
 
 export const toggledLogs = (model: Model, ref: SupabaseProjectRef, enabled: boolean): Return =>
-	toggled(model, ref, SetSupabaseLogs({ ref, enabled }))
+	toggled(model, ref, "logs", enabled, SetSupabaseLogs({ ref, enabled }))
 
 export const completedLogs = (
 	model: Model,

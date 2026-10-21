@@ -108,7 +108,11 @@ const projectSwitch = (
 const projectRow = (h: H, model: Model, project: Project): Html => {
 	const row = metricsRowOf(model.supabaseCard.metrics, project.ref)
 	const isPaused = lifecycleOf(project.status)._tag === "Paused"
-	const isLocked = isPaused || model.supabaseCard.pendingRefs.includes(project.ref)
+	const pending = model.supabaseCard.pending.find((entry) => entry.ref === project.ref)
+	const isLocked = isPaused || pending !== undefined
+	// A flip in flight shows the intended value until the server confirms or refuses it.
+	const metricsEnabled = pending?.kind === "metrics" ? pending.enabled : project.metricsEnabled
+	const logsEnabled = pending?.kind === "logs" ? pending.enabled : project.logsEnabled
 	return h.div(
 		[
 			h.Key(project.ref),
@@ -158,20 +162,17 @@ const projectRow = (h: H, model: Model, project: Project): Html => {
 			),
 			projectSwitch(h, {
 				id: `supabase-metrics-${project.ref}`,
-				isChecked: project.metricsEnabled,
+				isChecked: metricsEnabled,
 				isDisabled: isLocked,
 				label: `Collect metrics for ${project.name}`,
-				onToggle: Message.ToggledSupabaseMetrics({
-					ref: project.ref,
-					enabled: !project.metricsEnabled,
-				}),
+				onToggle: Message.ToggledSupabaseMetrics({ ref: project.ref, enabled: !metricsEnabled }),
 			}),
 			projectSwitch(h, {
 				id: `supabase-logs-${project.ref}`,
-				isChecked: project.logsEnabled,
+				isChecked: logsEnabled,
 				isDisabled: isLocked,
 				label: `Collect logs for ${project.name}`,
-				onToggle: Message.ToggledSupabaseLogs({ ref: project.ref, enabled: !project.logsEnabled }),
+				onToggle: Message.ToggledSupabaseLogs({ ref: project.ref, enabled: !logsEnabled }),
 			}),
 		],
 	)

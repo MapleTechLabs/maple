@@ -262,7 +262,15 @@ describe("supabase card", () => {
 			sent.model,
 			Message.CompletedSupabaseLogs({ ref: REF, enabled: false, failure: toLoadFailure("boom") }),
 		)
-		expect(failed.model.supabaseCard.pendingRefs).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(failed.model),
+			expectView(role("switch", { name: "Collect logs for storefront" })).toBeEnabled(),
+			expectView(role("switch", { name: "Collect logs for storefront" })).toHaveAttr(
+				"aria-checked",
+				"true",
+			),
+		)
 		expect(failed.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "error",
@@ -297,7 +305,6 @@ describe("supabase card", () => {
 			sent.model,
 			Message.CompletedSupabaseMetrics({ ref: REF, enabled: false, failure: null }),
 		)
-		expect(done.model.supabaseCard.pendingRefs).toEqual([])
 		expect(names(done.commands)).toContain("LoadIntegrationsSupabaseStatus")
 		expect(names(done.commands)).toContain("ReadSupabaseClock")
 	})
@@ -398,6 +405,70 @@ describe("supabase card", () => {
 		)
 	})
 
+	test("a flipped switch shows the new value while saving and keeps it until the status re-read lands", () => {
+		const metricsSwitch = role("switch", { name: "Collect metrics for storefront" })
+		const sent = pageUpdate(
+			withStatus(status()),
+			Message.ToggledSupabaseMetrics({ ref: REF, enabled: false }),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(sent.model),
+			expectView(metricsSwitch).toHaveAttr("aria-checked", "false"),
+			expectView(metricsSwitch).toBeDisabled(),
+			expectView(role("switch", { name: "Collect logs for storefront" })).toHaveAttr(
+				"aria-checked",
+				"true",
+			),
+		)
+		const done = pageUpdate(
+			sent.model,
+			Message.CompletedSupabaseMetrics({ ref: REF, enabled: false, failure: null }),
+		)
+		// The write landed but the status still holds the old value: the switch must not bounce back.
+		scene(
+			{ update: pageUpdate, view },
+			given(done.model),
+			expectView(metricsSwitch).toHaveAttr("aria-checked", "false"),
+		)
+		const [first, second] = status().projects
+		const reread = pageUpdate(
+			done.model,
+			Message.CompletedLoadSupabase({
+				key: done.model.statuses.supabase.key ?? "",
+				result: Result.succeed(status({ projects: [{ ...first, metricsEnabled: false }, second] })),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(reread),
+			expectView(metricsSwitch).toHaveAttr("aria-checked", "false"),
+			expectView(metricsSwitch).toBeEnabled(),
+		)
+	})
+
+	test("a status read superseded by the write does not retire the flip", () => {
+		const model = withStatus(status())
+		const staleKey = model.statuses.supabase.key ?? ""
+		const sent = pageUpdate(model, Message.ToggledSupabaseMetrics({ ref: REF, enabled: false }))
+		const done = pageUpdate(
+			sent.model,
+			Message.CompletedSupabaseMetrics({ ref: REF, enabled: false, failure: null }),
+		)
+		const stale = pageUpdate(
+			done.model,
+			Message.CompletedLoadSupabase({ key: staleKey, result: Result.succeed(status()) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(stale),
+			expectView(role("switch", { name: "Collect metrics for storefront" })).toHaveAttr(
+				"aria-checked",
+				"false",
+			),
+		)
+	})
+
 	test("a failed metrics write frees the switch and toasts", () => {
 		const sent = pageUpdate(
 			withStatus(status()),
@@ -407,7 +478,15 @@ describe("supabase card", () => {
 			sent.model,
 			Message.CompletedSupabaseMetrics({ ref: REF, enabled: true, failure: toLoadFailure("boom") }),
 		)
-		expect(failed.model.supabaseCard.pendingRefs).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(failed.model),
+			expectView(role("switch", { name: "Collect metrics for storefront" })).toBeEnabled(),
+			expectView(role("switch", { name: "Collect metrics for storefront" })).toHaveAttr(
+				"aria-checked",
+				"true",
+			),
+		)
 		expect(failed.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "error",
