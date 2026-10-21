@@ -377,6 +377,35 @@ describe("SupabaseLogsService", () => {
 		)
 	})
 
+	it.effect("an ingest refusal holds the project for an hour, then polling resumes", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeWorld()
+		world.supabase.state.logs = [row("a", ENABLED_FROM + 1_000)]
+		world.ingest.status = 402
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connectWithLogs(world)
+				const logs = yield* SupabaseLogsService
+				yield* logs.pollAllOrgs()
+				assert.strictEqual(logsCalls(world).length, 1)
+
+				world.ingest.status = 200
+				yield* Effect.forEach([1, 2, 30, 59], (minutes) =>
+					TestClock.setTime(NOW + minutes * minute).pipe(Effect.andThen(logs.pollAllOrgs())),
+				)
+				assert.strictEqual(logsCalls(world).length, 1)
+				assert.strictEqual(world.ingest.bodies.length, 0)
+
+				yield* TestClock.setTime(NOW + 61 * minute)
+				yield* logs.pollAllOrgs()
+				assert.isAbove(logsCalls(world).length, 1)
+				assert.deepStrictEqual(sentRecords(world).map(uidOf), ["a"])
+			}),
+		)
+	})
+
 	it.effect("a paused source reads nothing and its watermark follows the clock", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeWorld()
