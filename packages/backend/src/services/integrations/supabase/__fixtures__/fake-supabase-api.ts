@@ -81,6 +81,8 @@ export interface FakeSupabaseState {
 	omitRefreshToken: boolean
 	/** Refresh answers 400 `invalid_grant` (the grant was revoked upstream). */
 	refreshRevoked: boolean
+	/** Issued access tokens are not accepted (the API rejects a freshly minted token). */
+	rejectIssuedTokens: boolean
 	/** Forces `/v1/projects` to answer this status (e.g. 429). */
 	projectsStatus: number | null
 	/** Rows of the unified `logs` table, served by the logs endpoint for any project. */
@@ -110,6 +112,7 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		expiresIn: 86_400,
 		omitRefreshToken: false,
 		refreshRevoked: false,
+		rejectIssuedTokens: false,
 		projectsStatus: null,
 		logs: [],
 		logsStatus: null,
@@ -122,7 +125,7 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 	const issueTokens = () => {
 		state.issued += 1
 		const accessToken = `sbp_oauth_access_${state.issued}`
-		state.validAccessTokens.add(accessToken)
+		if (!state.rejectIssuedTokens) state.validAccessTokens.add(accessToken)
 		const tokens = { access_token: accessToken, expires_in: state.expiresIn, token_type: "Bearer" }
 		return json(state.omitRefreshToken ? tokens : { ...tokens, refresh_token: `refresh_${state.issued}` })
 	}

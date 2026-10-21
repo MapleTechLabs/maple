@@ -217,30 +217,39 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 					})
 				}
 
+				// A refused grant is never persisted, so this is the only chance to invalidate it upstream.
+				const revokeRefusedGrant = revokeGrant(httpClient, config.apiBaseUrl, {
+					...config,
+					refreshToken,
+				}).pipe(
+					Effect.catchTag("@maple/supabase/SupabaseApiError", (error) =>
+						Effect.logWarning("Supabase revoke of a refused grant failed", {
+							error: error.message,
+						}),
+					),
+				)
+
 				const organizations = yield* listOrganizations(
 					httpClient,
 					config.apiBaseUrl,
 					tokenResponse.access_token,
 				).pipe(
 					Effect.catchTag("@maple/supabase/SupabaseApiError", (error) =>
-						Effect.fail(
-							error.kind === "unauthorized"
-								? new IntegrationsRevokedError({ message: error.message })
-								: toUpstreamError(error.message, error.status),
+						revokeRefusedGrant.pipe(
+							Effect.andThen(
+								Effect.fail(
+									error.kind === "unauthorized"
+										? new IntegrationsRevokedError({ message: error.message })
+										: toUpstreamError(error.message, error.status),
+								),
+							),
 						),
 					),
 				)
 				yield* Effect.annotateCurrentSpan("maple.supabase.organizations", organizations.length)
 				const [organization, ...others] = organizations
 				if (organization === undefined || others.length > 0) {
-					// Never persisted, so revoke now: this is the only chance to invalidate it upstream.
-					yield* revokeGrant(httpClient, config.apiBaseUrl, { ...config, refreshToken }).pipe(
-						Effect.catchTag("@maple/supabase/SupabaseApiError", (error) =>
-							Effect.logWarning("Supabase revoke of a refused grant failed", {
-								error: error.message,
-							}),
-						),
-					)
+					yield* revokeRefusedGrant
 					return yield* new IntegrationsValidationError({
 						message:
 							organization === undefined
