@@ -12,7 +12,7 @@ import { highlight } from "../../lib/guide-highlight";
 
 const pageTitle = "Incident response, step by step | Maple";
 const pageDescription =
-    "How the incident response process works: prepare, detect, mitigate and resolve, then turn each postmortem into fewer and shorter incidents.";
+    "An incident response process for startups and small teams: prepare in an afternoon, respond with one or two engineers, and learn from each postmortem.";
 const published = "2026-10-19";
 const updatedLabel = "October 21, 2026";
 const author = CONTRIBUTORS.jeremyfunk;
@@ -21,9 +21,6 @@ const authorUrl = `https://github.com/${author.github}`;
 const toc = [
     { depth: 2, slug: "how-it-works", text: "How it works" },
     { depth: 2, slug: "prepare", text: "Prepare" },
-    { depth: 3, slug: "alerts-on-call", text: "Alerts, runbooks, on-call" },
-    { depth: 3, slug: "severity-levels", text: "Severity levels" },
-    { depth: 3, slug: "roles", text: "Incident roles" },
     { depth: 2, slug: "respond", text: "Respond" },
     { depth: 2, slug: "example", text: "A worked example" },
     { depth: 3, slug: "timeline", text: "The timeline" },
@@ -51,40 +48,24 @@ type PhaseKey = keyof typeof phases;
 
 const loop: { key: PhaseKey; title: string[]; items: string[] }[] = [
     { key: "prepare", title: ["Prepare"], items: ["alerts", "runbooks", "on-call rotation"] },
-    { key: "detect", title: ["Detect and", "triage"], items: ["alert fires", "severity", "commander"] },
+    { key: "detect", title: ["Detect and", "triage"], items: ["alert fires", "severity", "#incidents post"] },
     { key: "mitigate", title: ["Mitigate and", "resolve"], items: ["rollback", "feature flag", "failover"] },
     { key: "learn", title: ["Learn"], items: ["postmortem", "action items", "trend review"] },
 ];
 
 const steps: { slug: string; title: string; phase: PhaseKey | null; label?: string; body: string }[] = [
     { slug: "detect", title: "Detect", phase: "detect", body: "An alert fires on something users feel: error rate, latency, a drop in traffic. A customer report counts too, and an incident customers reported first should end with a new alert among the postmortem's action items." },
-    { slug: "declare", title: "Triage and declare", phase: "detect", body: "Acknowledge the page and check how far the problem reaches: one service or all, one region or all, which customers. If it is an incident, declare it with a severity level, name an incident commander and open a channel for it. Declaring early and downgrading later costs less than declaring late." },
+    { slug: "declare", title: "Triage and declare", phase: "detect", body: "Acknowledge the page and check how far the problem reaches: one service or all, one region or all, which customers. If it matches your incident definition, post in #incidents with the severity and what you see. That post is the declaration. Declaring early and downgrading later costs less than declaring late." },
     { slug: "mitigate", title: "Mitigate", phase: "mitigate", body: "Stop the user impact before you know the cause. Roll back the last deploy, turn off the feature flag, fail over to another region, scale up or shed load. A deploy in the last hour is the first suspect." },
-    { slug: "communicate", title: "Communicate", phase: null, label: "Throughout", body: "Post to the status page and to internal stakeholders at a fixed interval, even when nothing has changed. Each update says what is affected, what is being done and when the next update comes." },
-    { slug: "resolve", title: "Resolve", phase: "mitigate", body: "Confirm recovery on the same signal that detected the problem, then check for side effects: queued jobs, duplicate writes, retries still running. Close the incident, post a final update and book the postmortem. The root-cause fix can ship later as an action item." },
-];
-
-const preparation = [
-    ["Alert on symptoms", "Error rate, latency and traffic on the endpoints users call. A CPU alert pages someone for a problem users may never see."],
-    ["Link a runbook", "Every alert links to a page that says what it means, which dashboards to open and which mitigation to try first."],
-    ["Escalate pages", "One rotation per group of services, with a second person paged when the first has not acknowledged within 5 to 10 minutes."],
-    ["Make rollback cheap", "One command or one button, and an on-call engineer who has run it before and has the access to run it at 3 a.m."],
-    ["Pick a place", "A channel naming rule such as #inc-checkout and a status page, decided before the first incident needs them."],
+    { slug: "communicate", title: "Communicate", phase: null, label: "Throughout", body: "Post an update from your template at a fixed interval, even when nothing has changed: every 30 minutes for a SEV1. If a second engineer is around, hand them the updates and keep debugging." },
+    { slug: "resolve", title: "Resolve", phase: "mitigate", body: "Confirm recovery on the same signal that detected the problem, then check for side effects: queued jobs, duplicate writes, retries still running. Close the incident, post a final update and book a postmortem if the severity calls for one. The root-cause fix can ship later as an action item." },
 ];
 
 // Warm colors, darkest for the worst. Reused by the badges in the table and nowhere else.
 const severities = [
-    { level: "SEV1", name: "Critical", color: "var(--severity-fatal)", impact: "A core user journey is down, or data is at risk, for most users. Security breaches start here.", example: "Checkout fails for every user", response: "Page now, commander assigned, updates every 30 min, postmortem required" },
-    { level: "SEV2", name: "Major", color: "var(--severity-error)", impact: "A key feature is down for some users, or badly degraded for all of them.", example: "p99 latency at 8 s in one region", response: "Page now, updates every hour, postmortem required" },
-    { level: "SEV3", name: "Minor", color: "var(--severity-warn)", impact: "A non-critical feature is broken and a workaround exists.", example: "CSV export fails for large accounts", response: "Ticket, fixed in working hours" },
-    { level: "SEV4", name: "Low", color: "var(--severity-trace)", impact: "Cosmetic issues, or internal tools with no user impact.", example: "Wrong label on an admin page", response: "Backlog" },
-];
-
-const roles = [
-    ["Commander", "Owns the incident: sets priorities, assigns work, makes the rollback call and decides when it is over. The commander does not debug; to start debugging, they hand command to someone else first."],
-    ["Ops", "The engineers changing production. One person runs commands at a time and announces each change in the channel before making it."],
-    ["Comms", "Writes the status page and stakeholder updates at the interval the severity sets, and keeps support and account managers from interrupting the responders."],
-    ["Scribe", "Keeps a timestamped log of findings, decisions and changes. The postmortem timeline comes from this log."],
+    { level: "SEV1", name: "Critical", color: "var(--severity-fatal)", impact: "A core journey (signup, login, checkout, the API) is down or data is at risk", response: "Page now, status page update every 30 min, postmortem" },
+    { level: "SEV2", name: "Major", color: "var(--severity-error)", impact: "A key feature is broken for some users, or slow for all of them", response: "Page now, postmortem if it lasted over an hour or happened before" },
+    { level: "SEV3", name: "Minor", color: "var(--severity-warn)", impact: "Something is broken and a workaround exists, or nobody outside the team is affected", response: "Ticket, fixed in working hours, no page" },
 ];
 
 // Minutes after 14:00 UTC. The clock chart below uses the same minutes.
@@ -93,12 +74,12 @@ const timeline: { at: number; label: string; phase: PhaseKey | null; body: strin
     { at: 6, label: "Impact starts", phase: null, body: "Large carts hold database connections longer, the connection pool runs dry and checkout requests fail with 503." },
     { at: 8, label: "Alert fires", phase: "detect", body: "The checkout error rate has been above 5% on two checks in a row. The alert rule opens an incident and PagerDuty pages the on-call engineer." },
     { at: 11, label: "Acknowledged", phase: "detect", body: "The on-call engineer acknowledges the page. The error rate is 23% on checkout and normal everywhere else." },
-    { at: 13, label: "Declared", phase: "detect", body: "SEV1. The on-call engineer takes command, opens #inc-checkout and asks for a comms lead and a scribe." },
+    { at: 13, label: "Declared", phase: "detect", body: "SEV1. The on-call engineer posts in #incidents and asks a second engineer to take the status page updates." },
     { at: 16, label: "Diagnosis", phase: "detect", body: "Failing traces wait 4 to 5 seconds for a database connection before they time out. The failures started four minutes after the deploy." },
-    { at: 18, label: "Decision", phase: "mitigate", body: "Roll back to v2.40.3 instead of raising the pool size. Comms posts the first status page update." },
+    { at: 18, label: "Decision", phase: "mitigate", body: "Roll back to v2.40.3 instead of raising the pool size, following the bad-deploy runbook. The first status page update goes out." },
     { at: 24, label: "Mitigated", phase: "mitigate", body: "The rollback finishes. The error rate is under 1% within two minutes." },
     { at: 31, label: "Alert resolves", phase: "mitigate", body: "Once the 5-minute window no longer holds the failures, two healthy checks in a row resolve the alert's incident. The resolve notification closes the PagerDuty incident." },
-    { at: 45, label: "Resolved", phase: "mitigate", body: "The order queue is drained and the payment provider confirms no duplicate charges. The commander closes the incident and books the postmortem." },
+    { at: 45, label: "Resolved", phase: "mitigate", body: "The order queue is drained and the payment provider confirms no duplicate charges. The on-call engineer closes the incident and books a 30-minute postmortem review." },
 ];
 const clock = (minutes: number) => `14:${String(minutes).padStart(2, "0")}`;
 
@@ -115,42 +96,37 @@ const pct = (minutes: number) => `${(minutes / axisMinutes) * 100}%`;
 const actionKinds = [
     { kind: "Prevent", example: "Load test checkout with large carts", moves: "How often this failure happens" },
     { kind: "Detect", example: "Alert on connection pool wait time", moves: "MTTD" },
-    { kind: "Respond", example: "Page a second engineer after 5 minutes without an ack", moves: "MTTA" },
+    { kind: "Respond", example: "Page the second engineer after 10 minutes without an ack", moves: "MTTA" },
     { kind: "Mitigate", example: "Put the rollback command in the runbook", moves: "MTTM" },
 ];
 
 const postmortemTemplate = `# Postmortem: checkout failures after v2.41.0 (SEV1, 2026-10-19)
 
-Status: draft | Owner: <name> | Review date: <date>
-
-## Summary
+## What happened
 Two or three sentences: what broke, for whom, for how long, how it was fixed.
-
-## Impact
-- User impact: 14:06 to 14:24 UTC (18 minutes)
-- Users affected: 23% of checkout attempts failed (<number> orders)
-- Revenue, SLO budget or data impact: <numbers>
+User impact: 14:06 to 14:24 UTC, 23% of checkout attempts failed (<number> orders).
 
 ## Timeline (UTC)
-From the scribe's log. Include when each person learned what.
+Copied from the #incidents channel.
 
-## Root cause
+## Why it happened
 The chain of events in the system. Describe systems and decisions, not people.
 
-## Detection
-How we found out, and how long after impact started. Would a different
-threshold or window have caught it sooner?
-
-## Response
-What went well, what slowed us down, where we got lucky.
+## What helped, what slowed us down
+How we found out, and how long after impact started.
 
 ## Action items
 | Action                                       | Type     | Owner  | Due    |
 | -------------------------------------------- | -------- | ------ | ------ |
 | Load test checkout with large carts          | Prevent  | <name> | <date> |
 | Alert on connection pool wait time           | Detect   | <name> | <date> |
-| Page a second engineer after 5 min, no ack   | Respond  | <name> | <date> |
+| Page the second engineer after 10 min        | Respond  | <name> | <date> |
 | Put the rollback command in the runbook      | Mitigate | <name> | <date> |`;
+
+const updateTemplate = `[Investigating] Checkout errors
+Impact: some customers cannot complete checkout since 14:06 UTC.
+Doing: rolling back the 14:02 deploy.
+Next update: 14:45 UTC.`;
 
 const mcpTools = [
     ["diagnose_service", "One service's health, top errors, recent traces and logs, and the platform resources behind it"],
@@ -174,6 +150,11 @@ const faqs = [
             "Four: prepare, detect and triage, mitigate and resolve, and learn, with the lessons feeding the next round of preparation. NIST SP 800-61 Rev. 2 calls them Preparation; Detection and Analysis; Containment, Eradication and Recovery; and Post-Incident Activity. The SANS Incident Handler's Handbook splits the third phase into three steps, for six in total.",
     },
     {
+        question: "Does a small team need an incident response plan?",
+        answer:
+            "Yes, and a short one is enough: one sentence that defines an incident, three severity levels, alerts on the symptoms users feel, an on-call rotation of two people, runbooks for the three likeliest failures and an update template. Two engineers can write it in an afternoon.",
+    },
+    {
         question: "How do you reduce the number of incidents over time?",
         answer:
             "Give every postmortem action items with an owner and a due date, track them in the same tracker as feature work, and review the trend each quarter: incidents per severity, median time to detect and mitigate, and repeat causes. Prevent items (tests, load tests, safer deploys) lower the count; detect and mitigate items make the remaining incidents shorter.",
@@ -181,7 +162,7 @@ const faqs = [
     {
         question: "What is a SEV1 incident?",
         answer:
-            "SEV1 is the highest severity level in most incident response plans: a core user journey is down, data is at risk, or most users are affected. It pages people immediately, gets a dedicated incident commander and regular status updates, and always gets a postmortem. Each company writes its own definitions, so publish yours where on-call engineers can find them.",
+            "SEV1 is the highest severity level in most incident response plans: a core user journey is down, data is at risk, or most users are affected. It pages the on-call engineer immediately, gets status page updates at a fixed interval, and always gets a postmortem. Each company writes its own definitions, so publish yours where on-call engineers can find them.",
     },
     {
         question: "What goes in a postmortem?",
@@ -242,7 +223,7 @@ const articleJsonLd = {
                     Incident response, step by step
                 </h1>
                 <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
-                    How to run an incident from the first alert to the postmortem, and how each one makes the next rarer and shorter.
+                    How a small team runs an incident from the first alert to the postmortem, and makes the next one rarer and shorter.
                 </p>
                 <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
                     <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
@@ -277,7 +258,10 @@ const articleJsonLd = {
                     </div>
 
                     <p>
-                        An incident is an unplanned event that hurts users or puts data at risk: an outage, a slow checkout, a leaked credential. Where the line sits between a bug and an incident is a decision about impact, so write it into your <a href="#severity-levels">severity levels</a> before you need it.
+                        An incident is an unplanned event that hurts users or puts data at risk: an outage, a slow checkout, a leaked credential. Where the line sits between a bug and an incident is a decision about impact, so write it into your <a href="#prep-define">incident definition</a> before you need it.
+                    </p>
+                    <p>
+                        This guide is written for startups and small companies. Often one or two engineers are on call, and the engineer who gets paged is the one who fixes the problem, so every step is sized for that.
                     </p>
                     <p>
                         The process has four phases. You <span class="phase-badge" style={`--phase: ${phases.prepare.color}`}>Prepare</span> on a quiet day. When an alert fires, you <span class="phase-badge" style={`--phase: ${phases.detect.color}`}>Detect and triage</span>, then <span class="phase-badge" style={`--phase: ${phases.mitigate.color}`}>Mitigate and resolve</span> until users are no longer affected and the system is clean. Afterwards you <span class="phase-badge" style={`--phase: ${phases.learn.color}`}>Learn</span> in a postmortem whose action items go back into preparation: a load test that would have caught the bug, an alert that fires two minutes sooner, a rollback that takes one command.
@@ -325,62 +309,88 @@ const articleJsonLd = {
 
                 <section id="prepare" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>02</span> · <span class="eyebrow-phase" style={`--phase: ${phases.prepare.color}`}>Before</span></p>
-                    <h2>Prepare before anything breaks</h2>
+                    <h2>Prepare in an afternoon</h2>
                     <p>
-                        Much of an incident's length is set before it starts: whether an alert exists for the symptom, whether the on-call engineer can reach production, whether rollback is one command or an afternoon.
+                        A team of two can do all of this in one afternoon. Each step ends with something written down that the on-call engineer can open at 3 a.m.
                     </p>
 
-                    <h3 id="alerts-on-call" class="scroll-mt-24">Alerts, runbooks and on-call</h3>
-                    <div class="role-list">
-                        {preparation.map(([item, body]) => (
-                            <div><span>{item}</span><p>{body}</p></div>
-                        ))}
-                    </div>
-
-                    <h3 id="severity-levels" class="scroll-mt-24">Incident severity levels</h3>
-                    <p>
-                        A severity level decides who gets woken up, how often stakeholders hear from you, and whether a postmortem is required. Define the levels by user impact rather than by which component broke, so the on-call engineer can pick one in under a minute. A common starting set:
-                    </p>
-                    <div class="guide-table">
-                        <table>
-                            <thead>
-                                <tr><th>Level</th><th>Impact</th><th>Example</th><th>Response</th></tr>
-                            </thead>
-                            <tbody>
-                                {severities.map((s) => (
-                                    <tr>
-                                        <td><span class="sev-badge" style={`--sev: ${s.color}`}>{s.level}</span><span class="sev-name">{s.name}</span></td>
-                                        <td>{s.impact}</td>
-                                        <td>{s.example}</td>
-                                        <td>{s.response}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                    <p>
-                        Severity can change mid-incident. A SEV3 that turns out to hit every enterprise customer becomes a SEV1, and the change is announced in the incident channel.
-                    </p>
-
-                    <h3 id="roles" class="scroll-mt-24">Incident roles</h3>
-                    <p>
-                        One person can run a small incident. Once more than two people are involved, split the work so nobody debugs and writes status updates at the same time.
-                    </p>
-                    <div class="role-list">
-                        {roles.map(([role, body]) => (
-                            <div><span>{role}</span><p>{body}</p></div>
-                        ))}
-                    </div>
-                    <p>
-                        At 3 a.m. the on-call engineer holds every role until help arrives. The roles matter most at handover: "I'm handing command to Priya, she has the channel" is one line in the incident log.
-                    </p>
+                    <ol class="guide-steps guide-steps--prep" style={`--phase: ${phases.prepare.color}`}>
+                        <li>
+                            <span>01</span>
+                            <div>
+                                <h3 id="prep-define" class="scroll-mt-24">Write down what counts as an incident</h3>
+                                <p>Name the user journeys your business depends on and the impact that turns a bug into an incident. For example: signup, login, checkout or the public API failing or slow for more than 5 minutes, any data loss, any exposed credential.</p>
+                                <p class="guide-steps__out"><span>Output</span>One sentence, pinned in the incident channel.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div>
+                                <h3 id="severity-levels" class="scroll-mt-24">Define three severity levels</h3>
+                                <p>A severity level decides whether someone gets woken up, whether customers hear from you and whether a postmortem is written. Define the levels by user impact, not by which component broke, so whoever is paged can pick one in under a minute. If the impact turns out bigger, raise the level mid-incident.</p>
+                                <div class="guide-table">
+                                    <table>
+                                        <thead>
+                                            <tr><th>Level</th><th>Impact</th><th>Response</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            {severities.map((s) => (
+                                                <tr>
+                                                    <td><span class="sev-badge" style={`--sev: ${s.color}`}>{s.level}</span><span class="sev-name">{s.name}</span></td>
+                                                    <td>{s.impact}</td>
+                                                    <td>{s.response}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p class="guide-steps__out"><span>Output</span>The table, in your wiki next to the incident definition.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div>
+                                <h3 id="prep-alerts" class="scroll-mt-24">Alert on symptoms users feel</h3>
+                                <p>For each journey in your incident definition, add one error-rate alert and one latency alert, and one uptime check that calls the app from outside your infrastructure. Leave CPU and memory off the pager: they fire for problems users never see. Check each rule against the data from your last outage to confirm it would have fired.</p>
+                                <p class="guide-steps__out"><span>Output</span>Four to eight alert rules that page, each tested against a past outage.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>04</span>
+                            <div>
+                                <h3 id="prep-on-call" class="scroll-mt-24">Set up an on-call rotation</h3>
+                                <p>Put the engineers who can deploy on a weekly rotation in your paging tool. Two people is enough. Add an escalation that pages the other person after 10 minutes without an acknowledgement, and send a test page to each phone.</p>
+                                <p class="guide-steps__out"><span>Output</span>A rotation, an escalation rule, and a test page each person received.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>05</span>
+                            <div>
+                                <h3 id="prep-runbooks" class="scroll-mt-24">Write runbooks for your top three failure modes</h3>
+                                <p>List the three things most likely to break. For most small teams that is a bad deploy, the database and a third-party API. Write one page each: how it shows up, where to look, and the first mitigation to try. The bad-deploy runbook holds the exact rollback command, run once by everyone on the rotation.</p>
+                                <p class="guide-steps__out"><span>Output</span>Three one-page runbooks, linked from the alerts that point at them.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span>06</span>
+                            <div>
+                                <h3 id="prep-comms" class="scroll-mt-24">Pick a channel and an update template</h3>
+                                <p>Use one #incidents channel for every incident, so nobody has to ask where to look, and a status page customers can find from your app. Write the update template now, because nobody writes a clear one in the middle of an outage:</p>
+                                <div class="code-file">
+                                    <p class="code-file__name">status-update.md</p>
+                                    <pre><code set:html={highlight(updateTemplate, "markdown")} /></pre>
+                                </div>
+                                <p class="guide-steps__out"><span>Output</span>The channel, the status page and the template, linked from every runbook.</p>
+                            </div>
+                        </li>
+                    </ol>
                 </section>
 
                 <section id="respond" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>03</span> · During</p>
                     <h2>Respond: the incident response steps</h2>
                     <p>
-                        Once an alert fires, the on-call engineer works through these steps in order. Communication starts when the incident is declared and runs alongside the rest until the final update.
+                        When an alert fires, whoever is on call works through these steps in order, often alone. Communication starts with the first post in #incidents and runs alongside the rest until the final update.
                     </p>
 
                     <ol class="guide-steps">
@@ -484,10 +494,10 @@ const articleJsonLd = {
 
                     <h3 id="postmortem" class="scroll-mt-24">The blameless postmortem</h3>
                     <p>
-                        A blameless postmortem assumes everyone acted reasonably with what they knew at the time, and asks which parts of the system let a reasonable action cause an outage. "Checkout has no load test with large carts" leads to a fix. "Alex shipped a bad query" teaches people to hide their mistakes next time. Write it within five working days, while the people involved still remember the details, and review it with them.
+                        A blameless postmortem assumes everyone acted reasonably with what they knew at the time, and asks which parts of the system let a reasonable action cause an outage. "Checkout has no load test with large carts" leads to a fix. "Alex shipped a bad query" teaches people to hide their mistakes next time. Keep it to one page. The engineer who handled the incident writes it within two working days, and a 30-minute review with whoever was involved agrees the action items. Your <a href="#severity-levels">severity levels</a> decide which incidents get one.
                     </p>
                     <p>
-                        The template carries the checkout incident's numbers as an example. Copy it into your docs tool and replace each <code>&lt;placeholder&gt;</code> from the incident channel and the scribe's log:
+                        The template carries the checkout incident's numbers as an example. Copy it into your docs tool and fill each <code>&lt;placeholder&gt;</code> from the #incidents channel:
                     </p>
                     <div class="code-file">
                         <p class="code-file__name">postmortem.md</p>
@@ -513,13 +523,13 @@ const articleJsonLd = {
                     <div class="guide-callout">
                         <p class="guide-kicker">Track action items like feature work</p>
                         <p>
-                            Give each action item an owner, a due date and a ticket in the same tracker as feature work, and review the open ones in a recurring meeting.
+                            Give each action item an owner, a due date and a ticket in the same tracker as feature work, and look at the open ones in your weekly planning.
                         </p>
                     </div>
 
                     <h3 id="trend" class="scroll-mt-24">Review the trend</h3>
                     <p>
-                        Once a quarter, read the postmortems together and count:
+                        Once a quarter, spend 30 minutes on the incident list and count:
                     </p>
                     <ul class="guide-list">
                         <li><strong>Incidents per severity level.</strong> A falling SEV1 and SEV2 count is the sign that prevent items are working.</li>
@@ -534,7 +544,7 @@ const articleJsonLd = {
                     <p class="guide-eyebrow"><span>06</span> · In practice</p>
                     <h2>Incident response in Maple</h2>
                     <p>
-                        Maple stores the traces, logs, metrics, errors and browser session replays your services send over OpenTelemetry, and runs alert rules on the same data. The alert that opens an incident, the traces behind it, the code that caused it and the review of the next change to that code are in one place, so the on-call engineer moves from the alert to the cause to the fix without switching tools. Declaring severity, assigning roles, acknowledging pages and the status page stay with your team and your paging tool.
+                        A small team rarely has time to run a metrics stack, a log store, an error tracker and a tracing backend, and then wire all of them to a pager. Maple stores the traces, logs, metrics, errors and browser session replays your services send over OpenTelemetry, and runs alert rules on the same data. The engineer who gets paged goes from the alert to the traces behind it to the code that caused it in one tool, and the review of the next change to that code happens there too. Acknowledging pages and the status page stay with your paging tool.
                     </p>
 
                     <h3 id="maple-detect" class="scroll-mt-24"><span class="phase-badge" style={`--phase: ${phases.detect.color}`}>Detect</span> Alert rules open incidents</h3>
@@ -619,7 +629,6 @@ const articleJsonLd = {
                         <li><a href="https://csrc.nist.gov/pubs/sp/800/61/r2/final" target="_blank" rel="noopener noreferrer">NIST SP 800-61 Rev. 2: Computer Security Incident Handling Guide (2012)</a>, four phases: Preparation; Detection and Analysis; Containment, Eradication and Recovery; Post-Incident Activity</li>
                         <li><a href="https://csrc.nist.gov/pubs/sp/800/61/r3/final" target="_blank" rel="noopener noreferrer">NIST SP 800-61 Rev. 3 (2025)</a>, which files incident response under the NIST Cybersecurity Framework 2.0 functions</li>
                         <li><a href="https://www.sans.org/white-papers/33901" target="_blank" rel="noopener noreferrer">SANS Institute: Incident Handler's Handbook</a>, six steps: Preparation, Identification, Containment, Eradication, Recovery, Lessons Learned</li>
-                        <li><a href="https://sre.google/sre-book/managing-incidents/" target="_blank" rel="noopener noreferrer">Google SRE book: Managing Incidents</a>, the source of the commander, ops and comms split</li>
                         <li><a href="https://sre.google/sre-book/postmortem-culture/" target="_blank" rel="noopener noreferrer">Google SRE book: Postmortem Culture</a></li>
                         <li><a href="/docs/alerting/alert-rules">Maple docs: Alert rules</a> · <a href="/docs/alerting/incidents">Incidents</a> · <a href="/docs/errors/overview">Errors and issues</a> · <a href="/docs/reference/mcp">MCP server</a> · <a href="/docs/integrations/github">GitHub</a></li>
                         <li><a href="/guides/uptime-monitoring">Maple guide: Uptime monitoring with traces and HTTP checks</a></li>
@@ -676,6 +685,10 @@ const articleJsonLd = {
     .ir-guide .guide-steps > li > span { display: grid; width: 1.9rem; height: 1.9rem; place-items: center; border: 1px solid color-mix(in oklab, var(--primary) 45%, transparent); border-radius: 0.4rem; background: color-mix(in oklab, var(--primary) 12%, transparent); font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
     .ir-guide .guide-steps__head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
     .ir-guide .guide-steps h3 { margin: 0; font-size: 1.05rem; }
+    .ir-guide .guide-steps--prep > li > span { border-color: color-mix(in oklab, var(--phase) 50%, transparent); background: color-mix(in oklab, var(--phase) 14%, transparent); color: color-mix(in oklab, var(--phase) 70%, var(--foreground)); }
+    .ir-guide .guide-steps .guide-table, .ir-guide .guide-steps .code-file { margin: 1rem 0 0; }
+    .ir-guide .guide-steps p.guide-steps__out { margin-top: 0.8rem; color: var(--foreground); }
+    .ir-guide .guide-steps__out > span { display: inline-block; margin-right: 0.6rem; border: 1px solid color-mix(in oklab, var(--phase) 45%, transparent); border-radius: 999px; padding: 0 0.5rem; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; line-height: 1.6; color: color-mix(in oklab, var(--phase) 70%, var(--foreground)); vertical-align: 0.1em; }
     .ir-guide .guide-steps p { margin: 0.4rem 0 0; font-size: 14px; line-height: 1.7; color: var(--muted-foreground); }
     .ir-guide .guide-figure { margin: 1rem 0 0; }
     .ir-guide > section > .guide-figure { margin: 1.5rem 0 1.75rem; }
@@ -692,10 +705,6 @@ const articleJsonLd = {
     .ir-guide td + td { border-left: 1px solid var(--border); }
     .ir-guide tbody tr:last-child td { border-bottom: 0; }
 
-    .ir-guide .role-list { display: grid; gap: 1px; margin: 1.75rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
-    .ir-guide .role-list > div { display: grid; grid-template-columns: 6.5rem 1fr; gap: 1rem; background: var(--background); padding: 1rem 1.2rem; }
-    .ir-guide .role-list span { padding-top: 0.15rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--foreground); }
-    .ir-guide .role-list p { margin: 0; font-size: 14px; line-height: 1.65; color: var(--muted-foreground); }
 
     .ir-timeline { margin: 1.5rem 0 2rem; padding: 0; list-style: none; }
     .ir-timeline li { --phase: var(--muted-foreground); position: relative; display: grid; grid-template-columns: 3.25rem 1fr; gap: 1.25rem; padding: 0 0 1.1rem; }
