@@ -29,7 +29,8 @@ export type SupabaseProjectRow = typeof SupabaseProjectRow.Type
 
 export const SupabaseProjectTimeseriesRow = Schema.Struct({
 	bucket: Schema.String,
-	cpu: Schema.Number,
+	/** Null for a bucket without CPU increments. */
+	cpu: Schema.NullOr(Schema.Number),
 	memoryAvg: Schema.Number,
 	memoryMax: Schema.Number,
 	memoryTotal: Schema.Number,

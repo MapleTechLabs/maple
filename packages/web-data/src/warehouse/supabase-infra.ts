@@ -44,7 +44,8 @@ export interface SupabaseProjectRow {
 
 export interface SupabaseProjectTimeseriesRow {
 	bucket: string
-	cpu: number
+	/** Null for a bucket without CPU increments. */
+	cpu: number | null
 	memoryAvg: number
 	memoryMax: number
 	memoryTotal: number
@@ -147,7 +148,7 @@ export const getSupabaseProjectTimeseries = Effect.fn("QueryEngine.getSupabasePr
 	return {
 		buckets: result.data.map((row): SupabaseProjectTimeseriesRow => ({
 			bucket: String(row.bucket ?? ""),
-			cpu: wireNumber(row.cpu),
+			cpu: wireNumberOrNull(row.cpu),
 			memoryAvg: wireNumber(row.memoryAvg),
 			memoryMax: wireNumber(row.memoryMax),
 			memoryTotal: wireNumber(row.memoryTotal),

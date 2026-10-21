@@ -1,5 +1,6 @@
 import { formatPercent } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
+import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import type { SupabaseProjectRow } from "./model"
@@ -37,6 +38,8 @@ export const lifecycleOf = (status: string): Lifecycle => {
 
 export type ProjectHealth =
 	| { readonly _tag: "Healthy" }
+	/** No metrics row to judge by: `checking` while the read is in flight, else it failed or holds none. */
+	| { readonly _tag: "Unknown"; readonly checking: boolean }
 	| { readonly _tag: "Degraded"; readonly reason: string }
 	| { readonly _tag: "Paused" }
 	| { readonly _tag: "Lifecycle"; readonly label: string; readonly tone: "warn" | "crit" }
@@ -54,21 +57,31 @@ export const degradedReason = (row: SupabaseProjectRow): string | null => {
 }
 
 /**
- * An unknown connection limit skips that rule. Paused when Supabase says so; a transitional or failed lifecycle as Supabase names it; degraded
- * when a running project's window crosses a limit (`degradedReason`); else healthy.
+ * An unknown connection limit skips that rule. Paused when Supabase says so; a transitional or failed lifecycle as Supabase names it; unknown
+ * without a metrics row; degraded when a running project's window crosses a limit (`degradedReason`); else healthy.
  */
-export const projectHealth = (status: string | null, row: SupabaseProjectRow | null): ProjectHealth => {
+export const projectHealth = (
+	status: string | null,
+	row: SupabaseProjectRow | null,
+	isLoading: boolean,
+): ProjectHealth => {
 	const lifecycle: Lifecycle = status === null ? { _tag: "Running" } : lifecycleOf(status)
 	if (lifecycle._tag === "Paused") return { _tag: "Paused" }
 	if (lifecycle._tag === "Other") return { _tag: "Lifecycle", label: lifecycle.label, tone: lifecycle.tone }
-	const reason = row === null ? null : degradedReason(row)
+	if (row === null) return { _tag: "Unknown", checking: isLoading }
+	const reason = degradedReason(row)
 	return reason === null ? { _tag: "Healthy" } : { _tag: "Degraded", reason }
 }
 
-/** The one-line why for a project that is not healthy, `null` for a healthy one. */
+/** Whether a read has yet to return anything, the `isLoading` argument of `projectHealth`. */
+export const isReadPending = <A, E>(data: AsyncData.AsyncData<A, E>): boolean =>
+	AsyncData.isIdle(data) || AsyncData.isLoading(data)
+
+/** The one-line why for a project that is not healthy, `null` for a healthy or unknown one. */
 export const healthReason = (name: string, health: ProjectHealth): string | null => {
 	switch (health._tag) {
 		case "Healthy":
+		case "Unknown":
 			return null
 		case "Degraded":
 			return `${name} ${health.reason}`
@@ -85,6 +98,8 @@ const pillOf = (
 	switch (health._tag) {
 		case "Healthy":
 			return { label: "Healthy", variant: "ok" }
+		case "Unknown":
+			return { label: health.checking ? "Checking" : "No data", variant: "muted" }
 		case "Degraded":
 			return { label: "Degraded", variant: "warn" }
 		case "Paused":

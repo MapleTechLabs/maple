@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { collectingLabel, projectHealth } from "./health"
+import { collectingLabel, healthReason, projectHealth } from "./health"
 import type { SupabaseProjectRow } from "./model"
 
 const row = (overrides: Partial<SupabaseProjectRow> = {}): SupabaseProjectRow => ({
@@ -25,13 +25,18 @@ const row = (overrides: Partial<SupabaseProjectRow> = {}): SupabaseProjectRow =>
 
 describe("projectHealth", () => {
 	test("a running project inside every limit is healthy", () => {
-		expect(projectHealth("ACTIVE_HEALTHY", row())).toEqual({ _tag: "Healthy" })
-		expect(projectHealth("ACTIVE_HEALTHY", null)).toEqual({ _tag: "Healthy" })
+		expect(projectHealth("ACTIVE_HEALTHY", row(), false)).toEqual({ _tag: "Healthy" })
+	})
+
+	test("without a metrics row a running project is unknown, checking only while the read loads", () => {
+		expect(projectHealth("ACTIVE_HEALTHY", null, true)).toEqual({ _tag: "Unknown", checking: true })
+		expect(projectHealth("ACTIVE_HEALTHY", null, false)).toEqual({ _tag: "Unknown", checking: false })
+		expect(healthReason("storefront", { _tag: "Unknown", checking: false })).toBeNull()
 	})
 
 	test("degraded at 90% of the connection limit, 5% 5xx, or a 90% CPU, memory or disk peak", () => {
 		const reason = (overrides: Partial<SupabaseProjectRow>) =>
-			projectHealth("ACTIVE_HEALTHY", row(overrides))
+			projectHealth("ACTIVE_HEALTHY", row(overrides), false)
 		expect(reason({ connectionsMax: 81 })).toEqual({
 			_tag: "Degraded",
 			reason: "near its connection limit",
@@ -46,19 +51,19 @@ describe("projectHealth", () => {
 	})
 
 	test("a handful of failed requests is not a 5xx rate", () => {
-		expect(projectHealth("ACTIVE_HEALTHY", row({ requests: 10, errors5xx: 5 }))).toEqual({
+		expect(projectHealth("ACTIVE_HEALTHY", row({ requests: 10, errors5xx: 5 }), false)).toEqual({
 			_tag: "Healthy",
 		})
 	})
 
 	test("Supabase's own lifecycle wins over the metrics", () => {
-		expect(projectHealth("INACTIVE", row({ cpuMax: 1 }))).toEqual({ _tag: "Paused" })
-		expect(projectHealth("RESTORE_FAILED", row())).toEqual({
+		expect(projectHealth("INACTIVE", row({ cpuMax: 1 }), false)).toEqual({ _tag: "Paused" })
+		expect(projectHealth("RESTORE_FAILED", row(), false)).toEqual({
 			_tag: "Lifecycle",
 			label: "Restore failed",
 			tone: "crit",
 		})
-		expect(projectHealth("COMING_UP", null)).toEqual({
+		expect(projectHealth("COMING_UP", null, true)).toEqual({
 			_tag: "Lifecycle",
 			label: "Coming up",
 			tone: "warn",

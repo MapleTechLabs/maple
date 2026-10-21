@@ -4,7 +4,7 @@ import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { type AttentionItem, needsAttention } from "./attention"
+import { type AttentionItem, MAX_ATTENTION_ITEMS, needsAttention } from "./attention"
 import type { HealthStrip } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -13,8 +13,6 @@ import { panelEmpty, panelError, panelMeta, rowsLoading, sectionPanel } from "..
 // "Needs attention": advisors, recurring error logs and saturation, one list.
 
 type H = HtmlBuilder<Message>
-
-const MAX_ITEMS = 6
 
 const itemRow = (h: H, item: AttentionItem, timeZone: string): Html =>
 	h.li(
@@ -93,7 +91,7 @@ export const attentionPanel = (h: H, model: Model, strip: HealthStrip | null, ti
 						? panelEmpty(h, ["Nothing needs attention."])
 						: h.ul(
 								[h.AriaLabel("Needs attention")],
-								items.slice(0, MAX_ITEMS).map((item) => itemRow(h, item, timeZone)),
+								items.slice(0, MAX_ATTENTION_ITEMS).map((item) => itemRow(h, item, timeZone)),
 							),
 				],
 	)

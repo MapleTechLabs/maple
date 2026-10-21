@@ -67,13 +67,13 @@ describe("supabase infra queries", () => {
 		expect(rows.map((row) => row.cacheHitRatio)).toEqual([0.99, null])
 	})
 
-	it("keeps a bucket holding a counter's first sample as a null rate, not 0/s", () => {
+	it("keeps a bucket holding a counter's first sample as a null rate and CPU, not 0", () => {
 		const compiled = compileUnsafe(supabaseProjectRateSeriesSQL(), project)
 		const rows = Effect.runSync(
 			compiled.decodeRows([
 				{
 					bucket: "2026-07-02 12:00:00",
-					cpu: "0.2",
+					cpu: null,
 					commitsPerSecond: null,
 					rollbacksPerSecond: null,
 					cacheHitRatio: null,
@@ -84,6 +84,7 @@ describe("supabase infra queries", () => {
 				},
 			]),
 		)
+		expect(rows[0]?.cpu).toBeNull()
 		expect(rows[0]?.commitsPerSecond).toBeNull()
 		expect(rows[0]?.networkRxPerSecond).toBeNull()
 	})

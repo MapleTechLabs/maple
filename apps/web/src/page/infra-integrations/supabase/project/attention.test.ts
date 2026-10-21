@@ -1,7 +1,7 @@
 import { SupabaseLogIssue, SupabaseProjectInsights } from "@maple/domain/http"
 import { Schema } from "effect"
 import { describe, expect, test } from "vitest"
-import { needsAttention } from "./attention"
+import { MAX_ATTENTION_ITEMS, needsAttention } from "./attention"
 
 const lint = (advisor: "security" | "performance", level: "ERROR" | "WARN" | "INFO", title: string) => ({
 	advisor,
@@ -57,6 +57,34 @@ describe("needsAttention", () => {
 		])
 		expect(items[0]?.detail).toBe("Advisor · Table public.invoices is exposed")
 		expect(items[1]?.detail).toBe("postgres logs")
+	})
+
+	test("the panel budget applies after ranking, so error logs are never hidden behind an advisor warning", () => {
+		const errorLogs = ["a", "b", "c", "d", "e"].map((message) => issue(message, 17))
+		const warnOnly = Schema.decodeUnknownSync(SupabaseProjectInsights)({
+			...Schema.encodeSync(SupabaseProjectInsights)(insights),
+			advisors: { error: [], warn: insights.advisors.warn, info: [] },
+		})
+		const shown = (inputs: Parameters<typeof needsAttention>[0]) =>
+			needsAttention(inputs)
+				.slice(0, MAX_ATTENTION_ITEMS)
+				.map((item) => item.title)
+		expect(shown({ insights: warnOnly, issues: errorLogs, connections: null })).toEqual([
+			"a (14×)",
+			"b (14×)",
+			"c (14×)",
+			"d (14×)",
+			"e (14×)",
+			"Unindexed foreign keys",
+		])
+		expect(shown({ insights, issues: [...errorLogs, issue("f", 17)], connections: null })).toEqual([
+			"RLS disabled in public",
+			"a (14×)",
+			"b (14×)",
+			"c (14×)",
+			"d (14×)",
+			"e (14×)",
+		])
 	})
 
 	test("connections under 90% of the limit, or without a known limit, are not saturation", () => {

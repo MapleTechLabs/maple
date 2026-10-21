@@ -305,7 +305,8 @@ export function supabaseProjectGaugeSeriesSQL() {
 
 export interface SupabaseProjectRateSeriesOutput {
 	readonly bucket: DateTime.Utc
-	readonly cpu: number
+	/** Null for a bucket with no CPU increments (a first sample or no sample): a gap, not 0% busy. */
+	readonly cpu: number | null
 	/** Per-second rates are null for a bucket holding a series' first sample. */
 	readonly commitsPerSecond: number | null
 	readonly rollbacksPerSecond: number | null
@@ -356,19 +357,15 @@ export function supabaseProjectRateSeriesSQL() {
 					),
 				)
 			const isNetwork = (metricName: string) => $.metricName.eq(metricName).and($.device.neq("lo"))
+			const busy = CH.lit(1).sub(
+				CH.sumIf($.delta, $.metricName.eq(SUPABASE_CPU_SECONDS).and($.mode.eq("idle"))).div(
+					CH.nullIf(CH.sumIf($.delta, $.metricName.eq(SUPABASE_CPU_SECONDS)), 0),
+				),
+			)
 			return {
 				bucket: CH.toStartOfInterval($.t, param.int("bucketSeconds")),
-				cpu: finiteOrZero(
-					CH.greatest_(
-						CH.lit(1).sub(
-							CH.sumIf(
-								$.delta,
-								$.metricName.eq(SUPABASE_CPU_SECONDS).and($.mode.eq("idle")),
-							).div(CH.sumIf($.delta, $.metricName.eq(SUPABASE_CPU_SECONDS))),
-						),
-						CH.lit(0),
-					),
-				),
+				// `if_`, not `greatest_`: newer ClickHouse `greatest` skips NULL and would turn the gap into 0.
+				cpu: CH.if_(busy.lt(0), CH.lit(0), busy),
 				commitsPerSecond: perSecond($.metricName.eq(SUPABASE_XACT_COMMIT)),
 				rollbacksPerSecond: perSecond($.metricName.eq(SUPABASE_XACT_ROLLBACK)),
 				cacheHitRatio: CH.sumIf($.delta, $.metricName.eq(SUPABASE_BLKS_HIT)).div(

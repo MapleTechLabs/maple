@@ -35,7 +35,7 @@ export const projectViews = (
 			ref: project.ref,
 			displayName: project.name || project.ref,
 			region: project.region,
-			health: projectHealth(project.status, metrics),
+			health: projectHealth(project.status, metrics, false),
 			collection: metrics !== null ? "collecting" : project.metricsEnabled ? "waiting" : "off",
 			metricsEnabled: project.metricsEnabled,
 			logsEnabled: project.logsEnabled,
@@ -48,7 +48,7 @@ export const projectViews = (
 			ref: row.projectRef,
 			displayName: row.projectRef,
 			region: "",
-			health: projectHealth(null, row),
+			health: projectHealth(null, row, false),
 			collection: "collecting",
 			metricsEnabled: true,
 			logsEnabled: row.requests > 0 || row.issueCount > 0,
@@ -70,7 +70,9 @@ export const fleetSummary = (projects: ReadonlyArray<ProjectView>) => {
 	})
 	return {
 		total: projects.length,
-		healthy: projects.length - unhealthy.length,
+		healthy: projects.filter((project) => project.health._tag === "Healthy").length,
+		/** Projects with no metrics row to judge, neither healthy nor unhealthy. */
+		unknown: projects.filter((project) => project.health._tag === "Unknown").length,
 		/** Why the first unhealthy project is not healthy, `null` when all are. */
 		firstReason: unhealthy[0] ?? null,
 		unhealthyCount: unhealthy.length,

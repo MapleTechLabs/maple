@@ -12,7 +12,7 @@ import { icon } from "../../ui/icon"
 import { switchControl } from "../../ui/switch"
 import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
 import { relativeTime } from "../kit/relative-time"
-import { healthPill, lifecycleOf, projectHealth } from "../infra-integrations/supabase/health"
+import { healthPill, isReadPending, lifecycleOf, projectHealth } from "../infra-integrations/supabase/health"
 import type { SupabaseProjectRow } from "../infra-integrations/supabase/model"
 import {
 	SUPABASE_BRAND,
@@ -143,7 +143,15 @@ const projectRow = (h: H, model: Model, project: Project): Html => {
 						: []),
 				],
 			),
-			h.span([h.Class("flex w-24 shrink-0")], [healthPill(h, projectHealth(project.status, row))]),
+			h.span(
+				[h.Class("flex w-24 shrink-0")],
+				[
+					healthPill(
+						h,
+						projectHealth(project.status, row, isReadPending(model.supabaseCard.metrics.data)),
+					),
+				],
+			),
 			h.span(
 				[h.Class("w-48 shrink-0 truncate font-mono text-2xs text-muted-foreground")],
 				[lastDataLabel(project, model.supabaseCard.metrics, row, model.nowMs)],

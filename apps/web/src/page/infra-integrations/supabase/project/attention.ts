@@ -26,7 +26,8 @@ export type AttentionInputs = Readonly<{
 
 /** Severity numbers from ERROR (17) up. */
 const ERROR_SEVERITY = 17
-const MAX_LOG_ITEMS = 3
+/** The panel's one budget, applied after ranking so a milder item never displaces a worse one. */
+export const MAX_ATTENTION_ITEMS = 6
 
 const advisorItem = (lint: SupabaseAdvisorLint): AttentionItem => ({
 	key: `advisor:${lint.cacheKey}`,
@@ -55,13 +56,10 @@ const saturationItem = (peak: number, limit: number): AttentionItem => ({
 	lastSeen: null,
 })
 
-/** Advisor errors, error logs, saturation, then advisor warnings. */
+/** Advisor errors, error logs, saturation, then advisor warnings; uncapped, the panel shows the first `MAX_ATTENTION_ITEMS`. */
 export const needsAttention = (inputs: AttentionInputs): ReadonlyArray<AttentionItem> => {
 	const advisors = inputs.insights?.advisors
-	const logs = inputs.issues
-		.filter((issue) => issue.maxSeverity >= ERROR_SEVERITY)
-		.slice(0, MAX_LOG_ITEMS)
-		.map(issueItem)
+	const logs = inputs.issues.filter((issue) => issue.maxSeverity >= ERROR_SEVERITY).map(issueItem)
 	const connections = inputs.connections
 	const saturation =
 		connections !== null &&

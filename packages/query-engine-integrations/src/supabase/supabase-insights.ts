@@ -4,7 +4,14 @@
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
-import { defineFn, from, fromQuery, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
+import {
+	defineFn,
+	from,
+	fromQuery,
+	inSubquery,
+	param,
+	type ColumnAccessor,
+} from "@maple-dev/effect-orm/clickhouse"
 import { finiteOrZero, isoBucket, leftUTF8 } from "@maple/query-engine/ch/format"
 import { Logs, Traces, orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
 import type { DateTime } from "effect"
@@ -20,6 +27,8 @@ const WARN_SEVERITY = 13
 const TOP_PATHS_LIMIT = 10
 const LOG_ISSUES_LIMIT = 20
 const ISSUE_MESSAGE_CHARS = 200
+/** The callers table's rows; the sparkline series reads exactly these services. */
+const CALLERS_LIMIT = 100
 
 const toFloat64OrNull = defineFn<[CH.Expr<string>], number | null>("toFloat64OrNull", T.nullable(T.float64))
 const replaceRegexpAll = defineFn<[CH.Expr<string>, CH.Expr<string>, CH.Expr<string>], string>(
@@ -339,9 +348,21 @@ export function supabaseProjectCallersSQL() {
 		})
 		.groupBy("serviceName")
 		.orderBy(["calls", "desc"], ["serviceName", "asc"])
-		.limit(100)
+		.limit(CALLERS_LIMIT)
 		.format("JSON")
 }
+
+/** The services `supabaseProjectCallersSQL` returns: same spans, ranking and limit. */
+const topCallers = () =>
+	fromQuery(
+		from(Traces)
+			.select(($) => ({ serviceName: $.ServiceName, calls: CH.count() }))
+			.where(projectClientSpans)
+			.groupBy("serviceName")
+			.orderBy(["calls", "desc"], ["serviceName", "asc"])
+			.limit(CALLERS_LIMIT),
+		"callers",
+	).select(($) => ({ serviceName: $.serviceName }))
 
 export interface SupabaseProjectCallerSeriesOutput {
 	readonly serviceName: string
@@ -349,7 +370,7 @@ export interface SupabaseProjectCallerSeriesOutput {
 	readonly calls: number
 }
 
-/** Calls per (service, bucket), for the callers table's sparklines. */
+/** Calls per (service, bucket) for exactly the callers table's services, for its sparklines. */
 export function supabaseProjectCallerSeriesSQL() {
 	return from(Traces)
 		.select(($) => ({
@@ -357,7 +378,7 @@ export function supabaseProjectCallerSeriesSQL() {
 			bucket: isoBucket($.Timestamp),
 			calls: CH.count(),
 		}))
-		.where(projectClientSpans)
+		.where(($) => [...projectClientSpans($), inSubquery($.ServiceName, topCallers())])
 		.groupBy("serviceName", "bucket")
 		.orderBy(["serviceName", "asc"], ["bucket", "asc"])
 		.limit(10_000)

@@ -102,10 +102,23 @@ describe("healthStrip", () => {
 			}),
 		])
 		expect(strip?.cpu.avg).toBeCloseTo(0.2)
-		expect(strip?.cpu.peakAt).toBe("2026-10-01T10:05:00Z")
+		expect(strip?.cpu.peak?.bucket).toBe("2026-10-01T10:05:00Z")
 		expect(strip?.cacheHit.ratio).toBe(0.95)
 		expect(strip?.connections).toMatchObject({ peak: 31, limit: 90 })
 		expect(strip?.dbSize.growth).toBe(0.25e9)
+	})
+
+	test("a bucket without CPU increments is a gap in the spark, left out of the average", () => {
+		const strip = healthStrip([
+			bucket("2026-10-01T10:00:00Z", { cpu: 0.3 }),
+			bucket("2026-10-01T10:05:00Z", { cpu: null }),
+		])
+		expect(strip?.cpu.avg).toBeCloseTo(0.3)
+		expect(strip?.cpu.spark.map((point) => point.value)).toEqual([0.3, null])
+		expect(healthStrip([bucket("2026-10-01T10:00:00Z", { cpu: null })])?.cpu).toMatchObject({
+			avg: null,
+			peak: null,
+		})
 	})
 
 	test("no buckets is no strip", () => {

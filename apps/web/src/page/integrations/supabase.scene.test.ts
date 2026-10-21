@@ -183,6 +183,8 @@ describe("supabase card", () => {
 			{ update: pageUpdate, view },
 			given(withMetrics([])),
 			expectView(text("waiting for first scrape · logs 41s")).toExist(),
+			expectView(text("No data")).toExist(),
+			expectView(text("Healthy")).toBeAbsent(),
 		)
 		const clocked = pageUpdate(withStatus(status()), Message.CompletedReadClock({ nowMs: NOW })).model
 		const failed = pageUpdate(
@@ -197,6 +199,17 @@ describe("supabase card", () => {
 			given(failed),
 			expectView(text("metrics unavailable · logs 41s")).toExist(),
 			expectView(text("storefront")).toExist(),
+			expectView(text("No data")).toExist(),
+			expectView(text("Healthy")).toBeAbsent(),
+		)
+	})
+
+	test("while the metrics rows load a running project reads checking, not healthy", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(withStatus(status()), Message.CompletedReadClock({ nowMs: NOW })).model),
+			expectView(text("Checking")).toExist(),
+			expectView(text("Healthy")).toBeAbsent(),
 		)
 	})
 
@@ -286,6 +299,34 @@ describe("supabase card", () => {
 		)
 		expect(done.model.supabaseCard.pendingRefs).toEqual([])
 		expect(names(done.commands)).toEqual(["LoadIntegrationsSupabaseStatus"])
+	})
+
+	test("a settled switch re-reads the metrics rows, so the new rows replace the entry-time verdict", () => {
+		const before = withMetrics([])
+		const sent = pageUpdate(before, Message.ToggledSupabaseMetrics({ ref: REF, enabled: true }))
+		const done = pageUpdate(
+			sent.model,
+			Message.CompletedSupabaseMetrics({ ref: REF, enabled: true, failure: null }),
+		)
+		expect(names(done.commands)).toContain("LoadIntegrationsSupabaseMetrics")
+		const reread = pageUpdate(
+			done.model,
+			Message.CompletedLoadSupabaseMetrics({
+				key: done.model.supabaseCard.metrics.key ?? "",
+				result: Result.succeed([metricsRow(REF)]),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(reread),
+			expectView(text("metrics 23s · logs 41s")).toExist(),
+			expectView(text("Healthy")).toExist(),
+		)
+		const logs = pageUpdate(
+			pageUpdate(before, Message.ToggledSupabaseLogs({ ref: REF, enabled: false })).model,
+			Message.CompletedSupabaseLogs({ ref: REF, enabled: false, failure: null }),
+		)
+		expect(names(logs.commands)).toContain("LoadIntegrationsSupabaseMetrics")
 	})
 
 	test("a successful connect syncs the projects, then re-reads the status", () => {

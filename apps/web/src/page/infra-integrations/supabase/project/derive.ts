@@ -70,15 +70,22 @@ const last = <A>(values: ReadonlyArray<A>): A | undefined => values[values.lengt
 export const healthStrip = (rows: ReadonlyArray<Row>) => {
 	const latest = last(rows)
 	if (latest === undefined) return null
-	const peakCpu = rows.reduce((best, row) => (row.cpu > best.cpu ? row : best), latest)
+	const cpuSamples = rows.flatMap((row) => (row.cpu === null ? [] : [{ bucket: row.bucket, cpu: row.cpu }]))
+	const peakCpu = cpuSamples.reduce<(typeof cpuSamples)[number] | null>(
+		(best, sample) => (best === null || sample.cpu > best.cpu ? sample : best),
+		null,
+	)
 	const cacheHits = rows.flatMap((row) => (row.cacheHitRatio === null ? [] : [row.cacheHitRatio]))
 	const sizes = rows.flatMap((row) => (row.dbSize > 0 ? [row.dbSize] : []))
 	const limits = rows.flatMap((row) => (row.maxConnections === null ? [] : [row.maxConnections]))
 	return {
 		cpu: {
-			avg: rows.reduce((sum, row) => sum + row.cpu, 0) / rows.length,
-			peak: peakCpu.cpu,
-			peakAt: peakCpu.bucket,
+			/** `null` when no bucket had CPU increments. */
+			avg:
+				cpuSamples.length === 0
+					? null
+					: cpuSamples.reduce((sum, sample) => sum + sample.cpu, 0) / cpuSamples.length,
+			peak: peakCpu,
 			spark: rows.map((row) => ({ bucket: row.bucket, value: row.cpu })),
 		},
 		memory: {

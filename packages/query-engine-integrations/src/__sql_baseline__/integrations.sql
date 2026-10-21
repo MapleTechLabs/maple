@@ -4238,7 +4238,7 @@ SELECT
 -- builder:supabase-infra:supabaseProjectRateSeriesSQL:default
 SELECT
           toStartOfInterval(deltas.t, INTERVAL 300 SECOND) AS bucket,
-          ifNull(ifNotFinite(greatest(1 - sumIf(deltas.delta, (deltas.metricName = 'node_cpu_seconds_total' AND deltas.mode = 'idle')) / sumIf(deltas.delta, deltas.metricName = 'node_cpu_seconds_total'), 0), 0), 0) AS cpu,
+          if(1 - sumIf(deltas.delta, (deltas.metricName = 'node_cpu_seconds_total' AND deltas.mode = 'idle')) / nullIf(sumIf(deltas.delta, deltas.metricName = 'node_cpu_seconds_total'), 0) < 0, 0, 1 - sumIf(deltas.delta, (deltas.metricName = 'node_cpu_seconds_total' AND deltas.mode = 'idle')) / nullIf(sumIf(deltas.delta, deltas.metricName = 'node_cpu_seconds_total'), 0)) AS cpu,
           sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_xact_commit_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'pg_stat_database_xact_commit_total'), 1), 0), 0) AS commitsPerSecond,
           sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_xact_rollback_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'pg_stat_database_xact_rollback_total'), 1), 0), 0) AS rollbacksPerSecond,
           sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_blks_hit_total') / nullIf(sumIf(deltas.delta, deltas.metricName IN ('pg_stat_database_blks_hit_total', 'pg_stat_database_blks_read_total')), 0) AS cacheHitRatio,
@@ -4412,6 +4412,20 @@ SELECT
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND traces.SpanKind = 'Client'
           AND ((((traces.SpanAttributes['server.address'] = concat('abcdefghijklmnopqrst', '.supabase.co') OR traces.SpanAttributes['net.peer.name'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR traces.SpanAttributes['http.host'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR domain(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url'])) = concat('abcdefghijklmnopqrst', '.supabase.co')) OR (coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql' AND (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) = concat('db.', 'abcdefghijklmnopqrst', '.supabase.co') OR (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) LIKE '%.pooler.supabase.com' AND traces.SpanAttributes['db.user'] LIKE concat('%.', 'abcdefghijklmnopqrst')))))
+          AND traces.ServiceName IN (SELECT
+          callers.serviceName AS serviceName
+        FROM (SELECT
+          traces.ServiceName AS serviceName,
+          count() AS calls
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Client'
+          AND ((((traces.SpanAttributes['server.address'] = concat('abcdefghijklmnopqrst', '.supabase.co') OR traces.SpanAttributes['net.peer.name'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR traces.SpanAttributes['http.host'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR domain(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url'])) = concat('abcdefghijklmnopqrst', '.supabase.co')) OR (coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql' AND (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) = concat('db.', 'abcdefghijklmnopqrst', '.supabase.co') OR (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) LIKE '%.pooler.supabase.com' AND traces.SpanAttributes['db.user'] LIKE concat('%.', 'abcdefghijklmnopqrst')))))
+        GROUP BY serviceName
+        ORDER BY calls DESC, serviceName ASC
+        LIMIT 100) AS callers)
         GROUP BY serviceName, bucket
         ORDER BY serviceName ASC, bucket ASC
         LIMIT 10000

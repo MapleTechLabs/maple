@@ -16,7 +16,7 @@ import { integrationNotConnected } from "../../kit/empty-states"
 import { pageTime } from "../../kit/page-time"
 import { type SparkWindow } from "../../kit/window-sparkline"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { healthPill, projectHealth } from "../health"
+import { healthPill, isReadPending, projectHealth } from "../health"
 import { supabaseDashboardHref, supabaseLogsHref } from "../links"
 import type { SupabaseProjectRow, SupabaseStatus } from "../model"
 import { type HealthStrip, healthStrip } from "./derive"
@@ -187,7 +187,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					pageHero(h, {
 						title: titleOf(model),
 						trailing: isStatusLoaded
-							? healthPill(h, projectHealth(project?.status ?? null, summary))
+							? healthPill(
+									h,
+									projectHealth(
+										project?.status ?? null,
+										summary,
+										isReadPending(model.projects.data),
+									),
+								)
 							: undefined,
 						meta: heroMeta(h, project, summary, clock),
 						actions: heroActions(h, model, project),

@@ -133,7 +133,7 @@ const enterIntegration = (model: Model, context: PageContext): Return => {
 	if (integration === "cloudflare") return CloudflareCard.enterCloudflare(model, context)
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
-	if (integration === "supabase") return Supabase.requestMetricsRows(model, context)
+	if (integration === "supabase") return Supabase.requestMetricsRows(model, context, "Load")
 	return { model }
 }
 
@@ -158,7 +158,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						watchStartedAt: model.planetscaleCard.watchStartedAt ?? nowMs,
 					},
 				},
-				[(next) => gcpBand(next, context), (next) => Supabase.requestMetricsRows(next, context)],
+				[
+					(next) => gcpBand(next, context),
+					(next) => Supabase.requestMetricsRows(next, context, "Load"),
+				],
 			),
 		CompletedLoadCloudflare: ({ key, result }) =>
 			accepted(model, { ...s, cloudflare: Keyed.accept(s.cloudflare, key, result) }),
@@ -188,6 +191,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Supabase.requestMetricsRows(
 				accepted(model, { ...s, supabase: Keyed.accept(s.supabase, key, result) }).model,
 				context,
+				"Load",
 			),
 		CompletedLoadSupabaseMetrics: ({ key, result }) => Supabase.completedMetricsRows(model, key, result),
 		CompletedLoadHazel: ({ key, result }) =>

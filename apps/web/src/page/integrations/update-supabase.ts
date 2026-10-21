@@ -17,7 +17,7 @@ import {
 	type SupabaseCardModel,
 	SyncSupabase,
 } from "./supabase"
-import { requestStatus } from "./update-status"
+import { chain, requestStatus } from "./update-status"
 
 // The Supabase card's state changes.
 
@@ -40,7 +40,7 @@ const isConnected = (model: Model): boolean =>
 	})
 
 /** The card's last-hour metrics rows, once the clock is read and the shown card is connected. */
-export const requestMetricsRows = (model: Model, context: PageContext): Return => {
+export const requestMetricsRows = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
 	if (
 		model.nowMs === 0 ||
 		integrationOfSearch(model.search.integration) !== "supabase" ||
@@ -49,7 +49,7 @@ export const requestMetricsRows = (model: Model, context: PageContext): Return =
 		return { model }
 	const window = resolveWindow({ preset: "1h", snap: true, timeZone: context.timeZone }, model.nowMs)
 	const key = requestKey(context.orgId, "getSupabaseProjects", { data: window })
-	return Option.match(Keyed.request(model.supabaseCard.metrics, key, "Load"), {
+	return Option.match(Keyed.requestFor(model.supabaseCard.metrics, key, mode), {
 		onNone: () => ({ model }),
 		onSome: (metrics) => ({
 			model: withCard(model, { metrics }),
@@ -101,9 +101,12 @@ const completed = (
 	const settled = withCard(model, {
 		pendingRefs: model.supabaseCard.pendingRefs.filter((pending) => pending !== ref),
 	})
-	return failure === null
-		? requestStatus(settled, context, "supabase", "Supersede")
-		: toast(settled, "error", failedTitle, failure.message)
+	if (failure !== null) return toast(settled, "error", failedTitle, failure.message)
+	// Re-read the rows too: same window, same key, so only a superseding read refreshes health and last data.
+	return chain(settled, [
+		(next) => requestStatus(next, context, "supabase", "Supersede"),
+		(next) => requestMetricsRows(next, context, "Supersede"),
+	])
 }
 
 export const toggledMetrics = (model: Model, ref: SupabaseProjectRef, enabled: boolean): Return =>

@@ -52,7 +52,11 @@ const tiles = (h: H, views: ReadonlyArray<ProjectView>): Html => {
 			value: `${summary.healthy} of ${summary.total} healthy`,
 			tone: summary.unhealthyCount > 0 ? "warn" : undefined,
 			subline:
-				summary.firstReason === null ? "Every project is healthy" : `${summary.firstReason}${more}`,
+				summary.firstReason !== null
+					? `${summary.firstReason}${more}`
+					: summary.unknown > 0
+						? `${countLabel(summary.unknown, "project")} without metrics`
+						: "Every project is healthy",
 		}),
 		statRailItem(h, {
 			compact: true,

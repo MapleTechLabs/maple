@@ -58,9 +58,12 @@ export const healthStripView = (h: H, strip: HealthStrip, window: SparkWindow, t
 		[
 			tile(h, window, {
 				label: "CPU",
-				value: formatPercent(cpu.avg),
+				value: cpu.avg === null ? EMPTY_VALUE : formatPercent(cpu.avg),
 				spark: cpu.spark,
-				caption: `peak ${formatPercent(cpu.peak)} at ${formatClockInTimezone(cpu.peakAt, { timeZone }).slice(0, 5)}`,
+				caption:
+					cpu.peak === null
+						? ""
+						: `peak ${formatPercent(cpu.peak.cpu)} at ${formatClockInTimezone(cpu.peak.bucket, { timeZone }).slice(0, 5)}`,
 			}),
 			tile(h, window, {
 				label: "Memory",
