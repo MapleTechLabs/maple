@@ -1824,6 +1824,22 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () => runCompile(CH.serviceDbTopQueriesSQL({ ...window, dbSystem: "postgresql" })),
 	},
 	{
+		// apps/api/src/routes/queries.ts gcpCloudSqlStatementSpans.
+		module: "service-map",
+		name: "serviceDbQuerySpansQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceDbQuerySpansQuery({
+					dbSystem: "postgresql",
+					dbNamespaces: ["orders"],
+					queryKeys: ["11640393269246331608"],
+					limit: 5,
+				}),
+				window,
+			),
+	},
+	{
 		// Hourly MV UNION ALL raw traces, minus the internal-resolution anti-join.
 		module: "service-map",
 		name: "serviceExternalEdgesSQL",

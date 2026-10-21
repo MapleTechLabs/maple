@@ -4,6 +4,7 @@ import { compileUnsafe, param, toDateTime } from "@maple-dev/effect-orm/clickhou
 import {
 	serviceDbEdgesSQL,
 	serviceDbEdgesForServiceQuery,
+	serviceDbQuerySpansQuery,
 	serviceDbQuerySummarySQL,
 	serviceDbQueryTimeseriesSQL,
 	serviceDbTopQueriesSQL,
@@ -15,7 +16,7 @@ import {
 } from "./service-map"
 import { serviceMapEdgesRollupSQL, serviceMapResolutionsRollupSQL } from "./service-map-rollup"
 import { ServiceMapEdgesHourly } from "../tables"
-import { DB_NAMESPACE_ATTR_SQL } from "@maple/domain/tinybird/db-query-shape-sql"
+import { DB_NAMESPACE_ATTR_SQL, DB_QUERY_KEY_SQL } from "@maple/domain/tinybird/db-query-shape-sql"
 import { OrgId } from "@maple/domain"
 
 // The read side must derive `DbNamespace` byte-identically to the write side's
@@ -933,4 +934,60 @@ describe("servicePlatformsSQL", () => {
 			expect(Exit.isFailure(exit)).toBe(true)
 		}),
 	)
+})
+
+// serviceDbQuerySpansQuery
+
+describe("serviceDbQuerySpansQuery", () => {
+	const spans = (limit?: number) =>
+		serviceDbQuerySpansQuery({
+			dbSystem: "postgresql",
+			dbNamespaces: ["orders", "o'brien"],
+			queryKeys: ["123", "456"],
+			limit,
+		})
+
+	it("reads one org's client spans of the given keys and databases over the whole window", () => {
+		const { sql, tenantScope } = compileUnsafe(spans(), baseParams)
+		expect(tenantScope).toBe("single-tenant")
+		expect(sql).toContain("traces.OrgId = 'org_1'")
+		expect(sql).toContain("traces.Timestamp >= toDateTime('2024-01-01 00:00:00')")
+		expect(sql).toContain("traces.Timestamp <= toDateTime('2024-01-02 00:00:00')")
+		expect(sql).not.toContain("toStartOfHour")
+		expect(sql).toContain("traces.SpanKind IN ('Client', 'Producer')")
+		expect(sql).toContain("traces.SpanAttributes['db.system']) = 'postgresql'")
+		expect(sql).toContain("'hyperdrive', coalesce(")
+		expect(sql).toContain(") IN ('orders', 'o\\'brien')")
+		// The key top queries group by, so a listed key finds its spans.
+		expect(sql).toContain(`${DB_QUERY_KEY_SQL} IN ('123', '456')`)
+	})
+
+	it("returns the slowest first, five by default and at most twenty", () => {
+		expect(compileUnsafe(spans(), baseParams).sql).toContain(
+			"ORDER BY durationMs DESC, traceId ASC, spanId ASC\n        LIMIT 5\n",
+		)
+		expect(compileUnsafe(spans(500), baseParams).sql).toContain("LIMIT 20\n")
+		expect(compileUnsafe(spans(0), baseParams).sql).toContain("LIMIT 1\n")
+	})
+
+	it("decodes the span's start to UTC and its duration to milliseconds", () => {
+		const rows = Effect.runSync(
+			compileUnsafe(spans(), baseParams).decodeRows([
+				{
+					traceId: "t1",
+					spanId: "s1",
+					serviceName: "orders-api",
+					timestamp: "2024-01-01 10:00:00.123456789",
+					durationMs: "812.5",
+				},
+			]),
+		)
+		expect(rows[0]).toMatchObject({
+			traceId: "t1",
+			spanId: "s1",
+			serviceName: "orders-api",
+			durationMs: 812.5,
+		})
+		expect(DateTime.formatIso(rows[0]!.timestamp)).toBe("2024-01-01T10:00:00.123Z")
+	})
 })

@@ -9,11 +9,13 @@ import { EMPTY_VALUE, formatLatency, formatNumber, formatPercent } from "@maple/
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
+import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../../../data/load-failure"
 import { AppRoute, hrefOf } from "../../../../route"
 import { emptyMessage } from "../../../../ui/empty"
+import { icon } from "../../../../ui/icon"
 import { errorState } from "../../../../ui/error-state"
 import { meter } from "../../../../ui/meter"
 import { skeletonList } from "../../../../ui/skeleton"
@@ -35,6 +37,7 @@ const MANY_ROWS = 10_000
 const LOCK_WARN = 0.2
 const LOCK_CRIT = 0.5
 const APP_GAP = 5
+const CHEVRON = "flex w-4 shrink-0 justify-center"
 
 const head = (h: H, label: string, width: string, align?: "right", hidden?: string) =>
 	columnHead(h, { label, width, align, hidden })
@@ -48,12 +51,28 @@ const callers = (h: H, traced: GcpTracedStatement | undefined): Html => {
 	)
 }
 
-const statementRow = (h: H, row: GcpStatement, traced: GcpTracedStatement | undefined): Html => {
+const statementRow = (
+	h: H,
+	row: GcpStatement,
+	traced: GcpTracedStatement | undefined,
+	isPeeked: boolean,
+): Html => {
 	const rowsPerCall = row.calls > 0 ? row.rows / row.calls : undefined
 	const db = row.p95LatencyMillis
 	const app = traced?.appP95Ms
-	return h.div(
-		[h.Class("flex items-center gap-4 border-b border-border/40 px-4 py-2.5 last:border-0")],
+	return h.button(
+		[
+			h.Type("button"),
+			h.OnClick(Message.ClickedStatement({ queryHash: row.queryHash })),
+			h.AriaLabel(`Open statement: ${row.querystring}`),
+			...(isPeeked ? [h.AriaCurrent("true")] : []),
+			h.Class(
+				cn(
+					"flex w-full items-center gap-4 border-b border-border/40 px-4 py-2.5 text-left transition-colors last:border-0 hover:bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
+					rowSelectedClass(isPeeked),
+				),
+			),
+		],
 		[
 			h.div(
 				[h.Class(cn(STATEMENT, "space-y-0.5"))],
@@ -128,6 +147,13 @@ const statementRow = (h: H, row: GcpStatement, traced: GcpTracedStatement | unde
 					),
 				],
 			),
+			h.span(
+				[
+					h.AriaHidden(true),
+					h.Class(cn(CHEVRON, isPeeked ? "text-foreground" : "text-muted-foreground")),
+				],
+				[icon(h, "ChevronRightIcon", { size: 14 })],
+			),
 		],
 	)
 }
@@ -141,6 +167,8 @@ export type TopQueriesInputs = Readonly<{
 	unavailableReason: string | null
 	traced: ReadonlyMap<string, GcpTracedStatement>
 	showAll: boolean
+	/** The statement open in the side panel. */
+	peekHash: string | undefined
 }>
 
 export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
@@ -160,9 +188,12 @@ export const topQueries = (h: H, inputs: TopQueriesInputs): Html => {
 				head(h, "Rows", "w-[64px]", "right", "hidden md:flex"),
 				head(h, "Lock", "w-[56px]", "right"),
 				head(h, "Total time", "w-[112px]", undefined, "hidden md:flex"),
+				h.span([h.Class(CHEVRON)], []),
 			],
 			[
-				...shown.map((row) => statementRow(h, row, inputs.traced.get(row.queryHash))),
+				...shown.map((row) =>
+					statementRow(h, row, inputs.traced.get(row.queryHash), row.queryHash === inputs.peekHash),
+				),
 				h.div(
 					[
 						h.Class(

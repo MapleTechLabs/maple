@@ -6,12 +6,14 @@ import {
 	CloudSqlInput,
 	loadFleet,
 	loadOverview,
+	loadStatementSpans,
 	loadResources,
 	loadTimeseries,
 	loadTopQueries,
 	loadTraceSide,
 	OverviewInput,
 	ResourcesQuery,
+	StatementSpansInput,
 	TimeseriesInput,
 } from "../data"
 import { Message, RequestMode } from "./model"
@@ -82,6 +84,15 @@ export const FetchTraceSide = Command.define("FetchGcpCloudSqlTraceSide", {
 	messages: [Message.CompletedFetchTraceSide],
 	execute: ({ key, input }) =>
 		Effect.map(loadTraceSide(input), (result) => Message.CompletedFetchTraceSide({ key, result })),
+})
+
+export const FetchStatementSpans = Command.define("FetchGcpCloudSqlStatementSpans", {
+	args: { key: Schema.String, input: StatementSpansInput },
+	messages: [Message.CompletedFetchStatementSpans],
+	execute: ({ key, input }) =>
+		Effect.map(loadStatementSpans(input), (result) =>
+			Message.CompletedFetchStatementSpans({ key, result }),
+		),
 })
 
 export const FetchFleet = Command.define("FetchGcpWorkloadFleet", {

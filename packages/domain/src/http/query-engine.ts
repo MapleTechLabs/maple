@@ -618,6 +618,40 @@ export class GcpCloudSqlDatabasesResponse extends Schema.Class<GcpCloudSqlDataba
 	databases: Schema.Array(Schema.String),
 }) {}
 
+/** One Query Insights statement's traced counterparts: their slowest client spans. */
+export class GcpCloudSqlStatementSpansRequest extends Schema.Class<GcpCloudSqlStatementSpansRequest>(
+	"GcpCloudSqlStatementSpansRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	/** The instance's databases, matched against the spans' `db.namespace`. */
+	databases: Schema.Array(Schema.String.check(Schema.isMaxLength(256))).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(32),
+	),
+	/** Traced query keys (`DB_QUERY_KEY_SQL`) the statement matched. */
+	queryKeys: Schema.Array(Schema.String.check(Schema.isMaxLength(64))).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(16),
+	),
+}) {}
+
+export class GcpCloudSqlStatementSpansResponse extends Schema.Class<GcpCloudSqlStatementSpansResponse>(
+	"GcpCloudSqlStatementSpansResponse",
+)({
+	/** Slowest first: see `serviceDbQuerySpansQuery`. */
+	data: Schema.Array(
+		Schema.Struct({
+			traceId: Schema.String,
+			spanId: Schema.String,
+			serviceName: Schema.String,
+			/** ISO-8601 UTC. */
+			timestamp: Schema.String,
+			durationMs: Schema.Number,
+		}),
+	),
+}) {}
+
 // Cloudflare infrastructure page (/infra/cloudflare): per-zone HTTP edge
 // analytics and per-Worker invocation analytics from the direct-integration
 // poller's metrics. Same conventions as ServiceCloudflareStats — no
@@ -2916,6 +2950,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("gcpCloudSqlDatabases", "/gcp-cloudsql-databases", {
 			payload: GcpCloudSqlInstanceRequest,
 			success: GcpCloudSqlDatabasesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("gcpCloudSqlStatementSpans", "/gcp-cloudsql-statement-spans", {
+			payload: GcpCloudSqlStatementSpansRequest,
+			success: GcpCloudSqlStatementSpansResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

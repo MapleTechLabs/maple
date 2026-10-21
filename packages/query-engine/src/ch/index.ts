@@ -441,6 +441,7 @@ export {
 	serviceDbQuerySummarySQL,
 	serviceDbQueryTimeseriesSQL,
 	serviceDbTopQueriesSQL,
+	serviceDbQuerySpansQuery,
 	dbQueryVolumeQuery,
 	dbQueryVolumeRowSchema,
 	type DbQueryVolumeOpts,

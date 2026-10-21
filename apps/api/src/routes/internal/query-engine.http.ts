@@ -23,6 +23,7 @@ import {
 	GcpInfraPresenceResponse,
 	GcpInfraSparklinesResponse,
 	GcpCloudSqlDatabasesResponse,
+	GcpCloudSqlStatementSpansResponse,
 	GcpCloudSqlTopQueriesResponse,
 	GcpInfraTimeseriesResponse,
 	ServiceCloudflareStatsResponse,
@@ -904,6 +905,18 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const rows = yield* runQuery(Queries.gcpCloudSqlDatabases, tenant, payload)
 						return new GcpCloudSqlDatabasesResponse({
 							databases: rows.map((row) => row.database),
+						})
+					}),
+				)
+				.handle("gcpCloudSqlStatementSpans", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpCloudSqlStatementSpans, tenant, payload)
+						return new GcpCloudSqlStatementSpansResponse({
+							data: rows.map((row) => ({
+								...row,
+								timestamp: DateTime.formatIso(row.timestamp),
+							})),
 						})
 					}),
 				)

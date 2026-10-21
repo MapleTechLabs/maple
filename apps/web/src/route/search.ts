@@ -765,6 +765,8 @@ export const InfraGcpResourceSearch = Schema.Struct({
 	location: Schema.optional(Schema.String),
 	zone: Schema.optional(Schema.String),
 	backend: Schema.optional(Schema.String),
+	/** A Cloud SQL instance's statement open in the side panel, by its Query Insights hash. */
+	peek: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
 })
 

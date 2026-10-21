@@ -19,6 +19,7 @@ import type {
 	GcpInfraMetricsRequest,
 	GcpInfraPresenceRequest,
 	GcpCloudSqlInstanceRequest,
+	GcpCloudSqlStatementSpansRequest,
 	GcpInfraSparklinesRequest,
 	GcpInfraTimeseriesRequest,
 	GetLogRequest,
@@ -369,6 +370,22 @@ const gcpCloudSqlDatabases = defineQuery({
 			startTime: payload.startTime,
 			endTime: payload.endTime,
 		}),
+})
+
+const gcpCloudSqlStatementSpans = defineQuery({
+	id: "gcpCloudSqlStatementSpans",
+	profile: "list",
+	cache: 15,
+	compile: (payload: GcpCloudSqlStatementSpansRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.serviceDbQuerySpansQuery({
+				dbSystem: "postgresql",
+				dbNamespaces: payload.databases,
+				queryKeys: payload.queryKeys,
+				limit: 5,
+			}),
+			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+		),
 })
 
 const zoneDetailParams = (payload: CloudflareInfraZoneDetailRequest, orgId: OrgId) => ({
@@ -896,6 +913,7 @@ export const Queries = {
 	gcpInfraSparklines,
 	gcpCloudSqlTopQueries,
 	gcpCloudSqlDatabases,
+	gcpCloudSqlStatementSpans,
 
 	// ZoneDetail / PlanetScaleStats sub-queries, declared above.
 	cloudflareInfraZoneDetailStatus,

@@ -9,6 +9,7 @@ import type { GcpResource } from "@maple/domain/http"
 
 import type { GcpBucketPoint } from "../components/infra/gcp/charts"
 import type { GcpStatement, GcpTracedQuery } from "../components/infra/gcp/cloud-sql-signals"
+import type { StatementSpan } from "../page/infra-integrations/gcp/data"
 import type { GcpCloudSqlInstance } from "../components/infra/gcp/inventory"
 import { GCP_IDLE_IN_TRANSACTION, type GcpReplica } from "../components/infra/gcp/list-model"
 
@@ -190,6 +191,7 @@ const tracedQuery = (
 	p95DurationMs: number,
 	serviceCount = 1,
 ) => ({
+	queryKey: `shape-${sampleService}-${sampleStatement.length}`,
 	sampleStatement,
 	sampleService,
 	serviceCount,
@@ -236,6 +238,24 @@ const ORDERS_DB_INSTANCE: GcpCloudSqlInstance = {
 	maxConnections: 100,
 	maxConnectionsSource: "default",
 }
+
+const SPAN_SERVICES = ["checkout-api", "orders-worker"]
+
+/** A statement's five slowest calls: its traced p95 stretched into a tail, one call in a few minutes. */
+export const labStatementSpans = (
+	queryHash: string,
+	p95Ms: number,
+	services: ReadonlyArray<string>,
+): ReadonlyArray<StatementSpan> =>
+	[4.4, 3.1, 2.3, 1.7, 1.4].map((factor, index) => ({
+		traceId: `${queryHash}${String(index).padStart(30, "0")}`,
+		spanId: `${queryHash}${String(index).padStart(14, "0")}`,
+		serviceName: (services.length === 0 ? SPAN_SERVICES : services)[index % 2] ?? services[0] ?? "",
+		timestamp: new Date(
+			START_MS + (BUCKETS * BUCKET_SECONDS - (index * 37 + 11) * 60) * 1000,
+		).toISOString(),
+		durationMs: Math.round(p95Ms * factor),
+	}))
 
 /** What a Cloud SQL page reads besides its metrics. */
 export interface LabCloudSql {
