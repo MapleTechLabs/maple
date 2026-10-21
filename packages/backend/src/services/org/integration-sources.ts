@@ -192,6 +192,34 @@ const scrapeOverrides = (
 		: { staleAfterMs: Math.max(...enabled.map((target) => scrapeStaleAfterMs(target.scrapeIntervalSeconds))) }
 }
 
+const overridesBySource = (
+	targets: ReadonlyArray<{
+		readonly sourceId: SourceId | null
+		readonly enabled: boolean
+		readonly scrapeIntervalSeconds: number
+	}>,
+) => {
+	const bySource = Arr.groupBy(
+		targets.flatMap((target) => (target.sourceId === null ? [] : [{ ...target, sourceId: target.sourceId }])),
+		(target) => target.sourceId,
+	)
+	return new Map(
+		Object.values(bySource).map(
+			(group): readonly [SourceId, SourceHealthOverrides] => [group[0].sourceId, scrapeOverrides(group)],
+		),
+	)
+}
+
+/** What each of an org's Prometheus sources' targets add to its health, reading only scrape targets. */
+export const readScrapeOverrides = Effect.fnUntraced(function* (db: MapleDb, orgId: OrgId) {
+	const targets = yield* db.run(
+		PG.from(ScrapeTargets)
+			.select("sourceId", "enabled", "scrapeIntervalSeconds")
+			.where(($) => [$.orgId.eq(orgId), $.managedBy.isNull()]),
+	)
+	return overridesBySource(targets)
+})
+
 /**
  * For each of an org's integration sources: the integration row it stands for (a scrape target,
  * a connector, a connection; a PlanetScale-managed target sends as its connection), and what its
@@ -220,16 +248,8 @@ export const readSourceOwners = Effect.fnUntraced(function* (db: MapleDb, orgId:
 	const linked = [...targets, ...owners.flat()].flatMap((owner) =>
 		owner.sourceId === null ? [] : [[owner.sourceId, owner.id] as const],
 	)
-	const bySource = Arr.groupBy(
-		targets.flatMap((target) => (target.sourceId === null ? [] : [{ ...target, sourceId: target.sourceId }])),
-		(target) => target.sourceId,
-	)
 	return {
 		integrationIds: new Map(linked),
-		overrides: new Map(
-			Object.values(bySource).map(
-				(group): readonly [SourceId, SourceHealthOverrides] => [group[0].sourceId, scrapeOverrides(group)],
-			),
-		),
+		overrides: overridesBySource(targets),
 	}
 })
