@@ -1,9 +1,10 @@
 import { assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Fiber, Layer } from "effect"
+import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { classifyAutumn, ensureOk } from "@maple/backend/services/billing/autumn-client"
-import type { AutumnResult } from "@maple/backend/services/billing/autumn-http"
+import { type AutumnResult, BILLING_REQUEST_TIMEOUT } from "@maple/backend/services/billing/autumn-http"
 import { STRIPE_API_VERSION } from "@maple/backend/services/billing/stripe-api"
 import { StripeClient, type StripeClientApi, encodeForm } from "@maple/backend/services/billing/stripe-http"
 
@@ -268,4 +269,21 @@ describe("StripeClient responses", () => {
 		assert.strictEqual(error._tag, "@maple/http/errors/BillingNotConfiguredError")
 		assert.isFalse(called)
 	})
+
+	it.effect("fails a stalled request as an upstream error once the timeout passes", () =>
+		Effect.gen(function* () {
+			// Hangs until the timeout aborts the request.
+			const fetch: typeof globalThis.fetch = (_input, init) =>
+				new Promise((_resolve, reject) => {
+					init?.signal?.addEventListener("abort", () => reject(init.signal?.reason))
+				})
+			const fiber = yield* Effect.forkChild(
+				Effect.flip(runWithClient(fetch, (stripe) => stripe.getCustomer(CUS))),
+			)
+			yield* TestClock.adjust(BILLING_REQUEST_TIMEOUT)
+			const error = yield* Fiber.join(fiber)
+			assert.strictEqual(error._tag, "@maple/http/errors/BillingUpstreamError")
+			assert.include(error.message, "timed out")
+		}),
+	)
 })

@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Tracer } from "effect"
-import { ClerkRequestError, clerkRequest } from "./clerk-request"
+import { Effect, Fiber, Tracer } from "effect"
+import { TestClock } from "effect/testing"
+import { CLERK_REQUEST_TIMEOUT, ClerkRequestError, clerkRequest } from "./clerk-request"
 
 const makeRecordingTracer = () => {
 	const spans: Array<Tracer.NativeSpan> = []
@@ -45,6 +46,20 @@ describe("clerkRequest", () => {
 				assert.instanceOf(result.failure, ClerkRequestError)
 				assert.strictEqual(result.failure.operation, "Clerk.users.getUser")
 			}
+		}),
+	)
+
+	it.effect("fails a stalled SDK call as a typed request error once the timeout passes", () =>
+		Effect.gen(function* () {
+			const fiber = yield* Effect.forkChild(
+				Effect.flip(
+					clerkRequest("Clerk.organizations.getOrganization", {}, () => new Promise(() => {})),
+				),
+			)
+			yield* TestClock.adjust(CLERK_REQUEST_TIMEOUT)
+			const error = yield* Fiber.join(fiber)
+			assert.instanceOf(error, ClerkRequestError)
+			assert.include(error.message, "timed out")
 		}),
 	)
 })

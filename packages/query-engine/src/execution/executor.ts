@@ -114,7 +114,7 @@ const sqlClientCacheKey = (config: ResolvedWarehouseConfig): string =>
 		? `tinybird:${config.host}:${config.token}`
 		: `${config.kind}:${config.url}:${config.username}:${config.password}:${config.database}`
 
-// Only retry transient upstream failures (5xx, 408, 429, network blips). Non-transient
+// Only retry transient upstream failures (5xx, 408, rate-limit 429s, network blips). Non-transient
 // errors (auth, config, schema_drift, query) re-fail immediately — there's nothing to
 // recover from by trying again. Caps at 2 retries (3 attempts total) to bound worst-case
 // tail latency: at concurrency=4 in the alerting tick, a fully-degraded warehouse can
@@ -122,8 +122,13 @@ const sqlClientCacheKey = (config: ResolvedWarehouseConfig): string =>
 // `Schedule.max` recurs only while every schedule does, so `recurs(2)` is the cap.
 const TRANSIENT_RETRY_SCHEDULE = Schedule.max([Schedule.exponential("100 millis", 2.0), Schedule.recurs(2)])
 
+// A 429 naming a daily or quota limit ("daily request limit exceeded (1000/day)") cannot
+// clear within the backoff, so retrying only adds latency. vCPU limits can clear and still retry.
+const PLAN_LIMIT_429 = /\bdaily\b[^.]*\blimit\b|\/day\)|\bquota\b/i
+
 const isTransientUpstreamError = (error: unknown): error is WarehouseUpstreamError =>
-	error instanceof WarehouseUpstreamError
+	error instanceof WarehouseUpstreamError &&
+	!(error.upstreamStatus === 429 && PLAN_LIMIT_429.test(error.message))
 
 // Client-side ceiling for a single query attempt. Tinybird's server-side
 // `max_execution_time` is not always honored — when its query queue is saturated
