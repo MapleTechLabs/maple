@@ -55,11 +55,11 @@ export interface ScrapeTargetRowLike {
 	readonly scrapeIntervalSeconds: number
 	readonly labelsJson: unknown
 	/** Public `src_` id of the target's pull source, stamped as `maple_source_id`. */
-	readonly sourceId?: string
+	readonly publicSourceId?: string
 }
 
 /** A listed row with the public id of the pull source it reports as. */
-type SourcedScrapeTarget = EnabledScrapeTarget & { readonly sourceId?: string }
+type SourcedScrapeTarget = EnabledScrapeTarget & { readonly publicSourceId?: string }
 
 export interface SubTargetOverride {
 	/** Discovered per-branch scrape URL replacing the row's SD endpoint url. */
@@ -114,7 +114,7 @@ export const toInternalScrapeTarget = (
 					scrapeIntervalSeconds: decodeScrapeIntervalSecondsSync(row.scrapeIntervalSeconds),
 					labels,
 					ingestKey,
-					...(row.sourceId === undefined ? undefined : { sourceId: row.sourceId }),
+					...(row.publicSourceId === undefined ? undefined : { sourceId: row.publicSourceId }),
 				}),
 			catch: (cause) =>
 				new InvalidScrapeTargetRow({
@@ -239,7 +239,7 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 								),
 							onSome: (keys) =>
 								resolveRowTargets(
-									{ ...row, sourceId: sourceIds.get(row.id) },
+									{ ...row, publicSourceId: sourceIds.get(row.id) },
 									keys.publicKey,
 								),
 						}),
