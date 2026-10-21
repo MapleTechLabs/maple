@@ -118,7 +118,7 @@ describe("AwsConnectionService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
-	it.effect("never lets one connection's stack verify another's", () => {
+	it.effect("never lets one connection's external id verify another's role", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
 		return Effect.gen(function* () {
@@ -126,9 +126,17 @@ describe("AwsConnectionService", () => {
 			const mine = yield* service.create(orgId, userId, { accountId: account, modules: [] })
 			const theirs = yield* service.create(otherOrgId, userId, { accountId: account, modules: [] })
 			aws.deploy(account, (yield* service.setup(orgId, mine.id)).cloudformationTemplate)
+			// Their role, deployed exactly as rendered except for trusting my external id: the
+			// mismatch alone must be what refuses it.
+			const template = (yield* service.setup(otherOrgId, theirs.id)).cloudformationTemplate
+			assert.include(template, theirs.externalId)
+			aws.deploy(account, template.replaceAll(theirs.externalId, mine.externalId))
 			const checked = yield* later(service.check(otherOrgId, theirs.id))
 			assert.isNull(checked.verifiedAt)
-			assert.notStrictEqual(mine.externalId, theirs.externalId)
+			// The same role trusting their own id verifies: nothing else was wrong with it.
+			aws.deploy(account, template)
+			const verified = yield* later(service.check(otherOrgId, theirs.id))
+			assert.isNotNull(verified.verifiedAt)
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 

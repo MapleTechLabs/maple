@@ -261,9 +261,12 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 			const pending = status.connections.some((connection) => connection.verified_at === null)
 			const issue =
 				failing > 0 ? `${countLabel(failing, "account")} failing` : pending ? "Finish setup" : null
+			// A stack not deployed yet is setup in progress, not a failure.
+			const health: Pick<IntegrationOverview & { kind: "connected" }, "health" | "stateLabel"> =
+				failing === 0 && pending ? { health: "pending", stateLabel: "Finish setup" } : attentionOr(issue)
 			return {
 				kind: "connected",
-				...attentionOr(issue),
+				...health,
 				context: status.connections.length === 1 ? (status.connections[0]?.account_id ?? null) : null,
 				stat: countLabel(status.connections.length, "account"),
 				lastSyncLabel: syncedLabel(

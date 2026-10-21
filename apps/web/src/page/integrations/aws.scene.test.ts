@@ -10,6 +10,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
 import { statusKey } from "./update-status"
+import { overviewOf } from "./derive"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -159,6 +160,32 @@ describe("aws card", () => {
 				description: "Maple cannot assume the role yet.",
 			}),
 		)
+	})
+
+	test("a background check verifying another connection leaves the open setup alone", () => {
+		const other = Schema.decodeSync(AwsConnectionId)("028f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+		const open = pageUpdate(
+			withStatus(entered(), [connection(), connection({ id: other })]),
+			Message.ClickedAwsSetup({ id: connectionId }),
+		).model
+		const polling = pageUpdate(open, Message.TickedAwsPending()).model
+		const verified = connection({
+			id: other,
+			verified_at: Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z"),
+		})
+		const done = pageUpdate(
+			polling,
+			Message.CompletedAwsCheck({ id: other, quiet: true, connection: verified, failure: null }),
+		)
+		expect(done.model.awsCard.setupId).toBe(connectionId)
+		expect(done.outMessage).toBeUndefined()
+	})
+
+	test("a connection waiting for its stack reads as setup in progress, not a failure", () => {
+		const model = withStatus(entered(), [connection()])
+		const overview = overviewOf(model.statuses, model.nowMs, "aws")
+		expect(overview?.kind === "connected" && overview.health).toBe("pending")
+		expect(overview?.kind === "connected" && overview.issue).toBe("Finish setup")
 	})
 
 	test("a status read that finds the open setup verified closes it", () => {

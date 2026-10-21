@@ -165,13 +165,15 @@ export const completedCheck = (
 	}
 	const before = connectionsOf(model).find((entry) => entry.id === id)
 	const justVerified = before?.verified_at === null && connection?.verified_at != null
+	// Only the open setup's own connection closes it: a background check may verify another.
+	const isOpen = model.awsCard.setupId === id
 	return chain(settled, [
 		// A check lands after the page read its clock: "checked" would read as in the future.
 		(next) => ({ model: next, commands: [ReadClock()] }),
 		(next) => requestStatus(next, context, "aws", "Supersede"),
 		(next) =>
-			justVerified
-				? chain(withCard(next, { setupId: null }), [
+			justVerified && (isOpen || !quiet)
+				? chain(withCard(next, isOpen ? { setupId: null } : {}), [
 						(after) =>
 							toast(
 								after,
