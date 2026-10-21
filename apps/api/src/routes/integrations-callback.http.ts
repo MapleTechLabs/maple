@@ -545,7 +545,8 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 		 */
 		const oauthCallbackRoute = <E extends { readonly _tag: string; readonly message: string }>(options: {
 			readonly path: HttpRouter.PathInput
-			readonly spanName: string
+			/** `maple.integration.provider` on the shared, fixed-name callback span. */
+			readonly provider: string
 			readonly label: string
 			readonly messageType: string
 			/** Extra callback checks; a returned message refuses the callback. */
@@ -571,9 +572,13 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 				)
 			const errorPage = (message: string) => page({ status: "error", message, returnTo: null }, 400)
 
-			const handle = Effect.fn(`IntegrationsCallbackRouter.${options.spanName}`, {
+			const handle = Effect.fn("IntegrationsCallbackRouter.oauthCallback", {
 				kind: "server",
-				attributes: { "http.route": options.path, "http.request.method": "GET" },
+				attributes: {
+					"http.route": options.path,
+					"http.request.method": "GET",
+					"maple.integration.provider": options.provider,
+				},
 			})(
 				function* (req: HttpServerRequest.HttpServerRequest) {
 					const urlOption = Option.liftThrowable(() => new URL(req.url, "http://localhost"))()
@@ -620,7 +625,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 
 		yield* oauthCallbackRoute({
 			path: CLOUDFLARE_CALLBACK_PATH,
-			spanName: "cloudflareOAuthCallback",
+			provider: "cloudflare",
 			label: "Cloudflare",
 			messageType: CLOUDFLARE_MESSAGE_TYPE,
 			complete: (code, state) =>
@@ -650,7 +655,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 
 		yield* oauthCallbackRoute({
 			path: PLANETSCALE_CALLBACK_PATH,
-			spanName: "planetscaleOAuthCallback",
+			provider: "planetscale",
 			label: "PlanetScale",
 			messageType: PLANETSCALE_MESSAGE_TYPE,
 			complete: (code, state) =>
@@ -683,7 +688,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 		const supabaseIssuer = supabaseOAuth.apiBaseUrl
 		yield* oauthCallbackRoute({
 			path: SUPABASE_CALLBACK_PATH,
-			spanName: "supabaseOAuthCallback",
+			provider: "supabase",
 			label: "Supabase",
 			messageType: SUPABASE_MESSAGE_TYPE,
 			validate: (url) => {

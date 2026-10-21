@@ -211,8 +211,9 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 								PG.or(
 									$.logsLeaseUntil.isNull(),
 									$.logsLeaseUntil.lt(now),
-									// A bogus far-future lease (clock jump, crashed writer) must not wedge the project.
-									$.logsLeaseUntil.gt(now + 2 * LEASE_MS),
+									// A bogus far-future lease (clock jump, crashed writer) must not wedge the project;
+									// the bound sits above the longest intentional hold so refusal holds survive.
+									$.logsLeaseUntil.gt(now + REFUSED_HOLD_MS + LEASE_MS),
 								),
 							])
 							.returning(),

@@ -1,5 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Schema } from "effect"
+// A live logs response (2026-10-21) with the project ref, client IPs, geo, ISP and JWT signature
+// fields replaced by placeholders (documentation IPs, "Example City", AS64500).
 import sample from "./__fixtures__/supabase-logs-sample.json" with { type: "json" }
 import {
 	advanceWatermark,
