@@ -208,12 +208,12 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 			},
 			now,
 		)
-		const { turnedOff } = yield* dbExecute((db) => readSourceOwners(db, orgId))
+		const { overrides } = yield* dbExecute((db) => readSourceOwners(db, orgId))
 		return withSourceHealth(
 			inventory,
 			rows.sources.map((source) => ({
 				platform: source.platform,
-				health: sourceRowHealth(source, now, turnedOff.get(source.id)),
+				health: sourceRowHealth(source, now, overrides.get(source.id)),
 			})),
 		)
 	})

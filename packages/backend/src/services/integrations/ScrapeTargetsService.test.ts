@@ -326,6 +326,20 @@ describe("ScrapeTargetsService", () => {
 				{ targetId: worker.id, scrapedAt: 1750000200000, error: "HTTP 500" },
 			])
 			assert.isNull((yield* readSource())!.last_poll_error)
+
+			// A probe of a switched-off target says nothing about its source.
+			yield* Effect.promise(() =>
+				testDb.pglite.query(
+					"UPDATE scrape_targets SET managed_by = NULL, enabled = false WHERE id IN ($1, $2)",
+					[api.id, worker.id],
+				),
+			)
+			const before = yield* readSource()
+			yield* TestClock.adjust("2 minutes")
+			yield* service.recordScrapeResults([
+				{ targetId: api.id, scrapedAt: 1750000300000, error: null },
+			])
+			assert.deepStrictEqual(yield* readSource(), before)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

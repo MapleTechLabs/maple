@@ -8,12 +8,19 @@ import {
 	Sources,
 	VcsInstallations,
 } from "@maple/db/tables"
+import { scrapeStaleAfterMs } from "@maple/domain/integration-inventory"
 import type { SourceResourceCount } from "@maple/domain/source-health"
 import { SourcePublicId } from "@maple/domain/http/v2"
 import type { OrgId, PullSourcePlatform, SourceId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Effect, Schema } from "effect"
-import { isPausedAt, newSourceId, type PullSourceRef, pullSourceRow } from "./source-rows"
+import { Array as Arr, Effect, Schema } from "effect"
+import {
+	isPausedAt,
+	newSourceId,
+	type PullSourceRef,
+	pullSourceRow,
+	type SourceHealthOverrides,
+} from "./source-rows"
 
 const encodeSourceId = Schema.encodeSync(SourcePublicId)
 
@@ -175,17 +182,27 @@ export const stampedSourceId = (sourceId: SourceId | null) =>
 
 const SCRAPING_OFF = "Scraping is turned off"
 
+/** What a Prometheus source's targets add to its health: off when none is enabled, else their slowest window. */
+const scrapeOverrides = (
+	group: ReadonlyArray<{ readonly enabled: boolean; readonly scrapeIntervalSeconds: number }>,
+): SourceHealthOverrides => {
+	const enabled = group.filter((target) => target.enabled)
+	return enabled.length === 0
+		? { turnedOff: SCRAPING_OFF }
+		: { staleAfterMs: Math.max(...enabled.map((target) => scrapeStaleAfterMs(target.scrapeIntervalSeconds))) }
+}
+
 /**
  * For each of an org's integration sources: the integration row it stands for (a scrape target,
- * a connector, a connection; a PlanetScale-managed target sends as its connection), and why it
- * reads nothing on purpose (a scrape target switched off).
+ * a connector, a connection; a PlanetScale-managed target sends as its connection), and what its
+ * scrape targets add to its health.
  */
 export const readSourceOwners = Effect.fnUntraced(function* (db: MapleDb, orgId: OrgId) {
 	const [targets, ...owners] = yield* Effect.all(
 		[
 			db.run(
 				PG.from(ScrapeTargets)
-					.select("id", "sourceId", "enabled")
+					.select("id", "sourceId", "enabled", "scrapeIntervalSeconds")
 					.where(($) => [$.orgId.eq(orgId), $.managedBy.isNull()]),
 			),
 			db.run(PG.from(GcpConnectors).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
@@ -203,11 +220,15 @@ export const readSourceOwners = Effect.fnUntraced(function* (db: MapleDb, orgId:
 	const linked = [...targets, ...owners.flat()].flatMap((owner) =>
 		owner.sourceId === null ? [] : [[owner.sourceId, owner.id] as const],
 	)
+	const bySource = Arr.groupBy(
+		targets.flatMap((target) => (target.sourceId === null ? [] : [{ ...target, sourceId: target.sourceId }])),
+		(target) => target.sourceId,
+	)
 	return {
 		integrationIds: new Map(linked),
-		turnedOff: new Map(
-			targets.flatMap((target) =>
-				target.enabled || target.sourceId === null ? [] : [[target.sourceId, SCRAPING_OFF] as const],
+		overrides: new Map(
+			Object.values(bySource).map(
+				(group): readonly [SourceId, SourceHealthOverrides] => [group[0].sourceId, scrapeOverrides(group)],
 			),
 		),
 	}

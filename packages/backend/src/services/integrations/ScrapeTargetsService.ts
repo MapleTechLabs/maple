@@ -1200,8 +1200,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						target.managedBy === null || target.sourceId === null ? [] : [target.sourceId],
 					),
 				)
+				// A source whose targets are all switched off reads paused; a probe of one reports nothing.
+				const scraped = new Set(siblings.map((target) => target.sourceId))
 				yield* Effect.forEach(
-					[first, ...rest].filter((sourceId) => !managed.has(sourceId)),
+					[first, ...rest].filter((sourceId) => !managed.has(sourceId) && scraped.has(sourceId)),
 					(sourceId) => {
 						// Each target's stored state after this batch, so a sibling's earlier failure still counts.
 						const targets = siblings.filter((target) => target.sourceId === sourceId)

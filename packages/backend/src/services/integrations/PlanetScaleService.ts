@@ -914,6 +914,15 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					// put the reason on the span (mirrors CloudflareAnalyticsService.pollOrg)
 					// so every skipped org is visible on the trace.
 					yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": claim })
+					// A fresh inventory still answers for the source, so a reconnect clears a disconnect.
+					if (claim === "fresh") {
+						yield* reportInventoryPoll(
+							connection,
+							connection.lastInventoryError === null
+								? { _tag: "Ok" }
+								: { _tag: "Failed", error: connection.lastInventoryError },
+						)
+					}
 					return { outcome: "skipped" as const, deployEvents }
 				}
 

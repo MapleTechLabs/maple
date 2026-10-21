@@ -26,7 +26,13 @@ import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLi
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { readSourceOwners } from "./integration-sources"
-import { defaultSourceRow, newSourceId, sourceRowHealth, statusOf } from "./source-rows"
+import {
+	defaultSourceRow,
+	newSourceId,
+	type SourceHealthOverrides,
+	sourceRowHealth,
+	statusOf,
+} from "./source-rows"
 
 const SOURCE_TOKEN_PREFIX = "maple_src_"
 const {
@@ -65,10 +71,10 @@ const toSourceHealth = (health: SourceHealthResult) =>
 interface SourceOwner {
 	/** The integration row an integration source stands for. */
 	readonly integrationId: string | null
-	/** Why the integration reads nothing on purpose. */
-	readonly turnedOff: string | undefined
+	/** What the integration adds to its health. */
+	readonly overrides: SourceHealthOverrides | undefined
 }
-const NO_OWNER: SourceOwner = { integrationId: null, turnedOff: undefined }
+const NO_OWNER: SourceOwner = { integrationId: null, overrides: undefined }
 
 const rowToSource = (
 	row: SourceRow,
@@ -96,7 +102,7 @@ const rowToSource = (
 		rolledAt: isoOrNull(row.rolledAt),
 		createdAt: toIso(row.createdAt),
 		updatedAt: toIso(row.updatedAt),
-		health: toSourceHealth(sourceRowHealth(row, now, owner.turnedOff)),
+		health: toSourceHealth(sourceRowHealth(row, now, owner.overrides)),
 	})
 }
 
@@ -267,7 +273,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 			id: SourceId,
 		): SourceOwner => ({
 			integrationId: owners.integrationIds.get(id) ?? null,
-			turnedOff: owners.turnedOff.get(id),
+			overrides: owners.overrides.get(id),
 		})
 
 		const toSources = (

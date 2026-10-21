@@ -1627,14 +1627,15 @@ describe("VcsRepository", () => {
 			assert.strictEqual(failed.last_poll_error, "octo/b: upstream unavailable")
 			assert.deepStrictEqual(failed.poll_resources, { total: 2, unhealthy: 1 })
 
-			// A suspension disconnects the source, and reactivating reconnects it at once: an
-			// installation without repositories has no sync that would.
+			// A suspension disconnects the source; reactivating reconnects it at once with its
+			// repositories' health, so the still-failing repo keeps it failing.
 			yield* markInstStatusFor(repo, "42", "suspended")
 			assert.isNotNull((yield* sourceState).disconnected_at)
 			yield* markInstStatusFor(repo, "42", "active")
 			const recovered = yield* sourceState
 			assert.isNull(recovered.disconnected_at)
-			assert.isNull(recovered.last_poll_error)
+			assert.strictEqual(recovered.last_poll_error, "octo/b: upstream unavailable")
+			assert.deepStrictEqual(recovered.poll_resources, { total: 2, unhealthy: 1 })
 		}).pipe(Effect.provide(repoLayer(testDb)))
 	})
 

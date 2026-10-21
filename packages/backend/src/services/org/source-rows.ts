@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import type { SourceInsert, SourceRow } from "@maple/db/tables"
 import type { SourceTokenStatus } from "@maple/domain/http"
-import { sourceHealth } from "@maple/domain/source-health"
+import { type SourceHealthInput, sourceHealth } from "@maple/domain/source-health"
 import { type OrgId, type PullSourcePlatform, SourceId } from "@maple/domain/primitives"
 import { Schema } from "effect"
 
@@ -59,12 +59,10 @@ export const statusOf = (
 	return "active"
 }
 
-/** A source's health from its row; `turnedOff` when its integration reads nothing on purpose. */
-export const sourceRowHealth = (row: SourceRow, now: number, turnedOff?: string) =>
-	sourceHealth(
-		turnedOff === undefined
-			? { ...row, status: statusOf(row, now) }
-			: { ...row, status: statusOf(row, now), turnedOff },
-		now,
-	)
+/** What a source's integration says about its health beyond the row (a scrape target's cadence). */
+export type SourceHealthOverrides = Pick<SourceHealthInput, "turnedOff" | "staleAfterMs">
+
+/** A source's health from its row and what its integration adds. */
+export const sourceRowHealth = (row: SourceRow, now: number, overrides: SourceHealthOverrides = {}) =>
+	sourceHealth({ ...row, status: statusOf(row, now), ...overrides }, now)
 
