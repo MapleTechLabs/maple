@@ -11,6 +11,7 @@ import { CONTRIBUTORS } from "../../lib/changelog-meta";
 import { highlight } from "../../lib/guide-highlight";
 import LanguageTabs from "../../components/docs/LanguageTabs.astro";
 import LanguageTab from "../../components/docs/LanguageTab.astro";
+import InstallTabs from "../../components/docs/InstallTabs.astro";
 
 const pageTitle = "Pino logger for Node.js: setup, levels, trace IDs | Maple";
 const pageDescription =
@@ -63,20 +64,20 @@ logger.info("user %s signed in after %d ms", "ada", 42)
 logger.error(new Error("connection refused"), "payment provider unreachable")`;
 
 const firstLogTabs = [
-    { id: "esm", label: "ES modules", run: "node app.mjs", code: `// app.mjs\nimport pino from "pino"\n\nconst logger = pino()\n\n${firstLogBody}` },
-    { id: "commonjs", label: "CommonJS", run: "node app.cjs", code: `// app.cjs\nconst pino = require("pino")\n\nconst logger = pino()\n\n${firstLogBody}` },
     {
         id: "typescript",
         label: "TypeScript",
         run: "node app.ts   # Node 22.18+, in a package with \"type\": \"module\"",
         code: `// app.ts\nimport pino, { type Logger } from "pino"\n\nconst logger: Logger = pino()\n\n${firstLogBody}`,
     },
+    { id: "esm", label: "ES modules", run: "node app.mjs", code: `// app.mjs\nimport pino from "pino"\n\nconst logger = pino()\n\n${firstLogBody}` },
+    { id: "commonjs", label: "CommonJS", run: "node app.cjs", code: `// app.cjs\nconst pino = require("pino")\n\nconst logger = pino()\n\n${firstLogBody}` },
 ];
 
 const firstLogOutput = `{"level":30,"time":1792513464618,"pid":4812,"hostname":"api-1","msg":"server started"}
 {"level":30,"time":1792513464619,"pid":4812,"hostname":"api-1","port":3000,"msg":"listening"}
 {"level":30,"time":1792513464619,"pid":4812,"hostname":"api-1","msg":"user ada signed in after 42 ms"}
-{"level":50,"time":1792513464619,"pid":4812,"hostname":"api-1","err":{"type":"Error","message":"connection refused","stack":"Error: connection refused\\n    at file:///srv/app.mjs:8:14 ..."},"msg":"payment provider unreachable"}`;
+{"level":50,"time":1792513464619,"pid":4812,"hostname":"api-1","err":{"type":"Error","message":"connection refused","stack":"Error: connection refused\\n    at file:///srv/app.ts:8:14 ..."},"msg":"payment provider unreachable"}`;
 
 const levelSnippet = `const logger = pino({ level: process.env.LOG_LEVEL ?? "info" })
 
@@ -132,7 +133,12 @@ const prettySnippet = `const logger = pino({
 const prettyOutput = `<span class="tok-comment">[18:24:50]</span> <span class="tok-level">INFO</span>: <span class="tok-labels">listening</span>
     <span class="tok-name">port</span>: <span class="tok-value">3000</span>`;
 
-const prettyCli = `node app.mjs | npx pino-pretty -c -t "SYS:HH:MM:ss" -i pid,hostname`;
+const prettyFlags = `-c -t "SYS:HH:MM:ss" -i pid,hostname`;
+const prettyCli = [
+    { id: "npm", value: `node app.ts | npx pino-pretty ${prettyFlags}` },
+    { id: "pnpm", value: `node app.ts | pnpm exec pino-pretty ${prettyFlags}` },
+    { id: "bun", value: `node app.ts | bunx pino-pretty ${prettyFlags}` },
+];
 
 const transportSnippet = `const transport = pino.transport({
   targets: [
@@ -295,7 +301,7 @@ const faqs = [
     {
         question: "How do I pretty print Pino logs?",
         answer:
-            "Install pino-pretty as a dev dependency. Either pipe the output through it (node app.mjs | npx pino-pretty) or set transport: { target: \"pino-pretty\" } in the logger options only when NODE_ENV is development. Keep production output as JSON so log tooling can read the fields.",
+            "Install pino-pretty as a dev dependency. Either pipe the output through it (node app.ts | npx pino-pretty) or set transport: { target: \"pino-pretty\" } in the logger options only when NODE_ENV is development. Keep production output as JSON so log tooling can read the fields.",
     },
     {
         question: "How do I set the Pino log level?",
@@ -465,7 +471,7 @@ const articleJsonLd = {
 
                     <h3 id="first-log" class="scroll-mt-24">The first log line</h3>
                     <p>Pino is one package and needs no configuration to start:</p>
-                    <pre><code set:html={highlight("npm install pino", "shell")} /></pre>
+                    <InstallTabs command="npm install pino" />
                     <LanguageTabs label="Module format" tabs={firstLogTabs.map(({ id, label }) => ({ id, label }))}>
                         {firstLogTabs.map((t) => (
                             <LanguageTab id={t.id}>
@@ -537,12 +543,13 @@ const articleJsonLd = {
 
                     <h3 id="pino-pretty" class="scroll-mt-24">pino-pretty in development only</h3>
                     <p>
-                        <code>pino-pretty</code> turns JSON lines into colored, readable ones. Install it with <code>npm install --save-dev pino-pretty</code> and load it as a transport only when <code>NODE_ENV</code> is <code>development</code>, so a production install without dev dependencies never asks for it:
+                        <code>pino-pretty</code> turns JSON lines into colored, readable ones. Install it as a dev dependency and load it as a transport only when <code>NODE_ENV</code> is <code>development</code>, so a production install without dev dependencies never asks for it:
                     </p>
+                    <InstallTabs command="npm install --save-dev pino-pretty" />
                     <pre><code set:html={highlight(prettySnippet, "javascript")} /></pre>
                     <div class="code-file code-file--output"><p class="code-file__name">Output</p><pre><code set:html={prettyOutput} /></pre></div>
                     <p>Or leave the code alone and pipe the output through the CLI, which takes the same options as flags:</p>
-                    <pre><code set:html={highlight(prettyCli, "shell")} /></pre>
+                    <InstallTabs variants={prettyCli} />
                     <p>
                         The pino-pretty README advises against running it in production: keep production output as JSON so the tool that collects it can read the fields.
                     </p>
@@ -595,7 +602,7 @@ const articleJsonLd = {
                     <LanguageTabs label="Framework" tabs={httpTabs.map(({ id, label }) => ({ id, label }))}>
                         {httpTabs.map((t) => (
                             <LanguageTab id={t.id}>
-                                <p class="client-install"><span>Install</span><code>{t.install}</code></p>
+                                <InstallTabs command={t.install} />
                                 <pre><code set:html={highlight(t.code, "javascript")} /></pre>
                                 <p class="tab-note" set:html={t.note} />
                             </LanguageTab>
@@ -621,7 +628,7 @@ const articleJsonLd = {
                     <p>
                         The instrumentation is part of <code>@opentelemetry/auto-instrumentations-node</code>, so the standard Node.js SDK setup turns it on. Install the SDK packages:
                     </p>
-                    <pre><code set:html={highlight(otelInstall, "shell")} /></pre>
+                    <InstallTabs command={otelInstall} />
                     <p>
                         Create <code>tracing.mjs</code> next to <code>server.mjs</code>. It starts the SDK before your code loads Pino, which is what lets the instrumentation patch it. <code>MAPLE_KEY</code> is an ingest key from Maple, covered in the <a href="#maple">Maple steps</a> below.
                     </p>
