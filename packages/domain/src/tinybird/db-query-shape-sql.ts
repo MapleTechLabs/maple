@@ -149,3 +149,16 @@ export const DB_QUERY_KEY_SQL = `coalesce(
   nullIf(if(${DB_STATEMENT_SQL} != '', toString(cityHash64(${normalizeStatementSql(DB_STATEMENT_SQL)})), ''), ''),
   toString(cityHash64(${DB_QUERY_LABEL_SQL}))
 )`
+
+/**
+ * `DB_QUERY_KEY_SQL` as a `multiIf`, which evaluates a branch only when the ones before it fall
+ * through: the same key, without normalizing the statement of a span that carries a fingerprint
+ * (`coalesce` evaluates every argument). For filtering raw spans by key; the rollups keep
+ * `DB_QUERY_KEY_SQL`, whose text their migrations embed.
+ */
+export const DB_QUERY_KEY_LAZY_SQL = `multiIf(
+  SpanAttributes['db.query.fingerprint'] != '', SpanAttributes['db.query.fingerprint'],
+  SpanAttributes['db.statement.fingerprint'] != '', SpanAttributes['db.statement.fingerprint'],
+  ${DB_STATEMENT_SQL} != '', toString(cityHash64(${normalizeStatementSql(DB_STATEMENT_SQL)})),
+  toString(cityHash64(${DB_QUERY_LABEL_SQL}))
+)`

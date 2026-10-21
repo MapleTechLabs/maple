@@ -34,8 +34,10 @@ import { type PageData, pageOf } from "./derive"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { type ChartsContext, correlationStrips, workloadCharts } from "./view-charts"
+import { resolveQueryPeek } from "./peek"
 import { workloadRail } from "./view-rail"
 import { appWaitCallout, figure, topQueries } from "./view-sql"
+import { queryPeekSheet } from "./view-sql-peek"
 
 // `GcpWorkloadPage`.
 
@@ -295,6 +297,7 @@ const body = (h: H, model: Model, data: PageData, timeSearch: TimeSearch, ctx: C
 									unavailableReason: data.unavailableReason,
 									traced: sql.traced,
 									showAll: model.showAllQueries,
+									peekHash: model.search.peek,
 								}),
 							]),
 					h.section(
@@ -387,9 +390,32 @@ export const workloadPageView = (
 	const isReady = theme !== null && model.chartRuntime._tag !== "Loading"
 	const ctx = theme === null ? null : { theme, timeZone: options.timeZone }
 	const service = model.service
+	const databases = data.traceSide?.databases ?? []
+	const peek =
+		data.sql === undefined
+			? null
+			: resolveQueryPeek(data.statements, data.sql.traced, databases, model.search.peek)
+	const instanceName = gcpWorkloadName(service, data.keys)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
 		[
+			...(data.sql === undefined
+				? []
+				: [
+						queryPeekSheet(h, model, {
+							peek,
+							where:
+								databases.length === 1 ? `${instanceName} / ${databases[0]}` : instanceName,
+							spans: model.statementSpans.data,
+							// The lab hands the trace side over in `data`, not in its slot.
+							traceSide:
+								data.traceSide === undefined
+									? model.traceSide.data
+									: AsyncData.Success({ data: data.traceSide }),
+							timeSearch,
+							timeZone: options.timeZone,
+						}),
+					]),
 			dashboardPage(
 				h,
 				{

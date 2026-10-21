@@ -136,6 +136,8 @@ export const gcpNormalizeStatement = (statement: string): string =>
 
 /** A query pattern the traces recorded against the instance's databases: see `serviceDbTopQueriesSQL`. */
 export interface GcpTracedQuery {
+	/** The shape's fingerprint (`DB_QUERY_KEY_SQL`), which its spans are found by. */
+	readonly queryKey: string
 	readonly sampleStatement: string
 	readonly sampleService: string
 	readonly serviceCount: number
@@ -151,6 +153,8 @@ export interface GcpTracedStatement {
 	readonly serviceCount: number
 	/** The client spans' p95, where it is called most. */
 	readonly appP95Ms: number
+	/** The traced shapes it matched, busiest first: its spans are theirs. */
+	readonly queryKeys: ReadonlyArray<string>
 }
 
 /** The traced side of each statement, by `queryHash`; a statement the traces never recorded has none. */
@@ -175,9 +179,23 @@ export function gcpMatchStatements(
 			services,
 			serviceCount: Math.max(services.length, ...found.map((query) => query.serviceCount)),
 			appP95Ms: found[0].p95DurationMs,
+			queryKeys: [...new Set(found.map((query) => query.queryKey))],
 		})
 	}
 	return matched
+}
+
+const MIN_PREFIX = 16
+const MAX_PREFIX = 200
+
+/**
+ * What a span's `db.query.text` of the statement contains for sure: its first line up to the first
+ * placeholder, since a span may carry the literals instead, capped to keep a link short. Null when
+ * that is too short to tell statements apart.
+ */
+export const gcpStatementTextPrefix = (statement: string): string | null => {
+	const prefix = (statement.split(/\$\d/)[0] ?? "").split("\n")[0]?.trim().slice(0, MAX_PREFIX) ?? ""
+	return prefix.length >= MIN_PREFIX ? prefix : null
 }
 
 /** The app side this many times slower than the database, and by at least `APP_WAIT_MIN_MS`. */

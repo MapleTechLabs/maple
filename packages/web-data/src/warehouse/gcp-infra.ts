@@ -2,6 +2,7 @@ import { Effect, Schema } from "effect"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "@maple/domain/gcp-infra"
 import {
 	GcpCloudSqlInstanceRequest,
+	GcpCloudSqlStatementSpansRequest,
 	GcpInfraMetricsRequest,
 	GcpInfraPresenceRequest,
 	GcpInfraSparklinesRequest,
@@ -166,6 +167,32 @@ export const getGcpCloudSqlTopQueries = Effect.fn("QueryEngine.getGcpCloudSqlTop
 		}),
 	)
 	return { statements: result.data }
+})
+
+const StatementSpansInputSchema = Schema.Struct({
+	...WindowInputSchema.fields,
+	/** The instance's databases, as `db.namespace`; at least one. */
+	databases: GcpCloudSqlStatementSpansRequest.fields.databases,
+	/** The traced query keys a statement matched (`tracedQueries[].queryKey`); at least one. */
+	queryKeys: GcpCloudSqlStatementSpansRequest.fields.queryKeys,
+})
+
+/** The slowest client spans of a statement's traced query keys, each linking to its trace. */
+export const getGcpCloudSqlStatementSpans = Effect.fn("QueryEngine.getGcpCloudSqlStatementSpans")(function* ({
+	data,
+}: {
+	data: (typeof StatementSpansInputSchema)["Encoded"]
+}) {
+	const input = yield* decodeInput(StatementSpansInputSchema, data, "getGcpCloudSqlStatementSpans")
+	const result = yield* runWarehouseQuery("gcpCloudSqlStatementSpans", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.gcpCloudSqlStatementSpans({
+				payload: new GcpCloudSqlStatementSpansRequest(input),
+			})
+		}),
+	)
+	return { spans: result.data }
 })
 
 const DatabaseInstancesInputSchema = Schema.Struct({

@@ -6,6 +6,7 @@ import {
 } from "@maple/domain/http"
 import { V2GcpIntegration } from "@maple/domain/http/v2"
 import {
+	getGcpCloudSqlStatementSpans,
 	getGcpCloudSqlTopQueries,
 	getGcpCloudSqlTraceSide,
 	getGcpInfraFleet,
@@ -143,6 +144,7 @@ export const TraceSide = Schema.Struct({
 	databases: Schema.Array(Schema.String),
 	tracedQueries: Schema.Array(
 		Schema.Struct({
+			queryKey: Schema.String,
 			sampleStatement: Schema.String,
 			sampleService: Schema.String,
 			serviceCount: Schema.Number,
@@ -159,6 +161,7 @@ export const loadTraceSide = (input: CloudSqlInput) =>
 		Effect.map((response): TraceSide => ({
 			databases: response.databases,
 			tracedQueries: response.tracedQueries.map((query) => ({
+				queryKey: query.queryKey,
 				sampleStatement: query.sampleStatement,
 				sampleService: query.sampleService,
 				serviceCount: query.serviceCount,
@@ -167,6 +170,34 @@ export const loadTraceSide = (input: CloudSqlInput) =>
 			})),
 			services: response.services,
 		})),
+		Effect.mapError(toLoadFailure),
+		Effect.result,
+	)
+
+/** One client span of a statement's traced shapes: see `serviceDbQuerySpansSQL`. */
+export const StatementSpan = Schema.Struct({
+	traceId: Schema.String,
+	spanId: Schema.String,
+	serviceName: Schema.String,
+	timestamp: Schema.String,
+	durationMs: Schema.Number,
+})
+export type StatementSpan = typeof StatementSpan.Type
+
+export const StatementSpansInput = Schema.Struct({
+	startTime: Schema.String,
+	endTime: Schema.String,
+	databases: Schema.Array(Schema.String),
+	queryKeys: Schema.Array(Schema.String),
+})
+export type StatementSpansInput = typeof StatementSpansInput.Type
+
+/** The slowest spans of a statement's traced shapes against the instance's databases. */
+export const loadStatementSpans = (input: StatementSpansInput) =>
+	getGcpCloudSqlStatementSpans({
+		data: { ...input, databases: [...input.databases], queryKeys: [...input.queryKeys] },
+	}).pipe(
+		Effect.map((response): ReadonlyArray<StatementSpan> => response.spans),
 		Effect.mapError(toLoadFailure),
 		Effect.result,
 	)
