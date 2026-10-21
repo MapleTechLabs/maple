@@ -7,7 +7,7 @@ import { Effect, Option, Queue, Schema, Stream } from "effect"
 export const COLLECTION_LOAD_TIMEOUT_MS = 30_000
 
 /** How long a page waits on a collection it only enriches with before reading it as empty. */
-export const ENRICHMENT_LOAD_TIMEOUT_MS = 8_000
+export const ENRICHMENT_LOAD_TIMEOUT_MS = 3_000
 
 const decodeDetail = Schema.decodeUnknownOption(Schema.Struct({ collectionId: Schema.String }))
 
