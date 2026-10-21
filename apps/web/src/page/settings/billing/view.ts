@@ -14,7 +14,7 @@ import { Message, type Model } from "./model"
 import { spendModelOf, USAGE_HEADING_ID } from "./update"
 import { cyclePanel, cyclePanelSkeleton } from "./view-cycle"
 import { planSection } from "./view-plan"
-import { detailsSection, invoicesSection } from "./view-records"
+import { detailsSection, invoicesSection, unpaidInvoicesNotice } from "./view-records"
 import { usageTable, usageTableSkeleton } from "./view-usage"
 
 export type ViewInputs = Readonly<{
@@ -57,6 +57,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const uncapped = spend === null ? [] : uncappedFeatures(spend, customer ?? undefined)
 	return settingsSections(h, "standard", [
 		...checkoutReturnPanel(h, model),
+		...unpaidInvoicesNotice(h, model, inputs.timeZone),
 		...notice,
 		settingsSection(
 			h,
