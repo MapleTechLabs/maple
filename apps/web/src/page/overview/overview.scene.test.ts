@@ -250,6 +250,24 @@ describe("overview", () => {
 		)
 	})
 
+	test("zero-filled series of a signal never received show the setup copy, not flat lines", () => {
+		const start = withPresence(loaded([snapshotRow("checkout")]), "present", "absent")
+		const zeros = pageUpdate(
+			start,
+			Message.CompletedFetchLogSeries({
+				key: start.logSeries.key ?? "",
+				result: Result.succeed([{ bucket: "2026-10-01 11:00:00", count: 0 }]),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(zeros),
+			themeResolved(),
+			cursorMounted(),
+			expectView(text("No logs yet")).toExist(),
+		)
+	})
+
 	test("when presence could not be read, an empty card gives no wider-range hint", () => {
 		const loadedModel = loaded([snapshotRow("checkout")])
 		const failed = pageUpdate(
