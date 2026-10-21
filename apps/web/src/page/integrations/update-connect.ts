@@ -18,6 +18,7 @@ const STATUS_OF = {
 	hazel: "hazel",
 	github: "github",
 	planetscale: "planetscale",
+	supabase: "supabase",
 } satisfies { readonly [K in ConnectProvider]: keyof Statuses }
 
 const withConnect = (model: Model, connect: Partial<ConnectModel>): Model => ({
@@ -113,6 +114,7 @@ const CONNECTED_TITLE = {
 	hazel: "Hazel connected",
 	github: "GitHub connected",
 	planetscale: null,
+	supabase: "Supabase connected",
 } satisfies { readonly [K in ConnectProvider]: string | null }
 
 /** `useIntegrationMessage`: the callback page's verdict; a success is `integration_connected`. */

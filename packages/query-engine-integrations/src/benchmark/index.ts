@@ -58,6 +58,9 @@ const railwayServiceBucketed = {
 	bucketSeconds: 300,
 }
 
+/** One Supabase project, as /infra/supabase/$ref scopes it. */
+const supabaseProjectBucketed = { ...window, projectRef: "abcdefghijklmnopqrst", bucketSeconds: 300 }
+
 /** The zone-slice filters the /infra/cloudflare page sends, as one bag. */
 const CF_FILTERS = { hosts: ["example.com"], statusClasses: ["5xx"], methods: ["GET"] }
 
@@ -782,6 +785,30 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		name: "railwayServiceTimeseriesSQL",
 		label: "default",
 		compile: () => compileUnsafe(CH.railwayServiceTimeseriesSQL(), railwayServiceBucketed),
+	},
+	{
+		module: "supabase-infra",
+		name: "supabaseProjectGaugesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectGaugesSQL(), window),
+	},
+	{
+		module: "supabase-infra",
+		name: "supabaseProjectCpuSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectCpuSQL(), window),
+	},
+	{
+		module: "supabase-infra",
+		name: "supabaseProjectGaugeSeriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectGaugeSeriesSQL(), supabaseProjectBucketed),
+	},
+	{
+		module: "supabase-infra",
+		name: "supabaseProjectRateSeriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectRateSeriesSQL(), supabaseProjectBucketed),
 	},
 	{
 		module: "gcp-infra",

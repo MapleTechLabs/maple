@@ -19,6 +19,8 @@ import { initPrometheusCard } from "./prometheus"
 import { initRailwayCard } from "./railway"
 import { initPlanetscaleCard } from "./planetscale"
 import { initGcpCard } from "./gcp"
+import { initSupabaseCard } from "./supabase"
+import * as Supabase from "./update-supabase"
 import * as Gcp from "./update-gcp"
 import * as Configure from "./update-gcp-configure"
 import * as Planetscale from "./update-planetscale"
@@ -84,6 +86,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			planetscale: Keyed.idle(),
 			planetscaleDatabases: Keyed.idle(),
 			gcp: Keyed.idle(),
+			supabase: Keyed.idle(),
 			hazel: Keyed.idle(),
 			github: Keyed.idle(),
 			chat: Keyed.idle(),
@@ -100,6 +103,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		planetscaleCard: initPlanetscaleCard(),
 		gcpCard: initGcpCard(),
 		railwayCard: initRailwayCard(),
+		supabaseCard: initSupabaseCard(),
 	}
 	const loaded = chain(model, [
 		...STATUS_NAMES.map((name) => (next: Model) => requestStatus(next, context, name, "Load")),
@@ -179,6 +183,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				s.gcp.key === key && Result.isSuccess(result) ? Configure.statusArrived(read).model : read
 			return gcpBand(arrived, context)
 		},
+		CompletedLoadSupabase: ({ key, result }) =>
+			accepted(model, { ...s, supabase: Keyed.accept(s.supabase, key, result) }),
 		CompletedLoadHazel: ({ key, result }) =>
 			accepted(model, { ...s, hazel: Keyed.accept(s.hazel, key, result) }),
 		CompletedLoadGithub: ({ key, result }) =>
@@ -268,6 +274,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRailwayRotate: () => Railway.setRotating(model, true),
 		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
 		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
+		ClickedSupabaseSync: () => Supabase.clickedSync(model),
+		CompletedSupabaseSync: ({ failure }) => Supabase.completedSync(model, context, failure),
+		ToggledSupabaseMetrics: ({ ref, enabled }) => Supabase.toggledMetrics(model, ref, enabled),
+		CompletedSupabaseMetrics: ({ ref, enabled, failure }) =>
+			Supabase.completedMetrics(model, context, ref, enabled, failure),
 		CompletedFetchOrganizations: ({ key, result }) =>
 			Planetscale.updateCard(model, {
 				organizations: Keyed.accept(model.planetscaleCard.organizations, key, result),

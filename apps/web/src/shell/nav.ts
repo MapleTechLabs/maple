@@ -13,6 +13,7 @@ export const NavSurface = Schema.Literals([
 	"cloudflare",
 	"planetscale",
 	"railway",
+	"supabase",
 	"gcp",
 ])
 export type NavSurface = typeof NavSurface.Type
@@ -45,7 +46,7 @@ export interface NavGroup {
 /** `PLANETSCALE_COLOR` (packages/ui/src/components/service-map/service-map-db.tsx). */
 const PLANETSCALE_COLOR = "oklch(0.62 0.02 270)"
 
-export const NAV_PREVIEW_MAX_GLYPHS = 6
+export const NAV_PREVIEW_MAX_GLYPHS = 7
 
 const infrastructureItem: NavItem = {
 	title: "Infrastructure",
@@ -81,6 +82,7 @@ const infrastructureItem: NavItem = {
 			surfaces: ["planetscale"],
 		},
 		{ title: "Railway", href: "/infra/railway", icon: "RailwayIcon", surfaces: ["railway"] },
+		{ title: "Supabase", href: "/infra/supabase", icon: "SupabaseIcon", surfaces: ["supabase"] },
 		{ title: "Google Cloud", href: "/infra/gcp", icon: "GoogleCloudIcon", surfaces: ["gcp"] },
 	],
 }

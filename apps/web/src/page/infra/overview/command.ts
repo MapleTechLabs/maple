@@ -8,14 +8,17 @@ import {
 	summarizePlanetScale,
 	summarizePods,
 	summarizeRailway,
+	summarizeSupabase,
 } from "../../../components/infra/overview/summaries"
 import { getCloudflareZones } from "@maple/web-data/warehouse/cloudflare-infra"
 import { getGcpInfraFleet } from "@maple/web-data/warehouse/gcp-infra"
 import { containersSummary, listHosts, podsSummary } from "@maple/web-data/warehouse/infra"
 import { getRailwayServices } from "@maple/web-data/warehouse/railway-infra"
+import { getSupabaseProjects } from "@maple/web-data/warehouse/supabase-infra"
 import { getServiceMapPlanetScale } from "@maple/web-data/warehouse/service-map"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
+import { IntegrationStatuses } from "../../../data/integration-statuses"
 import { loadInfraPresence } from "../../../data/infra-surfaces"
 import { toLoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
@@ -49,6 +52,20 @@ const read = (source: SourceId, window: TimeWindow) => {
 			return Effect.map(getRailwayServices({ data }), ({ services }) =>
 				reading(summarizeRailway(services)),
 			)
+		// Discovery names the projects; without it the findings fall back to refs.
+		case "supabase":
+			return Effect.gen(function* () {
+				const { projects } = yield* getSupabaseProjects({ data })
+				const status = yield* Effect.option((yield* IntegrationStatuses).supabase())
+				const names = new Map(
+					Option.match(status, {
+						onNone: () => [],
+						onSome: ({ projects: discovered }) =>
+							discovered.map((project): readonly [string, string] => [project.ref, project.name]),
+					}),
+				)
+				return reading(summarizeSupabase(projects, names))
+			})
 		case "planetscale":
 			return Effect.map(getServiceMapPlanetScale({ data }), ({ databases }) =>
 				reading(summarizePlanetScale(databases)),

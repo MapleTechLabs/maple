@@ -85,6 +85,7 @@ export {
 
 // Queries — Metrics
 export {
+	metricDeltaExpr,
 	metricsTimeseriesQuery,
 	metricsTimeseriesRateQuery,
 	metricsBreakdownQuery,

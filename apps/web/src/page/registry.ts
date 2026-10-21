@@ -53,6 +53,8 @@ import * as InfraPlanetscaleDatabase from "./infra-integrations/planetscale/db"
 import * as InfraPlanetscale from "./infra-integrations/planetscale/list"
 import * as InfraRailway from "./infra-integrations/railway/list"
 import * as InfraRailwayService from "./infra-integrations/railway/service"
+import * as InfraSupabase from "./infra-integrations/supabase/list"
+import * as InfraSupabaseProject from "./infra-integrations/supabase/project"
 import * as Integrations from "./integrations"
 import * as InvestigationDetail from "./investigations/detail"
 import * as InvestigationsList from "./investigations/list"
@@ -115,6 +117,8 @@ export const pages = [
 	InfraOverview.page,
 	InfraRailway.page,
 	InfraRailwayService.page,
+	InfraSupabase.page,
+	InfraSupabaseProject.page,
 	InfraPlanetscale.page,
 	InfraPlanetscaleDatabase.page,
 	InfraGcp.page,

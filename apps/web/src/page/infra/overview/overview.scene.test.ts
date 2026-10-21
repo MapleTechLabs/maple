@@ -11,7 +11,7 @@ import { presentSources, sourceState, surfacesOf } from "./state"
 import { init, update } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
-const integrations = { cloudflare: true, railway: false, planetscale: false, gcp: false }
+const integrations = { cloudflare: true, railway: false, planetscale: false, gcp: false, supabase: false }
 const context: PageContext = {
 	orgId,
 	pinnedNamespace: null,
@@ -41,11 +41,11 @@ const reporting: SourceReading = {
 }
 
 describe("infra overview", () => {
-	test("entry probes the window's presence and, until it answers, reads all seven sources", () => {
+	test("entry probes the window's presence and, until it answers, reads all eight sources", () => {
 		expect(names(init({ search: {} }, context).commands)).toContain("FetchInstallIngestKey")
 		expect(names(entered().commands)).toContain("FetchInfraOverviewPresence")
-		expect(sourceReads(entered().commands)).toHaveLength(7)
-		expect(shown(entered().model)).toHaveLength(7)
+		expect(sourceReads(entered().commands)).toHaveLength(8)
+		expect(shown(entered().model)).toHaveLength(8)
 	})
 
 	test("once presence answers only the org's sources show, a connected provider with no data included", () => {

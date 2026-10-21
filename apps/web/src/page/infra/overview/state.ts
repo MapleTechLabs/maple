@@ -26,11 +26,12 @@ const SOURCE_SURFACES = {
 	kubernetes: ["k8sPods", "k8sNodes", "k8sWorkloads"],
 	cloudflare: ["cloudflare"],
 	railway: ["railway"],
+	supabase: ["supabase"],
 	planetscale: ["planetscale"],
 	gcp: ["gcp"],
 } satisfies Readonly<{ [K in SourceId]: ReadonlyArray<NavSurface> }>
 
-const NOT_CONNECTED = { cloudflare: false, railway: false, planetscale: false, gcp: false }
+const NOT_CONNECTED = { cloudflare: false, railway: false, planetscale: false, gcp: false, supabase: false }
 
 /** `useInfraSurfaces(window)`: the page's probe (the last answer while a new window loads) and the shell's statuses. */
 export const surfacesOf = (model: Model, context: PageContext): ReadonlySet<NavSurface> | null =>

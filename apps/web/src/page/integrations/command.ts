@@ -88,6 +88,22 @@ export const LoadGcp = Command.define("LoadIntegrationsGcpStatus", {
 		),
 })
 
+/** Shared with the sidebar and /infra/supabase through `IntegrationStatuses`. */
+export const LoadSupabase = Command.define("LoadIntegrationsSupabaseStatus", {
+	args: RefreshArgs,
+	messages: [Message.CompletedLoadSupabase],
+	execute: ({ key, refresh }) =>
+		Effect.map(
+			settle(
+				Effect.gen(function* () {
+					const statuses = yield* IntegrationStatuses
+					return yield* statuses.supabase({ refresh })
+				}),
+			),
+			(result) => Message.CompletedLoadSupabase({ key, result }),
+		),
+})
+
 /** `retainedQueryV2("planetscaleIntegration", "databases")`: the poller's inventory. */
 export const LoadPlanetscaleDatabases = Command.define("LoadIntegrationsPlanetscaleDatabases", {
 	args: Args,

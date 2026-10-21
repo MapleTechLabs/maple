@@ -49,6 +49,7 @@ export interface IntegrationFlags {
 	readonly railway: boolean
 	readonly planetscale: boolean
 	readonly gcp: boolean
+	readonly supabase: boolean
 }
 
 /** The probe's surfaces plus the connected integrations; `null` while the probe is unknown. */
@@ -57,6 +58,6 @@ export const infraSurfacesOf = (
 	integrations: IntegrationFlags,
 ): ReadonlySet<NavSurface> | null => {
 	if (presence === null) return null
-	const connected = (["cloudflare", "planetscale", "railway", "gcp"] as const).filter((id) => integrations[id])
+	const connected = (["cloudflare", "planetscale", "railway", "gcp", "supabase"] as const).filter((id) => integrations[id])
 	return new Set<NavSurface>([...presence, ...connected])
 }

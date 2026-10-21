@@ -3,6 +3,7 @@ import {
 	GithubStartConnectRequest,
 	HazelStartConnectRequest,
 	IntegrationReturnPath,
+	SupabaseConnectRequest,
 } from "@maple/domain/http"
 import { Effect, Result, Schema } from "effect"
 import { toLoadFailure } from "../../data/load-failure"
@@ -10,7 +11,7 @@ import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-cli
 
 // `IntegrationConnectProvider` and `useOAuthPopupFlow`.
 
-export const ConnectProvider = Schema.Literals(["cloudflare", "hazel", "github", "planetscale"])
+export const ConnectProvider = Schema.Literals(["cloudflare", "hazel", "github", "planetscale", "supabase"])
 export type ConnectProvider = typeof ConnectProvider.Type
 
 /** One attempt: the popup is out while this is set; a new attempt restarts the flow. */
@@ -78,6 +79,14 @@ export const PROVIDERS = {
 		closeGraceMs: 0,
 		polls: false,
 	},
+	supabase: {
+		label: "Supabase",
+		windowName: "maple-supabase-connect",
+		windowFeatures: "popup,width=560,height=720",
+		startErrorTitle: "Failed to start Supabase connect flow",
+		closeGraceMs: 0,
+		polls: false,
+	},
 } satisfies { readonly [K in ConnectProvider]: ProviderSpec }
 
 const decodeReturnPath = Schema.decodeUnknownResult(IntegrationReturnPath)
@@ -115,5 +124,9 @@ export const startConnect = (provider: ConnectProvider, returnTo: IntegrationRet
 				})
 				return { redirectUrl: response.redirect_url }
 			}
+			case "supabase":
+				return yield* internal.integrations.supabaseConnect({
+					payload: new SupabaseConnectRequest({ returnTo }),
+				})
 		}
 	}).pipe(Effect.mapError(toLoadFailure))

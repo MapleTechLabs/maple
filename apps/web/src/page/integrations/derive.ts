@@ -157,6 +157,19 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId): CardStatus 
 							: { label: countLabel(status.environments.length, "environment"), variant: "ok" },
 				unavailableStatus,
 			)
+		case "supabase":
+			return fold(
+				statuses.supabase,
+				(status): CardStatus =>
+					!status.configured
+						? NOT_CONFIGURED
+						: !status.connected
+							? NOT_CONNECTED
+							: status.revoked
+								? { label: "Access revoked", variant: "crit" }
+								: { label: status.organization?.name ?? "Connected", variant: "ok" },
+				unavailableStatus,
+			)
 		case "cloudflare":
 			return fold(statuses.cloudflare, (status) => connectedOrNot(status.connected), unavailableStatus)
 		case "prometheus":
@@ -256,6 +269,30 @@ const railwayOverview = (statuses: Statuses, nowMs: number) =>
 				context: status.workspaceNames,
 				stat: `${countLabel(status.environments.length, "environment")} polled`,
 				lastSyncLabel: syncedLabel(status.lastSyncedAt ?? null, nowMs),
+				issue,
+			}
+		},
+		unavailableOverview,
+	)
+
+const supabaseOverview = (statuses: Statuses, nowMs: number) =>
+	fold(
+		statuses.supabase,
+		(status): IntegrationOverview => {
+			if (!status.configured) return UNAVAILABLE
+			if (!status.connected) return CONNECT
+			const issue = status.revoked
+				? "Reconnect to resume"
+				: status.lastDiscoveryError !== null
+					? "Project discovery failing"
+					: null
+			const collecting = status.projects.filter((project) => project.metricsEnabled).length
+			return {
+				kind: "connected",
+				...attentionOr(issue),
+				context: status.organization?.name ?? null,
+				stat: `${countLabel(status.projects.length, "project")} · ${collecting} collecting metrics`,
+				lastSyncLabel: syncedLabel(status.lastDiscoveryAt, nowMs),
 				issue,
 			}
 		},
@@ -454,6 +491,8 @@ export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId)
 			return gcpOverview(statuses, nowMs)
 		case "railway":
 			return railwayOverview(statuses, nowMs)
+		case "supabase":
+			return supabaseOverview(statuses, nowMs)
 		case "cloudflare":
 			return cloudflareOverview(statuses, nowMs)
 		case "prometheus":

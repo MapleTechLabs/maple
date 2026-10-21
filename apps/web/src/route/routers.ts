@@ -224,6 +224,12 @@ const routers = {
 		search(Search.InfraRailwayServiceSearch),
 		Route.mapTo(AppRoute.InfraRailwayService),
 	),
+	InfraSupabaseProject: pipe(
+		path("infra", "supabase"),
+		slash(segment("projectRef")),
+		search(Search.InfraSupabaseProjectSearch),
+		Route.mapTo(AppRoute.InfraSupabaseProject),
+	),
 	AgentSessionTools: pipe(
 		path("agent-sessions", "tools"),
 		search(Search.AgentSessionToolsSearch),
@@ -264,6 +270,11 @@ const routers = {
 		path("infra", "railway"),
 		search(Search.InfraRailwaySearch),
 		Route.mapTo(AppRoute.InfraRailway),
+	),
+	InfraSupabase: pipe(
+		path("infra", "supabase"),
+		search(Search.InfraSupabaseSearch),
+		Route.mapTo(AppRoute.InfraSupabase),
 	),
 	DashboardWidget: pipe(
 		path("dashboards"),
@@ -347,6 +358,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.InfraKubernetes,
 		routers.InfraPlanetscale,
 		routers.InfraRailway,
+		routers.InfraSupabase,
 		routers.AgentSessionTools,
 		routers.ErrorIssues,
 		...Object.values(routers),
