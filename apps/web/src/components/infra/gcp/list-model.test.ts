@@ -397,6 +397,8 @@ describe("views", () => {
 	it("shows only the requested view while the fleet loads", () => {
 		expect(gcpViews(null, "pubsub", false)).toEqual({ views: ["pubsub"], view: "pubsub" })
 		expect(gcpViews(null, undefined, false)).toEqual({ views: [], view: "services" })
+		expect(gcpViews(null, undefined, true)).toEqual({ views: [], view: "services" })
+		expect(gcpViews(null, "resources", true)).toEqual({ views: ["resources"], view: "resources" })
 	})
 
 	it("tells a view whose query failed from an empty one", () => {
