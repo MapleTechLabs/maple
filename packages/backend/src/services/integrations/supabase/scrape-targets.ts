@@ -1,12 +1,10 @@
-/**
- * One managed Prometheus scrape target per Supabase project, pointed at the Management API's
- * metrics endpoint and authenticated with the org's OAuth grant (`supabase_oauth`) at
- * target-list time. Reconciled from `supabase_projects` after every discovery and toggle.
- */
+// One managed scrape target per Supabase project, on the Management API metrics endpoint and
+// authenticated with the org's OAuth grant (`supabase_oauth`) when the scraper lists targets.
 import { randomUUID } from "node:crypto"
 import type { MapleDb } from "@maple/db/client"
 import {
 	ScrapeTargets,
+	SupabaseConnections,
 	SupabaseProjects,
 	type ScrapeTargetRow,
 	type SupabaseConnectionRow,
@@ -19,18 +17,10 @@ import { Effect, Schema } from "effect"
 /** Supabase allows 10 metrics requests a minute per project; one a minute leaves headroom. */
 export const SUPABASE_SCRAPE_INTERVAL_SECONDS = 60
 
-/**
- * One `service.name` for every project, so Supabase adds a single entry to the services list;
- * projects are told apart by the `supabase.project.*` labels and the series' own
- * `supabase_project_ref` label.
- */
+/** One `service.name` for every project; projects differ by their `supabase.project.*` labels. */
 export const SUPABASE_SERVICE_NAME = "supabase"
 
-/**
- * Statuses of a project that is not running, so its metrics endpoint has nothing to serve.
- * Transient states (COMING_UP, RESTARTING, RESIZING, UPGRADING, RESTORING) keep scraping:
- * they last minutes, discovery runs hourly, and the scraper backs off on the failures.
- */
+/** Not-running statuses. Transient ones (COMING_UP, RESTARTING, ...) keep scraping; they last minutes. */
 const NOT_RUNNING_STATUSES: ReadonlySet<string> = new Set([
 	"INACTIVE",
 	"PAUSING",
@@ -101,16 +91,26 @@ export interface ScrapeTargetReconcileSummary {
 type Change = "created" | "updated" | "deleted" | null
 
 /**
- * Converge the connection's managed targets on its projects: create for present projects that
- * should scrape, update drifted rows (enabled follows the toggle and the project status),
- * delete for removed projects and for any target no project points at. Idempotent.
+ * Converge the connection's managed targets on its projects: create, update drift, delete removed
+ * and orphaned. Idempotent; run it in a transaction, which holds the connection row lock.
  */
 export const reconcileSupabaseScrapeTargets = Effect.fnUntraced(function* (
 	db: MapleDb,
-	connection: SupabaseConnectionRow,
+	current: SupabaseConnectionRow,
 	apiBaseUrl: string,
 	now: number,
 ) {
+	// Serialize reconciles per connection: one that read the projects before a toggle committed
+	// must not write its stale `enabled` after the toggle's own reconcile, nor double-insert.
+	const [connection] = yield* db.run(
+		PG.from(SupabaseConnections)
+			.select()
+			.where(($) => [$.id.eq(current.id)])
+			.forUpdate(),
+	)
+	if (connection === undefined) {
+		return { created: 0, updated: 0, deleted: 0 } satisfies ScrapeTargetReconcileSummary
+	}
 	const managedBy = managedBySupabase(connection.id)
 	const projects = yield* db.run(
 		PG.from(SupabaseProjects)

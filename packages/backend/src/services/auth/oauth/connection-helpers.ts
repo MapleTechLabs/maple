@@ -5,7 +5,7 @@
 // parameterized by provider id and display label. Provider-specific flow
 // (PKCE, OIDC discovery, account resolution) stays in each service.
 
-import { randomUUID } from "node:crypto"
+import { createHash, randomBytes, randomUUID } from "node:crypto"
 import {
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
@@ -33,10 +33,7 @@ import {
 	type EncryptedValue,
 } from "@maple/backend/platform/Crypto"
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
-import {
-	deleteSourcesOf,
-	createIntegrationSource,
-} from "@maple/backend/services/org/integration-sources"
+import { deleteSourcesOf, createIntegrationSource } from "@maple/backend/services/org/integration-sources"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import type { EnvConfig } from "@maple/backend/platform/Env"
 
@@ -88,6 +85,11 @@ const decodeOAuthErrorCode = Schema.decodeUnknownOption(
 
 const oauthErrorCodeOf = (text: string): Option.Option<string> =>
 	Option.map(decodeOAuthErrorCode(text), (body) => body.error)
+
+/** PKCE (RFC 7636) S256 pair: the verifier is stashed on the auth-state row and replayed at exchange. */
+export const generateCodeVerifier = (): string => randomBytes(32).toString("base64url")
+export const deriveCodeChallenge = (verifier: string): string =>
+	createHash("sha256").update(verifier).digest("base64url")
 
 export const toUpstreamError = (message: string, status?: number, cause?: unknown) =>
 	new IntegrationsUpstreamError({
@@ -207,7 +209,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				db.run(
 					PG.from(OAuthAuthStates)
 						.select()
-						.where(($) => [$.state.eq(state)])
+						.where(($) => [$.state.eq(state), $.provider.eq(provider)])
 						.limit(1),
 				),
 			)
@@ -331,10 +333,12 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		 * Stamp the connection as revoked (idempotent — only the first stamp writes).
 		 * Pollers filter on `revokedAt IS NULL`, so a revoked grant stops being
 		 * retried every tick; `upsertConnection` (reconnect) clears the stamp.
+		 * With `unchangedSince`, the stamp is a no-op once the row was rewritten after that read.
 		 * Best-effort: bookkeeping must never mask the revocation error itself.
 		 */
 		const markConnectionRevoked = Effect.fn("OAuthConnectionHelpers.markConnectionRevoked")(function* (
 			orgId: OrgId,
+			unchangedSince?: number,
 		) {
 			const currentTime = yield* Clock.currentTimeMillis
 			// Before the write, not after: the memo must not outlive the decision to
@@ -344,7 +348,12 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				db.run(
 					PG.update(OAuthConnections)
 						.set({ revokedAt: currentTime })
-						.where(($) => [$.orgId.eq(orgId), $.provider.eq(provider), $.revokedAt.isNull()]),
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.provider.eq(provider),
+							$.revokedAt.isNull(),
+							...(unchangedSince === undefined ? [] : [$.updatedAt.eq(unchangedSince)]),
+						]),
 				),
 			).pipe(Effect.ignore)
 		})
@@ -451,7 +460,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			if (status === config.deadRefreshTokenStatus) {
 				return yield* Effect.fail(
 					new IntegrationsRevokedError({
-						message: `${providerLabel} connection no longer authorized — reconnect required`,
+						message: `${providerLabel} connection is no longer authorized; reconnect required`,
 					}),
 				)
 			}
@@ -462,7 +471,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				if (Option.contains(errorCode, "invalid_grant")) {
 					return yield* Effect.fail(
 						new IntegrationsRevokedError({
-							message: `${providerLabel} connection no longer authorized — reconnect required`,
+							message: `${providerLabel} connection is no longer authorized; reconnect required`,
 						}),
 					)
 				}
@@ -504,6 +513,8 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 							refreshTokenIv: refreshEnc?.iv ?? row.refreshTokenIv,
 							refreshTokenTag: refreshEnc?.tag ?? row.refreshTokenTag,
 							expiresAt,
+							// A successful refresh proves the grant alive, even if a racing isolate stamped it.
+							revokedAt: null,
 							updatedAt: currentTime,
 						})
 						.where(($) => [$.id.eq(row.id)]),
@@ -550,11 +561,11 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 					tag: row.refreshTokenTag,
 				})
 				return yield* refreshAccessToken(config, refreshToken).pipe(
-					Effect.flatMap((refreshed) =>
-						persistRefreshedTokens(row, refreshed).pipe(
-							Effect.map((accessToken) => ({ accessToken, row })),
-						),
-					),
+					Effect.flatMap((refreshed) => persistRefreshedTokens(row, refreshed)),
+					// The provider rotates the refresh token on use, so an interrupt between the POST and
+					// the write loses the only usable copy. Both are bounded by their own timeouts/retries.
+					Effect.uninterruptible,
+					Effect.map((accessToken) => ({ accessToken, row })),
 					// Cross-isolate race: a concurrent worker isolate may have consumed the rotated
 					// refresh token and persisted new tokens between our read and our refresh. Before
 					// declaring the connection revoked, re-read the row — if a newer, valid token
@@ -566,7 +577,9 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 							if (advanced && rowIsValid(latest, yield* Clock.currentTimeMillis)) {
 								return yield* accessTokenFromRow(latest)
 							}
-							yield* markConnectionRevoked(orgId)
+							// Only while the row is still the one we read: a racing isolate may persist
+							// fresh tokens between our re-read and this stamp.
+							yield* markConnectionRevoked(orgId, row.updatedAt)
 							return yield* Effect.fail(error)
 						}),
 					),
@@ -680,6 +693,46 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			},
 		)
 
+		/**
+		 * Run `use` with the org's access token (a stamped grant fails first). A rejected token forces
+		 * one refresh and a retry; a rejected fresh token stamps the grant revoked.
+		 */
+		const withRejectedTokenRetry = <A, E, Rejected extends E & { readonly message: string }>(
+			config: OAuthTokenEndpointConfig,
+			orgId: OrgId,
+			isRejected: (error: E) => error is Rejected,
+			use: (accessToken: string) => Effect.Effect<A, E>,
+		) =>
+			Effect.gen(function* () {
+				const { accessToken } = yield* getValidConnectionToken(config, orgId, { failIfRevoked: true })
+				return yield* use(accessToken).pipe(
+					Effect.catchIf(isRejected, () =>
+						Effect.gen(function* () {
+							const refreshed = yield* refreshRejectedToken(config, orgId, accessToken)
+							return yield* use(refreshed.accessToken).pipe(
+								Effect.catchIf(isRejected, (rejected) =>
+									markRejectedTokenRevoked(orgId, refreshed.accessToken).pipe(
+										Effect.tap((stamped) =>
+											Effect.annotateCurrentSpan(
+												`maple.${provider}.grant_revoked`,
+												stamped,
+											),
+										),
+										Effect.andThen(
+											Effect.fail(
+												new IntegrationsRevokedError({
+													message: rejected.message,
+												}),
+											),
+										),
+									),
+								),
+							)
+						}),
+					),
+				)
+			})
+
 		return {
 			toPersistenceError,
 			dbExecute,
@@ -701,5 +754,6 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			persistRefreshedTokens,
 			rowIsValid,
 			getValidConnectionToken,
+			withRejectedTokenRetry,
 		} as const
 	})

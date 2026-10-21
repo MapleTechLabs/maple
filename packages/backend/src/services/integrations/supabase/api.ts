@@ -1,8 +1,5 @@
-/**
- * Supabase Management API calls the integration makes with an OAuth access token: the granted
- * organization, its projects, and grant revocation. Field names follow the official OpenAPI spec
- * (https://api.supabase.com/api/v1-json); extra fields are ignored so additions never break decode.
- */
+// Supabase Management API calls made with an OAuth access token. Field names follow the OpenAPI spec
+// (https://api.supabase.com/api/v1-json); extra fields are ignored so additions never break decode.
 import { SupabaseProjectRef } from "@maple/domain/primitives"
 import { Duration, Effect, Option, Redacted, Schedule, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"

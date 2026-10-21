@@ -1023,7 +1023,7 @@ export class SupabaseConnectResponse extends Schema.Class<SupabaseConnectRespons
 	},
 ) {}
 
-/** Per-project switches. The log drain toggle joins once drains ship. */
+/** Per-project switches. */
 export class SupabaseProjectUpdateRequest extends Schema.Class<SupabaseProjectUpdateRequest>(
 	"SupabaseProjectUpdateRequest",
 )({

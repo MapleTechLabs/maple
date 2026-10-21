@@ -505,36 +505,12 @@ export class PlanetScaleOAuthService extends Context.Service<
 			orgId: OrgId,
 			use: (accessToken: string) => Effect.Effect<A, E | PlanetScaleTokenRejectedError>,
 		) =>
-			Effect.gen(function* () {
-				const { accessToken } = yield* getValidAccessToken(orgId)
-				return yield* use(accessToken).pipe(
-					Effect.catchIf(isPlanetScaleTokenRejected, () =>
-						Effect.gen(function* () {
-							const config = yield* resolveConfig(env)
-							const refreshed = yield* oauth.refreshRejectedToken(config, orgId, accessToken)
-							return yield* use(refreshed.accessToken).pipe(
-								Effect.catchIf(isPlanetScaleTokenRejected, (rejected) =>
-									oauth.markRejectedTokenRevoked(orgId, refreshed.accessToken).pipe(
-										Effect.tap((stamped) =>
-											Effect.annotateCurrentSpan(
-												"maple.planetscale.grant_revoked",
-												stamped,
-											),
-										),
-										Effect.andThen(
-											Effect.fail(
-												new IntegrationsRevokedError({
-													message: rejected.message,
-												}),
-											),
-										),
-									),
-								),
-							)
-						}),
-					),
-				)
-			}).pipe(Effect.withSpan("PlanetScaleOAuthService.withAccessToken", { attributes: { orgId } }))
+			resolveConfig(env).pipe(
+				Effect.flatMap((config) =>
+					oauth.withRejectedTokenRetry(config, orgId, isPlanetScaleTokenRejected, use),
+				),
+				Effect.withSpan("PlanetScaleOAuthService.withAccessToken", { attributes: { orgId } }),
+			)
 
 		const listOrganizations = Effect.fn("PlanetScaleOAuthService.listOrganizations")(function* (
 			orgId: OrgId,
