@@ -1,5 +1,25 @@
 # @maple-dev/effect-sdk
 
+## 0.12.0
+
+### Minor Changes
+
+- af2b366: Browser telemetry follows the OpenTelemetry conventions more closely. Rename these keys in saved queries, dashboards and alerts:
+
+    - `app.navigation.interrupted` is now `maple.navigation.interrupted` (both SDKs). `app.*` belongs to the semantic conventions.
+    - `browser.timezone` is now `maple.browser.timezone` (`@maple-dev/effect-sdk`). It is not a semantic-convention key.
+    - An interrupted span (`@maple-dev/effect-sdk`) is still `Ok`, but carries `maple.interrupted: true` instead of a status message, `status.interrupted` and `span.label`. A status message is reserved for `Error`.
+
+    `@maple-dev/effect-sdk` also sets `error.type` on every failed span that lacks one (`TransportError` for a request that never got a response, otherwise the error's name), and browser presets report `telemetry.sdk.name`, `telemetry.sdk.language` (`webjs`) and `telemetry.sdk.version`.
+
+- 75a59ca: New `@maple-dev/effect-sdk/foldkit` entry point for Foldkit apps. `MapleFoldkit.make(config).instrument(appConfig)` wraps a `Runtime.makeApplication` config: Command spans are grouped under the page load or navigation that caused them, Commands that finished without a child span (focus, scroll, hover delays) are dropped, Command args export as `maple.foldkit.arg.<key>`, only ids and flags unless allowed by name, runtime crashes are reported with the recent Message tags, and slow `update`, `view` and DOM patch phases become spans.
+
+### Patch Changes
+
+- f34141f: Add `replay.canvasFps` to record `<canvas>` content, such as charts, in session replays. Off by default, and never with `maskAllText`.
+- c463f5c: Report the package's own version in the SDK hint sent to ingest. The 0.11 releases still sent the previous version.
+- 7216bb9: Browser: requests cut off by a page unload are exported as `Unset` with `maple.connection_lost`, including the spans that passed the error up, instead of `Error`.
+
 ## 0.11.0
 
 ### Minor Changes
