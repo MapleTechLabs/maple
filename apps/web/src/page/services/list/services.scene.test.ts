@@ -16,7 +16,6 @@ import {
 import { describe, expect, test } from "vitest"
 import { ThemeMessage, ResolveThemeColors } from "../../../charts/theme-colors"
 import { toLoadFailure } from "../../../data/load-failure"
-import { requestKey } from "../../../data/request-key"
 import { PageOutMessage, type PageContext } from "../../contract"
 import {
 	FetchAnomalies,
