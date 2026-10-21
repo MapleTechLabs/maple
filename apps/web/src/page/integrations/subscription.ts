@@ -5,6 +5,7 @@ import { gcpConnectionState } from "../../components/integrations/gcp-connector-
 import { ingestPhaseOf } from "../infra-integrations/cloudflare/ingest"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
+import { apiOrigins } from "../../lib/services/common/api-base-url"
 import { integrationOfSearch } from "./catalog"
 import { ConnectAttempt, ConnectProvider, currentReturnPath, PROVIDERS, startConnect } from "./connect"
 import { Message } from "./message"
@@ -217,8 +218,13 @@ const CallbackData = Schema.Struct({
 })
 const decodeCallback = Schema.decodeUnknownOption(CallbackData)
 
+/** The callback page is the API's: served from its origin, or this one through the proxy. */
+export const isCallbackOrigin = (origin: string, ownOrigin: string): boolean =>
+	origin === ownOrigin || apiOrigins.includes(origin)
+
 const callbackMessages = (provider: ConnectProvider) =>
 	Stream.fromEventListener<MessageEvent>(window, "message").pipe(
+		Stream.filter((event) => isCallbackOrigin(event.origin, window.location.origin)),
 		Stream.flatMap((event) =>
 			Option.match(decodeCallback(event.data), {
 				onNone: () => Stream.empty,

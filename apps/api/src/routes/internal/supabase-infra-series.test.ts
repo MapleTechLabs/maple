@@ -15,10 +15,8 @@ const gauge = (iso: string, memoryAvg: number) => ({
 	connectionsAvg: 5,
 	connectionsMax: 6,
 	poolerClients: 2,
-	poolerWaiting: 0,
 	authUsers: 3,
 	authSamples: 5,
-	realtimeSubscriptions: 0,
 	postgrestPoolMax: 10,
 	postgrestPoolInUse: 1,
 	postgrestPoolWaiting: 0,
@@ -30,8 +28,6 @@ const rate = (iso: string, cpu: number) => ({
 	commitsPerSecond: 1.5,
 	rollbacksPerSecond: 0,
 	cacheHitRatio: 0.99,
-	cacheReads: 100,
-	deadlocks: 0,
 	networkRxPerSecond: 10,
 	networkTxPerSecond: 20,
 	diskReadPerSecond: 0,
@@ -56,5 +52,10 @@ describe("mergeSupabaseSeries", () => {
 		expect(rows[0]?.cpu).toBe(0.4)
 		expect(rows[0]?.memoryAvg).toBe(0)
 		expect(rows[0]?.dbSize).toBe(0)
+	})
+
+	it("leaves the cache hit ratio empty for a bucket only the gauges have", () => {
+		const rows = mergeSupabaseSeries([gauge("2026-07-02T00:00:00Z", 0.5)], [])
+		expect(rows[0]?.cacheHitRatio).toBeNull()
 	})
 })

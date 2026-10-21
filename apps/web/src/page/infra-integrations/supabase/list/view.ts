@@ -14,11 +14,10 @@ import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { filteredEmpty } from "../../../kit/signal-empty-state"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
-import { timeControls } from "../../../kit/time-controls"
-import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { countLabel, pageHero, searchToolbar } from "../../../infra/kit/page-parts"
 import { integrationNotConnected } from "../../kit/empty-states"
-import { supabaseOnRamp } from "../connect"
+import { pageTime } from "../../kit/page-time"
+import { SUPABASE_CONNECT_HINT, SUPABASE_NOT_CONFIGURED, supabaseOnRamp } from "../connect"
 import type { SupabaseProjectRow, SupabaseStatus } from "../model"
 import { filterProjects, fleetSummary, projectViews } from "./derive"
 import { Message } from "./message"
@@ -132,16 +131,8 @@ const projectsView = (h: H, model: Model, status: SupabaseStatus, clock: Clock):
 const byStatus = (h: H, model: Model, status: SupabaseStatus, clock: Clock): Html => {
 	if (status.connected) return projectsView(h, model, status, clock)
 	return status.configured
-		? supabaseOnRamp(
-				h,
-				"Connect a Supabase organization, then choose the projects Maple collects metrics from.",
-				connectLink(h, "Connect Supabase"),
-			)
-		: supabaseOnRamp(
-				h,
-				"Supabase is not set up on this Maple deployment yet. Its Supabase OAuth app needs to be configured first.",
-				null,
-			)
+		? supabaseOnRamp(h, SUPABASE_CONNECT_HINT, connectLink(h, "Connect Supabase"))
+		: supabaseOnRamp(h, SUPABASE_NOT_CONFIGURED, null)
 }
 
 const statusView = (h: H, model: Model, clock: Clock): Html =>
@@ -159,42 +150,27 @@ const statusView = (h: H, model: Model, clock: Clock): Html =>
 		onRefreshing: (data) => byStatus(h, model, data, clock),
 	})
 
-const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
-
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
 	return dashboardPage(
 		h,
 		{
 			scrollClassName: "gap-6",
-			actions: timeControls(h, {
+			actions: pageTime(h, {
 				search: model.search,
 				defaultPreset: DEFAULT_PRESET,
 				window: model.window,
+				picker: model.timePicker,
+				toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
 				onReset: Message.ClickedResetTimeRange(),
 				onReload: Message.ClickedReload(),
 				isReloading: model.isReloading,
-				trigger: (label) =>
-					h.submodel({
-						slotId: "time-range-picker",
-						model: model.timePicker,
-						view: TimeRangePicker.view,
-						toParentMessage: toTimePicker,
-						viewInputs: {
-							label,
-							selectedPreset:
-								model.search.timePreset ??
-								(model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
-							presets: TimeRangePicker.PRESET_VALUES,
-						},
-					}),
 			}),
 		},
 		[
 			pageHero(h, {
 				title: "Supabase",
-				description:
-					"CPU, memory, disk and Postgres health for every Supabase project, scraped from each project's metrics endpoint.",
+				description: "CPU, memory, disk and Postgres health for each Supabase project.",
 			}),
 			statusView(h, model, clock),
 		],

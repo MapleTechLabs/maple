@@ -1,9 +1,15 @@
 import { Clock, Effect, Schema } from "effect"
 import { SupabaseInfraProjectsRequest, SupabaseInfraProjectTimeseriesRequest } from "@maple/domain/http"
 import { SupabaseProjectRef } from "@maple/domain/primitives"
-import { formatWarehouseDateTime } from "@maple/query-engine"
 import { MapleInternalHttp } from "./warehouse-services"
-import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
+import {
+	InfraWindowInput,
+	decodeInput,
+	resolveInfraWindow,
+	runWarehouseQuery,
+	wireNumber,
+	wireNumberOrNull,
+} from "./effect-utils"
 
 /** /infra/supabase data access over the metrics scraped from each Supabase project. */
 
@@ -24,8 +30,6 @@ export interface SupabaseProjectRow {
 	/** Postgres backends. */
 	connectionsAvg: number
 	connectionsMax: number
-	/** PgBouncer client slots in use. */
-	poolerClientsMax: number
 	lastSeen: string
 }
 
@@ -41,15 +45,12 @@ export interface SupabaseProjectTimeseriesRow {
 	connectionsAvg: number
 	connectionsMax: number
 	poolerClients: number
-	poolerWaiting: number
 	commitsPerSecond: number
 	rollbacksPerSecond: number
-	cacheHitRatio: number
-	cacheReads: number
-	deadlocks: number
+	/** Null for a bucket with no block reads. */
+	cacheHitRatio: number | null
 	authUsers: number
 	authSamples: number
-	realtimeSubscriptions: number
 	postgrestPoolMax: number
 	postgrestPoolInUse: number
 	postgrestPoolWaiting: number
@@ -59,34 +60,22 @@ export interface SupabaseProjectTimeseriesRow {
 	diskWritePerSecond: number
 }
 
-const TimeRangeInputSchema = Schema.Struct({
-	startTime: Schema.optional(WarehouseDateTimeString),
-	endTime: Schema.optional(WarehouseDateTimeString),
-})
-
 const TimeseriesInputSchema = Schema.Struct({
-	...TimeRangeInputSchema.fields,
+	...InfraWindowInput.fields,
 	projectRef: SupabaseProjectRef,
 	bucketSeconds: Schema.Number,
 })
 
-export type SupabaseTimeRangeInput = (typeof TimeRangeInputSchema)["Encoded"]
+export type SupabaseTimeRangeInput = (typeof InfraWindowInput)["Encoded"]
 export type SupabaseTimeseriesInput = (typeof TimeseriesInputSchema)["Encoded"]
-
-const resolveRange = (input: { startTime?: string; endTime?: string }, nowMillis: number) => ({
-	startTime: input.startTime ?? formatWarehouseDateTime(nowMillis - 6 * 60 * 60 * 1000),
-	endTime: input.endTime ?? formatWarehouseDateTime(nowMillis),
-})
-
-const num = (value: unknown) => Number(value ?? 0)
 
 export const getSupabaseProjects = Effect.fn("QueryEngine.getSupabaseProjects")(function* ({
 	data,
 }: {
 	data: SupabaseTimeRangeInput
 }) {
-	const input = yield* decodeInput(TimeRangeInputSchema, data, "getSupabaseProjects")
-	const range = resolveRange(input, yield* Clock.currentTimeMillis)
+	const input = yield* decodeInput(InfraWindowInput, data, "getSupabaseProjects")
+	const range = resolveInfraWindow(input, yield* Clock.currentTimeMillis)
 	const result = yield* runWarehouseQuery("supabaseInfraProjects", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -98,17 +87,16 @@ export const getSupabaseProjects = Effect.fn("QueryEngine.getSupabaseProjects")(
 	return {
 		projects: result.data.map((row): SupabaseProjectRow => ({
 			projectRef: String(row.projectRef ?? ""),
-			cpuAvg: num(row.cpuAvg),
-			cpuMax: num(row.cpuMax),
-			memoryAvg: num(row.memoryAvg),
-			memoryMax: num(row.memoryMax),
-			memoryTotal: num(row.memoryTotal),
-			diskUsedMax: num(row.diskUsedMax),
-			diskSize: num(row.diskSize),
-			dbSize: num(row.dbSize),
-			connectionsAvg: num(row.connectionsAvg),
-			connectionsMax: num(row.connectionsMax),
-			poolerClientsMax: num(row.poolerClientsMax),
+			cpuAvg: wireNumber(row.cpuAvg),
+			cpuMax: wireNumber(row.cpuMax),
+			memoryAvg: wireNumber(row.memoryAvg),
+			memoryMax: wireNumber(row.memoryMax),
+			memoryTotal: wireNumber(row.memoryTotal),
+			diskUsedMax: wireNumber(row.diskUsedMax),
+			diskSize: wireNumber(row.diskSize),
+			dbSize: wireNumber(row.dbSize),
+			connectionsAvg: wireNumber(row.connectionsAvg),
+			connectionsMax: wireNumber(row.connectionsMax),
 			lastSeen: String(row.lastSeen ?? ""),
 		})),
 	}
@@ -120,7 +108,7 @@ export const getSupabaseProjectTimeseries = Effect.fn("QueryEngine.getSupabasePr
 	data: SupabaseTimeseriesInput
 }) {
 	const input = yield* decodeInput(TimeseriesInputSchema, data, "getSupabaseProjectTimeseries")
-	const range = resolveRange(input, yield* Clock.currentTimeMillis)
+	const range = resolveInfraWindow(input, yield* Clock.currentTimeMillis)
 	const result = yield* runWarehouseQuery("supabaseInfraProjectTimeseries", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
@@ -136,32 +124,28 @@ export const getSupabaseProjectTimeseries = Effect.fn("QueryEngine.getSupabasePr
 	return {
 		buckets: result.data.map((row): SupabaseProjectTimeseriesRow => ({
 			bucket: String(row.bucket ?? ""),
-			cpu: num(row.cpu),
-			memoryAvg: num(row.memoryAvg),
-			memoryMax: num(row.memoryMax),
-			memoryTotal: num(row.memoryTotal),
-			diskUsed: num(row.diskUsed),
-			diskSize: num(row.diskSize),
-			dbSize: num(row.dbSize),
-			connectionsAvg: num(row.connectionsAvg),
-			connectionsMax: num(row.connectionsMax),
-			poolerClients: num(row.poolerClients),
-			poolerWaiting: num(row.poolerWaiting),
-			commitsPerSecond: num(row.commitsPerSecond),
-			rollbacksPerSecond: num(row.rollbacksPerSecond),
-			cacheHitRatio: num(row.cacheHitRatio),
-			cacheReads: num(row.cacheReads),
-			deadlocks: num(row.deadlocks),
-			authUsers: num(row.authUsers),
-			authSamples: num(row.authSamples),
-			realtimeSubscriptions: num(row.realtimeSubscriptions),
-			postgrestPoolMax: num(row.postgrestPoolMax),
-			postgrestPoolInUse: num(row.postgrestPoolInUse),
-			postgrestPoolWaiting: num(row.postgrestPoolWaiting),
-			networkRxPerSecond: num(row.networkRxPerSecond),
-			networkTxPerSecond: num(row.networkTxPerSecond),
-			diskReadPerSecond: num(row.diskReadPerSecond),
-			diskWritePerSecond: num(row.diskWritePerSecond),
+			cpu: wireNumber(row.cpu),
+			memoryAvg: wireNumber(row.memoryAvg),
+			memoryMax: wireNumber(row.memoryMax),
+			memoryTotal: wireNumber(row.memoryTotal),
+			diskUsed: wireNumber(row.diskUsed),
+			diskSize: wireNumber(row.diskSize),
+			dbSize: wireNumber(row.dbSize),
+			connectionsAvg: wireNumber(row.connectionsAvg),
+			connectionsMax: wireNumber(row.connectionsMax),
+			poolerClients: wireNumber(row.poolerClients),
+			commitsPerSecond: wireNumber(row.commitsPerSecond),
+			rollbacksPerSecond: wireNumber(row.rollbacksPerSecond),
+			cacheHitRatio: wireNumberOrNull(row.cacheHitRatio),
+			authUsers: wireNumber(row.authUsers),
+			authSamples: wireNumber(row.authSamples),
+			postgrestPoolMax: wireNumber(row.postgrestPoolMax),
+			postgrestPoolInUse: wireNumber(row.postgrestPoolInUse),
+			postgrestPoolWaiting: wireNumber(row.postgrestPoolWaiting),
+			networkRxPerSecond: wireNumber(row.networkRxPerSecond),
+			networkTxPerSecond: wireNumber(row.networkTxPerSecond),
+			diskReadPerSecond: wireNumber(row.diskReadPerSecond),
+			diskWritePerSecond: wireNumber(row.diskWritePerSecond),
 		})),
 	}
 })

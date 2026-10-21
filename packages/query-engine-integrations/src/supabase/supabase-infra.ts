@@ -1,9 +1,5 @@
-// Supabase infrastructure page (/infra/supabase)
-//
-// Reads the metrics Maple scrapes from each project's Prometheus endpoint. Every series carries
-// the `supabase_project_ref` datapoint attribute, which is the project's identity here. Gauges
-// land in metrics_gauge; Prometheus counters land in metrics_sum as cumulative sums, so their
-// charts take reset-aware per-series deltas (`metricDeltaExpr`) before bucketing.
+// /infra/supabase reads, keyed by the `supabase_project_ref` attribute. Gauges are in metrics_gauge;
+// counters are cumulative sums in metrics_sum, differenced reset-aware (`metricDeltaExpr`).
 
 import type { DateTime } from "effect"
 import { finiteOrZero } from "@maple/query-engine/ch/format"
@@ -14,30 +10,27 @@ import { MetricsGauge, MetricsSum, orgIdParam, utcSecondsParam } from "@maple/qu
 
 export const SUPABASE_PROJECT_REF_ATTRIBUTE = "supabase_project_ref"
 
-export const SUPABASE_MEMORY_TOTAL = "node_memory_MemTotal_bytes"
-export const SUPABASE_MEMORY_AVAILABLE = "node_memory_MemAvailable_bytes"
-export const SUPABASE_FS_SIZE = "node_filesystem_size_bytes"
-export const SUPABASE_FS_AVAILABLE = "node_filesystem_avail_bytes"
-export const SUPABASE_DB_SIZE = "pg_database_size_bytes"
-export const SUPABASE_BACKENDS = "pg_stat_database_num_backends"
-export const SUPABASE_POOLER_CLIENTS = "pgbouncer_used_clients"
-export const SUPABASE_POOLER_WAITING = "pgbouncer_pools_client_waiting_connections"
-export const SUPABASE_AUTH_USERS = "auth_users_user_count"
-export const SUPABASE_REALTIME_SUBSCRIPTIONS = "realtime_postgres_changes_total_subscriptions"
-export const SUPABASE_POSTGREST_POOL_MAX = "pgrst_db_pool_max"
-export const SUPABASE_POSTGREST_POOL_AVAILABLE = "pgrst_db_pool_available"
-export const SUPABASE_POSTGREST_POOL_WAITING = "pgrst_db_pool_waiting"
+const SUPABASE_MEMORY_TOTAL = "node_memory_MemTotal_bytes"
+const SUPABASE_MEMORY_AVAILABLE = "node_memory_MemAvailable_bytes"
+const SUPABASE_FS_SIZE = "node_filesystem_size_bytes"
+const SUPABASE_FS_AVAILABLE = "node_filesystem_avail_bytes"
+const SUPABASE_DB_SIZE = "pg_database_size_bytes"
+const SUPABASE_BACKENDS = "pg_stat_database_num_backends"
+const SUPABASE_POOLER_CLIENTS = "pgbouncer_used_clients"
+const SUPABASE_AUTH_USERS = "auth_users_user_count"
+const SUPABASE_POSTGREST_POOL_MAX = "pgrst_db_pool_max"
+const SUPABASE_POSTGREST_POOL_AVAILABLE = "pgrst_db_pool_available"
+const SUPABASE_POSTGREST_POOL_WAITING = "pgrst_db_pool_waiting"
 
-export const SUPABASE_CPU_SECONDS = "node_cpu_seconds_total"
-export const SUPABASE_XACT_COMMIT = "pg_stat_database_xact_commit_total"
-export const SUPABASE_XACT_ROLLBACK = "pg_stat_database_xact_rollback_total"
-export const SUPABASE_BLKS_HIT = "pg_stat_database_blks_hit_total"
-export const SUPABASE_BLKS_READ = "pg_stat_database_blks_read_total"
-export const SUPABASE_DEADLOCKS = "pg_stat_database_deadlocks_total"
-export const SUPABASE_NETWORK_RX = "node_network_receive_bytes_total"
-export const SUPABASE_NETWORK_TX = "node_network_transmit_bytes_total"
-export const SUPABASE_DISK_READ = "node_disk_read_bytes_total"
-export const SUPABASE_DISK_WRITTEN = "node_disk_written_bytes_total"
+const SUPABASE_CPU_SECONDS = "node_cpu_seconds_total"
+const SUPABASE_XACT_COMMIT = "pg_stat_database_xact_commit_total"
+const SUPABASE_XACT_ROLLBACK = "pg_stat_database_xact_rollback_total"
+const SUPABASE_BLKS_HIT = "pg_stat_database_blks_hit_total"
+const SUPABASE_BLKS_READ = "pg_stat_database_blks_read_total"
+const SUPABASE_NETWORK_RX = "node_network_receive_bytes_total"
+const SUPABASE_NETWORK_TX = "node_network_transmit_bytes_total"
+const SUPABASE_DISK_READ = "node_disk_read_bytes_total"
+const SUPABASE_DISK_WRITTEN = "node_disk_written_bytes_total"
 
 /** The database volume. The root filesystem holds the OS, not the data the plan's disk size bounds. */
 export const SUPABASE_DATA_MOUNTPOINT = "/data"
@@ -59,9 +52,7 @@ const GAUGE_METRIC_NAMES = [
 	SUPABASE_DB_SIZE,
 	SUPABASE_BACKENDS,
 	SUPABASE_POOLER_CLIENTS,
-	SUPABASE_POOLER_WAITING,
 	SUPABASE_AUTH_USERS,
-	SUPABASE_REALTIME_SUBSCRIPTIONS,
 	SUPABASE_POSTGREST_POOL_MAX,
 	SUPABASE_POSTGREST_POOL_AVAILABLE,
 	SUPABASE_POSTGREST_POOL_WAITING,
@@ -73,7 +64,6 @@ const COUNTER_METRIC_NAMES = [
 	SUPABASE_XACT_ROLLBACK,
 	SUPABASE_BLKS_HIT,
 	SUPABASE_BLKS_READ,
-	SUPABASE_DEADLOCKS,
 	SUPABASE_NETWORK_RX,
 	SUPABASE_NETWORK_TX,
 	SUPABASE_DISK_READ,
@@ -105,11 +95,9 @@ const gaugePoints = () =>
 		),
 		backends: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_BACKENDS)),
 		poolerClients: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POOLER_CLIENTS)),
-		poolerWaiting: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POOLER_WAITING)),
 		// The exporter reports -1 when it cannot count the users.
 		authUsers: CH.maxIf($.Value, $.MetricName.eq(SUPABASE_AUTH_USERS).and($.Value.gte(0))),
 		authSamples: CH.countIf($.MetricName.eq(SUPABASE_AUTH_USERS).and($.Value.gte(0))),
-		realtimeSubscriptions: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_REALTIME_SUBSCRIPTIONS)),
 		postgrestPoolMax: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POSTGREST_POOL_MAX)),
 		postgrestPoolAvailable: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POSTGREST_POOL_AVAILABLE)),
 		postgrestPoolWaiting: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POSTGREST_POOL_WAITING)),
@@ -146,6 +134,9 @@ const counterDeltas = () =>
 		}
 	})
 
+/** `1 - available / total`: the share in use. Callers guard `total > 0`. */
+const usedShare = (available: CH.Expr<number>, total: CH.Expr<number>) => CH.lit(1).sub(available.div(total))
+
 const counterWindowStart = () => CH.intervalSub(param.dateTime("startTime"), COUNTER_LOOKBACK_SECONDS)
 
 // PROJECTS
@@ -160,7 +151,6 @@ export interface SupabaseProjectGaugesOutput {
 	readonly dbSize: number
 	readonly connectionsAvg: number
 	readonly connectionsMax: number
-	readonly poolerClientsMax: number
 	readonly lastSeen: DateTime.Utc
 }
 
@@ -179,21 +169,14 @@ export function supabaseProjectGaugesSQL() {
 	return fromQuery(points, "points")
 		.select(($) => ({
 			projectRef: $.projectRef,
-			memoryAvg: finiteOrZero(
-				CH.avgIf(CH.lit(1).sub($.memAvailable.div($.memTotal)), $.memTotal.gt(0)),
-			),
-			memoryMax: finiteOrZero(
-				CH.maxIf(CH.lit(1).sub($.memAvailable.div($.memTotal)), $.memTotal.gt(0)),
-			),
+			memoryAvg: finiteOrZero(CH.avgIf(usedShare($.memAvailable, $.memTotal), $.memTotal.gt(0))),
+			memoryMax: finiteOrZero(CH.maxIf(usedShare($.memAvailable, $.memTotal), $.memTotal.gt(0))),
 			memoryTotal: CH.max_($.memTotal),
-			diskUsedMax: finiteOrZero(
-				CH.maxIf(CH.lit(1).sub($.diskAvailable.div($.diskSize)), $.diskSize.gt(0)),
-			),
+			diskUsedMax: finiteOrZero(CH.maxIf(usedShare($.diskAvailable, $.diskSize), $.diskSize.gt(0))),
 			diskSize: CH.max_($.diskSize),
 			dbSize: CH.max_($.dbSize),
 			connectionsAvg: finiteOrZero(CH.avg($.backends)),
 			connectionsMax: CH.max_($.backends),
-			poolerClientsMax: CH.max_($.poolerClients),
 			lastSeen: CH.max_($.t),
 		}))
 		.groupBy("projectRef")
@@ -256,10 +239,8 @@ export interface SupabaseProjectGaugeSeriesOutput {
 	readonly connectionsAvg: number
 	readonly connectionsMax: number
 	readonly poolerClients: number
-	readonly poolerWaiting: number
 	readonly authUsers: number
 	readonly authSamples: number
-	readonly realtimeSubscriptions: number
 	readonly postgrestPoolMax: number
 	readonly postgrestPoolInUse: number
 	readonly postgrestPoolWaiting: number
@@ -280,25 +261,17 @@ export function supabaseProjectGaugeSeriesSQL() {
 	return fromQuery(points, "points")
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.t, param.int("bucketSeconds")),
-			memoryAvg: finiteOrZero(
-				CH.avgIf(CH.lit(1).sub($.memAvailable.div($.memTotal)), $.memTotal.gt(0)),
-			),
-			memoryMax: finiteOrZero(
-				CH.maxIf(CH.lit(1).sub($.memAvailable.div($.memTotal)), $.memTotal.gt(0)),
-			),
+			memoryAvg: finiteOrZero(CH.avgIf(usedShare($.memAvailable, $.memTotal), $.memTotal.gt(0))),
+			memoryMax: finiteOrZero(CH.maxIf(usedShare($.memAvailable, $.memTotal), $.memTotal.gt(0))),
 			memoryTotal: CH.max_($.memTotal),
-			diskUsed: finiteOrZero(
-				CH.maxIf(CH.lit(1).sub($.diskAvailable.div($.diskSize)), $.diskSize.gt(0)),
-			),
+			diskUsed: finiteOrZero(CH.maxIf(usedShare($.diskAvailable, $.diskSize), $.diskSize.gt(0))),
 			diskSize: CH.max_($.diskSize),
 			dbSize: CH.max_($.dbSize),
 			connectionsAvg: finiteOrZero(CH.avg($.backends)),
 			connectionsMax: CH.max_($.backends),
 			poolerClients: finiteOrZero(CH.avg($.poolerClients)),
-			poolerWaiting: CH.max_($.poolerWaiting),
 			authUsers: CH.max_($.authUsers),
 			authSamples: CH.sum($.authSamples),
-			realtimeSubscriptions: finiteOrZero(CH.avg($.realtimeSubscriptions)),
 			postgrestPoolMax: CH.max_($.postgrestPoolMax),
 			// In use = max - available, per scrape, averaged over the bucket.
 			postgrestPoolInUse: finiteOrZero(
@@ -317,9 +290,8 @@ export interface SupabaseProjectRateSeriesOutput {
 	readonly cpu: number
 	readonly commitsPerSecond: number
 	readonly rollbacksPerSecond: number
-	readonly cacheHitRatio: number
-	readonly cacheReads: number
-	readonly deadlocks: number
+	/** Null for a bucket with no block reads: there is no ratio to draw. */
+	readonly cacheHitRatio: number | null
 	readonly networkRxPerSecond: number
 	readonly networkTxPerSecond: number
 	readonly diskReadPerSecond: number
@@ -368,13 +340,9 @@ export function supabaseProjectRateSeriesSQL() {
 				),
 				commitsPerSecond: perSecond($.metricName.eq(SUPABASE_XACT_COMMIT)),
 				rollbacksPerSecond: perSecond($.metricName.eq(SUPABASE_XACT_ROLLBACK)),
-				cacheHitRatio: finiteOrZero(
-					CH.sumIf($.delta, $.metricName.eq(SUPABASE_BLKS_HIT)).div(
-						CH.sumIf($.delta, $.metricName.in_(SUPABASE_BLKS_HIT, SUPABASE_BLKS_READ)),
-					),
+				cacheHitRatio: CH.sumIf($.delta, $.metricName.eq(SUPABASE_BLKS_HIT)).div(
+					CH.nullIf(CH.sumIf($.delta, $.metricName.in_(SUPABASE_BLKS_HIT, SUPABASE_BLKS_READ)), 0),
 				),
-				cacheReads: CH.sumIf($.delta, $.metricName.in_(SUPABASE_BLKS_HIT, SUPABASE_BLKS_READ)),
-				deadlocks: CH.sumIf($.delta, $.metricName.eq(SUPABASE_DEADLOCKS)),
 				networkRxPerSecond: perSecond(isNetwork(SUPABASE_NETWORK_RX)),
 				networkTxPerSecond: perSecond(isNetwork(SUPABASE_NETWORK_TX)),
 				diskReadPerSecond: perSecond($.metricName.eq(SUPABASE_DISK_READ)),

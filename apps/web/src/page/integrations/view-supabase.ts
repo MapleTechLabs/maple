@@ -1,23 +1,30 @@
 import type { SupabaseIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
-import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
 import { badge } from "../../ui/display"
-import { errorState } from "../../ui/error-state"
 import { icon } from "../../ui/icon"
-import { item, itemContent, itemMedia } from "../../ui/item"
-import { skeleton } from "../../ui/skeleton"
 import { switchControl } from "../../ui/switch"
 import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
 import { relativeTime } from "../kit/relative-time"
-import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
-import { SUPABASE_BRAND, supabaseOnRamp } from "../infra-integrations/supabase/connect"
+import {
+	SUPABASE_BRAND,
+	SUPABASE_CONNECT_HINT,
+	SUPABASE_NOT_CONFIGURED,
+	supabaseOnRamp,
+} from "../infra-integrations/supabase/connect"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { projectStatusLabel } from "./supabase"
-import { disconnectDialog } from "./view-disconnect"
+import {
+	connectedIntegrationCard,
+	disconnectButton,
+	integrationActions,
+	integrationAlertNotice,
+	integrationErrorNotice,
+	integrationStatusCard,
+} from "./view-integration-card"
 
 // The Supabase card: connect, then the organization's projects and their switches.
 
@@ -68,11 +75,9 @@ const projectRow = (h: H, model: Model, project: Project, timeZone: string): Htm
 						nowMs: model.nowMs,
 						timeZone,
 						tooltip: "title",
-						prefix: "seen",
 					}),
 				],
 			),
-			// Phase 4 adds the opt-in log drain switch here, beside the metrics one.
 			h.span(
 				[h.Class("flex w-28 shrink-0 justify-end")],
 				switchControl(h, {
@@ -98,7 +103,7 @@ const projectsTable = (h: H, model: Model, status: SupabaseIntegrationStatus, ti
 		[
 			columnHead(h, { label: "Project", width: "w-0 min-w-48 flex-1" }),
 			columnHead(h, { label: "Region", width: "w-32" }),
-			columnHead(h, { label: "Discovered", width: "w-28", align: "right" }),
+			columnHead(h, { label: "Last seen", width: "w-28", align: "right" }),
 			columnHead(h, { label: "Collect metrics", width: "w-28", align: "right" }),
 		],
 		status.projects.length === 0
@@ -138,126 +143,68 @@ const summaryLine = (
 	]
 }
 
-const notice = (h: H, status: SupabaseIntegrationStatus): ReadonlyArray<Html> =>
+const notice = (h: H, status: SupabaseIntegrationStatus): Html | null =>
 	status.revoked
-		? [
-				h.p(
-					[h.Class("text-xs text-severity-error"), h.Role("alert")],
-					[
-						"Supabase no longer accepts Maple's access, so discovery and metrics are paused. Reconnect to resume.",
-					],
-				),
-			]
+		? integrationAlertNotice(
+				h,
+				"Supabase no longer accepts Maple's access, so discovery and metrics are paused. Reconnect to resume.",
+			)
 		: status.lastDiscoveryError !== null
-			? [
-					h.p(
-						[
-							h.Class("line-clamp-2 text-xs text-muted-foreground [overflow-wrap:anywhere]"),
-							h.Title(status.lastDiscoveryError),
-						],
-						["Last discovery failed: ", status.lastDiscoveryError],
-					),
-				]
-			: []
+			? integrationErrorNotice(h, "Last discovery failed: ", status.lastDiscoveryError)
+			: null
 
 const actions = (h: H, model: Model, status: SupabaseIntegrationStatus): Html =>
-	h.div(
-		[h.Class("flex flex-wrap gap-2")],
-		[
-			status.revoked
-				? button(
+	integrationActions(h, [
+		status.revoked
+			? button(
+					h,
+					{
+						size: "sm",
+						isLoading: model.connect.isStarting,
+						attributes: [h.OnClick(Message.ClickedConnect())],
+					},
+					["Reconnect"],
+				)
+			: linkButton(h, { size: "sm", href: hrefOf(AppRoute.InfraSupabase({ search: {} })) }, [
+					"View metrics",
+				]),
+		...(status.revoked
+			? []
+			: [
+					button(
 						h,
 						{
 							size: "sm",
-							isLoading: model.connect.isStarting,
-							attributes: [h.OnClick(Message.ClickedConnect())],
+							variant: "outline",
+							isLoading: model.supabaseCard.isSyncing,
+							attributes: [h.OnClick(Message.ClickedSupabaseSync())],
 						},
-						["Reconnect"],
-					)
-				: linkButton(h, { size: "sm", href: hrefOf(AppRoute.InfraSupabase({ search: {} })) }, [
-						"View metrics",
-					]),
-			...(status.revoked
-				? []
-				: [
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "outline",
-								isLoading: model.supabaseCard.isSyncing,
-								attributes: [h.OnClick(Message.ClickedSupabaseSync())],
-							},
-							["Sync now"],
-						),
-					]),
-			button(
-				h,
-				{
-					size: "sm",
-					variant: "outline",
-					isLoading: model.disconnect.isPending,
-					attributes: [h.OnClick(Message.ClickedDisconnect())],
-				},
-				["Disconnect"],
-			),
-		],
-	)
-
-const connectedView = (h: H, model: Model, status: SupabaseIntegrationStatus, timeZone: string): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-4")],
-		[
-			item(h, { variant: "card", className: "items-start gap-4 p-4" }, [
-				itemMedia(h, {}, [integrationIconPlate(h, SUPABASE_BRAND)]),
-				itemContent(
-					h,
-					[
-						h.div(
-							[h.Class("flex flex-wrap items-center gap-2")],
-							[h.h3([h.Class("text-sm font-semibold")], ["Supabase"]), statusBadge(h, status)],
-						),
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							summaryLine(h, model, status, timeZone),
-						),
-						...notice(h, status),
-						actions(h, model, status),
-						disconnectDialog(h, model, "supabase"),
-					],
-					"gap-2",
-				),
-			]),
-			projectsTable(h, model, status, timeZone),
-		],
-	)
+						["Sync now"],
+					),
+				]),
+		disconnectButton(h, model),
+	])
 
 const byStatus = (h: H, model: Model, status: SupabaseIntegrationStatus, timeZone: string): Html => {
-	if (status.connected) return connectedView(h, model, status, timeZone)
-	return status.configured
-		? supabaseOnRamp(
-				h,
-				"Authorize one Supabase organization. Its projects appear here, and you choose which ones Maple collects metrics from.",
-				connectButton(h, model, "Connect Supabase"),
-			)
-		: supabaseOnRamp(
-				h,
-				"Supabase is not set up on this Maple deployment yet. Its Supabase OAuth app needs to be configured first.",
-				null,
-			)
+	if (!status.connected)
+		return status.configured
+			? supabaseOnRamp(h, SUPABASE_CONNECT_HINT, connectButton(h, model, "Connect Supabase"))
+			: supabaseOnRamp(h, SUPABASE_NOT_CONFIGURED, null)
+	return connectedIntegrationCard(h, model, {
+		integration: "supabase",
+		brand: SUPABASE_BRAND,
+		title: "Supabase",
+		badge: statusBadge(h, status),
+		summary: summaryLine(h, model, status, timeZone),
+		notice: notice(h, status),
+		actions: actions(h, model, status),
+		table: projectsTable(h, model, status, timeZone),
+	})
 }
 
 export const supabaseCard = (h: H, model: Model, timeZone: string): Html =>
-	AsyncData.match(model.statuses.supabase.data, {
-		onIdle: () => skeleton(h, "h-32 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-32 w-full rounded-md"),
-		onFailure: (failure) =>
-			errorState(h, {
-				failure,
-				title: "Failed to load the Supabase integration",
-				onRetry: Message.ClickedRetryStatus({ name: "supabase" }),
-			}),
-		onStale: ({ data }) => byStatus(h, model, data, timeZone),
-		onRefreshing: (data) => byStatus(h, model, data, timeZone),
-		onSuccess: (data) => byStatus(h, model, data, timeZone),
+	integrationStatusCard(h, model.statuses.supabase, {
+		name: "supabase",
+		failureTitle: "Failed to load the Supabase integration",
+		render: (status) => byStatus(h, model, status, timeZone),
 	})

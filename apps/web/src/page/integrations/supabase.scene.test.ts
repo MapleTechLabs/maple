@@ -83,9 +83,7 @@ describe("supabase card", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
-			expectView(
-				text("Supabase is not set up on this Maple deployment yet.", { exact: false }),
-			).toExist(),
+			expectView(text("Supabase isn't configured on this deployment.")).toExist(),
 			expectView(role("button", { name: "Connect Supabase" })).toBeAbsent(),
 		)
 		expect(overviewOf(model.statuses, model.nowMs, "supabase")).toEqual({ kind: "unavailable" })
