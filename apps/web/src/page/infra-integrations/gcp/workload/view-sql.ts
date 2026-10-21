@@ -80,7 +80,7 @@ const statementRow = (
 			...(isPeeked ? [h.AriaCurrent("true")] : []),
 			h.Class(
 				cn(
-					"flex w-full items-center gap-4 border-b border-border/40 px-4 py-2.5 text-left transition-colors last:border-0 hover:bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
+					"flex w-full cursor-pointer items-center gap-4 border-b border-border/40 px-4 py-2.5 text-left transition-colors last:border-0 hover:bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
 					rowSelectedClass(isPeeked),
 				),
 			),
