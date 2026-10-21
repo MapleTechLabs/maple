@@ -44,6 +44,7 @@ import { PlanetScaleDiscoveryService } from "@maple/backend/services/integration
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
+import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
@@ -127,6 +128,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	RailwayMetricsService.layer,
 	SupabaseOAuthService.layer,
 	SupabaseConnectionService.layer,
+	SupabaseLogsService.layer,
 	GcpConnectorService.layer,
 	OrgOpenRouterKeyService.layer,
 	AuditLogService.layer,

@@ -191,6 +191,13 @@ export const Message = defineMessageUnion({
 		enabled: Schema.Boolean,
 		failure: Schema.NullOr(LoadFailure),
 	},
+	/** A project row's "Collect logs" switch. */
+	ToggledSupabaseLogs: { ref: SupabaseProjectRef, enabled: Schema.Boolean },
+	CompletedSupabaseLogs: {
+		ref: SupabaseProjectRef,
+		enabled: Schema.Boolean,
+		failure: Schema.NullOr(LoadFailure),
+	},
 	CompletedFetchOrganizations: result(V2PlanetScaleOrganizationList),
 	CompletedFetchWebhookConfig: result(V2PlanetScaleWebhookConfig),
 	ClickedChangeOrganization: {},

@@ -21,7 +21,8 @@ export const ALERTING_SCHEDULE = {
 	// `error` also runs fix verification, chained after it (see `./scheduled.ts`).
 	// Under two periods, not one: the alert tick drains deliveries after it
 	// evaluates, so a one-minute bound would starve the drain on a slow minute.
-	"* * * * *": { lanes: ["alert", "error", "escalation"], deadline: "110 seconds" },
+	// `supabase_logs` reads each opted-in project's last minute (Supabase allows 10 queries a minute).
+	"* * * * *": { lanes: ["alert", "error", "escalation", "supabase_logs"], deadline: "110 seconds" },
 	"*/5 * * * *": {
 		lanes: [
 			"anomaly",

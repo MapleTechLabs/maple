@@ -279,6 +279,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ToggledSupabaseMetrics: ({ ref, enabled }) => Supabase.toggledMetrics(model, ref, enabled),
 		CompletedSupabaseMetrics: ({ ref, enabled, failure }) =>
 			Supabase.completedMetrics(model, context, ref, enabled, failure),
+		ToggledSupabaseLogs: ({ ref, enabled }) => Supabase.toggledLogs(model, ref, enabled),
+		CompletedSupabaseLogs: ({ ref, enabled, failure }) =>
+			Supabase.completedLogs(model, context, ref, enabled, failure),
 		CompletedFetchOrganizations: ({ key, result }) =>
 			Planetscale.updateCard(model, {
 				organizations: Keyed.accept(model.planetscaleCard.organizations, key, result),
@@ -335,9 +338,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Gcp.updateGcpCard(model, { inventory: Keyed.accept(model.gcpCard.inventory, key, result) }),
 		GotWorkloadFilterMessage: ({ message: child }) => Gcp.gotWorkloadFilter(model, child),
 		GotGcpMenuMessage: ({ id, message: child }) =>
-			Gcp.gotMenu(model, context, id, child, (next, target) =>
-				Configure.openConfigure(next, target),
-			),
+			Gcp.gotMenu(model, context, id, child, (next, target) => Configure.openConfigure(next, target)),
 		CompletedGcpScripts: ({ key, result }) =>
 			Gcp.updateGcpCard(model, { scripts: Keyed.accept(model.gcpCard.scripts, key, result) }),
 		ClickedGcpScriptToggle: () =>
@@ -381,12 +382,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedGcpMethod: ({ method }) => Configure.clickedMethod(model, method),
 		GotGcpFlavourMessage: ({ message: child }) => Configure.gotFlavour(model, child),
 		ClickedGcpMethodContinue: () => Configure.clickedMethodContinue(model, context),
-		ClickedGcpManualStep: ({ title, firstTitle }) => Configure.clickedManualStep(model, title, firstTitle),
+		ClickedGcpManualStep: ({ title, firstTitle }) =>
+			Configure.clickedManualStep(model, title, firstTitle),
 		ClickedGcpCopyPrompt: ({ prompt }) => Configure.clickedCopyPrompt(model, prompt),
 		CompletedGcpPromptCopy: ({ isCopied }) => Configure.completedPromptCopy(model, isCopied),
 		ClickedGcpPromptBack: () => Configure.clickedPromptBack(model),
 		ClickedGcpConfirmRemoval: () => Configure.clickedConfirmRemoval(model),
-		CompletedGcpConfirmRemoval: ({ failure }) => Configure.completedConfirmRemoval(model, context, failure),
+		CompletedGcpConfirmRemoval: ({ failure }) =>
+			Configure.completedConfirmRemoval(model, context, failure),
 		TickedGcpRefresh: () => {
 			const refreshed = requestStatus(model, context, "gcp", "Refresh")
 			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }

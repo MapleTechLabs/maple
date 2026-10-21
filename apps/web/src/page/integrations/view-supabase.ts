@@ -57,6 +57,19 @@ const projectRow = (h: H, model: Model, project: Project, timeZone: string): Htm
 						],
 					),
 					h.span([h.Class("font-mono text-2xs text-muted-foreground")], [project.ref]),
+					...(project.logsEnabled && project.logsError !== null
+						? [
+								h.span(
+									[
+										h.Class(
+											"line-clamp-1 text-2xs text-severity-error [overflow-wrap:anywhere]",
+										),
+										h.Title(project.logsError),
+									],
+									["Logs: ", project.logsError],
+								),
+							]
+						: []),
 				],
 			),
 			h.span([h.Class("w-32 shrink-0 truncate text-xs text-muted-foreground")], [project.region]),
@@ -72,7 +85,6 @@ const projectRow = (h: H, model: Model, project: Project, timeZone: string): Htm
 					}),
 				],
 			),
-			// Phase 4 adds the opt-in log drain switch here, beside the metrics one.
 			h.span(
 				[h.Class("flex w-28 shrink-0 justify-end")],
 				switchControl(h, {
@@ -84,6 +96,20 @@ const projectRow = (h: H, model: Model, project: Project, timeZone: string): Htm
 					onToggle: Message.ToggledSupabaseMetrics({
 						ref: project.ref,
 						enabled: !project.metricsEnabled,
+					}),
+				}),
+			),
+			h.span(
+				[h.Class("flex w-24 shrink-0 justify-end")],
+				switchControl(h, {
+					id: `supabase-logs-${project.ref}`,
+					inputId: `supabase-logs-input-${project.ref}`,
+					isChecked: project.logsEnabled,
+					isDisabled: isPending,
+					ariaLabel: `Collect logs for ${project.name}`,
+					onToggle: Message.ToggledSupabaseLogs({
+						ref: project.ref,
+						enabled: !project.logsEnabled,
 					}),
 				}),
 			),
@@ -100,6 +126,7 @@ const projectsTable = (h: H, model: Model, status: SupabaseIntegrationStatus, ti
 			columnHead(h, { label: "Region", width: "w-32" }),
 			columnHead(h, { label: "Discovered", width: "w-28", align: "right" }),
 			columnHead(h, { label: "Collect metrics", width: "w-28", align: "right" }),
+			columnHead(h, { label: "Collect logs", width: "w-24", align: "right" }),
 		],
 		status.projects.length === 0
 			? [dataTableEmpty(h, ["No projects in this organization yet. Sync after creating one."])]
