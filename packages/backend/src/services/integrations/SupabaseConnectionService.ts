@@ -1,16 +1,12 @@
-/**
- * Supabase integration: an org authorizes Maple's Management API OAuth app for one Supabase
- * organization. The grant lives in `oauth_connections` (SupabaseOAuthService); this service owns
- * the organization binding, its source, and project discovery, run on connect, on demand, and
- * hourly from the alerting cron. Metrics scraping and log drains build on the project rows.
- */
+// Supabase integration: binds the one Supabase organization a grant (SupabaseOAuthService) covers,
+// owns its source, and discovers its projects on demand and hourly from the alerting cron.
 import { randomUUID } from "node:crypto"
 import {
 	IntegrationsNotConnectedError,
 	IntegrationsNotFoundError,
 	IntegrationsPersistenceError,
 	IntegrationsUpstreamError,
-	OrgId,
+	type OrgId,
 	SupabaseIntegrationStatus,
 	SupabaseOrganizationSummary,
 	SupabaseProjectStatus,
@@ -40,7 +36,7 @@ const LEASE_MS = 5 * 60_000
 /** The cron skips connections discovered more recently than this (it fires hourly). */
 const DISCOVERY_INTERVAL_MS = 50 * 60_000
 const DISCOVERY_TIMEOUT = Duration.seconds(60)
-/** Connect and sync run discovery inline; what does not finish is left to the cron. */
+/** Sync runs discovery inline; what does not finish is left to the cron. */
 const DISCOVER_NOW_TIMEOUT = Duration.seconds(20)
 /** Floor for a 429 hold, so a missing reset header still backs off. */
 const RATE_LIMIT_HOLD_MS = 60_000
@@ -58,7 +54,6 @@ const UNHEALTHY_STATUSES: ReadonlySet<string> = new Set([
 
 const REVOKED_REASON = "Supabase no longer accepts this authorization. Reconnect Supabase."
 
-const decodeOrgId = Schema.decodeUnknownSync(OrgId)
 const decodeConnectionId = Schema.decodeUnknownSync(SupabaseConnectionId)
 const decodeProjectId = Schema.decodeUnknownSync(SupabaseProjectId)
 
@@ -92,7 +87,10 @@ export interface SupabaseConnectionServiceApi {
 	readonly getStatus: (
 		orgId: OrgId,
 	) => Effect.Effect<SupabaseIntegrationStatus, IntegrationsPersistenceError>
-	/** Bind a freshly exchanged grant's organization and run a first discovery. Called by the callback. */
+	/**
+	 * Bind a freshly exchanged grant's organization. Called by the callback, which must stay fast:
+	 * the first discovery runs from `sync` (the dashboard, after the popup reports) or the hourly cron.
+	 */
 	readonly finalizeConnect: (
 		orgId: OrgId,
 		userId: UserId,
@@ -174,7 +172,7 @@ export class SupabaseConnectionService extends Context.Service<
 		const getStatus = Effect.fn("SupabaseConnectionService.getStatus")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const connection = yield* loadConnection(orgId)
-			const grant = yield* oauth.grantStatus(orgId)
+			const grantUsable = yield* oauth.isGrantUsable(orgId)
 			if (connection === null) {
 				return new SupabaseIntegrationStatus({
 					configured: oauth.isConfigured,
@@ -200,7 +198,7 @@ export class SupabaseConnectionService extends Context.Service<
 				connectedByUserId: connection.connectedByUserId,
 				connectedAt: connection.createdAt,
 				// A connection whose grant row vanished cannot discover either.
-				revoked: !grant.connected || grant.revokedAt !== null,
+				revoked: !grantUsable,
 				lastDiscoveryAt: connection.lastDiscoveryAt,
 				lastDiscoveryError: connection.lastDiscoveryError,
 				projects: projects
@@ -330,8 +328,7 @@ export class SupabaseConnectionService extends Context.Service<
 			const connection = yield* loadConnection(orgId)
 			if (connection === null) return skip("not connected")
 			const now = yield* Clock.currentTimeMillis
-			const grant = yield* oauth.grantStatus(orgId)
-			if (!grant.connected || grant.revokedAt !== null) {
+			if (!(yield* oauth.isGrantUsable(orgId))) {
 				yield* reportTick(connection, { _tag: "Disconnected", reason: REVOKED_REASON }, now)
 				return skip("grant revoked")
 			}
@@ -439,45 +436,57 @@ export class SupabaseConnectionService extends Context.Service<
 			// A reconnect keeps the connection id and so its source and project toggles.
 			const connection = yield* dbExecute((db) =>
 				db.transaction(
-					upsertWithSource(
-						db,
-						orgId,
-						{ platform: "supabase", name: integrationSourceName.supabase(organization) },
-						now,
-						db
-							.run(
-								PG.from(SupabaseConnections)
-									.select("sourceId")
-									.where(($) => [$.orgId.eq(orgId)])
-									.limit(1)
-									// Held until the upsert, so a concurrent disconnect cannot delete the reused source.
-									.forUpdate(),
+					Effect.gen(function* () {
+						const [existing] = yield* db.run(
+							PG.from(SupabaseConnections)
+								.select("id", "sourceId", "supabaseOrganizationId")
+								.where(($) => [$.orgId.eq(orgId)])
+								.limit(1)
+								// Held until the upsert, so a concurrent disconnect cannot delete the reused source.
+								.forUpdate(),
+						)
+						const organizationChanged =
+							existing !== undefined && existing.supabaseOrganizationId !== organization.id
+						// The old organization's projects are no longer granted.
+						if (organizationChanged) {
+							yield* db.run(
+								PG.update(SupabaseProjects)
+									.set({ removedAt: now, updatedAt: now })
+									.where(($) => [$.connectionId.eq(existing.id), $.removedAt.isNull()]),
 							)
-							.pipe(Effect.map(([row]) => row?.sourceId ?? null)),
-						(sourceId) =>
-							db
-								.run(
-									PG.insertInto(SupabaseConnections)
-										.values({
-											id: decodeConnectionId(randomUUID()),
-											orgId,
-											sourceId,
-											...binding,
-											createdAt: now,
-											updatedAt: now,
-										})
-										.onConflictDoUpdate({
-											target: ["orgId"],
-											set: () => ({
+						}
+						const rebind = { ...binding, lastDiscoveryError: null, updatedAt: now }
+						return yield* upsertWithSource(
+							db,
+							orgId,
+							{ platform: "supabase", name: integrationSourceName.supabase(organization) },
+							now,
+							Effect.succeed(existing?.sourceId ?? null),
+							(sourceId) =>
+								db
+									.run(
+										PG.insertInto(SupabaseConnections)
+											.values({
+												id: decodeConnectionId(randomUUID()),
+												orgId,
+												sourceId,
 												...binding,
-												lastDiscoveryError: null,
+												createdAt: now,
 												updatedAt: now,
-											}),
-										})
-										.returning(),
-								)
-								.pipe(Effect.map(([row]) => row)),
-					),
+											})
+											.onConflictDoUpdate({
+												target: ["orgId"],
+												// A new organization is due for the next cron tick's discovery.
+												set: () =>
+													organizationChanged
+														? { ...rebind, lastDiscoveryAt: null }
+														: rebind,
+											})
+											.returning(),
+									)
+									.pipe(Effect.map(([row]) => row)),
+						)
+					}),
 				),
 			)
 			if (connection === undefined) {
@@ -485,7 +494,6 @@ export class SupabaseConnectionService extends Context.Service<
 					message: "Failed to save the Supabase connection",
 				})
 			}
-			yield* discoverNow(orgId)
 			return yield* getStatus(orgId)
 		})
 
@@ -565,7 +573,7 @@ export class SupabaseConnectionService extends Context.Service<
 				due,
 				(row) =>
 					Effect.gen(function* () {
-						const orgId = decodeOrgId(row.orgId)
+						const orgId = row.orgId
 						if ((yield* Clock.currentTimeMillis) - started >= TICK_BUDGET_MS) {
 							return { orgId, skipped: "tick budget", projects: 0, removed: 0, error: null }
 						}
@@ -579,7 +587,7 @@ export class SupabaseConnectionService extends Context.Service<
 										error: summarizeCause(cause),
 									}).pipe(
 										Effect.as<SupabaseDiscoverySummary>({
-											orgId: decodeOrgId(row.orgId),
+											orgId: row.orgId,
 											skipped: null,
 											projects: 0,
 											removed: 0,

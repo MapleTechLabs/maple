@@ -53,7 +53,7 @@ const REF_C = "cdefghijklmnopqrstuv"
 const OTHER_ORG_REF = "zyxwvutsrqponmlkjihg"
 
 /** The callback's sequence: start, consent (the fake sees the PKCE challenge), exchange, bind. */
-const connect = (fake: Fake) =>
+const finalize = (fake: Fake) =>
 	Effect.gen(function* () {
 		const oauth = yield* SupabaseOAuthService
 		const connection = yield* SupabaseConnectionService
@@ -67,6 +67,13 @@ const connect = (fake: Fake) =>
 			granted.connectedByUserId,
 			granted.organization,
 		)
+	})
+
+/** The callback, then the dashboard's sync once the popup reports success. */
+const connect = (fake: Fake) =>
+	Effect.gen(function* () {
+		yield* finalize(fake)
+		return yield* (yield* SupabaseConnectionService).sync(ORG)
 	})
 
 const projectRow = (testDb: TestDb, ref: string) =>
@@ -117,7 +124,14 @@ describe("SupabaseConnectionService", () => {
 			],
 		})
 		return Effect.gen(function* () {
-			const status = yield* connect(fake)
+			// The callback binds without discovering, so the popup never waits on Supabase's API.
+			const bound = yield* finalize(fake)
+			assert.isTrue(bound.connected)
+			assert.isNull(bound.lastDiscoveryAt)
+			assert.deepStrictEqual(bound.projects, [])
+			assert.strictEqual(apiCalls(fake, "/v1/projects"), 0)
+
+			const status = yield* (yield* SupabaseConnectionService).sync(ORG)
 			assert.isTrue(status.connected)
 			assert.isFalse(status.revoked)
 			assert.strictEqual(status.organization?.name, "Acme")
@@ -273,6 +287,47 @@ describe("SupabaseConnectionService", () => {
 				failures: 0,
 			})
 			assert.strictEqual(apiCalls(fake, "/v1/projects"), listed + 1)
+		}).pipe(Effect.provide(makeLayer(testDb, fake)))
+	})
+
+	it.effect("reconnecting to a different Supabase organization removes the old one's projects", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A), fakeProject(REF_B)] })
+		return Effect.gen(function* () {
+			yield* connect(fake)
+			const other = { id: "otherorgidotherorgid", slug: "otherorg", name: "Other" }
+			fake.state.organizations = [other]
+			fake.state.projects = [
+				fakeProject(REF_C, { organization_id: other.id, organization_slug: other.slug }),
+			]
+			yield* TestClock.adjust("1 minute")
+
+			const status = yield* finalize(fake)
+			assert.strictEqual(status.organization?.name, "Other")
+			assert.deepStrictEqual(status.projects, [])
+			assert.isNotNull((yield* projectRow(testDb, REF_A))?.removed_at ?? null)
+			assert.isNotNull((yield* projectRow(testDb, REF_B))?.removed_at ?? null)
+			// The new organization is due for the next sweep rather than waiting out the interval.
+			assert.strictEqual((yield* (yield* SupabaseConnectionService).discoverAllOrgs()).discovered, 1)
+			assert.deepStrictEqual(
+				(yield* (yield* SupabaseConnectionService).getStatus(ORG)).projects.map(
+					(project) => project.ref,
+				),
+				[REF_C],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, fake)))
+	})
+
+	it.effect("reconnecting to the same organization keeps its projects", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)] })
+		return Effect.gen(function* () {
+			yield* connect(fake)
+			const status = yield* finalize(fake)
+			assert.deepStrictEqual(
+				status.projects.map((project) => project.ref),
+				[REF_A],
+			)
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})
 

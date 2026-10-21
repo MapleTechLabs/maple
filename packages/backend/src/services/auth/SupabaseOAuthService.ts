@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto"
+import { randomBytes } from "node:crypto"
 import {
 	IntegrationsConfigurationError,
 	IntegrationsNotConnectedError,
@@ -6,12 +6,12 @@ import {
 	IntegrationsRevokedError,
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
-	OrgId,
-	UserId,
+	type OrgId,
+	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OAuthAuthStates } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
@@ -22,29 +22,18 @@ import {
 	type SupabaseApiError,
 	type SupabaseOrganization,
 } from "@maple/backend/services/integrations/supabase/api"
-import { makeOAuthConnectionHelpers, OAUTH_STATE_TTL_MS, toUpstreamError } from "./oauth/connection-helpers"
+import {
+	deriveCodeChallenge,
+	generateCodeVerifier,
+	makeOAuthConnectionHelpers,
+	OAUTH_STATE_TTL_MS,
+	toUpstreamError,
+} from "./oauth/connection-helpers"
 
 const SUPABASE_PROVIDER = "supabase"
 
 /** Where Supabase redirects after consent; registered on the Supabase OAuth app. */
 export const SUPABASE_CALLBACK_PATH = "/api/integrations/supabase/callback"
-
-const decodeOrgId = Schema.decodeUnknownSync(OrgId)
-const decodeUserId = Schema.decodeUnknownSync(UserId)
-
-const generateCodeVerifier = (): string => randomBytes(32).toString("base64url")
-const deriveCodeChallenge = (verifier: string): string =>
-	createHash("sha256").update(verifier).digest("base64url")
-
-interface ResolvedSupabaseOAuthConfig {
-	readonly clientId: string
-	readonly clientSecret: Redacted.Redacted<string>
-	readonly clientAuthentication: "client_secret_basic"
-	readonly deadRefreshTokenStatus: number
-	readonly apiBaseUrl: string
-	readonly authorizeUrl: string
-	readonly tokenUrl: string
-}
 
 const apiBaseOf = (env: EnvConfig) => env.MAPLE_SUPABASE_API_BASE_URL.replace(/\/$/, "")
 
@@ -68,13 +57,13 @@ const resolveConfig = Effect.fn("SupabaseOAuthService.resolveConfig")(function* 
 		clientId,
 		clientSecret,
 		// Live-verified: the token endpoint accepts HTTP Basic client auth alongside PKCE.
-		clientAuthentication: "client_secret_basic",
+		clientAuthentication: "client_secret_basic" as const,
 		// Live-verified: a rotated-away or revoked refresh token gets 404 "No such refresh token found".
 		deadRefreshTokenStatus: 404,
 		apiBaseUrl,
 		authorizeUrl: `${apiBaseUrl}/v1/oauth/authorize`,
 		tokenUrl: `${apiBaseUrl}/v1/oauth/token`,
-	} satisfies ResolvedSupabaseOAuthConfig
+	}
 })
 
 /** Failures involved in resolving a usable Supabase access token. */
@@ -126,12 +115,8 @@ export interface SupabaseOAuthServiceApi {
 		orgId: OrgId,
 		use: (accessToken: string) => Effect.Effect<A, E | SupabaseApiError>,
 	) => Effect.Effect<A, Exclude<E, SupabaseApiError> | SupabaseApiError | SupabaseAccessTokenError>
-	readonly grantStatus: (
-		orgId: OrgId,
-	) => Effect.Effect<
-		{ readonly connected: boolean; readonly revokedAt: number | null; readonly expiresAt: number | null },
-		IntegrationsPersistenceError
-	>
+	/** Whether a grant is stored and not stamped revoked, i.e. discovery may use it. */
+	readonly isGrantUsable: (orgId: OrgId) => Effect.Effect<boolean, IntegrationsPersistenceError>
 	/** Revoke the grant at Supabase (best effort, logged) and drop the stored tokens. */
 	readonly disconnect: (
 		orgId: OrgId,
@@ -152,8 +137,6 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 				env,
 			})
 			const apiBaseUrl = apiBaseOf(env)
-
-			const toUpstream = (error: SupabaseApiError) => toUpstreamError(error.message, error.status)
 
 			const startConnect = Effect.fn("SupabaseOAuthService.startConnect")(function* (
 				orgId: OrgId,
@@ -207,7 +190,7 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 						message: "OAuth state is missing its PKCE verifier. Restart the connect flow.",
 					})
 				}
-				const orgId = decodeOrgId(stateRow.orgId)
+				const orgId = stateRow.orgId
 				yield* Effect.annotateCurrentSpan({ orgId })
 
 				const tokenResponse = yield* oauth.exchangeAuthorizationCode(
@@ -236,7 +219,7 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 						Effect.fail(
 							error.kind === "unauthorized"
 								? new IntegrationsRevokedError({ message: error.message })
-								: toUpstream(error),
+								: toUpstreamError(error.message, error.status),
 						),
 					),
 				)
@@ -284,7 +267,7 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 
 				return {
 					orgId,
-					connectedByUserId: decodeUserId(stateRow.initiatedByUserId),
+					connectedByUserId: stateRow.initiatedByUserId,
 					returnTo: stateRow.returnTo ?? null,
 					organization,
 				}
@@ -294,52 +277,17 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 				orgId: OrgId,
 				use: (accessToken: string) => Effect.Effect<A, E | SupabaseApiError>,
 			) =>
-				Effect.gen(function* () {
-					const config = yield* resolveConfig(env)
-					// A stamped grant failed a refresh or had a fresh token rejected; reconnecting clears it.
-					const { accessToken } = yield* oauth.getValidConnectionToken(config, orgId, {
-						failIfRevoked: true,
-					})
-					return yield* use(accessToken).pipe(
-						Effect.catchIf(isSupabaseTokenRejected, () =>
-							Effect.gen(function* () {
-								const refreshed = yield* oauth.refreshRejectedToken(
-									config,
-									orgId,
-									accessToken,
-								)
-								return yield* use(refreshed.accessToken).pipe(
-									Effect.catchIf(isSupabaseTokenRejected, (rejected) =>
-										oauth.markRejectedTokenRevoked(orgId, refreshed.accessToken).pipe(
-											Effect.tap((stamped) =>
-												Effect.annotateCurrentSpan(
-													"maple.supabase.grant_revoked",
-													stamped,
-												),
-											),
-											Effect.andThen(
-												Effect.fail(
-													new IntegrationsRevokedError({
-														message: rejected.message,
-													}),
-												),
-											),
-										),
-									),
-								)
-							}),
-						),
-					)
-				}).pipe(Effect.withSpan("SupabaseOAuthService.withAccessToken", { attributes: { orgId } }))
+				resolveConfig(env).pipe(
+					Effect.flatMap((config) =>
+						oauth.withRejectedTokenRetry(config, orgId, isSupabaseTokenRejected, use),
+					),
+					Effect.withSpan("SupabaseOAuthService.withAccessToken", { attributes: { orgId } }),
+				)
 
-			const grantStatus = Effect.fn("SupabaseOAuthService.grantStatus")(function* (orgId: OrgId) {
+			const isGrantUsable = Effect.fn("SupabaseOAuthService.isGrantUsable")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const row = yield* oauth.loadConnection(orgId)
-				return {
-					connected: row !== null,
-					revokedAt: row?.revokedAt ?? null,
-					expiresAt: row?.expiresAt ?? null,
-				}
+				return row !== null && row.revokedAt === null
 			})
 
 			/** Best effort: a failed revoke still drops the local grant, and is logged. */
@@ -383,7 +331,7 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 				startConnect,
 				completeConnect,
 				withAccessToken,
-				grantStatus,
+				isGrantUsable,
 				disconnect,
 			} satisfies SupabaseOAuthServiceApi
 		}),
