@@ -232,6 +232,7 @@ const LogDrainSchema = Schema.Struct({
 	id: Schema.String,
 	attributes: Schema.Struct({
 		name: Schema.String,
+		description: Schema.optionalKey(Schema.String),
 		backend_type: Schema.String,
 		config: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
 	}),

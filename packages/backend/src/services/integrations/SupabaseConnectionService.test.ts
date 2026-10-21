@@ -21,7 +21,7 @@ import {
 	fakeProject,
 	makeFakeSupabase,
 } from "./supabase/__fixtures__/fake-supabase-api"
-import { SupabaseConnectionService } from "./SupabaseConnectionService"
+import { MAPLE_DRAIN_DESCRIPTION, SupabaseConnectionService } from "./SupabaseConnectionService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -586,6 +586,57 @@ describe("SupabaseConnectionService log drains", () => {
 			assert.include(error.message, `"maple by hand"`)
 			assert.strictEqual(drainCalls(fake, "POST").length, 0)
 			assert.strictEqual(yield* tokenSourceCount(testDb), 0)
+		}).pipe(Effect.provide(makeLayer(testDb, fake)))
+	})
+
+	it.effect(
+		"a create that fails after Supabase stored it is swept, so no drain is billed unrecorded",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)] })
+			fake.state.drains.set(REF_A, [DATADOG_DRAIN])
+			fake.state.drainCreateFailsAfterStore = true
+			return Effect.gen(function* () {
+				const service = yield* SupabaseConnectionService
+				yield* connect(fake)
+				const error = yield* service
+					.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+					.pipe(Effect.flip)
+				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsUpstreamError")
+				assert.deepStrictEqual(fake.state.drains.get(REF_A), [DATADOG_DRAIN])
+				assert.strictEqual(yield* tokenSourceCount(testDb), 0)
+			}).pipe(Effect.provide(makeLayer(testDb, fake)))
+		},
+	)
+
+	it.effect("a Maple drain no row records is replaced on enable, not mistaken for a hand-made one", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)] })
+		const orphan: FakeLogDrain = {
+			id: "drain-orphan",
+			attributes: {
+				name: "Maple",
+				description: MAPLE_DRAIN_DESCRIPTION,
+				backend_type: "otlp",
+				config: { endpoint: "https://ingest.example.com/v1/logs" },
+			},
+		}
+		fake.state.drains.set(REF_A, [orphan])
+		return Effect.gen(function* () {
+			const service = yield* SupabaseConnectionService
+			const connected = yield* connect(fake)
+			assert.deepStrictEqual(
+				connected.projects[0]?.logDrains.map((drain) => [drain.id, drain.managedByMaple]),
+				[["drain-orphan", true]],
+			)
+			const status = yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+			const stored = fake.state.drains.get(REF_A) ?? []
+			assert.strictEqual(stored.length, 1)
+			assert.notStrictEqual(stored[0]?.id, "drain-orphan")
+			assert.deepStrictEqual(
+				status.projects[0]?.logDrains.map((drain) => drain.id),
+				[stored[0]?.id],
+			)
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})
 

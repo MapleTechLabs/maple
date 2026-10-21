@@ -348,7 +348,7 @@ describe("supabase card", () => {
 				role("switch", { name: "Send storefront's logs through a Supabase log drain" }),
 			).toHaveAttr("aria-checked", "true"),
 			expectView(text("Drain: The log drain was removed in Supabase.")).toExist(),
-			expectView(text("logs via drain", { exact: false })).toExist(),
+			expectView(text("drain broken", { exact: false })).toExist(),
 		)
 	})
 

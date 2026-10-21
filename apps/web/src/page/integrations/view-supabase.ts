@@ -76,7 +76,7 @@ export const lastDataLabel = (
 					? ["metrics unavailable"]
 					: []
 	const logsPart = project.logDrainEnabled
-		? ["logs via drain"]
+		? [project.logDrainError === null ? "logs via drain" : "drain broken"]
 		: !project.logsEnabled
 			? []
 			: project.logsLastPolledAt === null
@@ -109,9 +109,11 @@ const projectSwitch = (
 	)
 
 /** "soc2-archive (datadog, US1)"; a drain to Maple says so instead of naming our host. */
-const drainLabel = (drain: Drain): string =>
+const drainLabel = (project: Project, drain: Drain): string =>
 	drain.managedByMaple
-		? "Maple (managed here)"
+		? project.logDrainEnabled
+			? "Maple (managed here)"
+			: "Maple (left over; turning the drain on replaces it)"
 		: drain.toMaple
 			? `${drain.name} (already sends to Maple)`
 			: `${drain.name} (${drain.destination === null ? drain.backendType : `${drain.backendType}, ${drain.destination}`})`
@@ -148,7 +150,13 @@ const projectRow = (h: H, model: Model, project: Project): Html => {
 	const manual = manualMapleDrain(project)
 	const notes = [
 		...(project.logDrains.length > 0
-			? [noteLine(h, `Drains: ${project.logDrains.map(drainLabel).join(", ")}`, "muted")]
+			? [
+					noteLine(
+						h,
+						`Drains: ${project.logDrains.map((drain) => drainLabel(project, drain)).join(", ")}`,
+						"muted",
+					),
+				]
 			: []),
 		...(project.logDrainEnabled && project.logDrainError !== null
 			? [noteLine(h, `Drain: ${project.logDrainError}`, "error")]

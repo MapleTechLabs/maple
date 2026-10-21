@@ -124,6 +124,8 @@ export interface FakeSupabaseState {
 	drains: Map<string, Array<FakeLogDrain>>
 	/** Forces drain creates to answer this status (402 answers the live Free plan body). */
 	drainCreateStatus: number | null
+	/** Stores the drain, then answers 502: a create Maple never hears succeed. */
+	drainCreateFailsAfterStore: boolean
 	/** Forces drain listings to answer this status. */
 	drainListStatus: number | null
 	/** Forces drain deletes to answer this status. */
@@ -160,6 +162,7 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		readOnlyError: null,
 		drains: new Map(),
 		drainCreateStatus: null,
+		drainCreateFailsAfterStore: false,
 		drainListStatus: null,
 		drainDeleteStatus: null,
 		issued: 0,
@@ -262,6 +265,7 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 			const parsed: { data: { attributes: FakeLogDrain["attributes"] } } = JSON.parse(body)
 			const drain: FakeLogDrain = { id: randomUUID(), attributes: parsed.data.attributes }
 			state.drains.set(ref, [...drains, drain])
+			if (state.drainCreateFailsAfterStore) return json({ message: "Bad gateway" }, 502)
 			return json({ data: { type: "log_drain", ...drain } }, 201)
 		}
 		if (id !== undefined && method === "DELETE") {
