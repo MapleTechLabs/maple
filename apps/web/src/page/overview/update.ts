@@ -309,6 +309,13 @@ const navigate = (model: Model, search: Search): Return => ({
 
 // ENTRY POINTS
 
+const loadChartRuntime = () =>
+	Command.mapMessage(LoadChartRuntime(), (message) =>
+		message._tag === "CompletedLoadChartRuntime"
+			? Message.CompletedLoadChartRuntime()
+			: Message.FailedLoadChartRuntime({ reason: message.reason }),
+	)
+
 /** `init`, with the Clerk gate as an input (`{isClerkAuthEnabled && <SetupChecklist />}`). */
 export const initWith =
 	(isClerk: boolean) =>
@@ -350,11 +357,7 @@ export const initWith =
 				...Command.mapMessages(setup?.commands ?? [], (message) =>
 					Message.GotSetupMessage({ message }),
 				),
-				Command.mapMessage(LoadChartRuntime(), (message) =>
-					message._tag === "CompletedLoadChartRuntime"
-						? Message.CompletedLoadChartRuntime()
-						: Message.FailedLoadChartRuntime({ reason: message.reason }),
-				),
+				loadChartRuntime(),
 			],
 		}
 	}
@@ -372,6 +375,39 @@ export const routeChanged = (
 		: sync({ ...model, search: route.search }, context, "Load")
 
 export const init = initWith(isClerkAuthEnabled)
+
+/** Back after leaving: the last data stays on screen while entry re-reads the clock (snapped, so cached reads serve). */
+export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+	// The open-anomalies key never changes, so entry alone would keep the parked counts.
+	const anomaliesKey = requestKey(context.orgId, "anomalies.serviceCounts", { status: "open" })
+	const anomalies = Keyed.request(Keyed.forgetFailure(model.anomalies), anomaliesKey, "Refresh")
+	// A runtime that failed before parking is asked for again, as entry does.
+	const isRuntimeFailed = model.chartRuntime._tag === "Failed"
+	const revived: Return = {
+		model: {
+			...model,
+			search: route.search,
+			refreshVersion: 0,
+			isReloading: false,
+			facets: Keyed.forgetFailure(model.facets),
+			snapshot: Keyed.forgetFailure(model.snapshot),
+			anomalies: Option.getOrElse(anomalies, () => model.anomalies),
+			usage: Keyed.forgetFailure(model.usage),
+			overviewSeries: Keyed.forgetFailure(model.overviewSeries),
+			logSeries: Keyed.forgetFailure(model.logSeries),
+			refinement: Keyed.forgetFailure(model.refinement),
+			charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
+			chartRuntime: isRuntimeFailed ? { _tag: "Loading" } : model.chartRuntime,
+		},
+		commands: [
+			ReadEntry({ orgId: context.orgId }),
+			LoadSignalPresence({ orgId: context.orgId }),
+			...(Option.isSome(anomalies) ? [FetchAnomalies({ key: anomaliesKey, refresh: false })] : []),
+			...(isRuntimeFailed ? [loadChartRuntime()] : []),
+		],
+	}
+	return withSetup(revived, Setup.revived)
+}
 
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	resolveSetupWindow(sync(model, context, "Load"), context)
@@ -498,6 +534,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		FailedLoadIncidents: ({ orgId }) =>
 			orgId === context.orgId && AsyncData.isLoading(model.incidents)
 				? { model: { ...model, incidents: IncidentsData.Failure({ error: "Unavailable" }) } }
+				: { model },
+		FailedLoadRules: ({ orgId }) =>
+			orgId === context.orgId && AsyncData.isLoading(model.rules)
+				? { model: { ...model, rules: RulesData.Failure({ error: "Unavailable" }) } }
 				: { model },
 		UpdatedRules: ({ orgId, enabled }) =>
 			orgId === context.orgId

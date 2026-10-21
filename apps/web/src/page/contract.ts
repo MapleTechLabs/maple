@@ -156,6 +156,11 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 		route: RouteOf<Tags>,
 		context: PageContext,
 	) => PageReturn<Model, Message>
+	/**
+	 * Makes a page revivable: coming back restores the instance it left, last data on screen. Resets
+	 * what was in flight when it was parked and re-resolves its window the way entry does.
+	 */
+	readonly revive?: (model: Model, route: RouteOf<Tags>, context: PageContext) => PageReturn<Model, Message>
 	/** The namespace pin or time zone changed (an org change builds a new instance). */
 	readonly contextChanged?: (model: Model, context: PageContext) => PageReturn<Model, Message>
 	readonly view: Submodel.View<Model, Message, PageViewInputs>
@@ -362,6 +367,16 @@ export const definePage = <
 			isOwnSlot(slot) && ownsRoute(route) && spec.routeChanged
 				? Option.some(step(slot.key, slot.instance, context, spec.routeChanged(slot.model, route, context)))
 				: Option.none<PageStep<SlotType, WrappedType>>(),
+		isRevivable: spec.revive !== undefined,
+		/** A parked instance of this route's page, back as `instance`; `None` if it cannot be. */
+		revive: (slot: PageSlotBase, route: AppRoute, context: PageContext, instance: number) => {
+			const revive = spec.revive
+			if (!isOwnSlot(slot) || !ownsRoute(route) || revive === undefined)
+				return Option.none<PageStep<SlotType, WrappedType>>()
+			if (slot.key !== keyOf(route) || slot.orgId !== context.orgId)
+				return Option.none<PageStep<SlotType, WrappedType>>()
+			return Option.some(step(slot.key, instance, context, revive(slot.model, route, context)))
+		},
 		/** A navigation away from this instance, held: the page's confirm step, or `None` if it allows it. */
 		blockedNavigation: (slot: PageSlotBase, url: string, context: PageContext) =>
 			isOwnSlot(slot) &&

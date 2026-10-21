@@ -50,7 +50,7 @@ const credentials = (h: H, model: Model): Html =>
 			}),
 			model.keys._tag === "Failed"
 				? keysUnavailable(h)
-				: model.keys._tag === "Loading" || model.keys.privateKey === ""
+				: model.keys._tag === "Pending" || model.keys.privateKey === ""
 					? h.div(
 							[h.Class("space-y-1")],
 							[h.span([h.Class("text-xs text-muted-foreground")], ["Private ingest key"]), skeleton(h, "h-8 w-full")],

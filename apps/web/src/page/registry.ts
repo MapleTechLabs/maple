@@ -1,4 +1,4 @@
-import { Array, Option, Schema } from "effect"
+import { Array, Option, Predicate, Schema } from "effect"
 import { Subscription } from "foldkit"
 import type { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -183,13 +183,14 @@ const pageById = (id: string) => Array.findFirst(pages, (page) => page.id === id
 
 /**
  * Route entry: keep the instance when its key and org are unchanged (it gets `routeChanged`),
- * otherwise build the route's page as instance `nextInstance` and drop the previous one.
+ * otherwise revive a parked instance of the route's page or build it, as instance `nextInstance`.
  */
 export const enterRoute = (
 	current: PageSlot | null,
 	route: AppRoute,
 	context: PageContext,
 	nextInstance: number,
+	parked: ReadonlyArray<PageSlot> = [],
 ): PageTransition =>
 	Option.match(
 		Array.findFirst(pages, (page) => Option.isSome(page.keyOf(route))),
@@ -201,12 +202,62 @@ export const enterRoute = (
 					current._tag === page.id &&
 					current.orgId === context.orgId &&
 					Option.contains(page.keyOf(route), current.key)
-				return isSameInstance
-					? toTransition(page.routeChanged(current, route, context), current)
+				if (isSameInstance) return toTransition(page.routeChanged(current, route, context), current)
+				const revived = Option.flatMap(
+					Array.findFirst(
+						parked,
+						(slot) => slot._tag === page.id && Option.contains(page.keyOf(route), slot.key),
+					),
+					(slot): Option.Option<PageStep<PageSlot, PageMessage>> =>
+						page.revive(slot, route, context, nextInstance),
+				)
+				return Option.isSome(revived)
+					? toTransition(revived, null)
 					: toTransition(page.init(route, context, nextInstance), null)
 			},
 		},
 	)
+
+const ASYNC_DATA_TAGS: ReadonlyArray<string> = [
+	"Idle",
+	"Loading",
+	"Refreshing",
+	"Failure",
+	"Stale",
+	"Success",
+]
+
+/** Some `AsyncData` in the Model is in flight; its answer would be dropped while parked. */
+const hasLoadInFlight = (value: unknown): boolean => {
+	if (Array.isArray(value)) return value.some(hasLoadInFlight)
+	if (!Predicate.isReadonlyObject(value)) return false
+	const tag = value["_tag"]
+	// An `AsyncData`'s own data holds no requests: rows are not walked.
+	if (Predicate.isString(tag) && ASYNC_DATA_TAGS.includes(tag))
+		return tag === "Loading" || tag === "Refreshing"
+	return Object.values(value).some(hasLoadInFlight)
+}
+
+/** How many left pages are kept to revive; each holds its last data. */
+const PARKED_PAGES_MAX = 4
+
+/** The parked pages after leaving `left` for `entered`: newest first, the entered one taken out. */
+export const parkPages = (
+	parked: ReadonlyArray<PageSlot>,
+	left: PageSlot | null,
+	entered: PageSlot | null,
+): ReadonlyArray<PageSlot> => {
+	const isLeft =
+		left !== null &&
+		pageIdentity(left) !== pageIdentity(entered) &&
+		Array.some(pages, (page) => page.id === left._tag && page.isRevivable) &&
+		!hasLoadInFlight(left.model)
+	const sameSlot = (a: PageSlotBase, b: PageSlotBase) => a._tag === b._tag && a.key === b.key
+	return [...(isLeft ? [left] : []), ...parked]
+		.filter((slot) => entered === null || (slot.orgId === entered.orgId && !sameSlot(slot, entered)))
+		.filter((slot, index, all) => all.findIndex((other) => sameSlot(other, slot)) === index)
+		.slice(0, PARKED_PAGES_MAX)
+}
 
 /** Link intent (`page/preload.ts`): the route's page's preload Commands, or none. */
 export const preloadRoute = (

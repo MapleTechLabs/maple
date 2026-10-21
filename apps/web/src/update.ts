@@ -45,6 +45,7 @@ import {
 	changeContext,
 	blockNavigation,
 	enterRoute,
+	parkPages,
 	isBarePageRoute,
 	PageMessage,
 	pageIdentity,
@@ -296,6 +297,7 @@ const writePage =
 		return {
 			model: modifyFields(followed.model, {
 				page: () => transition.slot,
+				parkedPages: (parked) => parkPages(parked, followed.model.page, transition.slot),
 				pageInstances: (built) => Math.max(built, transition.slot?.instance ?? 0),
 				preload: () => held.model,
 			}),
@@ -365,14 +367,26 @@ const foldChatSheet = (model: Model, message: ChatSheet.Message) => {
 const isPlanGated = (model: Model) => Option.exists(planGateOf(model), isRouteHeld)
 
 const loadPage: Step = (model) =>
-	Option.match(Option.filter(pageContextOf(model), () => !isPlanGated(model)), {
-		// Leaving every page (signed out) releases what the last one held, like any page change.
-		onNone: () =>
-			model.page === null && model.preload.holder === ""
-				? { model }
-				: writePage({ slot: null, commands: [], outMessage: Option.none() })(model),
-		onSome: (context) => applyPage(enterRoute(model.page, model.route, context, model.pageInstances + 1))(model),
-	})
+	Option.match(
+		Option.filter(pageContextOf(model), () => !isPlanGated(model)),
+		{
+			// Leaving every page (signed out) releases what the last one held, like any page change.
+			// Parked pages go too: none may come back in the next session or org.
+			onNone: () => {
+				const cleared =
+					model.parkedPages.length === 0 ? model : modifyFields(model, { parkedPages: () => [] })
+				if (model.page === null && model.preload.holder === "") return { model: cleared }
+				const left = writePage({ slot: null, commands: [], outMessage: Option.none() })(cleared)
+				return left.model.parkedPages.length === 0
+					? left
+					: { ...left, model: modifyFields(left.model, { parkedPages: () => [] }) }
+			},
+			onSome: (context) =>
+				applyPage(
+					enterRoute(model.page, model.route, context, model.pageInstances + 1, model.parkedPages),
+				)(model),
+		},
+	)
 
 // ONBOARDING
 

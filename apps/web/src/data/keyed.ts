@@ -7,7 +7,11 @@ import { orgOfKey, type RequestKey } from "./request-key"
  * This is what one `useAtomValue(queryAtom(input))` call site becomes. `retained`: the data on
  * screen answers an earlier key (`useRetainedResult`), so a failure of the new key shows as one.
  */
-export type Keyed<A, E> = Readonly<{ key: RequestKey | null; data: AsyncData.AsyncData<A, E>; retained?: boolean }>
+export type Keyed<A, E> = Readonly<{
+	key: RequestKey | null
+	data: AsyncData.AsyncData<A, E>
+	retained?: boolean
+}>
 
 export const KeyedSchema = <A, AI, E, EI>(
 	dataSchema: Schema.Codec<A, AI>,
@@ -33,8 +37,11 @@ const generationOf = (key: RequestKey | null): number =>
 /** A slot just requested: its key is the one to fetch with. */
 export type Requested<A, E> = Keyed<A, E> & Readonly<{ key: RequestKey }>
 
-const withRetained = <A, E>(key: RequestKey, data: AsyncData.AsyncData<A, E>, retained: boolean): Requested<A, E> =>
-	retained ? { key, data, retained } : { key, data }
+const withRetained = <A, E>(
+	key: RequestKey,
+	data: AsyncData.AsyncData<A, E>,
+	retained: boolean,
+): Requested<A, E> => (retained ? { key, data, retained } : { key, data })
 
 /**
  * `Load` is route entry or an input change; `Refresh` is the explicit refresh (`useAtomRefresh`).
@@ -65,6 +72,10 @@ export const request = <A, E>(
 		}),
 	)
 }
+
+/** A parked page coming back: a failed slot is forgotten, so entry asks again as a fresh mount would. */
+export const forgetFailure = <A, E>(slot: Keyed<A, E>): Keyed<A, E> =>
+	AsyncData.isFailure(slot.data) ? idle() : slot
 
 /**
  * A re-read after a write (reactivity invalidation): always requests, even with a read in flight,

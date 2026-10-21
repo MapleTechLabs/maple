@@ -50,6 +50,8 @@ export const Model = Schema.Struct({
 	page: Schema.NullOr(PageSlot),
 	/** Page instances built so far; the next build is stamped `pageInstances + 1`. */
 	pageInstances: Schema.Number,
+	/** Pages left recently, newest first: going back revives one with its last data (`parkPages`). */
+	parkedPages: Schema.Array(PageSlot),
 	/** The open onboarding or auth-handoff screen (`page/onboarding`): outside the shell and `PageContext`. */
 	onboarding: Schema.NullOr(Onboarding.Model),
 	/** The last Clerk emit (`useUser`, `useOrganization`, `useOrganizationList`), Clerk mode only. */

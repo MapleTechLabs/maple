@@ -39,6 +39,7 @@ const signedIn = (): Model => ({
 	chatSheet: ChatSheet.init(),
 	page: null,
 	pageInstances: 0,
+	parkedPages: [],
 	onboarding: null,
 	clerkSnapshot: null,
 	customer: initCustomer(),

@@ -64,7 +64,8 @@ export type Incident = typeof Incident.Type
 /** `Failure`: the live alert sync failed or stalled; the page reads it as no incidents. */
 export const IncidentsData = AsyncData.Schema(Schema.Array(Incident), Schema.Literal("Unavailable"))
 /** `useAlertRulesList()`, reduced to each rule's `enabled`. */
-export const RulesData = AsyncData.Schema(Schema.Array(Schema.Boolean), Schema.Never)
+/** `Failure`: the live rules sync failed or stalled; the banner stays out. */
+export const RulesData = AsyncData.Schema(Schema.Array(Schema.Boolean), Schema.Literal("Unavailable"))
 
 /** `ServiceDetailTimeSeriesPoint` (@maple/web-data/warehouse/services): one overview bucket. */
 export const OverviewPoint = Schema.Struct({
