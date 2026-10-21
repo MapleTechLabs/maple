@@ -188,6 +188,7 @@ const TracerLive = Maple.layer({
 		sampleRate: 0.1, // record 10% of sessions (default 1)
 		maskAllInputs: true, // default
 		maskAllText: false, // default
+		canvasFps: 1, // record <canvas> (e.g. charts) at 1 fps; off by default, never with maskAllText
 	},
 })
 ```

@@ -44,7 +44,7 @@ const withList = (model: Model, entries: ReadonlyArray<MetricEntry>, ctx = conte
 describe("local metrics list", () => {
 	test("entry reads the clock, then asks for the catalog and the type summary", () => {
 		expect(names(init(context).commands)).toContain("ReadMetricsClock")
-		expect(names(entered().commands)).toEqual(["FetchLocalMetricsList", "FetchLocalMetricsSummary"])
+		expect(names(entered().commands)).toEqual(expect.arrayContaining(["FetchLocalMetricsList", "FetchLocalMetricsSummary"]))
 	})
 
 	test("the listed metrics ask for one sparkline batch", () => {

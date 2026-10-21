@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url"
-import { defineConfig } from "vitest/config"
+import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
 	resolve: {
@@ -10,6 +10,7 @@ export default defineConfig({
 	test: {
 		environment: "node",
 		include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
+		exclude: [...configDefaults.exclude, "**/.claude/**", "**/.context/**", "**/worktrees/**"],
 		// Forked processes, as in packages/backend. Threads measured ~3s faster here,
 		// but on Linux the one process hosting every PGlite thread keeps the memory
 		// freed at each file's end; a fork hands it back at exit. `isolate` stays on.

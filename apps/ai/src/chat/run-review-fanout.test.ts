@@ -16,7 +16,8 @@ import { assert, describe, it } from "vitest"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
-import type { ResolvedModel } from "../platform/Llm"
+import { noRepositoryWarmup } from "../../test/chat/tool-executor"
+import { layerLlm, type ResolvedModel } from "../platform/Llm"
 import { runChatTurn } from "./run"
 import { makeReviewLedger } from "./review-ledger"
 import { makeRunUsage } from "./tools"
@@ -45,6 +46,9 @@ const answer = (text: string): ReadonlyArray<Response.StreamPartEncoded> => [
 	{ type: "finish", reason: "stop", usage: USAGE },
 ]
 
+/** Placeholder provider clients the scripted model never calls; `runChatTurn` requires them. */
+const llmClients = layerLlm({})
+
 /** One response per model call, parent and child alike, in the order the engine asks. */
 const scriptedModel = (script: ReadonlyArray<ReadonlyArray<Response.StreamPartEncoded>>): ResolvedModel => {
 	let calls = 0
@@ -60,7 +64,7 @@ const scriptedModel = (script: ReadonlyArray<ReadonlyArray<Response.StreamPartEn
 			Layer.effect(
 				LanguageModel.LanguageModel,
 				LanguageModel.make({
-					generateText: () => Effect.succeed([...respond()]),
+					generateText: () => Effect.die("the turn streams; generateText is never called"),
 					streamText: () => Stream.suspend(() => Stream.fromIterable(respond())),
 				}),
 			),
@@ -72,6 +76,7 @@ describe("runChatTurn review_files children", () => {
 	it("gives a child its own repeated-call budget and files its spans under the review", async () => {
 		const dispatched: Array<string> = []
 		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
 			execute: (_tenant, name) =>
 				Effect.sync(() => {
 					dispatched.push(name)
@@ -112,7 +117,7 @@ describe("runChatTurn review_files children", () => {
 				usage: makeRunUsage(),
 				holdsTurn: () => true,
 				append: () => {},
-			}).pipe(Effect.withTracer(tracer)),
+			}).pipe(Effect.withTracer(tracer), Effect.provide(llmClients)),
 		)
 
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
@@ -137,6 +142,7 @@ describe("runChatTurn review_files children", () => {
 		let childInterrupted = false
 		// The child's first call never answers on its own, as a worker mid-tool does.
 		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
 			execute: () =>
 				Effect.sync(() => supersede.abort("superseded")).pipe(
 					Effect.andThen(Effect.never),
@@ -181,6 +187,7 @@ describe("runChatTurn review_files children", () => {
 				interruptOnAbort(supersede.signal, observability),
 				Effect.withSpan("chat.turn"),
 				Effect.withTracer(tracer),
+				Effect.provide(llmClients),
 			),
 		)
 

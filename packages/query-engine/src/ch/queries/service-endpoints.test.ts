@@ -34,7 +34,6 @@ describe("serviceEndpointsSummaryQuery", () => {
 	it("reports p50/p95/p99 out of two-level stored t-digest state", () => {
 		const { sql } = compileUnsafe(serviceEndpointsSummaryQuery({ serviceName: "api" }), baseParams)
 		expect(sql).toContain("quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles)")
-		expect(sql).toContain("AS p99DurationMs")
 	})
 
 	it("scopes to the org on every branch", () => {

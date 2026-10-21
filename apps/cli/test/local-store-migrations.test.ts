@@ -66,6 +66,7 @@ import {
 	type MigrationModuleContext,
 	type MigrationJournal,
 } from "../src/server/local-store-migrations"
+import type { MigrationDb } from "../src/server/local-store-migration-module"
 import {
 	comparePhysicalSchema,
 	type LocalSchemaManifest,
@@ -475,7 +476,7 @@ describe("local migration registry", () => {
 			"local-0001-to-0002-fixture",
 		])
 		expect(validateMigrationRegistry([legacyToCurrentModule, v2])).toHaveLength(2)
-		const context = {
+		const context: MigrationModuleContext = {
 			dataDir: "/tmp/source",
 			sourceDataDir: "/tmp/source",
 			targetDataDir: "/tmp/target",
@@ -487,13 +488,14 @@ describe("local migration registry", () => {
 				moduleVersion: v2.moduleVersion,
 				from: v2.from,
 				to: v2.to,
-				status: "pending" as const,
+				status: "pending",
 			},
-			openSource: async () => undefined,
-			openTarget: async () => undefined,
+			openSource: () => Promise.reject(new Error("fixture module never opens the source")),
+			openTarget: () => Promise.reject(new Error("fixture module never opens the target")),
+			closeStores: async () => undefined,
 			ensureCapacity: async () => undefined,
 			saveStep: async () => undefined,
-		} as MigrationModuleContext
+		}
 		await executeMigrationModule(v2, context, context.step, { prepareTarget: true })
 		expect(events).toEqual(["preflight", "prepareTarget", "apply", "verify"])
 
@@ -785,7 +787,7 @@ describe("durable migration recovery", () => {
 				"local-0000-to-0001-raw-replay",
 			])
 			const recovered = await runLocalStoreMigration({ dataDir })
-			expect(recovered.phase).toBe("promoted")
+			expect("phase" in recovered && recovered.phase).toBe("promoted")
 			expect(await readMigrationJournal(dataDir)).toBeNull()
 			expect(await Bun.file(migrationHistoryPath(dataDir, migrationId)).exists()).toBe(true)
 			expect(readMarker(dataDir)).toMatchObject({
@@ -1662,7 +1664,7 @@ describe("legacy raw replay 64-bit exactness", () => {
 		const sourceQueries: string[] = []
 		const targetStatements: string[] = []
 		let call = 0
-		const fakeSourceDb = {
+		const fakeSourceDb: MigrationDb = {
 			query: (sql: string): string => {
 				sourceQueries.push(sql)
 				call += 1
@@ -1675,8 +1677,11 @@ describe("legacy raw replay 64-bit exactness", () => {
 					__maple_tie_break: "3",
 				})}\n`
 			},
+			exec: (sql: string): void => {
+				sourceQueries.push(sql)
+			},
 		}
-		const fakeTargetDb = {
+		const fakeTargetDb: MigrationDb = {
 			query: (sql: string): string => {
 				targetStatements.push(sql)
 				return ""
@@ -1685,7 +1690,7 @@ describe("legacy raw replay 64-bit exactness", () => {
 				targetStatements.push(sql)
 			},
 		}
-		const context = {
+		const context: MigrationModuleContext = {
 			dataDir: "/tmp/fake",
 			sourceDataDir: "/tmp/fake-source",
 			targetDataDir: "/tmp/fake-target",
@@ -1699,13 +1704,12 @@ describe("legacy raw replay 64-bit exactness", () => {
 				to: LOCAL_SCHEMA_V1,
 				status: "running" as const,
 			},
-			openSource: async (fn: (db: typeof fakeSourceDb) => string | Promise<string>) => fn(fakeSourceDb),
-			openTarget: async (fn: (db: typeof fakeTargetDb) => string | void | Promise<string | void>) =>
-				fn(fakeTargetDb),
+			openSource: async (fn) => fn(fakeSourceDb),
+			openTarget: async (fn) => fn(fakeTargetDb),
 			closeStores: async () => undefined,
 			ensureCapacity: async () => undefined,
 			saveStep: async () => undefined,
-		} as MigrationModuleContext
+		}
 		const columns = [
 			{ name: "Timestamp", type: "DateTime64(9)" },
 			{ name: "Duration", type: "UInt64" },

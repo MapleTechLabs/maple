@@ -28,7 +28,9 @@ describe("hostMetricSpec", () => {
 	it("reads filesystem utilization from the used state only", () => {
 		const sql = hostGaugeSql("filesystem")
 		expect(sql).toContain("Attributes['state'] = 'used'")
-		expect(sql).toContain("Attributes['mountpoint']")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the per-disk grain
+		expect(sql).toContain("Attributes['mountpoint'] AS attributeValue")
+		expect(sql).toContain("GROUP BY bucket, attributeValue")
 	})
 
 	// CPU and memory chart every state as a stacked breakdown.

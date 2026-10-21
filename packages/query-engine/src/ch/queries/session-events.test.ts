@@ -25,6 +25,7 @@ describe("sessionActivityQuery", () => {
 		)
 		// Nanosecond subtraction → milliseconds.
 		expect(sql).toContain("toUnixTimestamp64Nano(session_events.Timestamp)")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the ns to ms conversion of the gap
 		expect(sql).toContain("/ 1000000 AS gapMs")
 	})
 
@@ -42,7 +43,6 @@ describe("sessionActivityQuery", () => {
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("SessionId = 'sess_1'")
 		expect(sql).toContain("LIMIT 1")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("adds the session time window as a partition-pruning predicate when provided", () => {

@@ -151,14 +151,14 @@ export type StepProgress = { readonly [field: string]: string | number | boolean
 export interface StepCustom {
 	/** Strictly decodes the journaled progress; `apply` returns the same shape. */
 	readonly progress: Schema.Codec<StepProgress, unknown>
-	readonly apply: (db: Chdb, state: StepState) => StepProgress
-	readonly verify: (db: Chdb, state: StepState, progress: StepProgress) => void
+	readonly apply: (db: Pick<Chdb, "query" | "exec">, state: StepState) => StepProgress
+	readonly verify: (db: Pick<Chdb, "query" | "exec">, state: StepState, progress: StepProgress) => void
 }
 
 export const customStep = <Progress extends StepProgress>(custom: {
 	readonly progress: Schema.Codec<Progress, unknown>
-	readonly apply: (db: Chdb, state: StepState) => Progress
-	readonly verify: (db: Chdb, state: StepState, progress: Progress) => void
+	readonly apply: (db: Pick<Chdb, "query" | "exec">, state: StepState) => Progress
+	readonly verify: (db: Pick<Chdb, "query" | "exec">, state: StepState, progress: Progress) => void
 }): StepCustom => {
 	const decodeProgress = strictDecoder(custom.progress)
 	return {
@@ -291,16 +291,19 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 		return INSTALLED
 	}
 
-	const scalarCount = (db: Chdb, sql: string): string => {
+	const scalarCount = (db: Pick<Chdb, "query" | "exec">, sql: string): string => {
 		const count = decodeJsonObjectRows(db.query(sql))[0]?.count
 		return isCount(count) ? count : fail(`${label} count query returned no row: ${sql}`)
 	}
 
-	const run = (db: Chdb, operations: ReadonlyArray<StepOperation> | undefined): void => {
+	const run = (
+		db: Pick<Chdb, "query" | "exec">,
+		operations: ReadonlyArray<StepOperation> | undefined,
+	): void => {
 		for (const statement of stepStatements(operations ?? [])) db.exec(statement)
 	}
 
-	const verifyCounts = (db: Chdb, counts: StepCounts, state: StepState): void => {
+	const verifyCounts = (db: Pick<Chdb, "query" | "exec">, counts: StepCounts, state: StepState): void => {
 		const expected = decodeCountGroup(counts.group, state[counts.group])
 		const found = counts.checks.map((check) => ({
 			check,

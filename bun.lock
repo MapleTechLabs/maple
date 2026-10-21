@@ -31,6 +31,7 @@
         "tsrs": "0.15.0-ts7.1.0-dev.20260929",
         "turbo": "^2.11.7",
         "typescript": "catalog:tooling",
+        "vitest": "catalog:",
       },
     },
     "apps/ai": {
@@ -700,6 +701,7 @@
       "devDependencies": {
         "@effect/language-service": "catalog:effect",
         "@maple/widgets": "workspace:*",
+        "@types/bun": "^1.4.2",
         "@types/node": "catalog:tooling",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",

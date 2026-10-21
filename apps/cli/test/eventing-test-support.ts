@@ -69,6 +69,32 @@ export const metricRecorder = () => {
 	}
 }
 
+const unexpected = (method: string) => Effect.die(new Error(`unexpected eventing call: ${method}`))
+
+/** A runtime whose methods die unless overridden, for handler tests that touch one or two. */
+export const stubEventing = (overrides: Partial<LocalEventingRuntimeApi>): LocalEventingRuntimeApi => ({
+	hasActiveSource: () => unexpected("hasActiveSource"),
+	prepareActivation: () => unexpected("prepareActivation"),
+	commitActivation: () => unexpected("commitActivation"),
+	activate: () => unexpected("activate"),
+	listActive: unexpected("listActive"),
+	evaluateOtlp: () => unexpected("evaluateOtlp"),
+	persistFailures: () => unexpected("persistFailures"),
+	stage: () => unexpected("stage"),
+	markReady: () => unexpected("markReady"),
+	listReady: () => unexpected("listReady"),
+	listStaged: () => unexpected("listStaged"),
+	listConsumers: unexpected("listConsumers"),
+	registerConsumer: () => unexpected("registerConsumer"),
+	disableConsumer: () => unexpected("disableConsumer"),
+	claimReady: () => unexpected("claimReady"),
+	acknowledgeClaim: () => unexpected("acknowledgeClaim"),
+	acceptDeliveryGap: () => unexpected("acceptDeliveryGap"),
+	abandonEvents: () => unexpected("abandonEvents"),
+	health: unexpected("health"),
+	...overrides,
+})
+
 /** Runs a serve.ts request effect against a runtime (real or a partial stub). */
 export const serveWith = <A>(
 	eventing: LocalEventingRuntimeApi,

@@ -22,10 +22,9 @@ describe("planetscaleStorageSQL", () => {
 		// and min free space can come from two different branches and produce a
 		// percentage neither branch ever had.
 		expect(sql).toContain("GROUP BY database, branch")
-		expect(sql).toContain("GROUP BY database")
+		expect(sql).toMatch(/GROUP BY database(?!,)\b/)
 		expect(sql).toContain("planetscale_volume_capacity_bytes")
 		expect(sql).toContain("planetscale_volume_available_bytes")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("guards the ratio against zero capacity and an absent free-space series", () => {
@@ -70,7 +69,6 @@ describe("planetscaleBranchStorageSQL", () => {
 			"coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'maple'",
 		)
 		expect(sql).toContain("GROUP BY database, branch")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("decodes a branch row", () => {

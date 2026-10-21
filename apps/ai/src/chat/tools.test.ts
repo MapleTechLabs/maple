@@ -127,7 +127,7 @@ describe("buildDiagnosisCompletion", () => {
 		const { spans, tracer } = makeRecordingTracer()
 
 		await Effect.runPromise(
-			completion!.handlers[SUBMIT_DIAGNOSIS](sampleSubmission(), {} as never).pipe(
+			completion!.handlers[SUBMIT_DIAGNOSIS](sampleSubmission()).pipe(
 				Effect.withSpan(`execute_tool ${SUBMIT_DIAGNOSIS}`),
 				Effect.withTracer(tracer),
 			),
@@ -191,9 +191,7 @@ describe("buildReviewCompletion", () => {
 			return {
 				completion: completion!,
 				call: (submission: PrReviewSubmission) =>
-					Effect.runPromise(
-						Effect.result(completion!.handlers[SUBMIT_REVIEW](submission, {} as never)),
-					),
+					Effect.runPromise(Effect.result(completion!.handlers[SUBMIT_REVIEW](submission))),
 			}
 		}
 		const CLEAN: PrReviewSubmission = { verdict: "clean", summary: "Adds a retry to the order client." }
@@ -267,9 +265,9 @@ describe("record_finding", () => {
 			filed,
 			ledger,
 			save: (finding: PrReviewFindingSubmission) =>
-				Effect.runPromise(Effect.result(handlers[RECORD_FINDING](finding, {} as never))),
+				Effect.runPromise(Effect.result(handlers[RECORD_FINDING](finding))),
 			submit: (submission: PrReviewSubmission) =>
-				Effect.runPromise(Effect.result(handlers[SUBMIT_REVIEW](submission, {} as never))),
+				Effect.runPromise(Effect.result(handlers[SUBMIT_REVIEW](submission))),
 		}
 	}
 

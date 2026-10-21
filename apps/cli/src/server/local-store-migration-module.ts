@@ -43,6 +43,9 @@ export interface StateDispositionEntry {
  * step through its current-schema constant. */
 export type MigrationStepJournal = typeof MigrationStepJournalSchema.Type
 
+/** The chDB surface a migration module may touch; tests can hand in a fake. */
+export type MigrationDb = Pick<Chdb, "query" | "exec">
+
 export interface MigrationDbOptions {
 	readonly schemaSql?: string
 	readonly bootstrapSchema?: boolean
@@ -64,8 +67,14 @@ export interface MigrationModuleContext {
 	readonly target: LocalSchemaIdentity
 	readonly cutoffAt: string
 	readonly step: MigrationStepJournal
-	readonly openSource: <A>(fn: (db: Chdb) => A | Promise<A>, options?: MigrationDbOptions) => Promise<A>
-	readonly openTarget: <A>(fn: (db: Chdb) => A | Promise<A>, options?: MigrationDbOptions) => Promise<A>
+	readonly openSource: <A>(
+		fn: (db: MigrationDb) => A | Promise<A>,
+		options?: MigrationDbOptions,
+	) => Promise<A>
+	readonly openTarget: <A>(
+		fn: (db: MigrationDb) => A | Promise<A>,
+		options?: MigrationDbOptions,
+	) => Promise<A>
 	/** Close the coordinator-owned chDB session before a module performs a
 	 * filesystem-level clone of a clean, stopped store. */
 	readonly closeStores: () => Promise<void>

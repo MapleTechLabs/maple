@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
-import { ApiKeyNotFoundError, OrgId, UserId } from "@maple/domain/http"
+import { ApiKeyId, ApiKeyNotFoundError, OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { ApiKeysService } from "./ApiKeysService"
 import {
@@ -10,6 +10,7 @@ import {
 	queryFirstRow,
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
+import { ORG_A, ORG_B, USER_A, USER_B } from "@maple/backend/platform/test-two-orgs"
 
 const trackedDbs: TestDb[] = []
 
@@ -272,6 +273,68 @@ describe("ApiKeysService.touchLastUsed", () => {
 				stamped.getTime(),
 				"SQL gate makes the cold-isolate touch a zero-row update",
 			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+})
+
+/**
+ * Key ids are global UUIDs, so the `org_id` predicate is the only thing standing
+ * between one org and another's keys. Each case acts as org B on org A's key and
+ * then proves A's key still authenticates, unrevoked, with no successor.
+ */
+describe("ApiKeysService across orgs", () => {
+	const expectNotFound = <A, E>(exit: Exit.Exit<A, E>) => {
+		assert.isTrue(Exit.isFailure(exit))
+		assert.instanceOf(Option.getOrUndefined(Exit.findErrorOption(exit)), ApiKeyNotFoundError)
+	}
+
+	const seedBoth = Effect.gen(function* () {
+		const svc = yield* ApiKeysService
+		const keyA = yield* svc.create(ORG_A, USER_A, { name: "a-key" })
+		const keyB = yield* svc.create(ORG_B, USER_B, { name: "b-key" })
+		return { keyA, keyB }
+	})
+
+	// The org's only key is still live, still authenticates, and still as that org.
+	const assertUntouched = (key: { readonly id: ApiKeyId; readonly secret: string }, orgId: OrgId) =>
+		Effect.gen(function* () {
+			const svc = yield* ApiKeysService
+			const resolved = yield* svc.resolveByKey(key.secret)
+			assert.deepStrictEqual(
+				Option.map(resolved, (value) => [value.orgId, value.keyId]),
+				Option.some([orgId, key.id]),
+			)
+			const { keys } = yield* svc.list(orgId)
+			assert.deepStrictEqual(
+				keys.map((listed) => [listed.id, listed.revoked]),
+				[[key.id, false]],
+			)
+		})
+
+	it.effect("cannot roll another org's key", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const svc = yield* ApiKeysService
+			const { keyA, keyB } = yield* seedBoth
+
+			expectNotFound(yield* Effect.exit(svc.roll(ORG_B, USER_B, keyA.id, {})))
+
+			yield* assertUntouched(keyA, ORG_A)
+			yield* assertUntouched(keyB, ORG_B)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("cannot revoke or read another org's key", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const svc = yield* ApiKeysService
+			const { keyA, keyB } = yield* seedBoth
+
+			expectNotFound(yield* Effect.exit(svc.revoke(ORG_B, keyA.id)))
+			expectNotFound(yield* Effect.exit(svc.get(ORG_B, keyA.id)))
+
+			yield* assertUntouched(keyA, ORG_A)
+			yield* assertUntouched(keyB, ORG_B)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })

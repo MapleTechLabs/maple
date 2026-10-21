@@ -6,7 +6,7 @@
 		"dev": "vite dev --port ${PORT:-3471} --host ${HOST:-127.0.0.1}",
 		"build": "vite build",
 		"test": "vitest run --passWithNoTests",
-		"typecheck": "tsrs --noEmit",
+		"typecheck": "tsrs --noEmit && tsrs --noEmit -p e2e/tsconfig.json",
 		"test:e2e": "cd e2e && e2e run",
 		"og:fonts": "bun scripts/build-og-fonts.ts"
 	},

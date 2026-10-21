@@ -53,10 +53,7 @@ describe("bucketTimeseries", () => {
 		const out = bucketTimeseries(rows, keys, 3)
 		// Ranked by total magnitude: c (200) > b (20) > d (4) > a (2).
 		expect(out.keys).toEqual(["c", "b", OTHER_LABEL])
-		const row0 = out.rows[0] as Record<string, number>
-		expect(row0.c).toBe(100)
-		expect(row0.b).toBe(10)
-		expect(row0[OTHER_LABEL]).toBe(3) // a (1) + d (2)
-		expect(row0.bucket).toBe("t0")
+		// Other = a (1) + d (2).
+		expect(out.rows[0]).toMatchObject({ bucket: "t0", c: 100, b: 10, [OTHER_LABEL]: 3 })
 	})
 })

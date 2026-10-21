@@ -24,6 +24,7 @@ function span(
 		serviceName: opts.serviceName ?? "svc",
 		spanKind: opts.spanKind ?? "Internal",
 		durationMs: opts.durationMs ?? 1,
+		startTime: opts.startTime ?? "2026-01-01 00:00:00",
 		statusCode: opts.statusCode ?? "Unset",
 		statusMessage: opts.statusMessage ?? "",
 		attributes: opts.attributes ?? {},

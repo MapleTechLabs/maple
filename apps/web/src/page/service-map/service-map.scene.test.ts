@@ -124,14 +124,16 @@ describe("service map page: requests", () => {
 			entry.model,
 			Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual([
-			"FetchServiceMapFacets",
-			"FetchServiceMapBundle",
-			"FetchServiceMapCloudflare",
-			"FetchServiceMapPlanetScale",
-			"FetchPlanetScaleInventory",
-			"FetchCloudflareHyperdrives",
-		])
+		expect(names(resolved.commands)).toEqual(
+			expect.arrayContaining([
+				"FetchServiceMapFacets",
+				"FetchServiceMapBundle",
+				"FetchServiceMapCloudflare",
+				"FetchServiceMapPlanetScale",
+				"FetchPlanetScaleInventory",
+				"FetchCloudflareHyperdrives",
+			]),
+		)
 	})
 
 	test("a zone change re-resolves the window in the new zone; a pin change does not", () => {

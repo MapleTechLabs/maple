@@ -1,5 +1,7 @@
 {
 	"include": ["src/**/*.ts", "src/**/*.tsx"],
+	// TODO(test-typecheck): tests stay out until `bun run typecheck:test` is clean (217 errors
+	// on 2026-10-21), then drop this exclude and the separate tsconfig.test.json.
 	"exclude": ["src/**/*.test.ts"],
 	"compilerOptions": {
 		"target": "ES2022",

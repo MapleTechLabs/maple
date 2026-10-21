@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
-import { homedir, tmpdir } from "node:os"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect, Schema } from "effect"
 import schemaSql from "../src/server/schema/local-schema.sql" with { type: "text" }
@@ -9,6 +9,7 @@ import { decodeJsonEachRow } from "../src/server/chdb-rows"
 import { buildLocalSchemaManifest } from "../src/server/schema-manifest"
 import { LOCAL_SCHEMA_MANIFEST } from "../src/server/schema-identity"
 import { serviceMapRollupInserts } from "../src/server/service-map-rollup"
+import { describeWithChdb } from "./libchdb-test-support"
 import {
 	pendingDeletePath,
 	resumePendingDelete,
@@ -89,17 +90,11 @@ describe("scoped delete plan", () => {
 	})
 })
 
-// Needs a real libchdb; skipped where none is installed.
-const libchdbAvailable =
-	(process.env.MAPLE_LIBCHDB !== undefined && existsSync(process.env.MAPLE_LIBCHDB)) ||
-	existsSync(join(homedir(), ".maple", "bin", "libchdb.so")) ||
-	existsSync(join(homedir(), ".maple", "bin", "libchdb.dylib"))
-
 const HOUR_MS = 3_600_000
 const iso = (ms: number) => new Date(ms).toISOString().replace("T", " ").replace("Z", "")
 const decodeCount = decodeJsonEachRow(Schema.Struct({ n: Schema.String }))
 
-describe.skipIf(!libchdbAvailable)("scoped delete against chDB", () => {
+describeWithChdb("scoped delete against chDB", () => {
 	let root = ""
 	let dataDir = ""
 	let db: Chdb
@@ -116,7 +111,9 @@ describe.skipIf(!libchdbAvailable)("scoped delete against chDB", () => {
 		)
 	}
 	const attributeKey = (key: string) =>
-		count(`SELECT toString(sum(UsageCount)) AS n FROM attribute_keys_hourly WHERE AttributeKey = '${key}'`)
+		count(
+			`SELECT toString(sum(UsageCount)) AS n FROM attribute_keys_hourly WHERE AttributeKey = '${key}'`,
+		)
 
 	const span = (at: number, id: string, service: string, env: string, parent = "", kind = "Server") =>
 		`('local', '${iso(at)}', 't-${id}', 's-${id}', '${parent}', 'GET /x', '${kind}', '${service}', 1000000, 'Error', ` +
@@ -169,7 +166,13 @@ describe.skipIf(!libchdbAvailable)("scoped delete against chDB", () => {
 		Effect.runPromise(runScopedDelete(db, LOCAL_SCHEMA_MANIFEST, dataDir, request, { dryRun }))
 
 	test("seed reached the derived tables", () => {
-		for (const table of ["trace_list_mv", "service_overview_hourly", "error_events", "service_usage", "metric_catalog"])
+		for (const table of [
+			"trace_list_mv",
+			"service_overview_hourly",
+			"error_events",
+			"service_usage",
+			"metric_catalog",
+		])
 			expect(serviceRows(table, "drop")).toBeGreaterThan(0)
 		expect(attributeKey("attr.drop")).toBe(3)
 	})
@@ -194,7 +197,9 @@ describe.skipIf(!libchdbAvailable)("scoped delete against chDB", () => {
 		expect(
 			count("SELECT toString(sum(TraceCount)) AS n FROM service_usage WHERE ServiceName = 'drop'"),
 		).toBe(2)
-		expect(count("SELECT toString(sum(LogCount)) AS n FROM service_usage WHERE ServiceName = 'drop'")).toBe(1)
+		expect(
+			count("SELECT toString(sum(LogCount)) AS n FROM service_usage WHERE ServiceName = 'drop'"),
+		).toBe(1)
 		expect(attributeKey("attr.drop")).toBe(2)
 		expect(existsSync(pendingDeletePath(dataDir))).toBe(false)
 	})
@@ -212,7 +217,10 @@ describe.skipIf(!libchdbAvailable)("scoped delete against chDB", () => {
 			expect({ table, rows: serviceRows(table, "drop") }).toEqual({ table, rows: 0 })
 			// Edges from keep to drop go too: they were derived from drop's spans.
 			if (table !== "service_map_edges_hourly")
-				expect({ table, rows: serviceRows(table, "keep") }).toEqual({ table, rows: keepBefore[table]! })
+				expect({ table, rows: serviceRows(table, "keep") }).toEqual({
+					table,
+					rows: keepBefore[table]!,
+				})
 		}
 		expect(serviceRows("service_map_edges_hourly", "keep")).toBe(1)
 		expect(serviceRows("error_fingerprints_minutely", "drop")).toBe(0)
@@ -245,7 +253,7 @@ describe.skipIf(!libchdbAvailable)("scoped delete against chDB", () => {
 	})
 })
 
-describe.skipIf(!libchdbAvailable)("namespace delete against chDB", () => {
+describeWithChdb("namespace delete against chDB", () => {
 	let root = ""
 	let dataDir = ""
 	let db: Chdb
@@ -285,7 +293,11 @@ describe.skipIf(!libchdbAvailable)("namespace delete against chDB", () => {
 	test("removes one namespace and keeps a same-named service in another", async () => {
 		expect(edge("web")).toBe(1)
 		expect(edge("caller")).toBe(1)
-		expect(count("SELECT toString(sum(SpanCount)) AS n FROM service_operations_hourly WHERE ServiceName = 'api'")).toBe(2)
+		expect(
+			count(
+				"SELECT toString(sum(SpanCount)) AS n FROM service_operations_hourly WHERE ServiceName = 'api'",
+			),
+		).toBe(2)
 
 		const report = await Effect.runPromise(
 			runScopedDelete(db, LOCAL_SCHEMA_MANIFEST, dataDir, { namespace: "pr-1" }, { dryRun: false }),
@@ -295,13 +307,22 @@ describe.skipIf(!libchdbAvailable)("namespace delete against chDB", () => {
 		expect(strategy("error_events")).toBe("rebuild")
 		expect(strategy("service_map_edges_hourly")).toBe("rebuild")
 
-		expect(count("SELECT toString(count()) AS n FROM traces WHERE ResourceAttributes['service.namespace'] = 'pr-1'")).toBe(0)
+		expect(
+			count(
+				"SELECT toString(count()) AS n FROM traces WHERE ResourceAttributes['service.namespace'] = 'pr-1'",
+			),
+		).toBe(0)
 		expect(count("SELECT toString(count()) AS n FROM traces WHERE ServiceName = 'api'")).toBe(1)
-		expect(count("SELECT toString(count()) AS n FROM trace_list_mv WHERE ServiceNamespace = 'pr-1'")).toBe(0)
+		expect(
+			count("SELECT toString(count()) AS n FROM trace_list_mv WHERE ServiceNamespace = 'pr-1'"),
+		).toBe(0)
 		for (const [table, plan] of Object.entries(TABLE_DELETE_PLAN)) {
 			if (plan.strategy !== "scoped" || plan.service === null) continue
 			const where = plan.service.map((c) => `${c} = 'web'`).join(" OR ")
-			expect({ table, rows: count(`SELECT toString(count()) AS n FROM ${table} WHERE ${where}`) }).toEqual({
+			expect({
+				table,
+				rows: count(`SELECT toString(count()) AS n FROM ${table} WHERE ${where}`),
+			}).toEqual({
 				table,
 				rows: 0,
 			})
@@ -309,9 +330,19 @@ describe.skipIf(!libchdbAvailable)("namespace delete against chDB", () => {
 		// Recomputed from pr-2's surviving api span, including the cascaded hourly rollup.
 		expect(count("SELECT toString(count()) AS n FROM error_events WHERE ServiceName = 'api'")).toBe(1)
 		expect(count("SELECT toString(sum(OccurrenceCount)) AS n FROM error_fingerprints_minutely")).toBe(1)
-		expect(count("SELECT toString(sum(SpanCount)) AS n FROM service_operations_minutely WHERE ServiceName = 'api'")).toBe(1)
-		expect(count("SELECT toString(sum(SpanCount)) AS n FROM service_operations_hourly WHERE ServiceName = 'api'")).toBe(1)
-		expect(count("SELECT toString(sum(TraceCount)) AS n FROM service_usage WHERE ServiceName = 'api'")).toBe(1)
+		expect(
+			count(
+				"SELECT toString(sum(SpanCount)) AS n FROM service_operations_minutely WHERE ServiceName = 'api'",
+			),
+		).toBe(1)
+		expect(
+			count(
+				"SELECT toString(sum(SpanCount)) AS n FROM service_operations_hourly WHERE ServiceName = 'api'",
+			),
+		).toBe(1)
+		expect(
+			count("SELECT toString(sum(TraceCount)) AS n FROM service_usage WHERE ServiceName = 'api'"),
+		).toBe(1)
 		expect(edge("web")).toBe(0)
 		expect(edge("caller")).toBe(1)
 		expect(existsSync(pendingDeletePath(dataDir))).toBe(false)

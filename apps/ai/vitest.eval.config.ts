@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url"
-import { defineConfig } from "vitest/config"
+import { configDefaults, defineConfig } from "vitest/config"
 
 // Evals are separate from the unit suite (vitest.config.ts → src/**/*.test.ts).
 // They drive a real LLM via OpenRouter, so they only run via `bun run eval`,
@@ -14,6 +14,7 @@ export default defineConfig({
 	test: {
 		environment: "node",
 		include: ["src/**/*.eval.ts"],
+		exclude: [...configDefaults.exclude, "**/.claude/**", "**/.context/**", "**/worktrees/**"],
 		// Execution evals use the same migrated database fixture as unit tests.
 		globalSetup: ["../../packages/backend/test/global-setup.ts"],
 		// LLM round-trips are slow; give each eval generous headroom.

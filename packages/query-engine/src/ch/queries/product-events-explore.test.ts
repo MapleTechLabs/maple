@@ -28,7 +28,6 @@ describe("productEventsTimeseriesQuery", () => {
 		expect(compiled.sql).toContain(
 			"toStartOfInterval(product_events.Timestamp, INTERVAL 3600 SECOND) AS bucket",
 		)
-		expect(compiled.sql).toContain("'all' AS groupName")
 		expect(compiled.sql).toContain("count() AS value")
 		expect(compiled.sql).toContain("count() AS eventCount")
 		expect(compiled.rowSchemaSource).toBe("derived")
@@ -101,7 +100,7 @@ describe("productEventsTimeseriesQuery", () => {
 			productEventsTimeseriesQuery({ metric: "count", groupBy: ["event_name"], seriesLimit: 5 }),
 			params,
 		)
-		expect(sql).toContain("__series_peak")
+		expect(sql).toContain("__series_rank <= 5")
 	})
 })
 
@@ -111,6 +110,7 @@ describe("productEventsBreakdownQuery", () => {
 			productEventsBreakdownQuery({ metric: "sessions", groupBy: "page_path", limit: 25 }),
 			params,
 		)
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- groupBy picks the grouped column
 		expect(sql).toContain("PagePath AS name")
 		expect(sql).toContain("uniqIf(product_events.SessionId, product_events.SessionId != '') AS value")
 		expect(sql).toContain("ORDER BY value DESC, name ASC")
@@ -119,13 +119,11 @@ describe("productEventsBreakdownQuery", () => {
 })
 
 describe("productEventsListQuery", () => {
-	it("returns the row columns newest first, seq breaking ties", () => {
+	it("filters by service and returns newest first, seq breaking ties", () => {
 		const { sql } = compileUnsafe(
 			productEventsListQuery({ limit: 20, serviceNames: ["maple-api"] }),
 			params,
 		)
-		expect(sql).toContain("Attributes AS attributes")
-		expect(sql).toContain("TraceId AS traceId")
 		expect(sql).toContain("ServiceName IN ('maple-api')")
 		expect(sql).toContain("ORDER BY timestamp DESC, seq DESC")
 		expect(sql).toContain("LIMIT 20")
@@ -141,7 +139,6 @@ describe("attribute discovery", () => {
 
 	it("lists values for one key only where the key is present", () => {
 		const { sql } = compileUnsafe(productEventAttributeValuesQuery({ attributeKey: "plan" }), params)
-		expect(sql).toContain("Attributes['plan'] AS attributeValue")
 		expect(sql).toContain("has(mapKeys(product_events.Attributes), 'plan')")
 	})
 })

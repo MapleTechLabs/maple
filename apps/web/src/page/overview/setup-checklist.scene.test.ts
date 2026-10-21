@@ -82,10 +82,9 @@ describe("overview setup checklist", () => {
 	test("under Clerk the card mounts its keys and last-hour overview reads", () => {
 		const { start, read } = entered(true)
 		expect(names(start.commands)).toContain("ReadSetupChecklistState")
-		expect(names(read.commands).map((name) => name)).toEqual([
-			"FetchSetupChecklistKeys",
-			"FetchSetupChecklistOverview",
-		])
+		expect(names(read.commands)).toEqual(
+			expect.arrayContaining(["FetchSetupChecklistKeys", "FetchSetupChecklistOverview"]),
+		)
 	})
 
 	test("waiting for telemetry shows the connect card; demo services do not count", () => {

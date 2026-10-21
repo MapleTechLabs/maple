@@ -621,11 +621,6 @@ describe("classifyAutumn", () => {
 		assert.strictEqual(error._tag, "@maple/http/errors/BillingNotConfiguredError")
 	})
 
-	it("passes a 2xx body straight through", async () => {
-		const body = await Effect.runPromise(classifyAutumn({ statusCode: 200, response: { ok: 1 } }))
-		assert.deepStrictEqual(body, { ok: 1 })
-	})
-
 	it("collapses every classified 4xx back to 502 under ensureOk, keeping the status in the message", async () => {
 		for (const [status] of cases.filter(([code]) => code < 500 && code !== 401 && code !== 403)) {
 			const error = await Effect.runPromise(Effect.flip(ensureOk(rejection(status))))

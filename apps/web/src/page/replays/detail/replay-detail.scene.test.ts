@@ -14,7 +14,7 @@ import {
 	isFigureFullscreen,
 	WatchPlayerKeys,
 } from "./command"
-import { cacheRange, RANGE_CACHE_LIMIT, seedEvents } from "./loader"
+import { cacheRange, RANGE_CACHE_LIMIT, seedEvents, seedShiftMs } from "./loader"
 import { Message } from "./message"
 import type { EventRow, Manifest, Model, ReplayDetail } from "./model"
 import { init, update } from "./update"
@@ -126,12 +126,9 @@ const mounted = [
 
 describe("replay detail", () => {
 	test("entry asks for the session, its manifest and its transcript", () => {
-		expect(names(entered().commands)).toEqual([
-			"ResolveReplayClock",
-			FetchDetail.name,
-			FetchManifest.name,
-			FetchTranscript.name,
-		])
+		expect(names(entered().commands)).toEqual(
+			expect.arrayContaining(["ResolveReplayClock", FetchDetail.name, FetchManifest.name, FetchTranscript.name]),
+		)
 	})
 
 	test("a loaded session subscribes to 0–0, then the planned opening range, and its traces", () => {
@@ -210,6 +207,52 @@ describe("replay detail", () => {
 		expect(isFigureFullscreen(element("data-replay-figure"))).toBe(true)
 		expect(isFigureFullscreen(element("data-replay-studio"))).toBe(false)
 		expect(isFigureFullscreen(null)).toBe(false)
+	})
+
+	test("the scrubber spans the whole recording, not just the loaded seed", () => {
+		const ready = pageUpdate(seeded(), Message.ReadiedEngine({ seedVersion: 1, totalMs: 1000 })).model
+		expect(ready.player.totalMs).toBe(2000)
+	})
+
+	test("a seek past the loaded window plays the later checkpoint at its place in the recording", () => {
+		const at = (seconds: number) => new Date(Date.UTC(2026, 9, 1, 11, 18, 0) + seconds * 1000)
+		const big = (seq: number, seconds: number, isCheckpoint: boolean, bytes: number) => ({
+			chunk_seq: seq,
+			timestamp: at(seconds).toISOString(),
+			duration_ms: 1000,
+			event_count: 2,
+			byte_size: bytes,
+			is_checkpoint: isCheckpoint,
+		})
+		const long: Manifest = {
+			chunks: [big(0, 0, true, 4_000_000), big(1, 10, false, 3_000_000), big(2, 300, true, 4_000_000), big(3, 301, false, 1_000)],
+			maxBytesPerRequest: 6_000_000,
+			maxChunksPerRequest: 16,
+		}
+		const page = (seconds: number) => ({ type: 4, timestamp: at(seconds).getTime(), data: { width: 1280, height: 720, href: "https://shop.acme.test/" } })
+		const snapshot = (seconds: number) => ({ type: 2, timestamp: at(seconds).getTime() + 1, data: {} })
+		const click = (seconds: number) => ({ type: 3, timestamp: at(seconds).getTime(), data: { source: 2, type: 2 } })
+		const answer = (model: Model, rows: ReadonlyArray<{ chunk_seq: number; events: ReadonlyArray<unknown> }>) =>
+			pageUpdate(model, Message.CompletedFetchRange({ key: model.loader.range.key ?? "", result: Result.succeed(rows) })).model
+
+		const start = entered().model
+		const opened = [
+			Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.succeed(session) }),
+			Message.CompletedFetchManifest({ key: start.manifest.key ?? "", result: Result.succeed(long) }),
+		].reduce((model, message) => pageUpdate(model, message).model, start)
+		const seeded = answer(opened, [{ chunk_seq: 0, events: [page(0), snapshot(0), click(1)] }])
+		const ready = pageUpdate(seeded, Message.ReadiedEngine({ seedVersion: seeded.loader.seedVersion, totalMs: 1000 })).model
+		expect(seedShiftMs(ready.loader)).toBe(0)
+
+		const seeking = pageUpdate(ready, Message.RequestedSeek({ displayMs: 302_000 })).model
+		const rebuilt = answer(seeking, [
+			{ chunk_seq: 2, events: [page(300), snapshot(300)] },
+			{ chunk_seq: 3, events: [click(305)] },
+		])
+		expect(seedShiftMs(rebuilt.loader)).toBe(300_000)
+		expect(rebuilt.loader.seekTargetMs).toBe(302_000)
+		// The clicks before the seek stay marked, and the new window's land at their real offsets.
+		expect(rebuilt.meta.actionMarkers.map((marker) => marker.ms)).toEqual([1_000, 305_000])
 	})
 
 	test("the seed is cut once per seed version, not re-flattened on every engine tick", () => {

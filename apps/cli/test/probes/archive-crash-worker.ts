@@ -143,7 +143,6 @@ const main = async (): Promise<void> => {
 	const tuning = resolveArchiveTuning({
 		archiveDir: args.archiveDir,
 		scratchRoot: args.scratchRoot,
-		dataDir: args.dataDir,
 		// The harness inserts three rows and one row per shard forces a genuine
 		// pause after shard 1 while later shards do not yet exist.
 		maxShardRows: 1,

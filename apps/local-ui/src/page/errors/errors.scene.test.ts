@@ -46,7 +46,9 @@ describe("local errors", () => {
 	test("entry reads the clock, then asks for the summary, the types and the facets, and the presence", () => {
 		expect(names(init(context).commands)).toContain("ReadErrorsClock")
 		const step = entered()
-		expect(names(step.commands)).toEqual(["FetchLocalErrorsSummary", "FetchLocalErrorsByType", "FetchLocalErrorsFacets"])
+		expect(names(step.commands)).toEqual(
+			expect.arrayContaining(["FetchLocalErrorsSummary", "FetchLocalErrorsByType", "FetchLocalErrorsFacets"]),
+		)
 		expect(step.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
 	})
 

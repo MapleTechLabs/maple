@@ -1,7 +1,6 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { existsSync } from "node:fs"
+import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
-import { homedir, tmpdir } from "node:os"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Schema } from "effect"
 import { Chdb, configureRawTelemetryRetentionDays } from "../src/server/chdb"
@@ -9,12 +8,7 @@ import { decodeJsonEachRow } from "../src/server/chdb-rows"
 import type { MigrationDbOptions, MigrationModuleContext } from "../src/server/local-store-migration-module"
 import { localStoreMigrations } from "../src/server/local-store-migrations"
 import { localSchemaSnapshot } from "../src/server/schema-identity"
-
-// Needs a real libchdb; skipped where none is installed.
-const libchdbAvailable =
-	(process.env.MAPLE_LIBCHDB !== undefined && existsSync(process.env.MAPLE_LIBCHDB)) ||
-	existsSync(join(homedir(), ".maple", "bin", "libchdb.so")) ||
-	existsSync(join(homedir(), ".maple", "bin", "libchdb.dylib"))
+import { describeWithChdb } from "./libchdb-test-support"
 
 const DAY_MS = 86_400_000
 const RETENTION_DAYS = 120
@@ -76,7 +70,7 @@ const open = async <A>(
 	}
 }
 
-describe.skipIf(!libchdbAvailable)("v33 -> v34 traces re-sort", () => {
+describeWithChdb("v33 -> v34 traces re-sort", () => {
 	const [migration] = localStoreMigrations.filter(
 		(candidate) => candidate.id === "local-0033-to-0034-traces-trace-key",
 	)

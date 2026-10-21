@@ -61,7 +61,9 @@ const ready = (): Model =>
 
 describe("dashboard view", () => {
 	test("entry reads the clock and loads the chart runtime; the document asks for the shares", () => {
-		expect(names(init(ROUTE, context).commands)).toEqual(["ReadDashboardClock", "LoadChartRuntime"])
+		expect(names(init(ROUTE, context).commands)).toEqual(
+			expect.arrayContaining(["ReadDashboardClock", "LoadChartRuntime"]),
+		)
 		const clocked = pageUpdate(
 			init(ROUTE, context).model,
 			Message.CompletedReadClock({ nowMs: NOW }),

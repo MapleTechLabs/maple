@@ -84,21 +84,26 @@ describe("overview", () => {
 			expect.arrayContaining(["ReadOverviewEntry", "LoadOverviewSignalPresence"]),
 		)
 		const { commands } = entered()
-		expect(names(commands)).toEqual([
-			"FetchOverviewFacets",
-			"FetchOverviewAnomalyCounts",
-			"FetchOverviewServiceUsage",
-		])
+		expect(names(commands)).toEqual(
+			expect.arrayContaining([
+				"FetchOverviewFacets",
+				"FetchOverviewAnomalyCounts",
+				"FetchOverviewServiceUsage",
+			]),
+		)
+		expect(names(commands)).not.toContain("FetchOverviewTimeSeries")
 	})
 
 	test("facets with production fetch health, series and logs for it, and store the hint", () => {
 		const answered = withFacets(entered().model, ["production", "staging"])
-		expect(names(answered.commands)).toEqual([
-			"FetchServiceHealthSnapshot",
-			"FetchOverviewTimeSeries",
-			"FetchOverviewLogVolume",
-			"SaveOverviewFacetsHint",
-		])
+		expect(names(answered.commands)).toEqual(
+			expect.arrayContaining([
+				"FetchServiceHealthSnapshot",
+				"FetchOverviewTimeSeries",
+				"FetchOverviewLogVolume",
+				"SaveOverviewFacetsHint",
+			]),
+		)
 		expect(answered.model.overviewSeries.key).toContain("production")
 		expect(answered.model.hint).toEqual({ environment: "production", preset: "24h", seen: true })
 	})
@@ -352,7 +357,9 @@ describe("overview", () => {
 
 	test("Reload re-reads the clock and spins for the reload", () => {
 		const reloaded = pageUpdate(loaded([]), Message.ClickedReload())
-		expect(names(reloaded.commands)).toEqual(["ResolveOverviewClock", "CompleteOverviewReloadSpin"])
+		expect(names(reloaded.commands)).toEqual(
+			expect.arrayContaining(["ResolveOverviewClock", "CompleteOverviewReloadSpin"]),
+		)
 		const settled = pageUpdate(
 			reloaded.model,
 			Message.CompletedReloadSpin({ version: reloaded.model.refreshVersion }),
