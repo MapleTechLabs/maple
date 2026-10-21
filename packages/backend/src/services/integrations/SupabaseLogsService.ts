@@ -5,7 +5,7 @@
  * Supabase allows 10 logs queries a minute per project, so a caught-up project costs one query a
  * tick and a lagging one at most {@link MAX_QUERIES_PER_PROJECT}. The lease is per project (the
  * rate limit is per project, and one slow project must not hold its siblings back). Watermarks
- * only advance after ingest accepted the batch.
+ * only advance past rows ingest accepted.
  */
 import { IntegrationsNotFoundError, IntegrationsPersistenceError, OrgId, UserId } from "@maple/domain/http"
 import type { SupabaseProjectRef } from "@maple/domain/primitives"
@@ -22,7 +22,11 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
-import { isRefusal, makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
+import {
+	type IngestSendError,
+	isRefusal,
+	makeIngestSender,
+} from "@maple/backend/services/ingest/ingest-sender"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import {
 	isSourcePaused,
@@ -31,6 +35,7 @@ import {
 	stampedSourceId,
 } from "@maple/backend/services/org/integration-sources"
 import {
+	acceptedWatermark,
 	advanceWatermark,
 	decodeLogRows,
 	LOGS_INITIAL_LOOKBACK_MS,
@@ -170,6 +175,8 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 											logsWatermarkAt: now - LOGS_INITIAL_LOOKBACK_MS,
 											logsBoundaryIds: [],
 											logsError: null,
+											// Drops a refusal hold, so turning logs back on polls on the next tick.
+											logsLeaseUntil: null,
 											updatedAt: now,
 										}
 									: { logsEnabled: false, logsError: null, updatedAt: now },
@@ -327,29 +334,50 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 						const rows = decodeLogRows(page.success)
 						const sent = new Set(boundaryIds)
 						const fresh = rows.filter((row) => !sent.has(row.id))
-						const delivered = yield* Effect.result(
-							Effect.forEach(
-								Arr.chunksOf(fresh, INGEST_CHUNK),
-								(chunk) =>
+						const chunks = Arr.chunksOf(fresh, INGEST_CHUNK)
+						// Ingest has no dedup: each accepted chunk moves the watermark past it, so a later
+						// failure resumes after the last accepted row instead of resending it.
+						const sendFrom = (
+							index: number,
+							delivered: number,
+						): Effect.Effect<
+							{ readonly delivered: number; readonly failure: IngestSendError | null },
+							IntegrationsPersistenceError
+						> =>
+							Effect.gen(function* () {
+								const chunk = chunks[index]
+								if (chunk === undefined) return { delivered, failure: null }
+								const accepted = yield* Effect.result(
 									ingest.send({
 										signal: "logs",
 										ingestKey,
 										payload: logsToOtlp(resource, chunk),
 										label: "Supabase logs",
 									}),
-								{ discard: true },
-							),
-						)
-						if (delivered._tag === "Failure") {
+								)
+								if (accepted._tag === "Failure") return { delivered, failure: accepted.failure }
+								if (index < chunks.length - 1) {
+									const mark = acceptedWatermark(rows, Arr.lastNonEmpty(chunk))
+									yield* updateClaimed(claimed, {
+										logsWatermarkAt: mark.watermarkAt,
+										logsBoundaryIds: mark.boundaryIds,
+										logsLastPolledAt: now,
+									})
+								}
+								return yield* sendFrom(index + 1, delivered + chunk.length)
+							})
+						const delivery = yield* sendFrom(0, 0)
+						if (delivery.failure !== null) {
 							yield* Effect.logWarning("supabase logs ingest failed", {
 								orgId,
 								projectRef: claimed.projectRef,
-								error: delivered.failure.message,
+								error: delivery.failure.message,
 							})
 							return {
 								...called,
-								refused: isRefusal(delivered.failure),
-								error: yield* recordError(delivered.failure.message),
+								rows: called.rows + delivery.delivered,
+								refused: isRefusal(delivery.failure),
+								error: yield* recordError(delivery.failure.message),
 							}
 						}
 						const next = advanceWatermark(window, page.success.length, rows, fresh.length)
