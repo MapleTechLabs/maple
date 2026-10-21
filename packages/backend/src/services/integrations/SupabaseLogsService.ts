@@ -371,7 +371,8 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 										label: "Supabase logs",
 									}),
 								)
-								if (accepted._tag === "Failure") return { delivered, failure: accepted.failure }
+								if (accepted._tag === "Failure")
+									return { delivered, failure: accepted.failure }
 								if (index < chunks.length - 1) {
 									const mark = acceptedWatermark(rows, Arr.lastNonEmpty(chunk))
 									yield* updateClaimed(claimed, {

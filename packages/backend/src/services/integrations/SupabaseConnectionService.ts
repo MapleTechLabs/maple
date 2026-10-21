@@ -405,7 +405,8 @@ export class SupabaseConnectionService extends Context.Service<
 				.withAccessToken(orgId, (accessToken) =>
 					createLogDrain(httpClient, oauth.apiBaseUrl, accessToken, ref, {
 						name: "Maple",
-						description: "OpenTelemetry logs to Maple, managed by the Maple Supabase integration.",
+						description:
+							"OpenTelemetry logs to Maple, managed by the Maple Supabase integration.",
 						endpoint: ingestLogsUrl,
 						token,
 					}),
@@ -931,7 +932,10 @@ export class SupabaseConnectionService extends Context.Service<
 				})
 			}
 			if (request.metricsEnabled !== undefined) {
-				yield* updateProjectRow(project.id, { metricsEnabled: request.metricsEnabled, updatedAt: now })
+				yield* updateProjectRow(project.id, {
+					metricsEnabled: request.metricsEnabled,
+					updatedAt: now,
+				})
 				yield* reconcileTargets(connection, now)
 			}
 			if (request.logDrainEnabled === true) yield* enableDrain(orgId, userId, project, now)

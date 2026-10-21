@@ -150,7 +150,7 @@ describe("supabase card", () => {
 			expectView(role("button", { name: "Sync now" })).toExist(),
 			expectView(
 				text(
-					"Logs are pulled every minute through your grant and count toward ingest. No Supabase add-on needed.",
+					"Logs are pulled every minute through your grant and count toward ingest. A log drain has Supabase push them instead: it needs a Pro plan and Supabase bills it per drain.",
 				),
 			).toExist(),
 			expectView(role("link", { name: "View in Infrastructure" })).toExist(),

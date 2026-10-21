@@ -461,82 +461,94 @@ const MANUAL_MAPLE_DRAIN: FakeLogDrain = {
 }
 
 describe("SupabaseConnectionService log drains", () => {
-	it.effect("enabling mints a logs-only token source, creates an OTLP drain that sends as it and stops polling", () => {
-		const testDb = createTestDb(trackedDbs)
-		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A, { name: "app" })] })
-		return Effect.gen(function* () {
-			const service = yield* SupabaseConnectionService
-			yield* connect(fake)
-			yield* Effect.promise(() =>
-				executeSql(testDb, "UPDATE supabase_projects SET logs_enabled = true WHERE project_ref = $1", [
-					REF_A,
-				]),
-			)
-			const status = yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+	it.effect(
+		"enabling mints a logs-only token source, creates an OTLP drain that sends as it and stops polling",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFakeSupabase({ projects: [fakeProject(REF_A, { name: "app" })] })
+			return Effect.gen(function* () {
+				const service = yield* SupabaseConnectionService
+				yield* connect(fake)
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						"UPDATE supabase_projects SET logs_enabled = true WHERE project_ref = $1",
+						[REF_A],
+					),
+				)
+				const status = yield* service.updateProject(ORG, USER, asRef(REF_A), {
+					logDrainEnabled: true,
+				})
 
-			const [create] = drainCalls(fake, "POST")
-			assert.strictEqual(create?.path, `/v2/projects/${REF_A}/analytics/log-drains`)
-			const body = Schema.decodeUnknownSync(DrainBody)(create?.body)
-			const authorization = body.data.attributes.config.headers.Authorization ?? ""
-			assert.deepStrictEqual(
-				{ ...body.data.attributes, config: { ...body.data.attributes.config, headers: {} } },
-				{
-					name: "Maple",
-					backend_type: "otlp",
-					config: {
-						endpoint: "https://ingest.example.com/v1/logs",
-						protocol: "http/protobuf",
-						gzip: true,
-						headers: {},
+				const [create] = drainCalls(fake, "POST")
+				assert.strictEqual(create?.path, `/v2/projects/${REF_A}/analytics/log-drains`)
+				const body = Schema.decodeUnknownSync(DrainBody)(create?.body)
+				const authorization = body.data.attributes.config.headers.Authorization ?? ""
+				assert.deepStrictEqual(
+					{ ...body.data.attributes, config: { ...body.data.attributes.config, headers: {} } },
+					{
+						name: "Maple",
+						backend_type: "otlp",
+						config: {
+							endpoint: "https://ingest.example.com/v1/logs",
+							protocol: "http/protobuf",
+							gzip: true,
+							headers: {},
+						},
 					},
-				},
-			)
-			assert.strictEqual(body.data.type, "log_drain")
-			assert.match(authorization, /^Bearer maple_src_/)
+				)
+				assert.strictEqual(body.data.type, "log_drain")
+				assert.match(authorization, /^Bearer maple_src_/)
 
-			const row = yield* drainRow(testDb, REF_A)
-			const stored = fake.state.drains.get(REF_A) ?? []
-			assert.isTrue(row?.log_drain_enabled ?? false)
-			assert.strictEqual(row?.log_drain_id, stored[0]?.id)
-			// The drain now delivers this project's logs, so polling them too would store them twice.
-			assert.isFalse(row?.logs_enabled ?? true)
-			const source = yield* Effect.promise(() =>
-				queryFirstRow<{
-					platform: string
-					kind: string
-					name: string
-					key_prefix: string
-					allowed_signals: unknown
-					resource_attributes: unknown
-				}>(
-					testDb,
-					"SELECT platform, kind, name, key_prefix, allowed_signals, resource_attributes FROM sources WHERE id = $1",
-					[row?.log_drain_source_id ?? ""],
-				),
-			)
-			assert.deepStrictEqual(
-				{ platform: source?.platform, kind: source?.kind, name: source?.name },
-				{ platform: "supabase", kind: "token", name: "Supabase logs: app" },
-			)
-			// The drain sends the token this source was minted with.
-			assert.isTrue(authorization.startsWith(`Bearer ${source?.key_prefix ?? "?"}`))
-			assert.deepStrictEqual(source?.allowed_signals, ["logs"])
-			assert.deepStrictEqual(source?.resource_attributes, [
-				{ key: "supabase.project.ref", value: REF_A, mode: "set" },
-				{ key: "supabase.project.name", value: "app", mode: "set" },
-				{ key: "service.name", value: "supabase", mode: "default" },
-			])
-			const project = status.projects[0]
-			assert.deepStrictEqual(
-				[project?.logDrainEnabled, project?.logDrainError, project?.logDrainSourceId, project?.logsEnabled],
-				[true, null, row?.log_drain_source_id, false],
-			)
-			assert.deepStrictEqual(
-				project?.logDrains.map((drain) => [drain.name, drain.toMaple, drain.managedByMaple]),
-				[["Maple", true, true]],
-			)
-		}).pipe(Effect.provide(makeLayer(testDb, fake)))
-	})
+				const row = yield* drainRow(testDb, REF_A)
+				const stored = fake.state.drains.get(REF_A) ?? []
+				assert.isTrue(row?.log_drain_enabled ?? false)
+				assert.strictEqual(row?.log_drain_id, stored[0]?.id)
+				// The drain now delivers this project's logs, so polling them too would store them twice.
+				assert.isFalse(row?.logs_enabled ?? true)
+				const source = yield* Effect.promise(() =>
+					queryFirstRow<{
+						platform: string
+						kind: string
+						name: string
+						key_prefix: string
+						allowed_signals: unknown
+						resource_attributes: unknown
+					}>(
+						testDb,
+						"SELECT platform, kind, name, key_prefix, allowed_signals, resource_attributes FROM sources WHERE id = $1",
+						[row?.log_drain_source_id ?? ""],
+					),
+				)
+				assert.deepStrictEqual(
+					{ platform: source?.platform, kind: source?.kind, name: source?.name },
+					{ platform: "supabase", kind: "token", name: "Supabase logs: app" },
+				)
+				// The drain sends the token this source was minted with.
+				assert.isTrue(authorization.startsWith(`Bearer ${source?.key_prefix ?? "?"}`))
+				assert.deepStrictEqual(source?.allowed_signals, ["logs"])
+				assert.deepStrictEqual(source?.resource_attributes, [
+					{ key: "supabase.project.ref", value: REF_A, mode: "set" },
+					{ key: "supabase.project.name", value: "app", mode: "set" },
+					{ key: "service.name", value: "supabase", mode: "default" },
+				])
+				const project = status.projects[0]
+				assert.deepStrictEqual(
+					[
+						project?.logDrainEnabled,
+						project?.logDrainError,
+						project?.logDrainSourceId,
+						project?.logsEnabled,
+					],
+					[true, null, row?.log_drain_source_id, false],
+				)
+				assert.deepStrictEqual(
+					project?.logDrains.map((drain) => [drain.name, drain.toMaple, drain.managedByMaple]),
+					[["Maple", true, true]],
+				)
+			}).pipe(Effect.provide(makeLayer(testDb, fake)))
+		},
+	)
 
 	it.effect("a Free plan 402 deletes the minted source and surfaces the plan error", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -702,25 +714,28 @@ describe("SupabaseConnectionService log drains", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})
 
-	it.effect("disconnect deletes Maple's drains upstream and their sources, and leaves the customer's", () => {
-		const testDb = createTestDb(trackedDbs)
-		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A), fakeProject(REF_B)] })
-		fake.state.drains.set(REF_A, [DATADOG_DRAIN])
-		return Effect.gen(function* () {
-			const service = yield* SupabaseConnectionService
-			yield* connect(fake)
-			yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
-			yield* service.updateProject(ORG, USER, asRef(REF_B), { logDrainEnabled: true })
-			assert.strictEqual(yield* tokenSourceCount(testDb), 2)
+	it.effect(
+		"disconnect deletes Maple's drains upstream and their sources, and leaves the customer's",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFakeSupabase({ projects: [fakeProject(REF_A), fakeProject(REF_B)] })
+			fake.state.drains.set(REF_A, [DATADOG_DRAIN])
+			return Effect.gen(function* () {
+				const service = yield* SupabaseConnectionService
+				yield* connect(fake)
+				yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+				yield* service.updateProject(ORG, USER, asRef(REF_B), { logDrainEnabled: true })
+				assert.strictEqual(yield* tokenSourceCount(testDb), 2)
 
-			yield* service.disconnect(ORG)
-			assert.deepStrictEqual(
-				[fake.state.drains.get(REF_A), fake.state.drains.get(REF_B)],
-				[[DATADOG_DRAIN], []],
-			)
-			assert.strictEqual(yield* tokenSourceCount(testDb), 0)
-		}).pipe(Effect.provide(makeLayer(testDb, fake)))
-	})
+				yield* service.disconnect(ORG)
+				assert.deepStrictEqual(
+					[fake.state.drains.get(REF_A), fake.state.drains.get(REF_B)],
+					[[DATADOG_DRAIN], []],
+				)
+				assert.strictEqual(yield* tokenSourceCount(testDb), 0)
+			}).pipe(Effect.provide(makeLayer(testDb, fake)))
+		},
+	)
 
 	it.effect("discovery flags a drain deleted upstream or a deleted source, and never recreates it", () => {
 		const testDb = createTestDb(trackedDbs)

@@ -537,7 +537,9 @@ describe("SupabaseLogsService", () => {
 				const connection = yield* SupabaseConnectionService
 				const logs = yield* SupabaseLogsService
 				const user = asUserId("user_a")
-				const drained = yield* connection.updateProject(ORG, user, asRef(REF_A), { logDrainEnabled: true })
+				const drained = yield* connection.updateProject(ORG, user, asRef(REF_A), {
+					logDrainEnabled: true,
+				})
 				assert.isFalse(drained.projects.find((project) => project.ref === REF_A)?.logsEnabled ?? true)
 
 				const refused = yield* Effect.flip(logs.setLogsEnabled(ORG, asRef(REF_A), true))

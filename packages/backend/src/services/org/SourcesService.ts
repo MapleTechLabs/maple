@@ -62,7 +62,6 @@ const toIso = (epochMs: number) => decodeIsoSync(new Date(epochMs).toISOString()
 const generateSecret = () => `${SOURCE_TOKEN_PREFIX}${randomBytes(24).toString("base64url")}`
 const displayPrefix = (secret: string) => secret.slice(0, SOURCE_TOKEN_PREFIX.length + 5)
 
-
 const isoOrNull = (epochMs: number | null) => (epochMs === null ? null : toIso(epochMs))
 
 const toSourceHealth = (health: SourceHealthResult) =>
@@ -81,11 +80,7 @@ interface SourceOwner {
 }
 const NO_OWNER: SourceOwner = { integrationId: null, overrides: undefined }
 
-const rowToSource = (
-	row: SourceRow,
-	now: number,
-	owner: SourceOwner = NO_OWNER,
-): Source => {
+const rowToSource = (row: SourceRow, now: number, owner: SourceOwner = NO_OWNER): Source => {
 	const status = statusOf(row, now)
 	return new Source({
 		id: row.id,
