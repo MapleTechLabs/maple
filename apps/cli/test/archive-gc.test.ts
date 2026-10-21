@@ -35,7 +35,9 @@ import { writeInitialIntent, type GcOperationIntent } from "../src/server/archiv
 // SIGKILL probe; these unit tests cover the invariants the harness does not
 // isolate.
 
-const withArchive = async (run: (archiveDir: string) => Promise<void> | void): Promise<void> => {
+const withArchive = async (
+	run: (archiveDir: string, dataDir: string, scratchRoot: string, parent: string) => Promise<void> | void,
+): Promise<void> => {
 	const parent = realpathSync(mkdtempSync(join(tmpdir(), "maple-gc-test-")))
 	const archiveDir = join(parent, "archive")
 	const dataDir = join(parent, "data")

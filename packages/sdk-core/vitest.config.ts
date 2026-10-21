@@ -1,5 +1,5 @@
 import { playwright } from "@vitest/browser-playwright"
-import { defineConfig } from "vitest/config"
+import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
 	test: {
@@ -9,13 +9,25 @@ export default defineConfig({
 					name: "node",
 					environment: "node",
 					include: ["src/**/*.test.ts"],
-					exclude: ["src/**/*.browser.test.ts"],
+					exclude: [
+						...configDefaults.exclude,
+						"**/.claude/**",
+						"**/.context/**",
+						"**/worktrees/**",
+						"src/**/*.browser.test.ts",
+					],
 				},
 			},
 			{
 				test: {
 					name: "browser",
 					include: ["src/**/*.browser.test.ts"],
+					exclude: [
+						...configDefaults.exclude,
+						"**/.claude/**",
+						"**/.context/**",
+						"**/worktrees/**",
+					],
 					browser: {
 						enabled: true,
 						headless: true,

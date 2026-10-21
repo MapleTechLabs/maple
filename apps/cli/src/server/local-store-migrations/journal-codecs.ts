@@ -41,7 +41,7 @@ export const RAW_TABLES: ReadonlyArray<string> = RAW_TABLES_INTERNAL
  * Row counts per raw table, straight from `system.parts`. The input to the one
  * guarantee every step makes: a structural DDL change moves no telemetry.
  */
-export const rawRowCounts = (db: Chdb): Readonly<Record<string, string>> => {
+export const rawRowCounts = (db: Pick<Chdb, "query" | "exec">): Readonly<Record<string, string>> => {
 	const quotedTables = RAW_TABLES_INTERNAL.map((table) => `'${table}'`).join(", ")
 	const rows = decodeTableRowCounts(
 		db.query(
@@ -62,7 +62,7 @@ const RETAINED_MARGIN_DAYS = 2
  * comparison failed on every store holding rows past retention.
  */
 export const retainedRawRowCounts = (
-	db: Chdb,
+	db: Pick<Chdb, "query" | "exec">,
 	manifest: LocalSchemaManifest,
 	countedOn: string,
 ): Readonly<Record<string, string>> =>

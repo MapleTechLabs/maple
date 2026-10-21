@@ -60,7 +60,9 @@ const USER = asUserId("user_a")
 const DASHBOARD = asDashboardId("dash-1")
 const NOW = asIsoDateTimeString(new Date("2026-01-01T00:00:00.000Z").toISOString())
 
-const widget = (id: string) => ({
+type Widget = DashboardDocument["widgets"][number]
+
+const widget = (id: string): Widget => ({
 	id,
 	visualization: "stat",
 	dataSource: { kind: "route", endpoint: "test" },

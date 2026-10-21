@@ -15,6 +15,7 @@ import { ExternalUserId, OrgId, UserId } from "@maple/domain/primitives"
 import { Effect, Schema } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
+import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 import { mapleToolCatalog } from "../mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -75,6 +76,7 @@ describe("profileForTurn", () => {
 		authMode: "self_hosted",
 	}
 	const executor: McpToolExecutorApi = {
+		...noRepositoryWarmup,
 		execute: (_tenant, name) => Effect.succeed({ content: [{ type: "text" as const, text: name }] }),
 	}
 	/** Exactly what `runChatTurn` builds, through the same policy. */

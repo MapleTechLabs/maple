@@ -1,5 +1,5 @@
 import { playwright } from "@vitest/browser-playwright"
-import { defineConfig } from "vitest/config"
+import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
 	resolve: { dedupe: ["react", "react-dom"] },
@@ -11,7 +11,13 @@ export default defineConfig({
 					benchmark: { exclude: ["src/**/*.browser.bench.ts"] },
 					environment: "node",
 					include: ["src/**/*.test.{ts,tsx}"],
-					exclude: ["src/**/*.browser.test.{ts,tsx}"],
+					exclude: [
+						...configDefaults.exclude,
+						"**/.claude/**",
+						"**/.context/**",
+						"**/worktrees/**",
+						"src/**/*.browser.test.{ts,tsx}",
+					],
 				},
 			},
 			{
@@ -19,6 +25,12 @@ export default defineConfig({
 					name: "browser",
 					benchmark: { include: ["src/**/*.browser.bench.ts"] },
 					include: ["src/**/*.browser.test.{ts,tsx}"],
+					exclude: [
+						...configDefaults.exclude,
+						"**/.claude/**",
+						"**/.context/**",
+						"**/worktrees/**",
+					],
 					browser: {
 						enabled: true,
 						headless: true,

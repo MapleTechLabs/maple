@@ -6,6 +6,7 @@ import * as CH from "@maple/query-engine/ch"
 import { Effect, Schema } from "effect"
 import schemaSql from "../src/server/schema/local-schema.sql" with { type: "text" }
 import { Chdb } from "../src/server/chdb"
+import { LOCAL_ORG_ID } from "../src/core/executor"
 import { decodeJsonEachRow } from "../src/server/chdb-rows"
 import { describeWithChdb } from "./libchdb-test-support"
 import {
@@ -86,7 +87,7 @@ describeWithChdb("local service map rollup", () => {
 			CH.serviceDependenciesSQL(
 				{},
 				{
-					orgId: "local",
+					orgId: LOCAL_ORG_ID,
 					startTime: iso(currentHourMs - 3 * HOUR_MS).slice(0, 19),
 					endTime: iso(nowMs).slice(0, 19),
 				},

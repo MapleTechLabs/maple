@@ -47,18 +47,6 @@ const makeSession = () => {
 	return { session, state, turnId }
 }
 
-interface ChatSessionWaiterHarness {
-	readonly waiters: Set<() => void>
-	readonly appends: number
-	readonly waitForAppend: (seen: number, timeoutMs: number) => Effect.Effect<boolean>
-}
-
-const waiterHarness = (session: ChatSession): ChatSessionWaiterHarness => {
-	// SAFETY: this test intentionally exercises ChatSession's private waiter lifecycle; the
-	// interface mirrors the three members declared by ChatSession and never escapes the test.
-	return session as ChatSessionWaiterHarness
-}
-
 describe("ChatSession.history", () => {
 	it("folds a streamed turn into ONE assistant message", () => {
 		const { session } = makeSession()
@@ -749,11 +737,10 @@ describe("ChatSession.subscribe", () => {
 
 	it("removes a timed-out waiter before the next idle reconnect", async () => {
 		const { session } = makeSession()
-		const harness = waiterHarness(session)
-
+		// Element access reaches the private waiter lifecycle this test pins, without a cast.
 		for (let reconnect = 0; reconnect < 3; reconnect++) {
-			assert.isFalse(await Effect.runPromise(harness.waitForAppend.call(session, harness.appends, 0)))
-			assert.equal(harness.waiters.size, 0)
+			assert.isFalse(await Effect.runPromise(session["waitForAppend"](session["appends"], 0)))
+			assert.equal(session["waiters"].size, 0)
 		}
 	})
 })

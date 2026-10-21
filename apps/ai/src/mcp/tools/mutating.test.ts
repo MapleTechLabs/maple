@@ -5,6 +5,7 @@ import { evaluatePermission, isToolVisible } from "@maple/domain/permission"
 import { DEFAULT_RULESET, READ_ONLY_RULESET } from "../../chat/permissions"
 import { profileForTurn } from "../../chat/profiles"
 import { CHAT_BUDGET } from "../../chat/budgets"
+import type { AgentDefinition } from "../../chat/agents"
 
 describe("MUTATING_TOOL_NAMES", () => {
 	it("every approval-gated tool exists in the registry", () => {
@@ -71,12 +72,13 @@ describe("READ_ONLY_RULESET", () => {
  * case, and that is where the gate is the whole point.
  */
 describe("profileForTurn", () => {
-	const agent = {
+	const agent: AgentDefinition = {
 		name: "default",
 		description: "",
 		prompt: "",
 		permission: DEFAULT_RULESET,
 		budget: CHAT_BUDGET,
+		model: "triage",
 	}
 	const rulesetFor = (kind: "app" | "autonomous") => profileForTurn(agent, { kind }).ruleset
 
