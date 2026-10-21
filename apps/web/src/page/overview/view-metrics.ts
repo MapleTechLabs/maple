@@ -56,8 +56,8 @@ type CardBody =
 	| Readonly<{ _tag: "Loading" }>
 	| Readonly<{ _tag: "Failed"; failure: LoadFailure; retry: RetryTarget }>
 	| Readonly<{ _tag: "Chart"; spec: Spec; ariaLabel: string }>
-	/** No rows: `NeverReceived` when the org has never sent the chart's signal. */
-	| Readonly<{ _tag: "Empty" }>
+	/** No rows: `NeverReceived` when the org has never sent the chart's signal; `isPresent` when it has. */
+	| Readonly<{ _tag: "Empty"; isPresent: boolean }>
 	| Readonly<{ _tag: "NeverReceived"; signal: "traces" | "logs" }>
 
 export type GridItem = Readonly<{
@@ -139,7 +139,9 @@ const LOADING: CardBody = { _tag: "Loading" }
 const emptyBody = (model: Model, signal: "traces" | "logs"): CardBody => {
 	const { status } = presenceOf(model.presence, signal)
 	if (status === "loading") return LOADING
-	return status === "absent" ? { _tag: "NeverReceived", signal } : { _tag: "Empty" }
+	return status === "absent"
+		? { _tag: "NeverReceived", signal }
+		: { _tag: "Empty", isPresent: status === "present" }
 }
 
 /** `OVERVIEW_CHARTS` with the `metrics` memo's data, loading, error, header value and footer. */
@@ -263,7 +265,10 @@ const cardContent = (h: HtmlBuilder<Message>, model: Model, item: GridItem): Htm
 				onRetry: Message.ClickedRetry({ target: item.body.retry }),
 			})
 		case "Empty":
-			return chartEmpty(h, { hint: "Try a wider time range" }, ["No data in this window"])
+			// A wider window only helps when the signal was seen; a failed presence read says nothing.
+			return chartEmpty(h, item.body.isPresent ? { hint: "Try a wider time range" } : {}, [
+				"No data in this window",
+			])
 		case "NeverReceived":
 			return chartEmpty(h, { hint: "Fills in once Maple receives them" }, [
 				`No ${item.body.signal} yet`,
