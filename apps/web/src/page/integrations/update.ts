@@ -283,6 +283,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRailwayRotate: () => Railway.setRotating(model, true),
 		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
 		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
+		// Advances the card's window and "Last data" ages; the fresh clock re-reads rows on a new key.
+		TickedSupabaseClock: () => ({ model, commands: [ReadClock()] }),
+		CompletedReadSupabaseClock: ({ nowMs }) => Supabase.completedReadClock(model, context, nowMs),
 		ClickedSupabaseSync: () => Supabase.clickedSync(model),
 		CompletedSupabaseSync: ({ failure }) => Supabase.completedSync(model, context, failure),
 		ToggledSupabaseMetrics: ({ ref, enabled }) => Supabase.toggledMetrics(model, ref, enabled),

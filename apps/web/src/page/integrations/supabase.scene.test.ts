@@ -298,7 +298,8 @@ describe("supabase card", () => {
 			Message.CompletedSupabaseMetrics({ ref: REF, enabled: false, failure: null }),
 		)
 		expect(done.model.supabaseCard.pendingRefs).toEqual([])
-		expect(names(done.commands)).toEqual(["LoadIntegrationsSupabaseStatus"])
+		expect(names(done.commands)).toContain("LoadIntegrationsSupabaseStatus")
+		expect(names(done.commands)).toContain("ReadSupabaseClock")
 	})
 
 	test("a settled switch re-reads the metrics rows, so the new rows replace the entry-time verdict", () => {
@@ -308,11 +309,14 @@ describe("supabase card", () => {
 			sent.model,
 			Message.CompletedSupabaseMetrics({ ref: REF, enabled: true, failure: null }),
 		)
-		expect(names(done.commands)).toContain("LoadIntegrationsSupabaseMetrics")
+		expect(names(done.commands)).toContain("ReadSupabaseClock")
+		// Same clock, same window: the re-read still goes out, superseding the pre-write rows.
+		const clocked = pageUpdate(done.model, Message.CompletedReadSupabaseClock({ nowMs: NOW }))
+		expect(names(clocked.commands)).toContain("LoadIntegrationsSupabaseMetrics")
 		const reread = pageUpdate(
-			done.model,
+			clocked.model,
 			Message.CompletedLoadSupabaseMetrics({
-				key: done.model.supabaseCard.metrics.key ?? "",
+				key: clocked.model.supabaseCard.metrics.key ?? "",
 				result: Result.succeed([metricsRow(REF)]),
 			}),
 		).model
@@ -326,7 +330,43 @@ describe("supabase card", () => {
 			pageUpdate(before, Message.ToggledSupabaseLogs({ ref: REF, enabled: false })).model,
 			Message.CompletedSupabaseLogs({ ref: REF, enabled: false, failure: null }),
 		)
-		expect(names(logs.commands)).toContain("LoadIntegrationsSupabaseMetrics")
+		expect(names(logs.commands)).toContain("ReadSupabaseClock")
+	})
+
+	test("a switch toggled long after mount re-reads the hour ending now, not at mount", () => {
+		const later = NOW + 80 * 60_000
+		const sent = pageUpdate(withMetrics([]), Message.ToggledSupabaseMetrics({ ref: REF, enabled: true }))
+		const done = pageUpdate(
+			sent.model,
+			Message.CompletedSupabaseMetrics({ ref: REF, enabled: true, failure: null }),
+		)
+		const clocked = pageUpdate(done.model, Message.CompletedReadSupabaseClock({ nowMs: later }))
+		const load = (clocked.commands ?? []).find(({ name }) => name === "LoadIntegrationsSupabaseMetrics")
+		expect(load?.args).toEqual({
+			key: clocked.model.supabaseCard.metrics.key,
+			window: { startTime: "2026-10-01 12:20:00", endTime: "2026-10-01 13:20:00" },
+		})
+		const reread = pageUpdate(
+			clocked.model,
+			Message.CompletedLoadSupabaseMetrics({
+				key: clocked.model.supabaseCard.metrics.key ?? "",
+				result: Result.succeed([metricsRow(REF, { lastSeen: "2026-10-01 13:19:30" })]),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(reread),
+			expectView(text("waiting for first scrape", { exact: false })).toBeAbsent(),
+			expectView(text("Healthy")).toExist(),
+		)
+	})
+
+	test("the card's clock tick advances the window, so the rows re-read on the new hour", () => {
+		const ticked = pageUpdate(withMetrics([metricsRow(REF)]), Message.TickedSupabaseClock())
+		expect(names(ticked.commands)).toEqual(["ReadIntegrationsClock"])
+		const clocked = pageUpdate(ticked.model, Message.CompletedReadClock({ nowMs: NOW + 60_000 }))
+		expect(names(clocked.commands)).toContain("LoadIntegrationsSupabaseMetrics")
+		expect(clocked.model.nowMs).toBe(NOW + 60_000)
 	})
 
 	test("a successful connect syncs the projects, then re-reads the status", () => {

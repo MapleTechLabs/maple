@@ -184,6 +184,10 @@ export const Message = defineMessageUnion({
 	/** Every 15 s while environments wait for their first sync. */
 	TickedRailwaySettle: {},
 	ClickedSupabaseSync: {},
+	/** Every minute while the connected Supabase card is shown, so its window and ages advance. */
+	TickedSupabaseClock: {},
+	/** The clock read after a settled switch; its rows re-read supersedes on the fresh window. */
+	CompletedReadSupabaseClock: { nowMs: Schema.Number },
 	CompletedLoadSupabaseMetrics: result(Schema.Array(SupabaseProjectRow)),
 	CompletedSupabaseSync: { failure: Schema.NullOr(LoadFailure) },
 	/** A project row's "Collect metrics" switch. */

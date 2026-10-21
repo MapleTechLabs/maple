@@ -12,12 +12,13 @@ import type { Message } from "./message"
 import type { Model } from "./model"
 import {
 	LoadSupabaseMetrics,
+	ReadSupabaseClock,
 	SetSupabaseLogs,
 	SetSupabaseMetrics,
 	type SupabaseCardModel,
 	SyncSupabase,
 } from "./supabase"
-import { chain, requestStatus } from "./update-status"
+import { requestStatus } from "./update-status"
 
 // The Supabase card's state changes.
 
@@ -102,12 +103,14 @@ const completed = (
 		pendingRefs: model.supabaseCard.pendingRefs.filter((pending) => pending !== ref),
 	})
 	if (failure !== null) return toast(settled, "error", failedTitle, failure.message)
-	// Re-read the rows too: same window, same key, so only a superseding read refreshes health and last data.
-	return chain(settled, [
-		(next) => requestStatus(next, context, "supabase", "Supersede"),
-		(next) => requestMetricsRows(next, context, "Supersede"),
-	])
+	// The rows re-read waits on a fresh clock, so a card open for an hour reads the current window.
+	const reread = requestStatus(settled, context, "supabase", "Supersede")
+	return { ...reread, commands: [...(reread.commands ?? []), ReadSupabaseClock()] }
 }
+
+/** A superseding rows read: the window may equal the last one, and that read predates the write. */
+export const completedReadClock = (model: Model, context: PageContext, nowMs: number): Return =>
+	requestMetricsRows({ ...model, nowMs }, context, "Supersede")
 
 export const toggledMetrics = (model: Model, ref: SupabaseProjectRef, enabled: boolean): Return =>
 	toggled(model, ref, SetSupabaseMetrics({ ref, enabled }))
