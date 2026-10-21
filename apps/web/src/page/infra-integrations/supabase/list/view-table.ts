@@ -1,53 +1,37 @@
-import { formatBytes } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatPercent, formatRate } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
-import { badge } from "../../../../ui/display"
+import { meter } from "../../../../ui/meter"
 import { skeleton } from "../../../../ui/skeleton"
-import { projectStatusLabel } from "../../../integrations/supabase"
 import { columnHead, dataTable, ROW_LINK_CLASS, skeletonRows } from "../../../infra/kit/data-table"
-import { meterRows } from "../../../infra/kit/meter-rows"
-import { relativeTime } from "../../../kit/relative-time"
-import type { Sort } from "../../../kit/table-sort"
-import { type ProjectView, sortProjects } from "./derive"
-import { Message } from "./message"
-import type { SortKey } from "./model"
+import { collectingLabel, healthPill, SATURATION } from "../health"
+import type { ProjectView } from "./derive"
+import type { Message } from "./message"
 
 // The project table and its loading state.
 
 type H = HtmlBuilder<Message>
 
-export type Clock = Readonly<{ nowMs: number; timeZone: string }>
-
-const COLUMNS: ReadonlyArray<{
-	label: string
-	key: SortKey | null
-	width: string
-	align?: "right"
-	hidden?: string
-}> = [
-	{ label: "Project", key: "displayName", width: "w-0 flex-1 min-w-[220px]" },
-	{ label: "Region", key: null, width: "w-[120px]", hidden: "hidden md:flex" },
-	{ label: "Peak use", key: "peak", width: "w-[180px]" },
-	{ label: "DB size", key: "dbSize", width: "w-[100px]", align: "right" },
-	{ label: "Connections", key: "connectionsMax", width: "w-[110px]", align: "right" },
-	{ label: "Last seen", key: "lastSeen", width: "w-[100px]", align: "right" },
+const COLUMNS: ReadonlyArray<{ label: string; width: string; align?: "right"; hidden?: string }> = [
+	{ label: "Project", width: "w-0 flex-1 min-w-40" },
+	{ label: "Status", width: "w-20" },
+	{ label: "CPU", width: "w-24", hidden: "hidden lg:flex" },
+	{ label: "Memory", width: "w-24", hidden: "hidden lg:flex" },
+	{ label: "Disk", width: "w-24", hidden: "hidden lg:flex" },
+	{ label: "Connections", width: "w-20", align: "right" },
+	{ label: "Req / min", width: "w-16", align: "right", hidden: "hidden md:flex" },
+	{ label: "Issues", width: "w-14", align: "right", hidden: "hidden md:flex" },
+	{ label: "Collecting", width: "w-28", align: "right" },
 ]
 
-const columns = (h: H, sort: Sort<SortKey> | undefined): ReadonlyArray<Html> =>
+const columns = (h: H): ReadonlyArray<Html> =>
 	COLUMNS.map((column) =>
 		columnHead(h, {
 			label: column.label,
 			width: column.width,
 			align: column.align,
 			hidden: column.hidden,
-			sort:
-				sort === undefined || column.key === null
-					? undefined
-					: {
-							onSort: Message.ClickedSort({ key: column.key }),
-							isActive: sort.key === column.key,
-							dir: sort.dir,
-						},
 		}),
 	)
 
@@ -55,117 +39,134 @@ export const supabaseTableLoading = (h: H): Html =>
 	dataTable(
 		h,
 		{ ariaLabel: "Supabase projects" },
-		columns(h, undefined),
+		columns(h),
 		skeletonRows(h, 4, () => [
-			h.div([h.Class("w-0 min-w-[220px] flex-1")], [skeleton(h, "h-4 w-36")]),
-			skeleton(h, "hidden h-3 w-[120px] md:block"),
-			skeleton(h, "h-3 w-[180px]"),
-			skeleton(h, "ml-auto h-3 w-[100px]"),
-			skeleton(h, "ml-auto h-3 w-[110px]"),
-			skeleton(h, "h-3 w-[100px]"),
+			h.div(
+				[h.Class("w-0 min-w-40 flex-1 space-y-1.5")],
+				[skeleton(h, "h-3.5 w-36"), skeleton(h, "h-2.5 w-48")],
+			),
+			skeleton(h, "h-4 w-16"),
+			skeleton(h, "hidden h-1.5 w-24 lg:block"),
+			skeleton(h, "hidden h-1.5 w-24 lg:block"),
+			skeleton(h, "hidden h-1.5 w-24 lg:block"),
+			skeleton(h, "ml-auto h-3 w-16"),
+			skeleton(h, "ml-auto hidden h-3 w-12 md:block"),
+			skeleton(h, "ml-auto hidden h-3 w-10 md:block"),
+			skeleton(h, "ml-auto h-3 w-24"),
 		]),
 	)
 
-const MUTED_CELL = "text-2xs text-muted-foreground"
+const MUTED = "font-mono text-2xs text-muted-foreground"
+const NUMBER = "font-mono text-xs tabular-nums text-foreground/80"
 
-/** A project without metrics in the window says why instead of showing zeros. */
-const usageCell = (h: H, view: ProjectView): Html => {
-	if (view.metrics !== null)
-		return meterRows(h, [
-			{ label: "CPU", fraction: view.metrics.cpuMax },
-			{ label: "MEM", fraction: view.metrics.memoryMax },
-			{ label: "DISK", fraction: view.metrics.diskUsedMax },
-		])
+/** A utilisation bar and its percent; a project without metrics shows an empty track. */
+const usageCell = (h: H, label: string, fraction: number | null): Html =>
+	h.div(
+		[h.Class("hidden w-24 items-center gap-2 lg:flex")],
+		[
+			meter(h, {
+				value: fraction ?? 0,
+				tone: fraction !== null && fraction >= SATURATION ? "warn" : "ok",
+				className: "h-1 w-12 shrink-0",
+				label: fraction === null ? undefined : `${label} ${formatPercent(fraction)}`,
+			}),
+			h.span(
+				[
+					h.Class(
+						cn(
+							"font-mono text-2xs tabular-nums",
+							fraction === null ? "text-muted-foreground" : "text-foreground/80",
+						),
+					),
+				],
+				[fraction === null ? EMPTY_VALUE : formatPercent(fraction)],
+			),
+		],
+	)
+
+const connectionsCell = (h: H, view: ProjectView): Html => {
+	const metrics = view.metrics
+	if (metrics === null) return h.span([h.Class(MUTED)], [EMPTY_VALUE])
+	const peak = Math.round(metrics.connectionsMax)
+	const limit = metrics.maxConnections
+	const isNear = limit !== null && peak >= limit * SATURATION
 	return h.span(
-		[h.Class(MUTED_CELL)],
-		[view.collection === "waiting" ? "Waiting for the first scrape" : "Not collected"],
+		[
+			h.Class(cn(NUMBER, isNear && "text-severity-warn")),
+			h.Title(
+				limit === null ? "Peak Postgres connections" : "Peak Postgres connections of max_connections",
+			),
+		],
+		[limit === null ? String(peak) : `${peak} / ${limit}`],
 	)
 }
 
-const numberCell = (h: H, text: string | null): Html =>
-	h.span(
-		[h.Class(text === null ? MUTED_CELL : "font-mono text-xs tabular-nums text-foreground/80")],
-		[text ?? "-"],
+const numberCell = (h: H, value: number | null, className: string): Html =>
+	h.div(
+		[h.Class(cn("justify-end", className))],
+		[
+			h.span(
+				[h.Class(value === null ? MUTED : NUMBER)],
+				[value === null ? EMPTY_VALUE : formatRate(value)],
+			),
+		],
 	)
 
-const row = (h: H, view: ProjectView, clock: Clock): Html => {
-	const pill = view.status === null ? null : projectStatusLabel(view.status)
+const collectingCell = (h: H, view: ProjectView): Html => {
+	const isWaiting = view.collection === "waiting" && !view.logsEnabled
+	return h.span(
+		[
+			h.Class(cn(MUTED, "truncate")),
+			h.Title(isWaiting ? "Waiting for the first scrape" : collectingLabel(view)),
+		],
+		[isWaiting ? "Waiting" : collectingLabel(view)],
+	)
+}
+
+const row = (h: H, view: ProjectView): Html => {
+	const metrics = view.metrics
+	const logs = (value: number) => (metrics === null || !view.logsEnabled ? null : value)
 	return h.a(
 		[
 			h.Key(view.ref),
-			h.Class(ROW_LINK_CLASS),
+			h.Class(cn(ROW_LINK_CLASS, view.health._tag === "Paused" && "opacity-60")),
 			h.Href(hrefOf(AppRoute.InfraSupabaseProject({ projectRef: view.ref, search: {} }))),
 		],
 		[
 			h.div(
-				[h.Class("flex w-0 min-w-[220px] flex-1 flex-col gap-0.5")],
+				[h.Class("flex w-0 min-w-40 flex-1 flex-col gap-0.5")],
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-center gap-2")],
+					h.span(
 						[
-							h.span(
-								[
-									h.Class(
-										"truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
-									),
-									h.Title(view.displayName),
-								],
-								[view.displayName],
+							h.Class(
+								"truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
 							),
-							...(pill === null
-								? []
-								: [badge(h, { variant: pill.tone, className: "shrink-0" }, [pill.label])]),
+							h.Title(view.displayName),
 						],
+						[view.displayName],
 					),
-					h.span([h.Class("font-mono text-2xs text-muted-foreground")], [view.ref]),
-				],
-			),
-			h.div(
-				[h.Class("hidden w-[120px] truncate text-xs text-muted-foreground md:block")],
-				[view.region || "-"],
-			),
-			h.div([h.Class("w-[180px]")], [usageCell(h, view)]),
-			h.div(
-				[h.Class("w-[100px] text-right")],
-				[numberCell(h, view.metrics === null ? null : formatBytes(view.metrics.dbSize))],
-			),
-			h.div(
-				[h.Class("w-[110px] text-right")],
-				[
-					numberCell(
-						h,
-						view.metrics === null ? null : String(Math.round(view.metrics.connectionsMax)),
+					h.span(
+						[h.Class("truncate font-mono text-2xs text-muted-foreground")],
+						[view.region === "" ? view.ref : `${view.ref} · ${view.region}`],
 					),
 				],
 			),
-			h.div(
-				[h.Class("w-[100px] text-right")],
-				[
-					view.metrics === null
-						? numberCell(h, null)
-						: relativeTime(h, {
-								value: view.metrics.lastSeen,
-								...clock,
-								mono: true,
-								tooltip: "title",
-								className: "text-2xs text-muted-foreground",
-							}),
-				],
-			),
+			h.div([h.Class("w-20")], [healthPill(h, view.health)]),
+			usageCell(h, "CPU", metrics?.cpuAvg ?? null),
+			usageCell(h, "Memory", metrics?.memoryAvg ?? null),
+			usageCell(h, "Disk", metrics?.diskUsedMax ?? null),
+			h.div([h.Class("flex w-20 justify-end")], [connectionsCell(h, view)]),
+			numberCell(h, logs(metrics?.requestsPerMinute ?? 0), "hidden w-16 md:flex"),
+			numberCell(h, logs(metrics?.issueCount ?? 0), "hidden w-14 md:flex"),
+			h.div([h.Class("flex w-28 justify-end")], [collectingCell(h, view)]),
 		],
 	)
 }
 
-export type SupabaseTableInputs = Readonly<{
-	projects: ReadonlyArray<ProjectView>
-	sort: Sort<SortKey>
-	clock: Clock
-}>
-
-export const supabaseTable = (h: H, inputs: SupabaseTableInputs): Html =>
+export const supabaseTable = (h: H, projects: ReadonlyArray<ProjectView>, isWaiting: boolean): Html =>
 	dataTable(
 		h,
-		{ ariaLabel: "Supabase projects" },
-		columns(h, inputs.sort),
-		sortProjects(inputs.projects, inputs.sort).map((view) => row(h, view, inputs.clock)),
+		{ ariaLabel: "Supabase projects", isWaiting },
+		columns(h),
+		projects.map((view) => row(h, view)),
 	)

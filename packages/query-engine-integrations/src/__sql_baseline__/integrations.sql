@@ -4133,6 +4133,7 @@ SELECT
           metrics_sum.MetricName AS metricName,
           metrics_sum.Attributes['mode'] AS mode,
           metrics_sum.Attributes['device'] AS device,
+          multiIf(lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) = metrics_sum.TimeUnix, 1, 0) AS isFirst,
           multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
@@ -4158,6 +4159,7 @@ SELECT
           maxIf(points.dbSize, points.dbSizeSamples > 0) AS dbSize,
           ifNull(ifNotFinite(avgIf(points.backends, points.backendSamples > 0), 0), 0) AS connectionsAvg,
           maxIf(points.backends, points.backendSamples > 0) AS connectionsMax,
+          maxIf(points.maxConnections, points.maxConnectionsSamples > 0) AS maxConnections,
           ifNull(ifNotFinite(avgIf(points.poolerClients, points.poolerSamples > 0), 0), 0) AS poolerClients,
           max(points.authUsers) AS authUsers,
           sum(points.authSamples) AS authSamples,
@@ -4179,6 +4181,8 @@ SELECT
           countIf(metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backendSamples,
           sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerClients,
           countIf(metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'max_connections_connection_count' AND metrics_gauge.Attributes['service_type'] = 'postgresql')) AS maxConnections,
+          countIf((metrics_gauge.MetricName = 'max_connections_connection_count' AND metrics_gauge.Attributes['service_type'] = 'postgresql')) AS maxConnectionsSamples,
           maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authUsers,
           countIf((metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authSamples,
           sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMax,
@@ -4189,7 +4193,7 @@ SELECT
           countIf(metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaitingSamples
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('node_memory_MemTotal_bytes', 'node_memory_MemAvailable_bytes', 'node_filesystem_size_bytes', 'node_filesystem_avail_bytes', 'pg_database_size_bytes', 'pg_stat_database_num_backends', 'pgbouncer_used_clients', 'auth_users_user_count', 'pgrst_db_pool_max', 'pgrst_db_pool_available', 'pgrst_db_pool_waiting')
+          AND metrics_gauge.MetricName IN ('node_memory_MemTotal_bytes', 'node_memory_MemAvailable_bytes', 'node_filesystem_size_bytes', 'node_filesystem_avail_bytes', 'pg_database_size_bytes', 'pg_stat_database_num_backends', 'pgbouncer_used_clients', 'max_connections_connection_count', 'auth_users_user_count', 'pgrst_db_pool_max', 'pgrst_db_pool_available', 'pgrst_db_pool_waiting')
           AND metrics_gauge.Attributes['supabase_project_ref'] = 'abcdefghijklmnopqrst'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
@@ -4210,6 +4214,7 @@ SELECT
           maxIf(points.dbSize, points.dbSizeSamples > 0) AS dbSize,
           ifNull(ifNotFinite(avgIf(points.backends, points.backendSamples > 0), 0), 0) AS connectionsAvg,
           maxIf(points.backends, points.backendSamples > 0) AS connectionsMax,
+          maxIf(points.maxConnections, points.maxConnectionsSamples > 0) AS maxConnections,
           max(points.t) AS lastSeen
         FROM (SELECT
           metrics_gauge.Attributes['supabase_project_ref'] AS projectRef,
@@ -4226,6 +4231,8 @@ SELECT
           countIf(metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backendSamples,
           sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerClients,
           countIf(metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'max_connections_connection_count' AND metrics_gauge.Attributes['service_type'] = 'postgresql')) AS maxConnections,
+          countIf((metrics_gauge.MetricName = 'max_connections_connection_count' AND metrics_gauge.Attributes['service_type'] = 'postgresql')) AS maxConnectionsSamples,
           maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authUsers,
           countIf((metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authSamples,
           sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMax,
@@ -4236,7 +4243,7 @@ SELECT
           countIf(metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaitingSamples
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('node_memory_MemTotal_bytes', 'node_memory_MemAvailable_bytes', 'node_filesystem_size_bytes', 'node_filesystem_avail_bytes', 'pg_database_size_bytes', 'pg_stat_database_num_backends', 'pgbouncer_used_clients', 'auth_users_user_count', 'pgrst_db_pool_max', 'pgrst_db_pool_available', 'pgrst_db_pool_waiting')
+          AND metrics_gauge.MetricName IN ('node_memory_MemTotal_bytes', 'node_memory_MemAvailable_bytes', 'node_filesystem_size_bytes', 'node_filesystem_avail_bytes', 'pg_database_size_bytes', 'pg_stat_database_num_backends', 'pgbouncer_used_clients', 'max_connections_connection_count', 'auth_users_user_count', 'pgrst_db_pool_max', 'pgrst_db_pool_available', 'pgrst_db_pool_waiting')
           AND metrics_gauge.Attributes['supabase_project_ref'] != ''
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
@@ -4249,20 +4256,21 @@ SELECT
 -- builder:supabase-infra:supabaseProjectRateSeriesSQL:default
 SELECT
           toStartOfInterval(deltas.t, INTERVAL 300 SECOND) AS bucket,
-          ifNull(ifNotFinite(greatest(1 - sumIf(deltas.delta, (deltas.metricName = 'node_cpu_seconds_total' AND deltas.mode = 'idle')) / sumIf(deltas.delta, deltas.metricName = 'node_cpu_seconds_total'), 0), 0), 0) AS cpu,
-          ifNull(ifNotFinite(sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_xact_commit_total') / min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS commitsPerSecond,
-          ifNull(ifNotFinite(sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_xact_rollback_total') / min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS rollbacksPerSecond,
+          if(1 - sumIf(deltas.delta, (deltas.metricName = 'node_cpu_seconds_total' AND deltas.mode = 'idle')) / nullIf(sumIf(deltas.delta, deltas.metricName = 'node_cpu_seconds_total'), 0) < 0, 0, 1 - sumIf(deltas.delta, (deltas.metricName = 'node_cpu_seconds_total' AND deltas.mode = 'idle')) / nullIf(sumIf(deltas.delta, deltas.metricName = 'node_cpu_seconds_total'), 0)) AS cpu,
+          sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_xact_commit_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'pg_stat_database_xact_commit_total'), 1), 0), 0) AS commitsPerSecond,
+          sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_xact_rollback_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'pg_stat_database_xact_rollback_total'), 1), 0), 0) AS rollbacksPerSecond,
           sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_blks_hit_total') / nullIf(sumIf(deltas.delta, deltas.metricName IN ('pg_stat_database_blks_hit_total', 'pg_stat_database_blks_read_total')), 0) AS cacheHitRatio,
-          ifNull(ifNotFinite(sumIf(deltas.delta, (deltas.metricName = 'node_network_receive_bytes_total' AND deltas.device != 'lo')) / min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS networkRxPerSecond,
-          ifNull(ifNotFinite(sumIf(deltas.delta, (deltas.metricName = 'node_network_transmit_bytes_total' AND deltas.device != 'lo')) / min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS networkTxPerSecond,
-          ifNull(ifNotFinite(sumIf(deltas.delta, deltas.metricName = 'node_disk_read_bytes_total') / min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS diskReadPerSecond,
-          ifNull(ifNotFinite(sumIf(deltas.delta, deltas.metricName = 'node_disk_written_bytes_total') / min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS diskWritePerSecond
+          sumIf(deltas.delta, (deltas.metricName = 'node_network_receive_bytes_total' AND deltas.device != 'lo')) / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, (deltas.metricName = 'node_network_receive_bytes_total' AND deltas.device != 'lo')), 1), 0), 0) AS networkRxPerSecond,
+          sumIf(deltas.delta, (deltas.metricName = 'node_network_transmit_bytes_total' AND deltas.device != 'lo')) / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, (deltas.metricName = 'node_network_transmit_bytes_total' AND deltas.device != 'lo')), 1), 0), 0) AS networkTxPerSecond,
+          sumIf(deltas.delta, deltas.metricName = 'node_disk_read_bytes_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'node_disk_read_bytes_total'), 1), 0), 0) AS diskReadPerSecond,
+          sumIf(deltas.delta, deltas.metricName = 'node_disk_written_bytes_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'node_disk_written_bytes_total'), 1), 0), 0) AS diskWritePerSecond
         FROM (SELECT
           metrics_sum.Attributes['supabase_project_ref'] AS projectRef,
           metrics_sum.TimeUnix AS t,
           metrics_sum.MetricName AS metricName,
           metrics_sum.Attributes['mode'] AS mode,
           metrics_sum.Attributes['device'] AS device,
+          multiIf(lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) = metrics_sum.TimeUnix, 1, 0) AS isFirst,
           multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
@@ -4274,4 +4282,201 @@ SELECT
         GROUP BY bucket
         ORDER BY bucket ASC
         LIMIT 2000
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseApiTopPathsSQL:default
+SELECT
+          logs.LogAttributes['request.method'] AS method,
+          extract(logs.LogAttributes['request.path'], '^[^?#]*') AS path,
+          count() AS requests,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599) AS errors5xx,
+          ifNull(ifNotFinite(quantile(0.95)(toFloat64OrNull(logs.LogAttributes['response.origin_time'])), 0), 0) AS p95OriginMs
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst'
+          AND logs.LogAttributes['supabase.log.source'] = 'edge_logs'
+        GROUP BY method, path
+        ORDER BY requests DESC, method ASC, path ASC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseApiTrafficSeriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(logs.TimestampTime, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 200 AND 299) AS status2xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 300 AND 399) AS status3xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 400 AND 499) AS status4xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599) AS status5xx
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst'
+          AND logs.LogAttributes['supabase.log.source'] = 'edge_logs'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseApiTrafficTotalsSQL:default
+SELECT
+          count() AS requests,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599) AS errors5xx,
+          ifNull(ifNotFinite(quantile(0.95)(toFloat64OrNull(logs.LogAttributes['response.origin_time'])), 0), 0) AS p95OriginMs
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst'
+          AND logs.LogAttributes['supabase.log.source'] = 'edge_logs'
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseLogIssuesSQL:org
+SELECT
+          records.projectRef AS projectRef,
+          records.source AS source,
+          records.message AS message,
+          count() AS count,
+          max(records.t) AS lastSeen,
+          max(records.severity) AS maxSeverity
+        FROM (SELECT
+          logs.ResourceAttributes['supabase.project.ref'] AS projectRef,
+          logs.LogAttributes['supabase.log.source'] AS source,
+          leftUTF8(replaceRegexpAll(multiIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs', concat(logs.LogAttributes['request.method'], ' ', extract(logs.LogAttributes['request.path'], '^[^?#]*'), ' ', logs.LogAttributes['response.status_code']), logs.LogAttributes['msg'] != '', logs.LogAttributes['msg'], logs.Body), '[0-9]+', '0'), 200) AS message,
+          logs.Timestamp AS t,
+          logs.SeverityNumber AS severity
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.SeverityNumber >= 13
+          AND logs.ResourceAttributes['supabase.project.ref'] != '') AS records
+        GROUP BY projectRef, source, message
+        ORDER BY count DESC, lastSeen DESC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseLogIssuesSQL:project
+SELECT
+          records.projectRef AS projectRef,
+          records.source AS source,
+          records.message AS message,
+          count() AS count,
+          max(records.t) AS lastSeen,
+          max(records.severity) AS maxSeverity
+        FROM (SELECT
+          logs.ResourceAttributes['supabase.project.ref'] AS projectRef,
+          logs.LogAttributes['supabase.log.source'] AS source,
+          leftUTF8(replaceRegexpAll(multiIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs', concat(logs.LogAttributes['request.method'], ' ', extract(logs.LogAttributes['request.path'], '^[^?#]*'), ' ', logs.LogAttributes['response.status_code']), logs.LogAttributes['msg'] != '', logs.LogAttributes['msg'], logs.Body), '[0-9]+', '0'), 200) AS message,
+          logs.Timestamp AS t,
+          logs.SeverityNumber AS severity
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.SeverityNumber >= 13
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst') AS records
+        GROUP BY projectRef, source, message
+        ORDER BY count DESC, lastSeen DESC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseLogsProjectsSummarySQL:default
+SELECT
+          logs.ResourceAttributes['supabase.project.ref'] AS projectRef,
+          countIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs') AS requests,
+          ifNull(ifNotFinite(countIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs') * 60 / greatest(toUnixTimestamp(toDateTime('2026-01-03 14:15:00')) - toUnixTimestamp(toDateTime('2026-01-01 10:30:00')), 1), 0), 0) AS requestsPerMinute,
+          countIf((logs.LogAttributes['supabase.log.source'] = 'edge_logs' AND toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599)) AS errors5xx,
+          countIf(logs.SeverityNumber >= 13) AS issueCount,
+          max(logs.Timestamp) AS lastSeen
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] != ''
+        GROUP BY projectRef
+        ORDER BY projectRef ASC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseProjectCallerSeriesSQL:default
+SELECT
+          traces.ServiceName AS serviceName,
+          formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          count() AS calls
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Client'
+          AND ((((traces.SpanAttributes['server.address'] = concat('abcdefghijklmnopqrst', '.supabase.co') OR traces.SpanAttributes['net.peer.name'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR traces.SpanAttributes['http.host'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR domain(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url'])) = concat('abcdefghijklmnopqrst', '.supabase.co')) OR (coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql' AND (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) = concat('db.', 'abcdefghijklmnopqrst', '.supabase.co') OR (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) LIKE '%.pooler.supabase.com' AND traces.SpanAttributes['db.user'] LIKE concat('%.', 'abcdefghijklmnopqrst')))))
+          AND traces.ServiceName IN (SELECT
+          callers.serviceName AS serviceName
+        FROM (SELECT
+          traces.ServiceName AS serviceName,
+          count() AS calls
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Client'
+          AND ((((traces.SpanAttributes['server.address'] = concat('abcdefghijklmnopqrst', '.supabase.co') OR traces.SpanAttributes['net.peer.name'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR traces.SpanAttributes['http.host'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR domain(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url'])) = concat('abcdefghijklmnopqrst', '.supabase.co')) OR (coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql' AND (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) = concat('db.', 'abcdefghijklmnopqrst', '.supabase.co') OR (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) LIKE '%.pooler.supabase.com' AND traces.SpanAttributes['db.user'] LIKE concat('%.', 'abcdefghijklmnopqrst')))))
+        GROUP BY serviceName
+        ORDER BY calls DESC, serviceName ASC
+        LIMIT 100) AS callers)
+        GROUP BY serviceName, bucket
+        ORDER BY serviceName ASC, bucket ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseProjectCallersSQL:default
+SELECT
+          spans.serviceName AS serviceName,
+          count() AS calls,
+          ifNull(ifNotFinite(count() * 60 / greatest(toUnixTimestamp(toDateTime('2026-01-03 14:15:00')) - toUnixTimestamp(toDateTime('2026-01-01 10:30:00')), 1), 0), 0) AS callsPerMinute,
+          sum(spans.failed) AS errors,
+          ifNull(ifNotFinite(sum(spans.failed) / count(), 0), 0) AS errorRate,
+          ifNull(ifNotFinite(quantile(0.95)(spans.duration) / 1000000, 0), 0) AS p95DurationMs,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/rest/%')) AS rest,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/auth/%')) AS auth,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/storage/%')) AS storage,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/realtime/%')) AS realtime,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/functions/%')) AS functions,
+          countIf(spans.isPostgres = 1) AS postgres,
+          countIf((spans.isPostgres = 0 AND NOT (match(spans.path, '^/(rest|auth|storage|realtime|functions)/')))) AS other
+        FROM (SELECT
+          traces.ServiceName AS serviceName,
+          traces.Duration AS duration,
+          if(traces.StatusCode = 'Error', 1, 0) AS failed,
+          if(coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql', 1, 0) AS isPostgres,
+          if(traces.SpanAttributes['url.path'] != '', traces.SpanAttributes['url.path'], path(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url']))) AS path
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Client'
+          AND ((((traces.SpanAttributes['server.address'] = concat('abcdefghijklmnopqrst', '.supabase.co') OR traces.SpanAttributes['net.peer.name'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR traces.SpanAttributes['http.host'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR domain(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url'])) = concat('abcdefghijklmnopqrst', '.supabase.co')) OR (coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql' AND (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) = concat('db.', 'abcdefghijklmnopqrst', '.supabase.co') OR (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) LIKE '%.pooler.supabase.com' AND traces.SpanAttributes['db.user'] LIKE concat('%.', 'abcdefghijklmnopqrst')))))) AS spans
+        GROUP BY serviceName
+        ORDER BY calls DESC, serviceName ASC
+        LIMIT 100
         FORMAT JSON

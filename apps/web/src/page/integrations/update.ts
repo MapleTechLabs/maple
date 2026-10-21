@@ -133,6 +133,7 @@ const enterIntegration = (model: Model, context: PageContext): Return => {
 	if (integration === "cloudflare") return CloudflareCard.enterCloudflare(model, context)
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
+	if (integration === "supabase") return Supabase.requestMetricsRows(model, context, "Load")
 	return { model }
 }
 
@@ -148,7 +149,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	const s = model.statuses
 	return Message.match<Return>(message, {
 		CompletedReadClock: ({ nowMs }) =>
-			gcpBand(
+			chain(
 				{
 					...model,
 					nowMs,
@@ -157,7 +158,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						watchStartedAt: model.planetscaleCard.watchStartedAt ?? nowMs,
 					},
 				},
-				context,
+				[
+					(next) => gcpBand(next, context),
+					(next) => Supabase.requestMetricsRows(next, context, "Load"),
+				],
 			),
 		CompletedLoadCloudflare: ({ key, result }) =>
 			accepted(model, { ...s, cloudflare: Keyed.accept(s.cloudflare, key, result) }),
@@ -183,8 +187,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				s.gcp.key === key && Result.isSuccess(result) ? Configure.statusArrived(read).model : read
 			return gcpBand(arrived, context)
 		},
-		CompletedLoadSupabase: ({ key, result }) =>
-			accepted(model, { ...s, supabase: Keyed.accept(s.supabase, key, result) }),
+		CompletedLoadSupabase: ({ key, result }) => {
+			const read = accepted(model, { ...s, supabase: Keyed.accept(s.supabase, key, result) }).model
+			// Any answer to the current read retires saved flips; a failed one shows the last known value.
+			return Supabase.requestMetricsRows(
+				s.supabase.key === key ? Supabase.settledStatus(read) : read,
+				context,
+				"Load",
+			)
+		},
+		CompletedLoadSupabaseMetrics: ({ key, result }) => Supabase.completedMetricsRows(model, key, result),
 		CompletedLoadHazel: ({ key, result }) =>
 			accepted(model, { ...s, hazel: Keyed.accept(s.hazel, key, result) }),
 		CompletedLoadGithub: ({ key, result }) =>
@@ -274,6 +286,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRailwayRotate: () => Railway.setRotating(model, true),
 		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
 		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
+		// Advances the card's window and "Last data" ages; the fresh clock re-reads rows on a new key.
+		TickedSupabaseClock: () => ({ model, commands: [ReadClock()] }),
+		CompletedReadSupabaseClock: ({ nowMs }) => Supabase.completedReadClock(model, context, nowMs),
 		ClickedSupabaseSync: () => Supabase.clickedSync(model),
 		CompletedSupabaseSync: ({ failure }) => Supabase.completedSync(model, context, failure),
 		ToggledSupabaseMetrics: ({ ref, enabled }) => Supabase.toggledMetrics(model, ref, enabled),

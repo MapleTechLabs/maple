@@ -1,7 +1,16 @@
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
-import { loadSupabaseProjects, loadSupabaseStatus, loadSupabaseTimeseries } from "../data"
+import {
+	loadSupabaseApiTopPaths,
+	loadSupabaseApiTraffic,
+	loadSupabaseCallers,
+	loadSupabaseInsights,
+	loadSupabaseLogIssues,
+	loadSupabaseProjects,
+	loadSupabaseStatus,
+	loadSupabaseTimeseries,
+} from "../data"
 import { Message, RequestMode } from "./message"
 
 export const ResolveWindow = Command.define("ResolveSupabaseProjectWindow", {
@@ -23,7 +32,7 @@ export const ResolveWindow = Command.define("ResolveSupabaseProjectWindow", {
 		),
 })
 
-/** The project's name, region and lifecycle status come from discovery. */
+/** The project's name, region, lifecycle status and switches come from discovery. */
 export const LoadStatus = Command.define("LoadSupabaseProjectStatus", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedLoadStatus],
@@ -39,12 +48,14 @@ export const FetchProjects = Command.define("FetchSupabaseProjectRows", {
 		Effect.map(loadSupabaseProjects(window), (result) => Message.CompletedFetchProjects({ key, result })),
 })
 
-export const TimeseriesInput = Schema.Struct({
+export const ProjectWindowInput = Schema.Struct({
 	startTime: Schema.String,
 	endTime: Schema.String,
-	bucketSeconds: Schema.Number,
 	projectRef: Schema.String,
 })
+export type ProjectWindowInput = typeof ProjectWindowInput.Type
+
+export const TimeseriesInput = Schema.Struct({ ...ProjectWindowInput.fields, bucketSeconds: Schema.Number })
 export type TimeseriesInput = typeof TimeseriesInput.Type
 
 export const FetchTimeseries = Command.define("FetchSupabaseProjectTimeseries", {
@@ -53,6 +64,45 @@ export const FetchTimeseries = Command.define("FetchSupabaseProjectTimeseries", 
 	execute: ({ key, input }) =>
 		Effect.map(loadSupabaseTimeseries(input), (result) =>
 			Message.CompletedFetchTimeseries({ key, result }),
+		),
+})
+
+export const FetchTraffic = Command.define("FetchSupabaseApiTraffic", {
+	args: { key: Schema.String, input: TimeseriesInput },
+	messages: [Message.CompletedFetchTraffic],
+	execute: ({ key, input }) =>
+		Effect.map(loadSupabaseApiTraffic(input), (result) => Message.CompletedFetchTraffic({ key, result })),
+})
+
+export const FetchTopPaths = Command.define("FetchSupabaseApiTopPaths", {
+	args: { key: Schema.String, input: ProjectWindowInput },
+	messages: [Message.CompletedFetchTopPaths],
+	execute: ({ key, input }) =>
+		Effect.map(loadSupabaseApiTopPaths(input), (result) =>
+			Message.CompletedFetchTopPaths({ key, result }),
+		),
+})
+
+export const FetchCallers = Command.define("FetchSupabaseProjectCallers", {
+	args: { key: Schema.String, input: TimeseriesInput },
+	messages: [Message.CompletedFetchCallers],
+	execute: ({ key, input }) =>
+		Effect.map(loadSupabaseCallers(input), (result) => Message.CompletedFetchCallers({ key, result })),
+})
+
+export const FetchIssues = Command.define("FetchSupabaseProjectLogIssues", {
+	args: { key: Schema.String, input: ProjectWindowInput },
+	messages: [Message.CompletedFetchIssues],
+	execute: ({ key, input }) =>
+		Effect.map(loadSupabaseLogIssues(input), (result) => Message.CompletedFetchIssues({ key, result })),
+})
+
+export const FetchInsights = Command.define("FetchSupabaseProjectInsights", {
+	args: { key: Schema.String, projectRef: Schema.String },
+	messages: [Message.CompletedFetchInsights],
+	execute: ({ key, projectRef }) =>
+		Effect.map(loadSupabaseInsights(projectRef), (result) =>
+			Message.CompletedFetchInsights({ key, result }),
 		),
 })
 

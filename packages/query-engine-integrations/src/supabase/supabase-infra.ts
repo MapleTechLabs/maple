@@ -17,6 +17,8 @@ const SUPABASE_FS_AVAILABLE = "node_filesystem_avail_bytes"
 const SUPABASE_DB_SIZE = "pg_database_size_bytes"
 const SUPABASE_BACKENDS = "pg_stat_database_num_backends"
 const SUPABASE_POOLER_CLIENTS = "pgbouncer_used_clients"
+/** Postgres' `max_connections`, exported once per project with `service_type="postgresql"`. */
+const SUPABASE_MAX_CONNECTIONS = "max_connections_connection_count"
 const SUPABASE_AUTH_USERS = "auth_users_user_count"
 const SUPABASE_POSTGREST_POOL_MAX = "pgrst_db_pool_max"
 const SUPABASE_POSTGREST_POOL_AVAILABLE = "pgrst_db_pool_available"
@@ -52,6 +54,7 @@ const GAUGE_METRIC_NAMES = [
 	SUPABASE_DB_SIZE,
 	SUPABASE_BACKENDS,
 	SUPABASE_POOLER_CLIENTS,
+	SUPABASE_MAX_CONNECTIONS,
 	SUPABASE_AUTH_USERS,
 	SUPABASE_POSTGREST_POOL_MAX,
 	SUPABASE_POSTGREST_POOL_AVAILABLE,
@@ -84,6 +87,9 @@ const gaugePoints = () =>
 		const isDbSize = $.MetricName.eq(SUPABASE_DB_SIZE).and(
 			CH.notInList($.Attributes.get("datname"), TEMPLATE_DATABASES),
 		)
+		const isMaxConnections = $.MetricName.eq(SUPABASE_MAX_CONNECTIONS).and(
+			$.Attributes.get("service_type").eq("postgresql"),
+		)
 		// The exporter reports -1 when it cannot count the users.
 		const isAuthUsers = $.MetricName.eq(SUPABASE_AUTH_USERS).and($.Value.gte(0))
 		return {
@@ -101,6 +107,8 @@ const gaugePoints = () =>
 			backendSamples: CH.countIf($.MetricName.eq(SUPABASE_BACKENDS)),
 			poolerClients: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POOLER_CLIENTS)),
 			poolerSamples: CH.countIf($.MetricName.eq(SUPABASE_POOLER_CLIENTS)),
+			maxConnections: CH.maxIf($.Value, isMaxConnections),
+			maxConnectionsSamples: CH.countIf(isMaxConnections),
 			authUsers: CH.maxIf($.Value, isAuthUsers),
 			authSamples: CH.countIf(isAuthUsers),
 			postgrestPoolMax: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POSTGREST_POOL_MAX)),
@@ -133,6 +141,11 @@ const counterDeltas = () =>
 			metricName: $.MetricName,
 			mode: $.Attributes.get("mode"),
 			device: $.Attributes.get("device"),
+			// 1 for a series' first sample: nothing before it to difference against, so its delta is 0.
+			isFirst: CH.multiIf(
+				[[CH.over(CH.lagInFrame($.TimeUnix, 1, $.TimeUnix), previous).eq($.TimeUnix), CH.lit(1)]],
+				CH.lit(0),
+			),
 			delta: metricDeltaExpr({
 				value: $.Value,
 				previousValue: CH.over(CH.lagInFrame($.Value, 1, $.Value), previous),
@@ -162,6 +175,8 @@ export interface SupabaseProjectGaugesOutput {
 	readonly dbSize: number
 	readonly connectionsAvg: number
 	readonly connectionsMax: number
+	/** Postgres' `max_connections`; 0 when the project never reported it. */
+	readonly maxConnections: number
 	readonly lastSeen: DateTime.Utc
 }
 
@@ -203,6 +218,7 @@ export function supabaseProjectGaugesSQL() {
 			dbSize: CH.maxIf($.dbSize, $.dbSizeSamples.gt(0)),
 			connectionsAvg: finiteOrZero(CH.avgIf($.backends, $.backendSamples.gt(0))),
 			connectionsMax: CH.maxIf($.backends, $.backendSamples.gt(0)),
+			maxConnections: CH.maxIf($.maxConnections, $.maxConnectionsSamples.gt(0)),
 			lastSeen: CH.max_($.t),
 		}))
 		.groupBy("projectRef")
@@ -264,6 +280,8 @@ export interface SupabaseProjectGaugeSeriesOutput {
 	readonly dbSize: number
 	readonly connectionsAvg: number
 	readonly connectionsMax: number
+	/** Postgres' `max_connections`; 0 for a bucket without the sample. */
+	readonly maxConnections: number
 	readonly poolerClients: number
 	readonly authUsers: number
 	readonly authSamples: number
@@ -310,6 +328,7 @@ export function supabaseProjectGaugeSeriesSQL() {
 			dbSize: CH.maxIf($.dbSize, $.dbSizeSamples.gt(0)),
 			connectionsAvg: finiteOrZero(CH.avgIf($.backends, $.backendSamples.gt(0))),
 			connectionsMax: CH.maxIf($.backends, $.backendSamples.gt(0)),
+			maxConnections: CH.maxIf($.maxConnections, $.maxConnectionsSamples.gt(0)),
 			poolerClients: finiteOrZero(CH.avgIf($.poolerClients, $.poolerSamples.gt(0))),
 			authUsers: CH.max_($.authUsers),
 			authSamples: CH.sum($.authSamples),
@@ -331,15 +350,17 @@ export function supabaseProjectGaugeSeriesSQL() {
 
 export interface SupabaseProjectRateSeriesOutput {
 	readonly bucket: DateTime.Utc
-	readonly cpu: number
-	readonly commitsPerSecond: number
-	readonly rollbacksPerSecond: number
+	/** Null for a bucket with no CPU increments (a first sample or no sample): a gap, not 0% busy. */
+	readonly cpu: number | null
+	/** Per-second rates are null for a bucket holding a series' first sample. */
+	readonly commitsPerSecond: number | null
+	readonly rollbacksPerSecond: number | null
 	/** Null for a bucket with no block reads: there is no ratio to draw. */
 	readonly cacheHitRatio: number | null
-	readonly networkRxPerSecond: number
-	readonly networkTxPerSecond: number
-	readonly diskReadPerSecond: number
-	readonly diskWritePerSecond: number
+	readonly networkRxPerSecond: number | null
+	readonly networkTxPerSecond: number | null
+	readonly diskReadPerSecond: number | null
+	readonly diskWritePerSecond: number | null
 }
 
 /**
@@ -366,22 +387,30 @@ export function supabaseProjectRateSeriesSQL() {
 					CH.greatest_(bucketStart, rangeStart),
 				),
 			)
+			// A bucket holding a series' first sample is a gap: its zero delta would read as a dip.
 			const perSecond = (condition: CH.Condition) =>
-				finiteOrZero(CH.sumIf($.delta, condition).div(covered))
+				CH.sumIf($.delta, condition).div(
+					// `greatest_` wraps the factor in a call: the builder does not parenthesize arithmetic.
+					CH.nullIf(
+						covered.mul(
+							CH.greatest_(
+								CH.lit(1).sub(CH.least_(CH.sumIf($.isFirst, condition), CH.lit(1))),
+								CH.lit(0),
+							),
+						),
+						0,
+					),
+				)
 			const isNetwork = (metricName: string) => $.metricName.eq(metricName).and($.device.neq("lo"))
+			const busy = CH.lit(1).sub(
+				CH.sumIf($.delta, $.metricName.eq(SUPABASE_CPU_SECONDS).and($.mode.eq("idle"))).div(
+					CH.nullIf(CH.sumIf($.delta, $.metricName.eq(SUPABASE_CPU_SECONDS)), 0),
+				),
+			)
 			return {
 				bucket: CH.toStartOfInterval($.t, param.int("bucketSeconds")),
-				cpu: finiteOrZero(
-					CH.greatest_(
-						CH.lit(1).sub(
-							CH.sumIf(
-								$.delta,
-								$.metricName.eq(SUPABASE_CPU_SECONDS).and($.mode.eq("idle")),
-							).div(CH.sumIf($.delta, $.metricName.eq(SUPABASE_CPU_SECONDS))),
-						),
-						CH.lit(0),
-					),
-				),
+				// `if_`, not `greatest_`: newer ClickHouse `greatest` skips NULL and would turn the gap into 0.
+				cpu: CH.if_(busy.lt(0), CH.lit(0), busy),
 				commitsPerSecond: perSecond($.metricName.eq(SUPABASE_XACT_COMMIT)),
 				rollbacksPerSecond: perSecond($.metricName.eq(SUPABASE_XACT_ROLLBACK)),
 				cacheHitRatio: CH.sumIf($.delta, $.metricName.eq(SUPABASE_BLKS_HIT)).div(

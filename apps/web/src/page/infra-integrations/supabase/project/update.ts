@@ -14,14 +14,20 @@ import { requestSlot } from "../../kit/slot"
 import { CHART_IDS } from "./charts"
 import {
 	CompleteReloadSpin,
+	FetchCallers,
+	FetchInsights,
+	FetchIssues,
 	FetchProjects,
 	FetchTimeseries,
+	FetchTopPaths,
+	FetchTraffic,
 	LoadStatus,
+	type ProjectWindowInput,
 	ResolveWindow,
 	type TimeseriesInput,
 } from "./command"
 import { Message, type RequestMode } from "./message"
-import type { Model } from "./model"
+import type { Model, Section } from "./model"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -45,20 +51,91 @@ export const timeseriesInput = (model: Model, window: TimeWindow): TimeseriesInp
 	projectRef: model.projectRef,
 })
 
+type Commands = NonNullable<Return["commands"]>
+type Step = Readonly<{ model: Model; commands: Commands }>
+
+const SECTIONS: ReadonlyArray<Section> = [
+	"timeseries",
+	"traffic",
+	"topPaths",
+	"callers",
+	"issues",
+	"insights",
+]
+
+/** Polled on Supabase's schedule, not windowed: keyed by the project alone, so init asks at once. */
+const requestInsights = (model: Model, context: PageContext, mode: RequestMode): Step => {
+	const key = requestKey(context.orgId, "getSupabaseProjectInsights", {
+		data: { projectRef: model.projectRef },
+	})
+	const [insights, commands] = requestSlot(model.insights, key, mode, () =>
+		FetchInsights({ key, projectRef: model.projectRef }),
+	)
+	return { model: { ...model, insights }, commands }
+}
+
+/** One read of the page: its slot, keyed by what it asks, and its fetch. */
+const requestSection = (
+	model: Model,
+	context: PageContext,
+	window: TimeWindow,
+	section: Section,
+	mode: RequestMode,
+): Step => {
+	const input = timeseriesInput(model, window)
+	const ranged: ProjectWindowInput = { ...window, projectRef: model.projectRef }
+	const keyOf = (operation: string, data: unknown) => requestKey(context.orgId, operation, { data })
+	switch (section) {
+		case "timeseries": {
+			const key = keyOf("getSupabaseProjectTimeseries", input)
+			const [timeseries, commands] = requestSlot(model.timeseries, key, mode, () =>
+				FetchTimeseries({ key, input }),
+			)
+			return { model: { ...model, timeseries }, commands }
+		}
+		case "traffic": {
+			const key = keyOf("getSupabaseApiTraffic", input)
+			const [traffic, commands] = requestSlot(model.traffic, key, mode, () =>
+				FetchTraffic({ key, input }),
+			)
+			return { model: { ...model, traffic }, commands }
+		}
+		case "topPaths": {
+			const key = keyOf("getSupabaseApiTopPaths", ranged)
+			const [topPaths, commands] = requestSlot(model.topPaths, key, mode, () =>
+				FetchTopPaths({ key, input: ranged }),
+			)
+			return { model: { ...model, topPaths }, commands }
+		}
+		case "callers": {
+			const key = keyOf("getSupabaseProjectCallers", input)
+			const [callers, commands] = requestSlot(model.callers, key, mode, () =>
+				FetchCallers({ key, input }),
+			)
+			return { model: { ...model, callers }, commands }
+		}
+		case "issues": {
+			const key = keyOf("getSupabaseLogIssues", ranged)
+			const [issues, commands] = requestSlot(model.issues, key, mode, () =>
+				FetchIssues({ key, input: ranged }),
+			)
+			return { model: { ...model, issues }, commands }
+		}
+		case "insights":
+			return requestInsights(model, context, mode)
+	}
+}
+
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const projectsKey = requestKey(context.orgId, "getSupabaseProjects", { data: window })
-	const input = timeseriesInput(model, window)
-	const seriesKey = requestKey(context.orgId, "getSupabaseProjectTimeseries", { data: input })
 	const [projects, projectFetches] = requestSlot(model.projects, projectsKey, mode, () =>
 		FetchProjects({ key: projectsKey, window }),
 	)
-	const [timeseries, seriesFetches] = requestSlot(model.timeseries, seriesKey, mode, () =>
-		FetchTimeseries({ key: seriesKey, input }),
-	)
-	return {
-		model: { ...model, window, projects, timeseries },
-		commands: [...projectFetches, ...seriesFetches],
-	}
+	const start: Step = { model: { ...model, window, projects }, commands: projectFetches }
+	return SECTIONS.reduce((step, section) => {
+		const next = requestSection(step.model, context, window, section, mode)
+		return { model: next.model, commands: [...step.commands, ...next.commands] }
+	}, start)
 }
 
 const searchHref = (model: Model, search: Search) =>
@@ -79,6 +156,12 @@ export const init = (route: Route, context: PageContext): Return => {
 		status: Keyed.idle(),
 		projects: Keyed.idle(),
 		timeseries: Keyed.idle(),
+		traffic: Keyed.idle(),
+		topPaths: Keyed.idle(),
+		callers: Keyed.idle(),
+		issues: Keyed.idle(),
+		insights: Keyed.idle(),
+		isTopPathsOpen: false,
 		charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
@@ -89,11 +172,14 @@ export const init = (route: Route, context: PageContext): Return => {
 	const [status, statusFetches] = requestSlot(model.status, statusKey, "Load", () =>
 		LoadStatus({ key: statusKey }),
 	)
+	// The status only shapes what the page says; no read waits for it.
+	const insights = requestInsights({ ...model, status }, context, "Load")
 	return {
-		model: { ...model, status },
+		model: insights.model,
 		commands: [
 			resolveCommand(model, context, "Load"),
 			...statusFetches,
+			...insights.commands,
 			Command.mapMessage(LoadChartRuntime(), (message) =>
 				message._tag === "CompletedLoadChartRuntime"
 					? Message.CompletedLoadChartRuntime()
@@ -132,13 +218,31 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchTimeseries: ({ key, result }) => ({
 			model: { ...model, timeseries: Keyed.accept(model.timeseries, key, result) },
 		}),
+		CompletedFetchTraffic: ({ key, result }) => ({
+			model: { ...model, traffic: Keyed.accept(model.traffic, key, result) },
+		}),
+		CompletedFetchTopPaths: ({ key, result }) => ({
+			model: { ...model, topPaths: Keyed.accept(model.topPaths, key, result) },
+		}),
+		CompletedFetchCallers: ({ key, result }) => ({
+			model: { ...model, callers: Keyed.accept(model.callers, key, result) },
+		}),
+		CompletedFetchIssues: ({ key, result }) => ({
+			model: { ...model, issues: Keyed.accept(model.issues, key, result) },
+		}),
+		CompletedFetchInsights: ({ key, result }) => ({
+			model: { ...model, insights: Keyed.accept(model.insights, key, result) },
+		}),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
 		FailedLoadChartRuntime: ({ reason }) => ({
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
 		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		ClickedRetryTimeseries: () =>
-			model.window === null ? { model } : requestAll(model, context, model.window, "Refresh"),
+		ClickedRetry: ({ section }) =>
+			model.window === null
+				? { model }
+				: requestSection(model, context, model.window, section, "Refresh"),
+		ClickedToggleTopPaths: () => ({ model: { ...model, isTopPathsOpen: !model.isTopPathsOpen } }),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {

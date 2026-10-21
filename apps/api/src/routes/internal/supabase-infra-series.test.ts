@@ -14,6 +14,7 @@ const gauge = (iso: string, memoryAvg: number) => ({
 	dbSize: 512,
 	connectionsAvg: 5,
 	connectionsMax: 6,
+	maxConnections: 60,
 	poolerClients: 2,
 	authUsers: 3,
 	authSamples: 5,
@@ -54,8 +55,12 @@ describe("mergeSupabaseSeries", () => {
 		expect(rows[0]?.dbSize).toBe(0)
 	})
 
-	it("leaves the cache hit ratio empty for a bucket only the gauges have", () => {
+	it("leaves every counter series empty, CPU included, for a bucket only the gauges have", () => {
 		const rows = mergeSupabaseSeries([gauge("2026-07-02T00:00:00Z", 0.5)], [])
 		expect(rows[0]?.cacheHitRatio).toBeNull()
+		expect(rows[0]?.cpu).toBeNull()
+		expect(rows[0]?.commitsPerSecond).toBeNull()
+		expect(rows[0]?.networkRxPerSecond).toBeNull()
+		expect(rows[0]?.diskWritePerSecond).toBeNull()
 	})
 })

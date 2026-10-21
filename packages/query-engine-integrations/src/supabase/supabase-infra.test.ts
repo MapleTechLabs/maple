@@ -40,11 +40,13 @@ describe("supabase infra queries", () => {
 					dbSize: "10802867",
 					connectionsAvg: "5",
 					connectionsMax: "7",
+					maxConnections: "60",
 					lastSeen: "2026-07-02 12:00:00.000",
 				},
 			]),
 		)
 		expect(rows[0]?.memoryTotal).toBe(426192896)
+		expect(rows[0]?.maxConnections).toBe(60)
 		expect(rows[0]?.lastSeen).toEqual(DateTime.makeUnsafe("2026-07-02T12:00:00Z"))
 	})
 
@@ -63,5 +65,27 @@ describe("supabase infra queries", () => {
 		})
 		const rows = Effect.runSync(compiled.decodeRows([rate("0.99"), rate(null)]))
 		expect(rows.map((row) => row.cacheHitRatio)).toEqual([0.99, null])
+	})
+
+	it("keeps a bucket holding a counter's first sample as a null rate and CPU, not 0", () => {
+		const compiled = compileUnsafe(supabaseProjectRateSeriesSQL(), project)
+		const rows = Effect.runSync(
+			compiled.decodeRows([
+				{
+					bucket: "2026-07-02 12:00:00",
+					cpu: null,
+					commitsPerSecond: null,
+					rollbacksPerSecond: null,
+					cacheHitRatio: null,
+					networkRxPerSecond: null,
+					networkTxPerSecond: null,
+					diskReadPerSecond: null,
+					diskWritePerSecond: null,
+				},
+			]),
+		)
+		expect(rows[0]?.cpu).toBeNull()
+		expect(rows[0]?.commitsPerSecond).toBeNull()
+		expect(rows[0]?.networkRxPerSecond).toBeNull()
 	})
 })

@@ -1,41 +1,59 @@
 import { SupabaseProjectUpdateRequest } from "@maple/domain/http"
 import { SupabaseProjectRef } from "@maple/domain/primitives"
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "../../data/load-failure"
+import { idle, KeyedSchema } from "../../data/keyed"
+import { LoadFailure, toLoadFailure } from "../../data/load-failure"
+import { TimeWindow } from "../../data/time-range"
+import { loadSupabaseProjects } from "../infra-integrations/supabase/data"
+import { SupabaseProjectRow } from "../infra-integrations/supabase/model"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { Message } from "./message"
 
 // The Supabase card: state and writes.
 
+export const SupabaseSwitchKind = Schema.Literals(["metrics", "logs"])
+export type SupabaseSwitchKind = typeof SupabaseSwitchKind.Type
+
+/** A switch flip the server has not confirmed: shown in place of the status until the re-read lands. */
+export const PendingSupabaseSwitch = Schema.Struct({
+	ref: SupabaseProjectRef,
+	kind: SupabaseSwitchKind,
+	enabled: Schema.Boolean,
+	/** The write succeeded; the entry waits for the status re-read that carries it. */
+	isSaved: Schema.Boolean,
+})
+export type PendingSupabaseSwitch = typeof PendingSupabaseSwitch.Type
+
 export const SupabaseCardModel = Schema.Struct({
 	isSyncing: Schema.Boolean,
-	/** Projects whose "Collect metrics" or "Collect logs" switch is saving. */
-	pendingRefs: Schema.Array(SupabaseProjectRef),
+	/** At most one per project: a project's switches lock while its write and re-read are in flight. */
+	pending: Schema.Array(PendingSupabaseSwitch),
+	/** The last hour's metrics rows, for each project's health and "Last data". */
+	metrics: KeyedSchema(Schema.Array(SupabaseProjectRow), LoadFailure),
 })
 export type SupabaseCardModel = typeof SupabaseCardModel.Type
 
-export const initSupabaseCard = (): SupabaseCardModel => ({ isSyncing: false, pendingRefs: [] })
+export const initSupabaseCard = (): SupabaseCardModel => ({
+	isSyncing: false,
+	pending: [],
+	metrics: idle(),
+})
 
-/** Supabase's lifecycle status as the row's pill reads it; `null` for a healthy project. */
-export const projectStatusLabel = (
-	status: string,
-): Readonly<{ label: string; tone: "warn" | "crit" }> | null => {
-	if (status === "ACTIVE_HEALTHY") return null
-	if (status === "INACTIVE") return { label: "Paused", tone: "warn" }
-	if (status === "ACTIVE_UNHEALTHY") return { label: "Unhealthy", tone: "crit" }
-	return { label: sentenceCase(status), tone: status.endsWith("_FAILED") ? "crit" : "warn" }
-}
+export const LoadSupabaseMetrics = Command.define("LoadIntegrationsSupabaseMetrics", {
+	args: { key: Schema.String, window: TimeWindow },
+	messages: [Message.CompletedLoadSupabaseMetrics],
+	execute: ({ key, window }) =>
+		Effect.map(loadSupabaseProjects(window), (result) =>
+			Message.CompletedLoadSupabaseMetrics({ key, result }),
+		),
+})
 
-/** `COMING_UP` reads "Coming up". */
-const sentenceCase = (status: string): string => {
-	const sentence = status
-		.toLowerCase()
-		.split("_")
-		.filter((word) => word !== "")
-		.join(" ")
-	return sentence.charAt(0).toUpperCase() + sentence.slice(1)
-}
+/** After a switch settles, so the rows re-read resolves its window against now, not page mount. */
+export const ReadSupabaseClock = Command.define("ReadSupabaseClock", {
+	messages: [Message.CompletedReadSupabaseClock],
+	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadSupabaseClock({ nowMs })),
+})
 
 export const SyncSupabase = Command.define("SyncSupabase", {
 	messages: [Message.CompletedSupabaseSync],

@@ -9,6 +9,7 @@ import {
 	SupabaseProjectRef,
 	UserId,
 } from "@maple/domain/primitives"
+import { SupabaseAdvisorLint, SupabaseTopQuery } from "@maple/domain/http"
 import { Sources } from "./sources"
 
 /**
@@ -109,3 +110,42 @@ export const SupabaseProjects = PG.table("supabase_projects", {
 
 export type SupabaseProjectRow = PG.SelectRowOf<typeof SupabaseProjects>
 export type SupabaseProjectInsert = PG.InsertRowOf<typeof SupabaseProjects>
+
+/**
+ * A project's polled advisors and slowest statements. One row per project, created by the first
+ * insights poll; a failed poll records its error and keeps the previous result.
+ */
+export const SupabaseProjectInsights = PG.table("supabase_project_insights", {
+	columns: {
+		projectId: PG.column(PG.brand(PG.text, SupabaseProjectId), { name: "project_id" }),
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		advisorsJson: PG.column(PG.jsonb(Schema.Array(SupabaseAdvisorLint)), {
+			name: "advisors_json",
+			default: [],
+		}),
+		topQueriesJson: PG.column(PG.jsonb(Schema.Array(SupabaseTopQuery)), {
+			name: "top_queries_json",
+			default: [],
+		}),
+		advisorsCheckedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "advisors_checked_at" }),
+		queriesCheckedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "queries_checked_at" }),
+		advisorsError: PG.column(PG.nullable(PG.text), { name: "advisors_error" }),
+		queriesError: PG.column(PG.nullable(PG.text), { name: "queries_error" }),
+		leaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "lease_until" }),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+	},
+	primaryKey: ["projectId"],
+	indexes: [PG.index("supabase_project_insights_org_idx", ["orgId"])],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["projectId"],
+			references: SupabaseProjects,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
+	],
+	tenantColumn: "orgId",
+})
+
+export type SupabaseProjectInsightsRow = PG.SelectRowOf<typeof SupabaseProjectInsights>

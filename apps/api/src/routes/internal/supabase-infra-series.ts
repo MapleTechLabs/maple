@@ -15,6 +15,7 @@ const GAUGE_ZEROS: Omit<SupabaseProjectGaugeSeriesOutput, "bucket"> = {
 	dbSize: 0,
 	connectionsAvg: 0,
 	connectionsMax: 0,
+	maxConnections: 0,
 	poolerClients: 0,
 	authUsers: 0,
 	authSamples: 0,
@@ -24,21 +25,21 @@ const GAUGE_ZEROS: Omit<SupabaseProjectGaugeSeriesOutput, "bucket"> = {
 }
 
 const RATE_ZEROS: Omit<SupabaseProjectRateSeriesOutput, "bucket"> = {
-	cpu: 0,
-	commitsPerSecond: 0,
-	rollbacksPerSecond: 0,
-	// No block reads, no ratio: a gap, not 0%.
+	// No counter samples in the bucket: gaps, not 0% busy, zero rates or 0% hits.
+	cpu: null,
+	commitsPerSecond: null,
+	rollbacksPerSecond: null,
 	cacheHitRatio: null,
-	networkRxPerSecond: 0,
-	networkTxPerSecond: 0,
-	diskReadPerSecond: 0,
-	diskWritePerSecond: 0,
+	networkRxPerSecond: null,
+	networkTxPerSecond: null,
+	diskReadPerSecond: null,
+	diskWritePerSecond: null,
 }
 
 export type SupabaseSeriesRow = Omit<SupabaseProjectGaugeSeriesOutput, "bucket"> &
 	Omit<SupabaseProjectRateSeriesOutput, "bucket"> & { readonly bucket: string }
 
-/** Every bucket either read has, in time order; the half a bucket lacks reads as zeros (cache hit as a gap). */
+/** Every bucket either read has, in time order; a missing gauge half reads as zeros, a missing rate half as gaps. */
 export const mergeSupabaseSeries = (
 	gauges: ReadonlyArray<SupabaseProjectGaugeSeriesOutput>,
 	rates: ReadonlyArray<SupabaseProjectRateSeriesOutput>,
