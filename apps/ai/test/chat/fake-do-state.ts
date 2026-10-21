@@ -86,8 +86,13 @@ class FakeCursor<T extends Row> implements SqlStorageCursor<T> {
 	raw<U extends SqlStorageValue[]>(): IterableIterator<U> {
 		throw new Error("raw() is not used by ChatSession")
 	}
-	[Symbol.iterator](): IterableIterator<T> {
-		return this.toArray()[Symbol.iterator]()
+	// Lazy, like the real cursor: iterating consumes rows one at a time via next().
+	*[Symbol.iterator](): Generator<T, void> {
+		let step = this.next()
+		while (!step.done) {
+			yield step.value
+			step = this.next()
+		}
 	}
 }
 
