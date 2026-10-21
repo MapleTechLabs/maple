@@ -92,6 +92,11 @@ export interface EnvConfig {
 	 */
 	readonly MAPLE_CANCELLATION_SLACK_CHANNEL_ID: Option.Option<string>
 	/**
+	 * The Clerk dashboard's instance URL (`https://dashboard.clerk.com/apps/<app>/instances/<ins>`)
+	 * that cancellation reports link orgs into. Unset → a link to the last-active instance.
+	 */
+	readonly MAPLE_CLERK_DASHBOARD_URL: Option.Option<string>
+	/**
 	 * Self-observability ingest key (`@maple-dev/effect-sdk` reads the same variable
 	 * for OTLP export). Also the default credential for server-side product events.
 	 */
@@ -234,6 +239,7 @@ const envConfig = Config.all({
 	MAPLE_SUPPORT_SLACK_BOT_TOKEN: optionalRedacted("MAPLE_SUPPORT_SLACK_BOT_TOKEN"),
 	MAPLE_SUPPORT_SLACK_TEAM_USER_IDS: optionalString("MAPLE_SUPPORT_SLACK_TEAM_USER_IDS"),
 	MAPLE_CANCELLATION_SLACK_CHANNEL_ID: optionalString("MAPLE_CANCELLATION_SLACK_CHANNEL_ID"),
+	MAPLE_CLERK_DASHBOARD_URL: optionalString("MAPLE_CLERK_DASHBOARD_URL"),
 	MAPLE_INGEST_KEY: optionalRedacted("MAPLE_INGEST_KEY"),
 	MAPLE_ENDPOINT: optionalString("MAPLE_ENDPOINT"),
 	MAPLE_PRODUCT_EVENTS_INGEST_KEY: optionalRedacted("MAPLE_PRODUCT_EVENTS_INGEST_KEY"),

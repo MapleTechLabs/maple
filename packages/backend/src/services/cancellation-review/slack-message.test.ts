@@ -12,6 +12,13 @@ const report = (id: string, overrides: Partial<CancellationReport> = {}): Cancel
 			orgName: "Acme <Labs> & Co",
 			contactEmail: "dev@example.com",
 			expiresAt: Date.parse("2026-10-19T00:00:00Z"),
+			links: {
+				clerk: "https://clerk.test/organizations/org_42",
+				autumn: "https://autumn.test/customers/org_42",
+				stripe: "https://stripe.test/customers/cus_42",
+			},
+			integrations: null,
+			otherOrgs: null,
 		},
 		snapshot: fixture.snapshot,
 		reason: ruleReason(fixture.snapshot),
@@ -71,5 +78,95 @@ describe("buildCancellationMessage", () => {
 		const message = buildCancellationMessage(report("past-due"))
 		expect(message.text).toBe("Plan ended: Acme &lt;Labs&gt; &amp; Co (Payment failed)")
 		expect(text(message)).toContain("access ended")
+	})
+
+	it("links the org in Clerk, Stripe and Autumn, leaving out Stripe when there is no customer", () => {
+		const base = report("healthy-team")
+		expect(text(buildCancellationMessage(base))).toContain(
+			"<https://clerk.test/organizations/org_42|Clerk>  ·  <https://stripe.test/customers/cus_42|Stripe>  ·  <https://autumn.test/customers/org_42|Autumn>",
+		)
+		const noStripe = buildCancellationMessage({
+			...base,
+			subject: { ...base.subject, links: { ...base.subject.links, stripe: null } },
+		})
+		expect(text(noStripe)).not.toContain("|Stripe>")
+	})
+
+	it("lists each integration with its icon, and each chat connector as its own row", () => {
+		const base = report("healthy-team")
+		const resource = (kind: string, name: string, note: string | null = null) => ({
+			kind,
+			name,
+			status: "healthy" as const,
+			lastSuccessAt: null,
+			lastError: null,
+			note,
+		})
+		const message = buildCancellationMessage({
+			...base,
+			subject: {
+				...base.subject,
+				integrations: [
+					{
+						provider: "github",
+						status: "failing",
+						account: "acme",
+						connectedAt: null,
+						problem: null,
+						feeds: [],
+						resources: [resource("repository", "api"), resource("repository", "web")],
+					},
+					{
+						provider: "chat",
+						status: "healthy",
+						account: null,
+						connectedAt: null,
+						problem: null,
+						feeds: [],
+						resources: [
+							resource("workspace", "Acme", "slack"),
+							resource("workspace", "Acme HQ", "discord"),
+						],
+					},
+				],
+			},
+		})
+		const rows = message.blocks.filter(
+			(block) => block.type === "context" && JSON.stringify(block).includes("favicons"),
+		)
+		expect(rows.map((row) => JSON.stringify(row))).toEqual([
+			expect.stringContaining("*GitHub*  acme  ·  2 repositories  ·  failing"),
+			expect.stringContaining("*Slack*  Acme"),
+			expect.stringContaining("*Discord*  Acme HQ"),
+		])
+		expect(JSON.stringify(rows[0])).toContain("domain=github.com")
+
+		const none = buildCancellationMessage({ ...base, subject: { ...base.subject, integrations: [] } })
+		expect(text(none)).toContain("None connected")
+	})
+
+	it("names the members' other orgs and who links them", () => {
+		const base = report("healthy-team")
+		const message = buildCancellationMessage({
+			...base,
+			subject: {
+				...base.subject,
+				otherOrgs: [
+					{
+						orgId: "org_new",
+						name: "Acme (new)",
+						createdAtMs: Date.parse("2026-10-03T00:00:00Z"),
+						membersCount: 2,
+						sharedMembers: ["a@acme.test", "b@acme.test"],
+						clerkUrl: "https://clerk.test/organizations/org_new",
+					},
+				],
+			},
+		})
+		expect(text(message)).toContain(
+			"<https://clerk.test/organizations/org_new|Acme (new)> `org_new`  created Oct 3, 2 members, via a@acme.test, b@acme.test",
+		)
+		const none = buildCancellationMessage({ ...base, subject: { ...base.subject, otherOrgs: [] } })
+		expect(text(none)).toContain("*Members' other orgs*\\nNone")
 	})
 })

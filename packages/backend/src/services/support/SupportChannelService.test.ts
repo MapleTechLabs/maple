@@ -89,6 +89,7 @@ const stubs = (world: World) =>
 		}),
 		Layer.succeed(OrgMembersService, {
 			listMembers: die,
+			listOrganizationsOf: die,
 			resolveMembers: (_orgId, userIds) =>
 				Effect.succeed(
 					userIds.map((userId) => ({

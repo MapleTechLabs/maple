@@ -62,6 +62,7 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalSecret("MAPLE_SUPPORT_SLACK_BOT_TOKEN"),
 		optionalPlain("MAPLE_SUPPORT_SLACK_TEAM_USER_IDS"),
 		optionalPlain("MAPLE_CANCELLATION_SLACK_CHANNEL_ID"),
+		optionalPlain("MAPLE_CLERK_DASHBOARD_URL"),
 		optionalSecret("SD_INTERNAL_TOKEN"),
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
 		optionalPlain("HAZEL_API_BASE_URL"),

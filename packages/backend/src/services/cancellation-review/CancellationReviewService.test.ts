@@ -21,6 +21,7 @@ import {
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { SupportChannelUnavailableError } from "@maple/domain/support-channel"
 import {
 	SupportSlackClient,
@@ -113,6 +114,20 @@ const stubs = (world: World) =>
 					{ userId: "user_1", email: "a@acme.test", name: null, imageUrl: null },
 					{ userId: "user_2", email: "b@acme.test", name: null, imageUrl: null },
 				]),
+			listOrganizationsOf: (userId) =>
+				Effect.succeed([
+					{ orgId: ORG, name: "Acme Inc.", createdAtMs: 0, membersCount: 2 },
+					...(userId === "user_1"
+						? [
+								{
+									orgId: "org_acme_new",
+									name: "Acme New",
+									createdAtMs: CANCELED_AT - DAY_MS,
+									membersCount: 1,
+								},
+							]
+						: []),
+				]),
 		}),
 		Layer.succeed(DailySpendService, {
 			get: () =>
@@ -160,6 +175,7 @@ const stubs = (world: World) =>
 					statusCode: world.autumnStatus,
 					response: {
 						id: ORG,
+						stripeId: "cus_acme",
 						// One odd field on a subscription must not cost the report its guards.
 						subscriptions: world.subscriptions.map((sub) => ({ ...sub, pastDue: null })),
 						balances: {},
@@ -204,6 +220,7 @@ const makeLayer = (world: World, testDb: TestDb) =>
 			Layer.mergeAll(
 				stubs(world),
 				OnboardingService.layer.pipe(Layer.provide(testDb.layer)),
+				IntegrationInventoryService.layer.pipe(Layer.provide(testDb.layer)),
 				testDb.layer,
 			),
 		),
@@ -296,6 +313,16 @@ describe("CancellationReviewService", () => {
 			assert.include(blocks, "founder@acme.test")
 			assert.include(blocks, "access until Oct 19 (9d left)")
 			assert.notInclude(blocks, "Could not read")
+			assert.include(blocks, "<https://dashboard.stripe.com/customers/cus_acme|Stripe>")
+			assert.include(blocks, `<https://app.useautumn.com/customers/${ORG}|Autumn>`)
+			assert.include(
+				blocks,
+				`<https://dashboard.clerk.com/last-active?path=organizations/${ORG}|Clerk>`,
+			)
+			assert.include(blocks, "None connected")
+			// The other org is named once, through the member in it; the org itself is not "other".
+			assert.include(blocks, "|Acme New> `org_acme_new`  created Oct 6, 1 member, via a@acme.test")
+			assert.notInclude(blocks, `|Acme Inc.> \`${ORG}\``)
 
 			// The org's visits are read from Maple's own org, filtered to the customer.
 			assert.strictEqual(world.queries.length, 1)
