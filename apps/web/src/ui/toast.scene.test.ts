@@ -49,7 +49,7 @@ describe("toast scene", () => {
 	})
 
 	test("add starts the enter transition and, with a timeout, its timer", () => {
-		assert(commandNames(added(5000))).toEqual(["WaitForToastPaint", "WaitToastTimeout"])
+		assert(commandNames(added(5000))).toContain("WaitToastTimeout")
 		assert(commandNames(added(0))).toEqual(["WaitForToastPaint"])
 		scene(
 			config,

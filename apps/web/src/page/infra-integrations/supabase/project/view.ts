@@ -2,29 +2,25 @@ import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../../charts/chart"
-import * as InfraMetricChart from "../../../../charts/infra-metric-chart"
 import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
-import { ResolveThemeColors, type ThemeColors } from "../../../../charts/theme-colors"
+import { ResolveThemeColors } from "../../../../charts/theme-colors"
 import { encodeLogAttributeFilter } from "../../../../lib/logs/log-attribute-filters"
 import { AppRoute, hrefOf } from "../../../../route"
 import { linkButton } from "../../../../ui/button"
 import { badge } from "../../../../ui/display"
-import { chartLoading } from "../../../../ui/chart-state"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
-import { timeControls } from "../../../kit/time-controls"
-import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHero } from "../../../infra/kit/page-parts"
 import { projectStatusLabel } from "../../../integrations/supabase"
-import { chartCard } from "../../kit/chart-card"
 import { integrationNotConnected } from "../../kit/empty-states"
+import { metricChartCards, metricChartsLoading } from "../../kit/metric-charts"
+import { pageTime } from "../../kit/page-time"
 import type { SupabaseProjectRow, SupabaseProjectTimeseriesRow, SupabaseStatus } from "../model"
-import { CHARTS, chartRows, visibleCharts } from "./charts"
+import { visibleCharts } from "./charts"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
@@ -35,9 +31,10 @@ type H = HtmlBuilder<Message>
 type DiscoveredProject = SupabaseStatus["projects"][number]
 
 const LINKED_CHART_ID = "supabase-project"
+const LOADING_CHARTS = 4
 
 /** The project as discovery lists it, once the status loaded. */
-export const discoveredOf = (model: Model): DiscoveredProject | null =>
+const discoveredOf = (model: Model): DiscoveredProject | null =>
 	Option.getOrNull(
 		Option.flatMap(AsyncData.getData(model.status.data), (status) =>
 			Option.fromNullishOr(status.projects.find((project) => project.ref === model.projectRef)),
@@ -45,7 +42,7 @@ export const discoveredOf = (model: Model): DiscoveredProject | null =>
 	)
 
 /** The project's summary row in the fleet read, once loaded. */
-export const summaryOf = (model: Model): SupabaseProjectRow | null =>
+const summaryOf = (model: Model): SupabaseProjectRow | null =>
 	Option.getOrNull(
 		Option.flatMap(AsyncData.getData(model.projects.data), (rows) =>
 			Option.fromNullishOr(rows.find((row) => row.projectRef === model.projectRef)),
@@ -77,52 +74,6 @@ const stats = (h: H, row: SupabaseProjectRow): Html =>
 		statRailItem(h, { compact: true, eyebrow: "Database size", value: formatBytes(row.dbSize) }),
 	])
 
-const GRID = "grid grid-cols-1 gap-4 lg:grid-cols-2"
-
-const loadingGrid = (h: H): Html =>
-	h.div(
-		[h.Class(GRID)],
-		CHARTS.slice(0, 4).map(() => chartLoading(h, { variant: "line", height: 256 })),
-	)
-
-const chartGrid = (
-	h: H,
-	model: Model,
-	buckets: ReadonlyArray<SupabaseProjectTimeseriesRow>,
-	theme: ThemeColors,
-	timeZone: string,
-	isWaiting: boolean,
-): Html => {
-	const xDomain = buckets.map((row) => row.bucket)
-	return h.div(
-		[h.Class(GRID)],
-		visibleCharts(buckets).map((chart, index) =>
-			chartCard(h, { title: chart.id }, [
-				h.submodel({
-					slotId: `supabase-chart-${chart.id}`,
-					model: model.charts[chart.id] ?? Chart.init(),
-					view: InfraMetricChart.view,
-					toParentMessage: (message: Chart.Message) =>
-						Message.GotChartMessage({ chartId: chart.id, message }),
-					viewInputs: {
-						chartId: `supabase-${index}`,
-						spec: InfraMetricChart.infraMetricSpec({
-							rows: chartRows(chart, buckets),
-							unit: chart.unit,
-							xDomain,
-							theme,
-							timeZone,
-							gradientPrefix: `supabase-${index}`,
-						}),
-						linkedChartId: LINKED_CHART_ID,
-						isWaiting,
-					},
-				}),
-			]),
-		),
-	)
-}
-
 const chartsView = (h: H, model: Model, timeZone: string): Html => {
 	const theme = model.themeColors
 	const isReady = theme !== null && model.chartRuntime._tag !== "Loading"
@@ -130,8 +81,18 @@ const chartsView = (h: H, model: Model, timeZone: string): Html => {
 		buckets.length === 0
 			? noMetrics(h, discoveredOf(model))
 			: isReady
-				? chartGrid(h, model, buckets, theme, timeZone, isWaiting)
-				: loadingGrid(h)
+				? metricChartCards(h, {
+						idPrefix: "supabase",
+						linkedChartId: LINKED_CHART_ID,
+						charts: visibleCharts(buckets),
+						buckets,
+						models: model.charts,
+						toMessage: (chartId, message) => Message.GotChartMessage({ chartId, message }),
+						theme,
+						timeZone,
+						isWaiting,
+					})
+				: metricChartsLoading(h, LOADING_CHARTS)
 	const failed = (failure: Parameters<typeof errorState>[1]["failure"]) =>
 		errorState(h, {
 			failure,
@@ -139,8 +100,8 @@ const chartsView = (h: H, model: Model, timeZone: string): Html => {
 			onRetry: Message.ClickedRetryTimeseries(),
 		})
 	return AsyncData.match(model.timeseries.data, {
-		onIdle: () => loadingGrid(h),
-		onLoading: () => loadingGrid(h),
+		onIdle: () => metricChartsLoading(h, LOADING_CHARTS),
+		onLoading: () => metricChartsLoading(h, LOADING_CHARTS),
 		onFailure: failed,
 		onStale: ({ error, data }) => (data.length === 0 ? failed(error) : grid(data, false)),
 		onSuccess: (data) => grid(data, false),
@@ -197,8 +158,6 @@ const heroMeta = (h: H, model: Model, project: DiscoveredProject | null): Readon
 	]
 }
 
-const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
-
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const summary = summaryOf(model)
 	return h.div(
@@ -208,27 +167,15 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					scrollClassName: "gap-6",
-					actions: timeControls(h, {
+					actions: pageTime(h, {
 						search: model.search,
 						defaultPreset: DEFAULT_PRESET,
 						window: model.window,
+						picker: model.timePicker,
+						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
 						onReset: Message.ClickedResetTimeRange(),
 						onReload: Message.ClickedReload(),
 						isReloading: model.isReloading,
-						trigger: (label) =>
-							h.submodel({
-								slotId: "time-range-picker",
-								model: model.timePicker,
-								view: TimeRangePicker.view,
-								toParentMessage: toTimePicker,
-								viewInputs: {
-									label,
-									selectedPreset:
-										model.search.timePreset ??
-										(model.search.startTime === undefined ? DEFAULT_PRESET : undefined),
-									presets: TimeRangePicker.PRESET_VALUES,
-								},
-							}),
 					}),
 				},
 				[

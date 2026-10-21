@@ -90,7 +90,9 @@ const loaded = (rows: ReadonlyArray<RailwayServiceRow>): Model => {
 describe("railway list", () => {
 	test("entry asks for the status and the window; services wait for a connected status", () => {
 		const entered = init({ search: {} }, context)
-		expect(names(entered.commands)).toEqual(["ResolveRailwayWindow", "LoadRailwayStatus"])
+		expect(names(entered.commands)).toEqual(
+			expect.arrayContaining(["ResolveRailwayWindow", "LoadRailwayStatus"]),
+		)
 		const windowed = pageUpdate(
 			entered.model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),

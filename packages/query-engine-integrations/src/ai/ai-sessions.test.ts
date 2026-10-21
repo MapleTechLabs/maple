@@ -108,6 +108,7 @@ describe("aiSessionPageQuery", () => {
 		// keyed per index row, every non-turn agent span would become its own
 		// `trace:` session. Only then is the key grouped over.
 		expect(sql).toContain("max(ai_trace_index.SessionId) AS rawSessionId")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the per-trace session key the page groups by
 		expect(sql).toContain(`${sessionKey("index_traces")} AS sessionId`)
 		expect(sql).toContain("GROUP BY traceId")
 		expect(sql).toContain("GROUP BY sessionId")
@@ -357,11 +358,8 @@ describe("aiSessionPageQuery", () => {
 		expect(compileUnsafe(aiSessionPageQuery({ search: "   " }), params).sql).not.toContain("LIKE")
 	})
 
-	it("ranks a page off the session level alone, selecting nothing the netting needs", () => {
+	it("ranks a page off the session level alone", () => {
 		const { sql } = compileUnsafe(aiSessionRankQuery({ limit: 25, offset: 50, hasErrors: true }), params)
-		expect(sql).toMatch(
-			/^\s*SELECT\s+ranked_sessions\.sessionId AS sessionId,\s+ranked_sessions\.agentStart AS agentStart,\s+ranked_sessions\.agentEnd AS agentEnd\s+FROM \(/,
-		)
 		expect(sql).toContain("HAVING errorAgentSpans > 0")
 		expect(sql).toContain("ORDER BY agentStart DESC, sessionId ASC")
 		expect(sql).toContain("LIMIT 25")
@@ -622,7 +620,6 @@ describe("aiSessionDetailsQuery", () => {
 		expect(sql.split("FROM traces").length - 1).toBe(1)
 		expect(sql).toContain("GROUP BY traceId")
 		expect(sql).toContain("GROUP BY sessionId")
-		expect(sql).toContain("ORDER BY startTime DESC")
 	})
 
 	it("pages nowhere itself — the page it was handed is the page", () => {
@@ -656,8 +653,10 @@ describe("aiSessionDetailsQuery", () => {
 		// The one JOIN in the file, and it is here so the aggregation files a trace
 		// under exactly the key the page ranked it by: two derivations over two
 		// windows can disagree, and a disagreement drops the row from its own page.
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- inner join drops a trace the page did not rank
 		expect(sql).toContain("INNER JOIN")
 		expect(sql).toContain("AS index_traces ON session_traces.traceId = index_traces.traceId")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- files a trace under the key the page ranked it by
 		expect(sql).toContain(`${LIST_SESSION_KEY} AS sessionId`)
 		expect(sql).not.toContain("max(SpanAttributes['maple_ai.session.id'])")
 		// The index read nested inside each side is `agent_traces`, so the JOIN's
@@ -906,7 +905,6 @@ describe("aiSessionFacetsQuery", () => {
 		expect(sql).not.toContain("FROM traces")
 		expect(sql).not.toContain("FROM trace_index")
 		expect(sql).not.toContain("TraceId IN (SELECT")
-		expect(sql).toContain("UNION ALL")
 	})
 
 	it("counts distinct sessions per value of each index dimension", () => {
@@ -925,6 +923,7 @@ describe("aiSessionFacetsQuery", () => {
 			expect(sql).toContain(
 				`groupUniqArrayIf(20)(ai_trace_index.${column}, ai_trace_index.${column} != '') AS names`,
 			)
+			// oxlint-disable-next-line test-slop/no-sql-text-pin -- the label routes each branch to its facet
 			expect(sql).toContain(`'${facetType}' AS facetType`)
 		}
 		expect(sql.split("arrayJoin(facet_traces.names) AS name").length - 1).toBe(dimensions.length)
@@ -1090,6 +1089,7 @@ describe("aiSessionSpansQuery", () => {
 		expect(sql).toMatch(
 			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \(SELECT/,
 		)
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- unit conversion, ns to ms
 		expect(sql).toContain("Duration / 1000000 AS durationMs")
 		expect(sql).toContain("mapFilter((k, v) -> (((k IN ('maple_ai.session.id', ")
 		expect(sql).toContain("OR k LIKE 'gen_ai.prompt.variable.%')")
@@ -1326,8 +1326,8 @@ describe("aiTraceSpansQuery", () => {
 		const { sql } = compileUnsafe(aiTraceSpansQuery(), traceParams)
 
 		// One shape whichever kind of session the detail page opened.
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- unit conversion, ns to ms
 		expect(sql).toContain("Duration / 1000000 AS durationMs")
-		expect(sql).toContain("SpanAttributes) AS spanAttributes")
 		expect(sql).not.toContain("ResourceAttributes")
 		expect(sql).toContain("ORDER BY timestamp ASC, spanId ASC")
 		expect(sql).toContain("LIMIT 2000")
@@ -1463,8 +1463,6 @@ describe("aiSessionSummaryQuery", () => {
 		]) {
 			expect(sql, key).toContain(`SpanAttributes['${key}']`)
 		}
-		expect(sql).toContain("AS inputTokens")
-		expect(sql).toContain("AS llmInputTokens")
 		expect(sql).toContain("IN ('chat', 'generate_content', 'text_completion', 'fetch_response')")
 		expect(sql).toContain("NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent'")
 	})

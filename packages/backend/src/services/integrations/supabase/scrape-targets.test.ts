@@ -56,7 +56,8 @@ const REF_A = "abcdefghijklmnopqrst"
 const REF_B = "bcdefghijklmnopqrstu"
 const REF_C = "cdefghijklmnopqrstuv"
 
-const connect = (fake: Fake) =>
+/** The OAuth callback: exchange and bind, without discovery. */
+const finalize = (fake: Fake) =>
 	Effect.gen(function* () {
 		const oauth = yield* SupabaseOAuthService
 		const { redirectUrl, state } = yield* oauth.startConnect(
@@ -73,6 +74,13 @@ const connect = (fake: Fake) =>
 			granted.connectedByUserId,
 			granted.organization,
 		)
+	})
+
+/** The callback, then the dashboard's sync, which runs the first discovery. */
+const connect = (fake: Fake) =>
+	Effect.gen(function* () {
+		yield* finalize(fake)
+		return yield* (yield* SupabaseConnectionService).sync(ORG)
 	})
 
 interface TargetRow {
@@ -223,6 +231,46 @@ describe("Supabase managed scrape targets", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, fake)))
 		},
 	)
+
+	it.effect("the callback creates no targets; the first discovery does", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)] })
+		return Effect.gen(function* () {
+			yield* finalize(fake)
+			assert.strictEqual(yield* targetCount(testDb), 0)
+			yield* TestClock.adjust("1 hour")
+			yield* (yield* SupabaseConnectionService).discoverAllOrgs()
+			assert.isTrue((yield* targetOf(testDb, REF_A))?.enabled ?? false)
+		}).pipe(Effect.provide(makeLayer(testDb, fake)))
+	})
+
+	it.effect("a discovery after a metrics toggle keeps the toggle", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)] })
+		return Effect.gen(function* () {
+			const service = yield* SupabaseConnectionService
+			yield* connect(fake)
+			yield* service.updateProject(ORG, asRef(REF_A), { metricsEnabled: false })
+			yield* TestClock.adjust("1 hour")
+			yield* service.discoverOrg(ORG)
+			assert.isFalse((yield* targetOf(testDb, REF_A))?.enabled ?? true)
+			assert.strictEqual(yield* targetCount(testDb), 1)
+		}).pipe(Effect.provide(makeLayer(testDb, fake)))
+	})
+
+	it.effect("reconnecting to a different organization deletes the old organization's targets", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A), fakeProject(REF_B)] })
+		return Effect.gen(function* () {
+			yield* connect(fake)
+			assert.strictEqual(yield* targetCount(testDb), 2)
+			const other = { id: "otherorgidotherorgid", slug: "otherorg", name: "Other" }
+			fake.state.organizations = [other]
+			yield* finalize(fake)
+			assert.strictEqual(yield* targetCount(testDb), 0)
+			assert.isNull(yield* targetOf(testDb, REF_A))
+		}).pipe(Effect.provide(makeLayer(testDb, fake)))
+	})
 
 	it.effect("disconnect deletes every managed target", () => {
 		const testDb = createTestDb(trackedDbs)

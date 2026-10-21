@@ -65,7 +65,6 @@ const row = (projectRef: string): SupabaseProjectRow => ({
 	dbSize: 10_802_867,
 	connectionsAvg: 5,
 	connectionsMax: 7,
-	poolerClientsMax: 2,
 	lastSeen: "2026-10-01 12:00:00",
 })
 

@@ -15,7 +15,6 @@ export const SupabaseProjectRow = Schema.Struct({
 	dbSize: Schema.Number,
 	connectionsAvg: Schema.Number,
 	connectionsMax: Schema.Number,
-	poolerClientsMax: Schema.Number,
 	lastSeen: Schema.String,
 })
 export type SupabaseProjectRow = typeof SupabaseProjectRow.Type
@@ -32,15 +31,12 @@ export const SupabaseProjectTimeseriesRow = Schema.Struct({
 	connectionsAvg: Schema.Number,
 	connectionsMax: Schema.Number,
 	poolerClients: Schema.Number,
-	poolerWaiting: Schema.Number,
 	commitsPerSecond: Schema.Number,
 	rollbacksPerSecond: Schema.Number,
-	cacheHitRatio: Schema.Number,
-	cacheReads: Schema.Number,
-	deadlocks: Schema.Number,
+	/** Null for a bucket with no block reads. */
+	cacheHitRatio: Schema.NullOr(Schema.Number),
 	authUsers: Schema.Number,
 	authSamples: Schema.Number,
-	realtimeSubscriptions: Schema.Number,
 	postgrestPoolMax: Schema.Number,
 	postgrestPoolInUse: Schema.Number,
 	postgrestPoolWaiting: Schema.Number,

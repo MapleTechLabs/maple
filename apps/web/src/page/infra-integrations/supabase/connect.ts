@@ -13,11 +13,15 @@ import {
 export const SUPABASE_ACCENT = "#3FCF8E"
 export const SUPABASE_BRAND: IntegrationBrand = { icon: "SupabaseIcon", accent: SUPABASE_ACCENT }
 
+export const SUPABASE_CONNECT_HINT =
+	"Connect an organization, then pick the projects to collect metrics from."
+export const SUPABASE_NOT_CONFIGURED = "Supabase isn't configured on this deployment."
+
 const FEATURES = [
 	{
 		label: "Projects",
-		title: "Every project, found for you",
-		description: "Maple lists the projects in your Supabase organization and keeps the list current.",
+		title: "Projects in your organization",
+		description: "Maple lists the projects in the connected organization and keeps the list current.",
 	},
 	{
 		label: "Resources",

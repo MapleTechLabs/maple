@@ -1,5 +1,5 @@
 import { Option } from "effect"
-import { AsyncData, Command } from "foldkit"
+import { AsyncData } from "foldkit"
 import * as Keyed from "../../../../data/keyed"
 import { requestKey } from "../../../../data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
@@ -8,6 +8,8 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../../cont
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { nextSort } from "../../../kit/table-sort"
+import { stepTimePicker, withPreset } from "../../kit/page-time"
+import { requestSlot } from "../../kit/slot"
 import { CompleteReloadSpin, FetchProjects, LoadStatus, ResolveWindow } from "./command"
 import { Message, type RequestMode } from "./message"
 import type { Model } from "./model"
@@ -39,20 +41,17 @@ const requestProjects = (model: Model, context: PageContext, mode: Keyed.Request
 	const window = model.window
 	if (window === null || !isConnected(model)) return { model }
 	const key = requestKey(context.orgId, "getSupabaseProjects", { data: window })
-	return Option.match(Keyed.request(model.projects, key, mode), {
-		onNone: () => ({ model }),
-		onSome: (projects) => ({ model: { ...model, projects }, commands: [FetchProjects({ key, window })] }),
-	})
+	const [projects, commands] = requestSlot(model.projects, key, mode, () => FetchProjects({ key, window }))
+	return { model: { ...model, projects }, commands }
 }
 
-const requestStatus = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return =>
-	Option.match(Keyed.request(model.status, statusKey(context), mode), {
-		onNone: () => ({ model }),
-		onSome: (status) => ({
-			model: { ...model, status },
-			commands: [LoadStatus({ key: status.key, refresh: mode === "Refresh" })],
-		}),
-	})
+const requestStatus = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
+	const key = statusKey(context)
+	const [status, commands] = requestSlot(model.status, key, mode, () =>
+		LoadStatus({ key, refresh: mode === "Refresh" }),
+	)
+	return { model: { ...model, status }, commands }
+}
 
 const searchHref = (search: Search) => hrefOf(AppRoute.InfraSupabase({ search }))
 
@@ -135,34 +134,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				],
 			}
 		},
-		ClickedResetTimeRange: () =>
-			navigate(model, {
-				...model.search,
-				startTime: undefined,
-				endTime: undefined,
-				timePreset: DEFAULT_PRESET,
-			}),
+		ClickedResetTimeRange: () => navigate(model, withPreset(model.search, DEFAULT_PRESET)),
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted: Return = {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands, (picker) =>
-					Message.GotTimePickerMessage({ message: picker }),
-				),
+			const step = stepTimePicker(
+				model.timePicker,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(preset) => searchHref(withPreset(model.search, preset)),
+			)
+			return {
+				model: { ...model, timePicker: step.timePicker },
+				commands: step.commands,
+				outMessage: step.outMessage,
 			}
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? lifted
-				: {
-						...lifted,
-						outMessage: PageOutMessage.RequestedNavigation({
-							url: searchHref({
-								...model.search,
-								...TimeRangePicker.searchPatchOf(next.outMessage),
-							}),
-							isReplace: false,
-						}),
-					}
 		},
 	})

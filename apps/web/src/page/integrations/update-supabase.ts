@@ -27,9 +27,11 @@ export const clickedSync = (model: Model): Return =>
 
 export const completedSync = (model: Model, context: PageContext, failure: LoadFailure | null): Return => {
 	const settled = withCard(model, { isSyncing: false })
+	const reloaded = requestStatus(settled, context, "supabase", "Supersede")
+	// A failed sync still re-reads the status: the card stays connected and shows its error.
 	return failure === null
-		? requestStatus(settled, context, "supabase", "Supersede")
-		: toast(settled, "error", "Failed to sync Supabase", failure.message)
+		? reloaded
+		: { ...reloaded, ...toast(reloaded.model, "error", "Failed to sync Supabase", failure.message) }
 }
 
 /** One write per project at a time; a second flip while one saves is ignored. */

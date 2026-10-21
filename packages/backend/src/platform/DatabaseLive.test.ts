@@ -230,8 +230,8 @@ describe("Database execute span instrumentation", () => {
 			assert.deepStrictEqual(rest, [])
 			assert.strictEqual(span.attributes.get("db.statement_count"), 2)
 			const queryText = span.attributes.get("db.query.text") as string
-			assert.include(queryText, "INSERT INTO")
-			assert.include(queryText, "SELECT")
+			// Both statements land in the joined text, not just the first.
+			assert.strictEqual(queryText.split(";\n").length, 2)
 			// A multi-statement call is summarized by the joined text — the same
 			// input the warehouse derives its fallback label from — so the leading
 			// statement names the span.

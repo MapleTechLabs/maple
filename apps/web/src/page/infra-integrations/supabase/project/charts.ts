@@ -1,19 +1,23 @@
-import type { ChartUnit, LongRow } from "../../../../charts/infra-metric-series"
+import { hasMetricData, type MetricChart } from "../../kit/metric-charts"
 import type { SupabaseProjectTimeseriesRow } from "../model"
 
-// The project page's charts: which series each draws, and which buckets count as data.
+// The project page's charts. A series picks null for a bucket without a sample, which draws a gap.
 
 type Row = SupabaseProjectTimeseriesRow
 
-export interface SupabaseChart {
-	readonly id: string
-	readonly unit: ChartUnit
-	readonly series: ReadonlyArray<readonly [string, (row: Row) => number]>
-	/** Buckets without a sample of the metric are left out instead of drawn as zero. */
-	readonly hasSample?: (row: Row) => boolean
+export interface SupabaseChart extends MetricChart<Row> {
 	/** Shown only once a bucket has a sample: not every project exposes it. */
 	readonly isOptional?: boolean
 }
+
+const when = (hasSample: (row: Row) => boolean, pick: (row: Row) => number) => (row: Row) =>
+	hasSample(row) ? pick(row) : null
+
+const hasMemory = (row: Row) => row.memoryTotal > 0
+const hasDisk = (row: Row) => row.diskSize > 0
+const hasDbSize = (row: Row) => row.dbSize > 0
+const hasAuth = (row: Row) => row.authSamples > 0
+const hasPostgrestPool = (row: Row) => row.postgrestPoolMax > 0
 
 export const CHARTS: ReadonlyArray<SupabaseChart> = [
 	{ id: "CPU", unit: "percent", series: [["Busy", (row) => row.cpu]] },
@@ -21,16 +25,14 @@ export const CHARTS: ReadonlyArray<SupabaseChart> = [
 		id: "Memory",
 		unit: "percent",
 		series: [
-			["Average", (row) => row.memoryAvg],
-			["Peak", (row) => row.memoryMax],
+			["Average", when(hasMemory, (row) => row.memoryAvg)],
+			["Peak", when(hasMemory, (row) => row.memoryMax)],
 		],
-		hasSample: (row) => row.memoryTotal > 0,
 	},
 	{
 		id: "Disk used",
 		unit: "percent",
-		series: [["Data volume", (row) => row.diskUsed]],
-		hasSample: (row) => row.diskSize > 0,
+		series: [["Data volume", when(hasDisk, (row) => row.diskUsed)]],
 	},
 	{
 		id: "Connections",
@@ -48,17 +50,11 @@ export const CHARTS: ReadonlyArray<SupabaseChart> = [
 			["Rollbacks", (row) => row.rollbacksPerSecond],
 		],
 	},
-	{
-		id: "Cache hit ratio",
-		unit: "percent",
-		series: [["Buffer cache hits", (row) => row.cacheHitRatio]],
-		hasSample: (row) => row.cacheReads > 0,
-	},
+	{ id: "Cache hit ratio", unit: "percent", series: [["Buffer cache hits", (row) => row.cacheHitRatio]] },
 	{
 		id: "Database size",
 		unit: "bytes",
-		series: [["Size", (row) => row.dbSize]],
-		hasSample: (row) => row.dbSize > 0,
+		series: [["Size", when(hasDbSize, (row) => row.dbSize)]],
 	},
 	{
 		id: "Network",
@@ -79,38 +75,22 @@ export const CHARTS: ReadonlyArray<SupabaseChart> = [
 	{
 		id: "Auth users",
 		unit: "count",
-		series: [["Users", (row) => row.authUsers]],
-		hasSample: (row) => row.authSamples > 0,
+		series: [["Users", when(hasAuth, (row) => row.authUsers)]],
 		isOptional: true,
 	},
 	{
 		id: "PostgREST pool",
 		unit: "count",
 		series: [
-			["In use", (row) => row.postgrestPoolInUse],
-			["Waiting", (row) => row.postgrestPoolWaiting],
+			["In use", when(hasPostgrestPool, (row) => row.postgrestPoolInUse)],
+			["Waiting", when(hasPostgrestPool, (row) => row.postgrestPoolWaiting)],
 		],
-		hasSample: (row) => row.postgrestPoolMax > 0,
 		isOptional: true,
 	},
 ]
 
 export const CHART_IDS = CHARTS.map((chart) => chart.id)
 
-/** One long row per (bucket, series), skipping buckets the chart has no sample for. */
-export const chartRows = (chart: SupabaseChart, buckets: ReadonlyArray<Row>): ReadonlyArray<LongRow> =>
-	buckets
-		.filter((row) => chart.hasSample?.(row) ?? true)
-		.flatMap((row) =>
-			chart.series.map(([label, pick]) => ({
-				bucket: row.bucket,
-				attributeValue: label,
-				value: pick(row),
-			})),
-		)
-
 /** Every core chart, plus the optional ones the project actually reports. */
 export const visibleCharts = (buckets: ReadonlyArray<Row>): ReadonlyArray<SupabaseChart> =>
-	CHARTS.filter(
-		(chart) => chart.isOptional !== true || buckets.some((row) => chart.hasSample?.(row) ?? true),
-	)
+	CHARTS.filter((chart) => chart.isOptional !== true || hasMetricData(chart, buckets))

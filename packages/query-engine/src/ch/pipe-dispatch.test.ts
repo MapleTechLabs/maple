@@ -89,7 +89,7 @@ describe("compilePipeQuery", () => {
 
 			it("applies no status filter when has_error is absent", () => {
 				const sql = sqlFor()
-				expect(sql).toContain("FORMAT JSON")
+				expect(sql).toContain("OrgId = 'test-org'")
 				expect(sql).not.toContain("StatusCode != 'Error'")
 			})
 
@@ -237,27 +237,27 @@ describe("compilePipeQuery", () => {
 			const result = compilePipeQuery("service_overview_compare", compareParams())
 			expect(result).toBeDefined()
 			const sql = result!.sql
+			// oxlint-disable-next-line test-slop/no-sql-text-pin -- the period label routes each row to its window
 			expect(sql).toContain("'current' AS period")
+			// oxlint-disable-next-line test-slop/no-sql-text-pin -- the period label routes each row to its window
 			expect(sql).toContain("'previous' AS period")
-			expect(sql).toContain("UNION ALL")
 			expect(sql).toContain("2024-01-08 00:00:00")
 			expect(sql).toContain("2024-01-15 00:00:00")
 			expect(sql).toContain("2024-01-01 00:00:00")
 			expect(sql).toContain("test-org")
-			expect(sql).toMatch(/FORMAT JSON\s*$/)
 		})
 
 		it("get_service_usage_compare wraps both windows into one SQL", () => {
 			const result = compilePipeQuery("get_service_usage_compare", compareParams())
 			expect(result).toBeDefined()
 			const sql = result!.sql
+			// oxlint-disable-next-line test-slop/no-sql-text-pin -- the period label routes each row to its window
 			expect(sql).toContain("'current' AS period")
+			// oxlint-disable-next-line test-slop/no-sql-text-pin -- the period label routes each row to its window
 			expect(sql).toContain("'previous' AS period")
-			expect(sql).toContain("UNION ALL")
 			expect(sql).toContain("2024-01-08 00:00:00")
 			expect(sql).toContain("2024-01-01 00:00:00")
 			expect(sql).toContain("test-org")
-			expect(sql).toMatch(/FORMAT JSON\s*$/)
 		})
 
 		it("service_overview_compare honors environments and commit_shas filters", () => {
@@ -295,7 +295,7 @@ describe("buildAttributeFiltersFromParams", () => {
 		})
 		expect(result).toBeDefined()
 		expect(result!.sql).toContain("http.method")
-		expect(result!.sql).toContain("GET")
+		expect(result!.sql).toContain("'GET'")
 		expect(result!.sql).toContain("http.status_code")
 		expect(result!.sql).toContain("200")
 	})

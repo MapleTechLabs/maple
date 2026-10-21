@@ -1,4 +1,3 @@
-import { Option } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "../../../../charts/chart"
 import { LoadChartRuntime } from "../../../../charts/chart-runtime"
@@ -10,6 +9,8 @@ import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
+import { stepTimePicker, withPreset } from "../../kit/page-time"
+import { requestSlot } from "../../kit/slot"
 import { CHART_IDS } from "./charts"
 import {
 	CompleteReloadSpin,
@@ -48,19 +49,15 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 	const projectsKey = requestKey(context.orgId, "getSupabaseProjects", { data: window })
 	const input = timeseriesInput(model, window)
 	const seriesKey = requestKey(context.orgId, "getSupabaseProjectTimeseries", { data: input })
-	const projects = Keyed.request(model.projects, projectsKey, mode)
-	const timeseries = Keyed.request(model.timeseries, seriesKey, mode)
+	const [projects, projectFetches] = requestSlot(model.projects, projectsKey, mode, () =>
+		FetchProjects({ key: projectsKey, window }),
+	)
+	const [timeseries, seriesFetches] = requestSlot(model.timeseries, seriesKey, mode, () =>
+		FetchTimeseries({ key: seriesKey, input }),
+	)
 	return {
-		model: {
-			...model,
-			window,
-			projects: Option.getOrElse(projects, () => model.projects),
-			timeseries: Option.getOrElse(timeseries, () => model.timeseries),
-		},
-		commands: [
-			...(Option.isSome(projects) ? [FetchProjects({ key: projectsKey, window })] : []),
-			...(Option.isSome(timeseries) ? [FetchTimeseries({ key: seriesKey, input })] : []),
-		],
+		model: { ...model, window, projects, timeseries },
+		commands: [...projectFetches, ...seriesFetches],
 	}
 }
 
@@ -89,12 +86,14 @@ export const init = (route: Route, context: PageContext): Return => {
 		refreshVersion: 0,
 		isReloading: false,
 	}
-	const status = Keyed.request(model.status, statusKey, "Load")
+	const [status, statusFetches] = requestSlot(model.status, statusKey, "Load", () =>
+		LoadStatus({ key: statusKey }),
+	)
 	return {
-		model: { ...model, status: Option.getOrElse(status, () => model.status) },
+		model: { ...model, status },
 		commands: [
 			resolveCommand(model, context, "Load"),
-			...(Option.isSome(status) ? [LoadStatus({ key: statusKey })] : []),
+			...statusFetches,
 			Command.mapMessage(LoadChartRuntime(), (message) =>
 				message._tag === "CompletedLoadChartRuntime"
 					? Message.CompletedLoadChartRuntime()
@@ -150,32 +149,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				],
 			}
 		},
-		ClickedResetTimeRange: () =>
-			navigate(model, {
-				...model.search,
-				startTime: undefined,
-				endTime: undefined,
-				timePreset: DEFAULT_PRESET,
-			}),
+		ClickedResetTimeRange: () => navigate(model, withPreset(model.search, DEFAULT_PRESET)),
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted: Return = {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands, (picker) =>
-					Message.GotTimePickerMessage({ message: picker }),
-				),
+			const step = stepTimePicker(
+				model.timePicker,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(preset) => searchHref(model, withPreset(model.search, preset)),
+			)
+			return {
+				model: { ...model, timePicker: step.timePicker },
+				commands: step.commands,
+				outMessage: step.outMessage,
 			}
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? lifted
-				: {
-						...lifted,
-						outMessage: navigate(model, {
-							...model.search,
-							...TimeRangePicker.searchPatchOf(next.outMessage),
-						}).outMessage,
-					}
 		},
 		GotChartMessage: ({ chartId, message: inner }) => {
 			const next = Chart.update(model.charts[chartId] ?? Chart.init(), inner)

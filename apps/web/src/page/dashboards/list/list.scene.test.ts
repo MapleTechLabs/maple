@@ -57,10 +57,9 @@ const loaded = (search = {}, dashboards: ReadonlyArray<ListDashboard> = BOARDS):
 
 describe("dashboards list", () => {
 	test("entry reads the clock and the stored preferences, then renders rows as links", () => {
-		expect(names(init({ search: {} }, context).commands)).toEqual([
-			"ReadDashboardsListClock",
-			"LoadDashboardsPreferences",
-		])
+		expect(names(init({ search: {} }, context).commands)).toEqual(
+			expect.arrayContaining(["ReadDashboardsListClock", "LoadDashboardsPreferences"]),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded()),

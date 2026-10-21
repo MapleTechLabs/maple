@@ -67,12 +67,12 @@ export const SupabaseProjects = PG.table("supabase_projects", {
 		/** Supabase's lifecycle status (`ACTIVE_HEALTHY`, `INACTIVE`, ...), as reported. */
 		status: PG.text,
 		metricsEnabled: PG.column(PG.bool, { name: "metrics_enabled", default: true }),
-		/** The managed scrape target feeding this project's metrics (phase 2). */
+		/** The managed scrape target feeding this project's metrics. */
 		scrapeTargetId: PG.column(PG.nullable(PG.brand(PG.text, ScrapeTargetId)), {
 			name: "scrape_target_id",
 		}),
 		logDrainEnabled: PG.column(PG.bool, { name: "log_drain_enabled", default: false }),
-		/** Supabase's id for the log drain Maple created on this project (phase 4). */
+		/** Supabase's id for the log drain Maple created on this project. */
 		logDrainId: PG.column(PG.nullable(PG.text), { name: "log_drain_id" }),
 		/** Opt-in: polled logs count against the org's ingest. */
 		logsEnabled: PG.column(PG.bool, { name: "logs_enabled", default: false }),

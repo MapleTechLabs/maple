@@ -3,6 +3,7 @@
  * unit suite: a renamed parameter or a dropped enum value fails here, where it is obvious, instead
  * of silently scoring every correct model call as wrong in the paid eval.
  */
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { inputSchemaOf, mapleToolCatalogFor } from "../../mcp/tools/registry"
 import type { ArgExpectation, Scalar } from "../targets"
@@ -10,10 +11,14 @@ import { TOOL_TASKS } from "./tasks"
 
 const catalog = new Map(mapleToolCatalogFor("chat").map((entry) => [entry.name, entry]))
 
+const isProperties = Schema.is(
+	Schema.Record(Schema.String, Schema.Struct({ enum: Schema.optionalKey(Schema.Array(Schema.Unknown)) })),
+)
+
 const propertiesOf = (tool: string): Readonly<Record<string, { readonly enum?: ReadonlyArray<unknown> }>> => {
 	const entry = catalog.get(tool)
 	const properties = entry === undefined ? undefined : inputSchemaOf(entry).properties
-	return typeof properties === "object" && properties !== null ? properties : {}
+	return isProperties(properties) ? properties : {}
 }
 
 const valuesOf = (expectation: ArgExpectation): ReadonlyArray<Scalar> => {

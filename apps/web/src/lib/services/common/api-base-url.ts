@@ -1,3 +1,5 @@
+import { Option } from "effect"
+
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
 
 export const apiBaseUrl =
@@ -12,3 +14,10 @@ export const apiPublicUrl =
 	configuredApiPublicUrl && configuredApiPublicUrl.length > 0
 		? configuredApiPublicUrl.replace(/\/$/, "")
 		: apiBaseUrl
+
+const originOf = Option.liftThrowable((url: string) => new URL(url).origin)
+
+/** The origins the API answers on: its own, and the proxy's when `apiBaseUrl` is same-origin. */
+export const apiOrigins: ReadonlyArray<string> = [apiBaseUrl, apiPublicUrl].flatMap((url) =>
+	Option.toArray(originOf(url)),
+)

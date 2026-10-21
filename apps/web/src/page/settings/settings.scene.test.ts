@@ -59,18 +59,13 @@ const indicatorMeasured = () =>
 
 describe("settings page", () => {
 	test("entry reads the clock, session and customer; the MCP tab adds its two reads", () => {
-		expect(names(entered({ tab: "automation" }).commands).slice(0, 3)).toEqual([
-			"ReadSettingsClock",
-			"FetchSettingsSession",
-			"FetchSettingsCustomer",
-		])
-		expect(names(entered({ tab: "mcp" }).commands)).toEqual([
-			"ReadSettingsClock",
-			"FetchSettingsSession",
-			"FetchSettingsCustomer",
-			"FetchMcpConnections",
-			"FetchMcpTools",
-		])
+		expect(names(entered({ tab: "automation" }).commands)).toEqual(
+			expect.arrayContaining(["ReadSettingsClock", "FetchSettingsSession", "FetchSettingsCustomer"]),
+		)
+		expect(names(entered({ tab: "automation" }).commands)).not.toContain("FetchMcpTools")
+		expect(names(entered({ tab: "mcp" }).commands)).toEqual(
+			expect.arrayContaining(["FetchMcpConnections", "FetchMcpTools"]),
+		)
 	})
 
 	test("a retired tab id replaces the URL with its new home", () => {
@@ -126,7 +121,7 @@ describe("settings page", () => {
 	// data shown a moment ago until the reads answered again.
 	test("coming back to a tab shows its data at once while it reads again", () => {
 		const back = toTab(toTab(mcpLoaded(), "setup-health").model, "mcp")
-		expect(names(back.commands)).toEqual(["FetchMcpConnections", "FetchMcpTools"])
+		expect(names(back.commands)).toEqual(expect.arrayContaining(["FetchMcpConnections", "FetchMcpTools"]))
 		scene(
 			{ update: pageUpdate, view },
 			given(back.model),

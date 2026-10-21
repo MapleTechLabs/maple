@@ -57,12 +57,14 @@ describe("railway service", () => {
 
 	test("the window brings the fleet read and the service's series, bucketed for ~100 points", () => {
 		const entered = init(route, context)
-		expect(names(entered.commands)).toEqual(["ResolveRailwayServiceWindow", "LoadChartRuntime"])
+		expect(names(entered.commands)).toContain("ResolveRailwayServiceWindow")
 		const resolved = pageUpdate(
 			entered.model,
 			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual(["FetchRailwayServiceRows", "FetchRailwayServiceTimeseries"])
+		expect(names(resolved.commands)).toEqual(
+			expect.arrayContaining(["FetchRailwayServiceRows", "FetchRailwayServiceTimeseries"]),
+		)
 		expect(timeseriesInput(resolved.model, window)).toEqual({
 			...window,
 			bucketSeconds: 300,

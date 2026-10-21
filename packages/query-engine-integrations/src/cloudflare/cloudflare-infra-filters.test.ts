@@ -37,9 +37,9 @@ describe("cloudflareFilterConditions", () => {
 	it("routes the host filter through the same transitional coalesce as the grouping key", () => {
 		// A host read off a chart built on pre-rename rows must still filter to those rows.
 		const { sql } = compileUnsafe(cloudflareZoneFirewallTopSQL({ hosts: ["a.example.com"] }), zoneParams)
-		expect(sql).toContain("server.address']")
-		expect(sql).toContain("http.host']")
-		expect(sql).toContain("IN ('a.example.com')")
+		expect(sql).toContain(
+			"if(metrics_sum.Attributes['server.address'] != '', metrics_sum.Attributes['server.address'], metrics_sum.Attributes['http.host']) IN ('a.example.com')",
+		)
 	})
 
 	it("compiles pathContains to a case-insensitive substring match", () => {

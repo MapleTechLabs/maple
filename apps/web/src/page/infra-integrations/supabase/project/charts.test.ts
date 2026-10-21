@@ -1,6 +1,7 @@
-import { describe, expect, test } from "vitest"
+import { assert, describe, expect, test } from "vitest"
 import type { SupabaseProjectTimeseriesRow } from "../model"
-import { CHARTS, chartRows, visibleCharts } from "./charts"
+import { metricChartRows } from "../../kit/metric-charts"
+import { CHARTS, visibleCharts } from "./charts"
 
 const bucket = (
 	iso: string,
@@ -17,15 +18,11 @@ const bucket = (
 	connectionsAvg: 5,
 	connectionsMax: 6,
 	poolerClients: 2,
-	poolerWaiting: 0,
 	commitsPerSecond: 1.5,
 	rollbacksPerSecond: 0.1,
 	cacheHitRatio: 0.99,
-	cacheReads: 1000,
-	deadlocks: 0,
 	authUsers: 0,
 	authSamples: 0,
-	realtimeSubscriptions: 0,
 	postgrestPoolMax: 0,
 	postgrestPoolInUse: 0,
 	postgrestPoolWaiting: 0,
@@ -38,15 +35,15 @@ const bucket = (
 
 const chart = (id: string) => {
 	const found = CHARTS.find((entry) => entry.id === id)
-	if (found === undefined) throw new Error(`no chart ${id}`)
+	assert(found !== undefined, `no chart ${id}`)
 	return found
 }
 
 describe("supabase project charts", () => {
 	test("a bucket without block reads is a gap in the cache hit ratio, not a 0% dip", () => {
-		const rows = chartRows(chart("Cache hit ratio"), [
+		const rows = metricChartRows(chart("Cache hit ratio"), [
 			bucket("2026-10-01T10:00:00Z"),
-			bucket("2026-10-01T10:05:00Z", { cacheHitRatio: 0, cacheReads: 0 }),
+			bucket("2026-10-01T10:05:00Z", { cacheHitRatio: null }),
 		])
 		expect(rows).toEqual([
 			{ bucket: "2026-10-01T10:00:00Z", attributeValue: "Buffer cache hits", value: 0.99 },
@@ -54,7 +51,7 @@ describe("supabase project charts", () => {
 	})
 
 	test("transactions draw commits and rollbacks per second", () => {
-		expect(chartRows(chart("Transactions"), [bucket("2026-10-01T10:00:00Z")])).toEqual([
+		expect(metricChartRows(chart("Transactions"), [bucket("2026-10-01T10:00:00Z")])).toEqual([
 			{ bucket: "2026-10-01T10:00:00Z", attributeValue: "Commits", value: 1.5 },
 			{ bucket: "2026-10-01T10:00:00Z", attributeValue: "Rollbacks", value: 0.1 },
 		])

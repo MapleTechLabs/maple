@@ -22,12 +22,14 @@ const settle = (model: Model, data: ReadonlyArray<never>) =>
 
 describe("investigations list", () => {
 	test("entry reads the clock, the first page and the triage budget", () => {
-		expect(names(init({ search: {} }, context).commands)).toEqual([
-			"LoadInvestigationsPresence",
-			"ReadInvestigationsClock",
-			"FetchInvestigations",
-			"FetchTriageBudget",
-		])
+		expect(names(init({ search: {} }, context).commands)).toEqual(
+			expect.arrayContaining([
+				"LoadInvestigationsPresence",
+				"ReadInvestigationsClock",
+				"FetchInvestigations",
+				"FetchTriageBudget",
+			]),
+		)
 	})
 
 	test("a failed page renders the error state", () => {

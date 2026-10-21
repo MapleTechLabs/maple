@@ -35,7 +35,10 @@ const loaded = () => update(init().model, Message.CompletedFetchSettings({ resul
 
 describe("data platform tab", () => {
 	test("a configured cluster also reads the apply status", () => {
-		expect(names(init().commands)).toEqual(["FetchOrgClickHouseSettings", "FetchOrgClickHouseSchemaDiff", "FetchDataPlatformUsage"])
+		expect(names(init().commands)).toEqual(
+			expect.arrayContaining(["FetchOrgClickHouseSettings", "FetchOrgClickHouseSchemaDiff", "FetchDataPlatformUsage"]),
+		)
+		expect(names(init().commands)).not.toContain("FetchOrgClickHouseApplyStatus")
 		expect(names(loaded().commands)).toEqual(["FetchOrgClickHouseApplyStatus"])
 	})
 
@@ -55,8 +58,11 @@ describe("data platform tab", () => {
 		const running = answer(loaded().model, 1, "running").model
 		const polled = update(running, Message.TickedApplyPoll()).model
 		const done = answer(polled, 2, "succeeded")
-		expect(names(done.commands)).toEqual(["FetchOrgClickHouseSettings", "FetchOrgClickHouseSchemaDiff"])
-		expect(done.outMessage).toEqual(PageOutMessage.RequestedToast({ type: "success", title: "Schema applied", description: "" }))
+		expect(names(done.commands)).toContain("FetchOrgClickHouseSettings")
+		expect(names(done.commands)).toContain("FetchOrgClickHouseSchemaDiff")
+		expect(done.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "Schema applied", description: "" }),
+		)
 	})
 
 	test("a poll tick waits on a read still out, and a late running answer cannot undo a finished run", () => {

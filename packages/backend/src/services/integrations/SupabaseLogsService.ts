@@ -407,8 +407,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 				const connection = yield* loadConnection(orgId)
 				if (connection === null) return skip("not connected")
 				const now = yield* Clock.currentTimeMillis
-				const grant = yield* oauth.grantStatus(orgId)
-				if (!grant.connected || grant.revokedAt !== null) {
+				if (!(yield* oauth.isGrantUsable(orgId))) {
 					yield* reportTick(connection, { _tag: "Disconnected", reason: REVOKED_REASON }, now)
 					return skip("grant revoked")
 				}

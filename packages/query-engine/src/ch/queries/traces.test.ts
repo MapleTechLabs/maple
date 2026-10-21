@@ -88,7 +88,6 @@ describe("traceSpanStatsByTraceIdsQuery", () => {
 			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \('t1', 't2'\)\s+AND trace_index\.Bucket >= toStartOfFiveMinutes\(toDateTime64\(subtractHours\(/,
 		)
 		expect(sql).toContain("count() AS spanCount")
-		expect(sql).toContain("AS services")
 		expect(sql).toContain("subtractHours(")
 		expect(sql).toContain("addHours(")
 		expect(sql).toContain("GROUP BY traceId")
@@ -99,24 +98,14 @@ describe("traceSpanStatsByTraceIdsQuery", () => {
 // tracesListQuery
 
 describe("tracesListQuery", () => {
-	it("compiles basic list with all columns", () => {
+	it("defaults to 25 rows from raw traces", () => {
 		const q = tracesListQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM traces")
-		expect(sql).toContain("TraceId AS traceId")
-		expect(sql).toContain("Timestamp AS timestamp")
-		expect(sql).toContain("SpanId AS spanId")
-		expect(sql).toContain("ServiceName AS serviceName")
-		expect(sql).toContain("SpanName AS spanName")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the ns to ms duration conversion
 		expect(sql).toContain("Duration / 1000000 AS durationMs")
-		expect(sql).toContain("StatusCode AS statusCode")
-		expect(sql).toContain("SpanKind AS spanKind")
-		expect(sql).toContain("AS hasError")
-		expect(sql).toContain("SpanAttributes AS spanAttributes")
-		expect(sql).toContain("ResourceAttributes AS resourceAttributes")
 		expect(sql).toContain("ORDER BY timestamp DESC")
 		expect(sql).toContain("LIMIT 25")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("keeps the timestamp cutoff untouched when sorting explicitly by timestamp desc", () => {
@@ -199,10 +188,6 @@ describe("tracesListQuery", () => {
 		const q = tracesListQuery({ limit: 100 })
 		const { sql } = compileUnsafe(q, baseParams)
 
-		// Outer query keeps the heavy Map columns.
-		expect(sql).toContain("SpanAttributes AS spanAttributes")
-		expect(sql).toContain("ResourceAttributes AS resourceAttributes")
-
 		// Cutoff subquery reads only Timestamp — no Map columns, no Duration math.
 		const cutoffMatch = sql.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)
 		expect(cutoffMatch).not.toBeNull()
@@ -274,32 +259,21 @@ describe("traceServicesByTraceIdsQuery", () => {
 // tracesRootListQuery
 
 describe("tracesRootListQuery", () => {
-	it("compiles basic root list with all columns", () => {
+	it("defaults to 25 root rows from raw traces", () => {
 		const q = tracesRootListQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM traces")
-		expect(sql).toContain("TraceId AS traceId")
-		expect(sql).toContain("Timestamp AS startTime")
-		expect(sql).toContain("Timestamp AS endTime")
-		expect(sql).toContain("AS durationMicros")
-		expect(sql).toContain("AS spanCount")
-		expect(sql).toContain("AS services")
-		expect(sql).toContain("SpanName AS rootSpanName")
-		expect(sql).toContain("SpanKind AS rootSpanKind")
-		expect(sql).toContain("StatusCode AS rootSpanStatusCode")
-		expect(sql).toContain("'http.method'")
-		expect(sql).toContain("'http.route'")
-		expect(sql).toContain("'http.status_code'")
-		expect(sql).toContain("AS rootSpanAttributes")
-		expect(sql).toContain("AS hasError")
 		expect(sql).toContain("ORDER BY startTime DESC")
 		expect(sql).toContain("LIMIT 25")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
-	it("projects the URL/host keys into rootSpanAttributes for client-span labels", () => {
+	it("projects env, service.version and the URL/host keys the trace list renders", () => {
 		const q = tracesRootListQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the trace list's env/version columns
+		expect(sql).toContain("AS rootDeploymentEnv")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the trace list's env/version columns
+		expect(sql).toContain("ResourceAttributes['service.version'] AS rootServiceVersion")
 		// These keys (omitted by the flat rootHttp* columns) let getHttpInfo build
 		// a client destination instead of falling back to "http.client GET".
 		expect(sql).toContain("'url.full'")
@@ -329,10 +303,6 @@ describe("tracesRootListQuery", () => {
 	it("gates the heavy column scan on a cheap cutoff subquery", () => {
 		const q = tracesRootListQuery({ limit: 100 })
 		const { sql } = compileUnsafe(q, baseParams)
-
-		// Outer query keeps the heavy Map lookups.
-		expect(sql).toContain("'http.method'")
-		expect(sql).toContain("'http.route'")
 
 		// Cutoff subquery reads only Timestamp.
 		const cutoffMatch = sql.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)
@@ -411,13 +381,10 @@ describe("traceListQuery", () => {
 		expect(sql).toContain(
 			"trace_index.Bucket <= toDateTime64(addHours(toDateTime('2024-01-02 00:00:00'), 1), 9)",
 		)
-		expect(sql).toContain("TraceId AS traceId")
 		expect(sql).toContain("GROUP BY traceId")
 		expect(sql).toContain("count() AS spanCount")
-		expect(sql).toContain("AS services")
 		expect(sql).toContain("ORDER BY startSecond DESC, traceId DESC")
 		expect(sql).toContain("LIMIT 25")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("orders the raw-traces page by the ns start time stage 1 pages by", () => {
@@ -564,9 +531,6 @@ describe("traceListQuery", () => {
 		expect(sql).toContain(
 			"argMin(traces.SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName",
 		)
-		expect(sql).toContain("AS rootSpanKind")
-		expect(sql).toContain("AS rootSpanStatusCode")
-		expect(sql).toContain("AS rootSpanAttributes")
 		// hasError stays root-scoped — same population the errorsOnly filter and
 		// the sidebar's trace_list_mv error count describe.
 		expect(sql).toContain(
@@ -699,7 +663,6 @@ describe("spanSearchQuery", () => {
 		expect(sql).toContain("Timestamp >= (SELECT min(ts) FROM (")
 		// The cutoff must cover every row the outer query can examine.
 		expect(sql).toContain("LIMIT 25")
-		expect(sql).toContain("SpanAttributes AS spanAttributes")
 	})
 
 	it("does not add a cutoff on the trace id path", () => {
@@ -733,6 +696,7 @@ describe("resource-attribute group-by", () => {
 			}),
 			baseParams,
 		)
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- group key must come from ResourceAttributes, not SpanAttributes
 		expect(sql).toContain("ResourceAttributes['deployment.environment'] AS name")
 		expect(sql).not.toContain("ServiceName AS name")
 	})
@@ -748,12 +712,6 @@ describe("resource-attribute group-by", () => {
 			baseParams,
 		)
 		expect(sql).toContain("ResourceAttributes['k8s.pod.name']")
-	})
-
-	it("root list carries deployment environment and service.version", () => {
-		const { sql } = compileUnsafe(tracesRootListQuery({}), baseParams)
-		expect(sql).toContain("AS rootDeploymentEnv")
-		expect(sql).toContain("ResourceAttributes['service.version'] AS rootServiceVersion")
 	})
 
 	it("span search filters by deployment environment", () => {

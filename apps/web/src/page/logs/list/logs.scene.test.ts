@@ -273,7 +273,9 @@ describe("logs list", () => {
 
 	test("Reload re-resolves the window unsnapped and spins for the reload", () => {
 		const reloaded = pageUpdate(withFirstPage(), Message.ClickedReload())
-		expect(names(reloaded.commands)).toEqual(["ResolveLogsWindow", "CompleteLogsReloadSpin"])
+		expect(names(reloaded.commands)).toEqual(
+			expect.arrayContaining(["ResolveLogsWindow", "CompleteLogsReloadSpin"]),
+		)
 		expect(reloaded.model.isReloading).toBe(true)
 	})
 

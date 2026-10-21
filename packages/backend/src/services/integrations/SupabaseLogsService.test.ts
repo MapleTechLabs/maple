@@ -141,6 +141,7 @@ const connectWithLogs = (world: World) =>
 		world.supabase.state.codeChallenge = new URL(redirectUrl).searchParams.get("code_challenge")
 		const granted = yield* oauth.completeConnect("code", state)
 		yield* connection.finalizeConnect(granted.orgId, granted.connectedByUserId, granted.organization)
+		yield* connection.sync(granted.orgId)
 		yield* (yield* SupabaseLogsService).setLogsEnabled(ORG, asRef(REF_A), true)
 	})
 

@@ -8,6 +8,7 @@ import type { Model, Statuses } from "./model"
 import { chain, requestStatus } from "./update-status"
 import { TrackConnected } from "./command"
 import * as Cloudflare from "./update-cloudflare"
+import * as Supabase from "./update-supabase"
 
 // The OAuth popup flow's state changes; the popup itself runs in `subscription.ts`.
 
@@ -133,6 +134,8 @@ export const receivedCallback = (
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
 			(next) =>
 				provider === "cloudflare" ? Cloudflare.prime(next) : refreshProvider(next, context, provider),
+			// The callback no longer discovers projects; a sync now lists them instead of the hourly cron.
+			(next) => (provider === "supabase" ? Supabase.clickedSync(next) : { model: next }),
 		])
 	}
 	if (status !== "error") return { model }

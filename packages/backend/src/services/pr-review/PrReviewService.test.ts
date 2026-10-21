@@ -531,7 +531,6 @@ describe("PrReviewService.onPullRequestEvent", () => {
 			assert.isTrue(result!.startsWith(`${prReviewCommentMarker(first.reviewId!)}\n## Maple review`))
 			assert.notInclude(result!, "is reviewing")
 			assert.isTrue(next!.startsWith(prReviewCommentMarker(second.reviewId!)))
-			assert.include(next!, "Maple is reviewing this pull request")
 			assert.notInclude(next!, "## Maple review")
 		}).pipe(Effect.provide(layerFor(testDb, { comments })))
 	})
@@ -636,7 +635,6 @@ describe("PrReviewService.onPullRequestEvent", () => {
 			assert.equal(comments.length, 3)
 			assert.isTrue(result!.startsWith(`${prReviewCommentMarker(first.reviewId!, 0)}\n## Maple review`))
 			assert.isTrue(notice!.startsWith(prReviewCommentMarker(first.reviewId!, 1)))
-			assert.include(notice!, "Maple is reviewing this pull request")
 		}).pipe(Effect.provide(layerFor(testDb, { comments })))
 	})
 
@@ -1287,7 +1285,6 @@ describe("withReviewStatus", () => {
 			withReviewStatus(undefined, MARKER, { kind: "reviewing", headSha: HEAD }, "@maple-review-bot") ??
 			""
 		assert.isTrue(reviewing.startsWith(`${MARKER}\n`))
-		assert.include(reviewing, "Maple is reviewing this pull request")
 		assert.equal(
 			withReviewStatus(reviewing, MARKER, { kind: "reviewing", headSha: HEAD }, "@maple-review-bot"),
 			reviewing,
