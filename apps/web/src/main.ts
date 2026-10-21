@@ -63,6 +63,7 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		chatSheet: ChatSheet.init(),
 		page: null,
 		pageInstances: 0,
+		parkedPages: [],
 		onboarding: null,
 		clerkSnapshot: null,
 		customer: initCustomer(),

@@ -35,6 +35,7 @@ const base = (route: AppRoute): Model => ({
 	chatSheet: ChatSheet.init(),
 	page: null,
 	pageInstances: 0,
+	parkedPages: [],
 	onboarding: null,
 	clerkSnapshot: null,
 	customer: initCustomer(),

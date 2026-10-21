@@ -15,6 +15,7 @@ export const page = definePage(
 		preload,
 		update,
 		routeChanged,
+		reload: Message.ClickedReload(),
 		contextChanged,
 		view,
 		subscriptions,
