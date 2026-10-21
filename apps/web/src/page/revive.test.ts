@@ -163,6 +163,14 @@ describe("reviving a page left earlier", () => {
 		expect(parkPages([], left, enterRoute(left, home, context, 2).slot)).toEqual([])
 	})
 
+	test("leaving the same page twice keeps one parked copy, the newest", () => {
+		const first = servicesPage(1, true)
+		const once = parkPages([], first, enterRoute(first, home, context, 2).slot)
+		const second = servicesPage(3, true)
+		const twice = parkPages(once, second, enterRoute(second, home, context, 4).slot)
+		expect(twice.map((slot) => [slot._tag, slot.instance])).toEqual([["ServicesList", 3]])
+	})
+
 	test("switching org drops the pages parked for the previous one", () => {
 		const left = servicesPage(1, true)
 		const parked = parkPages([], left, enterRoute(left, home, context, 2).slot)
