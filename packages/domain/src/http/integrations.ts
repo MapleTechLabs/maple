@@ -1042,6 +1042,75 @@ export class SupabaseDisconnectResponse extends Schema.Class<SupabaseDisconnectR
 	disconnected: Schema.Boolean,
 }) {}
 
+export const SupabaseAdvisorLevel = Schema.Literals(["ERROR", "WARN", "INFO"])
+export type SupabaseAdvisorLevel = typeof SupabaseAdvisorLevel.Type
+
+/** Which Management API advisor reported a lint. */
+export const SupabaseAdvisorKind = Schema.Literals(["performance", "security"])
+export type SupabaseAdvisorKind = typeof SupabaseAdvisorKind.Type
+
+/** One advisor finding (a Splinter lint such as `unindexed_foreign_keys`), as stored and served. */
+export const SupabaseAdvisorLint = Schema.Struct({
+	advisor: SupabaseAdvisorKind,
+	/** The lint id, e.g. `rls_disabled_in_public`. */
+	name: Schema.String,
+	title: Schema.String,
+	level: SupabaseAdvisorLevel,
+	/** `PERFORMANCE`, `SECURITY`, `HEALTH`. */
+	categories: Schema.Array(Schema.String),
+	description: Schema.String,
+	/** The finding itself, naming the object (markdown-ish text from Supabase). */
+	detail: Schema.String,
+	/** A docs URL. */
+	remediation: Schema.String,
+	/** The database object the lint is about, when it names one. */
+	schema: Schema.NullOr(Schema.String),
+	object: Schema.NullOr(Schema.String),
+	/** `table`, `view`, `function`, `extension`, `auth`... */
+	objectType: Schema.NullOr(Schema.String),
+	cacheKey: Schema.String,
+})
+export type SupabaseAdvisorLint = typeof SupabaseAdvisorLint.Type
+
+/** One `pg_stat_statements` entry, ranked by total execution time. */
+export const SupabaseTopQuery = Schema.Struct({
+	/** `queryid` as text (a 64-bit hash). */
+	queryId: Schema.String,
+	/** Normalized statement text (`$1` placeholders), cut at 2000 chars. */
+	query: Schema.String,
+	calls: Schema.Number,
+	totalExecMs: Schema.Number,
+	meanExecMs: Schema.Number,
+	rows: Schema.Number,
+})
+export type SupabaseTopQuery = typeof SupabaseTopQuery.Type
+
+export class SupabaseAdvisorsByLevel extends Schema.Class<SupabaseAdvisorsByLevel>("SupabaseAdvisorsByLevel")(
+	{
+		error: Schema.Array(SupabaseAdvisorLint),
+		warn: Schema.Array(SupabaseAdvisorLint),
+		info: Schema.Array(SupabaseAdvisorLint),
+	},
+) {}
+
+/**
+ * A project's polled advisors (hourly) and slowest statements (every 15 minutes). A null
+ * `*CheckedAt` means never polled; an `*Error` is the last poll's failure, with the previous
+ * good result kept beside it.
+ */
+export class SupabaseProjectInsights extends Schema.Class<SupabaseProjectInsights>("SupabaseProjectInsights")(
+	{
+		projectRef: SupabaseProjectRef,
+		advisors: SupabaseAdvisorsByLevel,
+		advisorsCheckedAt: Schema.NullOr(Schema.Number),
+		advisorsError: Schema.NullOr(Schema.String),
+		/** Top 10 by total execution time since the project's stats were last reset. */
+		topQueries: Schema.Array(SupabaseTopQuery),
+		queriesCheckedAt: Schema.NullOr(Schema.Number),
+		queriesError: Schema.NullOr(Schema.String),
+	},
+) {}
+
 export class IntegrationsForbiddenError extends HttpTaggedError<IntegrationsForbiddenError>()(
 	"@maple/http/errors/IntegrationsForbiddenError",
 	{
@@ -1397,6 +1466,13 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			payload: SupabaseProjectUpdateRequest,
 			success: SupabaseIntegrationStatus,
 			error: [IntegrationsForbiddenError, IntegrationsNotFoundError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("supabaseProjectInsights", "/supabase/projects/:ref/insights", {
+			params: { ref: SupabaseProjectRef },
+			success: SupabaseProjectInsights,
+			error: [IntegrationsNotFoundError, IntegrationsPersistenceError],
 		}),
 	)
 	.add(

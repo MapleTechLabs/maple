@@ -32,6 +32,8 @@ import type {
 	SpanDetailRequest,
 	SupabaseInfraProjectsRequest,
 	SupabaseInfraProjectTimeseriesRequest,
+	SupabaseLogIssuesRequest,
+	SupabaseProjectWindowRequest,
 	TraceSpanEventsRequest,
 	WorkloadInfraTimeseriesRequest,
 } from "@maple/domain/http"
@@ -345,6 +347,89 @@ const supabaseInfraProjectRateSeries = defineQuery({
 	cache: 15,
 	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
 		CH.compile(Integrations.supabaseProjectRateSeriesSQL(), supabaseProjectSeriesParams(payload, orgId)),
+})
+
+// /infra/supabase insights: the polled Supabase logs and the org's client spans to a project.
+const supabaseProjectParams = (payload: SupabaseProjectWindowRequest, orgId: OrgId) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+	projectRef: payload.projectRef,
+})
+
+const supabaseLogsProjectsSummary = defineQuery({
+	id: "supabaseLogsProjectsSummary",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseLogsProjectsSummarySQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const supabaseApiTrafficSeries = defineQuery({
+	id: "supabaseApiTrafficSeries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseApiTrafficSeriesSQL(), supabaseProjectSeriesParams(payload, orgId)),
+})
+
+const supabaseApiTrafficTotals = defineQuery({
+	id: "supabaseApiTrafficTotals",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseProjectWindowRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseApiTrafficTotalsSQL(), supabaseProjectParams(payload, orgId)),
+})
+
+const supabaseApiTopPaths = defineQuery({
+	id: "supabaseApiTopPaths",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseProjectWindowRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseApiTopPathsSQL(), supabaseProjectParams(payload, orgId)),
+})
+
+const supabaseProjectCallers = defineQuery({
+	id: "supabaseProjectCallers",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseProjectCallersSQL(), supabaseProjectParams(payload, orgId)),
+})
+
+const supabaseProjectCallerSeries = defineQuery({
+	id: "supabaseProjectCallerSeries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.supabaseProjectCallerSeriesSQL(),
+			supabaseProjectSeriesParams(payload, orgId),
+		),
+})
+
+// One project, or (no `projectRef`) every project of the org.
+const supabaseLogIssues = defineQuery({
+	id: "supabaseLogIssues",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseLogIssuesRequest, orgId: OrgId) =>
+		payload.projectRef === undefined
+			? CH.compile(Integrations.supabaseLogIssuesSQL({ byProject: false }), {
+					orgId,
+					startTime: payload.startTime,
+					endTime: payload.endTime,
+				})
+			: CH.compile(Integrations.supabaseLogIssuesSQL({ byProject: true }), {
+					orgId,
+					startTime: payload.startTime,
+					endTime: payload.endTime,
+					projectRef: payload.projectRef,
+				}),
 })
 
 // A small read of the hourly catalog that decides which tabs /infra/gcp shows.
@@ -963,6 +1048,13 @@ export const Queries = {
 	supabaseInfraProjectCpu,
 	supabaseInfraProjectGaugeSeries,
 	supabaseInfraProjectRateSeries,
+	supabaseLogsProjectsSummary,
+	supabaseApiTrafficSeries,
+	supabaseApiTrafficTotals,
+	supabaseApiTopPaths,
+	supabaseProjectCallers,
+	supabaseProjectCallerSeries,
+	supabaseLogIssues,
 	gcpInfraPresence,
 	gcpInfraMetrics,
 	gcpInfraTimeseries,

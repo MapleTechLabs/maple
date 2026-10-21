@@ -1,6 +1,6 @@
 /**
  * An in-memory Supabase Management API for tests: OAuth token/revoke, `/v1/organizations`,
- * `/v1/projects` and the logs endpoint, with bodies shaped like live responses (2026-10-21). Provided per test through
+ * `/v1/projects`, the logs endpoint, the advisors and the read-only query endpoint, with bodies shaped like live responses (2026-10-21). Provided per test through
  * `FetchHttpClient.Fetch`; tests steer it by mutating `state` between steps.
  */
 import { createHash } from "node:crypto"
@@ -89,6 +89,14 @@ export interface FakeSupabaseState {
 	logsStatus: number | null
 	/** Makes the logs endpoint answer 200 `{ "error": ... }`, as it does for a refused query. */
 	logsQueryError: string | null
+	/** `lints` served by `/advisors/performance` and `/advisors/security`. */
+	advisors: { performance: Array<unknown>; security: Array<unknown> }
+	/** Forces both advisor endpoints to answer this status (e.g. 429). */
+	advisorsStatus: number | null
+	/** Rows the read-only query endpoint answers with, whatever the SQL. */
+	readOnlyRows: Array<unknown>
+	/** Makes the read-only query endpoint answer 400 `{ message }`, as it does for a refused query. */
+	readOnlyError: string | null
 	issued: number
 	readonly calls: Array<FakeCall>
 }
@@ -114,6 +122,10 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		logs: [],
 		logsStatus: null,
 		logsQueryError: null,
+		advisors: { performance: [], security: [] },
+		advisorsStatus: null,
+		readOnlyRows: [],
+		readOnlyError: null,
 		issued: 0,
 		calls: [],
 		...initial,
@@ -179,6 +191,23 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 			}
 			if (state.logsQueryError !== null) return json({ error: state.logsQueryError })
 			return json({ result: runLogsQuery(state.logs, url.searchParams.get("sql") ?? "") })
+		}
+		const advisor = /^\/v1\/projects\/[a-z]{20}\/advisors\/(performance|security)$/.exec(path)?.[1]
+		if (advisor === "performance" || advisor === "security") {
+			if (state.advisorsStatus !== null) {
+				return json({ message: "Too many requests" }, state.advisorsStatus, {
+					"x-ratelimit-reset": "60",
+				})
+			}
+			return json({ lints: state.advisors[advisor] })
+		}
+		if (
+			/^\/v1\/projects\/[a-z]{20}\/database\/query\/read-only$/.test(path) &&
+			request.method === "POST"
+		) {
+			// Live-verified: a refused statement answers 400 with the Postgres message.
+			if (state.readOnlyError !== null) return json({ message: state.readOnlyError }, 400)
+			return json(state.readOnlyRows, 201)
 		}
 		return json({ message: "Not found" }, 404)
 	}

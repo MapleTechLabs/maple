@@ -34,7 +34,8 @@ export const ALERTING_SCHEDULE = {
 		],
 		deadline: "270 seconds",
 	},
-	"*/15 * * * *": { lanes: ["digest"], deadline: "10 minutes" },
+	// `supabase_insights` reads top queries every tick and advisors hourly (it tracks the hour itself).
+	"*/15 * * * *": { lanes: ["digest", "supabase_insights"], deadline: "10 minutes" },
 	"0 * * * *": { lanes: ["service_map_rollup", "supabase_discovery"], deadline: "15 minutes" },
 } as const satisfies Record<string, CronSchedule>
 

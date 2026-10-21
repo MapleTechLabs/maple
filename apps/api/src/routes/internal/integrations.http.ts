@@ -60,6 +60,7 @@ import {
 import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
+import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
 import {
 	SUPABASE_CALLBACK_PATH,
@@ -131,6 +132,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const supabaseOAuth = yield* SupabaseOAuthService
 		const supabase = yield* SupabaseConnectionService
 		const supabaseLogs = yield* SupabaseLogsService
+		const supabaseInsights = yield* SupabaseInsightsService
 		const gcp = yield* GcpConnectorService
 		const edgeCache = yield* EdgeCacheService
 		const env = yield* Env
@@ -513,6 +515,12 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							yield* supabaseLogs.setLogsEnabled(tenant.orgId, params.ref, payload.logsEnabled)
 						}
 						return yield* supabase.updateProject(tenant.orgId, params.ref, payload)
+					}),
+				)
+				.handle("supabaseProjectInsights", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* supabaseInsights.getInsights(tenant.orgId, params.ref)
 					}),
 				)
 				.handle("supabaseDisconnect", () =>

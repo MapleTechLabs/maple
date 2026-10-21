@@ -23,6 +23,7 @@ import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetS
 import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrReviewPostMergeService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
+import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
 import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
@@ -57,6 +58,7 @@ export const layerTick = (
 		RailwayMetricsService.layer,
 		SupabaseConnectionService.layer,
 		SupabaseLogsService.layer,
+		SupabaseInsightsService.layer,
 		DigestService.layer,
 		WebAnalyticsDigestService.layer,
 		ErrorsService.layer,
@@ -331,6 +333,21 @@ const supabaseLogsTick = makeTick(
 			: undefined,
 )
 
+const supabaseInsightsTick = makeTick(
+	SupabaseInsightsService.use((supabase) => supabase.pollAllOrgs()),
+	"supabase_insights",
+	(result) =>
+		result.orgs > 0
+			? {
+					orgs: result.orgs,
+					advisorsRead: result.advisorsRead,
+					queriesRead: result.queriesRead,
+					skipped: result.skipped,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
 const prReviewPostMergeTick = makeTick(
 	PrReviewPostMergeService.use((service) => service.runTick()),
 	"pr_review_post_merge",
@@ -361,6 +378,7 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly serviceMapRollup: Effect.Effect<void, never, R>
 	readonly supabaseDiscovery: Effect.Effect<void, never, R>
 	readonly supabaseLogs: Effect.Effect<void, never, R>
+	readonly supabaseInsights: Effect.Effect<void, never, R>
 }
 
 /** The program each lane runs; every tick belongs to exactly one lane. */
@@ -382,6 +400,7 @@ const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect
 		Match.when("service_map_rollup", () => ticks.serviceMapRollup),
 		Match.when("supabase_discovery", () => ticks.supabaseDiscovery),
 		Match.when("supabase_logs", () => ticks.supabaseLogs),
+		Match.when("supabase_insights", () => ticks.supabaseInsights),
 		Match.exhaustive,
 	)
 
@@ -433,6 +452,7 @@ type ScheduledServices =
 	| ServiceMapRollupService
 	| SupabaseConnectionService
 	| SupabaseLogsService
+	| SupabaseInsightsService
 
 export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	alert: alertTick,
@@ -449,6 +469,7 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	serviceMapRollup: serviceMapRollupTick,
 	supabaseDiscovery: supabaseDiscoveryTick,
 	supabaseLogs: supabaseLogsTick,
+	supabaseInsights: supabaseInsightsTick,
 }
 
 /**

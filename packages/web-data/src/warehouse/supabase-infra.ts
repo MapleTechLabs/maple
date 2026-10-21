@@ -30,6 +30,13 @@ export interface SupabaseProjectRow {
 	/** Postgres backends. */
 	connectionsAvg: number
 	connectionsMax: number
+	/** Edge (API gateway) requests from the polled logs; 0 when logs are off. */
+	requests: number
+	requestsPerMinute: number
+	errors5xx: number
+	/** WARN-or-worse log records of any source. */
+	issueCount: number
+	/** Latest scrape, or latest log record for a project with logs only. */
 	lastSeen: string
 }
 
@@ -97,6 +104,10 @@ export const getSupabaseProjects = Effect.fn("QueryEngine.getSupabaseProjects")(
 			dbSize: wireNumber(row.dbSize),
 			connectionsAvg: wireNumber(row.connectionsAvg),
 			connectionsMax: wireNumber(row.connectionsMax),
+			requests: wireNumber(row.requests),
+			requestsPerMinute: wireNumber(row.requestsPerMinute),
+			errors5xx: wireNumber(row.errors5xx),
+			issueCount: wireNumber(row.issueCount),
 			lastSeen: String(row.lastSeen ?? ""),
 		})),
 	}

@@ -4259,3 +4259,186 @@ SELECT
         ORDER BY bucket ASC
         LIMIT 2000
         FORMAT JSON
+
+-- builder:supabase-insights:supabaseApiTopPathsSQL:default
+SELECT
+          logs.LogAttributes['request.method'] AS method,
+          extract(logs.LogAttributes['request.path'], '^[^?#]*') AS path,
+          count() AS requests,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599) AS errors5xx,
+          ifNull(ifNotFinite(quantile(0.95)(toFloat64OrNull(logs.LogAttributes['response.origin_time'])), 0), 0) AS p95OriginMs
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst'
+          AND logs.LogAttributes['supabase.log.source'] = 'edge_logs'
+        GROUP BY method, path
+        ORDER BY requests DESC, method ASC, path ASC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseApiTrafficSeriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(logs.TimestampTime, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 200 AND 299) AS status2xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 300 AND 399) AS status3xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 400 AND 499) AS status4xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599) AS status5xx
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst'
+          AND logs.LogAttributes['supabase.log.source'] = 'edge_logs'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseApiTrafficTotalsSQL:default
+SELECT
+          count() AS requests,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599) AS errors5xx,
+          ifNull(ifNotFinite(quantile(0.95)(toFloat64OrNull(logs.LogAttributes['response.origin_time'])), 0), 0) AS p95OriginMs
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst'
+          AND logs.LogAttributes['supabase.log.source'] = 'edge_logs'
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseLogIssuesSQL:org
+SELECT
+          records.projectRef AS projectRef,
+          records.source AS source,
+          records.message AS message,
+          count() AS count,
+          max(records.t) AS lastSeen,
+          max(records.severity) AS maxSeverity
+        FROM (SELECT
+          logs.ResourceAttributes['supabase.project.ref'] AS projectRef,
+          logs.LogAttributes['supabase.log.source'] AS source,
+          leftUTF8(replaceRegexpAll(multiIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs', concat(logs.LogAttributes['request.method'], ' ', extract(logs.LogAttributes['request.path'], '^[^?#]*'), ' ', logs.LogAttributes['response.status_code']), logs.LogAttributes['msg'] != '', logs.LogAttributes['msg'], logs.Body), '[0-9]+', '0'), 200) AS message,
+          logs.Timestamp AS t,
+          logs.SeverityNumber AS severity
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.SeverityNumber >= 13
+          AND logs.ResourceAttributes['supabase.project.ref'] != '') AS records
+        GROUP BY projectRef, source, message
+        ORDER BY count DESC, lastSeen DESC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseLogIssuesSQL:project
+SELECT
+          records.projectRef AS projectRef,
+          records.source AS source,
+          records.message AS message,
+          count() AS count,
+          max(records.t) AS lastSeen,
+          max(records.severity) AS maxSeverity
+        FROM (SELECT
+          logs.ResourceAttributes['supabase.project.ref'] AS projectRef,
+          logs.LogAttributes['supabase.log.source'] AS source,
+          leftUTF8(replaceRegexpAll(multiIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs', concat(logs.LogAttributes['request.method'], ' ', extract(logs.LogAttributes['request.path'], '^[^?#]*'), ' ', logs.LogAttributes['response.status_code']), logs.LogAttributes['msg'] != '', logs.LogAttributes['msg'], logs.Body), '[0-9]+', '0'), 200) AS message,
+          logs.Timestamp AS t,
+          logs.SeverityNumber AS severity
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.SeverityNumber >= 13
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst') AS records
+        GROUP BY projectRef, source, message
+        ORDER BY count DESC, lastSeen DESC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseLogsProjectsSummarySQL:default
+SELECT
+          logs.ResourceAttributes['supabase.project.ref'] AS projectRef,
+          countIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs') AS requests,
+          ifNull(ifNotFinite(countIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs') * 60 / greatest(toUnixTimestamp(toDateTime('2026-01-03 14:15:00')) - toUnixTimestamp(toDateTime('2026-01-01 10:30:00')), 1), 0), 0) AS requestsPerMinute,
+          countIf((logs.LogAttributes['supabase.log.source'] = 'edge_logs' AND toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599)) AS errors5xx,
+          countIf(logs.SeverityNumber >= 13) AS issueCount,
+          max(logs.Timestamp) AS lastSeen
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] != ''
+        GROUP BY projectRef
+        ORDER BY projectRef ASC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseProjectCallerSeriesSQL:default
+SELECT
+          traces.ServiceName AS serviceName,
+          formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          count() AS calls
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Client'
+          AND ((((traces.SpanAttributes['server.address'] = concat('abcdefghijklmnopqrst', '.supabase.co') OR traces.SpanAttributes['net.peer.name'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR traces.SpanAttributes['http.host'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR domain(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url'])) = concat('abcdefghijklmnopqrst', '.supabase.co')) OR (coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql' AND (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) = concat('db.', 'abcdefghijklmnopqrst', '.supabase.co') OR (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) LIKE '%.pooler.supabase.com' AND traces.SpanAttributes['db.user'] LIKE concat('%.', 'abcdefghijklmnopqrst')))))
+        GROUP BY serviceName, bucket
+        ORDER BY serviceName ASC, bucket ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseProjectCallersSQL:default
+SELECT
+          spans.serviceName AS serviceName,
+          count() AS calls,
+          ifNull(ifNotFinite(count() * 60 / greatest(toUnixTimestamp(toDateTime('2026-01-03 14:15:00')) - toUnixTimestamp(toDateTime('2026-01-01 10:30:00')), 1), 0), 0) AS callsPerMinute,
+          sum(spans.failed) AS errors,
+          ifNull(ifNotFinite(sum(spans.failed) / count(), 0), 0) AS errorRate,
+          ifNull(ifNotFinite(quantile(0.95)(spans.duration) / 1000000, 0), 0) AS p95DurationMs,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/rest/%')) AS rest,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/auth/%')) AS auth,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/storage/%')) AS storage,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/realtime/%')) AS realtime,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/functions/%')) AS functions,
+          countIf(spans.isPostgres = 1) AS postgres,
+          countIf((spans.isPostgres = 0 AND NOT (match(spans.path, '^/(rest|auth|storage|realtime|functions)/')))) AS other
+        FROM (SELECT
+          traces.ServiceName AS serviceName,
+          traces.Duration AS duration,
+          if(traces.StatusCode = 'Error', 1, 0) AS failed,
+          if(coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql', 1, 0) AS isPostgres,
+          if(traces.SpanAttributes['url.path'] != '', traces.SpanAttributes['url.path'], path(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url']))) AS path
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Client'
+          AND ((((traces.SpanAttributes['server.address'] = concat('abcdefghijklmnopqrst', '.supabase.co') OR traces.SpanAttributes['net.peer.name'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR traces.SpanAttributes['http.host'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR domain(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url'])) = concat('abcdefghijklmnopqrst', '.supabase.co')) OR (coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql' AND (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) = concat('db.', 'abcdefghijklmnopqrst', '.supabase.co') OR (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) LIKE '%.pooler.supabase.com' AND traces.SpanAttributes['db.user'] LIKE concat('%.', 'abcdefghijklmnopqrst')))))) AS spans
+        GROUP BY serviceName
+        ORDER BY calls DESC, serviceName ASC
+        LIMIT 100
+        FORMAT JSON
