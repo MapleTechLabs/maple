@@ -35,6 +35,12 @@ const baseParams = {
 /** The `facetType` literals a facets union emits, the values the UI groups rows by. */
 const facetTypes = (sql: string) => [...sql.matchAll(/'(\w+)' AS facetType/g)].map((m) => m[1])
 
+/** `facetType: attribute` for each union branch that reads a single resource attribute. */
+const facetSources = (sql: string) =>
+	[...sql.matchAll(/ResourceAttributes\['([\w.]+)'\] AS name[\s\S]*?'(\w+)' AS facetType/g)].map(
+		(m) => `${m[2]}: ${m[1]}`,
+	)
+
 describe("listHostsQuery", () => {
 	it("scopes to the org with every param bound", () => {
 		const { sql } = compileUnsafe(listHostsQuery({}), baseParams)
@@ -305,6 +311,18 @@ describe("podFacetsQuery", () => {
 				"daemonset",
 				"job",
 				"environment",
+			]),
+		)
+		expect(facetSources(sql)).toEqual(
+			expect.arrayContaining([
+				"pod: k8s.pod.name",
+				"namespace: k8s.namespace.name",
+				"node: k8s.node.name",
+				"cluster: k8s.cluster.name",
+				"deployment: k8s.deployment.name",
+				"statefulset: k8s.statefulset.name",
+				"daemonset: k8s.daemonset.name",
+				"job: k8s.job.name",
 			]),
 		)
 		expect(sql).toContain(

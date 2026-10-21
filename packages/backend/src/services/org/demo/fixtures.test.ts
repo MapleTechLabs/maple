@@ -7,6 +7,15 @@ describe("generateDemoRows metrics", () => {
 	it("emits runtime gauge and sum metrics alongside traces/logs", () => {
 		expect(rows.metricGaugeRows.length).toBeGreaterThan(0)
 		expect(rows.metricSumRows.length).toBeGreaterThan(0)
+		// The demo dashboards chart these by name.
+		expect(rows.metricGaugeRows.map((r) => r.metric_name)).toEqual(
+			expect.arrayContaining([
+				"process.runtime.nodejs.memory.heap.used",
+				"process.runtime.nodejs.handles",
+				"process.runtime.nodejs.eventloop.lag",
+			]),
+		)
+		expect(rows.metricSumRows.map((r) => r.metric_name)).toContain("process.runtime.nodejs.gc.count")
 	})
 
 	it("scopes every metric row to the org (maple_org_id drives OrgId)", () => {

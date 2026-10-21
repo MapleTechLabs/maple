@@ -86,6 +86,7 @@ describe("IncidentClassifier", () => {
 			const result = yield* classifier.classify(request)
 
 			assert.instanceOf(result, IncidentTriageVerdict)
+			assert.strictEqual(result?.disposition, "noise")
 			assert.lengthOf(worker.calls, 1)
 			const call = worker.calls[0]
 			assert.match(call?.url ?? "", /\/internal\/triage\/classify$/)

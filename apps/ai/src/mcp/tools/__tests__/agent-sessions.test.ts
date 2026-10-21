@@ -302,7 +302,9 @@ describe("get_agent_session rendering", () => {
 		// needs attention, the failed tool as a row with what to do, and the
 		// checks that passed named on one line.
 		expect(output).toMatch(/### Checks \(\d+ failed · \d+ warnings? · \d+ passed · \d+ not checked\)/)
-		expect(output).toMatch(/^\| (failed|warning) \| Tool errors \| .+ \|$/m)
+		expect(output).toMatch(
+			/^\| (failed|warning) \| Tool errors \| .+ \| Fix the tool, or make its error text say what to do next\. \|$/m,
+		)
 		// A passed check is its name, on one line with the others that passed.
 		expect(output).toMatch(/^Passed: .*Rate limits.*\.$/m)
 		expect(structured.checks.every((check) => check.status !== "passed")).toBe(true)

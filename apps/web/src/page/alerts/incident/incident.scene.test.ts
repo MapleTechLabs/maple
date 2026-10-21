@@ -38,7 +38,7 @@ const step = (model: Model, message: Message) => pageUpdate(model, message)
 describe("alert incident", () => {
 	test("entry reads the clock and loads the chart runtime; the incident's reads follow its row", () => {
 		const entered = init(route(), context)
-		expect(names(entered.commands)).toContain("ReadAlertIncidentClock")
+		expect(names(entered.commands)).toEqual(expect.arrayContaining(["ReadAlertIncidentClock", "LoadChartRuntime"]))
 		const clocked = step(entered.model, Message.ReadClock({ nowMs: NOW })).model
 		const withIncident = step(clocked, Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] }))
 		expect(names(withIncident.commands)).toEqual(

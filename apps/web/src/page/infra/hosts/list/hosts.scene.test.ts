@@ -50,7 +50,9 @@ const loaded = (hosts: ReadonlyArray<HostRow>, search: Model["search"] = {}): Mo
 describe("hosts list", () => {
 	test("entry resolves the window and fetches the ingest key; the window then fetches the hosts", () => {
 		const entered = init({ search: {} }, context)
-		expect((entered.commands ?? []).map(({ name }) => name)).toContain("ResolveInfraWindow")
+		expect((entered.commands ?? []).map(({ name }) => name)).toEqual(
+			expect.arrayContaining(["ResolveInfraWindow", "FetchInstallIngestKey"]),
+		)
 		expect((resolved(entered.model).commands ?? []).map(({ name }) => name)).toContain(FetchHosts.name)
 	})
 

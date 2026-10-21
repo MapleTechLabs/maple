@@ -16,6 +16,7 @@ import {
 import { describe, expect, test } from "vitest"
 import { ThemeMessage, ResolveThemeColors } from "../../../charts/theme-colors"
 import { toLoadFailure } from "../../../data/load-failure"
+import { requestKey } from "../../../data/request-key"
 import { PageOutMessage, type PageContext } from "../../contract"
 import {
 	FetchAnomalies,
@@ -57,6 +58,9 @@ const row = (serviceName: string, environment = "production", serviceNamespace =
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	(commands ?? []).map(({ name }) => name)
+
+const overviewKey = (input = overviewInput({}, window, null)) =>
+	requestKey(orgId, "getServiceOverview", { data: input })
 
 /** Entered and windowed: every query in flight. */
 const windowed = (): Model => {
@@ -117,7 +121,7 @@ describe("services list", () => {
 		expect(fetch?.args).toMatchObject({
 			input: { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00" },
 		})
-		expect(resolved.model.overview.key).toBe(fetch?.args?.["key"])
+		expect(resolved.model.overview.key).toBe(overviewKey())
 	})
 
 	test("the org namespace pin overrides the URL's namespace filters in the request", () => {
