@@ -59,9 +59,10 @@ import {
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import {
 	deleteSourcesOf,
-	ensureIntegrationSource,
+	createIntegrationSource,
 	integrationSourceName,
 	type PollOutcome,
+	pollReportDue,
 	reportPoll,
 } from "@maple/backend/services/org/integration-sources"
 import type { MapleDb } from "@maple/db/client"
@@ -779,14 +780,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const inserted = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							const sourceId = yield* ensureIntegrationSource(
+							const sourceId = yield* createIntegrationSource(
 								db,
 								orgId,
-								{
-									platform: "prometheus",
-									integrationId: id,
-									name: integrationSourceName.prometheus({ name }),
-								},
+								{ platform: "prometheus", name: integrationSourceName.prometheus({ name }) },
 								now,
 							)
 							return yield* db.run(
@@ -1188,6 +1185,14 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						)
 						.where(($) => [$.sourceId.in_(first, ...rest), $.enabled.eq(true)]),
 				)
+				// Results arrive every few seconds; a source is only written when its state moves.
+				const current = new Map(
+					(yield* db.run(
+						PG.from(Sources)
+							.select("id", "lastPollAt", "lastPollError", "disconnectedAt")
+							.where(($) => [$.id.in_(first, ...rest)]),
+					)).map((source) => [source.id, source]),
+				)
 				const now = yield* Clock.currentTimeMillis
 				// A PlanetScale connection's targets leave its source to the connection's own poller.
 				const managed = new Set(
@@ -1221,7 +1226,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 											: failing.lastScrapeError,
 										resources,
 									}
-						return reportPoll(db, sourceId, outcome, now)
+						const state = current.get(sourceId)
+						return state === undefined || !pollReportDue(state, outcome, now)
+							? Effect.void
+							: reportPoll(db, sourceId, outcome, now)
 					},
 					{ discard: true },
 				)

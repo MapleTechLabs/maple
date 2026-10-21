@@ -22,10 +22,6 @@ export const Sources = PG.table("sources", {
 		description: PG.nullable(PG.text),
 		platform: PG.brand(PG.text, SourcePlatform),
 		kind: PG.brand(PG.text, SourceKind),
-		isDefault: PG.column(PG.bool, { name: "is_default", default: false }),
-		// The integration row a pull source stands for (scrape target, GCP connector, Railway
-		// connection, ...), keyed by platform. Null for push sources.
-		integrationId: PG.column(PG.nullable(PG.text), { name: "integration_id" }),
 		// Null for the default source and pull sources.
 		keyHash: PG.column(PG.nullable(PG.text), { name: "key_hash" }),
 		keyPrefix: PG.column(PG.nullable(PG.text), { name: "key_prefix" }),
@@ -70,10 +66,7 @@ export const Sources = PG.table("sources", {
 	indexes: [
 		PG.uniqueIndex("sources_key_hash_unique", ["keyHash"]),
 		PG.index("sources_org_id_idx", ["orgId"]),
-		PG.uniqueIndex("sources_org_default_unique", ["orgId"], { where: ($) => $.isDefault.eq(true) }),
-		PG.uniqueIndex("sources_org_integration_unique", ["orgId", "platform", "integrationId"], {
-			where: ($) => $.integrationId.isNotNull(),
-		}),
+		PG.uniqueIndex("sources_org_default_kind_unique", ["orgId"], { where: ($) => $.kind.eq("default") }),
 	],
 	tenantColumn: "orgId",
 })

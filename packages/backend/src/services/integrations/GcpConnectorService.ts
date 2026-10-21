@@ -32,7 +32,7 @@ import { gcpLogFilter, renderGcpCleanupScript, renderGcpSetupScript } from "./gc
 import { renderGcpTerraform } from "./gcp/terraform"
 import {
 	deleteSourcesOf,
-	ensureIntegrationSource,
+	createIntegrationSource,
 	integrationSourceName,
 	reportPoll,
 } from "@maple/backend/services/org/integration-sources"
@@ -397,11 +397,18 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				const [row] = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							const [inserted] = yield* db.run(
+							const sourceId = yield* createIntegrationSource(
+								db,
+								orgId,
+								{ platform: "gcp", name: integrationSourceName.gcp(input) },
+								now,
+							)
+							const inserted = yield* db.run(
 								PG.insertInto(GcpConnectors)
 									.values({
 										id,
 										orgId,
+										sourceId,
 										...input,
 										// What is created off is known not to exist; switching it on later resets this to null.
 										appliedLogsEnabled: input.logsEnabled ? null : false,
@@ -417,23 +424,9 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 									.onConflictDoNothing({ target: ["orgId", "scopeType", "scopeId"] })
 									.returning(),
 							)
-							if (inserted === undefined) return []
-							const sourceId = yield* ensureIntegrationSource(
-								db,
-								orgId,
-								{
-									platform: "gcp",
-									integrationId: id,
-									name: integrationSourceName.gcp(inserted),
-								},
-								now,
-							)
-							return yield* db.run(
-								PG.update(GcpConnectors)
-									.set({ sourceId })
-									.where(($) => [$.id.eq(id)])
-									.returning(),
-							)
+							// A scope that is already connected keeps no source of its own.
+							if (inserted.length === 0) yield* deleteSourcesOf(db, orgId, [{ sourceId }])
+							return inserted
 						}),
 					),
 				)

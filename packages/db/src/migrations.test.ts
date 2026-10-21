@@ -572,4 +572,63 @@ describe("bundled migrations", () => {
 		expect(await owner("cloudflare_logpush_connectors", "l1")).toBeNull()
 		await pg.close()
 	}, 30_000)
+
+	it("links what old code left unlinked before source_id becomes required", async () => {
+		const pg = new PGlite()
+		await pg.exec(readMigrationSqlBefore("source_ownership_contract"))
+
+		const now = "2026-10-21T00:00:00.000Z"
+		// Written the old way after the expand: no `kind`, no link.
+		await pg.query(
+			`INSERT INTO sources (id, org_id, name, platform, is_default, integration_id, created_at, updated_at) VALUES
+				('src_gone', 'org_1', 'Deleted target', 'prometheus', false, 'gone', $1, $1),
+				('src_t1', 'org_1', 'Target one', 'prometheus', false, 't1', $1, $1)`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO scrape_targets (id, org_id, name, url, managed_by, created_at, updated_at) VALUES
+				('t1', 'org_1', 'Target one', 'http://one', NULL, $1, $1),
+				('t2', 'org_1', 'Target two', 'http://two', NULL, $1, $1),
+				('t3', 'org_1', 'Old PlanetScale', 'http://ps', 'planetscale:ps_gone', $1, $1),
+				('t4', 'org_1', 'PlanetScale', 'http://ps2', 'planetscale:ps_live', $1, $1)`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO planetscale_connections (id, org_id, ps_organization, connected_by_user_id, created_at, updated_at)
+			VALUES ('ps_live', 'org_1', 'acme', 'user_1', $1, $1)`,
+			[now],
+		)
+		await pg.query(
+			`INSERT INTO railway_connections (id, org_id, token_ciphertext, token_iv, token_tag, connected_by_user_id,
+				created_at, updated_at)
+			VALUES ('r1', 'org_1', 'x', 'x', 'x', 'user_1', $1, $1)`,
+			[now],
+		)
+
+		await pg.exec(readMigrationSql("source_ownership_contract"))
+
+		const owners = await pg.query<{ id: string; managed_by: string | null; platform: string; kind: string }>(
+			`SELECT t.id, t.managed_by, s.platform, s.kind FROM scrape_targets t JOIN sources s ON s.id = t.source_id
+			UNION ALL SELECT r.id, NULL, s.platform, s.kind FROM railway_connections r JOIN sources s ON s.id = r.source_id
+			ORDER BY 1`,
+		)
+		expect(owners.rows).toEqual([
+			{ id: "r1", managed_by: null, platform: "railway", kind: "integration" },
+			// An existing source is kept; a target whose PlanetScale connection is gone becomes the user's.
+			{ id: "t1", managed_by: null, platform: "prometheus", kind: "integration" },
+			{ id: "t2", managed_by: null, platform: "prometheus", kind: "integration" },
+			{ id: "t3", managed_by: null, platform: "prometheus", kind: "integration" },
+			// A live connection linked in the same migration still takes its managed target along.
+			{ id: "t4", managed_by: "planetscale:ps_live", platform: "planetscale", kind: "integration" },
+		])
+		expect((await pg.query("SELECT source_id FROM scrape_targets WHERE id = 't1'")).rows).toEqual([
+			{ source_id: "src_t1" },
+		])
+		expect((await pg.query("SELECT id FROM sources WHERE id = 'src_gone'")).rows).toEqual([])
+		const columns = await pg.query(
+			"SELECT column_name FROM information_schema.columns WHERE table_name = 'sources' AND column_name IN ('is_default', 'integration_id')",
+		)
+		expect(columns.rows).toEqual([])
+		await pg.close()
+	}, 30_000)
 })

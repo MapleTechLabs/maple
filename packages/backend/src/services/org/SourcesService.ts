@@ -25,7 +25,7 @@ import type { SourceHealthResult } from "@maple/domain/source-health"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
-import { readTurnedOff } from "./integration-sources"
+import { readSourceOwners } from "./integration-sources"
 import { defaultSourceRow, newSourceId, sourceRowHealth, statusOf } from "./source-rows"
 
 const SOURCE_TOKEN_PREFIX = "maple_src_"
@@ -62,8 +62,19 @@ const toSourceHealth = (health: SourceHealthResult) =>
 		resources: health.resources ?? null,
 	})
 
-// `turnedOff`: why an integration source reads nothing on purpose.
-const rowToSource = (row: SourceRow, now: number, turnedOff?: string): Source => {
+interface SourceOwner {
+	/** The integration row an integration source stands for. */
+	readonly integrationId: string | null
+	/** Why the integration reads nothing on purpose. */
+	readonly turnedOff: string | undefined
+}
+const NO_OWNER: SourceOwner = { integrationId: null, turnedOff: undefined }
+
+const rowToSource = (
+	row: SourceRow,
+	now: number,
+	owner: SourceOwner = NO_OWNER,
+): Source => {
 	const status = statusOf(row, now)
 	return new Source({
 		id: row.id,
@@ -71,9 +82,8 @@ const rowToSource = (row: SourceRow, now: number, turnedOff?: string): Source =>
 		description: row.description,
 		platform: row.platform,
 		kind: row.kind,
-		isDefault: row.kind === "default",
 		keyPrefix: row.keyPrefix,
-		integrationId: row.integrationId,
+		integrationId: owner.integrationId,
 		status,
 		allowedSignals: row.allowedSignals,
 		rateLimitRps: row.rateLimitRps,
@@ -86,7 +96,7 @@ const rowToSource = (row: SourceRow, now: number, turnedOff?: string): Source =>
 		rolledAt: isoOrNull(row.rolledAt),
 		createdAt: toIso(row.createdAt),
 		updatedAt: toIso(row.updatedAt),
-		health: toSourceHealth(sourceRowHealth(row, now, turnedOff)),
+		health: toSourceHealth(sourceRowHealth(row, now, owner.turnedOff)),
 	})
 }
 
@@ -252,33 +262,41 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 			)
 
 		// The default source first, then newest first as selected.
+		const ownerOf = (
+			owners: Effect.Success<ReturnType<typeof readSourceOwners>>,
+			id: SourceId,
+		): SourceOwner => ({
+			integrationId: owners.integrationIds.get(id) ?? null,
+			turnedOff: owners.turnedOff.get(id),
+		})
+
 		const toSources = (
 			rows: ReadonlyArray<SourceRow>,
-			turnedOff: ReadonlyMap<SourceId, string>,
+			owners: Effect.Success<ReturnType<typeof readSourceOwners>>,
 			now: number,
 		) =>
 			Arr.map(
 				Arr.sortWith(rows, (row) => (row.kind === "default" ? 0 : 1), Order.Number),
-				(row) => rowToSource(row, now, turnedOff.get(row.id)),
+				(row) => rowToSource(row, now, ownerOf(owners, row.id)),
 			)
 
-		// An integration source reads its integration's switches; any other source reads its row.
+		// An integration source answers with its integration row and that row's switches.
 		const toSource = Effect.fnUntraced(function* (orgId: OrgId, row: SourceRow, now: number) {
 			if (row.kind !== "integration") return rowToSource(row, now)
-			const turnedOff = yield* dbExecute((db) => readTurnedOff(db, orgId))
-			return rowToSource(row, now, turnedOff.get(row.id))
+			const owners = yield* dbExecute((db) => readSourceOwners(db, orgId))
+			return rowToSource(row, now, ownerOf(owners, row.id))
 		})
 
 		const list = Effect.fn("SourcesService.list")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			const now = yield* Clock.currentTimeMillis
-			const [before, turnedOff] = yield* Effect.all(
-				[selectAll(orgId), dbExecute((db) => readTurnedOff(db, orgId))],
+			const [before, owners] = yield* Effect.all(
+				[selectAll(orgId), dbExecute((db) => readSourceOwners(db, orgId))],
 				{ concurrency: "unbounded" },
 			)
 			const missingDefault = !before.some((row) => row.kind === "default")
 			if (missingDefault) yield* ensureDefault(orgId, now)
-			return toSources(missingDefault ? yield* selectAll(orgId) : before, turnedOff, now)
+			return toSources(missingDefault ? yield* selectAll(orgId) : before, owners, now)
 		})
 
 		const get = Effect.fn("SourcesService.get")(function* (orgId: OrgId, sourceId: SourceId) {
@@ -326,7 +344,6 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 									description,
 									platform: request.platform,
 									kind: "token",
-									isDefault: false,
 									keyHash: hashIngestKey(secret, lookupHmacKey),
 									keyPrefix: displayPrefix(secret),
 									allowedSignals,

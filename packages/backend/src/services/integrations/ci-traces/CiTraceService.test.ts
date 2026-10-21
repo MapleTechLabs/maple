@@ -11,6 +11,7 @@ import {
 	cleanupTestDbs,
 	createTestDb,
 	executeSql,
+	insertTestSource,
 	queryFirstRow,
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
@@ -232,19 +233,17 @@ const attr = (attributes: OtlpRequest["resourceSpans"][number]["resource"]["attr
 // Installation 42 of `org_ci` with its source, as VcsRepository.upsertInstallation writes it.
 const seedInstallation = (testDb: TestDb, options: { readonly paused?: boolean } = {}) =>
 	Effect.promise(async () => {
-		await executeSql(
-			testDb,
-			`INSERT INTO sources (id, org_id, name, platform, kind, integration_id, paused_at, created_at, updated_at)
-			VALUES (gen_random_uuid()::text, 'org_ci', 'GitHub octo', 'github', 'integration',
-				'00000000-0000-4000-8000-000000000042', $1, now(), now())`,
-			[options.paused === true ? new Date().toISOString() : null],
-		)
+		const sourceId = await insertTestSource(testDb, { orgId: "org_ci", platform: "github", name: "GitHub octo" })
+		if (options.paused === true) {
+			await executeSql(testDb, "UPDATE sources SET paused_at = now() WHERE id = $1", [sourceId])
+		}
 		await executeSql(
 			testDb,
 			`INSERT INTO vcs_installations (id, org_id, provider, external_installation_id, account_login,
 				account_type, external_account_id, installed_by_user_id, created_at, updated_at, source_id)
-			SELECT '00000000-0000-4000-8000-000000000042', 'org_ci', 'github', '42', 'octo', 'Organization',
-				'1', 'user_1', now(), now(), id FROM sources WHERE platform = 'github'`,
+			VALUES ('00000000-0000-4000-8000-000000000042', 'org_ci', 'github', '42', 'octo', 'Organization',
+				'1', 'user_1', now(), now(), $1)`,
+			[sourceId],
 		)
 	})
 
@@ -262,7 +261,7 @@ describe("CiTraceService", () => {
 			const source = yield* Effect.promise(() =>
 				queryFirstRow<{ id: string; name: string }>(
 					testDb,
-					"SELECT id, name FROM sources WHERE platform = 'github' AND integration_id = '00000000-0000-4000-8000-000000000042'",
+					"SELECT id, name FROM sources WHERE platform = 'github'",
 				),
 			)
 			assert.strictEqual(source!.name, "GitHub octo")

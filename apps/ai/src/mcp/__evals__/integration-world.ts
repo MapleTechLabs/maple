@@ -41,20 +41,36 @@ export const seedIntegrationWorld = async (rt: EvalRuntime) => {
 		[org, created],
 	)
 
-	const oauth = (id: string, provider: string, account: string) =>
+	// Every integration row sends as its source, as the connect flows create it.
+	const source = (id: string, platform: string, name: string) =>
+		sql(
+			`INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, 'integration', $5, $5)`,
+			[id, org, name, platform, created],
+		)
+	await source("5e0a1c3b-0000-4000-8000-0000000000c1", "cloudflare", "Acme")
+	await source("5e0a1c3b-0000-4000-8000-0000000000c2", "github", "GitHub acme")
+	await source("5e0a1c3b-0000-4000-8000-0000000000c3", "railway", "acme")
+	await source("5e0a1c3b-0000-4000-8000-0000000000c4", "planetscale", "PlanetScale acme")
+	await source("5e0a1c3b-0000-4000-8000-0000000000c5", "prometheus", "node-exporter")
+	await source("5e0a1c3b-0000-4000-8000-0000000000c6", "prometheus", INTEGRATION_WORLD.failingScrapeTarget)
+
+	const oauth = (id: string, provider: string, account: string, sourceId: string | null) =>
 		sql(
 			`INSERT INTO oauth_connections (id, org_id, provider, external_user_id, external_account_name,
-				connected_by_user_id, access_token_ciphertext, access_token_iv, access_token_tag, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, $5, 'user_eval', 'c', 'i', 't', $6, $6)`,
-			[id, org, provider, `${provider}-user`, account, created],
+				connected_by_user_id, access_token_ciphertext, access_token_iv, access_token_tag, source_id,
+				created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5, 'user_eval', 'c', 'i', 't', $6, $7, $7)`,
+			[id, org, provider, `${provider}-user`, account, sourceId, created],
 		)
-	await oauth("oauth_cf", "cloudflare", "Acme")
-	await oauth("oauth_ps", "planetscale", "acme")
+	await oauth("oauth_cf", "cloudflare", "Acme", "5e0a1c3b-0000-4000-8000-0000000000c1")
+	await oauth("oauth_ps", "planetscale", "acme", null)
 
 	await sql(
 		`INSERT INTO vcs_installations (id, org_id, provider, external_installation_id, account_login, account_type,
-			external_account_id, installed_by_user_id, created_at, updated_at)
-		 VALUES ('7a1e0c3b-2f4d-4c8e-9b61-5d2a7e4f1c01', $1, 'github', '4242', 'acme', 'organization', '99', 'user_eval', $2, $2)`,
+			external_account_id, installed_by_user_id, source_id, created_at, updated_at)
+		 VALUES ('7a1e0c3b-2f4d-4c8e-9b61-5d2a7e4f1c01', $1, 'github', '4242', 'acme', 'organization', '99', 'user_eval',
+			'5e0a1c3b-0000-4000-8000-0000000000c2', $2, $2)`,
 		[org, created],
 	)
 	const repo = (
@@ -126,8 +142,8 @@ export const seedIntegrationWorld = async (rt: EvalRuntime) => {
 
 	await sql(
 		`INSERT INTO railway_connections (id, org_id, token_ciphertext, token_iv, token_tag, workspace_names,
-			connected_by_user_id, last_success_at, created_at, updated_at)
-		 VALUES ('rw_1', $1, 'c', 'i', 't', 'acme', 'user_eval', $2, $3, $3)`,
+			connected_by_user_id, last_success_at, source_id, created_at, updated_at)
+		 VALUES ('rw_1', $1, 'c', 'i', 't', 'acme', 'user_eval', $2, '5e0a1c3b-0000-4000-8000-0000000000c3', $3, $3)`,
 		[org, at(2), created],
 	)
 	const railwayEnv = (id: string, env: string, services: Record<string, string>, ok: number) =>
@@ -143,8 +159,8 @@ export const seedIntegrationWorld = async (rt: EvalRuntime) => {
 
 	await sql(
 		`INSERT INTO planetscale_connections (id, org_id, ps_organization, connected_by_user_id,
-			detected_permissions_json, last_inventory_at, created_at, updated_at)
-		 VALUES ('ps_1', $1, 'acme', 'user_eval', $2, $3, $4, $4)`,
+			detected_permissions_json, last_inventory_at, source_id, created_at, updated_at)
+		 VALUES ('ps_1', $1, 'acme', 'user_eval', $2, $3, '5e0a1c3b-0000-4000-8000-0000000000c4', $4, $4)`,
 		[
 			org,
 			JSON.stringify({ readOrganization: true, readDatabases: true, readMetricsEndpoints: true }),
@@ -186,13 +202,14 @@ export const seedIntegrationWorld = async (rt: EvalRuntime) => {
 		url: string,
 		ok: number,
 		error: string | null,
+		sourceId: string,
 		managedBy?: string,
 	) =>
 		sql(
 			`INSERT INTO scrape_targets (id, org_id, name, url, last_scrape_at, last_scrape_error, managed_by,
-				created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)`,
-			[id, org, name, url, at(ok), error, managedBy ?? null, created],
+				source_id, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`,
+			[id, org, name, url, at(ok), error, managedBy ?? null, sourceId, created],
 		)
 	await target(
 		"6f1c2a52-6b0e-4d7e-9a7e-0c1d2e3f4a50",
@@ -200,6 +217,7 @@ export const seedIntegrationWorld = async (rt: EvalRuntime) => {
 		"https://api.planetscale.com/v1/organizations/acme/metrics",
 		1,
 		null,
+		"5e0a1c3b-0000-4000-8000-0000000000c4",
 		"planetscale:ps_1",
 	)
 	await target(
@@ -208,6 +226,7 @@ export const seedIntegrationWorld = async (rt: EvalRuntime) => {
 		"https://metrics.acme.dev/node?token=fixture-secret",
 		1,
 		null,
+		"5e0a1c3b-0000-4000-8000-0000000000c5",
 	)
 	await target(
 		"6f1c2a52-6b0e-4d7e-9a7e-0c1d2e3f4a52",
@@ -215,36 +234,7 @@ export const seedIntegrationWorld = async (rt: EvalRuntime) => {
 		"http://10.0.4.12:9100/metrics",
 		60 * 30,
 		"dial tcp 10.0.4.12:9100: connect: connection refused",
-	)
-
-	// Every integration row sends as its source, as the connect flows write it.
-	const owners = [
-		["scrape_targets", "prometheus", "name", "managed_by IS NULL"],
-		["railway_connections", "railway", "coalesce(workspace_names, 'Railway')", "true"],
-		["planetscale_connections", "planetscale", "'PlanetScale ' || ps_organization", "true"],
-		[
-			"oauth_connections",
-			"cloudflare",
-			"coalesce(external_account_name, 'Cloudflare')",
-			"provider = 'cloudflare'",
-		],
-		["vcs_installations", "github", "'GitHub ' || account_login", "provider = 'github'"],
-	] as const
-	for (const [table, platform, name, where] of owners) {
-		await sql(
-			`WITH linked AS (
-				INSERT INTO sources (id, org_id, name, platform, kind, integration_id, created_at, updated_at)
-				SELECT gen_random_uuid()::text, org_id, ${name}, $1, 'integration', id, $2, $2 FROM ${table} WHERE ${where}
-				RETURNING id, integration_id
-			)
-			UPDATE ${table} t SET source_id = linked.id FROM linked WHERE t.id = linked.integration_id`,
-			[platform, created],
-		)
-	}
-	await sql(
-		`UPDATE scrape_targets t SET source_id = c.source_id FROM planetscale_connections c
-		 WHERE t.managed_by = 'planetscale:' || c.id`,
-		[],
+		"5e0a1c3b-0000-4000-8000-0000000000c6",
 	)
 
 	// What each poller last reported for this world, as `reportPoll` writes it.

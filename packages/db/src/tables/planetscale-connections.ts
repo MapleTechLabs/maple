@@ -18,7 +18,7 @@ export const PlanetscaleConnections = PG.table("planetscale_connections", {
 		id: PG.text,
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		// The source this integration sends as. Deleting the source deletes the row.
-		sourceId: PG.column(PG.nullable(PG.brand(PG.text, SourceId)), { name: "source_id" }),
+		sourceId: PG.column(PG.brand(PG.text, SourceId), { name: "source_id" }),
 		/** PlanetScale organization slug the connection is bound to. */
 		psOrganization: PG.column(PG.text, { name: "ps_organization" }),
 		connectedByUserId: PG.column(PG.text, { name: "connected_by_user_id" }),

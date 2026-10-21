@@ -3,12 +3,13 @@ import { createHmac } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PlanetscaleConnections } from "@maple/db/tables"
-import { ConfigProvider, Context, Effect, Layer } from "effect"
+import { SourceId } from "@maple/domain/primitives"
+import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, insertTestSource, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
 	MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES,
 	PlanetScaleWebhookQueue,
@@ -56,6 +57,8 @@ const makeRouterLayer = (
 		Layer.provide(makeConfig()),
 	)
 
+const asSourceId = Schema.decodeUnknownSync(SourceId)
+
 describe("PlanetScaleWebhookRouter", () => {
 	it.effect("enforces connection-scoped signatures and accepts a verified test delivery", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -68,11 +71,15 @@ describe("PlanetScaleWebhookRouter", () => {
 				(message) => new IntegrationsValidationError({ message }),
 			).pipe(Effect.orDie)
 			const now = Date.parse("2026-07-11T00:00:00.000Z")
+			const sourceId = yield* Effect.promise(() =>
+				insertTestSource(testDb, { orgId: "org_1", platform: "planetscale" }).then(asSourceId),
+			)
 			yield* database.execute((db) =>
 				db.run(
 					PG.insertInto(PlanetscaleConnections).values({
 						id: CONNECTION_ID,
 						orgId: OrgId.make("org_1"),
+						sourceId,
 						psOrganization: "acme",
 						connectedByUserId: "user_1",
 						webhookSecretCiphertext: encrypted.ciphertext,
@@ -140,11 +147,15 @@ describe("PlanetScaleWebhookRouter", () => {
 				(message) => new IntegrationsValidationError({ message }),
 			).pipe(Effect.orDie)
 			const now = Date.parse("2026-07-11T00:00:00.000Z")
+			const sourceId = yield* Effect.promise(() =>
+				insertTestSource(testDb, { orgId: "org_1", platform: "planetscale" }).then(asSourceId),
+			)
 			yield* database.execute((db) =>
 				db.run(
 					PG.insertInto(PlanetscaleConnections).values({
 						id: CONNECTION_ID,
 						orgId: OrgId.make("org_1"),
+						sourceId,
 						psOrganization: "acme",
 						connectedByUserId: "user_1",
 						webhookSecretCiphertext: encrypted.ciphertext,
@@ -266,11 +277,15 @@ describe("PlanetScaleWebhookRouter", () => {
 				(message) => new IntegrationsValidationError({ message }),
 			).pipe(Effect.orDie)
 			const now = Date.parse("2026-07-11T00:00:00.000Z")
+			const sourceId = yield* Effect.promise(() =>
+				insertTestSource(testDb, { orgId: "org_1", platform: "planetscale" }).then(asSourceId),
+			)
 			yield* database.execute((db) =>
 				db.run(
 					PG.insertInto(PlanetscaleConnections).values({
 						id: CONNECTION_ID,
 						orgId: OrgId.make("org_1"),
+						sourceId,
 						psOrganization: "acme",
 						connectedByUserId: "user_1",
 						webhookSecretCiphertext: encrypted.ciphertext,
@@ -350,11 +365,15 @@ describe("PlanetScaleWebhookRouter", () => {
 				(message) => new IntegrationsValidationError({ message }),
 			).pipe(Effect.orDie)
 			const now = Date.parse("2026-07-11T00:00:00.000Z")
+			const sourceId = yield* Effect.promise(() =>
+				insertTestSource(testDb, { orgId: "org_1", platform: "planetscale" }).then(asSourceId),
+			)
 			yield* database.execute((db) =>
 				db.run(
 					PG.insertInto(PlanetscaleConnections).values({
 						id: CONNECTION_ID,
 						orgId: OrgId.make("org_1"),
+						sourceId,
 						psOrganization: "acme",
 						connectedByUserId: "user_1",
 						webhookSecretCiphertext: encrypted.ciphertext,

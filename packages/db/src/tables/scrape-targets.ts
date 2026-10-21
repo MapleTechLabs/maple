@@ -8,7 +8,7 @@ export const ScrapeTargets = PG.table("scrape_targets", {
 		id: PG.brand(PG.text, ScrapeTargetId),
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		// The source this integration sends as. Deleting the source deletes the row.
-		sourceId: PG.column(PG.nullable(PG.brand(PG.text, SourceId)), { name: "source_id" }),
+		sourceId: PG.column(PG.brand(PG.text, SourceId), { name: "source_id" }),
 		name: PG.text,
 		serviceName: PG.column(PG.nullable(PG.text), { name: "service_name" }),
 		url: PG.text,

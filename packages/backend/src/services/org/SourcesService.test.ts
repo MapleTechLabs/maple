@@ -41,39 +41,37 @@ const orgB = Schema.decodeUnknownSync(OrgId)("org_b")
 const user = Schema.decodeUnknownSync(UserId)("user_a")
 const missingId = Schema.decodeUnknownSync(SourceId)("0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b")
 
-/** An integration row's source as its service creates it, with what its poller last reported. */
-const linkSource = (
+/**
+ * An integration source as its service creates it, with what its poller last reported. Fixture
+ * rows reuse their own id as their source's.
+ */
+const insertSource = (
 	testDb: TestDb,
-	table: string,
-	integrationId: string,
+	id: string,
 	platform: string,
 	name: string,
 	poll: { readonly okAt?: number; readonly error?: string; readonly disconnected?: boolean } = {},
 ) =>
-	Effect.promise(async () => {
-		const sourceId = crypto.randomUUID()
-		const iso = (ms: number | undefined) => (ms === undefined ? null : new Date(ms).toISOString())
-		await executeSql(
+	Effect.promise(() =>
+		executeSql(
 			testDb,
-			`INSERT INTO sources (id, org_id, name, platform, kind, integration_id, last_poll_ok_at, last_poll_error,
+			`INSERT INTO sources (id, org_id, name, platform, kind, last_poll_ok_at, last_poll_error,
 				disconnected_at, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, 'integration', $5, $6, $7, $8, now(), now())`,
+			 VALUES ($1, $2, $3, $4, 'integration', $5, $6, $7, now(), now())`,
 			[
-				sourceId,
+				id,
 				orgA,
 				name,
 				platform,
-				integrationId,
-				iso(poll.okAt),
+				poll.okAt === undefined ? null : new Date(poll.okAt).toISOString(),
 				poll.error ?? null,
 				poll.disconnected === true ? new Date().toISOString() : null,
 			],
-		)
-		await executeSql(testDb, `UPDATE ${table} SET source_id = $1 WHERE id = $2`, [sourceId, integrationId])
-	})
+		),
+	)
 
 const ownSources = (keys: SourcesService["Service"], orgId: OrgId) =>
-	keys.list(orgId).pipe(Effect.map((sources) => sources.filter((source) => !source.isDefault)))
+	keys.list(orgId).pipe(Effect.map((sources) => sources.filter((source) => source.kind !== "default")))
 
 describe("SourcesService", () => {
 	it.effect("creates a source whose token is stored only as its lookup hash", () => {
@@ -110,8 +108,8 @@ describe("SourcesService", () => {
 
 			const listed = yield* keys.list(orgA)
 			assert.deepStrictEqual(
-				listed.map((source) => source.isDefault),
-				[true, false],
+				listed.map((source) => source.kind),
+				["default", "token"],
 			)
 			assert.deepStrictEqual(listed[1], created.source)
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -443,7 +441,7 @@ describe("SourcesService", () => {
 			const [first] = yield* keys.list(orgA)
 			const [again] = yield* keys.list(orgA)
 			assert.strictEqual(first?.id, again?.id)
-			assert.isTrue(first?.isDefault)
+			assert.strictEqual(first?.kind, "default")
 			assert.isNull(first?.keyPrefix)
 			if (first === undefined) return
 
@@ -477,8 +475,8 @@ describe("SourcesService", () => {
 			Effect.promise(() =>
 				executeSql(
 					testDb,
-					`INSERT INTO scrape_targets (id, org_id, name, url, scrape_interval_seconds, last_scrape_at, last_scrape_error, created_at, updated_at)
-					 VALUES ($1, $2, $3, 'http://node:9100/metrics', 15, $4, $5, now(), now())`,
+					`INSERT INTO scrape_targets (id, org_id, source_id, name, url, scrape_interval_seconds, last_scrape_at, last_scrape_error, created_at, updated_at)
+					 VALUES ($1, $2, $1, $3, 'http://node:9100/metrics', 15, $4, $5, now(), now())`,
 					[
 						id,
 						orgA,
@@ -492,14 +490,14 @@ describe("SourcesService", () => {
 		return Effect.gen(function* () {
 			const keys = yield* SourcesService
 			yield* TestClock.adjust("1 hour")
-			yield* insertTarget("9d1e2f3a-0000-4000-8000-000000000001", "node", 3_600_000 - 30_000, null)
-			yield* insertTarget("9d1e2f3a-0000-4000-8000-000000000002", "broken", null, "connection refused")
-			yield* linkSource(testDb, "scrape_targets", "9d1e2f3a-0000-4000-8000-000000000001", "prometheus", "node", {
+			yield* insertSource(testDb, "9d1e2f3a-0000-4000-8000-000000000001", "prometheus", "node", {
 				okAt: 3_600_000 - 30_000,
 			})
-			yield* linkSource(testDb, "scrape_targets", "9d1e2f3a-0000-4000-8000-000000000002", "prometheus", "broken", {
+			yield* insertSource(testDb, "9d1e2f3a-0000-4000-8000-000000000002", "prometheus", "broken", {
 				error: "connection refused",
 			})
+			yield* insertTarget("9d1e2f3a-0000-4000-8000-000000000001", "node", 3_600_000 - 30_000, null)
+			yield* insertTarget("9d1e2f3a-0000-4000-8000-000000000002", "broken", null, "connection refused")
 
 			const first = yield* ownSources(keys, orgA)
 			assert.deepStrictEqual(
@@ -563,15 +561,15 @@ describe("SourcesService", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const keys = yield* SourcesService
+			yield* insertSource(testDb, "9d1e2f3a-0000-4000-8000-000000000009", "prometheus", "off")
 			yield* Effect.promise(() =>
 				executeSql(
 					testDb,
-					`INSERT INTO scrape_targets (id, org_id, name, url, enabled, created_at, updated_at)
-					 VALUES ('9d1e2f3a-0000-4000-8000-000000000009', $1, 'off', 'http://off/metrics', false, now(), now())`,
-					[orgA],
+					`INSERT INTO scrape_targets (id, org_id, source_id, name, url, enabled, created_at, updated_at)
+					 VALUES ($2, $1, $2, 'off', 'http://off/metrics', false, now(), now())`,
+					[orgA, "9d1e2f3a-0000-4000-8000-000000000009"],
 				),
 			)
-			yield* linkSource(testDb, "scrape_targets", "9d1e2f3a-0000-4000-8000-000000000009", "prometheus", "off")
 			const [off] = yield* ownSources(keys, orgA)
 			assert.deepStrictEqual([off?.health.status, off?.health.problem], ["paused", "Scraping is turned off"])
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -583,21 +581,21 @@ describe("SourcesService", () => {
 			Effect.promise(() =>
 				executeSql(
 					testDb,
-					`INSERT INTO vcs_installations (id, org_id, provider, external_installation_id, account_login, account_type, external_account_id, status, installed_by_user_id, created_at, updated_at)
-					 VALUES ($1, $2, 'github', $3, $4, 'Organization', $3, $5, 'user_a', now(), now())`,
+					`INSERT INTO vcs_installations (id, org_id, source_id, provider, external_installation_id, account_login, account_type, external_account_id, status, installed_by_user_id, created_at, updated_at)
+					 VALUES ($1, $2, $1, 'github', $3, $4, 'Organization', $3, $5, 'user_a', now(), now())`,
 					[id, orgA, `ext-${login}`, login, status],
 				),
 			)
 
 		return Effect.gen(function* () {
 			const keys = yield* SourcesService
-			yield* insertInstallation("7a1e2f3a-0000-4000-8000-000000000001", "acme", "active")
-			yield* insertInstallation("7a1e2f3a-0000-4000-8000-000000000002", "globex", "suspended")
-			yield* linkSource(testDb, "vcs_installations", "7a1e2f3a-0000-4000-8000-000000000001", "github", "GitHub acme")
-			yield* linkSource(testDb, "vcs_installations", "7a1e2f3a-0000-4000-8000-000000000002", "github", "GitHub globex", {
+			yield* insertSource(testDb, "7a1e2f3a-0000-4000-8000-000000000001", "github", "GitHub acme")
+			yield* insertSource(testDb, "7a1e2f3a-0000-4000-8000-000000000002", "github", "GitHub globex", {
 				error: "The GitHub installation is suspended",
 				disconnected: true,
 			})
+			yield* insertInstallation("7a1e2f3a-0000-4000-8000-000000000001", "acme", "active")
+			yield* insertInstallation("7a1e2f3a-0000-4000-8000-000000000002", "globex", "suspended")
 
 			const sources = yield* ownSources(keys, orgA)
 			assert.deepStrictEqual(

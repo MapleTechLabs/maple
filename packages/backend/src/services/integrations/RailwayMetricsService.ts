@@ -35,7 +35,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import {
 	deleteSourcesOf,
-	ensureIntegrationSource,
+	upsertWithSource,
 	integrationSourceName,
 	isSourcePaused,
 	type PollOutcome,
@@ -206,7 +206,11 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				)
 
 			/** Best effort: a failed health report must not fail the tick it describes. */
-			const reportTick = (sourceId: RailwayConnectionRow["sourceId"], outcome: PollOutcome, now: number) =>
+			const reportTick = (
+				sourceId: RailwayConnectionRow["sourceId"],
+				outcome: PollOutcome,
+				now: number,
+			) =>
 				dbExecute((db) => reportPoll(db, sourceId, outcome, now)).pipe(
 					Effect.catchTag("@maple/http/errors/IntegrationsPersistenceError", (error) =>
 						Effect.logWarning("railway source health report failed").pipe(
@@ -385,54 +389,56 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				)
 				const now = yield* Clock.currentTimeMillis
 				// A reconnect keeps the connection id and so its source.
-				const [connection] = yield* dbExecute((db) =>
+				const connection = yield* dbExecute((db) =>
 					db.transaction(
-						Effect.gen(function* () {
-							const [upserted] = yield* db.run(
-								PG.insertInto(RailwayConnections)
-									.values({
-										id: randomUUID(),
-										orgId,
-										tokenCiphertext: encrypted.ciphertext,
-										tokenIv: encrypted.iv,
-										tokenTag: encrypted.tag,
-										connectedByUserId: userId,
-										createdAt: now,
-										updatedAt: now,
-									})
-									.onConflictDoUpdate({
-										target: ["orgId"],
-										set: () => ({
-											tokenCiphertext: encrypted.ciphertext,
-											tokenIv: encrypted.iv,
-											tokenTag: encrypted.tag,
-											connectedByUserId: userId,
-											authFailedAt: null,
-											lastError: null,
-											lastErrorAt: null,
-											updatedAt: now,
-										}),
-									})
-									.returning(),
-							)
-							if (upserted === undefined || upserted.sourceId !== null) return [upserted]
-							const sourceId = yield* ensureIntegrationSource(
-								db,
-								orgId,
-								{
-									platform: "railway",
-									integrationId: upserted.id,
-									name: integrationSourceName.railway(upserted),
-								},
-								now,
-							)
-							return yield* db.run(
-								PG.update(RailwayConnections)
-									.set({ sourceId })
-									.where(($) => [$.id.eq(upserted.id)])
-									.returning(),
-							)
-						}),
+						upsertWithSource(
+							db,
+							orgId,
+							{
+								platform: "railway",
+								name: integrationSourceName.railway({ workspaceNames: null }),
+							},
+							now,
+							db
+								.run(
+									PG.from(RailwayConnections)
+										.select("sourceId")
+										.where(($) => [$.orgId.eq(orgId)])
+										.limit(1),
+								)
+								.pipe(Effect.map(([row]) => row?.sourceId ?? null)),
+							(sourceId) =>
+								db
+									.run(
+										PG.insertInto(RailwayConnections)
+											.values({
+												id: randomUUID(),
+												orgId,
+												sourceId,
+												tokenCiphertext: encrypted.ciphertext,
+												tokenIv: encrypted.iv,
+												tokenTag: encrypted.tag,
+												connectedByUserId: userId,
+												createdAt: now,
+												updatedAt: now,
+											})
+											.onConflictDoUpdate({
+												target: ["orgId"],
+												set: () => ({
+													tokenCiphertext: encrypted.ciphertext,
+													tokenIv: encrypted.iv,
+													tokenTag: encrypted.tag,
+													connectedByUserId: userId,
+													authFailedAt: null,
+													lastError: null,
+													lastErrorAt: null,
+													updatedAt: now,
+												}),
+											})
+											.returning(),
+									)
+									.pipe(Effect.map(([row]) => row)),
+						),
 					),
 				)
 				if (connection === undefined) {
@@ -710,9 +716,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 												)
 												return { ...failed, stopped: true }
 											}
-										} else if (
-											isRefusal(error)
-										) {
+										} else if (isRefusal(error)) {
 											// Billing limit or a refused key: back off instead of retrying every tick.
 											yield* Ref.set(holdUntilRef, now + BILLING_HOLD_MS)
 											return { ...failed, stopped: true }

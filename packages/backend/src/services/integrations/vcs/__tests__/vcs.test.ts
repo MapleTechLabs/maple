@@ -1278,10 +1278,10 @@ describe("VcsRepository", () => {
 			yield* Effect.promise(() =>
 				executeSql(
 					testDb,
-					`INSERT INTO vcs_installations
+					`WITH source AS (INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at) VALUES (gen_random_uuid()::text, $2, 'Source', 'github', 'integration', now(), now()) RETURNING id) INSERT INTO vcs_installations
 						(id, org_id, provider, external_installation_id, account_login, account_type,
-						 external_account_id, repository_selection, status, installed_by_user_id, created_at, updated_at)
-					 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now(), now())`,
+						 external_account_id, repository_selection, status, installed_by_user_id, created_at, updated_at, source_id)
+					 SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now(), now(), source.id FROM source`,
 					[randomUUID(), "org_x", "github", "55", "octo", "team", "1", "all", "active", "user_1"],
 				),
 			)

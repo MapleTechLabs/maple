@@ -11,7 +11,7 @@ export const RailwayConnections = PG.table("railway_connections", {
 		id: PG.text,
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		// The source this integration sends as. Deleting the source deletes the row.
-		sourceId: PG.column(PG.nullable(PG.brand(PG.text, SourceId)), { name: "source_id" }),
+		sourceId: PG.column(PG.brand(PG.text, SourceId), { name: "source_id" }),
 		tokenCiphertext: PG.column(PG.text, { name: "token_ciphertext" }),
 		tokenIv: PG.column(PG.text, { name: "token_iv" }),
 		tokenTag: PG.column(PG.text, { name: "token_tag" }),

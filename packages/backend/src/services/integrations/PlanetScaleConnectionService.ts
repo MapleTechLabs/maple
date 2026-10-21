@@ -43,7 +43,7 @@ import {
 import { ScrapeTargetsService, type ScrapeTargetsServiceApi } from "./ScrapeTargetsService"
 import {
 	deleteSourcesOf,
-	ensureIntegrationSource,
+	createIntegrationSource,
 	integrationSourceName,
 } from "@maple/backend/services/org/integration-sources"
 
@@ -568,14 +568,10 @@ export class PlanetScaleConnectionService extends Context.Service<
 							// from the user loses its own Prometheus source.
 							const sourceId =
 								existing?.sourceId ??
-								(yield* ensureIntegrationSource(
+								(yield* createIntegrationSource(
 									db,
 									orgId,
-									{
-										platform: "planetscale",
-										integrationId: connectionId,
-										name: integrationSourceName.planetscale(organization),
-									},
+									{ platform: "planetscale", name: integrationSourceName.planetscale(organization) },
 									now,
 								))
 							const [target] = yield* db.run(
