@@ -37,7 +37,6 @@ const toc = [
 const sectionNav = toc.filter((h) => h.depth === 2);
 
 // One color per phase, used by the loop diagram, the step badges, the timeline and the clock chart.
-// Severity uses the warm colors, so the phases keep to the cool ones.
 const phases = {
     prepare: { name: "Prepare", color: "var(--chart-5)" },
     detect: { name: "Detect and triage", color: "var(--chart-2)" },
@@ -47,25 +46,18 @@ const phases = {
 type PhaseKey = keyof typeof phases;
 
 const loop: { key: PhaseKey; title: string[]; items: string[] }[] = [
-    { key: "prepare", title: ["Prepare"], items: ["alerts", "runbooks", "on-call rotation"] },
-    { key: "detect", title: ["Detect and", "triage"], items: ["alert fires", "severity", "#incidents post"] },
+    { key: "prepare", title: ["Prepare"], items: ["alerts", "who gets alerted", "runbooks"] },
+    { key: "detect", title: ["Detect and", "triage"], items: ["alert fires", "how far it reaches", "#incidents post"] },
     { key: "mitigate", title: ["Mitigate and", "resolve"], items: ["rollback", "feature flag", "failover"] },
     { key: "learn", title: ["Learn"], items: ["postmortem", "action items", "trend review"] },
 ];
 
 const steps: { slug: string; title: string; phase: PhaseKey | null; label?: string; body: string }[] = [
     { slug: "detect", title: "Detect", phase: "detect", body: "An alert fires on something users feel: error rate, latency, a drop in traffic. A customer report counts too, and an incident customers reported first should end with a new alert among the postmortem's action items." },
-    { slug: "declare", title: "Triage and declare", phase: "detect", body: "Acknowledge the page and check how far the problem reaches: one service or all, one region or all, which customers. If it matches your incident definition, post in #incidents with the severity and what you see. That post is the declaration. Declaring early and downgrading later costs less than declaring late." },
+    { slug: "declare", title: "Triage and declare", phase: "detect", body: "Acknowledge the page and check how far the problem reaches: one service or all, one region or all, which customers. If it matches your incident definition, post in #incidents with what you see and that you are on it. That post is the declaration. Declaring early and downgrading later costs less than declaring late." },
     { slug: "mitigate", title: "Mitigate", phase: "mitigate", body: "Stop the user impact before you know the cause. Roll back the last deploy, turn off the feature flag, fail over to another region, scale up or shed load. A deploy in the last hour is the first suspect." },
-    { slug: "communicate", title: "Communicate", phase: null, label: "Throughout", body: "Post an update from your template at a fixed interval, even when nothing has changed: every 30 minutes for a SEV1. If a second engineer is around, hand them the updates and keep debugging." },
-    { slug: "resolve", title: "Resolve", phase: "mitigate", body: "Confirm recovery on the same signal that detected the problem, then check for side effects: queued jobs, duplicate writes, retries still running. Close the incident, post a final update and book a postmortem if the severity calls for one. The root-cause fix can ship later as an action item." },
-];
-
-// Warm colors, darkest for the worst. Reused by the badges in the table and nowhere else.
-const severities = [
-    { level: "SEV1", name: "Critical", color: "var(--severity-fatal)", impact: "A core journey (signup, login, checkout, the API) is down or data is at risk", response: "Page now, status page update every 30 min, postmortem" },
-    { level: "SEV2", name: "Major", color: "var(--severity-error)", impact: "A key feature is broken for some users, or slow for all of them", response: "Page now, postmortem if it lasted over an hour or happened before" },
-    { level: "SEV3", name: "Minor", color: "var(--severity-warn)", impact: "Something is broken and a workaround exists, or nobody outside the team is affected", response: "Ticket, fixed in working hours, no page" },
+    { slug: "communicate", title: "Communicate", phase: null, label: "Throughout", body: "Post a short update at a fixed interval while customers are affected, even when nothing has changed: what is broken, what you are doing, when the next update comes. If a second engineer is around, hand them the updates and keep debugging." },
+    { slug: "resolve", title: "Resolve", phase: "mitigate", body: "Confirm recovery on the same signal that detected the problem, then check for side effects: queued jobs, duplicate writes, retries still running. Close the incident, post a final update and decide whether it needs a postmortem. The root-cause fix can ship later as an action item." },
 ];
 
 // Minutes after 14:00 UTC. The clock chart below uses the same minutes.
@@ -74,19 +66,19 @@ const timeline: { at: number; label: string; phase: PhaseKey | null; body: strin
     { at: 6, label: "Impact starts", phase: null, body: "Large carts hold database connections longer, the connection pool runs dry and checkout requests fail with 503." },
     { at: 8, label: "Alert fires", phase: "detect", body: "The checkout error rate has been above 5% on two checks in a row. The alert rule opens an incident and PagerDuty pages the on-call engineer." },
     { at: 11, label: "Acknowledged", phase: "detect", body: "The on-call engineer acknowledges the page. The error rate is 23% on checkout and normal everywhere else." },
-    { at: 13, label: "Declared", phase: "detect", body: "SEV1. The on-call engineer posts in #incidents and asks a second engineer to take the status page updates." },
+    { at: 13, label: "Declared", phase: "detect", body: "The on-call engineer posts in #incidents and asks a second engineer to take the status page updates." },
     { at: 16, label: "Diagnosis", phase: "detect", body: "Failing traces wait 4 to 5 seconds for a database connection before they time out. The failures started four minutes after the deploy." },
     { at: 18, label: "Decision", phase: "mitigate", body: "Roll back to v2.40.3 instead of raising the pool size, following the bad-deploy runbook. The first status page update goes out." },
     { at: 24, label: "Mitigated", phase: "mitigate", body: "The rollback finishes. The error rate is under 1% within two minutes." },
     { at: 31, label: "Alert resolves", phase: "mitigate", body: "Once the 5-minute window no longer holds the failures, two healthy checks in a row resolve the alert's incident. The resolve notification closes the PagerDuty incident." },
-    { at: 45, label: "Resolved", phase: "mitigate", body: "The order queue is drained and the payment provider confirms no duplicate charges. The on-call engineer closes the incident and books a 30-minute postmortem review." },
+    { at: 45, label: "Resolved", phase: "mitigate", body: "The order queue is drained and the payment provider confirms no duplicate charges. The on-call engineer closes the incident and books the postmortem." },
 ];
 const clock = (minutes: number) => `14:${String(minutes).padStart(2, "0")}`;
 
 const axisMinutes = 50; // 14:00 to 14:50 on the clock chart
 const clocks = [
     { name: "MTTD", full: "time to detect", from: 6, to: 8, by: "Alerts on user-facing symptoms, shorter evaluation windows" },
-    { name: "MTTA", full: "time to acknowledge", from: 8, to: 11, by: "Paging escalation, fewer noisy alerts" },
+    { name: "MTTA", full: "time to acknowledge", from: 8, to: 11, by: "Alerts that ring a phone, fewer noisy alerts" },
     { name: "MTTM", full: "time to mitigate", from: 6, to: 24, by: "Rollbacks that take one command, feature flags, runbooks" },
     { name: "MTTR", full: "time to resolve", from: 6, to: 45, by: "All of the above, plus written exit criteria" },
 ];
@@ -96,11 +88,11 @@ const pct = (minutes: number) => `${(minutes / axisMinutes) * 100}%`;
 const actionKinds = [
     { kind: "Prevent", example: "Load test checkout with large carts", moves: "How often this failure happens" },
     { kind: "Detect", example: "Alert on connection pool wait time", moves: "MTTD" },
-    { kind: "Respond", example: "Page the second engineer after 10 minutes without an ack", moves: "MTTA" },
+    { kind: "Respond", example: "Send checkout alerts to phones, not only to Slack", moves: "MTTA" },
     { kind: "Mitigate", example: "Put the rollback command in the runbook", moves: "MTTM" },
 ];
 
-const postmortemTemplate = `# Postmortem: checkout failures after v2.41.0 (SEV1, 2026-10-19)
+const postmortemTemplate = `# Postmortem: checkout failures after v2.41.0 (2026-10-19)
 
 ## What happened
 Two or three sentences: what broke, for whom, for how long, how it was fixed.
@@ -120,29 +112,22 @@ How we found out, and how long after impact started.
 | -------------------------------------------- | -------- | ------ | ------ |
 | Load test checkout with large carts          | Prevent  | <name> | <date> |
 | Alert on connection pool wait time           | Detect   | <name> | <date> |
-| Page the second engineer after 10 min        | Respond  | <name> | <date> |
+| Send checkout alerts to phones, not Slack    | Respond  | <name> | <date> |
 | Put the rollback command in the runbook      | Mitigate | <name> | <date> |`;
 
-const updateTemplate = `[Investigating] Checkout errors
-Impact: some customers cannot complete checkout since 14:06 UTC.
-Doing: rolling back the 14:02 deploy.
-Next update: 14:45 UTC.`;
-
-const mcpTools = [
-    ["diagnose_service", "One service's health, top errors, recent traces and logs, and the platform resources behind it"],
-    ["find_slow_traces", "The slowest traces, with p50 and p95 for context"],
-    ["inspect_trace", "The span tree and logs of one trace"],
-    ["error_detail", "Sample traces and correlated logs for one error fingerprint"],
-    ["read_source_file", "A line range from a file in a repository connected through the GitHub integration"],
-    ["claim_error_issue", "A lease on an error issue, so two people or agents do not fix the same bug"],
-    ["get_incident_timeline", "Trigger, notification and resolution times of a rule's incidents, for the postmortem"],
+const sources = [
+    { source: "Your services", lands: "Traces, logs, metrics and error issues sent over OpenTelemetry", tools: ["diagnose_service", "find_slow_traces", "inspect_trace", "error_detail", "search_logs"] },
+    { source: "Infrastructure", lands: "Logs and metrics from connected integrations", tools: ["list_integrations", "query_data"] },
+    { source: "GitHub", lands: "GitHub Actions runs as traces and logs, commit history, source code", tools: ["ci_runs", "compare_commits", "read_source_file"] },
+    { source: "Browsers", lands: "Session replays from the Browser SDK, linked to their backend traces", tools: ["search_sessions", "get_session_transcript", "get_session_traces"] },
+    { source: "Everything", lands: "One read-only ClickHouse SQL query over the same tables", tools: ["run_sql"] },
 ];
 
 const faqs = [
     {
         question: "What are the incident response steps?",
         answer:
-            "For an on-call software team: detect the problem, triage it and declare an incident with a severity level, mitigate the user impact, communicate at a fixed interval throughout, resolve the incident once the service is healthy, and review it in a blameless postmortem with tracked action items. Preparation (alert rules, runbooks, an on-call rotation) happens before any of them.",
+            "For an on-call software team: detect the problem, triage it and declare an incident, mitigate the user impact, communicate at a fixed interval throughout, resolve the incident once the service is healthy, and review it in a blameless postmortem with tracked action items. Preparation (alert rules, who gets alerted, runbooks) happens before any of them.",
     },
     {
         question: "What are the phases of the incident response lifecycle?",
@@ -152,17 +137,12 @@ const faqs = [
     {
         question: "Does a small team need an incident response plan?",
         answer:
-            "Yes, and a short one is enough: one sentence that defines an incident, three severity levels, alerts on the symptoms users feel, an on-call rotation of two people, runbooks for the three likeliest failures and an update template. Two engineers can write it in an afternoon.",
+            "Yes, and a short one is enough: alerts on the symptoms users feel, an agreement on who gets alerted and where you talk during an incident, and runbooks for the three likeliest failures. Two engineers can set it up in an afternoon.",
     },
     {
         question: "How do you reduce the number of incidents over time?",
         answer:
-            "Give every postmortem action items with an owner and a due date, track them in the same tracker as feature work, and review the trend each quarter: incidents per severity, median time to detect and mitigate, and repeat causes. Prevent items (tests, load tests, safer deploys) lower the count; detect and mitigate items make the remaining incidents shorter.",
-    },
-    {
-        question: "What is a SEV1 incident?",
-        answer:
-            "SEV1 is the highest severity level in most incident response plans: a core user journey is down, data is at risk, or most users are affected. It pages the on-call engineer immediately, gets status page updates at a fixed interval, and always gets a postmortem. Each company writes its own definitions, so publish yours where on-call engineers can find them.",
+            "Give every postmortem action items with an owner and a due date, track them in the same tracker as feature work, and review the trend each quarter: incidents per month, median time to detect and mitigate, and repeat causes. Prevent items (tests, load tests, safer deploys) lower the count; detect and mitigate items make the remaining incidents shorter.",
     },
     {
         question: "What goes in a postmortem?",
@@ -258,10 +238,10 @@ const articleJsonLd = {
                     </div>
 
                     <p>
-                        An incident is an unplanned event that hurts users or puts data at risk: an outage, a slow checkout, a leaked credential. Where the line sits between a bug and an incident is a decision about impact, so write it into your <a href="#prep-define">incident definition</a> before you need it.
+                        An incident is an unplanned event that hurts users or puts data at risk: an outage, a slow checkout, a leaked credential.
                     </p>
                     <p>
-                        This guide is written for startups and small companies. Often one or two engineers are on call, and the engineer who gets paged is the one who fixes the problem, so every step is sized for that.
+                        This guide is written for startups and small companies. Often one or two engineers are on call, and the engineer who gets paged is the one who fixes the problem, so every step is sized for that. For the formal versions, written for larger security teams, see <a href="https://csrc.nist.gov/pubs/sp/800/61/r2/final" target="_blank" rel="noopener noreferrer">NIST SP 800-61</a> and the <a href="https://www.sans.org/white-papers/33901" target="_blank" rel="noopener noreferrer">SANS Incident Handler's Handbook</a>.
                     </p>
                     <p>
                         The process has four phases. You <span class="phase-badge" style={`--phase: ${phases.prepare.color}`}>Prepare</span> on a quiet day. When an alert fires, you <span class="phase-badge" style={`--phase: ${phases.detect.color}`}>Detect and triage</span>, then <span class="phase-badge" style={`--phase: ${phases.mitigate.color}`}>Mitigate and resolve</span> until users are no longer affected and the system is clean. Afterwards you <span class="phase-badge" style={`--phase: ${phases.learn.color}`}>Learn</span> in a postmortem whose action items go back into preparation: a load test that would have caught the bug, an alert that fires two minutes sooner, a rollback that takes one command.
@@ -318,69 +298,26 @@ const articleJsonLd = {
                         <li>
                             <span>01</span>
                             <div>
-                                <h3 id="prep-define" class="scroll-mt-24">Write down what counts as an incident</h3>
-                                <p>Name the user journeys your business depends on and the impact that turns a bug into an incident. For example: signup, login, checkout or the public API failing or slow for more than 5 minutes, any data loss, any exposed credential.</p>
-                                <p class="guide-steps__out"><span>Output</span>One sentence, pinned in the incident channel.</p>
+                                <h3 id="prep-alerts" class="scroll-mt-24">Alert on symptoms users feel</h3>
+                                <p>For each journey your business depends on (signup, login, checkout, the public API), add one error-rate alert and one latency alert, plus one uptime check that calls the app from outside your infrastructure. Leave CPU and memory off the phone: they fire for problems users never see. Check each rule against the data from your last outage to confirm it would have fired.</p>
+                                <p class="guide-steps__out"><span>Output</span>Four to eight alert rules that reach a phone, each tested against a past outage.</p>
                             </div>
                         </li>
                         <li>
                             <span>02</span>
                             <div>
-                                <h3 id="severity-levels" class="scroll-mt-24">Define three severity levels</h3>
-                                <p>A severity level decides whether someone gets woken up, whether customers hear from you and whether a postmortem is written. Define the levels by user impact, not by which component broke, so whoever is paged can pick one in under a minute. If the impact turns out bigger, raise the level mid-incident.</p>
-                                <div class="guide-table">
-                                    <table>
-                                        <thead>
-                                            <tr><th>Level</th><th>Impact</th><th>Response</th></tr>
-                                        </thead>
-                                        <tbody>
-                                            {severities.map((s) => (
-                                                <tr>
-                                                    <td><span class="sev-badge" style={`--sev: ${s.color}`}>{s.level}</span><span class="sev-name">{s.name}</span></td>
-                                                    <td>{s.impact}</td>
-                                                    <td>{s.response}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <p class="guide-steps__out"><span>Output</span>The table, in your wiki next to the incident definition.</p>
+                                <h3 id="prep-on-call" class="scroll-mt-24">Agree who gets alerted when</h3>
+                                <p>Decide whose phone the alerts ring, by day, at night and on weekends, so that at any hour at least one person who can deploy is reachable. Send a test alert to each phone. Pick one channel, such as #incidents, where whoever handles an incident posts what they see.</p>
+                                <p class="guide-steps__out"><span>Output</span>A short note with names and hours, a test alert each person received, and the channel.</p>
                             </div>
                         </li>
                         <li>
                             <span>03</span>
                             <div>
-                                <h3 id="prep-alerts" class="scroll-mt-24">Alert on symptoms users feel</h3>
-                                <p>For each journey in your incident definition, add one error-rate alert and one latency alert, and one uptime check that calls the app from outside your infrastructure. Leave CPU and memory off the pager: they fire for problems users never see. Check each rule against the data from your last outage to confirm it would have fired.</p>
-                                <p class="guide-steps__out"><span>Output</span>Four to eight alert rules that page, each tested against a past outage.</p>
-                            </div>
-                        </li>
-                        <li>
-                            <span>04</span>
-                            <div>
-                                <h3 id="prep-on-call" class="scroll-mt-24">Set up an on-call rotation</h3>
-                                <p>Put the engineers who can deploy on a weekly rotation in your paging tool. Two people is enough. Add an escalation that pages the other person after 10 minutes without an acknowledgement, and send a test page to each phone.</p>
-                                <p class="guide-steps__out"><span>Output</span>A rotation, an escalation rule, and a test page each person received.</p>
-                            </div>
-                        </li>
-                        <li>
-                            <span>05</span>
-                            <div>
                                 <h3 id="prep-runbooks" class="scroll-mt-24">Write runbooks for your top three failure modes</h3>
-                                <p>List the three things most likely to break. For most small teams that is a bad deploy, the database and a third-party API. Write one page each: how it shows up, where to look, and the first mitigation to try. The bad-deploy runbook holds the exact rollback command, run once by everyone on the rotation.</p>
-                                <p class="guide-steps__out"><span>Output</span>Three one-page runbooks, linked from the alerts that point at them.</p>
-                            </div>
-                        </li>
-                        <li>
-                            <span>06</span>
-                            <div>
-                                <h3 id="prep-comms" class="scroll-mt-24">Pick a channel and an update template</h3>
-                                <p>Use one #incidents channel for every incident, so nobody has to ask where to look, and a status page customers can find from your app. Write the update template now, because nobody writes a clear one in the middle of an outage:</p>
-                                <div class="code-file">
-                                    <p class="code-file__name">status-update.md</p>
-                                    <pre><code set:html={highlight(updateTemplate, "markdown")} /></pre>
-                                </div>
-                                <p class="guide-steps__out"><span>Output</span>The channel, the status page and the template, linked from every runbook.</p>
+                                <p>List the three things most likely to break. For most small teams that is a bad deploy, the database and a third-party API. Write one page each: how it shows up, where to look, and the first mitigation to try. The bad-deploy runbook holds the exact rollback command, run once by everyone who gets alerted.</p>
+                                <p>Writing them also hardens the system before anything breaks. A runbook that says "restore from the last backup" makes you check that the backup restores, and a third-party API with no timeout or fallback shows up while you describe how it fails.</p>
+                                <p class="guide-steps__out"><span>Output</span>Three one-page runbooks linked from their alerts, and a list of the weak spots you found.</p>
                             </div>
                         </li>
                     </ol>
@@ -420,6 +357,9 @@ const articleJsonLd = {
                     <p>
                         A deploy at 14:02 UTC makes checkout run one database query per item in a cart. At normal traffic nobody notices. At the afternoon peak, large carts hold database connections longer, the connection pool runs dry, and checkout starts failing.
                     </p>
+                    <p>
+                        This is the ideal case, with every step on time and in order. Real incidents are more hectic: two things break at once, the first guess is wrong, nobody posts an update for 40 minutes. Skip what is not urgent in the moment and fill it in afterwards.
+                    </p>
 
                     <h3 id="timeline" class="scroll-mt-24">The timeline</h3>
                     <ol class="ir-timeline">
@@ -436,7 +376,7 @@ const articleJsonLd = {
 
                     <h3 id="metrics" class="scroll-mt-24">MTTD, MTTA, MTTM and MTTR</h3>
                     <p>
-                        Each incident metric is a clock that starts and stops at a different event. Measured on this incident:
+                        Each incident metric is a clock that starts and stops at a different event. They are worth tracking because each one shows where an incident's time went and which kind of fix would shorten it. A rough estimate written into the postmortem after each incident is enough to see the trend over a few months. Measured on this incident:
                     </p>
                     <figure class="clocks" aria-label="Four clocks on a 14:00 to 14:50 axis. MTTD runs from 14:06 to 14:08, 2 minutes. MTTA from 14:08 to 14:11, 3 minutes. MTTM from 14:06 to 14:24, 18 minutes. MTTR from 14:06 to 14:45, 39 minutes.">
                         <div class="clocks__rows" aria-hidden="true">
@@ -494,7 +434,7 @@ const articleJsonLd = {
 
                     <h3 id="postmortem" class="scroll-mt-24">The blameless postmortem</h3>
                     <p>
-                        A blameless postmortem assumes everyone acted reasonably with what they knew at the time, and asks which parts of the system let a reasonable action cause an outage. "Checkout has no load test with large carts" leads to a fix. "Alex shipped a bad query" teaches people to hide their mistakes next time. Keep it to one page. The engineer who handled the incident writes it within two working days, and a 30-minute review with whoever was involved agrees the action items. Your <a href="#severity-levels">severity levels</a> decide which incidents get one.
+                        A blameless postmortem assumes everyone acted reasonably with what they knew at the time, and asks which parts of the system let a reasonable action cause an outage. "Checkout has no load test with large carts" leads to a fix. "Alex shipped a bad query" teaches people to hide their mistakes next time. Keep it to one page, written by whoever handled the incident while the details are fresh, and go through the action items with anyone who was involved. Write one for incidents customers noticed; skip it for the rest.
                     </p>
                     <p>
                         The template carries the checkout incident's numbers as an example. Copy it into your docs tool and fill each <code>&lt;placeholder&gt;</code> from the #incidents channel:
@@ -532,7 +472,7 @@ const articleJsonLd = {
                         Once a quarter, spend 30 minutes on the incident list and count:
                     </p>
                     <ul class="guide-list">
-                        <li><strong>Incidents per severity level.</strong> A falling SEV1 and SEV2 count is the sign that prevent items are working.</li>
+                        <li><strong>Incidents per month.</strong> A falling count is the sign that prevent items are working.</li>
                         <li><strong>Median MTTD and MTTM.</strong> These move when detect and mitigate items ship.</li>
                         <li><strong>Incidents a customer reported first.</strong> Each one points at a missing alert.</li>
                         <li><strong>Repeat causes.</strong> The same root cause twice means an action item from the first postmortem was not done, or did not work.</li>
@@ -543,9 +483,20 @@ const articleJsonLd = {
                 <section id="maple" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>06</span> · In practice</p>
                     <h2>Incident response in Maple</h2>
-                    <p>
-                        A small team rarely has time to run a metrics stack, a log store, an error tracker and a tracing backend, and then wire all of them to a pager. Maple stores the traces, logs, metrics, errors and browser session replays your services send over OpenTelemetry, and runs alert rules on the same data. The engineer who gets paged goes from the alert to the traces behind it to the code that caused it in one tool, and the review of the next change to that code happens there too. Acknowledging pages and the status page stay with your paging tool.
-                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Do this</th><th>You get</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Send your services' traces, logs and metrics to Maple over OpenTelemetry (<a href="/docs/getting-started/quickstart">quickstart</a>)</td><td>Every request as a trace with its logs, and error spans grouped into issues</td></tr>
+                                <tr><td>Add the alert rules from <a href="#prep-alerts">the first preparation step</a> and attach PagerDuty or Slack</td><td>An incident in Maple and a page on the right phone when a rule breaches</td></tr>
+                                <tr><td>Connect your cloud, database and GitHub accounts under <strong>Sources</strong></td><td>Infrastructure metrics and logs, and CI runs, next to your own telemetry</td></tr>
+                                <tr><td>Connect your coding agent to the <a href="/docs/reference/mcp">MCP server</a></td><td>An agent that can query all of it to find a root cause</td></tr>
+                                <tr><td>Install the Maple GitHub App and open <a href="/features/github">Code Review</a> (beta)</td><td>Pull requests reviewed against the production traffic of the code they change</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
 
                     <h3 id="maple-detect" class="scroll-mt-24"><span class="phase-badge" style={`--phase: ${phases.detect.color}`}>Detect</span> Alert rules open incidents</h3>
                     <ol class="guide-steps">
@@ -560,7 +511,7 @@ const articleJsonLd = {
                         <li>
                             <span>02</span>
                             <div>
-                                <h4>Route pages by severity</h4>
+                                <h4>Route critical alerts to a phone</h4>
                                 <p>Each rule sends to the <a href="/docs/alerting/notification-destinations">notification destinations</a> attached to it. Attach PagerDuty to the <strong>Critical</strong> rules and a Slack channel to the <strong>Warning</strong> ones. PagerDuty receives a stable <code>dedup_key</code>, so the trigger and the resolve land on the same PagerDuty incident.</p>
                             </div>
                         </li>
@@ -579,22 +530,25 @@ const articleJsonLd = {
                         Maple groups error spans into <a href="/docs/errors/overview">issues</a> by fingerprint. Each flare-up of an issue is an incident under it, and the issue page shows the stack, the occurrences and the traces behind them. For a browser app instrumented with the Browser SDK, a <a href="/docs/session-replay/replays">session replay</a> plays back what the user saw next to the backend traces of that session.
                     </p>
                     <p>
-                        The <a href="/docs/reference/mcp">Maple MCP server</a> at <code>https://api.maple.dev/mcp</code> gives Claude Code, Cursor or any other MCP client the same data, scoped to your organization. The <strong>MCP</strong> page under <strong>Settings</strong> shows the endpoint and ready-made configuration for common clients. During the checkout incident, an assistant connected to it would use:
+                        The <a href="/docs/reference/mcp">Maple MCP server</a> at <code>https://api.maple.dev/mcp</code> gives Claude Code, Cursor or any other MCP client the same data, scoped to your organization. The <strong>MCP</strong> page under <strong>Settings</strong> shows the endpoint and ready-made configuration for common clients.
+                    </p>
+                    <p>
+                        Data from <a href="/docs/integrations/gcp">Google Cloud</a> (Cloud Logging and Cloud Monitoring), <a href="/docs/integrations/cloudflare">Cloudflare</a> (zone and Workers analytics), <a href="/docs/integrations/planetscale">PlanetScale</a> (branch metrics), Railway (service metrics), <a href="/docs/integrations/prometheus">any Prometheus endpoint</a> and <a href="/docs/integrations/github">GitHub Actions</a> is stored in the same log, metric and trace tables as your own telemetry. One query layer covers all of it, so an agent can follow a root cause from a failing checkout to a saturated database or a red deploy without switching tools:
                     </p>
                     <div class="guide-table">
                         <table>
                             <thead>
-                                <tr><th>Tool</th><th>What it returns</th></tr>
+                                <tr><th>Source</th><th>What lands in Maple</th><th>MCP tools</th></tr>
                             </thead>
                             <tbody>
-                                {mcpTools.map(([tool, body]) => (
-                                    <tr><td><code>{tool}</code></td><td>{body}</td></tr>
+                                {sources.map((r) => (
+                                    <tr><td><strong>{r.source}</strong></td><td>{r.lands}</td><td>{r.tools.map((t) => <code class="tool-chip">{t}</code>)}</td></tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
                     <p>
-                        The server also ships an <code>incident_triage</code> prompt that walks the assistant through these calls.
+                        <code>run_sql</code> takes the same ClickHouse SQL that dashboard widgets and raw-SQL alert rules use (see the <a href="/docs/reference/sql">SQL reference</a>). <code>claim_error_issue</code> takes the lease on an error issue so two people or agents do not fix the same bug, and the server ships an <code>incident_triage</code> prompt that walks the assistant through the first calls.
                     </p>
                     <figure class="guide-figure"><img src="/screenshots/flow-04-agent.webp" data-zoomable alt="Claude Code connected to the Maple MCP server, asked why api-gateway is erroring: list_services, search_traces, find_errors and read_source_file calls lead to a propose_fix call with a patch to a payment retry." width="1984" height="1200" loading="lazy" /></figure>
 
@@ -666,9 +620,6 @@ const articleJsonLd = {
     /* One color per NIST phase: set --phase on the element. */
     .ir-guide .phase-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in oklab, var(--phase) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--phase) 14%, transparent); padding: 0.1rem 0.55rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; line-height: 1.5; color: color-mix(in oklab, var(--phase) 70%, var(--foreground)); white-space: nowrap; vertical-align: 0.1em; }
     .ir-guide .phase-badge--neutral { --phase: var(--muted-foreground); }
-    /* One color per severity level: set --sev on the element. */
-    .ir-guide .sev-badge { display: inline-block; border-radius: 0.3rem; background: color-mix(in oklab, var(--sev) 22%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--sev) 55%, transparent); padding: 0.1rem 0.45rem; font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: color-mix(in oklab, var(--sev) 65%, var(--foreground)); }
-    .ir-guide .sev-name { display: block; margin-top: 0.35rem; font-size: 12px; color: var(--foreground); }
 
     .cycle { margin: 2rem 0 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
     .cycle svg { display: block; width: 100%; min-width: 600px; height: auto; }
@@ -686,7 +637,7 @@ const articleJsonLd = {
     .ir-guide .guide-steps__head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
     .ir-guide .guide-steps h3 { margin: 0; font-size: 1.05rem; }
     .ir-guide .guide-steps--prep > li > span { border-color: color-mix(in oklab, var(--phase) 50%, transparent); background: color-mix(in oklab, var(--phase) 14%, transparent); color: color-mix(in oklab, var(--phase) 70%, var(--foreground)); }
-    .ir-guide .guide-steps .guide-table, .ir-guide .guide-steps .code-file { margin: 1rem 0 0; }
+    .ir-guide .tool-chip { display: inline-block; margin: 0 0.3rem 0.3rem 0; }
     .ir-guide .guide-steps p.guide-steps__out { margin-top: 0.8rem; color: var(--foreground); }
     .ir-guide .guide-steps__out > span { display: inline-block; margin-right: 0.6rem; border: 1px solid color-mix(in oklab, var(--phase) 45%, transparent); border-radius: 999px; padding: 0 0.5rem; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; line-height: 1.6; color: color-mix(in oklab, var(--phase) 70%, var(--foreground)); vertical-align: 0.1em; }
     .ir-guide .guide-steps p { margin: 0.4rem 0 0; font-size: 14px; line-height: 1.7; color: var(--muted-foreground); }
