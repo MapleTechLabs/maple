@@ -236,10 +236,14 @@ export class SupabaseConnectionService extends Context.Service<
 			})
 		})
 
-		/** Upsert the organization's listed projects; stamp `removedAt` on the ones that disappeared. */
+		/**
+		 * Upsert the organization's listed projects; stamp `removedAt` on the ones that disappeared.
+		 * An incomplete listing (`skipped > 0`) cannot prove absence, so it removes nothing.
+		 */
 		const reconcileProjects = Effect.fn("SupabaseConnectionService.reconcileProjects")(function* (
 			connection: SupabaseConnectionRow,
 			listed: ReadonlyArray<SupabaseProject>,
+			skipped: number,
 			now: number,
 		) {
 			const projects = listed.filter((project) => belongsToOrganization(project, connection))
@@ -278,7 +282,16 @@ export class SupabaseConnectionService extends Context.Service<
 				{ discard: true },
 			)
 			const seen = new Set<string>(projects.map((project) => project.ref))
-			const gone = existing.filter((row) => row.removedAt === null && !seen.has(row.projectRef))
+			const complete = skipped === 0
+			const gone = complete
+				? existing.filter((row) => row.removedAt === null && !seen.has(row.projectRef))
+				: []
+			if (!complete) {
+				yield* Effect.logWarning("supabase project listing incomplete; skipping removals", {
+					orgId: connection.orgId,
+					skipped,
+				})
+			}
 			yield* Effect.forEach(
 				gone,
 				(row) =>
@@ -296,6 +309,8 @@ export class SupabaseConnectionService extends Context.Service<
 				"maple.supabase.projects": projects.length,
 				"maple.supabase.projects_removed": gone.length,
 				"maple.supabase.projects_other_org": listed.length - projects.length,
+				"maple.supabase.projects_undecodable": skipped,
+				"maple.supabase.removal_skipped": !complete,
 			})
 			return { projects: projects.length, removed: gone.length, unhealthy }
 		})
@@ -372,7 +387,12 @@ export class SupabaseConnectionService extends Context.Service<
 						),
 				)
 				if (listed._tag === "Success") {
-					const result = yield* reconcileProjects(claimed, listed.success, now)
+					const result = yield* reconcileProjects(
+						claimed,
+						listed.success.projects,
+						listed.success.skipped,
+						now,
+					)
 					yield* reconcileTargets(claimed, now)
 					yield* updateConnection(claimed.id, {
 						lastDiscoveryAt: now,

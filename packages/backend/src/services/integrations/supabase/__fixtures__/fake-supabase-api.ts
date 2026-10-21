@@ -46,6 +46,8 @@ export interface FakeSupabaseState {
 	omitRefreshToken: boolean
 	/** Refresh answers 400 `invalid_grant` (the grant was revoked upstream). */
 	refreshRevoked: boolean
+	/** Issued access tokens are not accepted (the API rejects a freshly minted token). */
+	rejectIssuedTokens: boolean
 	/** Forces `/v1/projects` to answer this status (e.g. 429). */
 	projectsStatus: number | null
 	issued: number
@@ -69,6 +71,7 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		expiresIn: 86_400,
 		omitRefreshToken: false,
 		refreshRevoked: false,
+		rejectIssuedTokens: false,
 		projectsStatus: null,
 		issued: 0,
 		calls: [],
@@ -78,7 +81,7 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 	const issueTokens = () => {
 		state.issued += 1
 		const accessToken = `sbp_oauth_access_${state.issued}`
-		state.validAccessTokens.add(accessToken)
+		if (!state.rejectIssuedTokens) state.validAccessTokens.add(accessToken)
 		const tokens = { access_token: accessToken, expires_in: state.expiresIn, token_type: "Bearer" }
 		return json(state.omitRefreshToken ? tokens : { ...tokens, refresh_token: `refresh_${state.issued}` })
 	}
@@ -90,7 +93,9 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		const params = new URLSearchParams(body)
 		if (params.get("grant_type") === "refresh_token") {
 			// Live-verified: Supabase answers 404 for a revoked or rotated-away refresh token.
-			return state.refreshRevoked ? json({ message: "No such refresh token found" }, 404) : issueTokens()
+			return state.refreshRevoked
+				? json({ message: "No such refresh token found" }, 404)
+				: issueTokens()
 		}
 		const verifier = params.get("code_verifier") ?? ""
 		const challenge = createHash("sha256").update(verifier).digest("base64url")

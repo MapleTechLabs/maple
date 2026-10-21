@@ -181,6 +181,18 @@ describe("SupabaseOAuthService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})
 
+	it.effect("completeConnect revokes a grant whose fresh access token Supabase rejects", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFakeSupabase({ rejectIssuedTokens: true })
+		return Effect.gen(function* () {
+			const error = yield* connect(fake).pipe(Effect.flip)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsRevokedError")
+			const revoke = fake.state.calls.find((call) => call.path === "/v1/oauth/revoke")
+			assert.include(revoke?.body ?? "", "refresh_1")
+			assert.isFalse(yield* (yield* SupabaseOAuthService).isGrantUsable(ORG))
+		}).pipe(Effect.provide(makeLayer(testDb, fake)))
+	})
+
 	it.effect("withAccessToken refreshes an expired access token before calling Supabase", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fake = makeFakeSupabase()
