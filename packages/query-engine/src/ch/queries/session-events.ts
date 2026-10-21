@@ -62,12 +62,15 @@ export interface SessionTranscriptOpts {
 	/** Optional session time window — prunes daily partitions. Omit to scan all. */
 	startTime?: DateTime.Utc
 	endTime?: DateTime.Utc
+	/** Page from the session's end instead of its start: rows come newest first, for the caller to reverse. */
+	newestFirst?: boolean
 	/** Page size. Transcripts are unbounded otherwise — always cap for agents. */
 	limit?: number
 	offset?: number
 }
 
 export function sessionTranscriptQuery(opts: SessionTranscriptOpts = {}) {
+	const order = opts.newestFirst ? "desc" : "asc"
 	return from(SessionEvents)
 		.select(($) => ({
 			timestamp: $.Timestamp,
@@ -102,7 +105,7 @@ export function sessionTranscriptQuery(opts: SessionTranscriptOpts = {}) {
 					.or($.Type.eq("network").and($.NetStatus.gte(400))),
 			),
 		])
-		.orderBy(["timestamp", "asc"], ["seq", "asc"])
+		.orderBy(["timestamp", order], ["seq", order])
 		.limit(opts.limit ?? 100)
 		.offset(opts.offset ?? 0)
 		.format("JSON")

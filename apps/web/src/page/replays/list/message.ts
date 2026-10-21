@@ -59,6 +59,7 @@ export const Message = defineMessageUnion({
 	ClickedClearUser: {},
 	ClickedClearUserId: {},
 	ClickedClearVisitor: {},
+	ClickedClearGroupId: {},
 	ClickedClearSidebarFilters: {},
 	ClickedClearFilters: {},
 	ClickedSession: { sessionId: Schema.String, startTime: Schema.String },

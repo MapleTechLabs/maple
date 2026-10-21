@@ -33,6 +33,7 @@ const report = (id: string, overrides: Partial<CancellationReport> = {}): Cancel
 		signals: deriveSignals(fixture.snapshot),
 		modelRead: null,
 		stripeFeedback: null,
+		unreadEvidence: [],
 		...overrides,
 	}
 }
@@ -85,7 +86,7 @@ const otherOrg = (overrides: Partial<OtherOrg> = {}): OtherOrg => ({
 })
 
 const modelRead = (verdict: CancellationModelRead["verdict"], reason: string | null, note: string | null) =>
-	new CancellationModelRead({ verdict, reason, note, model: "test-model" })
+	new CancellationModelRead({ verdict, category: null, reason, note, model: "test-model" })
 
 describe("buildCancellationMessage", () => {
 	it("adds nothing when the model agrees", () => {
@@ -114,9 +115,31 @@ describe("buildCancellationMessage", () => {
 		)
 		expect(message.text).toBe("Acme &lt;Labs&gt; &amp; Co cancelled the startup plan (Needed SSO)")
 		expect(text(message)).toContain(
-			"*Likely reason:* Needed SSO  _(rules said: Stopped sending telemetry)_",
+			"*Likely reason:* Needed SSO  _(model's read; rules said: Stopped sending telemetry)_",
 		)
 		expect(text(message)).toContain(":robot_face: Asked Stripe for SSO.")
+	})
+
+	it("never turns a URL in the customer's or the model's words into a link", () => {
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				stripeFeedback: { feedback: null, comment: "see https://evil.test" },
+				modelRead: modelRead("context", null, "Visit https://evil.test now."),
+			}),
+		)
+		const quotedTexts = message.blocks
+			.flatMap((block) => (Array.isArray(block.elements) ? block.elements : []))
+			.filter(
+				(element: { text?: unknown }) =>
+					typeof element.text === "string" && element.text.includes("evil.test"),
+			)
+		expect(quotedTexts).toHaveLength(2)
+		for (const element of quotedTexts) expect(element).toMatchObject({ verbatim: true })
+	})
+
+	it("names the evidence it could not read", () => {
+		const message = buildCancellationMessage(report("pipeline-off", { unreadEvidence: ["Stripe"] }))
+		expect(text(message)).toContain("Could not read: Stripe")
 	})
 
 	it("quotes what the customer told Stripe, and nothing when they skipped it", () => {

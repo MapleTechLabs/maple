@@ -311,6 +311,12 @@ describe("session replay identity columns", () => {
 		expect(sql.split("GroupName = 'Acme Inc'").length - 1).toBe(12)
 	})
 
+	it("narrows every facet branch by the exact GroupId", () => {
+		const q = sessionReplaysFacetsQuery({ groupId: "org_acme" })
+		const { sql } = compileUnionUnsafe(q, { ...baseParams, ...WINDOW })
+		expect(sql.split("GroupId = 'org_acme'").length - 1).toBe(13)
+	})
+
 	it("never offers an empty group as a facet option", () => {
 		const q = sessionReplaysFacetsQuery({})
 		const { sql } = compileUnionUnsafe(q, { ...baseParams, ...WINDOW })

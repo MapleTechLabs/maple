@@ -8,16 +8,20 @@ import type {
 	CancellationSessionDigest,
 	CancellationStripeFeedback,
 } from "@maple/domain/http"
-import { DateTime, Option, Schema } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 
 /** Sessions the model sees, newest first. */
 export const SESSIONS_SHOWN = 20
-/** Sessions whose pages and errors are read: one transcript query each. */
+/** Sessions whose pages and errors are read: two transcript queries each. */
 export const SESSIONS_READ = 5
-/** Events per session transcript. */
-export const TRANSCRIPT_EVENTS = 60
-/** Audit entries the model sees, newest first. */
+/** The last page visits and problems of a session: its end is where a user gives up. */
+export const TRANSCRIPT_PAGES = 40
+export const TRANSCRIPT_PROBLEMS = 30
+/** Audit entries the model sees, newest first, and how many are read to find them among reads. */
 export const AUDIT_ENTRIES_SHOWN = 40
+export const AUDIT_ENTRIES_READ = 200
+/** A Stripe cancellation this far from the reviewed one is another cancellation. */
+const SAME_CANCELLATION_MS = 2 * 86_400_000
 
 const OptionalText = Schema.optionalKey(Schema.NullOr(Schema.String))
 
@@ -34,24 +38,38 @@ const StripeSubscriptions = Schema.Struct({
 	),
 })
 
-const decodeSubscriptions = Schema.decodeUnknownOption(StripeSubscriptions)
+const decodeSubscriptions = Schema.decodeUnknownEffect(StripeSubscriptions)
 
-const text = (value: string | null | undefined): string | null => value?.trim() || null
+/** Free text goes to a third-party model: no addresses in it. */
+const redact = (value: string): string => value.replaceAll(/[^\s@<>"']+@[^\s@<>"']+\.[a-z]{2,}/gi, "[email]")
+
+const text = (value: string | null | undefined): string | null => {
+	const trimmed = value?.trim()
+	return trimmed ? redact(trimmed) : null
+}
 
 /**
- * The survey answer and comment of the newest cancelled subscription, the one
- * being reviewed. Both null when the customer skipped it there or did not
- * cancel through Stripe's portal; an older subscription's answer is never used.
+ * The survey answer and comment of the Stripe cancellation being reviewed: the
+ * subscription cancelled within two days of it. Both null when the customer
+ * skipped the survey or cancelled outside Stripe's portal; an earlier
+ * cancellation's answer is never used. Fails on a body it cannot read.
  */
-export const stripeFeedbackOf = (response: unknown): CancellationStripeFeedback => {
-	const newest = Option.getOrUndefined(decodeSubscriptions(response))
-		?.data.filter((sub) => sub.canceledAt != null)
-		.sort((a, b) => (b.canceledAt ?? 0) - (a.canceledAt ?? 0))[0]
-	return {
-		feedback: text(newest?.cancellationDetails?.feedback),
-		comment: text(newest?.cancellationDetails?.comment),
-	}
-}
+export const stripeFeedbackOf = (response: unknown, canceledAtMs: number) =>
+	decodeSubscriptions(response).pipe(
+		Effect.map(({ data }): CancellationStripeFeedback => {
+			const match = data
+				.filter(
+					(sub) =>
+						sub.canceledAt != null &&
+						Math.abs(sub.canceledAt * 1000 - canceledAtMs) <= SAME_CANCELLATION_MS,
+				)
+				.sort((a, b) => (b.canceledAt ?? 0) - (a.canceledAt ?? 0))[0]
+			return {
+				feedback: text(match?.cancellationDetails?.feedback),
+				comment: text(match?.cancellationDetails?.comment),
+			}
+		}),
+	)
 
 export interface SessionRow {
 	readonly sessionId: string
@@ -60,14 +78,15 @@ export interface SessionRow {
 	readonly quality: string
 	readonly pageViews: number
 	readonly clickCount: number
-	readonly errorCount: number
 }
 
-/** Navigation and error events only; the rest would crowd the pages out of the cap. */
 export interface TranscriptEvent {
 	readonly type: string
 	readonly url: string
 	readonly message: string
+	readonly netMethod: string
+	readonly netUrl: string
+	readonly netStatus: number
 }
 
 const pathOf = (url: string): string => (URL.canParse(url) ? new URL(url).pathname : url)
@@ -79,22 +98,34 @@ const pagesOf = (events: ReadonlyArray<TranscriptEvent>): ReadonlyArray<string> 
 		.map((event) => pathOf(event.url))
 		.filter((path, index, paths) => index === 0 || paths[index - 1] !== path)
 
+/** An error event, a console error or a failed request, in a line. */
+const problemOf = (event: TranscriptEvent): string =>
+	event.type === "network"
+		? redact(`${event.netMethod} ${pathOf(event.netUrl)} failed with ${event.netStatus}`)
+		: redact(event.message).slice(0, 200)
+
+/**
+ * Problems of Maple's own app rather than the customer's: its telemetry SDK
+ * failing to ship (an ad blocker, a dropped connection) and the live-sync
+ * stream's routine 409 when a shape must be refetched.
+ */
+const isOwnNoise = (event: TranscriptEvent): boolean =>
+	event.message.startsWith("[MapleClientSDK]") ||
+	(event.type === "network" && event.netStatus === 409 && pathOf(event.netUrl).endsWith("/sync/shape"))
+
+/** `pages` and `problems` are the session's last events of each kind, oldest first. */
 export const digestSession = (
 	row: SessionRow,
-	events: ReadonlyArray<TranscriptEvent>,
+	pages: ReadonlyArray<TranscriptEvent>,
+	problems: ReadonlyArray<TranscriptEvent>,
 ): CancellationSessionDigest => ({
 	startedAt: DateTime.formatIso(row.startTime),
 	durationMs: row.durationMs,
 	quality: row.quality,
 	pageViews: row.pageViews,
 	clicks: row.clickCount,
-	errors: row.errorCount,
-	pages: pagesOf(events),
-	problems: [
-		...new Set(
-			events.filter((event) => event.type === "error").map((event) => event.message.slice(0, 200)),
-		),
-	].slice(0, 10),
+	pages: pagesOf(pages),
+	problems: [...new Set(problems.filter((event) => !isOwnNoise(event)).map(problemOf))].slice(-10),
 })
 
 export interface AuditRow {
@@ -103,6 +134,13 @@ export interface AuditRow {
 	readonly outcome: string
 	readonly occurredAt: Date
 }
+
+/**
+ * Reads, tool calls, SQL runs and refused requests record access, not a
+ * change; a dashboard's SQL widgets alone would crowd every change out.
+ */
+export const isAuditedChange = (row: AuditRow): boolean =>
+	!/\.(read|called|sql_executed|request)$/.test(row.action)
 
 export const auditEntryOf = (row: AuditRow): CancellationAuditEntry => ({
 	at: row.occurredAt.toISOString(),

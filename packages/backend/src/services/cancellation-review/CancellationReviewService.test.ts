@@ -75,7 +75,8 @@ interface World {
 	anyPageViews: boolean
 	/** The org's browser sessions under Maple's org, and the events of each. */
 	sessionRows: Array<Record<string, unknown>>
-	sessionEvents: Array<{ type: string; url: string; message: string }>
+	/** Oldest first; the warehouse stub answers newest first, as the query asks. */
+	sessionEvents: Array<{ type: string; url: string; message: string; netStatus?: number }>
 	/** Stripe's subscription list body, camelised. */
 	stripeSubscriptions: Array<Record<string, unknown>>
 	/** What the model answers; null is no answer. */
@@ -171,7 +172,12 @@ const stubs = (world: World) =>
 						const sql = compiledQueryOf(compiled).sql
 						world.queries.push({ orgId: tenant.orgId, sql })
 						if (sql.includes("session_events")) {
-							return Effect.succeed(world.sessionEvents as ReadonlyArray<never>)
+							const pagesOnly = sql.includes("'navigation'")
+							const events = world.sessionEvents
+								.filter((event) => (event.type === "navigation") === pagesOnly)
+								.map((event) => ({ netMethod: "GET", netUrl: "", netStatus: 0, ...event }))
+								.toReversed()
+							return Effect.succeed(events as ReadonlyArray<never>)
 						}
 						if (sql.includes("session_replays")) {
 							return Effect.succeed(world.sessionRows as ReadonlyArray<never>)
@@ -230,6 +236,14 @@ const stubs = (world: World) =>
 		Layer.mock(AuditLogService)({
 			list: () =>
 				Effect.succeed([
+					// An access record: never one of the changes the model reads.
+					{
+						action: "telemetry.read",
+						actorType: "user",
+						actorLabel: "a@acme.test",
+						outcome: "allowed",
+						occurredAt: new Date(CANCELED_AT - DAY_MS + 60_000),
+					} as never,
 					{
 						action: "ingest_key.revoke",
 						actorType: "user",
@@ -440,7 +454,16 @@ describe("CancellationReviewService", () => {
 					quality: "engaged",
 					pageViews: 3,
 					clickCount: 9,
-					errorCount: 1,
+				},
+				{
+					sessionId: "s_bot",
+					startTime: DateTime.makeUnsafe(CANCELED_AT - 2 * DAY_MS),
+					endTime: null,
+					durationMs: null,
+					userEmail: "",
+					quality: "bot",
+					pageViews: 1,
+					clickCount: 0,
 				},
 			]
 			world.sessionEvents = [
@@ -451,6 +474,7 @@ describe("CancellationReviewService", () => {
 			]
 			world.modelRead = new CancellationModelRead({
 				verdict: "override",
+				category: "missing_features",
 				reason: "Needed SSO",
 				note: "Told Stripe they need SSO and hit the SSO paywall the day before.",
 				model: "test-model",
@@ -463,7 +487,10 @@ describe("CancellationReviewService", () => {
 				feedback: "missing_features",
 				comment: "No SSO",
 			})
-			assert.deepStrictEqual(request?.sessions?.[0]?.pages, ["/settings/members", "/billing"])
+			assert.deepStrictEqual(
+				request?.sessions?.map((session) => session.pages),
+				[["/settings/members", "/billing"]],
+			)
 			assert.deepStrictEqual(request?.sessions?.[0]?.problems, ["SSO is not available on your plan"])
 			assert.deepStrictEqual(request?.auditLog?.[0], {
 				at: new Date(CANCELED_AT - DAY_MS).toISOString(),
@@ -484,12 +511,39 @@ describe("CancellationReviewService", () => {
 			const post = world.posts[0]
 			assert.strictEqual(post?.text, "Acme Inc. cancelled the startup plan (Needed SSO)")
 			const blocks = String(post?.blocks)
-			assert.include(blocks, "*Likely reason:* Needed SSO  _(rules said: Stopped sending telemetry)_")
+			assert.include(
+				blocks,
+				"*Likely reason:* Needed SSO  _(model's read; rules said: Stopped sending telemetry)_",
+			)
 			assert.include(blocks, ":robot_face: Told Stripe they need SSO")
 			assert.include(blocks, "*Told Stripe:* missing features “No SSO”")
-			assert.include(blocks, '"url":"http://127.0.0.1:3471/replays?group=Acme+Inc.&timePreset=30d"')
+			assert.include(
+				blocks,
+				`"url":"http://127.0.0.1:3471/replays?groupId=${ORG}&startTime=2026-09-07+15%3A30%3A00&endTime=2026-10-07+16%3A30%3A00"`,
+			)
 			const stored = yield* storedReview(testDb)
-			assert.deepInclude(stored?.model_read, { verdict: "override", reason: "Needed SSO" })
+			assert.deepInclude(stored?.model_read, {
+				verdict: "override",
+				category: "missing_features",
+				reason: "Needed SSO",
+			})
+		}),
+	)
+
+	it.effect("ignores a Stripe survey from an earlier cancellation", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.stripeSubscriptions = [
+				{
+					created: 1,
+					canceledAt: (CANCELED_AT - 90 * DAY_MS) / 1000,
+					cancellationDetails: { feedback: "switched_service", comment: "Datadog", reason: null },
+				},
+			]
+			const testDb = createTestDb(trackedDbs)
+			assert.strictEqual(yield* review(world, testDb), "posted")
+			assert.deepStrictEqual(world.modelRequests[0]?.stripeFeedback, { feedback: null, comment: null })
+			assert.notInclude(String(world.posts[0]?.blocks), "Datadog")
 		}),
 	)
 

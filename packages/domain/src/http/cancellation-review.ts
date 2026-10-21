@@ -126,15 +126,14 @@ export type CancellationStripeFeedback = Schema.Schema.Type<typeof CancellationS
 /** One of the org's browser sessions in Maple's own app, reduced to what a reader skims. */
 export const CancellationSessionDigest = Schema.Struct({
 	startedAt: Schema.String,
-	durationMs: Schema.NullOr(Schema.Number),
-	/** `engaged`, `glance`, `idle`, `bounce` or `bot`. */
+	durationMs: Schema.NullOr(Count),
+	/** `engaged`, `glance`, `idle` or `bounce`. */
 	quality: Schema.String,
-	pageViews: Schema.Number,
-	clicks: Schema.Number,
-	errors: Schema.Number,
-	/** Page paths in visit order, consecutive repeats collapsed. Empty when not read. */
+	pageViews: Count,
+	clicks: Count,
+	/** The session's last page paths in visit order, consecutive repeats collapsed. Empty when not read. */
 	pages: Schema.Array(Schema.String),
-	/** Error messages the session recorded, deduplicated. */
+	/** The session's last errors and failed requests, deduplicated. */
 	problems: Schema.Array(Schema.String),
 })
 export type CancellationSessionDigest = Schema.Schema.Type<typeof CancellationSessionDigest>
@@ -173,10 +172,27 @@ export class CancellationModelRequest extends Schema.Class<CancellationModelRequ
 export const CancellationModelVerdict = Schema.Literals(["agree", "override", "context"])
 export type CancellationModelVerdict = Schema.Schema.Type<typeof CancellationModelVerdict>
 
+/**
+ * An override's reason as a fixed label, so stored reads can be counted against
+ * the rules' reasons and Stripe's survey answers. The rules' reasons, plus what
+ * only the customer's own evidence shows.
+ */
+export const CancellationModelCategory = Schema.Literals([
+	...CancellationReason.literals,
+	"missing_features",
+	"product_quality",
+	"too_complex",
+	"switched_service",
+	"other",
+])
+export type CancellationModelCategory = Schema.Schema.Type<typeof CancellationModelCategory>
+
 export class CancellationModelRead extends Schema.Class<CancellationModelRead>("CancellationModelRead")({
 	verdict: CancellationModelVerdict,
 	/** The reason in a few words, set only on `override`. */
 	reason: Schema.NullOr(Schema.String),
+	/** The override's reason as a label; null unless `override`. Absent on reads stored before it. */
+	category: Schema.optionalKey(Schema.NullOr(CancellationModelCategory)),
 	/** One to three sentences, citing the evidence; null on `agree`. */
 	note: Schema.NullOr(Schema.String),
 	/** The model id that answered. */

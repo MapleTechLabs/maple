@@ -57,6 +57,8 @@ export interface CancellationReport {
 	readonly modelRead: CancellationModelRead | null
 	/** Null when Stripe could not be read. */
 	readonly stripeFeedback: CancellationStripeFeedback | null
+	/** Sources only the model reads that could not be read, by name. */
+	readonly unreadEvidence: ReadonlyArray<string>
 }
 
 const REASON_LABELS = {
@@ -273,6 +275,8 @@ const unread = (snapshot: CancellationSnapshot): ReadonlyArray<string> =>
 		.map(([name]) => name)
 
 const context = (text: string) => ({ type: "context", elements: [{ type: "mrkdwn", text }] })
+/** Text the customer or the model wrote: shown as written, a URL in it never turned into a link. */
+const quoted = (text: string) => ({ type: "context", elements: [{ type: "mrkdwn", text, verbatim: true }] })
 const heading = (text: string) => ({ type: "section", text: { type: "mrkdwn", text: `*${text}*` } })
 
 /** Favicons, because Slack renders neither SVG nor its own app icons in a message. */
@@ -433,7 +437,7 @@ const stripeFeedbackText = (feedback: CancellationStripeFeedback | null): string
 /** The reason line: the model's when it overrode the rules, which then stay visible beside it. */
 const reasonText = (reason: CancellationReason, modelRead: CancellationModelRead | null): string =>
 	modelRead?.verdict === "override" && modelRead.reason !== null
-		? `*Likely reason:* ${escape(clip(modelRead.reason))}  _(rules said: ${REASON_LABELS[reason]})_`
+		? `*Likely reason:* ${escape(clip(modelRead.reason))}  _(model's read; rules said: ${REASON_LABELS[reason]})_`
 		: `*Likely reason:* ${REASON_LABELS[reason]}`
 
 /** `text` is the notification and screen-reader fallback; `blocks` is what the channel shows. */
@@ -449,14 +453,15 @@ export const buildCancellationMessage = (
 		{ type: "header", text: { type: "plain_text", text: title(report).slice(0, 150), emoji: true } },
 		context(planContext(report)),
 		linkButtons(subject.links, subject.sessionsUrl),
-		{ type: "section", text: { type: "mrkdwn", text: reasonText(reason, modelRead) } },
+		// Verbatim: an override's reason is the model's words.
+		{ type: "section", text: { type: "mrkdwn", text: reasonText(reason, modelRead), verbatim: true } },
 	]
 	// `agree` adds nothing: the model only speaks when it has something the rules did not.
 	if (modelRead !== null && modelRead.verdict !== "agree" && modelRead.note !== null) {
-		blocks.push(context(`:robot_face: ${escape(clip(modelRead.note))}`))
+		blocks.push(quoted(`:robot_face: ${escape(clip(modelRead.note))}`))
 	}
 	const told = stripeFeedbackText(report.stripeFeedback)
-	if (told !== null) blocks.push(context(told))
+	if (told !== null) blocks.push(quoted(told))
 	if (flags.length > 0) {
 		blocks.push(
 			context(flags.map((signal) => `${TONE_MARK[signal.tone]}${escape(signal.text)}`).join(SEPARATOR)),
@@ -472,7 +477,7 @@ export const buildCancellationMessage = (
 	if (integrations.length > 0) blocks.push({ type: "divider" }, ...integrations)
 	blocks.push({ type: "divider" }, ...otherOrgsBlocks(subject.otherOrgs))
 
-	const missing = unread(snapshot)
+	const missing = [...unread(snapshot), ...report.unreadEvidence]
 	if (missing.length > 0) blocks.push(context(`Could not read: ${missing.join(", ")}`))
 
 	// Unlike the header's plain text, the fallback is mrkdwn: an org name is escaped here.

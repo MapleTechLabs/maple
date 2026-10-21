@@ -60,9 +60,9 @@ Each snapshot section is one stat in the report; its signal sentences only colou
 green, nothing for neutral). Sentences about a section with no stat, such as a past-due payment,
 are listed under the reason.
 
-The report's Sessions button opens Maple's own replays page filtered to the org's name, last 30
-days. It shows the org's sessions only when you are signed in to the org the app reports its own
-usage to (the product-events key's org).
+The report's Sessions button opens Maple's own replays page filtered to the org's id, from 30 days
+before the cancellation to an hour after it. It shows them only when you are signed in to the org
+the app reports its own usage to (the product-events key's org).
 
 ## How the reason is decided
 
@@ -78,13 +78,15 @@ cancellations whose reasons are known, those rows are what a model's read could 
 After the rules, maple-ai reads the same snapshot with what the rules cannot see
 (`POST /internal/cancellation-review/read` over the `AI_WORKER` binding, `INTERNAL_SERVICE_TOKEN`):
 
-- Stripe's cancellation survey and comment on the org's newest cancelled subscription
-- its last 20 browser sessions in Maple's app, the 5 newest with their pages and errors
-- its last 40 audit-log entries
+- Stripe's survey answer and comment on the subscription cancelled at the reviewed time (never an
+  earlier cancellation's)
+- the org's last 20 browser sessions in Maple's app up to the cancellation, bots left out; the 5
+  newest with their last pages and their errors and failed requests
+- the org's last 40 audit-log changes (reads and tool calls left out)
 
-It answers `agree` (the report shows nothing), `context` (a note under the reason) or `override`
-(its reason leads, the rules' stays beside it). It is one structured call on the triage model; no
-answer within 8 s, or no binding, and the report goes out with the rules alone. The answer is
-kept in `cancellation_reviews.model_read`, so it can be checked against known reasons later.
-What the customer told Stripe is also shown in the report as is.
-
+Emails in free text are replaced before it goes to the model. It answers `agree` (the report shows
+nothing), `context` (a note under the reason) or `override` (its reason leads, the rules' stays
+beside it, and a `category` label is stored for counting). It is one structured call on the triage
+model. These reads run alongside the snapshot's, each given 4 s, and the model 8 s; whatever does not
+answer is left out and named under "Could not read". The answer is kept in
+`cancellation_reviews.model_read`. What the customer told Stripe is also shown in the report as is.

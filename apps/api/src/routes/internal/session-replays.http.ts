@@ -45,6 +45,7 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 								userId: payload.userId,
 								userSearch: payload.userSearch,
 								groupName: payload.groupName,
+								groupId: payload.groupId,
 								visitorId: payload.visitorId,
 								hasErrors: payload.hasErrors,
 								search: payload.search,

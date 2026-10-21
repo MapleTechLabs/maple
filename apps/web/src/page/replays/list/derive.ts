@@ -47,6 +47,7 @@ export const hasActiveFilters = (search: Search): boolean =>
 		search.userId,
 		search.user,
 		search.group,
+		search.groupId,
 		search.visitorId,
 		search.hasErrors,
 		search.q,

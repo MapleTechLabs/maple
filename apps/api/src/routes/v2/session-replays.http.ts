@@ -116,6 +116,7 @@ export const HttpV2SessionReplaysLive = HttpApiBuilder.group(MapleApiV2, "sessio
 							...(payload.group_name !== undefined
 								? { groupName: payload.group_name }
 								: undefined),
+							...(payload.group_id !== undefined ? { groupId: payload.group_id } : undefined),
 							...(payload.visitor_id !== undefined
 								? { visitorId: payload.visitor_id }
 								: undefined),

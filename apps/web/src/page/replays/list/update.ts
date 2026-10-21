@@ -356,6 +356,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedClearUser: () => navigate(model, { ...model.search, user: undefined }),
 		ClickedClearUserId: () => navigate(model, { ...model.search, userId: undefined }),
 		ClickedClearVisitor: () => navigate(model, { ...model.search, visitorId: undefined }),
+		ClickedClearGroupId: () => navigate(model, { ...model.search, groupId: undefined }),
 		ClickedClearSidebarFilters: () => navigate(model, clearedSidebar(model.search)),
 		ClickedClearFilters: () => navigate(model, clearedFilters(model.search)),
 		ClickedSession: ({ sessionId, startTime }) => ({

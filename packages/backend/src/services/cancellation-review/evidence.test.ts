@@ -1,49 +1,55 @@
-import { DateTime } from "effect"
+import { DateTime, Effect, Exit } from "effect"
 import { describe, expect, it } from "vitest"
-import { digestSession, stripeFeedbackOf } from "./evidence"
+import { auditEntryOf, digestSession, isAuditedChange, stripeFeedbackOf } from "./evidence"
+
+const DAY_S = 86_400
+const CANCELLED_S = 1_760_000_000
+const feedback = (response: unknown) => Effect.runSync(stripeFeedbackOf(response, CANCELLED_S * 1000))
 
 describe("stripeFeedbackOf", () => {
-	it("reads the newest cancelled subscription's survey", () => {
+	it("reads the survey of the subscription cancelled at the reviewed time", () => {
 		expect(
-			stripeFeedbackOf({
+			feedback({
 				data: [
 					{
-						created: 30,
+						created: 1,
 						canceledAt: null,
 						cancellationDetails: { feedback: "unused", comment: null },
 					},
 					{
-						created: 10,
-						canceledAt: 20,
-						cancellationDetails: { feedback: "unused", comment: null },
-					},
-					{
-						created: 20,
-						canceledAt: 40,
-						cancellationDetails: { feedback: "too_expensive", comment: "  Bill doubled  " },
+						created: 2,
+						canceledAt: CANCELLED_S + 60,
+						cancellationDetails: {
+							feedback: "too_expensive",
+							comment: "  Bill doubled, mail me at a@b.co  ",
+						},
 					},
 				],
 			}),
-		).toEqual({ feedback: "too_expensive", comment: "Bill doubled" })
+		).toEqual({ feedback: "too_expensive", comment: "Bill doubled, mail me at [email]" })
 	})
 
-	it("never quotes an older cancellation when the customer skipped the survey this time", () => {
+	it("never quotes an earlier cancellation, even when this one skipped the survey", () => {
 		expect(
-			stripeFeedbackOf({
+			feedback({
 				data: [
 					{
-						created: 10,
-						canceledAt: 20,
-						cancellationDetails: { feedback: "too_expensive", comment: null },
+						created: 1,
+						canceledAt: CANCELLED_S - 90 * DAY_S,
+						cancellationDetails: { feedback: "switched_service", comment: "Datadog" },
 					},
-					{ created: 30, canceledAt: 40, cancellationDetails: { feedback: null, comment: "" } },
+					{
+						created: 2,
+						canceledAt: CANCELLED_S,
+						cancellationDetails: { feedback: null, comment: "" },
+					},
 				],
 			}),
 		).toEqual({ feedback: null, comment: null })
 	})
 
-	it("is empty when Stripe's list is not what it expects", () => {
-		expect(stripeFeedbackOf({ error: "nope" })).toEqual({ feedback: null, comment: null })
+	it("fails on a body it cannot read, so the report says Stripe was not read", () => {
+		expect(Exit.isFailure(Effect.runSyncExit(stripeFeedbackOf({ error: "nope" }, 0)))).toBe(true)
 	})
 })
 
@@ -55,25 +61,83 @@ describe("digestSession", () => {
 		quality: "engaged",
 		pageViews: 4,
 		clickCount: 12,
-		errorCount: 2,
 	}
+	const event = (
+		type: string,
+		fields: Partial<{ url: string; message: string; netUrl: string; netStatus: number }>,
+	) => ({
+		type,
+		url: "",
+		message: "",
+		netMethod: "POST",
+		netUrl: "",
+		netStatus: 0,
+		...fields,
+	})
 
 	it("lists the pages in order, a reload or query change on the same page once", () => {
-		const digest = digestSession(row, [
-			{ type: "navigation", url: "https://app.maple.dev/traces", message: "" },
-			{ type: "navigation", url: "https://app.maple.dev/traces?service=api", message: "" },
-			{ type: "navigation", url: "https://app.maple.dev/billing", message: "" },
-			{ type: "navigation", url: "https://app.maple.dev/traces", message: "" },
-		])
+		const pages = [
+			"https://app.maple.dev/traces",
+			"https://app.maple.dev/traces?service=api",
+			"https://app.maple.dev/billing",
+			"https://app.maple.dev/traces",
+		].map((url) => event("navigation", { url }))
+		const digest = digestSession(row, pages, [])
 		expect(digest.pages).toEqual(["/traces", "/billing", "/traces"])
 		expect(digest.startedAt).toBe("2026-10-06T10:00:00.000Z")
 	})
 
-	it("keeps each distinct error once", () => {
-		const error = (message: string) => ({ type: "error", url: "", message })
-		expect(digestSession(row, [error("Boom"), error("Boom"), error("Quota exceeded")]).problems).toEqual([
-			"Boom",
-			"Quota exceeded",
+	it("names each distinct problem once: errors by message, failed requests by path and status", () => {
+		const problems = [
+			event("error", { message: "Boom for ada@acme.test" }),
+			event("error", { message: "Boom for ada@acme.test" }),
+			// Redacted before it is cut, so an address at the cut never half-survives.
+			event("error", { message: `${"x".repeat(190)} ada@acme.test` }),
+			event("network", { netUrl: "https://api.maple.dev/v1/keys?token=secret", netStatus: 403 }),
+			// Maple's own app, not the customer's: never shown as their problem.
+			event("console", {
+				message: "[MapleClientSDK] traces flush failed; cooldown 60s: TypeError: Load failed",
+			}),
+			event("network", { netUrl: "https://api.maple.dev/api/sync/shape?table=x", netStatus: 409 }),
+		]
+		expect(digestSession(row, [], problems).problems).toEqual([
+			"Boom for [email]",
+			`${"x".repeat(190)} [email]`,
+			"POST /v1/keys failed with 403",
 		])
+	})
+})
+
+describe("audit entries", () => {
+	const entry = (action: string) => ({
+		action,
+		actorType: "user",
+		outcome: "allowed",
+		occurredAt: new Date("2026-10-06T10:00:00Z"),
+	})
+
+	it("keeps changes and drops reads and tool calls", () => {
+		expect(
+			[
+				"telemetry.read",
+				"mcp_tool.called",
+				"telemetry.sql_executed",
+				"api.request",
+				"ingest_key.revoked",
+				"dashboard.deleted",
+			]
+				.map(entry)
+				.filter(isAuditedChange)
+				.map((row) => row.action),
+		).toEqual(["ingest_key.revoked", "dashboard.deleted"])
+	})
+
+	it("names the actor's kind, never the person", () => {
+		expect(auditEntryOf(entry("dashboard.deleted"))).toEqual({
+			at: "2026-10-06T10:00:00.000Z",
+			action: "dashboard.deleted",
+			actor: "user",
+			outcome: "allowed",
+		})
 	})
 })

@@ -86,3 +86,14 @@ describe("session transcript rows decode timestamps to DateTime.Utc", () => {
 		}),
 	)
 })
+
+describe("sessionTranscriptQuery order", () => {
+	it("reads from the session's start by default and from its end when asked", () => {
+		expect(compileUnsafe(sessionTranscriptQuery(), sessionParams).sql).toMatch(
+			/ORDER BY timestamp ASC, seq ASC/i,
+		)
+		expect(compileUnsafe(sessionTranscriptQuery({ newestFirst: true }), sessionParams).sql).toMatch(
+			/ORDER BY timestamp DESC, seq DESC/i,
+		)
+	})
+})

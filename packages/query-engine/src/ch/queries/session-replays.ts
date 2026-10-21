@@ -528,6 +528,8 @@ export interface SessionReplaysFacetsOpts {
 	userSearch?: string
 	/** Exact match on the identified group name — excluded from its own branch. */
 	groupName?: string
+	/** Exact match on the identified group's id. No facet branch, so it narrows every dimension. */
+	groupId?: string
 	/**
 	 * Exact match on the persistent visitor id, mirroring the list query.
 	 *
@@ -563,6 +565,7 @@ export function sessionReplaysFacetsQuery(
 		exclude === "country" ? undefined : CH.when(opts.country, (v: string) => $.Country.eq(v)),
 		exclude === "device" ? undefined : CH.when(opts.deviceType, (v: string) => $.DeviceType.eq(v)),
 		exclude === "group" ? undefined : CH.when(opts.groupName, (v: string) => $.GroupName.eq(v)),
+		CH.when(opts.groupId, (v: string) => $.GroupId.eq(v)),
 		// Like UserId below: no facet branch of its own, so it narrows every dimension.
 		CH.when(opts.userSearch, (v: string) => $.UserName.ilike(`%${v}%`).or($.UserEmail.ilike(`%${v}%`))),
 		// UserId has no facet branch (high cardinality), so it's never excluded — it
@@ -742,6 +745,7 @@ export function sessionReplaysFacetsQuery(
 				CH.when(opts.userId, (v: string) => $.UserId.eq(v)),
 				CH.when(opts.visitorId, (v: string) => $.VisitorId.eq(v)),
 				CH.when(opts.groupName, (v: string) => $.GroupName.eq(v)),
+				CH.when(opts.groupId, (v: string) => $.GroupId.eq(v)),
 				CH.when(opts.userSearch, (v: string) =>
 					$.UserName.ilike(`%${v}%`).or($.UserEmail.ilike(`%${v}%`)),
 				),

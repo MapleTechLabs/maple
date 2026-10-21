@@ -46,12 +46,15 @@ import { SupportSlackClient } from "@maple/backend/services/support/SupportSlack
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { CancellationReader } from "./CancellationReader"
 import {
+	AUDIT_ENTRIES_READ,
 	AUDIT_ENTRIES_SHOWN,
 	SESSIONS_READ,
 	SESSIONS_SHOWN,
-	TRANSCRIPT_EVENTS,
+	TRANSCRIPT_PAGES,
+	TRANSCRIPT_PROBLEMS,
 	auditEntryOf,
 	digestSession,
+	isAuditedChange,
 	stripeFeedbackOf,
 } from "./evidence"
 import { deriveSignals, ruleReason } from "./signals"
@@ -79,6 +82,15 @@ export interface CancellationToReview extends Omit<PlanCancellation, "orgId"> {
  * second delivery must wait rather than post beside it.
  */
 const CLAIM_LEASE_MS = 2 * 60 * 1000
+
+/**
+ * How long each source only the model reads may take. The review answers Svix
+ * within 15 seconds, and the model's own read comes after these.
+ */
+const EVIDENCE_TIMEOUT = "4 seconds"
+
+/** The visit the org cancelled in can start after the cancellation's timestamp is set. */
+const CANCELLATION_SESSION_GRACE_MS = 60 * 60 * 1000
 
 /** Members whose other orgs are looked up: one Clerk call each. */
 const OTHER_ORGS_MEMBER_LIMIT = 10
@@ -346,63 +358,85 @@ export class CancellationReviewService extends Context.Service<
 		})
 
 		/**
-		 * The org's browser sessions in Maple's own app, newest first, the latest
-		 * few with the pages they visited and the errors they hit.
+		 * The org's browser sessions in Maple's own app up to the cancellation,
+		 * newest first, the latest few with their last pages and problems.
 		 */
 		const readSessions = Effect.fn("CancellationReviewService.readSessions")(function* (
 			orgId: OrgId,
 			atMs: number,
-			nowMs: number,
 			ownOrgId: OrgId | null,
 		) {
 			if (ownOrgId === null) return null
 			const tenant = systemTenant(ownOrgId)
 			const rows = yield* warehouse.compiledQuery(
 				tenant,
-				CH.compile(CH.sessionReplaysListQuery({ groupId: orgId, limit: SESSIONS_SHOWN }), {
+				// Read a few extra, to still show `SESSIONS_SHOWN` once bots are dropped.
+				CH.compile(CH.sessionReplaysListQuery({ groupId: orgId, limit: SESSIONS_SHOWN * 2 }), {
 					orgId: ownOrgId,
 					startTime: formatWarehouseDateTime(atMs - WINDOW_DAYS * DAY_MS),
-					endTime: formatWarehouseDateTime(nowMs),
+					// Up to the visit the org cancelled in; later visits are not why it left.
+					endTime: formatWarehouseDateTime(atMs + CANCELLATION_SESSION_GRACE_MS),
 				}),
 				{ profile: "list", context: "cancellationReviewSessions" },
 			)
+			const transcript = (row: (typeof rows)[number], options: CH.SessionTranscriptOpts) =>
+				warehouse
+					.compiledQuery(
+						tenant,
+						CH.compile(
+							CH.sessionTranscriptQuery({
+								...options,
+								newestFirst: true,
+								startTime: row.startTime,
+								...(row.endTime === null ? undefined : { endTime: row.endTime }),
+							}),
+							{ orgId: ownOrgId, sessionId: row.sessionId },
+						),
+						{ profile: "list", context: "cancellationReviewSessionEvents" },
+					)
+					.pipe(Effect.map((events) => events.toReversed()))
 			return yield* Effect.forEach(
-				rows,
+				rows.filter((row) => row.quality !== "bot").slice(0, SESSIONS_SHOWN),
 				(row, index) =>
-					(index < SESSIONS_READ && row.quality !== "bot"
-						? warehouse.compiledQuery(
-								tenant,
-								CH.compile(
-									CH.sessionTranscriptQuery({
-										types: ["navigation", "error"],
-										startTime: row.startTime,
-										...(row.endTime === null ? undefined : { endTime: row.endTime }),
-										limit: TRANSCRIPT_EVENTS,
-									}),
-									{ orgId: ownOrgId, sessionId: row.sessionId },
-								),
-								{ profile: "list", context: "cancellationReviewSessionEvents" },
-							)
-						: Effect.succeed([])
-					).pipe(Effect.map((events) => digestSession(row, events))),
+					index < SESSIONS_READ
+						? Effect.all([
+								transcript(row, { types: ["navigation"], limit: TRANSCRIPT_PAGES }),
+								transcript(row, { errorsOnly: true, limit: TRANSCRIPT_PROBLEMS }),
+							]).pipe(Effect.map(([pages, problems]) => digestSession(row, pages, problems)))
+						: Effect.succeed(digestSession(row, [], [])),
 				{ concurrency: 3 },
 			)
 		})
 
+		/** The org's changes around the cancellation; reads and tool calls are left out. */
 		const readAuditLog = (orgId: OrgId, atMs: number) =>
 			auditLog
-				.list(orgId, { sinceMs: atMs - WINDOW_DAYS * DAY_MS, limit: AUDIT_ENTRIES_SHOWN, offset: 0 })
-				.pipe(Effect.map((entries) => entries.map(auditEntryOf)))
+				.list(orgId, {
+					sinceMs: atMs - WINDOW_DAYS * DAY_MS,
+					untilMs: atMs + CANCELLATION_SESSION_GRACE_MS,
+					limit: AUDIT_ENTRIES_READ,
+					offset: 0,
+				})
+				.pipe(
+					Effect.map((entries) =>
+						entries.filter(isAuditedChange).slice(0, AUDIT_ENTRIES_SHOWN).map(auditEntryOf),
+					),
+				)
 
-		/** What the customer told Stripe when cancelling; null without a Stripe customer. */
-		const readStripeFeedback = (customer: unknown) =>
+		/** What the customer told Stripe when cancelling; nothing to tell without a Stripe customer. */
+		const readStripeFeedback = (customer: unknown, atMs: number) =>
 			Option.match(stripeCustomerIdOf(customer), {
-				onNone: () => Effect.succeed(null),
+				onNone: () => Effect.succeed({ feedback: null, comment: null }),
 				onSome: (customerId) =>
-					stripe
-						.listSubscriptions(customerId)
-						.pipe(Effect.flatMap(ensureOk), Effect.map(stripeFeedbackOf)),
+					stripe.listSubscriptions(customerId).pipe(
+						Effect.flatMap(ensureOk),
+						Effect.flatMap((response) => stripeFeedbackOf(response, atMs)),
+					),
 			})
+
+		/** Evidence for the model only: a slow source is dropped rather than holding the report. */
+		const evidence = <A, E>(name: string, read: Effect.Effect<A, E>) =>
+			optional(name, read.pipe(Effect.timeout(EVIDENCE_TIMEOUT)))
 
 		/** Orgs the members also belong to: a customer moving to another org is not leaving. */
 		const readOtherOrgs = (orgId: OrgId, people: ReadonlyArray<{ userId: string; email: string }>) =>
@@ -597,8 +631,22 @@ export class CancellationReviewService extends Context.Service<
 				// well before the plan ends.
 				const atMs = job.canceledAt ?? job.receivedAt
 				const ownOrgId = yield* optional("ownOrg", readOwnOrg)
-				const [org, ingest, visits, adoption, billing, integrations] = yield* Effect.all(
+				const [
+					sessions,
+					audit,
+					stripeFeedback,
+					org,
+					ingest,
+					visits,
+					adoption,
+					billing,
+					integrations,
+				] = yield* Effect.all(
 					[
+						// First, so their timeouts start with the review rather than in a queue.
+						evidence("sessions", readSessions(orgId, atMs, ownOrgId)),
+						evidence("auditLog", readAuditLog(orgId, atMs)),
+						evidence("stripeFeedback", readStripeFeedback(response, atMs)),
 						optional("org", readOrg(orgId)),
 						optional("ingest", readIngest(orgId, atMs)),
 						optional("visits", readVisits(orgId, atMs, ownOrgId)),
@@ -616,13 +664,8 @@ export class CancellationReviewService extends Context.Service<
 							inventory.list(orgId).pipe(Effect.map((listed) => listed.integrations)),
 						),
 					],
-					{ concurrency: 3 },
+					{ concurrency: 5 },
 				)
-				const otherOrgs =
-					org?.members == null
-						? null
-						: yield* optional("otherOrgs", readOtherOrgs(orgId, org.members))
-
 				const snapshot = new CancellationSnapshot({
 					plan: {
 						planId: job.planId,
@@ -662,23 +705,24 @@ export class CancellationReviewService extends Context.Service<
 
 				const reason = ruleReason(snapshot)
 				const signals = deriveSignals(snapshot)
-				const [sessions, audit, stripeFeedback] = yield* Effect.all(
+				// The model does not read the other orgs, so neither waits on the other.
+				const [otherOrgs, modelRead] = yield* Effect.all(
 					[
-						optional("sessions", readSessions(orgId, atMs, nowMs, ownOrgId)),
-						optional("auditLog", readAuditLog(orgId, atMs)),
-						optional("stripeFeedback", readStripeFeedback(response)),
+						org?.members == null
+							? Effect.succeed(null)
+							: optional("otherOrgs", readOtherOrgs(orgId, org.members)),
+						reader.read(
+							new CancellationModelRequest({
+								snapshot,
+								ruleReason: reason,
+								signals: signals.map((signal) => signal.text),
+								stripeFeedback,
+								sessions,
+								auditLog: audit,
+							}),
+						),
 					],
-					{ concurrency: 3 },
-				)
-				const modelRead = yield* reader.read(
-					new CancellationModelRequest({
-						snapshot,
-						ruleReason: reason,
-						signals: signals.map((signal) => signal.text),
-						stripeFeedback,
-						sessions,
-						auditLog: audit,
-					}),
+					{ concurrency: 2 },
 				)
 				const message = buildCancellationMessage({
 					subject: {
@@ -687,14 +731,17 @@ export class CancellationReviewService extends Context.Service<
 						contactEmail: org?.state?.email ?? null,
 						expiresAt: job.expiresAt,
 						links: orgLinks(orgId, response),
-						// The replays page filters by the group name the app identifies sessions with.
+						// The same sessions the model read: this org's, up to the visit it cancelled in.
 						sessionsUrl:
-							org?.info.name == null || ownOrgId === null
+							ownOrgId === null
 								? null
 								: `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/replays?${new URLSearchParams(
 										{
-											group: org.info.name,
-											timePreset: "30d",
+											groupId: orgId,
+											startTime: formatWarehouseDateTime(atMs - WINDOW_DAYS * DAY_MS),
+											endTime: formatWarehouseDateTime(
+												atMs + CANCELLATION_SESSION_GRACE_MS,
+											),
 										},
 									)}`,
 						integrations,
@@ -705,6 +752,9 @@ export class CancellationReviewService extends Context.Service<
 					signals,
 					modelRead,
 					stripeFeedback,
+					unreadEvidence: Object.entries({ sessions, "audit log": audit, Stripe: stripeFeedback })
+						.filter(([, source]) => source === null)
+						.map(([name]) => name),
 				})
 
 				const delivered = yield* slack
@@ -763,6 +813,9 @@ export class CancellationReviewService extends Context.Service<
 						visits,
 						adoption,
 						billing,
+						sessions,
+						auditLog: audit,
+						stripeFeedback,
 					})
 						.filter(([, section]) => section === null)
 						.map(([name]) => name)
