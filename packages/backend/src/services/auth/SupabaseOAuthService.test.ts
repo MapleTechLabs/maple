@@ -9,6 +9,7 @@ import { listOrganizations } from "@maple/backend/services/integrations/supabase
 import {
 	FAKE_CLIENT_ID,
 	FAKE_CLIENT_SECRET,
+	FAKE_ORG,
 	makeFakeSupabase,
 } from "@maple/backend/services/integrations/supabase/__fixtures__/fake-supabase-api"
 import { SupabaseOAuthService } from "./SupabaseOAuthService"
@@ -178,6 +179,17 @@ describe("SupabaseOAuthService", () => {
 			const error = yield* connect(fake).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			assert.isTrue(fake.state.calls.some((call) => call.path === "/v1/oauth/revoke"))
+		}).pipe(Effect.provide(makeLayer(testDb, fake)))
+	})
+
+	it.effect("completeConnect refuses and revokes a grant listing an organization it cannot read", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFakeSupabase({ organizations: [FAKE_ORG, { id: "org_b", name: "Beta" }] })
+		return Effect.gen(function* () {
+			const error = yield* connect(fake).pipe(Effect.flip)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsUpstreamError")
+			assert.isTrue(fake.state.calls.some((call) => call.path === "/v1/oauth/revoke"))
+			assert.isFalse(yield* (yield* SupabaseOAuthService).isGrantUsable(ORG))
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})
 
