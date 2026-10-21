@@ -129,6 +129,35 @@ describe("supabase card", () => {
 		expect(names(done.commands)).toEqual(["LoadIntegrationsSupabaseStatus"])
 	})
 
+	test("a successful connect syncs the projects, then re-reads the status", () => {
+		const connected = pageUpdate(
+			withStatus(status({ connected: false, organization: null, projects: [] })),
+			Message.ReceivedConnectMessage({ provider: "supabase", status: "success", message: null }),
+		)
+		expect(names(connected.commands)).toContain("SyncSupabase")
+		expect(connected.model.supabaseCard.isSyncing).toBe(true)
+		const synced = pageUpdate(connected.model, Message.CompletedSupabaseSync({ failure: null }))
+		expect(synced.model.supabaseCard.isSyncing).toBe(false)
+		expect(names(synced.commands)).toEqual(["LoadIntegrationsSupabaseStatus"])
+	})
+
+	test("a failed sync toasts and still re-reads the status", () => {
+		const syncing = pageUpdate(withStatus(status()), Message.ClickedSupabaseSync())
+		const failed = pageUpdate(
+			syncing.model,
+			Message.CompletedSupabaseSync({ failure: toLoadFailure("boom") }),
+		)
+		expect(failed.model.supabaseCard.isSyncing).toBe(false)
+		expect(names(failed.commands)).toEqual(["LoadIntegrationsSupabaseStatus"])
+		expect(failed.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "error",
+				title: "Failed to sync Supabase",
+				description: toLoadFailure("boom").message,
+			}),
+		)
+	})
+
 	test("a failed metrics write frees the switch and toasts", () => {
 		const sent = pageUpdate(
 			withStatus(status()),
