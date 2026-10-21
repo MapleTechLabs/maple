@@ -4,6 +4,7 @@ import {
 	gcpListScope,
 	gcpRequestedView,
 	gcpSparklineBucketSeconds,
+	gcpWindowSeconds,
 	gcpSparks,
 	NO_GCP_SPARKS,
 } from "../../../../components/infra/gcp/list-model"
@@ -53,6 +54,10 @@ export const fleetOf = (model: Model): ReadonlyArray<FleetRead> | null => succes
 export const requestedViewOf = (model: Model): GcpView | undefined =>
 	gcpRequestedView(model.search.view, model.search.tab)
 
+/** The seconds the fleet was read over; 0 before the window resolves. */
+export const windowSecondsOf = (model: Model): number =>
+	model.window === null ? 0 : gcpWindowSeconds(model.window.startTime, model.window.endTime)
+
 export const sparksOf = (model: Model) => {
 	const window = model.window
 	const reads = successOf(model.sparks.data)
@@ -70,7 +75,14 @@ const instancesOf = (inventory: Resources | null) =>
 export const listScopeOf = (model: Model, collecting: boolean) => {
 	const fleet = fleetOf(model)
 	const allRows =
-		fleet === null ? null : gcpListRows(fleet, sparksOf(model), cloudSqlInstancesOf(model, collecting))
+		fleet === null
+			? null
+			: gcpListRows(
+					fleet,
+					sparksOf(model),
+					windowSecondsOf(model),
+					cloudSqlInstancesOf(model, collecting),
+				)
 	return gcpListScope(
 		allRows,
 		{ view: requestedViewOf(model), project: model.search.project, region: model.search.region },
@@ -82,7 +94,7 @@ export const listScopeOf = (model: Model, collecting: boolean) => {
 export const cloudSqlInstancesOf = (model: Model, collecting: boolean) => {
 	const fleet = fleetOf(model)
 	const scoped = gcpListScope(
-		fleet === null ? null : gcpListRows(fleet, NO_GCP_SPARKS),
+		fleet === null ? null : gcpListRows(fleet, NO_GCP_SPARKS, windowSecondsOf(model)),
 		{ view: requestedViewOf(model), project: model.search.project, region: model.search.region },
 		collecting,
 	)
