@@ -340,4 +340,31 @@ describe("AwsConnectionService", () => {
 			assert.lengthOf(aws.assumed, 3)
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
+
+	it.effect("a slow AWS stops a sweep at its budget; the connections it left come due again", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			yield* Effect.forEach(
+				Array.from({ length: 80 }, (_, index) => index),
+				(index) =>
+					service.create(orgId, userId, {
+						accountId: Schema.decodeUnknownSync(AwsAccountId)(String(100000000000 + index)),
+						modules: [],
+					}),
+				{ concurrency: 10 },
+			)
+			// Each check takes 9s, under the SDK's timers: 80 checks two at a time outlast the budget.
+			aws.beforeEachCall = TestClock.adjust("9 seconds")
+			const first = yield* service.checkDue()
+			assert.strictEqual(first.due, 80)
+			assert.isAbove(first.checked, 0)
+			assert.isBelow(first.checked, 80)
+			assert.strictEqual(aws.assumed.length, first.checked)
+			aws.beforeEachCall = Effect.void
+			yield* TestClock.adjust("1 hour")
+			assert.strictEqual((yield* service.checkDue()).checked, 80)
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
 })

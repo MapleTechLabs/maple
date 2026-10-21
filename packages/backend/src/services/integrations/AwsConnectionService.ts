@@ -506,7 +506,10 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			})
 
 			/** One batch: the oldest due connections, never-checked ones first, claimed and checked. */
-			const sweepBatch = Effect.fn("AwsConnectionService.sweepBatch")(function* (key: AwsKey) {
+			const sweepBatch = Effect.fn("AwsConnectionService.sweepBatch")(function* (
+				key: AwsKey,
+				deadlineAt: number,
+			) {
 				const now = yield* Clock.currentTimeMillis
 				// A paused source is left out here, so it neither reads AWS nor holds a place in the limit.
 				const due = yield* dbExecute((db) =>
@@ -561,8 +564,13 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				const results = yield* Effect.forEach(
 					ordered,
 					(row) =>
-						runCheck(key, row).pipe(
-							Effect.map(({ ok }) => ok),
+						// Past the budget no check starts: a slow AWS cannot carry a batch past the lane's
+						// deadline, and the rows left stay leased, then come due again.
+						Effect.flatMap(Clock.currentTimeMillis, (now) =>
+							now >= deadlineAt
+								? Effect.succeed(undefined)
+								: runCheck(key, row).pipe(Effect.map(({ ok }) => ok)),
+						).pipe(
 							Effect.withSpan("AwsConnectionService.checkDue.connection", {
 								attributes: { orgId: row.orgId, "maple.aws.connection_id": row.id },
 							}),
@@ -579,11 +587,8 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 						),
 					{ concurrency: SWEEP_CONCURRENCY },
 				)
-				return {
-					due: due.length,
-					checked: results.length,
-					failures: results.filter((ok) => !ok).length,
-				}
+				const ran = results.filter((ok) => ok !== undefined)
+				return { due: due.length, checked: ran.length, failures: ran.filter((ok) => !ok).length }
 			})
 
 			/**
@@ -595,7 +600,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				startedAt: number,
 				total: AwsCheckSweep,
 			): Effect.Effect<AwsCheckSweep, IntegrationsPersistenceError> =>
-				sweepBatch(key).pipe(
+				sweepBatch(key, startedAt + SWEEP_BUDGET_MS).pipe(
 					Effect.flatMap((batch) =>
 						Effect.flatMap(Clock.currentTimeMillis, (now) => {
 							const next = {

@@ -105,6 +105,8 @@ export interface FakeAws {
 	readonly deploy: (accountId: string, templateJson: string) => void
 	/** Deletes every role of an account, as deleting its stack would. */
 	readonly deleteStacks: (accountId: string) => void
+	/** Runs before every call: a test makes AWS slow with a `TestClock` adjustment. */
+	beforeEachCall: Effect.Effect<void>
 	/** Answers every call with this error instead, as AWS does when it throttles or fails. */
 	failWith: { readonly status: number; readonly code: string } | undefined
 }
@@ -122,6 +124,7 @@ export const makeFakeAws = (
 	const state: FakeAws = {
 		calls,
 		assumed,
+		beforeEachCall: Effect.void,
 		failWith: undefined,
 		deploy: (accountId, templateJson) => {
 			const role = deployTemplate(accountId, templateJson)
@@ -131,88 +134,103 @@ export const makeFakeAws = (
 			for (const [arn, role] of roles) if (role.accountId === accountId) roles.delete(arn)
 		},
 		client: HttpClient.make((request) =>
-			Effect.sync(() => {
-				const body = request.body._tag === "Uint8Array" ? decoder.decode(request.body.body) : ""
-				const form = new URLSearchParams(body)
-				const action = form.get("Action") ?? ""
-				calls.push(action)
-				const respond = (response: Response) => HttpClientResponse.fromWeb(request, response)
-				if (state.failWith !== undefined) {
-					return respond(stsError(state.failWith.status, state.failWith.code, "fake failure"))
-				}
-				const key = signingKey(request.headers["authorization"])
-				if (action === "AssumeRole") {
-					if (key !== mapleKeyId) {
-						return respond(
-							stsError(403, "InvalidClientTokenId", "The security token is invalid."),
-						)
-					}
-					const roleArn = form.get("RoleArn") ?? ""
-					assumed.push(roleArn)
-					const role = roles.get(roleArn)
-					if (
-						role === undefined ||
-						role.trustedPrincipalArn !== maplePrincipalArn ||
-						role.externalId !== form.get("ExternalId")
-					) {
-						return respond(
-							stsError(
-								403,
-								"AccessDenied",
-								`User is not authorized to perform: sts:AssumeRole on resource: ${roleArn}`,
-							),
-						)
-					}
-					const sessionKey = `ASIA${String(sessions.size).padStart(16, "0")}`
-					sessions.set(sessionKey, role)
-					const session = form.get("RoleSessionName") ?? ""
-					return respond(
-						xml(
-							200,
-							`<AssumeRoleResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><AssumeRoleResult><Credentials><AccessKeyId>${sessionKey}</AccessKeyId><SecretAccessKey>secret</SecretAccessKey><SessionToken>token</SessionToken><Expiration>2030-01-01T00:00:00Z</Expiration></Credentials><AssumedRoleUser><AssumedRoleId>AROAFAKE:${session}</AssumedRoleId><Arn>arn:aws:sts::${role.accountId}:assumed-role/${role.roleName}/${session}</Arn></AssumedRoleUser></AssumeRoleResult><ResponseMetadata><RequestId>req</RequestId></ResponseMetadata></AssumeRoleResponse>`,
-						),
-					)
-				}
-				const role = key === undefined ? undefined : sessions.get(key)
-				const stillDeployed =
-					role !== undefined && roles.has(`arn:aws:iam::${role.accountId}:role/${role.roleName}`)
-				if (
-					role === undefined ||
-					!stillDeployed ||
-					request.headers["x-amz-security-token"] !== "token"
-				) {
-					return respond(iamError(403, "InvalidClientTokenId", "The security token is invalid."))
-				}
-				if (!role.canReadSelf || form.get("RoleName") !== role.roleName) {
-					return respond(iamError(403, "AccessDenied", `not authorized to perform: iam:${action}`))
-				}
-				if (action === "GetRole") {
-					const tags = role.tags
-						.map((tag) => `<member><Key>${tag.Key}</Key><Value>${tag.Value}</Value></member>`)
-						.join("")
-					return respond(
-						xml(
-							200,
-							`<GetRoleResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/"><GetRoleResult><Role><Path>/</Path><RoleName>${role.roleName}</RoleName><RoleId>AROAFAKE</RoleId><Arn>arn:aws:iam::${role.accountId}:role/${role.roleName}</Arn><CreateDate>2026-10-21T12:00:00Z</CreateDate><Tags>${tags}</Tags></Role></GetRoleResult><ResponseMetadata><RequestId>req</RequestId></ResponseMetadata></GetRoleResponse>`,
-						),
-					)
-				}
-				if (action === "ListAttachedRolePolicies") {
-					const policies = role.attachedPolicyNames
-						.map(
-							(name) =>
-								`<member><PolicyName>${name}</PolicyName><PolicyArn>arn:aws:iam::${role.accountId}:policy/${name}</PolicyArn></member>`,
-						)
-						.join("")
-					return respond(
-						xml(
-							200,
-							`<ListAttachedRolePoliciesResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/"><ListAttachedRolePoliciesResult><AttachedPolicies>${policies}</AttachedPolicies><IsTruncated>false</IsTruncated></ListAttachedRolePoliciesResult><ResponseMetadata><RequestId>req</RequestId></ResponseMetadata></ListAttachedRolePoliciesResponse>`,
-						),
-					)
-				}
-				return respond(iamError(400, "InvalidAction", `unknown action ${action}`))
-			}),
+			Effect.suspend(() => state.beforeEachCall).pipe(
+				Effect.andThen(
+					Effect.sync(() => {
+						const body =
+							request.body._tag === "Uint8Array" ? decoder.decode(request.body.body) : ""
+						const form = new URLSearchParams(body)
+						const action = form.get("Action") ?? ""
+						calls.push(action)
+						const respond = (response: Response) => HttpClientResponse.fromWeb(request, response)
+						if (state.failWith !== undefined) {
+							return respond(
+								stsError(state.failWith.status, state.failWith.code, "fake failure"),
+							)
+						}
+						const key = signingKey(request.headers["authorization"])
+						if (action === "AssumeRole") {
+							if (key !== mapleKeyId) {
+								return respond(
+									stsError(403, "InvalidClientTokenId", "The security token is invalid."),
+								)
+							}
+							const roleArn = form.get("RoleArn") ?? ""
+							assumed.push(roleArn)
+							const role = roles.get(roleArn)
+							if (
+								role === undefined ||
+								role.trustedPrincipalArn !== maplePrincipalArn ||
+								role.externalId !== form.get("ExternalId")
+							) {
+								return respond(
+									stsError(
+										403,
+										"AccessDenied",
+										`User is not authorized to perform: sts:AssumeRole on resource: ${roleArn}`,
+									),
+								)
+							}
+							const sessionKey = `ASIA${String(sessions.size).padStart(16, "0")}`
+							sessions.set(sessionKey, role)
+							const session = form.get("RoleSessionName") ?? ""
+							return respond(
+								xml(
+									200,
+									`<AssumeRoleResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><AssumeRoleResult><Credentials><AccessKeyId>${sessionKey}</AccessKeyId><SecretAccessKey>secret</SecretAccessKey><SessionToken>token</SessionToken><Expiration>2030-01-01T00:00:00Z</Expiration></Credentials><AssumedRoleUser><AssumedRoleId>AROAFAKE:${session}</AssumedRoleId><Arn>arn:aws:sts::${role.accountId}:assumed-role/${role.roleName}/${session}</Arn></AssumedRoleUser></AssumeRoleResult><ResponseMetadata><RequestId>req</RequestId></ResponseMetadata></AssumeRoleResponse>`,
+								),
+							)
+						}
+						const role = key === undefined ? undefined : sessions.get(key)
+						const stillDeployed =
+							role !== undefined &&
+							roles.has(`arn:aws:iam::${role.accountId}:role/${role.roleName}`)
+						if (
+							role === undefined ||
+							!stillDeployed ||
+							request.headers["x-amz-security-token"] !== "token"
+						) {
+							return respond(
+								iamError(403, "InvalidClientTokenId", "The security token is invalid."),
+							)
+						}
+						if (!role.canReadSelf || form.get("RoleName") !== role.roleName) {
+							return respond(
+								iamError(403, "AccessDenied", `not authorized to perform: iam:${action}`),
+							)
+						}
+						if (action === "GetRole") {
+							const tags = role.tags
+								.map(
+									(tag) =>
+										`<member><Key>${tag.Key}</Key><Value>${tag.Value}</Value></member>`,
+								)
+								.join("")
+							return respond(
+								xml(
+									200,
+									`<GetRoleResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/"><GetRoleResult><Role><Path>/</Path><RoleName>${role.roleName}</RoleName><RoleId>AROAFAKE</RoleId><Arn>arn:aws:iam::${role.accountId}:role/${role.roleName}</Arn><CreateDate>2026-10-21T12:00:00Z</CreateDate><Tags>${tags}</Tags></Role></GetRoleResult><ResponseMetadata><RequestId>req</RequestId></ResponseMetadata></GetRoleResponse>`,
+								),
+							)
+						}
+						if (action === "ListAttachedRolePolicies") {
+							const policies = role.attachedPolicyNames
+								.map(
+									(name) =>
+										`<member><PolicyName>${name}</PolicyName><PolicyArn>arn:aws:iam::${role.accountId}:policy/${name}</PolicyArn></member>`,
+								)
+								.join("")
+							return respond(
+								xml(
+									200,
+									`<ListAttachedRolePoliciesResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/"><ListAttachedRolePoliciesResult><AttachedPolicies>${policies}</AttachedPolicies><IsTruncated>false</IsTruncated></ListAttachedRolePoliciesResult><ResponseMetadata><RequestId>req</RequestId></ResponseMetadata></ListAttachedRolePoliciesResponse>`,
+								),
+							)
+						}
+						return respond(iamError(400, "InvalidAction", `unknown action ${action}`))
+					}),
+				),
+			),
 		),
 	}
 	return state
