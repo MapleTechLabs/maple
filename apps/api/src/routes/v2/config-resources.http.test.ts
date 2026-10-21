@@ -96,7 +96,7 @@ const planetScaleStubs = Layer.mergeAll(
 		completeConnect: die,
 		getValidAccessToken: die,
 		withAccessToken: die,
-		grantStatus: die,
+		isGrantUsable: die,
 		disconnect: die,
 	}),
 )
