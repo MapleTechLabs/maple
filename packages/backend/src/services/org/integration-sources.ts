@@ -35,7 +35,7 @@ export const ensureIntegrationSource = Effect.fnUntraced(function* (
 	ref: PullSourceRef,
 	now: number,
 ) {
-	const existing = yield* db.run(
+	const select = db.run(
 		PG.from(Sources)
 			.select(($) => ({ id: $.id }))
 			.where(($) => [
@@ -45,10 +45,16 @@ export const ensureIntegrationSource = Effect.fnUntraced(function* (
 			])
 			.limit(1),
 	)
+	const existing = yield* select
 	if (existing[0] !== undefined) return existing[0].id
+	// A concurrent connect may insert first: the unique index settles it, and the winner's id is read back.
 	const id = newSourceId()
-	yield* db.run(PG.insertInto(Sources).values({ ...pullSourceRow(orgId, ref, now), id }))
-	return id
+	yield* db.run(
+		PG.insertInto(Sources)
+			.values({ ...pullSourceRow(orgId, ref, now), id })
+			.onConflictDoNothing(),
+	)
+	return (yield* select)[0]?.id ?? id
 })
 
 /**
