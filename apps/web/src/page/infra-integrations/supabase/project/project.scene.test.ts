@@ -152,6 +152,24 @@ describe("supabase project", () => {
 		)
 	})
 
+	test("a failed advisors read does not also claim nothing needs attention", () => {
+		const settled = quiet(true)
+		const retrying = pageUpdate(settled, Message.ClickedRetry({ section: "insights" })).model
+		const failed = pageUpdate(
+			retrying,
+			Message.CompletedFetchInsights({
+				key: retrying.insights.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			themeResolved(),
+			expectView(text("Nothing needs attention.")).toBeAbsent(),
+		)
+	})
+
 	test("a failed advisors read retries only that read", () => {
 		const model = windowed()
 		const failed = pageUpdate(
