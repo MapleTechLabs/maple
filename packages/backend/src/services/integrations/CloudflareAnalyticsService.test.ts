@@ -33,7 +33,7 @@ import {
 	WarehouseQueryService,
 	type WarehouseQueryServiceApi,
 } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { ensureIntegrationSource, publicSourceId } from "@maple/backend/services/org/integration-sources"
+import { createIntegrationSource, publicSourceId } from "@maple/backend/services/org/integration-sources"
 import { SourceId } from "@maple/domain/primitives"
 import { CloudflareAnalyticsService, hasAnalyticsScopes } from "./CloudflareAnalyticsService"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
@@ -489,10 +489,10 @@ const seedConnection = (
 		const id = randomUUID()
 		yield* database.execute((db) =>
 			Effect.gen(function* () {
-				const sourceId = yield* ensureIntegrationSource(
+				const sourceId = yield* createIntegrationSource(
 					db,
 					ORG,
-					{ platform: "cloudflare", integrationId: id, name: Arr.headNonEmpty(accounts).name },
+					{ platform: "cloudflare", name: Arr.headNonEmpty(accounts).name },
 					T0 - 60 * MIN,
 				)
 				yield* db.run(

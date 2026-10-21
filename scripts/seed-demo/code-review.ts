@@ -18,6 +18,7 @@ import {
 	PrReviewReplies,
 	PrReviewSettings,
 	PrReviews,
+	Sources,
 	VcsCommits,
 	VcsInstallations,
 	VcsRepositories,
@@ -55,11 +56,13 @@ import {
 	type PrReviewSkipReason,
 	type PrReviewTestSignal,
 } from "@maple/domain/http"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, SourceId, UserId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Clock, Config, Console, DateTime, Effect, Layer, Redacted, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { Rng } from "./rng"
+
+const DEMO_GITHUB_SOURCE = Schema.decodeUnknownSync(SourceId)("5e0a1c3b-0000-4000-8000-00000000de01")
 
 // Same value as `DEMO_ORG_ID` in make-env.ts; importing that module would run its program.
 const DEMO_ORG = "org_3AcmeShopDemo0000000000000"
@@ -1746,8 +1749,23 @@ const program = Effect.gen(function* () {
 			yield* db.run(PG.deleteFrom(VcsRepositoryBranches).where(byOrg))
 			yield* db.run(PG.deleteFrom(VcsRepositories).where(byOrg))
 			yield* db.run(PG.deleteFrom(VcsInstallations).where(byOrg))
+			yield* db.run(PG.deleteFrom(Sources).where(($) => [$.id.eq(DEMO_GITHUB_SOURCE)]))
 
-			yield* db.run(PG.insertInto(VcsInstallations).values([world.installation]))
+			// The installation sends as its source, as the GitHub connect flow creates it.
+			yield* db.run(
+				PG.insertInto(Sources).values({
+					id: DEMO_GITHUB_SOURCE,
+					orgId,
+					name: "GitHub acme",
+					platform: "github",
+					kind: "integration",
+					createdAt: world.installation.createdAt,
+					updatedAt: world.installation.createdAt,
+				}),
+			)
+			yield* db.run(
+				PG.insertInto(VcsInstallations).values([{ ...world.installation, sourceId: DEMO_GITHUB_SOURCE }]),
+			)
 			yield* db.run(PG.insertInto(VcsRepositories).values(world.repositories))
 			yield* db.run(PG.insertInto(VcsRepositoryBranches).values(world.branches))
 			yield* db.run(

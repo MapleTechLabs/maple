@@ -1,5 +1,13 @@
 import type { MapleDb } from "@maple/db/client"
-import { ScrapeTargets, Sources } from "@maple/db/tables"
+import {
+	GcpConnectors,
+	OAuthConnections,
+	PlanetscaleConnections,
+	RailwayConnections,
+	ScrapeTargets,
+	Sources,
+	VcsInstallations,
+} from "@maple/db/tables"
 import { scrapeStaleAfterMs } from "@maple/domain/integration-inventory"
 import type { SourceResourceCount } from "@maple/domain/source-health"
 import { SourcePublicId } from "@maple/domain/http/v2"
@@ -32,37 +40,39 @@ export const integrationSourceName = {
 	github: (installation: { readonly accountLogin: string }) => `GitHub ${installation.accountLogin}`,
 }
 
-/**
- * The source an integration row sends as: an existing one for the same integration, or a new
- * one. Call it inside the transaction that writes the row's `source_id`.
- */
-export const ensureIntegrationSource = Effect.fnUntraced(function* (
+/** A new integration source. Create it in the transaction that writes the row pointing at it. */
+export const createIntegrationSource = Effect.fnUntraced(function* (
 	db: MapleDb,
 	orgId: OrgId,
 	ref: PullSourceRef,
 	now: number,
 ) {
-	const select = db.run(
-		PG.from(Sources)
-			.select(($) => ({ id: $.id }))
-			.where(($) => [
-				$.orgId.eq(orgId),
-				$.platform.eq(ref.platform),
-				$.integrationId.eq(ref.integrationId),
-			])
-			.limit(1),
-	)
-	const existing = yield* select
-	if (existing[0] !== undefined) return existing[0].id
-	// A concurrent connect may insert first: the unique index settles it, and the winner's id is read back.
 	const id = newSourceId()
-	yield* db.run(
-		PG.insertInto(Sources)
-			.values({ ...pullSourceRow(orgId, ref, now), id })
-			.onConflictDoNothing(),
-	)
-	return (yield* select)[0]?.id ?? id
+	yield* db.run(PG.insertInto(Sources).values({ ...pullSourceRow(orgId, ref, now), id }))
+	return id
 })
+
+/**
+ * Upserts an integration row with its source: the source of the row it replaces, or a new one.
+ * A source created for a row that lost the race to a concurrent upsert is deleted again.
+ */
+export const upsertWithSource = <Row extends { readonly sourceId: SourceId | null }, E1, E2>(
+	db: MapleDb,
+	orgId: OrgId,
+	ref: PullSourceRef,
+	now: number,
+	current: Effect.Effect<SourceId | null, E1>,
+	upsert: (sourceId: SourceId) => Effect.Effect<Row | undefined, E2>,
+) =>
+	Effect.gen(function* () {
+		const existing = yield* current
+		const sourceId = existing ?? (yield* createIntegrationSource(db, orgId, ref, now))
+		const row = yield* upsert(sourceId)
+		if (existing === null && row?.sourceId !== sourceId) {
+			yield* deleteSourcesOf(db, orgId, [{ sourceId }])
+		}
+		return row
+	})
 
 /**
  * Deletes the integration sources of `rows` and, through `ON DELETE CASCADE`, every row that still
@@ -115,10 +125,31 @@ export type PollOutcome =
 /** A tick that changes nothing rewrites the row at most once a minute. */
 const POLL_REPORT_INTERVAL_MS = 60_000
 
+const pollError = (outcome: PollOutcome) =>
+	outcome._tag === "Ok" ? null : outcome._tag === "Failed" ? outcome.error : outcome.reason
+
+/**
+ * Whether a tick changes what its source last recorded, or the record is over a minute old. The
+ * same test `reportPoll` writes with, for a caller that already holds the source's poll state.
+ */
+export const pollReportDue = (
+	current: {
+		readonly lastPollAt: number | null
+		readonly lastPollError: string | null
+		readonly disconnectedAt: number | null
+	},
+	outcome: PollOutcome,
+	now: number,
+) =>
+	current.lastPollAt === null ||
+	current.lastPollAt < now - POLL_REPORT_INTERVAL_MS ||
+	(outcome._tag === "Disconnected") !== (current.disconnectedAt !== null) ||
+	pollError(outcome) !== current.lastPollError
+
 /** Records a poll tick on its source; a row not linked yet has nowhere to record it. */
 export const reportPoll = (db: MapleDb, sourceId: SourceId | null, outcome: PollOutcome, now: number) => {
 	if (sourceId === null) return Effect.void
-	const error = outcome._tag === "Ok" ? null : outcome._tag === "Failed" ? outcome.error : outcome.reason
+	const error = pollError(outcome)
 	const tick: PG.UpdateSetOf<typeof Sources> = {
 		lastPollAt: now,
 		lastPollError: error,
@@ -151,34 +182,74 @@ export const stampedSourceId = (sourceId: SourceId | null) =>
 
 const SCRAPING_OFF = "Scraping is turned off"
 
-/**
- * What each Prometheus source's targets add to its health: switched off when none is enabled,
- * otherwise stale only after its slowest target's window.
- */
+/** What a Prometheus source's targets add to its health: off when none is enabled, else their slowest window. */
+const scrapeOverrides = (
+	group: ReadonlyArray<{ readonly enabled: boolean; readonly scrapeIntervalSeconds: number }>,
+): SourceHealthOverrides => {
+	const enabled = group.filter((target) => target.enabled)
+	return enabled.length === 0
+		? { turnedOff: SCRAPING_OFF }
+		: { staleAfterMs: Math.max(...enabled.map((target) => scrapeStaleAfterMs(target.scrapeIntervalSeconds))) }
+}
+
+const overridesBySource = (
+	targets: ReadonlyArray<{
+		readonly sourceId: SourceId | null
+		readonly enabled: boolean
+		readonly scrapeIntervalSeconds: number
+	}>,
+) => {
+	const bySource = Arr.groupBy(
+		targets.flatMap((target) => (target.sourceId === null ? [] : [{ ...target, sourceId: target.sourceId }])),
+		(target) => target.sourceId,
+	)
+	return new Map(
+		Object.values(bySource).map(
+			(group): readonly [SourceId, SourceHealthOverrides] => [group[0].sourceId, scrapeOverrides(group)],
+		),
+	)
+}
+
+/** What each of an org's Prometheus sources' targets add to its health, reading only scrape targets. */
 export const readScrapeOverrides = Effect.fnUntraced(function* (db: MapleDb, orgId: OrgId) {
 	const targets = yield* db.run(
 		PG.from(ScrapeTargets)
 			.select("sourceId", "enabled", "scrapeIntervalSeconds")
 			.where(($) => [$.orgId.eq(orgId), $.managedBy.isNull()]),
 	)
-	const bySource = Arr.groupBy(
-		targets.flatMap((target) => (target.sourceId === null ? [] : [{ ...target, sourceId: target.sourceId }])),
-		(target) => target.sourceId,
-	)
-	return new Map(
-		Object.values(bySource).map((group): readonly [SourceId, SourceHealthOverrides] => {
-			const enabled = group.filter((target) => target.enabled)
-			return [
-				group[0].sourceId,
-				enabled.length === 0
-					? { turnedOff: SCRAPING_OFF }
-					: {
-							staleAfterMs: Math.max(
-								...enabled.map((target) => scrapeStaleAfterMs(target.scrapeIntervalSeconds)),
-							),
-						},
-			]
-		}),
-	)
+	return overridesBySource(targets)
 })
 
+/**
+ * For each of an org's integration sources: the integration row it stands for (a scrape target,
+ * a connector, a connection; a PlanetScale-managed target sends as its connection), and what its
+ * scrape targets add to its health.
+ */
+export const readSourceOwners = Effect.fnUntraced(function* (db: MapleDb, orgId: OrgId) {
+	const [targets, ...owners] = yield* Effect.all(
+		[
+			db.run(
+				PG.from(ScrapeTargets)
+					.select("id", "sourceId", "enabled", "scrapeIntervalSeconds")
+					.where(($) => [$.orgId.eq(orgId), $.managedBy.isNull()]),
+			),
+			db.run(PG.from(GcpConnectors).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
+			db.run(PG.from(RailwayConnections).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
+			db.run(PG.from(PlanetscaleConnections).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
+			db.run(
+				PG.from(OAuthConnections)
+					.select("id", "sourceId")
+					.where(($) => [$.orgId.eq(orgId), $.sourceId.isNotNull()]),
+			),
+			db.run(PG.from(VcsInstallations).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
+		],
+		{ concurrency: "unbounded" },
+	)
+	const linked = [...targets, ...owners.flat()].flatMap((owner) =>
+		owner.sourceId === null ? [] : [[owner.sourceId, owner.id] as const],
+	)
+	return {
+		integrationIds: new Map(linked),
+		overrides: overridesBySource(targets),
+	}
+})

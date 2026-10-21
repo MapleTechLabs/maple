@@ -35,7 +35,7 @@ import {
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import {
 	deleteSourcesOf,
-	ensureIntegrationSource,
+	createIntegrationSource,
 } from "@maple/backend/services/org/integration-sources"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import type { EnvConfig } from "@maple/backend/platform/Env"
@@ -292,14 +292,10 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 						)
 						if (source === undefined || connection === undefined || connection.sourceId !== null)
 							return
-						const sourceId = yield* ensureIntegrationSource(
+						const sourceId = yield* createIntegrationSource(
 							db,
 							orgId,
-							{
-								platform: source.platform,
-								integrationId: connection.id,
-								name: source.name(connection),
-							},
+							{ platform: source.platform, name: source.name(connection) },
 							currentTime,
 						)
 						yield* db.run(

@@ -51,7 +51,7 @@ const toV2Source = (source: Source): V2Source => ({
 	description: source.description,
 	platform: source.platform,
 	kind: source.kind,
-	is_default: source.isDefault,
+	is_default: source.kind === "default",
 	key_prefix: source.keyPrefix,
 	integration_id: integrationIdOf(source),
 	status: source.status,

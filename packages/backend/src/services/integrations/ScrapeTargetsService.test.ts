@@ -15,6 +15,7 @@ import {
 	cleanupTestDbs,
 	createTestDb,
 	executeSql,
+	insertTestSource,
 	makeStatementRecorder,
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
@@ -374,6 +375,10 @@ describe("ScrapeTargetsService", () => {
 		return Effect.gen(function* () {
 			const service = yield* ScrapeTargetsService
 			const orgId = asOrgId("org_1")
+			// One source for all six, as a PlanetScale connection's branch targets share one.
+			const sourceId = yield* Effect.promise(() =>
+				insertTestSource(testDb, { orgId, platform: "prometheus" }),
+			)
 			// Seeded with SQL, not create(), whose background probe would run its own
 			// recordScrapeResults alongside the one under test.
 			const [ok, failing, stale, ...rest] = yield* Effect.forEach(
@@ -384,13 +389,14 @@ describe("ScrapeTargetsService", () => {
 						Effect.promise(() =>
 							executeSql(
 								testDb,
-								"INSERT INTO scrape_targets (id, org_id, name, url, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $5)",
+								"INSERT INTO scrape_targets (id, org_id, source_id, name, url, created_at, updated_at) VALUES ($1, $2, $6, $3, $4, $5, $5)",
 								[
 									id,
 									orgId,
 									name,
 									`https://${name}.example.com/metrics`,
 									new Date(0).toISOString(),
+									sourceId,
 								],
 							),
 						),
@@ -416,8 +422,9 @@ describe("ScrapeTargetsService", () => {
 					...rest.map((target) => ({ targetId: target.id, scrapedAt, error: null })),
 				])
 				.pipe(Effect.withTracer(recorder.tracer))
-			// 6 targets: 1 UPDATE + 1 SELECT (org ids) + 1 INSERT (check rows).
-			assert.deepStrictEqual(recorder.verbs(), ["UPDATE", "SELECT", "INSERT"])
+			// 6 targets of one source: 1 UPDATE, 1 SELECT (org and source ids), the source's targets and
+			// poll state, 1 UPDATE of the source, then 1 INSERT (check rows).
+			assert.deepStrictEqual(recorder.verbs(), ["UPDATE", "SELECT", "SELECT", "SELECT", "UPDATE", "INSERT"])
 
 			const okRow = yield* service.get(orgId, ok.id)
 			assert.strictEqual(okRow.lastScrapeAt, new Date(scrapedAt).toISOString())

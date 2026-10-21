@@ -8,6 +8,7 @@ import {
 	cleanupTestDbs,
 	createTestDb,
 	executeSql,
+	insertTestSource,
 	queryFirstRow,
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
@@ -442,20 +443,14 @@ const insertConnector = (
 	const orgId = options.orgId ?? "org_gcp"
 	// With its source, as GcpConnectorService.create writes it.
 	return Effect.promise(async () => {
-		await executeSql(
-			testDb,
-			`INSERT INTO sources (id, org_id, name, platform, kind, integration_id, created_at, updated_at)
-			 VALUES (gen_random_uuid()::text, $1, 'Google Cloud ' || $2, 'gcp', 'integration', $3, now(), now())`,
-			[orgId, scopeId, id],
-		)
+		const sourceId = await insertTestSource(testDb, { orgId, platform: "gcp", name: `Google Cloud ${scopeId}` })
 		await executeSql(
 			testDb,
 			`INSERT INTO gcp_connectors
 			   (id, org_id, scope_type, scope_id, project_id, secret_ciphertext, secret_iv, secret_tag,
 			    secret_hash, metrics_enabled, created_by, created_at, updated_at, source_id)
-			 SELECT $1, $2, $3, $4, $5, 'c', 'i', 't', $1, $6, 'user_1', now(), now(), s.id
-			 FROM sources s WHERE s.platform = 'gcp' AND s.integration_id = $1`,
-			[id, orgId, scopeType, scopeId, projectId, options.metricsEnabled ?? true],
+			 VALUES ($1, $2, $3, $4, $5, 'c', 'i', 't', $1, $6, 'user_1', now(), now(), $7)`,
+			[id, orgId, scopeType, scopeId, projectId, options.metricsEnabled ?? true, sourceId],
 		)
 	})
 }
@@ -620,7 +615,7 @@ describe("GcpMetricsService", () => {
 				const source = yield* Effect.promise(() =>
 					queryFirstRow<{ id: string }>(
 						testDb,
-						`SELECT id FROM sources WHERE platform = 'gcp' AND integration_id = '${CONNECTOR_A}'`,
+						`SELECT source_id AS id FROM gcp_connectors WHERE id = '${CONNECTOR_A}'`,
 					),
 				)
 				assert.strictEqual(
@@ -776,7 +771,7 @@ describe("GcpMetricsService", () => {
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, CONNECTOR_A)
 				yield* Effect.promise(() =>
-					executeSql(testDb, "UPDATE sources SET paused_at = now() WHERE integration_id = $1", [
+					executeSql(testDb, "UPDATE sources SET paused_at = now() WHERE id = (SELECT source_id FROM gcp_connectors WHERE id = $1)", [
 						CONNECTOR_A,
 					]),
 				)

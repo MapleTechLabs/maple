@@ -21,7 +21,7 @@ export const GcpConnectors = PG.table("gcp_connectors", {
 		id: PG.brand(PG.text, GcpConnectorId),
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		// The source this integration sends as. Deleting the source deletes the row.
-		sourceId: PG.column(PG.nullable(PG.brand(PG.text, SourceId)), { name: "source_id" }),
+		sourceId: PG.column(PG.brand(PG.text, SourceId), { name: "source_id" }),
 		scopeType: PG.column(PG.brand(PG.text, GcpScopeType), { name: "scope_type" }),
 		scopeId: PG.column(PG.brand(PG.text, Schema.Union([GcpProjectId, GcpResourceNumber])), {
 			name: "scope_id",

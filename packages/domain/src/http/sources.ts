@@ -51,7 +51,6 @@ export class Source extends Schema.Class<Source>("Source")({
 	description: Schema.NullOr(Schema.String),
 	platform: SourcePlatform,
 	kind: SourceKind,
-	isDefault: Schema.Boolean,
 	/** Null for the default source (it uses the org's public/private pair) and pull sources. */
 	keyPrefix: Schema.NullOr(Schema.String),
 	/** The integration row a pull source stands for (a scrape target, a connection); null for push sources. */

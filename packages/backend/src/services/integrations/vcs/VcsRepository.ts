@@ -45,7 +45,7 @@ import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLi
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import {
 	deleteSourcesOf,
-	ensureIntegrationSource,
+	upsertWithSource,
 	integrationSourceName,
 	type PollOutcome,
 	reportPoll,
@@ -308,18 +308,39 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		) {
 			const now = yield* Clock.currentTimeMillis
 			const id = newInstallationId()
-			// A GitHub installation sends CI traces as its own source, created with the row.
+			// An installation sends CI traces as its own source, created with the row. A reinstall keeps
+			// the row and so its source.
 			const rows = yield* dbRead("vcs_installations")((db) =>
 				db.transaction(
-					Effect.gen(function* () {
-						const [upserted] = yield* db.run(
-							PG.insertInto(VcsInstallations)
+					upsertWithSource(
+						db,
+						input.orgId,
+						{ platform: "github", name: integrationSourceName.github(input) },
+						now,
+						db
+							.run(
+								PG.from(VcsInstallations)
+									.select("sourceId")
+									.where(($) => [
+										$.provider.eq(input.provider),
+										$.externalInstallationId.eq(input.externalInstallationId),
+									])
+									.limit(1)
+									// Held until the upsert, so a concurrent purge cannot delete the reused source.
+									.forUpdate(),
+							)
+							.pipe(Effect.map(([row]) => row?.sourceId ?? null)),
+						(sourceId) =>
+							db
+								.run(
+									PG.insertInto(VcsInstallations)
 								// `status`/`suspended_at` are omitted: a new row takes the schema
 								// default ("active"), and on conflict they are left untouched so a
 								// reconcile can't un-suspend. Status is owned by markInstallationStatus.
 								.values({
 									id,
 									orgId: input.orgId,
+									sourceId,
 									provider: input.provider,
 									externalInstallationId: input.externalInstallationId,
 									accountLogin: input.accountLogin,
@@ -346,32 +367,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 									}),
 								})
 								.returning(),
-						)
-						if (
-							upserted === undefined ||
-							upserted.sourceId !== null ||
-							upserted.provider !== "github"
-						) {
-							return [upserted]
-						}
-						const sourceId = yield* ensureIntegrationSource(
-							db,
-							// On a conflict the row keeps its org; the source belongs with the row.
-							upserted.orgId,
-							{
-								platform: "github",
-								integrationId: upserted.id,
-								name: integrationSourceName.github(upserted),
-							},
-							now,
-						)
-						return yield* db.run(
-							PG.update(VcsInstallations)
-								.set({ sourceId })
-								.where(($) => [$.id.eq(upserted.id)])
-								.returning(),
-						)
-					}),
+								)
+								.pipe(Effect.map(([row]) => row)),
+					).pipe(Effect.map((row) => [row])),
 				),
 			)
 
