@@ -84,6 +84,17 @@ describe("root navigation", () => {
 		expect(commandsOf(result)).toContainEqual({ name: "ReleaseReads", args: { orgId: null, keys: ["k1"] } })
 		expect(result.model.preload.heldKeys).toEqual([])
 	})
+
+	test("signing out drops the parked pages, so none comes back in the next session", () => {
+		const parked = settle(base(AppRoute.Services({ search: {} }))).model.page
+		const model: Model = {
+			...base(AppRoute.Services({ search: {} })),
+			session: Session.SignedOut(),
+			parkedPages: parked === null ? [] : [parked],
+		}
+		expect(model.parkedPages).toHaveLength(1)
+		expect(settle(model).model.parkedPages).toEqual([])
+	})
 })
 
 describe("telemetry identity", () => {
