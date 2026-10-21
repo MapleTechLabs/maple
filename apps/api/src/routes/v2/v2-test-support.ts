@@ -132,7 +132,10 @@ const ChatWorkspaceServiceStubLayer = Layer.succeed(
  * those endpoints and a group left unimplemented would stop the whole API layer
  * from building.
  */
-const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatWorkspaceService>) =>
+const v2GroupLayersExceptOnboardingChecklist = (
+	chatWorkspace: Layer.Layer<ChatWorkspaceService>,
+	auditLog: Layer.Layer<AuditLogService> = AuditLogService.layerMemory,
+) =>
 	Layer.mergeAll(
 		HttpV2ApiKeysLive,
 		HttpV2ChatIntegrationsLive.pipe(Layer.provide(chatWorkspace)),
@@ -153,7 +156,7 @@ const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatW
 		// provides. The member directory IS stubbed — the route asks it for display
 		// names, and every harness would otherwise reach for Clerk.
 		HttpV2AuditLogLive.pipe(
-			Layer.provide(Layer.merge(AuditLogService.layerMemory, OrgMembersServiceStubLayer)),
+			Layer.provide(Layer.merge(auditLog, OrgMembersServiceStubLayer)),
 		),
 		HttpV2ScrapeTargetsLive,
 		HttpV2InstrumentationRecommendationsLive,
@@ -246,7 +249,7 @@ export const allV2GroupLayersWithChat = (
 	auditLog: Layer.Layer<AuditLogService> = AuditLogService.layerMemory,
 ) =>
 	Layer.mergeAll(
-		v2GroupLayersExceptOnboardingChecklist(chatWorkspace),
+		v2GroupLayersExceptOnboardingChecklist(chatWorkspace, auditLog),
 		HttpV2OnboardingChecklistLive.pipe(Layer.provide(OnboardingChecklistServiceStubLayer)),
 	).pipe(
 		// Mutation handlers across the groups record audit entries; the real service

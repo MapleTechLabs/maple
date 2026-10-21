@@ -29,8 +29,8 @@ const nowMs = Date.now()
 const currentHourMs = Math.floor(nowMs / HOUR_MS) * HOUR_MS
 // Inside a full hour of the window, so the rollup tiers answer for it.
 const interiorMs = currentHourMs - 3 * HOUR_MS + 10 * 60_000
-// In the trailing partial hour, so the raw tier answers for it.
-const edgeMs = nowMs - 60_000
+// In the trailing partial hour, so the raw tier answers for it, even in an hour's first minute.
+const edgeMs = Math.max(currentHourMs, nowMs - 60_000)
 const window = { startTime: seconds(currentHourMs - 5 * HOUR_MS + 30_000), endTime: seconds(nowMs) }
 
 /** A `<prefix>-front` Client span calling a `<prefix>-api` Server span at `atMs`.
