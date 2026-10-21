@@ -26,6 +26,7 @@ const sourceExample = {
 	name: "Checkout staging",
 	description: "Staging deploys of the checkout service",
 	platform: "nodejs",
+	kind: "token",
 	is_default: false,
 	key_prefix: "maple_src_Q7xZa",
 	integration_id: null,
