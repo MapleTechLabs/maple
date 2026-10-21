@@ -153,14 +153,28 @@ export const isWarehouseApiError = (cause: unknown): cause is WarehouseApiError 
  * batcher rejects its promise with an `HttpClientError`, which `Effect.tryPromise`
  * then wraps. Bounded at the same depth `displayError` uses.
  */
-export const isTransportFailure = (cause: unknown, depth = 0): boolean => {
-	if (HttpClientError.isHttpClientError(cause)) return cause.reason._tag === "TransportError"
-	if (depth >= 4) return false
+export const isTransportFailure = (cause: unknown): boolean => transportErrorOf(cause) !== undefined
+
+/** True when the transport failure is the client's own request deadline, not a dropped connection. */
+export const isRequestTimeout = (cause: unknown): boolean => {
+	const reason = transportErrorOf(cause)
+	return (
+		reason !== undefined &&
+		typeof DOMException !== "undefined" &&
+		reason.cause instanceof DOMException &&
+		reason.cause.name === "TimeoutError"
+	)
+}
+
+const transportErrorOf = (cause: unknown, depth = 0): HttpClientError.TransportError | undefined => {
+	if (HttpClientError.isHttpClientError(cause))
+		return cause.reason._tag === "TransportError" ? cause.reason : undefined
+	if (depth >= 4) return undefined
 	const nested =
 		typeof cause === "object" && cause !== null && "cause" in cause
 			? (cause as { readonly cause: unknown }).cause
 			: undefined
-	return nested === undefined || nested === cause ? false : isTransportFailure(nested, depth + 1)
+	return nested === undefined || nested === cause ? undefined : transportErrorOf(nested, depth + 1)
 }
 
 /**

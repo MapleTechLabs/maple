@@ -53,6 +53,7 @@ export const Message = defineMessageUnion({
 	PaintedTable: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	UpdatedIncidents: { orgId: Schema.String, incidents: Schema.Array(IncidentCause) },
+	FailedLoadIncidents: { orgId: Schema.String },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },

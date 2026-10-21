@@ -15,6 +15,7 @@ import {
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ThemeMessage, ResolveThemeColors } from "../../../charts/theme-colors"
+import { toLoadFailure } from "../../../data/load-failure"
 import { requestKey } from "../../../data/request-key"
 import { PageOutMessage, type PageContext } from "../../contract"
 import {
@@ -139,6 +140,38 @@ describe("services list", () => {
 		const model = windowed()
 		const other = pageUpdate(model, Message.UpdatedIncidents({ orgId: "org_other", incidents: [] }))
 		expect(AsyncData.isLoading(other.model.incidents)).toBe(true)
+	})
+
+	test("a failed alert sync and anomaly read do not hold the table on its skeleton", () => {
+		const base = windowed()
+		const steps: ReadonlyArray<Message> = [
+			Message.CompletedFetchOverview({
+				key: base.overview.key ?? "",
+				result: Result.succeed([row("checkout")]),
+			}),
+			Message.CompletedFetchSparklines({ key: base.sparklines.key ?? "", result: Result.succeed({}) }),
+			Message.CompletedFetchAnomalies({
+				key: base.anomalies.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+			Message.FailedLoadIncidents({ orgId }),
+			Message.CompletedLoadChartRuntime(),
+			Message.ResolvedThemeColors({ colors: {} }),
+		]
+		scene(
+			{ update: pageUpdate, view },
+			given(steps.reduce((model, message) => pageUpdate(model, message).model, base)),
+			themeResolved(),
+			Mount.resolve(MountTable, Message.PaintedTable()),
+			expectView(role("table", { name: "Services" })).toExist(),
+			expectView(text("checkout")).toExist(),
+		)
+	})
+
+	test("a late alert-sync failure does not replace incidents that already arrived", () => {
+		const synced = pageUpdate(windowed(), Message.UpdatedIncidents({ orgId, incidents: [] })).model
+		const late = pageUpdate(synced, Message.FailedLoadIncidents({ orgId }))
+		expect(AsyncData.isSuccess(late.model.incidents)).toBe(true)
 	})
 
 	test("loaded rows render grouped by environment with the footer tally", () => {

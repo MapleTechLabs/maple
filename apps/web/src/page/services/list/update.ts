@@ -1,6 +1,7 @@
 import { Duration, Effect, Option, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "../../../charts/chart-runtime"
+import { emptyOnFailure } from "../../../data/enrichment"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import { commitDetailsKey } from "../../kit/commit-card"
@@ -203,11 +204,11 @@ const followData =
 		}
 	}
 
-/** The health summary, once the overview, incidents and anomalies have all loaded. */
+/** The health summary, once the overview, incidents and anomalies have all settled (a failed enrichment reads as none). */
 export const summaryOf = (model: Model) => {
 	const overview = AsyncData.getData(model.overview.data)
-	const incidents = AsyncData.getData(model.incidents)
-	const anomalies = AsyncData.getData(model.anomalies.data)
+	const incidents = AsyncData.getData(emptyOnFailure(model.incidents))
+	const anomalies = AsyncData.getData(emptyOnFailure(model.anomalies.data))
 	return Option.isSome(overview) && Option.isSome(incidents) && Option.isSome(anomalies)
 		? healthSummary(overview.value, incidents.value, anomalies.value, model.nowMs)
 		: undefined
@@ -424,6 +425,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId
 				? followData(context)({
 						model: { ...model, incidents: IncidentsData.Success({ data: incidents }) },
+					})
+				: { model },
+		FailedLoadIncidents: ({ orgId }) =>
+			orgId === context.orgId && AsyncData.isLoading(model.incidents)
+				? followData(context)({
+						model: { ...model, incidents: IncidentsData.Failure({ error: "Unavailable" }) },
 					})
 				: { model },
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),

@@ -73,7 +73,8 @@ export const IncidentCause = Schema.Struct({
 })
 export type IncidentCause = typeof IncidentCause.Type
 
-export const IncidentsData = AsyncData.Schema(Schema.Array(IncidentCause), Schema.Never)
+/** `Failure`: the live alert sync failed or stalled; the page reads it as no incidents. */
+export const IncidentsData = AsyncData.Schema(Schema.Array(IncidentCause), Schema.Literal("Unavailable"))
 
 export const Model = Schema.Struct({
 	search: ServicesSearch,

@@ -11,7 +11,7 @@ import {
 	type VariableValues,
 } from "@maple/query-engine"
 import { displayError } from "@maple/web-data/lib/error-messages"
-import { WarehouseDecodeError } from "@maple/web-data/warehouse/effect-utils"
+import { isRequestTimeout, WarehouseDecodeError } from "@maple/web-data/warehouse/effect-utils"
 import { getWidgetServerFunction } from "@maple/web-data/warehouse/widget-data-sources"
 import {
 	dataSourceTransform,
@@ -183,7 +183,10 @@ export const toWidgetFailure = (error: unknown): WidgetFailure => {
 	return { title: shown.title, message: shown.message, kind }
 }
 
-/** `fetchWidgetData`: the endpoint's server function, retried twice unless the window was empty. */
+/**
+ * `fetchWidgetData`: the endpoint's server function, retried twice unless the window was empty or the read
+ * hit its deadline (retrying a timeout would hold the tile on its skeleton for three deadlines).
+ */
 export const fetchWidgetData = (endpoint: string, params: Readonly<Record<string, unknown>>) => {
 	const serverFn = getWidgetServerFunction(endpoint)
 	return serverFn === undefined
@@ -192,7 +195,8 @@ export const fetchWidgetData = (endpoint: string, params: Readonly<Record<string
 				Effect.retry({
 					times: 2,
 					schedule: Schedule.exponential(Duration.millis(500)),
-					while: (error) => !EXPECTED_EMPTY_MESSAGES.has(messageOf(error) ?? ""),
+					while: (error) =>
+						!EXPECTED_EMPTY_MESSAGES.has(messageOf(error) ?? "") && !isRequestTimeout(error),
 				}),
 			)
 }

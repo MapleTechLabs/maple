@@ -6,7 +6,7 @@ import {
 	QueryEngineExecuteResponse,
 } from "@maple/query-engine"
 import { EXECUTE_BATCH_WINDOW_MS } from "@maple/web-data/warehouse/execute-batcher"
-import { Deferred, Duration, Effect, Ref, Schema, type Scope } from "effect"
+import { Cause, Deferred, Duration, Effect, Option, Ref, Schema, type Scope } from "effect"
 
 /**
  * `@maple/web-data`'s promise `makeExecuteBatcher` as an Effect: queries enqueued from separate
@@ -70,12 +70,21 @@ export const makeExecuteBatcher = <E>(
 
 		const dispatch = (batch: ReadonlyArray<Pending<E>>) =>
 			send(batch.map((entry) => entry.payload)).pipe(
-				Effect.matchEffect({
-					// Whole-request failure: every query in this batch failed for the same reason.
-					onFailure: (error) =>
-						Effect.forEach(batch, (entry) => Deferred.fail(entry.settled, error), {
+				Effect.matchCauseEffect({
+					// Whole-request failure: every query in this batch failed for the same reason. A defect or
+					// interrupt fails them as unanswered, so each tile shows its error instead of awaiting forever.
+					onFailure: (cause) => {
+						const error = Option.getOrElse(
+							Cause.findErrorOption(cause),
+							(): ExecuteFailure<E> =>
+								new MissingBatchResultError({
+									message: "The batch request ended without an answer.",
+								}),
+						)
+						return Effect.forEach(batch, (entry) => Deferred.fail(entry.settled, error), {
 							discard: true,
-						}),
+						})
+					},
 					onSuccess: (outcomes) =>
 						Effect.forEach(batch, (entry, index) => settle(entry, outcomes[index]), {
 							discard: true,

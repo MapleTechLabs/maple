@@ -494,6 +494,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId
 				? { model: { ...model, incidents: IncidentsData.Success({ data: incidents }) } }
 				: { model },
+		FailedLoadIncidents: ({ orgId }) =>
+			orgId === context.orgId && AsyncData.isLoading(model.incidents)
+				? { model: { ...model, incidents: IncidentsData.Failure({ error: "Unavailable" }) } }
+				: { model },
 		UpdatedRules: ({ orgId, enabled }) =>
 			orgId === context.orgId
 				? { model: { ...model, rules: RulesData.Success({ data: enabled }) } }

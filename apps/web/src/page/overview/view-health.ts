@@ -7,6 +7,7 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { emptyOnFailure } from "../../data/enrichment"
 import type { LoadFailure } from "../../data/load-failure"
 import { AppRoute, hrefOf } from "../../route"
 import { card } from "../../ui/card"
@@ -40,7 +41,11 @@ export type HealthData = readonly [
 
 /** `Result.all([snapshot, anomalies, alertIncidents])`. */
 export const healthData = (model: Model): AsyncData.AsyncData<HealthData, LoadFailure> =>
-	AsyncData.all([model.snapshot.data, model.anomalies.data, model.incidents])
+	AsyncData.all([
+		model.snapshot.data,
+		emptyOnFailure(model.anomalies.data),
+		emptyOnFailure(model.incidents),
+	])
 
 export type SliceSearch = Readonly<{
 	startTime: string | undefined

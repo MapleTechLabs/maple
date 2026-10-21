@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema } from "effect"
+import { Option, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { Command, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -12,6 +12,7 @@ import { Message } from "./message"
 import type { FacetsHint, HealthSnapshot, Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
+import { healthData } from "./view-health"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -142,6 +143,26 @@ describe("overview", () => {
 			Message.UpdatedIncidents({ orgId: "org_other", incidents: [] }),
 		)
 		expect(AsyncData.isLoading(other.model.incidents)).toBe(true)
+	})
+
+	test("health counts once the snapshot lands, even when the alert sync and anomaly read failed", () => {
+		const facets = withFacets(entered().model, ["production"]).model
+		const steps: ReadonlyArray<Message> = [
+			Message.CompletedFetchSnapshot({
+				key: facets.snapshot.key ?? "",
+				result: Result.succeed([snapshotRow("checkout")]),
+			}),
+			Message.CompletedFetchAnomalies({
+				key: facets.anomalies.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		]
+		const waiting = steps.reduce((model, message) => pageUpdate(model, message).model, facets)
+		expect(AsyncData.isLoading(healthData(waiting))).toBe(true)
+		const failed = pageUpdate(waiting, Message.FailedLoadIncidents({ orgId })).model
+		expect(AsyncData.getData(healthData(failed))).toEqual(
+			Option.some([[snapshotRow("checkout")], [], []]),
+		)
 	})
 
 	test("picking an environment writes it to the URL; All environments leaves it", () => {
