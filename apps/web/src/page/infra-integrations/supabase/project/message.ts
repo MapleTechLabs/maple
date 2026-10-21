@@ -43,7 +43,5 @@ export const Message = defineMessageUnion({
 	CompletedReloadSpin: { version: Schema.Number },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotChartMessage: { chartId: Schema.String, message: Chart.Message },
-	/** The callers' sparklines have no interaction to keep. */
-	GotSparklineMessage: { message: Chart.Message },
 })
 export type Message = typeof Message.Type

@@ -26,14 +26,14 @@ const GAUGE_ZEROS: Omit<SupabaseProjectGaugeSeriesOutput, "bucket"> = {
 
 const RATE_ZEROS: Omit<SupabaseProjectRateSeriesOutput, "bucket"> = {
 	cpu: 0,
-	commitsPerSecond: 0,
-	rollbacksPerSecond: 0,
-	// No block reads, no ratio: a gap, not 0%.
+	// No counter samples in the bucket: gaps, not zero rates or 0% hits.
+	commitsPerSecond: null,
+	rollbacksPerSecond: null,
 	cacheHitRatio: null,
-	networkRxPerSecond: 0,
-	networkTxPerSecond: 0,
-	diskReadPerSecond: 0,
-	diskWritePerSecond: 0,
+	networkRxPerSecond: null,
+	networkTxPerSecond: null,
+	diskReadPerSecond: null,
+	diskWritePerSecond: null,
 }
 
 export type SupabaseSeriesRow = Omit<SupabaseProjectGaugeSeriesOutput, "bucket"> &

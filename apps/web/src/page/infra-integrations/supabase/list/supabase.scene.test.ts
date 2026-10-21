@@ -119,7 +119,7 @@ const withStatus = (connected: boolean): Model => {
 }
 
 describe("supabase list", () => {
-	test("not connected is the connect on-ramp and reads no metrics", () => {
+	test("not connected is the connect on-ramp and reads no advisors", () => {
 		const entered = init({ search: {} }, context).model
 		const windowed = pageUpdate(
 			entered,
@@ -141,22 +141,26 @@ describe("supabase list", () => {
 		)
 	})
 
-	test("a connected organization reads its projects' metrics for the window", () => {
-		const entered = init({ search: {} }, context).model
-		const windowed = steps(entered, [
+	test("the window's metrics and log issues load beside the status, advisors once it is connected", () => {
+		const entered = init({ search: {} }, context)
+		expect(names(entered.commands)).toContain("LoadInfraSupabaseStatus")
+		const windowed = pageUpdate(
+			entered.model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
-		])
+		)
+		// The status has not answered yet.
+		expect(names(windowed.commands)).toContain("FetchSupabaseProjects")
+		expect(names(windowed.commands)).toContain("FetchSupabaseFleetIssues")
+		expect(names(windowed.commands)).not.toContain("FetchSupabaseFleetInsights")
 		const answered = pageUpdate(
-			windowed,
+			windowed.model,
 			Message.CompletedLoadStatus({
-				key: windowed.status.key ?? "",
+				key: windowed.model.status.key ?? "",
 				result: Result.succeed(status(true)),
 			}),
 		)
-		const fetched = names(answered.commands)
-		expect(fetched).toContain("FetchSupabaseProjects")
-		expect(fetched).toContain("FetchSupabaseFleetIssues")
-		expect(fetched).toContain("FetchSupabaseFleetInsights")
+		expect(names(answered.commands)).toContain("FetchSupabaseFleetInsights")
+		expect(names(answered.commands)).not.toContain("FetchSupabaseProjects")
 	})
 
 	test("each project reads healthy, degraded near its connection limit, or paused", () => {

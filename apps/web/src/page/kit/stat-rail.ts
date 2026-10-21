@@ -9,14 +9,13 @@ import { statFigure } from "../../ui/stat-figure"
 
 // `StatRail`, `StatRailItem`, `StatRailItemSkeleton` and `StatRailLoading`.
 
-export type StatRailColumns = 2 | 3 | 4 | 5 | 6
+export type StatRailColumns = 2 | 3 | 4 | 5
 
 const COLUMNS_CLASS = new Map<StatRailColumns, string>([
 	[2, "md:grid-cols-2"],
 	[3, "md:grid-cols-3"],
 	[4, "md:grid-cols-4"],
 	[5, "md:grid-cols-5"],
-	[6, "md:grid-cols-6"],
 ])
 
 export const statRail = <M>(

@@ -56,8 +56,9 @@ export interface SupabaseProjectTimeseriesRow {
 	/** Postgres' `max_connections`; null for a bucket without the sample. */
 	maxConnections: number | null
 	poolerClients: number
-	commitsPerSecond: number
-	rollbacksPerSecond: number
+	/** Per-second rates are null for a bucket holding a counter's first sample. */
+	commitsPerSecond: number | null
+	rollbacksPerSecond: number | null
 	/** Null for a bucket with no block reads. */
 	cacheHitRatio: number | null
 	authUsers: number
@@ -65,10 +66,10 @@ export interface SupabaseProjectTimeseriesRow {
 	postgrestPoolMax: number
 	postgrestPoolInUse: number
 	postgrestPoolWaiting: number
-	networkRxPerSecond: number
-	networkTxPerSecond: number
-	diskReadPerSecond: number
-	diskWritePerSecond: number
+	networkRxPerSecond: number | null
+	networkTxPerSecond: number | null
+	diskReadPerSecond: number | null
+	diskWritePerSecond: number | null
 }
 
 /** The warehouse reads an unreported limit as 0: no limit is known, not a limit of zero. */
@@ -157,18 +158,18 @@ export const getSupabaseProjectTimeseries = Effect.fn("QueryEngine.getSupabasePr
 			connectionsMax: wireNumber(row.connectionsMax),
 			maxConnections: positiveOrNull(row.maxConnections),
 			poolerClients: wireNumber(row.poolerClients),
-			commitsPerSecond: wireNumber(row.commitsPerSecond),
-			rollbacksPerSecond: wireNumber(row.rollbacksPerSecond),
+			commitsPerSecond: wireNumberOrNull(row.commitsPerSecond),
+			rollbacksPerSecond: wireNumberOrNull(row.rollbacksPerSecond),
 			cacheHitRatio: wireNumberOrNull(row.cacheHitRatio),
 			authUsers: wireNumber(row.authUsers),
 			authSamples: wireNumber(row.authSamples),
 			postgrestPoolMax: wireNumber(row.postgrestPoolMax),
 			postgrestPoolInUse: wireNumber(row.postgrestPoolInUse),
 			postgrestPoolWaiting: wireNumber(row.postgrestPoolWaiting),
-			networkRxPerSecond: wireNumber(row.networkRxPerSecond),
-			networkTxPerSecond: wireNumber(row.networkTxPerSecond),
-			diskReadPerSecond: wireNumber(row.diskReadPerSecond),
-			diskWritePerSecond: wireNumber(row.diskWritePerSecond),
+			networkRxPerSecond: wireNumberOrNull(row.networkRxPerSecond),
+			networkTxPerSecond: wireNumberOrNull(row.networkTxPerSecond),
+			diskReadPerSecond: wireNumberOrNull(row.diskReadPerSecond),
+			diskWritePerSecond: wireNumberOrNull(row.diskWritePerSecond),
 		})),
 	}
 })

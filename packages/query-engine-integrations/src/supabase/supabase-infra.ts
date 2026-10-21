@@ -131,6 +131,11 @@ const counterDeltas = () =>
 			metricName: $.MetricName,
 			mode: $.Attributes.get("mode"),
 			device: $.Attributes.get("device"),
+			// 1 for a series' first sample: nothing before it to difference against, so its delta is 0.
+			isFirst: CH.multiIf(
+				[[CH.over(CH.lagInFrame($.TimeUnix, 1, $.TimeUnix), previous).eq($.TimeUnix), CH.lit(1)]],
+				CH.lit(0),
+			),
 			delta: metricDeltaExpr({
 				value: $.Value,
 				previousValue: CH.over(CH.lagInFrame($.Value, 1, $.Value), previous),
@@ -301,14 +306,15 @@ export function supabaseProjectGaugeSeriesSQL() {
 export interface SupabaseProjectRateSeriesOutput {
 	readonly bucket: DateTime.Utc
 	readonly cpu: number
-	readonly commitsPerSecond: number
-	readonly rollbacksPerSecond: number
+	/** Per-second rates are null for a bucket holding a series' first sample. */
+	readonly commitsPerSecond: number | null
+	readonly rollbacksPerSecond: number | null
 	/** Null for a bucket with no block reads: there is no ratio to draw. */
 	readonly cacheHitRatio: number | null
-	readonly networkRxPerSecond: number
-	readonly networkTxPerSecond: number
-	readonly diskReadPerSecond: number
-	readonly diskWritePerSecond: number
+	readonly networkRxPerSecond: number | null
+	readonly networkTxPerSecond: number | null
+	readonly diskReadPerSecond: number | null
+	readonly diskWritePerSecond: number | null
 }
 
 /**
@@ -335,8 +341,20 @@ export function supabaseProjectRateSeriesSQL() {
 					CH.greatest_(bucketStart, rangeStart),
 				),
 			)
+			// A bucket holding a series' first sample is a gap: its zero delta would read as a dip.
 			const perSecond = (condition: CH.Condition) =>
-				finiteOrZero(CH.sumIf($.delta, condition).div(covered))
+				CH.sumIf($.delta, condition).div(
+					// `greatest_` wraps the factor in a call: the builder does not parenthesize arithmetic.
+					CH.nullIf(
+						covered.mul(
+							CH.greatest_(
+								CH.lit(1).sub(CH.least_(CH.sumIf($.isFirst, condition), CH.lit(1))),
+								CH.lit(0),
+							),
+						),
+						0,
+					),
+				)
 			const isNetwork = (metricName: string) => $.metricName.eq(metricName).and($.device.neq("lo"))
 			return {
 				bucket: CH.toStartOfInterval($.t, param.int("bucketSeconds")),

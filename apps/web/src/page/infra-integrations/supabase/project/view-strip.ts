@@ -1,12 +1,15 @@
 import { EMPTY_VALUE, formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { statRail, statRailItem } from "../../../kit/stat-rail"
+import { VALUE_TONE } from "../../../../components/infra/severity-tokens"
+import { cn } from "@maple/ui/lib/utils"
+import { type SparkPoint, type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
+import { SUPABASE_ACCENT } from "../connect"
 import { SATURATION } from "../health"
 import type { HealthStrip } from "./derive"
 import type { Message } from "./message"
 
-// The health strip: six tiles, each with its spark over the window.
+// The health strip: six tiles, each value over a line spark of the window and a caption.
 
 type H = HtmlBuilder<Message>
 
@@ -16,53 +19,80 @@ const ofTotal = (fraction: number, total: number): string | undefined =>
 const signedBytes = (bytes: number): string =>
 	bytes >= 0 ? `+${formatBytes(bytes)}` : `-${formatBytes(Math.abs(bytes))}`
 
-export const healthStripView = (h: H, strip: HealthStrip, timeZone: string): Html => {
+type TileOptions = Readonly<{
+	label: string
+	value: string
+	isWarn?: boolean
+	spark: ReadonlyArray<SparkPoint>
+	caption: string | undefined
+}>
+
+const tile = (h: H, window: SparkWindow, options: TileOptions): Html =>
+	h.div(
+		[h.Class("flex min-w-0 flex-col gap-2 rounded-md border bg-card p-4")],
+		[
+			h.span([h.Class("truncate text-2xs font-medium text-muted-foreground")], [options.label]),
+			h.span(
+				[
+					h.Class(
+						cn(
+							"font-mono text-xl font-semibold tabular-nums",
+							VALUE_TONE[options.isWarn === true ? "warn" : "neutral"],
+						),
+					),
+				],
+				[options.value],
+			),
+			windowSparkline(h, { points: options.spark, window, color: SUPABASE_ACCENT }),
+			h.span([h.Class("truncate font-mono text-2xs text-muted-foreground")], [options.caption ?? ""]),
+		],
+	)
+
+export const HEALTH_STRIP_GRID = "grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6"
+
+export const healthStripView = (h: H, strip: HealthStrip, window: SparkWindow, timeZone: string): Html => {
 	const { cpu, memory, disk, connections, cacheHit, dbSize } = strip
 	const limit = connections.limit
-	const isSaturated = limit !== null && connections.peak >= limit * SATURATION
-	return statRail(h, { columns: 6 }, [
-		statRailItem(h, {
-			size: "sm",
-			eyebrow: "CPU",
-			value: formatPercent(cpu.avg),
-			spark: cpu.spark,
-			subline: `peak ${formatPercent(cpu.peak)} at ${formatClockInTimezone(cpu.peakAt, { timeZone }).slice(0, 5)}`,
-		}),
-		statRailItem(h, {
-			size: "sm",
-			eyebrow: "Memory",
-			value: memory.total > 0 ? formatPercent(memory.used) : EMPTY_VALUE,
-			spark: memory.spark,
-			subline: ofTotal(memory.used, memory.total),
-		}),
-		statRailItem(h, {
-			size: "sm",
-			eyebrow: "Disk",
-			value: disk.size > 0 ? formatPercent(disk.used) : EMPTY_VALUE,
-			spark: disk.spark,
-			subline: ofTotal(disk.used, disk.size),
-		}),
-		statRailItem(h, {
-			size: "sm",
-			eyebrow: "Connections",
-			value: `${Math.round(connections.current)}${limit === null ? "" : ` / ${limit}`}`,
-			tone: isSaturated ? "warn" : undefined,
-			spark: connections.spark,
-			subline: `peak ${Math.round(connections.peak)} · pooler ${Math.round(connections.pooler)} clients`,
-		}),
-		statRailItem(h, {
-			size: "sm",
-			eyebrow: "Cache hit",
-			value: cacheHit.ratio === null ? EMPTY_VALUE : formatPercent(cacheHit.ratio),
-			spark: cacheHit.spark,
-			subline: "buffer cache",
-		}),
-		statRailItem(h, {
-			size: "sm",
-			eyebrow: "Database size",
-			value: dbSize.bytes === null ? EMPTY_VALUE : formatBytes(dbSize.bytes),
-			spark: dbSize.spark,
-			subline: dbSize.growth === null ? undefined : `${signedBytes(dbSize.growth)} in this range`,
-		}),
-	])
+	return h.div(
+		[h.Class(HEALTH_STRIP_GRID)],
+		[
+			tile(h, window, {
+				label: "CPU",
+				value: formatPercent(cpu.avg),
+				spark: cpu.spark,
+				caption: `peak ${formatPercent(cpu.peak)} at ${formatClockInTimezone(cpu.peakAt, { timeZone }).slice(0, 5)}`,
+			}),
+			tile(h, window, {
+				label: "Memory",
+				value: memory.total > 0 ? formatPercent(memory.used) : EMPTY_VALUE,
+				spark: memory.spark,
+				caption: ofTotal(memory.used, memory.total),
+			}),
+			tile(h, window, {
+				label: "Disk",
+				value: disk.size > 0 ? formatPercent(disk.used) : EMPTY_VALUE,
+				spark: disk.spark,
+				caption: ofTotal(disk.used, disk.size),
+			}),
+			tile(h, window, {
+				label: "Connections",
+				value: `${Math.round(connections.current)}${limit === null ? "" : ` / ${limit}`}`,
+				isWarn: limit !== null && connections.peak >= limit * SATURATION,
+				spark: connections.spark,
+				caption: `peak ${Math.round(connections.peak)} · pooler ${Math.round(connections.pooler)} clients`,
+			}),
+			tile(h, window, {
+				label: "Cache hit",
+				value: cacheHit.ratio === null ? EMPTY_VALUE : formatPercent(cacheHit.ratio),
+				spark: cacheHit.spark,
+				caption: "buffer cache",
+			}),
+			tile(h, window, {
+				label: "Database size",
+				value: dbSize.bytes === null ? EMPTY_VALUE : formatBytes(dbSize.bytes),
+				spark: dbSize.spark,
+				caption: dbSize.growth === null ? undefined : `${signedBytes(dbSize.growth)} in this range`,
+			}),
+		],
+	)
 }

@@ -10,22 +10,24 @@ import { icon } from "../../../../ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { relativeTime } from "../../../kit/relative-time"
-import { statRailLoading } from "../../../kit/stat-rail"
+import { skeleton } from "../../../../ui/skeleton"
 import { pageHero } from "../../../infra/kit/page-parts"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { pageTime } from "../../kit/page-time"
+import { type SparkWindow } from "../../kit/window-sparkline"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 import { healthPill, projectHealth } from "../health"
 import { supabaseDashboardHref, supabaseLogsHref } from "../links"
 import type { SupabaseProjectRow, SupabaseStatus } from "../model"
 import { type HealthStrip, healthStrip } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { DEFAULT_PRESET } from "./update"
+import { DEFAULT_PRESET, timeseriesInput } from "./update"
 import { attentionPanel } from "./view-attention"
 import { callersPanel } from "./view-callers"
 import { issuesPanel } from "./view-issues"
 import { postgresRow } from "./view-postgres"
-import { healthStripView } from "./view-strip"
+import { HEALTH_STRIP_GRID, healthStripView } from "./view-strip"
 import { trafficPanel } from "./view-traffic"
 
 // `/infra/supabase/$projectRef`: the project's Overview.
@@ -53,9 +55,27 @@ const summaryOf = (model: Model): SupabaseProjectRow | null =>
 
 export const titleOf = (model: Model): string => discoveredOf(model)?.name || model.projectRef
 
+/** The sparklines' x axis: the page's window, at the timeseries' bucket width. */
+const sparkWindowOf = (model: Model): SparkWindow | null =>
+	model.window === null
+		? null
+		: {
+				startMs: toEpochMs(model.window.startTime),
+				endMs: toEpochMs(model.window.endTime),
+				bucketMs: timeseriesInput(model, model.window).bucketSeconds * 1000,
+			}
+
+const EMPTY_WINDOW: SparkWindow = { startMs: 0, endMs: 0, bucketMs: 0 }
+
 /** The timeseries' strip figures, once it loaded with at least one bucket. */
 const stripOf = (model: Model): HealthStrip | null =>
 	Option.getOrNull(Option.flatMapNullishOr(AsyncData.getData(model.timeseries.data), healthStrip))
+
+const stripLoading = (h: H): Html =>
+	h.div(
+		[h.Class(HEALTH_STRIP_GRID), h.AriaBusy(true)],
+		Array.from({ length: 6 }, () => skeleton(h, "h-[118px] rounded-md")),
+	)
 
 const stripView = (h: H, model: Model, timeZone: string): Html => {
 	const failed = (failure: Parameters<typeof errorState>[1]["failure"]) =>
@@ -68,11 +88,11 @@ const stripView = (h: H, model: Model, timeZone: string): Html => {
 		const figures = stripOf(model)
 		return figures === null || rows.length === 0
 			? noMetrics(h, discoveredOf(model))
-			: healthStripView(h, figures, timeZone)
+			: healthStripView(h, figures, sparkWindowOf(model) ?? EMPTY_WINDOW, timeZone)
 	}
 	return AsyncData.match(model.timeseries.data, {
-		onIdle: () => statRailLoading(h, 6, 6),
-		onLoading: () => statRailLoading(h, 6, 6),
+		onIdle: () => stripLoading(h),
+		onLoading: () => stripLoading(h),
 		onFailure: failed,
 		onStale: ({ error, data }) => (data.length === 0 ? failed(error) : strip(data)),
 		onSuccess: strip,
@@ -181,7 +201,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							attentionPanel(h, model, strip, timeZone),
 						],
 					),
-					callersPanel(h, model, { theme, isReady: model.chartRuntime._tag === "Ready" }),
+					callersPanel(h, model, sparkWindowOf(model)),
 					postgresRow(h, model, { theme, limit: strip?.connections.limit ?? null, clock }),
 					issuesPanel(h, model, { timeZone, isLogsEnabled, logsHref: projectLogsHref(model) }),
 				],

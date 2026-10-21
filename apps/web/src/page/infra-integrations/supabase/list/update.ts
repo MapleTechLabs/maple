@@ -47,26 +47,31 @@ const connectedStatus = (model: Model): SupabaseStatus | null =>
 const insightRefs = (status: SupabaseStatus): ReadonlyArray<string> =>
 	status.projects.slice(0, FLEET_INSIGHTS_LIMIT).map((project) => project.ref)
 
-/** Metrics and log issues follow the window; advisors follow the first projects' refs. */
+/**
+ * Metrics and log issues follow the window alone, so they load beside the status; advisors fan out
+ * over the connected organization's first projects, so they wait for it.
+ */
 const requestProjects = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.window
-	const status = connectedStatus(model)
-	if (window === null || status === null) return { model }
+	if (window === null) return { model }
 	const projectsKey = requestKey(context.orgId, "getSupabaseProjects", { data: window })
 	const issuesKey = requestKey(context.orgId, "getSupabaseLogIssues", { data: window })
-	const refs = insightRefs(status)
-	const insightsKey = requestKey(context.orgId, "getSupabaseFleetInsights", { refs })
 	const [projects, projectFetches] = requestSlot(model.projects, projectsKey, mode, () =>
 		FetchProjects({ key: projectsKey, window }),
 	)
 	const [issues, issueFetches] = requestSlot(model.issues, issuesKey, mode, () =>
 		FetchIssues({ key: issuesKey, window }),
 	)
+	const windowed = { ...model, projects, issues }
+	const status = connectedStatus(model)
+	if (status === null) return { model: windowed, commands: [...projectFetches, ...issueFetches] }
+	const refs = insightRefs(status)
+	const insightsKey = requestKey(context.orgId, "getSupabaseFleetInsights", { refs })
 	const [insights, insightFetches] = requestSlot(model.insights, insightsKey, mode, () =>
 		FetchInsights({ key: insightsKey, refs }),
 	)
 	return {
-		model: { ...model, projects, issues, insights },
+		model: { ...windowed, insights },
 		commands: [...projectFetches, ...issueFetches, ...insightFetches],
 	}
 }
@@ -74,7 +79,7 @@ const requestProjects = (model: Model, context: PageContext, mode: Keyed.Request
 /** One panel's retry: its slot re-read on its own. */
 const retryIssues = (model: Model, context: PageContext): Return => {
 	const window = model.window
-	if (window === null || connectedStatus(model) === null) return { model }
+	if (window === null) return { model }
 	const key = requestKey(context.orgId, "getSupabaseLogIssues", { data: window })
 	const [issues, commands] = requestSlot(model.issues, key, "Refresh", () => FetchIssues({ key, window }))
 	return { model: { ...model, issues }, commands }

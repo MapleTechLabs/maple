@@ -79,26 +79,36 @@ export const healthStrip = (rows: ReadonlyArray<Row>) => {
 			avg: rows.reduce((sum, row) => sum + row.cpu, 0) / rows.length,
 			peak: peakCpu.cpu,
 			peakAt: peakCpu.bucket,
-			spark: rows.map((row) => row.cpu),
+			spark: rows.map((row) => ({ bucket: row.bucket, value: row.cpu })),
 		},
 		memory: {
 			used: latest.memoryAvg,
 			total: latest.memoryTotal,
-			spark: rows.map((row) => row.memoryAvg),
+			spark: rows.map((row) => ({
+				bucket: row.bucket,
+				value: row.memoryTotal > 0 ? row.memoryAvg : null,
+			})),
 		},
-		disk: { used: latest.diskUsed, size: latest.diskSize, spark: rows.map((row) => row.diskUsed) },
+		disk: {
+			used: latest.diskUsed,
+			size: latest.diskSize,
+			spark: rows.map((row) => ({ bucket: row.bucket, value: row.diskSize > 0 ? row.diskUsed : null })),
+		},
 		connections: {
 			current: latest.connectionsAvg,
 			peak: rows.reduce((max, row) => Math.max(max, row.connectionsMax), 0),
 			limit: last(limits) ?? null,
 			pooler: latest.poolerClients,
-			spark: rows.map((row) => row.connectionsAvg),
+			spark: rows.map((row) => ({ bucket: row.bucket, value: row.connectionsAvg })),
 		},
-		cacheHit: { ratio: last(cacheHits) ?? null, spark: cacheHits },
+		cacheHit: {
+			ratio: last(cacheHits) ?? null,
+			spark: rows.map((row) => ({ bucket: row.bucket, value: row.cacheHitRatio })),
+		},
 		dbSize: {
 			bytes: last(sizes) ?? null,
 			growth: sizes.length < 2 ? null : (last(sizes) ?? 0) - (sizes[0] ?? 0),
-			spark: sizes,
+			spark: rows.map((row) => ({ bucket: row.bucket, value: row.dbSize > 0 ? row.dbSize : null })),
 		},
 	}
 }
@@ -106,7 +116,7 @@ export type HealthStrip = NonNullable<ReturnType<typeof healthStrip>>
 
 /** The window's rollback share of all transactions; `null` with none. */
 export const rollbackShare = (rows: ReadonlyArray<Row>): number | null => {
-	const commits = rows.reduce((sum, row) => sum + row.commitsPerSecond, 0)
-	const rollbacks = rows.reduce((sum, row) => sum + row.rollbacksPerSecond, 0)
+	const commits = rows.reduce((sum, row) => sum + (row.commitsPerSecond ?? 0), 0)
+	const rollbacks = rows.reduce((sum, row) => sum + (row.rollbacksPerSecond ?? 0), 0)
 	return commits + rollbacks > 0 ? rollbacks / (commits + rollbacks) : null
 }

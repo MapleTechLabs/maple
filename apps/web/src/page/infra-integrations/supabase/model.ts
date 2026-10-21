@@ -41,8 +41,9 @@ export const SupabaseProjectTimeseriesRow = Schema.Struct({
 	/** Null for a bucket without the sample. */
 	maxConnections: Schema.NullOr(Schema.Number),
 	poolerClients: Schema.Number,
-	commitsPerSecond: Schema.Number,
-	rollbacksPerSecond: Schema.Number,
+	/** Per-second rates are null for a bucket holding a counter's first sample. */
+	commitsPerSecond: Schema.NullOr(Schema.Number),
+	rollbacksPerSecond: Schema.NullOr(Schema.Number),
 	/** Null for a bucket with no block reads. */
 	cacheHitRatio: Schema.NullOr(Schema.Number),
 	authUsers: Schema.Number,
@@ -50,10 +51,10 @@ export const SupabaseProjectTimeseriesRow = Schema.Struct({
 	postgrestPoolMax: Schema.Number,
 	postgrestPoolInUse: Schema.Number,
 	postgrestPoolWaiting: Schema.Number,
-	networkRxPerSecond: Schema.Number,
-	networkTxPerSecond: Schema.Number,
-	diskReadPerSecond: Schema.Number,
-	diskWritePerSecond: Schema.Number,
+	networkRxPerSecond: Schema.NullOr(Schema.Number),
+	networkTxPerSecond: Schema.NullOr(Schema.Number),
+	diskReadPerSecond: Schema.NullOr(Schema.Number),
+	diskWritePerSecond: Schema.NullOr(Schema.Number),
 })
 export type SupabaseProjectTimeseriesRow = typeof SupabaseProjectTimeseriesRow.Type
 

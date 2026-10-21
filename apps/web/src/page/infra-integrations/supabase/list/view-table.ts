@@ -14,15 +14,15 @@ import type { Message } from "./message"
 type H = HtmlBuilder<Message>
 
 const COLUMNS: ReadonlyArray<{ label: string; width: string; align?: "right"; hidden?: string }> = [
-	{ label: "Project", width: "w-0 flex-1 min-w-[220px]" },
-	{ label: "Status", width: "w-24" },
-	{ label: "CPU", width: "w-28", hidden: "hidden lg:flex" },
-	{ label: "Memory", width: "w-28", hidden: "hidden lg:flex" },
-	{ label: "Disk", width: "w-28", hidden: "hidden lg:flex" },
-	{ label: "Connections", width: "w-24", align: "right" },
-	{ label: "Req / min", width: "w-20", align: "right", hidden: "hidden md:flex" },
-	{ label: "Issues", width: "w-16", align: "right", hidden: "hidden md:flex" },
-	{ label: "Collecting", width: "w-36", align: "right" },
+	{ label: "Project", width: "w-0 flex-1 min-w-40" },
+	{ label: "Status", width: "w-20" },
+	{ label: "CPU", width: "w-24", hidden: "hidden lg:flex" },
+	{ label: "Memory", width: "w-24", hidden: "hidden lg:flex" },
+	{ label: "Disk", width: "w-24", hidden: "hidden lg:flex" },
+	{ label: "Connections", width: "w-20", align: "right" },
+	{ label: "Req / min", width: "w-16", align: "right", hidden: "hidden md:flex" },
+	{ label: "Issues", width: "w-14", align: "right", hidden: "hidden md:flex" },
+	{ label: "Collecting", width: "w-28", align: "right" },
 ]
 
 const columns = (h: H): ReadonlyArray<Html> =>
@@ -42,13 +42,13 @@ export const supabaseTableLoading = (h: H): Html =>
 		columns(h),
 		skeletonRows(h, 4, () => [
 			h.div(
-				[h.Class("w-0 min-w-[220px] flex-1 space-y-1.5")],
+				[h.Class("w-0 min-w-40 flex-1 space-y-1.5")],
 				[skeleton(h, "h-3.5 w-36"), skeleton(h, "h-2.5 w-48")],
 			),
 			skeleton(h, "h-4 w-16"),
-			skeleton(h, "hidden h-1.5 w-28 lg:block"),
-			skeleton(h, "hidden h-1.5 w-28 lg:block"),
-			skeleton(h, "hidden h-1.5 w-28 lg:block"),
+			skeleton(h, "hidden h-1.5 w-24 lg:block"),
+			skeleton(h, "hidden h-1.5 w-24 lg:block"),
+			skeleton(h, "hidden h-1.5 w-24 lg:block"),
 			skeleton(h, "ml-auto h-3 w-16"),
 			skeleton(h, "ml-auto hidden h-3 w-12 md:block"),
 			skeleton(h, "ml-auto hidden h-3 w-10 md:block"),
@@ -62,12 +62,12 @@ const NUMBER = "font-mono text-xs tabular-nums text-foreground/80"
 /** A utilisation bar and its percent; a project without metrics shows an empty track. */
 const usageCell = (h: H, label: string, fraction: number | null): Html =>
 	h.div(
-		[h.Class("hidden w-28 items-center gap-2 lg:flex")],
+		[h.Class("hidden w-24 items-center gap-2 lg:flex")],
 		[
 			meter(h, {
 				value: fraction ?? 0,
 				tone: fraction !== null && fraction >= SATURATION ? "warn" : "ok",
-				className: "h-1 w-16",
+				className: "h-1 w-12 shrink-0",
 				label: fraction === null ? undefined : `${label} ${formatPercent(fraction)}`,
 			}),
 			h.span(
@@ -112,15 +112,16 @@ const numberCell = (h: H, value: number | null, className: string): Html =>
 		],
 	)
 
-const collectingCell = (h: H, view: ProjectView): Html =>
-	h.span(
-		[h.Class(MUTED)],
+const collectingCell = (h: H, view: ProjectView): Html => {
+	const isWaiting = view.collection === "waiting" && !view.logsEnabled
+	return h.span(
 		[
-			view.collection === "waiting" && !view.logsEnabled
-				? "Waiting for the first scrape"
-				: collectingLabel(view),
+			h.Class(cn(MUTED, "truncate")),
+			h.Title(isWaiting ? "Waiting for the first scrape" : collectingLabel(view)),
 		],
+		[isWaiting ? "Waiting" : collectingLabel(view)],
 	)
+}
 
 const row = (h: H, view: ProjectView): Html => {
 	const metrics = view.metrics
@@ -133,7 +134,7 @@ const row = (h: H, view: ProjectView): Html => {
 		],
 		[
 			h.div(
-				[h.Class("flex w-0 min-w-[220px] flex-1 flex-col gap-0.5")],
+				[h.Class("flex w-0 min-w-40 flex-1 flex-col gap-0.5")],
 				[
 					h.span(
 						[
@@ -150,14 +151,14 @@ const row = (h: H, view: ProjectView): Html => {
 					),
 				],
 			),
-			h.div([h.Class("w-24")], [healthPill(h, view.health)]),
+			h.div([h.Class("w-20")], [healthPill(h, view.health)]),
 			usageCell(h, "CPU", metrics?.cpuAvg ?? null),
 			usageCell(h, "Memory", metrics?.memoryAvg ?? null),
 			usageCell(h, "Disk", metrics?.diskUsedMax ?? null),
-			h.div([h.Class("flex w-24 justify-end")], [connectionsCell(h, view)]),
-			numberCell(h, logs(metrics?.requestsPerMinute ?? 0), "hidden w-20 md:flex"),
-			numberCell(h, logs(metrics?.issueCount ?? 0), "hidden w-16 md:flex"),
-			h.div([h.Class("flex w-36 justify-end")], [collectingCell(h, view)]),
+			h.div([h.Class("flex w-20 justify-end")], [connectionsCell(h, view)]),
+			numberCell(h, logs(metrics?.requestsPerMinute ?? 0), "hidden w-16 md:flex"),
+			numberCell(h, logs(metrics?.issueCount ?? 0), "hidden w-14 md:flex"),
+			h.div([h.Class("flex w-28 justify-end")], [collectingCell(h, view)]),
 		],
 	)
 }

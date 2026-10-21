@@ -2,12 +2,10 @@ import type { SupabaseProjectCaller } from "@maple/domain/http"
 import { formatErrorRate, formatLatency, formatRate } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Chart from "../../../../charts/chart"
-import * as Sparkline from "../../../../charts/sparkline"
-import { resolveColor, type ThemeColors } from "../../../../charts/theme-colors"
 import { docsUrl } from "../../../../lib/docs"
 import { AppRoute, hrefOf } from "../../../../route"
 import { columnHead, dataTable } from "../../../infra/kit/data-table"
+import { type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
 import { ERROR_RATE_LIMIT } from "../health"
 import { callerMixText } from "./derive"
 import { Message } from "./message"
@@ -17,38 +15,30 @@ import { keyedBody, panelEmpty, panelLink, sectionPanel } from "../panel"
 // "Services calling this project": the org's client spans to the project's API and pooler.
 
 type H = HtmlBuilder<Message>
-type Spark = Readonly<{ theme: ThemeColors | null; isReady: boolean }>
-
-const CHART_MODEL = Chart.init()
 const SERVICE_MAP_HREF = hrefOf(AppRoute.ServiceMap({ search: {} }))
 
-const trend = (h: H, caller: SupabaseProjectCaller, spark: Spark): Html =>
-	caller.series.length < 2 || spark.theme === null || !spark.isReady
+const trend = (h: H, caller: SupabaseProjectCaller, window: SparkWindow | null): Html =>
+	window === null
 		? h.div([h.Class("h-5 w-24")])
 		: h.div(
-				[h.Class("h-5 w-24")],
+				[h.Class("h-5 w-24 text-chart-p50")],
 				[
-					h.submodel({
-						slotId: `supabase-caller-${caller.serviceName}`,
-						model: CHART_MODEL,
-						view: Sparkline.view,
-						toParentMessage: (message: Chart.Message) => Message.GotSparklineMessage({ message }),
-						viewInputs: {
-							chartId: `supabase-caller-${caller.serviceName.replace(/\W+/g, "_")}`,
-							values: caller.series.map((bucket) => bucket.calls),
-							color: resolveColor(spark.theme, "--chart-1"),
-							className: "h-full w-full",
-							revision: 0,
-							curve: "monotone",
-							fillOpacity: [0.35, 0],
-						},
+					windowSparkline(h, {
+						points: caller.series.map((bucket) => ({
+							bucket: bucket.bucket,
+							value: bucket.calls,
+						})),
+						window,
+						color: "currentColor",
+						className: "h-5",
+						label: `${caller.serviceName} calls over the time range`,
 					}),
 				],
 			)
 
 const NUMBER = "font-mono text-xs tabular-nums"
 
-const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: Spark): Html =>
+const callerRow = (h: H, model: Model, caller: SupabaseProjectCaller, spark: SparkWindow | null): Html =>
 	h.div(
 		[
 			h.Key(caller.serviceName),
@@ -124,7 +114,7 @@ const noCallers = (h: H): Html =>
 		),
 	])
 
-export const callersPanel = (h: H, model: Model, spark: Spark): Html =>
+export const callersPanel = (h: H, model: Model, spark: SparkWindow | null): Html =>
 	sectionPanel(
 		h,
 		{

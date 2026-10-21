@@ -1,7 +1,7 @@
 import { SupabaseApiTrafficBucket, SupabaseCallerMix } from "@maple/domain/http"
 import { describe, expect, test } from "vitest"
 import type { SupabaseProjectTimeseriesRow } from "../model"
-import { CONNECTIONS_CHART } from "./charts"
+import { CONNECTIONS_CHART, TRANSACTIONS_CHART } from "./charts"
 import { callerMixText, healthStrip, rollbackShare, trafficShares } from "./derive"
 import { metricChartRows } from "../../kit/metric-charts"
 
@@ -122,6 +122,14 @@ describe("postgres charts", () => {
 		expect(rows.filter((entry) => entry.attributeValue === "Limit")).toEqual([
 			{ bucket: "2026-10-01T10:00:00Z", attributeValue: "Limit", value: 90 },
 		])
+	})
+
+	test("a bucket holding a counter's first sample is a gap in transactions, not a 0/s dip", () => {
+		const rows = metricChartRows(TRANSACTIONS_CHART, [
+			bucket("2026-10-01T10:00:00Z", { commitsPerSecond: null, rollbacksPerSecond: null }),
+			bucket("2026-10-01T10:05:00Z"),
+		])
+		expect(rows.map((entry) => entry.bucket)).toEqual(["2026-10-01T10:05:00Z", "2026-10-01T10:05:00Z"])
 	})
 
 	test("rollback share over the window, none without transactions", () => {

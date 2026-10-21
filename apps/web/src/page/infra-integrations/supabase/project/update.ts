@@ -63,6 +63,17 @@ const SECTIONS: ReadonlyArray<Section> = [
 	"insights",
 ]
 
+/** Polled on Supabase's schedule, not windowed: keyed by the project alone, so init asks at once. */
+const requestInsights = (model: Model, context: PageContext, mode: RequestMode): Step => {
+	const key = requestKey(context.orgId, "getSupabaseProjectInsights", {
+		data: { projectRef: model.projectRef },
+	})
+	const [insights, commands] = requestSlot(model.insights, key, mode, () =>
+		FetchInsights({ key, projectRef: model.projectRef }),
+	)
+	return { model: { ...model, insights }, commands }
+}
+
 /** One read of the page: its slot, keyed by what it asks, and its fetch. */
 const requestSection = (
 	model: Model,
@@ -110,14 +121,8 @@ const requestSection = (
 			)
 			return { model: { ...model, issues }, commands }
 		}
-		case "insights": {
-			// Polled on Supabase's schedule, not windowed: the key is the project alone.
-			const key = keyOf("getSupabaseProjectInsights", { projectRef: model.projectRef })
-			const [insights, commands] = requestSlot(model.insights, key, mode, () =>
-				FetchInsights({ key, projectRef: model.projectRef }),
-			)
-			return { model: { ...model, insights }, commands }
-		}
+		case "insights":
+			return requestInsights(model, context, mode)
 	}
 }
 
@@ -167,11 +172,14 @@ export const init = (route: Route, context: PageContext): Return => {
 	const [status, statusFetches] = requestSlot(model.status, statusKey, "Load", () =>
 		LoadStatus({ key: statusKey }),
 	)
+	// The status only shapes what the page says; no read waits for it.
+	const insights = requestInsights({ ...model, status }, context, "Load")
 	return {
-		model: { ...model, status },
+		model: insights.model,
 		commands: [
 			resolveCommand(model, context, "Load"),
 			...statusFetches,
+			...insights.commands,
 			Command.mapMessage(LoadChartRuntime(), (message) =>
 				message._tag === "CompletedLoadChartRuntime"
 					? Message.CompletedLoadChartRuntime()
@@ -261,7 +269,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				outMessage: step.outMessage,
 			}
 		},
-		GotSparklineMessage: () => ({ model }),
 		GotChartMessage: ({ chartId, message: inner }) => {
 			const next = Chart.update(model.charts[chartId] ?? Chart.init(), inner)
 			return {

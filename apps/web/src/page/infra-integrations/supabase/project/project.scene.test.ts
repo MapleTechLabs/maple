@@ -107,10 +107,13 @@ const quiet = (logsEnabled: boolean): Model => {
 }
 
 describe("supabase project", () => {
-	test("a resolved window reads every panel of the project", () => {
-		const entered = init({ projectRef: REF, search: {} }, context).model
+	test("no read waits for the status: advisors load at entry, the rest once the window resolves", () => {
+		const entered = init({ projectRef: REF, search: {} }, context)
+		expect(names(entered.commands)).toContain("LoadSupabaseProjectStatus")
+		expect(names(entered.commands)).toContain("FetchSupabaseProjectInsights")
+		// The status is still loading when the window resolves.
 		const resolved = pageUpdate(
-			entered,
+			entered.model,
 			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
 		)
 		expect(names(resolved.commands).toSorted()).toEqual(
@@ -118,7 +121,6 @@ describe("supabase project", () => {
 				"FetchSupabaseApiTopPaths",
 				"FetchSupabaseApiTraffic",
 				"FetchSupabaseProjectCallers",
-				"FetchSupabaseProjectInsights",
 				"FetchSupabaseProjectLogIssues",
 				"FetchSupabaseProjectRows",
 				"FetchSupabaseProjectTimeseries",
