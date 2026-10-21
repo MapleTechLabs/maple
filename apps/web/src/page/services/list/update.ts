@@ -328,6 +328,22 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	}
 }
 
+/** Back after leaving: the last rows stay on screen while the window re-resolves like entry (snapped). */
+export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+	const next = {
+		...model,
+		...initOverlays(),
+		search: route.search,
+		refreshVersion: 0,
+		isReloading: false,
+		rowRevision: model.rowRevision + 1,
+	}
+	return {
+		model: next,
+		commands: [LoadSignalPresence({ orgId: context.orgId }), resolveCommand(next, context, "Load")],
+	}
+}
+
 /**
  * `servicesRouteAtoms(search)`, warmed on link intent: the facets, overview and sparklines for the
  * snapped window. The atoms pin overview and sparklines before keying ("top"), so the page reuses them.

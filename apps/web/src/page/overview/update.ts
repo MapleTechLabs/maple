@@ -373,6 +373,18 @@ export const routeChanged = (
 
 export const init = initWith(isClerkAuthEnabled)
 
+/** Back after leaving: the last data stays on screen while entry re-reads the clock (snapped, so cached reads serve). */
+export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => ({
+	model: {
+		...model,
+		search: route.search,
+		refreshVersion: 0,
+		isReloading: false,
+		setup: model.setup === null ? null : Setup.revived(model.setup),
+	},
+	commands: [ReadEntry({ orgId: context.orgId }), LoadSignalPresence({ orgId: context.orgId })],
+})
+
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	resolveSetupWindow(sync(model, context, "Load"), context)
 

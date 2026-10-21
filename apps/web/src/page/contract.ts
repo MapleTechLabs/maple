@@ -157,10 +157,10 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 		context: PageContext,
 	) => PageReturn<Model, Message>
 	/**
-	 * Makes a page revivable: coming back to it restores the instance it left, last data on screen,
-	 * and sends this Message (its Reload) unless the route change already re-requests.
+	 * Makes a page revivable: coming back restores the instance it left, last data on screen. Resets
+	 * what was in flight when it was parked and re-resolves its window the way entry does.
 	 */
-	readonly reload?: Message
+	readonly revive?: (model: Model, route: RouteOf<Tags>, context: PageContext) => PageReturn<Model, Message>
 	/** The namespace pin or time zone changed (an org change builds a new instance). */
 	readonly contextChanged?: (model: Model, context: PageContext) => PageReturn<Model, Message>
 	readonly view: Submodel.View<Model, Message, PageViewInputs>
@@ -367,20 +367,15 @@ export const definePage = <
 			isOwnSlot(slot) && ownsRoute(route) && spec.routeChanged
 				? Option.some(step(slot.key, slot.instance, context, spec.routeChanged(slot.model, route, context)))
 				: Option.none<PageStep<SlotType, WrappedType>>(),
-		isRevivable: spec.reload !== undefined,
-		/** A parked instance of this route's page, back as `instance` and refreshing; `None` if it cannot be. */
+		isRevivable: spec.revive !== undefined,
+		/** A parked instance of this route's page, back as `instance`; `None` if it cannot be. */
 		revive: (slot: PageSlotBase, route: AppRoute, context: PageContext, instance: number) => {
-			const reload = spec.reload
-			if (!isOwnSlot(slot) || !ownsRoute(route) || reload === undefined)
+			const revive = spec.revive
+			if (!isOwnSlot(slot) || !ownsRoute(route) || revive === undefined)
 				return Option.none<PageStep<SlotType, WrappedType>>()
 			if (slot.key !== keyOf(route) || slot.orgId !== context.orgId)
 				return Option.none<PageStep<SlotType, WrappedType>>()
-			const routed = spec.routeChanged
-				? spec.routeChanged(slot.model, route, context)
-				: { model: slot.model }
-			const result =
-				(routed.commands ?? []).length > 0 ? routed : spec.update(routed.model, reload, context)
-			return Option.some(step(slot.key, instance, context, result))
+			return Option.some(step(slot.key, instance, context, revive(slot.model, route, context)))
 		},
 		/** A navigation away from this instance, held: the page's confirm step, or `None` if it allows it. */
 		blockedNavigation: (slot: PageSlotBase, url: string, context: PageContext) =>

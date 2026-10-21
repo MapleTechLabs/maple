@@ -50,6 +50,13 @@ export const init = (storageKey: string): Return => ({
 	commands: [ReadSetupState({ storageKey })],
 })
 
+/** Back after the page was parked: the answers it waited on were dropped, so nothing is in flight. */
+export const revived = (model: Model): Model => ({
+	...model,
+	isOverviewInFlight: false,
+	isSendingTest: false,
+})
+
 /** `SetupChecklist` renders (and polls) once the state is read and the checklist is not dismissed. */
 export const isMounted = (model: Model): boolean => model.state !== null && !model.state.checklistDismissed
 

@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest"
 import { AppRoute } from "../route"
 import type { PageContext } from "./contract"
 import { enterRoute, PageMessage, type PageSlot, parkPages, updatePage } from "./registry"
+import { initWith, revive as reviveOverview } from "./overview/update"
 import { Message } from "./services/list/message"
 import type { ServiceRow } from "./services/list/model"
 
@@ -79,7 +80,40 @@ describe("reviving a page left earlier", () => {
 		expect(model === null ? Option.none() : AsyncData.getData(model.overview.data)).toEqual(
 			Option.some([row]),
 		)
-		expect(back.commands.map((command) => command.name)).toContain("ResolveServicesWindow")
+		// Re-resolved like entry: snapped, so a read still cached is served, not forced.
+		expect(back.commands.map((command) => [command.name, command.args])).toContainEqual([
+			"ResolveServicesWindow",
+			expect.objectContaining({ mode: "Load" }),
+		])
+	})
+
+	test("coming back through a link with other filters takes the new search and a fresh window", () => {
+		const left = servicesPage(1, true)
+		const overview = enterRoute(left, home, context, 2).slot
+		const filtered = AppRoute.Services({ search: { environments: ["staging"], timePreset: "1h" } })
+		const back = enterRoute(overview, filtered, context, 3, parkPages([], left, overview))
+		expect(servicesModel(back.slot)?.search).toEqual(filtered.search)
+		expect(back.commands.map((command) => [command.name, command.args])).toContainEqual([
+			"ResolveServicesWindow",
+			expect.objectContaining({ mode: "Load", preset: "1h" }),
+		])
+	})
+
+	test("the overview comes back with no setup read or test send left waiting, and re-reads its entry", () => {
+		const { model } = initWith(true)({ search: {} }, context)
+		const setup =
+			model.setup === null ? null : { ...model.setup, isOverviewInFlight: true, isSendingTest: true }
+		const back = reviveOverview(
+			{ ...model, setup, isReloading: true, refreshVersion: 2 },
+			{ search: {} },
+			context,
+		)
+		expect([back.model.setup?.isOverviewInFlight, back.model.setup?.isSendingTest]).toEqual([
+			false,
+			false,
+		])
+		expect([back.model.isReloading, back.model.refreshVersion]).toEqual([false, 0])
+		expect((back.commands ?? []).map((command) => command.name)).toContain("ReadOverviewEntry")
 	})
 
 	test("a page left mid-load is not parked: coming back builds it fresh", () => {

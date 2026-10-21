@@ -371,10 +371,16 @@ const loadPage: Step = (model) =>
 		Option.filter(pageContextOf(model), () => !isPlanGated(model)),
 		{
 			// Leaving every page (signed out) releases what the last one held, like any page change.
-			onNone: () =>
-				model.page === null && model.preload.holder === ""
-					? { model }
-					: writePage({ slot: null, commands: [], outMessage: Option.none() })(model),
+			// Parked pages go too: none may come back in the next session or org.
+			onNone: () => {
+				const cleared =
+					model.parkedPages.length === 0 ? model : modifyFields(model, { parkedPages: () => [] })
+				if (model.page === null && model.preload.holder === "") return { model: cleared }
+				const left = writePage({ slot: null, commands: [], outMessage: Option.none() })(cleared)
+				return left.model.parkedPages.length === 0
+					? left
+					: { ...left, model: modifyFields(left.model, { parkedPages: () => [] }) }
+			},
 			onSome: (context) =>
 				applyPage(
 					enterRoute(model.page, model.route, context, model.pageInstances + 1, model.parkedPages),
