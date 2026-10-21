@@ -245,13 +245,14 @@ export const ScrapeAuthType = Schema.Literals([
 	"basic",
 	"token",
 	"planetscale_oauth",
+	"supabase_oauth",
 ]).annotate({
 	identifier: "@maple/ScrapeAuthType",
 	title: "Scrape Auth Type",
 })
 export type ScrapeAuthType = Schema.Schema.Type<typeof ScrapeAuthType>
 
-export const ScrapeTargetType = Schema.Literals(["prometheus", "planetscale"]).annotate({
+export const ScrapeTargetType = Schema.Literals(["prometheus", "planetscale", "supabase"]).annotate({
 	identifier: "@maple/ScrapeTargetType",
 	title: "Scrape Target Type",
 })
