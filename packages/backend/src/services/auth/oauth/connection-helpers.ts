@@ -91,6 +91,9 @@ export const generateCodeVerifier = (): string => randomBytes(32).toString("base
 export const deriveCodeChallenge = (verifier: string): string =>
 	createHash("sha256").update(verifier).digest("base64url")
 
+/** Hard cap on one token-endpoint POST (execute + body read). */
+const TOKEN_REQUEST_TIMEOUT = "20 seconds"
+
 export const toUpstreamError = (message: string, status?: number, cause?: unknown) =>
 	new IntegrationsUpstreamError({
 		message,
@@ -383,9 +386,18 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				const request = HttpClientRequest.post(url, {
 					headers: { accept: "application/json", ...headers },
 				}).pipe(HttpClientRequest.bodyUrlParams(params))
-				const response = yield* httpClient.execute(request)
-				const text = yield* response.text
-				return { status: response.status, text }
+				// Bounded so a stalled token endpoint cannot pin the uninterruptible refresh (and its permit).
+				return yield* Effect.gen(function* () {
+					const response = yield* httpClient.execute(request)
+					const text = yield* response.text
+					return { status: response.status, text }
+				}).pipe(
+					Effect.timeoutOrElse({
+						duration: TOKEN_REQUEST_TIMEOUT,
+						orElse: () =>
+							Effect.fail(toUpstreamError(`${providerLabel} OAuth request timed out`)),
+					}),
+				)
 			},
 			Effect.catchTag("HttpClientError", (error) =>
 				Effect.fail(
@@ -563,7 +575,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				return yield* refreshAccessToken(config, refreshToken).pipe(
 					Effect.flatMap((refreshed) => persistRefreshedTokens(row, refreshed)),
 					// The provider rotates the refresh token on use, so an interrupt between the POST and
-					// the write loses the only usable copy. Both are bounded by their own timeouts/retries.
+					// the write loses the only usable copy. postForm's timeout and the write's retries bound it.
 					Effect.uninterruptible,
 					Effect.map((accessToken) => ({ accessToken, row })),
 					// Cross-isolate race: a concurrent worker isolate may have consumed the rotated
