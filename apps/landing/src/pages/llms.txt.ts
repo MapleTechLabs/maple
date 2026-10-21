@@ -109,6 +109,7 @@ export const GET: APIRoute = ({ site }) => {
 		`- [What is observability?](${url("/observability")})`,
 		`- [What is OpenTelemetry?](${url("/opentelemetry")})`,
 		`- [Best open-source observability tools](${url("/best-open-source-observability-tools")})`,
+		`- [Pino logger for Node.js: setup, levels and trace IDs](${url("/guides/pino-logger")})`,
 		"",
 
 		"## Maple API",

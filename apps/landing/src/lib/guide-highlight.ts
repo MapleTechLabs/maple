@@ -1,7 +1,19 @@
 // Tiny highlighter for guide code blocks. The token classes match the colors a
 // guide uses in its diagrams (metric name, labels, value), so a block reads the
 // same way as the annotated example above it. Style the `tok-*` classes on the page.
-export type GuideLang = "exposition" | "promql" | "yaml" | "python" | "typescript" | "go" | "rust" | "java" | "csharp";
+export type GuideLang =
+    | "exposition"
+    | "promql"
+    | "yaml"
+    | "python"
+    | "typescript"
+    | "go"
+    | "rust"
+    | "java"
+    | "csharp"
+    | "javascript"
+    | "json"
+    | "shell";
 
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const span = (cls: string, text: string) => `<span class="tok-${cls}">${escape(text)}</span>`;
@@ -98,5 +110,34 @@ const rust = braces("use|fn|let|mut|for|in");
 const java = braces("import|public|static|final|class|void|new|try|throws");
 const csharp = braces("using|var|new|await");
 
+// JavaScript and TypeScript application code: all three string quotes, no metric classes.
+const javascript = (code: string) =>
+    tokenize(code, [
+        [/\/\/.*/y, (m) => span("comment", m[0])],
+        [/"[^"\n]*"|'[^'\n]*'|`[^`]*`/y, (m) => span("labels", m[0])],
+        [/\b(?:import|from|export|const|let|new|async|await|return|if|else|function|type|require|undefined|true|false)\b/y, (m) => span("fn", m[0])],
+        [/\b\d+(?:\.\d+)?\b/y, (m) => span("value", m[0])],
+        [/[a-zA-Z_$][\w$]*/y, (m) => escape(m[0])],
+    ]);
+
+// JSON and NDJSON log lines. OpenTelemetry's trace-context fields get their own
+// class so a guide can color them like the traces in its diagrams.
+const json = (code: string) =>
+    tokenize(code, [
+        [/"(?:trace_id|span_id|trace_flags)":"[^"\n]*"/y, (m) => span("trace", m[0])],
+        [/"(?:[^"\\\n]|\\.)*"(?=\s*:)/y, (m) => span("name", m[0])],
+        [/"(?:[^"\\\n]|\\.)*"/y, (m) => span("labels", m[0])],
+        [/-?\b\d+(?:\.\d+)?\b|\b(?:true|false|null)\b/y, (m) => span("value", m[0])],
+    ]);
+
+// Shell commands: the program name, flags and quoted arguments.
+const shell = (code: string) =>
+    tokenize(code, [
+        [/#.*/y, (m) => span("comment", m[0])],
+        [/(?<=^|\n|\| )(\s*)([\w.-]+)/y, (m) => escape(m[1]) + span("fn", m[2])],
+        [/"[^"\n]*"/y, (m) => span("labels", m[0])],
+        [/(?<=\s)--?[\w-]+/y, (m) => span("value", m[0])],
+    ]);
+
 export const highlight = (code: string, lang: GuideLang) =>
-    ({ exposition, promql, yaml, python, typescript, go, rust, java, csharp })[lang](code);
+    ({ exposition, promql, yaml, python, typescript, go, rust, java, csharp, javascript, json, shell })[lang](code);
