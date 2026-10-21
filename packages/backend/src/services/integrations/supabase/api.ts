@@ -168,7 +168,15 @@ export const listOrganizations = Effect.fn("SupabaseApi.listOrganizations")(func
 		accessToken,
 		"listing organizations",
 	)
-	return items.flatMap((item) => Option.toArray(decodeOrganization(item)))
+	const organizations = items.flatMap((item) => Option.toArray(decodeOrganization(item)))
+	// A dropped org would make a partial listing look complete, so any undecodable item fails.
+	if (organizations.length !== items.length) {
+		return yield* new SupabaseApiError({
+			message: `Supabase returned ${items.length - organizations.length} organization(s) Maple could not read while listing organizations`,
+			kind: "upstream",
+		})
+	}
+	return organizations
 })
 
 /**
