@@ -85,6 +85,12 @@ describe("sourceHealth", () => {
 		).toMatchObject({ status: "stale", problem: "1 of 3 not up to date" })
 	})
 
+	it("waits out a source's own cadence when it has one", () => {
+		const slow = source({ platform: "prometheus", lastPollOkAt: now - 20 * MINUTE })
+		expect(sourceHealth(slow, now).status).toBe("stale")
+		expect(sourceHealth({ ...slow, staleAfterMs: 50 * MINUTE }, now).status).toBe("healthy")
+	})
+
 	it("is disconnected while the grant is revoked, ahead of a pause", () => {
 		const revoked = source({
 			platform: "github",

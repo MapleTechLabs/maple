@@ -1,11 +1,18 @@
 import type { MapleDb } from "@maple/db/client"
 import { ScrapeTargets, Sources } from "@maple/db/tables"
+import { scrapeStaleAfterMs } from "@maple/domain/integration-inventory"
 import type { SourceResourceCount } from "@maple/domain/source-health"
 import { SourcePublicId } from "@maple/domain/http/v2"
 import type { OrgId, PullSourcePlatform, SourceId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Effect, Schema } from "effect"
-import { isPausedAt, newSourceId, type PullSourceRef, pullSourceRow } from "./source-rows"
+import { Array as Arr, Effect, Schema } from "effect"
+import {
+	isPausedAt,
+	newSourceId,
+	type PullSourceRef,
+	pullSourceRow,
+	type SourceHealthOverrides,
+} from "./source-rows"
 
 const encodeSourceId = Schema.encodeSync(SourcePublicId)
 
@@ -144,15 +151,34 @@ export const stampedSourceId = (sourceId: SourceId | null) =>
 
 const SCRAPING_OFF = "Scraping is turned off"
 
-/** Why each of an org's sources reads nothing on purpose: a scrape target switched off. */
-export const readTurnedOff = Effect.fnUntraced(function* (db: MapleDb, orgId: OrgId) {
-	const off = yield* db.run(
+/**
+ * What each Prometheus source's targets add to its health: switched off when none is enabled,
+ * otherwise stale only after its slowest target's window.
+ */
+export const readScrapeOverrides = Effect.fnUntraced(function* (db: MapleDb, orgId: OrgId) {
+	const targets = yield* db.run(
 		PG.from(ScrapeTargets)
-			.select("sourceId")
-			.where(($) => [$.orgId.eq(orgId), $.managedBy.isNull(), $.enabled.eq(false)]),
+			.select("sourceId", "enabled", "scrapeIntervalSeconds")
+			.where(($) => [$.orgId.eq(orgId), $.managedBy.isNull()]),
+	)
+	const bySource = Arr.groupBy(
+		targets.flatMap((target) => (target.sourceId === null ? [] : [{ ...target, sourceId: target.sourceId }])),
+		(target) => target.sourceId,
 	)
 	return new Map(
-		off.flatMap((target) => (target.sourceId === null ? [] : [[target.sourceId, SCRAPING_OFF] as const])),
+		Object.values(bySource).map((group): readonly [SourceId, SourceHealthOverrides] => {
+			const enabled = group.filter((target) => target.enabled)
+			return [
+				group[0].sourceId,
+				enabled.length === 0
+					? { turnedOff: SCRAPING_OFF }
+					: {
+							staleAfterMs: Math.max(
+								...enabled.map((target) => scrapeStaleAfterMs(target.scrapeIntervalSeconds)),
+							),
+						},
+			]
+		}),
 	)
 })
 

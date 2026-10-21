@@ -41,6 +41,10 @@ const POLLER_STALE_MS = 30 * 60 * 1000
 const PLANETSCALE_STALE_MS = 3 * 60 * 60 * 1000
 const SCRAPE_MIN_STALE_MS = 10 * 60 * 1000
 
+/** How long a scrape target may go without a good scrape: ten intervals, at least 10 minutes. */
+export const scrapeStaleAfterMs = (scrapeIntervalSeconds: number) =>
+	Math.max(SCRAPE_MIN_STALE_MS, scrapeIntervalSeconds * 10 * 1000)
+
 export interface PollState {
 	readonly lastSuccessAt: number | null
 	readonly lastErrorAt: number | null
@@ -466,7 +470,7 @@ export const scrapeResource = (
 	now: number,
 	kind: string,
 ): IntegrationResource => {
-	const staleAfterMs = Math.max(SCRAPE_MIN_STALE_MS, target.scrapeIntervalSeconds * 10 * 1000)
+	const staleAfterMs = scrapeStaleAfterMs(target.scrapeIntervalSeconds)
 	// A failed scrape leaves lastScrapeAt at the last success and sets the error; a later success clears it.
 	const status: IntegrationStatus =
 		target.lastScrapeError !== null

@@ -88,6 +88,8 @@ export interface SourceHealthInput {
 	readonly pollResources: SourceResourceCount | null
 	/** Why the integration reads nothing on purpose (a scrape target switched off), or undefined. */
 	readonly turnedOff?: string
+	/** Replaces the platform's window, for a source whose cadence is its own (a scrape interval). */
+	readonly staleAfterMs?: number
 }
 
 const latest = (a: number | null, b: number | null) => (a === null ? b : b === null ? a : Math.max(a, b))
@@ -119,10 +121,11 @@ export const sourceHealth = (source: SourceHealthInput, now: number): SourceHeal
 		return result("stale", `${resources.unhealthy} of ${resources.total} not up to date`)
 	}
 	const freshAt = policy.freshness === "data" ? source.lastUsedAt : source.lastPollOkAt
+	const staleAfterMs = source.staleAfterMs ?? policy.staleAfterMs
 	if (freshAt === null) return result("pending", null)
-	if (now - freshAt > policy.staleAfterMs) {
+	if (now - freshAt > staleAfterMs) {
 		const what = policy.freshness === "data" ? "No data" : "No successful update"
-		return result("stale", `${what} in the last ${formatWindow(policy.staleAfterMs)}`)
+		return result("stale", `${what} in the last ${formatWindow(staleAfterMs)}`)
 	}
 	return result("healthy", null)
 }

@@ -569,6 +569,15 @@ describe("PlanetScaleService", () => {
 			assert.isNotNull(ok.last_poll_ok_at)
 			assert.isNull(ok.last_poll_error)
 
+			// A tick inside the inventory's hour reports its last result, so a stale disconnect clears.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE sources SET disconnected_at = now(), last_poll_error = 'Revoked'"),
+			)
+			yield* TestClock.adjust("2 minutes")
+			yield* service.pollAllOrgs()
+			const fresh = yield* sourcePollState(testDb, "org_1")
+			assert.deepStrictEqual([fresh.disconnected_at, fresh.last_poll_error], [null, null])
+
 			// The next refresh fails: the source records the connection's own error.
 			yield* (yield* PlanetScaleOAuthService).disconnect(asOrgId("org_1"))
 			yield* TestClock.adjust("2 hours")
@@ -576,7 +585,7 @@ describe("PlanetScaleService", () => {
 			const failed = yield* sourcePollState(testDb, "org_1")
 			assert.isNotNull(failed.last_poll_error)
 			assert.strictEqual(failed.last_poll_error, failed.last_inventory_error)
-			assert.strictEqual(failed.last_poll_ok_at?.getTime(), ok.last_poll_ok_at?.getTime())
+			assert.strictEqual(failed.last_poll_ok_at?.getTime(), fresh.last_poll_ok_at?.getTime())
 			assert.isNull(failed.disconnected_at)
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),

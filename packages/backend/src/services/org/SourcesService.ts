@@ -25,8 +25,14 @@ import type { SourceHealthResult } from "@maple/domain/source-health"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
-import { readTurnedOff } from "./integration-sources"
-import { defaultSourceRow, newSourceId, sourceRowHealth, statusOf } from "./source-rows"
+import { readScrapeOverrides } from "./integration-sources"
+import {
+	defaultSourceRow,
+	newSourceId,
+	type SourceHealthOverrides,
+	sourceRowHealth,
+	statusOf,
+} from "./source-rows"
 
 const SOURCE_TOKEN_PREFIX = "maple_src_"
 const {
@@ -62,8 +68,8 @@ const toSourceHealth = (health: SourceHealthResult) =>
 		resources: health.resources ?? null,
 	})
 
-// `turnedOff`: why an integration source reads nothing on purpose.
-const rowToSource = (row: SourceRow, now: number, turnedOff?: string): Source => {
+// `overrides`: what an integration source's integration adds to its health.
+const rowToSource = (row: SourceRow, now: number, overrides?: SourceHealthOverrides): Source => {
 	const status = statusOf(row, now)
 	return new Source({
 		id: row.id,
@@ -86,7 +92,7 @@ const rowToSource = (row: SourceRow, now: number, turnedOff?: string): Source =>
 		rolledAt: isoOrNull(row.rolledAt),
 		createdAt: toIso(row.createdAt),
 		updatedAt: toIso(row.updatedAt),
-		health: toSourceHealth(sourceRowHealth(row, now, turnedOff)),
+		health: toSourceHealth(sourceRowHealth(row, now, overrides)),
 	})
 }
 
@@ -254,31 +260,31 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 		// The default source first, then newest first as selected.
 		const toSources = (
 			rows: ReadonlyArray<SourceRow>,
-			turnedOff: ReadonlyMap<SourceId, string>,
+			overrides: ReadonlyMap<SourceId, SourceHealthOverrides>,
 			now: number,
 		) =>
 			Arr.map(
 				Arr.sortWith(rows, (row) => (row.kind === "default" ? 0 : 1), Order.Number),
-				(row) => rowToSource(row, now, turnedOff.get(row.id)),
+				(row) => rowToSource(row, now, overrides.get(row.id)),
 			)
 
 		// An integration source reads its integration's switches; any other source reads its row.
 		const toSource = Effect.fnUntraced(function* (orgId: OrgId, row: SourceRow, now: number) {
 			if (row.kind !== "integration") return rowToSource(row, now)
-			const turnedOff = yield* dbExecute((db) => readTurnedOff(db, orgId))
-			return rowToSource(row, now, turnedOff.get(row.id))
+			const overrides = yield* dbExecute((db) => readScrapeOverrides(db, orgId))
+			return rowToSource(row, now, overrides.get(row.id))
 		})
 
 		const list = Effect.fn("SourcesService.list")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			const now = yield* Clock.currentTimeMillis
-			const [before, turnedOff] = yield* Effect.all(
-				[selectAll(orgId), dbExecute((db) => readTurnedOff(db, orgId))],
+			const [before, overrides] = yield* Effect.all(
+				[selectAll(orgId), dbExecute((db) => readScrapeOverrides(db, orgId))],
 				{ concurrency: "unbounded" },
 			)
 			const missingDefault = !before.some((row) => row.kind === "default")
 			if (missingDefault) yield* ensureDefault(orgId, now)
-			return toSources(missingDefault ? yield* selectAll(orgId) : before, turnedOff, now)
+			return toSources(missingDefault ? yield* selectAll(orgId) : before, overrides, now)
 		})
 
 		const get = Effect.fn("SourcesService.get")(function* (orgId: OrgId, sourceId: SourceId) {

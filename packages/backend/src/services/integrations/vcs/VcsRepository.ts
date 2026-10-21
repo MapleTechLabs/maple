@@ -26,6 +26,7 @@ import {
 	VcsRepositoryId,
 	type VcsRepoSyncStatus,
 } from "@maple/domain/http"
+import type { MapleDb } from "@maple/db/client"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	PrReviewSettings,
@@ -225,6 +226,10 @@ interface RepoSyncStatusUpdate {
  */
 type RepoQueryScope = "active" | "all"
 
+/** A repository whose last sync failed, with or without a recorded reason. */
+const repoFailing = (repo: { readonly syncStatus: string; readonly lastSyncError: string | null }) =>
+	repo.syncStatus === "error" || repo.lastSyncError !== null
+
 export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/services/vcs/VcsRepository", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
@@ -402,25 +407,50 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 						.returning("sourceId"),
 				),
 			)
-			// A reactivation clears the disconnect at once: an installation with no repositories
-			// never settles a sync that would.
+			// A reactivation reconnects the source at once with its repositories' health: an
+			// installation without repositories never settles a sync that would.
 			yield* Effect.forEach(
 				rows,
 				(row) =>
 					reportBestEffort(
 						dbExecute((db) =>
-							reportPoll(
-								db,
-								row.sourceId,
-								status === "active"
-									? { _tag: "Ok" }
-									: { _tag: "Disconnected", reason: `The GitHub installation is ${status}` },
-								now,
-							),
+							Effect.gen(function* () {
+								const outcome: PollOutcome =
+									status === "active"
+										? yield* installationOutcome(db, installationId)
+										: { _tag: "Disconnected", reason: `The GitHub installation is ${status}` }
+								yield* reportPoll(db, row.sourceId, outcome, now)
+							}),
 						),
 					),
 				{ discard: true },
 			)
+		})
+
+		/** An installation's repositories as one poll outcome: Ok, or the first failing one's error. */
+		const installationOutcome = Effect.fnUntraced(function* (
+			db: MapleDb,
+			installationId: VcsInstallationId,
+		) {
+			const repos = yield* db.run(
+				PG.from(VcsRepositories)
+					.select("fullName", "syncStatus", "lastSyncError")
+					.where(($) => [$.installationId.eq(installationId), $.status.eq("active")])
+					.orderBy(($) => [[$.fullName, "asc"]]),
+			)
+			const failing = repos.filter(repoFailing)
+			const resources =
+				repos.length >= 2 ? { resources: { total: repos.length, unhealthy: failing.length } } : {}
+			const first = failing[0]
+			const outcome: PollOutcome =
+				first === undefined
+					? { _tag: "Ok", ...resources }
+					: {
+							_tag: "Failed",
+							error: `${first.fullName}: ${first.lastSyncError ?? "the last sync failed"}`,
+							...resources,
+						}
+			return outcome
 		})
 
 		/**
@@ -433,7 +463,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 					Effect.gen(function* () {
 						const [target] = yield* db.run(
 							PG.from(VcsRepositories)
-								.select("installationId", "lastSyncError")
+								.select("installationId", "syncStatus", "lastSyncError")
 								.where(($) => [$.id.eq(repositoryId)])
 								.limit(1),
 						)
@@ -457,7 +487,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 								.limit(1),
 						)
 						if (
-							target.lastSyncError === null &&
+							!repoFailing(target) &&
 							source !== undefined &&
 							source.lastPollError === null &&
 							source.lastPollAt !== null &&
@@ -465,29 +495,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 						) {
 							return
 						}
-						const repos = yield* db.run(
-							PG.from(VcsRepositories)
-								.select("fullName", "lastSyncError")
-								.where(($) => [
-									$.installationId.eq(target.installationId),
-									$.status.eq("active"),
-								])
-								.orderBy(($) => [[$.fullName, "asc"]]),
-						)
-						const failing = repos.filter((repo) => repo.lastSyncError !== null)
-						const resources =
-							repos.length >= 2
-								? { resources: { total: repos.length, unhealthy: failing.length } }
-								: {}
-						const first = failing[0]
-						const outcome: PollOutcome =
-							first === undefined
-								? { _tag: "Ok", ...resources }
-								: {
-										_tag: "Failed",
-										error: `${first.fullName}: ${first.lastSyncError}`,
-										...resources,
-									}
+						const outcome = yield* installationOutcome(db, target.installationId)
 						yield* reportPoll(db, sourceId, outcome, now)
 					}),
 				),

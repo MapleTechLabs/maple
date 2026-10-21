@@ -24,7 +24,7 @@ import type { OrgId } from "@maple/domain/primitives"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { readTurnedOff } from "@maple/backend/services/org/integration-sources"
+import { readScrapeOverrides } from "@maple/backend/services/org/integration-sources"
 import { sourceRowHealth } from "@maple/backend/services/org/source-rows"
 
 export class IntegrationInventoryUnavailableError extends Schema.TaggedError<IntegrationInventoryUnavailableError>()(
@@ -208,12 +208,12 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 			},
 			now,
 		)
-		const turnedOff = yield* dbExecute((db) => readTurnedOff(db, orgId))
+		const overrides = yield* dbExecute((db) => readScrapeOverrides(db, orgId))
 		return withSourceHealth(
 			inventory,
 			rows.sources.map((source) => ({
 				platform: source.platform,
-				health: sourceRowHealth(source, now, turnedOff.get(source.id)),
+				health: sourceRowHealth(source, now, overrides.get(source.id)),
 			})),
 		)
 	})
