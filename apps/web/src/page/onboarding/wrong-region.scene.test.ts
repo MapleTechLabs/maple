@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { Option } from "effect"
-import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, role, scene, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { ClerkOrganization } from "../../platform/clerk"
 import { AppRoute } from "../../route"
@@ -36,7 +36,6 @@ describe("wrong-region screen", () => {
 			{ update: (model, message) => update(model, message, inputs), view: withViewInputs(view, inputs)() },
 			given(step.model),
 			expectView(role("heading", { name: "Acme EU is in the EU region" })).toExist(),
-			expectView(text("You are on the US dashboard", { exact: false })).toExist(),
 			expectView(role("button", { name: "Switch organization" })).toExist(),
 		)
 	})

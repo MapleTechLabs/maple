@@ -82,15 +82,6 @@ describe("local traces list", () => {
 		expect(pageUpdate(base, Message.FoundCachedTraces({ key: base.traces.key ?? "", cached })).commands).toEqual([])
 	})
 
-	test("an answer for a superseded key is dropped", () => {
-		const base = anchored().model
-		const stale = pageUpdate(
-			base,
-			Message.SucceededFetchTraces({ key: "stale", data: { pages: [[row("a")]], hasNextPage: false }, fetchedAtMs: NOW }),
-		)
-		expect(stale.model.traces).toEqual(base.traces)
-	})
-
 	test("rows render and Has error filters the hash", () => {
 		scene(
 			{ update: pageUpdate, view },

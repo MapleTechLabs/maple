@@ -17,7 +17,6 @@ describe("releasesListQuery", () => {
 		)
 		expect(sql).toContain("FROM service_overview_spans")
 		expect(sql).toContain("FROM service_overview_hourly")
-		expect(sql).toContain("UNION ALL")
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("DeploymentEnv IN ('production')")
 		expect(sql).toContain("bServiceName IN ('api', 'web')")

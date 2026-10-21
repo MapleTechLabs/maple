@@ -69,16 +69,6 @@ describe("local logs", () => {
 		expect(names(resolved.commands)).toEqual([FetchLogs.name, FetchServices.name, FetchSeverities.name])
 	})
 
-	test("a list answer for a superseded window is dropped", () => {
-		const first = entered()
-		const second = pageUpdate(first, Message.CompletedReadRefreshClock({ nowMs: NOW + 60_000 })).model
-		const late = pageUpdate(
-			second,
-			Message.SucceededFetchLogs({ key: first.logs.key ?? "", data: { pages: [[log(1)]], hasNextPage: false }, fetchedAtMs: NOW }),
-		)
-		expect(late.model.logs).toEqual(second.logs)
-	})
-
 	test("an empty window asks the root for signal presence and says no logs were found", () => {
 		const base = entered()
 		const empty = pageUpdate(

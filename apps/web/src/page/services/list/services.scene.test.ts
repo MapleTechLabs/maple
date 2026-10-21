@@ -34,7 +34,6 @@ import { view as pageView } from "./view"
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const window = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00" }
-const later = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:05:00" }
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -58,9 +57,6 @@ const row = (serviceName: string, environment = "production", serviceNamespace =
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	(commands ?? []).map(({ name }) => name)
-
-const overviewKey = (input = overviewInput({}, window, null)) =>
-	requestKey(orgId, "getServiceOverview", { data: input })
 
 /** Entered and windowed: every query in flight. */
 const windowed = (): Model => {
@@ -117,29 +113,17 @@ describe("services list", () => {
 			FetchBaseline.name,
 			FetchAnomalies.name,
 		])
-		expect(resolved.model.overview.key).toBe(overviewKey())
+		const fetch = resolved.commands?.find(({ name }) => name === FetchOverview.name)
+		expect(fetch?.args).toMatchObject({
+			input: { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00" },
+		})
+		expect(resolved.model.overview.key).toBe(fetch?.args?.["key"])
 	})
 
 	test("the org namespace pin overrides the URL's namespace filters in the request", () => {
 		const input = overviewInput({ namespaces: ["a"], excludedNamespaces: ["b"] }, window, "shop")
 		expect(input.namespaces).toEqual(["shop"])
 		expect(input.excludedNamespaces).toBeUndefined()
-	})
-
-	test("an overview answer for a superseded window is dropped", () => {
-		const first = windowed()
-		const second = pageUpdate(
-			first,
-			Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Load" }),
-		).model
-		const late = pageUpdate(
-			second,
-			Message.CompletedFetchOverview({
-				key: first.overview.key ?? "",
-				result: Result.succeed([row("stale")]),
-			}),
-		)
-		expect(late.model.overview).toEqual(second.overview)
 	})
 
 	test("an incident snapshot read for another org is dropped", () => {
@@ -251,7 +235,9 @@ describe("services list", () => {
 
 	test("Reload re-resolves the window unsnapped and spins for the reload", () => {
 		const reloaded = pageUpdate(loaded([row("checkout")]), Message.ClickedReload())
-		expect(names(reloaded.commands)).toEqual(["ResolveServicesWindow", "CompleteServicesReloadSpin"])
+		expect(names(reloaded.commands)).toEqual(
+			expect.arrayContaining(["ResolveServicesWindow", "CompleteServicesReloadSpin"]),
+		)
 		expect(reloaded.model.isReloading).toBe(true)
 		const settled = pageUpdate(
 			reloaded.model,

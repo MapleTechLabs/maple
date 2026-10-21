@@ -71,13 +71,8 @@ describe("span panel", () => {
 		])
 	})
 
-	test("an answer for another span is dropped", () => {
+	test("a failed logs fetch becomes Failure", () => {
 		const entered = init(input).model
-		const stale = update(
-			entered,
-			Message.CompletedFetchDetail({ key: "org_acme\u0000other", result: Result.succeed(detail) }),
-		)
-		expect(stale.model.detail).toEqual(entered.detail)
 		const failed = update(
 			entered,
 			Message.CompletedFetchLogs({

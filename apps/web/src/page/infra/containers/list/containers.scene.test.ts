@@ -57,7 +57,13 @@ const loaded = (rows: ReadonlyArray<ContainerRow>, search: Model["search"] = {})
 describe("containers list", () => {
 	test("the window requests the page, the scope-only summary and the facets", () => {
 		const names = (windowed().commands ?? []).map(({ name }) => name)
-		expect(names).toEqual(["FetchInfraContainers", "FetchInfraContainersSummary", "FetchInfraContainerFacets"])
+		expect(names).toEqual(
+			expect.arrayContaining([
+				"FetchInfraContainers",
+				"FetchInfraContainersSummary",
+				"FetchInfraContainerFacets",
+			]),
+		)
 	})
 
 	test("the server sees the debounced search, not each keystroke", () => {

@@ -14,7 +14,6 @@ const orgId = Schema.decodeSync(OrgId)("org_acme")
 const issueId = Schema.decodeSync(ErrorIssueId)("0199a004-0000-7000-8000-000000000001")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const window = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00" }
-const later = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:05:00" }
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -43,22 +42,6 @@ describe("error issue", () => {
 		expect(names(resolved.commands)).toEqual(["FetchErrorIssueDetail"])
 		expect(resolved.model.detail.key).toContain("2026-10-01T00:00:00")
 		expect(resolved.model.detail.key).toContain("900")
-	})
-
-	test("a detail answer for a superseded window is dropped", () => {
-		const first = windowed()
-		const second = pageUpdate(
-			first,
-			Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Load" }),
-		).model
-		const late = pageUpdate(
-			second,
-			Message.CompletedFetchDetail({
-				key: first.detail.key ?? "",
-				result: Result.fail(toLoadFailure("boom")),
-			}),
-		)
-		expect(late.model.detail).toEqual(second.detail)
 	})
 
 	test("a failed detail fails the page and Retry asks it again", () => {

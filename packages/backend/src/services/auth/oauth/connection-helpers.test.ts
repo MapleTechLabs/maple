@@ -146,6 +146,51 @@ describe("refreshAccessToken classification", () => {
 	})
 })
 
+describe("getValidConnectionToken", () => {
+	it.live("concurrent reads of an expired token refresh once (single-flight, no false revoke)", () => {
+		const testDb = createTestDb(trackedDbs)
+		const counters = { refreshes: 0 }
+		// The refresh token rotates on use: a second refresh with it would 400.
+		const fetch = fetchLayer(() => {
+			counters.refreshes += 1
+			return counters.refreshes > 1
+				? jsonResponse({ error: "invalid_grant" }, 400)
+				: jsonResponse({
+						access_token: "fresh-access-token",
+						refresh_token: "rotated",
+						expires_in: 3600,
+					})
+		})
+		return Effect.gen(function* () {
+			const helpers = yield* makeHelpers()
+			yield* seedExpiredConnection(helpers)
+			const [a, b] = yield* Effect.all(
+				[
+					helpers.getValidConnectionToken(tokenConfig, ORG),
+					helpers.getValidConnectionToken(tokenConfig, ORG),
+				],
+				{ concurrency: 2 },
+			)
+			assert.strictEqual(a.accessToken, "fresh-access-token")
+			assert.strictEqual(b.accessToken, "fresh-access-token")
+			assert.strictEqual(counters.refreshes, 1)
+			assert.isNull(yield* revokedAtOf(testDb))
+		}).pipe(Effect.provide(provideBase(testDb, fetch)))
+	})
+})
+
+describe("requireStateRow", () => {
+	it.live("rejects a state that was never issued", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fetch = fetchLayer(() => jsonResponse({ error: "unexpected" }, 500))
+		return Effect.gen(function* () {
+			const helpers = yield* makeHelpers()
+			const error = yield* helpers.requireStateRow("state-that-was-never-issued").pipe(Effect.flip)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+		}).pipe(Effect.provide(provideBase(testDb, fetch)))
+	})
+})
+
 describe("persistRefreshedTokens", () => {
 	it.live("retries a transient persistence failure instead of losing the rotated tokens", () => {
 		const testDb = createTestDb(trackedDbs)

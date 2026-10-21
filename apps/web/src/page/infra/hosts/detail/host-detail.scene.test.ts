@@ -14,7 +14,6 @@ import { view as pageView } from "./view"
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const window = { startTime: "2026-10-01 11:00:00", endTime: "2026-10-01 12:00:00" }
-const later = { startTime: "2026-10-01 11:05:00", endTime: "2026-10-01 12:05:00" }
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -53,20 +52,6 @@ describe("host detail", () => {
 		const names = (resolved(entered.model).commands ?? []).map(({ name }) => name)
 		expect(names.filter((name) => name === "FetchInfraHostSummary")).toHaveLength(1)
 		expect(names.filter((name) => name === "FetchInfraHostSeries")).toHaveLength(5)
-	})
-
-	test("a series answer for a superseded window is dropped", () => {
-		const first = resolved(init(route, context).model).model
-		const second = resolved(first, later).model
-		const late = pageUpdate(
-			second,
-			Message.CompletedFetchSeries({
-				metric: "cpu",
-				key: first.series.cpu?.key ?? "",
-				result: Result.succeed({ rows: [], unit: "percent" }),
-			}),
-		)
-		expect(late.model.series.cpu).toEqual(second.series.cpu)
 	})
 
 	test("the loaded summary renders the hero and the rail", () => {

@@ -145,6 +145,16 @@ describe("inspect_trace bounded-overview rendering", () => {
 	})
 })
 
+/** Runs inspect_span and returns the rendered text beside the structured output. */
+const inspectSpan = async (params: Record<string, unknown>) => {
+	const result = await runToolDirect(rt, "inspect_span", params)
+	return {
+		result,
+		text: markdown(result),
+		output: Schema.decodeUnknownSync(InspectSpanOutput)(result.structuredContent),
+	}
+}
+
 describe("inspect_span drill-down", () => {
 	it("returns the full attribute set for a known span", async () => {
 		const result = await runToolDirect(rt, "inspect_span", {
@@ -175,15 +185,11 @@ describe("inspect_span drill-down", () => {
 			span_id: AI_SPAN_SPAN_ID,
 		})
 		const text = markdown(result)
-		expect(text).toContain("### AI agent span — inference")
-		expect(text).toContain("#### Messages")
 		expect(text).toContain("why is checkout failing?")
 		// The call's result is captured on the tool span, not on this one.
-		expect(text).toContain("#### Tool calls")
 		expect(text).toContain("table orders does not exist")
 		// The raw maps are still there, and still below the decoded view.
-		expect(text.indexOf("### AI agent span")).toBeLessThan(text.indexOf("### Span attributes"))
-		expect(text).toContain("`gen_ai.request.model`")
+		expect(text.indexOf("why is checkout failing?")).toBeLessThan(text.indexOf("`gen_ai.request.model`"))
 		expect(text).toContain('get_agent_session session_id="wrun_01KZEVAL"')
 	})
 
@@ -196,43 +202,33 @@ describe("inspect_span drill-down", () => {
 			sql.includes(AI_SPAN_TRACE_ID) &&
 			!sql.includes(AI_SPAN_SPAN_ID) &&
 			!sql.includes("AS spanCount")
-		const result = await runToolDirect(rt, "inspect_span", {
-			trace_id: AI_SPAN_TRACE_ID,
-			span_id: AI_SPAN_SPAN_ID,
-		})
-		const text = markdown(result)
+		const { result, output } = await inspectSpan({ trace_id: AI_SPAN_TRACE_ID, span_id: AI_SPAN_SPAN_ID })
 		expect(result.isError).toBeUndefined()
-		expect(text).toContain("AI decode skipped: the trace is too large to read in one call")
-		expect(text).toContain("### Span attributes")
-		expect(text).toContain("`gen_ai.request.model`")
-		expect(text).not.toContain("#### Messages")
+		expect(output.ai?._tag).toBe("undecoded")
+		expect(output.attributes["gen_ai.request.model"]).toBeDefined()
 	})
 
 	// A trace bigger than one read is the case where "not an AI span" and "not
 	// decoded" have to be told apart: the raw attributes still answer.
 	it("falls back to the raw view when the span is past the trace read's first page", async () => {
-		const text = markdown(
-			await runToolDirect(rt, "inspect_span", {
-				trace_id: PARTIAL_AI_TRACE_ID,
-				span_id: PARTIAL_AI_SPAN_ID,
-			}),
-		)
+		const { text, output } = await inspectSpan({
+			trace_id: PARTIAL_AI_TRACE_ID,
+			span_id: PARTIAL_AI_SPAN_ID,
+		})
 		expect(text).toContain(`only the first ${PARTIAL_AI_TRACE_SPANS - 1} spans of trace`)
-		expect(text).toContain("### Span attributes")
-		expect(text).not.toContain("#### Messages")
+		expect(output.ai?._tag).toBe("partial")
+		expect(output.found).toBe(true)
 	})
 
 	// The same trace, with the span ON its first page: it decodes, but a call
 	// whose tool span is past the page renders as "not captured" — and only the
 	// note tells that apart from a result the span never recorded.
 	it("decodes a span on the first page of a partial trace, saying the rest was not read", async () => {
-		const result = await runToolDirect(rt, "inspect_span", {
+		const { text, output } = await inspectSpan({
 			trace_id: PARTIAL_AI_TRACE_ID,
 			span_id: PARTIAL_AI_FIRST_SPAN_ID,
 		})
-		const text = markdown(result)
-		expect(text).toContain("### AI agent span")
-		expect(text).toContain("#### Messages")
+		expect(output.ai?._tag).toBe("decoded")
 		expect(text).toContain(`Only the first ${PARTIAL_AI_TRACE_SPANS - 1} spans of the trace were read`)
 		expect(text).toContain("result: not captured")
 	})
@@ -242,43 +238,31 @@ describe("inspect_span drill-down", () => {
 	// that instant is the window, and the lookup over `traces` never runs.
 	it("skips the trace-bounds lookup when the caller passed a timestamp", async () => {
 		const before = traceWindowReads
-		const text = markdown(
-			await runToolDirect(rt, "inspect_span", {
-				trace_id: AI_SPAN_TRACE_ID,
-				span_id: AI_SPAN_SPAN_ID,
-				timestamp: "2026-08-19T10:00:00Z",
-			}),
-		)
+		const { output } = await inspectSpan({
+			trace_id: AI_SPAN_TRACE_ID,
+			span_id: AI_SPAN_SPAN_ID,
+			timestamp: "2026-08-19T10:00:00Z",
+		})
 		expect(traceWindowReads).toBe(before)
-		expect(text).toContain("#### Messages")
+		expect(output.ai?._tag).toBe("decoded")
 	})
 
 	// A trace read that ended WITHOUT a cursor read all of it, so a span missing
 	// from it is not a paging problem — telling the model to page further would
 	// send it after a span the index does not have yet.
 	it("says the span is not indexed yet when the whole trace was read without it", async () => {
-		const text = markdown(
-			await runToolDirect(rt, "inspect_span", {
-				trace_id: AI_SPAN_TRACE_ID,
-				span_id: LAGGED_AI_SPAN_ID,
-			}),
-		)
+		const { text, output } = await inspectSpan({ trace_id: AI_SPAN_TRACE_ID, span_id: LAGGED_AI_SPAN_ID })
 		expect(text).toContain("not in the AI index yet")
 		expect(text).not.toContain("spans of trace")
-		expect(text).toContain("### Span attributes")
+		expect(output.found).toBe(true)
 	})
 
 	// The AI read pins the trace id into a warehouse param, so a trace stored
 	// under any other id shape still gets its raw attributes, undecoded.
 	it("falls back to the raw view for an AI span under a non-hex trace id", async () => {
-		const text = markdown(
-			await runToolDirect(rt, "inspect_span", {
-				trace_id: NON_HEX_TRACE_ID,
-				span_id: NON_HEX_AI_SPAN_ID,
-			}),
-		)
-		expect(text).toContain("### Span attributes")
-		expect(text).not.toContain("### AI agent span")
+		const { output } = await inspectSpan({ trace_id: NON_HEX_TRACE_ID, span_id: NON_HEX_AI_SPAN_ID })
+		expect(output.found).toBe(true)
+		expect(output.ai).toBeUndefined()
 	})
 
 	it("clips the decoded payloads to payload_chars, clamping an out-of-range one", async () => {

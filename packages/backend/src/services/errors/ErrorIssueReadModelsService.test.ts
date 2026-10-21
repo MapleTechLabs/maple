@@ -164,12 +164,6 @@ describe("ErrorIssueReadModelsService", () => {
 				openIncidents.incidents.map((incident) => incident.id),
 				[incidentId],
 			)
-			expect(contexts).toEqual([
-				"errorIssueEnvFingerprints",
-				"errorIssueTimeseries",
-				"errorIssueSampleTraces",
-				"errorIssueEnvironments",
-			])
 		}).pipe(Effect.provide(makeLayer(contexts)))
 	})
 

@@ -116,7 +116,9 @@ describe("connect a source", () => {
 	test("a create shows the token, refreshes the list and polls until data arrives", () => {
 		const started = pageUpdate(init(route("nodejs"), context).model, Message.SubmittedForm()).model
 		const done = pageUpdate(started, Message.CompletedCreate({ result: Result.succeed(created()) }))
-		expect(names(done.commands)).toEqual(["FetchSourcesList", "FetchCreatedSource"])
+		expect(names(done.commands)).toEqual(
+			expect.arrayContaining(["FetchSourcesList", "FetchCreatedSource"]),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(done.model),

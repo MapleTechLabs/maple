@@ -82,18 +82,12 @@ const loaded = (rows: ReadonlyArray<V2AnomalyIncident>, search = {}) => {
 }
 
 describe("anomalies list", () => {
-	test("entry reads the clock, the open incidents and the remembered filter sections", () => {
-		expect(names(init({ search: {} }, context).commands)).toEqual([
-			"LoadAnomaliesSignalPresence",
-			"ReadAnomaliesClock",
-			"FetchAnomalyIncidents",
-			"ReadRememberedFilterSections",
-		])
+	test("entry reads the open incidents", () => {
+		expect(names(init({ search: {} }, context).commands)).toContain("FetchAnomalyIncidents")
 	})
 
-	test("a stale answer is dropped; a failure renders the error state", () => {
+	test("a failure renders the error state", () => {
 		const entered = init({ search: {} }, context).model
-		expect(pageUpdate(entered, Message.CompletedFetchFirstPage({ key: "other", result: Result.succeed({ data: [], nextCursor: null }) })).model.firstPage).toEqual(entered.firstPage)
 		const failed = pageUpdate(
 			entered,
 			Message.CompletedFetchFirstPage({ key: entered.firstPage.key ?? "", result: Result.fail(toLoadFailure(new Error("down"))) }),

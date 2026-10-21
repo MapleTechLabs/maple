@@ -62,7 +62,8 @@ const withOrgTotals = (
 		readonly sampledRootlessCount: number
 	}>,
 ) => {
-	const sum = (pick: (row: (typeof rows)[number]) => number) => rows.reduce((total, row) => total + pick(row), 0)
+	const sum = (pick: (row: (typeof rows)[number]) => number) =>
+		rows.reduce((total, row) => total + pick(row), 0)
 	const totals = {
 		orgTraceCount: sum((row) => row.traceCount),
 		orgRootlessCount: sum((row) => row.rootlessCount),
@@ -131,7 +132,9 @@ const healthyWarehouse: WarehouseAuditInputs = {
 				sampleTraceIds: [],
 			},
 		],
-		rootless: withOrgTotals([{ entryService: "api", traceCount: 10_000, rootlessCount: 1, sampledRootlessCount: 0 }]),
+		rootless: withOrgTotals([
+			{ entryService: "api", traceCount: 10_000, rootlessCount: 1, sampledRootlessCount: 0 },
+		]),
 	},
 }
 
@@ -311,14 +314,6 @@ describe("runSetupAudit — baseline", () => {
 
 		// Every check must actually have produced a sentence, or the guard proves nothing.
 		const sentences = failing.filter((row) => row.status === "fail" && row.detail !== null)
-		const fired = new Set(sentences.map((row) => row.id))
-		console.log("FIRED:", [...fired].sort().join(","))
-		console.log(
-			"SILENT:",
-			SETUP_AUDIT_CHECKS.map((c) => c.id)
-				.filter((id) => !fired.has(id))
-				.join(","),
-		)
 
 		const singularVerbAfterPluralNoun =
 			/\b\d+ [a-z][a-z .\-_*`]*s (is|has|emits|sends|receives|appears|uses|starts|logs|arrives|duplicates|marks)\b/

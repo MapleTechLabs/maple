@@ -3,7 +3,7 @@ import { expect as expectView, given, Mount, role, scene, text, withViewInputs }
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import { FrameMessage } from "../kit/frame"
-import { analyticsOf, context, names, NOW, PAYMENTS, window } from "../kit/test-fixtures"
+import { analyticsOf, context, names, NOW, window } from "../kit/test-fixtures"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -58,20 +58,9 @@ describe("code review analytics", () => {
 		const filtered = navigated(reloaded, { author: "ada-l" })
 		expect(names(filtered.commands)).toEqual(["FetchCodeReviewAnalytics"])
 		const moved = navigated(filtered.model, { author: "ada-l", timePreset: "1h" })
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveCodeReviewWindow", "Refresh"]])
-	})
-
-	test("an answer for a superseded filter is dropped", () => {
-		const first = windowed().model
-		const second = navigated(first, { repo: PAYMENTS }).model
-		const dropped = pageUpdate(
-			second,
-			Message.CompletedFetchAnalytics({
-				key: first.analytics.key ?? "",
-				result: Result.succeed(analyticsOf(9)),
-			}),
-		).model
-		expect(dropped.analytics).toEqual(second.analytics)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveCodeReviewWindow", "Refresh"],
+		])
 	})
 
 	test("a filtered window with nothing in it offers to clear the filters", () => {

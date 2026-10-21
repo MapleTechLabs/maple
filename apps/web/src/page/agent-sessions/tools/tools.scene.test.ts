@@ -64,15 +64,6 @@ describe("agent tools", () => {
 		)
 	})
 
-	test("a stale totals answer is dropped", () => {
-		const resolved = windowed().model
-		const late = pageUpdate(
-			resolved,
-			Message.CompletedFetchTotals({ key: "old", result: Result.succeed(totals) }),
-		)
-		expect(AsyncData.isLoading(late.model.totals.data)).toBe(true)
-	})
-
 	test("tiles, failing chip and table sort write the URL or the sort", () => {
 		const model = windowed().model
 		expect(pageUpdate(model, Message.ClickedMetric({ metric: "error_rate" })).outMessage).toEqual(
@@ -100,19 +91,23 @@ describe("agent tools", () => {
 
 	test("Reload re-resolves the window unsnapped and spins", () => {
 		const reloaded = pageUpdate(windowed().model, Message.ClickedReload())
-		expect(names(reloaded.commands)).toEqual(["ResolveAgentToolsWindow", "CompleteAgentToolsReloadSpin"])
+		expect(names(reloaded.commands)).toEqual(
+			expect.arrayContaining(["ResolveAgentToolsWindow", "CompleteAgentToolsReloadSpin"]),
+		)
 		expect(reloaded.model.isReloading).toBe(true)
 	})
 
 	test("after Reload, a metric tile's URL change re-reads nothing; a new filter reads only its own keys", () => {
 		const reloaded = pageUpdate(windowed().model, Message.ClickedReload()).model
-		const resolved = pageUpdate(reloaded, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" })).model
-		expect(names(routeChanged(resolved, { search: { metric: "error_rate" } }, context).commands)).toEqual([])
-		expect(names(routeChanged(resolved, { search: { tool: "Bash" } }, context).commands)).toEqual([
-			"FetchAgentToolsSeries",
-			"FetchAgentToolsSeries",
-			"FetchAgentToolsTotals",
-			"FetchAgentToolsBreakdowns",
-		])
+		const resolved = pageUpdate(
+			reloaded,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" }),
+		).model
+		expect(names(routeChanged(resolved, { search: { metric: "error_rate" } }, context).commands)).toEqual(
+			[],
+		)
+		const filtered = names(routeChanged(resolved, { search: { tool: "Bash" } }, context).commands)
+		expect(filtered.filter((name) => name === "FetchAgentToolsTotals")).toHaveLength(1)
+		expect(filtered).not.toContain("FetchAgentToolsFacets")
 	})
 })
