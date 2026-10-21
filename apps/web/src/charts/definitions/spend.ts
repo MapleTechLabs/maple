@@ -50,7 +50,15 @@ export const buildSpendCumulative = (spec: SpendSpec): BuiltChart<SpendDatum, Da
 	const cells: ReadonlyArray<SpendCell> = points.flatMap((point) =>
 		keys.map((band) => ({ point, band, value: point.bands[band] ?? null })),
 	)
-	const projectedPoints = points.filter((point) => point.projected !== null)
+	// The series anchors the projection at today and the cycle's end only; every day between gets its
+	// point on that straight line so hovering a day to come reads its projected total.
+	const projectionOf = (point: Point): number | null => {
+		if (!hasFuture || todayPoint === undefined || lastPoint === undefined || point.dayMs < todayPoint.dayMs) return null
+		const start = todayPoint.projected ?? 0
+		const span = lastPoint.dayMs - todayPoint.dayMs
+		return span <= 0 ? spec.projected : start + ((spec.projected - start) * (point.dayMs - todayPoint.dayMs)) / span
+	}
+	const projectedPoints = points.filter((point) => projectionOf(point) !== null)
 
 	const definition = defineChart({
 		marks: [
@@ -71,7 +79,7 @@ export const buildSpendCumulative = (spec: SpendSpec): BuiltChart<SpendDatum, Da
 						lineY(projectedPoints, {
 							id: "projected",
 							x: at,
-							y: (point: Point) => point.projected,
+							y: projectionOf,
 							stroke: spec.primary,
 							strokeWidth: 1.5,
 							strokeDasharray: "4 4",
@@ -114,14 +122,24 @@ export const buildSpendCumulative = (spec: SpendSpec): BuiltChart<SpendDatum, Da
 		tooltipOf: (focused) =>
 			Option.map(Option.fromNullishOr(focused[0]?.datum), (datum) => {
 				const day = dayOf(datum)
+				const money = (value: number) => formatCurrency(value, spec.currency)
+				const actual = spec.bands.flatMap((band) => {
+					const value = day.bands[band.key]
+					return value === null || value === undefined || (value === 0 && band.key !== "base")
+						? []
+						: [{ label: band.label, color: band.color, dashed: false, value: money(value) }]
+				})
+				const spent = actual.length === 0 ? null : spec.bands.reduce((sum, band) => sum + (day.bands[band.key] ?? 0), 0)
+				const projection = day.future ? projectionOf(day) : null
 				return ChartTooltip.Bucket({
-					heading: dateLabel(day.date),
-					rows: spec.bands.flatMap((band) => {
-						const value = day.bands[band.key]
-						return value === null || value === undefined
+					heading: day.future ? `${dateLabel(day.date)} · projected` : dateLabel(day.date),
+					rows: [
+						...actual,
+						...(projection === null
 							? []
-							: [{ label: band.label, color: band.color, dashed: false, value: formatCurrency(value, spec.currency) }]
-					}),
+							: [{ label: "Projected", color: spec.primary, dashed: true, value: money(projection) }]),
+					],
+					...(spent !== null && actual.length > 1 && { total: money(spent) }),
 				})
 			}),
 	}

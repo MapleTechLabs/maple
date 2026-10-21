@@ -1,12 +1,14 @@
 import { formatCurrency } from "@maple/domain/format"
 import type { BillingInvoice, CatalogPlan } from "@maple/domain/http"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
 import { formatAddressLines } from "../../../lib/billing/billing-profile"
 import { planDisplayName } from "../../../lib/billing/plans"
 import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../../ui/button"
+import { alert, alertAction, alertDescription, alertTitle } from "../../../ui/alert"
+import { button, linkButton } from "../../../ui/button"
 import { badge } from "../../../ui/display"
 import { emptyMessage } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
@@ -44,40 +46,56 @@ const statusBadge = (status: string) => {
 	}
 }
 
+/** Stripe statuses that still want paying: open, or overdue enough to be marked uncollectible. */
+const isUnpaid = (invoice: BillingInvoice) => ["open", "past_due", "uncollectible"].includes(invoice.status.toLowerCase())
+
+const hostedUrl = (invoice: BillingInvoice): string | null =>
+	invoice.hostedInvoiceUrl === undefined || invoice.hostedInvoiceUrl === null || invoice.hostedInvoiceUrl === ""
+		? null
+		: invoice.hostedInvoiceUrl
+
+const externalLink = (h: H, href: string) => [h.Href(href), h.Rel("noopener noreferrer"), h.Target("_blank")]
+
 const planLabel = (invoice: BillingInvoice, catalog: ReadonlyArray<CatalogPlan>): string => {
 	const ids = invoice.planIds ?? []
 	return ids.length === 0 ? EMPTY_VALUE : ids.map((id) => planDisplayName(id, catalog)).join(" + ")
 }
 
-const INVOICE_COLUMNS = ["Date", "Plan", "Status", "Amount", "Invoice link"] as const
+const INVOICE_COLUMNS = [
+	{ label: "Date", className: "w-32" },
+	{ label: "Plan", className: "" },
+	{ label: "Status", className: "w-24" },
+	{ label: "Amount", className: "w-28 text-right" },
+	{ label: "Invoice", className: "w-20 text-right" },
+] as const
 
 const invoiceRow = (h: H, invoice: BillingInvoice, timeZone: string, catalog: ReadonlyArray<CatalogPlan>, index: number): Html => {
 	const status = statusBadge(invoice.status)
 	const date = formatDateInTimezone(invoice.createdAt, { timeZone })
+	const url = hostedUrl(invoice)
+	const unpaid = isUnpaid(invoice)
 	return tableRow(
 		h,
 		[
 			tableCell(h, [date], "w-32 whitespace-nowrap tabular-nums"),
 			tableCell(h, [planLabel(invoice, catalog)], "max-w-0 truncate text-muted-foreground"),
 			tableCell(h, [badge(h, { size: "sm", variant: status.variant }, [status.label])], "w-24"),
-			tableCell(h, [formatCurrency(invoice.total, invoice.currency)], "w-24 text-right tabular-nums"),
+			tableCell(h, [formatCurrency(invoice.total, invoice.currency)], "w-28 text-right font-mono tabular-nums"),
 			tableCell(
 				h,
-				invoice.hostedInvoiceUrl === undefined || invoice.hostedInvoiceUrl === null || invoice.hostedInvoiceUrl === ""
+				url === null
 					? []
 					: [
 							h.a(
 								[
-									h.AriaLabel(`View invoice from ${date}`),
+									h.AriaLabel(`${unpaid ? "Pay" : "View"} invoice from ${date}`),
 									h.Class("text-primary text-xs font-medium hover:underline"),
-									h.Href(invoice.hostedInvoiceUrl),
-									h.Rel("noopener noreferrer"),
-									h.Target("_blank"),
+									...externalLink(h, url),
 								],
-								["View"],
+								[unpaid ? "Pay" : "View"],
 							),
 						],
-				"w-14 text-right",
+				"w-20 text-right",
 			),
 		],
 		undefined,
@@ -100,7 +118,10 @@ const invoicesSkeleton = (h: H): Html =>
 export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 	const catalog = AsyncData.getOrElse(model.plans, () => [])
 	const invoices = [...AsyncData.getOrElse(model.invoices, () => [])].sort((a, b) => b.createdAt - a.createdAt)
-	const visible = model.isAdmin ? invoices.slice(0, RECENT_INVOICES) : invoices
+	// Unpaid invoices always stay in the compact list, however old.
+	const visible = model.isAdmin
+		? invoices.filter((invoice, index) => index < RECENT_INVOICES || isUnpaid(invoice))
+		: invoices
 	const body = AsyncData.matchDataSplitEmpty(model.invoices, {
 		onIdle: () => invoicesSkeleton(h),
 		onLoading: () => invoicesSkeleton(h),
@@ -132,19 +153,16 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 				? emptyMessage(h, { dashed: true }, ["Your first invoice appears after your first billing cycle closes."])
 				: panel(h, {}, [
 						table(h, {}, [
-							// The rows read without labels, so the headers exist for assistive tech only.
-							tableHeader(
-								h,
-								[
-									tableRow(
-										h,
-										INVOICE_COLUMNS.map((column) =>
-											tableHead(h, [h.span([h.Class("sr-only")], [column])], "h-0 p-0", [h.Key(column)]),
-										),
+							tableHeader(h, [
+								tableRow(
+									h,
+									INVOICE_COLUMNS.map((column) =>
+										tableHead(h, [column.label], cn("text-2xs font-medium text-muted-foreground", column.className), [
+											h.Key(column.label),
+										]),
 									),
-								],
-								{ className: "[&_tr]:border-0" },
-							),
+								),
+							]),
 							tableBody(h, visible.map((invoice, index) => invoiceRow(h, invoice, timeZone, catalog, index))),
 						]),
 					]),
@@ -256,4 +274,50 @@ export const detailsSection = (h: H, model: Model): Html => {
 					]),
 		],
 	)
+}
+
+/** Above everything else on the tab: what is owed and a direct way to pay it on Stripe's invoice page. */
+export const unpaidInvoicesNotice = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
+	const unpaid = AsyncData.getOrElse(model.invoices, () => [])
+		.filter(isUnpaid)
+		.toSorted((a, b) => a.createdAt - b.createdAt)
+	const oldest = unpaid[0]
+	if (oldest === undefined) return []
+	const overdue = unpaid.some((invoice) => invoice.status.toLowerCase() !== "open")
+	const currencies = new Set(unpaid.map((invoice) => invoice.currency.toLowerCase()))
+	const amount =
+		currencies.size === 1
+			? formatCurrency(
+					unpaid.reduce((sum, invoice) => sum + invoice.total, 0),
+					oldest.currency,
+				)
+			: null
+	const title =
+		unpaid.length === 1
+			? `You have an unpaid invoice${amount === null ? "" : ` for ${amount}`}`
+			: `You have ${unpaid.length} unpaid invoices${amount === null ? "" : ` totalling ${amount}`}`
+	const since = formatDateInTimezone(oldest.createdAt, { timeZone })
+	const url = hostedUrl(oldest)
+	return [
+		alert(h, { variant: overdue ? "crit" : "warn" }, [
+			icon(h, "CircleWarningIcon"),
+			alertTitle(h, [title]),
+			alertDescription(h, [
+				model.isAdmin
+					? `${unpaid.length === 1 ? "Issued" : "The oldest was issued"} ${since}. Pay it with a card or bank transfer on the invoice page; it updates here once Stripe confirms the payment.`
+					: `${unpaid.length === 1 ? "Issued" : "The oldest was issued"} ${since}. An org admin can pay it from this page.`,
+			]),
+			...(model.isAdmin
+				? [
+						alertAction(h, [
+							url === null
+								? button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedManageBilling())] }, ["Pay in billing portal"])
+								: linkButton(h, { size: "sm", href: url, attributes: [h.Rel("noopener noreferrer"), h.Target("_blank")] }, [
+										unpaid.length === 1 ? "Pay invoice" : "Pay oldest invoice",
+									]),
+						]),
+					]
+				: []),
+		]),
+	]
 }

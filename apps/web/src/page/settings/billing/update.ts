@@ -203,7 +203,7 @@ export const init = (isAdmin: boolean, isReturning: boolean): Return => ({
 		editingCap: null,
 		capDraft: "",
 		isSavingCap: false,
-		isBreakdownOpen: false,
+		isBreakdownOpen: true,
 		isOpeningPortal: false,
 		compareDialog: Dialog.init("billing-compare", "dialog"),
 		attaching: null,

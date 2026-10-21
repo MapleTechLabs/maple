@@ -36,14 +36,39 @@ const priceLabel = (spend: SpendModel): { price: string; suffix: string } => {
 	return { price: `$${plan.dollars}`, suffix: billsUsage(spend) ? `${interval} + usage` : interval }
 }
 
-/** "Bring your own cloud ($99/month)": an add-on the plan could take, as plain text. */
-const addOnLabel = (addOn: CatalogPlan): string => {
-	const name = sentenceCasePlanName(addOn.name)
-	const amount = addOn.price?.amount
-	return amount === undefined || amount === null ? name : `${name} ($${amount}/${addOn.price?.interval ?? "month"})`
-}
+const perInterval = (dollars: number | null, interval: string | null | undefined): string =>
+	dollars === null ? "Custom" : `$${dollars}/${interval ?? "month"}`
 
-const planRow = (h: H, spend: SpendModel, plans: ReadonlyArray<CatalogPlan>): Html => {
+/** One line of the plan list: a name and caption on the left, a price and an optional action on the right. */
+const planLine = (
+	h: H,
+	options: Readonly<{ key: string; name: Html | string; caption: string; price: Html | string; muted?: boolean; action?: Html }>,
+): Html =>
+	h.div(
+		[h.Key(options.key), h.Class("flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-3")],
+		[
+			h.div(
+				[h.Class("flex min-w-0 flex-col gap-0.5")],
+				[
+					h.span([h.Class(cn("text-sm font-medium", options.muted === true && "text-muted-foreground"))], [options.name]),
+					h.span([h.Class("text-2xs text-muted-foreground")], [options.caption]),
+				],
+			),
+			h.div(
+				[h.Class("flex items-center gap-4")],
+				[
+					h.span(
+						[h.Class(cn("font-mono text-sm tabular-nums", options.muted === true && "text-muted-foreground"))],
+						[options.price],
+					),
+					...(options.action === undefined ? [] : [options.action]),
+				],
+			),
+		],
+	)
+
+/** The plan, then each add-on it carries with its price, then the add-ons it could take. */
+const planRow = (h: H, spend: SpendModel, plans: ReadonlyArray<CatalogPlan>, canManage: boolean): Html => {
 	if (spend.planName === null)
 		return panel(h, { padded: true }, [
 			h.p([h.Class("text-sm text-muted-foreground")], ["No active plan. Compare plans to pick one."]),
@@ -51,42 +76,44 @@ const planRow = (h: H, spend: SpendModel, plans: ReadonlyArray<CatalogPlan>): Ht
 	const { price, suffix } = priceLabel(spend)
 	const activeIds = new Set(spend.addOns.map((addOn) => addOn.id))
 	const available = plans.filter((plan) => plan.addOn === true && !activeIds.has(plan.id))
-	return panel(h, { className: "flex-row flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3.5" }, [
-		h.div(
-			[h.Class("flex items-baseline gap-3")],
-			[
-				h.span([h.Class("text-sm font-medium")], [sentenceCasePlanName(spend.planName)]),
-				h.span(
-					[h.Class("flex items-baseline gap-0.5")],
-					[
-						h.span([h.Class("font-mono text-sm tabular-nums")], [price]),
-						h.span([h.Class("text-2xs text-muted-foreground")], [suffix]),
-					],
+	const activeCharges = spend.charges.filter((charge) => charge.kind === "addOn")
+	return panel(h, { className: "divide-y divide-border/60" }, [
+		planLine(h, {
+			key: "plan",
+			name: sentenceCasePlanName(spend.planName),
+			caption: "Base plan",
+			price: h.span(
+				[h.Class("flex items-baseline gap-0.5")],
+				[price, h.span([h.Class("font-sans text-2xs text-muted-foreground")], [suffix])],
+			),
+		}),
+		...activeCharges.map((charge) =>
+			planLine(h, {
+				key: charge.key,
+				name: h.span(
+					[h.Class("flex items-center gap-2")],
+					[sentenceCasePlanName(charge.name), badge(h, { size: "sm", variant: "ok" }, ["Active"])],
 				),
-			],
+				caption: "Add-on, billed with your plan",
+				price: perInterval(charge.dollars, charge.interval),
+			}),
 		),
-		...(spend.addOns.length > 0 || available.length > 0
-			? [
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-1.5")],
-						[
-							...spend.addOns.map((addOn) =>
-								badge(h, { size: "sm", pill: true, className: "bg-primary/15 text-primary" }, [
-									sentenceCasePlanName(addOn.name ?? "Add-on"),
-								]),
-							),
-							...(available.length > 0
-								? [
-										h.span(
-											[h.Class("text-2xs text-muted-foreground")],
-											["Available add-ons: ", available.map(addOnLabel).join(", ")],
-										),
-									]
-								: []),
-						],
+		...available.map((addOn) =>
+			planLine(h, {
+				key: addOn.id,
+				name: sentenceCasePlanName(addOn.name),
+				caption: "Available add-on",
+				price: `+${perInterval(addOn.price?.amount ?? null, addOn.price?.interval)}`,
+				muted: true,
+				...(canManage && {
+					action: button(
+						h,
+						{ variant: "outline", size: "xs", attributes: [h.OnClick(Message.ClickedCompare())] },
+						["Add"],
 					),
-				]
-			: []),
+				}),
+			}),
+		),
 	])
 }
 
@@ -312,7 +339,7 @@ export const planSection = (
 		{
 			id: "settings-billing-plan",
 			title: "Plan",
-			description: ["Your plan and add-ons."],
+			description: ["What you pay for every cycle before usage: your plan and its add-ons."],
 			framed: false,
 			...(options.canManage && {
 				actions: button(
@@ -325,7 +352,7 @@ export const planSection = (
 		[
 			options.spend === null || visiblePlans === undefined
 				? skeleton(h, "h-12 w-full rounded-md")
-				: planRow(h, options.spend, visiblePlans),
+				: planRow(h, options.spend, visiblePlans, options.canManage),
 			...(options.isLegacy
 				? [
 						h.p(

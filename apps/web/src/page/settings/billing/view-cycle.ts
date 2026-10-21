@@ -43,7 +43,9 @@ const SPEND_CHART_HEIGHT = 190
 
 const BASE_COLOR = "#57534a"
 const BANDS = ["base", ...SPEND_FEATURES] as const
-const bandLabel = (band: (typeof BANDS)[number]) => (band === "base" ? "Base plan" : FEATURE_LABELS[band])
+/** The base band carries every fixed fee, so it names the add-ons when there are any. */
+const bandLabel = (band: (typeof BANDS)[number], spend: SpendModel) =>
+	band === "base" ? (spend.addOns.length > 0 ? "Plan + add-ons" : "Base plan") : FEATURE_LABELS[band]
 const bandColor = (band: (typeof BANDS)[number]) => (band === "base" ? BASE_COLOR : FEATURE_COLORS[band])
 
 /** The custom properties the plot reads: the projection's primary and the chrome. */
@@ -117,7 +119,7 @@ const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResp
 			projected: point.projected,
 			future: point.future,
 		})),
-		bands: BANDS.map((band) => ({ key: band, label: bandLabel(band), color: bandColor(band) })),
+		bands: BANDS.map((band) => ({ key: band, label: bandLabel(band, spend), color: bandColor(band) })),
 		primary,
 		chrome: { border: resolveColor(colors, "--border"), background: resolveColor(colors, "--background") },
 		projected,
@@ -137,7 +139,7 @@ const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResp
 						items: [
 							...BANDS.filter((band) => (latest?.[band] ?? 0) > 0).map((band) => ({
 								key: band,
-								label: bandLabel(band),
+								label: bandLabel(band, spend),
 								color: bandColor(band),
 							})),
 							...(hasFuture ? [{ key: "projected", label: "Projection", color: primary, swatch: "dashed" as const }] : []),
