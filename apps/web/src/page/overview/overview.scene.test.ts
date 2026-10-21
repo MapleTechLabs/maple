@@ -250,6 +250,26 @@ describe("overview", () => {
 		)
 	})
 
+	test("when presence could not be read, an empty card gives no wider-range hint", () => {
+		const loadedModel = loaded([snapshotRow("checkout")])
+		const failed = pageUpdate(
+			loadedModel,
+			Message.CompletedLoadSignalPresence({ result: Result.fail(toLoadFailure("boom")) }),
+		).model
+		const empty = pageUpdate(
+			failed,
+			Message.CompletedFetchLogSeries({ key: failed.logSeries.key ?? "", result: Result.succeed([]) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(empty),
+			themeResolved(),
+			cursorMounted(),
+			expectView(text("No data in this window")).toExist(),
+			expectView(text("Try a wider time range")).not.toExist(),
+		)
+	})
+
 	test("a new workspace shows a skeleton, never the quiet-window copy, until its setup state", () => {
 		scene(
 			{ update: pageUpdate, view },
