@@ -51,12 +51,16 @@ export const init = (storageKey: string): Return => ({
 })
 
 /** Back after the page was parked: the answers it waited on were dropped, so nothing is in flight. */
-export const revived = (model: Model): Model => ({
-	...model,
-	isOverviewInFlight: false,
-	isSendingTest: false,
-	copies: { endpoint: CopyButton.init(), privateKey: CopyButton.init() },
-	snippetCopies: {},
+export const revived = (model: Model): Return => ({
+	model: {
+		...model,
+		isOverviewInFlight: false,
+		isSendingTest: false,
+		copies: { endpoint: CopyButton.init(), privateKey: CopyButton.init() },
+		snippetCopies: {},
+	},
+	// A key read still out when the page was parked was dropped: ask again.
+	commands: isMounted(model) && model.keys._tag === "Pending" ? [FetchSetupKeys()] : [],
 })
 
 /** `SetupChecklist` renders (and polls) once the state is read and the checklist is not dismissed. */

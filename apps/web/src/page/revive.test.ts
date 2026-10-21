@@ -144,6 +144,20 @@ describe("reviving a page left earlier", () => {
 		expect(enterRoute(away, home, context, 3, parked).slot?.instance).toBe(3)
 	})
 
+	test("the overview asks again for what was dropped while parked: setup keys and a failed chart runtime", () => {
+		const { model } = initWith(true)({ search: {} }, context)
+		const setup =
+			model.setup === null
+				? null
+				: { ...model.setup, state: DEFAULT_QUICK_START_STATE, keys: { _tag: "Pending" as const } }
+		const parkedModel = { ...model, setup, chartRuntime: { _tag: "Failed" as const, reason: "boom" } }
+		const back = reviveOverview(parkedModel, { search: {} }, context)
+		const names = (back.commands ?? []).map((command) => command.name)
+		expect(names).toContain("FetchSetupChecklistKeys")
+		expect(names.some((name) => name.includes("ChartRuntime"))).toBe(true)
+		expect(back.model.chartRuntime._tag).toBe("Loading")
+	})
+
 	test("a page left mid-load is not parked: coming back builds it fresh", () => {
 		const left = servicesPage(1, false)
 		expect(parkPages([], left, enterRoute(left, home, context, 2).slot)).toEqual([])

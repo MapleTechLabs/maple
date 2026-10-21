@@ -309,6 +309,13 @@ const navigate = (model: Model, search: Search): Return => ({
 
 // ENTRY POINTS
 
+const loadChartRuntime = () =>
+	Command.mapMessage(LoadChartRuntime(), (message) =>
+		message._tag === "CompletedLoadChartRuntime"
+			? Message.CompletedLoadChartRuntime()
+			: Message.FailedLoadChartRuntime({ reason: message.reason }),
+	)
+
 /** `init`, with the Clerk gate as an input (`{isClerkAuthEnabled && <SetupChecklist />}`). */
 export const initWith =
 	(isClerk: boolean) =>
@@ -350,11 +357,7 @@ export const initWith =
 				...Command.mapMessages(setup?.commands ?? [], (message) =>
 					Message.GotSetupMessage({ message }),
 				),
-				Command.mapMessage(LoadChartRuntime(), (message) =>
-					message._tag === "CompletedLoadChartRuntime"
-						? Message.CompletedLoadChartRuntime()
-						: Message.FailedLoadChartRuntime({ reason: message.reason }),
-				),
+				loadChartRuntime(),
 			],
 		}
 	}
@@ -378,7 +381,9 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 	// The open-anomalies key never changes, so entry alone would keep the parked counts.
 	const anomaliesKey = requestKey(context.orgId, "anomalies.serviceCounts", { status: "open" })
 	const anomalies = Keyed.request(Keyed.forgetFailure(model.anomalies), anomaliesKey, "Refresh")
-	return {
+	// A runtime that failed before parking is asked for again, as entry does.
+	const isRuntimeFailed = model.chartRuntime._tag === "Failed"
+	const revived: Return = {
 		model: {
 			...model,
 			search: route.search,
@@ -392,14 +397,16 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 			logSeries: Keyed.forgetFailure(model.logSeries),
 			refinement: Keyed.forgetFailure(model.refinement),
 			charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
-			setup: model.setup === null ? null : Setup.revived(model.setup),
+			chartRuntime: isRuntimeFailed ? { _tag: "Loading" } : model.chartRuntime,
 		},
 		commands: [
 			ReadEntry({ orgId: context.orgId }),
 			LoadSignalPresence({ orgId: context.orgId }),
 			...(Option.isSome(anomalies) ? [FetchAnomalies({ key: anomaliesKey, refresh: false })] : []),
+			...(isRuntimeFailed ? [loadChartRuntime()] : []),
 		],
 	}
+	return withSetup(revived, Setup.revived)
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return =>

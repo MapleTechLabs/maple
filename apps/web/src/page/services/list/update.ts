@@ -288,6 +288,13 @@ const windowOnly = (search: Search): Search => ({
 
 // ENTRY POINTS
 
+const loadChartRuntime = () =>
+	Command.mapMessage(LoadChartRuntime(), (message) =>
+		message._tag === "CompletedLoadChartRuntime"
+			? Message.CompletedLoadChartRuntime()
+			: Message.FailedLoadChartRuntime({ reason: message.reason }),
+	)
+
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
 		search: route.search,
@@ -319,11 +326,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
 			),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			loadChartRuntime(),
 		],
 	}
 }
@@ -346,6 +349,9 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 		baseline: Keyed.forgetFailure(model.baseline),
 		anomalies: Option.getOrElse(anomalies, () => model.anomalies),
 		commitMessages: Keyed.forgetFailure(model.commitMessages),
+		// A runtime that failed before parking is asked for again, as entry does.
+		chartRuntime:
+			model.chartRuntime._tag === "Failed" ? { _tag: "Loading" as const } : model.chartRuntime,
 	}
 	return {
 		model: next,
@@ -353,6 +359,7 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(next, context, "Load"),
 			...(Option.isSome(anomalies) ? [FetchAnomalies({ key: anomaliesKey })] : []),
+			...(model.chartRuntime._tag === "Failed" ? [loadChartRuntime()] : []),
 		],
 	}
 }
