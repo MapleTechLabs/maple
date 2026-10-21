@@ -125,10 +125,13 @@ const TRANSIENT_RETRY_SCHEDULE = Schedule.max([Schedule.exponential("100 millis"
 // A 429 naming a daily or quota limit ("daily request limit exceeded (1000/day)") cannot
 // clear within the backoff, so retrying only adds latency. vCPU limits can clear and still retry.
 const PLAN_LIMIT_429 = /\bdaily\b[^.]*\blimit\b|\/day\)|\bquota\b/i
+const VCPU_429 = /\bvCPU\b/i
+
+const isPlanLimit429 = (error: WarehouseUpstreamError) =>
+	error.upstreamStatus === 429 && PLAN_LIMIT_429.test(error.message) && !VCPU_429.test(error.message)
 
 const isTransientUpstreamError = (error: unknown): error is WarehouseUpstreamError =>
-	error instanceof WarehouseUpstreamError &&
-	!(error.upstreamStatus === 429 && PLAN_LIMIT_429.test(error.message))
+	error instanceof WarehouseUpstreamError && !isPlanLimit429(error)
 
 // Client-side ceiling for a single query attempt. Tinybird's server-side
 // `max_execution_time` is not always honored — when its query queue is saturated

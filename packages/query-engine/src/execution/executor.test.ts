@@ -357,6 +357,7 @@ describe("makeWarehouseExecutor span instrumentation", () => {
 		Effect.gen(function* () {
 			assert.strictEqual(yield* attemptsUntilFailure("HTTP status 429: Too many requests"), 3)
 			assert.strictEqual(yield* attemptsUntilFailure("HTTP status 429: vCPU usage limit exceeded"), 3)
+			assert.strictEqual(yield* attemptsUntilFailure("HTTP status 429: vCPU quota exceeded"), 3)
 		}),
 	)
 })
