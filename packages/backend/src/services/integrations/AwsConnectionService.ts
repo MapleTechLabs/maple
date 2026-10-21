@@ -153,8 +153,10 @@ const CHECK_INTERVAL_MS = 55 * 60_000
 const CHECK_LEASE_MS = 15 * 60_000
 /** A manual check this soon after a good one answers with it. */
 const MANUAL_CHECK_INTERVAL_MS = 5_000
-/** Connections one sweep claims, sized so a slow AWS still finishes inside the lane's deadline. */
+/** Connections one batch claims; a sweep runs batches until none is full. */
 const SWEEP_LIMIT = 100
+/** A sweep starts no batch past this, inside the lane's 15 minute deadline. */
+const SWEEP_BUDGET_MS = 10 * 60_000
 /**
  * A Worker allows six simultaneous connections, shared by the lane's Postgres pool and the AWS
  * fetches; each check holds one of each at most.
@@ -495,15 +497,16 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				// Every check spends Maple's one key, whose STS limits all tenants share: a click within
 				// seconds of a good check answers with it. A pending one always asks: the stack may be new.
 				const now = yield* Clock.currentTimeMillis
-				const recent = row.lastCheckedAt !== null && now - row.lastCheckedAt < MANUAL_CHECK_INTERVAL_MS
+				const recent =
+					row.lastCheckedAt !== null && now - row.lastCheckedAt < MANUAL_CHECK_INTERVAL_MS
 				if (recent && row.verifiedAt !== null && row.lastCheckError === null) {
 					return toConnection(row)
 				}
 				return toConnection((yield* runCheck(maple.key, row)).row)
 			})
 
-			const checkDue = Effect.fn("AwsConnectionService.checkDue")(function* () {
-				if (maple === undefined) return { due: 0, checked: 0, failures: 0 }
+			/** One batch: the oldest due connections, never-checked ones first, claimed and checked. */
+			const sweepBatch = Effect.fn("AwsConnectionService.sweepBatch")(function* (key: AwsKey) {
 				const now = yield* Clock.currentTimeMillis
 				// A paused source is left out here, so it neither reads AWS nor holds a place in the limit.
 				const due = yield* dbExecute((db) =>
@@ -521,7 +524,12 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 									PG.and($.s.pausedUntil.isNotNull(), $.s.pausedUntil.lte(now)),
 								),
 							])
-							.orderBy(["lastCheckedAt", "asc"], ["id", "asc"])
+							// `false` sorts first: a connection never checked goes ahead of every stale one.
+							.orderBy(($) => [
+								[PG.asBoolean($.lastCheckedAt.isNotNull()), "asc"],
+								[$.lastCheckedAt, "asc"],
+								[$.id, "asc"],
+							])
 							.limit(SWEEP_LIMIT),
 					),
 				)
@@ -546,7 +554,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				const results = yield* Effect.forEach(
 					claimed,
 					(row) =>
-						runCheck(maple.key, row).pipe(
+						runCheck(key, row).pipe(
 							Effect.map(({ ok }) => ok),
 							Effect.withSpan("AwsConnectionService.checkDue.connection", {
 								attributes: { orgId: row.orgId, "maple.aws.connection_id": row.id },
@@ -569,6 +577,36 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					checked: results.length,
 					failures: results.filter((ok) => !ok).length,
 				}
+			})
+
+			/**
+			 * Batches until none is full or the budget is spent: a lane checks every due connection,
+			 * however many, and stops short of its deadline. What it leaves stays leased, then due.
+			 */
+			const sweepFrom = (
+				key: AwsKey,
+				startedAt: number,
+				total: AwsCheckSweep,
+			): Effect.Effect<AwsCheckSweep, IntegrationsPersistenceError> =>
+				sweepBatch(key).pipe(
+					Effect.flatMap((batch) =>
+						Effect.flatMap(Clock.currentTimeMillis, (now) => {
+							const next = {
+								due: total.due + batch.due,
+								checked: total.checked + batch.checked,
+								failures: total.failures + batch.failures,
+							}
+							return batch.due < SWEEP_LIMIT || now - startedAt >= SWEEP_BUDGET_MS
+								? Effect.succeed(next)
+								: sweepFrom(key, startedAt, next)
+						}),
+					),
+				)
+
+			const checkDue = Effect.fn("AwsConnectionService.checkDue")(function* () {
+				if (maple === undefined) return { due: 0, checked: 0, failures: 0 }
+				const startedAt = yield* Clock.currentTimeMillis
+				return yield* sweepFrom(maple.key, startedAt, { due: 0, checked: 0, failures: 0 })
 			})
 
 			const deleteConnection = Effect.fn("AwsConnectionService.delete")(function* (

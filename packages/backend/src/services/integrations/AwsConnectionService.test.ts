@@ -296,4 +296,25 @@ describe("AwsConnectionService", () => {
 			assert.strictEqual(aws.calls.length, calls)
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
+
+	it.effect("one sweep checks every due connection, past a single batch", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			// More than one batch of 100, each in its own account.
+			yield* Effect.forEach(
+				Array.from({ length: 101 }, (_, index) => index),
+				(index) =>
+					service.create(orgId, userId, {
+						accountId: Schema.decodeUnknownSync(AwsAccountId)(String(100000000000 + index)),
+						modules: [],
+					}),
+				{ concurrency: 10 },
+			)
+			const sweep = yield* service.checkDue()
+			assert.deepStrictEqual(sweep, { due: 101, checked: 101, failures: 101 })
+			assert.deepStrictEqual(yield* service.checkDue(), { due: 0, checked: 0, failures: 0 })
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
 })
