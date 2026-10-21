@@ -58,7 +58,7 @@ export interface StripeClientApi {
 		taxId: { readonly type: string; readonly value: string },
 	) => StripeCall
 	readonly deleteTaxId: (stripeCustomerId: string, taxIdId: string) => StripeCall
-	/** The customer's most recent subscriptions in any status, cancelled ones included. */
+	/** The customer's subscriptions in any status, cancelled ones included, newest first. */
 	readonly listSubscriptions: (stripeCustomerId: string) => StripeCall
 }
 
@@ -250,7 +250,8 @@ export class StripeClient extends Context.Service<StripeClient, StripeClientApi>
 					call(
 						"listSubscriptions",
 						HttpClientRequest.get("/v1/subscriptions").pipe(
-							HttpClientRequest.setUrlParams({ customer: cus, status: "all", limit: "5" }),
+							// 100 is Stripe's page maximum, past any customer's history of plans and add-ons.
+							HttpClientRequest.setUrlParams({ customer: cus, status: "all", limit: "100" }),
 						),
 					),
 			} satisfies StripeClientApi

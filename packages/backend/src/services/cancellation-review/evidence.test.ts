@@ -48,6 +48,25 @@ describe("stripeFeedbackOf", () => {
 		).toEqual({ feedback: null, comment: null })
 	})
 
+	it("takes the cancellation closest to the reviewed one when two fall in the window", () => {
+		expect(
+			feedback({
+				data: [
+					{
+						created: 1,
+						canceledAt: CANCELLED_S + DAY_S,
+						cancellationDetails: { feedback: "unused", comment: null },
+					},
+					{
+						created: 2,
+						canceledAt: CANCELLED_S + 30,
+						cancellationDetails: { feedback: "missing_features", comment: null },
+					},
+				],
+			}),
+		).toEqual({ feedback: "missing_features", comment: null })
+	})
+
 	it("fails on a body it cannot read, so the report says Stripe was not read", () => {
 		expect(Exit.isFailure(Effect.runSyncExit(stripeFeedbackOf({ error: "nope" }, 0)))).toBe(true)
 	})

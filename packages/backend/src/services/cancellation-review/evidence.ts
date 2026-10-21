@@ -63,7 +63,12 @@ export const stripeFeedbackOf = (response: unknown, canceledAtMs: number) =>
 						sub.canceledAt != null &&
 						Math.abs(sub.canceledAt * 1000 - canceledAtMs) <= SAME_CANCELLATION_MS,
 				)
-				.sort((a, b) => (b.canceledAt ?? 0) - (a.canceledAt ?? 0))[0]
+				// A plan and an add-on cancelled together: the one closest to the reviewed time.
+				.sort(
+					(a, b) =>
+						Math.abs((a.canceledAt ?? 0) * 1000 - canceledAtMs) -
+						Math.abs((b.canceledAt ?? 0) * 1000 - canceledAtMs),
+				)[0]
 			return {
 				feedback: text(match?.cancellationDetails?.feedback),
 				comment: text(match?.cancellationDetails?.comment),
