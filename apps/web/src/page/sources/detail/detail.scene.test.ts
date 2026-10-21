@@ -36,6 +36,7 @@ const source = (fields: Readonly<Record<string, unknown>> = {}) =>
 		name: "Checkout API",
 		description: null,
 		platform: "nodejs",
+		kind: "token",
 		is_default: false,
 		key_prefix: "maple_src_Q7xZa",
 		integration_id: null,
@@ -128,7 +129,7 @@ describe("source detail", () => {
 	test("the default source has no token actions", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(source({ is_default: true, key_prefix: null, name: "Default" }))),
+			given(loaded(source({ kind: "default", is_default: true, key_prefix: null, name: "Default" }))),
 			resolveTheme,
 			expectView(role("button", { name: "Roll token" })).not.toExist(),
 		)
@@ -246,6 +247,7 @@ describe("integration sources", () => {
 		source({
 			name: "node-exporter",
 			platform: "prometheus",
+			kind: "integration",
 			key_prefix: null,
 			integration_id: null,
 			health: {

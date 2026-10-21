@@ -19,9 +19,7 @@ import {
 } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import {
-	ensureIntegrationSource,
-	integrationSourceName,
-	stampableSourceId,
+	stampedSourceId,
 } from "@maple/backend/services/org/integration-sources"
 import { isIngestRefusal, summarizeUpstreamBody } from "../upstream-body"
 import { jobLogRecords, type OtlpLogsPayload, workflowJobLogsToOtlp } from "./logs"
@@ -85,43 +83,36 @@ const make = Effect.gen(function* () {
 		)
 	}
 
-	// The installation's pull source as its `src_` id. Never fails: without it the spans go unstamped.
+	// The installation's source as its `src_` id. Never fails: without it the spans go unstamped.
 	const resolveSourceId = (
 		orgId: OrgId,
 		job: { readonly provider: string; readonly externalInstallationId: string },
 	) =>
-		stampableSourceId(
-			Effect.gen(function* () {
-				if (job.provider !== "github") return undefined
-				const now = yield* Clock.currentTimeMillis
-				return yield* database.execute((db) =>
-					Effect.gen(function* () {
-						const [installation] = yield* db.run(
+		job.provider !== "github"
+			? Effect.succeed(undefined)
+			: database
+					.execute((db) =>
+						db.run(
 							PG.from(VcsInstallations)
-								.select("id", "accountLogin")
+								.select("sourceId")
 								.where(($) => [
 									$.orgId.eq(orgId),
 									$.provider.eq("github"),
 									$.externalInstallationId.eq(job.externalInstallationId),
 								])
 								.limit(1),
-						)
-						if (installation === undefined) return undefined
-						return yield* ensureIntegrationSource(
-							db,
-							orgId,
-							{
-								platform: "github",
-								integrationId: installation.id,
-								name: integrationSourceName.github(installation),
-							},
-							now,
-						)
-					}),
-				)
-			}),
-			{ orgId, platform: "github" },
-		)
+						),
+					)
+					.pipe(
+						Effect.map(([installation]) => stampedSourceId(installation?.sourceId ?? null)),
+						Effect.catch((error) =>
+							Effect.logWarning("Installation source unavailable").pipe(
+								Effect.annotateLogs({ orgId, error: error.message }),
+								Effect.as(undefined),
+							),
+						),
+					)
+
 
 	/**
 	 * Posts with the org's public key. A 401 can be a key rotated in another graph while this one's

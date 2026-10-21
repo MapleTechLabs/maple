@@ -33,9 +33,10 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import {
+	deleteSourcesOf,
 	ensureIntegrationSource,
 	integrationSourceName,
-	stampableSourceId,
+	stampedSourceId,
 } from "@maple/backend/services/org/integration-sources"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import { discover, fetchEnvironmentMetrics, RailwayApiError, type RailwayDiscovery } from "./railway/api"
@@ -355,33 +356,55 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 					tokenAad(orgId),
 				)
 				const now = yield* Clock.currentTimeMillis
+				// A reconnect keeps the connection id and so its source.
 				const [connection] = yield* dbExecute((db) =>
-					db.run(
-						PG.insertInto(RailwayConnections)
-							.values({
-								id: randomUUID(),
+					db.transaction(
+						Effect.gen(function* () {
+							const [upserted] = yield* db.run(
+								PG.insertInto(RailwayConnections)
+									.values({
+										id: randomUUID(),
+										orgId,
+										tokenCiphertext: encrypted.ciphertext,
+										tokenIv: encrypted.iv,
+										tokenTag: encrypted.tag,
+										connectedByUserId: userId,
+										createdAt: now,
+										updatedAt: now,
+									})
+									.onConflictDoUpdate({
+										target: ["orgId"],
+										set: () => ({
+											tokenCiphertext: encrypted.ciphertext,
+											tokenIv: encrypted.iv,
+											tokenTag: encrypted.tag,
+											connectedByUserId: userId,
+											authFailedAt: null,
+											lastError: null,
+											lastErrorAt: null,
+											updatedAt: now,
+										}),
+									})
+									.returning(),
+							)
+							if (upserted === undefined || upserted.sourceId !== null) return [upserted]
+							const sourceId = yield* ensureIntegrationSource(
+								db,
 								orgId,
-								tokenCiphertext: encrypted.ciphertext,
-								tokenIv: encrypted.iv,
-								tokenTag: encrypted.tag,
-								connectedByUserId: userId,
-								createdAt: now,
-								updatedAt: now,
-							})
-							.onConflictDoUpdate({
-								target: ["orgId"],
-								set: () => ({
-									tokenCiphertext: encrypted.ciphertext,
-									tokenIv: encrypted.iv,
-									tokenTag: encrypted.tag,
-									connectedByUserId: userId,
-									authFailedAt: null,
-									lastError: null,
-									lastErrorAt: null,
-									updatedAt: now,
-								}),
-							})
-							.returning(),
+								{
+									platform: "railway",
+									integrationId: upserted.id,
+									name: integrationSourceName.railway(upserted),
+								},
+								now,
+							)
+							return yield* db.run(
+								PG.update(RailwayConnections)
+									.set({ sourceId })
+									.where(($) => [$.id.eq(upserted.id)])
+									.returning(),
+							)
+						}),
 					),
 				)
 				if (connection === undefined) {
@@ -396,14 +419,21 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 
 			const disconnect = Effect.fn("RailwayMetricsService.disconnect")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				yield* dbExecute((db) =>
-					db.run(PG.deleteFrom(RailwayEnvironments).where(($) => [$.orgId.eq(orgId)])),
-				)
+				// The connection's source goes with it.
 				const deleted = yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(RailwayConnections)
-							.where(($) => [$.orgId.eq(orgId)])
-							.returning("id"),
+					db.transaction(
+						Effect.gen(function* () {
+							yield* db.run(
+								PG.deleteFrom(RailwayEnvironments).where(($) => [$.orgId.eq(orgId)]),
+							)
+							const rows = yield* db.run(
+								PG.deleteFrom(RailwayConnections)
+									.where(($) => [$.orgId.eq(orgId)])
+									.returning("id", "sourceId"),
+							)
+							yield* deleteSourcesOf(db, orgId, rows)
+							return rows
+						}),
 					),
 				)
 				return { disconnected: deleted.length > 0 }
@@ -514,29 +544,6 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				return ingested
 			})
 
-			// The connection's pull source (`maple_source_id`); a failed lookup sends without it.
-			const resolveSourceId = (
-				orgId: OrgId,
-				connectionId: string,
-				workspaceNames: string | null,
-				now: number,
-			) =>
-				stampableSourceId(
-					dbExecute((db) =>
-						ensureIntegrationSource(
-							db,
-							orgId,
-							{
-								platform: "railway",
-								integrationId: connectionId,
-								name: integrationSourceName.railway({ workspaceNames }),
-							},
-							now,
-						),
-					),
-					{ orgId, platform: "railway" },
-				)
-
 			const pollOrg = Effect.fn("RailwayMetricsService.pollOrg")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const skip = (reason: string): RailwayPollOrgSummary => ({
@@ -602,7 +609,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 					)
 					if (ingestKey._tag === "None")
 						return { ...skip("ingest key unavailable"), callsMade: discoveryCalls }
-					const sourceId = yield* resolveSourceId(orgId, claimed.id, claimed.workspaceNames, now)
+					const sourceId = stampedSourceId(claimed.sourceId)
 
 					const environments = (yield* loadEnvironments(orgId))
 						.filter((row) => row.enabled)

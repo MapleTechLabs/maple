@@ -20,7 +20,7 @@ import { SourcePublicId } from "@maple/domain/http/v2"
 import type { OrgId, PullSourcePlatform, SourceId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Effect, Schema } from "effect"
-import { type PullSourceRef, pullSourceRow } from "./source-rows"
+import { newSourceId, type PullSourceRef, pullSourceRow } from "./source-rows"
 
 const encodeSourceId = Schema.encodeSync(SourcePublicId)
 
@@ -40,7 +40,10 @@ export const integrationSourceName = {
 	github: (installation: { readonly accountLogin: string }) => `GitHub ${installation.accountLogin}`,
 }
 
-/** The integration's source id. Reads first, inserts only on first use; the unique index settles races. */
+/**
+ * The source an integration row sends as: an existing one for the same integration, or a new
+ * one. Call it inside the transaction that writes the row's `source_id`.
+ */
 export const ensureIntegrationSource = Effect.fnUntraced(function* (
 	db: MapleDb,
 	orgId: OrgId,
@@ -59,34 +62,44 @@ export const ensureIntegrationSource = Effect.fnUntraced(function* (
 	)
 	const existing = yield* select
 	if (existing[0] !== undefined) return existing[0].id
+	// A concurrent connect may insert first: the unique index settles it, and the winner's id is read back.
+	const id = newSourceId()
 	yield* db.run(
 		PG.insertInto(Sources)
-			.values(pullSourceRow(orgId, ref, now))
+			.values({ ...pullSourceRow(orgId, ref, now), id })
 			.onConflictDoNothing(),
 	)
-	return (yield* select)[0]?.id
+	return (yield* select)[0]?.id ?? id
 })
 
 /**
- * The `src_` id a poller stamps, or undefined. Attribution is best effort: a failed lookup
- * logs a warning and the data goes out without `maple_source_id`.
+ * Deletes the integration sources of `rows` and, through `ON DELETE CASCADE`, every row that still
+ * sends as them. `platform` limits it to sources of that platform.
  */
-export const stampableSourceId = <E extends { readonly message: string }, R>(
-	lookup: Effect.Effect<SourceId | undefined, E, R>,
-	context: { readonly orgId: OrgId; readonly platform: PullSourcePlatform },
-) =>
-	lookup.pipe(
-		Effect.map((id) => (id === undefined ? undefined : publicSourceId(id))),
-		Effect.tap((id) =>
-			id === undefined ? Effect.void : Effect.annotateCurrentSpan("maple.source.id", id),
-		),
-		Effect.catch((error) =>
-			Effect.logWarning("Integration source unavailable").pipe(
-				Effect.annotateLogs({ ...context, error: error.message }),
-				Effect.as(undefined),
-			),
-		),
-	)
+export const deleteSourcesOf = (
+	db: MapleDb,
+	orgId: OrgId,
+	rows: ReadonlyArray<{ readonly sourceId: SourceId | null }>,
+	platform?: PullSourcePlatform,
+) => {
+	const ids = rows.flatMap((row) => (row.sourceId === null ? [] : [row.sourceId]))
+	return ids.length === 0
+		? Effect.void
+		: db
+				.run(
+					PG.deleteFrom(Sources).where(($) => [
+						$.orgId.eq(orgId),
+						PG.inList($.id, ids),
+						$.kind.eq("integration"),
+						platform === undefined ? undefined : $.platform.eq(platform),
+					]),
+				)
+				.pipe(Effect.asVoid)
+}
+
+/** The `src_` id a row stamps as `maple_source_id`; undefined for a row not linked yet. */
+export const stampedSourceId = (sourceId: SourceId | null) =>
+	sourceId === null ? undefined : publicSourceId(sourceId)
 
 /** A connected integration row as the source it stands for. */
 export interface IntegrationLink extends PullSourceRef {

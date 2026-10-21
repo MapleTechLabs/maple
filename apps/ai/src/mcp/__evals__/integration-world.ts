@@ -216,6 +216,36 @@ export const seedIntegrationWorld = async (rt: EvalRuntime) => {
 		60 * 30,
 		"dial tcp 10.0.4.12:9100: connect: connection refused",
 	)
+
+	// Every integration row sends as its source, as the connect flows write it.
+	const owners = [
+		["scrape_targets", "prometheus", "name", "managed_by IS NULL"],
+		["railway_connections", "railway", "coalesce(workspace_names, 'Railway')", "true"],
+		["planetscale_connections", "planetscale", "'PlanetScale ' || ps_organization", "true"],
+		[
+			"oauth_connections",
+			"cloudflare",
+			"coalesce(external_account_name, 'Cloudflare')",
+			"provider = 'cloudflare'",
+		],
+		["vcs_installations", "github", "'GitHub ' || account_login", "provider = 'github'"],
+	] as const
+	for (const [table, platform, name, where] of owners) {
+		await sql(
+			`WITH linked AS (
+				INSERT INTO sources (id, org_id, name, platform, kind, integration_id, created_at, updated_at)
+				SELECT gen_random_uuid()::text, org_id, ${name}, $1, 'integration', id, $2, $2 FROM ${table} WHERE ${where}
+				RETURNING id, integration_id
+			)
+			UPDATE ${table} t SET source_id = linked.id FROM linked WHERE t.id = linked.integration_id`,
+			[platform, created],
+		)
+	}
+	await sql(
+		`UPDATE scrape_targets t SET source_id = c.source_id FROM planetscale_connections c
+		 WHERE t.managed_by = 'planetscale:' || c.id`,
+		[],
+	)
 }
 
 // ---------------------------------------------------------------------------------------------

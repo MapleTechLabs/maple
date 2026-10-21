@@ -86,9 +86,7 @@ import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareO
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import {
-	ensureIntegrationSource,
-	integrationSourceName,
-	stampableSourceId,
+	stampedSourceId,
 } from "@maple/backend/services/org/integration-sources"
 import {
 	mapDnsGroups,
@@ -2616,35 +2614,16 @@ export class CloudflareAnalyticsService extends Context.Service<
 			)
 		})
 
-		// The grant's pull source as its `src_` id; a failed lookup sends without it.
+		// The grant's source as its `src_` id; undefined while the connection is not linked yet.
 		const resolveSourceId = (orgId: OrgId) =>
-			stampableSourceId(
-				Effect.gen(function* () {
-					const now = yield* Clock.currentTimeMillis
-					return yield* dbExecute((db) =>
-						Effect.gen(function* () {
-							const [connection] = yield* db.run(
-								PG.from(OAuthConnections)
-									.select("id", "externalAccountName")
-									.where(($) => [$.orgId.eq(orgId), $.provider.eq("cloudflare")])
-									.limit(1),
-							)
-							if (connection === undefined) return undefined
-							return yield* ensureIntegrationSource(
-								db,
-								orgId,
-								{
-									platform: "cloudflare",
-									integrationId: connection.id,
-									name: integrationSourceName.cloudflare(connection),
-								},
-								now,
-							)
-						}),
-					)
-				}),
-				{ orgId, platform: "cloudflare" },
-			)
+			dbExecute((db) =>
+				db.run(
+					PG.from(OAuthConnections)
+						.select("sourceId")
+						.where(($) => [$.orgId.eq(orgId), $.provider.eq("cloudflare")])
+						.limit(1),
+				),
+			).pipe(Effect.map(([connection]) => stampedSourceId(connection?.sourceId ?? null)))
 
 		/**
 		 * Poll every connected account of one org, sequentially, sharing ONE call budget —

@@ -1347,8 +1347,16 @@ describe("VcsRepository", () => {
 				yield* upsertCommitsFor(repo, orgId, "7", [commitFixture(SHA_42)])
 				yield* upsertCommitsFor(repo, orgId, "8", [commitFixture(SHA_99)])
 
+				// Each installation sends CI traces as its own source, purged with it.
+				const sources = () =>
+					Effect.promise(() =>
+						testDb.pglite.query<{ name: string }>("SELECT name FROM sources ORDER BY name"),
+					).pipe(Effect.map((result) => result.rows.map((row) => row.name)))
+				assert.deepStrictEqual(yield* sources(), ["GitHub octo", "GitHub other"])
+
 				yield* purgeInstallationFor(repo, orgId, "42")
 
+				assert.deepStrictEqual(yield* sources(), ["GitHub other"])
 				assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
 				assert.strictEqual((yield* reposOfInstallation(repo, "42", "all")).length, 0)
 				assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_42))))

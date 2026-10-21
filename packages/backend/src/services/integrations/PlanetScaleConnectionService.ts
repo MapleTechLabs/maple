@@ -41,6 +41,11 @@ import {
 	planetScaleBearerHeader,
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { ScrapeTargetsService, type ScrapeTargetsServiceApi } from "./ScrapeTargetsService"
+import {
+	deleteSourcesOf,
+	ensureIntegrationSource,
+	integrationSourceName,
+} from "@maple/backend/services/org/integration-sources"
 
 /**
  * First-class PlanetScale integration: one OAuth-backed connection per org.
@@ -559,12 +564,36 @@ export class PlanetScaleConnectionService extends Context.Service<
 				const retiredTargets = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							// The connection's source; the managed target sends as it, and a target adopted
+							// from the user loses its own Prometheus source.
+							const sourceId =
+								existing?.sourceId ??
+								(yield* ensureIntegrationSource(
+									db,
+									orgId,
+									{
+										platform: "planetscale",
+										integrationId: connectionId,
+										name: integrationSourceName.planetscale(organization),
+									},
+									now,
+								))
+							const [target] = yield* db.run(
+								PG.from(ScrapeTargets)
+									.select("sourceId")
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(scrapeTargetId)])
+									.limit(1),
+							)
 							const claimed = yield* db.run(
 								PG.update(ScrapeTargets)
-									.set({ managedBy })
+									.set({ managedBy, sourceId })
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(scrapeTargetId)])
 									.returning("id"),
 							)
+							const previousSourceId = target?.sourceId ?? null
+							if (previousSourceId !== sourceId) {
+								yield* deleteSourcesOf(db, orgId, [{ sourceId: previousSourceId }], "prometheus")
+							}
 							if (claimed.length !== 1) {
 								return yield* Effect.fail(
 									new IntegrationsPersistenceError({
@@ -581,6 +610,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 											psOrganization: organization,
 											connectedByUserId,
 											scrapeTargetId,
+											sourceId,
 											detectedPermissionsJson: { ...permissions },
 											updatedAt: now,
 										})
@@ -625,6 +655,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 									.values({
 										id: connectionId,
 										orgId,
+										sourceId,
 										psOrganization: organization,
 										connectedByUserId,
 										scrapeTargetId,
@@ -768,8 +799,16 @@ export class PlanetScaleConnectionService extends Context.Service<
 						)
 				}
 
+				// The connection's source goes with it.
 				yield* dbExecute((db) =>
-					db.run(PG.deleteFrom(PlanetscaleConnections).where(($) => [$.id.eq(connection.id)])),
+					db.transaction(
+						Effect.gen(function* () {
+							yield* db.run(
+								PG.deleteFrom(PlanetscaleConnections).where(($) => [$.id.eq(connection.id)]),
+							)
+							yield* deleteSourcesOf(db, orgId, [connection])
+						}),
+					),
 				)
 			}
 

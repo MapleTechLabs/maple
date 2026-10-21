@@ -14,6 +14,8 @@ import {
 	IntegrationsValidationError,
 	type OrgId,
 } from "@maple/domain/http"
+import type { PullSourcePlatform, SourceId } from "@maple/domain/primitives"
+import type { MapleDb } from "@maple/db/client"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	OAuthAuthStates,
@@ -31,6 +33,10 @@ import {
 	type EncryptedValue,
 } from "@maple/backend/platform/Crypto"
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
+import {
+	deleteSourcesOf,
+	ensureIntegrationSource,
+} from "@maple/backend/services/org/integration-sources"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import type { EnvConfig } from "@maple/backend/platform/Env"
 
@@ -105,6 +111,17 @@ export interface MakeOAuthConnectionHelpersOptions {
 	readonly providerLabel: string
 	readonly database: DatabaseApi
 	readonly env: EnvConfig
+	/** Set when the connection sends data: it owns a source, created and deleted with it. */
+	readonly source?: {
+		readonly platform: PullSourcePlatform
+		readonly name: (connection: { readonly externalAccountName: string | null }) => string
+		/** Other rows that send as the same source, linked when the source is created. */
+		readonly link?: (
+			db: MapleDb,
+			orgId: OrgId,
+			sourceId: SourceId,
+		) => Effect.Effect<unknown, Effect.Error<ReturnType<MapleDb["run"]>>>
+	}
 }
 
 /**
@@ -113,7 +130,7 @@ export interface MakeOAuthConnectionHelpersOptions {
  */
 export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOptions) =>
 	Effect.gen(function* () {
-		const { provider, providerLabel, database, env } = options
+		const { provider, providerLabel, database, env, source } = options
 		const httpClient = yield* HttpClient.HttpClient
 
 		const encryptionKey = yield* parseBase64Aes256GcmKey(
@@ -241,31 +258,57 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		})
 
 		/**
-		 * Write (or overwrite) the org's connection in one statement — the unique
-		 * index on (orgId, provider) makes select-then-branch unnecessary.
+		 * Write (or overwrite) the org's connection. The unique index on (orgId, provider)
+		 * makes select-then-branch unnecessary; a reconnect keeps the row id and its source.
 		 */
 		const upsertConnection = (
 			orgId: OrgId,
 			currentTime: number,
-			values: Omit<OAuthConnectionInsert, "id" | "orgId" | "provider" | "createdAt" | "updatedAt">,
+			values: Omit<
+				OAuthConnectionInsert,
+				"id" | "orgId" | "provider" | "sourceId" | "createdAt" | "updatedAt"
+			>,
 		) =>
 			dbExecute((db) =>
-				db.run(
-					PG.insertInto(OAuthConnections)
-						.values({
-							id: randomUUID(),
+				db.transaction(
+					Effect.gen(function* () {
+						const [connection] = yield* db.run(
+							PG.insertInto(OAuthConnections)
+								.values({
+									id: randomUUID(),
+									orgId,
+									provider,
+									createdAt: currentTime,
+									updatedAt: currentTime,
+									...values,
+								})
+								.onConflictDoUpdate({
+									target: ["orgId", "provider"],
+									// Reconnecting with fresh tokens clears any prior revocation so
+									// pollers resume automatically.
+									set: { ...values, revokedAt: null, updatedAt: currentTime },
+								})
+								.returning("id", "sourceId", "externalAccountName"),
+						)
+						if (source === undefined || connection === undefined || connection.sourceId !== null)
+							return
+						const sourceId = yield* ensureIntegrationSource(
+							db,
 							orgId,
-							provider,
-							createdAt: currentTime,
-							updatedAt: currentTime,
-							...values,
-						})
-						.onConflictDoUpdate({
-							target: ["orgId", "provider"],
-							// Reconnecting with fresh tokens clears any prior revocation so
-							// pollers resume automatically.
-							set: { ...values, revokedAt: null, updatedAt: currentTime },
-						}),
+							{
+								platform: source.platform,
+								integrationId: connection.id,
+								name: source.name(connection),
+							},
+							currentTime,
+						)
+						yield* db.run(
+							PG.update(OAuthConnections)
+								.set({ sourceId })
+								.where(($) => [$.id.eq(connection.id)]),
+						)
+						if (source.link !== undefined) yield* source.link(db, orgId, sourceId)
+					}),
 				),
 			).pipe(Effect.ensuring(invalidateConnectionMemo(orgId)))
 
@@ -291,13 +334,19 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			).pipe(Effect.ignore)
 		})
 
-		/** Drop the org's connection row; reports whether anything was removed. */
+		/** Drop the org's connection row and its source; reports whether anything was removed. */
 		const deleteConnection = (orgId: OrgId) =>
 			dbExecute((db) =>
-				db.run(
-					PG.deleteFrom(OAuthConnections)
-						.where(($) => [$.orgId.eq(orgId), $.provider.eq(provider)])
-						.returning("id"),
+				db.transaction(
+					Effect.gen(function* () {
+						const deleted = yield* db.run(
+							PG.deleteFrom(OAuthConnections)
+								.where(($) => [$.orgId.eq(orgId), $.provider.eq(provider)])
+								.returning("id", "sourceId"),
+						)
+						yield* deleteSourcesOf(db, orgId, deleted)
+						return deleted
+					}),
 				),
 			).pipe(
 				Effect.map((result) => ({ disconnected: result.length > 0 })),

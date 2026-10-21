@@ -439,16 +439,25 @@ const insertConnector = (
 ) => {
 	const projectId = options.projectId ?? "acme-prod"
 	const [scopeType, scopeId] = options.scope ?? ["project", projectId]
-	return Effect.promise(() =>
-		executeSql(
+	const orgId = options.orgId ?? "org_gcp"
+	// With its source, as GcpConnectorService.create writes it.
+	return Effect.promise(async () => {
+		await executeSql(
+			testDb,
+			`INSERT INTO sources (id, org_id, name, platform, kind, integration_id, created_at, updated_at)
+			 VALUES (gen_random_uuid()::text, $1, 'Google Cloud ' || $2, 'gcp', 'integration', $3, now(), now())`,
+			[orgId, scopeId, id],
+		)
+		await executeSql(
 			testDb,
 			`INSERT INTO gcp_connectors
 			   (id, org_id, scope_type, scope_id, project_id, secret_ciphertext, secret_iv, secret_tag,
-			    secret_hash, metrics_enabled, created_by, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, $5, 'c', 'i', 't', $1, $6, 'user_1', now(), now())`,
-			[id, options.orgId ?? "org_gcp", scopeType, scopeId, projectId, options.metricsEnabled ?? true],
-		),
-	)
+			    secret_hash, metrics_enabled, created_by, created_at, updated_at, source_id)
+			 SELECT $1, $2, $3, $4, $5, 'c', 'i', 't', $1, $6, 'user_1', now(), now(), s.id
+			 FROM sources s WHERE s.platform = 'gcp' AND s.integration_id = $1`,
+			[id, orgId, scopeType, scopeId, projectId, options.metricsEnabled ?? true],
+		)
+	})
 }
 
 interface PollState {

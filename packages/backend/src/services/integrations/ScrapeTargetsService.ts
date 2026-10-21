@@ -25,7 +25,6 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	ScrapeTargetChecks,
 	ScrapeTargets,
-	Sources,
 	type ScrapeTargetCheckRow,
 	type ScrapeTargetRow,
 } from "@maple/db/tables"
@@ -49,7 +48,7 @@ import {
 } from "@maple/backend/services/auth/scrape-auth"
 import { describeHttpClientError, guard, validateExternalUrl } from "@maple/safe-fetch"
 import { countSamples, parsePrometheusText } from "@maple/prometheus-otlp"
-import { DiscoveryConfigSchema, decodeDiscoveryConfig } from "./planetscale/discovery-config"
+import { DiscoveryConfigSchema } from "./planetscale/discovery-config"
 import { PlanetScaleDiscoveryService, planetScaleDiscoveryUrl } from "./PlanetScaleDiscoveryService"
 import {
 	PlanetScaleOAuthService,
@@ -58,11 +57,10 @@ import {
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import {
+	deleteSourcesOf,
 	ensureIntegrationSource,
 	integrationSourceName,
-	publicSourceId,
 } from "@maple/backend/services/org/integration-sources"
-import { type PullSourceRef, pullSourceKey } from "@maple/backend/services/org/source-rows"
 
 type ScrapeTargetSet = PG.UpdateSetOf<typeof ScrapeTargets>
 type MutableScrapeTargetSet = { -readonly [K in keyof ScrapeTargetSet]: ScrapeTargetSet[K] }
@@ -198,13 +196,6 @@ export interface ScrapeTargetsServiceApi {
 	readonly listAllEnabled: (
 		interval?: ScrapeIntervalSeconds,
 	) => Effect.Effect<ReadonlyArray<EnabledScrapeTarget>, ScrapeTargetPersistenceError>
-	/**
-	 * Each row's pull source as its public `src_` id, keyed by target id. Never
-	 * fails: a row whose source cannot be resolved is left out of the map.
-	 */
-	readonly sourceIds: (
-		rows: ReadonlyArray<EnabledScrapeTarget>,
-	) => Effect.Effect<ReadonlyMap<string, string>>
 	/**
 	 * The request headers a target's stored credential decrypts to (an
 	 * `Authorization` entry, or `{}` for `none`). For managed PlanetScale rows
@@ -355,20 +346,6 @@ const validateAuthCredentials = (authType: string, authCredentials: string | nul
 
 /** A row the scraper lists, its labels as stored. */
 export type EnabledScrapeTarget = Omit<ScrapeTargetRow, "labelsJson"> & { readonly labelsJson: unknown }
-const PLANETSCALE_MANAGED_PREFIX = "planetscale:"
-
-/** The pull source a scrape target reports as: its PlanetScale connection, or itself. */
-export const scrapeTargetSourceRef = (row: EnabledScrapeTarget): PullSourceRef => {
-	if (row.managedBy !== null && row.managedBy.startsWith(PLANETSCALE_MANAGED_PREFIX)) {
-		const organization = decodeDiscoveryConfig(row.discoveryConfigJson)?.organization
-		return {
-			platform: "planetscale",
-			integrationId: row.managedBy.slice(PLANETSCALE_MANAGED_PREFIX.length),
-			name: integrationSourceName.planetscale(organization),
-		}
-	}
-	return { platform: "prometheus", integrationId: row.id, name: integrationSourceName.prometheus(row) }
-}
 
 /** What resolving a target's credential reads: everything but its labels. */
 type ScrapeTargetCredentials = Omit<ScrapeTargetRow, "labelsJson">
@@ -792,27 +769,44 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const now = yield* Clock.currentTimeMillis
 				const id = decodeTargetIdSync(randomUUID())
 
+				// The target and the source it sends as land together.
 				const inserted = yield* dbExecute((db) =>
-					db.run(
-						PG.insertInto(ScrapeTargets)
-							.values({
-								id,
+					db.transaction(
+						Effect.gen(function* () {
+							const sourceId = yield* ensureIntegrationSource(
+								db,
 								orgId,
-								name,
-								serviceName,
-								url,
-								targetType,
-								discoveryConfigJson,
-								scrapeIntervalSeconds:
-									request.scrapeIntervalSeconds ?? (targetType === "planetscale" ? 30 : 15),
-								labelsJson: labels ?? null,
-								authType,
-								...credentialFields,
-								enabled: request.enabled !== false,
-								createdAt: now,
-								updatedAt: now,
-							})
-							.returning("id"),
+								{
+									platform: "prometheus",
+									integrationId: id,
+									name: integrationSourceName.prometheus({ name }),
+								},
+								now,
+							)
+							return yield* db.run(
+								PG.insertInto(ScrapeTargets)
+									.values({
+										id,
+										orgId,
+										sourceId,
+										name,
+										serviceName,
+										url,
+										targetType,
+										discoveryConfigJson,
+										scrapeIntervalSeconds:
+											request.scrapeIntervalSeconds ??
+											(targetType === "planetscale" ? 30 : 15),
+										labelsJson: labels ?? null,
+										authType,
+										...credentialFields,
+										enabled: request.enabled !== false,
+										createdAt: now,
+										updatedAt: now,
+									})
+									.returning("id"),
+							)
+						}),
 					),
 				)
 				if (inserted.length !== 1) {
@@ -1075,11 +1069,19 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				orgId: OrgId,
 				targetId: ScrapeTargetId,
 			) {
+				// A target's own Prometheus source goes with it; a managed target's PlanetScale
+				// source belongs to the connection and stays.
 				const rows = yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(ScrapeTargets)
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
-							.returning("id"),
+					db.transaction(
+						Effect.gen(function* () {
+							const deleted = yield* db.run(
+								PG.deleteFrom(ScrapeTargets)
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
+									.returning("id", "sourceId"),
+							)
+							yield* deleteSourcesOf(db, orgId, deleted, "prometheus")
+							return deleted
+						}),
 					),
 				)
 
@@ -1135,73 +1137,6 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				)
 
 				return rows
-			})
-
-			// One read per org for the sources that already exist; only new targets insert.
-			const orgSourceIds = (orgId: OrgId, rows: ReadonlyArray<EnabledScrapeTarget>, now: number) =>
-				dbExecute((db) =>
-					Effect.gen(function* () {
-						const existing = yield* db.run(
-							PG.from(Sources)
-								.select(($) => ({
-									id: $.id,
-									platform: $.platform,
-									integrationId: $.integrationId,
-								}))
-								.where(($) => [
-									$.orgId.eq(orgId),
-									PG.inList($.platform, ["prometheus", "planetscale"]),
-									$.integrationId.isNotNull(),
-								]),
-						)
-						const known = new Map(
-							existing.map((source) => [
-								pullSourceKey(source.platform, source.integrationId),
-								source.id,
-							]),
-						)
-						const refs = Arr.dedupeWith(
-							rows.map(scrapeTargetSourceRef),
-							(a, b) =>
-								pullSourceKey(a.platform, a.integrationId) ===
-								pullSourceKey(b.platform, b.integrationId),
-						)
-						const created = yield* Effect.forEach(
-							refs.filter((ref) => !known.has(pullSourceKey(ref.platform, ref.integrationId))),
-							(ref) =>
-								ensureIntegrationSource(db, orgId, ref, now).pipe(
-									Effect.map(
-										(id) => [pullSourceKey(ref.platform, ref.integrationId), id] as const,
-									),
-								),
-						)
-						const ids = new Map([...known, ...created])
-						return rows.flatMap((row) => {
-							const ref = scrapeTargetSourceRef(row)
-							const id = ids.get(pullSourceKey(ref.platform, ref.integrationId))
-							return id === undefined ? [] : [[row.id, publicSourceId(id)] as const]
-						})
-					}),
-				).pipe(
-					Effect.catch((error) =>
-						Effect.logWarning("Scrape target sources unavailable").pipe(
-							Effect.annotateLogs({ orgId, error: error.message }),
-							Effect.as([]),
-						),
-					),
-				)
-
-			const sourceIds = Effect.fn("ScrapeTargetsService.sourceIds")(function* (
-				rows: ReadonlyArray<EnabledScrapeTarget>,
-			) {
-				const now = yield* Clock.currentTimeMillis
-				const byOrg = Arr.groupBy(rows, (row) => row.orgId)
-				const perOrg = yield* Effect.forEach(
-					Object.values(byOrg),
-					(orgRows) => orgSourceIds(orgRows[0].orgId, orgRows, now),
-					{ concurrency: 2 },
-				)
-				return new Map(perOrg.flat())
 			})
 
 			const recordScrapeResults = Effect.fn("ScrapeTargetsService.recordScrapeResults")(function* (
@@ -1437,7 +1372,6 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				delete: remove,
 				deleteManaged: removeManaged,
 				listAllEnabled,
-				sourceIds,
 				authHeaders: authHeadersForRow,
 				recordScrapeResults,
 				listChecks,

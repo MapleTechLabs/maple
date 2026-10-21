@@ -6,6 +6,7 @@ import {
 	PushSourcePlatform,
 	SourceAttributeMode,
 	SourceId,
+	SourceKind,
 	SourcePlatform,
 	SourceSignal,
 } from "../../primitives"
@@ -25,6 +26,7 @@ const sourceExample = {
 	name: "Checkout staging",
 	description: "Staging deploys of the checkout service",
 	platform: "nodejs",
+	kind: "token",
 	is_default: false,
 	key_prefix: "maple_src_Q7xZa",
 	integration_id: null,
@@ -128,6 +130,11 @@ export const V2Source = Schema.Struct({
 		description:
 			"What sends the data. Push platforms (`opentelemetry`, `nodejs`, `kubernetes`, …) send with the source's own token; pull platforms (`prometheus`, `cloudflare`, `gcp`, `railway`, `planetscale`, `github`) are integrations Maple collects from.",
 		examples: ["nodejs"],
+	}),
+	kind: SourceKind.annotate({
+		description:
+			"`default` is the organization's built-in source for the default ingest keys, `token` sends with its own source token, `integration` is an integration Maple collects from and is removed by disconnecting it.",
+		examples: ["token"],
 	}),
 	is_default: Schema.Boolean.annotate({
 		description:

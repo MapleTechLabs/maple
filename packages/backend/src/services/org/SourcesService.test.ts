@@ -41,6 +41,19 @@ const orgB = Schema.decodeUnknownSync(OrgId)("org_b")
 const user = Schema.decodeUnknownSync(UserId)("user_a")
 const missingId = Schema.decodeUnknownSync(SourceId)("0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b")
 
+/** An integration row's source, as the owning integration service creates it. */
+const linkSource = (testDb: TestDb, table: string, integrationId: string, platform: string, name: string) =>
+	Effect.promise(async () => {
+		const sourceId = crypto.randomUUID()
+		await executeSql(
+			testDb,
+			`INSERT INTO sources (id, org_id, name, platform, kind, integration_id, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, 'integration', $5, now(), now())`,
+			[sourceId, orgA, name, platform, integrationId],
+		)
+		await executeSql(testDb, `UPDATE ${table} SET source_id = $1 WHERE id = $2`, [sourceId, integrationId])
+	})
+
 const ownSources = (keys: SourcesService["Service"], orgId: OrgId) =>
 	keys.list(orgId).pipe(Effect.map((sources) => sources.filter((source) => !source.isDefault)))
 
@@ -494,6 +507,8 @@ describe("SourcesService", () => {
 			yield* TestClock.adjust("1 hour")
 			yield* insertTarget("9d1e2f3a-0000-4000-8000-000000000001", "node", 3_600_000 - 30_000, null)
 			yield* insertTarget("9d1e2f3a-0000-4000-8000-000000000002", "broken", null, "connection refused")
+			yield* linkSource(testDb, "scrape_targets", "9d1e2f3a-0000-4000-8000-000000000001", "prometheus", "node")
+			yield* linkSource(testDb, "scrape_targets", "9d1e2f3a-0000-4000-8000-000000000002", "prometheus", "broken")
 
 			const first = yield* ownSources(keys, orgA)
 			assert.deepStrictEqual(
@@ -508,12 +523,6 @@ describe("SourcesService", () => {
 			assert.strictEqual(
 				first.find((source) => source.name === "broken")?.health.problem,
 				"connection refused",
-			)
-			// Listing again keeps the same ids instead of minting new sources.
-			const again = yield* ownSources(keys, orgA)
-			assert.deepStrictEqual(
-				again.map((source) => source.id).sort(),
-				first.map((source) => source.id).sort(),
 			)
 
 			const broken = first.find((source) => source.name === "broken")
@@ -538,13 +547,15 @@ describe("SourcesService", () => {
 			const refused = yield* keys.delete(orgA, broken.id).pipe(Effect.flip)
 			assert.strictEqual(refused._tag, "@maple/http/errors/SourceValidationError")
 
-			yield* Effect.promise(() =>
-				executeSql(testDb, "DELETE FROM scrape_targets WHERE id = $1", [
-					"9d1e2f3a-0000-4000-8000-000000000002",
-				]),
+			// Deleting the source deletes the target that sends as it.
+			yield* Effect.promise(() => executeSql(testDb, "DELETE FROM sources WHERE id = $1", [broken.id]))
+			const targets = yield* Effect.promise(() =>
+				testDb.pglite.query<{ id: string }>("SELECT id FROM scrape_targets"),
 			)
-			// Removed but not yet reconciled: the source reads as disconnected.
-			assert.strictEqual((yield* keys.get(orgA, broken.id)).health.status, "disconnected")
+			assert.deepStrictEqual(
+				targets.rows.map((row) => row.id),
+				["9d1e2f3a-0000-4000-8000-000000000001"],
+			)
 			assert.deepStrictEqual(
 				(yield* ownSources(keys, orgA)).map((source) => source.name),
 				["node"],
@@ -573,6 +584,8 @@ describe("SourcesService", () => {
 			const keys = yield* SourcesService
 			yield* insertInstallation("7a1e2f3a-0000-4000-8000-000000000001", "acme", "active")
 			yield* insertInstallation("7a1e2f3a-0000-4000-8000-000000000002", "globex", "suspended")
+			yield* linkSource(testDb, "vcs_installations", "7a1e2f3a-0000-4000-8000-000000000001", "github", "GitHub acme")
+			yield* linkSource(testDb, "vcs_installations", "7a1e2f3a-0000-4000-8000-000000000002", "github", "GitHub globex")
 
 			const sources = yield* ownSources(keys, orgA)
 			assert.deepStrictEqual(

@@ -113,6 +113,29 @@ describe("GcpConnectorService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("connects a scope as its own source and removes the source with the connector", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sources = () =>
+			Effect.promise(() =>
+				testDb.pglite.query<{ kind: string; platform: string; name: string; connector: string | null }>(
+					`SELECT s.kind, s.platform, s.name, c.id AS connector
+					FROM sources s LEFT JOIN gcp_connectors c ON c.source_id = s.id`,
+				),
+			)
+		return Effect.gen(function* () {
+			const gcp = yield* GcpConnectorService
+			const connector = yield* gcp.create(orgId, userId, projectScope("acme-prod"))
+			// A refused duplicate leaves no source behind.
+			yield* Effect.flip(gcp.create(orgId, userId, projectScope("acme-prod")))
+			assert.deepStrictEqual((yield* sources()).rows, [
+				{ kind: "integration", platform: "gcp", name: "Google Cloud acme-prod", connector: connector.id },
+			])
+
+			yield* gcp.delete(orgId, connector.id)
+			assert.deepStrictEqual((yield* sources()).rows, [])
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("connects a scope once per organization, whatever its host project", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
