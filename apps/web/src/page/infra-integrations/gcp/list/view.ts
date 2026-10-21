@@ -49,6 +49,7 @@ import {
 	pageStateOf,
 	requestedViewOf,
 	sparksOf,
+	windowSecondsOf,
 	statusOf,
 } from "./derive"
 import { Message, type Model } from "./model"
@@ -324,6 +325,7 @@ const infraView = (
 		gcpListPage(h, {
 			fleet,
 			sparks: sparksOf(model),
+			windowSeconds: windowSecondsOf(model),
 			cloudSqlInstances: cloudSqlInstancesOf(model, collecting),
 			projectHealth: gcpProjectHealth(connectors, model.nowMs),
 			collecting,
@@ -357,6 +359,8 @@ export type ListPageInput = Readonly<{
 	/** Null while loading. */
 	fleet: ReadonlyArray<GcpFleetRead> | null
 	sparks: GcpSparks
+	/** The seconds `fleet` was read over. */
+	windowSeconds: number
 	cloudSqlInstances: ReadonlyArray<GcpCloudSqlInstance> | undefined
 	projectHealth: ReadonlyMap<string, GcpProjectHealth>
 	collecting: boolean
@@ -375,7 +379,8 @@ export type ListPageInput = Readonly<{
 /** `GcpListPage`: header, projects strip, and the current view's band, search and table. */
 export const gcpListPage = (h: H, input: ListPageInput): Html => {
 	const { fleet, state, isWaiting } = input
-	const allRows = fleet === null ? null : gcpListRows(fleet, input.sparks, input.cloudSqlInstances)
+	const allRows =
+		fleet === null ? null : gcpListRows(fleet, input.sparks, input.windowSeconds, input.cloudSqlInstances)
 	const { projects, project, region, inRegion, rows, counts, views, view } = gcpListScope(
 		allRows,
 		{ view: state.view, project: state.project, region: state.region },
