@@ -18,7 +18,7 @@ const vitestDirs = Array.from(new Bun.Glob("{apps,packages,lib,examples}/*/packa
 	.map(dirname)
 
 const escape = (path: string) => path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-const owned = [...vitestDirs, ".claude", ".context"].map((dir) => escape(join(root, dir)))
+const owned = [...vitestDirs, ".claude", ".context", "worktrees"].map((dir) => escape(join(root, dir)))
 const filter = new RegExp(`^(${owned.join("|")})/.*\\.(test|spec)\\.[cm]?[jt]sx?$`)
 
 Bun.plugin({

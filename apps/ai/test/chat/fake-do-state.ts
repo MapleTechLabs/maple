@@ -70,8 +70,11 @@ class FakeCursor<T extends Row> implements SqlStorageCursor<T> {
 		const value = this.rows[this.index++]
 		return value === undefined ? { done: true } : { value }
 	}
+	// Like the real cursor, rows already taken by next() are not returned again.
 	toArray(): T[] {
-		return this.rows
+		const rest = this.rows.slice(this.index)
+		this.index = this.rows.length
+		return rest
 	}
 	one(): T {
 		const [row] = this.rows
@@ -84,7 +87,7 @@ class FakeCursor<T extends Row> implements SqlStorageCursor<T> {
 		throw new Error("raw() is not used by ChatSession")
 	}
 	[Symbol.iterator](): IterableIterator<T> {
-		return this.rows[Symbol.iterator]()
+		return this.toArray()[Symbol.iterator]()
 	}
 }
 
