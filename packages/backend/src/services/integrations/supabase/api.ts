@@ -171,7 +171,10 @@ export const listOrganizations = Effect.fn("SupabaseApi.listOrganizations")(func
 	return items.flatMap((item) => Option.toArray(decodeOrganization(item)))
 })
 
-/** Every project the token reaches; a project with an undecodable shape is skipped and counted. */
+/**
+ * Every project the token reaches. Undecodable items are skipped and counted, so callers can
+ * tell an incomplete listing from a complete one.
+ */
 export const listProjects = Effect.fn("SupabaseApi.listProjects")(function* (
 	httpClient: HttpClient.HttpClient,
 	baseUrl: string,
@@ -183,7 +186,7 @@ export const listProjects = Effect.fn("SupabaseApi.listProjects")(function* (
 		"maple.supabase.projects_listed": items.length,
 		"maple.supabase.projects_skipped": items.length - projects.length,
 	})
-	return projects
+	return { projects, skipped: items.length - projects.length }
 })
 
 /** `POST /v1/oauth/revoke`: revokes the app's authorization and every token it issued. */

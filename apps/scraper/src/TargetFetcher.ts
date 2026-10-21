@@ -35,6 +35,14 @@ export const parseRetryAfterSeconds = (value: string | null): number | null => {
 	return Number.isFinite(seconds) && seconds >= 0 ? seconds : null
 }
 
+/** Managed providers get their own service-map node; user-configured targets share one. */
+const peerServiceOf = (targetType: InternalScrapeTarget["targetType"]): string =>
+	targetType === "planetscale"
+		? "planetscale-metrics"
+		: targetType === "supabase"
+			? "supabase-metrics"
+			: "scrape-target"
+
 const DEFAULT_HEADERS = {
 	accept: "application/openmetrics-text;version=1.0.0,text/plain;version=0.0.4;q=0.5,*/*;q=0.1",
 	"user-agent": "maple-prometheus-scraper",
@@ -52,9 +60,9 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 			// its metrics data plane with `?sig=&exp=` query params, i.e. credentials.
 			// `pathname` drops the query, so the signed URL cannot leak into telemetry.
 			//
-			// `peer.service` is deliberately low-cardinality (two values, not one per
-			// target) — a per-target name would fragment the service map into a node
-			// per scrape target.
+			// `peer.service` is deliberately low-cardinality (one per managed provider plus
+			// `scrape-target`, never per target): a per-target name would fragment the
+			// service map into a node per scrape target.
 			const fetchTarget = Effect.fn("TargetFetcher.fetchTarget", { kind: "client" })(function* (
 				target: InternalScrapeTarget,
 			) {
@@ -62,8 +70,7 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 				// Annotated before the fetch so a failed or timed-out scrape still
 				// draws its service-map edge.
 				yield* Effect.annotateCurrentSpan({
-					"peer.service":
-						target.targetType === "planetscale" ? "planetscale-metrics" : "scrape-target",
+					"peer.service": peerServiceOf(target.targetType),
 					"http.request.method": "GET",
 					"maple.scrape.target_type": target.targetType,
 					...(Option.isSome(parsed)

@@ -1,5 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Fiber, Layer, Redacted, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OAuthAuthStates } from "@maple/db/tables"
@@ -344,6 +345,44 @@ describe("refresh interruption", () => {
 			assert.strictEqual(token.accessToken, "fresh-access-token")
 			// Served from the persisted rotation: the dead refresh token is never presented again.
 			assert.strictEqual(refreshPosts, 1)
+		}).pipe(Effect.provide(provideBase(testDb, fetch)))
+	})
+})
+
+describe("refresh timeout", () => {
+	it.effect("a stalled token endpoint times out as upstream and releases the refresh permit", () => {
+		const testDb = createTestDb(trackedDbs)
+		const counters = { posts: 0 }
+		let signalStarted: () => void = () => undefined
+		const started = new Promise<void>((resolve) => {
+			signalStarted = resolve
+		})
+		// First POST never answers (until aborted); the next one succeeds.
+		const fetch = Layer.succeed(FetchHttpClient.Fetch, async (input, init) => {
+			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+			if (!url.startsWith(TOKEN_URL)) return jsonResponse({ error: "not_found" }, 404)
+			counters.posts += 1
+			if (counters.posts > 1) return freshTokens()
+			signalStarted()
+			return new Promise<Response>((_, reject) => {
+				init?.signal?.addEventListener("abort", () => reject(new Error("aborted")))
+			})
+		})
+		return Effect.gen(function* () {
+			// Row timestamps are wall-clock, so align the test clock with them.
+			yield* TestClock.setTime(Date.now())
+			const helpers = yield* makeHelpers()
+			yield* seedExpiredConnection(helpers)
+			const fiber = yield* helpers.getValidConnectionToken(tokenConfig, ORG).pipe(Effect.forkChild)
+			yield* Effect.promise(() => started)
+			yield* TestClock.adjust("21 seconds")
+			const error = yield* Fiber.join(fiber).pipe(Effect.flip)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsUpstreamError")
+			assert.isNull(yield* revokedAtOf(testDb))
+
+			const token = yield* helpers.getValidConnectionToken(tokenConfig, ORG)
+			assert.strictEqual(token.accessToken, "fresh-access-token")
+			assert.strictEqual(counters.posts, 2)
 		}).pipe(Effect.provide(provideBase(testDb, fetch)))
 	})
 })

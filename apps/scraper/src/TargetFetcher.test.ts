@@ -13,7 +13,7 @@ const decodeTarget = Schema.decodeUnknownSync(InternalScrapeTarget)
 
 const mkTarget = (
 	overrides: Partial<{
-		targetType: "prometheus" | "planetscale"
+		targetType: "prometheus" | "planetscale" | "supabase"
 		scrapeUrl: string
 		authHeaders: Record<string, string>
 		scrapeIntervalSeconds: number
@@ -209,6 +209,29 @@ describe("TargetFetcher", () => {
 			if (!Exit.isFailure(exit)) return
 			assert.isTrue(aborted)
 			assert.include(String(exit.cause), "request timed out")
+		}).pipe(Effect.provide(FetcherLive)),
+	)
+
+	it.effect("each managed provider and user-configured targets get their own peer.service", () =>
+		Effect.gen(function* () {
+			const fetcher = yield* TargetFetcher
+			const peerOf = (targetType: "prometheus" | "planetscale" | "supabase") =>
+				Effect.gen(function* () {
+					const tracer = makeCapturingTracer()
+					yield* fetcher.fetch(mkTarget({ targetType })).pipe(
+						Effect.provideService(
+							FetchHttpClient.Fetch,
+							stubFetch([], () => new Response("up 1\n", { status: 200 })),
+						),
+						Effect.provide(tracer.layer),
+					)
+					const [span] = endedSpansNamed(tracer.ended, "TargetFetcher.fetchTarget")
+					return span?.attributes.get("peer.service")
+				})
+			assert.deepStrictEqual(
+				[yield* peerOf("supabase"), yield* peerOf("planetscale"), yield* peerOf("prometheus")],
+				["supabase-metrics", "planetscale-metrics", "scrape-target"],
+			)
 		}).pipe(Effect.provide(FetcherLive)),
 	)
 

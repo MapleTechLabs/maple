@@ -200,6 +200,25 @@ describe("SupabaseConnectionService", () => {
 		},
 	)
 
+	it.effect("an undecodable project item does not soft-remove the existing projects", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A), fakeProject(REF_B)] })
+		return Effect.gen(function* () {
+			const service = yield* SupabaseConnectionService
+			yield* connect(fake)
+
+			// REF_B's item stops decoding; the listing is incomplete, so absence proves nothing.
+			fake.state.projects = [fakeProject(REF_A), { ref: REF_B, name: 42 }]
+			yield* TestClock.adjust("1 hour")
+			const summary = yield* service.discoverOrg(ORG)
+			assert.deepStrictEqual(
+				{ projects: summary.projects, removed: summary.removed, error: summary.error },
+				{ projects: 1, removed: 0, error: null },
+			)
+			assert.isNull((yield* projectRow(testDb, REF_B))?.removed_at ?? null)
+		}).pipe(Effect.provide(makeLayer(testDb, fake)))
+	})
+
 	it.effect("updateProject toggles metrics and rejects a project the org does not have", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)] })
