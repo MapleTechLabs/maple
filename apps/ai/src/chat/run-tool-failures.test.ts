@@ -14,7 +14,8 @@ import * as AiModel from "effect/ai/Model"
 import { assert, describe, it } from "vitest"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
-import type { ResolvedModel } from "../platform/Llm"
+import { noRepositoryWarmup } from "../../test/chat/tool-executor"
+import { layerLlm, type ResolvedModel } from "../platform/Llm"
 import type { ChatTurnEvent } from "./events"
 import { runChatTurn } from "./run"
 import { makeReviewLedger } from "./review-ledger"
@@ -41,6 +42,9 @@ const answer = (text: string): ReadonlyArray<Response.StreamPartEncoded> => [
 	{ type: "finish", reason: "stop", usage: USAGE },
 ]
 
+/** Placeholder provider clients the scripted model never calls; `runChatTurn` requires them. */
+const llmClients = layerLlm({})
+
 /** A model that plays `script` one response per call, recording every prompt it was sent. */
 const scriptedModel = (script: ReadonlyArray<ReadonlyArray<Response.StreamPartEncoded>>) => {
 	const prompts: Array<Prompt.Prompt> = []
@@ -58,7 +62,7 @@ const scriptedModel = (script: ReadonlyArray<ReadonlyArray<Response.StreamPartEn
 			Layer.effect(
 				LanguageModel.LanguageModel,
 				LanguageModel.make({
-					generateText: (options) => Effect.succeed([...respond(options)]),
+					generateText: () => Effect.die("the turn streams; generateText is never called"),
 					streamText: (options) => Stream.suspend(() => Stream.fromIterable(respond(options))),
 				}),
 			),
@@ -87,6 +91,7 @@ const run = (model: ResolvedModel, executor: McpToolExecutorApi) => {
 }
 
 const rejectingExecutor: McpToolExecutorApi = {
+	...noRepositoryWarmup,
 	execute: () =>
 		Effect.succeed({
 			isError: true,
@@ -102,7 +107,7 @@ describe("runChatTurn tool failures", () => {
 		])
 		const { effect, events } = run(model, rejectingExecutor)
 
-		const exit = await Effect.runPromiseExit(effect)
+		const exit = await Effect.runPromiseExit(effect.pipe(Effect.provide(llmClients)))
 
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
 		assert.lengthOf(prompts, 2, "the model is called again after the failed tool")
@@ -131,7 +136,7 @@ describe("runChatTurn tool failures", () => {
 		])
 		const { effect, events } = run(model, rejectingExecutor)
 
-		const exit = await Effect.runPromiseExit(effect)
+		const exit = await Effect.runPromiseExit(effect.pipe(Effect.provide(llmClients)))
 
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
 		assert.lengthOf(prompts, 1, "a proposal is the turn's last word")
@@ -147,7 +152,6 @@ describe("runChatTurn tool failures", () => {
 				name: "create_dashboard",
 				input: { name: "Checkout" },
 				proposed: true,
-				label: "Creating a dashboard",
 			},
 			{ type: "turn-end", messageId: "msg-1", reason: "stop" },
 		])
@@ -182,7 +186,7 @@ describe("runChatTurn diagnosis rejections", () => {
 			append: () => {},
 		})
 
-		const exit = await Effect.runPromiseExit(effect)
+		const exit = await Effect.runPromiseExit(effect.pipe(Effect.provide(llmClients)))
 
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
 		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted)
@@ -226,7 +230,7 @@ describe("runChatTurn reply rejections", () => {
 			append: () => {},
 		})
 
-		const exit = await Effect.runPromiseExit(effect)
+		const exit = await Effect.runPromiseExit(effect.pipe(Effect.provide(llmClients)))
 
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
 		const results = prompts[1]!.content.flatMap((message) =>
@@ -274,7 +278,7 @@ describe("runChatTurn review refusals", () => {
 			append: () => {},
 		})
 
-		const exit = await Effect.runPromiseExit(effect)
+		const exit = await Effect.runPromiseExit(effect.pipe(Effect.provide(llmClients)))
 
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
 		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted)

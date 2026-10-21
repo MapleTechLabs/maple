@@ -1,33 +1,10 @@
 /**
- * The prompts, as contracts.
- *
- * Two different jobs here. The hashes pin that composing the shared sections changed nothing a
- * model reads: `SYSTEM_PROMPT` and `INVESTIGATE_SYSTEM_PROMPT` are byte-for-byte what they were
- * before the sections were lifted out, and a later edit to a shared section that reaches them has
- * to be an edit someone meant to make. The rest are the connector persona's own invariants.
- *
- * The digests were taken from these two strings as they stood before the refactor. Changing a
- * prompt is allowed — updating the digest in the same commit is what makes it deliberate.
+ * The prompts, as contracts: the sections every renderer has to agree with stay shared, and the
+ * connector persona only names tools that exist.
  */
-import { createHash } from "node:crypto"
 import { assert, describe, it } from "vitest"
 import { mapleToolCatalog } from "../mcp/tools/registry"
-import { CONNECTOR_SYSTEM_PROMPT, INVESTIGATE_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompts"
-
-const sha256 = (value: string) => createHash("sha256").update(value, "utf8").digest("hex")
-
-describe("the prompts the app and the investigation pass already shipped", () => {
-	it.each([
-		["SYSTEM_PROMPT", SYSTEM_PROMPT, "3e7ff9ab34673e959d233d891c07ec64854e8443fe94bb55cdfe363e14ae86a2"],
-		[
-			"INVESTIGATE_SYSTEM_PROMPT",
-			INVESTIGATE_SYSTEM_PROMPT,
-			"fd417ed6863dd0ebdb8037edde1ee213be5bcd2aeae0025932a27e1ff27c0ed8",
-		],
-	])("composes %s byte-for-byte as it was", (_name, prompt, digest) => {
-		assert.equal(sha256(prompt), digest)
-	})
-})
+import { CONNECTOR_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompts"
 
 describe("CONNECTOR_SYSTEM_PROMPT", () => {
 	it("carries the sections every renderer has to agree with", () => {

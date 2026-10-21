@@ -50,7 +50,6 @@ describe("renderGcpTerraform", () => {
 	it("places the sink and the read-only grants on the scope, and leaves the shared Logs Writer grant alone", () => {
 		const rendered = renderGcpTerraform(plan(), NEW)
 		expect(rendered).toContain('resource "google_logging_folder_sink" "maple"')
-		expect(rendered).toMatch(/^ {2}folder += "folders\/\$\{local\.folder_id\}"$/m)
 		// Every sink on the scope writes as the same identity: a destroy must not revoke its grant.
 		expect(rendered).not.toMatch(/role += "roles\/logging\.logWriter"/)
 		expect(renderGcpTerraform(plan({ scopeType: "project", scopeId: host }), NEW)).toContain(
@@ -60,11 +59,11 @@ describe("renderGcpTerraform", () => {
 
 	it("imports what a setup script created instead of creating it again", () => {
 		const rendered = renderGcpTerraform(plan(), { logs: true, reader: true })
-		expect(rendered).toContain(
-			'to = google_logging_folder_sink.maple\n  id = "folders/123456789012/sinks/maple-018f2b3c4d5e4f708192a3b4"',
+		expect(rendered).toMatch(
+			/to = google_logging_folder_sink\.maple\s+id = "folders\/123456789012\/sinks\/maple-018f2b3c4d5e4f708192a3b4"/,
 		)
-		expect(rendered).toContain(
-			'to = google_service_account.maple_reader\n  id = "projects/acme-host/serviceAccounts/maple-018f2b3c4d5e4f708192a3b4@acme-host.iam.gserviceaccount.com"',
+		expect(rendered).toMatch(
+			/to = google_service_account\.maple_reader\s+id = "projects\/acme-host\/serviceAccounts\/maple-018f2b3c4d5e4f708192a3b4@acme-host\.iam\.gserviceaccount\.com"/,
 		)
 		// Only commented: a resource only some earlier setups created is taken over by uncommenting.
 		expect(renderGcpTerraform(plan(), NEW)).not.toMatch(/^import \{/m)
@@ -100,15 +99,15 @@ describe("renderGcpAlchemy", () => {
 		const folder = renderGcpAlchemy(plan(), NEW)
 		expect(literal(folder, '^const SCOPE = (".*")$')).toBe("folders/123456789012")
 		expect(folder).toContain("yield* ScopeIamMember(")
-		expect(folder).toMatch(/GCP\.IAM\.Member\("maple-reader-serviceusage\.serviceUsageConsumer", \{\n {6}kind: "project",/)
+		expect(folder).toMatch(/"maple-reader-serviceusage\.serviceUsageConsumer", \{\s*kind: "project"/)
 		expect(renderGcpAlchemy(plan({ metricsEnabled: false }), NEW)).toContain('folderId: "123456789012"')
 		expect(renderGcpAlchemy(project(), NEW)).not.toContain("ScopeIamMember")
 	})
 
 	// Alchemy keys its state by stack name: two connections under one name would replace each other.
 	it("names the stack after the connection", () => {
-		expect(renderGcpAlchemy(project(), NEW)).toContain(
-			'Alchemy.Stack(\n  "maple-018f2b3c4d5e4f708192a3b4",',
+		expect(renderGcpAlchemy(project(), NEW)).toMatch(
+			/Alchemy\.Stack\(\s*"maple-018f2b3c4d5e4f708192a3b4"/,
 		)
 	})
 

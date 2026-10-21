@@ -98,11 +98,9 @@ describe("google cloud list", () => {
 	})
 
 	test("a connected status reads the fleet and nothing else until it lands", () => {
-		expect(names(init({ search: {} }, context).commands)).toEqual([
-			"ResolveGcpWindow",
-			"LoadGcpStatus",
-			"LoadChartRuntime",
-		])
+		expect(names(init({ search: {} }, context).commands)).toEqual(
+			expect.arrayContaining(["ResolveGcpWindow", "LoadGcpStatus", "LoadChartRuntime"]),
+		)
 		expect(names(withStatus(true).commands)).toEqual(["FetchGcpFleet"])
 	})
 

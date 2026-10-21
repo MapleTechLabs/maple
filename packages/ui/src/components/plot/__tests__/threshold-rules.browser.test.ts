@@ -1,11 +1,4 @@
-import type {
-	ChartKey,
-	ChartMark,
-	ChartValue,
-	MarkRenderContext,
-	ResolvedScale,
-	SceneNode,
-} from "@tanstack/charts"
+import type { ChartKey, MarkRenderContext, ResolvedScale, SceneNode } from "@tanstack/charts"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { canvasSafeThresholdColor, thresholdRules } from "../threshold-rules"
@@ -57,8 +50,10 @@ const RENDER_CONTEXT: MarkRenderContext = {
 	layout: {},
 }
 
+type ThresholdMark = ReturnType<typeof thresholdRules>[number]
+
 /** Every leaf scene node a mark emits, with its group wrapper unwrapped. */
-function renderNodes(mark: ChartMark<never, ChartValue, ChartValue>, markIndex = 0): SceneNode[] {
+function renderNodes(mark: ThresholdMark, markIndex = 0): SceneNode[] {
 	const initialized = mark.initialize({ markIndex })
 	const scene = initialized.render({ ...RENDER_CONTEXT, markIndex })
 	return scene.nodes.flatMap((node) => (node.kind === "group" ? [...node.children] : [node]))

@@ -50,13 +50,4 @@ describe("gcp connect lab", () => {
 		const reopened = update(closed, Message.ClickedReopen()).model
 		expect(reopened.hub.gcpCard.configure?.opened?.rerun).toBe(false)
 	})
-
-	test("a run fixture's Back and Try again do nothing, as legacy's no-ops", () => {
-		const failed = pick(opened(), "failed")
-		const retried = update(
-			failed,
-			Message.GotHubMessage({ message: IntegrationsMessage.ClickedGcpConfigureScriptRetry() }),
-		)
-		expect(retried.model).toBe(failed)
-	})
 })

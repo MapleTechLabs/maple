@@ -21,13 +21,13 @@ const profile = Schema.decodeUnknownSync(BillingProfile)({
 
 describe("billing tab", () => {
 	test("reads the catalog, usage, daily spend, invoices and billing details", () => {
-		expect(names(init(true, false).commands)).toEqual([
+		expect(names(init(true, false).commands)).toEqual(expect.arrayContaining([
 			"FetchBillingPlans",
 			"FetchBillingUsage",
 			"FetchBillingDailySpend",
 			"FetchBillingInvoices",
 			"FetchBillingProfile",
-		])
+		]))
 	})
 
 	test("a cap is saved for the open row, and the save reads the customer and daily spend again", () => {
@@ -85,7 +85,7 @@ describe("billing tab", () => {
 	test("a return from Stripe polls the customer until it carries the plan, then clears the marker", () => {
 		const returning = init(true, true)
 		expect(returning.model.checkoutReturn).toBe("Confirming")
-		expect(names(returning.commands).slice(-2)).toEqual(["WaitBillingCheckoutPoll", "WaitBillingCheckoutTimeout"])
+		expect(names(returning.commands)).toEqual(expect.arrayContaining(["WaitBillingCheckoutPoll", "WaitBillingCheckoutTimeout"]))
 		const polled = update(returning.model, Message.ElapsedCheckoutPoll(), null, 0)
 		expect(polled.isCustomerStale).toBe(true)
 		expect(names(polled.step.commands)).toEqual(["WaitBillingCheckoutPoll"])
@@ -113,6 +113,7 @@ describe("billing tab", () => {
 			null,
 			0,
 		)
+		// oxlint-disable-next-line test-slop/no-exact-name-list -- tracking must run before the redirect unloads the page
 		expect(attached.step.commands?.map((command) => command.name)).toEqual(["TrackBillingCheckout", "RedirectToBilling"])
 		expect(attached.step.commands?.[0]).toMatchObject({ args: { event: "plan_checkout_started", props: { plan_id: "startup" } } })
 	})

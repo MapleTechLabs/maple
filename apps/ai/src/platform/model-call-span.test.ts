@@ -17,7 +17,7 @@ import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/
 import { Cause, Duration, Effect, Exit, Fiber, Layer, Option, Redacted, Schema, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import type { Tracer } from "effect"
-import { AiError, LanguageModel, Tool, Toolkit } from "effect/ai"
+import { AiError, LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
 import type { Response as AiResponse } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
 import { instrumentLanguageModel } from "./genai-spans"
@@ -91,8 +91,8 @@ const chunk = (delta: Record<string, unknown>, finishReason: string | null) => (
  * One call answered by `frames`: how it ended, the types of the parts the consumer was handed, and
  * the model-call span's attributes as it ended.
  */
-const runModelCall = (
-	request: Parameters<typeof LanguageModel.streamText>[0],
+const runModelCall = <A extends { readonly type: string }, E, R>(
+	call: Stream.Stream<A, E, R>,
 	frames: ReadonlyArray<unknown>,
 	env: Parameters<typeof resolveTriageModel>[0] = ENV,
 	status = 200,
@@ -102,7 +102,7 @@ const runModelCall = (
 		const body = `${frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("")}data: [DONE]\n\n`
 		const delivered: Array<string> = []
 
-		const exit = yield* LanguageModel.streamText(request).pipe(
+		const exit = yield* call.pipe(
 			Stream.tap((part) => Effect.sync(() => void delivered.push(part.type))),
 			Stream.runDrain,
 			Effect.exit,
@@ -124,11 +124,15 @@ const runModelCall = (
 
 /** The model-call span's attributes as it ended, for one call answered by `frames`. */
 const endedModelCall = (
-	prompt: Parameters<typeof LanguageModel.streamText>[0]["prompt"],
+	prompt: Prompt.RawInput,
 	frames: ReadonlyArray<unknown>,
 	env: Parameters<typeof resolveTriageModel>[0] = ENV,
 	status = 200,
-) => Effect.map(runModelCall({ prompt }, frames, env, status), ({ attributes }) => attributes)
+) =>
+	Effect.map(
+		runModelCall(LanguageModel.streamText({ prompt }), frames, env, status),
+		({ attributes }) => attributes,
+	)
 
 /** The one tool the rejection fixtures declare: a parameter the model can get wrong. */
 const submitPlan = Tool.make("submit_plan", { parameters: Schema.Struct({ limit: Schema.Finite }) })
@@ -343,12 +347,12 @@ describe("the model-call span", () => {
 	it.effect("keeps the usage of a call the run rejects after the model finished", () =>
 		Effect.gen(function* () {
 			const { exit, delivered, attributes } = yield* runModelCall(
-				{
+				LanguageModel.streamText({
 					prompt: "hi",
 					toolkit: Toolkit.make(submitPlan),
 					// What the agent engine sends: the run owns tool execution.
 					disableToolCallResolution: true,
-				},
+				}),
 				[
 					chunk({ role: "assistant", content: "On it." }, null),
 					...rejectedToolCallFrames({
@@ -396,7 +400,11 @@ describe("the model-call span", () => {
 	it.effect("times a rejected call whose very first chunk was the rejected one", () =>
 		Effect.gen(function* () {
 			const { exit, delivered, attributes } = yield* runModelCall(
-				{ prompt: "hi", toolkit: Toolkit.make(submitPlan), disableToolCallResolution: true },
+				LanguageModel.streamText({
+					prompt: "hi",
+					toolkit: Toolkit.make(submitPlan),
+					disableToolCallResolution: true,
+				}),
 				rejectedToolCallFrames({ prompt_tokens: 40, completion_tokens: 12, total_tokens: 52 }),
 			)
 
@@ -415,7 +423,11 @@ describe("the model-call span", () => {
 		Effect.gen(function* () {
 			// The provider closes every stream with a finish part, usage or not.
 			const { exit, delivered, attributes } = yield* runModelCall(
-				{ prompt: "hi", toolkit: Toolkit.make(submitPlan), disableToolCallResolution: true },
+				LanguageModel.streamText({
+					prompt: "hi",
+					toolkit: Toolkit.make(submitPlan),
+					disableToolCallResolution: true,
+				}),
 				[rejectedToolCallChunk],
 			)
 

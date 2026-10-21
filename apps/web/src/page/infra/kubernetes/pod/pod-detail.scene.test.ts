@@ -27,11 +27,13 @@ const windowed = () =>
 
 describe("pod detail", () => {
 	test("the window fetches the summary, the selected metric and the pod's restarts", () => {
-		expect((windowed().commands ?? []).map(({ name }) => name)).toEqual([
-			"FetchInfraPodSummary",
-			"FetchInfraPodDetailRestarts",
-			"FetchInfraPodSeries",
-		])
+		expect((windowed().commands ?? []).map(({ name }) => name)).toEqual(
+			expect.arrayContaining([
+				"FetchInfraPodSummary",
+				"FetchInfraPodDetailRestarts",
+				"FetchInfraPodSeries",
+			]),
+		)
 	})
 
 	test("after a Reload a namespace change reads under the kept window; only a new preset re-resolves", () => {

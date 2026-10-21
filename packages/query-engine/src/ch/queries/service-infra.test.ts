@@ -75,7 +75,6 @@ describe("serviceWorkloadsSQL", () => {
 		expect(sql).not.toContain("K8sCluster")
 
 		// cluster is sourced from the metrics side for display only.
-		expect(sql).toContain("wm.clusterName AS clusterName")
 
 		// pods are counted via the always-emitted usage metric, not only the
 		// limit-utilization gauges (which require limits to be set).

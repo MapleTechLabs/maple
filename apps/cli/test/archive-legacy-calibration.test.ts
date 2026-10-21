@@ -10,6 +10,7 @@ import {
 	checkpointRoot,
 	checkpointSnapshotDir,
 	checkpointStatePath,
+	newCheckpointId,
 } from "../src/server/checkpoints"
 import { runArchiveReconciliation } from "../src/server/archives/generation"
 import { retireLegacyCalibration } from "../src/server/archives/legacy-calibration"
@@ -40,7 +41,7 @@ const withRoots = async (run: (roots: Roots) => Promise<void>): Promise<void> =>
 }
 
 const seedCheckpoint = (dataDir: string): string => {
-	const checkpointId = randomUUID()
+	const checkpointId = newCheckpointId()
 	const createdAt = "2026-01-01T00:00:00.000Z"
 	const snapshot = checkpointSnapshotDir(dataDir, checkpointId)
 	mkdirSync(join(snapshot, "backup"), { recursive: true })

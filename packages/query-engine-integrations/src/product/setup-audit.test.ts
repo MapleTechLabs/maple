@@ -166,6 +166,7 @@ describe("trace-completeness joins", () => {
 	it("auditOrphanSpansSQL left-joins children to parents over a lagged window", () => {
 		const { sql } = Effect.runSync(auditOrphanSpansSQL(window))
 		expect(sql).toContain("FROM service_map_children")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- an inner join would count no orphans
 		expect(sql).toContain("LEFT JOIN")
 		expect(sql).toContain("FROM service_map_spans")
 		expect(sql).toContain("ON (c.TraceId = p.TraceId AND c.ParentSpanId = p.SpanId)")

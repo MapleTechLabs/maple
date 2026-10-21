@@ -38,7 +38,7 @@ it("historical replay reads its head but cannot read a future fix or execute git
 			authMode: "self_hosted" as const,
 		}
 		const call = (name: string, args: Record<string, unknown>) =>
-			Effect.runPromise(executor.execute(tenant, name, args))
+			Effect.runPromise(executor.execute(tenant, name, args, "chat"))
 		expect(JSON.stringify(await call("sandbox_read_file", { path: "code.ts" }))).toContain(
 			"historical bug",
 		)
