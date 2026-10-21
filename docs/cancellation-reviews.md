@@ -14,6 +14,9 @@ cancellation and posts a report to a Slack channel in Maple's workspace.
    (`https://dashboard.clerk.com/apps/<app>/instances/<ins>`). Without it the report's Clerk links
    open the last-active instance.
 
+5. For the customer's Stripe cancellation survey: `STRIPE_SECRET_KEY` needs Subscriptions read.
+   Without it the report and the model's read go without the survey.
+
 Without a channel id nothing is reviewed.
 
 ## What triggers one
@@ -57,6 +60,10 @@ Each snapshot section is one stat in the report; its signal sentences only colou
 green, nothing for neutral). Sentences about a section with no stat, such as a past-due payment,
 are listed under the reason.
 
+The report's Sessions button opens Maple's own replays page filtered to the org's name, last 30
+days. It shows the org's sessions only when you are signed in to the org the app reports its own
+usage to (the product-events key's org).
+
 ## How the reason is decided
 
 `signals.ts` turns the snapshot into sentences and one reason, by fixed thresholds that all live
@@ -65,3 +72,19 @@ real cancellation is read wrongly.
 
 The snapshot, the reason and the post time are kept in `cancellation_reviews`. Once there are real
 cancellations whose reasons are known, those rows are what a model's read could be tested against.
+
+## The model's read
+
+After the rules, maple-ai reads the same snapshot with what the rules cannot see
+(`POST /internal/cancellation-review/read` over the `AI_WORKER` binding, `INTERNAL_SERVICE_TOKEN`):
+
+- Stripe's cancellation survey and comment on the org's newest cancelled subscription
+- its last 20 browser sessions in Maple's app, the 5 newest with their pages and errors
+- its last 40 audit-log entries
+
+It answers `agree` (the report shows nothing), `context` (a note under the reason) or `override`
+(its reason leads, the rules' stays beside it). It is one structured call on the triage model; no
+answer within 30 s, or no binding, and the report goes out with the rules alone. The answer is
+kept in `cancellation_reviews.model_read`, so it can be checked against known reasons later.
+What the customer told Stripe is also shown in the report as is.
+

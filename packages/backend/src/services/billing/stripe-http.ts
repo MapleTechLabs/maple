@@ -39,7 +39,13 @@ export interface StripeCustomerUpdate {
 	readonly address?: StripeAddressInput | null
 }
 
-type StripeRoute = "getCustomer" | "updateCustomer" | "listTaxIds" | "createTaxId" | "deleteTaxId"
+type StripeRoute =
+	| "getCustomer"
+	| "updateCustomer"
+	| "listTaxIds"
+	| "createTaxId"
+	| "deleteTaxId"
+	| "listSubscriptions"
 
 type StripeCall = Effect.Effect<AutumnResult, AutumnTransportFailure>
 
@@ -52,6 +58,8 @@ export interface StripeClientApi {
 		taxId: { readonly type: string; readonly value: string },
 	) => StripeCall
 	readonly deleteTaxId: (stripeCustomerId: string, taxIdId: string) => StripeCall
+	/** The customer's most recent subscriptions in any status, cancelled ones included. */
+	readonly listSubscriptions: (stripeCustomerId: string) => StripeCall
 }
 
 const toBillingUpstreamError = (error: unknown) =>
@@ -235,6 +243,14 @@ export class StripeClient extends Context.Service<StripeClient, StripeClientApi>
 						"deleteTaxId",
 						HttpClientRequest.delete(
 							`${customerPath(cus)}/tax_ids/${encodeURIComponent(taxIdId)}`,
+						),
+					),
+
+				listSubscriptions: (cus) =>
+					call(
+						"listSubscriptions",
+						HttpClientRequest.get("/v1/subscriptions").pipe(
+							HttpClientRequest.setUrlParams({ customer: cus, status: "all", limit: "5" }),
 						),
 					),
 			} satisfies StripeClientApi

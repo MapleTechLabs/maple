@@ -157,6 +157,8 @@ export interface SessionReplaysListOpts {
 	userSearch?: string
 	/** Exact match on the identified group (company / team / tenant) name. */
 	groupName?: string
+	/** Exact match on the identified group's id; unlike the name, unique. */
+	groupId?: string
 	/**
 	 * Exact match on the persistent visitor id. This is the join that walks from
 	 * an anonymous marketing session to the signed-in product sessions of the
@@ -336,6 +338,7 @@ function sessionReplaysListBase(opts: SessionReplaysListOpts) {
 				$.UserName.ilike(`%${v}%`).or($.UserEmail.ilike(`%${v}%`)),
 			),
 			CH.when(opts.groupName, (v: string) => $.GroupName.eq(v)),
+			CH.when(opts.groupId, (v: string) => $.GroupId.eq(v)),
 			CH.whenTrue(opts.hasErrors, () => $.ErrorCount.gt(0)),
 			CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
 			// SessionId is version-invariant, so this is row-level like the rest.

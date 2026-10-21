@@ -286,10 +286,19 @@ describe("session replay identity columns", () => {
 		expect(sql).toContain("GroupName = 'Acme Inc'")
 	})
 
+	it("matches groupId exactly", () => {
+		const { sql } = compileUnsafe(sessionReplaysListQuery({ groupId: "org_acme" }), {
+			...baseParams,
+			...WINDOW,
+		})
+		expect(sql).toContain("GroupId = 'org_acme'")
+	})
+
 	it("omits both identity predicates when unset", () => {
 		const { sql } = compileUnsafe(sessionReplaysListQuery({}), { ...baseParams, ...WINDOW })
 		expect(sql).not.toContain("ILIKE")
 		expect(sql).not.toContain("GroupName =")
+		expect(sql).not.toContain("GroupId =")
 	})
 
 	// The group facet must exclude its own dimension, or selecting a group would

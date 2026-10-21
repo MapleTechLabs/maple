@@ -22,16 +22,18 @@ import {
 	VcsInstallations,
 } from "@maple/db/tables"
 import { isActivePlanSubscription, isPlanSubscription } from "@maple/domain/billing"
-import { CancellationSnapshot, type OrgId } from "@maple/domain/http"
+import { CancellationModelRequest, CancellationSnapshot, type OrgId } from "@maple/domain/http"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Cause, Clock, Context, DateTime, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { decodeUpstream, ensureOk, subscriptionsOf } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { stripeCustomerIdOf } from "@maple/backend/services/billing/billing-profile"
+import { StripeClient } from "@maple/backend/services/billing/stripe-http"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
@@ -42,6 +44,16 @@ import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService
 import type { PlanCancellation } from "@maple/backend/services/product-events/autumn-events"
 import { SupportSlackClient } from "@maple/backend/services/support/SupportSlackClient"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { CancellationReader } from "./CancellationReader"
+import {
+	AUDIT_ENTRIES_SHOWN,
+	SESSIONS_READ,
+	SESSIONS_SHOWN,
+	TRANSCRIPT_EVENTS,
+	auditEntryOf,
+	digestSession,
+	stripeFeedbackOf,
+} from "./evidence"
 import { deriveSignals, ruleReason } from "./signals"
 import { buildCancellationMessage, OTHER_ORGS_SHOWN, type OrgLinks, type OtherOrg } from "./slack-message"
 import {
@@ -158,6 +170,9 @@ export class CancellationReviewService extends Context.Service<
 		const autumn = yield* AutumnClient
 		const slack = yield* SupportSlackClient
 		const inventory = yield* IntegrationInventoryService
+		const auditLog = yield* AuditLogService
+		const stripe = yield* StripeClient
+		const reader = yield* CancellationReader
 
 		const clerkOrgUrl = (orgId: string) =>
 			Option.match(env.MAPLE_CLERK_DASHBOARD_URL, {
@@ -273,22 +288,28 @@ export class CancellationReviewService extends Context.Service<
 		}
 
 		/**
-		 * The org's people in Maple's own app. Those page views are product events
-		 * of the org Maple reports its own usage under, tagged with the customer's
-		 * org as `GroupId`; that org is whichever one owns the product-events key.
+		 * The org Maple reports its own app usage under: whichever one owns the
+		 * product-events key. The customer's page views and browser sessions live
+		 * there, tagged with the customer's org as `GroupId`.
 		 */
-		const readVisits = Effect.fn("CancellationReviewService.readVisits")(function* (
-			orgId: OrgId,
-			atMs: number,
-		) {
+		const readOwnOrg = Effect.gen(function* () {
 			const key = Option.orElse(env.MAPLE_PRODUCT_EVENTS_INGEST_KEY, () => env.MAPLE_INGEST_KEY)
 			if (Option.isNone(key)) return null
 			const own = yield* ingestKeys.resolveIngestKey(Redacted.value(key.value))
-			if (Option.isNone(own)) return null
+			return Option.isNone(own) ? null : own.value.orgId
+		})
+
+		/** The org's people in Maple's own app, from the page views under Maple's org. */
+		const readVisits = Effect.fn("CancellationReviewService.readVisits")(function* (
+			orgId: OrgId,
+			atMs: number,
+			ownOrgId: OrgId | null,
+		) {
+			if (ownOrgId === null) return null
 			const window = visitsWindow(atMs)
 			const pageViews = (groupIds: ReadonlyArray<string> | undefined, bucketSeconds: number) =>
 				warehouse.compiledQuery(
-					systemTenant(own.value.orgId),
+					systemTenant(ownOrgId),
 					CH.compile(
 						CH.productEventsTimeseriesQuery({
 							metric: "users",
@@ -297,7 +318,7 @@ export class CancellationReviewService extends Context.Service<
 							...(groupIds === undefined ? undefined : { groupIds }),
 						}),
 						{
-							orgId: own.value.orgId,
+							orgId: ownOrgId,
 							startTime: formatWarehouseDateTime(window.startMs),
 							endTime: formatWarehouseDateTime(window.endMs),
 							bucketSeconds,
@@ -323,6 +344,65 @@ export class CancellationReviewService extends Context.Service<
 				atMs,
 			)
 		})
+
+		/**
+		 * The org's browser sessions in Maple's own app, newest first, the latest
+		 * few with the pages they visited and the errors they hit.
+		 */
+		const readSessions = Effect.fn("CancellationReviewService.readSessions")(function* (
+			orgId: OrgId,
+			atMs: number,
+			nowMs: number,
+			ownOrgId: OrgId | null,
+		) {
+			if (ownOrgId === null) return null
+			const tenant = systemTenant(ownOrgId)
+			const rows = yield* warehouse.compiledQuery(
+				tenant,
+				CH.compile(CH.sessionReplaysListQuery({ groupId: orgId, limit: SESSIONS_SHOWN }), {
+					orgId: ownOrgId,
+					startTime: formatWarehouseDateTime(atMs - WINDOW_DAYS * DAY_MS),
+					endTime: formatWarehouseDateTime(nowMs),
+				}),
+				{ profile: "list", context: "cancellationReviewSessions" },
+			)
+			return yield* Effect.forEach(
+				rows,
+				(row, index) =>
+					(index < SESSIONS_READ && row.quality !== "bot"
+						? warehouse.compiledQuery(
+								tenant,
+								CH.compile(
+									CH.sessionTranscriptQuery({
+										types: ["navigation", "error"],
+										startTime: row.startTime,
+										...(row.endTime === null ? undefined : { endTime: row.endTime }),
+										limit: TRANSCRIPT_EVENTS,
+									}),
+									{ orgId: ownOrgId, sessionId: row.sessionId },
+								),
+								{ profile: "list", context: "cancellationReviewSessionEvents" },
+							)
+						: Effect.succeed([])
+					).pipe(Effect.map((events) => digestSession(row, events))),
+				{ concurrency: 3 },
+			)
+		})
+
+		const readAuditLog = (orgId: OrgId, atMs: number) =>
+			auditLog
+				.list(orgId, { sinceMs: atMs - WINDOW_DAYS * DAY_MS, limit: AUDIT_ENTRIES_SHOWN, offset: 0 })
+				.pipe(Effect.map((entries) => entries.map(auditEntryOf)))
+
+		/** What the customer told Stripe when cancelling; null without a Stripe customer. */
+		const readStripeFeedback = (customer: unknown) =>
+			Option.match(stripeCustomerIdOf(customer), {
+				onNone: () => Effect.succeed(null),
+				onSome: (customerId) =>
+					stripe
+						.listSubscriptions(customerId)
+						.pipe(Effect.flatMap(ensureOk), Effect.map(stripeFeedbackOf)),
+			})
 
 		/** Orgs the members also belong to: a customer moving to another org is not leaving. */
 		const readOtherOrgs = (orgId: OrgId, people: ReadonlyArray<{ userId: string; email: string }>) =>
@@ -516,11 +596,12 @@ export class CancellationReviewService extends Context.Service<
 				// The moment the org decided, which for a scheduled cancellation is
 				// well before the plan ends.
 				const atMs = job.canceledAt ?? job.receivedAt
+				const ownOrgId = yield* optional("ownOrg", readOwnOrg)
 				const [org, ingest, visits, adoption, billing, integrations] = yield* Effect.all(
 					[
 						optional("org", readOrg(orgId)),
 						optional("ingest", readIngest(orgId, atMs)),
-						optional("visits", readVisits(orgId, atMs)),
+						optional("visits", readVisits(orgId, atMs, ownOrgId)),
 						optional("adoption", readAdoption(orgId)),
 						optional(
 							"billing",
@@ -580,6 +661,25 @@ export class CancellationReviewService extends Context.Service<
 				})
 
 				const reason = ruleReason(snapshot)
+				const signals = deriveSignals(snapshot)
+				const [sessions, audit, stripeFeedback] = yield* Effect.all(
+					[
+						optional("sessions", readSessions(orgId, atMs, nowMs, ownOrgId)),
+						optional("auditLog", readAuditLog(orgId, atMs)),
+						optional("stripeFeedback", readStripeFeedback(response)),
+					],
+					{ concurrency: 3 },
+				)
+				const modelRead = yield* reader.read(
+					new CancellationModelRequest({
+						snapshot,
+						ruleReason: reason,
+						signals: signals.map((signal) => signal.text),
+						stripeFeedback,
+						sessions,
+						auditLog: audit,
+					}),
+				)
 				const message = buildCancellationMessage({
 					subject: {
 						orgId,
@@ -587,12 +687,24 @@ export class CancellationReviewService extends Context.Service<
 						contactEmail: org?.state?.email ?? null,
 						expiresAt: job.expiresAt,
 						links: orgLinks(orgId, response),
+						// The replays page filters by the group name the app identifies sessions with.
+						sessionsUrl:
+							org?.info.name == null || ownOrgId === null
+								? null
+								: `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/replays?${new URLSearchParams(
+										{
+											group: org.info.name,
+											timePreset: "30d",
+										},
+									)}`,
 						integrations,
 						otherOrgs,
 					},
 					snapshot,
 					reason,
-					signals: deriveSignals(snapshot),
+					signals,
+					modelRead,
+					stripeFeedback,
 				})
 
 				const delivered = yield* slack
@@ -624,6 +736,7 @@ export class CancellationReviewService extends Context.Service<
 								.set({
 									snapshotJson: snapshot,
 									ruleReason: reason,
+									modelRead,
 									canceledAt: job.canceledAt,
 									postedAt: nowMs,
 									updatedAt: nowMs,
@@ -642,6 +755,7 @@ export class CancellationReviewService extends Context.Service<
 
 				yield* Effect.annotateCurrentSpan({
 					"maple.cancellation.reason": reason,
+					"maple.cancellation.model_verdict": modelRead?.verdict ?? "none",
 					// A report can go out missing sections; this is how that shows on the span.
 					"maple.cancellation.unread_sources": Object.entries({
 						org,
@@ -676,6 +790,9 @@ export class CancellationReviewService extends Context.Service<
 				AutumnClient.layer,
 				SupportSlackClient.layer,
 				IntegrationInventoryService.layer,
+				AuditLogService.layer,
+				StripeClient.layer,
+				CancellationReader.layer,
 			),
 		),
 	)
