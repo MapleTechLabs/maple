@@ -100,6 +100,8 @@ export interface FakeAws {
 	readonly client: HttpClient.HttpClient
 	/** Every call, as `<Action>`. */
 	readonly calls: Array<string>
+	/** The role ARN of every AssumeRole, in order. */
+	readonly assumed: Array<string>
 	readonly deploy: (accountId: string, templateJson: string) => void
 	/** Deletes every role of an account, as deleting its stack would. */
 	readonly deleteStacks: (accountId: string) => void
@@ -116,8 +118,10 @@ export const makeFakeAws = (
 	// Session key id → the role it is a session of.
 	const sessions = new Map<string, FakeRole>()
 	const calls: Array<string> = []
+	const assumed: Array<string> = []
 	const state: FakeAws = {
 		calls,
+		assumed,
 		failWith: undefined,
 		deploy: (accountId, templateJson) => {
 			const role = deployTemplate(accountId, templateJson)
@@ -144,6 +148,7 @@ export const makeFakeAws = (
 						)
 					}
 					const roleArn = form.get("RoleArn") ?? ""
+					assumed.push(roleArn)
 					const role = roles.get(roleArn)
 					if (
 						role === undefined ||

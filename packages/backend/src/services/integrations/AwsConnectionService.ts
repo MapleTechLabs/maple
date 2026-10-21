@@ -551,8 +551,15 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 										.returning(),
 								),
 							)
+				// RETURNING keeps no order: check in the due order, never-checked first.
+				const rank = new Map(due.map((row, index) => [row.id, index]))
+				const ordered = [...claimed].sort(
+					(a, b) =>
+						(rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+						(rank.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+				)
 				const results = yield* Effect.forEach(
-					claimed,
+					ordered,
 					(row) =>
 						runCheck(key, row).pipe(
 							Effect.map(({ ok }) => ok),

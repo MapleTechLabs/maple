@@ -317,4 +317,27 @@ describe("AwsConnectionService", () => {
 			assert.deepStrictEqual(yield* service.checkDue(), { due: 0, checked: 0, failures: 0 })
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
+
+	it.effect("a sweep checks a never-checked connection ahead of stale ones", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		const accountOf = (digits: string) => Schema.decodeUnknownSync(AwsAccountId)(digits)
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const stale = yield* Effect.forEach(["111111111111", "222222222222"], (digits) =>
+				service.create(orgId, userId, { accountId: accountOf(digits), modules: [] }),
+			)
+			yield* Effect.forEach(stale, (connection) => later(service.check(orgId, connection.id)))
+			yield* TestClock.adjust("2 hours")
+			const fresh = yield* service.create(orgId, userId, {
+				accountId: accountOf("333333333333"),
+				modules: [],
+			})
+			aws.assumed.length = 0
+			yield* service.checkDue()
+			// Two checks run at a time: the new connection is in the first pair, not behind both stale ones.
+			assert.include(aws.assumed.slice(0, 2), fresh.roleArn)
+			assert.lengthOf(aws.assumed, 3)
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
 })
