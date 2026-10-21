@@ -447,36 +447,40 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 			})
 
 			// Resolve an installation's repositories into the dashboard summary shape
-			// (one branch query per repo — fine at current scale, tens of repos). "all"
-			// scope: surface provider-removed repos too, with their dashboard affordances.
+			// (one branch query per repo, bounded-concurrent so status loads do not scale
+			// with repo count). "all" scope: surface provider-removed repos too.
 			const repositoriesOf = Effect.fn("GithubConnectService.repositoriesOf")(function* (installation: {
 				readonly id: VcsInstallationId
 			}) {
 				const repos = yield* asPersistence(
 					repo.listRepositoriesByInstallation(installation.id, "all"),
 				)
-				return yield* Effect.forEach(repos, (r) =>
-					Effect.gen(function* () {
-						const branches = yield* asPersistence(repo.listBranchesByRepository(r.id))
-						return {
-							id: r.id,
-							fullName: r.fullName,
-							htmlUrl: r.htmlUrl,
-							isPrivate: r.isPrivate,
-							status: r.status,
-							syncStatus: r.syncStatus,
-							lastSyncedAt: r.lastSyncedAt,
-							lastSyncError: r.lastSyncError,
-							// Fall back to the default for a legacy row whose tracked branch
-							// was never set, mirroring the sync engine's resolution.
-							trackedBranch: r.trackedBranch ?? r.defaultBranch,
-							prReviewEnabled: r.prReviewEnabled,
-							branches: branches.map((b) => ({
-								name: b.name,
-								isDefault: b.isDefault,
-							})),
-						}
-					}),
+				return yield* Effect.forEach(
+					repos,
+					(r) =>
+						Effect.gen(function* () {
+							const branches = yield* asPersistence(repo.listBranchesByRepository(r.id))
+							return {
+								id: r.id,
+								fullName: r.fullName,
+								htmlUrl: r.htmlUrl,
+								isPrivate: r.isPrivate,
+								status: r.status,
+								syncStatus: r.syncStatus,
+								lastSyncedAt: r.lastSyncedAt,
+								lastSyncError: r.lastSyncError,
+								// Fall back to the default for a legacy row whose tracked branch
+								// was never set, mirroring the sync engine's resolution.
+								trackedBranch: r.trackedBranch ?? r.defaultBranch,
+								prReviewEnabled: r.prReviewEnabled,
+								branches: branches.map((b) => ({
+									name: b.name,
+									isDefault: b.isDefault,
+								})),
+							}
+						}),
+					// Below the request's Postgres pool (5), so a GitHub or Clerk call still gets a socket.
+					{ concurrency: 4 },
 				)
 			})
 
