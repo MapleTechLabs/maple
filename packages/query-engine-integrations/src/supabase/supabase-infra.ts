@@ -1,5 +1,5 @@
 // /infra/supabase reads, keyed by the `supabase_project_ref` attribute. Gauges are in metrics_gauge;
-// counters are cumulative sums in metrics_sum, differenced reset-aware (`metricDeltaExpr`).
+// counters in metrics_sum are differenced reset-aware (`metricDeltaExpr`), delta-temporality rows as-is.
 
 import type { DateTime } from "effect"
 import { finiteOrZero } from "@maple/query-engine/ch/format"
@@ -76,32 +76,41 @@ const isDataVolume = ($: GaugeColumns, metricName: string) =>
 	$.MetricName.eq(metricName).and($.Attributes.get("mountpoint").eq(SUPABASE_DATA_MOUNTPOINT))
 
 /**
- * One row per (project, scrape): every gauge of a scrape shares its timestamp. Database size
- * sums the non-template databases; connection gauges sum their pools.
+ * One row per (project, timestamp). Exporters report at different instants, so a family absent
+ * from a row reads 0: each family carries its sample count and aggregates skip rows without one.
  */
 const gaugePoints = () =>
-	from(MetricsGauge).select(($) => ({
-		projectRef: $.Attributes.get(SUPABASE_PROJECT_REF_ATTRIBUTE),
-		t: $.TimeUnix,
-		memTotal: CH.maxIf($.Value, $.MetricName.eq(SUPABASE_MEMORY_TOTAL)),
-		memAvailable: CH.maxIf($.Value, $.MetricName.eq(SUPABASE_MEMORY_AVAILABLE)),
-		diskSize: CH.maxIf($.Value, isDataVolume($, SUPABASE_FS_SIZE)),
-		diskAvailable: CH.maxIf($.Value, isDataVolume($, SUPABASE_FS_AVAILABLE)),
-		dbSize: CH.sumIf(
-			$.Value,
-			$.MetricName.eq(SUPABASE_DB_SIZE).and(
-				CH.notInList($.Attributes.get("datname"), TEMPLATE_DATABASES),
-			),
-		),
-		backends: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_BACKENDS)),
-		poolerClients: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POOLER_CLIENTS)),
+	from(MetricsGauge).select(($) => {
+		const isDbSize = $.MetricName.eq(SUPABASE_DB_SIZE).and(
+			CH.notInList($.Attributes.get("datname"), TEMPLATE_DATABASES),
+		)
 		// The exporter reports -1 when it cannot count the users.
-		authUsers: CH.maxIf($.Value, $.MetricName.eq(SUPABASE_AUTH_USERS).and($.Value.gte(0))),
-		authSamples: CH.countIf($.MetricName.eq(SUPABASE_AUTH_USERS).and($.Value.gte(0))),
-		postgrestPoolMax: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POSTGREST_POOL_MAX)),
-		postgrestPoolAvailable: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POSTGREST_POOL_AVAILABLE)),
-		postgrestPoolWaiting: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POSTGREST_POOL_WAITING)),
-	}))
+		const isAuthUsers = $.MetricName.eq(SUPABASE_AUTH_USERS).and($.Value.gte(0))
+		return {
+			projectRef: $.Attributes.get(SUPABASE_PROJECT_REF_ATTRIBUTE),
+			t: $.TimeUnix,
+			memTotal: CH.maxIf($.Value, $.MetricName.eq(SUPABASE_MEMORY_TOTAL)),
+			memAvailable: CH.maxIf($.Value, $.MetricName.eq(SUPABASE_MEMORY_AVAILABLE)),
+			memAvailableSamples: CH.countIf($.MetricName.eq(SUPABASE_MEMORY_AVAILABLE)),
+			diskSize: CH.maxIf($.Value, isDataVolume($, SUPABASE_FS_SIZE)),
+			diskAvailable: CH.maxIf($.Value, isDataVolume($, SUPABASE_FS_AVAILABLE)),
+			diskAvailableSamples: CH.countIf(isDataVolume($, SUPABASE_FS_AVAILABLE)),
+			dbSize: CH.sumIf($.Value, isDbSize),
+			dbSizeSamples: CH.countIf(isDbSize),
+			backends: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_BACKENDS)),
+			backendSamples: CH.countIf($.MetricName.eq(SUPABASE_BACKENDS)),
+			poolerClients: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POOLER_CLIENTS)),
+			poolerSamples: CH.countIf($.MetricName.eq(SUPABASE_POOLER_CLIENTS)),
+			authUsers: CH.maxIf($.Value, isAuthUsers),
+			authSamples: CH.countIf(isAuthUsers),
+			postgrestPoolMax: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POSTGREST_POOL_MAX)),
+			postgrestPoolMaxSamples: CH.countIf($.MetricName.eq(SUPABASE_POSTGREST_POOL_MAX)),
+			postgrestPoolAvailable: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POSTGREST_POOL_AVAILABLE)),
+			postgrestPoolAvailableSamples: CH.countIf($.MetricName.eq(SUPABASE_POSTGREST_POOL_AVAILABLE)),
+			postgrestPoolWaiting: CH.sumIf($.Value, $.MetricName.eq(SUPABASE_POSTGREST_POOL_WAITING)),
+			postgrestPoolWaitingSamples: CH.countIf($.MetricName.eq(SUPABASE_POSTGREST_POOL_WAITING)),
+		}
+	})
 
 /**
  * Per-sample increments of every counter series, reset-aware. One partition per series (its
@@ -130,6 +139,8 @@ const counterDeltas = () =>
 				startTime: $.StartTimeUnix,
 				previousTime: CH.over(CH.lagInFrame($.TimeUnix, 1, $.TimeUnix), previous),
 				time: $.TimeUnix,
+				// Delta-temporality rows already are increments.
+				isDeltaTemporality: CH.dynamicColumn<number>("AggregationTemporality").eq(1),
 			}),
 		}
 	})
@@ -169,14 +180,29 @@ export function supabaseProjectGaugesSQL() {
 	return fromQuery(points, "points")
 		.select(($) => ({
 			projectRef: $.projectRef,
-			memoryAvg: finiteOrZero(CH.avgIf(usedShare($.memAvailable, $.memTotal), $.memTotal.gt(0))),
-			memoryMax: finiteOrZero(CH.maxIf(usedShare($.memAvailable, $.memTotal), $.memTotal.gt(0))),
+			memoryAvg: finiteOrZero(
+				CH.avgIf(
+					usedShare($.memAvailable, $.memTotal),
+					$.memTotal.gt(0).and($.memAvailableSamples.gt(0)),
+				),
+			),
+			memoryMax: finiteOrZero(
+				CH.maxIf(
+					usedShare($.memAvailable, $.memTotal),
+					$.memTotal.gt(0).and($.memAvailableSamples.gt(0)),
+				),
+			),
 			memoryTotal: CH.max_($.memTotal),
-			diskUsedMax: finiteOrZero(CH.maxIf(usedShare($.diskAvailable, $.diskSize), $.diskSize.gt(0))),
+			diskUsedMax: finiteOrZero(
+				CH.maxIf(
+					usedShare($.diskAvailable, $.diskSize),
+					$.diskSize.gt(0).and($.diskAvailableSamples.gt(0)),
+				),
+			),
 			diskSize: CH.max_($.diskSize),
-			dbSize: CH.max_($.dbSize),
-			connectionsAvg: finiteOrZero(CH.avg($.backends)),
-			connectionsMax: CH.max_($.backends),
+			dbSize: CH.maxIf($.dbSize, $.dbSizeSamples.gt(0)),
+			connectionsAvg: finiteOrZero(CH.avgIf($.backends, $.backendSamples.gt(0))),
+			connectionsMax: CH.maxIf($.backends, $.backendSamples.gt(0)),
 			lastSeen: CH.max_($.t),
 		}))
 		.groupBy("projectRef")
@@ -261,23 +287,41 @@ export function supabaseProjectGaugeSeriesSQL() {
 	return fromQuery(points, "points")
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.t, param.int("bucketSeconds")),
-			memoryAvg: finiteOrZero(CH.avgIf(usedShare($.memAvailable, $.memTotal), $.memTotal.gt(0))),
-			memoryMax: finiteOrZero(CH.maxIf(usedShare($.memAvailable, $.memTotal), $.memTotal.gt(0))),
+			memoryAvg: finiteOrZero(
+				CH.avgIf(
+					usedShare($.memAvailable, $.memTotal),
+					$.memTotal.gt(0).and($.memAvailableSamples.gt(0)),
+				),
+			),
+			memoryMax: finiteOrZero(
+				CH.maxIf(
+					usedShare($.memAvailable, $.memTotal),
+					$.memTotal.gt(0).and($.memAvailableSamples.gt(0)),
+				),
+			),
 			memoryTotal: CH.max_($.memTotal),
-			diskUsed: finiteOrZero(CH.maxIf(usedShare($.diskAvailable, $.diskSize), $.diskSize.gt(0))),
+			diskUsed: finiteOrZero(
+				CH.maxIf(
+					usedShare($.diskAvailable, $.diskSize),
+					$.diskSize.gt(0).and($.diskAvailableSamples.gt(0)),
+				),
+			),
 			diskSize: CH.max_($.diskSize),
-			dbSize: CH.max_($.dbSize),
-			connectionsAvg: finiteOrZero(CH.avg($.backends)),
-			connectionsMax: CH.max_($.backends),
-			poolerClients: finiteOrZero(CH.avg($.poolerClients)),
+			dbSize: CH.maxIf($.dbSize, $.dbSizeSamples.gt(0)),
+			connectionsAvg: finiteOrZero(CH.avgIf($.backends, $.backendSamples.gt(0))),
+			connectionsMax: CH.maxIf($.backends, $.backendSamples.gt(0)),
+			poolerClients: finiteOrZero(CH.avgIf($.poolerClients, $.poolerSamples.gt(0))),
 			authUsers: CH.max_($.authUsers),
 			authSamples: CH.sum($.authSamples),
-			postgrestPoolMax: CH.max_($.postgrestPoolMax),
-			// In use = max - available, per scrape, averaged over the bucket.
+			postgrestPoolMax: CH.maxIf($.postgrestPoolMax, $.postgrestPoolMaxSamples.gt(0)),
+			// In use = max - available, per scrape with both, averaged over the bucket.
 			postgrestPoolInUse: finiteOrZero(
-				CH.avg(CH.greatest_($.postgrestPoolMax.sub($.postgrestPoolAvailable), CH.lit(0))),
+				CH.avgIf(
+					CH.greatest_($.postgrestPoolMax.sub($.postgrestPoolAvailable), CH.lit(0)),
+					$.postgrestPoolMaxSamples.gt(0).and($.postgrestPoolAvailableSamples.gt(0)),
+				),
 			),
-			postgrestPoolWaiting: CH.max_($.postgrestPoolWaiting),
+			postgrestPoolWaiting: CH.maxIf($.postgrestPoolWaiting, $.postgrestPoolWaitingSamples.gt(0)),
 		}))
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])
