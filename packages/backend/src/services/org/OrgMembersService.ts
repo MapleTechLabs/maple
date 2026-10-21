@@ -18,6 +18,13 @@ export interface OrgMember {
 	readonly imageUrl: string | null
 }
 
+export interface UserOrganization {
+	readonly orgId: string
+	readonly name: string
+	readonly createdAtMs: number
+	readonly membersCount: number | null
+}
+
 export interface OrgMembersServiceApi {
 	/**
 	 * Resolve workspace-member user ids to their emails via the auth provider.
@@ -33,6 +40,13 @@ export interface OrgMembersServiceApi {
 		orgId: OrgId,
 	) => Effect.Effect<
 		ReadonlyArray<OrgMember>,
+		AlertMemberDirectoryNotConfiguredError | AlertMemberDirectoryUnavailableError
+	>
+	/** The orgs a user belongs to; the first 100, which is every real account. */
+	readonly listOrganizationsOf: (
+		userId: string,
+	) => Effect.Effect<
+		ReadonlyArray<UserOrganization>,
 		AlertMemberDirectoryNotConfiguredError | AlertMemberDirectoryUnavailableError
 	>
 	readonly resolveMembers: (
@@ -98,6 +112,37 @@ const make = Effect.gen(function* () {
 		).pipe(Stream.runCollect)
 	})
 
+	const listOrganizationsOf = Effect.fn("OrgMembersService.listOrganizationsOf")(function* (
+		userId: string,
+	) {
+		if (clerk === null) {
+			return yield* Effect.fail(
+				new AlertMemberDirectoryNotConfiguredError({
+					message: "Organization lookup requires Clerk authentication",
+				}),
+			)
+		}
+		const page = yield* clerkRequest(
+			"Clerk.users.getOrganizationMembershipList",
+			{ "tenant.userId": userId },
+			() => clerk.users.getOrganizationMembershipList({ userId, limit: 100 }),
+		).pipe(
+			Effect.mapError(
+				(cause) =>
+					new AlertMemberDirectoryUnavailableError({
+						message: `Failed to list the organizations of ${userId}`,
+						cause,
+					}),
+			),
+		)
+		return page.data.map((membership): UserOrganization => ({
+			orgId: membership.organization.id,
+			name: membership.organization.name,
+			createdAtMs: membership.organization.createdAt,
+			membersCount: membership.organization.membersCount ?? null,
+		}))
+	})
+
 	const resolveMembers: OrgMembersServiceApi["resolveMembers"] = Effect.fn(
 		"OrgMembersService.resolveMembers",
 	)(function* (orgId: OrgId, userIds: ReadonlyArray<UserId>) {
@@ -129,7 +174,7 @@ const make = Effect.gen(function* () {
 		return resolved
 	})
 
-	return { listMembers, resolveMembers } satisfies OrgMembersServiceApi
+	return { listMembers, listOrganizationsOf, resolveMembers } satisfies OrgMembersServiceApi
 })
 
 export class OrgMembersService extends Context.Service<OrgMembersService, OrgMembersServiceApi>()(
