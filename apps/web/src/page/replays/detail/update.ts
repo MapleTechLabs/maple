@@ -262,7 +262,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							...model,
 							player: {
 								...model.player,
-								totalMs,
+								// rrweb only knows the loaded seed; the manifest knows the whole recording.
+								totalMs: manifestTotalMs(model) || totalMs,
 								currentMs: model.loader.seekTargetMs ?? 0,
 								isFinished: false,
 								isPlaying: false,
