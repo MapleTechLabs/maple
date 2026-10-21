@@ -101,6 +101,19 @@ describe("settling a proposal", () => {
 		assert.include(String(call?.output), "Declined by Ada")
 	})
 
+	it("declines a decision that is neither approve nor deny, and runs nothing", async () => {
+		const session = withProposal(makeSession())
+		// What a skewed Worker could send over RPC, where nothing decodes the decision.
+		const rpcBody = JSON.parse(
+			JSON.stringify({ sessionId: SESSION_ID, toolCallId: "call_9", decision: "yes", approver: ADA }),
+		)
+
+		assert.equal(await session.settleProposal(rpcBody), "decided")
+
+		assert.deepEqual(applied, [])
+		assert.equal(settledCall(session)?.isError, true)
+	})
+
 	it("hands an app approver's own tenant to the applier, and names the app in a denial", async () => {
 		const session = withProposal(makeSession())
 		const tenant = {

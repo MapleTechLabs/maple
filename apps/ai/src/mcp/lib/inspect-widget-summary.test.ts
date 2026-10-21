@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import type { DashboardDocument } from "@maple/domain/http"
 import {
 	makeQueryBuilderBreakdownDataSource,
 	makeQueryBuilderTimeseriesDataSource,
@@ -6,10 +7,10 @@ import {
 } from "@maple/backend/dashboard-templates/helpers"
 import { summarizeOutcome, SLOW_RAW_SQL_MS, type InspectionOutcome } from "./inspect-widget"
 
-const widget = {
+const widget: DashboardDocument["widgets"][number] = {
 	id: "w-1",
 	visualization: "chart",
-	dataSource: { kind: "raw_sql" as const, sql: "SELECT 1" },
+	dataSource: { kind: "raw_sql", sql: "SELECT 1" },
 	display: { title: "Tile" },
 	layout: { x: 0, y: 0, w: 6, h: 4 },
 }

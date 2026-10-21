@@ -29,7 +29,8 @@ describe("verticalGradient", () => {
 	it("runs top-to-bottom with the opaque stop at the top", () => {
 		const gradient = verticalGradient("g1", "#f00")
 		expect(gradient).toMatchObject({ id: "g1", x1: 0, y1: 0, x2: 0, y2: 1 })
-		expect(gradient.stops[0].opacity).toBeGreaterThan(gradient.stops[1].opacity)
+		const [top, bottom] = gradient.stops.map((stop) => stop.opacity ?? 0)
+		expect(top).toBeGreaterThan(bottom)
 		expect(gradient.stops.every((stop) => stop.color === "#f00")).toBe(true)
 	})
 })

@@ -12,12 +12,12 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
-import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
 import { ApiV2RateLimiter, type RateLimiterApi } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
+	allV2GroupLayersWithAudit,
 	ConfigResourceServiceStubsLayer,
 	PlanetScaleServiceStubsLayer,
 	TelemetryServiceStubsLayer,
@@ -50,6 +50,9 @@ const testConfig = () =>
 
 const makeHarness = (checkRateLimit: RateLimiterApi["check"] = () => Effect.succeed("allowed" as const)) => {
 	const testDb = createTestDb(createdDbs)
+	// One instance shared by the router and the test, so a test can read what a request recorded.
+	const audit = makeMemoryAuditLog()
+	const auditLive = Layer.succeed(AuditLogService, audit)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
@@ -59,14 +62,14 @@ const makeHarness = (checkRateLimit: RateLimiterApi["check"] = () => Effect.succ
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
 	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+		Layer.provide(allV2GroupLayersWithAudit(auditLive)),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
-		Layer.provideMerge(AuditLogService.layerMemory),
+		Layer.provideMerge(auditLive),
 		Layer.provideMerge(Layer.succeed(ApiV2RateLimiter, { check: checkRateLimit })),
 		Layer.provideMerge(servicesLive),
 		Layer.provideMerge(HttpRouter.cors(API_CORS_OPTIONS)),
@@ -160,8 +163,12 @@ const makeHarness = (checkRateLimit: RateLimiterApi["check"] = () => Effect.succ
 			}),
 		)
 
+	const auditEntries = (action: string) =>
+		Effect.runPromise(audit.list(ORG, { action, limit: 100, offset: 0 }))
+
 	return {
 		request,
+		auditEntries,
 		bootstrapKey,
 		bootstrapMemberKey,
 		bootstrapSession,
@@ -543,6 +550,69 @@ describe("v2 api_keys over HTTP", () => {
 		})
 		expect(denied.status).toBe(403)
 		expect(denied.body.error.code).toBe("insufficient_permissions")
+		await harness.dispose()
+	})
+
+	it("refuses a roll by a non-admin member and leaves the key live", async () => {
+		const harness = makeHarness()
+		const member = await harness.bootstrapMemberKey()
+		const target = await harness.bootstrapKey(["telemetry:read"])
+		const { encodePublicId } = await import("@maple/domain/http/v2")
+
+		const denied = await harness.request(
+			"POST",
+			`/v2/api_keys/${encodePublicId("key", target.id)}/roll`,
+			{
+				token: member.secret,
+			},
+		)
+		expect(denied.status).toBe(403)
+		expect(denied.body.error.code).toBe("insufficient_permissions")
+		expect(Option.isSome(await harness.resolveKey(target.secret))).toBe(true)
+		expect(await harness.auditEntries("api_key.rolled")).toEqual([])
+		await harness.dispose()
+	})
+
+	it("records exactly one audit entry for an admin roll", async () => {
+		const harness = makeHarness()
+		const root = await harness.bootstrapKey()
+		const target = await harness.bootstrapKey(["telemetry:read"])
+		const { encodePublicId } = await import("@maple/domain/http/v2")
+
+		const rolled = await harness.request(
+			"POST",
+			`/v2/api_keys/${encodePublicId("key", target.id)}/roll`,
+			{
+				token: root.secret,
+			},
+		)
+		expect(rolled.status).toBe(200)
+
+		const entries = await harness.auditEntries("api_key.rolled")
+		expect(entries.map((entry) => [entry.resourceId, entry.apiKeyId, entry.outcome])).toEqual([
+			[rolled.body.id, root.id, "allowed"],
+		])
+		await harness.dispose()
+	})
+
+	it("records who revoked which key in the audit log", async () => {
+		const harness = makeHarness()
+		const root = await harness.bootstrapKey()
+		const created = await harness.request("POST", "/v2/api_keys", {
+			token: root.secret,
+			body: { name: "to-revoke" },
+		})
+		expect(created.status).toBe(200)
+
+		const revoked = await harness.request("DELETE", `/v2/api_keys/${created.body.id}`, {
+			token: root.secret,
+		})
+		expect(revoked.status).toBe(200)
+
+		const entries = await harness.auditEntries("api_key.revoked")
+		expect(entries.map((entry) => [entry.resourceId, entry.apiKeyId, entry.outcome])).toEqual([
+			[created.body.id, root.id, "allowed"],
+		])
 		await harness.dispose()
 	})
 

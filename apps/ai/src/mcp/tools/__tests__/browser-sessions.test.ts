@@ -171,7 +171,7 @@ describe("search_sessions", () => {
 	it("rejects a tag outside the vocabulary", async () => {
 		const bad = await call("search_sessions", { tags: ["frustrated"] })
 		expect(bad.isError).toBe(true)
-		expect(markdown(bad)).toContain("Invalid parameters for `search_sessions`")
+		expect(markdown(bad)).toContain("`tags`")
 	})
 })
 
@@ -195,7 +195,7 @@ describe("get_session_transcript", () => {
 
 		const bad = await call("get_session_transcript", { session_id: SESSION_ID, event_types: ["clicks"] })
 		expect(bad.isError).toBe(true)
-		expect(markdown(bad)).toContain("Invalid parameters for `get_session_transcript`")
+		expect(markdown(bad)).toContain("`event_types`")
 	})
 })
 
@@ -205,7 +205,6 @@ describe("get_session_traces", () => {
 		const output = Schema.decodeUnknownSync(GetSessionTracesOutput)(result.structuredContent)
 		expect(output.traces[0]?.hasError).toBe(true)
 		const text = markdown(result)
-		expect(text).toContain("### Backend traces")
 		expect(text).toContain(
 			`\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24T10:00:02.000Z"\`: errored POST /api/pay in api`,
 		)

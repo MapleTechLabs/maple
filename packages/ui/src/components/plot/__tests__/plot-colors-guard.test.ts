@@ -1,4 +1,5 @@
 import { areaY, defineChart } from "@tanstack/charts"
+import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { verticalGradient } from "../plot-paint"
@@ -14,19 +15,22 @@ interface CyclicDefinition {
 type NestedDefinition = { stroke: string } | { nested: NestedDefinition }
 
 interface Row {
-	date: Date
+	at: number
 	value: number
 }
 
 const rows: Row[] = [
-	{ date: new Date(0), value: 1 },
-	{ date: new Date(1000), value: 2 },
+	{ at: 0, value: 1 },
+	{ at: 1, value: 2 },
 ]
 
 /** Silences the guard's own output while asserting on it. */
 function captureErrors() {
 	return vi.spyOn(console, "error").mockImplementation(() => {})
 }
+
+/** Both axes linear, as the shipped sparkline configures them. */
+const SCALES = { x: { scale: scaleLinear }, y: { scale: scaleLinear } }
 
 afterEach(() => {
 	vi.restoreAllMocks()
@@ -46,12 +50,13 @@ describe("warnUnresolvedColors", () => {
 		const definition = defineChart({
 			marks: [
 				areaY(rows, {
-					x: (row: Row) => row.date,
+					x: (row: Row) => row.at,
 					y: (row: Row) => row.value,
 					fill: "url(#band)",
 				}),
 			],
 			gradients: [verticalGradient("band", "--chart-p95")],
+			scales: SCALES,
 		})
 
 		warnUnresolvedColors(definition, "Latency")
@@ -63,8 +68,9 @@ describe("warnUnresolvedColors", () => {
 	it("passes a real chart whose gradient colours are resolved literals", () => {
 		const errors = captureErrors()
 		const definition = defineChart({
-			marks: [areaY(rows, { x: (row: Row) => row.date, y: (row: Row) => row.value })],
+			marks: [areaY(rows, { x: (row: Row) => row.at, y: (row: Row) => row.value })],
 			gradients: [verticalGradient("band", "oklch(0.7 0.1 250)")],
+			scales: SCALES,
 		})
 
 		warnUnresolvedColors(definition, "Latency")

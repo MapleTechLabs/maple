@@ -4,7 +4,7 @@ import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
 import { ReplaySearch } from "../../../route/search"
 import * as CopyButton from "../../../ui/copy-button"
-import { ReplayMeta } from "../kit/replay-meta"
+import { RangeMeta, ReplayMeta } from "../kit/replay-meta"
 
 // The replay detail page.
 
@@ -142,6 +142,10 @@ export const Loader = Schema.Struct({
 	rangeCache: Schema.Record(Schema.String, RangeRows),
 	/** Seeds so far: the engine element is keyed by it, so a new seed mounts a new engine. */
 	seedVersion: Schema.Number,
+	/** Epoch ms of the recording's first loaded event: time zero for every seed, including later ones. */
+	originMs: Schema.NullOr(Schema.Number),
+	/** Markers and idle gaps of every range loaded so far, kept across seeks. */
+	rangeMetas: Schema.Array(RangeMeta),
 })
 export type Loader = typeof Loader.Type
 

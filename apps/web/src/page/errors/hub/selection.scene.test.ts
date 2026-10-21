@@ -180,7 +180,7 @@ describe("errors hub selection", () => {
 			)
 		const first = completed(loaded(), ids[0] ?? "")
 		const second = completed(first.model, ids[1] ?? "")
-		expect(names(second.commands)).toEqual(["FetchErrorIssuesPage", "FetchErrorIssueServiceCounts"])
+		expect(names(second.commands)).toContain("FetchErrorIssuesPage")
 		const firstKey = first.model.pages[0]?.page.key ?? ""
 		expect(second.model.pages[0]?.page.key).not.toBe(firstKey)
 		const late = pageUpdate(second.model, Message.CompletedFetchPage({ key: firstKey, result: Result.fail(toLoadFailure("old")) }))

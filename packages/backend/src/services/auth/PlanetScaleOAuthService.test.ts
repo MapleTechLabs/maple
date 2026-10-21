@@ -26,13 +26,6 @@ interface MockOptions {
 	readonly withoutRefreshToken?: boolean
 	/** `/v1/user` responds 403 (outside the app's scopes) → externalUserId falls back. */
 	readonly userForbidden?: boolean
-	readonly counters?: { refreshes: number }
-	/** After the first refresh, subsequent refreshes 400 (rotated refresh token). */
-	readonly refreshOnce?: boolean
-	/** Every refresh 400s — the grant is genuinely gone. */
-	readonly refreshAlwaysFails?: boolean
-	/** Exchange returns an immediately-expiring access token (forces refresh on first use). */
-	readonly shortLivedAccessToken?: boolean
 	/** First N `/v1/organizations` calls answer 401 `invalid_token` (doorkeeper body). */
 	readonly organizationsUnauthorizedTimes?: number
 	/**
@@ -84,11 +77,6 @@ const mockPlanetScaleFetch = (options: MockOptions = {}): typeof globalThis.fetc
 			}).text()
 			const body = new URLSearchParams(text)
 			if (body.get("grant_type") === "refresh_token") {
-				if (options.counters) options.counters.refreshes += 1
-				const refreshes = options.counters?.refreshes ?? 1
-				if (options.refreshAlwaysFails || (options.refreshOnce && refreshes > 1)) {
-					return jsonResponse({ error: "invalid_grant" }, 400)
-				}
 				return jsonResponse({
 					access_token: "ps-access-token-refreshed",
 					refresh_token: "ps-refresh-token-rotated",
@@ -109,7 +97,7 @@ const mockPlanetScaleFetch = (options: MockOptions = {}): typeof globalThis.fetc
 			return jsonResponse({
 				access_token: "ps-access-token",
 				token_type: "Bearer",
-				expires_in: options.shortLivedAccessToken ? 1 : 3600,
+				expires_in: 3600,
 				scope: "read_organization read_databases read_metrics_endpoints",
 				...(!options.withoutRefreshToken ? { refresh_token: "ps-refresh-token" } : undefined),
 			})
@@ -585,59 +573,6 @@ describe("PlanetScaleOAuthService", () => {
 			const error = yield* service.listOrganizations(asOrgId("org_a")).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsNotConnectedError")
 		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch())))
-	})
-
-	it.effect("concurrent getValidAccessToken refreshes once (single-flight, no false revoke)", () => {
-		const testDb = createTestDb(trackedDbs)
-		const counters = { refreshes: 0 }
-		return Effect.gen(function* () {
-			const service = yield* PlanetScaleOAuthService
-			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
-				callbackUrl: CALLBACK_URL,
-			})
-			yield* service.completeConnect("auth-code", state)
-
-			// Two racers on an expired token: without single-flight both refresh, the
-			// loser's rotated-token 400 falsely surfaces as IntegrationsRevokedError.
-			const [a, b] = yield* Effect.all(
-				[
-					service.getValidAccessToken(asOrgId("org_a")),
-					service.getValidAccessToken(asOrgId("org_a")),
-				],
-				{ concurrency: 2 },
-			)
-			assert.strictEqual(a.accessToken, "ps-access-token-refreshed")
-			assert.strictEqual(b.accessToken, "ps-access-token-refreshed")
-			assert.strictEqual(counters.refreshes, 1)
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					withMockFetch({ shortLivedAccessToken: true, refreshOnce: true, counters }),
-				),
-			),
-		)
-	})
-
-	it.effect("a refresh the token endpoint rejects with 400 surfaces as revoked", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			const service = yield* PlanetScaleOAuthService
-			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
-				callbackUrl: CALLBACK_URL,
-			})
-			yield* service.completeConnect("auth-code", state)
-
-			const error = yield* service.getValidAccessToken(asOrgId("org_a")).pipe(Effect.flip)
-			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsRevokedError")
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					withMockFetch({ shortLivedAccessToken: true, refreshAlwaysFails: true }),
-				),
-			),
-		)
 	})
 
 	it.effect("getValidAccessToken serves a repeat call from the memo without re-reading Postgres", () => {

@@ -40,7 +40,7 @@ const countingGraph = (options: { readonly failFirstBuild: boolean }) => {
 		McpToolExecutor,
 		Effect.gen(function* () {
 			const build = yield* Ref.updateAndGet(builds, (n) => n + 1)
-			if (options.failFirstBuild && build === 1) yield* Config.string("MAPLE_TEST_UNSET_KEY")
+			if (options.failFirstBuild && build === 1) yield* Config.String("MAPLE_TEST_UNSET_KEY")
 			return {
 				execute: () => Effect.succeed({ content: [{ type: "text" as const, text: "ok" }] }),
 				prepareRepository: () => Effect.void,
@@ -52,6 +52,11 @@ const countingGraph = (options: { readonly failFirstBuild: boolean }) => {
 	const counts = () => Effect.runSync(Effect.all({ imports: Ref.get(imports), builds: Ref.get(builds) }))
 	return { counts, loader: McpToolExecutorLoader.layerFrom(importGraph) }
 }
+
+const ToolsListBody = Schema.Struct({
+	result: Schema.Struct({ tools: Schema.Array(Schema.Unknown) }),
+})
+const ErrorBody = Schema.Struct({ error: Schema.String })
 
 /** The public MCP routes over the given loader, and a client holding a valid MCP key. */
 const mcpClient = async (loader: ReturnType<typeof McpToolExecutorLoader.layerFrom>) => {
@@ -120,7 +125,9 @@ describe("McpToolExecutorLoader", () => {
 				builds: 0,
 			})
 
-			const listed = await (await send("tools/list", { authorized: true })).json()
+			const listed = Schema.decodeUnknownSync(ToolsListBody)(
+				await (await send("tools/list", { authorized: true })).json(),
+			)
 			await send("tools/list", { authorized: true })
 			expect(listed.result.tools.length).toBeGreaterThan(0)
 			expect(counts()).toEqual({ imports: 1, builds: 1 })
@@ -134,9 +141,9 @@ describe("McpToolExecutorLoader", () => {
 		const { send, dispose } = await mcpClient(loader)
 		try {
 			const failed = await send("tools/list", { authorized: true })
-			const failedBody = await failed.json()
+			const failedBody = Schema.decodeUnknownSync(ErrorBody)(await failed.json())
 			const retried = await send("tools/list", { authorized: true })
-			const listed = await retried.json()
+			const listed = Schema.decodeUnknownSync(ToolsListBody)(await retried.json())
 			expect({
 				statuses: [failed.status, retried.status],
 				failedError: failedBody.error,

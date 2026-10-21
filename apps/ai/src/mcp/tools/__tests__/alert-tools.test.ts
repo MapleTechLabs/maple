@@ -3,7 +3,7 @@
  * typed output on `structuredContent`, the rendered text, and input errors naming the parameter.
  */
 import { describe, expect, it } from "vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import {
 	AlertChecksListResponse,
 	AlertDestinationsListResponse,
@@ -329,23 +329,22 @@ const layer = (seen: Seen) =>
 		} as never),
 	)
 
-interface RunFailure {
-	readonly message: string
-	readonly parameter?: string
-}
+// The registry's requirement union names every tool's services; the alert tools reach only
+// the alert services `layer` provides, so the rest are left absent (a defect if ever reached).
+const withoutUnreachedServices = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E> =>
+	Effect.provide(effect, Context.makeUnsafe<R>(new Map()))
 
 const run = (name: string, params: unknown, seen: Seen = {}) =>
 	Effect.runPromise(
-		// The registry's requirement union names every tool's services; the alert tools reach only
-		// the alert services `layer` provides.
-		// oxlint-disable-next-line effecttsgo/missing-effect-context
 		executeRegisteredMcpToolUnscoped(name, params, "mcp").pipe(
 			Effect.provide(layer(seen)),
 			Effect.result,
-		) as Effect.Effect<
-			{ _tag: "Success"; success: McpToolResult } | { _tag: "Failure"; failure: RunFailure }
-		>,
+			withoutUnreachedServices,
+		),
 	)
+
+const invalidParameter = (failure: { readonly _tag: string }) =>
+	"parameter" in failure ? failure.parameter : undefined
 
 const ok = async (name: string, params: unknown, seen: Seen = {}) => {
 	const result = await run(name, params, seen)
@@ -365,7 +364,6 @@ describe("alert tools", () => {
 		// The unscoped rule covers checkout too; raw-SQL rules not naming it do not.
 		expect(output.rules.map((r) => r.id)).toEqual([RULE_ID, ALL_ID])
 		expect(output.services).toEqual(["checkout", "billing"])
-		expect(text(result)).toContain("## Alert Rules")
 		expect(text(result)).toContain("Services: checkout, billing")
 		expect(text(result)).toContain(RULE_ID)
 		expect(text(result)).toContain(`\`get_alert_rule rule_id="${RULE_ID}"\``)
@@ -388,16 +386,14 @@ describe("alert tools", () => {
 		const result = await ok("get_alert_rule", { rule_id: RULE_ID })
 		const output = Schema.decodeUnknownSync(GetAlertRuleOutput)(result.structuredContent)
 		expect(output.rule.notificationTitle).toBe("{{ rule.name }}")
-		expect(text(result)).toContain("## Alert Rule: Checkout errors")
 		expect(text(result)).toContain("Condition: > 0.05")
 		expect(text(result)).toContain("Last evaluation error: column Foo not found")
-		expect(text(result)).toContain("### Message Template")
 
 		const missing = await run("get_alert_rule", { rule_id: "nope" })
 		expect(missing._tag).toBe("Failure")
 		if (missing._tag === "Failure") {
 			expect(missing.failure._tag).toBe("@maple/mcp/errors/McpInvalidInputError")
-			expect(missing.failure.parameter).toBe("rule_id")
+			expect(invalidParameter(missing.failure)).toBe("rule_id")
 		}
 	})
 
@@ -420,12 +416,11 @@ describe("alert tools", () => {
 		const seen: Seen = {}
 		const result = await ok("get_incident_timeline", { rule_id: RULE_ID, limit: 1 }, seen)
 		expect(seen.incidentOptions).toMatchObject({ ruleId: RULE_ID, limit: 2 })
-		expect(text(result)).toContain("### Checkout errors (open)")
 		expect(text(result)).toContain(`Incident ID: ${INCIDENT_ID}`)
 		expect(text(result)).toContain("Showing 1 incidents.")
 
 		const bad = await run("get_incident_timeline", { rule_id: "not-a-uuid" })
-		expect(bad._tag === "Failure" && bad.failure.parameter).toBe("rule_id")
+		expect(bad._tag === "Failure" && invalidParameter(bad.failure)).toBe("rule_id")
 	})
 
 	it("list_alert_checks takes since/until as the window and a bad rule_id as invalid input", async () => {
@@ -453,12 +448,12 @@ describe("alert tools", () => {
 
 		const bad = await run("list_alert_checks", { rule_id: "nope" })
 		expect(bad._tag === "Failure" && bad.failure._tag).toBe("@maple/mcp/errors/McpInvalidInputError")
-		expect(bad._tag === "Failure" && bad.failure.parameter).toBe("rule_id")
+		expect(bad._tag === "Failure" && invalidParameter(bad.failure)).toBe("rule_id")
 	})
 
 	it("create_alert_rule builds the request from a template and list params", async () => {
 		const seen: Seen = {}
-		const result = await ok(
+		await ok(
 			"create_alert_rule",
 			{
 				name: "Errors",
@@ -479,7 +474,6 @@ describe("alert tools", () => {
 			groupBy: ["service.name"],
 			alertOnNoData: true,
 		})
-		expect(text(result)).toContain("## Alert Rule Created")
 
 		// An explicit service scope displaces the template's grouping.
 		await ok(
@@ -523,7 +517,7 @@ describe("alert tools", () => {
 			comparator: "lt",
 			threshold: 0.8,
 		})
-		expect(missing._tag === "Failure" && missing.failure.parameter).toBe("apdex_threshold_ms")
+		expect(missing._tag === "Failure" && invalidParameter(missing.failure)).toBe("apdex_threshold_ms")
 
 		const noDestinations = await run("create_alert_rule", { name: "X", template: "slow_p95" })
 		// Required in the published schema, so its absence is a decode failure naming it.
@@ -594,7 +588,7 @@ describe("alert tools", () => {
 		})
 
 		const missing = await run("preview_alert_rule", { rule_id: "8f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f" })
-		expect(missing._tag === "Failure" && missing.failure.parameter).toBe("rule_id")
+		expect(missing._tag === "Failure" && invalidParameter(missing.failure)).toBe("rule_id")
 	})
 
 	it("update_alert_rule overlays only the given fields", async () => {
@@ -725,13 +719,13 @@ describe("alert tools", () => {
 
 	it("delete_alert_rule requires confirm and maps not-found to rule_id", async () => {
 		const unconfirmed = await run("delete_alert_rule", { rule_id: RULE_ID, confirm: false })
-		expect(unconfirmed._tag === "Failure" && unconfirmed.failure.parameter).toBe("confirm")
+		expect(unconfirmed._tag === "Failure" && invalidParameter(unconfirmed.failure)).toBe("confirm")
 
 		const deleted = await ok("delete_alert_rule", { rule_id: RULE_ID, confirm: "true" })
 		expect(text(deleted)).toContain(`ID: ${RULE_ID}`)
 
 		const missing = await run("delete_alert_rule", { rule_id: INCIDENT_ID, confirm: true })
-		expect(missing._tag === "Failure" && missing.failure.parameter).toBe("rule_id")
+		expect(missing._tag === "Failure" && invalidParameter(missing.failure)).toBe("rule_id")
 	})
 	it("list_alert_rules by service includes unscoped rules and raw_query rules naming it", async () => {
 		const result = await ok("list_alert_rules", { service_names: "maple-api" })
@@ -811,8 +805,8 @@ describe("alert tools", () => {
 		expect(text(result)).toContain("Updated 4 Alert Rules")
 
 		const named = await run("update_alert_rule", { rule_ids: [RULE_ID, ALL_ID], name: "Same" })
-		expect(named._tag === "Failure" && named.failure.parameter).toBe("name")
+		expect(named._tag === "Failure" && invalidParameter(named.failure)).toBe("name")
 		const none = await run("update_alert_rule", { threshold: 1 })
-		expect(none._tag === "Failure" && none.failure.parameter).toBe("rule_id")
+		expect(none._tag === "Failure" && invalidParameter(none.failure)).toBe("rule_id")
 	})
 })

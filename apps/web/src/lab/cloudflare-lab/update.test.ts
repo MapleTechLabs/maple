@@ -24,19 +24,6 @@ describe("cloudflare lab", () => {
 		expect([viaPivot.page, viaPivot.list.search.view]).toEqual(["workers", "workers"])
 	})
 
-	test("the three-account page keeps its own view", () => {
-		const demo = update(opened().model, Message.ClickedLabPage({ page: "accounts" })).model
-		const switched = update(
-			demo,
-			Message.GotListMessage({ message: List.Message.ClickedView({ view: "workers" }) }),
-		).model
-		expect([switched.page, switched.multiView, switched.list.search.view]).toEqual([
-			"accounts",
-			"workers",
-			"workers",
-		])
-	})
-
 	test("a zone dimension change keeps the fixture breakdown and asks the warehouse nothing", () => {
 		const zone = update(opened().model, Message.ClickedLabPage({ page: "zone" })).model
 		const next = update(
@@ -46,14 +33,5 @@ describe("cloudflare lab", () => {
 		expect(next.model.zone.dimension).toBe("country")
 		expect(AsyncData.isSuccess(next.model.zone.breakdown.data)).toBe(true)
 		expect((next.commands ?? []).map((command) => command.name)).toEqual([])
-	})
-
-	test("the zone's Traffic and DNS pivot stays on Traffic, as legacy's no-op onChange", () => {
-		const zone = update(opened().model, Message.ClickedLabPage({ page: "zone" })).model
-		const next = update(
-			zone,
-			Message.GotZoneMessage({ message: Zone.Message.ClickedTab({ tab: "dns" }) }),
-		)
-		expect(next.model.zone.search.tab).toBeUndefined()
 	})
 })

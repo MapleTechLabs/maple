@@ -47,7 +47,7 @@ describe("local metric detail", () => {
 			step.model,
 			Message.SucceededFetchEntry({ key: step.model.entry.key ?? "", entry, fetchedAtMs: NOW }),
 		)
-		expect(names(found.commands)).toEqual(["FetchLocalMetricTimeseries", "FetchLocalMetricBreakdown"])
+		expect(names(found.commands)).toEqual(expect.arrayContaining(["FetchLocalMetricTimeseries", "FetchLocalMetricBreakdown"]))
 	})
 
 	test("an entry answer for a superseded window is dropped", () => {

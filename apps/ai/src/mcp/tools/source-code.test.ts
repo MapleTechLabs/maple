@@ -23,7 +23,6 @@ type Run = (
 
 const tools = new Map<string, Run>()
 registerSourceCodeTools({
-	tool: () => undefined,
 	define: (spec) => {
 		const run = (params: Readonly<Record<string, unknown>>) =>
 			Schema.decodeUnknownEffect(spec.parameters)(params).pipe(

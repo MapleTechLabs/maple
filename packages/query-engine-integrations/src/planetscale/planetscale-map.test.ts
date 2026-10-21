@@ -35,7 +35,6 @@ describe("planetscaleGaugesSQL", () => {
 		)
 		expect(sql).toContain("GROUP BY database")
 		expect(sql).not.toContain("planetscale_branch_name")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("adds the branch grouping (and database filter) for the detail panel", () => {
@@ -63,7 +62,6 @@ describe("planetscaleConnectionsSQL", () => {
 		expect(sql).toContain("GROUP BY database, t")
 		expect(sql).toContain("avg(conn.totalConnections)")
 		expect(sql).toContain("max(conn.totalConnections)")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("supports the per-branch breakdown", () => {

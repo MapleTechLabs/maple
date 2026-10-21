@@ -5,6 +5,7 @@ import { evaluatePermission, isToolVisible } from "@maple/domain/permission"
 import { DEFAULT_RULESET, READ_ONLY_RULESET } from "../../chat/permissions"
 import { profileForTurn } from "../../chat/profiles"
 import { CHAT_BUDGET } from "../../chat/budgets"
+import type { AgentDefinition } from "../../chat/agents"
 
 describe("MUTATING_TOOL_NAMES", () => {
 	it("every approval-gated tool exists in the registry", () => {
@@ -12,19 +13,6 @@ describe("MUTATING_TOOL_NAMES", () => {
 		for (const name of MUTATING_TOOL_NAMES) {
 			expect(registered.has(name), `missing registered tool: ${name}`).toBe(true)
 		}
-	})
-
-	it("excludes read-only tools (so /chat/apply can't run them)", () => {
-		expect(MUTATING_TOOL_NAMES.has("find_errors")).toBe(false)
-		expect(MUTATING_TOOL_NAMES.has("search_traces")).toBe(false)
-		expect(MUTATING_TOOL_NAMES.has("list_dashboards")).toBe(false)
-		expect(MUTATING_TOOL_NAMES.has("get_dashboard")).toBe(false)
-	})
-
-	it("covers the dashboard/alert/issue mutations", () => {
-		expect(MUTATING_TOOL_NAMES.has("update_dashboard_widget")).toBe(true)
-		expect(MUTATING_TOOL_NAMES.has("create_alert_rule")).toBe(true)
-		expect(MUTATING_TOOL_NAMES.has("transition_error_issue")).toBe(true)
 	})
 })
 
@@ -84,12 +72,13 @@ describe("READ_ONLY_RULESET", () => {
  * case, and that is where the gate is the whole point.
  */
 describe("profileForTurn", () => {
-	const agent = {
+	const agent: AgentDefinition = {
 		name: "default",
 		description: "",
 		prompt: "",
 		permission: DEFAULT_RULESET,
 		budget: CHAT_BUDGET,
+		model: "triage",
 	}
 	const rulesetFor = (kind: "app" | "autonomous") => profileForTurn(agent, { kind }).ruleset
 

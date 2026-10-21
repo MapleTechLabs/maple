@@ -1,9 +1,10 @@
-import { defineConfig } from "vitest/config"
+import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
 	test: {
 		environment: "node",
 		include: ["src/**/*.test.ts"],
+		exclude: [...configDefaults.exclude, "**/.claude/**", "**/.context/**", "**/worktrees/**"],
 		// Forked processes, not worker threads. Threads measured ~3s faster on the
 		// full suite, but on Linux CI the one process hosting every thread grew past
 		// the runner's 16 GB over ~140 files of PGlite instances and was SIGKILLed
