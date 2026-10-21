@@ -12225,6 +12225,10 @@
       "name": "Google Cloud Integration"
     },
     {
+      "description": "Connect AWS accounts: register a connection, choose what Maple may read, fetch the CloudFormation stack that sets it up, and see whether Maple can assume its role.",
+      "name": "AWS Integration"
+    },
+    {
       "description": "Deduplicated errors and alert-backed issues tracked through Maple's triage workflow.",
       "name": "Error Issues"
     },
