@@ -25,7 +25,12 @@ export const Message = defineMessageUnion({
 	UpdatedRuleStates: rows(AlertRuleStateRowSchema),
 	UpdatedIncidents: rows(AlertIncidentRowSchema),
 	UpdatedDestinations: rows(AlertDestinationRowSchema),
-	CompletedFetchDeliveries: { key: Schema.String, result: outcome(Schema.Array(AlertDeliveryEventDocument)) },
+	FailedLoadAlerts: { orgId: Schema.String },
+	ClickedRetryLoad: {},
+	CompletedFetchDeliveries: {
+		key: Schema.String,
+		result: outcome(Schema.Array(AlertDeliveryEventDocument)),
+	},
 	CompletedFetchRoutingDeliveries: {
 		key: Schema.String,
 		result: outcome(Schema.Array(AlertDeliveryEventDocument)),

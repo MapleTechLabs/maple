@@ -154,4 +154,33 @@ describe("makeExecuteBatcher", () => {
 				expect(yield* Fiber.joinAll(fibers)).toEqual([Exit.fail(error), Exit.fail(error)])
 			}),
 		))
+
+	test("a send that dies fails every query in that batch as unanswered, not with a crash or a wait", () =>
+		run(
+			Effect.gen(function* () {
+				const batcher = yield* makeExecuteBatcher(() => Effect.die("decoder blew up"), WINDOW_MS)
+				const fibers = yield* Effect.forEach([0, 1], (index) =>
+					Effect.forkChild(Effect.exit(batcher.enqueue(request(index)))),
+				)
+				yield* TestClock.adjust(`${WINDOW_MS} millis`)
+				const unanswered = Exit.fail(
+					new MissingBatchResultError({ message: "The batch request ended without an answer." }),
+				)
+				expect(yield* Fiber.joinAll(fibers)).toEqual([unanswered, unanswered])
+			}),
+		))
+
+	test("an interrupted send fails every query in that batch without interrupting its callers", () =>
+		run(
+			Effect.gen(function* () {
+				const batcher = yield* makeExecuteBatcher(() => Effect.interrupt, WINDOW_MS)
+				const fibers = yield* Effect.forEach([0, 1], (index) =>
+					Effect.forkChild(Effect.exit(batcher.enqueue(request(index)))),
+				)
+				yield* TestClock.adjust(`${WINDOW_MS} millis`)
+				const exits = yield* Fiber.joinAll(fibers)
+				expect(exits.every(Exit.isFailure)).toBe(true)
+				expect(exits.some(Exit.hasInterrupts)).toBe(false)
+			}),
+		))
 })

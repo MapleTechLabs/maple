@@ -10,7 +10,7 @@ import { clerkAppearance, clerkLocalization } from "../lib/clerk-appearance"
 import { currentRegion } from "../lib/region"
 import { purgeForeignClerkCookies } from "../lib/services/common/clerk-cookie-guard"
 import { clerkJsUrl } from "./clerk-js-url"
-import { Clock, Effect, Option, Predicate, Queue, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Option, Predicate, Queue, Schema, Stream } from "effect"
 
 /** The slice of clerk-js this app reads (`window.Clerk`). */
 interface ClerkResources {
@@ -271,6 +271,8 @@ const injectClerkJs = Effect.callback<void, ClerkLoadError>((resume) => {
 		resume(Effect.fail(new ClerkLoadError({ message: "Failed to load Clerk", cause }))),
 	)
 	document.head.appendChild(script)
+	// Interrupted (the load deadline): a later attempt injects its own tag.
+	return Effect.sync(() => script.remove())
 })
 
 const currentClerk = Effect.suspend(() =>
@@ -280,6 +282,8 @@ const currentClerk = Effect.suspend(() =>
 		onSome: Effect.succeed,
 	}),
 )
+
+const CLERK_LOAD_TIMEOUT = Duration.seconds(20)
 
 /** Loads clerk-js the way `<ClerkProvider>` does (unless a stub already sits on `window`). */
 export const loadClerk: Effect.Effect<ClerkSnapshot, ClerkLoadError> = Effect.gen(function* () {
@@ -302,7 +306,14 @@ export const loadClerk: Effect.Effect<ClerkSnapshot, ClerkLoadError> = Effect.ge
 		catch: (cause) => new ClerkLoadError({ message: "Clerk failed to load", cause }),
 	})
 	return yield* toSnapshot(clerk)
-})
+}).pipe(
+	// Without a deadline a stalled script or `clerk.load` keeps the boot splash up forever.
+	Effect.timeoutOrElse({
+		duration: CLERK_LOAD_TIMEOUT,
+		orElse: () =>
+			Effect.fail(new ClerkLoadError({ message: "Clerk did not load in time", cause: undefined })),
+	}),
+)
 
 /** Every Clerk emit (session touch, org switch, sign-out), as snapshots. */
 export const clerkSnapshots: Stream.Stream<ClerkSnapshot> = Stream.callback<ClerkResources>((queue) =>
@@ -363,9 +374,13 @@ export const clerkTeamOrganization: Effect.Effect<Option.Option<ClerkTeamOrganiz
 	}),
 )
 
+const SESSION_TOKEN_TIMEOUT = Duration.seconds(10)
+
 const sessionToken = (skipCache: boolean): Effect.Effect<Option.Option<string>> =>
 	Effect.tryPromise(() => window.Clerk?.session?.getToken({ skipCache }) ?? Promise.resolve(null)).pipe(
 		Effect.map(Option.fromNullishOr),
+		// Runs before the request deadline starts, so a stalled token refresh must not hang every request.
+		Effect.timeoutOrElse({ duration: SESSION_TOKEN_TIMEOUT, orElse: () => Effect.succeedNone }),
 		Effect.orElseSucceed(Option.none),
 	)
 

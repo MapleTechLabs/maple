@@ -9,6 +9,7 @@ import {
 	PEER_OUTAGE_GRACE_MS,
 } from "../lib/peer-reachability"
 import {
+	isRequestTimeout,
 	WarehouseDecodeError,
 	WarehouseQueryError,
 	WarehouseUnreachableError,
@@ -111,5 +112,27 @@ describe("transport failures during a connectivity blip", () => {
 		expect(normalizeWarehouseError("query", new Error("decode failed"), blipping())).toBeInstanceOf(
 			WarehouseQueryError,
 		)
+	})
+})
+
+describe("isRequestTimeout", () => {
+	const request = HttpClientRequest.get(`${apiBaseUrl}/v2/execute`)
+	const transport = (cause: unknown) =>
+		new HttpClientError.HttpClientError({
+			reason: new HttpClientError.TransportError({ request, description: "failed", cause }),
+		})
+
+	it("recognises the client deadline, also when a caller wrapped it", () => {
+		const timedOut = transport(new DOMException("No response within 45000ms", "TimeoutError"))
+		expect(isRequestTimeout(timedOut)).toBe(true)
+		expect(
+			isRequestTimeout(
+				new WarehouseUnreachableError({ operation: "execute", message: "x", cause: timedOut }),
+			),
+		).toBe(true)
+	})
+
+	it("a dropped connection is not a timeout", () => {
+		expect(isRequestTimeout(transport(new TypeError("Failed to fetch")))).toBe(false)
 	})
 })

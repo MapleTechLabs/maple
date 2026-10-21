@@ -61,7 +61,8 @@ export const Incident = Schema.Struct({
 })
 export type Incident = typeof Incident.Type
 
-export const IncidentsData = AsyncData.Schema(Schema.Array(Incident), Schema.Never)
+/** `Failure`: the live alert sync failed or stalled; the page reads it as no incidents. */
+export const IncidentsData = AsyncData.Schema(Schema.Array(Incident), Schema.Literal("Unavailable"))
 /** `useAlertRulesList()`, reduced to each rule's `enabled`. */
 export const RulesData = AsyncData.Schema(Schema.Array(Schema.Boolean), Schema.Never)
 

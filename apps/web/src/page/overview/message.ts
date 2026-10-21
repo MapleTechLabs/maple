@@ -45,6 +45,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchRefinement: result(Schema.Array(RefinementPoint)),
 	CompletedSaveFacetsHint: {},
 	UpdatedIncidents: { orgId: Schema.String, incidents: Schema.Array(Incident) },
+	FailedLoadIncidents: { orgId: Schema.String },
 	UpdatedRules: { orgId: Schema.String, enabled: Schema.Array(Schema.Boolean) },
 	UpdatedRuleStates: { orgId: Schema.String },
 	PaintedEmptyState: {},

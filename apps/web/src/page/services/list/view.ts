@@ -3,6 +3,7 @@ import { AsyncData as FoldkitAsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { activeFilterChips } from "../../../ui/filters/active-filter-chips"
+import { emptyOnFailure } from "../../../data/enrichment"
 import { errorState } from "../../../ui/error-state"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -46,8 +47,8 @@ const tableArea = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs
 	const blocking = FoldkitAsyncData.all([
 		model.overview.data,
 		model.sparklines.data,
-		model.anomalies.data,
-		model.incidents,
+		emptyOnFailure(model.anomalies.data),
+		emptyOnFailure(model.incidents),
 	])
 	return FoldkitAsyncData.matchData(blocking, {
 		onEmpty: () => loadingState(h),

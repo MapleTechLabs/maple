@@ -1,10 +1,12 @@
 import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 import { cn } from "@maple/ui/lib/utils"
+import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "../../../ui/button"
 import { confirmDialog } from "../../../ui/confirm-dialog"
+import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { skeleton, skeletonList } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
@@ -95,6 +97,16 @@ const headerActions = (h: H, model: Model): Html =>
 		],
 	)
 
+/** `SyncUnavailable`: the rules or incidents stream stopped before its first answer. */
+const SYNC_UNAVAILABLE = makeClientErrorBody({
+	_tag: "@maple/web/errors/SyncUnavailable",
+	code: "sync_unavailable",
+	title: "Failed to load alerts",
+	message: "Live sync is unavailable, so alerts couldn’t be loaded. Try again.",
+	retryable: false,
+	recovery: "retry",
+})
+
 const hubSkeleton = (h: H): Html =>
 	skeletonList(h, {
 		rows: HUB_SKELETON_ROWS.length,
@@ -109,7 +121,15 @@ const hubBody = (
 	tab: "inbox" | "rules",
 ): Html =>
 	Option.match(overview, {
-		onNone: () => hubSkeleton(h),
+		onNone: () =>
+			model.isLoadFailed
+				? errorState(h, {
+						failure: SYNC_UNAVAILABLE,
+						title: "Failed to load alerts",
+						onRetry: Message.ClickedRetryLoad(),
+						className: "py-12",
+					})
+				: hubSkeleton(h),
 		onSome: (data) => {
 			const destinations = destinationsOf(model)
 			const emptyState = alertsEmptyState(h, {

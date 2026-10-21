@@ -1,8 +1,9 @@
 import { rowToAlertIncidentDocument } from "@maple/web-data/collections/alerts"
 import { Schema, Stream } from "effect"
-import { Subscription } from "foldkit"
+import { AsyncData, Subscription } from "foldkit"
 import { type OrgCollectionSet, type OrgCollections, orgLive } from "../../data/collections/org-collections"
 import { liveQueryStream } from "../../data/live-query"
+import { collectionLoadFailed, ENRICHMENT_LOAD_TIMEOUT_MS } from "../alerts/shared/collection-load"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
 import { Message } from "./message"
@@ -59,6 +60,24 @@ const byOrg = (stream: (orgId: string) => Stream.Stream<Message, never, OrgColle
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
 	(entry) => ({
 		incidents: entry({ orgId: Schema.String }, byOrg(incidents)),
+		/** The banner and health counts stop waiting on an alert sync that failed or stalled. */
+		incidentsLoadFailed: entry(
+			{ orgId: Schema.String, isWaiting: Schema.Boolean },
+			{
+				modelToDependencies: ({ model, context }) => ({
+					orgId: context.orgId,
+					isWaiting: AsyncData.isLoading(model.incidents),
+				}),
+				dependenciesToStream: ({ orgId, isWaiting }) =>
+					isWaiting
+						? collectionLoadFailed(
+								`alert_incidents:${orgId}`,
+								() => Message.FailedLoadIncidents({ orgId }),
+								ENRICHMENT_LOAD_TIMEOUT_MS,
+							)
+						: Stream.empty,
+			},
+		),
 		rules: entry({ orgId: Schema.String }, byOrg(rules)),
 		ruleStates: entry({ orgId: Schema.String }, byOrg(ruleStates)),
 		/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the setup card is mounted. */
