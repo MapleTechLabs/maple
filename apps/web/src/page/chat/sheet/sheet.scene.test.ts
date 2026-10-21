@@ -116,6 +116,12 @@ describe("chat sheet", () => {
 			["ReadChatSheetTab", { orgId: "org_beta" }],
 			["LoadChatSheetSignalPresence", { orgId: "org_beta" }],
 		])
+		const late = update(
+			switched.model,
+			Message.CompletedLoadPresence({ orgId: "org_acme", result: Result.succeed({}) }),
+			"org_beta",
+		)
+		expect(late.model.presence).toEqual(switched.model.presence)
 		const signedOut = sessionChanged(model, null).model
 		expect(signedOut.dialog.isOpen).toBe(false)
 		expect(signedOut.conversation).toBeNull()

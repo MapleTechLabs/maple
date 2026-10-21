@@ -127,7 +127,6 @@ export const update = (model: Model, message: Message, orgId: string | null): Re
 					),
 		ClickedNewChat: () =>
 			model.orgId === null ? { model } : { model, commands: [CreateSheetTab({ orgId: model.orgId })] },
-		// A fresh conversation mounts a fresh empty state, which asks for the signal presence again.
 		CreatedSheetTab: ({ orgId: forOrg, tabId, referrerPath }) =>
 			!model.dialog.isOpen || forOrg !== model.orgId
 				? { model }
@@ -144,15 +143,18 @@ export const update = (model: Model, message: Message, orgId: string | null): Re
 			model.conversation === null || model.conversation.tabId !== tabId
 				? { model }
 				: liftConversation(model, Conversation.update(model.conversation, child, sendContext(model))),
-		CompletedLoadPresence: ({ result }) => ({
-			model: {
-				...model,
-				presence: Result.match(result, {
-					onSuccess: (data) => SignalPresenceData.Success({ data }),
-					onFailure: (error) => SignalPresenceData.Failure({ error }),
-				}),
-			},
-		}),
+		CompletedLoadPresence: ({ orgId, result }) =>
+			orgId !== model.orgId
+				? { model }
+				: {
+						model: {
+							...model,
+							presence: Result.match(result, {
+								onSuccess: (data) => SignalPresenceData.Success({ data }),
+								onFailure: (error) => SignalPresenceData.Failure({ error }),
+							}),
+						},
+					},
 		CompletedLoadKnownServices: ({ services }) => ({ model: { ...model, knownServices: services } }),
 		CompletedMountScroller: () => ({ model }),
 		CompletedReleaseFocus: () => ({ model }),

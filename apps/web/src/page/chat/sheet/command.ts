@@ -81,7 +81,7 @@ export const LoadPresence = Command.define("LoadChatSheetSignalPresence", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadPresence],
 	execute: ({ orgId }) =>
-		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadPresence({ result })),
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadPresence({ orgId, result })),
 })
 
 export const LoadKnownServices = Command.define("LoadChatSheetKnownServices", {

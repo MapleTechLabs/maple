@@ -1,4 +1,4 @@
-import { DateTime, Effect, Option, Schema } from "effect"
+import { Clock, DateTime, Effect, Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { IdleTtl } from "../../data/idle-ttl"
 import { LoadFailure, toLoadFailure } from "../../data/load-failure"
@@ -52,18 +52,25 @@ const fetchSignalPresences = Effect.gen(function* () {
 	)
 })
 
+/** Presence is reused within one bucket only: reads keep an idle TTL alive, so "absent" must expire anyway. */
+const PRESENCE_BUCKET_MS = 30_000
+
 /**
  * The org's presence through `ReadCache`: pages request it at init, so navigating between them
- * within the TTL reuses one read. A page's Command maps the Result into its Message.
+ * within a 30 s bucket reuses one read. A page's Command maps the Result into its Message.
  */
 export const loadSignalPresences = (orgId: string) =>
-	readThrough(
-		{
-			key: requestKey(orgId, "telemetrySignals", {}),
-			idleTtlMs: IdleTtl.signalPresence,
-			schema: SignalPresences,
-		},
-		fetchSignalPresences,
+	Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
+		readThrough(
+			{
+				key: requestKey(orgId, "telemetrySignals", {
+					bucket: Math.floor(nowMs / PRESENCE_BUCKET_MS),
+				}),
+				idleTtlMs: IdleTtl.signalPresence,
+				schema: SignalPresences,
+			},
+			fetchSignalPresences,
+		),
 	).pipe(Effect.mapError(toLoadFailure), Effect.result)
 
 /** Presence as an empty state reads it: `loading` until the read settles, `unknown` if it failed. */

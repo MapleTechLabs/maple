@@ -186,6 +186,19 @@ describe("overview setup checklist", () => {
 		)
 	})
 
+	test("the failure stays on screen while the next poll retries", () => {
+		const failed = failOverview(entered(true).read.model)
+		const polled = pageUpdate(failed, setup(SetupMessage.TickedPoll())).model
+		const later = { startTime: "2026-10-01 11:05:00", endTime: "2026-10-01 12:05:00" }
+		const retrying = pageUpdate(polled, setup(SetupMessage.ResolvedPollWindow({ window: later }))).model
+		scene(
+			{ update: pageUpdate, view },
+			given(retrying),
+			...pageMounts,
+			expectView(text("Couldn't check whether your app is sending data")).toExist(),
+		)
+	})
+
 	test("a stored dismissal sends none of the card's reads", () => {
 		const { read } = entered(true, { ...DEFAULT_QUICK_START_STATE, checklistDismissed: true })
 		expect(names(read.commands)).toEqual([])
