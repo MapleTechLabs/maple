@@ -1,7 +1,7 @@
 // Tiny highlighter for guide code blocks. The token classes match the colors a
 // guide uses in its diagrams (metric name, labels, value), so a block reads the
 // same way as the annotated example above it. Style the `tok-*` classes on the page.
-export type GuideLang = "exposition" | "promql" | "yaml" | "python" | "typescript" | "go" | "rust" | "java" | "csharp";
+export type GuideLang = "exposition" | "promql" | "yaml" | "python" | "typescript" | "go" | "rust" | "java" | "csharp" | "shell" | "sql";
 
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const span = (cls: string, text: string) => `<span class="tok-${cls}">${escape(text)}</span>`;
@@ -62,9 +62,10 @@ const exposition = (code: string) =>
 const yaml = (code: string) =>
     tokenize(code, [
         [/#.*/y, (m) => span("comment", m[0])],
-        [/(?<=^|\n)(\s*-?\s*)([\w.-]+)(:)/y, (m) => escape(m[1]) + span("name", m[2]) + escape(m[3])],
+        [/(?<=^|\n)(\s*-?\s*)([\w./-]+)(:)(?=\s|$)/y, (m) => escape(m[1]) + span("name", m[2]) + escape(m[3])],
         [/"[^"\n]*"/y, (m) => span("labels", m[0])],
-        [/\b\d+[a-z]*\b/y, (m) => span("value", m[0])],
+        [/(?<![\w.-])\d+[a-z]*\b/y, (m) => span("value", m[0])],
+        [/[\w.-]+/y, (m) => escape(m[0])],
     ]);
 
 const python = (code: string) =>
@@ -98,5 +99,32 @@ const rust = braces("use|fn|let|mut|for|in");
 const java = braces("import|public|static|final|class|void|new|try|throws");
 const csharp = braces("using|var|new|await");
 
+// Shell: comments, strings, variables and VAR= assignments, the command at the
+// start of a line or pipeline (and after sudo), flags.
+const shell = (code: string) =>
+    tokenize(code, [
+        [/(?<=^|\s)#.*/y, (m) => span("comment", m[0])],
+        [/"[^"\n]*"|'[^'\n]*'/y, (m) => span("labels", m[0])],
+        [/\$\{[^}\n]*\}|\$\w+/y, (m) => span("name", m[0])],
+        [/[A-Z_][A-Z0-9_]*(?==)/y, (m) => span("name", m[0])],
+        [/(?<=^|\n|\|\s|&&\s|;\s|sudo\s|do\s)[a-z][\w.-]*/y, (m) => span("fn", m[0])],
+        [/(?<=\s)--?[\w-]+/y, (m) => span("value", m[0])],
+        [/[\w./%-]+/y, (m) => escape(m[0])],
+    ]);
+
+// ClickHouse SQL: comments, strings, $__ macros, function calls, column names.
+// Keywords stay plain so the columns and functions stand out.
+const sql = (code: string) =>
+    tokenize(code, [
+        [/--.*/y, (m) => span("comment", m[0])],
+        [/'[^'\n]*'/y, (m) => span("labels", m[0])],
+        [/\$__\w+/y, (m) => span("value", m[0])],
+        [/\b(?:SELECT|FROM|WHERE|AND|OR|NOT|IN|AS|GROUP|BY|ORDER|LIMIT|WITH)\b/y, (m) => escape(m[0])],
+        [/[a-zA-Z_]\w*(?=\()/y, (m) => span("fn", m[0])],
+        [/\b[A-Z][A-Za-z]+\b/y, (m) => span("name", m[0])],
+        [/\b\d+(?:\.\d+)?\b/y, (m) => span("value", m[0])],
+        [/[a-zA-Z_]\w*/y, (m) => escape(m[0])],
+    ]);
+
 export const highlight = (code: string, lang: GuideLang) =>
-    ({ exposition, promql, yaml, python, typescript, go, rust, java, csharp })[lang](code);
+    ({ exposition, promql, yaml, python, typescript, go, rust, java, csharp, shell, sql })[lang](code);
