@@ -404,7 +404,9 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 									PG.from(RailwayConnections)
 										.select("sourceId")
 										.where(($) => [$.orgId.eq(orgId)])
-										.limit(1),
+										.limit(1)
+										// Held until the upsert, so a concurrent disconnect cannot delete the reused source.
+										.forUpdate(),
 								)
 								.pipe(Effect.map(([row]) => row?.sourceId ?? null)),
 							(sourceId) =>

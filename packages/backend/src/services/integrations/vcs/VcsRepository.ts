@@ -320,7 +320,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 										$.provider.eq(input.provider),
 										$.externalInstallationId.eq(input.externalInstallationId),
 									])
-									.limit(1),
+									.limit(1)
+									// Held until the upsert, so a concurrent purge cannot delete the reused source.
+									.forUpdate(),
 							)
 							.pipe(Effect.map(([row]) => row?.sourceId ?? null)),
 						(sourceId) =>
