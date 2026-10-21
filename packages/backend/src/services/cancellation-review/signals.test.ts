@@ -37,6 +37,7 @@ describe("ruleReason", () => {
 		}
 		expect(ruleReason(longGone)).toBe("stopped_sending")
 		expect(deriveSignals(longGone)[1]).toEqual({
+			topic: "telemetry",
 			tone: "concern",
 			text: "Stopped sending telemetry 140 days ago",
 		})
@@ -66,6 +67,7 @@ describe("ruleReason", () => {
 		const { snapshot } = fixture("drifting-away")
 		expect(ruleReason(snapshot)).toBe("not_engaged")
 		expect(deriveSignals(snapshot)[1]).toEqual({
+			topic: "visits",
 			tone: "concern",
 			text: "Visits fell away: in the app on 1 day of the last 30, 14 the month before",
 		})
@@ -85,20 +87,29 @@ describe("ruleReason", () => {
 describe("deriveSignals", () => {
 	it("says what a wound-down org looks like", () => {
 		expect(deriveSignals(fixture("pipeline-off").snapshot)).toEqual([
-			{ tone: "concern", text: "Stopped sending telemetry 24 days ago (42 GB the month before)" },
-			{ tone: "concern", text: "Nobody opened the app in 20 days" },
-			{ tone: "neutral", text: "9 dashboards, 14 alert rules, 2 integrations" },
+			{
+				topic: "telemetry",
+				tone: "concern",
+				text: "Stopped sending telemetry 24 days ago (42 GB the month before)",
+			},
+			{ topic: "visits", tone: "concern", text: "Nobody opened the app in 20 days" },
+			{ topic: "setup", tone: "neutral", text: "9 dashboards, 14 alert rules, 2 integrations" },
 		])
 	})
 
 	it("says what a healthy org looks like", () => {
 		expect(deriveSignals(fixture("healthy-team").snapshot)).toEqual([
-			{ tone: "healthy", text: "Still sending telemetry: 38 GB over 30 days of the last 30" },
 			{
+				topic: "telemetry",
+				tone: "healthy",
+				text: "Still sending telemetry: 38 GB over 30 days of the last 30",
+			},
+			{
+				topic: "visits",
 				tone: "healthy",
 				text: "In the app on 22 days of the last 30 (24 the month before), up to 4 people a day",
 			},
-			{ tone: "neutral", text: "9 dashboards, 14 alert rules, 2 integrations" },
+			{ topic: "setup", tone: "neutral", text: "9 dashboards, 14 alert rules, 2 integrations" },
 		])
 	})
 

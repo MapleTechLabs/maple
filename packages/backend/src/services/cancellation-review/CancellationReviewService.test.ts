@@ -170,21 +170,30 @@ const stubs = (world: World) =>
 				Effect.succeed(Option.some({ orgId: OWN_ORG, keyType: "private" as const, keyId: "key_1" })),
 		}),
 		Layer.mock(AutumnClient)({
-			getOrCreateCustomer: () =>
-				Effect.succeed({
-					statusCode: world.autumnStatus,
-					response: {
-						id: ORG,
-						stripeId: "cus_acme",
-						// One odd field on a subscription must not cost the report its guards.
-						subscriptions: world.subscriptions.map((sub) => ({ ...sub, pastDue: null })),
-						balances: {},
-						invoices: [
-							{ status: "paid", total: 39, currency: "usd", createdAt: 2 },
-							{ status: "paid", total: 39, currency: "usd", createdAt: 1 },
-						],
-					},
-				}),
+			getOrCreateCustomer: (customerId) =>
+				customerId === "org_acme_new"
+					? Effect.succeed({
+							statusCode: 200,
+							response: {
+								id: customerId,
+								stripeId: "cus_acme_new",
+								subscriptions: [{ planId: "pro", status: "active" }],
+							},
+						})
+					: Effect.succeed({
+							statusCode: world.autumnStatus,
+							response: {
+								id: ORG,
+								stripeId: "cus_acme",
+								// One odd field on a subscription must not cost the report its guards.
+								subscriptions: world.subscriptions.map((sub) => ({ ...sub, pastDue: null })),
+								balances: {},
+								invoices: [
+									{ status: "paid", total: 39, currency: "usd", createdAt: 2 },
+									{ status: "paid", total: 39, currency: "usd", createdAt: 1 },
+								],
+							},
+						}),
 		}),
 		Layer.succeed(SupportSlackClient, {
 			configured: true,
@@ -306,23 +315,27 @@ describe("CancellationReviewService", () => {
 			assert.strictEqual(world.posts.length, 1)
 			const post = world.posts[0]
 			assert.strictEqual(post?.channel, "C_CANCELLATIONS")
-			assert.strictEqual(post?.text, "Plan cancelled: Acme Inc. (Stopped sending telemetry)")
+			assert.strictEqual(post?.text, "Acme Inc. cancelled the startup plan (Stopped sending telemetry)")
 			const blocks = String(post?.blocks)
-			assert.include(blocks, "Stopped sending telemetry 24 days ago (42 GB the month before)")
-			assert.include(blocks, "Nobody opened the app in 20 days")
+			assert.include(blocks, "down from 42 GB · last data 24 days ago")
+			assert.include(blocks, "last visit 20 days ago")
 			assert.include(blocks, "founder@acme.test")
-			assert.include(blocks, "access until Oct 19 (9d left)")
+			assert.include(blocks, "Access until Oct 19 (9d left)")
 			assert.notInclude(blocks, "Could not read")
-			assert.include(blocks, "<https://dashboard.stripe.com/customers/cus_acme|Stripe>")
-			assert.include(blocks, `<https://app.useautumn.com/customers/${ORG}|Autumn>`)
+			assert.include(blocks, '"url":"https://dashboard.stripe.com/customers/cus_acme"')
+			assert.include(blocks, `"url":"https://app.useautumn.com/customers/${ORG}"`)
 			assert.include(
 				blocks,
-				`<https://dashboard.clerk.com/last-active?path=organizations/${ORG}|Clerk>`,
+				`"url":"https://dashboard.clerk.com/last-active?path=organizations/${ORG}"`,
 			)
 			assert.include(blocks, "None connected")
 			// The other org is named once, through the member in it; the org itself is not "other".
-			assert.include(blocks, "|Acme New> `org_acme_new`  created Oct 6, 1 member, via a@acme.test")
-			assert.notInclude(blocks, `|Acme Inc.> \`${ORG}\``)
+			assert.include(blocks, "*Acme New*  `org_acme_new`")
+			assert.include(
+				blocks,
+				"Created Oct 6  ·  1 member  ·  `pro`  ·  via a@acme.test  ·  <https://dashboard.clerk.com/last-active?path=organizations/org_acme_new|Clerk>  ·  <https://dashboard.stripe.com/customers/cus_acme_new|Stripe>  ·  <https://app.useautumn.com/customers/org_acme_new|Autumn>",
+			)
+			assert.notInclude(blocks, `*Acme Inc.*  \`${ORG}\``)
 
 			// The org's visits are read from Maple's own org, filtered to the customer.
 			assert.strictEqual(world.queries.length, 1)
@@ -438,7 +451,7 @@ describe("CancellationReviewService", () => {
 			const world = freshWorld()
 			world.visitRows = []
 			assert.strictEqual(yield* review(world, createTestDb(trackedDbs)), "posted")
-			assert.include(String(world.posts[0]?.blocks), "Nobody opened the app in the last 60 days")
+			assert.include(String(world.posts[0]?.blocks), "no visit in 60 days")
 
 			// No page views from anyone: the key points at an org the app does not report to.
 			const elsewhere = freshWorld()
@@ -446,7 +459,7 @@ describe("CancellationReviewService", () => {
 			elsewhere.anyPageViews = false
 			assert.strictEqual(yield* review(elsewhere, createTestDb(trackedDbs)), "posted")
 			assert.include(String(elsewhere.posts[0]?.blocks), "Could not read: app visits")
-			assert.notInclude(String(elsewhere.posts[0]?.blocks), "Nobody opened the app")
+			assert.notInclude(String(elsewhere.posts[0]?.blocks), "no visit in 60 days")
 		}),
 	)
 
