@@ -469,6 +469,37 @@ describe("SourcesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("keeps a scrape target that PlanetScale adopted while listing sources", () => {
+		const testDb = createTestDb(trackedDbs)
+		const target = "9d1e2f3a-0000-4000-8000-000000000003"
+		return Effect.gen(function* () {
+			const keys = yield* SourcesService
+			yield* Effect.promise(async () => {
+				await executeSql(
+					testDb,
+					`INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at)
+					 VALUES ('0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a50', $1, 'branches', 'prometheus', 'integration', now(), now())`,
+					[orgA],
+				)
+				// Adopted by a PlanetScale connection: managed, still pointing at its Prometheus source.
+				await executeSql(
+					testDb,
+					`INSERT INTO scrape_targets (id, org_id, name, url, managed_by, source_id, created_at, updated_at)
+					 VALUES ($1, $2, 'branches', 'http://ps/metrics', 'planetscale:conn_1', '0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a50', now(), now())`,
+					[target, orgA],
+				)
+			})
+			yield* keys.list(orgA)
+			const rows = yield* Effect.promise(() =>
+				testDb.pglite.query<{ id: string }>("SELECT id FROM scrape_targets"),
+			)
+			assert.deepStrictEqual(
+				rows.rows.map((row) => row.id),
+				[target],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("reads an integration source's health from what its poller reported, and pauses it", () => {
 		const testDb = createTestDb(trackedDbs)
 		const insertTarget = (id: string, name: string, lastScrapeAt: number | null, error: string | null) =>
