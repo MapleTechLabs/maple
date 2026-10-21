@@ -25,7 +25,7 @@ import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { readSourceOwners } from "@maple/backend/services/org/integration-sources"
-import { sourceRowHealth } from "@maple/backend/services/org/source-rows"
+import { SOURCE_HEALTH_COLUMNS, sourceRowHealth } from "@maple/backend/services/org/source-rows"
 
 export class IntegrationInventoryUnavailableError extends Schema.TaggedError<IntegrationInventoryUnavailableError>()(
 	"@maple/backend/services/IntegrationInventoryUnavailableError",
@@ -169,7 +169,7 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 					),
 					sources: db.run(
 						PG.from(Sources)
-							.select()
+							.select(...SOURCE_HEALTH_COLUMNS)
 							.where(($) => [$.orgId.eq(orgId), $.kind.eq("integration")]),
 					),
 				},
