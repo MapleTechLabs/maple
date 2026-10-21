@@ -124,7 +124,8 @@ export function gcpRequestedView(view: string | undefined, tab: string | undefin
  * The views on the page and the one shown. A view shows while it has rows, and the requested one
  * always, so a link or a narrower time range lands on its empty state. The inventory only while a
  * connection collects: the resources of one that stopped are not listed. `counts` is null while
- * the fleet loads.
+ * the fleet loads: only the requested view is listed then, so an unrequested page waits on the
+ * services skeleton instead of showing the inventory and jumping away from it.
  */
 export function gcpViews(
 	counts: Readonly<Record<GcpServiceView, number>> | null,
@@ -132,7 +133,9 @@ export function gcpViews(
 	collecting: boolean,
 ): { readonly views: ReadonlyArray<GcpView>; readonly view: GcpView } {
 	const views = GCP_VIEWS.filter((view) =>
-		view === GCP_RESOURCES_TAB ? collecting : view === requested || (counts !== null && counts[view] > 0),
+		view === requested
+			? view !== GCP_RESOURCES_TAB || collecting
+			: counts !== null && (view === GCP_RESOURCES_TAB ? collecting : counts[view] > 0),
 	)
 	const view = views.find((candidate) => candidate === requested) ?? views[0] ?? "services"
 	return { views, view }

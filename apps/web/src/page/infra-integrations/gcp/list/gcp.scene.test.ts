@@ -94,13 +94,13 @@ describe("google cloud list", () => {
 		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])?.[0]).toEqual(["ResolveGcpWindow", "Refresh"])
 	})
 
-	test("a connected status reads the fleet; until it lands the page shows its resources", () => {
+	test("a connected status reads the fleet and nothing else until it lands", () => {
 		expect(names(init({ search: {} }, context).commands)).toEqual([
 			"ResolveGcpWindow",
 			"LoadGcpStatus",
 			"LoadChartRuntime",
 		])
-		expect(names(withStatus(true).commands)).toEqual(["FetchGcpFleet", "FetchGcpResources"])
+		expect(names(withStatus(true).commands)).toEqual(["FetchGcpFleet"])
 	})
 
 	test("the window read carries the browser locale the tables format counts with", () => {
