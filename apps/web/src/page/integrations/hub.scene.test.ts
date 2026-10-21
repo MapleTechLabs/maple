@@ -48,8 +48,31 @@ describe("integrations hub", () => {
 	test("entry reads the clock, every status and the customer once", () => {
 		const result = init({ search: {} }, context)
 		const sent = names(result.commands)
-		expect(sent).toContain("LoadIntegrationsCustomer")
+		expect(sent).toEqual(
+			expect.arrayContaining([
+				"ReadIntegrationsClock",
+				"LoadIntegrationsCloudflareStatus",
+				"LoadIntegrationsRailwayStatus",
+				"LoadIntegrationsPlanetscaleStatus",
+				"LoadIntegrationsPlanetscaleDatabases",
+				"LoadIntegrationsGcpStatus",
+				"LoadIntegrationsHazelStatus",
+				"LoadIntegrationsGithubStatus",
+				"LoadIntegrationsChatConnectors",
+				"LoadIntegrationsScrapeTargets",
+				"LoadIntegrationsCustomer",
+			]),
+		)
 		expect(new Set(sent).size).toBe(sent.length)
+	})
+
+	test("a status answer under a superseded key is dropped", () => {
+		const model = entered()
+		const late = pageUpdate(
+			model,
+			Message.CompletedLoadHazel({ key: "stale", result: Result.succeed(hazel(true)) }),
+		)
+		expect(late.model.statuses.hazel).toEqual(model.statuses.hazel)
 	})
 
 	test("a write's re-read supersedes the read in flight, so the older answer cannot land last", () => {

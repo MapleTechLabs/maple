@@ -48,6 +48,15 @@ describe("infra correlation panel", () => {
 		])
 	})
 
+	test("an answer for another key is dropped", () => {
+		const model = resolved().model
+		const late = update(
+			model,
+			Message.CompletedFetchSeries({ chartId: "pod-cpu_usage", key: "stale", result: Result.succeed({ rows: [], unit: "cores" }) }),
+		)
+		expect(late.model.series["pod-cpu_usage"]).toEqual(model.series["pod-cpu_usage"])
+	})
+
 	test("each group links to its infra page; a failed read shows its message", () => {
 		const model = resolved().model
 		const failed = update(

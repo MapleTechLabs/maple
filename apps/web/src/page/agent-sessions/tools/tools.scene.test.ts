@@ -64,6 +64,15 @@ describe("agent tools", () => {
 		)
 	})
 
+	test("a stale totals answer is dropped", () => {
+		const resolved = windowed().model
+		const late = pageUpdate(
+			resolved,
+			Message.CompletedFetchTotals({ key: "old", result: Result.succeed(totals) }),
+		)
+		expect(AsyncData.isLoading(late.model.totals.data)).toBe(true)
+	})
+
 	test("tiles, failing chip and table sort write the URL or the sort", () => {
 		const model = windowed().model
 		expect(pageUpdate(model, Message.ClickedMetric({ metric: "error_rate" })).outMessage).toEqual(
@@ -108,6 +117,9 @@ describe("agent tools", () => {
 		)
 		const filtered = names(routeChanged(resolved, { search: { tool: "Bash" } }, context).commands)
 		expect(filtered.filter((name) => name === "FetchAgentToolsTotals")).toHaveLength(1)
+		expect(filtered).toEqual(
+			expect.arrayContaining(["FetchAgentToolsSeries", "FetchAgentToolsBreakdowns"]),
+		)
 		expect(filtered).not.toContain("FetchAgentToolsFacets")
 	})
 })

@@ -16,6 +16,7 @@ import { view as pageView } from "./view"
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const window = { startTime: "2026-10-01 06:00:00", endTime: "2026-10-01 12:00:00" }
+const later = { startTime: "2026-10-01 06:05:00", endTime: "2026-10-01 12:05:00" }
 const NOW = 1_790_000_000_000
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -115,6 +116,22 @@ describe("railway list", () => {
 			given(model),
 			expectView(role("button", { name: "Connect Railway" })).toBeDisabled(),
 		)
+	})
+
+	test("a services answer for a superseded window is dropped", () => {
+		const first = withStatus(true)
+		const second = pageUpdate(
+			first,
+			Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Load" }),
+		)
+		const late = pageUpdate(
+			second.model,
+			Message.CompletedFetchServices({
+				key: first.services.key ?? "",
+				result: Result.succeed([row("old", 1)]),
+			}),
+		)
+		expect(late.model.services).toEqual(second.model.services)
 	})
 
 	test("loaded rows render under their environment, heaviest first", () => {

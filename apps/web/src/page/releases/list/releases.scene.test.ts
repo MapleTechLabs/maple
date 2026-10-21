@@ -48,7 +48,9 @@ const loaded = (): Model => {
 describe("releases list", () => {
 	test("entry resolves the window, then reads the releases for it", () => {
 		const entered = init({ search: {} }, context)
-		expect(names(entered.commands)).toContain("ResolveReleasesWindow")
+		expect(names(entered.commands)).toEqual(
+			expect.arrayContaining(["ResolveReleasesWindow", "ReadRememberedFilterSections"]),
+		)
 		const resolved = pageUpdate(
 			entered.model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
@@ -64,12 +66,10 @@ describe("releases list", () => {
 		expect(pageUpdate(painted.model, Message.PaintedTable()).commands ?? []).toHaveLength(0)
 	})
 
-	test("a failure renders the error state", () => {
+	test("a stale answer is dropped; a failure renders the error state", () => {
 		const entered = init({ search: {} }, context).model
-		const resolved = pageUpdate(
-			entered,
-			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
-		).model
+		const resolved = pageUpdate(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
+		expect(pageUpdate(resolved, Message.CompletedFetchReleases({ key: "old", result: Result.succeed(data) })).model.releases).toEqual(resolved.releases)
 		const failed = pageUpdate(
 			resolved,
 			Message.CompletedFetchReleases({ key: resolved.releases.key ?? "", result: Result.fail(toLoadFailure(new Error("down"))) }),

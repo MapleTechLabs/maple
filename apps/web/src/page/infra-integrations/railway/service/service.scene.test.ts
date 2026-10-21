@@ -14,6 +14,7 @@ import { titleOf, view as pageView } from "./view"
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const window = { startTime: "2026-10-01 06:00:00", endTime: "2026-10-01 12:00:00" }
+const later = { startTime: "2026-10-01 06:05:00", endTime: "2026-10-01 12:05:00" }
 const route = { serviceId: "svc_api", search: { environmentId: "env_prod" } }
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -89,6 +90,19 @@ describe("railway service", () => {
 			themeResolved(),
 			expectView(text("1.5 vCPU")).toExist(),
 		)
+	})
+
+	test("a series answer for a superseded window is dropped", () => {
+		const first = windowed()
+		const second = pageUpdate(
+			first,
+			Message.CompletedResolveWindow({ window: later, nowMs: 0, mode: "Load" }),
+		).model
+		const late = pageUpdate(
+			second,
+			Message.CompletedFetchTimeseries({ key: first.timeseries.key ?? "", result: Result.succeed([]) }),
+		)
+		expect(late.model.timeseries).toEqual(second.timeseries)
 	})
 
 	test("a failed series read says so, and a retry asks again", () => {

@@ -42,7 +42,9 @@ const pickFromMenu = (model: Model, tabId: string, value: string) => {
 
 describe("chat page", () => {
 	test("entry reads the stored tabs, then every tab's conversation reads its history", () => {
-		expect(names(init(route(), context).commands)).toContain("LoadChatTabs")
+		expect(names(init(route(), context).commands)).toEqual(
+			expect.arrayContaining(["LoadChatTabs", "LoadChatSignalPresence"]),
+		)
 		const entered = loaded([tab("default"), tab("t2")])
 		expect(names(entered.commands).filter((name) => name === "LoadChatHistory")).toHaveLength(2)
 		expect(Object.keys(entered.model.conversations)).toEqual(["default", "t2"])

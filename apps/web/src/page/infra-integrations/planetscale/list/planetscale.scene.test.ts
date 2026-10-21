@@ -3,7 +3,7 @@ import { Result, Schema } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
-import type { DatabaseList, PlanetscaleStatus } from "../data"
+import type { DatabaseList, DatabaseStat, PlanetscaleStatus } from "../data"
 import { Message, type Model } from "./model"
 import { init, sortOf, update } from "./update"
 import { view as pageView } from "./view"
@@ -11,6 +11,7 @@ import { view as pageView } from "./view"
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const window = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00" }
+const later = { startTime: "2026-10-01 00:05:00", endTime: "2026-10-01 12:05:00" }
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
@@ -38,6 +39,16 @@ const inventory: DatabaseList = {
 	databases: [],
 }
 
+const stat = (database: string, storageUsedPercent: number): DatabaseStat => ({
+	database,
+	connectionsAvg: 10,
+	connectionsMax: 20,
+	cpuMaxPercent: 30,
+	memMaxPercent: 40,
+	replicaLagMaxSeconds: 0.2,
+	storageUsedPercent,
+})
+
 const withStatus = (connected: boolean) => {
 	const entered = init({ search: {} }, context)
 	const windowed = pageUpdate(
@@ -55,7 +66,9 @@ const withStatus = (connected: boolean) => {
 
 describe("planetscale list", () => {
 	test("a connected status brings the inventory and the window's stats", () => {
-		expect(names(init({ search: {} }, context).commands)).toContain("LoadPlanetscaleStatus")
+		expect(names(init({ search: {} }, context).commands)).toEqual(
+			expect.arrayContaining(["ResolvePlanetscaleWindow", "LoadPlanetscaleStatus"]),
+		)
 		expect(names(withStatus(true).commands)).toEqual(
 			expect.arrayContaining(["FetchPlanetscaleDatabases", "FetchPlanetscaleDatabaseStats"]),
 		)
@@ -72,6 +85,22 @@ describe("planetscale list", () => {
 				"/integrations?integration=planetscale",
 			),
 		)
+	})
+
+	test("stats for a superseded window are dropped", () => {
+		const first = withStatus(true).model
+		const second = pageUpdate(
+			first,
+			Message.CompletedResolveWindow({ window: later, nowMs: 0, mode: "Load" }),
+		).model
+		const late = pageUpdate(
+			second,
+			Message.CompletedFetchStats({
+				key: first.stats.key ?? "",
+				result: Result.succeed([stat("a", 50)]),
+			}),
+		)
+		expect(late.model.stats).toEqual(second.stats)
 	})
 
 	test("an empty inventory says nothing was discovered", () => {

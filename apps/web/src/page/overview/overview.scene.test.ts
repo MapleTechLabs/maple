@@ -84,7 +84,13 @@ describe("overview", () => {
 			expect.arrayContaining(["ReadOverviewEntry", "LoadOverviewSignalPresence"]),
 		)
 		const { commands } = entered()
-		expect(names(commands)).toContain("FetchOverviewFacets")
+		expect(names(commands)).toEqual(
+			expect.arrayContaining([
+				"FetchOverviewFacets",
+				"FetchOverviewAnomalyCounts",
+				"FetchOverviewServiceUsage",
+			]),
+		)
 		expect(names(commands)).not.toContain("FetchOverviewTimeSeries")
 	})
 
@@ -136,6 +142,19 @@ describe("overview", () => {
 		const second = pageUpdate(first.model, Message.ClickedRetry({ target: "Overview" }))
 		expect(names(second.commands)).toEqual([])
 		expect(second.model).toEqual(first.model)
+	})
+
+	test("an answer for a superseded environment is dropped", () => {
+		const first = withFacets(entered().model, ["production"]).model
+		const second = pageUpdate(first, Message.CompletedResolveClock({ nowMs: NOW + 60 * 60 * 1000 })).model
+		const late = pageUpdate(
+			second,
+			Message.CompletedFetchSnapshot({
+				key: first.snapshot.key ?? "",
+				result: Result.succeed([snapshotRow("stale")]),
+			}),
+		)
+		expect(late.model.snapshot).toEqual(second.snapshot)
 	})
 
 	test("incidents read for another org are dropped", () => {

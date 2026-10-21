@@ -13,6 +13,7 @@ import { view as pageView } from "./view"
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const window = { startTime: "2026-09-30 12:00:00", endTime: "2026-10-01 12:00:00" }
+const later = { startTime: "2026-09-30 12:05:00", endTime: "2026-10-01 12:05:00" }
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -79,6 +80,22 @@ describe("metrics explorer", () => {
 		const model = windowed({ view: "table" })
 		expect(model.catalog.key).toBeNull()
 		expect(model.table.key).toContain('"limit":101')
+	})
+
+	test("a catalog answer for a superseded window is dropped", () => {
+		const first = windowed()
+		const second = pageUpdate(
+			first,
+			Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Load" }),
+		).model
+		const dropped = pageUpdate(
+			second,
+			Message.CompletedFetchCatalog({
+				key: first.catalog.key ?? "",
+				result: Result.succeed([row("stale", "gauge")]),
+			}),
+		)
+		expect(dropped.model.catalog).toEqual(second.catalog)
 	})
 
 	test("the catalog asks one sparkline query per metric type, reused when the grid remounts", () => {

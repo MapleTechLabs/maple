@@ -127,7 +127,7 @@ const mounted = [
 describe("replay detail", () => {
 	test("entry asks for the session, its manifest and its transcript", () => {
 		expect(names(entered().commands)).toEqual(
-			expect.arrayContaining([FetchDetail.name, FetchManifest.name, FetchTranscript.name]),
+			expect.arrayContaining(["ResolveReplayClock", FetchDetail.name, FetchManifest.name, FetchTranscript.name]),
 		)
 	})
 

@@ -46,7 +46,7 @@ const session = (traceIds: ReadonlyArray<string>): SessionDetail => ({
 
 describe("local session detail", () => {
 	test("entry asks for the session and its transcript at once", () => {
-		expect(names(init(context, "sess-1").commands)).toEqual(expect.arrayContaining([FetchDetail.name, FetchTranscript.name]))
+		expect(names(init(context, "sess-1").commands)).toEqual(expect.arrayContaining(["ReadSessionDetailClock", FetchDetail.name, FetchTranscript.name]))
 	})
 
 	test("a found session with traces asks for their summaries; an answer for another key is dropped", () => {

@@ -70,7 +70,9 @@ const loaded = (search = {}) => {
 
 describe("trace detail", () => {
 	test("entry reads the clock and asks for the span hierarchy", () => {
-		expect(names(entered().commands)).toContain("FetchSpanHierarchy")
+		expect(names(entered().commands)).toEqual(
+			expect.arrayContaining(["ReadTraceDetailClock", "ReadTraceListQuery", "FetchSpanHierarchy"]),
+		)
 	})
 
 	test("an id that is not a trace id renders not found without a request", () => {

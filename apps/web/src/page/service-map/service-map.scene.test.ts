@@ -125,7 +125,14 @@ describe("service map page: requests", () => {
 			Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: NOW, mode: "Load" }),
 		)
 		expect(names(resolved.commands)).toEqual(
-			expect.arrayContaining(["FetchServiceMapFacets", "FetchServiceMapBundle"]),
+			expect.arrayContaining([
+				"FetchServiceMapFacets",
+				"FetchServiceMapBundle",
+				"FetchServiceMapCloudflare",
+				"FetchServiceMapPlanetScale",
+				"FetchPlanetScaleInventory",
+				"FetchCloudflareHyperdrives",
+			]),
 		)
 	})
 
@@ -160,6 +167,16 @@ describe("service map page: requests", () => {
 			}),
 		)
 		expect(names(confirmed.commands)).toEqual([])
+	})
+
+	test("an answer for a superseded key is dropped", () => {
+		const model = windowed()
+		const stale = pageUpdate(
+			model,
+			Message.CompletedFetchBundle({ key: "stale", result: Result.succeed(new MapBundle(BUNDLE)) }),
+		).model
+		expect(stale.map).toEqual(Option.none())
+		expect(Option.isSome(withBundle(model, BUNDLE).map)).toBe(true)
 	})
 
 	test("Reload revalidates the environment facets past the read cache, as legacy's refresh", () => {

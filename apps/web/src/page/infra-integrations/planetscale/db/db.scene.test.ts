@@ -54,10 +54,18 @@ describe("planetscale database", () => {
 
 	test("entry asks for status and inventory; the window brings the branch stats and the scoped reads", () => {
 		expect(names(init(route, context).commands)).toEqual(
-			expect.arrayContaining(["LoadPlanetscaleDatabaseStatus", "FetchPlanetscaleInventory"]),
+			expect.arrayContaining([
+				"LoadPlanetscaleDatabaseStatus",
+				"FetchPlanetscaleInventory",
+				"ReadRememberedFilterSections",
+			]),
 		)
 		expect(names(windowed().commands)).toEqual(
-			expect.arrayContaining(["FetchPlanetscaleBranchStats", "FetchPlanetscaleTimeseries"]),
+			expect.arrayContaining([
+				"FetchPlanetscaleBranchStats",
+				"FetchPlanetscaleTimeseries",
+				"FetchPlanetscaleQueryInsights",
+			]),
 		)
 	})
 

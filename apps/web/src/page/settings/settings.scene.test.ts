@@ -60,7 +60,7 @@ const indicatorMeasured = () =>
 describe("settings page", () => {
 	test("entry reads the clock, session and customer; the MCP tab adds its two reads", () => {
 		expect(names(entered({ tab: "automation" }).commands)).toEqual(
-			expect.arrayContaining(["FetchSettingsSession", "FetchSettingsCustomer"]),
+			expect.arrayContaining(["ReadSettingsClock", "FetchSettingsSession", "FetchSettingsCustomer"]),
 		)
 		expect(names(entered({ tab: "automation" }).commands)).not.toContain("FetchMcpTools")
 		expect(names(entered({ tab: "mcp" }).commands)).toEqual(

@@ -53,6 +53,17 @@ describe("local metrics list", () => {
 		expect(listed.model.sparklines.key).toContain('"gauge",["a"]')
 	})
 
+	test("a catalog answer for a superseded search is dropped", () => {
+		const first = entered().model
+		const searched = update(first, Message.CompletedReadClock({ nowMs: NOW }), contextAt("q=http")).model
+		const dropped = update(
+			searched,
+			Message.SucceededFetchList({ key: first.list.key ?? "", data: { entries: [], serviceFacets: [] }, fetchedAtMs: NOW }),
+			contextAt("q=http"),
+		)
+		expect(dropped.model.list).toEqual(searched.list)
+	})
+
 	test("an empty catalog renders the signal empty state, which reads the presence", () => {
 		const listed = withList(entered().model, [])
 		expect(listed.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())

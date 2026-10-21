@@ -43,6 +43,14 @@ const connector = (fields: Readonly<Record<string, unknown>> = {}) => ({
 	...fields,
 })
 
+const SETUP_FIELDS = {
+	push_endpoint: "https://ingest.maple.dev/v1/logpush/gcp/x",
+	log_filter: "severity>=DEFAULT",
+	maple_service_account_email: "collector@maple-prod.iam.gserviceaccount.com",
+	terraform: "# maple.tf",
+	alchemy: "// maple.ts",
+}
+
 const status = (connectors: ReadonlyArray<unknown>) =>
 	Schema.decodeUnknownSync(V2GcpIntegration)({
 		object: "gcp_integration",
@@ -213,6 +221,23 @@ describe("google cloud wizard: a connection", () => {
 		)
 		expect(configureOf(failed.model).confirm.isOpen).toBe(true)
 		expect(configureOf(failed.model).opened).toBeNull()
+	})
+
+	test("a script answer for an earlier request is dropped", () => {
+		const opened = run(configured(), [Message.ClickedGcpChooseApply(), Message.ClickedGcpMethodContinue()])
+		const stale = step(
+			opened,
+			Message.CompletedGcpConfigureScripts({
+				key: "stale",
+				result: Result.succeed({
+					object: "gcp_connector.setup_scripts",
+					setup_script: "x",
+					cleanup_script: "y",
+					...SETUP_FIELDS,
+				}),
+			}),
+		)
+		expect(configureOf(stale.model).scripts.data._tag).toBe("Loading")
 	})
 })
 

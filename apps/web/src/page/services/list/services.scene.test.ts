@@ -33,6 +33,7 @@ import { view as pageView } from "./view"
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const window = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00" }
+const later = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:05:00" }
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -123,6 +124,22 @@ describe("services list", () => {
 		const input = overviewInput({ namespaces: ["a"], excludedNamespaces: ["b"] }, window, "shop")
 		expect(input.namespaces).toEqual(["shop"])
 		expect(input.excludedNamespaces).toBeUndefined()
+	})
+
+	test("an overview answer for a superseded window is dropped", () => {
+		const first = windowed()
+		const second = pageUpdate(
+			first,
+			Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Load" }),
+		).model
+		const late = pageUpdate(
+			second,
+			Message.CompletedFetchOverview({
+				key: first.overview.key ?? "",
+				result: Result.succeed([row("stale")]),
+			}),
+		)
+		expect(late.model.overview).toEqual(second.overview)
 	})
 
 	test("an incident snapshot read for another org is dropped", () => {

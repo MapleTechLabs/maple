@@ -69,6 +69,20 @@ describe("code review pull requests", () => {
 		expect(dismissed.model.sheet.dialog.isOpen).toBe(false)
 	})
 
+	test("a review answer for another review is dropped", () => {
+		const open = init({ search: { review: REVIEW } }, context).model
+		const stale = pageUpdate(
+			open,
+			sheet(
+				SheetMessage.CompletedFetchDetail({
+					key: "other",
+					result: Result.fail(toLoadFailure("boom")),
+				}),
+			),
+		)
+		expect(stale.model.sheet.detail).toEqual(open.sheet.detail)
+	})
+
 	test("opening another review shows its skeleton, then its own error, never the previous review", () => {
 		const open = init({ search: { review: REVIEW } }, context).model
 		const loaded = pageUpdate(

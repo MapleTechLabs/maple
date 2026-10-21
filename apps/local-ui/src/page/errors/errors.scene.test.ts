@@ -52,6 +52,16 @@ describe("local errors", () => {
 		expect(step.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
 	})
 
+	test("an answer for a superseded filter is dropped", () => {
+		const first = entered().model
+		const filtered = update(first, Message.CompletedReadClock({ nowMs: NOW }), contextAt("service=checkout-api")).model
+		const dropped = pageUpdate(
+			filtered,
+			Message.SucceededFetchByType({ key: first.byType.key ?? "", rows: [row("a", "Stale")], fetchedAtMs: NOW }),
+		)
+		expect(dropped.model.byType).toEqual(filtered.byType)
+	})
+
 	test("no errors and no telemetry shows the unknown-presence empty state", () => {
 		scene({ update: pageUpdate, view }, given(loaded([])), expectView(text("No errors found")).toExist())
 	})

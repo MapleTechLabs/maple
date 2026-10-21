@@ -38,7 +38,9 @@ const loaded = (search: Model["search"] = {}): Model =>
 
 describe("alerts hub", () => {
 	test("entry reads the clock, the session and the deliveries list; Routing adds its own read", () => {
-		expect(names(entered().commands)).toContain("FetchAlertsHubDeliveries")
+		expect(names(entered().commands)).toEqual(
+			expect.arrayContaining(["ReadAlertsHubClock", "FetchAlertsHubSession", "FetchAlertsHubDeliveries"]),
+		)
 		expect(names(entered().commands)).not.toContain("FetchAlertsRoutingDeliveries")
 		expect(names(entered({ tab: "routing" }).commands)).toContain("FetchAlertsRoutingDeliveries")
 	})

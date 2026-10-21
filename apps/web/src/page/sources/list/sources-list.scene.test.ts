@@ -74,7 +74,9 @@ const loaded = (rows: ReadonlyArray<V2Source>): Model => {
 
 describe("sources list", () => {
 	test("entry reads the clock and the list", () => {
-		expect(names(init({ _tag: "Sources" }, context).commands)).toContain("FetchSourcesList")
+		expect(names(init({ _tag: "Sources" }, context).commands)).toEqual(
+			expect.arrayContaining(["ReadSourcesClock", "FetchSourcesList", "FetchSourcesUsage"]),
+		)
 	})
 
 	test("the default source is listed before the sources added ahead of it", () => {

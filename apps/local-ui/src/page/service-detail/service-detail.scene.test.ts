@@ -50,6 +50,12 @@ describe("local service detail", () => {
 		expect(names(withOps.commands)).toEqual([FetchTimeseries.name])
 	})
 
+	test("an answer for a superseded key is dropped", () => {
+		const base = anchored().model
+		const stale = pageUpdate(base, Message.SucceededFetchOperations({ key: "stale", operations: [operation("x")], fetchedAtMs: 0 }))
+		expect(stale.model.operations).toEqual(base.operations)
+	})
+
 	test("a quiet service offers to widen the range", () => {
 		const base = anchored().model
 		const quiet = pageUpdate(base, Message.SucceededFetchOverview({ key: base.overview.key ?? "", overview: null, fetchedAtMs: NOW }))

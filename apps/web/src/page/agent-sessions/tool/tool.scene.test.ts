@@ -1,5 +1,6 @@
 import { OrgId } from "@maple/domain"
-import { Schema } from "effect"
+import { Result, Schema } from "effect"
+import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { Message } from "./message"
@@ -24,8 +25,25 @@ const windowed = (search: Model["search"] = {}) =>
 describe("agent tool detail", () => {
 	test("the window's reads go out with the tool pinned from the route", () => {
 		const resolved = windowed({ tool: "Read" })
-		expect(names(resolved.commands)).toContain("FetchAgentToolTotals")
+		expect(names(resolved.commands)).toEqual(
+			expect.arrayContaining([
+				"FetchAgentToolSeries",
+				"FetchAgentToolTotals",
+				"FetchAgentToolErrors",
+				"FetchAgentToolSessions",
+				"FetchAgentToolFacets",
+			]),
+		)
 		expect(resolved.model.totals.key).toContain("Bash")
+	})
+
+	test("a stale errors answer is dropped", () => {
+		const resolved = windowed().model
+		const late = pageUpdate(
+			resolved,
+			Message.CompletedFetchErrors({ key: "old", result: Result.succeed({ data: [] }) }),
+		)
+		expect(AsyncData.isLoading(late.model.errors.data)).toBe(true)
 	})
 
 	test("an error row opens its group through the URL, dropping the last group's narrowing", () => {

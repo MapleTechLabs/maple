@@ -105,10 +105,19 @@ const withStatus = (model: Model, value: CloudflareIntegrationStatus) =>
 describe("cloudflare list", () => {
 	test("entry asks for the status and usage; a connected, analytics-capable status loads the lists", () => {
 		expect(names(init({ search: {} }, context).commands)).toEqual(
-			expect.arrayContaining(["LoadCloudflareIngestStatus", "LoadCloudflareUsage"]),
+			expect.arrayContaining([
+				"ResolveCloudflareWindow",
+				"LoadCloudflareIngestStatus",
+				"LoadCloudflareUsage",
+			]),
 		)
 		expect(names(withStatus(entered(), status()).commands)).toEqual(
-			expect.arrayContaining(["FetchCloudflareZones", "FetchCloudflareWorkers"]),
+			expect.arrayContaining([
+				"FetchCloudflareZones",
+				"FetchCloudflareZoneTimeseries",
+				"FetchCloudflareWorkers",
+				"FetchCloudflarePlatformResources",
+			]),
 		)
 		expect(names(withStatus(entered(), status({ analyticsCapable: false })).commands)).toEqual([])
 	})

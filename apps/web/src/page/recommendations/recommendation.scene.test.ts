@@ -47,7 +47,11 @@ const loaded = (rows: ReadonlyArray<V2Recommendation>, key = UUID): Model => {
 describe("recommendation detail", () => {
 	test("entry reads the clock, the recommendations and the attribute mappings", () => {
 		expect(names(init(route(), context).commands)).toEqual(
-			expect.arrayContaining(["FetchRecommendations", "FetchRecommendationAttributeMappings"]),
+			expect.arrayContaining([
+				"ReadRecommendationClock",
+				"FetchRecommendations",
+				"FetchRecommendationAttributeMappings",
+			]),
 		)
 	})
 
@@ -60,8 +64,10 @@ describe("recommendation detail", () => {
 		)
 	})
 
-	test("a failed list renders the error state", () => {
+	test("a failed list renders the error state; a stale answer is dropped", () => {
 		const entered = init(route(), context).model
+		const stale = pageUpdate(entered, Message.CompletedFetchList({ key: "other", result: Result.succeed([rec()]) })).model
+		expect(stale.list).toEqual(entered.list)
 		const failed = pageUpdate(
 			entered,
 			Message.CompletedFetchList({ key: entered.list.key ?? "", result: Result.fail(toLoadFailure(new Error("boom"))) }),

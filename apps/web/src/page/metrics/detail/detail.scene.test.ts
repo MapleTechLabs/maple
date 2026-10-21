@@ -16,6 +16,7 @@ import { view as pageView } from "./view"
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const window = { startTime: "2026-09-30 12:00:00", endTime: "2026-10-01 12:00:00" }
+const later = { startTime: "2026-09-30 12:05:00", endTime: "2026-10-01 12:05:00" }
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 const NAME = "http.server.request.duration"
 
@@ -100,6 +101,22 @@ describe("metric detail", () => {
 		}
 		expect(draftAggregation(sum)).toBe("rate")
 		expect(draftAggregation(histogram)).toBe("avg")
+	})
+
+	test("a catalog answer for a superseded window is dropped", () => {
+		const first = windowed()
+		const second = pageUpdate(
+			first,
+			Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Load" }),
+		).model
+		const late = pageUpdate(
+			second,
+			Message.CompletedFetchCatalog({
+				key: first.catalog.key ?? "",
+				result: Result.succeed([row("stale")]),
+			}),
+		)
+		expect(late.model.catalog).toEqual(second.catalog)
 	})
 
 	test("a breakdown bar narrows the where clause, replacing a filter on the same key", () => {

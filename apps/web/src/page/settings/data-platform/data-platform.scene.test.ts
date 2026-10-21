@@ -35,6 +35,9 @@ const loaded = () => update(init().model, Message.CompletedFetchSettings({ resul
 
 describe("data platform tab", () => {
 	test("a configured cluster also reads the apply status", () => {
+		expect(names(init().commands)).toEqual(
+			expect.arrayContaining(["FetchOrgClickHouseSettings", "FetchOrgClickHouseSchemaDiff", "FetchDataPlatformUsage"]),
+		)
 		expect(names(init().commands)).not.toContain("FetchOrgClickHouseApplyStatus")
 		expect(names(loaded().commands)).toEqual(["FetchOrgClickHouseApplyStatus"])
 	})

@@ -25,6 +25,7 @@ import { view as pageView } from "./view"
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const window = { startTime: "2026-09-30 12:00:00", endTime: "2026-10-01 12:00:00" }
+const later = { startTime: "2026-09-30 12:05:00", endTime: "2026-10-01 12:05:00" }
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
@@ -116,6 +117,16 @@ describe("replays list", () => {
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
 		expect(names(resolved.commands)).toEqual([FetchFirstPage.name, FetchFacets.name])
+	})
+
+	test("a first page for a superseded window is dropped", () => {
+		const first = windowed()
+		const second = pageUpdate(first, Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Load" }))
+		const late = pageUpdate(
+			second.model,
+			Message.CompletedFetchFirstPage({ key: first.firstPage.key ?? "", result: Result.succeed(page([session("a")])) }),
+		)
+		expect(allRows(late.model)).toEqual([])
 	})
 
 	test("reaching the end asks for the next page by cursor, once", () => {

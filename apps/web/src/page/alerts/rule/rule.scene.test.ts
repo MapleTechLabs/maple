@@ -74,14 +74,18 @@ describe("alert rule", () => {
 
 	test("entry resolves the window; the checks and the preview follow the window and the rule", () => {
 		const entered = init(route(), context)
-		expect(names(entered.commands)).toContain("ResolveAlertRuleWindow")
+		expect(names(entered.commands)).toEqual(
+			expect.arrayContaining(["ResolveAlertRuleWindow", "FetchAlertRuleDeliveries"]),
+		)
 		const windowed = pageUpdate(
 			entered.model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
 		expect(names(windowed.commands)).toEqual(["FetchAlertRuleChecks"])
 		const withRule = pageUpdate(windowed.model, Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2)] }))
-		expect(names(withRule.commands)).toContain("FetchAlertRulePreview")
+		expect(names(withRule.commands)).toEqual(
+			expect.arrayContaining(["FetchAlertRulePreview", "ReadAlertRuleDiagnosisClock"]),
+		)
 	})
 
 	test("a failed checks read shows its error and is not refetched by a live row change", () => {

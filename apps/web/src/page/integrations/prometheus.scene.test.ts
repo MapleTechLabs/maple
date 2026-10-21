@@ -54,9 +54,14 @@ const loaded = (): Model => {
 }
 
 describe("prometheus scrape targets", () => {
-	test("selecting a target reads its checks", () => {
+	test("selecting a target reads its checks; a stale answer is dropped", () => {
 		const selected = pageUpdate(loaded(), Message.ClickedTarget({ id: target.id }))
 		expect(names(selected.commands)).toEqual(["FetchScrapeTargetChecks"])
+		const late = pageUpdate(
+			selected.model,
+			Message.CompletedFetchChecks({ key: "old", result: Result.succeed([]) }),
+		)
+		expect(late.model.prometheusCard.checks).toEqual(selected.model.prometheusCard.checks)
 	})
 
 	test("the add form validates and saves once, then selects the new target", () => {

@@ -116,7 +116,7 @@ describe("service detail", () => {
 		expect(names(zoned.commands)).toEqual(["ResolveServiceDetailClock"])
 	})
 
-	test("a preset change re-resolves the clock into the new window", () => {
+	test("an overview answer for a superseded window is dropped", () => {
 		const first = entered()
 		const changed = routeChanged(first, route({ timePreset: "6h" }), context)
 		expect(names(changed.commands)).toEqual(["ResolveServiceDetailClock"])
@@ -125,6 +125,14 @@ describe("service detail", () => {
 			Message.CompletedResolveClock({ nowMs: NOW, mode: "Load" }),
 		).model
 		expect(second.window).toEqual({ startTime: "2026-10-01 06:00:00", endTime: "2026-10-01 12:00:00" })
+		const late = pageUpdate(
+			second,
+			Message.CompletedFetchOverview({
+				key: first.overview.key ?? "",
+				result: Result.succeed(overviewData()),
+			}),
+		)
+		expect(late.model.overview).toEqual(second.overview)
 	})
 
 	test("a loaded overview resolves each deploy's commit once", () => {

@@ -52,6 +52,8 @@ describe("ingestion tab", () => {
 	test("entry reads the overview, ingest keys, both rule lists and the stored framework", () => {
 		expect(names(init(options).commands)).toEqual(
 			expect.arrayContaining([
+				"FetchIngestOverview",
+				"FetchIngestionKeys",
 				"FetchRecommendations",
 				"FetchAttributeMappings",
 				"ReadQuickStartFramework",

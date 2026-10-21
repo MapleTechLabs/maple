@@ -79,7 +79,14 @@ const dashboardFixture = {
 describe("alert rule editor", () => {
 	test("a new rule opens on the template picker, in the query builder, with the reads it needs", () => {
 		const start = init(route(), context)
-		expect(names(start.commands)).toContain("GenerateAlertDraftId")
+		expect(names(start.commands)).toEqual(
+			expect.arrayContaining([
+				"GenerateAlertDraftId",
+				"ReadAlertEditorClock",
+				"ReadAlertEditorIsAdmin",
+				"FetchAlertEditorConnectors",
+			]),
+		)
 		const drafted = pageUpdate(start.model, Message.GeneratedDraftId({ id: DRAFT_ID }))
 		expect(drafted.model.form?.signalType).toBe("builder_query")
 		expect(drafted.model.form?.queryBuilderDraft.id).toBe(DRAFT_ID)

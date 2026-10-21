@@ -267,9 +267,13 @@ describe("tracesRootListQuery", () => {
 		expect(sql).toContain("LIMIT 25")
 	})
 
-	it("projects the URL/host keys into rootSpanAttributes for client-span labels", () => {
+	it("projects env, service.version and the URL/host keys the trace list renders", () => {
 		const q = tracesRootListQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the trace list's env/version columns
+		expect(sql).toContain("AS rootDeploymentEnv")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the trace list's env/version columns
+		expect(sql).toContain("ResourceAttributes['service.version'] AS rootServiceVersion")
 		// These keys (omitted by the flat rootHttp* columns) let getHttpInfo build
 		// a client destination instead of falling back to "http.client GET".
 		expect(sql).toContain("'url.full'")

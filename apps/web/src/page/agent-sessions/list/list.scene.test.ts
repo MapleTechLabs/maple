@@ -105,7 +105,13 @@ const withPresence = (model: Model, status: "present" | "absent"): Model =>
 describe("agent sessions list", () => {
 	test("the rail detects its empty model set as it mounts, then the week's reads go out under their keys", () => {
 		const entered = init({ search: {} }, context)
-		expect(names(entered.commands)).toContain("ResolveAgentSessionsWindow")
+		expect(names(entered.commands)).toEqual(
+			expect.arrayContaining([
+				"LoadAgentSessionsSignalPresence",
+				"ResolveAgentSessionsWindow",
+				"ReadRememberedFilterSections",
+			]),
+		)
 		const mounted = pageUpdate(entered.model, Message.MountedFilterRail())
 		expect(names(mounted.commands)).toEqual(["DetectAgentSessionsModels"])
 		expect(names(pageUpdate(mounted.model, Message.MountedFilterRail()).commands)).toEqual([])
@@ -113,14 +119,31 @@ describe("agent sessions list", () => {
 			entered.model,
 			Message.CompletedResolveWindow({ window, tabWindow: window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toContain("FetchAgentSessionsFirstPage")
+		expect(names(resolved.commands)).toEqual(
+			expect.arrayContaining([
+				"FetchAgentSessionsFirstPage",
+				"FetchAgentSessionsFacets",
+				"FetchAgentSessionsDistributions",
+				"FetchAgentSessionsTabSessions",
+				"FetchAgentSessionsTabTools",
+			]),
+		)
 	})
 
-	test("the errors-only toggle writes the filter to the URL", () => {
-		const filtered = pageUpdate(windowed(), Message.ToggledErrorsOnly())
+	test("a first page answered for a superseded filter is dropped", () => {
+		const first = windowed()
+		const filtered = pageUpdate(first, Message.ToggledErrorsOnly())
 		expect(filtered.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/agent-sessions?hasErrors=true", isReplace: false }),
 		)
+		const stale = pageUpdate(
+			{ ...first, firstPage: { ...first.firstPage, key: "newer" } },
+			Message.CompletedFetchFirstPage({
+				key: first.firstPage.key ?? "",
+				result: Result.succeed({ data: [session("old")], ranked: 1 }),
+			}),
+		)
+		expect(stale.model.firstPage.key).toBe("newer")
 	})
 
 	test("the painted rows ask for their details once, and the answer merges in", () => {
