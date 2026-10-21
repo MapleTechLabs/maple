@@ -25,10 +25,10 @@ on:
     workflow_dispatch:
 
 # Only PRs cancel superseded runs. GitHub can deliver a push event late, so on main
-# an older commit's run can start after a newer one and would cancel it; main runs
-# queue instead.
+# an older commit's run can start after a newer one and would cancel (or, queued,
+# replace) it. Each main commit gets its own group.
 concurrency:
-    group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+    group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
     cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:

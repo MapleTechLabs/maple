@@ -10,10 +10,6 @@ on:
         branches: [main]
     workflow_dispatch:
 
-concurrency:
-    group: deploy-prd
-    cancel-in-progress: false
-
 permissions:
     contents: read
     id-token: write # Infisical OIDC machine-identity auth
@@ -50,6 +46,11 @@ jobs:
     deploy-prd:
         needs: ingest-binary
         if: ${{ !cancelled() && needs.ingest-binary.result == 'success' }}
+        # Job-level, so only fresh runs enter it: a queued run replaces the pending one,
+        # and a stale or red run must never replace the tip's pending deploy.
+        concurrency:
+            group: deploy-prd-us
+            cancel-in-progress: false
         uses: ./.github/workflows/deploy-prd-instance.yml
         secrets: inherit
         with:
@@ -61,6 +62,9 @@ jobs:
     deploy-prd-eu:
         needs: [ingest-binary, deploy-prd]
         if: ${{ !cancelled() && vars.MAPLE_DEPLOY_EU == '1' && needs.deploy-prd.result == 'success' }}
+        concurrency:
+            group: deploy-prd-eu
+            cancel-in-progress: false
         uses: ./.github/workflows/deploy-prd-instance.yml
         secrets: inherit
         with:
@@ -83,6 +87,10 @@ jobs:
                   if [ "$result" = "skipped" ] && [ "${{ needs.freshness.outputs.stale }}" = "true" ]; then
                       echo "::notice::Nothing to deploy: $HEAD_SHA is no longer main's tip."
                       exit 0
+                  fi
+                  if [ "${{ needs.freshness.result }}" = "failure" ]; then
+                      echo "::error::Nothing was deployed: could not read main's tip to check $HEAD_SHA is current. Re-run."
+                      exit 1
                   fi
                   if [ "$result" = "skipped" ] && [ "$CI_CONCLUSION" = "cancelled" ]; then
                       echo "::notice::Nothing to deploy: CI for $HEAD_SHA was cancelled."

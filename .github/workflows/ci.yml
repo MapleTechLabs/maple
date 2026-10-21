@@ -10,10 +10,10 @@ on:
         # Stacked PRs target another feature branch and need the same checks.
 
 # Only PRs cancel superseded runs. GitHub can deliver a push event late, so on main
-# an older commit's run can start after a newer one and would cancel it; main runs
-# queue instead, and deploy-prd skips any run whose commit is no longer main's tip.
+# an older commit's run can start after a newer one and would cancel (or, queued,
+# replace) it. Each main commit gets its own group; deploy-prd deploys only main's tip.
 concurrency:
-    group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+    group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
     cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
