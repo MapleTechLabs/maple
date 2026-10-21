@@ -17,15 +17,14 @@ import type { OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"
 import { Cause, Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import {
-	stampedSourceId,
-} from "@maple/backend/services/org/integration-sources"
+import { makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
+import { isSourcePaused, stampedSourceId } from "@maple/backend/services/org/integration-sources"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import {
 	fetchMapleAccessToken,
@@ -65,7 +64,6 @@ const LEASE_MS = 4 * MINUTE_MS
 const TICK_BUDGET_MS = 1.5 * MINUTE_MS
 const POLL_BUDGET_MS = MINUTE_MS
 const CONNECTOR_TIMEOUT = Duration.minutes(2)
-const INGEST_TIMEOUT = Duration.seconds(30)
 const RESOURCE_SYNC_TIMEOUT = Duration.seconds(30)
 /**
  * Outbound requests per tick. A Workers Paid invocation gets 10,000 subrequests unless
@@ -172,11 +170,6 @@ const toPersistenceError = makePersistenceErrorMapper(
 	"Google Cloud metrics database error",
 )
 
-class GcpMetricsIngestError extends Schema.TaggedError<GcpMetricsIngestError>()(
-	"@maple/api/integrations/GcpMetricsIngestError",
-	{ message: Schema.String, status: Schema.optionalKey(Schema.Number) },
-) {}
-
 /**
  * The connector's next window, on minute boundaries, or null when it is caught up. It never
  * starts more than an hour back: after a long pause the gap is skipped, not replayed.
@@ -237,7 +230,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 			const env = yield* Env
 			const baseHttpClient = yield* HttpClient.HttpClient
 			const ingestKeys = yield* OrgIngestKeysService
-			const ingestMetricsUrl = `${env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")}/v1/metrics`
+			const ingest = yield* makeIngestSender
 			const dbExecute = makeDbExecute(database, "GcpMetricsService", toPersistenceError)
 
 			const updateConnector = (id: GcpConnectorRow["id"], set: PG.UpdateSetOf<typeof GcpConnectors>) =>
@@ -276,44 +269,24 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 				return FAILED
 			})
 
-			const emitMetrics = Effect.fnUntraced(
-				function* (
-					httpClient: HttpClient.HttpClient,
-					ingestKey: string,
-					sourceId: string | undefined,
-					rows: GcpMetricRows,
-				) {
-					const total = rows.sumRows.length + rows.gaugeRows.length
-					if (total === 0) return 0
-					const response = yield* httpClient
-						.execute(
-							HttpClientRequest.post(ingestMetricsUrl).pipe(
-								HttpClientRequest.bearerToken(ingestKey),
-								HttpClientRequest.bodyJsonUnsafe(
-									metricRowsToOtlp(rows.sumRows, rows.gaugeRows, { sourceId }),
-								),
-							),
-						)
-						.pipe(
-							Effect.annotateSpans("peer.service", "ingest"),
-							Effect.mapError(
-								() => new GcpMetricsIngestError({ message: "Metrics ingest request failed" }),
-							),
-						)
-					if (response.status >= 300) {
-						return yield* new GcpMetricsIngestError({
-							message: `Metrics ingest returned ${response.status}`,
-							status: response.status,
-						})
-					}
-					return total
-				},
-				Effect.timeoutOrElse({
-					duration: INGEST_TIMEOUT,
-					orElse: () =>
-						Effect.fail(new GcpMetricsIngestError({ message: "Metrics ingest timed out" })),
-				}),
-			)
+			const emitMetrics = Effect.fnUntraced(function* (
+				httpClient: HttpClient.HttpClient,
+				ingestKey: string,
+				sourceId: string | undefined,
+				rows: GcpMetricRows,
+			) {
+				const total = rows.sumRows.length + rows.gaugeRows.length
+				if (total === 0) return 0
+				const payload = metricRowsToOtlp(rows.sumRows, rows.gaugeRows, { sourceId })
+				yield* ingest.send({
+					signal: "metrics",
+					ingestKey,
+					payload,
+					label: "Google Cloud metrics",
+					client: httpClient,
+				})
+				return total
+			})
 
 			/**
 			 * Each Cloud SQL instance's settings onto its inventory row, which the search does not
@@ -464,6 +437,12 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					})
 					const window = nextWindow(connector.metricsWatermarkAt, tick.now)
 					if (window === null) return NOTHING
+					// A paused source reads nothing; its watermark follows the clock so a resume starts at now.
+					if (yield* dbExecute((db) => isSourcePaused(db, connector.sourceId, tick.now))) {
+						yield* Effect.annotateCurrentSpan("maple.gcp.skip_reason", "source paused")
+						yield* updateConnector(connector.id, { metricsWatermarkAt: window.endMs })
+						return NOTHING
+					}
 					const reader = yield* impersonateReader(tick.httpClient, tick.mapleToken, connector)
 					if (
 						connector.resourcesSyncedAt === null ||
@@ -683,7 +662,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						Effect.catchTags({
 							"@maple/api/integrations/GcpApiError": (error) =>
 								recordFailure(connector, describeApiError(error, connector, "metrics")),
-							"@maple/api/integrations/GcpMetricsIngestError": (error) =>
+							"@maple/backend/ingest/IngestSendError": (error) =>
 								error.status === 402
 									? recordFailure(
 											connector,

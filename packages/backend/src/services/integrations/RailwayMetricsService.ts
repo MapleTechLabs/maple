@@ -25,7 +25,7 @@ import {
 	type RailwayEnvironmentRow,
 } from "@maple/db/tables"
 import { Cause, Clock, Context, Duration, Effect, Layer, Redacted, Ref, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -36,12 +36,13 @@ import {
 	deleteSourcesOf,
 	ensureIntegrationSource,
 	integrationSourceName,
+	isSourcePaused,
 	stampedSourceId,
 } from "@maple/backend/services/org/integration-sources"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import { discover, fetchEnvironmentMetrics, RailwayApiError, type RailwayDiscovery } from "./railway/api"
 import { mapRailwayMetrics } from "./railway/mapping"
-import { isIngestRefusal, summarizeUpstreamBody } from "./upstream-body"
+import { isRefusal, makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
 
 const SAMPLE_RATE_SECONDS = 60
 const SAMPLE_MS = SAMPLE_RATE_SECONDS * 1000
@@ -59,7 +60,6 @@ const LEASE_MS = 4 * 60_000
  */
 const TICK_BUDGET_MS = 2.5 * 60_000
 const DISCOVERY_TIMEOUT = Duration.seconds(60)
-const INGEST_TIMEOUT = Duration.seconds(30)
 const MAX_ENVIRONMENT_CALLS_PER_TICK = 15
 const RATE_LIMIT_HOLD_MS = 15 * 60_000
 const BILLING_HOLD_MS = 60 * 60_000
@@ -97,11 +97,6 @@ export const nextWindow = (watermarkAt: number | null, now: number) => {
 	const endMs = Math.min(horizonMs, startMs + MAX_WINDOW_MS)
 	return startMs < endMs ? { startMs, endMs } : null
 }
-
-class RailwayIngestError extends Schema.TaggedError<RailwayIngestError>()(
-	"@maple/backend/integrations/RailwayIngestError",
-	{ message: Schema.String, status: Schema.optionalKey(Schema.Number) },
-) {}
 
 /** Running counts of one org's poll; `stopped` ends the pass early. */
 interface RailwayPollTally {
@@ -160,7 +155,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
 				(message) => new IntegrationsPersistenceError({ message }),
 			)
-			const ingestMetricsUrl = `${env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")}/v1/metrics`
+			const ingest = yield* makeIngestSender
 			const dbExecute = makeDbExecute(database, "RailwayMetricsService", toPersistenceError)
 
 			const loadConnection = (orgId: OrgId) =>
@@ -475,41 +470,20 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 					),
 				)
 
-			const emitMetrics = Effect.fn("RailwayMetricsService.emitMetrics")(
-				function* (
-					ingestKey: string,
-					rows: ReturnType<typeof mapRailwayMetrics>,
-					sourceId: string | undefined,
-				) {
-					if (rows.length === 0) return 0
-					const request = HttpClientRequest.post(ingestMetricsUrl, {
-						headers: { authorization: `Bearer ${ingestKey}`, "content-type": "application/json" },
-					}).pipe(HttpClientRequest.bodyJsonUnsafe(metricRowsToOtlp([], rows, { sourceId })))
-					const response = yield* httpClient.execute(request).pipe(
-						Effect.annotateSpans("peer.service", "ingest"),
-						Effect.mapError(
-							(error) =>
-								new RailwayIngestError({
-									message: `Railway metrics ingest failed: ${error.message}`,
-								}),
-						),
-					)
-					if (response.status >= 300) {
-						const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
-						return yield* new RailwayIngestError({
-							message: `Railway metrics ingest returned ${response.status}: ${summarizeUpstreamBody(body, response.headers)}`,
-							status: response.status,
-						})
-					}
-					return rows.length
-				},
-				// Covers the error-body read too, so a stalled body cannot outlive the lease.
-				Effect.timeoutOrElse({
-					duration: INGEST_TIMEOUT,
-					orElse: () =>
-						Effect.fail(new RailwayIngestError({ message: "Railway metrics ingest timed out" })),
-				}),
-			)
+			const emitMetrics = Effect.fnUntraced(function* (
+				ingestKey: string,
+				rows: ReturnType<typeof mapRailwayMetrics>,
+				sourceId: string | undefined,
+			) {
+				if (rows.length === 0) return 0
+				yield* ingest.send({
+					signal: "metrics",
+					ingestKey,
+					payload: metricRowsToOtlp([], rows, { sourceId }),
+					label: "Railway metrics",
+				})
+				return rows.length
+			})
 
 			const pollEnvironment = Effect.fn("RailwayMetricsService.pollEnvironment")(function* (
 				row: RailwayEnvironmentRow,
@@ -558,6 +532,21 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				if (connection.authFailedAt !== null) return skip("token rejected")
 
 				const now = yield* Clock.currentTimeMillis
+				// A paused source reads nothing; its watermarks follow the clock so a resume starts at now.
+				if (yield* dbExecute((db) => isSourcePaused(db, connection.sourceId, now))) {
+					const horizonMs = floorToSample(now - SAFETY_LAG_MS)
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(RailwayEnvironments)
+								.set({ watermarkAt: horizonMs, updatedAt: now })
+								.where(($) => [
+									$.connectionId.eq(connection.id),
+									PG.or($.watermarkAt.isNull(), $.watermarkAt.lt(horizonMs)),
+								]),
+						),
+					)
+					return skip("source paused")
+				}
 				const claimed = yield* claimLease(connection.id, now)
 				if (claimed === null) return skip("lease held")
 
@@ -680,8 +669,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 												return { ...failed, stopped: true }
 											}
 										} else if (
-											error.status !== undefined &&
-											isIngestRefusal(error.status)
+											isRefusal(error)
 										) {
 											// Billing limit or a refused key: back off instead of retrying every tick.
 											yield* Ref.set(holdUntilRef, now + BILLING_HOLD_MS)

@@ -30,7 +30,7 @@ import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLi
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
-import { type IntegrationLink, readIntegrationLinks } from "./integration-sources"
+import { type IntegrationLink, isPausedAt, readIntegrationLinks } from "./integration-sources"
 import { defaultSourceRow, newSourceId, pullSourceKey } from "./source-rows"
 
 const SOURCE_TOKEN_PREFIX = "maple_src_"
@@ -59,7 +59,7 @@ const displayPrefix = (secret: string) => secret.slice(0, SOURCE_TOKEN_PREFIX.le
 // Mirrors the gateway: an expired token is rejected even while paused.
 const statusOf = (row: SourceRow, now: number): SourceTokenStatus => {
 	if (row.expiresAt !== null && row.expiresAt <= now) return "expired"
-	if (row.pausedAt !== null && (row.pausedUntil === null || row.pausedUntil > now)) return "paused"
+	if (isPausedAt(row, now)) return "paused"
 	return "active"
 }
 

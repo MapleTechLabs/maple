@@ -66,7 +66,7 @@ import {
 	Result,
 	Schema,
 } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import * as CloudflareAnalyticsMetrics from "@maple/backend/observability/CloudflareAnalyticsMetrics"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
@@ -85,9 +85,8 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import {
-	stampedSourceId,
-} from "@maple/backend/services/org/integration-sources"
+import { isRefusal, makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
+import { isSourcePaused, stampedSourceId } from "@maple/backend/services/org/integration-sources"
 import {
 	mapDnsGroups,
 	mapDurableObjectsGroups,
@@ -101,7 +100,6 @@ import {
 	type CloudflareMetricRows,
 } from "./cloudflare-analytics/mapping"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
-import { isIngestRefusal, summarizeUpstreamBody } from "./upstream-body"
 import {
 	accountAnalyticsDocument,
 	DatasetSettings,
@@ -1239,7 +1237,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 
 		const apiBaseUrl = env.MAPLE_CLOUDFLARE_API_BASE_URL
 		/** The ingest gateway's OTLP metrics endpoint — poller metrics flow through it like all telemetry. */
-		const ingestMetricsUrl = `${env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")}/v1/metrics`
+		const ingest = yield* makeIngestSender
 
 		const dbExecute = makeDbExecute(database, "CloudflareAnalyticsService", toPersistenceError)
 
@@ -1697,46 +1695,28 @@ export class CloudflareAnalyticsService extends Context.Service<
 		 * them and retries next tick (the watermark only advances on success). Returns the row count,
 		 * or {@link IngestRefused} when the gateway refuses the org (billing or a refused key).
 		 */
-		const emitMetrics = Effect.fn("CloudflareAnalyticsService.emitMetrics")(
-			function* (ingestKey: string, rows: CloudflareMetricRows, sourceId: string | undefined) {
-				const total = rows.sumRows.length + rows.gaugeRows.length
-				if (total === 0) return 0
-				const payload = metricRowsToOtlp(rows.sumRows, rows.gaugeRows, { sourceId })
-				const request = HttpClientRequest.post(ingestMetricsUrl, {
-					headers: { authorization: `Bearer ${ingestKey}`, "content-type": "application/json" },
-				}).pipe(HttpClientRequest.bodyJsonUnsafe(payload))
-				const response = yield* httpClient
-					.execute(request)
-					.pipe(Effect.annotateSpans("peer.service", "ingest"))
-				if (response.status >= 300) {
-					const body = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
-					const message = `Cloudflare metrics ingest returned ${response.status}: ${summarizeUpstreamBody(body, response.headers)}`
+		const emitMetrics = Effect.fnUntraced(function* (
+			ingestKey: string,
+			rows: CloudflareMetricRows,
+			sourceId: string | undefined,
+		) {
+			const total = rows.sumRows.length + rows.gaugeRows.length
+			if (total === 0) return 0
+			const payload = metricRowsToOtlp(rows.sumRows, rows.gaugeRows, { sourceId })
+			return yield* ingest.send({ signal: "metrics", ingestKey, payload, label: "Cloudflare metrics" }).pipe(
+				Effect.as(total),
+				Effect.catchTag("@maple/backend/ingest/IngestSendError", (error) =>
 					// 402 is billing; 401/403 is the org's key refused (an edge block on a revoked key).
-					if (isIngestRefusal(response.status)) {
-						yield* Effect.annotateCurrentSpan("maple.cloudflare.ingest_refused", true)
-						return { refused: message } satisfies IngestRefused
-					}
-					return yield* Effect.fail(
-						new IntegrationsUpstreamError({
-							message,
-							status: response.status,
-						}),
-					)
-				}
-				return total
-			},
-			(effect) =>
-				effect.pipe(
-					Effect.mapError((error) =>
-						error instanceof IntegrationsUpstreamError
-							? error
-							: new IntegrationsUpstreamError({
-									message: `Cloudflare metrics ingest request failed: ${error instanceof Error ? error.message : String(error)}`,
-									cause: error,
-								}),
-					),
+					isRefusal(error)
+						? Effect.annotateCurrentSpan("maple.cloudflare.ingest_refused", true).pipe(
+								Effect.as({ refused: error.message } satisfies IngestRefused),
+							)
+						: Effect.fail(
+								new IntegrationsUpstreamError({ message: error.message, cause: error }),
+							),
 				),
-		)
+			)
+		})
 
 		/**
 		 * One poll step: query a batched document's window, attribute GraphQL-level errors to their
@@ -2614,8 +2594,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 			)
 		})
 
-		// The grant's source as its `src_` id; undefined while the connection is not linked yet.
-		const resolveSourceId = (orgId: OrgId) =>
+		// The grant's source; null while the connection is not linked yet.
+		const loadSourceId = (orgId: OrgId) =>
 			dbExecute((db) =>
 				db.run(
 					PG.from(OAuthConnections)
@@ -2623,7 +2603,19 @@ export class CloudflareAnalyticsService extends Context.Service<
 						.where(($) => [$.orgId.eq(orgId), $.provider.eq("cloudflare")])
 						.limit(1),
 				),
-			).pipe(Effect.map(([connection]) => stampedSourceId(connection?.sourceId ?? null)))
+			).pipe(Effect.map(([connection]) => connection?.sourceId ?? null))
+
+		// A paused source reads nothing; its head windows follow the clock so a resume starts at now.
+		const skipPausedWindows = (orgId: OrgId, now: number) => {
+			const horizon = floorToBucket(now - SAFETY_LAG_MS)
+			return dbExecute((db) =>
+				db.run(
+					PG.update(CloudflareAnalyticsState)
+						.set({ watermarkAt: horizon, updatedAt: now })
+						.where(($) => [$.orgId.eq(orgId), $.watermarkAt.lt(horizon)]),
+				),
+			)
+		}
 
 		/**
 		 * Poll every connected account of one org, sequentially, sharing ONE call budget —
@@ -2635,6 +2627,19 @@ export class CloudflareAnalyticsService extends Context.Service<
 		 */
 		const pollOrg = Effect.fn("CloudflareAnalyticsService.pollOrg")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
+			const linkedSource = yield* loadSourceId(orgId)
+			const startedAt = yield* Clock.currentTimeMillis
+			if (yield* dbExecute((db) => isSourcePaused(db, linkedSource, startedAt))) {
+				yield* skipPausedWindows(orgId, startedAt)
+				yield* Effect.annotateCurrentSpan("maple.cloudflare.skip_reason", "source paused")
+				return {
+					orgId,
+					skipped: "source paused",
+					callsMade: 0,
+					rowsIngested: 0,
+					failures: [],
+				} satisfies PollOrgSummary
+			}
 			const status = yield* oauth.getStatus(orgId)
 			// One budget for the whole grant, spent by the accounts in planned order.
 			const budget = { calls: 0 }
@@ -2664,7 +2669,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 							yield* Clock.currentTimeMillis,
 							grantCap,
 						)
-			const sourceId = plan.length === 0 ? undefined : yield* resolveSourceId(orgId)
+			const sourceId = stampedSourceId(linkedSource)
 			const polled = yield* Effect.forEach(plan, ({ accountId, callLimit }) =>
 				pollConnection(orgId, accountId, budget, callLimit, orgRefusal, sourceId),
 			)

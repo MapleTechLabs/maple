@@ -25,6 +25,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	ScrapeTargetChecks,
 	ScrapeTargets,
+	Sources,
 	type ScrapeTargetCheckRow,
 	type ScrapeTargetRow,
 } from "@maple/db/tables"
@@ -1123,20 +1124,36 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			const listAllEnabled = Effect.fn("ScrapeTargetsService.listAllEnabled")(function* (
 				interval?: ScrapeIntervalSeconds,
 			) {
-				const rows = yield* dbExecute((db) =>
-					db.run(
-						PG.from(ScrapeTargets)
-							// Labels as stored: the scraper reads a malformed document as no labels
-							// rather than failing every org's target list.
-							.select(($) => ({ ...$, labelsJson: PG.undecoded($.labelsJson) }))
-							.where(($) => [
-								$.enabled.eq(true),
-								interval === undefined ? undefined : $.scrapeIntervalSeconds.eq(interval),
-							]),
+				const now = yield* Clock.currentTimeMillis
+				const [rows, paused] = yield* dbExecute((db) =>
+					Effect.all(
+						[
+							db.run(
+								PG.from(ScrapeTargets)
+									// Labels as stored: the scraper reads a malformed document as no labels
+									// rather than failing every org's target list.
+									.select(($) => ({ ...$, labelsJson: PG.undecoded($.labelsJson) }))
+									.where(($) => [
+										$.enabled.eq(true),
+										interval === undefined ? undefined : $.scrapeIntervalSeconds.eq(interval),
+									]),
+							),
+							// A paused source is not scraped. Paused sources are few, so they are read whole.
+							db.run(
+								PG.from(Sources)
+									.select("id")
+									.where(($) => [
+										$.kind.eq("integration"),
+										$.pausedAt.isNotNull(),
+										PG.or($.pausedUntil.isNull(), $.pausedUntil.gt(now)),
+									]),
+							),
+						],
+						{ concurrency: "unbounded" },
 					),
 				)
-
-				return rows
+				const pausedIds = new Set(paused.map((source) => source.id))
+				return rows.filter((row) => row.sourceId === null || !pausedIds.has(row.sourceId))
 			})
 
 			const recordScrapeResults = Effect.fn("ScrapeTargetsService.recordScrapeResults")(function* (

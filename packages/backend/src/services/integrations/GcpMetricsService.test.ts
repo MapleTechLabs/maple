@@ -749,6 +749,29 @@ describe("GcpMetricsService", () => {
 		)
 	})
 
+	it.effect("reads nothing for a paused source and moves its watermark to now", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		return run(
+			testDb,
+			stubFetch(calls),
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, CONNECTOR_A)
+				yield* Effect.promise(() =>
+					executeSql(testDb, "UPDATE sources SET paused_at = now() WHERE integration_id = $1", [
+						CONNECTOR_A,
+					]),
+				)
+				assert.deepInclude(yield* pollAll, { polled: 1, rowsIngested: 0 })
+				assert.deepStrictEqual(
+					[calls.impersonate.length, calls.monitoring.length, calls.ingest.length],
+					[0, 0, 0],
+				)
+				assert.isNotNull((yield* pollState(testDb, CONNECTOR_A)).metrics_watermark_at)
+			}),
+		)
+	})
+
 	it.effect("is a no-op without a service account key", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()

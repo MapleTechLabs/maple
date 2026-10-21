@@ -97,6 +97,28 @@ export const deleteSourcesOf = (
 				.pipe(Effect.asVoid)
 }
 
+/** A pause with no end, or one that has not ended yet. Mirrors the gateway's pause window. */
+export const isPausedAt = (
+	source: { readonly pausedAt: number | null; readonly pausedUntil: number | null },
+	now: number,
+) => source.pausedAt !== null && (source.pausedUntil === null || source.pausedUntil > now)
+
+/**
+ * Whether one integration row's source is paused; a row not linked yet is not. Pollers skip a
+ * paused source instead of reading data the gateway would drop.
+ */
+export const isSourcePaused = (db: MapleDb, sourceId: SourceId | null, now: number) =>
+	sourceId === null
+		? Effect.succeed(false)
+		: db
+				.run(
+					PG.from(Sources)
+						.select("pausedAt", "pausedUntil")
+						.where(($) => [$.id.eq(sourceId)])
+						.limit(1),
+				)
+				.pipe(Effect.map(([source]) => source !== undefined && isPausedAt(source, now)))
+
 /** The `src_` id a row stamps as `maple_source_id`; undefined for a row not linked yet. */
 export const stampedSourceId = (sourceId: SourceId | null) =>
 	sourceId === null ? undefined : publicSourceId(sourceId)
