@@ -64,6 +64,23 @@ describe("alerts hub", () => {
 		)
 	})
 
+	test("a live sync that stops before its first answer shows the failure with a retry, not a skeleton", () => {
+		const clocked = pageUpdate(entered().model, Message.ReadClock({ nowMs: NOW })).model
+		const failed = pageUpdate(clocked, Message.FailedLoadAlerts({ orgId: ORG })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("Failed to load alerts")).toExist(),
+			click(role("button", { name: "Try again" })),
+			expectOutMessage(PageOutMessage.RequestedReconnectOrgCollections()),
+		)
+	})
+
+	test("a late sync failure does not hide alerts that already arrived", () => {
+		const late = pageUpdate(loaded(), Message.FailedLoadAlerts({ orgId: ORG })).model
+		expect(late.isLoadFailed).toBe(false)
+	})
+
 	test("an org with no rules gets the two-step empty state", () => {
 		const empty = pageUpdate(loaded(), Message.UpdatedRules({ orgId: ORG, rows: [] })).model
 		const noDestinations = pageUpdate(empty, Message.UpdatedDestinations({ orgId: ORG, rows: [] })).model
@@ -75,10 +92,20 @@ describe("alerts hub", () => {
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "rules" })),
 			click(role("button", { name: /^Firing/ })),
-			expectOutMessage(PageOutMessage.RequestedNavigation({ url: "/alerts?tab=rules&status=firing", isReplace: false })),
+			expectOutMessage(
+				PageOutMessage.RequestedNavigation({
+					url: "/alerts?tab=rules&status=firing",
+					isReplace: false,
+				}),
+			),
 		)
-		const cleared = pageUpdate(loaded({ tab: "rules", status: "firing" }), Message.ClickedStatusFilter({ bucket: "firing" }))
-		expect(cleared.outMessage).toEqual(PageOutMessage.RequestedNavigation({ url: "/alerts?tab=rules", isReplace: false }))
+		const cleared = pageUpdate(
+			loaded({ tab: "rules", status: "firing" }),
+			Message.ClickedStatusFilter({ bucket: "firing" }),
+		)
+		expect(cleared.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/alerts?tab=rules", isReplace: false }),
+		)
 	})
 
 	test("disabling a rule sends one PATCH at a time and a failed write says so", () => {

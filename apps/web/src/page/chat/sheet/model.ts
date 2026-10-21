@@ -75,7 +75,7 @@ export const Message = defineMessageUnion({
 	CompletedRenameStoredTab: {},
 	/** A conversation's message, named by its thread: a previous thread's late answers are dropped. */
 	GotConversationMessage: { tabId: Schema.String, message: ConversationMessage },
-	CompletedLoadPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
+	CompletedLoadPresence: { orgId: Schema.String, result: Schema.Result(SignalPresences, LoadFailure) },
 	CompletedLoadKnownServices: { services: Schema.Array(Schema.String) },
 	CompletedMountScroller: {},
 	CompletedReleaseFocus: {},

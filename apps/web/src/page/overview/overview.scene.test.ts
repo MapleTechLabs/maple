@@ -180,6 +180,27 @@ describe("overview", () => {
 		)
 	})
 
+	test("without live alerts the banner stays out instead of claiming all clear", () => {
+		const facets = withFacets(entered().model, ["production"]).model
+		const answered = pageUpdate(
+			facets,
+			Message.CompletedFetchSnapshot({
+				key: facets.snapshot.key ?? "",
+				result: Result.succeed([snapshotRow("checkout")]),
+			}),
+		).model
+		const failed = pageUpdate(answered, Message.FailedLoadIncidents({ orgId })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			Mount.resolveAll(
+				[ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })],
+				[MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()],
+			),
+			expectView(text("All clear")).toBeAbsent(),
+		)
+	})
+
 	test("picking an environment writes it to the URL; All environments leaves it", () => {
 		const model = loaded([snapshotRow("checkout")])
 		const picked = pageUpdate(

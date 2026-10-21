@@ -70,7 +70,8 @@ const fetchOverview = (model: Model, pinnedNamespace: string | null): Return =>
 				model: {
 					...model,
 					isOverviewInFlight: true,
-					services: AsyncData.hasData(model.services) ? model.services : ServicesData.Loading(),
+					// A failure stays on screen while the poll retries; only a cold card shows loading.
+					services: AsyncData.isIdle(model.services) ? ServicesData.Loading() : model.services,
 				},
 				commands: [FetchSetupOverview({ window: model.window, pinnedNamespace })],
 			}

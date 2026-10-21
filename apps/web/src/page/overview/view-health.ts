@@ -95,22 +95,28 @@ export type HealthOverviewInputs = Readonly<{
 	nowMs: number
 }>
 
-/** `ServiceHealthOverview`: the banner always; the rail loading, absent on error, counted on success. */
+/** `ServiceHealthOverview`: the banner once alerts are known; the rail loading, absent on error, counted on success. */
 export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: HealthOverviewInputs): Html => {
 	const incidents = AsyncData.getOrElse(model.incidents, () => [])
 	const open = incidents.filter((incident) => incident.status === "open")
 	const rules = AsyncData.getOrElse(model.rules, () => [])
-	const banner = alertFiringHero(h, {
-		openCount: open.length,
-		criticalCount: open.filter((incident) => incident.severity === "critical").length,
-		warningCount: open.filter((incident) => incident.severity === "warning").length,
-		rulesEnabled: rules.filter((enabled) => enabled).length,
-		rulesTotal: rules.length,
-	})
+	// "All clear" claims to know: without live alerts (loading or sync down) the banner stays out.
+	const isAlertsKnown = AsyncData.isSuccess(model.incidents) && AsyncData.isSuccess(model.rules)
+	const banner = !isAlertsKnown
+		? []
+		: [
+				alertFiringHero(h, {
+					openCount: open.length,
+					criticalCount: open.filter((incident) => incident.severity === "critical").length,
+					warningCount: open.filter((incident) => incident.severity === "warning").length,
+					rulesEnabled: rules.filter((enabled) => enabled).length,
+					rulesTotal: rules.length,
+				}),
+			]
 	const data = healthData(model)
 	return AsyncData.matchData(data, {
-		onEmpty: () => section(h, "mb-4 space-y-3", false, [banner, statRailLoading(h)]),
-		onFailure: () => section(h, "mb-4 space-y-3", false, [banner]),
+		onEmpty: () => section(h, "mb-4 space-y-3", false, [...banner, statRailLoading(h)]),
+		onFailure: () => section(h, "mb-4 space-y-3", false, banner),
 		onData: ([snapshot, anomalies, alerts]) => {
 			const counts = countByHealth(
 				enrichServices(
@@ -123,7 +129,7 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 			const tone = (health: ServiceHealth, active: "ok" | "warn" | "crit") =>
 				counts[health] > 0 ? active : "neutral"
 			return section(h, "mb-4 space-y-3", AsyncData.isRefreshing(data), [
-				banner,
+				...banner,
 				statRail(h, {}, [
 					statRailItem(h, {
 						eyebrow: "Services",

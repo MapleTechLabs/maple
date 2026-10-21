@@ -40,6 +40,8 @@ export const Model = Schema.Struct({
 	/** The enable/disable PATCH in flight (`toggleRule.state`) and whether the last one failed. */
 	togglingRuleId: Schema.NullOr(AlertRuleId),
 	hasToggleFailed: Schema.Boolean,
+	/** The rules or incidents stream stopped, or stalled, before its first answer. */
+	isLoadFailed: Schema.Boolean,
 	/** Routing: destinations with a test or delete in flight, and the one awaiting delete confirmation. */
 	testingDestinationIds: Schema.Array(AlertDestinationId),
 	deletingDestinationIds: Schema.Array(AlertDestinationId),

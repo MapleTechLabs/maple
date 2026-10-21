@@ -99,6 +99,7 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		isShowingAllRules: false,
 		togglingRuleId: null,
 		hasToggleFailed: false,
+		isLoadFailed: false,
 		testingDestinationIds: [],
 		deletingDestinationIds: [],
 		confirmDeleteId: null,
@@ -280,6 +281,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId ? { model: { ...model, states: rows } } : { model },
 		UpdatedIncidents: ({ orgId, rows }) =>
 			orgId === context.orgId ? { model: { ...model, incidents: rows } } : { model },
+		FailedLoadAlerts: ({ orgId }) =>
+			orgId === context.orgId && (model.rules === null || model.incidents === null)
+				? { model: { ...model, isLoadFailed: true } }
+				: { model },
+		// `retryOrgCollections`: a stopped shape syncs again only on fresh collections.
+		ClickedRetryLoad: () => ({
+			model: { ...model, isLoadFailed: false },
+			outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
+		}),
 		UpdatedDestinations: ({ orgId, rows }) =>
 			orgId === context.orgId ? { model: { ...model, destinations: rows } } : { model },
 		CompletedFetchDeliveries: ({ key, result }) => ({
