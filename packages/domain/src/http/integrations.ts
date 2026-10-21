@@ -6,6 +6,7 @@ import {
 	GcpResourceNumber,
 	GcpScopeType,
 	ScrapeTargetId,
+	SupabaseProjectRef,
 	UserId,
 } from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
@@ -973,6 +974,68 @@ export class RailwayDisconnectResponse extends Schema.Class<RailwayDisconnectRes
 	disconnected: Schema.Boolean,
 }) {}
 
+/** One project discovered under the connected Supabase organization. */
+export class SupabaseProjectStatus extends Schema.Class<SupabaseProjectStatus>("SupabaseProjectStatus")({
+	ref: SupabaseProjectRef,
+	name: Schema.String,
+	region: Schema.String,
+	/** Supabase's lifecycle status as reported, e.g. `ACTIVE_HEALTHY` or `INACTIVE`. */
+	status: Schema.String,
+	metricsEnabled: Schema.Boolean,
+	logDrainEnabled: Schema.Boolean,
+	lastSeenAt: Schema.Number,
+}) {}
+
+export class SupabaseOrganizationSummary extends Schema.Class<SupabaseOrganizationSummary>(
+	"SupabaseOrganizationSummary",
+)({
+	id: Schema.String,
+	slug: Schema.String,
+	name: Schema.String,
+}) {}
+
+/** Connection state of the Supabase integration (Management API OAuth, one organization per org). */
+export class SupabaseIntegrationStatus extends Schema.Class<SupabaseIntegrationStatus>(
+	"SupabaseIntegrationStatus",
+)({
+	/** False when this Maple deployment has no Supabase OAuth app configured. */
+	configured: Schema.Boolean,
+	connected: Schema.Boolean,
+	organization: Schema.NullOr(SupabaseOrganizationSummary),
+	connectedByUserId: Schema.NullOr(UserId),
+	connectedAt: Schema.NullOr(Schema.Number),
+	/** True when Supabase rejected the grant; discovery stops until the org reconnects. */
+	revoked: Schema.Boolean,
+	lastDiscoveryAt: Schema.NullOr(Schema.Number),
+	lastDiscoveryError: Schema.NullOr(Schema.String),
+	/** Projects currently present in the organization, by name. */
+	projects: Schema.Array(SupabaseProjectStatus),
+}) {}
+
+export class SupabaseConnectRequest extends Schema.Class<SupabaseConnectRequest>("SupabaseConnectRequest")({
+	returnTo: Schema.optionalKey(IntegrationReturnPath),
+}) {}
+
+export class SupabaseConnectResponse extends Schema.Class<SupabaseConnectResponse>("SupabaseConnectResponse")(
+	{
+		redirectUrl: Schema.String,
+		state: Schema.String,
+	},
+) {}
+
+/** Per-project switches. */
+export class SupabaseProjectUpdateRequest extends Schema.Class<SupabaseProjectUpdateRequest>(
+	"SupabaseProjectUpdateRequest",
+)({
+	metricsEnabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+export class SupabaseDisconnectResponse extends Schema.Class<SupabaseDisconnectResponse>(
+	"SupabaseDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
+
 export class IntegrationsForbiddenError extends HttpTaggedError<IntegrationsForbiddenError>()(
 	"@maple/http/errors/IntegrationsForbiddenError",
 	{
@@ -1298,6 +1361,41 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.add(
 		HttpApiEndpoint.delete("railwayDisconnect", "/railway", {
 			success: RailwayDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("supabaseStatus", "/supabase/status", {
+			success: SupabaseIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		// Starts the Management API OAuth flow (PKCE); the callback binds the granted organization.
+		HttpApiEndpoint.post("supabaseConnect", "/supabase/connect", {
+			payload: SupabaseConnectRequest,
+			success: SupabaseConnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsConfigurationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Runs project discovery now instead of waiting for the hourly cron.
+		HttpApiEndpoint.post("supabaseSync", "/supabase/sync", {
+			success: SupabaseIntegrationStatus,
+			error: [IntegrationsForbiddenError, IntegrationsNotConnectedError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.patch("supabaseUpdateProject", "/supabase/projects/:ref", {
+			params: { ref: SupabaseProjectRef },
+			payload: SupabaseProjectUpdateRequest,
+			success: SupabaseIntegrationStatus,
+			error: [IntegrationsForbiddenError, IntegrationsNotFoundError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("supabaseDisconnect", "/supabase", {
+			success: SupabaseDisconnectResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
 		}),
 	)

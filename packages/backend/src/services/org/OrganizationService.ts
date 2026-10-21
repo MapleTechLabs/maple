@@ -60,6 +60,8 @@ import {
 	RailwayEnvironments,
 	ScrapeTargets,
 	Sources,
+	SupabaseConnections,
+	SupabaseProjects,
 	VcsCommits,
 	PrReviews,
 	PrReviewSettings,
@@ -167,6 +169,9 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	// The encrypted Railway token would keep the poller reading an account for a deleted org.
 	RailwayConnections,
 	RailwayEnvironments,
+	// The Supabase grant itself is in oauth_connections; these hold the org binding and projects.
+	SupabaseProjects,
+	SupabaseConnections,
 	// The org's own OpenRouter key: a recreated org with the same id must not inherit it.
 	OrgOpenRouterKeys,
 	// APNs update tokens for running Live Activities. `mobile_devices` is purged

@@ -6,6 +6,7 @@ import {
 	RailwayConnections,
 	ScrapeTargets,
 	Sources,
+	SupabaseConnections,
 	VcsInstallations,
 } from "@maple/db/tables"
 import { scrapeStaleAfterMs } from "@maple/domain/integration-inventory"
@@ -38,6 +39,7 @@ export const integrationSourceName = {
 	cloudflare: (connection: { readonly externalAccountName: string | null }) =>
 		connection.externalAccountName ?? "Cloudflare",
 	github: (installation: { readonly accountLogin: string }) => `GitHub ${installation.accountLogin}`,
+	supabase: (organization: { readonly name: string }) => `Supabase ${organization.name}`,
 }
 
 /** A new integration source. Create it in the transaction that writes the row pointing at it. */
@@ -236,6 +238,11 @@ export const readSourceOwners = Effect.fnUntraced(function* (db: MapleDb, orgId:
 			db.run(PG.from(GcpConnectors).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
 			db.run(PG.from(RailwayConnections).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
 			db.run(PG.from(PlanetscaleConnections).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
+			db.run(
+				PG.from(SupabaseConnections)
+					.select("id", "sourceId")
+					.where(($) => [$.orgId.eq(orgId)]),
+			),
 			db.run(
 				PG.from(OAuthConnections)
 					.select("id", "sourceId")

@@ -18,7 +18,15 @@ import { detailActions, detailTitle } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 import { platformMeta, platformTile } from "../kit/platforms"
-import { effectiveTab, hasToken, integrationPlatformOf, focusIdOf, sourceHref, tabsOf } from "../kit/shared"
+import {
+	effectiveTab,
+	embeddedIntegrationOf,
+	hasToken,
+	integrationPlatformOf,
+	focusIdOf,
+	sourceHref,
+	tabsOf,
+} from "../kit/shared"
 import { actionsEmbed, cardEmbed } from "../../integrations/embed"
 import { sourceStatusBadge } from "../kit/status"
 import { Message } from "./message"
@@ -94,7 +102,7 @@ const connectionPart = (
 	timeZone: string,
 	part: "card" | "actions",
 ): Html | null => {
-	const platform = integrationPlatformOf(source)
+	const platform = embeddedIntegrationOf(source)
 	if (platform === null || model.connection === null) return null
 	return h.submodel({
 		slotId: `source-connection-${part}`,
