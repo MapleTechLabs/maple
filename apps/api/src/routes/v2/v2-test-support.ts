@@ -241,17 +241,24 @@ export const V2GroupLayersExceptOnboardingChecklist = v2GroupLayersExceptOnboard
 )
 
 /** Every v2 group, with the chat group served by the given service. */
-export const allV2GroupLayersWithChat = (chatWorkspace: Layer.Layer<ChatWorkspaceService>) =>
+export const allV2GroupLayersWithChat = (
+	chatWorkspace: Layer.Layer<ChatWorkspaceService>,
+	auditLog: Layer.Layer<AuditLogService> = AuditLogService.layerMemory,
+) =>
 	Layer.mergeAll(
 		v2GroupLayersExceptOnboardingChecklist(chatWorkspace),
 		HttpV2OnboardingChecklistLive.pipe(Layer.provide(OnboardingChecklistServiceStubLayer)),
 	).pipe(
 		// Mutation handlers across the groups record audit entries; the real service
 		// needs only the Database every harness already provides.
-		Layer.provide(AuditLogService.layerMemory),
+		Layer.provide(auditLog),
 	)
 
 export const AllV2GroupLayersLive = allV2GroupLayersWithChat(ChatWorkspaceServiceStubLayer)
+
+/** Every v2 group, recording audit entries into the given log so a test can read them. */
+export const allV2GroupLayersWithAudit = (auditLog: Layer.Layer<AuditLogService>) =>
+	allV2GroupLayersWithChat(ChatWorkspaceServiceStubLayer, auditLog)
 
 export const ApiV2RateLimiterAllowAllLayer = Layer.succeed(ApiV2RateLimiter, {
 	check: () => Effect.succeed("allowed" as const),
