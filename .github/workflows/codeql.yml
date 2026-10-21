@@ -24,9 +24,12 @@ on:
         - cron: "17 4 * * 1"
     workflow_dispatch:
 
+# Only PRs cancel superseded runs. GitHub can deliver a push event late, so on main
+# an older commit's run can start after a newer one and would cancel it; main runs
+# queue instead.
 concurrency:
     group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-    cancel-in-progress: true
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
     contents: read

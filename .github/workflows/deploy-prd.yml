@@ -19,15 +19,37 @@ permissions:
     id-token: write # Infisical OIDC machine-identity auth
 
 jobs:
-    # Separate job for the arm64 runner; same gate so a red CI builds nothing.
+    # Main CI runs queue rather than cancel, and GitHub can start an older commit's
+    # run after a newer one. Deploying it would roll prod back, so only main's tip deploys.
+    freshness:
+        if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }}
+        runs-on: ubuntu-latest
+        outputs:
+            stale: ${{ steps.tip.outputs.stale }}
+        steps:
+            - id: tip
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+              run: |
+                  tip=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+                  if [ "$tip" = "$HEAD_SHA" ]; then
+                      echo "stale=false" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "::notice::Skipping deploy: $HEAD_SHA is no longer main's tip ($tip); that commit's CI deploys it."
+                      echo "stale=true" >> "$GITHUB_OUTPUT"
+                  fi
+
+    # Separate job for the arm64 runner; same gate so a red or stale CI builds nothing.
     ingest-binary:
-        if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+        needs: freshness
+        if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'false') }}
         uses: ./.github/workflows/build-ingest-binary.yml
 
     # On workflow_run, `github.sha` is the branch head, not the commit CI tested: pin head_sha.
     deploy-prd:
         needs: ingest-binary
-        if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+        if: ${{ !cancelled() && needs.ingest-binary.result == 'success' }}
         uses: ./.github/workflows/deploy-prd-instance.yml
         secrets: inherit
         with:
@@ -38,7 +60,7 @@ jobs:
     # Sequenced after `us` so a breaking change stops at one instance.
     deploy-prd-eu:
         needs: [ingest-binary, deploy-prd]
-        if: ${{ vars.MAPLE_DEPLOY_EU == '1' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+        if: ${{ !cancelled() && vars.MAPLE_DEPLOY_EU == '1' && needs.deploy-prd.result == 'success' }}
         uses: ./.github/workflows/deploy-prd-instance.yml
         secrets: inherit
         with:
@@ -46,9 +68,9 @@ jobs:
             commit-sha: ${{ github.event.workflow_run.head_sha || github.sha }}
 
     # Skipped jobs do not fail a run, so this always runs and fails when nothing
-    # deployed. A cancelled CI run (superseded by a newer push) is not a failure.
+    # deployed. A stale commit or a cancelled CI run is not a failure.
     deployment-gate:
-        needs: [deploy-prd, deploy-prd-eu]
+        needs: [freshness, deploy-prd, deploy-prd-eu]
         if: ${{ always() }}
         runs-on: ubuntu-latest
         steps:
@@ -58,8 +80,12 @@ jobs:
                   HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
               run: |
                   result="${{ needs.deploy-prd.result }}"
+                  if [ "$result" = "skipped" ] && [ "${{ needs.freshness.outputs.stale }}" = "true" ]; then
+                      echo "::notice::Nothing to deploy: $HEAD_SHA is no longer main's tip."
+                      exit 0
+                  fi
                   if [ "$result" = "skipped" ] && [ "$CI_CONCLUSION" = "cancelled" ]; then
-                      echo "::notice::Nothing to deploy: CI for $HEAD_SHA was cancelled, superseded by a newer push to main."
+                      echo "::notice::Nothing to deploy: CI for $HEAD_SHA was cancelled."
                       exit 0
                   fi
                   if [ "$result" = "skipped" ]; then
