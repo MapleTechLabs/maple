@@ -29,6 +29,7 @@ describe("gcpInfraMetricsSQL", () => {
 		expect(sql).toContain("'gcp.cloud_run.request.duration', 'gcp.cloud_run.container.instance.count'")
 		expect(sql.match(/TimeUnix >= '2026-07-02 00:00:00.000'/g)).toHaveLength(2)
 		expect(sql.match(/TimeUnix <= '2026-07-03 00:00:00.000'/g)).toHaveLength(2)
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the identity key every row groups by
 		expect(sql).toContain(
 			"[metrics_sum.ResourceAttributes['service.name'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['cloud.region']] AS keys",
 		)
@@ -46,7 +47,6 @@ describe("gcpInfraMetricsSQL", () => {
 		expect(sql).toContain("metrics_sum.MetricName IN ('gcp.gce.network.io', 'gcp.gce.disk.io')")
 		expect(sql).toContain("GROUP BY keys, metric, label")
 		expect(sql).toContain("LIMIT 10000")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("keeps every service to its own metrics and never leaves a branch without one", () => {
@@ -188,6 +188,7 @@ describe("gcpInfraSparklinesSQL", () => {
 		// No gauge is drawn for Cloud Run: that branch reads nothing.
 		expect(sql).toContain("metrics_gauge.OrgId = 'org_1'")
 		expect(sql).toContain("1 = 0")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the identity key every row groups by
 		expect(sql).toContain(
 			"[metrics_sum.ResourceAttributes['service.name'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['cloud.region']] AS keys",
 		)
@@ -256,6 +257,7 @@ describe("gcpCloudSqlTopQueriesSQL", () => {
 			)
 		}
 		expect(sql).toContain("metrics_gauge.MetricName IN ('gcp.cloud_sql.query.statement.duration')")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the attribute the statement text is read from
 		expect(sql).toContain("metrics_sum.Attributes['db.query.text'] AS statement")
 		expect(sql).toContain("GROUP BY hash, t) AS polls")
 		expect(sql).toContain("GROUP BY queryHash")

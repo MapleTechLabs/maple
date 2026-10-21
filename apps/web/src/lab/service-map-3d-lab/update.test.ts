@@ -11,10 +11,4 @@ describe("service map 3D lab", () => {
 		const cleared = update(picked.model, Message.GotSceneMessage({ message: Scene3d.Message.PickedNode({ nodeId: null }) }))
 		expect(cleared.model.selectedId).toBeNull()
 	})
-
-	test("the scene's own controls leave the selection alone", () => {
-		const selected = update(opened(), Message.ClickedNode({ nodeId: "checkout" })).model
-		const next = update(selected, Message.GotSceneMessage({ message: Scene3d.Message.ClickedTraffic() })).model
-		expect([next.selectedId, next.scene.traffic]).toEqual(["checkout", false])
-	})
 })

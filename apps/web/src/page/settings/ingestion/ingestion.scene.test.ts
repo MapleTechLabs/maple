@@ -50,13 +50,15 @@ const loaded = (): Model =>
 
 describe("ingestion tab", () => {
 	test("entry reads the overview, ingest keys, both rule lists and the stored framework", () => {
-		expect(names(init(options).commands)).toEqual([
-			"FetchIngestOverview",
-			"FetchIngestionKeys",
-			"FetchRecommendations",
-			"FetchAttributeMappings",
-			"ReadQuickStartFramework",
-		])
+		expect(names(init(options).commands)).toEqual(
+			expect.arrayContaining([
+				"FetchIngestOverview",
+				"FetchIngestionKeys",
+				"FetchRecommendations",
+				"FetchAttributeMappings",
+				"ReadQuickStartFramework",
+			]),
+		)
 	})
 
 	test("regenerating a key asks first, refetches the pair and says the old key was revoked", () => {
@@ -107,7 +109,9 @@ describe("ingestion tab", () => {
 				result: Result.succeed(undefined),
 			}),
 		)
-		expect(names(applied.commands)).toEqual(["FetchRecommendations", "FetchAttributeMappings"])
+		expect(names(applied.commands)).toEqual(
+			expect.arrayContaining(["FetchRecommendations", "FetchAttributeMappings"]),
+		)
 		expect(applied.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "success",

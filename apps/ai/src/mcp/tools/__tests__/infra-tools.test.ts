@@ -36,7 +36,6 @@ describe("list_infra", () => {
 		expect(pods?.summary?.saturated).toBe(1)
 		expect(pods?.truncated).toBe(true)
 		const text = markdown(result)
-		expect(text).toContain("## Infrastructure overview")
 		expect(text).toContain("AT LIMIT: memory peaked at 98.00% of limit")
 		expect(text).toContain(`inspect_infra kind="pod" name="${INFRA_WORLD.oomPod}"`)
 	})

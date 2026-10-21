@@ -37,10 +37,8 @@ const CONNECTOR_ORIGIN: ChatTurnOrigin = {
 
 describe("AGENTS", () => {
 	it("names an agent for every wire mode", () => {
-		// `chatModeFromSessionId` is on the wire and the client derives from it, so a mode without a
-		// matching agent is a runtime `undefined` in the middle of a turn.
-		// `AGENTS` is keyed by `ChatMode`, so this is now a belt to the compiler's braces: it also
-		// pins that the record's key IS the agent's name, which `agentForSession` relies on.
+		// `AGENTS` is keyed by `ChatMode`, so the compiler covers the keys; this pins that the record's
+		// key IS the agent's name, which `agentForSession` relies on.
 		for (const mode of ChatMode.literals) {
 			assert.equal(AGENTS[mode].name, mode)
 		}

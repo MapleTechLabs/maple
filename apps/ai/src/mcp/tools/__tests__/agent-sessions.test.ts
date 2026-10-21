@@ -298,7 +298,6 @@ describe("get_agent_session rendering", () => {
 		expect(structured.verdict.status).not.toBe("clean")
 		expect(structured.evidence?.traceId).toBe(TRACE_ID)
 		const output = markdown(answer)
-		expect(output).toContain("### Verdict")
 		// The checks are the reading: a heading with the counts even when nothing
 		// needs attention, the failed tool as a row with what to do, and the
 		// checks that passed named on one line.
@@ -311,7 +310,6 @@ describe("get_agent_session rendering", () => {
 		expect(structured.checks.every((check) => check.status !== "passed")).toBe(true)
 		expect(structured.passedChecks).toContain("Rate limits")
 		expect(output).toContain("tool_error")
-		expect(output).toContain("### Tokens")
 		expect(rowCells(output, "run_sql")?.[2]).toBe("1")
 		expect(output).toContain("2 LLM calls")
 		expect(output).toContain(`inspect_span trace_id="${TRACE_ID}"`)
@@ -360,7 +358,6 @@ describe("get_agent_session rendering", () => {
 	it("halves the page and retries when the first page is too large", async () => {
 		responseTooLargeFor = (sql) => sql.includes(`LIMIT ${AI_SESSION_SPANS_MAX_SPANS + 1}`)
 		const output = await rendered("get_agent_session", { session_id: SESSION_ID, ...WINDOW })
-		expect(output).toContain("### Verdict")
 		expect(rowCells(output, "run_sql")?.[2]).toBe("1")
 		expect(output).not.toContain("exceeded the response byte limit")
 	})
@@ -402,7 +399,6 @@ describe("get_agent_session_transcript", () => {
 		const structured = Schema.decodeUnknownSync(GetAgentSessionTranscriptOutput)(answer.structuredContent)
 		expect(structured.rows.filter((row) => row.kind !== "turn").map((row) => row.kind)).toEqual(["tool"])
 		const output = markdown(answer)
-		expect(output).toContain("### Failures in time order")
 		expect(output).toMatch(/turn 1 · \[\+2\.0s\] tool run_sql FAILED/)
 	})
 

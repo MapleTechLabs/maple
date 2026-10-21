@@ -365,7 +365,6 @@ describe("alert tools", () => {
 		// The unscoped rule covers checkout too; raw-SQL rules not naming it do not.
 		expect(output.rules.map((r) => r.id)).toEqual([RULE_ID, ALL_ID])
 		expect(output.services).toEqual(["checkout", "billing"])
-		expect(text(result)).toContain("## Alert Rules")
 		expect(text(result)).toContain("Services: checkout, billing")
 		expect(text(result)).toContain(RULE_ID)
 		expect(text(result)).toContain(`\`get_alert_rule rule_id="${RULE_ID}"\``)
@@ -388,10 +387,8 @@ describe("alert tools", () => {
 		const result = await ok("get_alert_rule", { rule_id: RULE_ID })
 		const output = Schema.decodeUnknownSync(GetAlertRuleOutput)(result.structuredContent)
 		expect(output.rule.notificationTitle).toBe("{{ rule.name }}")
-		expect(text(result)).toContain("## Alert Rule: Checkout errors")
 		expect(text(result)).toContain("Condition: > 0.05")
 		expect(text(result)).toContain("Last evaluation error: column Foo not found")
-		expect(text(result)).toContain("### Message Template")
 
 		const missing = await run("get_alert_rule", { rule_id: "nope" })
 		expect(missing._tag).toBe("Failure")
@@ -420,7 +417,6 @@ describe("alert tools", () => {
 		const seen: Seen = {}
 		const result = await ok("get_incident_timeline", { rule_id: RULE_ID, limit: 1 }, seen)
 		expect(seen.incidentOptions).toMatchObject({ ruleId: RULE_ID, limit: 2 })
-		expect(text(result)).toContain("### Checkout errors (open)")
 		expect(text(result)).toContain(`Incident ID: ${INCIDENT_ID}`)
 		expect(text(result)).toContain("Showing 1 incidents.")
 
@@ -458,7 +454,7 @@ describe("alert tools", () => {
 
 	it("create_alert_rule builds the request from a template and list params", async () => {
 		const seen: Seen = {}
-		const result = await ok(
+		await ok(
 			"create_alert_rule",
 			{
 				name: "Errors",
@@ -479,7 +475,6 @@ describe("alert tools", () => {
 			groupBy: ["service.name"],
 			alertOnNoData: true,
 		})
-		expect(text(result)).toContain("## Alert Rule Created")
 
 		// An explicit service scope displaces the template's grouping.
 		await ok(

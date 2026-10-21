@@ -201,6 +201,7 @@ describe("sql catalog", () => {
 		expect(annual.length).toBeGreaterThan(0)
 		for (const entry of annual) {
 			// Always spliced, never a single-tier read.
+			// oxlint-disable-next-line test-slop/no-sql-text-pin -- the union is the raw/rollup splice
 			expect(entry.sql, entry.id).toContain("UNION ALL")
 			expect(entry.sql, entry.id).toContain("service_overview_spans")
 

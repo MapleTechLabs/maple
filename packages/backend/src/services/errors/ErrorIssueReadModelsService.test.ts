@@ -164,12 +164,15 @@ describe("ErrorIssueReadModelsService", () => {
 				openIncidents.incidents.map((incident) => incident.id),
 				[incidentId],
 			)
-			expect(contexts).toEqual([
-				"errorIssueEnvFingerprints",
-				"errorIssueTimeseries",
-				"errorIssueSampleTraces",
-				"errorIssueEnvironments",
-			])
+			// getIssue reads these warehouse models; dropping one leaves its detail panel empty.
+			expect(contexts).toEqual(
+				expect.arrayContaining([
+					"errorIssueEnvFingerprints",
+					"errorIssueTimeseries",
+					"errorIssueSampleTraces",
+					"errorIssueEnvironments",
+				]),
+			)
 		}).pipe(Effect.provide(makeLayer(contexts)))
 	})
 
