@@ -9,6 +9,8 @@ import type { CancellationReason, CancellationSnapshot, CancellationVolume } fro
 import { WINDOW_DAYS } from "./snapshot"
 
 export interface CancellationSignal {
+	/** The part of the snapshot the sentence is about; the report files it under that stat. */
+	readonly topic: "plan" | "telemetry" | "visits" | "billing" | "setup" | "members"
 	/** `concern` argues the org was already gone; `healthy` argues it was not. */
 	readonly tone: "concern" | "healthy" | "neutral"
 	readonly text: string
@@ -87,38 +89,50 @@ export const formatGB = (value: number): string =>
 
 const days = (count: number): string => (count === 1 ? "1 day" : `${count} days`)
 
-const dollars = (value: number): string => `$${value.toFixed(value % 1 === 0 ? 0 : 2)}`
+export const dollars = (value: number): string => `$${value.toFixed(value % 1 === 0 ? 0 : 2)}`
 
 /** The snapshot as the sentences a person would pick out of it. Unreadable sections say nothing. */
 export const deriveSignals = (snapshot: CancellationSnapshot): ReadonlyArray<CancellationSignal> => {
 	const { plan, org, ingest, visits, adoption, billing } = snapshot
 	const signals: Array<CancellationSignal> = []
-	const add = (tone: CancellationSignal["tone"], text: string) => signals.push({ tone, text })
+	const add = (topic: CancellationSignal["topic"], tone: CancellationSignal["tone"], text: string) =>
+		signals.push({ topic, tone, text })
 
-	if (plan.pastDue) add("concern", "Payment is past due")
-	if (plan.trial) add("neutral", "Cancelled during the trial")
+	if (plan.pastDue) add("plan", "concern", "Payment is past due")
+	if (plan.trial) add("plan", "neutral", "Cancelled during the trial")
 
 	if (ingest !== null) {
 		const recent = totalGB(ingest.recent)
 		const prior = totalGB(ingest.prior)
 		if (ingest.daysSinceLastData === null) {
 			add(
+				"telemetry",
 				"concern",
 				org?.everReceivedData === true ? "No telemetry in the last year" : "Never sent any telemetry",
 			)
 		} else if (ingest.daysSinceLastData >= STOPPED_AFTER_DAYS) {
 			add(
+				"telemetry",
 				"concern",
 				`Stopped sending telemetry ${days(ingest.daysSinceLastData)} ago${
 					prior > 0 ? ` (${formatGB(prior)} the month before)` : ""
 				}`,
 			)
 		} else if (prior > 0 && recent < prior * WOUND_DOWN_RATIO) {
-			add("concern", `Telemetry wound down: ${formatGB(recent)} in the last 30 days, ${formatGB(prior)} before`)
+			add(
+				"telemetry",
+				"concern",
+				`Telemetry wound down: ${formatGB(recent)} in the last 30 days, ${formatGB(prior)} before`,
+			)
 		} else if (prior > 0 && recent >= prior * 2) {
-			add("neutral", `Telemetry grew: ${formatGB(recent)} in the last 30 days, ${formatGB(prior)} before`)
+			add(
+				"telemetry",
+				"neutral",
+				`Telemetry grew: ${formatGB(recent)} in the last 30 days, ${formatGB(prior)} before`,
+			)
 		} else {
 			add(
+				"telemetry",
 				"healthy",
 				`Still sending telemetry: ${formatGB(recent)} over ${days(ingest.recent.activeDays)} of the last 30`,
 			)
@@ -127,16 +141,18 @@ export const deriveSignals = (snapshot: CancellationSnapshot): ReadonlyArray<Can
 
 	if (visits !== null) {
 		if (visits.daysSinceLastVisit === null) {
-			add("concern", "Nobody opened the app in the last 60 days")
+			add("visits", "concern", "Nobody opened the app in the last 60 days")
 		} else if (visits.daysSinceLastVisit >= UNVISITED_AFTER_DAYS) {
-			add("concern", `Nobody opened the app in ${days(visits.daysSinceLastVisit)}`)
+			add("visits", "concern", `Nobody opened the app in ${days(visits.daysSinceLastVisit)}`)
 		} else if (visitsCollapsed(visits)) {
 			add(
+				"visits",
 				"concern",
 				`Visits fell away: in the app on ${days(visits.recent.activeDays)} of the last 30, ${visits.prior.activeDays} the month before`,
 			)
 		} else {
 			add(
+				"visits",
 				visits.recent.activeDays >= 8 ? "healthy" : "neutral",
 				`In the app on ${days(visits.recent.activeDays)} of the last 30 (${visits.prior.activeDays} the month before), up to ${visits.recent.peakDailyUsers} people a day`,
 			)
@@ -144,23 +160,29 @@ export const deriveSignals = (snapshot: CancellationSnapshot): ReadonlyArray<Can
 	}
 
 	if (billing !== null) {
-		if (billJumped(billing) && billing.lastInvoiceTotal !== null && billing.previousInvoiceTotal !== null) {
+		if (
+			billJumped(billing) &&
+			billing.lastInvoiceTotal !== null &&
+			billing.previousInvoiceTotal !== null
+		) {
 			add(
+				"billing",
 				"concern",
 				`Last invoice ${dollars(billing.lastInvoiceTotal)}, up from ${dollars(billing.previousInvoiceTotal)}`,
 			)
 		}
 		if (billing.overAllowance.length > 0) {
-			add("concern", `Past the included allowance on ${billing.overAllowance.join(", ")}`)
+			add("billing", "concern", `Past the included allowance on ${billing.overAllowance.join(", ")}`)
 		}
 	}
 
 	if (adoption !== null) {
 		const configured = adoption.dashboards + adoption.alertRules
 		if (configured === 0) {
-			add("concern", "No dashboards or alert rules set up")
+			add("setup", "concern", "No dashboards or alert rules set up")
 		} else {
 			add(
+				"setup",
 				"neutral",
 				`${adoption.dashboards} dashboards, ${adoption.alertRules} alert rules, ${adoption.integrations} integrations`,
 			)
@@ -168,10 +190,10 @@ export const deriveSignals = (snapshot: CancellationSnapshot): ReadonlyArray<Can
 	}
 
 	if (plan.tenureDays !== null && plan.tenureDays < 14) {
-		add("concern", `Subscribed for only ${days(plan.tenureDays)}`)
+		add("plan", "concern", `Subscribed for only ${days(plan.tenureDays)}`)
 	}
-	if (org?.members === 1) add("neutral", "Single-member org")
-	if (org?.supportChannel === true) add("neutral", "Has a shared support channel")
+	if (org?.members === 1) add("members", "neutral", "Single-member org")
+	if (org?.supportChannel === true) add("members", "neutral", "Has a shared support channel")
 
 	return signals
 }

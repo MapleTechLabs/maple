@@ -43,7 +43,7 @@ import type { PlanCancellation } from "@maple/backend/services/product-events/au
 import { SupportSlackClient } from "@maple/backend/services/support/SupportSlackClient"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { deriveSignals, ruleReason } from "./signals"
-import { buildCancellationMessage, type OtherOrg } from "./slack-message"
+import { buildCancellationMessage, OTHER_ORGS_SHOWN, type OrgLinks, type OtherOrg } from "./slack-message"
 import {
 	DAY_MS,
 	WINDOW_DAYS,
@@ -164,6 +164,16 @@ export class CancellationReviewService extends Context.Service<
 				onSome: (base) => `${base.replace(/\/+$/, "")}/organizations/${orgId}`,
 				onNone: () => `https://dashboard.clerk.com/last-active?path=organizations/${orgId}`,
 			})
+
+		/** `customer` is Autumn's raw customer, null when it could not be read. */
+		const orgLinks = (orgId: string, customer: unknown): OrgLinks => ({
+			clerk: clerkOrgUrl(orgId),
+			autumn: `https://app.useautumn.com/customers/${encodeURIComponent(orgId)}`,
+			stripe: Option.match(stripeCustomerIdOf(customer), {
+				onNone: () => null,
+				onSome: (customerId) => `https://dashboard.stripe.com/customers/${customerId}`,
+			}),
+		})
 
 		/** A source that could not be read is `null` in the report, never the end of it. */
 		const optional = <A, E>(name: string, read: Effect.Effect<A, E>): Effect.Effect<A | null> =>
@@ -325,7 +335,7 @@ export class CancellationReviewService extends Context.Service<
 				{ concurrency: 4 },
 			).pipe(
 				Effect.map((perPerson) => {
-					const byOrg = new Map<string, OtherOrg>()
+					const byOrg = new Map<string, Omit<OtherOrg, "links" | "billing">>()
 					for (const { org, email } of perPerson.flat()) {
 						if (org.orgId === orgId) continue
 						const seen = byOrg.get(org.orgId)
@@ -335,11 +345,42 @@ export class CancellationReviewService extends Context.Service<
 							createdAtMs: org.createdAtMs,
 							membersCount: org.membersCount,
 							sharedMembers: [...(seen?.sharedMembers ?? []), email],
-							clerkUrl: clerkOrgUrl(org.orgId),
 						})
 					}
 					return [...byOrg.values()].sort((a, b) => b.createdAtMs - a.createdAtMs)
 				}),
+				// Only the orgs the report shows. Every Maple org already has an Autumn
+				// customer from the app's own reads, and this never creates a Stripe one.
+				Effect.flatMap((orgs) =>
+					Effect.forEach(
+						orgs,
+						(org, index) =>
+							(index < OTHER_ORGS_SHOWN
+								? optional(
+										"otherOrgBilling",
+										autumn
+											.getOrCreateCustomer(org.orgId, { expand: [] })
+											.pipe(Effect.flatMap(ensureOk)),
+									)
+								: Effect.succeed(null)
+							).pipe(
+								Effect.map((customer): OtherOrg => ({
+									...org,
+									links: orgLinks(org.orgId, customer),
+									billing:
+										customer === null
+											? null
+											: {
+													plan:
+														subscriptionsOf(customer).find(
+															isActivePlanSubscription,
+														)?.planId ?? null,
+												},
+								})),
+							),
+						{ concurrency: 3 },
+					),
+				),
 			)
 
 		/**
@@ -545,15 +586,7 @@ export class CancellationReviewService extends Context.Service<
 						orgName: org?.info.name ?? orgId,
 						contactEmail: org?.state?.email ?? null,
 						expiresAt: job.expiresAt,
-						links: {
-							clerk: clerkOrgUrl(orgId),
-							autumn: `https://app.useautumn.com/customers/${encodeURIComponent(orgId)}`,
-							stripe: Option.match(stripeCustomerIdOf(response), {
-								onNone: () => null,
-								onSome: (customerId) =>
-									`https://dashboard.stripe.com/customers/${customerId}`,
-							}),
-						},
+						links: orgLinks(orgId, response),
 						integrations,
 						otherOrgs,
 					},

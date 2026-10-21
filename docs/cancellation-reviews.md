@@ -49,8 +49,13 @@ A section that cannot be read is `null` and named in the report. Only the region
 Autumn customer read are required.
 
 The report also links the org in Clerk, Stripe and Autumn, lists its integrations
-(`IntegrationInventoryService`) and the other Clerk orgs its members (the first 10) belong to.
-These are shown only, never stored or used by the rules.
+(`IntegrationInventoryService`) and the other Clerk orgs its members (the first 10) belong to,
+each with its plan and links from one Autumn read per org shown. These are shown only, never
+stored or used by the rules.
+
+Each snapshot section is one stat in the report; its signal sentences only colour it (red or
+green, nothing for neutral). Sentences about a section with no stat, such as a past-due payment,
+are listed under the reason.
 
 ## How the reason is decided
 
