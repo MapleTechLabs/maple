@@ -7,6 +7,7 @@ import {
 	HazelIntegrationStatus,
 	RailwayIntegrationStatus,
 	ScrapeTargetId,
+	SupabaseIntegrationStatus,
 	VcsRepositoryId,
 } from "@maple/domain/http"
 import {
@@ -21,7 +22,7 @@ import {
 	V2ScrapeTarget,
 	V2ScrapeTargetCheck,
 } from "@maple/domain/http/v2"
-import { ChatWorkspaceId, GcpConnectorId, GcpLogRuntime } from "@maple/domain/primitives"
+import { ChatWorkspaceId, GcpConnectorId, GcpLogRuntime, SupabaseProjectRef } from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/load-failure"
@@ -45,6 +46,7 @@ export const StatusName = Schema.Literals([
 	"planetscale",
 	"planetscaleDatabases",
 	"gcp",
+	"supabase",
 	"hazel",
 	"github",
 	"chat",
@@ -64,6 +66,7 @@ export const Message = defineMessageUnion({
 	CompletedLoadPlanetscale: result(V2PlanetScaleIntegration),
 	CompletedLoadPlanetscaleDatabases: result(V2PlanetScaleDatabaseList),
 	CompletedLoadGcp: result(V2GcpIntegration),
+	CompletedLoadSupabase: result(SupabaseIntegrationStatus),
 	CompletedLoadHazel: result(HazelIntegrationStatus),
 	CompletedLoadGithub: result(GithubIntegrationStatus),
 	CompletedLoadChat: result(V2ChatConnectorList),
@@ -179,6 +182,15 @@ export const Message = defineMessageUnion({
 	ClickedRailwayRotateCancel: {},
 	/** Every 15 s while environments wait for their first sync. */
 	TickedRailwaySettle: {},
+	ClickedSupabaseSync: {},
+	CompletedSupabaseSync: { failure: Schema.NullOr(LoadFailure) },
+	/** A project row's "Collect metrics" switch. */
+	ToggledSupabaseMetrics: { ref: SupabaseProjectRef, enabled: Schema.Boolean },
+	CompletedSupabaseMetrics: {
+		ref: SupabaseProjectRef,
+		enabled: Schema.Boolean,
+		failure: Schema.NullOr(LoadFailure),
+	},
 	CompletedFetchOrganizations: result(V2PlanetScaleOrganizationList),
 	CompletedFetchWebhookConfig: result(V2PlanetScaleWebhookConfig),
 	ClickedChangeOrganization: {},

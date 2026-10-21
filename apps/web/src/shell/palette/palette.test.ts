@@ -66,7 +66,7 @@ describe("command palette", () => {
 			serviceNames.slice(0, 5),
 		)
 		expect(browsed.filter((entry) => entry.group === "Integrations").map((entry) => entry.title)).toEqual(
-			["Connect Google Cloud", "Connect Railway"],
+			["Connect Google Cloud", "Connect Railway", "Connect Supabase"],
 		)
 	})
 

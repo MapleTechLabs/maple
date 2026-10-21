@@ -4116,3 +4116,162 @@ SELECT
         ORDER BY weightedSpanCount DESC
         LIMIT 25
         FORMAT JSON
+
+-- builder:supabase-infra:supabaseProjectCpuSQL:default
+SELECT
+          buckets.projectRef AS projectRef,
+          ifNull(ifNotFinite(greatest(1 - sum(buckets.idle) / sum(buckets.total), 0), 0), 0) AS cpuAvg,
+          ifNull(ifNotFinite(maxIf(1 - buckets.idle / buckets.total, buckets.total > 0), 0), 0) AS cpuMax
+        FROM (SELECT
+          deltas.projectRef AS projectRef,
+          toStartOfInterval(deltas.t, INTERVAL 300 SECOND) AS bucket,
+          sumIf(deltas.delta, deltas.mode = 'idle') AS idle,
+          sum(deltas.delta) AS total
+        FROM (SELECT
+          metrics_sum.Attributes['supabase_project_ref'] AS projectRef,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metricName,
+          metrics_sum.Attributes['mode'] AS mode,
+          metrics_sum.Attributes['device'] AS device,
+          multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName = 'node_cpu_seconds_total'
+          AND metrics_sum.Attributes['supabase_project_ref'] != ''
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 120 SECOND
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00') AS deltas
+        WHERE deltas.t >= '2026-01-01 10:30:00'
+        GROUP BY projectRef, bucket) AS buckets
+        GROUP BY projectRef
+        ORDER BY projectRef ASC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:supabase-infra:supabaseProjectGaugeSeriesSQL:default
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          ifNull(ifNotFinite(avgIf(1 - points.memAvailable / points.memTotal, (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryAvg,
+          ifNull(ifNotFinite(maxIf(1 - points.memAvailable / points.memTotal, (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryMax,
+          max(points.memTotal) AS memoryTotal,
+          ifNull(ifNotFinite(maxIf(1 - points.diskAvailable / points.diskSize, (points.diskSize > 0 AND points.diskAvailableSamples > 0)), 0), 0) AS diskUsed,
+          max(points.diskSize) AS diskSize,
+          maxIf(points.dbSize, points.dbSizeSamples > 0) AS dbSize,
+          ifNull(ifNotFinite(avgIf(points.backends, points.backendSamples > 0), 0), 0) AS connectionsAvg,
+          maxIf(points.backends, points.backendSamples > 0) AS connectionsMax,
+          ifNull(ifNotFinite(avgIf(points.poolerClients, points.poolerSamples > 0), 0), 0) AS poolerClients,
+          max(points.authUsers) AS authUsers,
+          sum(points.authSamples) AS authSamples,
+          maxIf(points.postgrestPoolMax, points.postgrestPoolMaxSamples > 0) AS postgrestPoolMax,
+          ifNull(ifNotFinite(avgIf(greatest(points.postgrestPoolMax - points.postgrestPoolAvailable, 0), (points.postgrestPoolMaxSamples > 0 AND points.postgrestPoolAvailableSamples > 0)), 0), 0) AS postgrestPoolInUse,
+          maxIf(points.postgrestPoolWaiting, points.postgrestPoolWaitingSamples > 0) AS postgrestPoolWaiting
+        FROM (SELECT
+          metrics_gauge.Attributes['supabase_project_ref'] AS projectRef,
+          metrics_gauge.TimeUnix AS t,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'node_memory_MemTotal_bytes') AS memTotal,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'node_memory_MemAvailable_bytes') AS memAvailable,
+          countIf(metrics_gauge.MetricName = 'node_memory_MemAvailable_bytes') AS memAvailableSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'node_filesystem_size_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskSize,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'node_filesystem_avail_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskAvailable,
+          countIf((metrics_gauge.MetricName = 'node_filesystem_avail_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskAvailableSamples,
+          sumIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'pg_database_size_bytes' AND metrics_gauge.Attributes['datname'] NOT IN ('template0', 'template1'))) AS dbSize,
+          countIf((metrics_gauge.MetricName = 'pg_database_size_bytes' AND metrics_gauge.Attributes['datname'] NOT IN ('template0', 'template1'))) AS dbSizeSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backends,
+          countIf(metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backendSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerClients,
+          countIf(metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authUsers,
+          countIf((metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMax,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMaxSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_available') AS postgrestPoolAvailable,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_available') AS postgrestPoolAvailableSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaiting,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaitingSamples
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('node_memory_MemTotal_bytes', 'node_memory_MemAvailable_bytes', 'node_filesystem_size_bytes', 'node_filesystem_avail_bytes', 'pg_database_size_bytes', 'pg_stat_database_num_backends', 'pgbouncer_used_clients', 'auth_users_user_count', 'pgrst_db_pool_max', 'pgrst_db_pool_available', 'pgrst_db_pool_waiting')
+          AND metrics_gauge.Attributes['supabase_project_ref'] = 'abcdefghijklmnopqrst'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+        GROUP BY projectRef, t) AS points
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:supabase-infra:supabaseProjectGaugesSQL:default
+SELECT
+          points.projectRef AS projectRef,
+          ifNull(ifNotFinite(avgIf(1 - points.memAvailable / points.memTotal, (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryAvg,
+          ifNull(ifNotFinite(maxIf(1 - points.memAvailable / points.memTotal, (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryMax,
+          max(points.memTotal) AS memoryTotal,
+          ifNull(ifNotFinite(maxIf(1 - points.diskAvailable / points.diskSize, (points.diskSize > 0 AND points.diskAvailableSamples > 0)), 0), 0) AS diskUsedMax,
+          max(points.diskSize) AS diskSize,
+          maxIf(points.dbSize, points.dbSizeSamples > 0) AS dbSize,
+          ifNull(ifNotFinite(avgIf(points.backends, points.backendSamples > 0), 0), 0) AS connectionsAvg,
+          maxIf(points.backends, points.backendSamples > 0) AS connectionsMax,
+          max(points.t) AS lastSeen
+        FROM (SELECT
+          metrics_gauge.Attributes['supabase_project_ref'] AS projectRef,
+          metrics_gauge.TimeUnix AS t,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'node_memory_MemTotal_bytes') AS memTotal,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'node_memory_MemAvailable_bytes') AS memAvailable,
+          countIf(metrics_gauge.MetricName = 'node_memory_MemAvailable_bytes') AS memAvailableSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'node_filesystem_size_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskSize,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'node_filesystem_avail_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskAvailable,
+          countIf((metrics_gauge.MetricName = 'node_filesystem_avail_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskAvailableSamples,
+          sumIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'pg_database_size_bytes' AND metrics_gauge.Attributes['datname'] NOT IN ('template0', 'template1'))) AS dbSize,
+          countIf((metrics_gauge.MetricName = 'pg_database_size_bytes' AND metrics_gauge.Attributes['datname'] NOT IN ('template0', 'template1'))) AS dbSizeSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backends,
+          countIf(metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backendSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerClients,
+          countIf(metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authUsers,
+          countIf((metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMax,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMaxSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_available') AS postgrestPoolAvailable,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_available') AS postgrestPoolAvailableSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaiting,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaitingSamples
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('node_memory_MemTotal_bytes', 'node_memory_MemAvailable_bytes', 'node_filesystem_size_bytes', 'node_filesystem_avail_bytes', 'pg_database_size_bytes', 'pg_stat_database_num_backends', 'pgbouncer_used_clients', 'auth_users_user_count', 'pgrst_db_pool_max', 'pgrst_db_pool_available', 'pgrst_db_pool_waiting')
+          AND metrics_gauge.Attributes['supabase_project_ref'] != ''
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+        GROUP BY projectRef, t) AS points
+        GROUP BY projectRef
+        ORDER BY projectRef ASC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:supabase-infra:supabaseProjectRateSeriesSQL:default
+SELECT
+          toStartOfInterval(deltas.t, INTERVAL 300 SECOND) AS bucket,
+          ifNull(ifNotFinite(greatest(1 - sumIf(deltas.delta, (deltas.metricName = 'node_cpu_seconds_total' AND deltas.mode = 'idle')) / sumIf(deltas.delta, deltas.metricName = 'node_cpu_seconds_total'), 0), 0), 0) AS cpu,
+          ifNull(ifNotFinite(sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_xact_commit_total') / min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS commitsPerSecond,
+          ifNull(ifNotFinite(sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_xact_rollback_total') / min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS rollbacksPerSecond,
+          sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_blks_hit_total') / nullIf(sumIf(deltas.delta, deltas.metricName IN ('pg_stat_database_blks_hit_total', 'pg_stat_database_blks_read_total')), 0) AS cacheHitRatio,
+          ifNull(ifNotFinite(sumIf(deltas.delta, (deltas.metricName = 'node_network_receive_bytes_total' AND deltas.device != 'lo')) / min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS networkRxPerSecond,
+          ifNull(ifNotFinite(sumIf(deltas.delta, (deltas.metricName = 'node_network_transmit_bytes_total' AND deltas.device != 'lo')) / min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS networkTxPerSecond,
+          ifNull(ifNotFinite(sumIf(deltas.delta, deltas.metricName = 'node_disk_read_bytes_total') / min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS diskReadPerSecond,
+          ifNull(ifNotFinite(sumIf(deltas.delta, deltas.metricName = 'node_disk_written_bytes_total') / min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))), 0), 0) AS diskWritePerSecond
+        FROM (SELECT
+          metrics_sum.Attributes['supabase_project_ref'] AS projectRef,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metricName,
+          metrics_sum.Attributes['mode'] AS mode,
+          metrics_sum.Attributes['device'] AS device,
+          multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('node_cpu_seconds_total', 'pg_stat_database_xact_commit_total', 'pg_stat_database_xact_rollback_total', 'pg_stat_database_blks_hit_total', 'pg_stat_database_blks_read_total', 'node_network_receive_bytes_total', 'node_network_transmit_bytes_total', 'node_disk_read_bytes_total', 'node_disk_written_bytes_total')
+          AND metrics_sum.Attributes['supabase_project_ref'] = 'abcdefghijklmnopqrst'
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 120 SECOND
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00') AS deltas
+        WHERE deltas.t >= '2026-01-01 10:30:00'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON

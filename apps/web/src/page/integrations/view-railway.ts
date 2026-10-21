@@ -1,18 +1,14 @@
 import type { RailwayIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
-import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
 import { badge } from "../../ui/display"
-import { errorState } from "../../ui/error-state"
-import { item, itemContent, itemMedia } from "../../ui/item"
-import { skeleton } from "../../ui/skeleton"
 import { spinner } from "../../ui/spinner"
 import { truncatedText } from "../../ui/truncated-text"
 import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
 import { relativeTime } from "../kit/relative-time"
-import { integrationIconPlate, RAILWAY_ACCENT } from "../infra-integrations/kit/integration-empty"
+import { RAILWAY_ACCENT } from "../infra-integrations/kit/integration-empty"
 import {
 	railwayConnectCard,
 	railwayTokenForm,
@@ -21,7 +17,14 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { unsyncedEnvironments } from "./railway"
-import { disconnectDialog } from "./view-disconnect"
+import {
+	connectedIntegrationCard,
+	disconnectButton,
+	integrationActions,
+	integrationAlertNotice,
+	integrationErrorNotice,
+	integrationStatusCard,
+} from "./view-integration-card"
 
 // `RailwayIntegrationCard`.
 
@@ -109,135 +112,78 @@ const connectedView = (h: H, model: Model, status: RailwayIntegrationStatus, tim
 	const card = model.railwayCard
 	const failing = status.environments.filter((environment) => environment.lastError !== null).length
 	const queued = status.authFailed ? 0 : unsyncedEnvironments(status)
-	return h.div(
-		[h.Class("flex flex-col gap-4")],
-		[
-			item(h, { variant: "card", className: "items-start gap-4 p-4" }, [
-				itemMedia(h, {}, [integrationIconPlate(h, BRAND)]),
-				itemContent(
-					h,
-					[
-						h.div(
-							[h.Class("flex flex-wrap items-center gap-2")],
-							[
-								h.h3([h.Class("text-sm font-semibold")], ["Railway"]),
-								status.authFailed
-									? badge(h, { variant: "crit" }, ["Token rejected"])
-									: failing > 0
-										? badge(h, { variant: "warn" }, ["Needs attention"])
-										: badge(h, { variant: "ok" }, ["Connected"]),
-							],
-						),
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							[
-								status.workspaceNames !== null && status.workspaceNames !== ""
-									? `${status.workspaceNames} · `
-									: "",
-								countLabel(status.environments.length, "environment"),
-								...(status.lastSyncedAt !== null
-									? [
-											" · ",
-											relativeTime(h, {
-												value: status.lastSyncedAt,
-												nowMs: model.nowMs,
-												timeZone,
-												prefix: "synced",
-											}),
-										]
-									: []),
-								queued > 0 ? ` · ${queued} waiting for their first sync` : "",
-							],
-						),
-						...(status.authFailed
-							? [
-									h.p(
-										[h.Class("text-xs text-severity-error"), h.Role("alert")],
-										[
-											"Railway rejected the saved token, so polling is paused. Paste a new token to resume.",
-										],
-									),
-								]
-							: status.lastError !== null
-								? [
-										h.p(
-											[
-												h.Class(
-													"line-clamp-2 text-xs text-muted-foreground [overflow-wrap:anywhere]",
-												),
-												h.Title(status.lastError),
-											],
-											["Last error: ", status.lastError],
-										),
-									]
-								: []),
-						card.isRotating || status.authFailed
-							? railwayTokenForm(h, card.connect, formConfig("rotate", !status.authFailed))
-							: h.div(
-									[h.Class("flex flex-wrap gap-2")],
-									[
-										linkButton(
-											h,
-											{
-												size: "sm",
-												href: hrefOf(AppRoute.InfraRailway({ search: {} })),
-											},
-											["View metrics"],
-										),
-										button(
-											h,
-											{
-												size: "sm",
-												variant: "outline",
-												isLoading: card.isSyncing,
-												attributes: [h.OnClick(Message.ClickedRailwaySync())],
-											},
-											["Sync now"],
-										),
-										button(
-											h,
-											{
-												size: "sm",
-												variant: "outline",
-												attributes: [h.OnClick(Message.ClickedRailwayRotate())],
-											},
-											["Replace token"],
-										),
-										button(
-											h,
-											{
-												size: "sm",
-												variant: "outline",
-												isLoading: model.disconnect.isPending,
-												attributes: [h.OnClick(Message.ClickedDisconnect())],
-											},
-											["Disconnect"],
-										),
-									],
-								),
-						disconnectDialog(h, model, "railway"),
-					],
-					"gap-2",
-				),
-			]),
-			environmentsTable(h, model, status, timeZone),
+	return connectedIntegrationCard(h, model, {
+		integration: "railway",
+		brand: BRAND,
+		title: "Railway",
+		badge: status.authFailed
+			? badge(h, { variant: "crit" }, ["Token rejected"])
+			: failing > 0
+				? badge(h, { variant: "warn" }, ["Needs attention"])
+				: badge(h, { variant: "ok" }, ["Connected"]),
+		summary: [
+			status.workspaceNames !== null && status.workspaceNames !== ""
+				? `${status.workspaceNames} · `
+				: "",
+			countLabel(status.environments.length, "environment"),
+			...(status.lastSyncedAt !== null
+				? [
+						" · ",
+						relativeTime(h, {
+							value: status.lastSyncedAt,
+							nowMs: model.nowMs,
+							timeZone,
+							prefix: "synced",
+						}),
+					]
+				: []),
+			queued > 0 ? ` · ${queued} waiting for their first sync` : "",
 		],
-	)
+		notice: status.authFailed
+			? integrationAlertNotice(
+					h,
+					"Railway rejected the saved token, so polling is paused. Paste a new token to resume.",
+				)
+			: status.lastError !== null
+				? integrationErrorNotice(h, "Last error: ", status.lastError)
+				: null,
+		actions:
+			card.isRotating || status.authFailed
+				? railwayTokenForm(h, card.connect, formConfig("rotate", !status.authFailed))
+				: integrationActions(h, [
+						linkButton(h, { size: "sm", href: hrefOf(AppRoute.InfraRailway({ search: {} })) }, [
+							"View metrics",
+						]),
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								isLoading: card.isSyncing,
+								attributes: [h.OnClick(Message.ClickedRailwaySync())],
+							},
+							["Sync now"],
+						),
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								attributes: [h.OnClick(Message.ClickedRailwayRotate())],
+							},
+							["Replace token"],
+						),
+						disconnectButton(h, model),
+					]),
+		table: environmentsTable(h, model, status, timeZone),
+	})
 }
 
 export const railwayCard = (h: H, model: Model, timeZone: string): Html =>
-	AsyncData.match(model.statuses.railway.data, {
-		onIdle: () => skeleton(h, "h-32 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-32 w-full rounded-md"),
-		onFailure: (failure) =>
-			errorState(h, {
-				failure,
-				title: "Failed to load the Railway integration",
-				onRetry: Message.ClickedRetryStatus({ name: "railway" }),
-			}),
-		onStale: ({ data }) => byStatus(h, model, data, timeZone),
-		onRefreshing: (data) => byStatus(h, model, data, timeZone),
-		onSuccess: (data) => byStatus(h, model, data, timeZone),
+	integrationStatusCard(h, model.statuses.railway, {
+		name: "railway",
+		failureTitle: "Failed to load the Railway integration",
+		render: (status) => byStatus(h, model, status, timeZone),
 	})
 
 const byStatus = (h: H, model: Model, status: RailwayIntegrationStatus, timeZone: string): Html =>

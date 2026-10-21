@@ -87,6 +87,17 @@ export const LoadGcpStatus = Command.define("LoadGcpStatus", {
 		}).pipe(failed(Message.FailedLoadIntegration({ orgId, integration: "gcp" }))),
 })
 
+/** Supabase counts once an organization is connected (its projects are listed even before metrics). */
+export const LoadSupabaseStatus = Command.define("LoadSupabaseStatus", {
+	args: orgArgs,
+	messages: integrationMessages,
+	execute: ({ orgId }) =>
+		Effect.gen(function* () {
+			const status = yield* (yield* IntegrationStatuses).supabase({ orgId })
+			return Message.SucceededLoadIntegration({ orgId, integration: "supabase", isConnected: status.connected })
+		}).pipe(failed(Message.FailedLoadIntegration({ orgId, integration: "supabase" }))),
+})
+
 // DASHBOARDS AND NAMESPACES
 
 /**

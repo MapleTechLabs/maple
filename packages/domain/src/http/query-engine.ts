@@ -12,6 +12,7 @@ import {
 	SpanId,
 	SpanName,
 	StatusCode,
+	SupabaseProjectRef,
 	TraceId,
 } from "../primitives"
 import {
@@ -488,6 +489,30 @@ export class RailwayInfraServiceTimeseriesRequest extends Schema.Class<RailwayIn
 
 export class RailwayInfraRowsResponse extends Schema.Class<RailwayInfraRowsResponse>(
 	"RailwayInfraRowsResponse",
+)({
+	data: Schema.Array(WireRow),
+}) {}
+
+// Supabase infrastructure page (/infra/supabase): the metrics scraped from each project, keyed by
+// the `supabase_project_ref` attribute.
+export class SupabaseInfraProjectsRequest extends Schema.Class<SupabaseInfraProjectsRequest>(
+	"SupabaseInfraProjectsRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+}) {}
+
+export class SupabaseInfraProjectTimeseriesRequest extends Schema.Class<SupabaseInfraProjectTimeseriesRequest>(
+	"SupabaseInfraProjectTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	projectRef: SupabaseProjectRef,
+}) {}
+
+export class SupabaseInfraRowsResponse extends Schema.Class<SupabaseInfraRowsResponse>(
+	"SupabaseInfraRowsResponse",
 )({
 	data: Schema.Array(WireRow),
 }) {}
@@ -2908,6 +2933,20 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("railwayInfraServiceTimeseries", "/railway-infra-service-timeseries", {
 			payload: RailwayInfraServiceTimeseriesRequest,
 			success: RailwayInfraRowsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("supabaseInfraProjects", "/supabase-infra-projects", {
+			payload: SupabaseInfraProjectsRequest,
+			success: SupabaseInfraRowsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("supabaseInfraProjectTimeseries", "/supabase-infra-project-timeseries", {
+			payload: SupabaseInfraProjectTimeseriesRequest,
+			success: SupabaseInfraRowsResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

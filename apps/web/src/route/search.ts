@@ -678,6 +678,11 @@ export const InfraRailwayServiceSearch = Schema.Struct({
 	environmentId: Schema.String,
 })
 
+// sessionTimeRangeSearchMiddleware()
+export const InfraSupabaseProjectSearch = Schema.Struct({
+	...TimeRangeSearchFields,
+})
+
 // Nested list routes
 
 // sessionTimeRangeSearchMiddleware()
@@ -748,6 +753,12 @@ export const InfraPlanetscaleSearch = Schema.Struct({
 
 // sessionTimeRangeSearchMiddleware()
 export const InfraRailwaySearch = Schema.Struct({
+	q: Schema.optional(Schema.String),
+	...TimeRangeSearchFields,
+})
+
+// sessionTimeRangeSearchMiddleware()
+export const InfraSupabaseSearch = Schema.Struct({
 	q: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
 })

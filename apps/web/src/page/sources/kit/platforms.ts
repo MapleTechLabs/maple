@@ -45,8 +45,7 @@ export const PLATFORMS = {
 	railway: { label: "Railway", description: "Service metrics", icon: "RailwayIcon" },
 	planetscale: { label: "PlanetScale", description: "Database metrics", icon: "PlanetScaleIcon" },
 	github: { label: "GitHub", description: "Repositories, CI and deploys", icon: "GithubIcon" },
-	// No Supabase brand icon yet; the generic database glyph stands in.
-	supabase: { label: "Supabase", description: "Project metrics and logs", icon: "DatabaseIcon" },
+	supabase: { label: "Supabase", description: "Project and Postgres metrics", icon: "SupabaseIcon" },
 } as const satisfies Record<SourcePlatform, PlatformMeta>
 
 export const platformMeta = (platform: SourcePlatform): PlatformMeta => PLATFORMS[platform]

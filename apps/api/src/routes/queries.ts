@@ -30,6 +30,8 @@ import type {
 	RailwayInfraServiceTimeseriesRequest,
 	ServiceCloudflareStatsRequest,
 	SpanDetailRequest,
+	SupabaseInfraProjectsRequest,
+	SupabaseInfraProjectTimeseriesRequest,
 	TraceSpanEventsRequest,
 	WorkloadInfraTimeseriesRequest,
 } from "@maple/domain/http"
@@ -293,6 +295,56 @@ const railwayInfraServiceTimeseries = defineQuery({
 			environmentId: payload.environmentId,
 			serviceId: payload.serviceId,
 		}),
+})
+
+// /infra/supabase: gauges and counter rates are separate reads (metrics_gauge, metrics_sum),
+// merged per project or bucket by the handler.
+const supabaseInfraProjectGauges = defineQuery({
+	id: "supabaseInfraProjectGauges",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseProjectGaugesSQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const supabaseInfraProjectCpu = defineQuery({
+	id: "supabaseInfraProjectCpu",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseProjectCpuSQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const supabaseProjectSeriesParams = (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+	bucketSeconds: Math.max(60, Math.floor(payload.bucketSeconds)),
+	projectRef: payload.projectRef,
+})
+
+const supabaseInfraProjectGaugeSeries = defineQuery({
+	id: "supabaseInfraProjectGaugeSeries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseProjectGaugeSeriesSQL(), supabaseProjectSeriesParams(payload, orgId)),
+})
+
+const supabaseInfraProjectRateSeries = defineQuery({
+	id: "supabaseInfraProjectRateSeries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseProjectRateSeriesSQL(), supabaseProjectSeriesParams(payload, orgId)),
 })
 
 // A small read of the hourly catalog that decides which tabs /infra/gcp shows.
@@ -907,6 +959,10 @@ export const Queries = {
 	planetscaleInfraTimeseries,
 	railwayInfraServices,
 	railwayInfraServiceTimeseries,
+	supabaseInfraProjectGauges,
+	supabaseInfraProjectCpu,
+	supabaseInfraProjectGaugeSeries,
+	supabaseInfraProjectRateSeries,
 	gcpInfraPresence,
 	gcpInfraMetrics,
 	gcpInfraTimeseries,

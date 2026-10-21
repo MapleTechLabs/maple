@@ -4,6 +4,7 @@ import { docsUrl } from "../../lib/docs"
 import { Array, Option, Schema } from "effect"
 import type { IconName } from "../../ui/icon"
 import { PLANETSCALE_COLOR } from "../infra-integrations/planetscale/notices"
+import { SUPABASE_ACCENT } from "../infra-integrations/supabase/connect"
 
 // The integration catalog's data.
 
@@ -14,6 +15,7 @@ export type IntegrationId =
 	| "planetscale"
 	| "gcp"
 	| "railway"
+	| "supabase"
 	| "warpstream"
 	| "hazel"
 	| "github"
@@ -126,6 +128,16 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: named("RailwayIcon"),
 		accent: RAILWAY_ACCENT,
 		iconClassName: "text-foreground",
+	},
+	{
+		id: "supabase",
+		category: "infrastructure",
+		isNew: true,
+		name: "Supabase",
+		description:
+			"Authorize your Supabase organization to collect CPU, memory, disk and Postgres metrics for every project.",
+		icon: named("SupabaseIcon"),
+		accent: SUPABASE_ACCENT,
 	},
 	{
 		id: "warpstream",

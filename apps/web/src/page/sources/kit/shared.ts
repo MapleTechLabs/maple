@@ -72,12 +72,6 @@ export const sourceHref = (source: V2Source, tab: SourceTab = "overview"): strin
 export const integrationPlatformOf = (source: V2Source): PullSourcePlatform | null =>
 	isPushSourcePlatform(source.platform) ? null : source.platform
 
-/** The integration whose page a source embeds; Supabase has none until its dashboard ships. */
-export const embeddedIntegrationOf = (source: V2Source): Exclude<PullSourcePlatform, "supabase"> | null => {
-	const platform = integrationPlatformOf(source)
-	return platform === null || platform === "supabase" ? null : platform
-}
-
 /** The tabs a source shows: Setup for push sources, Connection for integration sources. */
 export const tabsOf = (source: V2Source): ReadonlyArray<SourceTab> => {
 	const hidden: SourceTab = integrationPlatformOf(source) === null ? "connection" : "setup"

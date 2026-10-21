@@ -1,5 +1,6 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { HttpApiBuilder } from "effect/http-api"
+import { mergeSupabaseSeries } from "./supabase-infra-series"
 import {
 	CurrentTenant,
 	MapleInternalApi,
@@ -19,6 +20,7 @@ import {
 	ServiceApdexResponse,
 	PlanetScaleInfraTimeseriesResponse,
 	RailwayInfraRowsResponse,
+	SupabaseInfraRowsResponse,
 	GcpInfraMetricsResponse,
 	GcpInfraPresenceResponse,
 	GcpInfraSparklinesResponse,
@@ -853,6 +855,44 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						return new RailwayInfraRowsResponse({
 							data: rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
 						})
+					}),
+				)
+				// Gauges and CPU are two reads; a project with no CPU samples yet reads 0% CPU.
+				.handle("supabaseInfraProjects", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [gauges, cpu] = yield* Effect.all(
+							[
+								runQuery(Queries.supabaseInfraProjectGauges, tenant, payload),
+								runQuery(Queries.supabaseInfraProjectCpu, tenant, payload),
+							],
+							{ concurrency: 2 },
+						)
+						const cpuByRef = new Map(cpu.map((row) => [row.projectRef, row]))
+						return new SupabaseInfraRowsResponse({
+							data: gauges.map((row) => ({
+								...row,
+								cpuAvg: cpuByRef.get(row.projectRef)?.cpuAvg ?? 0,
+								cpuMax: cpuByRef.get(row.projectRef)?.cpuMax ?? 0,
+								lastSeen: DateTime.formatIso(row.lastSeen),
+							})),
+						})
+					}),
+				)
+				// Buckets present in either read; a missing half reads as zeros.
+				.handle("supabaseInfraProjectTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [gauges, rates] = yield* Effect.all(
+							[
+								runQuery(Queries.supabaseInfraProjectGaugeSeries, tenant, payload),
+								runQuery(Queries.supabaseInfraProjectRateSeries, tenant, payload),
+							],
+							{ concurrency: 2 },
+						)
+						return new SupabaseInfraRowsResponse({ data: mergeSupabaseSeries(gauges, rates) })
 					}),
 				)
 				.handle("gcpInfraPresence", ({ payload }) =>
