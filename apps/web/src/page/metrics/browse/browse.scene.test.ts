@@ -1,11 +1,10 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
-import { Command, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, label, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import { PageOutMessage, type PageContext } from "../../contract"
 import type { MetricRow } from "../shared"
-import { LoadSignalPresence, MountEmptyState } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -56,6 +55,14 @@ const loaded = (rows: ReadonlyArray<MetricRow>): Model =>
 
 const themeResolved = () =>
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
+
+const withPresence = (model: Model, status: "present" | "absent"): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedLoadSignalPresence({
+			result: Result.succeed({ metrics: { status, lastSeenMs: null } }),
+		}),
+	).model
 
 describe("metrics explorer", () => {
 	test("entry resolves the window, then asks for the type counts and the catalog", () => {
@@ -161,19 +168,19 @@ describe("metrics explorer", () => {
 		expect(pageUpdate(model, Message.ClickedView({ view: "grid" })).outMessage).toBeUndefined()
 	})
 
-	test("an empty org asks for signal presence once the empty state painted, then shows setup", () => {
+	test("an empty org shows a skeleton until presence is known, never the 'No metrics found' copy", () => {
+		expect(names(init({ search: {} }, context).commands)).toContain("LoadMetricsSignalPresence")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([])),
 			themeResolved(),
-			expectView(text("No metrics found")).toExist(),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Command.resolve(
-				LoadSignalPresence,
-				Message.CompletedLoadSignalPresence({
-					result: Result.succeed({ metrics: { status: "absent", lastSeenMs: null } }),
-				}),
-			),
+			expectView(text("No metrics found")).not.toExist(),
+			expectView(label("Loading")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withPresence(loaded([]), "absent")),
+			themeResolved(),
 			expectView(text("No metrics yet")).toExist(),
 			expectView(role("link", { name: "Set up metrics" })).toHaveAttr(
 				"href",

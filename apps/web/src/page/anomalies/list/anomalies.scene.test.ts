@@ -1,13 +1,23 @@
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2AnomalyIncident } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
-import { click, Command, expect as expectView, expectOutMessage, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	expect as expectView,
+	expectOutMessage,
+	given,
+	label,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { MeasureTabIndicator, Message as TabsMessage } from "../../../ui/tabs"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import { LoadSignalPresence, MountBody } from "./command"
 import { allIncidentsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -20,11 +30,19 @@ const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
 const NOW = Date.UTC(2026, 9, 1, 12)
 const measured = () =>
-	Mount.resolve(MeasureTabIndicator, TabsMessage.MeasuredIndicator({ rect: { left: 2, right: 115, top: 2, bottom: 2, width: 51, height: 28 } }))
-const painted = () => [
-	Mount.resolve(MountBody, Message.PaintedBody()),
-	Command.resolve(LoadSignalPresence, Message.CompletedLoadSignalPresence({ result: Result.succeed({}) })),
-]
+	Mount.resolve(
+		MeasureTabIndicator,
+		TabsMessage.MeasuredIndicator({
+			rect: { left: 2, right: 115, top: 2, bottom: 2, width: 51, height: 28 },
+		}),
+	)
+const withPresence = (model: Model, status: "present" | "absent"): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedLoadSignalPresence({
+			result: Result.succeed({ traces: { status, lastSeenMs: null } }),
+		}),
+	).model
 const iso = (agoMs: number) => new Date(NOW - agoMs).toISOString()
 
 const incident = (index: number, severity: "critical" | "warning", resolved = false) =>
@@ -66,6 +84,7 @@ const loaded = (rows: ReadonlyArray<V2AnomalyIncident>, search = {}) => {
 describe("anomalies list", () => {
 	test("entry reads the clock, the open incidents and the remembered filter sections", () => {
 		expect(names(init({ search: {} }, context).commands)).toEqual([
+			"LoadAnomaliesSignalPresence",
 			"ReadAnomaliesClock",
 			"FetchAnomalyIncidents",
 			"ReadRememberedFilterSections",
@@ -100,7 +119,6 @@ describe("anomalies list", () => {
 			{ update: pageUpdate, view },
 			given(loaded([incident(1, "critical"), incident(2, "warning")])),
 			measured(),
-			...painted(),
 			expectView(text("2 anomalies")).toExist(),
 			click(role("button", { name: /^Critical/ })),
 			expectView(role("button", { name: /^Critical/ })).toHaveAttr("aria-expanded", "false"),
@@ -113,7 +131,6 @@ describe("anomalies list", () => {
 			{ update: pageUpdate, view },
 			given(model),
 			measured(),
-			...painted(),
 			click(role("button", { name: "Live" })),
 			expectOutMessage(PageOutMessage.RequestedNavigation({ url: "/anomalies?live=false", isReplace: false })),
 		)
@@ -122,17 +139,26 @@ describe("anomalies list", () => {
 		expect(switched.model.firstPage.data._tag).toBe("Refreshing")
 	})
 
-	test("an empty org asks for presence once the body paints", () => {
-		const model = loaded([])
-		const afterPaint = pageUpdate(model, Message.PaintedBody())
-		expect(names(afterPaint.commands)).toEqual(["LoadAnomaliesSignalPresence"])
-		expect(pageUpdate(afterPaint.model, Message.PaintedBody()).commands ?? []).toHaveLength(0)
+	test("an empty list shows a skeleton until presence is known, then setup or the quiet copy", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(model),
+			given(loaded([])),
 			measured(),
-			...painted(),
+			expectView(text("No open anomalies")).not.toExist(),
+			expectView(label("Loading")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withPresence(loaded([]), "absent")),
+			measured(),
 			expectView(text("No open anomalies")).toExist(),
+			expectView(role("link", { name: "Set up tracing" })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withPresence(loaded([]), "present")),
+			measured(),
+			expectView(role("link", { name: "Create an alert rule" })).toExist(),
 		)
 	})
 
@@ -143,7 +169,6 @@ describe("anomalies list", () => {
 			{ update: pageUpdate, view },
 			given(ticked),
 			measured(),
-			...painted(),
 			expectView(text(`last seen ${formatRelativeTime(NOW - 60_000, NOW + 3 * 3_600_000)}`)).toExist(),
 		)
 	})

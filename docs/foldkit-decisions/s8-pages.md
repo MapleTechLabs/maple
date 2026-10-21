@@ -64,9 +64,11 @@ export const page = definePage(
   Fetch Commands map errors with `toLoadFailure` (the `displayError` body), so `ErrorState` renders it.
 - Blocking like `Result.all(...)`: `AsyncData.all([...])` + `matchData` → skeleton, `errorState`, data.
   `Refreshing` is legacy's `waiting` (`refreshingClass`).
-- Requests legacy only sends once a component mounts (commit lookup, signal presence for the empty
-  state) are sent from a Mount on that element, after it painted, never earlier: the behavior diff
-  counts every call, and content swapped in after first paint is part of the pixels.
+- Requests legacy only sends once a component mounts (commit lookup) are sent from a Mount on that
+  element, after it painted, never earlier: the behavior diff counts every call.
+- Signal presence is the exception: every page asks at `init` through `loadSignalPresences`
+  (`readThrough`, 30 s buckets per org), so an empty state knows absent from loading before it paints
+  and its copy never flips. The paint-triggered `MountEmptyState` path is gone.
 - Live queries: `liveQueryStream` over `OrgCollections`, Messages carry `orgId`, dropped otherwise.
 
 ```ts

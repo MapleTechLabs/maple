@@ -22,7 +22,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { replaysToolbar } from "../kit/replays-toolbar"
 import { sessionListItems } from "../kit/session-row"
 import { sessionsList, sessionsListSkeleton } from "../kit/sessions-list"
-import { MountEmptyState, VirtualizeList, WatchListEnd } from "./command"
+import { VirtualizeList, WatchListEnd } from "./command"
 import {
 	allRows,
 	collapsesLowSignal,
@@ -54,30 +54,42 @@ const toolbarStat = (h: H, value: number, label: string, hasDot = false): Html =
 const headerActions = (h: H, model: Model): Html => {
 	const facets = facetsOf(model)
 	const { search } = model
-	return h.div([h.Class("flex flex-wrap items-center gap-2")], [
-		...(facets === undefined
-			? []
-			: [
-					h.div([h.Class("hidden items-center gap-4 sm:flex")], [
-						toolbarStat(h, facets.totalSessions, "sessions"),
-						...(facets.liveSessions > 0 ? [toolbarStat(h, facets.liveSessions, "live", true)] : []),
+	return h.div(
+		[h.Class("flex flex-wrap items-center gap-2")],
+		[
+			...(facets === undefined
+				? []
+				: [
+						h.div(
+							[h.Class("hidden items-center gap-4 sm:flex")],
+							[
+								toolbarStat(h, facets.totalSessions, "sessions"),
+								...(facets.liveSessions > 0
+									? [toolbarStat(h, facets.liveSessions, "live", true)]
+									: []),
+							],
+						),
 					]),
-				]),
-		linkButton(
-			h,
-			{
-				variant: "outline",
-				size: "sm",
-				href: hrefOf(
-					AppRoute.Analytics({
-						search: { startTime: search.startTime, endTime: search.endTime, timePreset: search.timePreset },
-					}),
-				),
-				attributes: [h.AriaLabel("View web analytics")],
-			},
-			[icon(h, "ChartBarHorizontalIcon"), h.span([h.Class("hidden sm:inline")], ["Analytics"])],
-		),
-	])
+			linkButton(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					href: hrefOf(
+						AppRoute.Analytics({
+							search: {
+								startTime: search.startTime,
+								endTime: search.endTime,
+								timePreset: search.timePreset,
+							},
+						}),
+					),
+					attributes: [h.AriaLabel("View web analytics")],
+				},
+				[icon(h, "ChartBarHorizontalIcon"), h.span([h.Class("hidden sm:inline")], ["Analytics"])],
+			),
+		],
+	)
 }
 
 /** `ActiveUserFilter`: the banner over the list while a user or visitor filter is set. */
@@ -161,15 +173,18 @@ const listBody = (h: H, model: Model, timeZone: string): Html =>
 		onData: () => {
 			const rows = allRows(model)
 			if (rows.length === 0)
-				return h.div([h.Class("contents"), h.OnMount(MountEmptyState())], [
-					signalEmptyState(h, {
-						signal: "sessions",
-						presence: presenceOf(model.presence, "sessions"),
-						nowMs: model.nowMs,
-						isFiltered: hasActiveFilters(model.search),
-						onClearFilters: Message.ClickedClearFilters(),
-					}),
-				])
+				return h.div(
+					[h.Class("contents")],
+					[
+						signalEmptyState(h, {
+							signal: "sessions",
+							presence: presenceOf(model.presence, "sessions"),
+							nowMs: model.nowMs,
+							isFiltered: hasActiveFilters(model.search),
+							onClearFilters: Message.ClickedClearFilters(),
+						}),
+					],
+				)
 			const items = sessionListItems(rows, {
 				collapse: collapsesLowSignal(model.search),
 				expanded: model.expandedRuns,

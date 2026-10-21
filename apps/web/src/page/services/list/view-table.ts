@@ -40,7 +40,7 @@ import {
 	resolveGroupBy,
 	type ServiceHealth,
 } from "./derive"
-import { MountEmptyState, MountTable } from "./command"
+import { MountTable } from "./command"
 import { Message } from "./message"
 import type { Model, ServiceRow } from "./model"
 import { isUnnamedService, type Overlays, rowIdOf, unnamedServiceHint, withOverlays } from "./view-overlays"
@@ -389,7 +389,7 @@ const groupHeaderRow = (
 
 const emptyState = (h: HtmlBuilder<Message>, ctx: TableContext) => {
 	const isFiltered = hasActiveServiceFilters(ctx.model.search)
-	return h.div([h.Class("contents"), h.OnMount(MountEmptyState())], [emptyStateBody(h, ctx, isFiltered)])
+	return h.div([h.Class("contents")], [emptyStateBody(h, ctx, isFiltered)])
 }
 
 const emptyStateBody = (h: HtmlBuilder<Message>, ctx: TableContext, isFiltered: boolean) => {

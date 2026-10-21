@@ -17,7 +17,7 @@ import { contextChips } from "../kit/view-composer"
 import { activeContextsOf } from "../kit/preamble"
 import { suggestionsForContexts } from "../../../components/chat/auto-contexts"
 import { DEFAULT_SUGGESTIONS } from "../page/update"
-import { MountEmptyState, MountFocusVisibleTrigger } from "./command"
+import { MountFocusVisibleTrigger } from "./command"
 import { Message, type Model, SHEET_ID } from "./model"
 
 // `GlobalChatPanel`'s sheet: Maple AI header with New chat and Open full page, the conversation.
@@ -151,7 +151,6 @@ const content = (h: HtmlBuilder<Message>, model: Model, inputs: SheetViewInputs)
 								suggestions: suggestionsForContexts([...contexts]) ?? DEFAULT_SUGGESTIONS,
 								onSelect: (text) => toConversation(model.tabId)(ConversationMessage.ClickedSuggestion({ text })),
 								tracePresence: presenceOf(model.presence, "traces"),
-								mount: MountEmptyState(),
 							}),
 						chips: contextChips(h, contexts, (id) => Message.DismissedContext({ id })),
 						scrollerMount: MountMessageScroller({ focusMessageId: null }),

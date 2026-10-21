@@ -21,7 +21,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET, footerText } from "./update"
 import { filtersRail } from "./view-filters"
-import { emptyState } from "./view-empty"
+import { emptyState, isNeverReceived } from "./view-empty"
 import { toolbar } from "./view-toolbar"
 import { VOLUME_THEME_TOKENS, volumeChart } from "./view-volume"
 
@@ -86,7 +86,8 @@ const streamArea = (
 
 const tableArea = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.firstPage.data, {
-		onEmpty: () => loadingState(h),
+		// A workspace that never sent logs gets its setup state without waiting on the stream.
+		onEmpty: () => (isNeverReceived(model) ? emptyState(h, model) : loadingState(h)),
 		onFailure: (failure) => errorState(h, { failure }),
 		onData: (page) =>
 			page.logs.length === 0

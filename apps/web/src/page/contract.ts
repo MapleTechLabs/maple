@@ -28,6 +28,8 @@ export interface PageContext {
 /** The sidebar's last-hour presence probe (`null` until it answers) and the integration statuses. */
 export interface ShellInfraSurfaces {
 	readonly presence: ReadonlyArray<InfraSurfaceLiteral> | null
+	/** The probe failed: `presence` stays `null` for good, so readers stop waiting on it. */
+	readonly isPresenceFailed: boolean
 	readonly integrations: IntegrationFlags
 }
 

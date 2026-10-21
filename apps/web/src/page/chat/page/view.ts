@@ -12,7 +12,7 @@ import { conversationView } from "../conversation/view"
 import { contextChips } from "../kit/view-composer"
 import { MountMessageScroller } from "../kit/scroller"
 import { chatEmptyState } from "../kit/view-empty"
-import { MountEmptyState, shareUrl } from "./command"
+import { shareUrl } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { activeContexts, activeTabId, composerId, subjectFor, suggestionsOf } from "./update"
@@ -56,7 +56,6 @@ const conversation = (
 						suggestions,
 						onSelect,
 						tracePresence: presenceOf(model.presence, "traces"),
-						mount: MountEmptyState(),
 					})
 				: subject._tag === "Investigation"
 					? emptyNotice(

@@ -35,7 +35,6 @@ export const Message = defineMessageUnion({
 	ClickedLoadMoreTable: {},
 	ClickedMetricCard: { metricName: Schema.String, metricType: Schema.String },
 	ClickedClearFilters: {},
-	PaintedEmptyState: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },

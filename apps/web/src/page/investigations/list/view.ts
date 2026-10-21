@@ -35,7 +35,7 @@ import { presenceOf } from "../../kit/signal-presence"
 import { severityBadge } from "../../errors/kit/severity"
 import { confidenceMeter, investigateBar, kindMarker, statusBadge } from "../kit"
 import { ROW_ATTRIBUTE } from "../clicks"
-import { MountHero, MountInvestigationRows } from "./command"
+import { MountInvestigationRows } from "./command"
 import {
 	allOf,
 	type HubView,
@@ -294,7 +294,7 @@ const HERO_SUGGESTIONS = [
 const hubHero = (h: H, model: Model): Html => {
 	const presence = presenceOf(model.presence, "traces")
 	return h.div(
-		[h.Class("mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center gap-5 py-16"), h.OnMount(MountHero())],
+		[h.Class("mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center gap-5 py-16")],
 		[
 			eyebrow(h, { className: "text-primary" }, ["Investigations"]),
 			h.header(

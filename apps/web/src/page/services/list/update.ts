@@ -304,7 +304,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		incidents: IncidentsData.Loading(),
 		hasPaintedTable: false,
 		commitMessages: Keyed.idle(),
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		...initOverlays(),
 		filterSections: FilterSections.init(),
 		timePicker: TimeRangePicker.init("services-time-range"),
@@ -314,6 +314,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(model, context, "Load"),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
@@ -410,14 +411,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.hasPaintedTable
 				? { model }
 				: followData(context)({ model: { ...model, hasPaintedTable: true } }),
-		// `useSignalPresence` mounts with the empty state, so the "unknown" copy paints first.
-		PaintedEmptyState: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),

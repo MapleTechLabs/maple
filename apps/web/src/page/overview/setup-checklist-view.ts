@@ -1,11 +1,12 @@
 import { ingestUrl } from "../../lib/services/common/ingest-url"
 import { getOnboardingSetupHint } from "../../lib/onboarding-intent"
-import { Submodel } from "foldkit"
+import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { button } from "../../ui/button"
 import { card, cardPanel } from "../../ui/card"
 import { copyableField } from "../../ui/copyable-field"
+import { errorState } from "../../ui/error-state"
 import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
 import { iconButton } from "../../ui/icon-button"
@@ -250,10 +251,22 @@ const waitingCard = (h: H, model: Model, isExpanded: boolean, framework: string,
 		"mb-4 shrink-0 border-primary/30 bg-primary/[0.02] overflow-hidden",
 	)
 
-/** `SetupChecklist`: nothing once dismissed, the celebration once connected, else the card. */
+/**
+ * `SetupChecklist`: nothing once dismissed or until the first read says whether data arrived,
+ * the read's failure if it never answered, the celebration once connected, else the card.
+ */
 const setupChecklist = (h: H, model: Model): Html => {
 	const state = model.state
 	if (state === null || !isMounted(model)) return h.empty
+	if (AsyncData.isFailure(model.services))
+		return errorState(h, {
+			failure: model.services.error,
+			variant: "inline",
+			title: "Couldn't check whether your app is sending data",
+			onRetry: Message.TickedPoll(),
+			className: "mb-4",
+		})
+	if (!AsyncData.hasData(model.services)) return h.empty
 	const first = realServices(model)[0]
 	if (first !== undefined) return celebration(h, first.serviceName)
 	return waitingCard(h, model, state.checklistExpanded, frameworkOf(state), state.qualifyAnswers.intents)

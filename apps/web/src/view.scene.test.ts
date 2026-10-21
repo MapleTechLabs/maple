@@ -2,7 +2,7 @@ import * as Animation from "@foldkit/ui/animation"
 import { OrgId } from "@maple/domain"
 import { Option, Schema } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
-import { click, Command, expect as expectView, given, Mount, role, scene } from "foldkit/scene"
+import { click, Command, expect as expectView, given, Mount, role, scene, text } from "foldkit/scene"
 import { describe, test, vi } from "vitest"
 
 // The shell's favorites listener targets `window` at import; the scene never touches it.
@@ -27,29 +27,43 @@ import { view } from "./view"
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const body = (model: Model, h: HtmlBuilder<Message>) => view(model, h).body
 
-const tracesPage = (): Model =>
-	settle({
-		route: AppRoute.Traces({ search: {} }),
-		session: Session.SignedIn({ maybeOrgId: Option.some(orgId) }),
-		clerk: ClerkPhase.Unused(),
-		signIn: SignIn.init(),
-		shell: Shell.init({ isMobile: false, theme: "light", pinnedNamespaces: {}, dashboardFavorites: [] }),
-		toasts: Toast.init("toasts"),
-		toastActions: {},
-		toastRootActions: {},
-		chatSheet: ChatSheet.init(),
-		page: null,
-		pageInstances: 0,
-		onboarding: null,
-		clerkSnapshot: null,
-		customer: initCustomer(),
-		knownToRenderApp: {},
-		preload: Preload.init(),
-		sessionTimeRange: null,
-		timeZone: "UTC",
-	}).model
+const signedIn = (): Model => ({
+	route: AppRoute.Traces({ search: {} }),
+	session: Session.SignedIn({ maybeOrgId: Option.some(orgId) }),
+	clerk: ClerkPhase.Unused(),
+	signIn: SignIn.init(),
+	shell: Shell.init({ isMobile: false, theme: "light", pinnedNamespaces: {}, dashboardFavorites: [] }),
+	toasts: Toast.init("toasts"),
+	toastActions: {},
+	toastRootActions: {},
+	chatSheet: ChatSheet.init(),
+	page: null,
+	pageInstances: 0,
+	onboarding: null,
+	clerkSnapshot: null,
+	customer: initCustomer(),
+	knownToRenderApp: {},
+	preload: Preload.init(),
+	sessionTimeRange: null,
+	timeZone: "UTC",
+})
+
+const tracesPage = (): Model => settle(signedIn()).model
 
 describe("root view", () => {
+	test("a shell route whose page is not up yet shows a page skeleton, never its route tag", () => {
+		scene(
+			{ update, view: body },
+			given(signedIn()),
+			Mount.resolve(Toast.PortalToasts, Toast.Message.CompletedPortalToasts()),
+			Mount.resolve(Toast.PortalToasts, Toast.Message.CompletedPortalToasts()),
+			Mount.resolve(MeasureSidebarOverflow, ShellMessage.MeasuredSidebarOverflow()),
+			expectView(role("main", { name: "Loading" })).toExist(),
+			expectView(text("Not ported yet")).not.toExist(),
+			expectView(role("heading", { name: "Traces" })).not.toExist(),
+		)
+	})
+
 	test("the memoized page still shows its own state: Advanced filter opens its dialog", () => {
 		scene(
 			{ update, view: body },

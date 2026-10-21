@@ -20,7 +20,9 @@ describe("chat sheet", () => {
 	test("opening reads the thread it last showed, then that conversation's history", () => {
 		const open = step(init(), Message.RequestedOpen({ viaKeyboard: false }))
 		expect(open.model.dialog.isOpen).toBe(true)
-		expect(names(open.commands)).toContain("ReadChatSheetTab")
+		expect(names(open.commands)).toEqual(
+			expect.arrayContaining(["ReadChatSheetTab", "LoadChatSheetSignalPresence"]),
+		)
 		const read = opened()
 		expect(read.model.conversation?.sessionId).toBe("org_acme:quick")
 		expect(names(read.commands)).toEqual(["LoadChatHistory"])
@@ -110,7 +112,16 @@ describe("chat sheet", () => {
 		const switched = sessionChanged(model, "org_beta")
 		expect(switched.model.dialog.isOpen).toBe(true)
 		expect(switched.model.conversation).toBeNull()
-		expect(switched.commands?.map((command) => command.args)).toEqual([{ orgId: "org_beta" }])
+		expect(switched.commands?.map((command) => [command.name, command.args])).toEqual([
+			["ReadChatSheetTab", { orgId: "org_beta" }],
+			["LoadChatSheetSignalPresence", { orgId: "org_beta" }],
+		])
+		const late = update(
+			switched.model,
+			Message.CompletedLoadPresence({ orgId: "org_acme", result: Result.succeed({}) }),
+			"org_beta",
+		)
+		expect(late.model.presence).toEqual(switched.model.presence)
 		const signedOut = sessionChanged(model, null).model
 		expect(signedOut.dialog.isOpen).toBe(false)
 		expect(signedOut.conversation).toBeNull()

@@ -49,7 +49,6 @@ export const Message = defineMessageUnion({
 	CompletedFetchBaseline: result(Schema.Array(LatencyBaseline)),
 	CompletedFetchAnomalies: result(Schema.Array(V2AnomalyServiceCount)),
 	CompletedFetchCommitMessages: result(Schema.Record(Schema.String, Schema.String)),
-	PaintedEmptyState: {},
 	PaintedTable: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	UpdatedIncidents: { orgId: Schema.String, incidents: Schema.Array(IncidentCause) },

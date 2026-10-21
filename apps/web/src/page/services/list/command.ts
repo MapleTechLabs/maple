@@ -201,18 +201,6 @@ const firstLine = (message: string): string => {
 	return (index === -1 ? message : message.slice(0, index)).trim()
 }
 
-/** The empty state is on screen: resolves after the frame that painted it. */
-export const MountEmptyState = Mount.define("MountServicesEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyState>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyState()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
-})
-
 /** Where a click in the table goes: a service link is the link's alone (the row ignores it). */
 export const tableLinkClick = (
 	click: Readonly<{ href: string | null; button: number; hasModifier: boolean }>,
@@ -255,8 +243,10 @@ export const MountTable = Mount.defineStream("MountServicesTable", {
 })
 
 export const LoadSignalPresence = Command.define("LoadSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
 /** `CopyableBadge`'s write for the commit SHA; the row navigation waits on it. */

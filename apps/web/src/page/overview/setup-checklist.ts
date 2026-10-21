@@ -1,5 +1,7 @@
 import { Schema } from "effect"
+import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
+import { LoadFailure } from "../../data/load-failure"
 import { TimeWindow } from "../../data/time-range"
 import * as CopyButton from "../../ui/copy-button"
 import * as Tabs from "../../ui/tabs"
@@ -19,6 +21,9 @@ export type Keys = typeof Keys.Type
 export const ServiceRow = Schema.Struct({ serviceName: Schema.String, spanCount: Schema.Number })
 export type ServiceRow = typeof ServiceRow.Type
 
+/** The last hour's services: unknown until the first read settles, so no card flashes first. */
+export const ServicesData = AsyncData.Schema(Schema.Array(ServiceRow), LoadFailure)
+
 export const CopyField = Schema.Literals(["endpoint", "privateKey"])
 export type CopyField = typeof CopyField.Type
 
@@ -28,8 +33,8 @@ export const Model = Schema.Struct({
 	/** `null` until the stored state was read; nothing renders before. */
 	state: Schema.NullOr(QuickStartState),
 	keys: Keys,
-	/** The last hour's overview; empty until it lands, kept when a later poll fails. */
-	services: Schema.Array(ServiceRow),
+	/** The last hour's overview; data already found is kept when a later poll fails. */
+	services: ServicesData.schema,
 	/** `useEffectiveTimeRange(.., "1h")`: snapped on entry, unsnapped after a Reload. */
 	window: Schema.NullOr(TimeWindow),
 	/** An overview read is out: a poll waits for it, so a slow answer still matches `window`. */
@@ -48,7 +53,7 @@ export const Message = defineMessageUnion({
 	SucceededLoadKeys: { publicKey: Schema.String, privateKey: Schema.String },
 	FailedLoadKeys: {},
 	SucceededLoadOverview: { window: TimeWindow, services: Schema.Array(ServiceRow) },
-	FailedLoadOverview: { window: TimeWindow },
+	FailedLoadOverview: { window: TimeWindow, failure: LoadFailure },
 	/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the card is mounted. */
 	TickedPoll: {},
 	/** A poll or a sent test event read the clock: the last hour up to now. */

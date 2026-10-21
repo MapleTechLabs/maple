@@ -10,7 +10,9 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../../charts/theme-colors"
 import { emptyMessage } from "../../../../ui/empty"
+import { errorState } from "../../../../ui/error-state"
 import { segmentedSelect } from "../../../../ui/segmented-select"
+import { skeletonList } from "../../../../ui/skeleton"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import * as Frame from "../../kit/frame"
@@ -86,8 +88,8 @@ const stats = (h: H, summary: Summary): Html =>
 
 const podsOnNode = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.pods.data, {
-		onEmpty: () => null,
-		onFailure: () => null,
+		onEmpty: () => skeletonList(h, { rows: 4, rowClassName: "h-9", label: "Loading pods" }),
+		onFailure: (failure) => errorState(h, { failure, title: "Failed to load pods on this node" }),
 		onData: (page) =>
 			page.data.length === 0
 				? emptyMessage(h, { dashed: true, className: "py-12" }, ["No pods reporting on this node in the selected window."])

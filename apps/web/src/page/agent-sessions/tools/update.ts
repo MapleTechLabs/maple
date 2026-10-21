@@ -204,7 +204,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		searchVersion: 0,
 		lastSentQuery: search.q ?? "",
 		chart: Chart.init(),
-		presence: SignalPresenceData.Idle(),
+		presence: SignalPresenceData.Loading(),
 		themeColors: null,
 		chartRuntime: { _tag: "Loading" },
 		refreshVersion: 0,
@@ -213,6 +213,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model,
 		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(search, context, "Load"),
 			Command.mapMessage(LoadChartRuntime(), (message) =>
 				message._tag === "CompletedLoadChartRuntime"
@@ -369,13 +370,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					}
 		},
 		GotSparkMessage: () => ({ model }),
-		PaintedEmptyState: () =>
-			AsyncData.isIdle(model.presence)
-				? {
-						model: { ...model, presence: SignalPresenceData.Loading() },
-						commands: [LoadSignalPresence()],
-					}
-				: { model },
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),

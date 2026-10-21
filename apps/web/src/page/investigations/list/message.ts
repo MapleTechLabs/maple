@@ -24,7 +24,6 @@ export const Message = defineMessageUnion({
 	ElapsedSearchDebounce: { generation: Schema.Number },
 	ClickedClearFilters: {},
 	ClickedRow: { id: Schema.String },
-	PaintedHero: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	GotTabsMessage: { message: Tabs.Message },
 	GotKindSelectMessage: { message: Select.Message },

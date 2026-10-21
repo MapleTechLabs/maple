@@ -186,8 +186,10 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		model,
 		commands: [
 			resolveCommand(model, context, "Load"),
-			LoadSignalPresence(),
-			Command.mapMessage(FilterSections.ReadRemembered(), (message) => Message.GotFilterSectionsMessage({ message })),
+			LoadSignalPresence({ orgId: context.orgId }),
+			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
+				Message.GotFilterSectionsMessage({ message }),
+			),
 			Command.mapMessage(LoadChartRuntime(), (message) =>
 				message._tag === "CompletedLoadChartRuntime"
 					? Message.CompletedLoadChartRuntime()

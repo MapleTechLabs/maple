@@ -1,12 +1,23 @@
 import { OrgId } from "@maple/domain"
 import { Option, Result, Schema } from "effect"
-import { click, Command, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	Command,
+	expect as expectView,
+	given,
+	label,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../charts/theme-colors"
 import { toLoadFailure } from "../../data/load-failure"
 import * as ServiceMap from "../../service-map/map/service-map"
 import { PageOutMessage, type PageContext } from "../contract"
-import { CompleteReloadSpin, FetchBundle, FetchFacets, LoadSignalPresence, MountEmptyState, ResolveWindow } from "./command"
+import { CompleteReloadSpin, FetchBundle, FetchFacets, ResolveWindow } from "./command"
 import { Message } from "./message"
 import { MapBundle, type Model } from "./model"
 import { ALL_ENVIRONMENTS, selectedEnvironment } from "./derive"
@@ -178,8 +189,6 @@ describe("service map page: requests", () => {
 			{ update: pageUpdate, view },
 			given(empty),
 			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Command.resolve(LoadSignalPresence, Message.CompletedLoadSignalPresence({ result: Result.succeed({}) })),
 			click(role("button", { name: "Reload" })),
 			Command.resolve(ResolveWindow, refreshed),
 			Command.expectHas(FetchFacets({ key: empty.facets.key ?? "", window: facetsWindow, refresh: true })),
@@ -253,22 +262,28 @@ describe("service map page: navigation", () => {
 })
 
 describe("service map page: view", () => {
-	test("an org with nothing in the window shows the empty canvas and asks for signal presence once painted", () => {
+	test("an empty window shows a skeleton until presence is known, then the setup canvas", () => {
+		expect(names(init({ search: {} }, context).commands)).toContain("LoadServiceMapSignalPresence")
 		const empty = withBundle(windowed(), EMPTY_BUNDLE)
 		scene(
 			{ update: pageUpdate, view },
 			given(empty),
-			expectView(text("service calls")).toExist(),
 			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Command.resolve(
-				LoadSignalPresence,
-				Message.CompletedLoadSignalPresence({ result: Result.succeed({}) }),
-			),
+			expectView(text("No service calls found")).not.toExist(),
+			expectView(label("Loading")).toExist(),
 		)
-		expect(names(pageUpdate(empty, Message.PaintedEmptyState()).commands)).toEqual([
-			"LoadServiceMapSignalPresence",
-		])
+		const absent = pageUpdate(
+			empty,
+			Message.CompletedLoadSignalPresence({
+				result: Result.succeed({ traces: { status: "absent", lastSeenMs: null } }),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(absent),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			expectView(text("No service calls yet")).toExist(),
+		)
 	})
 })
 

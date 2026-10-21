@@ -41,7 +41,6 @@ export const Model = Schema.Struct({
 	referrerPath: Schema.NullOr(Schema.String),
 	dismissedContexts: Schema.Array(Schema.String),
 	presence: SignalPresenceData.schema,
-	isPresenceRequested: Schema.Boolean,
 	/** The org's service names (the shared 24 h facets probe), for chat tables' service links. */
 	knownServices: Schema.Array(Schema.String),
 	isKnownServicesRequested: Schema.Boolean,

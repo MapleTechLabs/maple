@@ -13,7 +13,6 @@ import { table, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { tableSkeleton } from "../../../ui/table-skeleton"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
-import { MountEmptyState } from "./command"
 import { canWidenTimeRange, isFiltered, traceFilterChips } from "./derive"
 import { Message, type SortKey } from "./message"
 import type { Model } from "./model"
@@ -240,7 +239,7 @@ const emptyTable = (h: HtmlBuilder<Message>, model: Model): Html => {
 		[h.Class("flex-1 min-h-0 flex flex-col gap-4")],
 		[
 			h.div(
-				[h.Class("rounded-md border"), h.OnMount(MountEmptyState())],
+				[h.Class("rounded-md border")],
 				[
 					signalEmptyState(h, {
 						signal: "traces",
@@ -270,7 +269,11 @@ export const tracesTable = (
 	isMobile = false,
 ): Html =>
 	AsyncData.matchData(model.firstPage.data, {
-		onEmpty: () => loadingState(h),
+		// A workspace that never sent traces gets its setup state without waiting on the list.
+		onEmpty: () =>
+			presenceOf(model.presence, "traces").status === "absent" && !isFiltered(model.search)
+				? emptyTable(h, model)
+				: loadingState(h),
 		onFailure: (failure) => errorState(h, { failure }),
 		onData: () =>
 			allRows(model).length === 0

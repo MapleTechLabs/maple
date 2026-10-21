@@ -193,26 +193,33 @@ const MAX_ROWS = 7
 
 export type HealthListInputs = HealthOverviewInputs &
 	Readonly<{
-		/** The services empty state, with its presence-driven copy and paint Mount. */
+		/** The services empty state, with its presence-driven copy. */
 		emptyState: Html
+		/** The org never sent traces: the empty state shows without waiting on the snapshot. */
+		isNeverReceived: boolean
 	}>
 
 /** `ServiceHealthList`: up to seven rows, worst first, under the section header. */
 export const healthList = <M>(
 	h: HtmlBuilder<M>,
-	{ model, slice, nowMs, emptyState }: HealthListInputs,
+	{ model, slice, nowMs, emptyState, isNeverReceived }: HealthListInputs,
 ): Html => {
 	const data = healthData(model)
 	return AsyncData.matchData(data, {
 		onEmpty: () =>
-			section(h, "mt-4 space-y-3", false, [
-				listHeader(h, slice),
-				card(
-					h,
-					[skeletonList(h, { rows: 4, rowClassName: "h-6", gap: "2", className: "p-4" })],
-					"overflow-hidden p-0",
-				),
-			]),
+			isNeverReceived
+				? section(h, "mt-4 space-y-3", false, [
+						listHeader(h, slice),
+						card(h, [emptyState], "overflow-hidden p-0"),
+					])
+				: section(h, "mt-4 space-y-3", false, [
+						listHeader(h, slice),
+						card(
+							h,
+							[skeletonList(h, { rows: 4, rowClassName: "h-6", gap: "2", className: "p-4" })],
+							"overflow-hidden p-0",
+						),
+					]),
 		onFailure: (failure) =>
 			section(h, "mt-4 space-y-3", false, [listHeader(h, slice), errorState(h, { failure })]),
 		onData: ([snapshot, anomalies, alerts]) => {

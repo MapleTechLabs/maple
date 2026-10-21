@@ -1,6 +1,7 @@
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
+import { toLoadFailure } from "../../data/load-failure"
 import { currentWindow, TimeWindow } from "../../data/time-range"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import { QuickStartState, readQuickStartState, writeQuickStartState } from "../onboarding/quick-start-state"
@@ -47,7 +48,9 @@ export const FetchSetupOverview = Command.define("FetchSetupChecklistOverview", 
 					})),
 				}),
 			),
-			Effect.orElseSucceed(() => Message.FailedLoadOverview({ window })),
+			Effect.catch((error) =>
+				Effect.succeed(Message.FailedLoadOverview({ window, failure: toLoadFailure(error) })),
+			),
 		),
 })
 

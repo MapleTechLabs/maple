@@ -48,7 +48,6 @@ export const Message = defineMessageUnion({
 	GotFacetSelectMessage: { facet: FacetKey, message: Select.Message },
 	GotPercentileMessage: { message: ToggleGroup.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
-	PaintedEmptyState: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	GotChartMessage: { message: Chart.Message },
 	/** The table sparks: no focus or tooltip to keep. */

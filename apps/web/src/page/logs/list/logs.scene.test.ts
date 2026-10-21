@@ -16,6 +16,7 @@ import {
 import { describe, expect, test } from "vitest"
 import * as Chart from "../../../charts/chart"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
+import { toLoadFailure } from "../../../data/load-failure"
 import { requestKey } from "../../../data/request-key"
 import * as LogsStream from "../../../ui/logs/logs-stream"
 import { VirtualizeLogStream } from "../../../ui/logs/virtualize"
@@ -180,6 +181,41 @@ describe("logs list", () => {
 			expectView(role("log")).toExist(),
 			expectView(text("GET /cart/3 200")).toExist(),
 			expectView(text("Showing 100 logs, more available")).toExist(),
+		)
+	})
+
+	test("a failed volume query shows its failure instead of vanishing", () => {
+		const base = windowed()
+		const model = pageUpdate(
+			base,
+			Message.CompletedFetchVolume({
+				key: base.volume.key ?? "",
+				result: Result.fail(toLoadFailure("volume store down")),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			expectView(text(toLoadFailure("volume store down").message)).toExist(),
+		)
+	})
+
+	test("a workspace that never sent logs sees setup before the first page answers", () => {
+		const model = pageUpdate(
+			windowed(),
+			Message.CompletedLoadSignalPresence({
+				result: Result.succeed({ logs: { status: "absent", lastSeenMs: null } }),
+			}),
+		).model
+		expect(names(init({ search: {} }, context).commands)).toContain("LoadLogsSignalPresence")
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			expectView(text("No logs yet")).toExist(),
 		)
 	})
 

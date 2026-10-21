@@ -12,6 +12,7 @@ import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { delta } from "../../ui/delta"
+import { errorState } from "../../ui/error-state"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../ui/empty"
 import { icon } from "../../ui/icon"
 import { inlineCode } from "../../ui/inline-code"
@@ -99,7 +100,7 @@ const NO_CRAWLS = (h: H): ReadonlyArray<Html | string> => [
 
 export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 	const window = model.window
-	if (window === null) return h.div([], [])
+	if (window === null) return skeleton(h, "h-64 w-full")
 	const filters = filtersOf(model.search)
 	const bucketSeconds = sparkBucketSeconds(window.startTime, window.endTime)
 	const referralPoints = dataOf(model.aiReferrals)
@@ -119,53 +120,74 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 		crawlers.crawlers.every((row) => row.requests === 0)
 	if (isNoAiTraffic && !hasActiveFilters(filters)) return noAiTraffic(h)
 	const clock = { nowMs: model.nowMs, timeZone }
-	return h.div([h.Class("space-y-6")], [
-		aiKpis(h, model, referrals, previousTotals, crawlers),
-		AsyncData.matchData(model.aiReferrals.data, {
-			onEmpty: () =>
-				h.div(
-					[h.Class("grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3")],
-					CARD_PRODUCTS.map(() => skeleton(h, "h-[148px] w-full")),
-				),
-			onFailure: () => h.div([], []),
-			onData: () =>
-				h.div(
-					[h.Class("grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3")],
-					CARD_PRODUCTS.map((product, index) =>
-						aiProductCard(h, product, referrals?.get(product.id), crawls?.get(product.id), (index % 3) * 60, model.nowMs),
+	return h.div(
+		[h.Class("space-y-6")],
+		[
+			aiKpis(h, model, referrals, previousTotals, crawlers),
+			AsyncData.matchData(model.aiReferrals.data, {
+				onEmpty: () =>
+					h.div(
+						[h.Class("grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3")],
+						CARD_PRODUCTS.map(() => skeleton(h, "h-[148px] w-full")),
 					),
-				),
-		}),
-		h.div([h.Class("grid items-start gap-4 @min-[880px]/page:grid-cols-2")], [
-			referrals === undefined ? skeleton(h, "h-64 w-full") : rankingPanel(h, rankReferrals(referrals, previousTotals)),
-			AsyncData.matchData(model.aiCrawlers.data, {
-				onEmpty: () => skeleton(h, "h-64 w-full"),
-				onFailure: () => h.div([], []),
-				onData: (data) => crawlersPanel(h, data, clock),
+				onFailure: (failure) => errorState(h, { failure, title: "Failed to load AI referrals" }),
+				onData: () =>
+					h.div(
+						[h.Class("grid gap-3 @min-[560px]/page:grid-cols-2 @min-[880px]/page:grid-cols-3")],
+						CARD_PRODUCTS.map((product, index) =>
+							aiProductCard(
+								h,
+								product,
+								referrals?.get(product.id),
+								crawls?.get(product.id),
+								(index % 3) * 60,
+								model.nowMs,
+							),
+						),
+					),
 			}),
-		]),
-		h.section([h.Class("space-y-3")], [
-			sectionHeading(h, {
-				title: "What AI crawlers read",
-				hint: isVisitorFiltered ? "Crawls follow the site and page filters only" : undefined,
-			}),
-			...AsyncData.matchData(model.aiCrawlers.data, {
-				onEmpty: () => [skeleton(h, "h-32 w-full")],
-				onFailure: () => [],
-				onData: (data) => [
-					contentFormats(h, data.formats),
-					data.pages.length === 0
-						? aiPanel(h, { title: "Pages read by AI crawlers" }, [
-								aiEmpty(h, ["No page was served to an AI crawler in this window."]),
-							])
-						: (breakdownPanel(h, model, crawledPagesCard(model, data), {
-								selectedOf: (key) => (key === "pagePath" ? filters.pagePath : undefined),
-								isWaiting: false,
-							}) ?? h.div([], [])),
+			h.div(
+				[h.Class("grid items-start gap-4 @min-[880px]/page:grid-cols-2")],
+				[
+					referrals === undefined
+						? skeleton(h, "h-64 w-full")
+						: rankingPanel(h, rankReferrals(referrals, previousTotals)),
+					AsyncData.matchData(model.aiCrawlers.data, {
+						onEmpty: () => skeleton(h, "h-64 w-full"),
+						onFailure: (failure) =>
+							errorState(h, { failure, title: "Failed to load AI crawlers" }),
+						onData: (data) => crawlersPanel(h, data, clock),
+					}),
 				],
-			}),
-		]),
-	])
+			),
+			h.section(
+				[h.Class("space-y-3")],
+				[
+					sectionHeading(h, {
+						title: "What AI crawlers read",
+						hint: isVisitorFiltered ? "Crawls follow the site and page filters only" : undefined,
+					}),
+					...AsyncData.matchData(model.aiCrawlers.data, {
+						onEmpty: () => [skeleton(h, "h-32 w-full")],
+						// The crawlers panel above already shows this read's failure.
+						onFailure: () => [],
+						onData: (data) => [
+							contentFormats(h, data.formats),
+							data.pages.length === 0
+								? aiPanel(h, { title: "Pages read by AI crawlers" }, [
+										aiEmpty(h, ["No page was served to an AI crawler in this window."]),
+									])
+								: (breakdownPanel(h, model, crawledPagesCard(model, data), {
+										selectedOf: (key) =>
+											key === "pagePath" ? filters.pagePath : undefined,
+										isWaiting: false,
+									}) ?? h.div([], [])),
+						],
+					}),
+				],
+			),
+		],
+	)
 }
 
 const rankingPanel = (h: H, ranks: ReturnType<typeof rankReferrals>): Html => {

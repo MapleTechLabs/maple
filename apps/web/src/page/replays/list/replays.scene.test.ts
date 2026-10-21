@@ -1,18 +1,21 @@
 import { OrgId } from "@maple/domain"
 import { Option, Result, Schema } from "effect"
-import { Command, expect as expectView, find, given, Mount, scene, tap, text, withViewInputs } from "foldkit/scene"
+import {
+	Command,
+	expect as expectView,
+	find,
+	given,
+	label,
+	Mount,
+	scene,
+	tap,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import type { SessionRow } from "../kit/session-row"
-import {
-	FetchFacets,
-	FetchFirstPage,
-	FetchNextPage,
-	LoadSignalPresence,
-	MountEmptyState,
-	VirtualizeList,
-	WatchListEnd,
-} from "./command"
+import { FetchFacets, FetchFirstPage, FetchNextPage, VirtualizeList, WatchListEnd } from "./command"
 import { allRows } from "./derive"
 import { Message } from "./message"
 import type { Model, ReplaysFacets, ReplaysPage } from "./model"
@@ -97,6 +100,14 @@ const rowsWindow = (count: number) =>
 			scrollMargin: 0,
 		},
 	})
+
+const withPresence = (model: Model, status: "present" | "absent"): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedLoadSignalPresence({
+			result: Result.succeed({ sessions: { status, lastSeenMs: null } }),
+		}),
+	).model
 
 describe("replays list", () => {
 	test("entry resolves the window, then asks for the first page and the facets", () => {
@@ -206,17 +217,17 @@ describe("replays list", () => {
 		)
 	})
 
-	test("an empty org asks for signal presence once the empty state painted, then shows setup", () => {
+	test("an empty org shows a skeleton until presence is known, never the 'No sessions found' copy", () => {
+		expect(names(init({ search: {} }, context).commands)).toContain("LoadReplaysSignalPresence")
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(page([]))),
-			Mount.resolve(MountEmptyState, Message.PaintedEmptyState()),
-			Command.resolve(
-				LoadSignalPresence,
-				Message.CompletedLoadSignalPresence({
-					result: Result.succeed({ sessions: { status: "absent", lastSeenMs: null } }),
-				}),
-			),
+			expectView(text("No sessions found")).not.toExist(),
+			expectView(label("Loading")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withPresence(loaded(page([])), "absent")),
 			expectView(text("No sessions yet")).toExist(),
 		)
 	})

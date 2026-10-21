@@ -30,7 +30,6 @@ import {
 import { scopeRow } from "../tools-kit/scope-row"
 import { seriesChart, TOOL_CHART_TOKENS } from "../tools-kit/series-chart"
 import { facetSelect, toolFilterToolbar } from "../tools-kit/toolbar"
-import { MountEmptyState } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { bucketSecondsOf } from "./update"
@@ -148,7 +147,7 @@ const loadedView = (h: H, model: Model, options: BodyOptions, actions: Html): Ht
 			...(tabs.tools === 0
 				? [
 						h.div(
-							[h.Class("contents"), h.OnMount(MountEmptyState())],
+							[h.Class("contents")],
 							[
 								signalEmptyState(h, {
 									signal: "traces",

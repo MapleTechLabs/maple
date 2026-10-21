@@ -4,12 +4,14 @@ import { expect as expectView, given, Mount, role, scene, text, withViewInputs }
 import { describe, expect, test } from "vitest"
 import { LinkedCursorMessage, MountLinkedCursor } from "../../charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "../../charts/theme-colors"
+import { toLoadFailure } from "../../data/load-failure"
 import * as Tabs from "../../ui/tabs"
 import { PageOutMessage, type PageContext } from "../contract"
 import { DEFAULT_QUICK_START_STATE } from "../onboarding/quick-start-state"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { Message as SetupMessage } from "./setup-checklist"
+import { realServices as realServicesOf } from "./setup-checklist-update"
 import { initWith, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -44,6 +46,20 @@ const withServices = (model: Model, services: ReadonlyArray<string>): Model =>
 			}),
 		),
 	).model
+
+const failOverview = (model: Model): Model =>
+	pageUpdate(
+		model,
+		setup(
+			SetupMessage.FailedLoadOverview({
+				window: model.setup?.window ?? { startTime: "", endTime: "" },
+				failure: toLoadFailure("boom"),
+			}),
+		),
+	).model
+
+/** The card's services as the celebration reads them, `[]` while unknown. */
+const realServices = (model: Model) => (model.setup === null ? [] : realServicesOf(model.setup))
 
 const RECT = { left: 0, right: 225, top: 4, bottom: 5, width: 112, height: 32 }
 const pageMounts = [
@@ -120,8 +136,10 @@ describe("overview setup checklist", () => {
 		expect(names(polled.commands)).toEqual(["ResolveSetupChecklistPollWindow"])
 		const later = { startTime: "2026-10-01 11:05:00", endTime: "2026-10-01 12:05:00" }
 		const resolved = pageUpdate(polled.model, setup(SetupMessage.ResolvedPollWindow({ window: later })))
-		expect(resolved.commands?.map((command) => command.args)).toEqual([{ window: later, pinnedNamespace: null }])
-		expect(withServices(resolved.model, ["checkout"]).setup?.services).toEqual([
+		expect(resolved.commands?.map((command) => command.args)).toEqual([
+			{ window: later, pinnedNamespace: null },
+		])
+		expect(realServices(withServices(resolved.model, ["checkout"]))).toEqual([
 			{ serviceName: "checkout", spanCount: 10 },
 		])
 	})
@@ -131,7 +149,7 @@ describe("overview setup checklist", () => {
 		const polled = pageUpdate(reading, setup(SetupMessage.TickedPoll()))
 		expect(names(polled.commands)).toEqual([])
 		const landed = withServices(polled.model, ["checkout"])
-		expect(landed.setup?.services).toEqual([{ serviceName: "checkout", spanCount: 10 }])
+		expect(realServices(landed)).toEqual([{ serviceName: "checkout", spanCount: 10 }])
 		expect(names(pageUpdate(landed, setup(SetupMessage.TickedPoll())).commands)).toEqual([
 			"ResolveSetupChecklistPollWindow",
 		])
@@ -144,11 +162,41 @@ describe("overview setup checklist", () => {
 
 	test("a failed poll keeps the services already found", () => {
 		const found = withServices(entered(true).read.model, ["checkout"])
-		const failed = pageUpdate(
-			found,
-			setup(SetupMessage.FailedLoadOverview({ window: found.setup?.window ?? { startTime: "", endTime: "" } })),
+		const failed = failOverview(found)
+		expect(realServices(failed)).toEqual([{ serviceName: "checkout", spanCount: 10 }])
+	})
+
+	test("nothing renders until the first overview read says whether data arrived", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(entered(true).read.model),
+			...pageMounts,
+			expectView(text("Connect your app to see real data")).not.toExist(),
+			expectView(text(/We're seeing telemetry/)).not.toExist(),
 		)
-		expect(failed.model.setup?.services).toEqual([{ serviceName: "checkout", spanCount: 10 }])
+	})
+
+	test("a first overview read that fails shows the failure, not the waiting card", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(failOverview(entered(true).read.model)),
+			...pageMounts,
+			expectView(text("Couldn't check whether your app is sending data")).toExist(),
+			expectView(text("Watching for your first trace…")).not.toExist(),
+		)
+	})
+
+	test("the failure stays on screen while the next poll retries", () => {
+		const failed = failOverview(entered(true).read.model)
+		const polled = pageUpdate(failed, setup(SetupMessage.TickedPoll())).model
+		const later = { startTime: "2026-10-01 11:05:00", endTime: "2026-10-01 12:05:00" }
+		const retrying = pageUpdate(polled, setup(SetupMessage.ResolvedPollWindow({ window: later }))).model
+		scene(
+			{ update: pageUpdate, view },
+			given(retrying),
+			...pageMounts,
+			expectView(text("Couldn't check whether your app is sending data")).toExist(),
+		)
 	})
 
 	test("a stored dismissal sends none of the card's reads", () => {

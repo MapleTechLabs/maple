@@ -29,7 +29,6 @@ export const Model = Schema.Struct({
 	conversation: Schema.NullOr(Conversation.Model),
 	nowMs: Schema.Number,
 	presence: SignalPresenceData.schema,
-	isPresenceRequested: Schema.Boolean,
 	knownServices: Schema.Array(Schema.String),
 	isKnownServicesRequested: Schema.Boolean,
 	/** `readChatReferrer()` when the thread mounted, and the context chips dismissed since. */
@@ -47,7 +46,6 @@ export const init = (): Model => ({
 	conversation: null,
 	nowMs: 0,
 	presence: SignalPresenceData.Idle(),
-	isPresenceRequested: false,
 	knownServices: [],
 	isKnownServicesRequested: false,
 	referrerPath: null,
@@ -77,8 +75,7 @@ export const Message = defineMessageUnion({
 	CompletedRenameStoredTab: {},
 	/** A conversation's message, named by its thread: a previous thread's late answers are dropped. */
 	GotConversationMessage: { tabId: Schema.String, message: ConversationMessage },
-	PaintedEmptyState: {},
-	CompletedLoadPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
+	CompletedLoadPresence: { orgId: Schema.String, result: Schema.Result(SignalPresences, LoadFailure) },
 	CompletedLoadKnownServices: { services: Schema.Array(Schema.String) },
 	CompletedMountScroller: {},
 	CompletedReleaseFocus: {},

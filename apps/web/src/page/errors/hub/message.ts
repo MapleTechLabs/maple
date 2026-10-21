@@ -36,7 +36,6 @@ export const Message = defineMessageUnion({
 	CompletedFetchVolume: result(Schema.Array(VolumeRow)),
 	CompletedFetchSpark: result(Schema.Array(SparkSeries)),
 	CompletedFetchInvestigations: result(Schema.Array(V2Investigation)),
-	PaintedEmptyList: {},
 	/** The filter rail mounted (inline, or in the sheet below `lg`). */
 	MountedFilterRail: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },

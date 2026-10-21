@@ -2,7 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { icon, type IconName } from "../../../ui/icon"
-import { docsLink, signalEmptyState } from "../../kit/signal-empty-state"
+import { docsLink, presenceLoading, signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "../../kit/signal-presence"
 import { SEVERITY_LABEL } from "../kit/severity"
 import { hasErrorFilters, severityOf, viewOf } from "./derive"
@@ -90,6 +90,7 @@ export const hubEmpty = (h: H, model: Model, isNarrowedBySidebar: boolean): Html
 	const isFiltered = severity !== "all"
 	const isNarrowed = isFiltered || isNarrowedBySidebar
 	const presence = presenceOf(model.presence, "traces")
+	if (!isNarrowed && presence.status === "loading") return presenceLoading(h, "py-12")
 	if (!isNarrowed && presence.status === "absent") {
 		return signalEmptyState(h, {
 			signal: "traces",

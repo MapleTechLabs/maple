@@ -8,7 +8,7 @@ import {
 	getServiceMapPlanetScale,
 } from "@maple/web-data/warehouse/service-map"
 import { Clock, Duration, Effect, Option, Schema } from "effect"
-import { Command, Mount } from "foldkit"
+import { Command } from "foldkit"
 import { loadServicesFacets } from "../../data/services-facets-probe"
 import { toLoadFailure } from "../../data/load-failure"
 import { resolveWindow, TimeWindow } from "../../data/time-range"
@@ -252,21 +252,11 @@ export const FetchBranchStats = Command.define("FetchPlanetScaleBranchStats", {
 		),
 })
 
-/** The empty canvas is on screen: resolves after the frame that painted it. */
-export const MountEmptyState = Mount.define("MountServiceMapEmptyState", {
-	messages: [Message.PaintedEmptyState],
-	execute: () =>
-		Effect.callback<ReturnType<typeof Message.PaintedEmptyState>>((resume) => {
-			const handle = requestAnimationFrame(() =>
-				requestAnimationFrame(() => resume(Effect.succeed(Message.PaintedEmptyState()))),
-			)
-			return Effect.sync(() => cancelAnimationFrame(handle))
-		}),
-})
-
 export const LoadSignalPresence = Command.define("LoadServiceMapSignalPresence", {
+	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
-	execute: Effect.map(loadSignalPresences, (result) => Message.CompletedLoadSignalPresence({ result })),
+	execute: ({ orgId }) =>
+		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
 /** `PageRefreshProvider`: how long Reload shows its pending spinner. */

@@ -1,11 +1,10 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
-import { Command, expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import { MeasureTabIndicator, Message as TabsMessage } from "../../../ui/tabs"
 import { type PageContext, PageOutMessage } from "../../contract"
-import { LoadInvestigationsPresence, MountHero } from "./command"
 import { Message } from "./message"
 import type { Model, TriageBudget } from "./model"
 import { init, update } from "./update"
@@ -23,7 +22,12 @@ const settle = (model: Model, data: ReadonlyArray<never>) =>
 
 describe("investigations list", () => {
 	test("entry reads the clock, the first page and the triage budget", () => {
-		expect(names(init({ search: {} }, context).commands)).toEqual(["ReadInvestigationsClock", "FetchInvestigations", "FetchTriageBudget"])
+		expect(names(init({ search: {} }, context).commands)).toEqual([
+			"LoadInvestigationsPresence",
+			"ReadInvestigationsClock",
+			"FetchInvestigations",
+			"FetchTriageBudget",
+		])
 	})
 
 	test("a failed page renders the error state", () => {
@@ -35,16 +39,25 @@ describe("investigations list", () => {
 		scene({ update: pageUpdate, view }, given(failed), measured(), expectView(text("Investigations could not be loaded")).toExist())
 	})
 
-	test("an empty workspace is the first-run hero, which asks for presence once painted", () => {
+	test("an empty workspace is the first-run hero; absent traces add the setup prompt", () => {
 		const model = settle(init({ search: {} }, context).model, [])
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
-			Mount.resolve(MountHero, Message.PaintedHero()),
-			Command.resolve(LoadInvestigationsPresence, Message.CompletedLoadSignalPresence({ result: Result.succeed({}) })),
 			expectView(text("Ask, and Maple goes and finds out.")).toExist(),
+			expectView(text("Investigations read your telemetry. Send traces first.")).not.toExist(),
 		)
-		expect(names(pageUpdate(model, Message.PaintedHero()).commands)).toEqual(["LoadInvestigationsPresence"])
+		const absent = pageUpdate(
+			model,
+			Message.CompletedLoadSignalPresence({
+				result: Result.succeed({ traces: { status: "absent", lastSeenMs: null } }),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(absent),
+			expectView(text("Investigations read your telemetry. Send traces first.")).toExist(),
+		)
 	})
 
 	test("the investigate bar creates once and navigates to the new investigation", () => {
