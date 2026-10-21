@@ -22,6 +22,7 @@ const authorUrl = `https://github.com/${author.github}`;
 
 const toc = [
     { depth: 2, slug: "model", text: "The pricing model" },
+    { depth: 3, slug: "user-types", text: "User types" },
     { depth: 2, slug: "plans", text: "Plans" },
     { depth: 3, slug: "standard-ceiling", text: "Standard's five-user limit" },
     { depth: 3, slug: "terms", text: "Pay-as-you-go or commit" },
@@ -29,7 +30,7 @@ const toc = [
     { depth: 3, slug: "past-100-gb", text: "Past 100 GB" },
     { depth: 3, slug: "free-trial", text: "Free trial" },
     { depth: 2, slug: "rates", text: "User types and data rates" },
-    { depth: 3, slug: "user-types", text: "User types" },
+    { depth: 3, slug: "counting", text: "How users are counted" },
     { depth: 3, slug: "data-options", text: "Original Data or Data Plus" },
     { depth: 3, slug: "compute", text: "Compute pricing" },
     { depth: 2, slug: "example", text: "Cost example" },
@@ -71,7 +72,7 @@ const maple = estimateMaple("new-relic", { fullUsers: 12, dataVolume: dataGb });
 const scenarios = [
     {
         label: "A",
-        title: "12 full platform users, Pro annual",
+        title: "12 full platform users, Pro with a 1-year commitment",
         total: allFull.total,
         parts: [
             { meter: meters.full, value: allFullUsers.value, detail: allFullUsers.detail },
@@ -144,12 +145,12 @@ const faqs = [
     {
         question: "Is New Relic free?",
         answer:
-            "Yes. The free tier has no time limit and needs no credit card. Each month it includes 100 GB of data ingest, one full platform user, unlimited basic users, at least 8 days of retention and 500 synthetic checks. You pay once you need more data or more full platform or core users.",
+            "Yes. The free tier has no time limit and needs no credit card. Each month it includes 100 GB of data ingest, one full platform user, unlimited basic users, at least 8 days of retention and 500 synthetic check runs. You pay once you need more data or more full platform or core users.",
     },
     {
         question: "How much does New Relic cost per month?",
         answer:
-            "Users plus data. On Standard, the first full platform user is $10 a month and each additional one $99 a month, up to five. On Pro each full platform user is $349 a month on an annual term or $418.80 month to month. Core users are $49 a month on any paid plan, and every GB past the first 100 is $0.40. A 12-person team sending 800 GB pays about $979 a month with 4 full platform and 8 core users on Standard, or $4,468 with all 12 on Pro.",
+            "Users plus data. On Standard, the first full platform user is $10 a month and each additional one $99 a month, up to five. On Pro each full platform user is $349 a month with a 1-year commitment, or $418.80 a month without one. Core users are $49 a month on any paid plan, and every GB past the first 100 is $0.40. A 12-person team sending 800 GB pays about $979 a month with 4 full platform and 8 core users on Standard, or $4,468 with all 12 on Pro.",
     },
     {
         question: "What happens past 100 GB on the New Relic free tier?",
@@ -256,21 +257,40 @@ const articleJsonLd = {
                     </div>
 
                     <p>
-                        People are billed by <strong>user type</strong>. Only two of the three types cost money, and the most expensive one, the full platform user, changes price with your plan. The plan, called an <strong>edition</strong> (Free, Standard, Pro or Enterprise), also sets the support level and how many full platform users you can add.
+                        People are billed by <strong>user type</strong>, and only two of the three types cost money. The plan, called an <strong>edition</strong> (Free, Standard, Pro or Enterprise), sets the price of a full platform user, how many you can add and the support level.
                     </p>
+
+                    <h3 id="user-types" class="scroll-mt-24">The three user types</h3>
+                    <p>
+                        Every person in the account has one <strong>user type</strong>. It decides which screens they can open and what they cost; roles still decide what they may change.
+                    </p>
+                    <div class="user-types">
+                        <div class="user-types__row" style="--meter: var(--muted-foreground)">
+                            <div class="user-types__head"><span class="meter-badge">Basic</span><strong>$0</strong><small>unlimited, every edition</small></div>
+                            <p>Query any data with NRQL, build custom dashboards and basic alerts, set up instrumentation. No curated APM, infrastructure, browser or mobile screens.</p>
+                        </div>
+                        <div class="user-types__row" style={`--meter: ${meters.core.color}`}>
+                            <div class="user-types__head"><span class="meter-badge">Core</span><strong>$49</strong><small>per user, a month</small></div>
+                            <p>Basic plus the logs UI, the errors inbox, the CodeStream IDE extension, and user and billing management. Still no curated APM or infrastructure screens. Paid editions only.</p>
+                        </div>
+                        <div class="user-types__row" style={`--meter: ${meters.full.color}`}>
+                            <div class="user-types__head"><span class="meter-badge">Full platform</span><strong>$10 to $418.80</strong><small>per user, a month</small></div>
+                            <p>Everything, including APM, infrastructure, Kubernetes, browser, mobile and synthetics. Whoever is on call needs this type. The monthly price depends on the edition and on whether you commit for a year (see <a href="#plans">plans</a>).</p>
+                        </div>
+                    </div>
 
                     <figure class="formula" aria-label="The monthly bill is full platform users times $10 to $418.80 each, plus core users times $49, plus every GB past the first 100 times $0.40. Basic users, hosts, agents, containers and the first 100 GB cost nothing.">
                         <div class="formula__row" aria-hidden="true">
                             <div class="formula__term" style={`--meter: ${meters.full.color}`}>
                                 <span class="formula__label">Full platform users</span>
                                 <strong>× $10 to $418.80</strong>
-                                <span class="formula__note">by edition and term</span>
+                                <span class="formula__note">a month, by edition and term</span>
                             </div>
                             <span class="formula__op">+</span>
                             <div class="formula__term" style={`--meter: ${meters.core.color}`}>
                                 <span class="formula__label">Core users</span>
                                 <strong>× $49</strong>
-                                <span class="formula__note">paid editions only</span>
+                                <span class="formula__note">a month, paid editions only</span>
                             </div>
                             <span class="formula__op">+</span>
                             <div class="formula__term" style={`--meter: ${meters.data.color}`}>
@@ -292,7 +312,7 @@ const articleJsonLd = {
                         Hosts are not counted at all. A fleet of 10 hosts and a fleet of 1,000 pay the same user fees and differ only in the GB they send. GB ingested is measured after your drop rules run and is rounded up to the next whole GB each month.
                     </p>
                     <p>
-                        Smaller charges sit on top: synthetic checks past the included 500 cost $0.005 each, storing data in the EU region adds $0.05 per GB, and extended retention and Advanced Compute are add-ons. Pro and Enterprise accounts can also swap user fees for compute pricing, covered under <a href="#compute">compute pricing</a>.
+                        Smaller charges sit on top: synthetic checks past your edition's monthly allowance cost $0.005 each, storing data in the EU region adds $0.05 per GB, and extended retention and Advanced Compute are add-ons. Pro and Enterprise accounts can also swap user fees for compute pricing, covered under <a href="#compute">compute pricing</a>.
                     </p>
                 </section>
 
@@ -300,26 +320,26 @@ const articleJsonLd = {
                     <p class="guide-eyebrow"><span>02</span> · Editions</p>
                     <h2>New Relic plans: Free, Standard, Pro and Enterprise</h2>
                     <p>
-                        Every edition includes unlimited basic users and the same free 100 GB a month. They differ in the price and number of full platform users, and in support and compliance terms.
+                        Every edition includes unlimited basic users and the same free 100 GB a month. They differ in the price and number of full platform users, the synthetic checks included, and support: Standard gets ticket support, Enterprise adds FedRAMP and HIPAA eligibility and custom terms. Prices below are what you pay each month.
                     </p>
 
                     <div class="guide-table">
                         <table>
                             <thead>
-                                <tr><th>Edition</th><th>Full platform user</th><th>Core user</th><th>Data past 100 GB</th><th>Terms</th></tr>
+                                <tr><th>Edition</th><th>Full platform user, a month</th><th>Core user, a month</th><th>Data past 100 GB</th><th>Synthetic checks a month</th></tr>
                             </thead>
                             <tbody>
-                                <tr><td><strong>Free</strong></td><td>1 user, $0</td><td>Not offered</td><td>Ingest stops</td><td>No credit card, no expiry</td></tr>
-                                <tr><td><strong>Standard</strong></td><td>$10 first, $99 each after, 5 max</td><td>$49</td><td>$0.40/GB</td><td>Pay-as-you-go, ticket support</td></tr>
-                                <tr><td><strong>Pro</strong></td><td>$349 annual, $418.80 monthly</td><td>$49</td><td>$0.40/GB</td><td>Unlimited users, commitment discounts</td></tr>
-                                <tr><td><strong>Enterprise</strong></td><td>Contact sales</td><td>$49</td><td>Contact sales</td><td>FedRAMP and HIPAA eligibility, custom terms</td></tr>
+                                <tr><td><strong>Free</strong></td><td>1 user, $0</td><td>Not offered</td><td>Ingest stops</td><td>500</td></tr>
+                                <tr><td><strong>Standard</strong></td><td>$10 for the first, $99 for each after, 5 max</td><td>$49</td><td>$0.40/GB</td><td>10,000</td></tr>
+                                <tr><td><strong>Pro</strong></td><td>$349 with a 1-year commitment, $418.80 month to month, no user limit</td><td>$49</td><td>$0.40/GB</td><td>1 million</td></tr>
+                                <tr><td><strong>Enterprise</strong></td><td>Contact sales</td><td>$49</td><td>Contact sales</td><td>10 million</td></tr>
                             </tbody>
                         </table>
                     </div>
 
                     <h3 id="standard-ceiling" class="scroll-mt-24">Standard's five-user limit</h3>
                     <p>
-                        Standard allows five full platform users. A sixth person who needs the APM views moves the account to Pro, where every full platform user costs $349 instead of $99. Five Standard users cost $406 a month; six Pro users on an annual term cost $2,094.
+                        Standard allows five full platform users. A sixth person who needs the APM views moves the account to Pro, where every full platform user costs $349 a month (with a 1-year commitment) instead of $99 a month. Five Standard users cost $406 a month; six Pro users cost $2,094 a month with the commitment, or $2,513 a month without.
                     </p>
                     <p>
                         The limit counts full platform users only. Core and basic users are unlimited on Standard, which is why the cheaper option in the <a href="#example">cost example</a> stays on Standard with 12 people.
@@ -327,7 +347,7 @@ const articleJsonLd = {
 
                     <h3 id="terms" class="scroll-mt-24">Pay-as-you-go or a commitment</h3>
                     <p>
-                        Standard and Pro can run pay-as-you-go: New Relic bills at the end of each calendar month, with no commitment past it. Pro's annual price is 17% below its monthly price. Pro and Enterprise customers can also sign a commitment contract for volume discounts. New Relic runs programs for startups and nonprofits and does not publish their discounts.
+                        Standard and Pro can run pay-as-you-go: New Relic bills at the end of each calendar month, with no commitment past it. On Pro, committing for a year lowers the full platform price from $418.80 to $349 a month, 17% less; you still pay monthly. Pro and Enterprise customers can also sign a commitment contract for volume discounts. New Relic runs programs for startups and nonprofits and does not publish their discounts.
                     </p>
                 </section>
 
@@ -344,7 +364,7 @@ const articleJsonLd = {
                             ["1 full platform user", "One person gets every curated view, including APM, infrastructure and browser monitoring."],
                             ["Unlimited basic users", "Everyone else can query data, build dashboards and set basic alerts."],
                             ["At least 8 days of retention", "The default for most data types. Some keep data longer."],
-                            ["500 synthetic checks", "Each run of a synthetic monitor is one check."],
+                            ["500 synthetic checks", "A monthly budget of runs, not of monitors: each run from one location is one check. One monitor every 15 minutes from one location uses about 2,900 a month. Ping monitors don't count."],
                             ["Any number of hosts", "Instrument as many as you like; only their data counts."],
                         ].map(([title, body], index) => (
                             <div><span>{String(index + 1).padStart(2, "0")}</span><div><h4>{title}</h4><p>{body}</p></div></div>
@@ -398,25 +418,7 @@ const articleJsonLd = {
                     <p class="guide-eyebrow"><span>04</span> · Rates</p>
                     <h2>User types and data rates</h2>
 
-                    <h3 id="user-types" class="scroll-mt-24">Basic, core and full platform users</h3>
-                    <p>
-                        A user type decides which parts of New Relic a person can open and what they cost. Roles still control permissions; the type only changes access to features and the bill.
-                    </p>
-                    <div class="user-types">
-                        <div class="user-types__row" style="--meter: var(--muted-foreground)">
-                            <span class="meter-badge">Basic · $0</span>
-                            <p>Unlimited. Set up instrumentation, run NRQL queries, build custom dashboards and basic alerts. No curated APM, browser, mobile or infrastructure views.</p>
-                        </div>
-                        <div class="user-types__row" style={`--meter: ${meters.core.color}`}>
-                            <span class="meter-badge">Core · $49 per user a month</span>
-                            <p>Paid editions only. Adds the logs UI, errors inbox, the CodeStream IDE extension, and user and billing management. Still no curated APM views.</p>
-                        </div>
-                        <div class="user-types__row" style={`--meter: ${meters.full.color}`}>
-                            <span class="meter-badge">Full platform · $10 to $418.80 per user a month</span>
-                            <p>Every feature, including APM, infrastructure, Kubernetes, browser, mobile and synthetics. The price depends on edition and term.</p>
-                        </div>
-                    </div>
-
+                    <h3 id="counting" class="scroll-mt-24">How users are counted</h3>
                     <div class="guide-callout">
                         <p class="guide-kicker">How New Relic counts users</p>
                         <p>
@@ -461,7 +463,7 @@ const articleJsonLd = {
                         A team of 12 engineers sends {dataGb} GB of logs, traces and metrics a month to the US region on Original Data. Hosts cost nothing, so the bill comes from the users and the {billableGb} GB past the free 100. Two ways to staff the same team:
                     </p>
 
-                    <figure class="bars" aria-label={`Monthly cost of two options. Option A, 12 full platform users on Pro annual: ${usd(allFull.total)}, of which ${usd(allFullUsers.value)} is users and ${usd(allFullData.value)} is data. Option B, 4 full platform users and 8 core users on Standard: ${usd(mixedTotal)}, of which ${usd(mixedFullUsers.value)} is full platform users, ${usd(coreCost)} core users and ${usd(mixedData.value)} data.`}>
+                    <figure class="bars" aria-label={`Monthly cost of two options. Option A, 12 full platform users on Pro with a 1-year commitment: ${usd(allFull.total)}, of which ${usd(allFullUsers.value)} is users and ${usd(allFullData.value)} is data. Option B, 4 full platform users and 8 core users on Standard: ${usd(mixedTotal)}, of which ${usd(mixedFullUsers.value)} is full platform users, ${usd(coreCost)} core users and ${usd(mixedData.value)} data.`}>
                         <div class="bars__legend" aria-hidden="true">
                             {[meters.full, meters.core, meters.data].map((m) => (
                                 <span style={`--meter: ${m.color}`}><i></i>{m.name}</span>
@@ -503,7 +505,7 @@ const articleJsonLd = {
                             <tbody>
                                 <tr><td>Switch to Data Plus</td><td>{billableGb} GB × $0.60 = {usd(dataPlusCost)}, {usd(dataPlusCost - allFullData.value)} a month more on either option</td></tr>
                                 <tr><td>Option A month to month</td><td>12 × $418.80 = {usd(proMonthlyUsers)} for users, {usd(proMonthlyUsers - allFullUsers.value)} a month more</td></tr>
-                                <tr><td>A 13th full platform user on A</td><td>$349 more</td></tr>
+                                <tr><td>A 13th full platform user on A</td><td>$349 a month more</td></tr>
                                 <tr><td>Double the data to 1,600 GB</td><td>{usd(800 * 0.4)} a month more</td></tr>
                             </tbody>
                         </table>
@@ -522,7 +524,7 @@ const articleJsonLd = {
                                 <tr><th></th><th>New Relic</th><th>Dynatrace</th></tr>
                             </thead>
                             <tbody>
-                                <tr><td>Users</td><td>$10 to $418.80 per full platform user</td><td>No per-user fee</td></tr>
+                                <tr><td>Users</td><td>$10 to $418.80 per full platform user a month</td><td>No per-user fee</td></tr>
                                 <tr><td>Hosts</td><td>Free</td><td>$58/mo per 8 GiB full-stack host, $29/mo infrastructure-only</td></tr>
                                 <tr><td>Logs and traces</td><td>$0.40/GB past 100 GB, queries included</td><td>$0.20/GiB to ingest, plus retention and query fees for logs</td></tr>
                                 <tr><td>Free option</td><td>Permanent free tier</td><td>15-day trial</td></tr>
@@ -573,7 +575,7 @@ const articleJsonLd = {
                             <span>04</span>
                             <div>
                                 <h4>Commit once usage is stable</h4>
-                                <p>An annual Pro term saves $69.80 per full platform user a month, and commitment contracts add volume discounts. The commitment is owed whether you use it or not, so sign after a few months of measured usage.</p>
+                                <p>A 1-year Pro commitment saves $69.80 per full platform user a month, and commitment contracts add volume discounts. The commitment is owed whether you use it or not, so sign after a few months of measured usage.</p>
                             </div>
                         </li>
                     </ol>
@@ -685,7 +687,10 @@ const articleJsonLd = {
 
     .user-types { display: grid; gap: 1px; margin: 1.5rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
     .user-types__row { display: grid; gap: 0.6rem; border-left: 2px solid var(--meter); background: var(--background); padding: 1rem 1.15rem; }
-    .user-types__row .meter-badge { justify-self: start; }
+    .user-types__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; }
+    .user-types__head .meter-badge { align-self: center; }
+    .user-types__head strong { font-size: 1.05rem; color: var(--foreground); }
+    .user-types__head small { font-size: 12px; color: var(--muted-foreground); }
     .user-types__row p { margin: 0; font-size: 14px; line-height: 1.65; color: var(--muted-foreground); }
 
     .bars { margin: 1.75rem 0; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
@@ -734,7 +739,7 @@ const articleJsonLd = {
     @media (min-width: 640px) {
         .formula__row { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 0.8fr); }
         .nr-guide .guide-checklist { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .user-types__row { grid-template-columns: 13rem 1fr; align-items: start; }
+        .user-types__row { grid-template-columns: 15rem 1fr; align-items: start; gap: 1.25rem; }
         .nr-guide .guide-maple { padding: 2rem; }
     }
     @media (prefers-reduced-motion: reduce) {
