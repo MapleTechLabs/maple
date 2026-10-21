@@ -12,7 +12,8 @@ import { QuickStartState } from "../onboarding/quick-start-state"
 
 /** `readIngestKeys`: both keys from one admin-only read. */
 export const Keys = Schema.Union([
-	Schema.TaggedStruct("Loading", {}),
+	// Not "Loading": the keys are read only while the card shows, so this can hold for the whole visit.
+	Schema.TaggedStruct("Pending", {}),
 	Schema.TaggedStruct("Ready", { publicKey: Schema.String, privateKey: Schema.String }),
 	Schema.TaggedStruct("Failed", {}),
 ])

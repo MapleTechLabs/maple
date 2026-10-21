@@ -330,6 +330,9 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 
 /** Back after leaving: the last rows stay on screen while the window re-resolves like entry (snapped). */
 export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+	// The open-anomalies key never changes, so the window re-resolve alone would keep the parked counts.
+	const anomaliesKey = requestKey(context.orgId, "anomalies.serviceCounts", { status: "open" })
+	const anomalies = Keyed.request(Keyed.forgetFailure(model.anomalies), anomaliesKey, "Refresh")
 	const next = {
 		...model,
 		...initOverlays(),
@@ -337,10 +340,20 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 		refreshVersion: 0,
 		isReloading: false,
 		rowRevision: model.rowRevision + 1,
+		overview: Keyed.forgetFailure(model.overview),
+		sparklines: Keyed.forgetFailure(model.sparklines),
+		facets: Keyed.forgetFailure(model.facets),
+		baseline: Keyed.forgetFailure(model.baseline),
+		anomalies: Option.getOrElse(anomalies, () => model.anomalies),
+		commitMessages: Keyed.forgetFailure(model.commitMessages),
 	}
 	return {
 		model: next,
-		commands: [LoadSignalPresence({ orgId: context.orgId }), resolveCommand(next, context, "Load")],
+		commands: [
+			LoadSignalPresence({ orgId: context.orgId }),
+			resolveCommand(next, context, "Load"),
+			...(Option.isSome(anomalies) ? [FetchAnomalies({ key: anomaliesKey })] : []),
+		],
 	}
 }
 

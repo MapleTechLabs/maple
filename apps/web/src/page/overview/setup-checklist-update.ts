@@ -36,7 +36,7 @@ export const init = (storageKey: string): Return => ({
 	model: {
 		storageKey,
 		state: null,
-		keys: { _tag: "Loading" },
+		keys: { _tag: "Pending" },
 		services: ServicesData.Idle(),
 		window: null,
 		isOverviewInFlight: false,
@@ -55,6 +55,8 @@ export const revived = (model: Model): Model => ({
 	...model,
 	isOverviewInFlight: false,
 	isSendingTest: false,
+	copies: { endpoint: CopyButton.init(), privateKey: CopyButton.init() },
+	snippetCopies: {},
 })
 
 /** `SetupChecklist` renders (and polls) once the state is read and the checklist is not dismissed. */

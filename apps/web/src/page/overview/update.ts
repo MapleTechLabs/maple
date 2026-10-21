@@ -374,16 +374,33 @@ export const routeChanged = (
 export const init = initWith(isClerkAuthEnabled)
 
 /** Back after leaving: the last data stays on screen while entry re-reads the clock (snapped, so cached reads serve). */
-export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => ({
-	model: {
-		...model,
-		search: route.search,
-		refreshVersion: 0,
-		isReloading: false,
-		setup: model.setup === null ? null : Setup.revived(model.setup),
-	},
-	commands: [ReadEntry({ orgId: context.orgId }), LoadSignalPresence({ orgId: context.orgId })],
-})
+export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+	// The open-anomalies key never changes, so entry alone would keep the parked counts.
+	const anomaliesKey = requestKey(context.orgId, "anomalies.serviceCounts", { status: "open" })
+	const anomalies = Keyed.request(Keyed.forgetFailure(model.anomalies), anomaliesKey, "Refresh")
+	return {
+		model: {
+			...model,
+			search: route.search,
+			refreshVersion: 0,
+			isReloading: false,
+			facets: Keyed.forgetFailure(model.facets),
+			snapshot: Keyed.forgetFailure(model.snapshot),
+			anomalies: Option.getOrElse(anomalies, () => model.anomalies),
+			usage: Keyed.forgetFailure(model.usage),
+			overviewSeries: Keyed.forgetFailure(model.overviewSeries),
+			logSeries: Keyed.forgetFailure(model.logSeries),
+			refinement: Keyed.forgetFailure(model.refinement),
+			charts: Object.fromEntries(CHART_IDS.map((id) => [id, Chart.init()])),
+			setup: model.setup === null ? null : Setup.revived(model.setup),
+		},
+		commands: [
+			ReadEntry({ orgId: context.orgId }),
+			LoadSignalPresence({ orgId: context.orgId }),
+			...(Option.isSome(anomalies) ? [FetchAnomalies({ key: anomaliesKey, refresh: false })] : []),
+		],
+	}
+}
 
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	resolveSetupWindow(sync(model, context, "Load"), context)

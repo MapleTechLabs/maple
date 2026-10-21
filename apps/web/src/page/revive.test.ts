@@ -5,6 +5,9 @@ import { describe, expect, test } from "vitest"
 import { AppRoute } from "../route"
 import type { PageContext } from "./contract"
 import { enterRoute, PageMessage, type PageSlot, parkPages, updatePage } from "./registry"
+import { DEFAULT_QUICK_START_STATE } from "./onboarding/quick-start-state"
+import { IncidentsData, RulesData } from "./overview/model"
+import * as Setup from "./overview/setup-checklist-update"
 import { initWith, revive as reviveOverview } from "./overview/update"
 import { Message } from "./services/list/message"
 import type { ServiceRow } from "./services/list/model"
@@ -114,6 +117,31 @@ describe("reviving a page left earlier", () => {
 		])
 		expect([back.model.isReloading, back.model.refreshVersion]).toEqual([false, 0])
 		expect((back.commands ?? []).map((command) => command.name)).toContain("ReadOverviewEntry")
+	})
+
+	test("an overview with a dismissed setup card is parked, though its card never read the keys", () => {
+		const entered = enterRoute(null, home, context, 1).slot
+		const overview =
+			entered?._tag === "Overview"
+				? {
+						...entered,
+						model: {
+							...entered.model,
+							incidents: IncidentsData.Success({ data: [] }),
+							rules: RulesData.Success({ data: [] }),
+							presence: AsyncData.Success({ data: {} }),
+							chartRuntime: { _tag: "Ready" as const },
+							setup: {
+								...Setup.init("maple-onboarding-v6-org_acme").model,
+								state: { ...DEFAULT_QUICK_START_STATE, checklistDismissed: true },
+							},
+						},
+					}
+				: null
+		const away = enterRoute(overview, services, context, 2).slot
+		const parked = parkPages([], overview, away)
+		expect(parked.map((slot) => slot._tag)).toEqual(["Overview"])
+		expect(enterRoute(away, home, context, 3, parked).slot?.instance).toBe(3)
 	})
 
 	test("a page left mid-load is not parked: coming back builds it fresh", () => {
