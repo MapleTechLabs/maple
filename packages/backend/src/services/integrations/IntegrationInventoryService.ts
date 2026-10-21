@@ -11,17 +11,21 @@ import {
 	RailwayConnections,
 	RailwayEnvironments,
 	ScrapeTargets,
+	Sources,
 	VcsInstallations,
 	VcsRepositories,
 } from "@maple/db/tables"
 import {
 	buildIntegrationInventory,
 	type IntegrationInventory,
+	withSourceHealth,
 } from "@maple/domain/integration-inventory"
 import type { OrgId } from "@maple/domain/primitives"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { readScrapeOverrides } from "@maple/backend/services/org/integration-sources"
+import { SOURCE_HEALTH_COLUMNS, sourceRowHealth } from "@maple/backend/services/org/source-rows"
 
 export class IntegrationInventoryUnavailableError extends Schema.TaggedError<IntegrationInventoryUnavailableError>()(
 	"@maple/backend/services/IntegrationInventoryUnavailableError",
@@ -153,13 +157,20 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 								"scrapeIntervalSeconds",
 								"lastScrapeAt",
 								"lastScrapeError",
+								"enabled",
 							)
-							.where(($) => [$.orgId.eq(orgId), $.enabled.eq(true)]),
+							// A user's switched-off target is still configured; a managed one waits on its connection.
+							.where(($) => [$.orgId.eq(orgId), PG.or($.enabled.eq(true), $.managedBy.isNull())]),
 					),
 					chatWorkspaces: db.run(
 						PG.from(ChatWorkspaces)
 							.select("connector", "name", "createdAt")
 							.where(($) => [$.orgId.eq(orgId)]),
+					),
+					sources: db.run(
+						PG.from(Sources)
+							.select(...SOURCE_HEALTH_COLUMNS)
+							.where(($) => [$.orgId.eq(orgId), $.kind.eq("integration")]),
 					),
 				},
 				{ concurrency: "unbounded" },
@@ -168,7 +179,7 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 
 		const now = yield* Clock.currentTimeMillis
 		const planetscale = rows.planetscaleConnections[0]
-		return buildIntegrationInventory(
+		const inventory = buildIntegrationInventory(
 			{
 				oauthConnections: rows.oauthConnections,
 				vcsInstallations: rows.vcsInstallations,
@@ -198,6 +209,14 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 				chatWorkspaces: rows.chatWorkspaces,
 			},
 			now,
+		)
+		const overrides = yield* dbExecute((db) => readScrapeOverrides(db, orgId))
+		return withSourceHealth(
+			inventory,
+			rows.sources.map((source) => ({
+				platform: source.platform,
+				health: sourceRowHealth(source, now, overrides.get(source.id)),
+			})),
 		)
 	})
 

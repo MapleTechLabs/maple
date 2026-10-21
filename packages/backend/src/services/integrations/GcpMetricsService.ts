@@ -24,7 +24,12 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
-import { isSourcePaused, stampedSourceId } from "@maple/backend/services/org/integration-sources"
+import {
+	isSourcePaused,
+	type PollOutcome,
+	reportPoll,
+	stampedSourceId,
+} from "@maple/backend/services/org/integration-sources"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import {
 	fetchMapleAccessToken,
@@ -242,6 +247,20 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					),
 				)
 
+			/** Records a tick on the connector's source; a failed report does not fail the poll. */
+			const reportOutcome = (
+				connector: Pick<GcpConnectorRow, "id" | "sourceId">,
+				outcome: PollOutcome,
+				now: number,
+			) =>
+				dbExecute((db) => reportPoll(db, connector.sourceId, outcome, now)).pipe(
+					Effect.catchTag("@maple/http/errors/IntegrationsPersistenceError", (error) =>
+						Effect.logWarning("gcp source poll report failed").pipe(
+							Effect.annotateLogs({ connectorId: connector.id, error: error.message }),
+						),
+					),
+				)
+
 			/**
 			 * A failed poll leaves the watermark alone and says why. With `holdUntilMs` the whole
 			 * organization is held, so its other connectors are not read for nothing.
@@ -266,6 +285,25 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 									.where(($) => [$.orgId.eq(connector.orgId), $.metricsEnabled.eq(true)]),
 							),
 						)
+				const now = yield* Clock.currentTimeMillis
+				const failed: PollOutcome = { _tag: "Failed", error: message }
+				// A hold fails every connector it holds, so each of their sources says so.
+				const held =
+					holdUntilMs === undefined
+						? [connector]
+						: yield* dbExecute((db) =>
+								db.run(
+									PG.from(GcpConnectors)
+										.select("id", "sourceId")
+										.where(($) => [
+											$.orgId.eq(connector.orgId),
+											$.metricsEnabled.eq(true),
+										]),
+								),
+							)
+				yield* Effect.forEach(held, (row) => reportOutcome(row, failed, now), {
+					discard: true,
+				})
 				return FAILED
 			})
 
@@ -623,6 +661,8 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						lastMetricsReceivedAt: tick.now,
 						lastMetricsError: notes.length === 0 ? null : notes.join(" "),
 					})
+					// Incomplete or partly failed reads still count as a good read.
+					yield* reportOutcome(connector, { _tag: "Ok" }, tick.now)
 					// A read proves the read-only account is set up, however it was: a setup in the console
 					// or as code sends no report. Not after a switch-off or a removal made during the read.
 					yield* dbExecute((db) =>

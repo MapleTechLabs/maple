@@ -21,17 +21,18 @@ import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Sources, type SourceRow } from "@maple/db/tables"
 import { Array as Arr, Clock, Context, Effect, Layer, Order, Redacted, Schema } from "effect"
-import {
-	integrationSourceHealth,
-	pushSourceHealth,
-	type SourceHealthResult,
-} from "@maple/domain/source-health"
+import type { SourceHealthResult } from "@maple/domain/source-health"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
-import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
-import { type IntegrationLink, isPausedAt, readIntegrationLinks } from "./integration-sources"
-import { defaultSourceRow, newSourceId, pullSourceKey } from "./source-rows"
+import { readScrapeOverrides } from "./integration-sources"
+import {
+	defaultSourceRow,
+	newSourceId,
+	type SourceHealthOverrides,
+	sourceRowHealth,
+	statusOf,
+} from "./source-rows"
 
 const SOURCE_TOKEN_PREFIX = "maple_src_"
 const {
@@ -56,12 +57,6 @@ const toIso = (epochMs: number) => decodeIsoSync(new Date(epochMs).toISOString()
 const generateSecret = () => `${SOURCE_TOKEN_PREFIX}${randomBytes(24).toString("base64url")}`
 const displayPrefix = (secret: string) => secret.slice(0, SOURCE_TOKEN_PREFIX.length + 5)
 
-// Mirrors the gateway: an expired token is rejected even while paused.
-const statusOf = (row: SourceRow, now: number): SourceTokenStatus => {
-	if (row.expiresAt !== null && row.expiresAt <= now) return "expired"
-	if (isPausedAt(row, now)) return "paused"
-	return "active"
-}
 
 const isoOrNull = (epochMs: number | null) => (epochMs === null ? null : toIso(epochMs))
 
@@ -73,8 +68,8 @@ const toSourceHealth = (health: SourceHealthResult) =>
 		resources: health.resources ?? null,
 	})
 
-// Pull sources pass the integration's health; everything else reads the gateway's last_used_at.
-const rowToSource = (row: SourceRow, now: number, pullHealth?: SourceHealthResult): Source => {
+// `overrides`: what an integration source's integration adds to its health.
+const rowToSource = (row: SourceRow, now: number, overrides?: SourceHealthOverrides): Source => {
 	const status = statusOf(row, now)
 	return new Source({
 		id: row.id,
@@ -97,13 +92,7 @@ const rowToSource = (row: SourceRow, now: number, pullHealth?: SourceHealthResul
 		rolledAt: isoOrNull(row.rolledAt),
 		createdAt: toIso(row.createdAt),
 		updatedAt: toIso(row.updatedAt),
-		health: toSourceHealth(
-			pullHealth === undefined
-				? pushSourceHealth({ ...row, status }, now)
-				: status === "paused"
-					? pushSourceHealth({ status, lastUsedAt: pullHealth.lastDataAt }, now)
-					: pullHealth,
-		),
+		health: toSourceHealth(sourceRowHealth(row, now, overrides)),
 	})
 }
 
@@ -208,7 +197,6 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "SourcesService", toPersistenceError)
-		const integrations = yield* IntegrationInventoryService
 		const env = yield* Env
 		const lookupHmacKey = yield* parseIngestKeyLookupHmacKey(
 			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
@@ -269,75 +257,39 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 				),
 			)
 
-		const integrationHealth = Effect.fnUntraced(function* (
-			orgId: OrgId,
-			links: ReadonlyArray<IntegrationLink>,
-			now: number,
-		) {
-			if (links.length === 0) return new Map<string, SourceHealthResult>()
-			// Without the inventory, provider-wide integrations say health is unavailable instead of failing the list.
-			const inventory = yield* integrations
-				.list(orgId)
-				.pipe(
-					Effect.catchTag("@maple/backend/services/IntegrationInventoryUnavailableError", (error) =>
-						Effect.logWarning("Integration inventory unavailable for source health").pipe(
-							Effect.annotateLogs({ orgId, error: error.message }),
-							Effect.as(null),
-						),
-					),
-				)
-			return new Map(
-				links.map((link) => [
-					pullSourceKey(link.platform, link.integrationId),
-					link.health(inventory, now),
-				]),
-			)
-		})
-
+		// The default source first, then newest first as selected.
 		const toSources = (
 			rows: ReadonlyArray<SourceRow>,
-			health: Map<string, SourceHealthResult>,
+			overrides: ReadonlyMap<SourceId, SourceHealthOverrides>,
 			now: number,
 		) =>
-			// The default source first, then newest first as selected.
 			Arr.map(
 				Arr.sortWith(rows, (row) => (row.kind === "default" ? 0 : 1), Order.Number),
-				(row) =>
-					rowToSource(
-						row,
-						now,
-						row.integrationId === null
-							? undefined
-							: health.get(pullSourceKey(row.platform, row.integrationId)),
-					),
+				(row) => rowToSource(row, now, overrides.get(row.id)),
 			)
+
+		// An integration source reads its integration's switches; any other source reads its row.
+		const toSource = Effect.fnUntraced(function* (orgId: OrgId, row: SourceRow, now: number) {
+			if (row.kind !== "integration") return rowToSource(row, now)
+			const overrides = yield* dbExecute((db) => readScrapeOverrides(db, orgId))
+			return rowToSource(row, now, overrides.get(row.id))
+		})
 
 		const list = Effect.fn("SourcesService.list")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			const now = yield* Clock.currentTimeMillis
-			const [before, links] = yield* Effect.all(
-				[selectAll(orgId), dbExecute((db) => readIntegrationLinks(db, orgId))],
+			const [before, overrides] = yield* Effect.all(
+				[selectAll(orgId), dbExecute((db) => readScrapeOverrides(db, orgId))],
 				{ concurrency: "unbounded" },
 			)
 			const missingDefault = !before.some((row) => row.kind === "default")
 			if (missingDefault) yield* ensureDefault(orgId, now)
-			const rows = missingDefault ? yield* selectAll(orgId) : before
-			return toSources(rows, yield* integrationHealth(orgId, links, now), now)
+			return toSources(missingDefault ? yield* selectAll(orgId) : before, overrides, now)
 		})
 
 		const get = Effect.fn("SourcesService.get")(function* (orgId: OrgId, sourceId: SourceId) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
-			const row = yield* requireRow(orgId, sourceId)
-			const now = yield* Clock.currentTimeMillis
-			if (row.kind !== "integration" || row.integrationId === null) return rowToSource(row, now)
-			const links = yield* dbExecute((db) => readIntegrationLinks(db, orgId))
-			const health = yield* integrationHealth(orgId, links, now)
-			return rowToSource(
-				row,
-				now,
-				health.get(pullSourceKey(row.platform, row.integrationId)) ??
-					integrationSourceHealth(undefined),
-			)
+			return yield* toSource(orgId, yield* requireRow(orgId, sourceId), yield* Clock.currentTimeMillis)
 		})
 
 		const create = Effect.fn("SourcesService.create")(function* (
@@ -454,7 +406,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 				lastRejection: clearsRejection ? null : undefined,
 			})
 			// Integration sources take their health from the integration, as `get` reads it.
-			return row.kind !== "integration" ? rowToSource(row, now) : yield* get(orgId, sourceId)
+			return yield* toSource(orgId, row, now)
 		})
 
 		// `untilMs` null pauses until resumed.
@@ -475,7 +427,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 				updatedAt: now,
 				updatedBy: userId,
 			})
-			return row.kind !== "integration" ? rowToSource(row, now) : yield* get(orgId, sourceId)
+			return yield* toSource(orgId, row, now)
 		})
 
 		const resume = Effect.fn("SourcesService.resume")(function* (
@@ -493,7 +445,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 				updatedAt: now,
 				updatedBy: userId,
 			})
-			return row.kind !== "integration" ? rowToSource(row, now) : yield* get(orgId, sourceId)
+			return yield* toSource(orgId, row, now)
 		})
 
 		const roll = Effect.fn("SourcesService.roll")(function* (
@@ -538,7 +490,5 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 		return { list, get, create, update, pause, resume, roll, delete: remove }
 	}),
 }) {
-	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(IntegrationInventoryService.layer),
-	)
+	static readonly layer = Layer.effect(this, this.make)
 }

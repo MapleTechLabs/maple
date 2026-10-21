@@ -38,6 +38,7 @@ import {
 import { insertPlanetScaleEvent } from "./planetscale/webhook-events"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { timestampMs } from "@maple/backend/platform/time"
+import { type PollOutcome, reportPoll } from "@maple/backend/services/org/integration-sources"
 
 /**
  * PlanetScale management-API poller: keeps the org's database/branch inventory
@@ -319,6 +320,12 @@ const DEPLOY_BACKFILL_VERB: Record<string, string> = {
 	closed: "closed",
 } satisfies Record<string, string>
 
+/** A revoked or rejected grant: nothing is read until someone reconnects. */
+const DISCONNECTED: PollOutcome = {
+	_tag: "Disconnected",
+	reason: "PlanetScale no longer accepts Maple's access. Reconnect PlanetScale in Settings, Integrations.",
+}
+
 export class PlanetScaleService extends Context.Service<PlanetScaleService, PlanetScaleServiceApi>()(
 	"@maple/api/services/PlanetScaleService",
 	{
@@ -550,6 +557,21 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 									: { lastInventoryError: error, updatedAt: now },
 							)
 							.where(($) => [$.id.eq(connectionId)]),
+					),
+				)
+			})
+
+			/** Records an inventory tick on the connection's source; a failed report does not fail the poll. */
+			const reportInventoryPoll = Effect.fnUntraced(function* (
+				connection: PlanetScaleConnectionRow,
+				outcome: PollOutcome,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) => reportPoll(db, connection.sourceId, outcome, now)).pipe(
+					Effect.catchTag("@maple/http/errors/IntegrationsPersistenceError", (error) =>
+						Effect.logWarning("PlanetScale source poll report failed").pipe(
+							Effect.annotateLogs({ orgId: connection.orgId, error: error.message }),
+						),
 					),
 				)
 			})
@@ -861,6 +883,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				const grant = yield* psOAuth.grantStatus(connection.orgId)
 				if (grant.revokedAt !== null) {
 					yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": "grant_revoked" })
+					yield* reportInventoryPoll(connection, DISCONNECTED)
 					return { outcome: "skipped" as const, deployEvents: 0 }
 				}
 				const claim = yield* claimInventoryWork(connection.orgId)
@@ -891,6 +914,15 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					// put the reason on the span (mirrors CloudflareAnalyticsService.pollOrg)
 					// so every skipped org is visible on the trace.
 					yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": claim })
+					// A fresh inventory still answers for the source, so a reconnect clears a disconnect.
+					if (claim === "fresh") {
+						yield* reportInventoryPoll(
+							connection,
+							connection.lastInventoryError === null
+								? { _tag: "Ok" }
+								: { _tag: "Failed", error: connection.lastInventoryError },
+						)
+					}
 					return { outcome: "skipped" as const, deployEvents }
 				}
 
@@ -900,6 +932,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				)
 				if (result.ok) {
 					yield* recordInventoryResult(connection.orgId, connection.id, null)
+					yield* reportInventoryPoll(connection, { _tag: "Ok" })
 					yield* Effect.logInfo("PlanetScale inventory refreshed").pipe(
 						Effect.annotateLogs({ orgId: connection.orgId, databases: result.count }),
 					)
@@ -907,6 +940,12 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				}
 				yield* recordInventoryResult(connection.orgId, connection.id, result.error.message).pipe(
 					Effect.ignore({ log: "Warn", message: "Failed to record PlanetScale inventory result" }),
+				)
+				yield* reportInventoryPoll(
+					connection,
+					result.error._tag === "@maple/http/errors/IntegrationsRevokedError"
+						? DISCONNECTED
+						: { _tag: "Failed", error: result.error.message },
 				)
 				// Fail inside a span so poll failures surface in find_errors, mirroring
 				// the Cloudflare poller's observeDatasetFailure seam — EXCEPT an upstream

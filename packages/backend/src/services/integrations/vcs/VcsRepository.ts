@@ -26,6 +26,7 @@ import {
 	VcsRepositoryId,
 	type VcsRepoSyncStatus,
 } from "@maple/domain/http"
+import type { MapleDb } from "@maple/db/client"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	PrReviewSettings,
@@ -37,6 +38,7 @@ import {
 	type VcsRepositoryBranchRow,
 	VcsRepositories,
 	type VcsRepositoryRow,
+	Sources,
 } from "@maple/db/tables"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
@@ -45,6 +47,8 @@ import {
 	deleteSourcesOf,
 	ensureIntegrationSource,
 	integrationSourceName,
+	type PollOutcome,
+	reportPoll,
 } from "@maple/backend/services/org/integration-sources"
 
 // Postgres caps bind parameters at 65535. Chunk unbounded `in_(...)` filters
@@ -222,6 +226,10 @@ interface RepoSyncStatusUpdate {
  */
 type RepoQueryScope = "active" | "all"
 
+/** A repository whose last sync failed, with or without a recorded reason. */
+const repoFailing = (repo: { readonly syncStatus: string; readonly lastSyncError: string | null }) =>
+	repo.syncStatus === "error" || repo.lastSyncError !== null
+
 export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/services/vcs/VcsRepository", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
@@ -376,19 +384,122 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			return yield* decodeOne("vcs_installations", row.value, rowToInstallation)
 		})
 
+		/** Health reporting is best effort: a failed report never fails the write it follows. */
+		const reportBestEffort = (report: Effect.Effect<void, VcsRepoPersistenceError>) =>
+			report.pipe(
+				Effect.catchTag("@maple/http/errors/VcsRepoPersistenceError", (error) =>
+					Effect.logWarning("[VCS] GitHub source poll report failed").pipe(
+						Effect.annotateLogs({ error: error.message }),
+					),
+				),
+			)
+
 		const markInstallationStatus = Effect.fn("VcsRepository.markInstallationStatus")(function* (
 			installationId: VcsInstallationId,
 			status: VcsInstallStatus,
 		) {
 			const now = yield* Clock.currentTimeMillis
-			yield* dbExecute((db) =>
+			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.update(VcsInstallations)
 						.set({ status, suspendedAt: status === "suspended" ? now : null, updatedAt: now })
-						.where(($) => [$.id.eq(installationId)]),
+						.where(($) => [$.id.eq(installationId)])
+						.returning("sourceId"),
 				),
 			)
+			// A reactivation reconnects the source at once with its repositories' health: an
+			// installation without repositories never settles a sync that would.
+			yield* Effect.forEach(
+				rows,
+				(row) =>
+					reportBestEffort(
+						dbExecute((db) =>
+							Effect.gen(function* () {
+								const outcome: PollOutcome =
+									status === "active"
+										? yield* installationOutcome(db, installationId)
+										: { _tag: "Disconnected", reason: `The GitHub installation is ${status}` }
+								yield* reportPoll(db, row.sourceId, outcome, now)
+							}),
+						),
+					),
+				{ discard: true },
+			)
 		})
+
+		/** An installation's repositories as one poll outcome: Ok, or the first failing one's error. */
+		const installationOutcome = Effect.fnUntraced(function* (
+			db: MapleDb,
+			installationId: VcsInstallationId,
+		) {
+			const repos = yield* db.run(
+				PG.from(VcsRepositories)
+					.select("fullName", "syncStatus", "lastSyncError")
+					.where(($) => [$.installationId.eq(installationId), $.status.eq("active")])
+					.orderBy(($) => [[$.fullName, "asc"]]),
+			)
+			const failing = repos.filter(repoFailing)
+			const resources =
+				repos.length >= 2 ? { resources: { total: repos.length, unhealthy: failing.length } } : {}
+			const first = failing[0]
+			const outcome: PollOutcome =
+				first === undefined
+					? { _tag: "Ok", ...resources }
+					: {
+							_tag: "Failed",
+							error: `${first.fullName}: ${first.lastSyncError ?? "the last sync failed"}`,
+							...resources,
+						}
+			return outcome
+		})
+
+		/**
+		 * After a repository's sync settles, reports its installation's repositories on the
+		 * installation's source: Ok, or the first failing repository's error.
+		 */
+		const reportInstallationSync = (repositoryId: VcsRepositoryId, now: number) =>
+			reportBestEffort(
+				dbExecute((db) =>
+					Effect.gen(function* () {
+						const [target] = yield* db.run(
+							PG.from(VcsRepositories)
+								.select("installationId", "syncStatus", "lastSyncError")
+								.where(($) => [$.id.eq(repositoryId)])
+								.limit(1),
+						)
+						if (target === undefined) return
+						const [installation] = yield* db.run(
+							PG.from(VcsInstallations)
+								.select("sourceId", "status")
+								.where(($) => [$.id.eq(target.installationId)])
+								.limit(1),
+						)
+						// A suspended or removed installation keeps its disconnect until it is reactivated.
+						if (installation === undefined || installation.status !== "active") return
+						const sourceId = installation.sourceId
+						if (sourceId === null) return
+						// A healthy installation reported in the last minute: another healthy repo changes nothing,
+						// and an installation sync settles every repo in a burst.
+						const [source] = yield* db.run(
+							PG.from(Sources)
+								.select("lastPollAt", "lastPollError")
+								.where(($) => [$.id.eq(sourceId)])
+								.limit(1),
+						)
+						if (
+							!repoFailing(target) &&
+							source !== undefined &&
+							source.lastPollError === null &&
+							source.lastPollAt !== null &&
+							now - source.lastPollAt < 60_000
+						) {
+							return
+						}
+						const outcome = yield* installationOutcome(db, target.installationId)
+						yield* reportPoll(db, sourceId, outcome, now)
+					}),
+				),
+			)
 
 		// Org-scoped, so an installation id from another tenant no-ops.
 		const setCiTracesEnabled = Effect.fn("VcsRepository.setCiTracesEnabled")(function* (
@@ -646,6 +757,10 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 						.where(($) => [$.id.eq(repositoryId)]),
 				),
 			)
+			// Only a settled sync speaks for the installation; a start or a backfill step does not.
+			if (update.status === "ready" || update.status === "error") {
+				yield* reportInstallationSync(repositoryId, now)
+			}
 		})
 
 		// Flag a single repo's sync as errored without touching its cursor /
@@ -662,6 +777,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 						.where(($) => [$.id.eq(repositoryId)]),
 				),
 			)
+			yield* reportInstallationSync(repositoryId, now)
 		})
 
 		// Persist commits for an already-resolved repository. Commits belong to the

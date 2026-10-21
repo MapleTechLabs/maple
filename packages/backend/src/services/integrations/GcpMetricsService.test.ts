@@ -481,6 +481,24 @@ const pollState = (testDb: TestDb, id: string) =>
 		),
 	).pipe(Effect.map((row) => row!))
 
+interface SourcePollState {
+	readonly last_poll_at: Date | null
+	readonly last_poll_ok_at: Date | null
+	readonly last_poll_error: string | null
+	readonly disconnected_at: Date | null
+}
+
+/** The poll state on the connector's source, which its health reads. */
+const sourcePollState = (testDb: TestDb, id: string) =>
+	Effect.promise(() =>
+		queryFirstRow<SourcePollState>(
+			testDb,
+			`SELECT s.last_poll_at, s.last_poll_ok_at, s.last_poll_error, s.disconnected_at
+			 FROM sources s JOIN gcp_connectors c ON c.source_id = s.id WHERE c.id = $1`,
+			[id],
+		),
+	).pipe(Effect.map((row) => row!))
+
 /** The connector's inventory as `asset type -> display name` pairs, in name order. */
 const inventory = (testDb: TestDb, id: string) =>
 	Effect.promise(() =>
@@ -854,6 +872,48 @@ describe("GcpMetricsService", () => {
 			}),
 		)
 	})
+
+	it.effect(
+		"reports each tick on the connector's source: a lost sign-in fails it, a read clears it",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const calls = makeCalls()
+			let impersonate: () => Response | undefined = () => undefined
+			const stub = stubFetch(calls, { impersonate: () => impersonate(), monitoring: onlyRequestCount })
+			return run(
+				testDb,
+				stub,
+				Effect.gen(function* () {
+					yield* insertConnector(testDb, CONNECTOR_A)
+					yield* pollAll
+					const ok = yield* sourcePollState(testDb, CONNECTOR_A)
+					assert.strictEqual(ok.last_poll_ok_at?.getTime(), now)
+					assert.isNull(ok.last_poll_error)
+
+					impersonate = () => googleError(403, "PERMISSION_DENIED")
+					yield* TestClock.setTime(now + 5 * minute)
+					yield* pollAll
+					const failed = yield* sourcePollState(testDb, CONNECTOR_A)
+					// The source says what the connection says, and it is not a disconnect.
+					assert.strictEqual(
+						failed.last_poll_error,
+						(yield* pollState(testDb, CONNECTOR_A)).last_metrics_error,
+					)
+					assert.include(failed.last_poll_error, "can no longer sign in")
+					assert.strictEqual(failed.last_poll_at?.getTime(), now + 5 * minute)
+					assert.strictEqual(failed.last_poll_ok_at?.getTime(), now)
+					assert.isNull(failed.disconnected_at)
+
+					impersonate = () => undefined
+					yield* TestClock.setTime(now + 10 * minute)
+					yield* pollAll
+					const recovered = yield* sourcePollState(testDb, CONNECTOR_A)
+					assert.strictEqual(recovered.last_poll_ok_at?.getTime(), now + 10 * minute)
+					assert.isNull(recovered.last_poll_error)
+				}),
+			)
+		},
+	)
 
 	it.effect("names an organization's host project, and its parts when it is too large", () => {
 		const testDb = createTestDb(trackedDbs)

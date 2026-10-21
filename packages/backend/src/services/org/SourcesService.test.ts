@@ -41,15 +41,33 @@ const orgB = Schema.decodeUnknownSync(OrgId)("org_b")
 const user = Schema.decodeUnknownSync(UserId)("user_a")
 const missingId = Schema.decodeUnknownSync(SourceId)("0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b")
 
-/** An integration row's source, as the owning integration service creates it. */
-const linkSource = (testDb: TestDb, table: string, integrationId: string, platform: string, name: string) =>
+/** An integration row's source as its service creates it, with what its poller last reported. */
+const linkSource = (
+	testDb: TestDb,
+	table: string,
+	integrationId: string,
+	platform: string,
+	name: string,
+	poll: { readonly okAt?: number; readonly error?: string; readonly disconnected?: boolean } = {},
+) =>
 	Effect.promise(async () => {
 		const sourceId = crypto.randomUUID()
+		const iso = (ms: number | undefined) => (ms === undefined ? null : new Date(ms).toISOString())
 		await executeSql(
 			testDb,
-			`INSERT INTO sources (id, org_id, name, platform, kind, integration_id, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, 'integration', $5, now(), now())`,
-			[sourceId, orgA, name, platform, integrationId],
+			`INSERT INTO sources (id, org_id, name, platform, kind, integration_id, last_poll_ok_at, last_poll_error,
+				disconnected_at, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, 'integration', $5, $6, $7, $8, now(), now())`,
+			[
+				sourceId,
+				orgA,
+				name,
+				platform,
+				integrationId,
+				iso(poll.okAt),
+				poll.error ?? null,
+				poll.disconnected === true ? new Date().toISOString() : null,
+			],
 		)
 		await executeSql(testDb, `UPDATE ${table} SET source_id = $1 WHERE id = $2`, [sourceId, integrationId])
 	})
@@ -484,7 +502,7 @@ describe("SourcesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("gives each scrape target a source with its scrape health and drops it with the target", () => {
+	it.effect("reads an integration source's health from what its poller reported, and pauses it", () => {
 		const testDb = createTestDb(trackedDbs)
 		const insertTarget = (id: string, name: string, lastScrapeAt: number | null, error: string | null) =>
 			Effect.promise(() =>
@@ -507,8 +525,12 @@ describe("SourcesService", () => {
 			yield* TestClock.adjust("1 hour")
 			yield* insertTarget("9d1e2f3a-0000-4000-8000-000000000001", "node", 3_600_000 - 30_000, null)
 			yield* insertTarget("9d1e2f3a-0000-4000-8000-000000000002", "broken", null, "connection refused")
-			yield* linkSource(testDb, "scrape_targets", "9d1e2f3a-0000-4000-8000-000000000001", "prometheus", "node")
-			yield* linkSource(testDb, "scrape_targets", "9d1e2f3a-0000-4000-8000-000000000002", "prometheus", "broken")
+			yield* linkSource(testDb, "scrape_targets", "9d1e2f3a-0000-4000-8000-000000000001", "prometheus", "node", {
+				okAt: 3_600_000 - 30_000,
+			})
+			yield* linkSource(testDb, "scrape_targets", "9d1e2f3a-0000-4000-8000-000000000002", "prometheus", "broken", {
+				error: "connection refused",
+			})
 
 			const first = yield* ownSources(keys, orgA)
 			assert.deepStrictEqual(
@@ -568,7 +590,25 @@ describe("SourcesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("gives each GitHub installation its own source and health", () => {
+	it.effect("reads a scrape target that is switched off as paused", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const keys = yield* SourcesService
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO scrape_targets (id, org_id, name, url, enabled, created_at, updated_at)
+					 VALUES ('9d1e2f3a-0000-4000-8000-000000000009', $1, 'off', 'http://off/metrics', false, now(), now())`,
+					[orgA],
+				),
+			)
+			yield* linkSource(testDb, "scrape_targets", "9d1e2f3a-0000-4000-8000-000000000009", "prometheus", "off")
+			const [off] = yield* ownSources(keys, orgA)
+			assert.deepStrictEqual([off?.health.status, off?.health.problem], ["paused", "Scraping is turned off"])
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("reads a revoked GitHub installation as disconnected", () => {
 		const testDb = createTestDb(trackedDbs)
 		const insertInstallation = (id: string, login: string, status: string) =>
 			Effect.promise(() =>
@@ -585,7 +625,10 @@ describe("SourcesService", () => {
 			yield* insertInstallation("7a1e2f3a-0000-4000-8000-000000000001", "acme", "active")
 			yield* insertInstallation("7a1e2f3a-0000-4000-8000-000000000002", "globex", "suspended")
 			yield* linkSource(testDb, "vcs_installations", "7a1e2f3a-0000-4000-8000-000000000001", "github", "GitHub acme")
-			yield* linkSource(testDb, "vcs_installations", "7a1e2f3a-0000-4000-8000-000000000002", "github", "GitHub globex")
+			yield* linkSource(testDb, "vcs_installations", "7a1e2f3a-0000-4000-8000-000000000002", "github", "GitHub globex", {
+				error: "The GitHub installation is suspended",
+				disconnected: true,
+			})
 
 			const sources = yield* ownSources(keys, orgA)
 			assert.deepStrictEqual(

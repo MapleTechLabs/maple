@@ -254,6 +254,94 @@ describe("ScrapeTargetsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("recordScrapeResults reports each batch onto the target's source", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const orgId = asOrgId("org_1")
+			const create = (name: string) =>
+				service.create(
+					orgId,
+					new CreateScrapeTargetRequest({
+						name,
+						url: `https://metrics.example.com/${name}`,
+						scrapeIntervalSeconds: asScrapeIntervalSeconds(15),
+					}),
+				)
+			const api = yield* create("api")
+			const worker = yield* create("worker")
+			const readSource = () =>
+				Effect.promise(() =>
+					testDb.pglite.query<{
+						last_poll_ok_at: Date | null
+						last_poll_error: string | null
+						poll_resources: { total: number; unhealthy: number } | null
+					}>(
+						"SELECT s.last_poll_ok_at, s.last_poll_error, s.poll_resources FROM sources s JOIN scrape_targets t ON t.source_id = s.id WHERE t.id = $1",
+						[api.id],
+					),
+				).pipe(Effect.map((result) => result.rows[0]))
+
+			yield* service.recordScrapeResults([{ targetId: api.id, scrapedAt: 1750000000000, error: null }])
+			const healthy = yield* readSource()
+			assert.isNotNull(healthy!.last_poll_ok_at)
+			assert.isNull(healthy!.last_poll_error)
+			assert.isNull(healthy!.poll_resources)
+
+			yield* service.recordScrapeResults([
+				{ targetId: api.id, scrapedAt: 1750000015000, error: "HTTP 503" },
+			])
+			assert.strictEqual((yield* readSource())!.last_poll_error, "HTTP 503")
+
+			// Two targets on one source: the failure names its target and counts it unhealthy.
+			yield* Effect.promise(() =>
+				testDb.pglite.query(
+					"UPDATE scrape_targets SET source_id = (SELECT source_id FROM scrape_targets WHERE id = $1) WHERE id = $2",
+					[api.id, worker.id],
+				),
+			)
+			yield* service.recordScrapeResults([
+				{ targetId: api.id, scrapedAt: 1750000030000, error: null },
+				{ targetId: worker.id, scrapedAt: 1750000030000, error: "HTTP 401" },
+			])
+			const shared = yield* readSource()
+			assert.strictEqual(shared!.last_poll_error, "worker: HTTP 401")
+			assert.deepStrictEqual(shared!.poll_resources, { total: 2, unhealthy: 1 })
+
+			yield* service.recordScrapeResults([
+				{ targetId: worker.id, scrapedAt: 1750000045000, error: null },
+			])
+			const recovered = yield* readSource()
+			assert.isNull(recovered!.last_poll_error)
+			assert.deepStrictEqual(recovered!.poll_resources, { total: 2, unhealthy: 0 })
+
+			// A PlanetScale connection's target leaves its source to the connection's own poller.
+			yield* Effect.promise(() =>
+				testDb.pglite.query("UPDATE scrape_targets SET managed_by = 'planetscale:conn_1' WHERE id = $1", [
+					worker.id,
+				]),
+			)
+			yield* service.recordScrapeResults([
+				{ targetId: worker.id, scrapedAt: 1750000200000, error: "HTTP 500" },
+			])
+			assert.isNull((yield* readSource())!.last_poll_error)
+
+			// A probe of a switched-off target says nothing about its source.
+			yield* Effect.promise(() =>
+				testDb.pglite.query(
+					"UPDATE scrape_targets SET managed_by = NULL, enabled = false WHERE id IN ($1, $2)",
+					[api.id, worker.id],
+				),
+			)
+			const before = yield* readSource()
+			yield* TestClock.adjust("2 minutes")
+			yield* service.recordScrapeResults([
+				{ targetId: api.id, scrapedAt: 1750000300000, error: null },
+			])
+			assert.deepStrictEqual(yield* readSource(), before)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("recordScrapeResults tolerates unknown target ids and processes batches", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

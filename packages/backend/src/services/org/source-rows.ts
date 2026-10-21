@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto"
-import type { SourceInsert } from "@maple/db/tables"
+import type { SourceInsert, SourceRow } from "@maple/db/tables"
+import type { SourceTokenStatus } from "@maple/domain/http"
+import { type SourceHealthInput, sourceHealth } from "@maple/domain/source-health"
 import { type OrgId, type PullSourcePlatform, SourceId } from "@maple/domain/primitives"
 import { Schema } from "effect"
 
@@ -54,3 +56,47 @@ export const pullSourceRow = (orgId: OrgId, ref: PullSourceRef, now: number): So
 /** Identity of a pull source within an org. */
 export const pullSourceKey = (platform: string, integrationId: string | null) =>
 	`${platform}:${integrationId}`
+
+/** A pause with no end, or one that has not ended yet. Mirrors the gateway's pause window. */
+export const isPausedAt = (
+	source: { readonly pausedAt: number | null; readonly pausedUntil: number | null },
+	now: number,
+) => source.pausedAt !== null && (source.pausedUntil === null || source.pausedUntil > now)
+
+/** As the gateway applies it: an expired token is rejected even while paused. */
+export const statusOf = (
+	row: Pick<SourceRow, "expiresAt" | "pausedAt" | "pausedUntil">,
+	now: number,
+): SourceTokenStatus => {
+	if (row.expiresAt !== null && row.expiresAt <= now) return "expired"
+	if (isPausedAt(row, now)) return "paused"
+	return "active"
+}
+
+/** What a source's integration says about its health beyond the row (a scrape target's cadence). */
+export type SourceHealthOverrides = Pick<SourceHealthInput, "turnedOff" | "staleAfterMs">
+
+/** The `sources` columns health reads: no token or secret column. */
+export const SOURCE_HEALTH_COLUMNS = [
+	"id",
+	"platform",
+	"expiresAt",
+	"pausedAt",
+	"pausedUntil",
+	"lastUsedAt",
+	"lastRejectedAt",
+	"lastRejection",
+	"lastPollOkAt",
+	"lastPollError",
+	"disconnectedAt",
+	"pollResources",
+] as const
+
+/** A source's health from its row and what its integration adds. */
+export const sourceRowHealth = (
+	row: Pick<SourceRow, (typeof SOURCE_HEALTH_COLUMNS)[number]>,
+	now: number,
+	overrides: SourceHealthOverrides = {},
+) =>
+	sourceHealth({ ...row, status: statusOf(row, now), ...overrides }, now)
+
