@@ -348,7 +348,7 @@ describe("refresh interruption", () => {
 	})
 })
 
-describe("requireStateRow", () => {
+describe("requireStateRow provider scoping", () => {
 	it.live("refuses a state issued for another provider's connect flow", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
