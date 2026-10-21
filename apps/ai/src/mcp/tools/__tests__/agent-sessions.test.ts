@@ -124,6 +124,8 @@ const sessionSpanRows = [
 /** A page that fills the read plus the row that proves a page follows — one
  *  turn, so the fixture stays about paging rather than about turns. */
 const bigSpanId = (index: number) => `b${index.toString(16).padStart(15, "0")}`
+const bigSpanTimestamp = (index: number) =>
+	`2026-08-19 10:${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}.000000000`
 const bigSessionSpanRows = [
 	sessionSpan(
 		bigSpanId(0),
@@ -136,9 +138,7 @@ const bigSessionSpanRows = [
 		sessionSpan(
 			bigSpanId(index + 1),
 			"chat gpt-5",
-			`2026-08-19 10:${String(Math.floor((index + 1) / 60)).padStart(2, "0")}:${String(
-				(index + 1) % 60,
-			).padStart(2, "0")}.000000000`,
+			bigSpanTimestamp(index + 1),
 			{ "gen_ai.operation.name": "chat", "gen_ai.response.model": "gpt-5" },
 			{ sessionId: BIG_SESSION_ID },
 		),
@@ -336,10 +336,8 @@ describe("get_agent_session rendering", () => {
 		)
 		// The way out names an absolute bound: the last span in hand, so the next
 		// call has something to narrow from.
-		const lastLoaded = bigSessionSpanRows[AI_SESSION_SPANS_MAX_SPANS - 1]
-		expect(output).toContain(
-			`Pass start_time="${lastLoaded.timestamp.slice(0, 19)}" with the same end_time`,
-		)
+		const lastLoaded = bigSpanTimestamp(AI_SESSION_SPANS_MAX_SPANS - 1)
+		expect(output).toContain(`Pass start_time="${lastLoaded.slice(0, 19)}" with the same end_time`)
 	})
 
 	// Every page ends on a cursor, so the read stops on the span cap rather than

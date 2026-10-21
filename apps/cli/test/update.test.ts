@@ -19,6 +19,11 @@ import {
 	targetTripleFor,
 } from "../src/core/update"
 
+// A plain fetch implementation plus the `preconnect` member `typeof fetch` requires.
+const stubFetch = (
+	impl: (input: string | URL | Request, init?: RequestInit) => Promise<Response>,
+): typeof fetch => Object.assign(impl, { preconnect: () => {} })
+
 const withFetch = <A, E, R>(effect: Effect.Effect<A, E, R>, fetchStub: typeof fetch) =>
 	effect.pipe(
 		Effect.provide(FetchHttpClient.layer),
@@ -106,7 +111,7 @@ describe("shouldCheck", () => {
 describe("update HTTP", () => {
 	it.effect("decodes the latest release tag without mutating global fetch", () =>
 		Effect.gen(function* () {
-			const fetchStub = (async () => Response.json([{ tag_name: "v1.2.3" }])) as typeof fetch
+			const fetchStub = stubFetch(async () => Response.json([{ tag_name: "v1.2.3" }]))
 			const tag = yield* withFetch(fetchLatestTag(), fetchStub)
 			strictEqual(tag, "v1.2.3")
 		}),
@@ -115,14 +120,15 @@ describe("update HTTP", () => {
 	// The npm packages publish GitHub releases too; one of them was "latest" and broke updates.
 	it.effect("skips npm package releases, drafts and prereleases for the newest CLI tag", () =>
 		Effect.gen(function* () {
-			const fetchStub = (async () =>
+			const fetchStub = stubFetch(async () =>
 				Response.json([
 					{ tag_name: "@maple-dev/alchemy@0.2.0" },
 					{ tag_name: "v0.0.25", draft: true },
 					{ tag_name: "v0.0.25-rc.1", prerelease: true },
 					{ tag_name: "v0.0.24" },
 					{ tag_name: "v0.0.23" },
-				])) as typeof fetch
+				]),
+			)
 			strictEqual(yield* withFetch(fetchLatestTag(), fetchStub), "v0.0.24")
 		}),
 	)
@@ -130,12 +136,12 @@ describe("update HTTP", () => {
 	it.effect("pages past a full page of package releases", () =>
 		Effect.gen(function* () {
 			const packages = Array.from({ length: 100 }, (_, i) => ({ tag_name: `@maple-dev/sdk@0.${i}.0` }))
-			const fetchStub = (async (input: string | URL | Request) => {
+			const fetchStub = stubFetch(async (input: string | URL | Request) => {
 				const url = new URL(input instanceof Request ? input.url : input.toString())
 				return Response.json(
 					url.searchParams.get("page") === "1" ? packages : [{ tag_name: "v0.0.24" }],
 				)
-			}) as typeof fetch
+			})
 			strictEqual(yield* withFetch(fetchLatestTag(), fetchStub), "v0.0.24")
 		}),
 	)
@@ -145,14 +151,17 @@ describe("update HTTP", () => {
 			const statusError = yield* Effect.flip(
 				withFetch(
 					fetchLatestTag(),
-					(async () => new Response("unavailable", { status: 503 })) as typeof fetch,
+					stubFetch(async () => new Response("unavailable", { status: 503 })),
 				),
 			)
 			strictEqual(statusError._tag, "@maple/cli/UpdateError")
 			ok(statusError.message.includes("503"))
 
 			const decodeError = yield* Effect.flip(
-				withFetch(fetchLatestTag(), (async () => new Response("not-json")) as typeof fetch),
+				withFetch(
+					fetchLatestTag(),
+					stubFetch(async () => new Response("not-json")),
+				),
 			)
 			strictEqual(decodeError._tag, "@maple/cli/UpdateError")
 			ok(decodeError.message.includes("decode"))
@@ -161,7 +170,7 @@ describe("update HTTP", () => {
 
 	it("aborts a tag request at its configured deadline", async () => {
 		let aborted = false
-		const fetchStub = ((input: string | URL | Request, init?: RequestInit) => {
+		const fetchStub = stubFetch((input: string | URL | Request, init?: RequestInit) => {
 			const signal = input instanceof Request ? input.signal : init?.signal
 			return new Promise<Response>((_resolve, reject) => {
 				signal?.addEventListener("abort", () => {
@@ -169,7 +178,7 @@ describe("update HTTP", () => {
 					reject(new DOMException("aborted", "AbortError"))
 				})
 			})
-		}) as typeof fetch
+		})
 		const error = await Effect.runPromise(Effect.flip(withFetch(fetchLatestTag(5), fetchStub)))
 		ok(error.message.includes("timed out"))
 		strictEqual(aborted, true)
@@ -178,12 +187,12 @@ describe("update HTTP", () => {
 	it("downloads release bytes and reads checksums through the shared client", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "maple-update-http-"))
 		const destination = join(dir, "release.tar.gz")
-		const fetchStub = (async (input: string | URL | Request) => {
+		const fetchStub = stubFetch(async (input: string | URL | Request) => {
 			const url = input instanceof Request ? input.url : String(input)
 			return url.endsWith(".sha256")
 				? new Response("abc123  release.tar.gz\n")
 				: new Response("release-bytes")
-		}) as typeof fetch
+		})
 
 		try {
 			await Effect.runPromise(
@@ -217,17 +226,19 @@ describe("update HTTP", () => {
 	it("reports cumulative download progress against Content-Length", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "maple-update-progress-"))
 		const destination = join(dir, "release.tar.gz")
-		const fetchStub = (async () =>
-			new Response(
-				new ReadableStream({
-					start(controller) {
-						controller.enqueue(new TextEncoder().encode("release-"))
-						controller.enqueue(new TextEncoder().encode("bytes"))
-						controller.close()
-					},
-				}),
-				{ headers: { "content-length": "13" } },
-			)) as typeof fetch
+		const fetchStub = stubFetch(
+			async () =>
+				new Response(
+					new ReadableStream({
+						start(controller) {
+							controller.enqueue(new TextEncoder().encode("release-"))
+							controller.enqueue(new TextEncoder().encode("bytes"))
+							controller.close()
+						},
+					}),
+					{ headers: { "content-length": "13" } },
+				),
+		)
 		const reports: Array<readonly [number, number | undefined]> = []
 
 		try {

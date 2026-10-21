@@ -27,6 +27,23 @@ const makeMcpToolExecutorStubLayer = (
 		}),
 	})
 
+// Loose shape of the MCP responses the tests read; unknown fields are ignored.
+const McpResponseBody = Schema.Struct({
+	result: Schema.optionalKey(
+		Schema.Struct({
+			protocolVersion: Schema.optionalKey(Schema.String),
+			serverInfo: Schema.optionalKey(Schema.Struct({ name: Schema.String })),
+			capabilities: Schema.optionalKey(Schema.Unknown),
+			tools: Schema.optionalKey(Schema.Array(Schema.Struct({ name: Schema.String }))),
+		}),
+	),
+	error: Schema.optionalKey(Schema.Union([Schema.String, Schema.Struct({ code: Schema.Number })])),
+})
+const readBody = async (response: Response) =>
+	Schema.decodeUnknownSync(McpResponseBody)(await response.clone().json())
+const errorCode = (error: (typeof McpResponseBody.Type)["error"]) =>
+	typeof error === "object" ? error.code : undefined
+
 const makeRateLimiterStubLayer = (
 	check: RateLimiterApi["check"] = () => Effect.succeed("allowed" as const),
 ) => Layer.succeed(McpToolRateLimiter, { check })
@@ -254,7 +271,7 @@ describe("MCP HTTP authorization", () => {
 				}),
 				Context.empty() as never,
 			)
-			const initializedBody = await initialized.clone().json()
+			const initializedBody = await readBody(initialized)
 			expect({
 				status: initialized.status,
 				protocolVersion: initializedBody.result?.protocolVersion,
@@ -450,7 +467,7 @@ describe("MCP HTTP authorization", () => {
 				}),
 				Context.empty() as never,
 			)
-			const body = await response.clone().json()
+			const body = await readBody(response)
 			expect({
 				status: response.status,
 				retryAfter: response.headers.get("retry-after"),
@@ -512,8 +529,8 @@ describe("MCP HTTP authorization", () => {
 				}),
 				Context.empty() as never,
 			)
-			const body = await response.clone().json()
-			expect({ status: response.status, code: body.error?.code }).toEqual({
+			const body = await readBody(response)
+			expect({ status: response.status, code: errorCode(body.error) }).toEqual({
 				status: 200,
 				code: -32700,
 			})
@@ -572,7 +589,7 @@ describe("MCP HTTP authorization", () => {
 				}),
 				Context.empty() as never,
 			)
-			const result = (await initialized.clone().json()).result
+			const result = (await readBody(initialized)).result
 			expect({
 				status: initialized.status,
 				serverName: result?.serverInfo?.name,
@@ -592,7 +609,7 @@ describe("MCP HTTP authorization", () => {
 				Context.empty() as never,
 			)
 			const tools: ReadonlyArray<{ readonly name: string }> =
-				(await listed.clone().json()).result?.tools ?? []
+				(await readBody(listed)).result?.tools ?? []
 			expect({
 				status: listed.status,
 				hasInspectTrace: tools.some((tool) => tool.name === "inspect_trace"),

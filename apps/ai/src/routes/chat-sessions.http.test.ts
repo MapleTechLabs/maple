@@ -136,7 +136,9 @@ describe("ChatSessionsRouter", () => {
 				Effect.fnUntraced(function* (handler) {
 					const response = yield* send(handler, { authorization: `Bearer ${key}` })
 					assert.strictEqual(response.status, 202)
-					const body = yield* Effect.promise(() => response.json())
+					const body = yield* Effect.promise(() => response.json()).pipe(
+						Effect.map(Schema.decodeUnknownSync(Schema.Struct({ messageId: Schema.String }))),
+					)
 					assert.strictEqual(turns.length, 1)
 					assert.strictEqual(turns[0]?.tenant.orgId, ORG)
 					assert.strictEqual(turns[0]?.text, "hello")

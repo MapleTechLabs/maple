@@ -9,10 +9,8 @@ import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema, toOutputSchema } 
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
-import {
-	WarehouseQueryService,
-	type WarehouseQueryServiceApi,
-} from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { WarehouseQueryError } from "@maple/domain"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import {
@@ -332,10 +330,10 @@ describe("MCP dispatcher", () => {
 		it.effect("fails the dispatcher span on a real query failure", () =>
 			Effect.gen(function* () {
 				// SAFETY: run_sql reaches only rawSqlQuery on the warehouse; no other method is called.
-				const warehouse = {
+				const warehouse = makeWarehouseServiceStub({
 					rawSqlQuery: () =>
 						Effect.fail(new WarehouseQueryError({ message: "boom", pipeName: "run_sql" })),
-				} as WarehouseQueryServiceApi
+				})
 				const executor = yield* McpToolExecutor.make.pipe(
 					Effect.provide(
 						Context.make(AuditLogService, makeMemoryAuditLog()).pipe(

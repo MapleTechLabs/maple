@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
 import { Context, Effect, Option, Schema } from "effect"
 import { WarehouseExecutor, productEventsFunnel } from "@maple/query-engine/observability"
 import { CH } from "@maple/query-engine"
+import { OrgId } from "@maple/domain/http"
 import { ListProductEventsOutput, QueryFunnelOutput } from "@maple/domain/mcp-outputs"
 import type { McpToolResult } from "../types"
 import { mapleToolCatalog, toInputSchema } from "../registry"
@@ -176,9 +177,9 @@ describe("productEventsFunnel (observability helper)", () => {
 	]
 	const compiledSql: string[] = []
 	const executor = Context.make(WarehouseExecutor, {
-		orgId: "org_test",
+		orgId: Schema.decodeUnknownSync(OrgId)("org_test"),
 		query: () => Effect.succeed({ data: [] }),
-		compiledQuery: <T>(compiled: { readonly sql: string }) => {
+		compiledQuery: <T>(compiled: CH.CompiledQueryInput<T>) => {
 			compiledSql.push(compiledQueryOf(compiled).sql)
 			// SAFETY: the stub answers every compiled query with funnel rows; the
 			// only query these tests compile is the funnel, whose row type is `T`.
