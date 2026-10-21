@@ -128,24 +128,28 @@ const accountForm = (h: H, model: Model, canCancel: boolean): Html => {
 	)
 }
 
+/** Unavailable on this deployment: the card says so, without steps the reader can't take. */
 const connectCard = (h: H, model: Model, status: V2AwsIntegration): Html =>
 	integrationEmpty(h, [
 		integrationEmptyFeatures(h, FEATURES),
-		integrationEmptyCard(h, [
-			integrationEmptyMedia(h, BRAND),
-			integrationEmptyHint(h, [
-				"Enter the account to connect. Maple then gives you a stack to deploy from AWS CloudShell, and confirms it by assuming the role.",
-			]),
+		integrationEmptyCard(
+			h,
 			status.available
-				? accountForm(h, model, false)
-				: h.p(
-						[h.Class("text-sm text-muted-foreground"), h.Role("status")],
-						["AWS can't be connected on this Maple deployment yet."],
-					),
-			integrationEmptyFooter(h, [
-				"You need permission to create IAM roles in the account. Each account connects separately.",
-			]),
-		]),
+				? [
+						integrationEmptyMedia(h, BRAND),
+						integrationEmptyHint(h, [
+							"Enter the account to connect. Maple then gives you a stack to deploy from AWS CloudShell, and confirms it by assuming the role.",
+						]),
+						accountForm(h, model, false),
+						integrationEmptyFooter(h, [
+							"You need permission to create IAM roles in the account. Each account connects separately.",
+						]),
+					]
+				: [
+						integrationEmptyMedia(h, BRAND),
+						integrationEmptyHint(h, ["AWS can't be connected on this Maple deployment yet."]),
+					],
+		),
 	])
 
 type Health = Readonly<{ label: string; variant: "ok" | "warn" | "crit" | "muted" }>
