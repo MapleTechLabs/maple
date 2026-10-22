@@ -252,6 +252,8 @@ const CLAUSE_BOUNDARY = new Set([
 const disallowedTableFunction = (sql: string): string | null => {
 	const tokens = tokenizeSql(sql)
 	const parenKind: Array<"call" | "sub" | "group"> = []
+	// The enclosing FROM list survives a paren: a subquery closing must not end it.
+	const outerFromList: Array<number> = []
 	let depth = 0
 	let armed = false
 	let fromListDepth = -1
@@ -267,11 +269,13 @@ const disallowedTableFunction = (sql: string): string | null => {
 				const call = prev?.ident === true && prev.v !== "in" && !armed
 				parenKind.push(sub ? "sub" : call ? "call" : "group")
 				depth++
-				// `FROM (x(...))`: a paren in a table position keeps it one.
+				outerFromList.push(fromListDepth)
+				// A subquery opens its own FROM list; `FROM (x(...))` keeps the table position.
+				if (sub) armed = false
 			} else if (t.v === ")") {
 				parenKind.pop()
 				depth--
-				if (fromListDepth > depth) fromListDepth = -1
+				fromListDepth = outerFromList.pop() ?? -1
 				armed = false
 			} else if (t.v === "," && depth === fromListDepth) {
 				armed = true

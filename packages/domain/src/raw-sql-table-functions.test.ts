@@ -52,6 +52,8 @@ describe("rawSqlIssue table sources", () => {
 		// A reader name is refused in any position.
 		"SELECT file('/x') AS f FROM traces WHERE $__orgFilter",
 		"SELECT * FROM traces WHERE $__orgFilter AND SpanId = (SELECT 1 FROM t WHERE 1 = url('http://x/'))",
+		// A subquery in the FROM list must not end that list.
+		"SELECT * FROM (SELECT 1 FROM traces) a, zeros(10) WHERE $__orgFilter",
 	])("rejects table functions the walker must not miss: %s", (sql) => {
 		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
 	})
@@ -74,6 +76,8 @@ describe("rawSqlIssue table sources", () => {
 		"SELECT * FROM traces t, logs l WHERE $__orgFilter(t) AND t.TraceId = l.TraceId",
 		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN (SELECT SpanId FROM logs WHERE lower(Body) LIKE '%x%')",
 		"WITH c AS (SELECT count() AS n FROM traces WHERE $__orgFilter) SELECT n FROM c",
+		"SELECT * FROM (SELECT (Timestamp) AS t FROM traces WHERE $__orgFilter)",
+		"SELECT * FROM traces t JOIN (SELECT (1) AS a) s ON 1 = 1 WHERE $__orgFilter(t)",
 	])("accepts legitimate queries: %s", (sql) => {
 		expect(rawSqlIssue(sql)).toBeNull()
 	})
