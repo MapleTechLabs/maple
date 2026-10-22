@@ -8,6 +8,8 @@ COPY . .
 RUN bun install --frozen-lockfile \
 	&& bun run --cwd packages/effect-sdk build
 
+USER bun
+
 EXPOSE 3475
 
 CMD ["bun", "run", "apps/scraper/src/main.ts"]

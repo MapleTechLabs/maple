@@ -1,5 +1,6 @@
-import { Context, Effect, Layer, Option } from "effect"
+import { Context, Effect, Layer, Option, Stream } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
+import type { HttpClientResponse } from "effect/http"
 import type { InternalScrapeTarget } from "@maple/domain/http"
 import { describeHttpClientError, guard } from "@maple/safe-fetch"
 import { classifyTargetStatus } from "./policy"
@@ -42,6 +43,47 @@ const peerServiceOf = (targetType: InternalScrapeTarget["targetType"]): string =
 		: targetType === "supabase"
 			? "supabase-metrics"
 			: "scrape-target"
+
+/** Largest exposition body a scrape reads; past it the scrape fails instead of buffering on. */
+export const MAX_SCRAPE_RESPONSE_BYTES = 32 * 1024 * 1024
+
+const responseTooLarge = () =>
+	scrapeError({
+		message: `response exceeded ${MAX_SCRAPE_RESPONSE_BYTES / (1024 * 1024)} MiB`,
+		reason: "scrape_failed",
+	})
+
+interface BodyText {
+	readonly bytes: number
+	readonly text: string
+}
+
+/**
+ * The body as text, read as a stream so a target can never make the scraper
+ * buffer more than `MAX_SCRAPE_RESPONSE_BYTES`. A declared `Content-Length`
+ * over the cap fails before reading; the stream count catches the rest.
+ */
+const readCappedBody = (response: HttpClientResponse.HttpClientResponse) => {
+	const declared = Number(response.headers["content-length"] ?? Number.NaN)
+	if (Number.isFinite(declared) && declared > MAX_SCRAPE_RESPONSE_BYTES) {
+		return Effect.fail(responseTooLarge())
+	}
+	// Decode chunk by chunk (one decoder per body) so the fold stays linear in the chunk count.
+	return Effect.suspend(() => {
+		const decoder = new TextDecoder()
+		return Stream.runFoldEffect(
+			response.stream,
+			(): BodyText => ({ bytes: 0, text: "" }),
+			(acc, chunk) =>
+				acc.bytes + chunk.byteLength > MAX_SCRAPE_RESPONSE_BYTES
+					? Effect.fail(responseTooLarge())
+					: Effect.succeed({
+							bytes: acc.bytes + chunk.byteLength,
+							text: acc.text + decoder.decode(chunk, { stream: true }),
+						}),
+		).pipe(Effect.map(({ text }) => text + decoder.decode()))
+	})
+}
 
 const DEFAULT_HEADERS = {
 	accept: "application/openmetrics-text;version=1.0.0,text/plain;version=0.0.4;q=0.5,*/*;q=0.1",
@@ -86,7 +128,7 @@ export class TargetFetcher extends Context.Service<TargetFetcher, TargetFetcherA
 					)
 					.pipe(
 						Effect.flatMap((response) =>
-							Effect.map(response.text, (body): TargetResponse => ({
+							Effect.map(readCappedBody(response), (body): TargetResponse => ({
 								status: response.status,
 								body,
 								retryAfterSeconds: parseRetryAfterSeconds(
