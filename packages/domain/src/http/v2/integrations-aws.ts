@@ -17,7 +17,7 @@ import { PublicId, PublicIdPrefixes } from "./public-id"
 
 // AWS integration. No OAuth and no stored AWS secret: an org registers a connection for an account,
 // an administrator deploys the generated CloudFormation stack, and Maple assumes the role it creates
-// with an external id Maple minted. Each module is its own policy on the role; a metric stream is
+// with a token from its own OIDC issuer, whose subject names the connection. Each module is its own policy on the role; a metric stream is
 // its own stack per region. Public v2 from the start so scripted setups can use a scoped API key.
 
 /** `awsc_…` public ID ⇄ internal `AwsConnectionId` (raw UUID). */
@@ -28,10 +28,11 @@ const connectionExample = {
 	object: "aws_connection",
 	account_id: "123456789012",
 	role_arn: "arn:aws:iam::123456789012:role/MapleIntegration-018f2b3c4d5e4f708192a3b4",
-	external_id: "9f1c4e2a7b3d4c6e8a0b1c2d3e4f5a6b",
+	oidc_issuer: "https://api.maple.dev/oidc/aws",
+	oidc_subject: "aws-connection:018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
 	modules: [],
 	granted_modules: [],
-	template_version: 1,
+	template_version: 2,
 	setup_outdated: false,
 	verified_at: "2026-10-21T12:05:00.000Z",
 	last_checked_at: "2026-10-21T13:00:00.000Z",
@@ -60,10 +61,15 @@ export const V2AwsConnection = Schema.Struct({
 			"The IAM role the setup creates and Maple assumes. Its name is derived from the connection, so it cannot point at another role.",
 		examples: [connectionExample.role_arn],
 	}),
-	external_id: Schema.String.annotate({
+	oidc_issuer: Schema.String.annotate({
 		description:
-			"The external id the role's trust policy requires. Maple mints it; it is not a secret, but it is what keeps another Maple organization from assuming this role.",
-		examples: [connectionExample.external_id],
+			"Maple's OIDC issuer. The setup registers it as an IAM identity provider in the account (one per account, shared by every connection to it), and the role trusts tokens it signs.",
+		examples: [connectionExample.oidc_issuer],
+	}),
+	oidc_subject: Schema.String.annotate({
+		description:
+			"The `sub` the role's trust policy requires. Only this connection's tokens carry it, so no other Maple organization or connection can assume the role.",
+		examples: [connectionExample.oidc_subject],
 	}),
 	modules: Schema.Array(AwsModule).annotate({
 		description: "What the connection is meant to let Maple read. The setup grants exactly these.",
@@ -126,7 +132,7 @@ export const V2AwsIntegration = Schema.Struct({
 	}),
 	available: Schema.Boolean.annotate({
 		description:
-			"Whether this Maple deployment has an AWS identity to assume roles with. When `false`, connections cannot be created.",
+			"Whether this Maple deployment can sign the OIDC tokens Maple assumes roles with. When `false`, connections cannot be created.",
 		examples: [true],
 	}),
 	modules: Schema.Array(V2AwsModuleInfo).annotate({
@@ -156,7 +162,9 @@ const modulesField = (description: string) =>
 
 export const V2AwsCreateConnectionRequest = Schema.Struct({
 	account_id: AwsAccountId.annotate({ description: "The 12-digit AWS account ID." }),
-	modules: modulesField("What Maple may read. Defaults to none: the role then only lets Maple confirm the setup."),
+	modules: modulesField(
+		"What Maple may read. Defaults to none: the role then only lets Maple confirm the setup.",
+	),
 	metric_stream: Schema.optionalKey(Schema.NullOr(metricStreamField)),
 }).annotate({
 	identifier: "AwsCreateConnectionRequest",
@@ -166,7 +174,9 @@ export const V2AwsCreateConnectionRequest = Schema.Struct({
 export type V2AwsCreateConnectionRequest = Schema.Schema.Type<typeof V2AwsCreateConnectionRequest>
 
 export const V2AwsUpdateConnectionRequest = Schema.Struct({
-	modules: modulesField("What Maple may read. Omitted: the connection's modules are unchanged; `[]` removes them all."),
+	modules: modulesField(
+		"What Maple may read. Omitted: the connection's modules are unchanged; `[]` removes them all.",
+	),
 	metric_stream: Schema.optionalKey(
 		Schema.NullOr(metricStreamField).annotate({
 			description: "The metric stream. Omitted: unchanged; `null` turns it off.",
@@ -213,7 +223,8 @@ export const V2AwsSetup = Schema.Struct({
 			"The role as a self-contained Terraform file for the `aws` provider. It does not cover the metric stream: use `setup_script` for that.",
 	}),
 	metrics_stack_name: Schema.NullOr(Schema.String).annotate({
-		description: "The stack the metric stream lives in, the same in each of its regions, or `null` without a stream.",
+		description:
+			"The stack the metric stream lives in, the same in each of its regions, or `null` without a stream.",
 		examples: ["maple-metrics-018f2b3c4d5e4f708192a3b4"],
 	}),
 	metrics_cloudformation_template: Schema.NullOr(Schema.String).annotate({
@@ -238,7 +249,7 @@ export const V2AwsConnectionDeleteResponse = Schema.Struct({
 	}),
 	cleanup_script: Schema.String.annotate({
 		description:
-			"Text to paste into AWS CloudShell that deletes the stack. Maple has no write access to AWS, so an administrator runs it; until then the role exists but no Maple organization holds its external id.",
+			"Text to paste into AWS CloudShell that deletes the stack. Maple has no write access to AWS, so an administrator runs it; until then the role exists but Maple no longer signs tokens for its subject.",
 	}),
 }).annotate({
 	identifier: "AwsConnectionDeleteResponse",
@@ -286,7 +297,7 @@ export class V2AwsIntegrationsApiGroup extends HttpApiGroup.make("awsIntegration
 				identifier: "createAwsConnection",
 				summary: "Connect an AWS account",
 				description:
-					"Registers a connection for one account and mints its external id. Maple reads nothing until an administrator deploys the stack from `setup`. An account can be connected once per Maple organization. Requires an org-admin role and the `integrations:write` scope.",
+					"Registers a connection for one account. Maple reads nothing until an administrator deploys the stack from `setup`. An account can be connected once per Maple organization. Requires an org-admin role and the `integrations:write` scope.",
 			}),
 		),
 	)

@@ -54,8 +54,6 @@ export interface MapleProfile {
 		readonly replayBlobs: boolean
 		/** prd only: previews and dev share the AWS account and must not own its audit controls. */
 		readonly awsSecurityBaseline: AwsSecurityBaseline
-		/** Maple's IAM user for the AWS integration. Dev uses the shared dev user from `.env.local`. */
-		readonly awsIntegrationPrincipal: boolean
 	}
 	readonly ingest: {
 		/** The per-org replay byte budget is process-local, so it scales with this. */
@@ -102,7 +100,6 @@ const US_PRD: MapleProfile = {
 		sandbox: true,
 		replayBlobs: true,
 		awsSecurityBaseline: "account",
-		awsIntegrationPrincipal: true,
 	},
 	ingest: {
 		desiredCount: 2,
@@ -162,7 +159,6 @@ const PR: MapleProfile = {
 		sandbox: false,
 		replayBlobs: false,
 		awsSecurityBaseline: "none",
-		awsIntegrationPrincipal: true,
 	},
 	ingest: SMALL_INGEST,
 	electric: { taskSize: { cpu: 256, memory: 512 }, dbPoolSize: undefined },
@@ -180,7 +176,7 @@ const DEV: MapleProfile = {
 	...PR,
 	database: "managed",
 	migratesDatabase: false,
-	deploys: { ...PR.deploys, ingest: false, electric: false, awsIntegrationPrincipal: false },
+	deploys: { ...PR.deploys, ingest: false, electric: false },
 }
 
 export interface MapleProfileOptions {

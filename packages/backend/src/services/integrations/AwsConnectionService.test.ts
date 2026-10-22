@@ -13,10 +13,12 @@ import {
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
 import { AwsConnectionService } from "./AwsConnectionService"
-import { MAPLE_ACCESS_KEY_ID, MAPLE_PRINCIPAL_ARN, makeFakeAws, type FakeAws } from "./aws/fake-aws"
+import { MAPLE_TEST_OIDC_KEY, makeFakeAws, OTHER_TEST_OIDC_KEY, type FakeAws } from "./aws/fake-aws"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
+
+const API_BASE_URL = "https://api.maple.test"
 
 const baseConfig = {
 	PORT: "3472",
@@ -28,13 +30,10 @@ const baseConfig = {
 	MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 9).toString("base64"),
 	MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
 	MAPLE_INGEST_PUBLIC_URL: "https://ingest.test/",
+	MAPLE_API_BASE_URL: `${API_BASE_URL}/`,
 }
 
-const mapleAws = {
-	MAPLE_AWS_PRINCIPAL_ARN: MAPLE_PRINCIPAL_ARN,
-	MAPLE_AWS_ACCESS_KEY_ID: MAPLE_ACCESS_KEY_ID,
-	MAPLE_AWS_SECRET_ACCESS_KEY: "maple-test-secret",
-}
+const mapleAws = { MAPLE_AWS_OIDC_SIGNING_KEY: MAPLE_TEST_OIDC_KEY.privateKey }
 
 const makeLayer = (testDb: TestDb, aws: FakeAws, config: Record<string, string> = mapleAws) =>
 	Layer.effect(AwsConnectionService, AwsConnectionService.make).pipe(
@@ -86,7 +85,8 @@ describe("AwsConnectionService", () => {
 		return Effect.gen(function* () {
 			const service = yield* AwsConnectionService
 			const created = yield* service.create(orgId, userId, { accountId: account, modules: [] })
-			assert.match(created.externalId, /^[0-9a-f]{32}$/)
+			assert.strictEqual(created.oidcIssuer, `${API_BASE_URL}/oidc/aws`)
+			assert.strictEqual(created.oidcSubject, `aws-connection:${created.id}`)
 			assert.match(created.roleArn, /^arn:aws:iam::123456789012:role\/MapleIntegration-[0-9a-f]{24}$/)
 			assert.isNull(created.verifiedAt)
 
@@ -106,20 +106,20 @@ describe("AwsConnectionService", () => {
 			const checked = yield* later(service.check(orgId, created.id))
 			assert.isNotNull(checked.verifiedAt)
 			assert.isNull(checked.lastCheckError)
-			assert.strictEqual(checked.templateVersion, 1)
+			assert.strictEqual(checked.templateVersion, 2)
 			assert.deepStrictEqual(checked.grantedModules, [])
 			assert.isFalse(checked.setupOutdated)
 			const healthy = yield* sourceOf(testDb, created.id)
 			assert.isNotNull(healthy?.last_poll_ok_at)
 			assert.deepStrictEqual(aws.calls.slice(-3).sort(), [
-				"AssumeRole",
+				"AssumeRoleWithWebIdentity",
 				"GetRole",
 				"ListAttachedRolePolicies",
 			])
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
-	it.effect("never lets one connection's external id verify another's role", () => {
+	it.effect("never lets one connection's token assume another's role", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
 		return Effect.gen(function* () {
@@ -127,11 +127,11 @@ describe("AwsConnectionService", () => {
 			const mine = yield* service.create(orgId, userId, { accountId: account, modules: [] })
 			const theirs = yield* service.create(otherOrgId, userId, { accountId: account, modules: [] })
 			aws.deploy(account, (yield* service.setup(orgId, mine.id)).cloudformationTemplate)
-			// Their role, deployed exactly as rendered except for trusting my external id: the
-			// mismatch alone must be what refuses it.
+			// Their role, deployed exactly as rendered except for trusting my subject: the mismatch
+			// alone must be what refuses it.
 			const template = (yield* service.setup(otherOrgId, theirs.id)).cloudformationTemplate
-			assert.include(template, theirs.externalId)
-			aws.deploy(account, template.replaceAll(theirs.externalId, mine.externalId))
+			assert.include(template, `"${theirs.oidcSubject}"`)
+			aws.deploy(account, template.replaceAll(`"${theirs.oidcSubject}"`, `"${mine.oidcSubject}"`))
 			const checked = yield* later(service.check(otherOrgId, theirs.id))
 			assert.isNull(checked.verifiedAt)
 			// The same role trusting their own id verifies: nothing else was wrong with it.
@@ -157,14 +157,46 @@ describe("AwsConnectionService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
-	it.effect("blames Maple, not the customer, when AWS rejects Maple's own key", () => {
+	it.effect("keeps a role pending while the account has no OIDC provider for Maple", () => {
 		const testDb = createTestDb(trackedDbs)
-		const aws = makeFakeAws("AKIASOMEOTHERKEY0001")
+		const aws = makeFakeAws()
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const created = yield* service.create(orgId, userId, { accountId: account, modules: [] })
+			const template = (yield* service.setup(orgId, created.id)).cloudformationTemplate
+			aws.deploy(account, template, { createsProvider: false })
+			const pending = yield* later(service.check(orgId, created.id))
+			assert.isNull(pending.verifiedAt)
+			assert.include(pending.lastCheckError ?? "", "Run the setup script")
+			assert.isNull((yield* sourceOf(testDb, created.id))?.last_poll_error)
+			// The console default creates it with the stack; the role verifies once it exists.
+			aws.deploy(account, template)
+			assert.isNotNull((yield* later(service.check(orgId, created.id))).verifiedAt)
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
+
+	it.effect("keeps a role pending while the account's provider lacks Maple's audience", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const created = yield* service.create(orgId, userId, { accountId: account, modules: [] })
+			const template = (yield* service.setup(orgId, created.id)).cloudformationTemplate
+			aws.deploy(account, template, { providerAudience: "some-other-client" })
+			const pending = yield* later(service.check(orgId, created.id))
+			assert.isNull(pending.verifiedAt)
+			assert.include(pending.lastCheckError ?? "", "Run the setup script")
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
+
+	it.effect("blames Maple, not the customer, when AWS cannot verify Maple's token", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws(OTHER_TEST_OIDC_KEY.publicKey)
 		return Effect.gen(function* () {
 			const service = yield* AwsConnectionService
 			const created = yield* service.create(orgId, userId, { accountId: account, modules: [] })
 			const checked = yield* later(service.check(orgId, created.id))
-			assert.include(checked.lastCheckError ?? "", "Maple's own credentials")
+			assert.include(checked.lastCheckError ?? "", "Maple's identity token")
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
@@ -306,7 +338,7 @@ describe("AwsConnectionService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
-	it.effect("is unavailable without Maple's AWS identity", () => {
+	it.effect("is unavailable without a usable OIDC signing key", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
 		return Effect.gen(function* () {
@@ -317,7 +349,7 @@ describe("AwsConnectionService", () => {
 			)
 			assert.strictEqual(error._tag, "@maple/http/errors/AwsIntegrationUnavailableError")
 			assert.deepStrictEqual(yield* service.checkDue(), { due: 0, checked: 0, failures: 0 })
-		}).pipe(Effect.provide(makeLayer(testDb, aws, { MAPLE_AWS_PRINCIPAL_ARN: MAPLE_PRINCIPAL_ARN })))
+		}).pipe(Effect.provide(makeLayer(testDb, aws, { MAPLE_AWS_OIDC_SIGNING_KEY: "not a key" })))
 	})
 
 	it.effect("sweeps each connection once an hour and skips paused sources", () => {
@@ -371,7 +403,7 @@ describe("AwsConnectionService", () => {
 			aws.deploy(account, (yield* service.setup(orgId, created.id)).cloudformationTemplate)
 			const [a, b] = yield* Effect.all([service.checkDue(), service.checkDue()], { concurrency: 2 })
 			assert.strictEqual((a?.checked ?? 0) + (b?.checked ?? 0), 1)
-			assert.strictEqual(aws.calls.filter((call) => call === "AssumeRole").length, 1)
+			assert.strictEqual(aws.calls.filter((call) => call === "AssumeRoleWithWebIdentity").length, 1)
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 

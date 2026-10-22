@@ -8,11 +8,12 @@ import {
 	AWS_TEMPLATE_VERSION,
 	awsConnectionResourceNames,
 	awsModuleOfPolicyName,
+	awsOidcIssuer,
+	awsOidcSubject,
 	awsRoleArn,
 	type AwsMetricStream,
 	awsSetupPlan,
 	isAwsModuleAvailable,
-	parseAwsMaplePrincipal,
 } from "@maple/domain/aws"
 import {
 	AwsAccountAlreadyConnectedError,
@@ -42,14 +43,17 @@ import {
 	type PollOutcome,
 	reportPoll,
 } from "@maple/backend/services/org/integration-sources"
-import { type AwsApiError, type AwsKey, checkRole } from "./aws/api"
+import { AwsApiError, checkRole } from "./aws/api"
+import { type AwsOidcSigner, makeAwsOidcSigner } from "./aws/oidc"
 import { renderAwsCleanupScript, renderAwsSetup } from "./aws/setup"
 
 export interface AwsConnection {
 	readonly id: AwsConnectionId
 	readonly accountId: AwsAccountId
 	readonly roleArn: string
-	readonly externalId: string
+	/** The issuer and subject the role's trust policy names: what Maple's tokens carry. */
+	readonly oidcIssuer: string
+	readonly oidcSubject: string
 	readonly modules: ReadonlyArray<AwsModule>
 	/** What the latest check found on the role. Null until a check could assume it. */
 	readonly grantedModules: ReadonlyArray<AwsModule> | null
@@ -97,7 +101,7 @@ type ModulesError = IntegrationsValidationError
 export interface AwsConnectionServiceApi {
 	readonly status: (orgId: OrgId) => Effect.Effect<
 		{
-			/** False when this deployment has no AWS identity to assume roles with. */
+			/** False when this deployment has no OIDC signing key to assume roles with. */
 			readonly available: boolean
 			readonly modules: ReadonlyArray<AwsModuleInfo>
 			readonly connections: ReadonlyArray<AwsConnection>
@@ -190,13 +194,14 @@ const sameModules = (a: ReadonlyArray<AwsModule>, b: ReadonlyArray<AwsModule>) =
 const normalizeModules = (modules: ReadonlyArray<AwsModule>) =>
 	AWS_MODULES.filter((module) => modules.includes(module))
 
-const toConnection = (row: AwsConnectionRow): AwsConnection => {
+const toConnection = (issuer: string, row: AwsConnectionRow): AwsConnection => {
 	const names = awsConnectionResourceNames(row.id)
 	return {
 		id: row.id,
 		accountId: row.accountId,
 		roleArn: awsRoleArn(row.accountId, names.roleName),
-		externalId: row.externalId,
+		oidcIssuer: issuer,
+		oidcSubject: awsOidcSubject(row.id),
 		modules: row.modules,
 		grantedModules: row.grantedModules,
 		templateVersion: row.templateVersion,
@@ -307,9 +312,9 @@ export const interpretCheck = (
 				outcome: row.verifiedAt === null ? null : { _tag: "Failed", error: message },
 			}
 		}
-		case "maple_credentials": {
+		case "maple_identity": {
 			const message =
-				"AWS rejected Maple's own credentials. This is on Maple's side; nothing to change in AWS."
+				"AWS could not verify Maple's identity token. This is on Maple's side; nothing to change in AWS."
 			return {
 				changes: { ...base, lastCheckError: message },
 				outcome: row.verifiedAt === null ? null : { _tag: "Failed", error: message },
@@ -360,28 +365,20 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					}
 				})
 
-			// All three or nothing: a principal without a key could hand out setups nothing checks.
-			const maple = Option.all({
-				principalArn: env.MAPLE_AWS_PRINCIPAL_ARN,
-				accessKeyId: env.MAPLE_AWS_ACCESS_KEY_ID,
-				secretAccessKey: env.MAPLE_AWS_SECRET_ACCESS_KEY,
-			}).pipe(
-				Option.flatMap(({ principalArn, accessKeyId, secretAccessKey }) =>
-					Option.map(
-						Option.fromUndefinedOr(parseAwsMaplePrincipal(principalArn.trim())),
-						(principal) => ({
-							principal,
-							key: { accessKeyId: accessKeyId.trim(), secretAccessKey } satisfies AwsKey,
-						}),
+			const issuer = awsOidcIssuer(env.MAPLE_API_BASE_URL)
+			// Without a usable key nothing can be assumed, so no setup is handed out either.
+			const signer: AwsOidcSigner | undefined = yield* Option.match(env.MAPLE_AWS_OIDC_SIGNING_KEY, {
+				onNone: () => Effect.succeed(undefined),
+				onSome: (key) =>
+					makeAwsOidcSigner(issuer, key).pipe(
+						Effect.catchTag("@maple/backend/integrations/AwsOidcKeyError", (error) =>
+							Effect.logWarning(`AWS integration disabled: ${error.message}`).pipe(
+								Effect.as(undefined),
+							),
+						),
 					),
-				),
-				Option.getOrUndefined,
-			)
-			if (maple === undefined && Option.isSome(env.MAPLE_AWS_PRINCIPAL_ARN)) {
-				yield* Effect.logWarning(
-					"AWS integration disabled: MAPLE_AWS_PRINCIPAL_ARN is not an IAM user or role ARN, or its access key is unset",
-				)
-			}
+			})
+			const connectionOf = (row: AwsConnectionRow) => toConnection(issuer, row)
 
 			const selectRow = (orgId: OrgId, connectionId: AwsConnectionId) =>
 				dbExecute((db) =>
@@ -408,9 +405,9 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					),
 				)
 				return {
-					available: maple !== undefined,
+					available: signer !== undefined,
 					modules: MODULE_INFO,
-					connections: rows.map(toConnection),
+					connections: rows.map(connectionOf),
 				}
 			})
 
@@ -424,7 +421,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				},
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.aws.account_id": input.accountId })
-				if (maple === undefined) return yield* unavailable()
+				if (signer === undefined) return yield* unavailable()
 				const modules = yield* validateModules(input.modules)
 				const id = AwsConnectionId.make(randomUUID())
 				const streamSecret = yield* mintStreamSecret(id)
@@ -446,7 +443,6 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 										orgId,
 										sourceId,
 										accountId: input.accountId,
-										externalId: randomBytes(16).toString("hex"),
 										modules,
 										metricStream: input.metricStream ?? null,
 										...streamSecret,
@@ -469,7 +465,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 						message: `The AWS account ${input.accountId} is already connected.`,
 					})
 				}
-				return toConnection(row)
+				return connectionOf(row)
 			})
 
 			const update = Effect.fn("AwsConnectionService.update")(function* (
@@ -496,7 +492,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					}),
 				}
 				if (Object.keys(changes).length === 0)
-					return toConnection(yield* selectRow(orgId, connectionId))
+					return connectionOf(yield* selectRow(orgId, connectionId))
 				const updatedAt = yield* Clock.currentTimeMillis
 				const [row] = yield* dbExecute((db) =>
 					db.run(
@@ -507,7 +503,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					),
 				)
 				if (row === undefined) return yield* notFound()
-				return toConnection(row)
+				return connectionOf(row)
 			})
 
 			/** Mints a stream secret for a connection made before streams. */
@@ -551,13 +547,12 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				connectionId: AwsConnectionId,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.aws.connection_id": connectionId })
-				if (maple === undefined) return yield* unavailable()
+				if (signer === undefined) return yield* unavailable()
 				const row = yield* selectRow(orgId, connectionId)
 				const plan = awsSetupPlan({
 					connectionId: row.id,
 					accountId: row.accountId,
-					externalId: row.externalId,
-					maplePrincipal: maple.principal,
+					issuer,
 					modules: row.modules,
 				})
 				const stream =
@@ -572,15 +567,21 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			})
 
 			/** Assumes the row's role and writes what it found, on the row and on its source. */
-			const runCheck = (key: AwsKey, row: AwsConnectionRow) =>
+			const runCheck = (signer: AwsOidcSigner, row: AwsConnectionRow) =>
 				Effect.gen(function* () {
 					const names = awsConnectionResourceNames(row.id)
-					const result = yield* checkRole(httpClient, key, {
-						roleArn: awsRoleArn(row.accountId, names.roleName),
-						roleName: names.roleName,
-						externalId: row.externalId,
-						sessionName: names.sessionName,
-					}).pipe(
+					const result = yield* Clock.currentTimeMillis.pipe(
+						Effect.flatMap((issuedAt) => signer.mint(awsOidcSubject(row.id), issuedAt)),
+						Effect.mapError(
+							(error) => new AwsApiError({ message: error.message, kind: "maple_identity" }),
+						),
+						Effect.flatMap((token) =>
+							checkRole(httpClient, token, {
+								roleArn: awsRoleArn(row.accountId, names.roleName),
+								roleName: names.roleName,
+								sessionName: names.sessionName,
+							}),
+						),
 						Effect.map((report) => ({ _tag: "Ok" as const, ...report })),
 						Effect.catchTag("@maple/backend/integrations/AwsApiError", (error) =>
 							Effect.succeed({ _tag: "Failed" as const, error }),
@@ -615,22 +616,22 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				connectionId: AwsConnectionId,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.aws.connection_id": connectionId })
-				if (maple === undefined) return yield* unavailable()
+				if (signer === undefined) return yield* unavailable()
 				const row = yield* selectRow(orgId, connectionId)
-				// Every check spends Maple's one key, whose STS limits all tenants share: a click within
+				// Every check spends Maple's one identity, whose STS limits all tenants share: a click within
 				// seconds of a good check answers with it. A pending one always asks: the stack may be new.
 				const now = yield* Clock.currentTimeMillis
 				const recent =
 					row.lastCheckedAt !== null && now - row.lastCheckedAt < MANUAL_CHECK_INTERVAL_MS
 				if (recent && row.verifiedAt !== null && row.lastCheckError === null) {
-					return toConnection(row)
+					return connectionOf(row)
 				}
-				return toConnection((yield* runCheck(maple.key, row)).row)
+				return connectionOf((yield* runCheck(signer, row)).row)
 			})
 
 			/** One batch: the oldest due connections, never-checked ones first, claimed and checked. */
 			const sweepBatch = Effect.fn("AwsConnectionService.sweepBatch")(function* (
-				key: AwsKey,
+				signer: AwsOidcSigner,
 				deadlineAt: number,
 			) {
 				const now = yield* Clock.currentTimeMillis
@@ -692,7 +693,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 						Effect.flatMap(Clock.currentTimeMillis, (now) =>
 							now >= deadlineAt
 								? Effect.succeed(undefined)
-								: runCheck(key, row).pipe(Effect.map(({ ok }) => ok)),
+								: runCheck(signer, row).pipe(Effect.map(({ ok }) => ok)),
 						).pipe(
 							Effect.withSpan("AwsConnectionService.checkDue.connection", {
 								attributes: { orgId: row.orgId, "maple.aws.connection_id": row.id },
@@ -719,11 +720,11 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			 * however many, and stops short of its deadline. What it leaves stays leased, then due.
 			 */
 			const sweepFrom = (
-				key: AwsKey,
+				signer: AwsOidcSigner,
 				startedAt: number,
 				total: AwsCheckSweep,
 			): Effect.Effect<AwsCheckSweep, IntegrationsPersistenceError> =>
-				sweepBatch(key, startedAt + SWEEP_BUDGET_MS).pipe(
+				sweepBatch(signer, startedAt + SWEEP_BUDGET_MS).pipe(
 					Effect.flatMap((batch) =>
 						Effect.flatMap(Clock.currentTimeMillis, (now) => {
 							const next = {
@@ -733,15 +734,15 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 							}
 							return batch.due < SWEEP_LIMIT || now - startedAt >= SWEEP_BUDGET_MS
 								? Effect.succeed(next)
-								: sweepFrom(key, startedAt, next)
+								: sweepFrom(signer, startedAt, next)
 						}),
 					),
 				)
 
 			const checkDue = Effect.fn("AwsConnectionService.checkDue")(function* () {
-				if (maple === undefined) return { due: 0, checked: 0, failures: 0 }
+				if (signer === undefined) return { due: 0, checked: 0, failures: 0 }
 				const startedAt = yield* Clock.currentTimeMillis
-				return yield* sweepFrom(maple.key, startedAt, { due: 0, checked: 0, failures: 0 })
+				return yield* sweepFrom(signer, startedAt, { due: 0, checked: 0, failures: 0 })
 			})
 
 			const deleteConnection = Effect.fn("AwsConnectionService.delete")(function* (
@@ -756,6 +757,12 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					accountId: current.accountId,
 					stackName: names.stackName,
 					metricsStackName: names.metricsStackName,
+					oidcProvider: awsSetupPlan({
+						connectionId: current.id,
+						accountId: current.accountId,
+						issuer,
+						modules: [],
+					}).oidcProvider,
 				})
 				// Its source goes with it.
 				const [row] = yield* dbExecute((db) =>
@@ -772,7 +779,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					),
 				)
 				if (row === undefined) return yield* notFound()
-				return { connection: toConnection(row), cleanupScript }
+				return { connection: connectionOf(row), cleanupScript }
 			})
 
 			return {

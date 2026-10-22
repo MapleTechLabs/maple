@@ -26,7 +26,7 @@ setup snippets and connect flows hand out the preview's gateway.
 
 For UI work that does not need ingest, label the PR `preview:web` instead. It deploys the
 Workers (web, api, ai, alerting, chat-bot, electric-sync) on the same Neon and Tinybird
-branches, seeded and smoke-tested the same way, but on AWS only the AWS integration's IAM user: no ingest gateway, no
+branches, seeded and smoke-tested the same way, but creates nothing on AWS: no ingest gateway, no
 Electric (live sync stays off), no landing or local-ui. It holds no VPC, so it does not count
 against `MAX_LIVE_PREVIEWS`, and deploys faster. Its only data is the seed: setup snippets
 point at the shared ingest, which cannot see the preview's ingest keys, so connect flows and

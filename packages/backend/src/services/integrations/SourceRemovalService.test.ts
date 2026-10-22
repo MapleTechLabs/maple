@@ -109,7 +109,8 @@ const makeLayer = (testDb: TestDb, calls: string[]) => {
 						id: connectionId,
 						accountId,
 						roleArn: "arn:aws:iam::123456789012:role/MapleIntegration-abc",
-						externalId: "external",
+						oidcIssuer: "https://api.maple.test/oidc/aws",
+						oidcSubject: `aws-connection:${connectionId}`,
 						modules: [],
 						grantedModules: null,
 						templateVersion: null,
@@ -321,9 +322,9 @@ describe("SourceRemovalService", () => {
 				await insertSource(testDb, SOURCE_A, "aws")
 				await executeSql(
 					testDb,
-					`INSERT INTO aws_connections (id, org_id, source_id, account_id, external_id, modules, created_by,
+					`INSERT INTO aws_connections (id, org_id, source_id, account_id, modules, created_by,
 						created_at, updated_at)
-					 VALUES ($1, $2, $3, '123456789012', 'external', '[]', 'user_a', now(), now())`,
+					 VALUES ($1, $2, $3, '123456789012', '[]', 'user_a', now(), now())`,
 					[connection, org, SOURCE_A],
 				)
 			})

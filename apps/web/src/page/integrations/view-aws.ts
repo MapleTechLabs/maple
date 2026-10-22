@@ -51,7 +51,7 @@ const FEATURES = [
 	{
 		label: "Security",
 		title: "No stored secret",
-		description: "The role trusts Maple with an external ID only your organization holds.",
+		description: "The role trusts only short-lived tokens Maple signs for this connection.",
 	},
 	{
 		label: "Modules",

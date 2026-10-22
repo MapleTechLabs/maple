@@ -5,7 +5,7 @@ import { Schema } from "effect"
 import { Sources } from "./sources"
 
 // One row per connected AWS account. Maple holds no AWS secret for it: the customer's stack creates
-// a role (named from `id`) that trusts Maple's own identity with `external_id`. `modules` is what
+// a role (named from `id`) that trusts only Maple's OIDC tokens whose subject names `id`. `modules` is what
 // the connection asks for; the check writes what the role was found to grant.
 // The stream secret is Maple's own: the account's Firehose sends it to `/v1/firehose/aws/{id}`,
 // which looks the connection up by `id` + `stream_secret_hash`.
@@ -16,7 +16,6 @@ export const AwsConnections = PG.table("aws_connections", {
 		// The source this integration sends as. Deleting the source deletes the row.
 		sourceId: PG.column(PG.brand(PG.text, SourceId), { name: "source_id" }),
 		accountId: PG.column(PG.brand(PG.text, AwsAccountId), { name: "account_id" }),
-		externalId: PG.column(PG.text, { name: "external_id" }),
 		modules: PG.jsonb(Schema.Array(AwsModule)),
 		// What the latest check that assumed the role read off it. Null until one could.
 		grantedModules: PG.column(PG.nullable(PG.jsonb(Schema.Array(AwsModule))), {

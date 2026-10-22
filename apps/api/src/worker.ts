@@ -27,7 +27,7 @@ import ClickHouseSchemaApplyWorkflow from "./workflows/ClickHouseSchemaApplyWork
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const stack = yield* MapleStack
-	const { stage, region, domains, devEnv, db, awsPrincipal } = stack
+	const { stage, region, domains, devEnv, db, awsOidc } = stack
 	// api keeps the hostname and OAuth, and forwards `/mcp` and chat to maple-ai.
 	const ai = yield* AiWorker
 	// Resolved up front so a misconfigured deploy fails before applying anything.
@@ -50,8 +50,7 @@ const props = Effect.gen(function* () {
 			// Minted once and kept in state; bound to this Worker alone.
 			[VCS_SYNC_HOP_SECRET]: yield* makeRandom("VcsSyncHopSecret"),
 			...configuredEnv,
-			// After the config entries: a deploy's own identity wins over a stray MAPLE_AWS_* var.
-			...awsPrincipal,
+			...awsOidc,
 			...devEnv,
 		},
 	}
