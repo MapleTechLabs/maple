@@ -9,6 +9,7 @@ import type { Message } from "./message"
 import type { Model } from "./model"
 import { init } from "./update"
 import { cardView, connectButton } from "./view"
+import { awsDisconnectDialog } from "./view-aws"
 import { cloudflareReconnectButton } from "./view-cloudflare"
 import { gcpDialogs } from "./view-gcp-dialogs"
 
@@ -42,7 +43,7 @@ export const cardEmbed = Submodel.defineView<Model, Message, EmbedInputs>((model
 
 /**
  * A source's header: the Docs link, Connect while available, Cloudflare's Reconnect, and Google
- * Cloud's removal dialogs (the source's Delete opens them). The source's own Delete disconnects.
+ * Cloud's and AWS's removal dialogs (the source's Delete opens them, on any tab).
  */
 export const actionsEmbed = Submodel.defineView<Model, Message, EmbedInputs>((model, inputs, h) => {
 	const entry = catalogEntry(inputs.integration)
@@ -52,10 +53,14 @@ export const actionsEmbed = Submodel.defineView<Model, Message, EmbedInputs>((mo
 		overview?.kind === "connected" && inputs.integration === "cloudflare"
 			? [cloudflareReconnectButton(h, model)]
 			: []
-	const dialogs =
-		inputs.integration === "gcp" && (inputs.focusId ?? null) !== null
+	const isFocused = (inputs.focusId ?? null) !== null
+	const dialogs = !isFocused
+		? []
+		: inputs.integration === "gcp"
 			? gcpDialogs(h, model, inputs.timeZone)
-			: []
+			: inputs.integration === "aws"
+				? [awsDisconnectDialog(h, model)]
+				: []
 	return h.div(
 		[h.Class("flex shrink-0 items-center gap-3")],
 		[

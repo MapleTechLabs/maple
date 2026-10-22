@@ -438,8 +438,10 @@ const removedPanel = (h: H, model: Model, focusId: string | null): ReadonlyArray
 			),
 		)
 
-const disconnectConfirm = (h: H, model: Model, status: V2AwsIntegration): Html => {
-	const connection = status.connections.find((entry) => entry.id === model.awsCard.disconnectId)
+/** Mounted once: by the card on the integrations page, by the header on a source page. */
+export const awsDisconnectDialog = (h: H, model: Model): Html => {
+	const status = Option.getOrNull(AsyncData.getData(model.statuses.aws.data))
+	const connection = status?.connections.find((entry) => entry.id === model.awsCard.disconnectId)
 	return confirmDialog(h, {
 		slotId: "aws-disconnect",
 		model: model.awsCard.disconnectDialog,
@@ -487,7 +489,7 @@ const connectedView = (
 								],
 							),
 						]),
-			disconnectConfirm(h, model, status),
+			...(focusId === null ? [awsDisconnectDialog(h, model)] : []),
 		],
 	)
 }
