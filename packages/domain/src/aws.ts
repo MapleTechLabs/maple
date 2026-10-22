@@ -130,7 +130,12 @@ export const awsRoleArn = (accountId: AwsAccountId, roleName: string) =>
 export const AWS_OIDC_AUDIENCE = "sts.amazonaws.com"
 
 /** The issuer customer accounts trust: `{api}/oidc/aws`. It is permanent once an account trusts it. */
-export const awsOidcIssuer = (apiBaseUrl: string) => `${apiBaseUrl.replace(/\/+$/u, "")}/oidc/aws`
+export const awsOidcIssuer = (apiBaseUrl: string) => {
+	// A scan, not a `/\/+$/` regex: that one backtracks on a long run of slashes.
+	let end = apiBaseUrl.length
+	while (end > 0 && apiBaseUrl[end - 1] === "/") end--
+	return `${apiBaseUrl.slice(0, end)}/oidc/aws`
+}
 
 /** The `sub` of a connection's tokens, the one value its role's trust policy accepts. */
 export const awsOidcSubject = (connectionId: AwsConnectionId) => `aws-connection:${connectionId}`
