@@ -60,6 +60,7 @@ const SESSION_ATTRIBUTES = { [MAPLE_NATIVE_SESSION_ID_ATTR]: "session-1" }
 const build = (sessionId: string, origin: ChatTurnOrigin) =>
 	buildDiagnosisCompletion(
 		sessionId,
+		"msg-1",
 		tenantFor(human),
 		origin,
 		submitDiagnosis,

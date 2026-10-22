@@ -150,6 +150,8 @@ export class ChatSubToolCall extends Schema.Class<ChatSubToolCall>("@maple/ChatS
 	input: Schema.Unknown,
 	output: Schema.optionalKey(Schema.Unknown),
 	isError: Schema.optionalKey(Schema.Boolean),
+	/** The turn ended before this call settled. */
+	stopped: Schema.optionalKey(Schema.Boolean),
 	textOffset: Schema.optionalKey(Schema.Number),
 }) {}
 
@@ -178,6 +180,11 @@ export class ChatToolCall extends Schema.Class<ChatToolCall>("@maple/ChatToolCal
 	/** Present once the tool settled. */
 	output: Schema.optionalKey(Schema.Unknown),
 	isError: Schema.optionalKey(Schema.Boolean),
+	/**
+	 * The turn ended (stopped, failed or ran out of steps) before this call settled, so it never
+	 * will. Without it a reader shows the call as still running, forever.
+	 */
+	stopped: Schema.optionalKey(Schema.Boolean),
 	/**
 	 * True when this call is an approval-gated mutation the agent paused on. The tool did NOT run;
 	 * the client renders an approval card and applies it through `POST /internal/chat/apply`.

@@ -33,6 +33,7 @@ import {
 	ChatWorkspaces,
 	CliDeviceAuthorizations,
 	CloudflareLogpushConnectors,
+	AwsConnections,
 	GcpConnectors,
 	GcpResources,
 	Dashboards,
@@ -135,6 +136,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	GcpConnectors,
 	// Also removed with its connector, by the foreign key.
 	GcpResources,
+	// Holds the external id: a surviving row would keep Maple assuming the customer's role.
+	AwsConnections,
 	ErrorIssueEvents,
 	ErrorIssueStates,
 	ErrorIncidents,
