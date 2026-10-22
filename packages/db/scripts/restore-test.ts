@@ -527,7 +527,7 @@ const main = async (): Promise<void> => {
 	try {
 		if (await waitUntilReady(database, branch)) {
 			readyAfterSeconds = Math.round((Date.now() - startedAt.getTime()) / 1000)
-			await withBranchConnection(branch, async (url) => {
+			await withBranchConnection(branch, "read", async (url) => {
 				verification = await verify(url, latest)
 			})
 		}

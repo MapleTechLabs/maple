@@ -178,7 +178,7 @@ const main = async (): Promise<void> => {
 	if (databaseUrl !== undefined && databaseUrl !== "") {
 		rejected = await audit(databaseUrl, asJson)
 	} else {
-		await withBranchConnection(branch, async (connectionUrl) => {
+		await withBranchConnection(branch, "read", async (connectionUrl) => {
 			rejected = await audit(connectionUrl, asJson)
 		})
 	}
