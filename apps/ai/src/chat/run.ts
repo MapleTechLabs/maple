@@ -196,6 +196,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 	const completion: RunCompletion | undefined =
 		buildDiagnosisCompletion(
 			input.sessionId,
+			input.messageId,
 			input.tenant,
 			input.origin,
 			input.submitDiagnosis,
