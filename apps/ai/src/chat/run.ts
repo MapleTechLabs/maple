@@ -25,7 +25,13 @@ import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
-import { makeTextSanitizer, settledTurnEnd, toChatEvents, type ChatTurnEvent } from "./events"
+import {
+	makeTextSanitizer,
+	settledTurnEnd,
+	toChatEvents,
+	type ChatTurnEvent,
+	type ProgramCall,
+} from "./events"
 import { makeReviewCoverage, type ReviewCoverage } from "./review-coverage"
 import type { ReviewLedger } from "./review-ledger"
 import { buildReviewFanout } from "./review-fanout"
@@ -80,6 +86,9 @@ export const promptFromHistory = (history: ReadonlyArray<ChatMessage>): Readonly
 		content: [{ type: "text" as const, text: message.text }],
 	}))
 }
+
+/** The `n` of a program call's `<program call id>#<n>`: the order the program made its calls in. */
+const programCallIndex = (callId: string): number => Number(callId.slice(callId.lastIndexOf("#") + 1))
 
 /** One replayed turn, in the shape `Prompt.make` accepts. */
 export interface PromptMessage {
@@ -167,6 +176,8 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		: undefined
 	// A call's UI payload, held until its result event is written. Never part of what the model reads.
 	const uiByCall = new Map<string, ToolUiPayload>()
+	// The same for a `run_code` program's calls (`<program call id>#<n>`), drawn when it settles.
+	const programCalls = new Map<string, ProgramCall>()
 	const sessionAttributes = agentSessionSpanAttributes(input.model.tags)
 	const maple = buildChatToolkit(
 		input.toolExecutor,
@@ -175,7 +186,10 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		profile.surface,
 		sessionAttributes,
 		coverage?.observe,
-		(toolCallId, ui) => uiByCall.set(toolCallId, ui),
+		(toolCallId, ui, call) =>
+			toolCallId.includes("#")
+				? programCalls.set(toolCallId, { ...call, callId: toolCallId, ui })
+				: uiByCall.set(toolCallId, ui),
 	)
 	// One completion per session kind. The session id decides which, so a review session can never
 	// be handed the diagnosis tool or the other way round.
@@ -301,6 +315,13 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 			const ui = uiByCall.get(toolCallId)
 			uiByCall.delete(toolCallId)
 			return ui
+		},
+		programCallsOf: (toolCallId: string) => {
+			const calls = [...programCalls.values()]
+				.filter((call) => call.callId.startsWith(`${toolCallId}#`))
+				.sort((a, b) => programCallIndex(a.callId) - programCallIndex(b.callId))
+			calls.forEach((call) => programCalls.delete(call.callId))
+			return calls
 		},
 		sanitizer,
 	}
