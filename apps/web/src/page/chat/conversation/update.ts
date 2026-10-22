@@ -13,13 +13,12 @@ import { applyChatEvent, finalizeStreamingText, taskOf } from "../kit/fold"
 import { transcriptMarkdown } from "../kit/rich-text"
 import { initMinimap, updateMinimap } from "../kit/turn-minimap"
 import { TextPart } from "../kit/ui-message"
-import { highlightedFences, highlightKey } from "../kit/code-highlight"
+import { highlight, highlightedFences, highlightKey } from "../kit/code-highlight"
 import {
 	AbortTurn,
 	CopyCode,
 	DecideApproval,
 	DownloadCode,
-	HighlightCode,
 	LoadHistory,
 	ParseMarkdown,
 	PostMessage,
@@ -79,14 +78,14 @@ const followMarkdown = (result: Return): Return => {
 	)
 	const keys = new Set(fences.map((fence) => highlightKey(fence.language, fence.code)))
 	const highlights = Object.fromEntries(Object.entries(model.highlights).filter(([key]) => keys.has(key)))
-	const coloured = requestHighlights(
+	const coloured = withHighlights(
 		{ ...model, markdown, highlights, markdownPending: [...model.markdownPending, ...missing] },
 		fences,
 	)
-	return withCommands({ ...result, model: coloured.model }, [
-		...(missing.length === 0 ? [] : [ParseMarkdown({ texts: missing })]),
-		...(coloured.commands ?? []),
-	])
+	return withCommands(
+		{ ...result, model: coloured },
+		missing.length === 0 ? [] : [ParseMarkdown({ texts: missing })],
+	)
 }
 
 /** A ```chart fence anywhere in the thread loads the plotting runtime, once. */
@@ -174,32 +173,26 @@ const foldEvent = (model: Model, event: ChatEvent, nowMs: number): Model => {
 		: { ...next, status: "ready", stream: null }
 }
 
-/** Each fence not coloured yet, marked in flight and handed to Shiki. */
-const requestHighlights = (
+/** Each fence not coloured yet, coloured by sugar-high. */
+const withHighlights = (
 	model: Model,
 	fences: ReadonlyArray<{ readonly language: string; readonly code: string }>,
-): Return => {
-	const missing = fences.filter((fence, index) => {
-		const key = highlightKey(fence.language, fence.code)
-		return (
-			!(key in model.highlights) &&
-			fences.findIndex((other) => highlightKey(other.language, other.code) === key) === index
-		)
-	})
-	return {
-		model: {
-			...model,
-			highlights: {
-				...model.highlights,
-				...Object.fromEntries(
-					missing.map((fence) => [highlightKey(fence.language, fence.code), null]),
-				),
-			},
-		},
-		commands: missing.map((fence) =>
-			HighlightCode({ key: highlightKey(fence.language, fence.code), ...fence }),
-		),
-	}
+): Model => {
+	const missing = fences.filter((fence) => !(highlightKey(fence.language, fence.code) in model.highlights))
+	return missing.length === 0
+		? model
+		: {
+				...model,
+				highlights: {
+					...model.highlights,
+					...Object.fromEntries(
+						missing.map((fence) => [
+							highlightKey(fence.language, fence.code),
+							highlight(fence.language, fence.code),
+						]),
+					),
+				},
+			}
 }
 
 const toggle = (ids: ReadonlyArray<string>, id: string): ReadonlyArray<string> =>
@@ -349,9 +342,6 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 				),
 			}
 		},
-		CompletedHighlightCode: ({ key, highlighted }) => ({
-			model: { ...model, highlights: { ...model.highlights, [key]: highlighted } },
-		}),
 		GotChartMessage: ({ id, message: child }) => {
 			const chart = Chart.update(model.charts[id] ?? Chart.init(), child)
 			return {

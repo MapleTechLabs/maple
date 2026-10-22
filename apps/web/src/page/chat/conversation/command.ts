@@ -3,7 +3,6 @@ import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { MapleAiClient } from "../../../platform/api-clients"
 import { writeClipboardFallback } from "@maple/ui/lib/clipboard"
-import { highlight } from "../kit/code-highlight"
 import { parseMarkdownTexts } from "../../kit/markdown"
 import { abortTurn, loadHistory, postMessage } from "../kit/chat-api"
 import { historyMessageToUIMessage } from "../kit/fold"
@@ -65,17 +64,6 @@ export const ParseMarkdown = Command.define("ParseChatMarkdown", {
 	messages: [Message.CompletedParseMarkdown],
 	execute: ({ texts }) =>
 		Effect.map(parseMarkdownTexts(texts), (parsed) => Message.CompletedParseMarkdown({ parsed })),
-})
-
-/** One fence coloured by Shiki (loaded on first use); a failure leaves it plain. */
-export const HighlightCode = Command.define("HighlightChatCode", {
-	args: { key: Schema.String, language: Schema.String, code: Schema.String },
-	messages: [Message.CompletedHighlightCode],
-	execute: ({ key, language, code }) =>
-		highlight(language, code).pipe(
-			Effect.map((highlighted) => Message.CompletedHighlightCode({ key, highlighted })),
-			Effect.orElseSucceed(() => Message.CompletedHighlightCode({ key, highlighted: null })),
-		),
 })
 
 /** Streamdown's file names: `file.<ext>` by the fence's language. */

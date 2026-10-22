@@ -45,7 +45,6 @@
 		"effect": "catalog:effect",
 		"foldkit": "0.169.0",
 		"fuse.js": "7.5.0",
-		"shiki": "4.4.3",
 		"sugar-high": "^2.5.1",
 		"three": "^0.186.1",
 		"uqr": "^0.1.3"

@@ -56,8 +56,8 @@ export const Model = Schema.Struct({
 	chartRuntime: Schema.NullOr(ChartRuntime),
 	themeColors: Schema.NullOr(ThemeColors),
 	minimap: MinimapState,
-	/** Shiki tokens by fence (`highlightKey`); `null` while in flight or when it could not colour it. */
-	highlights: Schema.Record(Schema.String, Schema.NullOr(HighlightedCode)),
+	/** sugar-high tokens by fence (`highlightKey`). */
+	highlights: Schema.Record(Schema.String, HighlightedCode),
 	/** Each sub-agent row's sheet, by its tool call. */
 	taskSheets: Schema.Record(Schema.String, Dialog.Model),
 	/** Markdown parses of the bodies on screen, by text; `isStale` holds an earlier version's parse until its own lands. */

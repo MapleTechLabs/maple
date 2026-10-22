@@ -3,10 +3,10 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { COPY_PATH, DOWNLOAD_PATH, LINE_CLASS } from "../../kit/message-response"
 import { type HighlightedCode, highlightKey } from "./code-highlight"
 
-// Streamdown's full code block (`@streamdown/code`: Shiki tokens).
+// Streamdown's full code block, its lines coloured by sugar-high (`code-highlight.ts`).
 
 export type CodeHost<M> = Readonly<{
-	highlights: Readonly<Record<string, HighlightedCode | null>>
+	highlights: Readonly<Record<string, HighlightedCode>>
 	onCopy: (code: string) => M
 	onDownload: (code: string, language: string) => M
 }>
@@ -70,49 +70,25 @@ const actionsBar = <M>(h: HtmlBuilder<M>, slot: string, children: ReadonlyArray<
 		],
 	)
 
-const TOKEN_CLASS = "text-[var(--sdm-c,inherit)] dark:text-[var(--shiki-dark,var(--sdm-c,inherit))]"
-const TOKEN_FILL_CLASS = "bg-[var(--sdm-tbg)] dark:bg-[var(--shiki-dark-bg,var(--sdm-tbg))]"
-
 const codeLines = <M>(
 	h: HtmlBuilder<M>,
 	code: string,
 	highlighted: HighlightedCode | null,
 ): ReadonlyArray<Html> =>
 	highlighted === null
-		? code
-				.split("\n")
-				.map((line) =>
-					h.span(
-						[h.Class(LINE_CLASS)],
-						[
-							h.span(
-								[
-									h.Class(cn(TOKEN_CLASS, TOKEN_FILL_CLASS)),
-									h.Style({ "--sdm-c": "inherit", "--sdm-tbg": "transparent" }),
-								],
-								[line],
-							),
-						],
-					),
-				)
+		? code.split("\n").map((line) => h.span([h.Class(LINE_CLASS)], [line === "" ? "\n" : line]))
 		: highlighted.lines.map((line) =>
 				h.span(
 					[h.Class(LINE_CLASS)],
-					line.length === 0 || (line.length === 1 && line[0]?.content === "")
+					line.length === 0
 						? ["\n"]
 						: line.map((token) =>
-								h.span(
-									[
-										h.Class(cn(TOKEN_CLASS, token.hasBackground && TOKEN_FILL_CLASS)),
-										h.Style(Object.fromEntries(token.style)),
-									],
-									[token.content],
-								),
+								h.span([h.Style({ color: `var(--sh-${token.type})` })], [token.content]),
 							),
 				),
 			)
 
-/** A fenced block: the language header, Download and Copy, numbered lines (Shiki once it answered). */
+/** A fenced block: the language header, Download and Copy, numbered lines coloured by sugar-high. */
 export const codeBlock = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, value: string, language: string): Html => {
 	const code = value.replace(/\n+$/, "")
 	const highlighted = host.highlights[highlightKey(language, value)] ?? null
@@ -160,15 +136,7 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, value: string
 				],
 				[
 					h.pre(
-						[
-							h.Class(
-								cn(
-									languageClass,
-									"bg-[var(--sdm-bg,inherit)] dark:bg-[var(--shiki-dark-bg,var(--sdm-bg,inherit))]",
-								),
-							),
-							h.Style({ "--sdm-bg": "transparent", "--sdm-fg": "inherit" }),
-						],
+						[h.Class(cn(languageClass))],
 						[
 							h.code(
 								[h.Class("[counter-increment:line_0] [counter-reset:line]")],
