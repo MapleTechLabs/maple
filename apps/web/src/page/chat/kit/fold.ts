@@ -61,6 +61,8 @@ export const taskBudgetExhausted = (output: unknown): boolean =>
 	Option.exists(decodeAnswer(output), (fields) => fields.budgetExhausted === true)
 
 const leafToolPart = (call: ChatSubToolCall | ChatToolCall): LeafPart => {
+	if (call.stopped === true)
+		return ToolPart.make({ toolCallId: call.id, toolName: call.name, state: "output-stopped", input: call.input })
 	if (call.output === undefined)
 		return ToolPart.make({
 			toolCallId: call.id,
@@ -86,7 +88,8 @@ const leafToolPart = (call: ChatSubToolCall | ChatToolCall): LeafPart => {
 }
 
 const taskStatusOf = (call: ChatToolCall): TaskPart["status"] =>
-	call.task?.status ?? (call.isError === true ? "error" : call.output === undefined ? "running" : "completed")
+	call.task?.status ??
+	(call.isError === true ? "error" : call.stopped === true ? "aborted" : call.output === undefined ? "running" : "completed")
 
 /** `answer` on a settled run, `errorText` on a failed one; neither key otherwise. */
 const withAnswer = (call: ChatToolCall): Pick<TaskPart, "answer" | "errorText"> => {
@@ -186,6 +189,25 @@ export const finalizeStreamingText = (message: UIMessage): UIMessage => {
 		? message
 		: { ...message, parts: [...message.parts.slice(0, -1), { ...last, state: "done" }] }
 }
+
+/** A call still unsettled when its turn ends never settles: stopped, and a running sub-agent aborted. */
+const stopLeaf = (part: LeafPart): LeafPart =>
+	part._tag === "dynamic-tool" && part.state === "input-available" ? { ...part, state: "output-stopped" } : part
+
+const stopUnfinished = (message: UIMessage): UIMessage => ({
+	...message,
+	parts: message.parts.map((part): UIMessagePart =>
+		part._tag !== "task"
+			? stopLeaf(part)
+			: part.status !== "running"
+				? part
+				: {
+						...part,
+						status: "aborted",
+						messages: part.messages.map((child) => ({ ...child, parts: child.parts.map(stopLeaf) })),
+					},
+	),
+})
 
 /** Retracts text a failed, retried attempt produced; an emptied part is dropped. */
 const retractText = (message: UIMessage, chars: number): UIMessage => {
@@ -308,6 +330,6 @@ export const applyChatEvent = (messages: Messages, event: ChatEvent, nowMs: numb
 		case "turn-retry":
 			return updateMessage(messages, event.messageId, (message) => retractText(message, event.retractChars))
 		case "turn-end":
-			return updateMessage(messages, event.messageId, finalizeStreamingText)
+			return updateMessage(messages, event.messageId, (message) => finalizeStreamingText(stopUnfinished(message)))
 	}
 }
