@@ -14,25 +14,19 @@ import LanguageTab from "../../components/docs/LanguageTab.astro";
 
 const pageTitle = "Python logging levels: how to set the log level | Maple";
 const pageDescription =
-    "The Python logging levels and their values, why debug logs don't print, and how to set the log level with basicConfig, a flag, LOG_LEVEL or dictConfig.";
+    "The five Python logging levels, which one to use, and how to set the log level with basicConfig, setLevel, a command-line flag or LOG_LEVEL.";
 const published = "2026-10-19";
-const updatedLabel = "October 20, 2026";
+const updatedLabel = "October 22, 2026";
 const author = CONTRIBUTORS.jeremyfunk;
 const authorUrl = `https://github.com/${author.github}`;
 
 const toc = [
     { depth: 2, slug: "levels", text: "The logging levels" },
+    { depth: 3, slug: "basicconfig", text: "Set the level" },
     { depth: 3, slug: "choosing", text: "Choosing a level" },
-    { depth: 3, slug: "default", text: "The default is WARNING" },
-    { depth: 2, slug: "logger-vs-handler", text: "Logger vs handler level" },
-    { depth: 3, slug: "effective-level", text: "Effective level" },
-    { depth: 3, slug: "propagation", text: "Propagation" },
-    { depth: 3, slug: "debug-not-printing", text: "Why debug logs don't print" },
-    { depth: 2, slug: "set-level", text: "Set the logging level" },
-    { depth: 3, slug: "basicconfig", text: "basicConfig and setLevel" },
-    { depth: 3, slug: "flag-env-config", text: "Flag, variable or dictConfig" },
-    { depth: 3, slug: "per-module", text: "Per-module levels" },
-    { depth: 3, slug: "runtime", text: "Change it at runtime" },
+    { depth: 2, slug: "set-level", text: "From a flag or variable" },
+    { depth: 3, slug: "per-module", text: "Quiet noisy libraries" },
+    { depth: 2, slug: "handler-levels", text: "Handler levels" },
     { depth: 2, slug: "opentelemetry", text: "OpenTelemetry and Maple" },
     { depth: 3, slug: "handler-level", text: "A level for the exporter" },
     { depth: 3, slug: "severity", text: "Levels as severities" },
@@ -42,13 +36,13 @@ const toc = [
 const sectionNav = toc.filter((h) => h.depth === 2);
 
 // One color per level, the same severity colors Maple's Logs page uses. Code
-// blocks, badges and the diagram all read them.
+// blocks, badges and tables all read them.
 const levels = [
-    { name: "CRITICAL", value: 50, color: "var(--severity-fatal)", use: "The program may not be able to continue: the database is unreachable at startup.", shown: true, otel: "FATAL", severity: 21 },
-    { name: "ERROR", value: 40, color: "var(--severity-error)", use: "One operation failed: a request returned 500, a payment call raised.", shown: true, otel: "ERROR", severity: 17 },
-    { name: "WARNING", value: 30, color: "var(--severity-warn)", use: "Something unexpected that the program handled: a retry, a deprecated option.", shown: true, otel: "WARN", severity: 13 },
-    { name: "INFO", value: 20, color: "var(--severity-info)", use: "Normal milestones: service started, job finished, order placed.", shown: false, otel: "INFO", severity: 9 },
-    { name: "DEBUG", value: 10, color: "var(--severity-debug)", use: "Detail for chasing a bug: payloads, cache hits, branch decisions.", shown: false, otel: "DEBUG", severity: 5 },
+    { name: "DEBUG", color: "var(--severity-debug)", use: "Details you only need while tracking down a bug.", example: `log.debug("cache miss for user 42")`, otel: "DEBUG" },
+    { name: "INFO", color: "var(--severity-info)", use: "Normal events that show the program is doing its job.", example: `log.info("order 1042 placed")`, otel: "INFO" },
+    { name: "WARNING", color: "var(--severity-warn)", use: "Something unexpected happened, and the program handled it.", example: `log.warning("payment API slow, retrying")`, otel: "WARN" },
+    { name: "ERROR", color: "var(--severity-error)", use: "An operation failed.", example: `log.error("charge failed for order 1042")`, otel: "ERROR" },
+    { name: "CRITICAL", color: "var(--severity-fatal)", use: "The program can't keep running.", example: `log.critical("database unreachable, exiting")`, otel: "FATAL" },
 ] as const;
 const levelColor = Object.fromEntries(levels.map((l) => [l.name, l.color]));
 
@@ -56,53 +50,28 @@ const levelColor = Object.fromEntries(levels.map((l) => [l.name, l.color]));
 const code = (src: string, lang: GuideLang = "python") =>
     highlight(src, lang).replace(/\b(DEBUG|INFO|WARNING|ERROR|CRITICAL)\b/g, (name) => `<span class="lvl" style="--lvl: ${levelColor[name]}">${name}</span>`);
 
-const gatesCode = String.raw`import logging
-
-root = logging.getLogger()
-root.setLevel(logging.WARNING)
-
-console = logging.StreamHandler()
-console.setLevel(logging.WARNING)    # terminal: WARNING and above
-logfile = logging.FileHandler("app.log")
-logfile.setLevel(logging.DEBUG)      # file: everything it receives
-root.addHandler(console)
-root.addHandler(logfile)
-
-logging.getLogger("app").setLevel(logging.ERROR)
-db = logging.getLogger("app.db")
-db.setLevel(logging.DEBUG)
-api = logging.getLogger("app.api")   # no level of its own
-
-db.debug("pool size 5")
-api.debug("GET /orders")
-db.warning("pool exhausted")`;
-
-const gatesRun = String.raw`$ python levels.py
-pool exhausted
-$ cat app.log
-pool size 5
-pool exhausted`;
-
-const noHandlerCode = String.raw`import logging
-
-log = logging.getLogger("app")
-log.setLevel(logging.DEBUG)
-
-log.debug("cache miss for user 42")  # not printed
-log.warning("disk 91% full")         # printed`;
+const decide = [
+    ["Can the program no longer keep running?", "CRITICAL"],
+    ["Did an operation fail?", "ERROR"],
+    ["Did something go wrong that the program recovered from?", "WARNING"],
+    ["Would you want this line in production logs every day?", "INFO"],
+    ["Is it only useful while debugging?", "DEBUG"],
+] as const;
 
 const basicCode = String.raw`import logging
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(levelname)-8s %(name)s: %(message)s",
-)
-
+logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("app")
-log.debug("cache miss for user 42")`;
+
+log.debug("cache miss for user 42")
+log.info("order 1042 placed")
+log.warning("payment API slow, retrying")`;
 
 const basicRun = String.raw`$ python app.py
-DEBUG    app: cache miss for user 42`;
+INFO:app:order 1042 placed
+WARNING:app:payment API slow, retrying`;
+
+const setLevelCode = String.raw`logging.getLogger("app.db").setLevel(logging.DEBUG)`;
 
 const flagCode = String.raw`import argparse
 import logging
@@ -116,91 +85,57 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-logging.basicConfig(level=args.log_level, format="%(levelname)-8s %(name)s: %(message)s")
+logging.basicConfig(level=args.log_level)
 log = logging.getLogger("app")
 log.debug("parsed %s", args)
 log.info("starting")`;
 
 const flagRun = String.raw`$ python app.py --log-level debug
-DEBUG    app: parsed Namespace(log_level='DEBUG')
-INFO     app: starting
+DEBUG:app:parsed Namespace(log_level='DEBUG')
+INFO:app:starting
 $ python app.py --log-level loud
 usage: app.py [-h] [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
-app.py: error: argument --log-level: invalid choice: 'LOUD' (choose from DEBUG, INFO, WARNING, ERROR, CRITICAL)`;
-
-const verboseCode = String.raw`parser.add_argument("-v", "--verbose", action="count", default=0)
-args = parser.parse_args()
-
-# no flag: WARNING, -v: INFO, -vv: DEBUG
-logging.basicConfig(level=max(logging.DEBUG, logging.WARNING - 10 * args.verbose))`;
+app.py: error: argument --log-level: invalid choice: 'LOUD' (choose from 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')`;
 
 const envCode = String.raw`import logging
 import os
 
-logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-    format="%(levelname)-8s %(name)s: %(message)s",
-)
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper())
 log = logging.getLogger("worker")
 log.debug("polling queue")
 log.info("job 7 done")`;
 
 const envRun = String.raw`$ LOG_LEVEL=debug python worker.py
-DEBUG    worker: polling queue
-INFO     worker: job 7 done
+DEBUG:worker:polling queue
+INFO:worker:job 7 done
 $ python worker.py
-INFO     worker: job 7 done
-$ LOG_LEVEL=loud python worker.py
-Traceback (most recent call last):
-  ...
-ValueError: Unknown level: 'LOUD'`;
-
-const dictCode = String.raw`import logging
-import logging.config
-import os
-
-logging.config.dictConfig({
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "plain": {"format": "%(levelname)-8s %(name)s: %(message)s"},
-    },
-    "handlers": {
-        "console": {"class": "logging.StreamHandler", "formatter": "plain"},
-    },
-    "root": {"level": os.environ.get("LOG_LEVEL", "INFO").upper(), "handlers": ["console"]},
-    "loggers": {
-        "app.payments": {"level": "DEBUG"},
-        "urllib3": {"level": "WARNING"},
-    },
-})
-
-logging.getLogger("app.payments").debug("charging card")
-logging.getLogger("app.api").debug("GET /orders")
-logging.getLogger("urllib3.connectionpool").info("new connection")`;
-
-const dictRun = String.raw`$ python app.py
-DEBUG    app.payments: charging card
-$ LOG_LEVEL=debug python app.py
-DEBUG    app.payments: charging card
-DEBUG    app.api: GET /orders`;
+INFO:worker:job 7 done`;
 
 const noisyCode = String.raw`for name in ("urllib3", "botocore", "httpx", "httpcore"):
     logging.getLogger(name).setLevel(logging.WARNING)`;
 
-const runtimeCode = String.raw`import logging
-import signal
+const handlersCode = String.raw`import logging
 
-logging.basicConfig(level=logging.INFO)
 root = logging.getLogger()
+root.setLevel(logging.DEBUG)
 
+console = logging.StreamHandler()
+console.setLevel(logging.WARNING)
+root.addHandler(console)
 
-def toggle_debug(signum, frame):
-    root.setLevel(logging.INFO if root.level == logging.DEBUG else logging.DEBUG)
-    root.warning("log level now %s", logging.getLevelName(root.level))
+logfile = logging.FileHandler("app.log")
+logfile.setLevel(logging.DEBUG)
+root.addHandler(logfile)
 
+log = logging.getLogger("app")
+log.debug("cache miss for user 42")
+log.warning("payment API slow, retrying")`;
 
-signal.signal(signal.SIGUSR1, toggle_debug)`;
+const handlersRun = String.raw`$ python app.py
+payment API slow, retrying
+$ cat app.log
+cache miss for user 42
+payment API slow, retrying`;
 
 const otelInstall = "pip install opentelemetry-instrumentation-logging";
 
@@ -208,10 +143,7 @@ const otelCode = String.raw`from opentelemetry.instrumentation.logging.handler i
 
 root = logging.getLogger()
 root.setLevel(logging.DEBUG)
-
-console = logging.StreamHandler()
-console.setFormatter(logging.Formatter("%(levelname)-8s %(name)s: %(message)s"))
-root.addHandler(console)
+root.addHandler(logging.StreamHandler())
 
 otel = LoggingHandler(logger_provider=logger_provider)
 otel.setLevel(logging.INFO)
@@ -221,37 +153,33 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)`;
 
 const setTabs = [
     { id: "log-level-flag", label: "--log-level flag", file: "app.py", src: flagCode, run: flagRun,
-      note: `<code>type=str.upper</code> makes <code>--log-level debug</code> work, and <code>choices</code> rejects a typo before logging is set up. To let <code>LOG_LEVEL</code> provide the default, write <code>default=os.environ.get("LOG_LEVEL", "WARNING")</code>.` },
+      note: `<code>type=str.upper</code> makes <code>--log-level debug</code> work, and <code>choices</code> rejects a typo before the program starts.` },
     { id: "log-level-env", label: "LOG_LEVEL variable", file: "worker.py", src: envCode, run: envRun,
-      note: `<code>LOG_LEVEL</code> is a naming convention, not a variable Python reads. An unknown name raises at startup instead of running at the wrong level; to fall back to a default, look the name up in <code>logging.getLevelNamesMapping()</code> (Python 3.11+) first.` },
-    { id: "log-level-dictconfig", label: "dictConfig", file: "app.py", src: dictCode, run: dictRun,
-      note: `The console handler has no level, so the logger levels alone decide what prints. <code>"disable_existing_loggers": False</code> keeps loggers created before the call working. Django's <code>LOGGING</code> setting takes the same dictionary.` },
+      note: `<code>LOG_LEVEL</code> is a common name, not a variable Python knows about. Keep the <code>.upper()</code>: <code>basicConfig</code> accepts <code>"DEBUG"</code> but raises <code>ValueError</code> for <code>"debug"</code>, and for an unknown name such as <code>LOG_LEVEL=loud</code>.` },
 ];
 
 const mistakes = [
     ["Lower-case level names", "<code>setLevel(\"debug\")</code> and <code>basicConfig(level=\"debug\")</code> raise <code>ValueError: Unknown level: 'debug'</code>. Call <code>.upper()</code> on any name that comes from a user or a variable."],
-    ["Configuring logging in a library", "A library that calls <code>basicConfig</code> or sets the root level overrides the application's choice. Libraries only call <code>logging.getLogger(__name__)</code>, and the application sets levels and handlers."],
-    ["dictConfig's disable_existing_loggers", "It defaults to <code>True</code>, which disables every existing logger the config doesn't name, including <code>getLogger(__name__)</code> loggers in modules already imported. Their records disappear without an error. Set it to <code>False</code>."],
-    ["Every line printed twice", "A logger with its own handler still propagates to the root's handlers, so both write the record. Set <code>propagate = False</code> on that logger, or attach handlers to the root only."],
-    ["Formatting the message yourself", "<code>log.debug(f\"payload {data}\")</code> builds the string even when DEBUG is off. Write <code>log.debug(\"payload %s\", data)</code> so only records that pass are formatted, and wrap expensive work in <code>if log.isEnabledFor(logging.DEBUG):</code>."],
-    ["Custom levels", "<code>logging.addLevelName(5, \"TRACE\")</code> works, but there is no <code>log.trace()</code> method, two libraries can give the same number different names, and OpenTelemetry exports levels below 10 with an unspecified severity. DEBUG on a dedicated logger such as <code>app.parser.trace</code> can be switched on alone."],
+    ["Losing the traceback", "<code>log.error(e)</code> in an <code>except</code> block logs the message without the traceback. <code>log.exception(\"charge failed\")</code> logs at ERROR and adds the traceback."],
+    ["Configuring logging in a library", "A library that calls <code>basicConfig</code> or sets the root level overrides the application's choice. A library only creates its logger with <code>logging.getLogger(__name__)</code>, and the application sets the levels."],
+    ["Formatting the message yourself", "<code>log.debug(f\"payload {data}\")</code> builds the string even when DEBUG is off. <code>log.debug(\"payload %s\", data)</code> only builds it for messages that pass the level."],
 ];
 
 const faqs = [
     {
         question: "What are the Python logging levels?",
         answer:
-            "Python's logging module has five levels: DEBUG (10), INFO (20), WARNING (30), ERROR (40) and CRITICAL (50). WARN and FATAL are aliases for WARNING and CRITICAL. NOTSET (0) is not a severity: it tells a logger to use its parent's level. A logger handles a record only when the record's level is at or above the logger's effective level.",
+            "Python's logging module has five levels, from least to most serious: DEBUG, INFO, WARNING, ERROR and CRITICAL. Each has a constant (logging.DEBUG, logging.INFO, ...) and a method (log.debug(), log.info(), ...). Python drops every message below the level you set.",
     },
     {
         question: "What is the default logging level in Python?",
         answer:
-            "WARNING. The root logger starts at WARNING, and loggers created with logging.getLogger(name) start at NOTSET, so they inherit WARNING from the root until you set a level on them or on a parent. That is why info() and debug() print nothing in a fresh script.",
+            "WARNING. Until you set a level, Python drops DEBUG and INFO messages, which is why log.info() prints nothing in a new script. Call logging.basicConfig(level=logging.INFO) at startup to change it.",
     },
     {
         question: "How do I set the logging level in Python?",
         answer:
-            "Call logging.basicConfig(level=logging.DEBUG) once at startup, which sets the root logger's level and adds a console handler. To change the level later, or for a single logger, call setLevel on it: logging.getLogger(\"app.db\").setLevel(logging.DEBUG). Both accept the constant or its upper-case name.",
+            "Call logging.basicConfig(level=logging.INFO) once at startup. To change the level of one logger, call setLevel on it: logging.getLogger(\"app.db\").setLevel(logging.DEBUG). Both accept the constant or its upper-case name, such as \"DEBUG\".",
     },
     {
         question: "How do I set the Python log level from an environment variable?",
@@ -261,17 +189,17 @@ const faqs = [
     {
         question: "How do I set the Python logging level from the command line?",
         answer:
-            "Add a --log-level option with argparse, using type=str.upper so lower-case input works and choices to reject typos, then pass args.log_level to logging.basicConfig(level=...). Command-line tools often use a repeatable -v flag instead, lowering the level by 10 for each -v.",
+            "Add a --log-level option with argparse, using type=str.upper so lower-case input works and choices to reject typos, then pass args.log_level to logging.basicConfig(level=...).",
     },
     {
         question: "Why doesn't my Python debug log print?",
         answer:
-            "Usually the root logger is still at its default WARNING; call logging.basicConfig(level=logging.DEBUG). If the logger is at DEBUG and still prints nothing, there is no handler, so Python falls back to logging.lastResort, whose level is WARNING. If basicConfig has no effect, the root logger already had a handler; use logging.getLogger().setLevel(logging.DEBUG) or basicConfig(force=True).",
+            "The level is still above DEBUG, usually at the default WARNING. Call logging.basicConfig(level=logging.DEBUG) at startup. If that has no effect, a framework or library already set up logging, and basicConfig does nothing in that case; call logging.getLogger().setLevel(logging.DEBUG) instead.",
     },
     {
         question: "What is the difference between logger level and handler level?",
         answer:
-            "The logger level decides whether a record is created at all. Each handler's level then decides whether that handler writes it, so one logger can send DEBUG to a file and only WARNING to the terminal. When a record propagates to parent loggers, only their handlers' levels are checked, not the parents' own levels.",
+            "The logger level decides whether a message is logged at all. Each handler's level then decides whether that handler writes it, so one logger can send DEBUG to a file and only WARNING to the terminal.",
     },
 ];
 
@@ -282,7 +210,7 @@ const articleJsonLd = {
     headline: "Python logging levels",
     description: pageDescription,
     datePublished: published,
-    dateModified: "2026-10-20",
+    dateModified: "2026-10-22",
     author: { "@type": "Person", name: author.name, url: authorUrl },
     publisher: {
         "@type": "Organization",
@@ -316,20 +244,20 @@ const articleJsonLd = {
             <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-20 md:pt-28">
                 <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
                     <span class="border border-primary/40 px-2 py-1 text-primary">Python</span>
-                    <span>9 min read</span>
+                    <span>6 min read</span>
                 </div>
                 <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
                     Python logging levels
                 </h1>
                 <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
-                    What each level means, why your debug logs don't print, and how to set the level from code, a flag, an environment variable or a config.
+                    What each level means, which one to use, and how to set it from code, a flag or an environment variable.
                 </p>
                 <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
                     <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
                         <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
                         <span>By {author.name}</span>
                     </a>
-                    <time datetime="2026-10-20">Updated {updatedLabel}</time>
+                    <time datetime="2026-10-22">Updated {updatedLabel}</time>
                 </div>
             </div>
         </header>
@@ -349,169 +277,70 @@ const articleJsonLd = {
 
             <article class="pylog-guide min-w-0">
                 <section id="levels" class="scroll-mt-24">
-                    <p class="guide-eyebrow"><span>01</span> · Definition</p>
+                    <p class="guide-eyebrow"><span>01</span> · Basics</p>
                     <h2>The Python logging levels</h2>
 
                     <div class="guide-answer">
-                        <p>A <strong>logging level</strong> is a number that says how serious a log message is. Python drops every message below the level you set, and the default is WARNING, so <code>debug()</code> and <code>info()</code> print nothing until you lower it.</p>
+                        <p>A <strong>log level</strong> is a label on each log message that says how serious it is. You choose a level for your program, and Python drops every message below it.</p>
                     </div>
 
                     <p>
-                        The <code>logging</code> module defines five levels as integer constants: <code>logging.DEBUG</code> is 10, <code>logging.CRITICAL</code> is 50. Comparisons are numeric, so a logger set to <code>logging.INFO</code> handles every record with a level of 20 or more.
+                        The method you call sets a message's level: <code>log.debug()</code>, <code>log.info()</code>, <code>log.warning()</code>, <code>log.error()</code> or <code>log.critical()</code>. These are the five levels, from least to most serious:
                     </p>
 
                     <div class="guide-table">
-                        <table>
+                        <table class="is-compact">
                             <thead>
-                                <tr><th>Level</th><th>Value</th><th>Use it for</th><th>Shown by default</th></tr>
+                                <tr><th>Level</th><th>Use it when</th></tr>
                             </thead>
                             <tbody>
                                 {levels.map((l) => (
-                                    <tr class:list={[{ "is-hidden": !l.shown }]}>
+                                    <tr>
                                         <td><span class="lvl-badge" style={`--lvl: ${l.color}`}>{l.name}</span></td>
-                                        <td class="mono">{l.value}</td>
-                                        <td>{l.use}</td>
-                                        <td class="mono">{l.shown ? "Yes" : "No"}</td>
+                                        <td>{l.use}<code class="level-example">{l.example}</code></td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
-                    <p>
-                        <code>WARN</code> and <code>FATAL</code> are accepted aliases for <code>WARNING</code> and <code>CRITICAL</code>. <code>logger.exception()</code> logs at ERROR and appends the current traceback, so call it inside an <code>except</code> block. A sixth constant, <code>NOTSET</code> (0), is not a severity: on a logger it means "use my parent's level", on a handler it means "accept every record".
-                    </p>
 
-                    <h3 id="choosing" class="scroll-mt-24">Choosing a level</h3>
+                    <h3 id="basicconfig" class="scroll-mt-24">Set the level</h3>
                     <p>
-                        Ask whether you want the line in production every day. If yes, it is INFO. If only while chasing a bug, DEBUG. WARNING and above should be rare enough that someone reads each one: a retry that succeeded is a WARNING, a request that failed is an ERROR, and a process that cannot continue is CRITICAL.
-                    </p>
-
-                    <h3 id="default" class="scroll-mt-24">The default level is WARNING</h3>
-                    <p>
-                        Every logger sits in a tree under the <strong>root logger</strong>, which Python creates at WARNING. A logger from <code>logging.getLogger("app")</code> starts with no level of its own and uses the root's, which is why INFO and DEBUG messages print nothing in a fresh script. <code>log.getEffectiveLevel()</code> returns the level a logger actually uses.
-                    </p>
-                </section>
-
-                <section id="logger-vs-handler" class="scroll-mt-24">
-                    <p class="guide-eyebrow"><span>02</span> · How levels filter</p>
-                    <h2>Logger level vs handler level</h2>
-                    <p>
-                        A record passes two levels. The <strong>logger level</strong> decides whether the record is created at all. Each <strong>handler level</strong> then decides whether that handler writes it. A handler is the object that sends records somewhere: <code>StreamHandler</code> writes to the terminal, <code>FileHandler</code> to a file.
-                    </p>
-                    <p>
-                        This script gives the root logger two handlers with different levels, sets the <code>app</code> logger to ERROR and turns on DEBUG for <code>app.db</code> only:
+                        Set the level once, when the program starts, with <code>logging.basicConfig</code>. Messages at that level or above are printed, and messages below it are dropped:
                     </p>
                     <div class="code-file">
-                        <p class="code-file__name">levels.py</p>
-                        <pre><code set:html={code(gatesCode)} /></pre>
+                        <p class="code-file__name">app.py</p>
+                        <pre><code set:html={code(basicCode)} /></pre>
                     </div>
-                    <pre><code set:html={code(gatesRun, "console")} /></pre>
-
-                    <figure class="gates" aria-label="How the three log calls in levels.py are filtered. db.debug('pool size 5'): the app.db logger is set to DEBUG, so the record passes. It then propagates to app and the root without their levels being checked, and reaches the root's two handlers: the console handler at WARNING skips it and the app.log file handler at DEBUG writes it. api.debug('GET /orders'): app.api has no level, inherits ERROR from app, and drops the record before any handler sees it.">
-                        <svg viewBox="0 0 760 292" aria-hidden="true">
-                            <defs>
-                                <marker id="gates-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                                    <path d="M0,0 L8,4 L0,8 z" class="gates__head" />
-                                </marker>
-                            </defs>
-
-                            {[["0", "Log call"], ["200", "1 Logger level"], ["400", "2 Propagation"], ["600", "3 Handler levels"]].map(([x, label]) => (
-                                <text x={x} y="12" class="gates__step">{label}</text>
-                            ))}
-
-                            <rect x="0" y="37" width="170" height="50" rx="8" class="gates__box" />
-                            <text x="14" y="58" class="gates__mono gates__mono--fg">db.debug(</text>
-                            <text x="14" y="75" class="gates__mono">"pool size 5")</text>
-                            <line x1="170" y1="62" x2="196" y2="62" marker-end="url(#gates-arrow)" class="gates__line" />
-
-                            <rect x="200" y="34" width="160" height="56" rx="8" class="gates__box gates__box--pass" />
-                            <text x="214" y="56" class="gates__title">app.db</text>
-                            <text x="214" y="76" class="gates__mono">level <tspan class="gates__lvl" style={`--lvl: ${levelColor.DEBUG}`}>DEBUG</tspan>: passes</text>
-                            <line x1="360" y1="62" x2="396" y2="62" marker-end="url(#gates-arrow)" class="gates__line" />
-
-                            <rect x="400" y="36" width="160" height="52" rx="8" class="gates__box" />
-                            <text x="414" y="58" class="gates__title">app.db</text>
-                            <text x="414" y="76" class="gates__mono">no handlers</text>
-                            <line x1="480" y1="88" x2="480" y2="106" marker-end="url(#gates-arrow)" class="gates__line" />
-                            <rect x="400" y="108" width="160" height="52" rx="8" class="gates__box gates__box--skip" />
-                            <text x="414" y="130" class="gates__title">app</text>
-                            <text x="414" y="148" class="gates__mono"><tspan class="gates__lvl" style={`--lvl: ${levelColor.ERROR}`}>ERROR</tspan>, not checked</text>
-                            <line x1="480" y1="160" x2="480" y2="178" marker-end="url(#gates-arrow)" class="gates__line" />
-                            <rect x="400" y="180" width="160" height="52" rx="8" class="gates__box gates__box--skip" />
-                            <text x="414" y="202" class="gates__title">root</text>
-                            <text x="414" y="220" class="gates__mono"><tspan class="gates__lvl" style={`--lvl: ${levelColor.WARNING}`}>WARNING</tspan>, not checked</text>
-
-                            <line x1="560" y1="200" x2="596" y2="170" marker-end="url(#gates-arrow)" class="gates__line" />
-                            <line x1="560" y1="212" x2="596" y2="240" marker-end="url(#gates-arrow)" class="gates__line" />
-                            <g class="gates__dropped">
-                                <rect x="600" y="140" width="160" height="58" rx="8" class="gates__box" />
-                                <text x="614" y="160" class="gates__title">console</text>
-                                <text x="614" y="176" class="gates__mono">level <tspan class="gates__lvl" style={`--lvl: ${levelColor.WARNING}`}>WARNING</tspan></text>
-                                <text x="614" y="191" class="gates__mono">skipped: 10 &lt; 30</text>
-                            </g>
-                            <rect x="600" y="212" width="160" height="58" rx="8" class="gates__box gates__box--pass" />
-                            <text x="614" y="232" class="gates__title">app.log</text>
-                            <text x="614" y="248" class="gates__mono">level <tspan class="gates__lvl" style={`--lvl: ${levelColor.DEBUG}`}>DEBUG</tspan></text>
-                            <text x="614" y="263" class="gates__mono gates__mono--accent">written</text>
-
-                            <rect x="0" y="230" width="170" height="50" rx="8" class="gates__box" />
-                            <text x="14" y="251" class="gates__mono gates__mono--fg">api.debug(</text>
-                            <text x="14" y="268" class="gates__mono">"GET /orders")</text>
-                            <line x1="170" y1="255" x2="196" y2="255" marker-end="url(#gates-arrow)" class="gates__line" />
-                            <g class="gates__dropped">
-                                <rect x="200" y="227" width="160" height="56" rx="8" class="gates__box" />
-                                <text x="214" y="249" class="gates__title">app.api</text>
-                                <text x="214" y="269" class="gates__mono">inherits <tspan class="gates__lvl" style={`--lvl: ${levelColor.ERROR}`}>ERROR</tspan></text>
-                            </g>
-                            <line x1="360" y1="255" x2="380" y2="255" class="gates__line gates__line--dropped" />
-                            <text x="386" y="259" class="gates__mono">dropped: 10 &lt; 40</text>
-                        </svg>
-                    </figure>
-                    <p class="guide-caption">The logger level is checked once, on the logger you called. Propagation hands the record to each ancestor's handlers without checking the ancestors' levels, and each handler applies its own.</p>
-
-                    <h3 id="effective-level" class="scroll-mt-24">Effective level and NOTSET</h3>
+                    <pre><code set:html={code(basicRun, "console")} /></pre>
                     <p>
-                        <code>app.api</code> has no level of its own (NOTSET), so it walks up its dotted name until it finds one. Its parent <code>app</code> is set to ERROR, and <code>api.debug("GET /orders")</code> is dropped before any handler sees it. If <code>app</code> had no level either, the search would continue to the root's WARNING. A level on <code>app</code> covers every logger under it unless that logger sets its own, as <code>app.db</code> does.
+                        <code>logging.getLogger("app")</code> returns a <strong>logger</strong> named <code>app</code>, the object you log through. The DEBUG message is dropped because DEBUG is below INFO.
                     </p>
-
-                    <h3 id="propagation" class="scroll-mt-24">Propagation skips parent levels</h3>
                     <p>
-                        Once <code>app.db</code> accepts <code>pool size 5</code>, the record goes to the handlers of <code>app.db</code>, then of <code>app</code>, then of the root. The Python docs state that the ancestors' own levels are not checked at that point, only their handlers' levels. So the debug record reaches the root's handlers although <code>app</code> is at ERROR and the root at WARNING, and the file handler writes it. To keep a module's records away from the root's handlers, set <code>logger.propagate = False</code> and give that logger its own handler.
+                        Without the <code>basicConfig</code> line, the script prints only <code>payment API slow, retrying</code>. Python's default level is WARNING, which is why <code>log.info()</code> and <code>log.debug()</code> print nothing until you set a level.
                     </p>
-
-                    <h3 id="debug-not-printing" class="scroll-mt-24">Why your debug log doesn't print</h3>
                     <p>
-                        When <code>log.debug()</code> prints nothing, one of the two levels is too high, or no handler exists at all. Without a handler on the logger or any ancestor, Python falls back to <code>logging.lastResort</code>, a stderr handler with its level fixed at WARNING:
+                        To change the level for one part of your program, call <code>setLevel</code> on its logger. This line turns on DEBUG messages for the <code>app.db</code> logger while everything else stays at INFO:
                     </p>
-                    <pre><code set:html={code(noHandlerCode)} /></pre>
+                    <pre><code set:html={code(setLevelCode)} /></pre>
+
+                    <h3 id="choosing" class="scroll-mt-24">Choosing a level</h3>
+                    <p>Ask these questions in order and use the first level that fits:</p>
+                    <ol class="guide-decide">
+                        {decide.map(([question, level]) => (
+                            <li><span>{question}</span><span class="lvl-badge" style={`--lvl: ${levelColor[level]}`}>{level}</span></li>
+                        ))}
+                    </ol>
                     <p>
-                        The debug record passes the logger, reaches <code>lastResort</code>, and is skipped there. Adding a handler fixes it, and <code>basicConfig</code> adds one.
+                        Run production at INFO and switch to DEBUG while you investigate a problem.
                     </p>
                 </section>
 
                 <section id="set-level" class="scroll-mt-24">
-                    <p class="guide-eyebrow"><span>03</span> · Set the level</p>
-                    <h2>Set the logging level in Python</h2>
-
-                    <h3 id="basicconfig" class="scroll-mt-24">basicConfig and setLevel</h3>
+                    <p class="guide-eyebrow"><span>02</span> · Configure</p>
+                    <h2>Set the level from a flag or environment variable</h2>
                     <p>
-                        <code>logging.basicConfig(level=...)</code> adds a stderr handler to the root logger and sets the root's level. Call it once, in the program's entry point:
-                    </p>
-                    <pre><code set:html={code(basicCode)} /></pre>
-                    <pre><code set:html={code(basicRun, "console")} /></pre>
-                    <p>
-                        <code>level</code> takes the constant or its upper-case name: <code>level="DEBUG"</code> works, <code>level="debug"</code> raises <code>ValueError</code>. For one logger, call <code>setLevel</code> on it, for example <code>logging.getLogger("app.db").setLevel(logging.DEBUG)</code>.
-                    </p>
-                    <div class="guide-callout">
-                        <p class="guide-kicker">basicConfig runs once</p>
-                        <p>
-                            If the root logger already has a handler, <code>basicConfig</code> does nothing, level included, and raises no error. Frameworks, test runners and OpenTelemetry setup code often add one first. Call <code>logging.getLogger().setLevel(...)</code> instead, or pass <code>force=True</code>, which removes and closes the existing root handlers before adding its own.
-                        </p>
-                    </div>
-
-                    <h3 id="flag-env-config" class="scroll-mt-24">From a flag, a variable or dictConfig</h3>
-                    <p>
-                        Python reads no log level flag or environment variable on its own, so the program reads one and passes it to the logging setup. A command-line tool takes a flag, a service in a container reads an environment variable, and an application with several handlers and per-module levels describes them in a <code>dictConfig</code> dictionary:
+                        With <code>logging.INFO</code> in the code, seeing DEBUG messages means editing the code. Read the level from outside instead: a command-line tool takes a flag, and a service in a container reads an environment variable. Python reads neither on its own, so the program passes the value to <code>basicConfig</code>, which accepts a level name such as <code>"DEBUG"</code> as well as the constant:
                     </p>
                     <LanguageTabs tabs={setTabs.map(({ id, label }) => ({ id, label }))} label="Where the level comes from" group="maple-guide-log-level-source">
                         {setTabs.map((t) => (
@@ -523,24 +352,36 @@ const articleJsonLd = {
                             </LanguageTab>
                         ))}
                     </LanguageTabs>
-                    <p>
-                        Command-line tools often use a repeatable <code>-v</code> instead of a level name. Each <code>-v</code> lowers the level by one step of 10:
-                    </p>
-                    <pre><code set:html={code(verboseCode)} /></pre>
+                    <div class="guide-callout">
+                        <p class="guide-kicker">basicConfig runs once</p>
+                        <p>
+                            <code>basicConfig</code> does nothing when logging already has an output configured, for example by a web framework, a test runner or the OpenTelemetry setup. It raises no error and leaves the level unchanged. Call <code>logging.getLogger().setLevel(logging.INFO)</code> instead: <code>getLogger()</code> with no name returns the root logger, which every other logger falls back to.
+                        </p>
+                    </div>
 
-                    <h3 id="per-module" class="scroll-mt-24">Per-module levels for noisy libraries</h3>
+                    <h3 id="per-module" class="scroll-mt-24">Quiet noisy libraries</h3>
                     <p>
-                        Libraries log under their package name, so one <code>setLevel</code> per library hides its DEBUG and INFO lines while your own code stays verbose. A level on <code>urllib3</code> also covers <code>urllib3.connectionpool</code>. To find the name a library logs under, add <code>%(name)s</code> to the format string and read it off the noisy lines.
+                        Libraries log through their own loggers, named after the package. Raise the level on those loggers to hide their DEBUG and INFO messages when you run your own code at DEBUG:
                     </p>
                     <pre><code set:html={code(noisyCode)} /></pre>
-
-                    <h3 id="runtime" class="scroll-mt-24">Change the level at runtime</h3>
                     <p>
-                        <code>setLevel</code> applies from the next log call, so a running service can switch to DEBUG without a restart. This signal handler flips the root level each time the process receives <code>SIGUSR1</code>, which exists on Linux and macOS but not on Windows:
+                        A level on <code>urllib3</code> also covers <code>urllib3.connectionpool</code> and every other logger whose name starts with <code>urllib3.</code>. The default <code>basicConfig</code> output shows each logger's name between the colons, as in <code>DEBUG:urllib3.connectionpool:Starting new HTTPS connection (1): example.com:443</code>.
                     </p>
-                    <pre><code set:html={code(runtimeCode)} /></pre>
+                </section>
+
+                <section id="handler-levels" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>03</span> · Going further</p>
+                    <h2>Logger and handler levels</h2>
                     <p>
-                        Run <code>kill -USR1 &lt;pid&gt;</code> and the service logs <code>log level now DEBUG</code>. Send it again to go back to INFO.
+                        A <strong>handler</strong> is the object that writes messages somewhere: <code>StreamHandler</code> to the terminal, <code>FileHandler</code> to a file. <code>basicConfig</code> adds a terminal handler for you. Each handler can have its own level, so this script prints warnings to the terminal and keeps every message in a file:
+                    </p>
+                    <div class="code-file">
+                        <p class="code-file__name">app.py</p>
+                        <pre><code set:html={code(handlersCode)} /></pre>
+                    </div>
+                    <pre><code set:html={code(handlersRun, "console")} /></pre>
+                    <p>
+                        A message passes the logger's level first, then each handler's level. A message the logger drops never reaches a handler, so set the logger to the lowest level any of its handlers needs.
                     </p>
                 </section>
 
@@ -548,50 +389,46 @@ const articleJsonLd = {
                     <p class="guide-eyebrow"><span>04</span> · OpenTelemetry</p>
                     <h2>Python log levels in OpenTelemetry and Maple</h2>
                     <p>
-                        The OpenTelemetry Python SDK exports <code>logging</code> records through a handler, <code>LoggingHandler</code>. The <a href="/docs/guides/instrumentation-python">Python instrumentation guide</a> attaches one to the root logger in a <code>telemetry.py</code> module, and from then on it is one more handler behind the same two levels. With the root at its default WARNING, INFO records never reach the exporter.
+                        The OpenTelemetry Python SDK sends <code>logging</code> messages to Maple through a handler, <code>LoggingHandler</code>. The <a href="/docs/guides/instrumentation-python">Python instrumentation guide</a> adds one to the root logger in a <code>telemetry.py</code> module. Like any handler, it only receives messages that pass the logger's level, so with Python's default WARNING, INFO messages never reach Maple.
                     </p>
 
                     <h3 id="handler-level" class="scroll-mt-24">Give the exporter its own level</h3>
                     <p>
-                        To keep DEBUG in the terminal and send only INFO and above to Maple, set the root low and the exporting handler higher. The handler ships in its own package:
+                        To keep DEBUG in the terminal and send only INFO and above to Maple, set the root logger low and the OpenTelemetry handler higher. The handler ships in its own package:
                     </p>
                     <p class="client-install"><span>Install</span><code>{otelInstall}</code></p>
                     <p>
-                        In <code>telemetry.py</code>, replace the last line, the one that adds a <code>LoggingHandler</code> to the root logger, with this block. The root logger then has one OpenTelemetry handler:
+                        In <code>telemetry.py</code>, replace the last line, the one that adds a <code>LoggingHandler</code> to the root logger, with this block:
                     </p>
                     <div class="code-file">
                         <p class="code-file__name">telemetry.py</p>
                         <pre><code set:html={code(otelCode)} /></pre>
                     </div>
                     <p>
-                        <code>log.debug("cart has 3 items")</code> now prints locally only, <code>log.info("order 1042 placed")</code> prints and is exported, and urllib3 lines below WARNING go nowhere. Records logged inside an active span carry its trace and span IDs. Recent SDK releases deprecate the <code>LoggingHandler</code> in <code>opentelemetry.sdk._logs</code> in favor of this package; both take the same <code>logger_provider</code> argument.
-                    </p>
-                    <p>
-                        With the zero-code <code>opentelemetry-instrument</code> setup, the SDK removes its handler while <code>basicConfig</code> or <code>dictConfig</code> runs and adds it back afterwards, so those calls still set the level.
+                        <code>log.debug("cart has 3 items")</code> now prints in the terminal only, <code>log.info("order 1042 placed")</code> prints and goes to Maple, and urllib3 messages below WARNING go nowhere. Messages logged inside an active span carry its trace and span IDs. The <code>LoggingHandler</code> that <code>telemetry.py</code> imports from <code>opentelemetry.sdk._logs</code> is deprecated in favor of this package's; both take the same <code>logger_provider</code> argument.
                     </p>
 
                     <h3 id="severity" class="scroll-mt-24">How levels map to OpenTelemetry severities</h3>
                     <p>
-                        OpenTelemetry records each log's level twice: as a severity number from 1 to 24 and as severity text. The handler renames two of Python's levels:
+                        OpenTelemetry stores each message's level as its severity. The handler keeps three of Python's level names and renames two:
                     </p>
                     <div class="guide-table">
-                        <table>
+                        <table class="is-compact">
                             <thead>
-                                <tr><th>Python level</th><th>Severity text</th><th>Severity number</th></tr>
+                                <tr><th>Python level</th><th>Severity in Maple</th></tr>
                             </thead>
                             <tbody>
-                                {[...levels].reverse().map((l) => (
+                                {levels.map((l) => (
                                     <tr>
                                         <td><span class="lvl-badge" style={`--lvl: ${l.color}`}>{l.name}</span></td>
                                         <td><code>{l.otel}</code></td>
-                                        <td class="mono">{l.severity}</td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
                     <p>
-                        So in Maple you filter on <code>WARN</code> and <code>FATAL</code>, not <code>WARNING</code> and <code>CRITICAL</code>. Levels between the standard ones get the matching step, so 25 exports as severity 12. A custom level below 10 exports with an unspecified severity number.
+                        So in Maple you filter on <code>WARN</code> and <code>FATAL</code>, not <code>WARNING</code> and <code>CRITICAL</code>.
                     </p>
 
                     <h3 id="maple" class="scroll-mt-24">Filter by severity in Maple</h3>
@@ -632,10 +469,9 @@ const articleJsonLd = {
                 <section class="guide-sources">
                     <p class="guide-eyebrow">Sources and further reading</p>
                     <ul>
-                        <li><a href="https://docs.python.org/3/library/logging.html" target="_blank" rel="noopener noreferrer">Python docs: logging (levels, propagate, basicConfig, lastResort)</a></li>
+                        <li><a href="https://docs.python.org/3/library/logging.html" target="_blank" rel="noopener noreferrer">Python docs: logging (levels, basicConfig, setLevel)</a></li>
                         <li><a href="https://docs.python.org/3/howto/logging.html" target="_blank" rel="noopener noreferrer">Python docs: Logging HOWTO</a></li>
-                        <li><a href="https://docs.python.org/3/library/logging.config.html" target="_blank" rel="noopener noreferrer">Python docs: logging.config and the dictConfig schema</a></li>
-                        <li><a href="https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitynumber" target="_blank" rel="noopener noreferrer">OpenTelemetry: log data model, SeverityNumber</a></li>
+                        <li><a href="https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitynumber" target="_blank" rel="noopener noreferrer">OpenTelemetry: log data model, severity</a></li>
                         <li><a href="https://pypi.org/project/opentelemetry-instrumentation-logging/" target="_blank" rel="noopener noreferrer">PyPI: opentelemetry-instrumentation-logging</a></li>
                         <li><a href="/docs/guides/instrumentation-python">Maple docs: Python instrumentation</a></li>
                         <li><a href="/docs/explore/logs">Maple docs: Logs</a></li>
@@ -689,31 +525,20 @@ const articleJsonLd = {
     .pylog-guide .client-install code { border: 0 !important; background: transparent !important; padding: 0 !important; font-size: 11.5px; }
     .pylog-guide .lt .code-tab__note { margin: 0.9rem 0 0; font-size: 14px; line-height: 1.7; color: var(--muted-foreground); }
 
-    .gates { margin: 1.75rem 0 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
-    .gates svg { display: block; width: 100%; min-width: 640px; height: auto; }
-    .gates__step { fill: var(--muted-foreground); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
-    .gates__box { fill: var(--background); stroke: var(--border); }
-    .gates__box--pass { stroke: color-mix(in oklab, var(--primary) 60%, transparent); }
-    .gates__box--skip { stroke-dasharray: 4 3; }
-    .gates__title { fill: var(--foreground); font-family: var(--font-display); font-size: 14px; font-weight: 550; }
-    .gates__mono { fill: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; }
-    .gates__mono--fg { fill: var(--foreground); }
-    .gates__mono--accent { fill: var(--primary); }
-    .gates__lvl { fill: color-mix(in oklab, var(--lvl) 85%, var(--foreground)); }
-    .gates__line { stroke: var(--primary); stroke-width: 1.5; fill: none; }
-    .gates__line--dropped { stroke: var(--muted-foreground); stroke-dasharray: 3 3; }
-    .gates__head { fill: var(--primary); }
-    .gates__dropped { opacity: 0.55; }
 
     .pylog-guide .guide-table { margin: 1.75rem 0 2rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
     .pylog-guide table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
     .pylog-guide th { border-bottom: 1px solid var(--border); background: var(--bg-deep); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
     .pylog-guide td { border-bottom: 1px solid var(--border); padding: 0.8rem 0.9rem; vertical-align: middle; }
     .pylog-guide td + td { border-left: 1px solid var(--border); }
-    .pylog-guide td.mono { font-family: var(--font-mono); font-size: 12px; color: var(--foreground); white-space: nowrap; }
-    .pylog-guide tr.is-hidden td { background: color-mix(in oklab, var(--bg-deep) 70%, transparent); }
-    .pylog-guide tr.is-hidden td.mono:last-child { color: var(--muted-foreground); }
     .pylog-guide tbody tr:last-child td { border-bottom: 0; }
+    .pylog-guide table.is-compact { min-width: 0; }
+    .pylog-guide td:first-child { width: 1%; }
+    .pylog-guide td .level-example { display: block; width: fit-content; margin-top: 0.45rem; overflow-wrap: anywhere; }
+
+    .pylog-guide .guide-decide { margin: 1.25rem 0 1.5rem; padding: 0; list-style: none; border: 1px solid var(--border); border-radius: 0.75rem; overflow: hidden; }
+    .pylog-guide .guide-decide li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--border); padding: 0.75rem 1rem; font-size: 15px; line-height: 1.5; color: var(--foreground); }
+    .pylog-guide .guide-decide li:last-child { border-bottom: 0; }
 
     .pylog-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: color-mix(in oklab, var(--warning) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
     .pylog-guide .guide-callout .guide-kicker { color: var(--warning); }
