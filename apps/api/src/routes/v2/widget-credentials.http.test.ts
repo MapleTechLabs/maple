@@ -158,6 +158,21 @@ describe("v2 widget credentials", () => {
 		}
 	})
 
+	it("does not inherit the scope exemption standard keys get for feedback", async () => {
+		const harness = makeHarness()
+		try {
+			const key = await harness.bootstrapKey()
+			const minted = await harness.mint(key.secret)
+
+			const listed = await harness.request("GET", "/v2/agent_feedback", minted.body.secret)
+			expect(listed.status).toBe(403)
+			const sent = await harness.request("POST", "/v2/agent_feedback", minted.body.secret)
+			expect(sent.status).toBe(403)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
 	it("cannot renew itself — renewal always goes through a session", async () => {
 		const harness = makeHarness()
 		try {

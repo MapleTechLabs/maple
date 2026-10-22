@@ -11,6 +11,7 @@ import {
 	UserId,
 } from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
+import { OAuthCompleteRequest, OAuthCompleteResponse } from "./oauth-return"
 import { HttpTaggedError } from "./error-policy"
 import { PrReviewOrgSettings, PrReviewRepositoryConfig } from "./pr-review"
 import {
@@ -1554,6 +1555,14 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.get("githubStatus", "/github/status", {
 			success: GithubIntegrationStatus,
 			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		// Finishes any OAuth / app-install return for the signed-in caller (see `oauth-return.ts`).
+		// Failures come back as an `error` status with display copy, like the old callback page.
+		HttpApiEndpoint.post("oauthComplete", "/oauth/complete", {
+			payload: OAuthCompleteRequest,
+			success: OAuthCompleteResponse,
 		}),
 	)
 	.add(

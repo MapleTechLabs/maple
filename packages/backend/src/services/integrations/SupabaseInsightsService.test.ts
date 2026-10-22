@@ -115,7 +115,10 @@ const connect = (world: World) =>
 			},
 		)
 		world.state.codeChallenge = new URL(redirectUrl).searchParams.get("code_challenge")
-		const granted = yield* oauth.completeConnect("code", state)
+		const granted = yield* oauth.completeConnect("code", state, {
+			orgId: ORG,
+			userId: Schema.decodeUnknownSync(UserId)("user_a"),
+		})
 		yield* connection.finalizeConnect(granted.orgId, granted.connectedByUserId, granted.organization)
 		yield* connection.sync(granted.orgId)
 	})

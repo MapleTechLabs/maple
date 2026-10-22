@@ -1,3 +1,5 @@
+// First: takes an OAuth return's fragment off the URL before anything else reads it.
+import "./platform/oauth-return-boot"
 import "./styles.css"
 
 import { Runtime } from "foldkit"

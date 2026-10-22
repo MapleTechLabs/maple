@@ -17,6 +17,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeOAuthConnectionHelpers, OAUTH_STATE_TTL_MS, toUpstreamError } from "./oauth/connection-helpers"
+import type { OAuthFlowInitiator } from "./oauth/oauth-state"
 
 const HAZEL_PROVIDER = "hazel"
 
@@ -134,6 +135,7 @@ export interface HazelOAuthServiceApi {
 	readonly completeConnect: (
 		code: string,
 		state: string,
+		initiator: OAuthFlowInitiator,
 	) => Effect.Effect<
 		{ readonly orgId: OrgId; readonly returnTo: string | null },
 		IntegrationsValidationError | IntegrationsUpstreamError | IntegrationsPersistenceError
@@ -361,10 +363,10 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 			const completeConnect = Effect.fn("HazelOAuthService.completeConnect")(function* (
 				code: string,
 				state: string,
+				initiator: OAuthFlowInitiator,
 			) {
 				const config = yield* resolveConfig
-				const stateRow = yield* oauth.requireStateRow(state)
-				yield* oauth.deleteAuthState(state)
+				const stateRow = yield* oauth.consumeStateRow(state, initiator)
 
 				const tokenResponse = yield* oauth.exchangeAuthorizationCode(
 					config,
