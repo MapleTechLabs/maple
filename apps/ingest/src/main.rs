@@ -8746,7 +8746,8 @@ fn clickhouse_allow_private_endpoints(
     raw: Option<String>,
     self_hosted_mode: Option<String>,
 ) -> Result<bool, String> {
-    let self_hosted = self_hosted_mode.is_some_and(|mode| !mode.trim().is_empty());
+    // Same reading as the key store backend: only `single_tenant` is self-hosted.
+    let self_hosted = self_hosted_mode.as_deref() == Some("single_tenant");
     parse_bool(
         "INGEST_CLICKHOUSE_ALLOW_PRIVATE_ENDPOINTS",
         raw,
@@ -8883,6 +8884,9 @@ mod tests {
         assert_eq!(allow(Some("true"), None), Ok(true));
         assert_eq!(allow(None, Some("single_tenant")), Ok(true));
         assert_eq!(allow(Some("false"), Some("single_tenant")), Ok(false));
+        // Only the value the key store reads as self-hosted turns the opt-in on.
+        assert_eq!(allow(None, Some("false")), Ok(false));
+        assert_eq!(allow(None, Some("multi_tenant")), Ok(false));
         assert!(allow(Some("maybe"), None).is_err());
     }
 
