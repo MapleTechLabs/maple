@@ -64,8 +64,6 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 45
         outputs:
-            web_url: ${{ steps.deploy.outputs.web_url }}
-            api_url: ${{ steps.deploy.outputs.api_url }}
             smoke: ${{ steps.smoke.outcome }}
         # `pr-preview` holds its own Infisical identity, limited to the preview environment, so
         # PR code can never request `prod`. Required reviewers would also gate teardowns on close;
@@ -304,8 +302,10 @@ jobs:
             run:
                 working-directory: apps/web/e2e
         env:
-            MAPLE_E2E_APP_URL: ${{ needs.deploy-pr-preview.outputs.web_url }}
-            MAPLE_E2E_API_URL: ${{ needs.deploy-pr-preview.outputs.api_url }}
+            # Not the deploy's URL outputs: GitHub drops an output that contains any masked
+            # value, and short Infisical values occur in these hostnames.
+            MAPLE_E2E_APP_URL: https://app-pr-${{ github.event.pull_request.number }}.maple.dev
+            MAPLE_E2E_API_URL: https://api-pr-${{ github.event.pull_request.number }}.maple.dev
             E2E_TELEMETRY_DISABLED: "1"
             SECRETS_FILE: /.e2e-secrets.env
         steps:
