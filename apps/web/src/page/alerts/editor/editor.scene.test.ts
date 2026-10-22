@@ -251,6 +251,23 @@ describe("alert rule editor", () => {
 			expectView(text(/ran past 25 s charting this range/)).toExist(),
 			expectView(text("Too slow for 1-minute checks, fits 5-minute checks.")).toExist(),
 		)
+		const timed = Schema.encodeSync(AlertRulePreviewResponse)(timing(0))
+		const outOfMemory = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+			...timed,
+			queryTiming: { ...timed.queryTiming, elapsedMs: null, failure: "query_too_much_memory", fitsIntervalMinutes: [] },
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				run(sql, [
+					Message.CompletedFetchPreview({ key: sql.preview.key ?? "", isSaved: false, result: Result.succeed(outOfMemory) }),
+				]),
+			),
+			themeResolved(),
+			// Out of memory is no verdict on time: no interval reads as too slow.
+			expectView(text("It ran out of memory with the most any interval allows, so checking less often will not help.")).toExist(),
+			expectView(role("radio", { name: /too slow/ })).not.toExist(),
+		)
 	})
 
 	test("editing a slowed-down rule says saving resets it, and keeps it in one click", () => {
