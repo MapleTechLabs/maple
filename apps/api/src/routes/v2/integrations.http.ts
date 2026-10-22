@@ -65,6 +65,12 @@ const hostnameOf = (url: string): string | null =>
 		onSome: (parsed) => parsed.hostname.toLowerCase(),
 	})
 
+const protocolOf = (url: string): string | null =>
+	Option.match(Option.liftThrowable(() => new URL(url))(), {
+		onNone: () => null,
+		onSome: (parsed) => parsed.protocol,
+	})
+
 /** `app.maple.dev` → `maple.dev`; a single-label host is its own parent. */
 const parentDomain = (hostname: string): string => {
 	const dot = hostname.indexOf(".")
@@ -94,13 +100,16 @@ export const isTrustedCallbackOrigin = (origin: string, appBaseUrl: string): boo
 	const host = hostnameOf(origin)
 	const appHost = hostnameOf(appBaseUrl)
 	if (host === null || appHost === null) return false
-	if (host === appHost) return true
 	// Local dev is one family: `*.localhost` (portless proxy) plus loopback IPs
 	// (raw-port dev servers with no portless proxy, where web and api sit on
 	// different loopback ports).
 	const isLocal = (value: string) =>
 		value === "localhost" || value.endsWith(".localhost") || value.startsWith("127.") || value === "[::1]"
 	if (isLocal(host) || isLocal(appHost)) return isLocal(host) && isLocal(appHost)
+	// `x-forwarded-proto` is client-set too: a deployed callback keeps the app's
+	// scheme, so an https deployment never hands out an http redirect.
+	if (protocolOf(origin) !== protocolOf(appBaseUrl)) return false
+	if (host === appHost) return true
 	const parent = parentDomain(host)
 	// Require a dot so a bare TLD (`evil.dev` vs `app.maple.dev`) never matches.
 	return parent.includes(".") && parent === parentDomain(appHost)

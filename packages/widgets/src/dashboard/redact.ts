@@ -160,7 +160,7 @@ const referencedVariableNames = (widget: ShareWidgetInput): ReadonlySet<string> 
  * variable list of tiles the viewer cannot see — those names, labels, option
  * values and attribute keys are the board's, not the chart's.
  */
-const variablesForWidget = (
+export const variablesForWidget = (
 	variables: ReadonlyArray<DashboardVariable>,
 	widget: ShareWidgetInput,
 ): ReadonlyArray<DashboardVariable> => {
