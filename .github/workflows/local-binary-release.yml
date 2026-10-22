@@ -85,10 +85,12 @@ jobs:
 
             - name: Resolve version
               id: version
+              env:
+                  INPUT_TAG: ${{ github.event.inputs.tag }}
               run: |
                   set -euo pipefail
                   ref="${{ github.ref }}"
-                  input_tag="${{ github.event.inputs.tag }}"
+                  input_tag="${INPUT_TAG:-}"
                   if [ -n "$input_tag" ]; then
                     version="$input_tag"
                   elif [[ "$ref" == refs/tags/* ]]; then
@@ -192,10 +194,11 @@ jobs:
               env:
                   GH_TOKEN: ${{ github.token }}
                   REPO: ${{ github.repository }}
+                  INPUT_TAG: ${{ github.event.inputs.tag }}
               run: |
                   set -euo pipefail
                   ref="${{ github.ref }}"
-                  input_tag="${{ github.event.inputs.tag }}"
+                  input_tag="${INPUT_TAG:-}"
                   if [ -n "$input_tag" ]; then
                     TAG="$input_tag"
                   else

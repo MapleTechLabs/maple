@@ -32,12 +32,18 @@ jobs:
             - name: Checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
+            # Pinned uv and CLI versions instead of piping the vendor install script to sh.
+            - name: Install uv
+              uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+
             # Before secrets load, so the installer never sees them. `continue-on-error` so a
             # tinybird.co outage skips only the Tinybird sweep, not all of them.
             - name: Install Tinybird CLI
               id: install-tinybird-cli
               continue-on-error: true
-              run: curl https://tinybird.co | sh
+              run: |
+                  uv tool install tinybird==5.0.2 --python 3.11
+                  uv tool dir --bin >> "$GITHUB_PATH"
 
             # Toolchain, Infisical secrets, AWS OIDC credentials, deps. The deploy role must
             # trust `repo:<org>/<repo>:environment:maintenance`.
