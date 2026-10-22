@@ -140,8 +140,20 @@ describe("CiAnalyticsService.analytics", () => {
 		),
 	)
 
-	it.effect("reads at most the newest year, in weekly buckets that cover it", () =>
-		withService({}, (service) =>
+	it.effect("reads at most the newest year, in weekly buckets that cover it", () => {
+		const WEEK = 7 * 24 * HOUR
+		const week = (weeksAgo: number) => Math.floor((END - weeksAgo * WEEK) / WEEK) * WEEK
+		const seriesRow = (weeksAgo: number, failed: number) => ({
+			bucket: wire(week(weeksAgo)),
+			runs: String(failed + 1),
+			succeeded: "1",
+			failed: String(failed),
+			cancelled: "0",
+			p50DurationMs: 60_000,
+			p95DurationMs: 60_000,
+			totalDurationMs: 60_000,
+		})
+		return withService({ ciRunSeries: [seriesRow(40, 2), seriesRow(3, 5)] }, (service) =>
 			Effect.gen(function* () {
 				const analytics = yield* service.analytics(tenant, {
 					startTime: END - 2 * 365 * 24 * HOUR,
@@ -154,9 +166,13 @@ describe("CiAnalyticsService.analytics", () => {
 				assert.isAtMost(buckets[0]!, analytics.startTime)
 				assert.isAbove(buckets[buckets.length - 1]! + bucketMs, END - 1)
 				assert.isTrue(buckets.every((bucket, i) => i === 0 || bucket - buckets[i - 1]! === bucketMs))
+				// Each week's row lands in its own bar; the weeks around it stay empty.
+				const failedIn = (weeksAgo: number) =>
+					analytics.series.find((bucket) => bucket.bucket === week(weeksAgo))?.failed
+				assert.deepStrictEqual([failedIn(41), failedIn(40), failedIn(3), failedIn(2)], [0, 2, 5, 0])
 			}),
-		),
-	)
+		)
+	})
 
 	it.effect("scopes every read to the repository's owner and name", () =>
 		withService({}, (service, reads) =>
