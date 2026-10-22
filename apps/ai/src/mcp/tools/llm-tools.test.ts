@@ -7,7 +7,7 @@
  * tool failure the model can read rather than an authorization denial that ends the turn.
  */
 import { OrgId, UserId } from "@maple/domain"
-import { Effect, Result, Schema } from "effect"
+import { DateTime, Effect, Result, Schema, Scope } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../dispatcher"
 import { noRepositoryWarmup } from "../../../test/chat/tool-executor"
@@ -42,7 +42,9 @@ const inRun = (runId: string) =>
 	Effect.provideService(
 		AgentSpawner,
 		AgentSpawner.of({
+			scope: Scope.makeUnsafe(),
 			policy: agentPolicyFor(agentForSession("org_test:tab-1")),
+			durationDeadline: DateTime.nowUnsafe(),
 			depth: 0,
 			parent: {
 				agentId: Schema.decodeSync(AgentId)("pr-review"),

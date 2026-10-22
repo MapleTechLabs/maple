@@ -442,9 +442,37 @@ describe("v2 api_keys over HTTP", () => {
 
 		const created = await harness.request("POST", "/V2//api_keys", {
 			token: writeKey.secret,
-			body: { name: "normalized" },
+			body: { name: "normalized", scopes: ["api_keys:read"] },
 		})
 		expect(created.status).toBe(200)
+		await harness.dispose()
+	})
+
+	it("keeps a scoped key from handing out or taking over broader access", async () => {
+		const harness = makeHarness()
+		const scoped = await harness.bootstrapKey(["api_keys:write"])
+		const unscoped = await harness.bootstrapKey()
+		const listed = await harness.request("GET", "/v2/api_keys", { token: unscoped.secret })
+		const unscopedId: string = listed.body.data.find(
+			(key: { readonly name: string }) => key.name === "root-key",
+		).id
+		const request = (method: string, path: string, body?: unknown) =>
+			harness.request(method, path, { token: scoped.secret, body })
+
+		const statuses = [
+			(await request("POST", "/v2/api_keys", { name: "full" })).status,
+			(await request("POST", "/v2/api_keys", { name: "star", scopes: ["*"] })).status,
+			(await request("POST", "/v2/api_keys", { name: "wider", scopes: ["traces:read"] })).status,
+			(await request("POST", "/v2/api_keys", { name: "mcp", kind: "mcp", scopes: ["api_keys:read"] }))
+				.status,
+			(await request("POST", `/v2/api_keys/${unscopedId}/roll`)).status,
+			(await request("DELETE", `/v2/api_keys/${unscopedId}`)).status,
+		]
+		expect(statuses).toEqual([403, 403, 403, 403, 403, 403])
+
+		const narrower = await request("POST", "/v2/api_keys", { name: "narrow", scopes: ["api_keys:read"] })
+		expect(narrower.status).toBe(200)
+		expect(narrower.body.scopes).toEqual(["api_keys:read"])
 		await harness.dispose()
 	})
 

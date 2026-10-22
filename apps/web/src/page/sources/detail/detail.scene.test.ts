@@ -3,6 +3,7 @@ import {
 	encodePublicId,
 	PublicIdPrefixes,
 	V2AwsConnection,
+	V2GcpIntegration,
 	V2Source,
 	V2SourceUsage,
 } from "@maple/domain/http/v2"
@@ -12,8 +13,9 @@ import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import { toLoadFailure } from "../../../data/load-failure"
 import { AppRoute } from "../../../route"
+import * as Dialog from "../../../ui/dialog"
 import { type PageContext, PageOutMessage } from "../../contract"
-import { AwsConnectionId, ScrapeTargetId } from "@maple/domain/primitives"
+import { AwsConnectionId, GcpConnectorId, ScrapeTargetId } from "@maple/domain/primitives"
 import { Message as IntegrationMessage } from "../../integrations/message"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -370,6 +372,171 @@ describe("integration sources", () => {
 		expect(names(pageUpdate(loaded(paused), Message.ClickedResume()).commands)).toEqual(["ResumeSource"])
 	})
 
+	test("Delete lists what it disconnects, deletes through the sources API and offers a pause instead", () => {
+		const opened = pageUpdate(loaded(prometheus()), Message.ClickedDelete()).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			resolveTheme,
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("Maple stops scraping its targets and removes them")).toExist(),
+			expectView(role("button", { name: "Disconnect and delete" })).toExist(),
+			expectView(role("button", { name: "Pause instead" })).toExist(),
+		)
+		expect(names(pageUpdate(opened, Message.ConfirmedDelete()).commands)).toEqual(["DeleteSource"])
+		const pausing = pageUpdate(opened, Message.ClickedPauseUntilResumed())
+		expect(pausing.model.busy).toBe("pause")
+		expect(pausing.model.deleteDialog.isOpen).toBe(false)
+		expect(names(pausing.commands)).toContain("PauseSource")
+	})
+
+	describe("a Google Cloud source's Delete", () => {
+		const connectorUuid = "0199a0e1-0000-7000-8000-0000000000bb"
+		const connectorId = encodePublicId(PublicIdPrefixes.gcpConnector, connectorUuid)
+		const gcp = (integrationId: string | null) =>
+			prometheus({ name: "Google Cloud acme-prod", platform: "gcp", integration_id: integrationId })
+		const gcpStatus = Schema.decodeUnknownSync(V2GcpIntegration)({
+			object: "gcp_integration",
+			metrics_available: true,
+			connectors: [
+				{
+					id: connectorId,
+					object: "gcp_connector",
+					scope_type: "project",
+					scope_id: "acme-prod",
+					project_id: "acme-prod",
+					logs_enabled: true,
+					metrics_enabled: true,
+					created_at: "2026-09-01T00:00:00.000Z",
+					last_log_received_at: null,
+					last_log_error: null,
+					applied_logs_enabled: true,
+					applied_metrics_enabled: true,
+					setup_reported_at: "2026-09-01T00:05:00.000Z",
+					last_metrics_received_at: null,
+					last_metrics_error: null,
+					discovered_project_count: 1,
+					last_resources_error: null,
+				},
+			],
+		})
+		const withStatus = (model: Model): Model =>
+			pageUpdate(
+				model,
+				Message.GotConnectionMessage({
+					message: IntegrationMessage.CompletedLoadGcp({
+						key: model.connection?.statuses.gcp.key ?? "",
+						result: Result.succeed(gcpStatus),
+					}),
+				}),
+			).model
+
+		test("opens the integration's removal dialog, which reads the cleanup script", () => {
+			const clicked = pageUpdate(withStatus(loaded(gcp(connectorId))), Message.ClickedDelete())
+			expect(clicked.model.deleteDialog.isOpen).toBe(false)
+			expect(clicked.model.connection?.gcpCard.disconnectDialog.isOpen).toBe(true)
+			expect(names(clicked.commands)).toContain("LoadGcpSetupScripts")
+		})
+
+		test("says so while the connection has not loaded, instead of doing nothing", () => {
+			const clicked = pageUpdate(loaded(gcp(connectorId)), Message.ClickedDelete())
+			expect(clicked.outMessage?._tag === "RequestedToast" && clicked.outMessage.type).toBe("error")
+		})
+
+		test("deletes a source whose connector is gone through the generic dialog", () => {
+			const clicked = pageUpdate(loaded(gcp(null)), Message.ClickedDelete())
+			expect(clicked.model.deleteDialog.isOpen).toBe(true)
+			expect(names(pageUpdate(clicked.model, Message.ConfirmedDelete()).commands)).toEqual([
+				"DeleteSource",
+			])
+		})
+
+		test("once removed, leaves for the integration page that keeps the cleanup script", () => {
+			const done = pageUpdate(
+				withStatus(loaded(gcp(connectorId))),
+				Message.GotConnectionMessage({
+					message: IntegrationMessage.CompletedGcpDisconnect({
+						id: Schema.decodeSync(GcpConnectorId)(connectorUuid),
+						cleanupScript: "gcloud ...",
+						failure: null,
+					}),
+				}),
+			)
+			expect(done.outMessage?._tag === "RequestedNavigation" && done.outMessage.url).toBe(
+				"/sources/new?integration=gcp",
+			)
+		})
+	})
+
+	test("disconnecting the integration from its Connection tab leaves for the list", () => {
+		const left = pageUpdate(
+			loaded(prometheus({ platform: "railway", name: "Railway" }), "connection"),
+			Message.GotConnectionMessage({
+				message: IntegrationMessage.CompletedDisconnect({ integration: "railway", failure: null }),
+			}),
+		)
+		expect(left.outMessage?._tag === "RequestedNavigation" && left.outMessage.url).toBe("/sources")
+	})
+
+	test("a multi-account Cloudflare disconnect leaves for the list too", () => {
+		const left = pageUpdate(
+			loaded(prometheus({ platform: "cloudflare", name: "Cloudflare" }), "connection"),
+			Message.GotConnectionMessage({
+				message: IntegrationMessage.CompletedDisconnect({
+					integration: "cloudflare-multi",
+					failure: null,
+				}),
+			}),
+		)
+		expect(left.outMessage?._tag === "RequestedNavigation" && left.outMessage.url).toBe("/sources")
+	})
+
+	test("a GitHub delete says its repositories and commits go with it", () => {
+		const opened = pageUpdate(
+			loaded(prometheus({ platform: "github", name: "GitHub acme" })),
+			Message.ClickedDelete(),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			resolveTheme,
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(
+				text("Maple deletes this installation's repositories, branches and commits"),
+			).toExist(),
+			expectView(text("Data already stored stays until retention ends")).not.toExist(),
+		)
+	})
+
+	test("an integration's settings pause and delete it, with no rules to set", () => {
+		const model = loaded(prometheus(), "settings")
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("Ingestion")).toExist(),
+			expectView(role("button", { name: "Delete source" })).toExist(),
+			expectView(text("Rate limit")).not.toExist(),
+		)
+		expect(names(pageUpdate(model, Message.ClickedPauseUntilResumed()).commands)).toContain("PauseSource")
+	})
+
+	test("the default source's settings point to a new source for rules", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				loaded(
+					source({ kind: "default", is_default: true, key_prefix: null, name: "Default" }),
+					"settings",
+				),
+			),
+			resolveTheme,
+			expectView(role("link", { name: "Create a source" })).toExist(),
+			expectView(text("Rate limit")).not.toExist(),
+			expectView(role("button", { name: "Delete source" })).not.toExist(),
+		)
+	})
+
 	test("the overview totals every signal and its stored size", () => {
 		const model = loaded(prometheus())
 		const withUsage = pageUpdate(
@@ -525,6 +692,39 @@ describe("integration focus", () => {
 			}),
 		)
 		expect(names(answered.commands)).toContain("FetchSourceDetailList")
+	})
+
+	test("an AWS source's Delete opens the AWS disconnect dialog, which keeps the cleanup script", () => {
+		const connection = Schema.decodeSync(AwsConnectionId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+		const model = loaded(
+			source({
+				platform: "aws",
+				kind: "integration",
+				key_prefix: null,
+				integration_id: encodePublicId(PublicIdPrefixes.awsConnection, connection),
+			}),
+			"connection",
+		)
+		// Before the status loads there is no connection to disconnect yet.
+		const early = pageUpdate(model, Message.ClickedDelete())
+		expect(early.outMessage?._tag === "RequestedToast" && early.outMessage.type).toBe("error")
+		const withStatus = pageUpdate(
+			model,
+			Message.GotConnectionMessage({
+				message: IntegrationMessage.CompletedLoadAws({
+					key: model.connection?.statuses.aws.key ?? "",
+					result: Result.succeed({
+						object: "aws_integration",
+						available: true,
+						modules: [],
+						connections: [awsConnection(connection)],
+					}),
+				}),
+			}),
+		).model
+		const clicked = pageUpdate(withStatus, Message.ClickedDelete())
+		expect(clicked.model.deleteDialog.isOpen).toBe(false)
+		expect(clicked.model.connection?.awsCard.disconnectDialog.isOpen).toBe(true)
 	})
 
 	test("disconnecting its own AWS connection leaves for the AWS page, where the cleanup waits", () => {

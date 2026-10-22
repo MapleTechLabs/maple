@@ -1982,10 +1982,14 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "bot_author" })
 					return skip("bot_author")
 				}
-				// The automatic review reads org telemetry and posts to the pull request, so it runs only for
-				// a trusted author; a member can still ask for one explicitly.
-				if (!requested && !isTrustedAuthorAssociation(job.authorAssociation)) {
-					yield* annotate("skipped", { "maple.pr_review.skip_reason": "external_author" })
+				// The automatic review reads org telemetry and posts to the pull request, so on a public
+				// repository it runs only for a trusted author. GitHub reports private org members as
+				// CONTRIBUTOR in webhooks, and only people with access can open a pull request on a private one.
+				if (!requested && !repo.isPrivate && !isTrustedAuthorAssociation(job.authorAssociation)) {
+					yield* annotate("skipped", {
+						"maple.pr_review.skip_reason": "external_author",
+						"vcs.pull_request.author_association": job.authorAssociation ?? "absent",
+					})
 					return skip("external_author")
 				}
 				const nowMs = yield* Clock.currentTimeMillis

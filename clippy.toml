@@ -10,3 +10,19 @@ allow-panic-in-tests = true
 # suggestion lints must not propose APIs newer than it (see the
 # duration_constructors incident: a clippy suggestion broke rust:1.88 builds).
 msrv = "1.94"
+
+# Request bodies are decompressed only through `maple_ingest::decompress`, which
+# caps the decoded size. A raw decoder here is an unbounded inflate.
+disallowed-types = [
+    { path = "flate2::read::GzDecoder", reason = "use maple_ingest::decompress (bounded)" },
+    { path = "flate2::read::MultiGzDecoder", reason = "use maple_ingest::decompress (bounded)" },
+    { path = "flate2::read::DeflateDecoder", reason = "use maple_ingest::decompress (bounded)" },
+    { path = "flate2::read::ZlibDecoder", reason = "use maple_ingest::decompress (bounded)" },
+    { path = "flate2::bufread::GzDecoder", reason = "use maple_ingest::decompress (bounded)" },
+    { path = "flate2::bufread::MultiGzDecoder", reason = "use maple_ingest::decompress (bounded)" },
+    { path = "flate2::bufread::DeflateDecoder", reason = "use maple_ingest::decompress (bounded)" },
+    { path = "flate2::bufread::ZlibDecoder", reason = "use maple_ingest::decompress (bounded)" },
+    { path = "flate2::write::GzDecoder", reason = "use maple_ingest::decompress (bounded)" },
+    { path = "flate2::write::DeflateDecoder", reason = "use maple_ingest::decompress (bounded)" },
+    { path = "flate2::write::ZlibDecoder", reason = "use maple_ingest::decompress (bounded)" },
+]

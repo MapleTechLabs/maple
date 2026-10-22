@@ -8,9 +8,11 @@
 import { evaluatePermission } from "@maple/domain/permission"
 import type { ChatMessage, ChatTurnOrigin } from "@maple/domain/chat-session"
 import * as AgentRuntime from "@yielded/agent/agent-runtime"
+import type { RunBudgetHook } from "@yielded/agent/run-options"
+import type * as RunEvent from "@yielded/agent/run-event"
 import * as ThreadHistory from "@yielded/agent/thread-history"
 import { ThreadId } from "@yielded/agent/identifiers"
-import { Clock, Duration, Effect, Layer, Schema, Stream } from "effect"
+import { Cause, Clock, Duration, Effect, Layer, Schema, Stream } from "effect"
 import { Prompt, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
@@ -18,9 +20,10 @@ import { mapleToolPhrase } from "../mcp/tools/registry"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import { withRunSessionAttributes } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
-import { makeTextSanitizer, toChatEvents, type ChatTurnEvent } from "./events"
+import { makeTextSanitizer, settledTurnEnd, toChatEvents, type ChatTurnEvent } from "./events"
 import { makeReviewCoverage, type ReviewCoverage } from "./review-coverage"
 import type { ReviewLedger } from "./review-ledger"
 import { buildReviewFanout } from "./review-fanout"
@@ -227,13 +230,19 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		...(fanout === undefined ? [] : [fanout.layer.pipe(Layer.provide(maple.layer))]),
 	)
 
-	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
+	// Not declared to the engine, which would then require the tool on every call; see
+	// `buildDiagnosisCompletion`. A landed submission still settles the run, below.
 	const run = chatAgent({ ...agent, prompt: profile.prompt }, toolkit, input.model, {
 		autonomous: input.origin.kind === "autonomous",
-		...(completion === undefined
-			? undefined
-			: { completion: { tool: completion.tool, required: false } }),
 	})
+	const usage = accumulateUsage(input.usage)
+	const submitted = () => completion?.submitted() === true
+	const budget: RunBudgetHook = {
+		...usage,
+		// A landed submission settles the run: the next model pull after its batch never starts. An
+		// interrupt rather than a failure, so a settled run records no error.
+		guard: (effect) => (submitted() ? Effect.interrupt : usage.guard(effect)),
+	}
 
 	// A gated tool is announced exactly like any other and refuses when dispatched, so only the
 	// ruleset knows the call is a proposal.
@@ -242,6 +251,21 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 	let compactions = 0
 	// One per turn: a hidden block straddles deltas, so the state that finds it has to as well.
 	const sanitizer = makeTextSanitizer()
+	const context = {
+		messageId: input.messageId,
+		isProposed,
+		labelOf: mapleToolPhrase,
+		uiOf: (toolCallId: string) => {
+			const ui = uiByCall.get(toolCallId)
+			uiByCall.delete(toolCallId)
+			return ui
+		},
+		sanitizer,
+	}
+	// Once the submission lands, the run's own ending (the guard's interrupt) is not the turn's.
+	const settledTerminal = (event: RunEvent.RunEvent) =>
+		submitted() &&
+		(event._tag === "RunCompleted" || event._tag === "RunFailed" || event._tag === "RunInterrupted")
 
 	return AgentRuntime.stream(run, input.text, {
 		threadId: decodeThreadId(input.sessionId),
@@ -249,7 +273,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		// Not a budget: the ceilings live in the agent's policy. This is the only place the engine
 		// reports token usage as it accrues — the event stream carries none — and `submit_diagnosis`
 		// reads the running total mid-run, so a hook that merely observes is what fills it.
-		budget: accumulateUsage(input.usage),
+		budget,
 	}).pipe(
 		// An abort clears the claim; the run notices at the next event rather than only after the
 		// in-flight model call drains.
@@ -257,25 +281,30 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		Stream.runForEach((event) =>
 			Effect.sync(() => {
 				if (event._tag === "CompactionPerformed") compactions += 1
-				for (const chat of toChatEvents(event, {
-					messageId: input.messageId,
-					isProposed,
-					labelOf: mapleToolPhrase,
-					uiOf: (toolCallId) => {
-						const ui = uiByCall.get(toolCallId)
-						uiByCall.delete(toolCallId)
-						return ui
-					},
-					sanitizer,
-				})) {
-					input.append(chat)
-				}
+				if (settledTerminal(event)) return
+				for (const chat of toChatEvents(event, context)) input.append(chat)
 			}),
 		),
 		// The gate's refusal is how a run stops on a proposal: the turn finished, it did not fail.
 		Effect.catchIf(
 			(error) => error instanceof ApprovalRequired,
 			() => Effect.void,
+		),
+		// A landed submission makes any later failure moot, defects included; only an abort stays one.
+		Effect.catchCause((cause) =>
+			!submitted() || !input.holdsTurn()
+				? Effect.failCause(cause)
+				: Cause.hasInterruptsOnly(cause)
+					? Effect.void
+					: Effect.logWarning("Run failed after its submission landed").pipe(
+							Effect.annotateLogs({ cause: summarizeCause(cause) }),
+						),
+		),
+		Effect.tap(() =>
+			Effect.sync(() => {
+				if (submitted() && input.holdsTurn())
+					for (const chat of settledTurnEnd(context)) input.append(chat)
+			}),
 		),
 		// Once per turn, the tag alone: a model that wrote a tool call as prose answered with
 		// nothing, and how often that happens is a question about the run's ending, not this turn.

@@ -20,6 +20,7 @@ import { McpConnectionsService } from "@maple/backend/services/auth/McpConnectio
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
+import { SourceRemovalService } from "@maple/backend/services/integrations/SourceRemovalService"
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
@@ -214,8 +215,15 @@ const v2GroupLayersExceptOnboardingChecklist = (
 				Layer.succeed(DashboardWidgetDataService, {
 					variableOptions: () => Effect.succeed({}),
 					resolve: () => Effect.die("share widget data is not exercised by v2 route harnesses"),
-					resolveBatch: () =>
-						Effect.die("share widget data is not exercised by v2 route harnesses"),
+					// Echoes the variables it was handed, so a test can see which ones a
+					// share let through; the values themselves are not evaluated here.
+					resolveBatch: (_orgId, document) =>
+						Effect.succeed({
+							results: [],
+							variables: Object.fromEntries(
+								(document.variables ?? []).map((variable) => [variable.name, ""]),
+							),
+						}),
 				}),
 			),
 			Layer.provide(
@@ -391,6 +399,7 @@ export const SourcesServiceStubsLayer = Layer.mergeAll(
 		delete: die,
 	}),
 	Layer.succeed(SourceUsageService, { read: die, summary: die }),
+	Layer.succeed(SourceRemovalService, { remove: die }),
 )
 
 /** Inert config-resource services for harnesses that never touch those groups. */

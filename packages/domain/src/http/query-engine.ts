@@ -183,7 +183,7 @@ export class ErrorsByTypeRequest extends Schema.Class<ErrorsByTypeRequest>("Erro
 	excludedDeploymentEnvs: OptionalDeploymentEnvs,
 	excludedErrorLabels: OptionalErrorLabels,
 	excludedServiceVersions: OptionalServiceVersions,
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 }) {}
 
 export class ErrorsByTypeResponse extends Schema.Class<ErrorsByTypeResponse>("ErrorsByTypeResponse")({
@@ -260,7 +260,7 @@ export class ErrorDetailTracesRequest extends Schema.Class<ErrorDetailTracesRequ
 	fingerprintHash: FingerprintHash,
 	rootOnly: Schema.optional(Schema.Boolean),
 	services: OptionalServiceNames,
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 }) {}
 
 export class ErrorDetailTracesResponse extends Schema.Class<ErrorDetailTracesResponse>(
@@ -984,7 +984,7 @@ export class CloudflareInfraZoneBreakdownRequest extends Schema.Class<Cloudflare
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	bucketSeconds: BucketSeconds,
-	limit: Schema.optionalKey(Schema.Number),
+	limit: Schema.optionalKey(RowLimit),
 	...CloudflareZoneFilterFields,
 }) {}
 
@@ -1379,7 +1379,7 @@ export class ServiceOperationsRequest extends Schema.Class<ServiceOperationsRequ
 	// Bucket size for the per-operation sparkline sub-query (client-computed,
 	// like ServiceDetailOverviewRequest.releasesBucketSeconds).
 	bucketSeconds: Schema.optional(BucketSeconds),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 }) {}
 
 export class ServiceOperationsResponse extends Schema.Class<ServiceOperationsResponse>(
@@ -1417,7 +1417,7 @@ export class ServiceEndpointsRequest extends Schema.Class<ServiceEndpointsReques
 		startTime: TinybirdDateTime,
 		endTime: TinybirdDateTime,
 		environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
-		limit: Schema.optional(Schema.Number),
+		limit: Schema.optional(RowLimit),
 	},
 ) {}
 
@@ -1490,7 +1490,7 @@ export class ListLogsRequest extends Schema.Class<ListLogsRequest>("ListLogsRequ
 	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 	/** Scopes a log's surrounding context to one instance (`k8s.pod.name`, `service.instance.id`). */
 	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	/** `asc` reads oldest-first from `startTime`. Defaults to newest-first; `cursor` follows the order. */
 	order: Schema.optional(Schema.Literals(["asc", "desc"])),
 }) {}
@@ -1526,7 +1526,7 @@ export class ListMetricsRequest extends Schema.Class<ListMetricsRequest>("ListMe
 	service: Schema.optional(ServiceName),
 	metricType: Schema.optional(Schema.String),
 	search: Schema.optional(Schema.String),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	offset: Schema.optional(Schema.Number),
 }) {}
 
@@ -1556,7 +1556,7 @@ export class ListHostsRequest extends Schema.Class<ListHostsRequest>("ListHostsR
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	search: Schema.optional(Schema.String),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	offset: Schema.optional(Schema.Number),
 }) {}
 
@@ -1710,7 +1710,7 @@ export class ListPodsRequest extends Schema.Class<ListPodsRequest>("ListPodsRequ
 	lifecycle: Schema.optional(PodLifecycleLiteral),
 	sortBy: Schema.optional(PodSortKeyLiteral),
 	sortDir: Schema.optional(SortDirectionLiteral),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	offset: Schema.optional(Schema.Number),
 }) {}
 
@@ -1808,7 +1808,7 @@ export class ListContainersRequest extends Schema.Class<ListContainersRequest>("
 	scope: Schema.optional(ContainerScopeLiteral),
 	sortBy: Schema.optional(ContainerSortKeyLiteral),
 	sortDir: Schema.optional(SortDirectionLiteral),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	offset: Schema.optional(Schema.Number),
 }) {}
 
@@ -2067,7 +2067,7 @@ export class WebAnalyticsPagesRequest extends Schema.Class<WebAnalyticsPagesRequ
 )({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	...WebAnalyticsFilterFields,
 }) {}
 
@@ -2089,7 +2089,7 @@ export class WebAnalyticsEventsRequest extends Schema.Class<WebAnalyticsEventsRe
 )({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	...WebAnalyticsFilterFields,
 }) {}
 
@@ -2110,7 +2110,7 @@ export class WebAnalyticsBreakdownsRequest extends Schema.Class<WebAnalyticsBrea
 )({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	limitPerDimension: Schema.optional(Schema.Number),
+	limitPerDimension: Schema.optional(RowLimit),
 	...WebAnalyticsFilterFields,
 }) {}
 
@@ -2257,7 +2257,7 @@ export class ProductEventsFunnelBreakdownRequest extends Schema.Class<ProductEve
 	...ProductEventsFunnelFields,
 	breakdownBy: FunnelBreakdownBy,
 	/** Groups to keep, ranked by step-1 count. Default 10, max 20. */
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 }) {}
 
 export class ProductEventsFunnelBreakdownResponse extends Schema.Class<ProductEventsFunnelBreakdownResponse>(
@@ -2333,7 +2333,7 @@ export class ProductEventNamesRequest extends Schema.Class<ProductEventNamesRequ
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	/** Default 100. */
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	...WebAnalyticsFilterFields,
 }) {}
 
@@ -2497,7 +2497,7 @@ export class PodRestartsRequest extends Schema.Class<PodRestartsRequest>("PodRes
 	endTime: TinybirdDateTime,
 	podNames: Schema.optional(StringArray),
 	namespace: Schema.optional(Schema.String),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 }) {}
 
 export class PodRestartsResponse extends Schema.Class<PodRestartsResponse>("PodRestartsResponse")({
@@ -2547,7 +2547,7 @@ export class ListNodesRequest extends Schema.Class<ListNodesRequest>("ListNodesR
 	nodeNames: Schema.optional(StringArray),
 	clusters: Schema.optional(StringArray),
 	environments: Schema.optional(StringArray),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	offset: Schema.optional(Schema.Number),
 }) {}
 
@@ -2651,7 +2651,7 @@ export class ListWorkloadsRequest extends Schema.Class<ListWorkloadsRequest>("Li
 	clusters: Schema.optional(StringArray),
 	environments: Schema.optional(StringArray),
 	computeTypes: Schema.optional(StringArray),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(RowLimit),
 	offset: Schema.optional(Schema.Number),
 }) {}
 

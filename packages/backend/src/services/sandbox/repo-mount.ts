@@ -6,7 +6,12 @@
  * pointed at another organization's repository.
  */
 import type { OrgId } from "@maple/domain/http"
-import { NetworkDisabled, SandboxImplementation, SandboxMount, SandboxRuntime } from "@yielded/agent/sandbox"
+import {
+	NetworkDisabled,
+	SandboxImplementation,
+	SandboxMount,
+	SandboxRuntime,
+} from "@maple/backend/sandbox/contract"
 import { Option, Schema } from "effect"
 
 export const REPO_SANDBOX_RUNTIME = new SandboxRuntime({

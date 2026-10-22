@@ -3,10 +3,7 @@ import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { MapleAiClient } from "../../../platform/api-clients"
 import { writeClipboardFallback } from "@maple/ui/lib/clipboard"
-import { highlight } from "../kit/code-highlight"
 import { parseMarkdownTexts } from "../../kit/markdown"
-import { prepareMath } from "../kit/math"
-import { renderMermaid } from "../kit/mermaid"
 import { abortTurn, loadHistory, postMessage } from "../kit/chat-api"
 import { historyMessageToUIMessage } from "../kit/fold"
 import { trackProduct } from "../../../data/analytics"
@@ -31,7 +28,13 @@ export const LoadHistory = Command.define("LoadChatHistory", {
 })
 
 export const PostMessage = Command.define("PostChatMessage", {
-	args: { sessionId: Schema.String, generation: Schema.Number, localId: Schema.String, text: Schema.String, raw: Schema.String },
+	args: {
+		sessionId: Schema.String,
+		generation: Schema.Number,
+		localId: Schema.String,
+		text: Schema.String,
+		raw: Schema.String,
+	},
 	messages: [Message.CompletedPostMessage],
 	execute: ({ sessionId, generation, localId, text, raw }) =>
 		postMessage(sessionId, text).pipe(
@@ -46,7 +49,8 @@ export const PostMessage = Command.define("PostChatMessage", {
 export const TrackMessageSent = Command.define("TrackChatMessageSent", {
 	args: { turn: Schema.Literals(["first", "followup"]) },
 	messages: [Message.CompletedTrackMessageSent],
-	execute: ({ turn }) => trackProduct("chat_message_sent", { turn }).pipe(Effect.as(Message.CompletedTrackMessageSent())),
+	execute: ({ turn }) =>
+		trackProduct("chat_message_sent", { turn }).pipe(Effect.as(Message.CompletedTrackMessageSent())),
 })
 
 export const AbortTurn = Command.define("AbortChatTurn", {
@@ -59,18 +63,7 @@ export const ParseMarkdown = Command.define("ParseChatMarkdown", {
 	args: { texts: Schema.Array(Schema.String) },
 	messages: [Message.CompletedParseMarkdown],
 	execute: ({ texts }) =>
-		Effect.map(parseMarkdownTexts(texts, prepareMath), (parsed) => Message.CompletedParseMarkdown({ parsed })),
-})
-
-/** One fence coloured by Shiki (loaded on first use); a failure leaves it plain. */
-export const HighlightCode = Command.define("HighlightChatCode", {
-	args: { key: Schema.String, language: Schema.String, code: Schema.String },
-	messages: [Message.CompletedHighlightCode],
-	execute: ({ key, language, code }) =>
-		highlight(language, code).pipe(
-			Effect.map((highlighted) => Message.CompletedHighlightCode({ key, highlighted })),
-			Effect.orElseSucceed(() => Message.CompletedHighlightCode({ key, highlighted: null })),
-		),
+		Effect.map(parseMarkdownTexts(texts), (parsed) => Message.CompletedParseMarkdown({ parsed })),
 })
 
 /** Streamdown's file names: `file.<ext>` by the fence's language. */
@@ -93,9 +86,9 @@ const EXTENSIONS = new Map([
 	["markdown", "md"],
 ])
 
-const saveFile = (name: string, contents: string | Blob, type: string) =>
+const saveFile = (name: string, contents: string, type: string) =>
 	Effect.sync(() => {
-		const url = URL.createObjectURL(typeof contents === "string" ? new Blob([contents], { type }) : contents)
+		const url = URL.createObjectURL(new Blob([contents], { type }))
 		const anchor = document.createElement("a")
 		anchor.href = url
 		anchor.download = name
@@ -120,47 +113,9 @@ export const DownloadCode = Command.define("DownloadChatCode", {
 	args: { code: Schema.String, language: Schema.String },
 	messages: [Message.CompletedCodeAction],
 	execute: ({ code, language }) =>
-		Effect.as(saveFile(`file.${EXTENSIONS.get(language.toLowerCase()) ?? "txt"}`, code, "text/plain"), Message.CompletedCodeAction()),
-})
-
-/** `nn`: the `<svg>` element of mermaid's markup, serialized as XML. */
-const svgDocument = (markup: string): string => {
-	const svg = new DOMParser().parseFromString(markup, "text/html").querySelector("svg")
-	return svg === null ? markup : new XMLSerializer().serializeToString(svg)
-}
-
-/** `rn`: the SVG drawn on a canvas at 5x and encoded as PNG. */
-const svgToPng = (svg: string) =>
-	Effect.callback<Blob, "unencodable">((resume) => {
-		const image = new Image()
-		image.crossOrigin = "anonymous"
-		image.onload = () => {
-			const canvas = document.createElement("canvas")
-			canvas.width = image.width * 5
-			canvas.height = image.height * 5
-			canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height)
-			canvas.toBlob((blob) => resume(blob === null ? Effect.fail("unencodable") : Effect.succeed(blob)), "image/png")
-		}
-		image.onerror = () => resume(Effect.fail("unencodable"))
-		image.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
-	})
-
-/** The download menu's formats (`ct`): the source as `.mmd`, or the rendered diagram as SVG or PNG. */
-export const DownloadDiagram = Command.define("DownloadChatDiagram", {
-	args: { menuId: Schema.String, code: Schema.String, format: Schema.Literals(["svg", "png", "mmd"]) },
-	messages: [Message.CompletedDownloadDiagram],
-	execute: ({ menuId, code, format }) =>
-		(format === "mmd"
-			? saveFile("diagram.mmd", code, "text/plain")
-			: Effect.map(renderMermaid(code), svgDocument).pipe(
-					Effect.flatMap((svg) =>
-						format === "svg" ? saveFile("diagram.svg", svg, "image/svg+xml") : Effect.flatMap(svgToPng(svg), (png) => saveFile("diagram.png", png, "image/png")),
-					),
-				)
-		).pipe(
-			Effect.as(true),
-			Effect.orElseSucceed(() => false),
-			Effect.map((isSaved) => Message.CompletedDownloadDiagram({ menuId, isSaved })),
+		Effect.as(
+			saveFile(`file.${EXTENSIONS.get(language.toLowerCase()) ?? "txt"}`, code, "text/plain"),
+			Message.CompletedCodeAction(),
 		),
 })
 
@@ -181,7 +136,9 @@ export const DecideApproval = Command.define("DecideChatApproval", {
 			})
 			return { isError: response.isError === true, content: response.content }
 		}).pipe(
-			Effect.mapError((error) => ("message" in error && typeof error.message === "string" ? error.message : "Request failed")),
+			Effect.mapError((error) =>
+				"message" in error && typeof error.message === "string" ? error.message : "Request failed",
+			),
 			Effect.result,
 			Effect.map((result) => Message.CompletedDecideApproval({ toolCallId, tool, decision, result })),
 		),

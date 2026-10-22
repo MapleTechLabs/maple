@@ -28,7 +28,7 @@
 		"@maple/query-engine-integrations": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/widgets": "workspace:*",
-		"@yielded/agent": "0.1.0-beta.166",
+		"@yielded/agent": "0.1.0-beta.189",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

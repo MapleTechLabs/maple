@@ -728,7 +728,10 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 
 		const layer = buildLayer(createTestDb(trackedDbs))
 		const tenant = makeTenant()
-		const rows = [{ trace_id: "a" }, { trace_id: "b" }]
+		const rows = [
+			{ OrgId: "org_test", trace_id: "a" },
+			{ OrgId: "org_test", trace_id: "b" },
+		]
 
 		return Effect.gen(function* () {
 			yield* WarehouseQueryService.use((service) => service.ingest(tenant, "traces", rows))
@@ -785,7 +788,9 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 
 		return Effect.gen(function* () {
 			const exit = yield* Effect.exit(
-				WarehouseQueryService.use((service) => service.ingest(tenant, "traces", [{ trace_id: "a" }])),
+				WarehouseQueryService.use((service) =>
+					service.ingest(tenant, "traces", [{ OrgId: "org_test", trace_id: "a" }]),
+				),
 			)
 
 			assert.isTrue(Exit.isFailure(exit))
@@ -818,7 +823,7 @@ describe("createClickHouseSqlClient.insert is disabled (ClickHouse is read-only)
 		let thrown: unknown
 		try {
 			const client = makeClickHouseTestClient(chConfig)
-			await Effect.runPromise(client.insert("traces", [{ trace_id: "a" }]))
+			await Effect.runPromise(client.insert("traces", [{ OrgId: "org_test", trace_id: "a" }]))
 		} catch (error) {
 			thrown = error
 		} finally {
@@ -997,7 +1002,7 @@ describe("ingest routes writes to the managed pipeline, not a per-org read overr
 
 		return Effect.gen(function* () {
 			yield* executor.compiledQuery(tenant, scopedSql("SELECT 1 FROM traces WHERE OrgId = 'org_test'"))
-			yield* executor.ingest(tenant, "traces", [{ trace_id: "a" }])
+			yield* executor.ingest(tenant, "traces", [{ OrgId: "org_test", trace_id: "a" }])
 
 			assert.deepStrictEqual(purposes, ["read", "ingest"])
 			assert.deepStrictEqual(used, [
@@ -1048,7 +1053,7 @@ describe("ingest pins writes to Tinybird even when CLICKHOUSE_URL makes managed 
 				service.compiledQuery(tenant, scopedSql("SELECT 1 FROM traces WHERE OrgId = 'org_test'")),
 			)
 			yield* WarehouseQueryService.use((service) =>
-				service.ingest(tenant, "traces", [{ trace_id: "a" }]),
+				service.ingest(tenant, "traces", [{ OrgId: "org_test", trace_id: "a" }]),
 			)
 
 			// CLICKHOUSE_PROVIDER defaults to "tinybird", so a bare CLICKHOUSE_URL is
