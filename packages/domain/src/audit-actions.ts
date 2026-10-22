@@ -68,6 +68,11 @@ export const AuditResources = {
 		prefix: PublicIdPrefixes.gcpConnector,
 		verbs: ["created", "updated", "removal_confirmed", "deleted"],
 	},
+	/** One connected AWS account; the account and its modules are in `metadata`. */
+	aws_connection: {
+		prefix: PublicIdPrefixes.awsConnection,
+		verbs: ["created", "updated", "deleted"],
+	},
 	/** Anything that sends data; a token source's secret is never in `changes`. */
 	source: {
 		prefix: PublicIdPrefixes.source,
@@ -156,6 +161,7 @@ export const AuditResourceLabels = {
 	dashboard_share: "Dashboard share",
 	error_issue: "Issue",
 	gcp_connector: "Google Cloud connector",
+	aws_connection: "AWS connection",
 	ingest_key: "Ingest key",
 	mcp_connection: "MCP connection",
 	mcp_tool: "MCP tool",
@@ -230,6 +236,9 @@ export const AuditActionLabels = {
 	"gcp_connector.updated": "Updated Google Cloud connector",
 	"gcp_connector.removal_confirmed": "Confirmed Google Cloud resources removed",
 	"gcp_connector.deleted": "Removed Google Cloud connector",
+	"aws_connection.created": "Connected AWS",
+	"aws_connection.updated": "Updated AWS connection",
+	"aws_connection.deleted": "Removed AWS connection",
 	"ingest_key.rolled": "Rolled ingest key",
 	"source.created": "Created source",
 	"source.updated": "Updated source",

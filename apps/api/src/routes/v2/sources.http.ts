@@ -2,6 +2,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import type { Source } from "@maple/domain/http"
 import { CreateSourceRequest, CurrentTenant, UpdateSourceRequest } from "@maple/domain/http"
 import {
+	AwsConnectionPublicId,
 	GcpConnectorPublicId,
 	MapleApiV2,
 	paginateArray,
@@ -12,7 +13,7 @@ import {
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
 import type { V2Source, V2SourceDeleteResponse, V2SourceUpdateParams } from "@maple/domain/http/v2"
-import { GcpConnectorId, ScrapeTargetId } from "@maple/domain/primitives"
+import { AwsConnectionId, GcpConnectorId, ScrapeTargetId } from "@maple/domain/primitives"
 import { Effect, Option, Schema } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
@@ -33,6 +34,8 @@ const decodeScrapeTargetId = Schema.decodeUnknownOption(ScrapeTargetId)
 const decodeGcpConnectorId = Schema.decodeUnknownOption(GcpConnectorId)
 const encodeScrapeTargetId = Schema.encodeSync(ScrapeTargetPublicId)
 const encodeGcpConnectorId = Schema.encodeSync(GcpConnectorPublicId)
+const decodeAwsConnectionId = Schema.decodeUnknownOption(AwsConnectionId)
+const encodeAwsConnectionId = Schema.encodeSync(AwsConnectionPublicId)
 
 /** The id a client can look the integration record up by: its public form where the API has one. */
 export const integrationIdOf = (source: Source): string | null => {
@@ -42,6 +45,8 @@ export const integrationIdOf = (source: Source): string | null => {
 		return Option.match(decodeScrapeTargetId(raw), { onNone: () => raw, onSome: encodeScrapeTargetId })
 	if (source.platform === "gcp")
 		return Option.match(decodeGcpConnectorId(raw), { onNone: () => raw, onSome: encodeGcpConnectorId })
+	if (source.platform === "aws")
+		return Option.match(decodeAwsConnectionId(raw), { onNone: () => raw, onSome: encodeAwsConnectionId })
 	return raw
 }
 

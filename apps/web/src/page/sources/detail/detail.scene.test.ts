@@ -2,6 +2,7 @@ import { OrgId } from "@maple/domain"
 import {
 	encodePublicId,
 	PublicIdPrefixes,
+	V2AwsConnection,
 	V2GcpIntegration,
 	V2Source,
 	V2SourceUsage,
@@ -14,12 +15,13 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { AppRoute } from "../../../route"
 import * as Dialog from "../../../ui/dialog"
 import { type PageContext, PageOutMessage } from "../../contract"
-import { GcpConnectorId, ScrapeTargetId } from "@maple/domain/primitives"
+import { AwsConnectionId, GcpConnectorId, ScrapeTargetId } from "@maple/domain/primitives"
 import { Message as IntegrationMessage } from "../../integrations/message"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, sourceOf, update } from "./update"
 import { breadcrumbsOf, view as pageView } from "./view"
+import { focusIdOf } from "../kit/shared"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_parity"),
@@ -579,5 +581,186 @@ describe("integration sources", () => {
 		expect(loaded(prometheus(), "setup").tab).toBe("connection")
 		expect(loaded(source(), "connection").tab).toBe("setup")
 		expect(loaded(source()).connection).toBeNull()
+	})
+})
+
+const awsConnection = (id: AwsConnectionId): V2AwsConnection =>
+	Schema.decodeUnknownSync(V2AwsConnection)({
+		id: encodePublicId(PublicIdPrefixes.awsConnection, id),
+		object: "aws_connection",
+		account_id: "123456789012",
+		role_arn: "arn:aws:iam::123456789012:role/MapleIntegration-018f2b3c4d5e4f708192a3b4",
+		external_id: "9f1c4e2a7b3d4c6e8a0b1c2d3e4f5a6b",
+		modules: [],
+		granted_modules: null,
+		template_version: null,
+		setup_outdated: false,
+		verified_at: null,
+		last_checked_at: "2026-10-01T11:59:00.000Z",
+		last_check_error: "Maple cannot assume the role yet.",
+		metric_stream: null,
+		metrics_last_received_at: null,
+		metrics_last_error: null,
+		created_at: "2026-10-01T11:00:00.000Z",
+	})
+
+describe("integration focus", () => {
+	test("an AWS source's card shows only the connection it stands for", () => {
+		const connection = "018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8"
+		const aws = source({
+			platform: "aws",
+			kind: "integration",
+			key_prefix: null,
+			integration_id: encodePublicId(PublicIdPrefixes.awsConnection, connection),
+		})
+		expect(focusIdOf(aws)).toBe(connection)
+	})
+
+	test("an AWS check in the Connection tab re-reads the source, so the header shows its health", () => {
+		const connection = Schema.decodeSync(AwsConnectionId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+		const model = loaded(
+			source({
+				platform: "aws",
+				kind: "integration",
+				key_prefix: null,
+				integration_id: encodePublicId(PublicIdPrefixes.awsConnection, connection),
+			}),
+			"connection",
+		)
+		const checked = pageUpdate(
+			model,
+			Message.GotConnectionMessage({
+				message: IntegrationMessage.CompletedAwsCheck({
+					id: connection,
+					quiet: false,
+					connection: awsConnection(connection),
+					failure: null,
+				}),
+			}),
+		)
+		expect(names(checked.commands)).toContain("FetchSourceDetailList")
+		expect(names(checked.commands)).toContain("ReadSourceClock")
+		// A background poll that still finds no stack changes nothing the header shows.
+		const polled = pageUpdate(
+			model,
+			Message.GotConnectionMessage({
+				message: IntegrationMessage.CompletedAwsCheck({
+					id: connection,
+					quiet: true,
+					connection: awsConnection(connection),
+					failure: null,
+				}),
+			}),
+		)
+		expect(names(polled.commands)).not.toContain("FetchSourceDetailList")
+		// A click while a poll is in flight makes it the user's: its answer re-reads the header.
+		const withStatus = pageUpdate(
+			model,
+			Message.GotConnectionMessage({
+				message: IntegrationMessage.CompletedLoadAws({
+					key: model.connection?.statuses.aws.key ?? "",
+					result: Result.succeed({
+						object: "aws_integration",
+						available: true,
+						modules: [],
+						connections: [awsConnection(connection)],
+					}),
+				}),
+			}),
+		).model
+		const polling = pageUpdate(
+			withStatus,
+			Message.GotConnectionMessage({ message: IntegrationMessage.TickedAwsPending() }),
+		)
+		expect(names(polling.commands)).toContain("CheckAwsConnection")
+		const clicking = pageUpdate(
+			polling.model,
+			Message.GotConnectionMessage({ message: IntegrationMessage.ClickedAwsCheck({ id: connection }) }),
+		)
+		// The poll in flight answers for the click: no second call to AWS.
+		expect(names(clicking.commands)).not.toContain("CheckAwsConnection")
+		const clicked = clicking.model
+		const answered = pageUpdate(
+			clicked,
+			Message.GotConnectionMessage({
+				message: IntegrationMessage.CompletedAwsCheck({
+					id: connection,
+					quiet: true,
+					connection: awsConnection(connection),
+					failure: null,
+				}),
+			}),
+		)
+		expect(names(answered.commands)).toContain("FetchSourceDetailList")
+	})
+
+	test("an AWS source's Delete opens the AWS disconnect dialog, which keeps the cleanup script", () => {
+		const connection = Schema.decodeSync(AwsConnectionId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+		const model = loaded(
+			source({
+				platform: "aws",
+				kind: "integration",
+				key_prefix: null,
+				integration_id: encodePublicId(PublicIdPrefixes.awsConnection, connection),
+			}),
+			"connection",
+		)
+		// Before the status loads there is no connection to disconnect yet.
+		const early = pageUpdate(model, Message.ClickedDelete())
+		expect(early.outMessage?._tag === "RequestedToast" && early.outMessage.type).toBe("error")
+		const withStatus = pageUpdate(
+			model,
+			Message.GotConnectionMessage({
+				message: IntegrationMessage.CompletedLoadAws({
+					key: model.connection?.statuses.aws.key ?? "",
+					result: Result.succeed({
+						object: "aws_integration",
+						available: true,
+						modules: [],
+						connections: [awsConnection(connection)],
+					}),
+				}),
+			}),
+		).model
+		const clicked = pageUpdate(withStatus, Message.ClickedDelete())
+		expect(clicked.model.deleteDialog.isOpen).toBe(false)
+		expect(clicked.model.connection?.awsCard.disconnectDialog.isOpen).toBe(true)
+	})
+
+	test("disconnecting its own AWS connection leaves for the AWS page, where the cleanup waits", () => {
+		const connection = Schema.decodeSync(AwsConnectionId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+		const model = loaded(
+			source({
+				platform: "aws",
+				kind: "integration",
+				key_prefix: null,
+				integration_id: encodePublicId(PublicIdPrefixes.awsConnection, connection),
+			}),
+			"connection",
+		)
+		const removed = { connectionId: connection, accountId: "123456789012", cleanupScript: "cleanup" }
+		const done = pageUpdate(
+			model,
+			Message.GotConnectionMessage({
+				message: IntegrationMessage.CompletedAwsDisconnect({ id: connection, removed, error: null }),
+			}),
+		)
+		expect(done.outMessage?._tag === "RequestedNavigation" && done.outMessage.url).toBe(
+			"/sources/new?integration=aws",
+		)
+		expect(names(done.commands)).toContain("WriteAwsRemovedStacks")
+		// Another account's disconnect leaves this source where it is.
+		const other = Schema.decodeSync(AwsConnectionId)("028f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+		const elsewhere = pageUpdate(
+			model,
+			Message.GotConnectionMessage({
+				message: IntegrationMessage.CompletedAwsDisconnect({
+					id: other,
+					removed: { ...removed, connectionId: other },
+					error: null,
+				}),
+			}),
+		)
+		expect(elsewhere.outMessage?._tag).not.toBe("RequestedNavigation")
 	})
 })

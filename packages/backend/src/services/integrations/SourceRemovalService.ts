@@ -1,11 +1,12 @@
 import { type OrgId, type Source, SourcePersistenceError } from "@maple/domain/http"
 import type { SourceId } from "@maple/domain/primitives"
-import { GcpConnectors, ScrapeTargets, Sources, VcsInstallations } from "@maple/db/tables"
+import { AwsConnections, GcpConnectors, ScrapeTargets, Sources, VcsInstallations } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Context, Effect, Layer } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
+import { AwsConnectionService } from "./AwsConnectionService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { GcpConnectorService } from "./GcpConnectorService"
 import { PlanetScaleConnectionService } from "./PlanetScaleConnectionService"
@@ -21,7 +22,7 @@ const disconnectFailed = (error: { readonly message: string }) =>
 
 export interface SourceRemoval {
 	readonly source: Source
-	/** Google Cloud only: the script that removes what its setup created in the project. */
+	/** Google Cloud and AWS: the script that removes what their setup created there. */
 	readonly cleanupScript: string | null
 }
 
@@ -38,6 +39,7 @@ export class SourceRemovalService extends Context.Service<SourceRemovalService>(
 			const sources = yield* SourcesService
 			const scrapeTargets = yield* ScrapeTargetsService
 			const gcp = yield* GcpConnectorService
+			const aws = yield* AwsConnectionService
 			const cloudflare = yield* CloudflareOAuthService
 			const railway = yield* RailwayMetricsService
 			const planetscale = yield* PlanetScaleConnectionService
@@ -60,6 +62,14 @@ export class SourceRemovalService extends Context.Service<SourceRemovalService>(
 							.where(($) => [$.orgId.eq(orgId), $.sourceId.eq(sourceId)]),
 					),
 				)
+			const awsConnectionsOf = (orgId: OrgId, sourceId: SourceId) =>
+				dbExecute((db) =>
+					db.run(
+						PG.from(AwsConnections)
+							.select("id")
+							.where(($) => [$.orgId.eq(orgId), $.sourceId.eq(sourceId)]),
+					),
+				)
 			const installationsOf = (orgId: OrgId, sourceId: SourceId) =>
 				dbExecute((db) =>
 					db.run(
@@ -69,7 +79,7 @@ export class SourceRemovalService extends Context.Service<SourceRemovalService>(
 					),
 				)
 
-			/** Disconnects what sends as `source`; Google Cloud answers with its cleanup script. */
+			/** Disconnects what sends as `source`; Google Cloud and AWS answer with their cleanup script. */
 			const disconnect = Effect.fnUntraced(function* (orgId: OrgId, source: Source) {
 				// Platforms with several records per org disconnect only the ones sending as this source.
 				switch (source.platform) {
@@ -94,6 +104,18 @@ export class SourceRemovalService extends Context.Service<SourceRemovalService>(
 						const connectors = yield* gcpConnectorsOf(orgId, source.id)
 						const scripts = yield* Effect.forEach(connectors, (connector) =>
 							gcp.delete(orgId, connector.id).pipe(
+								Effect.map((deleted) => deleted.cleanupScript),
+								Effect.catchTag("@maple/http/errors/IntegrationsNotFoundError", () =>
+									Effect.succeed(null),
+								),
+							),
+						)
+						return scripts.find((script) => script !== null) ?? null
+					}
+					case "aws": {
+						const connections = yield* awsConnectionsOf(orgId, source.id)
+						const scripts = yield* Effect.forEach(connections, (connection) =>
+							aws.delete(orgId, connection.id).pipe(
 								Effect.map((deleted) => deleted.cleanupScript),
 								Effect.catchTag("@maple/http/errors/IntegrationsNotFoundError", () =>
 									Effect.succeed(null),
@@ -177,6 +199,7 @@ export class SourceRemovalService extends Context.Service<SourceRemovalService>(
 				SourcesService.layer,
 				ScrapeTargetsService.layer,
 				GcpConnectorService.layer,
+				AwsConnectionService.layer,
 				CloudflareOAuthService.layer,
 				RailwayMetricsService.layer,
 				PlanetScaleConnectionService.layer,
