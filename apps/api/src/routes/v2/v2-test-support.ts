@@ -20,6 +20,7 @@ import { McpConnectionsService } from "@maple/backend/services/auth/McpConnectio
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
+import { SourceRemovalService } from "@maple/backend/services/integrations/SourceRemovalService"
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
@@ -395,6 +396,7 @@ export const SourcesServiceStubsLayer = Layer.mergeAll(
 		delete: die,
 	}),
 	Layer.succeed(SourceUsageService, { read: die, summary: die }),
+	Layer.succeed(SourceRemovalService, { remove: die }),
 )
 
 /** Inert config-resource services for harnesses that never touch those groups. */

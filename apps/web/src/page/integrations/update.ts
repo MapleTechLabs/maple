@@ -364,6 +364,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedGcpScriptRetry: () => Gcp.retriedScripts(model, context),
 		GotGcpDisconnectDialogMessage: ({ message: child }) => Gcp.gotDisconnectDialog(model, child),
 		ConfirmedGcpDisconnect: () => Gcp.confirmedDisconnect(model),
+		ClickedGcpDisconnect: ({ id }) => Gcp.clickedDisconnect(model, context, id),
 		CompletedGcpDisconnect: ({ id, cleanupScript, failure }) =>
 			Gcp.completedDisconnect(model, context, id, cleanupScript, failure),
 		CompletedReadGcpRemoved: ({ removed }) => Gcp.updateGcpCard(model, { removed }),

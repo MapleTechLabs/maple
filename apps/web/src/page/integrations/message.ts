@@ -239,6 +239,8 @@ export const Message = defineMessageUnion({
 	GotGcpMenuMessage: { id: GcpConnectorId, message: Menu.Message },
 	GotGcpDisconnectDialogMessage: { message: Dialog.Message },
 	ConfirmedGcpDisconnect: {},
+	/** A Google Cloud source's Delete: opens the removal dialog for its connector. */
+	ClickedGcpDisconnect: { id: Schema.String },
 	CompletedGcpDisconnect: {
 		id: GcpConnectorId,
 		cleanupScript: Schema.NullOr(Schema.String),
