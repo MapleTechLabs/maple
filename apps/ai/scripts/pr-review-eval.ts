@@ -226,7 +226,7 @@ const mine = (argv: ReadonlyArray<string>) => {
 			fix: { sha, subject },
 			locations: mergeLines(lines),
 			// The squash that shipped the bug, replayed as the review saw it.
-			range: `${commit}^..${commit}`,
+			range: `${git(["rev-parse", `${commit}^`]).trim()}..${commit}`,
 			expected: "present",
 		})
 		console.error(`#${number} (${files} files) <- ${sha.slice(0, 10)} ${subject}`)
@@ -412,7 +412,10 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 						rationale: "",
 					})),
 				})
-		// Checkpoint after every replay, including failures, in job order whatever finished first.
+		checkpoint()
+	}
+	// After every replay, including failures, in job order whatever finished first.
+	const checkpoint = () => {
 		results.sort((a, b) => Number(a.order) - Number(b.order))
 		writeFileSync(join(out, "results.json"), JSON.stringify(results, null, "\t"))
 		writeFileSync(join(out, "grades.json"), JSON.stringify(grades, null, "\t"))
@@ -424,7 +427,23 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 		const order = next++
 		const job = jobs[order]
 		if (job === undefined) return
-		await runJob(job, order)
+		// A review that threw is a failed result, and the pool goes on to the next job.
+		await runJob(job, order).catch((error: unknown) => {
+			console.error(`\n${job.runId} failed: ${String(error)}`)
+			results.push({
+				order,
+				runId: job.runId,
+				repeat: job.repeat,
+				model: job.variant.model ?? "default",
+				prompt: job.variant.prompt,
+				codeMode: job.variant.codeMode,
+				submitted: false,
+				cases: job.labels.map((c) => c.id),
+				findings: [],
+				error: String(error),
+			})
+			checkpoint()
+		})
 		return worker()
 	}
 	await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker))
