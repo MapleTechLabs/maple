@@ -234,11 +234,9 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		autonomous: input.origin.kind === "autonomous",
 	})
 	const usage = accumulateUsage(input.usage)
+	// The turn after a landed submission: every call batched with it has reported by then.
 	const settles = (event: RunEvent.RunEvent): boolean =>
-		completion !== undefined &&
-		event._tag === "ToolCallSucceeded" &&
-		event.toolName === completion.tool &&
-		completion.submitted()
+		event._tag === "TurnStarted" && completion?.submitted() === true
 
 	// A gated tool is announced exactly like any other and refuses when dispatched, so only the
 	// ruleset knows the call is a proposal.
@@ -256,7 +254,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		// reads the running total mid-run, so a hook that merely observes is what fills it.
 		budget: {
 			...usage,
-			// A landed submission settles the run: the next model or tool pull never starts.
+			// A landed submission settles the run: the next turn's model call never starts.
 			guard: (effect) => (completion?.submitted() === true ? Effect.interrupt : usage.guard(effect)),
 		},
 	}).pipe(
@@ -278,8 +276,8 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 					},
 					sanitizer,
 				}
-				for (const chat of toChatEvents(event, context)) input.append(chat)
-				if (settles(event)) for (const chat of settledTurnEnd(context)) input.append(chat)
+				const chats = settles(event) ? settledTurnEnd(context) : toChatEvents(event, context)
+				for (const chat of chats) input.append(chat)
 			}),
 		),
 		// The gate's refusal is how a run stops on a proposal: the turn finished, it did not fail.
