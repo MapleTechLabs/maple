@@ -53,9 +53,9 @@ const responseTooLarge = () =>
 		reason: "scrape_failed",
 	})
 
-interface BodyParts {
+interface BodyText {
 	readonly bytes: number
-	readonly parts: ReadonlyArray<Uint8Array>
+	readonly text: string
 }
 
 /**
@@ -68,23 +68,21 @@ const readCappedBody = (response: HttpClientResponse.HttpClientResponse) => {
 	if (Number.isFinite(declared) && declared > MAX_SCRAPE_RESPONSE_BYTES) {
 		return Effect.fail(responseTooLarge())
 	}
-	return Stream.runFoldEffect(
-		response.stream,
-		(): BodyParts => ({ bytes: 0, parts: [] }),
-		(acc, chunk) =>
-			acc.bytes + chunk.byteLength > MAX_SCRAPE_RESPONSE_BYTES
-				? Effect.fail(responseTooLarge())
-				: Effect.succeed({ bytes: acc.bytes + chunk.byteLength, parts: acc.parts.concat([chunk]) }),
-	).pipe(Effect.map(({ bytes, parts }) => decodeParts(bytes, parts)))
-}
-
-const decodeParts = (bytes: number, parts: ReadonlyArray<Uint8Array>): string => {
-	const whole = new Uint8Array(bytes)
-	parts.reduce((offset, part) => {
-		whole.set(part, offset)
-		return offset + part.byteLength
-	}, 0)
-	return new TextDecoder().decode(whole)
+	// Decode chunk by chunk (one decoder per body) so the fold stays linear in the chunk count.
+	return Effect.suspend(() => {
+		const decoder = new TextDecoder()
+		return Stream.runFoldEffect(
+			response.stream,
+			(): BodyText => ({ bytes: 0, text: "" }),
+			(acc, chunk) =>
+				acc.bytes + chunk.byteLength > MAX_SCRAPE_RESPONSE_BYTES
+					? Effect.fail(responseTooLarge())
+					: Effect.succeed({
+							bytes: acc.bytes + chunk.byteLength,
+							text: acc.text + decoder.decode(chunk, { stream: true }),
+						}),
+		).pipe(Effect.map(({ text }) => text + decoder.decode()))
+	})
 }
 
 const DEFAULT_HEADERS = {
