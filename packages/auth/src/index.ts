@@ -364,7 +364,7 @@ export interface AuthEnv {
 	readonly MAPLE_AUTH_MODE: string
 	readonly MAPLE_DEFAULT_ORG_ID: string
 	readonly MAPLE_ORG_ID_OVERRIDE: Option.Option<string>
-	/** Only `development` lets a pinned org trust a non-member's session role. */
+	/** Only `development` lets a pinned org admit a non-member (with their session role). */
 	readonly MAPLE_ENVIRONMENT?: string | undefined
 	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted<string>>
 	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
@@ -749,10 +749,8 @@ export const makeResolveTenant = (
 				if (env.MAPLE_ENVIRONMENT === "development") {
 					return { orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" }
 				}
-				if (verifyOrgMembership) {
-					return yield* Effect.fail(organizationAccessDenied(pinnedOrgId))
-				}
-				return { orgId: pinnedOrgId, userId, roles: [], authMode: "clerk" }
+				// Outside development, membership the resolver cannot prove (no verifier) is a refusal.
+				return yield* Effect.fail(organizationAccessDenied(pinnedOrgId))
 			}
 
 			if (!auth.orgId) {
@@ -853,6 +851,19 @@ const extractPrimaryEmail = (u: ClerkUser): string | null => {
 	return primary?.emailAddress ?? u.emailAddresses?.[0]?.emailAddress ?? null
 }
 
+/** The primary address only once Clerk has verified it; never a fallback to another address. */
+export const extractVerifiedPrimaryEmail = (u: {
+	readonly primaryEmailAddressId: string | null
+	readonly emailAddresses: ReadonlyArray<{
+		readonly id: string
+		readonly emailAddress: string
+		readonly verification: { readonly status: string } | null
+	}>
+}): string | null => {
+	const primary = u.emailAddresses.find((e) => e.id === u.primaryEmailAddressId)
+	return primary?.verification?.status === "verified" ? primary.emailAddress : null
+}
+
 const makeClerkClient = (
 	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
 ) => {
@@ -885,6 +896,29 @@ export const makeGetUserEmail = (
 		return Option.match(user, {
 			onNone: () => null as string | null,
 			onSome: extractPrimaryEmail,
+		})
+	})
+}
+
+export const makeGetVerifiedPrimaryEmail = (
+	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
+) => {
+	const clerkClient = makeClerkClient(env)
+	if (!clerkClient) {
+		return Effect.fn("AuthService.getVerifiedPrimaryEmail")(function* (_userId: string) {
+			return null as string | null
+		})
+	}
+
+	return Effect.fn("AuthService.getVerifiedPrimaryEmail")(function* (userId: string) {
+		yield* Effect.annotateCurrentSpan("tenant.userId", userId)
+		const user = yield* clerkLookup("Clerk.users.getUser", { "tenant.userId": userId }, () =>
+			clerkClient.users.getUser(userId),
+		).pipe(Effect.option)
+
+		return Option.match(user, {
+			onNone: () => null as string | null,
+			onSome: extractVerifiedPrimaryEmail,
 		})
 	})
 }
