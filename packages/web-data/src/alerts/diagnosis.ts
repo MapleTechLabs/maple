@@ -193,7 +193,13 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			? rule.lastEvaluationErrorKind
 			: Option.getOrNull(decodeErrorKind(errorState.last_error_kind))
 	const errorChecks = checks.filter((c) => c.status === "error")
-	const intervalMinutes = alertRuleIntervalMinutes(rule)
+	// An error from before a slowdown ran under the interval the rule had then, not the slowed one.
+	const errorAt = parseMs(errorState?.last_evaluated_at ?? rule.lastEvaluatedAt)
+	const slowedAt = parseMs(rule.slowedAt)
+	const isErrorBeforeSlowdown = slowedAt != null && errorAt != null && errorAt <= slowedAt
+	const intervalMinutes = alertRuleIntervalMinutes(
+		isErrorBeforeSlowdown ? { ...rule, slowedIntervalMinutes: null } : rule,
+	)
 	const limitSeconds = alertQueryLimits(intervalMinutes).timeSeconds
 	const slowedLine =
 		rule.slowedIntervalMinutes !== null && rule.slowedAt !== null
