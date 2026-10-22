@@ -7,7 +7,7 @@ order: 11
 
 The AWS integration connects one AWS account to Maple through an IAM role in that account. Maple assumes the role from its own AWS identity, and the role trusts that identity only with an **external ID** Maple minted for your connection, so another Maple organization can't assume it. Maple stores no access key, secret or session for your account.
 
-Maple checks each connection every hour, and whenever you select **Check connection**. The check assumes the role and reads the role's own tags and attached policies. Nothing else is read yet. Metrics, a resource inventory, a security scan and cost each come as a **module**: a policy of its own on the same role, added by deploying the stack again.
+Maple checks each connection every hour, and whenever you select **Check connection**. The check assumes the role and reads the role's own tags and attached policies. CloudWatch metrics can be streamed to Maple as well (see below). A resource inventory, a security scan and cost each come as a **module**: a policy of its own on the same role, added by deploying the stack again.
 
 ## Before you start
 
@@ -42,6 +42,23 @@ Choose **Terraform** in the setup and copy the file into your repository. It nee
 | Managed policy `MapleIntegration-<id>-…` | One per module you turn on. None until modules are available.                                         |
 
 The role is tagged with the setup version. When a later version of the setup changes the role, the connection shows **Update the stack**. Deploy it again from the setup to apply the change.
+
+## CloudWatch metrics
+
+A connection can stream CloudWatch metrics to Maple. Choose the regions and the services (CloudWatch namespaces) to send, then run the setup script again. In each region it deploys a stack named `maple-metrics-<id>` with:
+
+| Resource                  | Purpose                                                                                       |
+| ------------------------- | --------------------------------------------------------------------------------------------- |
+| CloudWatch metric stream  | Sends the chosen namespaces every minute, in the OpenTelemetry 1.0 format.                     |
+| Firehose delivery stream  | Posts the metrics to Maple. It sends a secret only this connection holds, so Maple knows whose they are. |
+| Two IAM roles             | Let the metric stream write to the Firehose, and the Firehose to its bucket.                  |
+| S3 bucket                 | Keeps batches Maple could not accept, and deletes them after 7 days.                          |
+
+Maple reads nothing back from your account for this: AWS pushes the metrics. The first ones arrive a few minutes after the stack finishes.
+
+AWS bills the metric stream at $0.003 per 1,000 metric updates, and a metric updates once a minute, so 100 metrics cost about $13 a month. Firehose adds a few cents per gigabyte. Stream only the namespaces you need.
+
+To stop streaming, turn the metric stream off in Maple and run the setup script again: it removes the stack from every region. The cleanup script removes it too.
 
 ## Troubleshooting
 

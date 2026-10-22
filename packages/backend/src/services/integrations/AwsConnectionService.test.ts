@@ -2,7 +2,8 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { HttpClient } from "effect/http"
-import { AwsAccountId, OrgId, UserId } from "@maple/domain/primitives"
+import { hashIngestKey } from "@maple/db"
+import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/domain/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -208,6 +209,100 @@ describe("AwsConnectionService", () => {
 			assert.strictEqual(foreign._tag, "@maple/http/errors/IntegrationsNotFoundError")
 			const unpatched = yield* Effect.flip(service.update(otherOrgId, created.id, {}))
 			assert.strictEqual(unpatched._tag, "@maple/http/errors/IntegrationsNotFoundError")
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
+
+	it.effect("streams metrics with a secret only this connection's row can verify", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		const regions = ["us-east-1", "eu-central-1"].map((region) =>
+			Schema.decodeUnknownSync(AwsRegion)(region),
+		)
+		const streamSecretHash = (id: string) =>
+			Effect.promise(() =>
+				queryFirstRow<{ stream_secret_hash: string | null }>(
+					testDb,
+					"SELECT stream_secret_hash FROM aws_connections WHERE id = $1",
+					[id],
+				),
+			).pipe(Effect.map((row) => row?.stream_secret_hash))
+		const accessKeyOf = (script: string) => /AccessKey=(maple_aws_[\w-]+)/u.exec(script)?.[1]
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const created = yield* service.create(orgId, userId, {
+				accountId: account,
+				modules: [],
+				metricStream: { regions, namespaces: ["AWS/ECS", "AWS/ApplicationELB"] },
+			})
+			const setup = yield* service.setup(orgId, created.id)
+			const accessKey = accessKeyOf(setup.setupScript)
+			assert.isDefined(accessKey)
+			assert.strictEqual(
+				yield* streamSecretHash(created.id),
+				hashIngestKey(accessKey!, "maple-test-lookup-secret"),
+			)
+			assert.include(setup.setupScript, "for region in us-east-1 eu-central-1; do")
+
+			const template = JSON.parse(setup.metricsCloudformationTemplate ?? "{}")
+			assert.deepStrictEqual(template.Resources.MetricStream.Properties.IncludeFilters, [
+				{ Namespace: "AWS/ECS" },
+				{ Namespace: "AWS/ApplicationELB" },
+			])
+			assert.strictEqual(template.Resources.MetricStream.Properties.OutputFormat, "opentelemetry1.0")
+			const endpoint =
+				template.Resources.DeliveryStream.Properties.HttpEndpointDestinationConfiguration
+					.EndpointConfiguration
+			assert.strictEqual(endpoint.Url, `https://ingest.test/v1/firehose/aws/${created.id}`)
+			// The secret is a parameter the script passes, never part of the template.
+			assert.deepStrictEqual(endpoint.AccessKey, { Ref: "AccessKey" })
+			assert.isTrue(template.Parameters.AccessKey.NoEcho)
+			assert.notInclude(setup.metricsCloudformationTemplate ?? "", accessKey!)
+
+			// Turning the stream off leaves a setup that only removes its stacks.
+			const off = yield* service.update(orgId, created.id, { metricStream: null })
+			assert.isNull(off.metricStream)
+			const removed = yield* service.setup(orgId, created.id)
+			assert.isNull(removed.metricsStackName)
+			assert.isUndefined(accessKeyOf(removed.setupScript))
+			assert.include(removed.setupScript, "describe-regions")
+			// The old secret stops matching; turning the stream back on deploys a new one.
+			assert.isNull(yield* streamSecretHash(created.id))
+			yield* service.update(orgId, created.id, {
+				metricStream: { regions, namespaces: ["AWS/ECS"] },
+			})
+			const again = accessKeyOf((yield* service.setup(orgId, created.id)).setupScript)
+			assert.isDefined(again)
+			assert.notStrictEqual(again, accessKey)
+			assert.strictEqual(
+				yield* streamSecretHash(created.id),
+				hashIngestKey(again!, "maple-test-lookup-secret"),
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
+
+	it.effect("mints a stream secret once for a connection made before streams", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		const region = Schema.decodeUnknownSync(AwsRegion)("us-east-1")
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const created = yield* service.create(orgId, userId, { accountId: account, modules: [] })
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE aws_connections SET stream_secret_ciphertext = NULL, stream_secret_iv = NULL,
+					 stream_secret_tag = NULL, stream_secret_hash = NULL WHERE id = $1`,
+					[created.id],
+				),
+			)
+			yield* service.update(orgId, created.id, {
+				metricStream: { regions: [region], namespaces: ["AWS/Lambda"] },
+			})
+			const first = yield* service.setup(orgId, created.id)
+			const again = yield* service.setup(orgId, created.id)
+			const keyOf = (script: string) => /AccessKey=(maple_aws_[\w-]+)/u.exec(script)?.[1]
+			assert.isDefined(keyOf(first.setupScript))
+			assert.strictEqual(keyOf(again.setupScript), keyOf(first.setupScript))
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 

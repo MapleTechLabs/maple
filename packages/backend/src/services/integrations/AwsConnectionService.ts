@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { hashIngestKey, parseIngestKeyLookupHmacKey } from "@maple/db"
 import { AwsConnections, type AwsConnectionRow, Sources } from "@maple/db/tables"
 import {
 	AWS_MODULE_SPECS,
@@ -8,6 +9,7 @@ import {
 	awsConnectionResourceNames,
 	awsModuleOfPolicyName,
 	awsRoleArn,
+	type AwsMetricStream,
 	awsSetupPlan,
 	isAwsModuleAvailable,
 	parseAwsMaplePrincipal,
@@ -27,8 +29,9 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/primitives"
-import { Cause, Clock, Context, Effect, Layer, Option } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
+import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -56,6 +59,11 @@ export interface AwsConnection {
 	readonly verifiedAt: number | null
 	readonly lastCheckedAt: number | null
 	readonly lastCheckError: string | null
+	/** Null: no metric stream asked for. */
+	readonly metricStream: AwsMetricStream | null
+	/** The last metric delivery the receiver accepted, and why the last one failed. */
+	readonly metricsLastReceivedAt: number | null
+	readonly metricsLastError: string | null
 	readonly createdAt: number
 }
 
@@ -73,6 +81,9 @@ export interface AwsSetup {
 	readonly cleanupScript: string
 	readonly cloudformationTemplate: string
 	readonly terraform: string
+	/** The metric stream's stack, deployed to each of its regions. Null without a stream. */
+	readonly metricsStackName: string | null
+	readonly metricsCloudformationTemplate: string | null
 }
 
 export interface AwsCheckSweep {
@@ -96,7 +107,12 @@ export interface AwsConnectionServiceApi {
 	readonly create: (
 		orgId: OrgId,
 		userId: UserId,
-		input: { readonly accountId: AwsAccountId; readonly modules: ReadonlyArray<AwsModule> },
+		input: {
+			readonly accountId: AwsAccountId
+			readonly modules: ReadonlyArray<AwsModule>
+			/** Omitted: no metric stream. */
+			readonly metricStream?: AwsMetricStream | null | undefined
+		},
 	) => Effect.Effect<
 		AwsConnection,
 		| AwsAccountAlreadyConnectedError
@@ -108,7 +124,11 @@ export interface AwsConnectionServiceApi {
 	readonly update: (
 		orgId: OrgId,
 		connectionId: AwsConnectionId,
-		patch: { readonly modules?: ReadonlyArray<AwsModule> | undefined },
+		patch: {
+			readonly modules?: ReadonlyArray<AwsModule> | undefined
+			/** Null turns the stream off; undefined leaves it. */
+			readonly metricStream?: AwsMetricStream | null | undefined
+		},
 	) => Effect.Effect<AwsConnection, IntegrationsNotFoundError | ModulesError | IntegrationsPersistenceError>
 	readonly setup: (
 		orgId: OrgId,
@@ -186,9 +206,16 @@ const toConnection = (row: AwsConnectionRow): AwsConnection => {
 		verifiedAt: row.verifiedAt,
 		lastCheckedAt: row.lastCheckedAt,
 		lastCheckError: row.lastCheckError,
+		metricStream: row.metricStream,
+		metricsLastReceivedAt: row.streamLastReceivedAt,
+		metricsLastError: row.streamLastError,
 		createdAt: row.createdAt,
 	}
 }
+
+// Binds the ciphertext to its row, so a stored secret cannot be moved onto another connection.
+const streamSecretAad = (connectionId: string) =>
+	Buffer.from(`aws_connections:stream:v1:${connectionId}`, "utf8")
 
 const MODULE_INFO: ReadonlyArray<AwsModuleInfo> = AWS_MODULES.map((module) => ({
 	module,
@@ -303,6 +330,35 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			const env = yield* Env
 			const httpClient = yield* HttpClient.HttpClient
 			const dbExecute = makeDbExecute(database, "AwsConnectionService", toPersistenceError)
+			const persistence = (message: string) => new IntegrationsPersistenceError({ message })
+			const encryptionKey = yield* parseBase64Aes256GcmKey(
+				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+				persistence,
+			)
+			// The ingest gateway hashes a delivery's access key with this and looks the row up by it.
+			const lookupHmacKey = yield* parseIngestKeyLookupHmacKey(
+				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+				persistence,
+			)
+			const ingestBaseUrl = env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")
+
+			/** A new stream secret as the four columns that hold it. */
+			const mintStreamSecret = (connectionId: AwsConnectionId) =>
+				Effect.gen(function* () {
+					const secret = `maple_aws_${randomBytes(24).toString("base64url")}`
+					const encrypted = yield* encryptAes256Gcm(
+						secret,
+						encryptionKey,
+						persistence,
+						streamSecretAad(connectionId),
+					)
+					return {
+						streamSecretCiphertext: encrypted.ciphertext,
+						streamSecretIv: encrypted.iv,
+						streamSecretTag: encrypted.tag,
+						streamSecretHash: hashIngestKey(secret, lookupHmacKey),
+					}
+				})
 
 			// All three or nothing: a principal without a key could hand out setups nothing checks.
 			const maple = Option.all({
@@ -361,12 +417,17 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			const create = Effect.fn("AwsConnectionService.create")(function* (
 				orgId: OrgId,
 				userId: UserId,
-				input: { readonly accountId: AwsAccountId; readonly modules: ReadonlyArray<AwsModule> },
+				input: {
+					readonly accountId: AwsAccountId
+					readonly modules: ReadonlyArray<AwsModule>
+					readonly metricStream?: AwsMetricStream | null | undefined
+				},
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.aws.account_id": input.accountId })
 				if (maple === undefined) return yield* unavailable()
 				const modules = yield* validateModules(input.modules)
 				const id = AwsConnectionId.make(randomUUID())
+				const streamSecret = yield* mintStreamSecret(id)
 				const now = yield* Clock.currentTimeMillis
 				// The connection and the source it sends as land together.
 				const [row] = yield* dbExecute((db) =>
@@ -387,6 +448,8 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 										accountId: input.accountId,
 										externalId: randomBytes(16).toString("hex"),
 										modules,
+										metricStream: input.metricStream ?? null,
+										...streamSecret,
 										createdBy: userId,
 										createdAt: now,
 										updatedAt: now,
@@ -412,17 +475,33 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			const update = Effect.fn("AwsConnectionService.update")(function* (
 				orgId: OrgId,
 				connectionId: AwsConnectionId,
-				patch: { readonly modules?: ReadonlyArray<AwsModule> | undefined },
+				patch: {
+					readonly modules?: ReadonlyArray<AwsModule> | undefined
+					readonly metricStream?: AwsMetricStream | null | undefined
+				},
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.aws.connection_id": connectionId })
 				const modules =
 					patch.modules === undefined ? undefined : yield* validateModules(patch.modules)
-				if (modules === undefined) return toConnection(yield* selectRow(orgId, connectionId))
+				const changes = {
+					...(modules !== undefined && { modules }),
+					...(patch.metricStream !== undefined && { metricStream: patch.metricStream }),
+					// A stream turned off stops authenticating at once, though its Firehose may still be
+					// deployed; turning it back on mints a new secret for the next setup.
+					...(patch.metricStream === null && {
+						streamSecretCiphertext: null,
+						streamSecretIv: null,
+						streamSecretTag: null,
+						streamSecretHash: null,
+					}),
+				}
+				if (Object.keys(changes).length === 0)
+					return toConnection(yield* selectRow(orgId, connectionId))
 				const updatedAt = yield* Clock.currentTimeMillis
 				const [row] = yield* dbExecute((db) =>
 					db.run(
 						PG.update(AwsConnections)
-							.set({ modules, updatedAt })
+							.set({ ...changes, updatedAt })
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(connectionId)])
 							.returning(),
 					),
@@ -430,6 +509,42 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				if (row === undefined) return yield* notFound()
 				return toConnection(row)
 			})
+
+			/** Mints a stream secret for a connection made before streams. */
+			const withStreamSecret = (row: AwsConnectionRow) =>
+				Effect.gen(function* () {
+					const minted = yield* mintStreamSecret(row.id)
+					// A concurrent setup may mint first: whichever secret landed is the one to use.
+					const [updated] = yield* dbExecute((db) =>
+						db.run(
+							PG.update(AwsConnections)
+								.set(minted)
+								.where(($) => [$.id.eq(row.id), $.streamSecretHash.isNull()])
+								.returning(),
+						),
+					)
+					return updated ?? (yield* selectRow(row.orgId, row.id))
+				})
+
+			/** The plaintext stream secret the account's Firehose sends. */
+			const streamAccessKey = (row: AwsConnectionRow) =>
+				Effect.gen(function* () {
+					const held = row.streamSecretHash === null ? yield* withStreamSecret(row) : row
+					const { streamSecretCiphertext, streamSecretIv, streamSecretTag } = held
+					if (
+						streamSecretCiphertext === null ||
+						streamSecretIv === null ||
+						streamSecretTag === null
+					) {
+						return yield* persistence("The AWS connection has no stream secret")
+					}
+					return yield* decryptAes256Gcm(
+						{ ciphertext: streamSecretCiphertext, iv: streamSecretIv, tag: streamSecretTag },
+						encryptionKey,
+						() => persistence("Failed to decrypt the AWS stream secret"),
+						streamSecretAad(row.id),
+					)
+				})
 
 			const setup = Effect.fn("AwsConnectionService.setup")(function* (
 				orgId: OrgId,
@@ -445,7 +560,15 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					maplePrincipal: maple.principal,
 					modules: row.modules,
 				})
-				return yield* renderAwsSetup(row.id, row.accountId, plan)
+				const stream =
+					row.metricStream === null
+						? null
+						: {
+								...row.metricStream,
+								endpoint: `${ingestBaseUrl}/v1/firehose/aws/${row.id}`,
+								accessKey: yield* streamAccessKey(row),
+							}
+				return yield* renderAwsSetup(row.id, row.accountId, plan, stream)
 			})
 
 			/** Assumes the row's role and writes what it found, on the row and on its source. */
@@ -628,9 +751,11 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.aws.connection_id": connectionId })
 				const current = yield* selectRow(orgId, connectionId)
 				// Rendered first: once the row is gone, a failed render would lose the only cleanup.
+				const names = awsConnectionResourceNames(current.id)
 				const cleanupScript = yield* renderAwsCleanupScript({
 					accountId: current.accountId,
-					stackName: awsConnectionResourceNames(current.id).stackName,
+					stackName: names.stackName,
+					metricsStackName: names.metricsStackName,
 				})
 				// Its source goes with it.
 				const [row] = yield* dbExecute((db) =>

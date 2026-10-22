@@ -32,12 +32,16 @@ const toV2Connection = (connection: AwsConnection): V2AwsConnection => ({
 	verified_at: isoTimestampOrNull(connection.verifiedAt),
 	last_checked_at: isoTimestampOrNull(connection.lastCheckedAt),
 	last_check_error: connection.lastCheckError,
+	metric_stream: connection.metricStream,
+	metrics_last_received_at: isoTimestampOrNull(connection.metricsLastReceivedAt),
+	metrics_last_error: connection.metricsLastError,
 	created_at: isoTimestamp(connection.createdAt),
 })
 
 const auditMetadata = (connection: AwsConnection) => ({
 	account_id: connection.accountId,
 	modules: connection.modules,
+	metric_stream: connection.metricStream,
 })
 
 export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIntegration", (handlers) =>
@@ -64,6 +68,7 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 					const connection = yield* aws.create(tenant.orgId, tenant.userId, {
 						accountId: payload.account_id,
 						modules: payload.modules ?? [],
+						metricStream: payload.metric_stream ?? null,
 					})
 					yield* recordHttpAudit("aws_connection.created", {
 						resourceId: connection.id,
@@ -78,6 +83,7 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 					yield* requireAdmin(tenant.roles, adminOnly)
 					const connection = yield* aws.update(tenant.orgId, params.id, {
 						modules: payload.modules,
+						metricStream: payload.metric_stream,
 					})
 					yield* recordHttpAudit("aws_connection.updated", {
 						resourceId: connection.id,
@@ -99,6 +105,8 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 						cleanup_script: setup.cleanupScript,
 						cloudformation_template: setup.cloudformationTemplate,
 						terraform: setup.terraform,
+						metrics_stack_name: setup.metricsStackName,
+						metrics_cloudformation_template: setup.metricsCloudformationTemplate,
 					}
 				}),
 			)

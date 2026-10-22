@@ -1,5 +1,11 @@
 import { Schema } from "effect"
-import { type AwsAccountId, type AwsConnectionId, AwsModule } from "./primitives"
+import {
+	type AwsAccountId,
+	type AwsConnectionId,
+	AwsMetricNamespace,
+	AwsModule,
+	AwsRegion,
+} from "./primitives"
 
 const isAwsModule = Schema.is(AwsModule)
 
@@ -101,8 +107,21 @@ export const awsConnectionResourceNames = (connectionId: AwsConnectionId) => {
 		modulePolicyName: (module: AwsModule) => `${name}-${module}`,
 		/** What Maple names its sessions on the role, as CloudTrail shows them. */
 		sessionName: `maple-${hex}`,
+		/** The stack of one region's metric stream; the same name in every region it runs in. */
+		metricsStackName: `maple-metrics-${hex}`,
+		metricStreamName: `maple-${hex}`,
 	}
 }
+
+/**
+ * A connection's CloudWatch metric stream. Streams are regional, so the setup deploys one stack
+ * per region, each sending these namespaces to Maple through Firehose.
+ */
+export const AwsMetricStream = Schema.Struct({
+	regions: Schema.Array(AwsRegion).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+	namespaces: Schema.Array(AwsMetricNamespace).check(Schema.isMinLength(1)),
+})
+export type AwsMetricStream = Schema.Schema.Type<typeof AwsMetricStream>
 
 export const awsRoleArn = (accountId: AwsAccountId, roleName: string) =>
 	`arn:aws:iam::${accountId}:role/${roleName}`
@@ -151,6 +170,8 @@ interface IamDocument {
 export interface AwsSetupPlan {
 	readonly roleName: string
 	readonly stackName: string
+	readonly metricsStackName: string
+	readonly metricStreamName: string
 	readonly roleArn: string
 	readonly trustPolicy: IamDocument
 	/** Lets the role read its own tags and attached policies: how Maple checks the setup. */
@@ -171,6 +192,8 @@ export const awsSetupPlan = (input: AwsSetupPlanInput): AwsSetupPlan => {
 	return {
 		roleName: names.roleName,
 		stackName: names.stackName,
+		metricsStackName: names.metricsStackName,
+		metricStreamName: names.metricStreamName,
 		roleArn,
 		// Maple's account is the principal and the condition names the exact identity: an IAM user
 		// recreated under the same name still matches, which a principal ARN alone would not.

@@ -149,6 +149,29 @@ export const AWS_MODULES = ["observability", "inventory", "security", "cost"] as
 export const AwsModule = Schema.Literals(AWS_MODULES)
 export type AwsModule = Schema.Schema.Type<typeof AwsModule>
 
+/** A commercial or GovCloud AWS region code, like `us-east-1` or `us-gov-west-1`. */
+export const AwsRegion = Schema.String.check(Schema.isPattern(/^[a-z]{2}(-gov)?-[a-z]+-[0-9]$/u)).pipe(
+	Schema.brand("@maple/AwsRegion"),
+	Schema.annotate({ identifier: "@maple/AwsRegion", title: "AWS Region" }),
+)
+export type AwsRegion = Schema.Schema.Type<typeof AwsRegion>
+
+/** CloudWatch namespaces a connection's metric stream may send. */
+export const AWS_METRIC_NAMESPACES = [
+	"AWS/ECS",
+	"ECS/ContainerInsights",
+	"AWS/ApplicationELB",
+	"AWS/NetworkELB",
+	"AWS/RDS",
+	"AWS/Lambda",
+	"AWS/SQS",
+	"AWS/EC2",
+	"AWS/DynamoDB",
+	"AWS/ApiGateway",
+] as const
+export const AwsMetricNamespace = Schema.Literals(AWS_METRIC_NAMESPACES)
+export type AwsMetricNamespace = Schema.Schema.Type<typeof AwsMetricNamespace>
+
 /** What a Google Cloud connector covers: one project, or everything under a folder or organization. */
 export const GcpScopeType = Schema.Literals(["project", "folder", "organization"])
 export type GcpScopeType = Schema.Schema.Type<typeof GcpScopeType>

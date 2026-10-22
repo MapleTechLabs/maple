@@ -33,6 +33,9 @@ const connection = (overrides: Partial<V2AwsConnection> = {}): V2AwsConnection =
 	verified_at: null,
 	last_checked_at: null,
 	last_check_error: null,
+	metric_stream: null,
+	metrics_last_received_at: null,
+	metrics_last_error: null,
 	created_at: Schema.decodeSync(Timestamp)("2026-10-21T12:00:00.000Z"),
 	...overrides,
 })
@@ -131,6 +134,8 @@ describe("aws card", () => {
 					cleanup_script: "first",
 					cloudformation_template: "{}",
 					terraform: "",
+					metrics_stack_name: null,
+					metrics_cloudformation_template: null,
 				}),
 			}),
 		).model
