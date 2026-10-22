@@ -20,7 +20,6 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	OAuthAuthStates,
 	OAuthConnections,
-	type OAuthAuthStateRow,
 	type OAuthConnectionInsert,
 	type OAuthConnectionRow,
 } from "@maple/db/tables"
@@ -36,6 +35,7 @@ import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { deleteSourcesOf, createIntegrationSource } from "@maple/backend/services/org/integration-sources"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import type { EnvConfig } from "@maple/backend/platform/Env"
+import { makeOAuthStateConsumer, type OAuthFlowInitiator } from "./oauth-state"
 
 export const OAUTH_STATE_TTL_MS = 10 * 60_000 // 10 minutes
 export const OAUTH_REFRESH_LEEWAY_MS = 60_000 // refresh when the access token is within 1 minute of expiry
@@ -202,38 +202,11 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				db.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.expiresAt.lt(currentTime)])),
 			)
 
-		const deleteAuthState = (state: string) =>
-			dbExecute((db) => db.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.state.eq(state)])))
+		const consumeState = makeOAuthStateConsumer(database, toPersistenceError)
 
-		const requireStateRow = Effect.fn("OAuthConnectionHelpers.requireStateRow")(function* (
-			state: string,
-		) {
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.from(OAuthAuthStates)
-						.select()
-						.where(($) => [$.state.eq(state), $.provider.eq(provider)])
-						.limit(1),
-				),
-			)
-			const row = rows[0]
-			if (!row) {
-				return yield* Effect.fail(
-					new IntegrationsValidationError({
-						message: "OAuth state not recognized — restart the connect flow",
-					}),
-				)
-			}
-			if (row.expiresAt < (yield* Clock.currentTimeMillis)) {
-				yield* deleteAuthState(state)
-				return yield* Effect.fail(
-					new IntegrationsValidationError({
-						message: "OAuth state expired — restart the connect flow",
-					}),
-				)
-			}
-			return row satisfies OAuthAuthStateRow
-		})
+		/** Claim this provider's state row, only for the Maple user and org that started the flow. */
+		const consumeStateRow = (state: string, initiator: OAuthFlowInitiator) =>
+			consumeState({ state, provider, initiator })
 
 		/**
 		 * Per-isolate connection-row memo backing `getValidConnectionToken` only.
@@ -751,8 +724,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			encryptValue,
 			decryptValue,
 			purgeExpiredStates,
-			deleteAuthState,
-			requireStateRow,
+			consumeStateRow,
 			loadConnection,
 			requireConnection,
 			upsertConnection,

@@ -23,6 +23,7 @@ import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@m
 import type { PrReviewFailureReason } from "@maple/domain/http"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
+import { CodeLoader } from "@maple/backend/platform/bindings"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Exit, Layer, ManagedRuntime, Match, Option, Redacted } from "effect"
@@ -428,6 +429,25 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			// Read once: it is a SQL scan plus a decode, and it is a read-only snapshot.
 			const spoken = history.filter((message) => message.text.trim() !== "")
 			const latest = spoken.at(-1)
+			// Unbound (a stage without Dynamic Workers), the agents run without `run_code`. Imported only
+			// when bound: the adapter needs `cloudflare:workers`, which nothing outside workerd resolves.
+			// A failed import is logged and the turn runs without the tool, never fails over it.
+			const codeLoader = yield* CodeLoader
+			const codeExecutor =
+				agent.codeMode !== true || Option.isNone(codeLoader)
+					? undefined
+					: yield* Effect.tryPromise(
+							() => import("@yielded/agent-platform-cloudflare/cloudflare-code-mode"),
+						).pipe(
+							Effect.map(({ dynamicWorkerCodeExecutorLayer }) =>
+								dynamicWorkerCodeExecutorLayer({ loader: codeLoader.value }),
+							),
+							Effect.catch((error) =>
+								Effect.logWarning(
+									"run_code unavailable: the code executor failed to load",
+								).pipe(Effect.annotateLogs({ cause: String(error) }), Effect.as(undefined)),
+							),
+						)
 			// A restarted turn reads from its kickoff: what came after it is the attempt that died.
 			const kickoff =
 				input.resume === undefined
@@ -509,6 +529,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 					stageEdit: conversations.stageEdit,
 					...(turn.closeOut === true ? { closeOut: true } : undefined),
 					...(review === undefined ? undefined : { review }),
+					...(codeExecutor === undefined ? undefined : { codeExecutor }),
 					text: turn.text,
 					history: turn.history,
 					usage,

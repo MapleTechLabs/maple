@@ -1,4 +1,4 @@
-import { Effect, Option, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema, Stream } from "effect"
 import { constTrue } from "effect/Function"
 import { FetchHttpClient, HttpClient, HttpClientRequest, Url } from "effect/http"
 import type { HttpClientError, HttpClientResponse } from "effect/http"
@@ -222,31 +222,68 @@ const requestUrl = (request: HttpClientRequest.HttpClientRequest) =>
 		),
 	)
 
-/**
- * Wrap a fetch-backed `HttpClient` so it only reaches external hosts, for URLs
- * that came from user configuration.
- *
- * - Every hop is validated, redirects included. `HttpClient.followRedirects`
- *   cannot do this: it re-runs only `postprocess` per hop, so a check placed in
- *   `mapRequest*` would see the first URL and nothing after it.
- * - Redirects are followed here with `redirect: "manual"`, at most 5.
- * - A cross-origin hop drops credential headers for good: restoring them on a
- *   bounce back to the original origin would make the strip trivially
- *   bypassable by redirecting away and back again.
- * - The client's own span is disabled. It records `url.full`, and the URLs this
- *   guards routinely carry credentials (signed query params, webhook tokens in
- *   the path). Callers open their own client span with safe attributes.
- */
-export const guard = <E, R>(
+export class HostResolutionError extends Schema.TaggedError<HostResolutionError>()(
+	"@maple/safe-fetch/HostResolutionError",
+	{
+		message: Schema.String,
+		hostname: Schema.String,
+	},
+) {}
+
+/** Every address `hostname` resolves to. Injected so the caller owns DNS, and tests need none. */
+export type ResolveHost = (hostname: string) => Effect.Effect<ReadonlyArray<string>, HostResolutionError>
+
+/** A resolved address, judged by the same rules as a literal host. Unparseable answers are refused. */
+export const isPrivateAddress = (address: string): boolean =>
+	address.includes(":") ? isPrivateIPv6(address) : !IPV4_LITERAL_RE.test(address) || isPrivateIPv4(address)
+
+/** The request a hop actually sends, and the TLS name to verify when it dials an address. */
+interface Dial {
+	readonly request: HttpClientRequest.HttpClientRequest
+	readonly serverName: string | null
+}
+
+const pinTo =
+	(resolve: ResolveHost) =>
+	(
+		request: HttpClientRequest.HttpClientRequest,
+		url: URL,
+	): Effect.Effect<Dial, UrlValidationError | HostResolutionError> =>
+		Effect.gen(function* () {
+			const hostname = canonicalHostname(url.hostname)
+			if (IPV4_LITERAL_RE.test(hostname) || hostname.startsWith("["))
+				return { request, serverName: null }
+			const addresses = yield* resolve(hostname)
+			// Every answer is checked, so any is safe; IPv4 first because not every
+			// network that resolves AAAA can route IPv6.
+			const first = addresses.find((address) => !address.includes(":")) ?? addresses[0]
+			if (first === undefined || addresses.some(isPrivateAddress)) {
+				return yield* new UrlValidationError({
+					message: `URL host '${url.hostname}' resolves to a loopback, private, or metadata address`,
+				})
+			}
+			const pinned = new URL(url)
+			pinned.hostname = first.includes(":") ? `[${first}]` : first
+			return {
+				request: HttpClientRequest.setUrl(request, pinned).pipe(
+					HttpClientRequest.setHeader("host", url.host),
+				),
+				serverName: hostname,
+			}
+		})
+
+const guardWith = <E, R, E2>(
 	client: HttpClient.HttpClient.With<E, R>,
-): HttpClient.HttpClient.With<E | UrlValidationError, R> => {
-	const send = (request: HttpClientRequest.HttpClientRequest) =>
+	dial: (request: HttpClientRequest.HttpClientRequest, url: URL) => Effect.Effect<Dial, E2>,
+): HttpClient.HttpClient.With<E | E2 | UrlValidationError, R> => {
+	const send = ({ request, serverName }: Dial) =>
 		Effect.serviceOption(FetchHttpClient.RequestInit).pipe(
 			Effect.flatMap((init) =>
 				client.execute(request).pipe(
 					Effect.provideService(FetchHttpClient.RequestInit, {
 						...Option.getOrUndefined(init),
 						redirect: "manual",
+						...(serverName === null ? undefined : { tls: { serverName } }),
 					}),
 					Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
 				),
@@ -257,7 +294,7 @@ export const guard = <E, R>(
 		request: HttpClientRequest.HttpClientRequest,
 		redirects: number,
 		previousOrigin: string | null,
-	): Effect.Effect<HttpClientResponse.HttpClientResponse, E | UrlValidationError, R> =>
+	): Effect.Effect<HttpClientResponse.HttpClientResponse, E | E2 | UrlValidationError, R> =>
 		Effect.gen(function* () {
 			const validated = yield* requestUrl(request).pipe(
 				Effect.flatMap((url) => validateExternalUrl(url.toString())),
@@ -266,7 +303,7 @@ export const guard = <E, R>(
 				previousOrigin !== null && validated.origin !== previousOrigin
 					? withoutCredentialHeaders(request)
 					: request
-			const response = yield* send(outgoing)
+			const response = yield* send(yield* dial(outgoing, validated))
 			if (response.status < 300 || response.status >= 400) return response
 			const location = response.headers["location"]
 			// An empty Location resolves to the current URL; following it would
@@ -285,11 +322,48 @@ export const guard = <E, R>(
 			return yield* hop(next, redirects + 1, validated.origin)
 		})
 
-	return HttpClient.makeWith<E | UrlValidationError, R, E | UrlValidationError, R>(
+	return HttpClient.makeWith<E | E2 | UrlValidationError, R, E | E2 | UrlValidationError, R>(
 		(request) => Effect.flatMap(request, (initial) => hop(initial, 0, null)),
 		Effect.succeed,
 	)
 }
+
+/**
+ * Wrap a fetch-backed `HttpClient` so it only reaches external hosts, for URLs
+ * that came from user configuration.
+ *
+ * - Every hop is validated, redirects included. `HttpClient.followRedirects`
+ *   cannot do this: it re-runs only `postprocess` per hop, so a check placed in
+ *   `mapRequest*` would see the first URL and nothing after it.
+ * - Redirects are followed here with `redirect: "manual"`, at most 5.
+ * - A cross-origin hop drops credential headers for good: restoring them on a
+ *   bounce back to the original origin would make the strip trivially
+ *   bypassable by redirecting away and back again.
+ * - The client's own span is disabled. It records `url.full`, and the URLs this
+ *   guards routinely carry credentials (signed query params, webhook tokens in
+ *   the path). Callers open their own client span with safe attributes.
+ *
+ * Hostnames are checked by name only: the runtime resolves them after the
+ * check. Use this where the network cannot reach private ranges anyway
+ * (Cloudflare Workers, whose fetch cannot pick a peer address); use
+ * `guardPinned` in a process that can.
+ */
+export const guard = <E, R>(
+	client: HttpClient.HttpClient.With<E, R>,
+): HttpClient.HttpClient.With<E | UrlValidationError, R> =>
+	guardWith(client, (request) => Effect.succeed({ request, serverName: null }))
+
+/**
+ * `guard`, plus DNS pinning for processes inside a private network: each hop's
+ * hostname is resolved once with `resolve`, refused if any address is private,
+ * and the request dials the first address with the name kept for `Host` and
+ * TLS (`tls.serverName`, which Bun's fetch verifies the certificate against).
+ */
+export const guardPinned = <E, R>(
+	client: HttpClient.HttpClient.With<E, R>,
+	resolve: ResolveHost,
+): HttpClient.HttpClient.With<E | UrlValidationError | HostResolutionError, R> =>
+	guardWith(client, pinTo(resolve))
 
 /**
  * An `HttpClientError` message without the request URL. Effect's own messages
@@ -304,5 +378,76 @@ export const describeHttpClientError = (error: HttpClientError.HttpClientError):
 	return [url.success.href, request.url].reduce(
 		(redacted, secret) => redacted.split(secret).join(url.success.origin),
 		message,
+	)
+}
+
+export class ResponseTooLargeError extends Schema.TaggedError<ResponseTooLargeError>()(
+	"@maple/safe-fetch/ResponseTooLargeError",
+	{
+		message: Schema.String,
+		maxBytes: Schema.Number,
+	},
+) {}
+
+export interface TextPrefix {
+	readonly text: string
+	/** The body had more than `maxBytes`; the rest was never read. */
+	readonly truncated: boolean
+}
+
+interface Piece {
+	readonly bytes: Uint8Array
+	readonly over: boolean
+}
+
+/**
+ * At most the first `maxBytes` of a body, as text. Reading stops (and the body
+ * is cancelled) once the budget is spent, so a large or endless response
+ * costs no more than the budget. For bodies only shown as a detail.
+ */
+export const readTextPrefix = (
+	response: HttpClientResponse.HttpClientResponse,
+	maxBytes: number,
+): Effect.Effect<TextPrefix, HttpClientError.HttpClientError> =>
+	Effect.suspend(() => {
+		const decoder = new TextDecoder()
+		return response.stream.pipe(
+			Stream.mapAccum(
+				() => 0,
+				(seen, chunk: Uint8Array) => {
+					const room = Math.max(0, maxBytes - seen)
+					const piece: Piece = { bytes: chunk.subarray(0, room), over: chunk.byteLength > room }
+					return [seen + piece.bytes.byteLength, [piece]] as const
+				},
+			),
+			Stream.takeUntil((piece) => piece.over),
+			Stream.runFold(
+				(): TextPrefix => ({ text: "", truncated: false }),
+				(acc, piece): TextPrefix => ({
+					text: acc.text + decoder.decode(piece.bytes, { stream: true }),
+					truncated: piece.over,
+				}),
+			),
+			Effect.map(({ text, truncated }) => ({ text: text + decoder.decode(), truncated })),
+		)
+	})
+
+/**
+ * A whole body as text, failing with `ResponseTooLargeError` instead of
+ * buffering past `maxBytes`. A declared `Content-Length` over it fails before
+ * reading; the byte count catches chunked and lying bodies.
+ */
+export const readTextWithin = (
+	response: HttpClientResponse.HttpClientResponse,
+	maxBytes: number,
+): Effect.Effect<string, HttpClientError.HttpClientError | ResponseTooLargeError> => {
+	const tooLarge = new ResponseTooLargeError({
+		message: `response body exceeded ${maxBytes} bytes`,
+		maxBytes,
+	})
+	const declared = Number(response.headers["content-length"] ?? Number.NaN)
+	if (Number.isFinite(declared) && declared > maxBytes) return Effect.fail(tooLarge)
+	return readTextPrefix(response, maxBytes).pipe(
+		Effect.flatMap(({ text, truncated }) => (truncated ? Effect.fail(tooLarge) : Effect.succeed(text))),
 	)
 }

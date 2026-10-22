@@ -518,7 +518,10 @@ describe("PlanetScaleDiscoveryService", () => {
 			const { state } = yield* oauth.startConnect(asOrgId("org_1"), asUserId("user_1"), {
 				callbackUrl: "https://api.example.com/api/integrations/planetscale/callback",
 			})
-			yield* oauth.completeConnect("auth-code", state)
+			yield* oauth.completeConnect("auth-code", state, {
+				orgId: asOrgId("org_1"),
+				userId: asUserId("user_1"),
+			})
 			const created = yield* targets.create(
 				asOrgId("org_1"),
 				new CreateScrapeTargetRequest({
