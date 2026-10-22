@@ -370,6 +370,7 @@ describe("V2 alerts wire format", () => {
 			},
 		],
 		window_minutes: 5,
+		evaluation_interval_minutes: null,
 		minimum_sample_count: 50,
 		consecutive_breaches_required: 2,
 		breaches_out_of: null,
