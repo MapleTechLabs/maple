@@ -1,21 +1,15 @@
-name: Ingest Rust Tests
+name: Ingest load benchmark
 
+# Opt-in perf comparison of a PR's ingest against its base: label the PR `bench-ingest`
+# when changing the hot path, or dispatch it. `cargo test` and the release build are
+# ci.yml's `ingest-rust` job, which gates the deploy.
 on:
-    push:
-        branches: [main]
-        paths:
-            - "apps/ingest/**"
-            - "packages/db/drizzle/**"
-            - "packages/db/src/tables/**"
-            - "scripts/ci/format-ingest-benchmark-comment.ts"
-            - ".github/workflows/ingest-rust-tests.yml"
     pull_request:
+        types: [opened, synchronize, reopened, labeled]
         paths:
             - "apps/ingest/**"
-            - "packages/db/drizzle/**"
-            - "packages/db/src/tables/**"
             - "scripts/ci/format-ingest-benchmark-comment.ts"
-            - ".github/workflows/ingest-rust-tests.yml"
+            - ".github/workflows/ingest-bench.yml"
     workflow_dispatch:
 
 concurrency:
@@ -35,21 +29,14 @@ env:
     HEAD_INGEST_MODE: tinybird
 
 jobs:
-    test:
-        name: Cargo test and load benchmark
+    bench:
+        name: Ingest load benchmark
+        if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'bench-ingest') }}
         runs-on: ubuntu-latest
         timeout-minutes: 45
         defaults:
             run:
                 working-directory: apps/ingest
-        env:
-            # The perf comparison — head bench, Criterion, the base-branch release
-            # build, its probe and its bench — is opt-in. It was ~60% of this job's
-            # runtime on every ingest PR, and this job was the single most expensive
-            # workflow in the repo. Label a PR `bench-ingest` when you are actually
-            # changing the hot path; `cargo test` and the release build still run
-            # unconditionally. Same opt-in shape as eval.yml's `run-evals`.
-            RUN_BENCH: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'bench-ingest') }}
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
@@ -63,25 +50,10 @@ jobs:
               with:
                   workspaces: apps/ingest
 
-            - name: Run ingest unit and fake Tinybird e2e tests
-              run: |
-                  set +e
-                  set -o pipefail
-                  cargo test --locked 2>&1 | tee "$RUNNER_TEMP/ingest-cargo-test.txt"
-                  echo "${PIPESTATUS[0]}" > "$RUNNER_TEMP/ingest-cargo-test.exit"
-                  exit 0
-
             - name: Build PR ingest and benchmark binaries
               run: |
                   set +e
-                  # load_test only exists to drive the benchmark, so only build it
-                  # when the benchmark is going to run.
-                  bins="--bin maple-ingest"
-                  if [ "$RUN_BENCH" = "true" ]; then
-                    bins="$bins --bin load_test"
-                  fi
-                  # shellcheck disable=SC2086
-                  cargo build --locked --release $bins 2>&1 | tee "$RUNNER_TEMP/ingest-head-build.txt"
+                  cargo build --locked --release --bin maple-ingest --bin load_test 2>&1 | tee "$RUNNER_TEMP/ingest-head-build.txt"
                   echo "${PIPESTATUS[0]}" > "$RUNNER_TEMP/ingest-head-build.exit"
                   mkdir -p "$RUNNER_TEMP/head"
                   if [ -x target/release/maple-ingest ]; then
@@ -92,23 +64,17 @@ jobs:
                   fi
                   exit 0
 
-            # Every step above records its exit code and returns 0 so the run reaches
-            # the aggregation step and reports test and build failures together. That
-            # is worth doing for the cheap steps; it is not worth spending the
-            # benchmark budget on a tree that does not compile.
-            - name: Skip benchmarks if tests or build failed
+            # Steps record their exit code and return 0 so the last step reports every
+            # failure together, but a tree that does not compile is not worth benchmarking.
+            - name: Skip benchmarks if the build failed
               id: bench-gate
-              if: ${{ env.RUN_BENCH == 'true' }}
               run: |
-                  for file in "$RUNNER_TEMP"/ingest-cargo-test.exit "$RUNNER_TEMP"/ingest-head-build.exit; do
-                    [ -f "$file" ] || continue
-                    if [ "$(cat "$file")" != "0" ]; then
-                      echo "::notice::skipping benchmarks — $(basename "$file") is non-zero"
-                      echo "ok=false" >> "$GITHUB_OUTPUT"
-                      exit 0
-                    fi
-                  done
-                  echo "ok=true" >> "$GITHUB_OUTPUT"
+                  if [ "$(cat "$RUNNER_TEMP/ingest-head-build.exit")" != "0" ]; then
+                    echo "::notice::skipping benchmarks, the release build failed"
+                    echo "ok=false" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "ok=true" >> "$GITHUB_OUTPUT"
+                  fi
 
             - name: Run PR ingest load benchmark (median of N)
               if: ${{ steps.bench-gate.outputs.ok == 'true' }}
@@ -242,7 +208,6 @@ jobs:
             - name: Render PR comment body
               if: ${{ always() && steps.bench-gate.outputs.ok == 'true' && github.event_name == 'pull_request' }}
               env:
-                  TEST_OUTPUT: ${{ runner.temp }}/ingest-cargo-test.txt
                   CRITERION_OUTPUT: ${{ runner.temp }}/ingest-criterion.txt
                   COMMENT_OUTPUT: ${{ runner.temp }}/ingest-results-comment.md
               run: |
@@ -278,7 +243,7 @@ jobs:
                     gh pr comment "$PR_NUMBER" --body-file "$COMMENT_OUTPUT"
                   fi
 
-            - name: Fail if ingest checks failed
+            - name: Fail if a build or benchmark step failed
               if: ${{ always() }}
               run: |
                   failed=0
