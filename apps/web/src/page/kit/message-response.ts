@@ -205,9 +205,11 @@ const markdownLink = <M>(h: HtmlBuilder<M>, url: string, content: ReadonlyArray<
 		content,
 	)
 
+const imageLabel = (url: string, alt: string): string => (alt.trim() === "" ? url : alt)
+
 // Model output and transcripts are untrusted: an image is a link the reader opens, never a fetch.
 const markdownImage = <M>(h: HtmlBuilder<M>, url: string, alt: string): Html =>
-	markdownLink(h, url, [alt.trim() === "" ? url : alt])
+	markdownLink(h, url, [imageLabel(url, alt)])
 
 const viewsFor = <M>(
 	h: HtmlBuilder<M>,
@@ -219,7 +221,24 @@ const viewsFor = <M>(
 		InlineCode: ({ value }) =>
 			h.code(streamdown("inline-code", "rounded bg-muted px-1.5 py-0.5 font-mono text-sm")(h), [value]),
 		Strong: (_strong, content) => h.span(streamdown("strong", "font-semibold")(h), content),
-		Link: ({ url }, content) => markdownLink(h, url, content),
+		// A linked image is the outer link's label: no anchor inside an anchor.
+		Link: (link, content) =>
+			markdownLink(
+				h,
+				link.url,
+				link.content.some((inline) => inline._tag === "Image")
+					? Markdown.viewBlocks(
+							{ blocks: [{ _tag: "Paragraph", content: link.content }] },
+							{
+								views: {
+									...viewsFor(h, actions, overrides),
+									Paragraph: (_paragraph, inline) => h.span([], inline),
+									Image: ({ url, alt }) => h.span([], [imageLabel(url, alt)]),
+								},
+							},
+						)
+					: content,
+			),
 		Image: ({ url, alt }) => markdownImage(h, url, alt),
 		Heading: ({ level }, content) => {
 			const attributes = streamdown(`heading-${level}`, HEADING_CLASSES[level])(h)

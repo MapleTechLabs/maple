@@ -28,6 +28,22 @@ describe("markdown images", () => {
 		)
 	})
 
+	test("a linked image is the outer link's label, with no link inside it", async () => {
+		const parsed = await parse(
+			"[![the latency chart](https://example.test/chart.png)](https://example.test/dash)",
+		)
+		scene(
+			config,
+			given(parsed),
+			expect(altText("the latency chart")).toBeAbsent(),
+			expect(role("link", { name: "the latency chart" })).toHaveAttr(
+				"href",
+				"https://example.test/dash",
+			),
+			expect(role("link", { name: "https://example.test/chart.png" })).toBeAbsent(),
+		)
+	})
+
 	test("an image without alt text links by its URL", async () => {
 		const parsed = await parse("![](https://example.test/a.png)")
 		scene(config, given(parsed), expect(role("link", { name: "https://example.test/a.png" })).toExist())
