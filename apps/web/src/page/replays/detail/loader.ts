@@ -90,7 +90,7 @@ const loadedUntilMs = (model: Model): number => {
 	return through < 0 || last === undefined ? 0 : chunkStartMs(last) + last.duration_ms - manifestStartMs(chunks)
 }
 
-const hasMoreChunks = (model: Model): boolean => {
+export const hasMoreChunks = (model: Model): boolean => {
 	const lastSeq = chunksOf(model).at(-1)?.chunk_seq
 	const through = loadedThroughSeq(model.loader)
 	return lastSeq !== undefined && through >= 0 && through < lastSeq
@@ -166,11 +166,24 @@ const cutSeed = (model: Model): Model => {
 	}
 }
 
-/** `reportProgress`: keep the next range coming while the playhead nears the loaded end. */
+/** Where the last loaded range starts, in ms from the recording's start. */
+const lastLoadedFromMs = (model: Model): number => {
+	const from = model.loader.loaded.at(-1)?.range.fromChunkSeq
+	const chunks = chunksOf(model)
+	const first = chunks.find((chunk) => chunk.chunk_seq === from)
+	return first === undefined ? 0 : chunkStartMs(first) - manifestStartMs(chunks)
+}
+
+/**
+ * `reportProgress`: keep one range ahead of the playhead. The next range is asked for as soon as
+ * playback enters the last loaded one, not when it nears its end: at 8× with idle skipped a range
+ * can play out in seconds, faster than the next one arrives.
+ */
 export const reportProgress = (model: Model, offsetMs: number): Model => {
 	const loader = { ...model.loader, playheadMs: offsetMs }
 	const next = { ...model, loader }
-	if (loader.seedCount === 0 || offsetMs + 20_000 < loadedUntilMs(next) || !hasMoreChunks(next)) return next
+	if (loader.seedCount === 0 || !hasMoreChunks(next)) return next
+	if (offsetMs < lastLoadedFromMs(next) && offsetMs + 20_000 < loadedUntilMs(next)) return next
 	if (loader.queue.length > 0) return next
 	const range = rangeContaining(planOf(next), loadedThroughSeq(loader) + 1)
 	if (range === undefined || loader.loaded.some((entry) => entry.key === rangeKey(range))) return next

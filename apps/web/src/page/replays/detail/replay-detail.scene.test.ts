@@ -255,6 +255,28 @@ describe("replay detail", () => {
 		expect(rebuilt.meta.actionMarkers.map((marker) => marker.ms)).toEqual([1_000, 305_000])
 	})
 
+	test("the next range is asked for as soon as playback starts, not near the loaded end", () => {
+		const at = (seconds: number) => new Date(Date.UTC(2026, 9, 1, 11, 18, 0) + seconds * 1000).toISOString()
+		const two: Manifest = {
+			chunks: [
+				{ chunk_seq: 0, timestamp: at(0), duration_ms: 60_000, event_count: 2, byte_size: 4_000_000, is_checkpoint: true },
+				{ chunk_seq: 1, timestamp: at(60), duration_ms: 60_000, event_count: 2, byte_size: 4_000_000, is_checkpoint: false },
+			],
+			maxBytesPerRequest: 6_000_000,
+			maxChunksPerRequest: 16,
+		}
+		const start = entered().model
+		const opened = [
+			Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.succeed(session) }),
+			Message.CompletedFetchManifest({ key: start.manifest.key ?? "", result: Result.succeed(two) }),
+		].reduce((model, message) => pageUpdate(model, message).model, start)
+		const rows = [{ chunk_seq: 0, events: [{ type: 4, timestamp: 1, data: {} }, { type: 2, timestamp: 2, data: {} }] }]
+		const seeded = pageUpdate(opened, Message.CompletedFetchRange({ key: opened.loader.range.key ?? "", result: Result.succeed(rows) })).model
+		const ticked = pageUpdate(seeded, Message.TickedEngine({ seedVersion: seeded.loader.seedVersion, currentMs: 100 }))
+		expect(ticked.model.loader.queue).toEqual([{ fromChunkSeq: 1, toChunkSeq: 1 }])
+		expect(names(ticked.commands)).toEqual([FetchRange.name])
+	})
+
 	test("the seed is cut once per seed version, not re-flattened on every engine tick", () => {
 		const ready = pageUpdate(seeded(), Message.ReadiedEngine({ seedVersion: 1, totalMs: 1000 })).model
 		const ticked = pageUpdate(ready, Message.TickedEngine({ seedVersion: 1, currentMs: 100 })).model

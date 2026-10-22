@@ -15,6 +15,7 @@ import { docsLink } from "../../kit/signal-empty-state"
 import {
 	CONTROL_ATTRIBUTE,
 	HOLD_ATTRIBUTE,
+	COMPLETE_ATTRIBUTE,
 	IDLE_ATTRIBUTE,
 	SPEED_ATTRIBUTE,
 	TOTAL_ATTRIBUTE,
@@ -23,7 +24,7 @@ import { MARKER_STYLES } from "../kit/replay-meta"
 import { replayFormat } from "../kit/replay-window"
 import { FeedEvents, MountEngine } from "./command"
 import { type PlayerStatus, timelineOf } from "./derive"
-import { isBuffering, seedEvents, seedShiftMs, trailingRanges } from "./loader"
+import { hasMoreChunks, isBuffering, seedEvents, seedShiftMs, trailingRanges } from "./loader"
 import { Message } from "./message"
 import type { Model, ReplayDetail } from "./model"
 import type { LoadFailure } from "../../../data/load-failure"
@@ -172,6 +173,7 @@ const engineMount = (h: H, model: Model, session: ReplayDetail, status: PlayerSt
 		h.DataAttribute(IDLE_ATTRIBUTE, JSON.stringify(player.isSkippingIdle ? model.meta.inactiveIntervals : [])),
 		h.DataAttribute(HOLD_ATTRIBUTE, String(player.isPlaying && isBuffering(model))),
 		h.DataAttribute(TOTAL_ATTRIBUTE, String(player.totalMs)),
+		h.DataAttribute(COMPLETE_ATTRIBUTE, String(!hasMoreChunks(model))),
 	]
 	return status === "ready"
 		? h.div(
