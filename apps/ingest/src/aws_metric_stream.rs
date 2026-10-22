@@ -69,8 +69,32 @@ struct DeliveryRecord {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecordError {
     Unreadable,
-    /// The records decode to more than the allowed bytes.
+    /// The records decode to more than the allowed bytes or metric points.
     TooLarge,
+}
+
+/// Points one delivery may carry. Maple's stack buffers 1 MiB, a few thousand points; each
+/// point expands to five metrics, so a direct sender cannot use the byte cap to amplify memory.
+pub const MAX_POINTS_PER_DELIVERY: usize = 20_000;
+
+/// Metrics plus their data points: what a request costs once expanded.
+fn point_count(request: &ExportMetricsServiceRequest) -> usize {
+    request
+        .resource_metrics
+        .iter()
+        .flat_map(|resource| &resource.scope_metrics)
+        .flat_map(|scope| &scope.metrics)
+        .map(|metric| {
+            1 + match &metric.data {
+                Some(metric::Data::Summary(summary)) => summary.data_points.len(),
+                Some(metric::Data::Gauge(gauge)) => gauge.data_points.len(),
+                Some(metric::Data::Sum(sum)) => sum.data_points.len(),
+                Some(metric::Data::Histogram(histogram)) => histogram.data_points.len(),
+                Some(metric::Data::ExponentialHistogram(histogram)) => histogram.data_points.len(),
+                None => 0,
+            }
+        })
+        .sum()
 }
 
 /// `None` when the body is not a Firehose request.
@@ -86,6 +110,7 @@ impl Delivery {
         max_decoded: usize,
     ) -> Result<Vec<ExportMetricsServiceRequest>, RecordError> {
         let mut decoded_total = 0_usize;
+        let mut points = 0_usize;
         let mut requests = Vec::new();
         for record in &self.records {
             let bytes = STANDARD
@@ -105,6 +130,10 @@ impl Delivery {
                     .resource_metrics
                     .retain(|resource| !resource.scope_metrics.is_empty());
                 if !request.resource_metrics.is_empty() {
+                    points = points.saturating_add(point_count(&request));
+                    if points > MAX_POINTS_PER_DELIVERY {
+                        return Err(RecordError::TooLarge);
+                    }
                     requests.push(request);
                 }
             }
@@ -1056,6 +1085,19 @@ mod tests {
     }
 
     #[test]
+    fn refuses_a_delivery_with_more_points_than_a_stream_sends() {
+        let points = (0..=MAX_POINTS_PER_DELIVERY)
+            .map(|_| point(&[], 1, 1.0, 1.0, 1.0))
+            .collect();
+        let request = stream_request(vec![("amazonaws.com/AWS/ECS/A", "None", points)]);
+        let delivery = parse_delivery(&delivery_json(&[length_delimited(&[request])])).unwrap();
+        assert_eq!(
+            delivery.metric_requests(64 * 1024 * 1024).unwrap_err(),
+            RecordError::TooLarge
+        );
+    }
+
+    #[test]
     fn keeps_nothing_for_empty_requests_or_resources() {
         let one = stream_request(vec![(
             "amazonaws.com/AWS/ECS/A",
@@ -1063,7 +1105,7 @@ mod tests {
             vec![point(&[], 1, 1.0, 1.0, 1.0)],
         )]);
         let mut padded = one.clone();
-        padded.resource_metrics.push(Default::default());
+        padded.resource_metrics.push(ResourceMetrics::default());
         // Zero bytes are empty requests, one per byte.
         let mut record = vec![0_u8; 4096];
         record.extend(length_delimited(&[padded]));
