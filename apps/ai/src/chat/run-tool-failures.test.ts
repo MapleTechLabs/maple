@@ -240,7 +240,7 @@ describe("runChatTurn diagnosis rejections", () => {
 			(span) =>
 				span.status._tag === "Ended" &&
 				Exit.isFailure(span.status.exit) &&
-				span.status.exit.cause.reasons.some(Cause.isFailReason),
+				!Cause.hasInterruptsOnly(span.status.exit.cause),
 		)
 		assert.deepEqual(
 			failed.map((span) => span.name),
