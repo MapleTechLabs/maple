@@ -8,7 +8,8 @@ export const TextPart = Schema.TaggedStruct("text", {
 	state: Schema.Literals(["streaming", "done"]),
 })
 
-export const ToolState = Schema.Literals(["input-available", "proposed", "output-available", "output-error"])
+/** `output-stopped`: the turn ended before the call settled, so it never will. */
+export const ToolState = Schema.Literals(["input-available", "proposed", "output-available", "output-error", "output-stopped"])
 export type ToolState = typeof ToolState.Type
 
 /** One tool call's lifecycle; `output` once it settled, `errorText` when it failed. */

@@ -14,7 +14,8 @@ mod autumn;
 mod sources;
 mod task_protection;
 
-use std::io::{Read, Write};
+use std::collections::HashSet;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -40,13 +41,14 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use chrono::DateTime;
 use dashmap::DashMap;
-use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use hmac::{Hmac, Mac};
 use maple_ingest::ai_session;
 use maple_ingest::aws::CredentialsProvider as AwsCredentialsProvider;
+use maple_ingest::aws_metric_stream;
 use maple_ingest::clickhouse_insert_mappings::SCHEMA_VERSION as CLICKHOUSE_SCHEMA_VERSION;
+use maple_ingest::decompress::{gunzip_bounded, gunzip_len_bounded, GunzipError};
 use maple_ingest::gcp_logging;
 use maple_ingest::gcp_push_auth::{GooglePushAuth, PushAuthError};
 use maple_ingest::metrics;
@@ -217,6 +219,8 @@ struct AppConfig {
     /// The 401 body for a key this instance does not know. See
     /// `invalid_ingest_key_message`.
     invalid_key_message: &'static str,
+    /// `INGEST_BLOCKED_KEYS`: keys refused at origin whatever header spelling carries them.
+    blocked_ingest_keys: Arc<HashSet<String>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -420,6 +424,10 @@ impl AppConfig {
                     duration_millis(ClickHouseBreakerConfig::default().cooldown),
                 )?),
             },
+            clickhouse_allow_private_endpoints: clickhouse_allow_private_endpoints(
+                std::env::var("INGEST_CLICKHOUSE_ALLOW_PRIVATE_ENDPOINTS").ok(),
+                std::env::var("MAPLE_SELF_HOSTED_MODE").ok(),
+            )?,
             datasources: DatasourceNames::from_env(),
             datasource_session_replays: std::env::var("INGEST_TINYBIRD_DATASOURCE_SESSION_REPLAYS")
                 .unwrap_or_else(|_| "session_replays".to_owned()),
@@ -728,6 +736,9 @@ impl AppConfig {
             shutdown_drain_secs,
             wal_store,
             invalid_key_message,
+            blocked_ingest_keys: Arc::new(parse_blocked_ingest_keys(
+                std::env::var("INGEST_BLOCKED_KEYS").ok().as_deref(),
+            )),
         })
     }
 }
@@ -811,6 +822,8 @@ struct IngestKeyResolver {
     /// (org id, claim as received) to whether it names one of the org's pull sources,
     /// for `maple_source_id` values sent with the default keys.
     source_claims: Cache<(String, String), SourceClaim>,
+    /// Emergency block list, checked before any cache or store lookup.
+    blocked_keys: Arc<HashSet<String>>,
 }
 
 /// How often one token source's `last_used_at` is rewritten per gateway instance.
@@ -908,6 +921,26 @@ struct GcpConnectorResolver {
     recent_setup_reports: Cache<String, Arc<AtomicU32>>,
     /// Verifies the ID tokens Pub/Sub signs pushes with.
     push_auth: GooglePushAuth,
+}
+
+const AWS_CONNECTIONS_TABLE: &str = "aws_connections";
+
+/// How often one AWS connection's stream health columns are rewritten per
+/// outcome. A busy stream delivers every few seconds.
+const AWS_STREAM_HEALTH_WRITE_INTERVAL: Duration = Duration::from_mins(1);
+
+struct AwsConnectionResolver {
+    store: Arc<dyn KeyStore>,
+    lookup_hmac_key: String,
+    /// Keyed on (connection id, stream secret hash).
+    cache: Cache<(String, String), AwsConnectionIdentity>,
+    // A deleted connection's Firehose keeps delivering and retrying each 401;
+    // this keeps that off Postgres.
+    negative_cache: Cache<(String, String), ()>,
+    routing: Arc<OrgRoutingResolver>,
+    /// (connection id, succeeded) pairs already written within
+    /// `AWS_STREAM_HEALTH_WRITE_INTERVAL`.
+    recent_health_writes: Cache<(String, bool), ()>,
 }
 
 struct OrgRoutingResolver {
@@ -1061,6 +1094,22 @@ trait KeyStore: Send + Sync {
         report: gcp_logging::SetupReport,
         now_ms: i64,
     ) -> Result<(), String>;
+
+    /// An AWS connection by id and metric stream secret hash.
+    async fn fetch_aws_connection(
+        &self,
+        connection_id: &str,
+        secret_hash: &str,
+    ) -> Result<Option<AwsConnectionRow>, String>;
+
+    /// Stamps `stream_last_received_at` and clears `stream_last_error`
+    /// (`error == None`), or writes `stream_last_error`.
+    async fn record_aws_stream_health(
+        &self,
+        connection_id: &str,
+        error: Option<&str>,
+        now_ms: i64,
+    ) -> Result<(), String>;
 }
 
 #[derive(Clone, Debug)]
@@ -1125,6 +1174,15 @@ struct GcpConnectorRow {
     self_managed: bool,
     clickhouse_ready: bool,
     /// The connector's `sources` row, joined through `source_id`.
+    source: Option<PullSourceRow>,
+}
+
+#[derive(Clone, Debug)]
+struct AwsConnectionRow {
+    org_id: String,
+    self_managed: bool,
+    clickhouse_ready: bool,
+    /// The connection's `sources` row, joined through `source_id`.
     source: Option<PullSourceRow>,
 }
 
@@ -1214,6 +1272,33 @@ impl GcpConnectorIdentity {
         ResolvedGcpConnector {
             logs_enabled: self.logs_enabled,
             confirms_log_forwarding: self.confirms_log_forwarding,
+            source_pause: self.source_pause,
+            key: ResolvedIngestKey {
+                org_id: self.org_id,
+                key_type: IngestKeyType::Connector,
+                key_id: self.secret_key_id,
+                self_managed: routing.self_managed,
+                clickhouse_ready: routing.clickhouse_ready,
+                source: None,
+                default_source: self.source,
+            },
+        }
+    }
+}
+
+#[derive(Clone)]
+struct AwsConnectionIdentity {
+    org_id: String,
+    secret_key_id: String,
+    /// The connection's integration source, stamped on its metrics.
+    source: Option<SourceRef>,
+    /// That source's pause window, judged per delivery so a timed pause ends on time.
+    source_pause: PauseWindow,
+}
+
+impl AwsConnectionIdentity {
+    fn into_resolved(self, routing: &OrgRouting) -> ResolvedAwsConnection {
+        ResolvedAwsConnection {
             source_pause: self.source_pause,
             key: ResolvedIngestKey {
                 org_id: self.org_id,
@@ -1396,6 +1481,7 @@ struct AppState {
     attribute_mapping_resolver: AttributeMappingResolver,
     cloudflare_resolver: CloudflareConnectorResolver,
     gcp_resolver: GcpConnectorResolver,
+    aws_resolver: AwsConnectionResolver,
     autumn_tracker: Option<AutumnTracker>,
     autumn_entitlements: Option<AutumnEntitlements>,
     /// Per-org ingest volume, on its own delta-temporality provider. Recorded
@@ -1494,6 +1580,23 @@ struct ResolvedGcpConnector {
     /// The integration source's pause window: a paused source's entries are acked and dropped.
     source_pause: PauseWindow,
     key: ResolvedIngestKey,
+}
+
+struct ResolvedAwsConnection {
+    /// The integration source's pause window: a paused source's deliveries are acked and dropped.
+    source_pause: PauseWindow,
+    key: ResolvedIngestKey,
+}
+
+/// What an acked Firehose delivery did.
+enum AwsStreamOutcome {
+    Accepted {
+        item_count: usize,
+    },
+    /// The body or a record can never decode, so a retry is pointless.
+    Undecodable,
+    /// The connection's integration source is paused.
+    SourcePaused,
 }
 
 /// What an accepted Cloudflare Logpush request did.
@@ -2860,6 +2963,7 @@ async fn main() {
             source_claims: source_claims_cache(Duration::from_secs(
                 config.ingest_key_cache_ttl_secs,
             )),
+            blocked_keys: Arc::clone(&config.blocked_ingest_keys),
         },
         org_inflight_limiter: OrgInFlightLimiter::new(config.org_max_in_flight),
         key_rate_limiter: SourceRateLimiter::new(config.rate_limit_fleet_size),
@@ -2884,9 +2988,15 @@ async fn main() {
         gcp_resolver: GcpConnectorResolver::new(
             Arc::clone(&store),
             config.lookup_hmac_key.clone(),
-            org_routing_resolver,
+            Arc::clone(&org_routing_resolver),
             Duration::from_secs(config.ingest_key_cache_ttl_secs),
             GooglePushAuth::new(http_client.clone()),
+        ),
+        aws_resolver: AwsConnectionResolver::new(
+            Arc::clone(&store),
+            config.lookup_hmac_key.clone(),
+            org_routing_resolver,
+            Duration::from_secs(config.ingest_key_cache_ttl_secs),
         ),
         telemetry_pipeline,
         http_client,
@@ -2945,6 +3055,10 @@ async fn main() {
             post(handle_cloudflare_logpush_http_requests),
         )
         .route("/v1/logpush/gcp/{connector_id}", post(handle_gcp_logpush))
+        .route(
+            "/v1/firehose/aws/{connection_id}",
+            post(handle_aws_firehose),
+        )
         .layer(cors)
         .layer(DefaultBodyLimit::max(config.max_request_body_bytes))
         .with_state(state);
@@ -4424,23 +4538,12 @@ async fn handle_product_events_inner(
     Ok(count)
 }
 
-/// Decompressed length of a gzip payload, without materializing it.
-///
-/// Same number `read_to_string(...).len()` would produce, and the same
-/// rejection of malformed gzip — it just doesn't keep the bytes. Used on the
-/// blob-store path, where the decompressed text is never needed but `ByteSize`
-/// and the per-session budget are still denominated in decompressed bytes.
-fn decompressed_len(body: &[u8]) -> Result<u64, std::io::Error> {
-    let mut decoder = GzDecoder::new(body);
-    std::io::copy(&mut decoder, &mut std::io::sink())
-}
-
 /// Bounded gunzip of a replay chunk into text. Invalid UTF-8 reads as the
 /// same error `read_to_string` raised, so the rejection fingerprint holds.
-fn gunzip_replay_text(body: &[u8], max_decoded: usize) -> Result<String, BoundedGunzipError> {
+fn gunzip_replay_text(body: &[u8], max_decoded: usize) -> Result<String, GunzipError> {
     let bytes = gunzip_bounded(body, max_decoded)?;
     String::from_utf8(bytes).map_err(|_| {
-        BoundedGunzipError::Invalid(std::io::Error::new(
+        GunzipError::Invalid(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "stream did not contain valid UTF-8",
         ))
@@ -4597,19 +4700,17 @@ async fn handle_replay_blob_inner(
     // is denominated in *decompressed* bytes. So decode and discard, counting.
     // What that avoids is the part that actually cost: materializing a
     // multi-megabyte String, JSON-escaping it, and pushing it through the WAL.
+    // Both branches stop at the same decoded ceiling as the OTLP routes.
+    let max_decoded = state.config.max_decoded_body_bytes;
+    let gunzip_rejection = |e: GunzipError| match e {
+        GunzipError::Invalid(e) => replay_gunzip_rejection(headers, &body, &e),
+        GunzipError::TooLarge => ApiError::payload_too_large("decompressed replay chunk too large"),
+    };
     let (events_json, byte_size) = if state.replay_blob_store.is_some() {
-        (
-            None,
-            decompressed_len(&body).map_err(|e| replay_gunzip_rejection(headers, &body, &e))?,
-        )
+        let byte_size = gunzip_len_bounded(&body, max_decoded).map_err(gunzip_rejection)?;
+        (None, byte_size)
     } else {
-        let events_json = gunzip_replay_text(&body, state.config.max_decoded_body_bytes)
-            .map_err(|e| match e {
-                BoundedGunzipError::Invalid(e) => replay_gunzip_rejection(headers, &body, &e),
-                BoundedGunzipError::TooLarge => {
-                    ApiError::payload_too_large("decompressed replay chunk too large")
-                }
-            })?;
+        let events_json = gunzip_replay_text(&body, max_decoded).map_err(gunzip_rejection)?;
         let byte_size = events_json.len() as u64;
         (Some(events_json), byte_size)
     };
@@ -5807,6 +5908,371 @@ fn is_connector_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
 
+/// The plaintext stream secret Firehose sends with every delivery.
+const FIREHOSE_ACCESS_KEY_HEADER: &str = "x-amz-firehose-access-key";
+const FIREHOSE_REQUEST_ID_HEADER: &str = "x-amz-firehose-request-id";
+
+/// What Firehose's HTTP endpoint destination expects back.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FirehoseResponseBody<'a> {
+    request_id: &'a str,
+    timestamp: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_message: Option<&'a str>,
+}
+
+fn firehose_response(status: StatusCode, request_id: &str, error: Option<&ApiError>) -> Response {
+    let body = FirehoseResponseBody {
+        request_id,
+        timestamp: current_time_millis(),
+        error_message: error.map(|error| error.message.as_str()),
+    };
+    let mut response = (status, axum::Json(body)).into_response();
+    let retry_after = error.and_then(|error| error.kind.retry_after_seconds);
+    if let Some(value) =
+        retry_after.and_then(|seconds| HeaderValue::from_str(&seconds.to_string()).ok())
+    {
+        response.headers_mut().insert(RETRY_AFTER, value);
+    }
+    response
+}
+
+/// Receives a CloudWatch metric stream through Amazon Data Firehose's HTTP
+/// endpoint destination. Firehose retries anything but a 200 until its retry
+/// window ends, so a delivery that can never decode is acked.
+async fn handle_aws_firehose(
+    State(state): State<Arc<AppState>>,
+    Path(connection_id): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let start = Instant::now();
+
+    metrics::request_started();
+    let _guard = InFlightGuard;
+
+    let span = tracing::info_span!(
+        "aws_firehose",
+        otel.name = "POST /v1/firehose/aws/{connection_id}",
+        otel.kind = "server",
+        otel.status_code = tracing::field::Empty,
+        otel.status_description = tracing::field::Empty,
+        "maple.ingest.reject_reason" = tracing::field::Empty,
+        "http.request.method" = "POST",
+        "http.route" = "/v1/firehose/aws/{connection_id}",
+        "http.request.body.size" = body.len(),
+        "http.response.status_code" = tracing::field::Empty,
+        "error.type" = tracing::field::Empty,
+        "maple.signal" = "metrics",
+        "maple.org_id" = tracing::field::Empty,
+        "maple.aws.connection_id" = tracing::field::Empty,
+        "maple.ingest.self_managed" = tracing::field::Empty,
+        "maple.ingest.clickhouse_ready" = tracing::field::Empty,
+        "maple.ingest.destination" = tracing::field::Empty,
+        "maple.ingest.decoded_bytes" = tracing::field::Empty,
+        "maple.ingest.item_count" = tracing::field::Empty,
+    );
+    let span_handle = span.clone();
+
+    let header = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
+    // The body's `requestId` replaces this once the body is read.
+    let mut request_id = header(FIREHOSE_REQUEST_ID_HEADER)
+        .unwrap_or_default()
+        .to_owned();
+    let content_encoding = header(CONTENT_ENCODING.as_str())
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty() && value != "identity");
+    let result = handle_aws_firehose_inner(
+        &state,
+        &connection_id,
+        header(FIREHOSE_ACCESS_KEY_HEADER),
+        content_encoding.as_deref(),
+        &body,
+        &mut request_id,
+    )
+    .instrument(span)
+    .await;
+    let duration = start.elapsed().as_secs_f64();
+    let signal = Signal::Metrics.path();
+
+    match result {
+        Ok(outcome) => {
+            span_handle.record("http.response.status_code", StatusCode::OK.as_u16());
+            match outcome {
+                AwsStreamOutcome::Accepted { item_count } => {
+                    span_handle.record("otel.status_code", "Ok");
+                    span_handle.record("maple.ingest.item_count", item_count);
+                    metrics::request_completed(signal, "ok", "none", duration);
+                }
+                AwsStreamOutcome::Undecodable => {
+                    // Acked, but the metrics are gone: an `Error` like every
+                    // other rejection that loses the sender's data.
+                    span_handle.record("error.type", "decode");
+                    record_rejection_reason(
+                        &span_handle,
+                        200,
+                        "decode",
+                        "Firehose delivery is not OpenTelemetry 1.0 metric stream records",
+                    );
+                    metrics::request_completed(signal, "error", "decode", duration);
+                }
+                AwsStreamOutcome::SourcePaused => {
+                    span_handle.record("otel.status_code", "Ok");
+                    span_handle.record("maple.ingest.reject_reason", "source_paused");
+                    metrics::request_completed(signal, "ok", "none", duration);
+                }
+            }
+            firehose_response(StatusCode::OK, &request_id, None)
+        }
+        Err((error, error_kind)) => {
+            let status = error.status.as_u16();
+            span_handle.record("http.response.status_code", status);
+            span_handle.record("error.type", error_kind);
+            record_rejection_reason(&span_handle, status, error_kind, error.reason().as_str());
+            metrics::request_completed(signal, "error", error_kind, duration);
+            firehose_response(error.status, &request_id, Some(&error))
+        }
+    }
+}
+
+/// Returns what the ack means, or Err((ApiError, error_kind_label)).
+/// `request_id` takes the body's `requestId` once the body is read.
+async fn handle_aws_firehose_inner(
+    state: &AppState,
+    connection_id: &str,
+    access_key: Option<&str>,
+    content_encoding: Option<&str>,
+    body: &Bytes,
+    request_id: &mut String,
+) -> Result<AwsStreamOutcome, (ApiError, &'static str)> {
+    let unauthorized = || {
+        (
+            ApiError::unauthorized("Invalid connection credentials"),
+            "auth",
+        )
+    };
+    let access_key = access_key.map(str::trim).filter(|key| !key.is_empty());
+    let (Some(access_key), true) = (access_key, is_aws_connection_id(connection_id)) else {
+        warn!("Missing Firehose access key or malformed AWS connection id");
+        return Err(unauthorized());
+    };
+    Span::current().record("maple.aws.connection_id", connection_id);
+
+    let resolved = state
+        .aws_resolver
+        .resolve_connection(connection_id, access_key)
+        .await
+        .map_err(|error| {
+            error!(error = %error, connection_id, "AWS connection resolution failed");
+            (
+                ApiError::service_unavailable("Connection authentication unavailable"),
+                "auth",
+            )
+        })?
+        .ok_or_else(|| {
+            warn!(connection_id, "Invalid AWS metric stream credentials");
+            unauthorized()
+        })?;
+    let org_id = resolved.key.org_id.as_str();
+    let signal = Signal::Metrics.path();
+
+    Span::current().record("maple.org_id", org_id);
+    Span::current().record("maple.ingest.self_managed", resolved.key.self_managed);
+    Span::current().record(
+        "maple.ingest.clickhouse_ready",
+        resolved.key.clickhouse_ready,
+    );
+
+    // A paused integration source: acked like a paused token source, nothing stored or billed.
+    if resolved.source_pause.is_paused(current_time_millis()) {
+        metrics::source_paused_drop(org_id, signal);
+        debug!(
+            org_id,
+            connection_id, "AWS integration source paused; delivery acked and dropped"
+        );
+        return Ok(AwsStreamOutcome::SourcePaused);
+    }
+
+    let _org_inflight_permit = state
+        .org_inflight_limiter
+        .try_acquire(org_id)
+        .ok_or_else(|| {
+            warn!(
+                org_id,
+                connection_id, "Per-org in-flight ingest limit exceeded"
+            );
+            (
+                ApiError::too_many_requests("Per-org ingest limit exceeded"),
+                "throttle",
+            )
+        })?;
+
+    // Before the body is decoded, so a denied org's delivery is not gunzipped.
+    if let Some(error) = entitlement_rejection(state, org_id, signal).await {
+        state
+            .aws_resolver
+            .record_health(connection_id, Some(aws_metric_stream::OVER_PLAN_LIMIT))
+            .await;
+        return Err((error, "billing_limit"));
+    }
+
+    let Some(requests) = read_delivery(
+        state,
+        connection_id,
+        org_id,
+        content_encoding,
+        body,
+        request_id,
+    )
+    .await?
+    else {
+        return Ok(AwsStreamOutcome::Undecodable);
+    };
+    let item_count = store_delivery(state, connection_id, &resolved.key, &requests).await?;
+    Ok(AwsStreamOutcome::Accepted { item_count })
+}
+
+/// The delivery's metric requests, or `None` for one that can never decode
+/// (already acked and recorded as lost). Sets `request_id` from the body.
+async fn read_delivery(
+    state: &AppState,
+    connection_id: &str,
+    org_id: &str,
+    content_encoding: Option<&str>,
+    body: &Bytes,
+    request_id: &mut String,
+) -> Result<Option<Vec<ExportMetricsServiceRequest>>, (ApiError, &'static str)> {
+    let max_decoded = state.config.max_decoded_body_bytes;
+    let payload = match decode_payload(body, content_encoding, max_decoded) {
+        Ok(payload) => payload,
+        Err(error) if error.status == StatusCode::PAYLOAD_TOO_LARGE => {
+            return Err(refuse_oversized_delivery(state, connection_id, org_id).await);
+        }
+        Err(_) => {
+            ack_undecodable_delivery(state, connection_id, org_id).await;
+            return Ok(None);
+        }
+    };
+    let Some(delivery) = aws_metric_stream::parse_delivery(&payload) else {
+        ack_undecodable_delivery(state, connection_id, org_id).await;
+        return Ok(None);
+    };
+    if let Some(body_request_id) = &delivery.request_id {
+        request_id.clone_from(body_request_id);
+    }
+    match delivery.metric_requests(max_decoded) {
+        Ok(requests) => Ok(Some(requests)),
+        Err(aws_metric_stream::RecordError::TooLarge) => {
+            Err(refuse_oversized_delivery(state, connection_id, org_id).await)
+        }
+        Err(aws_metric_stream::RecordError::Unreadable) => {
+            ack_undecodable_delivery(state, connection_id, org_id).await;
+            Ok(None)
+        }
+    }
+}
+
+/// Converts, stores and meters a delivery's metrics; returns the points stored.
+async fn store_delivery(
+    state: &AppState,
+    connection_id: &str,
+    key: &ResolvedIngestKey,
+    requests: &[ExportMetricsServiceRequest],
+) -> Result<usize, (ApiError, &'static str)> {
+    let org_id = key.org_id.as_str();
+    let signal = Signal::Metrics.path();
+    // Metered as CloudWatch sent it, not as the larger expansion Maple stores.
+    let received_bytes: usize = requests.iter().map(Message::encoded_len).sum();
+    Span::current().record("maple.ingest.decoded_bytes", received_bytes);
+
+    let decoded = DecodedPayload::Metrics(aws_metric_stream::build_metrics_request(
+        requests,
+        &aws_metric_stream::Connection {
+            id: connection_id,
+            org_id,
+            source_id: key.source_public_id(),
+        },
+    ));
+    let item_count = decoded.item_count();
+    if item_count > 0 {
+        if let Err(error) = process_decoded_payload(
+            state,
+            Signal::Metrics,
+            PayloadFormat::Protobuf,
+            None,
+            &decoded,
+            key,
+        )
+        .await
+        {
+            state
+                .aws_resolver
+                .record_health(connection_id, Some(aws_metric_stream::DELIVERY_NOT_STORED))
+                .await;
+            return Err((error, "forward"));
+        }
+    }
+    state.aws_resolver.record_health(connection_id, None).await;
+    state.resolver.note_source_use(key, false);
+
+    if item_count > 0 {
+        if let Some(usage) = &state.usage_metrics {
+            usage.record(org_id, signal, received_bytes as u64, item_count as u64);
+        }
+        if let Some(tracker) = &state.autumn_tracker {
+            tracker.track(org_id, signal, billable_gb(received_bytes as u64));
+        }
+    }
+    Ok(item_count)
+}
+
+/// A delivery that can never decode: acked so Firehose does not retry it, and
+/// counted as lost.
+async fn ack_undecodable_delivery(state: &AppState, connection_id: &str, org_id: &str) {
+    // Not `warn!`: a stream in the wrong output format fails this way on every delivery.
+    debug!(
+        org_id,
+        connection_id, "AWS metric stream delivery cannot be decoded; acked and dropped"
+    );
+    metrics::org_data_loss(org_id, Signal::Metrics.path(), "decode");
+    state
+        .aws_resolver
+        .record_health(connection_id, Some(aws_metric_stream::UNREADABLE_DELIVERY))
+        .await;
+}
+
+/// Firehose does not retry a 413, so the delivery is lost.
+async fn refuse_oversized_delivery(
+    state: &AppState,
+    connection_id: &str,
+    org_id: &str,
+) -> (ApiError, &'static str) {
+    warn!(
+        org_id,
+        connection_id, "AWS metric stream delivery decodes past the size limit"
+    );
+    metrics::org_data_loss(org_id, Signal::Metrics.path(), "payload_too_large");
+    state
+        .aws_resolver
+        .record_health(connection_id, Some(aws_metric_stream::DELIVERY_TOO_LARGE))
+        .await;
+    (
+        ApiError::payload_too_large("Decoded delivery too large"),
+        "payload_too_large",
+    )
+}
+
+/// `aws_connections.id` is a lowercase UUID; anything else is refused before
+/// it reaches Postgres.
+fn is_aws_connection_id(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte),
+        })
+}
+
 enum ParsedCloudflarePayload {
     Validation,
     Records(Vec<JsonMap<String, JsonValue>>),
@@ -6156,26 +6622,6 @@ fn detect_payload_format(content_type: &str) -> Result<PayloadFormat, ApiError> 
     ))
 }
 
-#[derive(Debug)]
-enum BoundedGunzipError {
-    Invalid(std::io::Error),
-    TooLarge,
-}
-
-/// Gunzips `body`, stopping once more than `max_decoded` bytes have come out.
-fn gunzip_bounded(body: &[u8], max_decoded: usize) -> Result<Vec<u8>, BoundedGunzipError> {
-    let read_limit = u64::try_from(max_decoded).unwrap_or(u64::MAX).saturating_add(1);
-    let mut decompressed = Vec::new();
-    GzDecoder::new(body)
-        .take(read_limit)
-        .read_to_end(&mut decompressed)
-        .map_err(BoundedGunzipError::Invalid)?;
-    if decompressed.len() > max_decoded {
-        return Err(BoundedGunzipError::TooLarge);
-    }
-    Ok(decompressed)
-}
-
 #[hotpath::measure]
 fn decode_payload(
     body: &Bytes,
@@ -6185,8 +6631,8 @@ fn decode_payload(
     match content_encoding {
         None => Ok(body.to_vec()),
         Some("gzip") => gunzip_bounded(body.as_ref(), max_decoded).map_err(|e| match e {
-            BoundedGunzipError::Invalid(_) => ApiError::bad_request("Invalid gzip body"),
-            BoundedGunzipError::TooLarge => {
+            GunzipError::Invalid(_) => ApiError::bad_request("Invalid gzip body"),
+            GunzipError::TooLarge => {
                 ApiError::payload_too_large("Decompressed request body too large")
             }
         }),
@@ -7138,6 +7584,11 @@ impl IngestKeyResolver {
 
     #[hotpath::measure]
     async fn resolve_ingest_key(&self, raw_key: &str) -> Result<Option<ResolvedIngestKey>, String> {
+        // `raw_key` is already normalized by `extract_ingest_key`, so no header
+        // spelling the edge rule misses can carry a blocked key past this.
+        if self.blocked_keys.contains(raw_key) {
+            return Ok(None);
+        }
         // Recorded on `ingest.authenticate` when this runs under the HTTP path;
         // a no-op elsewhere (the field is only declared on that span).
         if let Some(identity) = self.cache.get(raw_key).await {
@@ -7506,6 +7957,105 @@ impl GcpConnectorResolver {
         };
         if let Err(error) = written {
             debug!(connector_id, error, "Failed to record GCP connector health");
+        }
+    }
+}
+
+impl AwsConnectionResolver {
+    fn new(
+        store: Arc<dyn KeyStore>,
+        lookup_hmac_key: String,
+        routing: Arc<OrgRoutingResolver>,
+        cache_ttl: Duration,
+    ) -> Self {
+        Self {
+            store,
+            lookup_hmac_key,
+            cache: Cache::builder()
+                .time_to_live(cache_ttl)
+                .max_capacity(10_000)
+                .build(),
+            negative_cache: Cache::builder()
+                .time_to_live(Duration::from_secs(30))
+                .max_capacity(10_000)
+                .build(),
+            routing,
+            recent_health_writes: Cache::builder()
+                .time_to_live(AWS_STREAM_HEALTH_WRITE_INTERVAL)
+                .max_capacity(20_000)
+                .build(),
+        }
+    }
+
+    async fn resolve_connection(
+        &self,
+        connection_id: &str,
+        raw_secret: &str,
+    ) -> Result<Option<ResolvedAwsConnection>, String> {
+        let secret_hash = hash_ingest_key(raw_secret, &self.lookup_hmac_key)?;
+        let cache_key = (connection_id.to_owned(), secret_hash);
+        if let Some(identity) = self.cache.get(&cache_key).await {
+            let routing = self.routing.resolve_org_routing(&identity.org_id).await?;
+            return Ok(Some(identity.into_resolved(&routing)));
+        }
+        if self.negative_cache.contains_key(&cache_key) {
+            return Ok(None);
+        }
+
+        let Some(row) = self
+            .store
+            .fetch_aws_connection(connection_id, &cache_key.1)
+            .await?
+        else {
+            self.negative_cache.insert(cache_key, ()).await;
+            return Ok(None);
+        };
+
+        let routing = OrgRouting {
+            self_managed: row.self_managed,
+            clickhouse_ready: row.clickhouse_ready,
+        };
+        let (source, source_pause) = PullSourceRow::stamped(row.source);
+        let identity = AwsConnectionIdentity {
+            org_id: row.org_id,
+            secret_key_id: cache_key.1.chars().take(16).collect(),
+            source,
+            source_pause,
+        };
+
+        self.cache.insert(cache_key, identity.clone()).await;
+        self.routing
+            .remember_org_routing(&identity.org_id, routing.clone())
+            .await;
+
+        Ok(Some(identity.into_resolved(&routing)))
+    }
+
+    /// Writes `stream_last_received_at` (`error == None`) or `stream_last_error`,
+    /// at most once per connection and outcome per interval. Best-effort, like
+    /// `GcpConnectorResolver::record_health`: a written failure lets the next
+    /// success through so the error does not outlive the retried delivery.
+    async fn record_health(&self, connection_id: &str, error: Option<&str>) {
+        let throttle_key = (connection_id.to_owned(), error.is_none());
+        let throttle = self.recent_health_writes.entry(throttle_key).or_insert(());
+        if !throttle.await.is_fresh() {
+            return;
+        }
+        if error.is_some() {
+            self.recent_health_writes
+                .invalidate(&(connection_id.to_owned(), true))
+                .await;
+        }
+        if let Err(write_error) = self
+            .store
+            .record_aws_stream_health(connection_id, error, current_time_millis())
+            .await
+        {
+            debug!(
+                connection_id,
+                error = write_error,
+                "Failed to record AWS stream health"
+            );
         }
     }
 }
@@ -8406,6 +8956,87 @@ impl KeyStore for PostgresKeyStore {
             .map(|_| ())
             .map_err(|error| format!("postgres record_gcp_setup_report failed: {error}"))
     }
+
+    async fn fetch_aws_connection(
+        &self,
+        connection_id: &str,
+        secret_hash: &str,
+    ) -> Result<Option<AwsConnectionRow>, String> {
+        let revision = required_schema_revision();
+        let client = self.client().await?;
+        let sql = format!(
+            "SELECT c.org_id, \
+             COALESCE(s.sync_status = 'connected', false) AS self_managed, \
+             COALESCE(s.sync_status = 'connected' AND {SCHEMA_REVISION_COMPATIBLE_SQL}, false) AS clickhouse_ready, \
+             {CONNECTOR_SOURCE_COLUMNS} \
+             FROM aws_connections c \
+             LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id \
+             {CONNECTOR_SOURCE_JOIN} \
+             WHERE c.id = $2 AND c.stream_secret_hash = $3 LIMIT 1"
+        );
+        let rows = client
+            .query(&sql, &[&revision, &connection_id, &secret_hash])
+            .instrument(postgres_client_span(
+                "fetch_aws_connection",
+                "SELECT",
+                AWS_CONNECTIONS_TABLE,
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres fetch_aws_connection failed: {error}"))?;
+        Ok(rows.first().map(|row| AwsConnectionRow {
+            org_id: row.get("org_id"),
+            self_managed: row.get("self_managed"),
+            clickhouse_ready: row.get("clickhouse_ready"),
+            source: connector_source(row),
+        }))
+    }
+
+    async fn record_aws_stream_health(
+        &self,
+        connection_id: &str,
+        error: Option<&str>,
+        now_ms: i64,
+    ) -> Result<(), String> {
+        let client = self.client().await?;
+        // `updated_at` is left alone: it tracks the connection's settings, not its traffic.
+        let written = match error {
+            None => {
+                client
+                    .execute(
+                        "UPDATE aws_connections \
+                         SET stream_last_received_at = to_timestamp($1::bigint / 1000.0), \
+                             stream_last_error = NULL \
+                         WHERE id = $2",
+                        &[&now_ms, &connection_id],
+                    )
+                    .instrument(postgres_client_span(
+                        "record_aws_stream_health",
+                        "UPDATE",
+                        AWS_CONNECTIONS_TABLE,
+                        &self.target,
+                    ))
+                    .await
+            }
+            Some(error) => {
+                client
+                    .execute(
+                        "UPDATE aws_connections SET stream_last_error = $1 WHERE id = $2",
+                        &[&error, &connection_id],
+                    )
+                    .instrument(postgres_client_span(
+                        "record_aws_stream_health",
+                        "UPDATE",
+                        AWS_CONNECTIONS_TABLE,
+                        &self.target,
+                    ))
+                    .await
+            }
+        };
+        written
+            .map(|_| ())
+            .map_err(|err| format!("postgres record_aws_stream_health failed: {err}"))
+    }
 }
 
 // Local-dev / single-tenant KeyStore: every well-formed ingest key resolves to
@@ -8542,6 +9173,33 @@ impl KeyStore for StaticKeyStore {
     ) -> Result<(), String> {
         Ok(())
     }
+
+    async fn fetch_aws_connection(
+        &self,
+        _connection_id: &str,
+        _secret_hash: &str,
+    ) -> Result<Option<AwsConnectionRow>, String> {
+        Ok(None)
+    }
+
+    async fn record_aws_stream_health(
+        &self,
+        _connection_id: &str,
+        _error: Option<&str>,
+        _now_ms: i64,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// Same comma-separated `INGEST_BLOCKED_KEYS` the edge WAF rule is built from.
+fn parse_blocked_ingest_keys(raw: Option<&str>) -> HashSet<String> {
+    raw.unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 fn infer_ingest_key_type(raw_key: &str) -> Option<IngestKeyType> {
@@ -8744,6 +9402,22 @@ fn invalid_ingest_key_message(region: Option<&str>) -> Result<&'static str, Stri
     }
 }
 
+/// Whether BYO ClickHouse exports may reach private addresses. Off for the
+/// managed deployment, whose tenants share its network; on by default for a
+/// self-hosted install, where ClickHouse usually sits on an internal name.
+fn clickhouse_allow_private_endpoints(
+    raw: Option<String>,
+    self_hosted_mode: Option<String>,
+) -> Result<bool, String> {
+    // Same reading as the key store backend: only `single_tenant` is self-hosted.
+    let self_hosted = self_hosted_mode.as_deref() == Some("single_tenant");
+    parse_bool(
+        "INGEST_CLICKHOUSE_ALLOW_PRIVATE_ENDPOINTS",
+        raw,
+        self_hosted,
+    )
+}
+
 fn parse_bool(name: &str, raw: Option<String>, default: bool) -> Result<bool, String> {
     let Some(raw) = raw else {
         return Ok(default);
@@ -8864,11 +9538,34 @@ fn parse_fleet_size(raw: Option<String>) -> Result<u32, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn clickhouse_private_endpoints_are_opt_in_or_self_hosted() {
+        let allow = |raw: Option<&str>, mode: Option<&str>| {
+            clickhouse_allow_private_endpoints(raw.map(str::to_owned), mode.map(str::to_owned))
+        };
+        assert_eq!(allow(None, None), Ok(false));
+        assert_eq!(allow(Some("true"), None), Ok(true));
+        assert_eq!(allow(None, Some("single_tenant")), Ok(true));
+        assert_eq!(allow(Some("false"), Some("single_tenant")), Ok(false));
+        // Only the value the key store reads as self-hosted turns the opt-in on.
+        assert_eq!(allow(None, Some("false")), Ok(false));
+        assert_eq!(allow(None, Some("multi_tenant")), Ok(false));
+        assert!(allow(Some("maybe"), None).is_err());
+    }
+
     use super::*;
     // `AtomicBool` is only used by the test fakes below; keeping it out of the
     // top-level import avoids an unused-import warning in non-test bin builds.
     use opentelemetry_proto::tonic::metrics::v1::metric;
     use std::sync::atomic::AtomicBool;
+
+    /// The blob path's length count, unbounded and with its `io::Error`, for the rejection tests.
+    fn decompressed_len(body: &[u8]) -> Result<u64, std::io::Error> {
+        gunzip_len_bounded(body, usize::MAX).map_err(|e| match e {
+            GunzipError::Invalid(e) => e,
+            GunzipError::TooLarge => std::io::Error::other("unreachable under usize::MAX"),
+        })
+    }
 
     #[test]
     fn self_trace_sample_ratio_must_be_in_the_unit_interval() {
@@ -9677,6 +10374,10 @@ mod tests {
         connector_failures: std::sync::Mutex<Vec<(&'static str, String)>>,
         /// (connector id, report) of every `record_gcp_setup_report` call.
         gcp_setup_reports: std::sync::Mutex<Vec<(String, gcp_logging::SetupReport)>>,
+        aws_connections:
+            std::sync::Mutex<std::collections::HashMap<(String, String), AwsConnectionRow>>,
+        /// (connection id, error) of every `record_aws_stream_health` call.
+        aws_stream_health: std::sync::Mutex<Vec<(String, Option<String>)>>,
         routings: std::sync::Mutex<std::collections::HashMap<String, OrgRouting>>,
         targets: std::sync::Mutex<std::collections::HashMap<String, ClickHouseTargetRow>>,
         ingest_key_fetches: AtomicU64,
@@ -9736,6 +10437,26 @@ mod tests {
                 .lock()
                 .unwrap()
                 .insert((connector_id.to_owned(), hash), row);
+        }
+
+        fn insert_aws_connection(
+            &self,
+            connection_id: &str,
+            raw_secret: &str,
+            row: AwsConnectionRow,
+        ) {
+            let hash = hash_ingest_key(raw_secret, "test-hmac-key").unwrap();
+            self.set_org_routing(
+                &row.org_id,
+                OrgRouting {
+                    self_managed: row.self_managed,
+                    clickhouse_ready: row.clickhouse_ready,
+                },
+            );
+            self.aws_connections
+                .lock()
+                .unwrap()
+                .insert((connection_id.to_owned(), hash), row);
         }
 
         fn set_org_routing(&self, org_id: &str, routing: OrgRouting) {
@@ -9925,6 +10646,35 @@ mod tests {
                 .push((connector_id.to_owned(), report));
             Ok(())
         }
+        async fn fetch_aws_connection(
+            &self,
+            connection_id: &str,
+            secret_hash: &str,
+        ) -> Result<Option<AwsConnectionRow>, String> {
+            self.connector_fetches.fetch_add(1, Ordering::Relaxed);
+            let row = self
+                .aws_connections
+                .lock()
+                .unwrap()
+                .get(&(connection_id.to_owned(), secret_hash.to_owned()))
+                .cloned();
+            Ok(row.map(|row| AwsConnectionRow {
+                source: self.joined_source(connection_id, &row.org_id),
+                ..row
+            }))
+        }
+        async fn record_aws_stream_health(
+            &self,
+            connection_id: &str,
+            error: Option<&str>,
+            _now_ms: i64,
+        ) -> Result<(), String> {
+            self.aws_stream_health
+                .lock()
+                .unwrap()
+                .push((connection_id.to_owned(), error.map(str::to_owned)));
+            Ok(())
+        }
     }
 
     fn make_routing_resolver(store: Arc<FakeKeyStore>, ttl: Duration) -> Arc<OrgRoutingResolver> {
@@ -9961,6 +10711,7 @@ mod tests {
             recent_key_uses: recent_key_uses_cache(),
             recent_key_rejections: recent_key_rejections_cache(),
             source_claims: source_claims_cache(Duration::from_mins(1)),
+            blocked_keys: Arc::default(),
         }
     }
 
@@ -9986,10 +10737,10 @@ mod tests {
         headers: HeaderMap,
         body: Bytes,
     ) -> StatusCode {
-        let mut decoded = String::new();
-        GzDecoder::new(&body[..])
-            .read_to_string(&mut decoded)
-            .expect("fake ClickHouse should receive gzip NDJSON");
+        let decoded = String::from_utf8(
+            gunzip_bounded(&body, usize::MAX).expect("fake ClickHouse should receive gzip NDJSON"),
+        )
+        .expect("fake ClickHouse should receive UTF-8 NDJSON");
 
         drop(
             tx.send(FakeClickHouseImport {
@@ -10062,6 +10813,7 @@ mod tests {
             export_max_attempts: 1,
             clickhouse_export_timeout: Duration::from_secs(5),
             clickhouse_breaker: ClickHouseBreakerConfig::default(),
+            clickhouse_allow_private_endpoints: true,
             datasources: DatasourceNames::defaults(),
             datasource_session_replays: "session_replays".to_owned(),
             datasource_session_replay_events: "session_replay_events".to_owned(),
@@ -10183,6 +10935,7 @@ mod tests {
                 shutdown_drain_secs: 1,
                 wal_store: None,
                 invalid_key_message: "Invalid ingest key",
+                blocked_ingest_keys: Arc::default(),
             },
             #[expect(
                 clippy::useless_conversion,
@@ -10206,6 +10959,7 @@ mod tests {
                 recent_key_uses: recent_key_uses_cache(),
                 recent_key_rejections: recent_key_rejections_cache(),
                 source_claims: source_claims_cache(Duration::from_mins(1)),
+                blocked_keys: Arc::default(),
             },
             org_inflight_limiter: OrgInFlightLimiter::new(100),
             key_rate_limiter: SourceRateLimiter::new(1),
@@ -10234,11 +10988,17 @@ mod tests {
                 routing: Arc::clone(&routing),
             },
             gcp_resolver: GcpConnectorResolver::new(
+                Arc::clone(&key_store),
+                "test-hmac-key".to_owned(),
+                Arc::clone(&routing),
+                Duration::from_mins(1),
+                GooglePushAuth::with_keys(gcp_push_test_keys()),
+            ),
+            aws_resolver: AwsConnectionResolver::new(
                 key_store,
                 "test-hmac-key".to_owned(),
                 routing,
                 Duration::from_mins(1),
-                GooglePushAuth::with_keys(gcp_push_test_keys()),
             ),
             autumn_tracker: None,
             autumn_entitlements: None,
@@ -10808,6 +11568,83 @@ mod tests {
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
+    #[tokio::test]
+    async fn replay_blob_gzip_bomb_is_refused_before_upload_and_budget() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/{*path}", axum::routing::put(fake_r2_put))
+            .with_state(tx);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let (raw_key, org_id) = ("maple_sk_test_replay_bomb", "org_replay_bomb");
+        let queue_dir = unique_main_test_dir("replay-blob-bomb");
+        let state = replay_blob_test_state(raw_key, org_id, queue_dir.clone()).await;
+        let mut state = with_replay_blob_store(state, format!("http://{addr}"));
+        state.config.max_decoded_body_bytes = 1024 * 1024;
+
+        let bomb = gzip_bytes(&"a".repeat(4 * 1024 * 1024));
+        assert!(bomb.len() < 64 * 1024, "fixture should compress well");
+        let error =
+            handle_replay_blob_inner(&state, &replay_blob_headers(raw_key, "sess_bomb", 0), bomb)
+                .await
+                .expect_err("a chunk inflating past the decoded limit must be refused");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(rx.try_recv().is_err(), "a refused chunk must not be stored");
+        assert_eq!(
+            state
+                .replay_session_budget
+                .add(org_id, "sess_bomb", 0)
+                .await,
+            0,
+            "a refused chunk must not be charged to the session"
+        );
+
+        handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(raw_key, "sess_bomb", 1),
+            gzip_bytes(r#"[{"type":2,"timestamp":1}]"#),
+        )
+        .await
+        .expect("a normal chunk is still accepted");
+        assert!(rx.recv().await.is_some(), "the normal chunk is stored");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn inline_replay_and_otlp_refuse_gzip_bombs() {
+        let queue_dir = unique_main_test_dir("inline-bomb");
+        let (raw_key, org_id) = ("maple_sk_test_inline_bomb", "org_inline_bomb");
+        let mut state = replay_blob_test_state(raw_key, org_id, queue_dir.clone()).await;
+        state.config.max_decoded_body_bytes = 1024 * 1024;
+        let bomb = || gzip_bytes(&"a".repeat(4 * 1024 * 1024));
+
+        let error = handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(raw_key, "sess_inline_bomb", 0),
+            bomb(),
+        )
+        .await
+        .expect_err("inline replay must refuse a gzip bomb");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+
+        let mut headers = test_headers(raw_key);
+        headers.insert(CONTENT_ENCODING, "gzip".parse().unwrap());
+        let (error, error_kind) = handle_signal_inner(&state, &headers, bomb(), Signal::Logs)
+            .await
+            .expect_err("OTLP must refuse a gzip bomb");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(error_kind, "payload_too_large");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
     #[test]
     fn decode_payload_gunzips_within_the_decoded_limit() {
         let payload = r#"{"resourceSpans":[]}"#;
@@ -10849,14 +11686,14 @@ mod tests {
         );
         assert!(matches!(
             gunzip_replay_text(&gzip_bytes(events), events.len() - 1),
-            Err(BoundedGunzipError::TooLarge)
+            Err(GunzipError::TooLarge)
         ));
 
         let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
         encoder.write_all(&[0xff, 0xfe]).unwrap();
         let not_utf8 = encoder.finish().unwrap();
         match gunzip_replay_text(&not_utf8, 1024) {
-            Err(BoundedGunzipError::Invalid(error)) => {
+            Err(GunzipError::Invalid(error)) => {
                 assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
             }
             other => panic!("expected an invalid-data error, got {other:?}"),
@@ -11545,6 +12382,330 @@ mod tests {
         drop(std::fs::remove_dir_all(queue_dir));
     }
 
+    const AWS_CONNECTION: &str = "6f1c2b9e-1d3a-4c5b-9e8f-0a1b2c3d4e5f";
+    const AWS_STREAM_SECRET: &str = "aws-stream-secret";
+
+    async fn aws_firehose_state(
+        name: &str,
+        clickhouse_url: &str,
+        max_decoded_body_bytes: usize,
+    ) -> (Arc<AppState>, Arc<FakeKeyStore>, PathBuf) {
+        let queue_dir = unique_main_test_dir(name);
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_aws_connection(
+            AWS_CONNECTION,
+            AWS_STREAM_SECRET,
+            AwsConnectionRow {
+                org_id: "org_aws".to_owned(),
+                self_managed: true,
+                clickhouse_ready: true,
+                source: None,
+            },
+        );
+        store.insert_clickhouse_target(
+            "org_aws",
+            ClickHouseTargetRow {
+                ch_url: clickhouse_url.to_owned(),
+                ch_user: "ingest".to_owned(),
+                ch_password_ciphertext: None,
+                ch_password_iv: None,
+                ch_password_tag: None,
+                ch_database: "maple".to_owned(),
+                schema_version: CLICKHOUSE_SCHEMA_VERSION.to_owned(),
+            },
+        );
+        let mut state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_mins(1),
+        )
+        .await;
+        state.config.max_decoded_body_bytes = max_decoded_body_bytes;
+        (Arc::new(state), store, queue_dir)
+    }
+
+    /// One `AWS/ECS` `CPUUtilization` point as a CloudWatch metric stream writes it.
+    fn cloudwatch_cpu_request() -> ExportMetricsServiceRequest {
+        use opentelemetry_proto::tonic::common::v1::KeyValueList;
+        use opentelemetry_proto::tonic::metrics::v1::{
+            metric, summary_data_point::ValueAtQuantile, Metric, ResourceMetrics, ScopeMetrics,
+            Summary, SummaryDataPoint,
+        };
+        let string = |key: &str, value: &str| KeyValue {
+            key: key.to_owned(),
+            value: Some(AnyValue {
+                value: Some(any_value::Value::StringValue(value.to_owned())),
+            }),
+            ..Default::default()
+        };
+        let point = SummaryDataPoint {
+            attributes: vec![
+                string("Namespace", "AWS/ECS"),
+                string("MetricName", "CPUUtilization"),
+                KeyValue {
+                    key: "Dimensions".to_owned(),
+                    value: Some(AnyValue {
+                        value: Some(any_value::Value::KvlistValue(KeyValueList {
+                            values: vec![
+                                string("ClusterName", "prod"),
+                                string("ServiceName", "checkout"),
+                            ],
+                        })),
+                    }),
+                    ..Default::default()
+                },
+            ],
+            start_time_unix_nano: 1_800_000_000_000_000_000,
+            time_unix_nano: 1_800_000_060_000_000_000,
+            count: 4,
+            sum: 100.0,
+            quantile_values: vec![
+                ValueAtQuantile {
+                    quantile: 0.0,
+                    value: 10.0,
+                },
+                ValueAtQuantile {
+                    quantile: 1.0,
+                    value: 40.0,
+                },
+            ],
+            flags: 0,
+        };
+        ExportMetricsServiceRequest {
+            resource_metrics: vec![ResourceMetrics {
+                resource: Some(Resource {
+                    attributes: vec![
+                        string("cloud.provider", "aws"),
+                        string("cloud.account.id", "123456789012"),
+                        string("cloud.region", "us-east-1"),
+                    ],
+                    ..Default::default()
+                }),
+                scope_metrics: vec![ScopeMetrics {
+                    scope: None,
+                    metrics: vec![Metric {
+                        name: "amazonaws.com/AWS/ECS/CPUUtilization".to_owned(),
+                        unit: "Percent".to_owned(),
+                        data: Some(metric::Data::Summary(Summary {
+                            data_points: vec![point],
+                        })),
+                        ..Default::default()
+                    }],
+                    schema_url: String::new(),
+                }],
+                schema_url: String::new(),
+            }],
+        }
+    }
+
+    /// A Firehose delivery whose one record holds two length-delimited requests.
+    fn firehose_body(records: &[&str]) -> String {
+        let records: Vec<JsonValue> = records
+            .iter()
+            .map(|data| serde_json::json!({ "data": data }))
+            .collect();
+        serde_json::json!({
+            "requestId": "body-request-id",
+            "timestamp": 1_800_000_000_000_i64,
+            "records": records,
+        })
+        .to_string()
+    }
+
+    fn cloudwatch_record() -> String {
+        let mut data = cloudwatch_cpu_request().encode_length_delimited_to_vec();
+        data.extend(cloudwatch_cpu_request().encode_length_delimited_to_vec());
+        STANDARD.encode(data)
+    }
+
+    async fn aws_deliver(
+        state: &Arc<AppState>,
+        connection_id: &str,
+        secret: Option<&str>,
+        body: Bytes,
+        gzip: bool,
+    ) -> (StatusCode, JsonValue) {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            FIREHOSE_REQUEST_ID_HEADER,
+            HeaderValue::from_static("header-request-id"),
+        );
+        if let Some(secret) = secret {
+            headers.insert(
+                FIREHOSE_ACCESS_KEY_HEADER,
+                HeaderValue::from_str(secret).unwrap(),
+            );
+        }
+        if gzip {
+            headers.insert(CONTENT_ENCODING, HeaderValue::from_static("gzip"));
+        }
+        let response = handle_aws_firehose(
+            State(Arc::clone(state)),
+            Path(connection_id.to_owned()),
+            headers,
+            body,
+        )
+        .await;
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap())
+    }
+
+    #[tokio::test]
+    async fn aws_firehose_rejects_bad_credentials_without_a_lookup_for_malformed_ids() {
+        let (state, store, queue_dir) =
+            aws_firehose_state("aws-firehose-auth", "http://127.0.0.1:1", 8 * 1024 * 1024).await;
+        let body = || Bytes::from(firehose_body(&[]));
+
+        for (case, connection_id) in [
+            ("uppercase uuid", "6F1C2B9E-1D3A-4C5B-9E8F-0A1B2C3D4E5F"),
+            ("not a uuid", "aws_conn_1"),
+            ("path-like", "../6f1c2b9e-1d3a-4c5b-9e8f-0a1b2c3d4e"),
+        ] {
+            let (status, response) = aws_deliver(
+                &state,
+                connection_id,
+                Some(AWS_STREAM_SECRET),
+                body(),
+                false,
+            )
+            .await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{case}");
+            assert_eq!(response["requestId"], "header-request-id", "{case}");
+            assert!(response["errorMessage"].is_string(), "{case}");
+        }
+        assert_eq!(store.connector_fetches.load(Ordering::Relaxed), 0);
+
+        for (case, secret) in [("missing key", None), ("wrong key", Some("wrong-secret"))] {
+            let (status, _) = aws_deliver(&state, AWS_CONNECTION, secret, body(), false).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{case}");
+        }
+        let (status, _) = aws_deliver(
+            &state,
+            "00000000-0000-4000-8000-000000000000",
+            Some(AWS_STREAM_SECRET),
+            body(),
+            false,
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(store.aws_stream_health.lock().unwrap().is_empty());
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn aws_firehose_stores_a_gzipped_metric_stream_and_acks_an_unreadable_record() {
+        let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
+        let (state, store, queue_dir) =
+            aws_firehose_state("aws-firehose-accept", &ch_url, 8 * 1024 * 1024).await;
+
+        let body = gzip_bytes(&firehose_body(&[
+            &cloudwatch_record(),
+            &cloudwatch_record(),
+        ]));
+        let (status, response) =
+            aws_deliver(&state, AWS_CONNECTION, Some(AWS_STREAM_SECRET), body, true).await;
+        assert_eq!(status, StatusCode::OK, "{response}");
+        assert_eq!(response["requestId"], "body-request-id");
+        assert!(response["timestamp"].is_i64());
+        assert!(response.get("errorMessage").is_none());
+
+        let mut stored = Vec::new();
+        while let Ok(Some(import)) =
+            tokio::time::timeout(Duration::from_secs(2), ch_rx.recv()).await
+        {
+            stored.push(import);
+            if stored.len() == 2 {
+                break;
+            }
+        }
+        let gauges = stored
+            .iter()
+            .find(|import| import.query.starts_with("INSERT INTO metrics_gauge"))
+            .expect("the average, min and max gauges should be stored");
+        assert!(
+            gauges.body.contains("aws.ecs.cpu_utilization.max"),
+            "{}",
+            gauges.body
+        );
+        assert!(gauges.body.contains("checkout"), "{}", gauges.body);
+        let sums = stored
+            .iter()
+            .find(|import| import.query.starts_with("INSERT INTO metrics_sum"))
+            .expect("the sum and count should be stored");
+        assert!(
+            sums.body.contains("aws.ecs.cpu_utilization.count"),
+            "{}",
+            sums.body
+        );
+        assert_eq!(
+            *store.aws_stream_health.lock().unwrap(),
+            [(AWS_CONNECTION.to_owned(), None)]
+        );
+
+        // Bad base64 never decodes, so it is acked rather than retried by Firehose.
+        // Sent twice: the `stream_last_error` write is throttled to one.
+        for _ in 0..2 {
+            let (status, _) = aws_deliver(
+                &state,
+                AWS_CONNECTION,
+                Some(AWS_STREAM_SECRET),
+                Bytes::from(firehose_body(&["!!not base64!!"])),
+                false,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+        }
+        assert_eq!(
+            *store.aws_stream_health.lock().unwrap(),
+            [
+                (AWS_CONNECTION.to_owned(), None),
+                (
+                    AWS_CONNECTION.to_owned(),
+                    Some(aws_metric_stream::UNREADABLE_DELIVERY.to_owned())
+                ),
+            ]
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), ch_rx.recv())
+                .await
+                .is_err(),
+            "an unreadable record must not be stored"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn aws_firehose_refuses_a_delivery_that_decodes_past_the_limit() {
+        let (state, store, queue_dir) =
+            aws_firehose_state("aws-firehose-too-large", "http://127.0.0.1:1", 64).await;
+
+        let (status, response) = aws_deliver(
+            &state,
+            AWS_CONNECTION,
+            Some(AWS_STREAM_SECRET),
+            Bytes::from(firehose_body(&[&cloudwatch_record()])),
+            false,
+        )
+        .await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(response["errorMessage"].is_string());
+        assert_eq!(
+            *store.aws_stream_health.lock().unwrap(),
+            [(
+                AWS_CONNECTION.to_owned(),
+                Some(aws_metric_stream::DELIVERY_TOO_LARGE.to_owned())
+            )]
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
     #[tokio::test]
     async fn gcp_logpush_rejects_bad_credentials() {
         let (state, _store, queue_dir) =
@@ -12091,6 +13252,70 @@ mod tests {
         assert_eq!(error_kind, "decode");
 
         drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn blocked_key_is_refused_in_every_header_spelling() {
+        let (forward_url, _forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("blocked-key");
+        let store = Arc::new(FakeKeyStore::default());
+        let (blocked, allowed) = ("maple_sk_test_blocked", "maple_sk_test_allowed");
+        for raw_key in [blocked, allowed] {
+            store.insert_private(
+                raw_key,
+                KeyRow {
+                    org_id: "org_blocked_key".to_owned(),
+                    self_managed: false,
+                    clickhouse_ready: false,
+                },
+            );
+        }
+        let mut state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_millis(5),
+        )
+        .await;
+        state.resolver.blocked_keys = Arc::new(parse_blocked_ingest_keys(Some(blocked)));
+
+        let body = || Bytes::from(test_log_request("blocked").encode_to_vec());
+        for (name, value) in [
+            ("authorization", format!("Bearer {blocked}")),
+            ("authorization", format!("bearer {blocked}")),
+            ("authorization", format!("BEARER {blocked}")),
+            ("authorization", format!("Bearer  {blocked}\t")),
+            ("x-maple-ingest-key", format!(" {blocked} ")),
+        ] {
+            let mut headers = HeaderMap::new();
+            headers.insert(name, value.parse().unwrap());
+            headers.insert(CONTENT_TYPE, "application/x-protobuf".parse().unwrap());
+            let (error, _) = handle_signal_inner(&state, &headers, body(), Signal::Logs)
+                .await
+                .expect_err("a blocked key must be refused");
+            assert_eq!(error.status, StatusCode::UNAUTHORIZED, "{name}: {value:?}");
+            let grpc = resolve_grpc_ingest_key(&state, &headers).await;
+            assert!(
+                matches!(&grpc, Err(status) if status.code() == tonic::Code::Unauthenticated),
+                "gRPC must refuse a blocked key: {name}: {value:?}"
+            );
+        }
+
+        let (response, ..) =
+            handle_signal_inner(&state, &test_headers(allowed), body(), Signal::Logs)
+                .await
+                .expect("an unblocked key still ingests");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[test]
+    fn blocked_keys_parse_like_the_edge_rule() {
+        let keys = parse_blocked_ingest_keys(Some(" maple_sk_a, ,maple_pk_b,"));
+        assert_eq!(keys.len(), 2);
+        assert!(keys.contains("maple_sk_a") && keys.contains("maple_pk_b"));
+        assert!(parse_blocked_ingest_keys(None).is_empty());
     }
 
     #[tokio::test]
@@ -13328,6 +14553,7 @@ mod tests {
             recent_key_uses: recent_key_uses_cache(),
             recent_key_rejections: recent_key_rejections_cache(),
             source_claims: source_claims_cache(Duration::from_mins(1)),
+            blocked_keys: Arc::default(),
         };
         let resolved = resolver
             .resolve_ingest_key("maple_src_static_backend_key_0000000000000")

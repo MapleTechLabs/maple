@@ -271,7 +271,7 @@ const make = Effect.gen(function* () {
 								),
 					),
 					Effect.map((created) =>
-						Option.isSome(created) && created.value.channel !== undefined
+						Option.isSome(created) && typeof created.value.channel === "object"
 							? Result.succeed(created.value.channel)
 							: Result.failVoid,
 					),

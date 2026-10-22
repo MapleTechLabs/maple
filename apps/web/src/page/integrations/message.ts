@@ -11,6 +11,9 @@ import {
 	VcsRepositoryId,
 } from "@maple/domain/http"
 import {
+	V2AwsConnection,
+	V2AwsIntegration,
+	V2AwsSetup,
 	V2ChatConnectorList,
 	V2GcpConnector,
 	V2GcpIntegration,
@@ -22,7 +25,7 @@ import {
 	V2ScrapeTarget,
 	V2ScrapeTargetCheck,
 } from "@maple/domain/http/v2"
-import { ChatWorkspaceId, GcpConnectorId, GcpLogRuntime, SupabaseProjectRef } from "@maple/domain/primitives"
+import { AwsConnectionId, ChatWorkspaceId, GcpConnectorId, GcpLogRuntime, SupabaseProjectRef } from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/load-failure"
@@ -36,10 +39,12 @@ import { FormFieldName } from "./prometheus-form-field"
 import * as ToggleGroup from "../../ui/toggle-group"
 import * as Chart from "../../charts/chart"
 import { ConnectProvider } from "./connect"
+import { OAuthReturnOutcome } from "./oauth-return"
 import { FleetRead } from "../infra-integrations/gcp/data"
 import { SupabaseProjectRow } from "../infra-integrations/supabase/model"
 import { Capability, GcpFlags, SetupMethod } from "./gcp-configure-schema"
 import { ConfigureTarget, LogVolume, RemovedConnector } from "./gcp-schema"
+import { AwsRemovedStack, AwsSetupMethod } from "./aws-schema"
 
 export const StatusName = Schema.Literals([
 	"cloudflare",
@@ -47,6 +52,7 @@ export const StatusName = Schema.Literals([
 	"planetscale",
 	"planetscaleDatabases",
 	"gcp",
+	"aws",
 	"supabase",
 	"hazel",
 	"github",
@@ -67,6 +73,7 @@ export const Message = defineMessageUnion({
 	CompletedLoadPlanetscale: result(V2PlanetScaleIntegration),
 	CompletedLoadPlanetscaleDatabases: result(V2PlanetScaleDatabaseList),
 	CompletedLoadGcp: result(V2GcpIntegration),
+	CompletedLoadAws: result(V2AwsIntegration),
 	CompletedLoadSupabase: result(SupabaseIntegrationStatus),
 	CompletedLoadHazel: result(HazelIntegrationStatus),
 	CompletedLoadGithub: result(GithubIntegrationStatus),
@@ -83,18 +90,6 @@ export const Message = defineMessageUnion({
 	ClickedSettingsTab: { tab: Schema.String },
 	/** The chat callback toast went out; the return params are stripped next (a replace). */
 	CompletedChatToast: {},
-	/** A forwarded provider callback finished (`oauthComplete`); `isRelayed`: the opener got it. */
-	CompletedOAuthCallback: {
-		provider: ConnectProvider,
-		status: Schema.Literals(["success", "error"]),
-		message: Schema.String,
-		returnTo: Schema.NullOr(Schema.String),
-		isRelayed: Schema.Boolean,
-	},
-	/** A forwarded chat install or account-link callback finished (`chatComplete`). */
-	CompletedChatCallback: { search: Schema.Record(Schema.String, Schema.String) },
-	/** The URL cleanup after a forwarded callback's toast. */
-	StrippedCallback: { href: Schema.String },
 	/** The header or card Connect button: a new popup attempt for the page's provider. */
 	ClickedConnect: {},
 	SucceededStartConnect: { attempt: Schema.Number },
@@ -195,6 +190,37 @@ export const Message = defineMessageUnion({
 	ClickedRailwayRotateCancel: {},
 	/** Every 15 s while environments wait for their first sync. */
 	TickedRailwaySettle: {},
+	GotAwsAccountIdMessage: { message: Field.Message },
+	SubmittedAwsAccount: {},
+	SucceededAwsCreate: { connection: V2AwsConnection },
+	FailedAwsCreate: { error: Schema.String },
+	ClickedAwsAdd: {},
+	ClickedAwsAddCancel: {},
+	ClickedAwsSetup: { id: AwsConnectionId },
+	ClickedAwsSetupClose: {},
+	CompletedLoadAwsSetup: result(V2AwsSetup),
+	ClickedAwsSetupMethod: { method: AwsSetupMethod },
+	ClickedAwsCheck: { id: AwsConnectionId },
+	/** The background re-check of connections still waiting for their stack. */
+	TickedAwsPending: {},
+	CompletedAwsCheck: {
+		id: AwsConnectionId,
+		quiet: Schema.Boolean,
+		connection: Schema.NullOr(V2AwsConnection),
+		failure: Schema.NullOr(LoadFailure),
+	},
+	GotAwsCopyMessage: { id: Schema.String, message: CopyButton.Message },
+	ClickedAwsDisconnect: { id: AwsConnectionId },
+	GotAwsDisconnectDialogMessage: { message: Dialog.Message },
+	ConfirmedAwsDisconnect: {},
+	CompletedAwsDisconnect: {
+		id: AwsConnectionId,
+		removed: Schema.NullOr(AwsRemovedStack),
+		error: Schema.NullOr(Schema.String),
+	},
+	DismissedAwsRemoved: { connectionId: Schema.String },
+	CompletedReadAwsRemoved: { removed: Schema.Array(AwsRemovedStack) },
+	CompletedWriteAwsRemoved: {},
 	ClickedSupabaseSync: {},
 	/** Every minute while the connected Supabase card is shown, so its window and ages advance. */
 	TickedSupabaseClock: {},
@@ -251,6 +277,8 @@ export const Message = defineMessageUnion({
 	GotGcpMenuMessage: { id: GcpConnectorId, message: Menu.Message },
 	GotGcpDisconnectDialogMessage: { message: Dialog.Message },
 	ConfirmedGcpDisconnect: {},
+	/** A Google Cloud source's Delete: opens the removal dialog for its connector. */
+	ClickedGcpDisconnect: { id: Schema.String },
 	CompletedGcpDisconnect: {
 		id: GcpConnectorId,
 		cleanupScript: Schema.NullOr(Schema.String),
@@ -320,5 +348,7 @@ export const Message = defineMessageUnion({
 		status: Schema.String,
 		message: Schema.NullOr(Schema.String),
 	},
+	/** The provider return this page was opened with, finished (`null`: there was none). */
+	CompletedOAuthReturn: { outcome: Schema.NullOr(OAuthReturnOutcome) },
 })
 export type Message = typeof Message.Type

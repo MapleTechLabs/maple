@@ -30,11 +30,7 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { sealChatWorkspaceCredentials } from "@maple/backend/services/integrations/chat-workspace-credentials"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
-import {
-	isStateInitiator,
-	stateInitiatorMismatch,
-	type OAuthStateInitiator,
-} from "@maple/backend/services/auth/oauth/state-initiator"
+import type { OAuthFlowInitiator } from "@maple/backend/services/auth/oauth/oauth-state"
 import {
 	linkChatIdentity,
 	listChatIdentities,
@@ -140,10 +136,10 @@ export interface ChatWorkspaceServiceApi {
 		IntegrationsNotFoundError | IntegrationsConfigurationError | IntegrationsPersistenceError
 	>
 	readonly completeInstall: (
-		/** The signed-in user finishing the flow; must be the one that started it. */
-		initiator: OAuthStateInitiator,
 		connectorId: ChatConnectorId,
 		params: URLSearchParams,
+		/** The signed-in Maple user finishing the flow; must be the one who started it. */
+		initiator: OAuthFlowInitiator,
 	) => Effect.Effect<
 		{ readonly orgId: OrgId; readonly name: string },
 		| IntegrationsNotFoundError
@@ -164,10 +160,10 @@ export interface ChatWorkspaceServiceApi {
 		IntegrationsNotFoundError | IntegrationsConfigurationError | IntegrationsPersistenceError
 	>
 	readonly completeLink: (
-		/** The signed-in user finishing the flow; must be the one that started it. */
-		initiator: OAuthStateInitiator,
 		connectorId: ChatConnectorId,
 		params: URLSearchParams,
+		/** The signed-in Maple user finishing the flow; must be the one who started it. */
+		initiator: OAuthFlowInitiator,
 	) => Effect.Effect<
 		{ readonly orgId: OrgId; readonly displayName?: string | undefined },
 		| IntegrationsNotFoundError
@@ -256,6 +252,20 @@ const make: Effect.Effect<
 	const dbExecute = makeDbExecute(database, "ChatWorkspaceService", toPersistenceError)
 
 	const notFound = (message: string) => new IntegrationsNotFoundError({ message })
+
+	/** Redeem the callback's state: single-use, and only for the identity that started the flow. */
+	const consumeState = (params: URLSearchParams, provider: string, initiator: OAuthFlowInitiator) => {
+		const state = params.get("state")
+		return state === null
+			? Effect.fail(new IntegrationsValidationError({ message: "The callback carried no state" }))
+			: states
+					.consume({ state, provider, initiator })
+					.pipe(
+						Effect.catchTag("@maple/http/errors/OAuthStatePersistenceError", (error) =>
+							Effect.fail(toPersistenceError(error)),
+						),
+					)
+	}
 
 	const requireConnector = (connectorId: ChatConnectorId) =>
 		Option.match(
@@ -358,45 +368,19 @@ const make: Effect.Effect<
 		return { url }
 	})
 
-	// `state` is unguessable, single-use and TTL-bounded, and it is redeemed only by the Maple
-	// user and org that started the install: the authorize URL is transferable, so a manager who
-	// completes somebody else's URL is refused rather than linking their workspace to that org.
-	// The workspace identity comes from the connector, which must read it from whatever the
-	// platform bound to the callback credential, and a workspace already linked to another org is
-	// rejected below rather than moved.
+	// The state only redeems for the signed-in Maple user and org that began the
+	// install, so an authorize URL forwarded to a chat-workspace manager links
+	// nothing to the sender's org. The workspace identity comes from the connector,
+	// and a workspace already linked to another org is rejected below, not moved.
 	const completeInstall = Effect.fn("ChatWorkspaceService.completeInstall")(function* (
-		initiator: OAuthStateInitiator,
 		connectorId: ChatConnectorId,
 		params: URLSearchParams,
+		initiator: OAuthFlowInitiator,
 	) {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connectorId })
 		const connector = yield* requireConnector(connectorId)
-		const state = params.get("state")
-		if (state === null) {
-			return yield* Effect.fail(
-				new IntegrationsValidationError({ message: "The callback carried no state" }),
-			)
-		}
-		const stateRow = yield* states.findByState(state).pipe(Effect.mapError(toPersistenceError))
-		if (Option.isNone(stateRow) || stateRow.value.provider !== stateProvider(connectorId)) {
-			return yield* Effect.fail(
-				new IntegrationsValidationError({
-					message: "Install state not recognized — start the install again",
-				}),
-			)
-		}
-		const row = stateRow.value
+		const row = yield* consumeState(params, stateProvider(connectorId), initiator)
 		const now = yield* Clock.currentTimeMillis
-		// Single-use: burn the state before doing any side effects.
-		yield* states.deleteByState(state).pipe(Effect.mapError(toPersistenceError))
-		if (row.expiresAt < now) {
-			return yield* Effect.fail(
-				new IntegrationsValidationError({
-					message: "Install state expired — start the install again",
-				}),
-			)
-		}
-		if (!isStateInitiator(row, initiator)) return yield* Effect.fail(stateInitiatorMismatch())
 		const orgId = yield* decodeOrgId(row.orgId).pipe(
 			Effect.mapError(
 				(error) =>
@@ -527,44 +511,19 @@ const make: Effect.Effect<
 	/**
 	 * Bind the chat account that just authorized to the Maple user who started the link.
 	 *
-	 * The platform's callback is public, so it only hands the query to the dashboard; the signed-in
-	 * dashboard finishes here, and the state row is redeemed only when that session is the user
-	 * and org the row names. A link URL forwarded to somebody else therefore cannot attach their
-	 * chat account to the sender's Maple user.
+	 * The state row names that user, and it only redeems when `initiator` (the session finishing
+	 * the link) is the same user and org, so a link URL forwarded to a colleague binds nothing.
+	 * The provider namespace keeps install and link states from redeeming each other.
 	 */
 	const completeLink = Effect.fn("ChatWorkspaceService.completeLink")(function* (
-		initiator: OAuthStateInitiator,
 		connectorId: ChatConnectorId,
 		params: URLSearchParams,
+		initiator: OAuthFlowInitiator,
 	) {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connectorId })
 		const identity = yield* requireIdentity(yield* requireConnector(connectorId))
-		const state = params.get("state")
-		if (state === null) {
-			return yield* Effect.fail(
-				new IntegrationsValidationError({ message: "The callback carried no state" }),
-			)
-		}
-		const stateRow = yield* states.findByState(state).pipe(Effect.mapError(toPersistenceError))
-		// The provider check is what keeps the two halves apart: an install's state names
-		// `chat:<connector>` and is refused here, and the reverse holds in `completeInstall`.
-		if (Option.isNone(stateRow) || stateRow.value.provider !== identityStateProvider(connectorId)) {
-			return yield* Effect.fail(
-				new IntegrationsValidationError({
-					message: "Link state not recognized — start the link again",
-				}),
-			)
-		}
-		const row = stateRow.value
+		const row = yield* consumeState(params, identityStateProvider(connectorId), initiator)
 		const now = yield* Clock.currentTimeMillis
-		// Single-use: burn the state before doing any side effects.
-		yield* states.deleteByState(state).pipe(Effect.mapError(toPersistenceError))
-		if (row.expiresAt < now) {
-			return yield* Effect.fail(
-				new IntegrationsValidationError({ message: "Link state expired — start the link again" }),
-			)
-		}
-		if (!isStateInitiator(row, initiator)) return yield* Effect.fail(stateInitiatorMismatch())
 		const orgId = yield* decodeOrgId(row.orgId).pipe(
 			Effect.mapError(
 				(error) =>

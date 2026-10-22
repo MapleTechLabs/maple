@@ -1,5 +1,6 @@
 import type { MapleDb } from "@maple/db/client"
 import {
+	AwsConnections,
 	GcpConnectors,
 	OAuthConnections,
 	PlanetscaleConnections,
@@ -39,6 +40,7 @@ export const integrationSourceName = {
 	cloudflare: (connection: { readonly externalAccountName: string | null }) =>
 		connection.externalAccountName ?? "Cloudflare",
 	github: (installation: { readonly accountLogin: string }) => `GitHub ${installation.accountLogin}`,
+	aws: (connection: { readonly accountId: string }) => `AWS ${connection.accountId}`,
 	supabase: (organization: { readonly name: string }) => `Supabase ${organization.name}`,
 }
 
@@ -249,6 +251,7 @@ export const readSourceOwners = Effect.fnUntraced(function* (db: MapleDb, orgId:
 					.where(($) => [$.orgId.eq(orgId), $.sourceId.isNotNull()]),
 			),
 			db.run(PG.from(VcsInstallations).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
+			db.run(PG.from(AwsConnections).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
 		],
 		{ concurrency: "unbounded" },
 	)

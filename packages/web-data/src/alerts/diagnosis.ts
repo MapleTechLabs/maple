@@ -5,7 +5,13 @@ import type {
 	AlertIncidentDocument,
 	AlertRuleDocument,
 } from "@maple/domain/http"
-import { alertEvaluationIntervalMinutes } from "@maple/query-engine/datetime"
+import {
+	alertQueryLimits,
+	alertRuleIntervalMinutes,
+	nextSlowerAlertInterval,
+} from "@maple/query-engine/datetime"
+import { ALERT_EVALUATION_INTERVALS, AlertEvaluationErrorKind } from "@maple/domain/http"
+import { Option, Schema } from "effect"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { countLabel } from "@maple/ui/lib/format"
 import type { AlertRuleStateRow } from "../collections/alerts"
@@ -13,9 +19,74 @@ import { comparatorLabels, formatSignalValue } from "./form-utils"
 import { staleThresholdMs } from "./rule-status"
 import { formatTimestampInTimezone } from "../lib/timezone-format"
 
-const evaluationCadence = (windowMinutes: number): string => {
-	const minutes = alertEvaluationIntervalMinutes(windowMinutes)
+const evaluationCadence = (rule: AlertRuleDocument): string => {
+	const minutes = alertRuleIntervalMinutes(rule)
 	return minutes === 1 ? "every minute" : `every ${minutes} minutes`
+}
+
+const decodeErrorKind = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
+
+/**
+ * The interval a slowed rule ran at just before its latest slowdown: the step the scheduler
+ * took to reach the slowed interval, from the rule's own interval or an earlier slowdown.
+ * The limit the failures hit picks the step; when two steps could, the one slowdown is likelier.
+ */
+export const intervalBeforeSlowdown = (
+	rule: AlertRuleDocument,
+	kind: AlertEvaluationErrorKind | null = rule.lastEvaluationErrorKind,
+): number => {
+	const base = alertRuleIntervalMinutes({ ...rule, slowedIntervalMinutes: null })
+	const slowed = rule.slowedIntervalMinutes
+	if (slowed === null) return base
+	const exceeded: ReadonlyArray<"time" | "memory"> =
+		kind === "query_too_slow" ? ["time"] : kind === "query_too_much_memory" ? ["memory"] : ["time", "memory"]
+	const steps = [
+		base,
+		...ALERT_EVALUATION_INTERVALS.filter((minutes) => minutes > base && minutes < slowed),
+	]
+	return (
+		steps.find((from) =>
+			exceeded.some((limit) => nextSlowerAlertInterval(from, rule.windowMinutes, limit) === slowed),
+		) ?? base
+	)
+}
+
+/** What a failing query's kind means for its author, in plain words. */
+const formatMemory = (bytes: number): string =>
+	bytes >= 1_000_000_000 ? `${bytes / 1_000_000_000} GB` : `${bytes / 1_000_000} MB`
+
+const queryFailureCause = (
+	kind: AlertEvaluationErrorKind | null,
+	isRawSql: boolean,
+	intervalMinutes: number,
+	limitSeconds: number,
+): { readonly summary: string; readonly evidence: ReadonlyArray<string> } => {
+	const every = intervalMinutes === 1 ? "every minute" : `every ${intervalMinutes} min`
+	if (kind === "query_too_slow" && !isRawSql) {
+		return { summary: "The rule's query is timing out", evidence: [] }
+	}
+	if (kind === "query_too_slow") {
+		return {
+			summary: `The query takes longer than the ${limitSeconds} s a check allows`,
+			evidence: [
+				`Checked ${every}, which allows ${limitSeconds} s per check. Rules checked every 5 min get 15 s, every 10 min or more 25 s.`,
+				"Narrow the query (a service filter, a structured attribute instead of a Body match) or check less often.",
+			],
+		}
+	}
+	if (kind === "query_too_much_memory") {
+		return {
+			summary: "The query needs more memory than a check allows",
+			evidence: [
+				`Checked ${every}, which allows ${formatMemory(alertQueryLimits(intervalMinutes).memoryBytes)} per check. Rules checked every 5 or 10 min get 512 MB, every 15 min or more 1 GB.`,
+				"Narrow the query or group by fewer values.",
+			],
+		}
+	}
+	if (kind === "invalid_query") {
+		return { summary: "The rule's query is invalid", evidence: [] }
+	}
+	return { summary: "The rule's query is failing", evidence: [] }
 }
 
 export type DiagnosisStageStatus = "pass" | "fail" | "warn" | "unknown"
@@ -128,13 +199,13 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			],
 		})
 	} else if (evaluatedAt != null) {
-		const stale = now - evaluatedAt > staleThresholdMs()
+		const stale = now - evaluatedAt > staleThresholdMs(rule)
 		stages.push({
 			id: "evaluated",
 			label: "Evaluated recently",
 			status: stale ? "warn" : "pass",
 			summary: stale
-				? `Last evaluated ${relative(now, evaluatedAt)}, expected ${evaluationCadence(rule.windowMinutes)}`
+				? `Last evaluated ${relative(now, evaluatedAt)}, expected ${evaluationCadence(rule)}`
 				: `Last evaluated ${relative(now, evaluatedAt)}`,
 			evidence: [
 				`Last evaluation: ${formatTimestampInTimezone(evaluatedAt, { timeZone, withYear: true })}`,
@@ -146,21 +217,58 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	}
 
 	/* 3 — Query succeeded */
-	const stateError = states.find((s) => s.last_error != null)?.last_error ?? null
-	const errorMessage = stateError ?? rule.lastEvaluationError
+	const errorState = states.find((s) => s.last_error != null)
+	const errorMessage = errorState?.last_error ?? rule.lastEvaluationError
+	// The kind of the same error as the message: the state's own, else the rule document's.
+	const errorKind =
+		errorState === undefined
+			? rule.lastEvaluationErrorKind
+			: Option.getOrNull(decodeErrorKind(errorState.last_error_kind))
 	const errorChecks = checks.filter((c) => c.status === "error")
+	// An error from before a slowdown ran under the interval the rule had then, not the slowed one.
+	const errorAt = parseMs(errorState?.last_evaluated_at ?? rule.lastEvaluatedAt)
+	const slowedAt = parseMs(rule.slowedAt)
+	const isErrorBeforeSlowdown = slowedAt != null && errorAt != null && errorAt <= slowedAt
+	const intervalMinutes = isErrorBeforeSlowdown
+		? intervalBeforeSlowdown(rule, errorKind)
+		: alertRuleIntervalMinutes(rule)
+	const limitSeconds = alertQueryLimits(intervalMinutes).timeSeconds
+	const slowedLine =
+		rule.slowedIntervalMinutes !== null && rule.slowedAt !== null
+			? `Slowed to every ${rule.slowedIntervalMinutes} min on ${formatTimestampInTimezone(parseMs(rule.slowedAt) ?? now, { timeZone, withYear: true })} after 3 checks in a row hit their limit. Editing the rule resets this.`
+			: null
 	if (errorMessage != null) {
+		const cause = queryFailureCause(
+			errorKind,
+			rule.signalType === "raw_query",
+			intervalMinutes,
+			limitSeconds,
+		)
 		stages.push({
 			id: "query",
 			label: "Query succeeded",
 			status: "fail",
-			summary: "The rule's query is failing",
+			summary: cause.summary,
 			evidence: [
+				...cause.evidence,
+				...(slowedLine !== null ? [slowedLine] : []),
 				errorMessage,
 				...(errorChecks[0]?.errorCategory != null
 					? [`Category: ${errorChecks[0].errorCategory}`]
 					: []),
 				...(evaluatedAt != null ? [`Last attempt ${relative(now, evaluatedAt)}`] : []),
+			],
+			action: { label: "Edit rule", kind: "edit" },
+		})
+	} else if (slowedLine !== null) {
+		stages.push({
+			id: "query",
+			label: "Query succeeded",
+			status: "warn",
+			summary: `Slowed to every ${rule.slowedIntervalMinutes} min because its query kept hitting its limit`,
+			evidence: [
+				slowedLine,
+				"Make the query cheaper, or pick this interval yourself, before you edit the rule.",
 			],
 			action: { label: "Edit rule", kind: "edit" },
 		})

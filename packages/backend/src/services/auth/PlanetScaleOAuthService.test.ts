@@ -158,7 +158,7 @@ const withOAuthApp = {
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
-const INITIATOR = { orgId: asOrgId("org_a"), userId: asUserId("user_a") }
+const initiatorA = { orgId: asOrgId("org_a"), userId: asUserId("user_a") }
 
 const CALLBACK_URL = "https://api.example.com/api/integrations/planetscale/callback"
 
@@ -240,7 +240,7 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			const result = yield* service.completeConnect(INITIATOR, "auth-code", state)
+			const result = yield* service.completeConnect("auth-code", state, initiatorA)
 			assert.strictEqual(result.orgId, "org_a")
 			assert.deepStrictEqual(
 				result.organizations.map((org) => org.name),
@@ -279,7 +279,7 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			yield* service.completeConnect(INITIATOR, "auth-code", state)
+			yield* service.completeConnect("auth-code", state, initiatorA)
 			const row = yield* Effect.promise(() =>
 				queryFirstRow<{ external_user_id: string }>(
 					testDb,
@@ -300,7 +300,7 @@ describe("PlanetScaleOAuthService", () => {
 		return Effect.gen(function* () {
 			const service = yield* PlanetScaleOAuthService
 			const error = yield* service
-				.completeConnect(INITIATOR, "auth-code", "state-that-was-never-issued")
+				.completeConnect("auth-code", "state-that-was-never-issued", initiatorA)
 				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			assert.isFalse(yield* service.hasConnection(asOrgId("org_a")))
@@ -316,7 +316,7 @@ describe("PlanetScaleOAuthService", () => {
 			})
 			yield* TestClock.adjust("11 minutes")
 
-			const error = yield* service.completeConnect(INITIATOR, "auth-code", state).pipe(Effect.flip)
+			const error = yield* service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			assert.include(error.message, "expired")
 			assert.isFalse(yield* service.hasConnection(asOrgId("org_a")))
@@ -330,7 +330,7 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			const error = yield* service.completeConnect(INITIATOR, "auth-code", state).pipe(Effect.flip)
+			const error = yield* service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			if (error._tag === "@maple/http/errors/IntegrationsValidationError") {
 				assert.include(error.message, "refresh token")
@@ -352,7 +352,7 @@ describe("PlanetScaleOAuthService", () => {
 			})
 			// The first listing 401s (auth→API propagation lag); the retry after the
 			// 2s backoff succeeds and the connect completes normally.
-			const fiber = yield* Effect.forkChild(service.completeConnect(INITIATOR, "auth-code", state), {
+			const fiber = yield* Effect.forkChild(service.completeConnect("auth-code", state, initiatorA), {
 				startImmediately: true,
 			})
 			yield* TestClock.adjust("2 seconds")
@@ -377,7 +377,7 @@ describe("PlanetScaleOAuthService", () => {
 				callbackUrl: CALLBACK_URL,
 			})
 			const fiber = yield* Effect.forkChild(
-				service.completeConnect(INITIATOR, "auth-code", state).pipe(Effect.flip),
+				service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip),
 				{ startImmediately: true },
 			)
 			yield* TestClock.adjust("2 seconds")
@@ -406,7 +406,7 @@ describe("PlanetScaleOAuthService", () => {
 				// The v1 API keeps rejecting a token the auth server introspects as
 				// active — "reconnect" would be a lie, so this must NOT be RevokedError.
 				const fiber = yield* Effect.forkChild(
-					service.completeConnect(INITIATOR, "auth-code", state).pipe(Effect.flip),
+					service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip),
 					{ startImmediately: true },
 				)
 				yield* TestClock.adjust("2 seconds")
@@ -435,7 +435,7 @@ describe("PlanetScaleOAuthService", () => {
 				callbackUrl: CALLBACK_URL,
 			})
 			const fiber = yield* Effect.forkChild(
-				service.completeConnect(INITIATOR, "auth-code", state).pipe(Effect.flip),
+				service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip),
 				{ startImmediately: true },
 			)
 			yield* TestClock.adjust("2 seconds")
@@ -459,7 +459,7 @@ describe("PlanetScaleOAuthService", () => {
 				callbackUrl: CALLBACK_URL,
 			})
 			const fiber = yield* Effect.forkChild(
-				service.completeConnect(INITIATOR, "auth-code", state).pipe(Effect.flip),
+				service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip),
 				{ startImmediately: true },
 			)
 			yield* TestClock.adjust("2 seconds")
@@ -483,7 +483,7 @@ describe("PlanetScaleOAuthService", () => {
 				callbackUrl: CALLBACK_URL,
 			})
 			const fiber = yield* Effect.forkChild(
-				service.completeConnect(INITIATOR, "auth-code", state).pipe(Effect.flip),
+				service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip),
 				{ startImmediately: true },
 			)
 			yield* TestClock.adjust("2 seconds")
@@ -506,7 +506,7 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			const error = yield* service.completeConnect(INITIATOR, "auth-code", state).pipe(Effect.flip)
+			const error = yield* service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			if (error._tag === "@maple/http/errors/IntegrationsValidationError") {
 				assert.include(error.message, "no organizations")
@@ -530,7 +530,7 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			yield* service.completeConnect(INITIATOR, "auth-code", state)
+			yield* service.completeConnect("auth-code", state, initiatorA)
 			const listed = yield* service.listOrganizations(asOrgId("org_a"))
 			assert.deepStrictEqual(
 				listed.map((org) => org.name),
@@ -548,7 +548,7 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			yield* service.completeConnect(INITIATOR, "auth-code", state)
+			yield* service.completeConnect("auth-code", state, initiatorA)
 
 			// The grant dies upstream: the org listing starts answering 401. That
 			// must surface as revoked, not a generic upstream failure — the picker
@@ -583,7 +583,7 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			yield* service.completeConnect(INITIATOR, "auth-code", state)
+			yield* service.completeConnect("auth-code", state, initiatorA)
 
 			const first = yield* service.getValidAccessToken(asOrgId("org_a"))
 
@@ -604,7 +604,7 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			yield* service.completeConnect(INITIATOR, "auth-code", state)
+			yield* service.completeConnect("auth-code", state, initiatorA)
 
 			// Populate the memo first — that is the state the invalidation has to clear.
 			yield* service.getValidAccessToken(asOrgId("org_a"))
@@ -622,7 +622,7 @@ describe("PlanetScaleOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: CALLBACK_URL,
 			})
-			yield* service.completeConnect(INITIATOR, "auth-code", state)
+			yield* service.completeConnect("auth-code", state, initiatorA)
 
 			const result = yield* service.disconnect(asOrgId("org_a"))
 			assert.strictEqual(result.disconnected, true)

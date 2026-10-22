@@ -29,7 +29,7 @@ import {
 	OAUTH_STATE_TTL_MS,
 	toUpstreamError,
 } from "./oauth/connection-helpers"
-import type { OAuthStateInitiator } from "./oauth/state-initiator"
+import type { OAuthFlowInitiator } from "./oauth/oauth-state"
 
 const SUPABASE_PROVIDER = "supabase"
 
@@ -93,10 +93,9 @@ export interface SupabaseOAuthServiceApi {
 	 * Supabase organization; it is returned so the caller can bind it.
 	 */
 	readonly completeConnect: (
-		/** The signed-in user finishing the flow; must be the one that started it. */
-		initiator: OAuthStateInitiator,
 		code: string,
 		state: string,
+		initiator: OAuthFlowInitiator,
 	) => Effect.Effect<
 		{
 			readonly orgId: OrgId
@@ -189,13 +188,12 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 			})
 
 			const completeConnect = Effect.fn("SupabaseOAuthService.completeConnect")(function* (
-				initiator: OAuthStateInitiator,
 				code: string,
 				state: string,
+				initiator: OAuthFlowInitiator,
 			) {
 				const config = yield* resolveConfig(env)
-				const stateRow = yield* oauth.requireStateRow(state, initiator)
-				yield* oauth.deleteAuthState(state)
+				const stateRow = yield* oauth.consumeStateRow(state, initiator)
 				if (stateRow.codeVerifier === null) {
 					return yield* new IntegrationsValidationError({
 						message: "OAuth state is missing its PKCE verifier. Restart the connect flow.",

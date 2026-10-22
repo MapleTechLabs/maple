@@ -5,7 +5,6 @@ import {
 	GCP_READER_SCOPE_ROLES,
 	gcpConnectorResourceNames,
 } from "@maple/domain/gcp"
-import { IntegrationsPersistenceError } from "@maple/domain/http"
 import {
 	type GcpConnectorId,
 	GcpLogRuntime,
@@ -13,7 +12,7 @@ import {
 	type GcpResourceNumber,
 	type GcpScopeType,
 } from "@maple/domain/primitives"
-import { Effect } from "effect"
+import { forPaste } from "../paste-script"
 
 /**
  * Single-quote a value for bash. Every value a script uses goes through here; the scope named in
@@ -701,34 +700,6 @@ else
 fi
 ${notifies ? `notify "Maple notified" '"metrics":false'\n` : ""}`
 
-/**
- * The text that is copied: the script as a here-document for a child bash. Pasted at a prompt,
- * nothing runs before the closing brace is read, a failing step ends the child and not the login
- * shell, and the terminal stays the script's stdin. The first line keeps the paste, secret and
- * all, out of the history file of zsh 5.3+ (which writes it after the command ran) and drops it
- * from the history of bash 5; its leading space does the same under `HISTCONTROL=ignorespace`
- * and `HIST_IGNORE_SPACE`. bash 3.2 keeps only the first line, which has no secret. Nothing
- * outside the here-document may be a comment: an interactive zsh runs `#` as a command.
- */
-// A terminal, not the bytes, decides where a pasted line ends: a CR or a TAB (completion) in a
-// value could end the here-document early and hand the rest to the login shell.
-const PASTE_SAFE = /^[\x20-\x7e\n]*$/u
-
-const forPaste = (marker: string, body: string): Effect.Effect<string, IntegrationsPersistenceError> =>
-	!PASTE_SAFE.test(body) || body.split("\n").includes(marker)
-		? Effect.fail(
-				new IntegrationsPersistenceError({
-					message: "A Google Cloud script value would end the script's here-document early",
-				}),
-			)
-		: Effect.succeed(
-				` { [ -z "\${ZSH_VERSION-}" ] || case "\${HISTORY_IGNORE-}" in *"*${marker}*"*) ;; *) HISTORY_IGNORE="(\${HISTORY_IGNORE:+$HISTORY_IGNORE|}*${marker}*)" ;; esac; [ -z "\${BASH_VERSION-}" ] || case "$(history 1)" in *${marker}*) history -d -1 ;; esac 2>/dev/null
-bash /dev/fd/3 3<<'${marker}'
-${body}${marker}
-}
-`,
-			)
-
 export interface GcpSetupScriptInput extends GcpScriptTarget {
 	/** The ingest gateway's receiver URL for this connector, including its secret. */
 	readonly pushEndpoint: string
@@ -762,6 +733,7 @@ export const renderGcpSetupScript = (input: GcpSetupScriptInput) => {
 	const metricsState =
 		metrics === "lost" ? "not available on this Maple deployment, left as is" : state(metrics === "on")
 	return forPaste(
+		"Google Cloud",
 		"MAPLE_SETUP_SCRIPT",
 		`#!/usr/bin/env bash
 # Maple setup for Google Cloud ${scopeType} ${input.scopeId}
@@ -881,6 +853,7 @@ export interface GcpCleanupScriptInput extends GcpScriptTarget {
 /** Removes what the setup script created. Without a push endpoint it carries no secret. */
 export const renderGcpCleanupScript = (input: GcpCleanupScriptInput) =>
 	forPaste(
+		"Google Cloud",
 		"MAPLE_CLEANUP_SCRIPT",
 		`#!/usr/bin/env bash
 # Maple cleanup for Google Cloud ${input.scopeType} ${input.scopeId}

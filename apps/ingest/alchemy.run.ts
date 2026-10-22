@@ -141,6 +141,10 @@ const blockedIngestKeys = Config.schema(
 	"INGEST_BLOCKED_KEYS",
 ).pipe(Config.withDefault([]))
 
+/** The same keys for the gateway's own check (`parse_blocked_ingest_keys`). */
+const blockedIngestKeysEnv = (keys: ReadonlyArray<string>) =>
+	keys.length > 0 ? { INGEST_BLOCKED_KEYS: keys.join(",") } : undefined
+
 /**
  * Edge block for abusive ingest keys (`INGEST_BLOCKED_KEYS`), so their
  * traffic never reaches the ALB. This owns the zone's whole custom-WAF phase: a rule added
@@ -624,6 +628,9 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				...(yield* optionalPlain("INGEST_QUEUE_MAX_AGE_SECS")),
 				...(yield* optionalPlain("INGEST_MAX_REQUEST_BODY_BYTES")),
 				...(yield* optionalPlain("INGEST_MAX_DECODED_BODY_BYTES")),
+				// The edge rule matches exact header values only; the gateway refuses these
+				// keys again after normalizing the header, so a respelled one is still blocked.
+				...blockedIngestKeysEnv(yield* blockedIngestKeys),
 				...(yield* optionalPlain("INGEST_EXPORT_MAX_ATTEMPTS")),
 				...(yield* optionalPlain("INGEST_TINYBIRD_CONCURRENCY_PER_SHARD")),
 				...(yield* optionalPlain("INGEST_REPLAY_MAX_SESSION_BYTES")),

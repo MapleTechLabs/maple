@@ -188,6 +188,12 @@ export const gotMenu = (
 	return { model: next, commands }
 }
 
+/** The removal dialog for a connector by id, opened from outside its menu (a source's Delete). */
+export const clickedDisconnect = (model: Model, context: PageContext, id: string): Return => {
+	const connector = gcpConnectors(model).find((entry) => entry.id === id)
+	return connector === undefined ? { model } : openDisconnect(model, context, connector)
+}
+
 /** "Try again" on the script read. */
 export const retriedScripts = (model: Model, context: PageContext): Return => {
 	const id = model.gcpCard.disconnectId

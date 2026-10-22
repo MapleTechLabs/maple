@@ -61,7 +61,6 @@ const listWithGrant = Effect.gen(function* () {
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
 const ORG = asOrgId("org_a")
-const INITIATOR = { orgId: ORG, userId: asUserId("user_a") }
 const CALLBACK_URL = "https://api.example.com/api/integrations/supabase/callback"
 
 /** Start the flow and hand the fake the PKCE challenge the authorize URL carried, as Supabase would. */
@@ -73,7 +72,10 @@ const connect = (fake: ReturnType<typeof makeFakeSupabase>) =>
 			returnTo: "/integrations/supabase",
 		})
 		fake.state.codeChallenge = new URL(redirectUrl).searchParams.get("code_challenge")
-		return yield* service.completeConnect(INITIATOR, "4a0c7b4e-code", state)
+		return yield* service.completeConnect("4a0c7b4e-code", state, {
+			orgId: ORG,
+			userId: asUserId("user_a"),
+		})
 	})
 
 describe("SupabaseOAuthService", () => {

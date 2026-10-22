@@ -18,6 +18,10 @@ export const AlertRuleRow = Schema.Struct({
 	comparator: Schema.String,
 	threshold: Schema.Number,
 	windowMinutes: Schema.Number,
+	/** Minutes between checks as picked; null checks every fifth of the window, 1 to 5. */
+	evaluationIntervalMinutes: Schema.NullOr(Schema.Number),
+	/** Set when the scheduler slowed the rule after repeated query timeouts; cleared by an edit. */
+	slowedIntervalMinutes: Schema.NullOr(Schema.Number),
 	destinationIds: Schema.Array(Schema.String),
 	createdAt: Schema.String,
 	updatedAt: Schema.String,
@@ -113,6 +117,10 @@ export const AlertRuleDetailRow = Schema.Struct({
 	notificationBody: Schema.optionalKey(NullableString),
 	/** Most recent evaluation failure, if the rule's last check errored. */
 	lastEvaluationError: Schema.optionalKey(NullableString),
+	/** Why it failed: query_too_slow, query_too_much_memory, invalid_query or other. */
+	lastEvaluationErrorKind: Schema.optionalKey(NullableString),
+	/** When the scheduler slowed the rule down, alongside `slowedIntervalMinutes`. */
+	slowedAt: Schema.optionalKey(NullableString),
 	lastEvaluatedAt: Schema.optionalKey(NullableString),
 	/** `destinationIds` resolved to their names; an id with no match is a deleted destination. */
 	destinations: Schema.optionalKey(
@@ -172,6 +180,25 @@ export const PreviewAlertRuleOutput = Schema.Struct({
 		Schema.Struct({ groupKey: Schema.String, start: Schema.String, end: Schema.String }),
 	),
 	warnings: Schema.Array(Schema.String),
+	/** Raw SQL rules only: one check of the latest window, timed against the interval's limit. */
+	/** Raw SQL only: the range was too heavy to chart, so no windows were evaluated. */
+	seriesFailure: Schema.optionalKey(Schema.Literals(["query_too_slow", "query_too_much_memory"])),
+	queryTiming: Schema.optionalKey(
+		Schema.Struct({
+			/** Null when the check did not finish within `probeLimitMs`. */
+			elapsedMs: NullableNumber,
+			failure: NullableString,
+			probeLimitMs: Schema.Number,
+			intervalMinutes: Schema.Number,
+			limitMs: Schema.Number,
+			/** Check intervals whose limit the query fits with a fifth to spare. */
+			fitsIntervalMinutes: Schema.Array(Schema.Number),
+		}),
+	),
+	/** Raw SQL rules only: filters that would make the query cheaper, by SQL line. */
+	performanceHints: Schema.optionalKey(
+		Schema.Array(Schema.Struct({ code: Schema.String, message: Schema.String, line: Schema.Number })),
+	),
 })
 
 export const AlertIncidentRow = Schema.Struct({

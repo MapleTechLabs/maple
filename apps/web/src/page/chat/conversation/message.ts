@@ -6,7 +6,6 @@ import { ThemeColors } from "../../../charts/theme-colors"
 import { ParsedMarkdown } from "../../kit/markdown"
 import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
-import { HighlightedCode } from "../kit/code-highlight"
 import { MinimapMessage } from "../kit/turn-minimap"
 import { UIMessage } from "../kit/ui-message"
 
@@ -46,21 +45,9 @@ export const Message = defineMessageUnion({
 	ToggledPanel: { id: Schema.String },
 	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
 	CompletedParseMarkdown: { parsed: Schema.Array(ParsedMarkdown) },
-	CompletedHighlightCode: { key: Schema.String, highlighted: Schema.NullOr(HighlightedCode) },
 	ClickedCopyCode: { code: Schema.String },
 	ClickedDownloadCode: { code: Schema.String, language: Schema.String },
-	/** The diagram toolbar's download menu (`menuId` tells the inline and fullscreen ones apart). */
-	ToggledDiagramMenu: { menuId: Schema.String },
-	PressedOutsideDiagramMenu: { menuId: Schema.String },
-	ClickedDiagramFormat: { menuId: Schema.String, code: Schema.String, format: Schema.Literals(["svg", "png", "mmd"]) },
-	CompletedDownloadDiagram: { menuId: Schema.String, isSaved: Schema.Boolean },
-	ClickedDiagramFullscreen: { code: Schema.String },
-	/** The exit button, a click on the backdrop, or Escape. */
-	ClosedDiagramFullscreen: {},
-	CompletedMountDiagramOverlay: {},
 	CompletedCodeAction: {},
-	CompletedMermaidDiagram: { isDrawn: Schema.Boolean },
-	CompletedMountMath: {},
 	CompletedMountJump: {},
 	CompletedMountClock: {},
 	GotTaskSheetMessage: { toolCallId: Schema.String, message: Dialog.Message },

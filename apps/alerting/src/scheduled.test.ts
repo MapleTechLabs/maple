@@ -18,8 +18,8 @@ const cronCases = [
 		],
 	],
 	["*/15 * * * *", ["digest", "supabaseInsights"]],
-	["0 * * * *", ["serviceMapRollup", "supabaseDiscovery"]],
-	["* * * * *", ["alert", "error", "escalation", "fixVerification", "supabaseLogs"]],
+	["0 * * * *", ["serviceMapRollup", "supabaseDiscovery", "awsConnections"]],
+	["* * * * *", ["alert", "alertLongQuery", "error", "escalation", "fixVerification", "supabaseLogs"]],
 ] as const
 
 /** Every tick recording its name when it runs, with `overrides` swapped in. */
@@ -30,7 +30,9 @@ const recordingTicks = (
 	const tick = (name: string) => Effect.sync(() => calls.push(name)).pipe(Effect.asVoid)
 	return {
 		alert: tick("alert"),
+		alertLongQuery: tick("alertLongQuery"),
 		anomaly: tick("anomaly"),
+		awsConnections: tick("awsConnections"),
 		cloudflareAnalytics: tick("cloudflareAnalytics"),
 		digest: tick("digest"),
 		error: tick("error"),

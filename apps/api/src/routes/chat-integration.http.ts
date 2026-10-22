@@ -1,25 +1,17 @@
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { ChatConnectorId } from "@maple/domain/http"
+import { ChatConnectorId, encodeOAuthReturnHash, type OAuthReturnFlow } from "@maple/domain/http"
 import { Effect, Option, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import {
-	callbackQueryOf,
-	dashboardCallbackUrl,
-	type DashboardCallbackKind,
-	forwardToDashboard,
-} from "./integrations-callback.http"
 
 /**
  * The two public callbacks every chat connector redirects to:
  * `GET /oauth/chat/:connector/callback` for the org's install, and
  * `GET /oauth/chat/:connector/identity/callback` for one person linking their own chat
- * account. The platform is a path *parameter*, so a new connector needs no new route — it
- * registers in the connector registry and these handlers resolve it by id.
+ * account. The platform is a path *parameter*, so a new connector needs no new route.
  *
- * Neither completes anything. The platform issues a top-level redirect, so the browser that lands
- * here proves nothing about who started the install or link; the query is forwarded to the
- * dashboard, which finishes it through `chatComplete` as the signed-in user, and the state row is
- * redeemed only when that user and org started it.
+ * Neither redeems anything: the platform's top-level redirect carries no Maple session, so this
+ * request cannot tell whose browser came back. The query goes to the dashboard in a URL fragment
+ * and the signed-in dashboard finishes it (`oauthComplete`), for the user who started it only.
  */
 
 const CHAT_CALLBACK_PATH = "/oauth/chat/:connector/callback"
@@ -36,40 +28,42 @@ export const ChatCallbackRouter = HttpRouter.use((router) =>
 		const env = yield* Env
 		const appBaseUrl = env.MAPLE_APP_BASE_URL.replace(/\/$/, "")
 
-		const callback = (span: string, path: string, kind: DashboardCallbackKind, outcome: string) =>
-			// Server-kind like `IntegrationsCallbackRouter`: the auto server span is suppressed for these
-			// paths (ApiObservabilityLive), so this is the callback's only trace root. Every branch is a 302.
-			Effect.fn(span, {
-				kind: "server",
-				attributes: { "http.route": path, "http.request.method": "GET" },
-			})(function* (req: HttpServerRequest.HttpServerRequest) {
-				yield* Effect.annotateCurrentSpan({ "http.response.status_code": 302 })
+		/** Where the browser lands: the integrations page, with the outcome or the return to finish. */
+		const toDashboard = (search: Record<string, string>, hash = "") =>
+			HttpServerResponse.redirect(
+				`${appBaseUrl}/integrations?${new URLSearchParams(search).toString()}${hash}`,
+			)
+
+		const callback = (span: string, flow: OAuthReturnFlow, outcome: string) =>
+			Effect.fn(span)(function* (req: HttpServerRequest.HttpServerRequest) {
 				const routeParams = yield* HttpRouter.params
 				const connector = decodeConnectorParam(routeParams.connector)
-				if (Option.isNone(connector)) {
-					const search = new URLSearchParams({ [outcome]: "error", chat_reason: "unknown" })
-					return HttpServerResponse.redirect(`${appBaseUrl}/integrations?${search.toString()}`)
+				const url = Option.liftThrowable(() => new URL(req.url, "http://localhost"))()
+				// A closed reason code, never a message: the dashboard renders it inside a signed-in page.
+				if (Option.isNone(connector))
+					return toDashboard({ [outcome]: "error", chat_reason: "unknown" })
+				if (Option.isNone(url)) {
+					return toDashboard({
+						integration: cardId(connector.value),
+						[outcome]: "error",
+						chat_reason: "failed",
+					})
 				}
-				yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connector.value })
-				return forwardToDashboard(
-					dashboardCallbackUrl(appBaseUrl, cardId(connector.value), kind, callbackQueryOf(req)),
+				return toDashboard(
+					{ integration: cardId(connector.value) },
+					encodeOAuthReturnHash({
+						flow,
+						connector: connector.value,
+						query: url.value.search.replace(/^\?/, ""),
+					}),
 				)
 			})
 
-		yield* router.add(
-			"GET",
-			CHAT_CALLBACK_PATH,
-			callback("ChatOAuth.callback", CHAT_CALLBACK_PATH, "chat-install", "chat"),
-		)
+		yield* router.add("GET", CHAT_CALLBACK_PATH, callback("ChatOAuth.callback", "chat_install", "chat"))
 		yield* router.add(
 			"GET",
 			CHAT_IDENTITY_CALLBACK_PATH,
-			callback(
-				"ChatOAuth.identityCallback",
-				CHAT_IDENTITY_CALLBACK_PATH,
-				"chat-identity",
-				"chat_identity",
-			),
+			callback("ChatOAuth.identityCallback", "chat_identity", "chat_identity"),
 		)
 	}),
 )

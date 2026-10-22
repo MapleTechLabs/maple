@@ -70,7 +70,10 @@ const finalize = (fake: Fake) =>
 			callbackUrl: "https://api.example.com/api/integrations/supabase/callback",
 		})
 		fake.state.codeChallenge = new URL(redirectUrl).searchParams.get("code_challenge")
-		const granted = yield* oauth.completeConnect({ orgId: ORG, userId: USER }, "code", state)
+		const granted = yield* oauth.completeConnect("code", state, {
+			orgId: ORG,
+			userId: asUserId("user_a"),
+		})
 		return yield* connection.finalizeConnect(
 			granted.orgId,
 			granted.connectedByUserId,

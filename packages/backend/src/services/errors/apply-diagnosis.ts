@@ -36,10 +36,9 @@ const decodeIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 const decodeEventId = Schema.decodeUnknownSync(ErrorIssueEventId)
 
 /**
- * Deterministic UUIDv5-style id derived from the investigation id, so the
- * timeline-event insert is idempotent across re-diagnosis and across a retried
- * workflow step: the same investigation regenerates the SAME id and the primary
- * key (+ onConflictDoNothing) absorbs the duplicate.
+ * Deterministic UUIDv5-style id derived from the investigation id (plus the filing turn, when
+ * there is one), so the timeline-event insert is idempotent across a retried write: the same
+ * key regenerates the SAME id and the primary key (+ onConflictDoNothing) absorbs the duplicate.
  */
 export const deterministicInvestigationEventId = (investigationId: string): string => {
 	const hex = createHash("sha256").update(`investigation-event:${investigationId}`).digest("hex")
@@ -81,6 +80,8 @@ export interface ApplyDiagnosisInput {
 	readonly inputTokens: number | null
 	readonly outputTokens: number | null
 	readonly nowMs: number
+	/** The chat turn that filed the report; see `SubmitDiagnosisRequest.turnId`. */
+	readonly turnId?: string
 	/**
 	 * The investigation's subject type, when the caller knows it.
 	 *
@@ -133,12 +134,16 @@ const writeDiagnosis = (orm: MapleDb, input: ApplyDiagnosisInput) =>
 		// See `subjectType` above: a verification's report must not re-rank the issue.
 		if (Option.contains(input.subjectType, "fix_verification")) return
 		const decodedIssueId = decodeIssueId(input.issueId)
+		// Keyed by the turn: a follow-up's superseding diagnosis records its own events, a retry
+		// does not. Without a turn, one set per investigation, as before.
+		const revision =
+			input.turnId === undefined ? input.investigationId : `${input.investigationId}:${input.turnId}`
 		yield* orm.transaction(
 			Effect.gen(function* () {
 				const applied = yield* applyTriageSeverity(orm, {
 					orgId: input.orgId,
 					issueId: decodedIssueId,
-					runId: input.investigationId,
+					runId: revision,
 					investigationId: input.investigationId,
 					severity: input.report.severityAssessment,
 					confidence,
@@ -148,7 +153,7 @@ const writeDiagnosis = (orm: MapleDb, input: ApplyDiagnosisInput) =>
 				yield* orm.run(
 					PG.insertInto(ErrorIssueEvents)
 						.values({
-							id: decodeEventId(deterministicInvestigationEventId(input.investigationId)),
+							id: decodeEventId(deterministicInvestigationEventId(revision)),
 							orgId: input.orgId,
 							issueId: decodedIssueId,
 							actorId: applied.actorId,

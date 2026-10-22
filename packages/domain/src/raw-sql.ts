@@ -64,34 +64,38 @@ const DENY_LIST_RE = new RegExp(`\\b(${DENY_LIST.join("|")})\\b`, "i")
 const INTO_OUTFILE_RE = /\bINTO\s+OUTFILE\b/i
 
 /**
- * ClickHouse table functions that read from somewhere other than this warehouse.
+ * Table functions that read only generated, in-memory data and reach nothing
+ * outside the query, so they are the one call form allowed in a table position.
  *
- * Everything above this line polices what *kind of statement* a query is; none
- * of it constrains where a SELECT reads from. `SELECT * FROM url('http://…')`
- * is a perfectly well-formed single SELECT, and it makes the ClickHouse server —
- * not the API — issue the request, so per-org credentials and the row cap do not
- * touch it. On BYO and self-hosted clusters that is a working SSRF primitive
- * with the response handed back as rows.
+ * Everything else written as `name(...)` after FROM/JOIN reaches outside this
+ * warehouse: `url`, `s3`, `remote`, `file`, `mysql`, `loop`, `view`, and the
+ * many lake-format and object-store readers ClickHouse keeps adding. On BYO and
+ * self-hosted clusters that is a working SSRF/file-read primitive with the
+ * response handed back as rows, untouched by per-org credentials or the row cap.
  *
- * A deny list is the wrong shape long-term — only an allow list of Maple's own
- * tables closes the class, which needs a parser. Until then the shape that
- * matters is *prefix* matching, below: ClickHouse suffixes these families freely
- * (`iceberg`, `icebergS3`, `icebergAzure`, `icebergS3Cluster`, `deltaLakeAzure`,
- * `s3Cluster`), so an exact-name list goes stale the moment a variant lands —
- * and goes stale silently, because the check keeps passing. No ClickHouse scalar
- * function begins with any of these, which is what makes the prefix safe.
+ * An allow list is the only shape that cannot go stale: a new reader family is
+ * refused the day it lands, with no regex to keep in step. The check runs over a
+ * token stream (comments stripped, strings and quoted identifiers lexed as the
+ * server lexes them), so a quoted, commented, cased or Unicode-quoted spelling
+ * of a blocked name resolves to the same token and is refused all the same.
  */
-const DISALLOWED_FUNCTION_PREFIXES = [
+const ALLOWED_TABLE_FUNCTIONS = new Set(["numbers", "generateseries"])
+
+// Defense in depth: known readers are refused as a call in ANY position, so a
+// table position the walker misses still cannot reach them. Families are
+// prefixes (ClickHouse suffixes them: `icebergS3Cluster`); the rest are exact
+// because they prefix real scalars (`URLHash`, `hiveHash`, `generateRandomStructure`).
+// `file` is also a scalar, and it reads the server's files, so it stays here.
+const READER_PREFIXES = [
 	"iceberg",
-	"deltaLake",
+	"deltalake",
 	"hudi",
 	"paimon",
 	"s3",
-	// `s3` under its object-store aliases.
 	"cosn",
 	"oss",
 	"gcs",
-	"azureBlobStorage",
+	"azureblobstorage",
 	"hdfs",
 	"remote",
 	"cluster",
@@ -103,37 +107,221 @@ const DISALLOWED_FUNCTION_PREFIXES = [
 	"odbc",
 	"jdbc",
 	"executable",
-	"arrowFlight",
+	"arrowflight",
 	"ytsaurus",
-	// Local, but reads any table by database and regex, system tables included.
-	"mergeTree",
-] as const
-
-/**
- * Names that must match *exactly*, because each is a prefix of a legitimate
- * scalar function: `url` would take `URLHash` and `URLPathHierarchy`, `file`
- * would take `filesystemAvailable`, `hive` would take `hiveHash`, `dictionary`
- * would take nothing today but sits beside the whole `dict*` family.
- */
-const DISALLOWED_FUNCTION_NAMES = [
+	"mergetree",
+]
+const READER_NAMES = new Set([
 	"url",
-	"urlCluster",
+	"urlcluster",
 	"file",
-	"fileCluster",
+	"filecluster",
 	"input",
 	"dictionary",
 	"hive",
 	"merge",
-] as const
+	"loop",
+	"view",
+	"generaterandom",
+	"timeseriesdata",
+	"timeseriesmetrics",
+	"timeseriestags",
+	"primes",
+])
+const isReaderName = (name: string): boolean =>
+	READER_NAMES.has(name) || READER_PREFIXES.some((prefix) => name.startsWith(prefix))
 
-// Anchored on the opening paren so a *column* named `file`, or a scalar function
-// like `urlHash`, is untouched — only the call form is a table function. The
-// leading `\b` is what keeps the exact names exact: there is no word boundary
-// inside `urlHash`, so its `url` prefix is never a match start.
-const DISALLOWED_FUNCTION_RE = new RegExp(
-	`\\b(${DISALLOWED_FUNCTION_PREFIXES.join("|")})[A-Za-z0-9_]*\\s*\\(|\\b(${DISALLOWED_FUNCTION_NAMES.join("|")})\\s*\\(`,
-	"i",
-)
+interface SqlToken {
+	readonly v: string
+	readonly ident: boolean
+}
+
+const IDENT_START_RE = /[A-Za-z_]/
+const IDENT_PART_RE = /[A-Za-z0-9_]/
+// Identifier quotes, including the Unicode double quotes ClickHouse accepts.
+const QUOTE_CLOSE = new Map([
+	["`", "`"],
+	['"', '"'],
+	["“", "”"],
+])
+const SPACE_RE = /\s/
+
+/**
+ * ClickHouse SQL as significant tokens: whitespace, `--`/`#`/`/* *\/` comments and
+ * string literals dropped; identifiers (quoted or bare) lowercased; every other
+ * character its own single-char token so a `(`'s left neighbour is always known.
+ * A pure lexer, so it uses local indices rather than Effect primitives.
+ */
+const tokenizeSql = (sql: string): ReadonlyArray<SqlToken> => {
+	const tokens: Array<SqlToken> = []
+	const n = sql.length
+	let i = 0
+	while (i < n) {
+		const c = sql.charAt(i)
+		if (SPACE_RE.test(c)) {
+			i++
+		} else if ((c === "-" && sql.charAt(i + 1) === "-") || c === "#") {
+			const nl = sql.indexOf("\n", i)
+			i = nl === -1 ? n : nl
+		} else if (c === "/" && sql.charAt(i + 1) === "*") {
+			const end = sql.indexOf("*/", i + 2)
+			i = end === -1 ? n : end + 2
+		} else if (c === "'") {
+			i++
+			while (i < n) {
+				const d = sql.charAt(i)
+				if (d === "\\") {
+					i += 2
+				} else if (d === "'" && sql.charAt(i + 1) === "'") {
+					// A doubled quote escapes itself.
+					i += 2
+				} else if (d === "'") {
+					i++
+					break
+				} else {
+					i++
+				}
+			}
+		} else if (QUOTE_CLOSE.has(c)) {
+			const close = QUOTE_CLOSE.get(c) ?? c
+			i++
+			let body = ""
+			while (i < n) {
+				const d = sql.charAt(i)
+				if (d === "\\") {
+					body += sql.slice(i, i + 2)
+					i += 2
+				} else if (d === close) {
+					if (close !== "”" && sql.charAt(i + 1) === close) {
+						body += d
+						i += 2
+					} else {
+						i++
+						break
+					}
+				} else {
+					body += d
+					i++
+				}
+			}
+			tokens.push({ v: body.toLowerCase(), ident: true })
+		} else if (IDENT_START_RE.test(c)) {
+			let j = i + 1
+			while (j < n && IDENT_PART_RE.test(sql.charAt(j))) j++
+			tokens.push({ v: sql.slice(i, j).toLowerCase(), ident: true })
+			i = j
+		} else {
+			tokens.push({ v: c, ident: false })
+			i++
+		}
+	}
+	return tokens
+}
+
+// Keywords that end the FROM list, so a later comma no longer introduces a table.
+// FINAL, SAMPLE, ON and USING qualify one item; a comma after them is a new table.
+const CLAUSE_BOUNDARY = new Set([
+	"where",
+	"prewhere",
+	"group",
+	"order",
+	"having",
+	"limit",
+	"offset",
+	"settings",
+	"union",
+	"except",
+	"intersect",
+	"window",
+	"qualify",
+	"format",
+	"into",
+	"select",
+	"with",
+])
+
+/**
+ * The first disallowed table function, or null. Any known reader called anywhere
+ * is refused. Beyond that, a table source is a token right after FROM/JOIN, a
+ * comma in the FROM list, or a `(` in either position; when it is
+ * an identifier immediately followed by `(` it is a table function, and only the
+ * in-memory generators are allowed. `FROM (SELECT ...)` is a subquery, a bare
+ * `FROM traces` a table, and `urlHash(...)` or `EXTRACT(x FROM y)` sit in an
+ * expression (inside a call paren), never in a table position.
+ */
+const disallowedTableFunction = (sql: string): string | null => {
+	const tokens = tokenizeSql(sql)
+	const parenKind: Array<"call" | "sub" | "group"> = []
+	// The enclosing FROM list survives a paren: a subquery closing must not end it.
+	const outerFromList: Array<number> = []
+	let depth = 0
+	let armed = false
+	let fromListDepth = -1
+	for (let i = 0; i < tokens.length; i++) {
+		const t = tokens[i]
+		if (!t.ident) {
+			if (t.v === "(") {
+				const prev = tokens[i - 1]
+				const next = tokens[i + 1]
+				// FROM-first queries (`(FROM t SELECT ...)`) are subqueries too.
+				const sub =
+					next?.ident === true && (next.v === "select" || next.v === "with" || next.v === "from")
+				const call = prev?.ident === true && prev.v !== "in" && !armed
+				parenKind.push(sub ? "sub" : call ? "call" : "group")
+				depth++
+				outerFromList.push(fromListDepth)
+				// A subquery opens its own FROM list; `FROM (x(...))` keeps the table position.
+				if (sub) armed = false
+			} else if (t.v === ")") {
+				parenKind.pop()
+				depth--
+				fromListDepth = outerFromList.pop() ?? -1
+				armed = false
+			} else if (t.v === "," && depth === fromListDepth) {
+				armed = true
+			} else {
+				armed = false
+			}
+			continue
+		}
+		const after = tokens[i + 1]
+		if (after !== undefined && !after.ident && after.v === "(" && isReaderName(t.v)) return t.v
+		if (t.v === "from" || (t.v === "join" && (tokens[i - 1]?.v ?? "") !== "array")) {
+			if (parenKind[parenKind.length - 1] !== "call") {
+				armed = true
+				fromListDepth = depth
+			}
+			continue
+		}
+		if (armed) {
+			let j = i
+			let dotted = false
+			while (tokens[j + 1]?.v === "." && tokens[j + 2]?.ident === true) {
+				j += 2
+				dotted = true
+			}
+			const next = tokens[j + 1]
+			if (
+				next !== undefined &&
+				!next.ident &&
+				next.v === "(" &&
+				(dotted || !ALLOWED_TABLE_FUNCTIONS.has(t.v))
+			) {
+				return dotted
+					? tokens
+							.slice(i, j + 1)
+							.map((x) => x.v)
+							.join("")
+					: t.v
+			}
+			armed = false
+			i = j
+			continue
+		}
+		if (CLAUSE_BOUNDARY.has(t.v) && depth === fromListDepth) fromListDepth = -1
+	}
+	return null
+}
 
 /**
  * ClickHouse syntax the masker does not lex: `#` / `#!` line comments, `$$` and
@@ -152,38 +340,6 @@ const UNMASKED_SYNTAX: ReadonlyArray<readonly [RegExp, string]> = [
 		"Nested /* */ comments are not supported in raw SQL. Close each comment before opening another.",
 	],
 ]
-
-/**
- * End offsets of every quoted identifier (`` `x` `` or `"x"`), lexed exactly as
- * the masker lexes, which blanks them. A quoted name followed by `(` is a call
- * the function check below would otherwise never see.
- */
-const quotedIdentifierEnds = (sql: string): ReadonlyArray<number> => {
-	const ends: Array<number> = []
-	let i = 0
-	while (i < sql.length) {
-		const ch = sql.charAt(i)
-		const next = sql.charAt(i + 1)
-		if (ch === "-" && next === "-") {
-			const nl = sql.indexOf("\n", i)
-			i = nl === -1 ? sql.length : nl
-		} else if (ch === "/" && next === "*") {
-			const close = sql.indexOf("*/", i + 2)
-			i = close === -1 ? sql.length : close + 2
-		} else if (ch === "'" || ch === "`" || ch === '"') {
-			i++
-			while (i < sql.length) {
-				const c = sql.charAt(i)
-				i += c === "\\" ? 2 : 1
-				if (c === ch) break
-			}
-			if (ch !== "'") ends.push(Math.min(i, sql.length))
-		} else {
-			i++
-		}
-	}
-	return ends
-}
 
 /** Macros the engine expands. Anything else `$__`-shaped is a typo. */
 export const RAW_SQL_MACROS = [
@@ -472,22 +628,14 @@ export const rawSqlIssue = (
 			"Raw SQL must be a SELECT query (WITH common table expressions are supported).",
 		)
 	}
-	const functionMatch = masked.match(DISALLOWED_FUNCTION_RE)
-	if (functionMatch) {
+	// Runs over the source text (not the masked copy): the tokenizer does its own
+	// comment and literal handling, and it recognises the Unicode and quoted
+	// identifier spellings the masker leaves as-is.
+	const tableFunction = disallowedTableFunction(sql)
+	if (tableFunction !== null) {
 		return issue(
 			"DisallowedFunction",
-			`Table function '${functionMatch[1] ?? functionMatch[2]}' is not allowed in raw SQL. Queries may only read Maple's own tables.`,
-		)
-	}
-	const callAfterQuote = /\s*\(/y
-	const quotedCall = quotedIdentifierEnds(sql).some((end) => {
-		callAfterQuote.lastIndex = end
-		return callAfterQuote.test(maskedSql)
-	})
-	if (quotedCall) {
-		return issue(
-			"DisallowedFunction",
-			"Quoted function names are not allowed in raw SQL. Write the function name without quotes.",
+			`Table function '${tableFunction}' is not allowed in raw SQL. Queries may only read Maple's own tables.`,
 		)
 	}
 	// The row cap nests the query, and a `SETTINGS` clause at any depth (a
@@ -545,3 +693,52 @@ export const rawAlertSampleCountWarning = (sql: string, minimumSampleCount: numb
 	minimumSampleCount > 1 && !rawAlertSqlSelectsSamples(sql)
 		? `Minimum sample count ${minimumSampleCount} counts returned rows (one per bucket) because the query has no \`samples\` column. Select an event count as \`samples\` (e.g. \`count() AS samples\`) to gate on volume.`
 		: null
+
+export type RawAlertPerformanceHintCode = "no_service_filter" | "body_wildcard_match"
+
+/** A change likely to make an alert query cheaper, pointing at the line it is about. */
+export interface RawAlertPerformanceHint {
+	readonly code: RawAlertPerformanceHintCode
+	readonly message: string
+	/** 1-based line of the SQL the hint is about. */
+	readonly line: number
+}
+
+const lineAt = (sql: string, index: number): number => sql.slice(0, index).split("\n").length
+
+/**
+ * Cheap, text-only guesses at what makes an alert query slow. Logs and traces are
+ * sorted by service after org and time, so a service filter skips most of the data,
+ * and a `Body` wildcard match has to read every log body in the window.
+ */
+export const rawAlertPerformanceHints = (sql: string): ReadonlyArray<RawAlertPerformanceHint> => {
+	const masked = maskLiteralsAndComments(sql)
+	const table = /\bFROM\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)?(logs|traces)\b/i.exec(masked)
+	const tableName = table?.[1]?.toLowerCase()
+	const serviceHint: ReadonlyArray<RawAlertPerformanceHint> =
+		table !== null && tableName !== undefined && !/\bServiceName\b/.test(masked)
+			? [
+					{
+						code: "no_service_filter",
+						message: `Filter ${tableName} on a service, e.g. \`AND ServiceName = 'checkout'\`. Rows are stored by service, so the query skips every other service's data.`,
+						line: lineAt(sql, table.index),
+					},
+				]
+			: []
+	// Masking keeps offsets, so the pattern's literal is read from the original text.
+	const bodyHints = Array.from(masked.matchAll(/\bBody\s+(?:NOT\s+)?I?LIKE\b/gi))
+		.filter((match) =>
+			sql
+				.slice(match.index + match[0].length)
+				.trimStart()
+				.startsWith("'%"),
+		)
+		.slice(0, 1)
+		.map((match): RawAlertPerformanceHint => ({
+			code: "body_wildcard_match",
+			message:
+				"A `Body` match starting with `%` reads every log body in the window. Match a structured attribute instead, e.g. `LogAttributes['event'] = 'webhook.failed'`, or filter on a service first.",
+			line: lineAt(sql, match.index),
+		}))
+	return [...serviceHint, ...bodyHints]
+}

@@ -1,11 +1,14 @@
 pub mod ai_session;
 pub mod aws;
+pub mod aws_metric_stream;
 pub mod clickhouse_insert_mappings;
+pub mod decompress;
 pub mod gcp_logging;
 pub mod gcp_push_auth;
 pub mod metrics;
 pub mod otel;
 pub mod otlp_json;
+pub mod outbound;
 pub mod r2;
 pub mod session_analytics;
 pub mod telemetry;

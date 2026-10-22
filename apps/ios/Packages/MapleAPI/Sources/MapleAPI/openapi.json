@@ -514,11 +514,13 @@
             "environments": [
               "production"
             ],
+            "evaluation_interval_minutes": null,
             "exclude_service_names": [],
             "group_by": null,
             "id": "alrt_gU26thvJECdQvu54Ad9jiz",
             "last_evaluated_at": "2026-07-15T09:10:00.000Z",
             "last_evaluation_error": null,
+            "last_evaluation_error_kind": null,
             "last_scheduled_at": "2026-07-15T09:10:00.000Z",
             "minimum_sample_count": 50,
             "name": "Checkout error rate",
@@ -535,6 +537,8 @@
             ],
             "severity": "critical",
             "signal_type": "error_rate",
+            "slowed_at": null,
+            "slowed_interval_minutes": null,
             "tags": [
               "payments"
             ],
@@ -631,6 +635,21 @@
             },
             "type": "array"
           },
+          "evaluation_interval_minutes": {
+            "description": "Minutes between checks: 1, 5, 10, 15, 30 or 60, at most `window_minutes`. Raw SQL rules checked less often may run longer queries (5s at 1 minute, 15s at 5, 25s at 10 or more). `null` checks every fifth of the window, 1 to 5 minutes.",
+            "enum": [
+              1,
+              5,
+              10,
+              15,
+              30,
+              60
+            ],
+            "examples": [
+              null
+            ],
+            "type": "number"
+          },
           "exclude_service_names": {
             "description": "Services excluded from evaluation.",
             "items": {
@@ -657,6 +676,16 @@
           },
           "last_evaluation_error": {
             "description": "The most recent evaluation error for this rule, or `null` if the last evaluation succeeded.",
+            "type": "string"
+          },
+          "last_evaluation_error_kind": {
+            "description": "Why the last evaluation failed: `query_too_slow` or `query_too_much_memory` (the query hit its limit; check less often or narrow it), `invalid_query`, or `other`. `null` with no error.",
+            "enum": [
+              "query_too_slow",
+              "query_too_much_memory",
+              "invalid_query",
+              "other"
+            ],
             "type": "string"
           },
           "last_scheduled_at": {
@@ -737,6 +766,28 @@
           },
           "signal_type": {
             "$ref": "#/components/schemas/_maple_AlertSignalType"
+          },
+          "slowed_at": {
+            "description": "When the rule was last slowed down, or `null`.",
+            "examples": [
+              null
+            ],
+            "type": "string"
+          },
+          "slowed_interval_minutes": {
+            "description": "Set when Maple slowed the rule down after its query hit its time or memory limit 3 checks in a row: it is checked at least this many minutes apart, which allows a longer query. Any update clears it.",
+            "enum": [
+              1,
+              5,
+              10,
+              15,
+              30,
+              60
+            ],
+            "examples": [
+              null
+            ],
+            "type": "number"
           },
           "tags": {
             "description": "Free-form tags used to group and filter rules.",
@@ -12223,6 +12274,10 @@
     {
       "description": "Connect Google Cloud projects, folders or organizations: register a connector, choose whether it forwards logs and whether Maple may read metrics and resources, fetch the `gcloud` scripts that set it up, and see whether logs are arriving.",
       "name": "Google Cloud Integration"
+    },
+    {
+      "description": "Connect AWS accounts: register a connection, choose what Maple may read, fetch the CloudFormation stack that sets it up, and see whether Maple can assume its role.",
+      "name": "AWS Integration"
     },
     {
       "description": "Deduplicated errors and alert-backed issues tracked through Maple's triage workflow.",

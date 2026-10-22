@@ -8,6 +8,7 @@ import {
 	AlertRuleDocument,
 	AlertRulePreviewFiringSpan,
 	AlertRulePreviewPoint,
+	AlertQueryTiming,
 	AlertRulePreviewResponse,
 	AlertRulePreviewSeries,
 	HazelChannelId,
@@ -24,6 +25,7 @@ import {
 	type ChatWorkspaceId,
 	type QueryBuilderQueryDraftPayload,
 	MAX_ALERT_BREACH_WINDOW,
+	AlertEvaluationIntervalMinutes,
 } from "@maple/domain/http"
 import type {
 	V2AlertCheck,
@@ -37,7 +39,7 @@ import type {
 } from "@maple/domain/http/v2"
 import { fromV2Threshold } from "@maple/domain/http/v2"
 import type { QueryEngineAlertReducer } from "@maple/query-engine"
-import { Array as Arr, Schema } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 import {
 	buildTimeseriesQuerySpec,
 	createQueryDraft,
@@ -87,6 +89,8 @@ export type RuleFormState = {
 	/** The critical tier over a warning one; null on a one-tier rule. */
 	escalation: EscalationTierForm | null
 	windowMinutes: string
+	/** Minutes between checks; "" checks every fifth of the window. */
+	evaluationIntervalMinutes: string
 	minimumSampleCount: string
 	/** Count an empty window as a breach instead of skipping it. */
 	alertOnNoData: boolean
@@ -237,6 +241,14 @@ export function domainThresholdToForm(subject: ThresholdSubject, value: number):
 	return isPercentSignal(subject) ? String(Number((value * 100).toPrecision(12))) : String(value)
 }
 
+const decodeEvaluationInterval = Schema.decodeUnknownOption(AlertEvaluationIntervalMinutes)
+
+/** The interval the form picked, or null for the window's own. */
+export const formEvaluationInterval = (form: RuleFormState): AlertEvaluationIntervalMinutes | null =>
+	form.evaluationIntervalMinutes.trim().length === 0
+		? null
+		: Option.getOrNull(decodeEvaluationInterval(Number(form.evaluationIntervalMinutes)))
+
 function parsePositiveNumber(value: string, fallback: number): number {
 	const parsed = Number(value)
 	if (!Number.isFinite(parsed) || parsed <= 0) return fallback
@@ -303,6 +315,7 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 		recoveryValue: "",
 		escalation: null,
 		windowMinutes: "5",
+		evaluationIntervalMinutes: "",
 		minimumSampleCount: "50",
 		alertOnNoData: false,
 		consecutiveBreachesRequired: "2",
@@ -358,6 +371,8 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 						destinationIds: [...escalation.destinationIds],
 					},
 		windowMinutes: String(rule.windowMinutes),
+		evaluationIntervalMinutes:
+			rule.evaluationIntervalMinutes === null ? "" : String(rule.evaluationIntervalMinutes),
 		minimumSampleCount: String(rule.minimumSampleCount),
 		alertOnNoData: rule.noDataBehavior === "alert",
 		consecutiveBreachesRequired: String(rule.consecutiveBreachesRequired),
@@ -541,6 +556,7 @@ export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateP
 		threshold: primary.value,
 		threshold_upper: primary.upper,
 		window_minutes: parsePositiveNumber(form.windowMinutes, 5),
+		evaluation_interval_minutes: formEvaluationInterval(form),
 		minimum_sample_count: parseNonNegativeNumber(form.minimumSampleCount, 0),
 		alert_on_no_data: form.alertOnNoData && !ruleFormIsGrouped(form),
 		consecutive_breaches_required: parsePositiveNumber(form.consecutiveBreachesRequired, 2),
@@ -928,6 +944,19 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 					severity: span.severity,
 				}),
 		),
+		...(result.series_failure === undefined ? undefined : { seriesFailure: result.series_failure }),
+		...(result.query_timing === undefined
+			? undefined
+			: {
+					queryTiming: new AlertQueryTiming({
+						elapsedMs: result.query_timing.elapsed_ms,
+						failure: result.query_timing.failure,
+						probeLimitMs: result.query_timing.probe_limit_ms,
+						intervalMinutes: result.query_timing.interval_minutes,
+						limitMs: result.query_timing.limit_ms,
+						fitsIntervalMinutes: result.query_timing.fits_interval_minutes,
+					}),
+				}),
 	})
 }
 
@@ -1098,7 +1127,11 @@ export function groupDeliveryEventsByDay(
 		if (last && last.key === key) {
 			last.events.push(event)
 		} else {
-			groups.push({ key, label: formatAlertDayHeading(event.scheduledAt, timeZone, nowMs), events: [event] })
+			groups.push({
+				key,
+				label: formatAlertDayHeading(event.scheduledAt, timeZone, nowMs),
+				events: [event],
+			})
 		}
 	}
 	return groups

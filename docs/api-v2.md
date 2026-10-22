@@ -124,6 +124,7 @@ v2 accepts API keys (`maple_ak_…`) and dashboard session tokens (Clerk or self
 - Enforcement is mechanical: `GET`/`HEAD` and explicitly declared read-only query POSTs (such as session-replay search, trace lookup, and alert preview) require `<family>:read`; mutations require `<family>:write`. `write` implies `read`.
 - Keys with no scopes (all pre-v2 keys) have full access. `POST` and `GET /v2/agent_feedback` are scope-exempt: any key of the org can send and list feedback (`isScopeExemptRoute` in `auth.ts`). Session tokens are never scope-checked. The dashboard's authorization comes from org roles, like Stripe's own dashboard.
 - Failing the check returns `permission_error` / `insufficient_scope`.
+- Some writes reach data beyond their family, so they also need the read scopes for that data. Starting or restarting an investigation needs `<family>:read` for every family in `INVESTIGATION_READ_FAMILIES`, because the agent reads them. Saving new raw SQL on a dashboard, and running a stored raw-SQL widget through `widget_data`, need `traces:read`, `logs:read` and `metrics:read` (`TELEMETRY_READ_FAMILIES`, the same bar as minting a share link).
 
 Implementation: `packages/domain/src/http/v2/auth.ts` + `packages/backend/src/services/auth/ApiAuthorizationV2Live.ts`; scopes are stored on `api_keys.scopes` (jsonb).
 

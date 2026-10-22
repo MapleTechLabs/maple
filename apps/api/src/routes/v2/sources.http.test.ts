@@ -12,6 +12,8 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
+import { SourceRemovalService } from "@maple/backend/services/integrations/SourceRemovalService"
+import type { SourceId } from "@maple/domain/primitives"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -75,8 +77,23 @@ const makeHarness = () => {
 		LiveActivitiesService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 	// Provided first so it shadows the inert stub in ConfigResourceServiceStubsLayer.
+	const realSources = SourcesService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
 	const sourcesLive = Layer.mergeAll(
-		SourcesService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer))),
+		realSources,
+		// Token and default sources only: SourceRemovalService.test.ts covers integration sources.
+		Layer.effect(
+			SourceRemovalService,
+			Effect.gen(function* () {
+				const sources = yield* SourcesService
+				return {
+					remove: (orgId: OrgId, sourceId: SourceId) =>
+						Effect.map(sources.delete(orgId, sourceId), (source) => ({
+							source,
+							cleanupScript: null,
+						})),
+				}
+			}),
+		).pipe(Layer.provide(realSources)),
 		Layer.effect(SourceUsageService, SourceUsageService.make).pipe(
 			Layer.provide(
 				Layer.succeed(

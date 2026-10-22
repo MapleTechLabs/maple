@@ -1,4 +1,4 @@
-import type { AlertComparator, AlertDestinationDocument } from "@maple/domain/http"
+import type { AlertComparator, AlertDestinationDocument, AlertQueryTiming } from "@maple/domain/http"
 import {
 	buildRuleCreateParamsV2,
 	comparatorSupportsTiers,
@@ -11,6 +11,7 @@ import {
 } from "@maple/web-data/alerts/form-utils"
 import { destinationProvider } from "../shared/providers"
 import type { RuleForm } from "./form"
+import { intervalWindowIssue, queryTimingIssue } from "./interval"
 
 // The rule editor's pure helpers: form surface, condition bar, live chart hero, notifications.
 
@@ -97,9 +98,17 @@ export const validationIssues = (form: RuleForm): ReadonlyArray<string> => {
 		if (sql.length === 0) issues.push("SQL query")
 		else if (!form.rawQuerySql.includes("$__orgFilter")) issues.push("$__orgFilter in SQL")
 	}
+	const intervalIssue = intervalWindowIssue(form)
+	if (intervalIssue !== null) issues.push(intervalIssue)
 	issues.push(...deriveRuleQueryIssues(form), ...deriveTierIssues(form))
 	if (form.destinationIds.length === 0) issues.push("Who gets notified")
 	return issues
+}
+
+/** What blocks saving: the form's own issues and a query too slow for its interval. */
+export const saveIssues = (form: RuleForm, timing: AlertQueryTiming | null): ReadonlyArray<string> => {
+	const timingIssue = queryTimingIssue(form, timing)
+	return timingIssue === null ? validationIssues(form) : [...validationIssues(form), timingIssue]
 }
 
 /** `previewIdentityKey`: the rule as evaluated; a dry-run verdict is only shown while it matches. */

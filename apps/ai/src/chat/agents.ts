@@ -67,6 +67,8 @@ export interface AgentDefinition {
 	 * (`resolveReviewModel`), `triage` the deployment's chat and investigation model.
 	 */
 	readonly model: AgentModel
+	/** Offer `run_code` over the turn's read-only tools, where the runtime has a code executor. */
+	readonly codeMode?: boolean
 }
 
 export type AgentModel = "triage" | "review"
@@ -109,6 +111,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		permission: DEFAULT_RULESET,
 		budget: INVESTIGATION_BUDGET,
 		model: "triage",
+		codeMode: true,
 	},
 	"pr-review": {
 		name: "pr-review",
@@ -120,6 +123,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		autonomousPermission: PR_REVIEW_RULESET,
 		budget: PR_REVIEW_BUDGET,
 		model: "review",
+		codeMode: true,
 	},
 	"pr-reply": {
 		name: "pr-reply",
@@ -180,17 +184,15 @@ export const agentPolicyFor = (
 /**
  * A chat agent: prose in, prose out.
  *
- * `Output.text` rather than a JSON output schema because the answer *is* the assistant message. An
- * investigation session declares `submit_diagnosis` as its completion tool as well: a call to it
- * settles the run, and the turn runner closes out a pass that never made one.
+ * `Output.text` rather than a JSON output schema because the answer *is* the assistant message.
+ * `submit_diagnosis` and the other submit tools are ordinary tools here: the engine would require a
+ * declared completion tool on every model call, so `run.ts` settles the run when one lands.
  */
 export const chatAgent = (
 	agent: AgentDefinition,
 	toolkit: Toolkit.Any,
 	model: ResolvedModel,
 	options: {
-		/** Set when a call to this tool settles the run. Never engine-required; see `tools.ts`. */
-		readonly completion?: { readonly tool: string; readonly required: boolean }
 		/** The turn is a machine-started pass; see {@link agentPolicyFor}. */
 		readonly autonomous?: boolean
 	} = {},
@@ -209,16 +211,6 @@ export const chatAgent = (
 			description: agent.description,
 			toolkit,
 			policy: agentPolicyFor(agent, model.limits.context, options.autonomous === true),
-			...(options.completion === undefined
-				? undefined
-				: {
-						completion: {
-							tool: options.completion.tool,
-							required: options.completion.required,
-							project: ({ parameters }: { readonly parameters: unknown }) =>
-								JSON.stringify(parameters),
-						},
-					}),
 		}),
 		model.layer,
 	)

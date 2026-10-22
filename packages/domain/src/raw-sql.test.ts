@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { rawAlertSampleCountWarning, RawSqlText, rawSqlIssue } from "./raw-sql"
+import { rawAlertPerformanceHints, rawAlertSampleCountWarning, RawSqlText, rawSqlIssue } from "./raw-sql"
 
 const ok = "SELECT count() FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"
 
@@ -172,7 +172,7 @@ describe("rawSqlIssue", () => {
 		"SELECT * FROM \"file\"('/etc/hosts', LineAsString) WHERE $__orgFilter",
 		"SELECT * FROM default.`s3` /* c */ ('https://x/y') WHERE $__orgFilter",
 	])("rejects a quoted function name: %s", (sql) => {
-		expect(rawSqlIssue(sql)?.message).toContain("Quoted function names")
+		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
 	})
 
 	// Syntax the masker does not lex, so it and the server would disagree on what is code.
@@ -332,5 +332,42 @@ describe("rawSqlIssue org filter review follow-ups", () => {
 		"WITH c AS (SELECT 1 AS OrgId) SELECT 1 FROM traces t, c l WHERE $__orgFilter(t) AND $__orgFilter(l)",
 	])("still rejects a comma item that is not a table: %s", (sql) => {
 		expect(rawSqlIssue(sql)?.code).toBe("InvalidMacro")
+	})
+})
+
+describe("rawAlertPerformanceHints", () => {
+	const codes = (sql: string) => rawAlertPerformanceHints(sql).map((hint) => [hint.code, hint.line])
+
+	it("asks for a service filter on logs and traces, at the FROM line", () => {
+		expect(
+			codes("SELECT count() AS value\nFROM logs\nWHERE $__orgFilter AND $__timeFilter(Timestamp)"),
+		).toEqual([["no_service_filter", 2]])
+		expect(codes("SELECT count() AS value FROM default.traces WHERE $__orgFilter")).toEqual([
+			["no_service_filter", 1],
+		])
+	})
+
+	it("flags a Body match that starts with a wildcard", () => {
+		const sql = [
+			"SELECT count() AS value FROM logs",
+			"WHERE $__orgFilter AND ServiceName = 'api'",
+			"  AND Body ILIKE '%webhook%failed%'",
+		].join("\n")
+		expect(codes(sql)).toEqual([["body_wildcard_match", 3]])
+	})
+
+	it("stays quiet on a query that already filters well", () => {
+		expect(
+			codes(
+				"SELECT count() AS value FROM logs WHERE $__orgFilter AND ServiceName = 'api' AND Body LIKE 'webhook failed%'",
+			),
+		).toEqual([])
+		expect(codes("SELECT count() AS value FROM metrics_sum WHERE $__orgFilter")).toEqual([])
+	})
+
+	it("ignores table names and patterns inside strings and comments", () => {
+		expect(
+			codes("SELECT 'FROM logs' AS value FROM metrics_gauge WHERE $__orgFilter -- Body ILIKE '%x'"),
+		).toEqual([])
 	})
 })

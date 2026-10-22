@@ -100,7 +100,7 @@ const withOAuthApp = {
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
-const INITIATOR = { orgId: asOrgId("org_a"), userId: asUserId("user_a") }
+const initiatorA = { orgId: asOrgId("org_a"), userId: asUserId("user_a") }
 
 describe("CloudflareOAuthService", () => {
 	it.effect("reports not-connected for a fresh org", () => {
@@ -185,7 +185,7 @@ describe("CloudflareOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 			})
-			const result = yield* service.completeConnect(INITIATOR, "auth-code", state)
+			const result = yield* service.completeConnect("auth-code", state, initiatorA)
 			assert.strictEqual(result.orgId, "org_a")
 
 			const status = yield* service.getStatus(asOrgId("org_a"))
@@ -216,13 +216,50 @@ describe("CloudflareOAuthService", () => {
 		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
 	})
 
+	it.effect("completeConnect refuses a valid state redeemed by a different Maple user or org", () => {
+		const testDb = createTestDb(trackedDbs)
+		const accounts = [{ id: "acc_victim", name: "Victim Inc", type: "standard" }]
+		return Effect.gen(function* () {
+			const service = yield* CloudflareOAuthService
+			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
+				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
+			})
+			const error = yield* service
+				.completeConnect("victim-code", state, {
+					orgId: asOrgId("org_b"),
+					userId: asUserId("user_b"),
+				})
+				.pipe(Effect.flip)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+			const status = yield* service.getStatus(asOrgId("org_a"))
+			assert.strictEqual(status.connected, false)
+		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
+	})
+
+	it.effect("completeConnect refuses the initiator's org redeemed by another member", () => {
+		const testDb = createTestDb(trackedDbs)
+		const accounts = [{ id: "acc_1", name: "Acme Inc", type: "standard" }]
+		return Effect.gen(function* () {
+			const service = yield* CloudflareOAuthService
+			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
+				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
+			})
+			const error = yield* service
+				.completeConnect("auth-code", state, { orgId: asOrgId("org_a"), userId: asUserId("user_b") })
+				.pipe(Effect.flip)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+			const status = yield* service.getStatus(asOrgId("org_a"))
+			assert.strictEqual(status.connected, false)
+		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))
+	})
+
 	it.effect("completeConnect rejects an unknown or expired state", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const service = yield* CloudflareOAuthService
 			// No state row was ever seeded — a forged/expired-and-purged callback.
 			const error = yield* service
-				.completeConnect(INITIATOR, "auth-code", "state-that-was-never-issued")
+				.completeConnect("auth-code", "state-that-was-never-issued", initiatorA)
 				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			if (error._tag === "@maple/http/errors/IntegrationsValidationError") {
@@ -245,7 +282,7 @@ describe("CloudflareOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 			})
-			const result = yield* service.completeConnect(INITIATOR, "auth-code", state)
+			const result = yield* service.completeConnect("auth-code", state, initiatorA)
 			assert.strictEqual(result.orgId, "org_a")
 
 			// Both accounts surface, in the grant's order.
@@ -322,7 +359,7 @@ describe("CloudflareOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 			})
-			const error = yield* service.completeConnect(INITIATOR, "auth-code", state).pipe(Effect.flip)
+			const error = yield* service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			if (error._tag === "@maple/http/errors/IntegrationsValidationError") {
 				assert.include(error.message, "refresh token")
@@ -358,7 +395,7 @@ describe("CloudflareOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 			})
-			yield* service.completeConnect(INITIATOR, "auth-code", state)
+			yield* service.completeConnect("auth-code", state, initiatorA)
 
 			const result = yield* service.disconnect(asOrgId("org_a"))
 			assert.strictEqual(result.disconnected, true)
@@ -412,7 +449,7 @@ describe("CloudflareOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 			})
-			yield* service.completeConnect(INITIATOR, "auth-code", state)
+			yield* service.completeConnect("auth-code", state, initiatorA)
 			const [connected] = yield* owners()
 			assert.deepStrictEqual(connected, {
 				source: connected!.source,
@@ -489,7 +526,7 @@ describe("CloudflareOAuthService", () => {
 				const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 					callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 				})
-				return yield* service.completeConnect(INITIATOR, "auth-code", state)
+				return yield* service.completeConnect("auth-code", state, initiatorA)
 			})
 
 		return Effect.gen(function* () {

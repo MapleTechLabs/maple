@@ -15,6 +15,8 @@ import { queryPanelView } from "../../kit/query-builder/view"
 import { spanAttributeKeysOf, traceFacetsOf } from "./derive-rows"
 import { baseValuesOf } from "./where-inputs"
 import type { RuleForm } from "./form"
+import type { AlertQueryTiming } from "@maple/domain/http"
+import { draftTimingOf } from "./derive-rows"
 import { Message, type SignalKind } from "./message"
 import type { Model } from "./model"
 import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "../../../ui/input-group"
@@ -277,7 +279,7 @@ const builderPanel = (h: H, model: QueryView, form: RuleForm): Html =>
 		],
 	)
 
-const query = (h: H, model: QueryView, form: RuleForm): Html => {
+const query = (h: H, model: QueryView, form: RuleForm, timing: AlertQueryTiming | null): Html => {
 	const kind = signalTypeToKind(form.signalType)
 	return h.div(
 		[h.Class("space-y-2")],
@@ -299,7 +301,7 @@ const query = (h: H, model: QueryView, form: RuleForm): Html => {
 				? builtinForm(h, model, form)
 				: kind === "builder_query"
 					? builderPanel(h, model, form)
-					: rawQueryEditor(h, model, form),
+					: rawQueryEditor(h, model, form, timing),
 		],
 	)
 }
@@ -318,4 +320,5 @@ const viewOf = stableSlice(
 )
 
 /** Step 1, "What to watch"; `form` is the evaluated draft (`evaluatedFormOf`). */
-export const querySection = (h: H, model: Model, form: RuleForm): Html => slot(query, [h, viewOf(model), form])
+export const querySection = (h: H, model: Model, form: RuleForm): Html =>
+	slot(query, [h, viewOf(model), form, draftTimingOf(model, form)])

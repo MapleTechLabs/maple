@@ -5,7 +5,7 @@
  * graph this file drags in is imported on the first fire, not at startup and
  * not in the deploy process, where the Worker's init also runs.
  */
-import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertsService, type AlertSchedulerLane } from "@maple/backend/services/alerts/AlertsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
@@ -22,6 +22,7 @@ import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-reque
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrReviewPostMergeService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
@@ -56,6 +57,7 @@ export const layerTick = (
 		GcpMetricsService.layer,
 		PlanetScaleService.layer,
 		RailwayMetricsService.layer,
+		AwsConnectionService.layer,
 		SupabaseConnectionService.layer,
 		SupabaseLogsService.layer,
 		SupabaseInsightsService.layer,
@@ -133,18 +135,22 @@ const makeTick = <A, E, R>(
 		catchTickFailure(spanKey),
 	)
 
-const alertTick = makeTick(
-	AlertsService.use((alerts) => alerts.runSchedulerTick()),
-	"scheduler",
-	(result) => ({
-		evaluatedCount: result.evaluatedCount,
-		processedCount: result.processedCount,
-		evaluationFailureCount: result.evaluationFailureCount,
-		warehouseUnavailableSkipCount: result.warehouseUnavailableSkipCount,
-		deferredCount: result.deferredCount,
-		deliveryFailureCount: result.deliveryFailureCount,
-	}),
-)
+const schedulerTick = (lane: AlertSchedulerLane, spanKey: string) =>
+	makeTick(
+		AlertsService.use((alerts) => alerts.runSchedulerTick(lane)),
+		spanKey,
+		(result) => ({
+			evaluatedCount: result.evaluatedCount,
+			processedCount: result.processedCount,
+			evaluationFailureCount: result.evaluationFailureCount,
+			warehouseUnavailableSkipCount: result.warehouseUnavailableSkipCount,
+			deferredCount: result.deferredCount,
+			deliveryFailureCount: result.deliveryFailureCount,
+		}),
+	)
+
+const alertTick = schedulerTick("standard", "scheduler")
+const alertLongQueryTick = schedulerTick("long_query", "scheduler_long_query")
 
 const errorTick = makeTick(
 	ErrorsService.use((errors) => errors.runTick()),
@@ -291,6 +297,19 @@ const planetScaleTick = makeTick(
 			: undefined,
 )
 
+const awsConnectionsTick = makeTick(
+	AwsConnectionService.use((aws) => aws.checkDue()),
+	"aws_connections",
+	(result) =>
+		result.due > 0
+			? {
+					due: result.due,
+					checked: result.checked,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
 const railwayMetricsTick = makeTick(
 	RailwayMetricsService.use((railway) => railway.pollAllOrgs()),
 	"railway_metrics",
@@ -365,7 +384,9 @@ const prReviewPostMergeTick = makeTick(
 
 export interface ScheduledTickPrograms<R = never> {
 	readonly alert: Effect.Effect<void, never, R>
+	readonly alertLongQuery: Effect.Effect<void, never, R>
 	readonly anomaly: Effect.Effect<void, never, R>
+	readonly awsConnections: Effect.Effect<void, never, R>
 	readonly cloudflareAnalytics: Effect.Effect<void, never, R>
 	readonly digest: Effect.Effect<void, never, R>
 	readonly error: Effect.Effect<void, never, R>
@@ -385,6 +406,7 @@ export interface ScheduledTickPrograms<R = never> {
 const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect.Effect<void, never, R> =>
 	Match.value(lane).pipe(
 		Match.when("alert", () => ticks.alert),
+		Match.when("alert_long_query", () => ticks.alertLongQuery),
 		// `fixVerification` is chained onto `error` rather than given its own lane:
 		// a window this minute's error tick just refuted must already be settled
 		// when the verification tick looks at it.
@@ -398,6 +420,7 @@ const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect
 		Match.when("pr_review_post_merge", () => ticks.prReviewPostMerge),
 		Match.when("digest", () => ticks.digest),
 		Match.when("service_map_rollup", () => ticks.serviceMapRollup),
+		Match.when("aws_connections", () => ticks.awsConnections),
 		Match.when("supabase_discovery", () => ticks.supabaseDiscovery),
 		Match.when("supabase_logs", () => ticks.supabaseLogs),
 		Match.when("supabase_insights", () => ticks.supabaseInsights),
@@ -439,6 +462,7 @@ export const selectLaneProgram = <R>(
 type ScheduledServices =
 	| AlertsService
 	| AnomalyDetectionService
+	| AwsConnectionService
 	| CloudflareAnalyticsService
 	| DigestService
 	| WebAnalyticsDigestService
@@ -456,7 +480,9 @@ type ScheduledServices =
 
 export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	alert: alertTick,
+	alertLongQuery: alertLongQueryTick,
 	anomaly: anomalyTick,
+	awsConnections: awsConnectionsTick,
 	cloudflareAnalytics: cloudflareAnalyticsTick,
 	digest: digestTick,
 	error: errorTick,

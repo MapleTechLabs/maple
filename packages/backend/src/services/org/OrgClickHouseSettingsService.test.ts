@@ -249,6 +249,52 @@ layer(FetchHttpClient.layer, { excludeTestServices: true })("execClickHouse", (i
 		}),
 	)
 
+	it.effect("rejects an endless response body without retrying instead of buffering it", () =>
+		Effect.gen(function* () {
+			const pulled = { count: 0 }
+			const chunk = new TextEncoder().encode("x".repeat(64 * 1024))
+			const { state, fetchImpl } = makeFetch(() =>
+				Promise.resolve(
+					new Response(
+						new ReadableStream<Uint8Array>({
+							pull: (controller) => {
+								pulled.count++
+								controller.enqueue(chunk)
+							},
+						}),
+						{ status: 200 },
+					),
+				),
+			)
+
+			const exit = yield* run("SELECT 1", fetchImpl).pipe(Effect.exit)
+
+			expect(getError(exit)).toBeInstanceOf(OrgClickHouseSettingsUpstreamRejectedError)
+			expect(state.calls).toBe(1)
+			expect(pulled.count).toBeLessThan(200)
+		}),
+	)
+
+	it.effect("reads a normal multi-chunk body in full", () =>
+		Effect.gen(function* () {
+			const parts = ['{"name":"a"}\n', '{"name":"b"}\n']
+			const { fetchImpl } = makeFetch(() =>
+				Promise.resolve(
+					new Response(
+						new ReadableStream<Uint8Array>({
+							start: (controller) => {
+								parts.forEach((part) => controller.enqueue(new TextEncoder().encode(part)))
+								controller.close()
+							},
+						}),
+						{ status: 200 },
+					),
+				),
+			)
+			expect(yield* run("SELECT name", fetchImpl)).toBe(parts.join(""))
+		}),
+	)
+
 	it.effect("does NOT retry a 4xx rejection", () =>
 		Effect.gen(function* () {
 			const { state, fetchImpl } = makeFetch(() => Promise.resolve(mockResponse("Syntax error", 400)))

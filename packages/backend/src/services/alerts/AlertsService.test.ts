@@ -1,4 +1,11 @@
-import { AlertDeliveryError, AlertDeliveryRejectedError, AlertValidationError } from "@maple/domain/http"
+import {
+	AlertDeliveryError,
+	AlertDeliveryRejectedError,
+	type AlertEvaluationIntervalMinutes,
+	AlertValidationError,
+	WarehouseQuotaExceededError,
+} from "@maple/domain/http"
+import type { WarehouseQuerySettings } from "@maple/query-engine/profiles"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
@@ -8,6 +15,7 @@ import { ChatAlertPoster } from "./ChatAlertPoster"
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
+	Fiber,
 	Array as Arr,
 	Cause,
 	Clock,
@@ -4928,6 +4936,154 @@ describe("AlertsService.previewRule", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 
+	describe("query timing", () => {
+		const rawPreview = (windowMinutes: number) =>
+			decodePreviewRequest({
+				rule: {
+					name: "Raw timing",
+					severity: "warning",
+					signalType: "raw_query",
+					rawQuerySql:
+						"SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+					comparator: "gt",
+					threshold: 10,
+					windowMinutes,
+					destinationIds: [],
+				},
+				startTime: "2026-01-01T00:00:00.000Z",
+				endTime: "2026-01-01T00:30:00.000Z",
+			})
+
+		// The timing probe reads the latest window (TestClock starts at the epoch), the chart the
+		// requested 2026 range; `chart` answers the chart's query, `probe` runs before the probe's.
+		const probeWarehouse = (
+			probe: Effect.Effect<void, WarehouseQuotaExceededError>,
+			chart: Effect.Effect<void, WarehouseQuotaExceededError> = Effect.void,
+		) => {
+			const stub = makeWarehouseStub({ rawQueryRows: [{ value: 1, samples: 1 }] })
+			return {
+				...stub,
+				rawSqlQuery: (...args: Parameters<WarehouseQueryServiceApi["rawSqlQuery"]>) =>
+					Effect.andThen(args[1].includes("1970-01-01") ? probe : chart, stub.rawSqlQuery(...args)),
+			} satisfies WarehouseQueryServiceApi
+		}
+
+		it.effect("times one check and says which intervals the query fits", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const preview = yield* alerts.previewRule(
+					asOrgId("org_timing_fits"),
+					adminRoles,
+					rawPreview(5),
+				)
+				assert.deepStrictEqual(preview.queryTiming && { ...preview.queryTiming }, {
+					elapsedMs: 7_800,
+					failure: null,
+					probeLimitMs: 25_000,
+					intervalMinutes: 1,
+					limitMs: 5_000,
+					// 7.8 s fits 5 minutes and up; a 5-minute window allows no longer interval.
+					fitsIntervalMinutes: [5],
+				})
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, probeWarehouse(TestClock.adjust(Duration.millis(7_800))), {
+						fetch: okFetch,
+					}),
+				),
+			)
+		})
+
+		it.effect("reports a query that ran past every limit as too slow for all of them", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const preview = yield* alerts.previewRule(
+					asOrgId("org_timing_slow"),
+					adminRoles,
+					rawPreview(5),
+				)
+				assert.strictEqual(preview.queryTiming?.elapsedMs, null)
+				assert.strictEqual(preview.queryTiming?.failure, "query_too_slow")
+				assert.deepStrictEqual(preview.queryTiming?.fitsIntervalMinutes, [])
+			}).pipe(
+				Effect.provide(
+					makeLayer(
+						testDb,
+						probeWarehouse(
+							Effect.fail(
+								new WarehouseQuotaExceededError({
+									message: "Timeout exceeded",
+									pipeName: "rawSqlQuery",
+									setting: "max_execution_time",
+								}),
+							),
+						),
+						{ fetch: okFetch },
+					),
+				),
+			)
+		})
+
+		it.effect("keeps the timing when the range is too heavy to chart, instead of failing", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const preview = yield* alerts.previewRule(
+					asOrgId("org_timing_heavy"),
+					adminRoles,
+					rawPreview(5),
+				)
+				assert.strictEqual(preview.seriesFailure, "query_too_slow")
+				assert.lengthOf(preview.series, 0)
+				assert.strictEqual(preview.queryTiming?.elapsedMs, 7_800)
+			}).pipe(
+				Effect.provide(
+					makeLayer(
+						testDb,
+						probeWarehouse(
+							TestClock.adjust(Duration.millis(7_800)),
+							Effect.fail(
+								new WarehouseQuotaExceededError({
+									message: "Timeout exceeded",
+									pipeName: "rawSqlQuery",
+									setting: "max_execution_time",
+								}),
+							),
+						),
+						{ fetch: okFetch },
+					),
+				),
+			)
+		})
+
+		it.effect("leaves timing off a builder rule, whose queries read rollups", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const preview = yield* alerts.previewRule(
+					asOrgId("org_timing_builder"),
+					adminRoles,
+					decodePreviewRequest({
+						rule: {
+							name: "Error rate",
+							severity: "warning",
+							signalType: "error_rate",
+							comparator: "gt",
+							threshold: 5,
+							windowMinutes: 5,
+							destinationIds: [],
+						},
+						startTime: "2026-01-01T00:00:00.000Z",
+						endTime: "2026-01-01T00:30:00.000Z",
+					}),
+				)
+				assert.isUndefined(preview.queryTiming)
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
+		})
+	})
+
 	it.effect("charts a no-data series for a raw-SQL rule whose query matches nothing", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = { rawQueryRows: [] }
@@ -6308,7 +6464,7 @@ describe("AlertsService evaluation cadence", () => {
 				(n) =>
 					!isAlertRuleDue({
 						ruleId: rule.id,
-						windowMinutes: 30,
+						intervalMinutes: 5,
 						updatedAt: claimedAt,
 						lastClaimedAt: claimedAt,
 						windowEndMs: snapAlertWindowEndMs(claimedAt + n * 60_000),
@@ -6335,6 +6491,324 @@ describe("AlertsService evaluation cadence", () => {
 			const afterEdit = yield* alerts.runSchedulerTick()
 			assert.strictEqual(afterEdit.evaluatedCount, 1)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
+	})
+})
+
+describe("AlertsService check intervals", () => {
+	const RAW_SQL = "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"
+
+	// Records the settings each raw SQL query ran with.
+	const recordingWarehouse = (settings: Array<WarehouseQuerySettings | undefined>) => {
+		const stub = makeWarehouseStub({ rawQueryRows: [{ value: 1, samples: 1 }] })
+		return {
+			...stub,
+			rawSqlQuery: (...args: Parameters<WarehouseQueryServiceApi["rawSqlQuery"]>) => {
+				settings.push(args[2]?.settings)
+				return stub.rawSqlQuery(...args)
+			},
+		} satisfies WarehouseQueryServiceApi
+	}
+
+	const createIntervalRule = (
+		alerts: AlertsServiceApi,
+		orgId: OrgId,
+		rule: {
+			readonly signalType: "raw_query" | "error_rate"
+			readonly windowMinutes: number
+			readonly evaluationIntervalMinutes: AlertEvaluationIntervalMinutes | null
+		},
+	) =>
+		createWebhookDestination(alerts, orgId, asUserId("user_interval")).pipe(
+			Effect.flatMap((destination) =>
+				alerts.createRule(
+					orgId,
+					asUserId("user_interval"),
+					adminRoles,
+					new AlertRuleUpsertRequest({
+						name: `Interval ${rule.signalType} ${rule.evaluationIntervalMinutes}`,
+						severity: "warning",
+						enabled: true,
+						signalType: rule.signalType,
+						...(rule.signalType === "raw_query" ? { rawQuerySql: RAW_SQL } : undefined),
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: rule.windowMinutes,
+						evaluationIntervalMinutes: rule.evaluationIntervalMinutes,
+						destinationIds: [destination.id],
+					}),
+				),
+			),
+		)
+
+	it.effect("runs a raw SQL rule checked every 10 minutes in the long-query lane with a 25s limit", () => {
+		const testDb = createTestDb(trackedDbs)
+		const settings: Array<WarehouseQuerySettings | undefined> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* createIntervalRule(alerts, asOrgId("org_interval_long"), {
+				signalType: "raw_query",
+				windowMinutes: 10,
+				evaluationIntervalMinutes: 10,
+			})
+
+			assert.strictEqual((yield* alerts.runSchedulerTick("standard")).evaluatedCount, 0)
+			assert.strictEqual((yield* alerts.runSchedulerTick("long_query")).evaluatedCount, 1)
+			assert.deepStrictEqual(settings, [{ maxExecutionTime: 25, maxMemoryUsage: 512_000_000 }])
+		}).pipe(Effect.provide(makeLayer(testDb, recordingWarehouse(settings), { fetch: okFetch })))
+	})
+
+	it.effect("keeps a raw SQL rule checked every minute in the standard lane with a 5s limit", () => {
+		const testDb = createTestDb(trackedDbs)
+		const settings: Array<WarehouseQuerySettings | undefined> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* createIntervalRule(alerts, asOrgId("org_interval_short"), {
+				signalType: "raw_query",
+				windowMinutes: 5,
+				evaluationIntervalMinutes: null,
+			})
+
+			assert.strictEqual((yield* alerts.runSchedulerTick("long_query")).evaluatedCount, 0)
+			assert.strictEqual((yield* alerts.runSchedulerTick("standard")).evaluatedCount, 1)
+			assert.deepStrictEqual(settings, [{ maxExecutionTime: 5, maxMemoryUsage: 256_000_000 }])
+		}).pipe(Effect.provide(makeLayer(testDb, recordingWarehouse(settings), { fetch: okFetch })))
+	})
+
+	it.effect("checks a rule on the interval its author picked", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			// A 15-minute window alone would be checked every third minute.
+			yield* createIntervalRule(alerts, asOrgId("org_interval_builder"), {
+				signalType: "error_rate",
+				windowMinutes: 15,
+				evaluationIntervalMinutes: 10,
+			})
+
+			const counts = yield* Effect.forEach(Arr.range(1, 25), () =>
+				alerts.runSchedulerTick().pipe(
+					Effect.map((tick) => tick.evaluatedCount),
+					Effect.tap(() => TestClock.adjust(Duration.minutes(1))),
+				),
+			)
+			const ran = Arr.filter(Arr.range(0, counts.length - 1), (index) => counts[index] === 1)
+			// Right away (never claimed), then on its phase minute every ten.
+			assert.strictEqual(ran[0], 0)
+			const settled = ran.slice(1)
+			assert.isAtMost(settled[0]!, 10)
+			assert.isAtLeast(settled.length, 2)
+			Arr.forEach(settled.slice(1), (tick, i) => assert.strictEqual(tick - settled[i]!, 10))
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
+	})
+
+	it.effect("defers a slow rule with no room left in the long-query lane to the very next tick", () => {
+		const testDb = createTestDb(trackedDbs)
+		// Each query takes 26 s two at a time, so the second pair would start with under 35 s of the 60 s budget left.
+		const stub = makeWarehouseStub({ rawQueryRows: [{ value: 1, samples: 1 }] })
+		const slowWarehouse = {
+			...stub,
+			rawSqlQuery: (...args: Parameters<WarehouseQueryServiceApi["rawSqlQuery"]>) =>
+				Effect.andThen(Effect.sleep(Duration.seconds(26)), stub.rawSqlQuery(...args)),
+		} satisfies WarehouseQueryServiceApi
+		// A tick under the test clock, which moves a second at a time while the tick sleeps.
+		const tickWithClock = (alerts: AlertsServiceApi) =>
+			Effect.gen(function* () {
+				const tick = yield* Effect.forkChild(alerts.runSchedulerTick("long_query"))
+				yield* Effect.forEach(Arr.range(1, 90), () => TestClock.adjust(Duration.seconds(1)), { discard: true })
+				return yield* Fiber.join(tick)
+			})
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* Effect.forEach(["a", "b", "c", "d"], (org) =>
+				createIntervalRule(alerts, asOrgId(`org_interval_room_${org}`), {
+					signalType: "raw_query",
+					windowMinutes: 10,
+					evaluationIntervalMinutes: 10,
+				}),
+			)
+
+			const first = yield* tickWithClock(alerts)
+			assert.deepStrictEqual(
+				{ evaluated: first.evaluatedCount, failed: first.evaluationFailureCount, deferred: first.deferredCount },
+				{ evaluated: 2, failed: 0, deferred: 2 },
+			)
+			// Their claims were released, so they run on the next tick rather than on their next 10-minute slot.
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS + 2 * 60_000)
+			assert.strictEqual((yield* tickWithClock(alerts)).evaluatedCount, 2)
+		}).pipe(Effect.provide(makeLayer(testDb, slowWarehouse, { fetch: okFetch })))
+	})
+
+	it.effect("rejects a check interval longer than the window", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const exit = yield* createIntervalRule(alerts, asOrgId("org_interval_gap"), {
+				signalType: "error_rate",
+				windowMinutes: 5,
+				evaluationIntervalMinutes: 15,
+			}).pipe(Effect.exit)
+			const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+			assert.instanceOf(error, AlertValidationError)
+			assert.include(
+				error instanceof AlertValidationError ? error.details.join("\n") : "",
+				"must be at least evaluationIntervalMinutes",
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
+	})
+
+	// A raw SQL warehouse whose queries run 6s and time out while `failing` holds.
+	const timingOutWarehouse = (state: {
+		failing: boolean
+		readonly limits: Array<number | undefined>
+		readonly checkDurations: Array<unknown>
+	}) => {
+		const stub = makeWarehouseStub({ rawQueryRows: [{ value: 1, samples: 1 }] })
+		return {
+			...stub,
+			rawSqlQuery: (...args: Parameters<WarehouseQueryServiceApi["rawSqlQuery"]>) =>
+				Effect.gen(function* () {
+					state.limits.push(args[2]?.settings?.maxExecutionTime)
+					yield* TestClock.adjust(Duration.seconds(6))
+					if (!state.failing) return yield* stub.rawSqlQuery(...args)
+					return yield* new WarehouseQuotaExceededError({
+						message: "Timeout exceeded: elapsed 6000 ms",
+						pipeName: "rawSqlQuery",
+						setting: "max_execution_time",
+					})
+				}),
+			ingest: (_tenant, datasource, rows) =>
+				Effect.sync(() => {
+					if (datasource === "alert_checks") {
+						state.checkDurations.push(...rows.map((row) => row.EvaluationDurationMs))
+					}
+				}),
+		} satisfies WarehouseQueryServiceApi
+	}
+
+	// Both lanes, once a minute.
+	const tickBothLanes = (alerts: AlertsServiceApi, minutes: number) =>
+		Effect.forEach(
+			Arr.range(1, minutes),
+			() =>
+				alerts
+					.runSchedulerTick("standard")
+					.pipe(
+						Effect.andThen(alerts.runSchedulerTick("long_query")),
+						Effect.andThen(TestClock.adjust(Duration.minutes(1))),
+					),
+			{ discard: true },
+		)
+
+	it.effect("slows a rule whose query keeps timing out, a step at a time, up to its window", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			limits: [] as Array<number | undefined>,
+			checkDurations: [] as Array<unknown>,
+		}
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_slowdown")
+			// Checked every 2 minutes by its window, under the 5s limit.
+			yield* createIntervalRule(alerts, orgId, {
+				signalType: "raw_query",
+				windowMinutes: 10,
+				evaluationIntervalMinutes: null,
+			})
+
+			yield* tickBothLanes(alerts, 60)
+
+			// Three timeouts at each limit, then 5-minute checks at 15s, then 10-minute checks at 25s.
+			assert.deepStrictEqual(state.limits.slice(0, 9), [5, 5, 5, 15, 15, 15, 25, 25, 25])
+			// The window caps it: 15 minutes would leave data unread between checks.
+			assert.isTrue(state.limits.slice(6).every((limit) => limit === 25))
+			assert.isAtMost(state.limits.length, 3 + 3 + 6)
+			const [rule] = (yield* alerts.listRules(orgId)).rules
+			assert.strictEqual(rule?.slowedIntervalMinutes, 10)
+			assert.isNotNull(rule?.slowedAt)
+			assert.strictEqual(rule?.lastEvaluationErrorKind, "query_too_slow")
+			// A failed check records how long its query ran, not 0.
+			assert.isNotEmpty(state.checkDurations)
+			assert.isTrue(state.checkDurations.every((ms) => ms === 6000))
+		}).pipe(Effect.provide(makeLayer(testDb, timingOutWarehouse(state), { fetch: okFetch })))
+	})
+
+	it.effect("does not slow a rule whose timeouts a clean check interrupts", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			limits: [] as Array<number | undefined>,
+			checkDurations: [] as Array<unknown>,
+		}
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_slowdown_reset")
+			yield* createIntervalRule(alerts, orgId, {
+				signalType: "raw_query",
+				windowMinutes: 5,
+				evaluationIntervalMinutes: null,
+			})
+
+			yield* tickBothLanes(alerts, 2)
+			state.failing = false
+			yield* tickBothLanes(alerts, 1)
+			state.failing = true
+			yield* tickBothLanes(alerts, 2)
+
+			assert.deepStrictEqual(state.limits, [5, 5, 5, 5, 5])
+			const [rule] = (yield* alerts.listRules(orgId)).rules
+			assert.isNull(rule?.slowedIntervalMinutes)
+		}).pipe(Effect.provide(makeLayer(testDb, timingOutWarehouse(state), { fetch: okFetch })))
+	})
+
+	it.effect("gives a slowed rule its own interval back when it is edited", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			limits: [] as Array<number | undefined>,
+			checkDurations: [] as Array<unknown>,
+		}
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_slowdown_edit")
+			const created = yield* createIntervalRule(alerts, orgId, {
+				signalType: "raw_query",
+				windowMinutes: 5,
+				evaluationIntervalMinutes: null,
+			})
+			yield* tickBothLanes(alerts, 3)
+			assert.strictEqual((yield* alerts.listRules(orgId)).rules[0]?.slowedIntervalMinutes, 5)
+
+			yield* alerts.updateRule(
+				orgId,
+				asUserId("user_interval"),
+				adminRoles,
+				created.id,
+				new AlertRuleUpsertRequest({
+					name: "Faster query",
+					severity: "warning",
+					signalType: "raw_query",
+					rawQuerySql: RAW_SQL,
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					destinationIds: [...created.destinationIds],
+				}),
+			)
+			state.failing = false
+			state.limits.length = 0
+			yield* tickBothLanes(alerts, 3)
+
+			assert.deepStrictEqual(state.limits, [5, 5, 5])
+			assert.isNull((yield* alerts.listRules(orgId)).rules[0]?.slowedIntervalMinutes)
+		}).pipe(Effect.provide(makeLayer(testDb, timingOutWarehouse(state), { fetch: okFetch })))
 	})
 })
 

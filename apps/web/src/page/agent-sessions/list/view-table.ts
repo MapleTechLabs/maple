@@ -46,14 +46,14 @@ const COLUMNS: ReadonlyArray<Column> = [
 		header: "Services",
 		width: 170,
 		skeleton: "w-24",
-		responsive: "hidden @min-[1110px]/page:table-cell",
+		responsive: "hidden @min-[1270px]/page:table-cell",
 	},
 	{
 		id: "model",
 		header: "Model",
 		width: 160,
 		skeleton: "w-24",
-		responsive: "hidden @min-[1270px]/page:table-cell",
+		responsive: "hidden @min-[1110px]/page:table-cell",
 	},
 	{
 		id: "durationMs",
@@ -211,7 +211,8 @@ export const sessionHref = (row: DisplayRow): string =>
 const startedAt = (h: H, row: DisplayRow, context: RowContext, className: string): Html =>
 	hint(h, className, [formatRelativeTimeOrDate(row.startTime, context.nowMs, context.timeZone)])
 
-/** The agent it ran beside the framework's mark, over the id it is cited by. */
+/** The agent it ran beside the framework's mark, over the id it is cited by and, while the Model
+ *  column is hidden, the model it ran on. */
 const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 	const vendor = vendorLabel(row.vendorId)
 	const id = sessionRowIdParts(row.sessionId)
@@ -253,24 +254,45 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 						row,
 						context,
 						"ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @min-[400px]/page:hidden",
-									),
+					),
 				],
 			),
 			h.div(
-				[
-					h.Class("mt-0.5 flex min-w-0 items-baseline gap-1.5 text-xs"),
-					...triggerAttributes(h),
-				],
+				[h.Class("mt-0.5 flex min-w-0 items-baseline gap-1.5 text-xs"), ...triggerAttributes(h)],
 				[
 					h.span(
 						[h.Class("shrink-0 text-muted-foreground/70")],
 						[id.kind === "trace" ? "Trace" : "Session"],
 					),
 					h.span([h.Class("min-w-0 truncate font-mono text-muted-foreground")], [id.short]),
+					...inlineModel(h, row, context),
 				],
 			),
 		],
 	)
+}
+
+/** The Model column's content, folded into the session cell below the column's breakpoint. */
+const inlineModel = (h: H, row: DisplayRow, context: RowContext): ReadonlyArray<Html> => {
+	const [firstModel] = row.models
+	return firstModel === undefined
+		? []
+		: [
+				h.span(
+					[
+						h.Class(
+							"ml-auto max-w-[55%] shrink-0 self-center text-muted-foreground @min-[1110px]/page:hidden",
+						),
+					],
+					[
+						modelLabel(h, {
+							detected: context.detect(firstModel),
+							moreCount: row.models.length - 1,
+							size: 12,
+						}),
+					],
+				),
+			]
 }
 
 const modelCell = (h: H, row: DisplayRow, context: RowContext): Html | null => {
@@ -381,28 +403,22 @@ const errorChips = (h: H, row: DisplayRow): Html => {
 		[
 			...(row.turnErrorCount > 0
 				? [
-						errorChip(
-							h,
-							{
-								iconName: "FaceRobotIcon",
-								count: row.turnErrorCount,
-								noun: "turn",
-								className: TURN_CHIP,
-							},
-						),
+						errorChip(h, {
+							iconName: "FaceRobotIcon",
+							count: row.turnErrorCount,
+							noun: "turn",
+							className: TURN_CHIP,
+						}),
 					]
 				: []),
 			...(row.toolErrorCount > 0
 				? [
-						errorChip(
-							h,
-							{
-								iconName: "GearIcon",
-								count: row.toolErrorCount,
-								noun: "tool",
-								className: TOOL_CHIP,
-							},
-						),
+						errorChip(h, {
+							iconName: "GearIcon",
+							count: row.toolErrorCount,
+							noun: "tool",
+							className: TOOL_CHIP,
+						}),
 					]
 				: []),
 			...(classified === 0 && other > 0
@@ -500,23 +516,23 @@ export const sessionsTable = (
 					tableBody(
 						h,
 						[
-						...windowRows(h, options.rows, options.context, options.virtual?.window),
-						...(options.isLoadingMore
-							? [
-									h.tr(
-										[h.Key("loading")],
-										[
-											h.td(
-												[
-													h.Attribute("colspan", String(COLUMNS.length)),
-													h.Class("p-2"),
-												],
-												[loadingMoreRow(h, "Loading more sessions…")],
-											),
-										],
-									),
-								]
-							: []),
+							...windowRows(h, options.rows, options.context, options.virtual?.window),
+							...(options.isLoadingMore
+								? [
+										h.tr(
+											[h.Key("loading")],
+											[
+												h.td(
+													[
+														h.Attribute("colspan", String(COLUMNS.length)),
+														h.Class("p-2"),
+													],
+													[loadingMoreRow(h, "Loading more sessions…")],
+												),
+											],
+										),
+									]
+								: []),
 						],
 						undefined,
 						options.virtual === undefined

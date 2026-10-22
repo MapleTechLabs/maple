@@ -203,8 +203,20 @@ const makeTelemetryLayer = Effect.gen(function* () {
 	}
 	const headers = { Authorization: `Bearer ${Redacted.value(key)}` }
 	return Layer.mergeAll(
-		OtlpTracer.layer({ url: `${endpoint}/v1/traces`, resource, headers, shutdownTimeout: "3 seconds" }),
-		OtlpMetrics.layer({ url: `${endpoint}/v1/metrics`, resource, headers, shutdownTimeout: "3 seconds" }),
+		OtlpTracer.layer({
+			url: `${endpoint}/v1/traces`,
+			resource,
+			headers,
+			compression: "gzip",
+			shutdownTimeout: "3 seconds",
+		}),
+		OtlpMetrics.layer({
+			url: `${endpoint}/v1/metrics`,
+			resource,
+			headers,
+			compression: "gzip",
+			shutdownTimeout: "3 seconds",
+		}),
 	).pipe(Layer.provide(ScrubbedSerialization), Layer.provide(FetchHttpClient.layer))
 })
 

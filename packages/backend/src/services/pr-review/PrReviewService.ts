@@ -40,6 +40,7 @@ import {
 	PR_REVIEW_CONFIDENCE_LABEL,
 	PR_REVIEW_CONFIDENCE_MAX,
 	PR_REVIEW_FAILURE_COPY,
+	PR_REVIEW_FAILURE_NEEDS_FIX,
 	DEFAULT_REVIEWER_MENTION,
 	PrReviewFailureReason,
 	prReviewFailureReason,
@@ -500,6 +501,12 @@ export type PrReviewStatusNotice = typeof PrReviewStatusNotice.Type
 const failedSentence = (sha: string, reason: PrReviewFailureReason | undefined): string =>
 	`The review of ${sha} could not finish.${reason === undefined ? "" : ` ${PR_REVIEW_FAILURE_COPY[reason]}`}`
 
+/** How to run it again: a key or config problem has to be fixed first, so it is not "try again". */
+const retryHint = (reason: PrReviewFailureReason | undefined, mention: string, where = ""): string =>
+	reason !== undefined && PR_REVIEW_FAILURE_NEEDS_FIX.has(reason)
+		? `Once that is fixed, comment \`${mention} review\`${where} to run it again.`
+		: `Comment \`${mention} review\`${where} to try again.`
+
 /**
  * A review's comment while it has no result: the notice alone, under the review's marker.
  *
@@ -524,10 +531,7 @@ export const withReviewStatus = (
 				"> [!NOTE]",
 				`> ⏳ **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`,
 			]
-		: [
-				"> [!WARNING]",
-				`> ${failedSentence(sha, notice.reason)} Comment \`${mention} review\` to try again.`,
-			]
+		: ["> [!WARNING]", `> ${failedSentence(sha, notice.reason)} ${retryHint(notice.reason, mention)}`]
 	const status = encodeStatusMarker([STATUS_OPEN, notice.kind, " ", notice.headSha, " -->"])
 	return [marker, status, ...lines, STATUS_CLOSE].join("\n")
 }
@@ -548,7 +552,7 @@ export const reviewCheckFor = (notice: PrReviewStatusNotice, mention: string) =>
 			...run,
 			state: { status: "completed" as const, conclusion: "neutral" as const },
 			title: "Review could not finish",
-			summary: `${failedSentence(sha, reason)} Comment \`${mention} review\` on the pull request to try again.`,
+			summary: `${failedSentence(sha, reason)} ${retryHint(reason, mention, " on the pull request")}`,
 		}),
 		superseded: () => ({
 			...run,
@@ -1982,10 +1986,14 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "bot_author" })
 					return skip("bot_author")
 				}
-				// The automatic review reads org telemetry and posts to the pull request, so it runs only for
-				// a trusted author; a member can still ask for one explicitly.
-				if (!requested && !isTrustedAuthorAssociation(job.authorAssociation)) {
-					yield* annotate("skipped", { "maple.pr_review.skip_reason": "external_author" })
+				// The automatic review reads org telemetry and posts to the pull request, so on a public
+				// repository it runs only for a trusted author. GitHub reports private org members as
+				// CONTRIBUTOR in webhooks, and only people with access can open a pull request on a private one.
+				if (!requested && !repo.isPrivate && !isTrustedAuthorAssociation(job.authorAssociation)) {
+					yield* annotate("skipped", {
+						"maple.pr_review.skip_reason": "external_author",
+						"vcs.pull_request.author_association": job.authorAssociation ?? "absent",
+					})
 					return skip("external_author")
 				}
 				const nowMs = yield* Clock.currentTimeMillis

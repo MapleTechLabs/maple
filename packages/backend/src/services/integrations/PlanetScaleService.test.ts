@@ -129,11 +129,10 @@ const connect = (orgId: string) =>
 		const { state } = yield* oauth.startConnect(asOrgId(orgId), asUserId("user_1"), {
 			callbackUrl: "https://api.example.com/api/integrations/planetscale/callback",
 		})
-		yield* oauth.completeConnect(
-			{ orgId: asOrgId(orgId), userId: asUserId("user_1") },
-			"auth-code",
-			state,
-		)
+		yield* oauth.completeConnect("auth-code", state, {
+			orgId: asOrgId(orgId),
+			userId: asUserId("user_1"),
+		})
 		yield* connections.finalizeOrgSelection(asOrgId(orgId), { organization: "acme" })
 	})
 

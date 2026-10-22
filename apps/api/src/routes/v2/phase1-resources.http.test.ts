@@ -686,9 +686,19 @@ const makeHarness = (
 			}),
 		)
 
+	// A self-hosted root session: a dashboard user, which carries no scopes.
+	const bootstrapSession = () =>
+		runtime.runPromise(
+			Effect.gen(function* () {
+				const auth = yield* AuthService
+				return (yield* auth.loginSelfHosted("test-root-password")).token
+			}),
+		)
+
 	return {
 		request,
 		bootstrapKey,
+		bootstrapSession,
 		lastIssueListCall: () => lastIssueListCall,
 		lastIssueDetailCall: () => lastIssueDetailCall,
 		issueActions: () => issueActions,
@@ -1075,6 +1085,51 @@ describe("v2 investigations over HTTP", () => {
 		)
 		expect(unavailable.body.error.retryable).toBe(true)
 		await unavailableHarness.dispose()
+	})
+
+	it("starts a run only for callers that can read everything the agent reads", async () => {
+		const harness = makeHarness()
+		const start = (token: string) =>
+			Promise.all([
+				harness.request("POST", "/v2/investigations", {
+					token,
+					body: { subject: { type: "freeform", title: "t", prompt: "p", context_refs: [] } },
+				}),
+				harness.request("POST", `/v2/investigations/${INV_ID}/restart`, { token }),
+			]).then((responses) => responses.map((response) => response.status))
+
+		const narrow = await harness.bootstrapKey(["investigations:write"])
+		expect(await start(narrow.secret)).toEqual([403, 403])
+		const telemetryOnly = await harness.bootstrapKey([
+			"investigations:write",
+			"traces:read",
+			"logs:read",
+			"metrics:read",
+		])
+		expect(await start(telemetryOnly.secret)).toEqual([403, 403])
+
+		const reads = [
+			"traces",
+			"logs",
+			"metrics",
+			"services",
+			"service_map",
+			"error_issues",
+			"session_replays",
+			"alerts",
+			"anomalies",
+			"dashboards",
+			"sources",
+			"instrumentation",
+			"integrations",
+		].map((family) => `${family}:read`)
+		const covered = await harness.bootstrapKey(["investigations:write", ...reads])
+		const unscoped = await harness.bootstrapKey()
+		const session = await harness.bootstrapSession()
+		for (const token of [covered.secret, unscoped.secret, session]) {
+			expect(await start(token)).toEqual([200, 200])
+		}
+		await harness.dispose()
 	})
 })
 

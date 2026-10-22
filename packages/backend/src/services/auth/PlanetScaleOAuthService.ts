@@ -24,7 +24,7 @@ import {
 	runPlanetScale,
 } from "@maple/backend/services/integrations/planetscale/api"
 import { makeOAuthConnectionHelpers, OAUTH_STATE_TTL_MS, toUpstreamError } from "./oauth/connection-helpers"
-import type { OAuthStateInitiator } from "./oauth/state-initiator"
+import type { OAuthFlowInitiator } from "./oauth/oauth-state"
 
 const PLANETSCALE_PROVIDER = "planetscale"
 
@@ -143,10 +143,9 @@ export interface PlanetScaleOAuthServiceApi {
 	 * second API round-trip.
 	 */
 	readonly completeConnect: (
-		/** The signed-in user finishing the flow; must be the one that started it. */
-		initiator: OAuthStateInitiator,
 		code: string,
 		state: string,
+		initiator: OAuthFlowInitiator,
 	) => Effect.Effect<
 		{
 			readonly orgId: OrgId
@@ -362,13 +361,12 @@ export class PlanetScaleOAuthService extends Context.Service<
 		})
 
 		const completeConnect = Effect.fn("PlanetScaleOAuthService.completeConnect")(function* (
-			initiator: OAuthStateInitiator,
 			code: string,
 			state: string,
+			initiator: OAuthFlowInitiator,
 		) {
 			const config = yield* resolveConfig(env)
-			const stateRow = yield* oauth.requireStateRow(state, initiator)
-			yield* oauth.deleteAuthState(state)
+			const stateRow = yield* oauth.consumeStateRow(state, initiator)
 
 			const tokenResponse = yield* oauth.exchangeAuthorizationCode(config, code, stateRow.redirectUri)
 

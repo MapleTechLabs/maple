@@ -8,12 +8,6 @@ import * as CopyButton from "../../ui/copy-button"
 import * as Dialog from "../../ui/dialog"
 import { chatConnectorOf, integrationOfSearch } from "./catalog"
 import { chatCallbackOf } from "./chat-callback"
-import {
-	CompleteChatCallback,
-	CompleteOAuthCallback,
-	forwardedCallbackOf,
-	StripCallback,
-} from "./forwarded-callback"
 import { initConnect } from "./connect"
 import { Disconnect, DISCONNECTS } from "./disconnect"
 import { initGithubCard } from "./github"
@@ -25,6 +19,8 @@ import { initPrometheusCard } from "./prometheus"
 import { initRailwayCard } from "./railway"
 import { initPlanetscaleCard } from "./planetscale"
 import { initGcpCard } from "./gcp"
+import { initAwsCard } from "./aws"
+import * as Aws from "./update-aws"
 import { initSupabaseCard } from "./supabase"
 import * as Supabase from "./update-supabase"
 import * as Gcp from "./update-gcp"
@@ -36,7 +32,8 @@ import { ChartRuntime } from "../../charts/chart-runtime"
 import { isMultiAccount } from "./view-cloudflare"
 import * as Connect from "./update-connect"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
-import { LoadCustomer, LoadSession, ReadClock, StripChatParams } from "./command"
+import { CompleteOAuthReturn, LoadCustomer, LoadSession, ReadClock, StripChatParams } from "./command"
+import type { OAuthReturnOutcome } from "./oauth-return"
 import { chain, requestStatus, STATUS_NAMES } from "./update-status"
 import { Message } from "./message"
 import type { Model, Statuses } from "./model"
@@ -75,25 +72,33 @@ const handleChatCallback = (model: Model, withToast: boolean): Return => {
 				}
 }
 
-/** A provider callback the API forwarded here (`?callback=`): finish it as the signed-in user. */
-const handleForwardedCallback = (model: Model): Return => {
-	if (model.search.callback === undefined) return { model }
-	const forwarded = forwardedCallbackOf(model.search)
-	if (forwarded === null) {
-		const { callback: _, ...rest } = model.search
-		return navigateTo(model, hrefOfSearch(rest), true)
+/** A chat return's outcome, as the `chat*` search params `chatCallbackOf` toasts and strips. */
+const chatSearchOf = (outcome: OAuthReturnOutcome, chat: NonNullable<OAuthReturnOutcome["chat"]>): Search => {
+	const ok = outcome.status === "success"
+	const integration = outcome.connector === null ? {} : { integration: `chat-${outcome.connector}` }
+	const reason = ok || chat.reason === null ? {} : { chat_reason: chat.reason }
+	if (chat.kind === "workspace") {
+		const name = chat.name === null ? {} : { chat_workspace: chat.name }
+		return { ...integration, chat: ok ? "connected" : "error", ...name, ...reason }
 	}
-	return {
-		model,
-		commands: [
-			forwarded.kind === "oauth"
-				? CompleteOAuthCallback({ provider: forwarded.provider })
-				: CompleteChatCallback({
-						connector: forwarded.connector,
-						kind: forwarded.kind === "chat-install" ? "install" : "identity",
-					}),
-		],
-	}
+	const name = chat.name === null ? {} : { chat_identity_name: chat.name }
+	return { ...integration, chat_identity: ok ? "linked" : "error", ...name, ...reason }
+}
+
+/**
+ * The finished provider return: a chat flow reports through its search params, a popup whose
+ * opener took the outcome waits to close, and anything else reports here.
+ */
+const completedOAuthReturn = (
+	model: Model,
+	context: PageContext,
+	outcome: OAuthReturnOutcome | null,
+): Return => {
+	if (outcome === null) return { model }
+	if (outcome.chat !== null)
+		return navigateTo(model, hrefOfSearch(chatSearchOf(outcome, outcome.chat)), true)
+	if (outcome.provider === null || (outcome.isHandedOff && outcome.status === "success")) return { model }
+	return Connect.receivedCallback(model, context, outcome.provider, outcome.status, outcome.message)
 }
 
 const navigateTo = (model: Model, url: string, isReplace: boolean): Return => ({
@@ -113,6 +118,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			planetscale: Keyed.idle(),
 			planetscaleDatabases: Keyed.idle(),
 			gcp: Keyed.idle(),
+			aws: Keyed.idle(),
 			supabase: Keyed.idle(),
 			hazel: Keyed.idle(),
 			github: Keyed.idle(),
@@ -129,6 +135,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		prometheusCard: initPrometheusCard(),
 		planetscaleCard: initPlanetscaleCard(),
 		gcpCard: initGcpCard(),
+		awsCard: initAwsCard(),
 		railwayCard: initRailwayCard(),
 		supabaseCard: initSupabaseCard(),
 	}
@@ -137,10 +144,12 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		(next: Model) => requestCustomer(next, context),
 		(next: Model) => enterIntegration(next, context),
 		(next: Model) => handleChatCallback(next, false),
-		(next: Model) => handleForwardedCallback(next),
 	])
 	const session = isClerkAuthEnabled ? [LoadSession()] : []
-	return { ...loaded, commands: [ReadClock(), ...session, ...(loaded.commands ?? [])] }
+	return {
+		...loaded,
+		commands: [ReadClock(), CompleteOAuthReturn(), ...session, ...(loaded.commands ?? [])],
+	}
 }
 
 export const routeChanged = (
@@ -159,6 +168,7 @@ export const routeChanged = (
 const enterIntegration = (model: Model, context: PageContext): Return => {
 	const integration = integrationOfSearch(model.search.integration)
 	if (integration === "cloudflare") return CloudflareCard.enterCloudflare(model, context)
+	if (integration === "aws") return Aws.enterAws(model, context)
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
 	if (integration === "supabase") return Supabase.requestMetricsRows(model, context, "Load")
@@ -215,6 +225,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				s.gcp.key === key && Result.isSuccess(result) ? Configure.statusArrived(read).model : read
 			return gcpBand(arrived, context)
 		},
+		CompletedLoadAws: ({ key, result }) =>
+			Aws.statusArrived(
+				accepted(model, { ...s, aws: Keyed.accept(s.aws, key, result) }).model,
+				Aws.connectionsOf(model),
+			),
 		CompletedLoadSupabase: ({ key, result }) => {
 			const read = accepted(model, { ...s, supabase: Keyed.accept(s.supabase, key, result) }).model
 			// Any answer to the current read retires saved flips; a failed one shows the last known value.
@@ -245,16 +260,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const callback = chatCallbackOf(model.search)
 			return callback === null ? { model } : navigateTo(model, hrefOfSearch(callback.next), true)
 		},
-		CompletedOAuthCallback: ({ provider, status, message: text, returnTo, isRelayed }) => {
-			// The popup closes itself once the page that opened it has the result.
-			if (isRelayed && status === "success") return { model }
-			const href =
-				status === "success" && returnTo !== null ? returnTo : hrefOfSearch({ integration: provider })
-			const received = Connect.receivedCallback(model, context, provider, status, text)
-			return { ...received, commands: [...(received.commands ?? []), StripCallback({ href })] }
-		},
-		CompletedChatCallback: ({ search }) => navigateTo(model, hrefOfSearch(search), true),
-		StrippedCallback: ({ href }) => navigateTo(model, href, true),
 		ClickedConnect: () => Connect.clickedConnect(model),
 		ClickedChatInstall: () => Chat.clickedInstall(model),
 		CompletedLoadCloudflareUsage: ({ key, result }) => ({
@@ -324,6 +329,29 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRailwayRotate: () => Railway.setRotating(model, true),
 		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
 		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
+		GotAwsAccountIdMessage: ({ message: child }) => Aws.gotAccountId(model, child),
+		SubmittedAwsAccount: () => Aws.submittedAccount(model),
+		SucceededAwsCreate: ({ connection }) => Aws.succeededCreate(model, context, connection),
+		FailedAwsCreate: ({ error }) => Aws.failedCreate(model, error),
+		ClickedAwsAdd: () => Aws.setAdding(model, true),
+		ClickedAwsAddCancel: () => Aws.setAdding(model, false),
+		ClickedAwsSetup: ({ id }) => Aws.openSetup(model, context, id),
+		ClickedAwsSetupClose: () => Aws.closeSetup(model),
+		CompletedLoadAwsSetup: ({ key, result }) => Aws.completedLoadSetup(model, key, result),
+		ClickedAwsSetupMethod: ({ method }) => Aws.setMethod(model, method),
+		ClickedAwsCheck: ({ id }) => Aws.clickedCheck(model, id),
+		TickedAwsPending: () => Aws.tickedPending(model),
+		CompletedAwsCheck: ({ id, quiet, connection, failure }) =>
+			Aws.completedCheck(model, context, id, quiet, connection, failure),
+		GotAwsCopyMessage: ({ id, message: child }) => Aws.gotCopy(model, id, child),
+		ClickedAwsDisconnect: ({ id }) => Aws.clickedDisconnect(model, id),
+		GotAwsDisconnectDialogMessage: ({ message: child }) => Aws.gotDisconnectDialog(model, child),
+		ConfirmedAwsDisconnect: () => Aws.confirmedDisconnect(model),
+		CompletedAwsDisconnect: ({ id, removed, error }) =>
+			Aws.completedDisconnect(model, context, id, removed, error),
+		DismissedAwsRemoved: ({ connectionId }) => Aws.dismissedRemoved(model, context, connectionId),
+		CompletedReadAwsRemoved: ({ removed }) => Aws.completedReadRemoved(model, removed),
+		CompletedWriteAwsRemoved: () => ({ model }),
 		// Advances the card's window and "Last data" ages; the fresh clock re-reads rows on a new key.
 		TickedSupabaseClock: () => ({ model, commands: [ReadClock()] }),
 		CompletedReadSupabaseClock: ({ nowMs }) => Supabase.completedReadClock(model, context, nowMs),
@@ -402,6 +430,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedGcpScriptRetry: () => Gcp.retriedScripts(model, context),
 		GotGcpDisconnectDialogMessage: ({ message: child }) => Gcp.gotDisconnectDialog(model, child),
 		ConfirmedGcpDisconnect: () => Gcp.confirmedDisconnect(model),
+		ClickedGcpDisconnect: ({ id }) => Gcp.clickedDisconnect(model, context, id),
 		CompletedGcpDisconnect: ({ id, cleanupScript, failure }) =>
 			Gcp.completedDisconnect(model, context, id, cleanupScript, failure),
 		CompletedReadGcpRemoved: ({ removed }) => Gcp.updateGcpCard(model, { removed }),
@@ -486,6 +515,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		EndedConnectGrace: ({ attempt }) => Connect.endedGrace(model, attempt),
 		ReceivedConnectMessage: ({ provider, status, message: text }) =>
 			Connect.receivedCallback(model, context, provider, status, text),
+		CompletedOAuthReturn: ({ outcome }) => completedOAuthReturn(model, context, outcome),
 		ClickedRetryStatus: ({ name }) => requestStatus(model, context, name, "Supersede"),
 		ClickedDisconnect: () => withDisconnectDialog(model, Dialog.open(model.disconnect.dialog)),
 		GotDisconnectDialogMessage: ({ message: child }) =>

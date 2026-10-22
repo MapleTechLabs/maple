@@ -37,8 +37,9 @@ import { ChatConnectorRegistry, ChatWorkspaceService } from "./ChatWorkspaceServ
 const ORG = Schema.decodeSync(OrgId)("org_chat_1")
 const OTHER_ORG = Schema.decodeSync(OrgId)("org_chat_2")
 const USER = Schema.decodeSync(UserId)("user_chat_1")
-const INITIATOR = { orgId: ORG, userId: USER }
 const OTHER_USER = Schema.decodeSync(UserId)("user_chat_2")
+// The signed-in Maple user and org finishing a flow: the ones that started it.
+const ME = { orgId: ORG, userId: USER }
 const TEST_CONNECTOR = Schema.decodeSync(ChatConnectorId)("testchat")
 const IDENTITY_CONNECTOR = Schema.decodeSync(ChatConnectorId)("testchatid")
 const UNREGISTERED = Schema.decodeSync(ChatConnectorId)("nosuchchat")
@@ -249,6 +250,22 @@ const insertWorkspace = (testDb: TestDb, id: string, orgId: string, externalWork
 
 const stateFrom = (url: string): string => new URL(url).searchParams.get("state") ?? ""
 
+/** The stored state row, read straight from the table. */
+const storedState = (testDb: TestDb, state: string) =>
+	Effect.promise(() =>
+		queryFirstRow<{ provider: string; initiated_by_user_id: string }>(
+			testDb,
+			"select provider, initiated_by_user_id from oauth_auth_states where state = $1",
+			[state],
+		),
+	).pipe(
+		Effect.map((row) =>
+			Option.fromNullishOr(row).pipe(
+				Option.map((r) => ({ provider: r.provider, initiatedByUserId: r.initiated_by_user_id })),
+			),
+		),
+	)
+
 const callback = (state: string, workspace: string, name?: string) =>
 	new URLSearchParams({ state, workspace, ...(name === undefined ? undefined : { name }) })
 
@@ -421,8 +438,7 @@ describe("ChatWorkspaceService", () => {
 			yield* Effect.gen(function* () {
 				const chat = yield* ChatWorkspaceService
 				const { url } = yield* chat.beginInstall(ORG, USER, TEST_CONNECTOR, CALLBACK)
-				const states = yield* OAuthStateRepository
-				const stored = yield* states.findByState(stateFrom(url))
+				const stored = yield* storedState(testDb, stateFrom(url))
 				assert.isTrue(Option.isSome(stored))
 				assert.strictEqual(Option.getOrUndefined(stored)?.provider, `chat:${TEST_CONNECTOR}`)
 			}).pipe(Effect.provide(makeLayer(testDb)))
@@ -437,9 +453,9 @@ describe("ChatWorkspaceService", () => {
 				const { url } = yield* chat.beginInstall(ORG, USER, TEST_CONNECTOR, CALLBACK)
 				const state = stateFrom(url)
 				const linked = yield* chat.completeInstall(
-					INITIATOR,
 					TEST_CONNECTOR,
 					callback(state, "workspace-7", "Acme"),
+					ME,
 				)
 				assert.strictEqual(linked.orgId, ORG)
 				assert.strictEqual(linked.name, "Acme")
@@ -450,41 +466,51 @@ describe("ChatWorkspaceService", () => {
 				)
 				// Single-use: the same callback replayed is not a second link.
 				const replay = yield* chat
-					.completeInstall(INITIATOR, TEST_CONNECTOR, callback(state, "workspace-7", "Acme"))
+					.completeInstall(TEST_CONNECTOR, callback(state, "workspace-7", "Acme"), ME)
 					.pipe(Effect.flip)
 				assert.strictEqual(replay._tag, "@maple/http/errors/IntegrationsValidationError")
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		}),
 	)
 
-	it.effect("refuses an install URL finished by another Maple user, and links nothing", () =>
+	it.effect("refuses an install state finished by a different Maple user or org", () =>
 		Effect.gen(function* () {
 			const testDb = createTestDb(trackedDbs)
 			yield* Effect.gen(function* () {
 				const chat = yield* ChatWorkspaceService
 				const { url } = yield* chat.beginInstall(ORG, USER, TEST_CONNECTOR, CALLBACK)
-				const state = stateFrom(url)
 				const failure = yield* chat
-					.completeInstall(
-						{ orgId: OTHER_ORG, userId: OTHER_USER },
-						TEST_CONNECTOR,
-						callback(state, "workspace-forwarded", "Victim"),
-					)
+					.completeInstall(TEST_CONNECTOR, callback(stateFrom(url), "workspace-victim"), {
+						orgId: OTHER_ORG,
+						userId: OTHER_USER,
+					})
 					.pipe(Effect.flip)
 				assert.strictEqual(failure._tag, "@maple/http/errors/IntegrationsValidationError")
-				assert.lengthOf((yield* chat.list(ORG))[0]?.workspaces ?? [], 0)
-				assert.lengthOf((yield* chat.list(OTHER_ORG))[0]?.workspaces ?? [], 0)
-				// Spent: the initiator cannot redeem the forwarded callback afterwards.
-				const replay = yield* chat
-					.completeInstall(
-						INITIATOR,
-						TEST_CONNECTOR,
-						callback(state, "workspace-forwarded", "Victim"),
-					)
-					.pipe(Effect.flip)
-				assert.strictEqual(replay._tag, "@maple/http/errors/IntegrationsValidationError")
-				assert.lengthOf((yield* chat.list(ORG))[0]?.workspaces ?? [], 0)
+				const statuses = yield* chat.list(ORG)
+				assert.deepStrictEqual(statuses[0]?.workspaces, [])
+				const resolved = yield* chat.resolve(TEST_CONNECTOR, "workspace-victim")
+				assert.isTrue(Option.isNone(resolved))
 			}).pipe(Effect.provide(makeLayer(testDb)))
+		}),
+	)
+
+	it.effect("refuses a link state finished by a different Maple user", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const { url } = yield* chat.beginLink(ORG, USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
+				// A colleague in the same org lands on the initiator's link with their own chat account.
+				const failure = yield* chat
+					.completeLink(IDENTITY_CONNECTOR, identityCallback(stateFrom(url), "victim-account"), {
+						orgId: ORG,
+						userId: OTHER_USER,
+					})
+					.pipe(Effect.flip)
+				assert.strictEqual(failure._tag, "@maple/http/errors/IntegrationsValidationError")
+				const mine = yield* chat.list(ORG, USER)
+				assert.isUndefined(mine[0]?.identity)
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [identityConnector] })))
 		}),
 	)
 
@@ -494,23 +520,19 @@ describe("ChatWorkspaceService", () => {
 			yield* Effect.gen(function* () {
 				const chat = yield* ChatWorkspaceService
 				const missing = yield* chat
-					.completeInstall(
-						INITIATOR,
-						TEST_CONNECTOR,
-						new URLSearchParams({ workspace: "workspace-8" }),
-					)
+					.completeInstall(TEST_CONNECTOR, new URLSearchParams({ workspace: "workspace-8" }), ME)
 					.pipe(Effect.flip)
 				assert.strictEqual(missing._tag, "@maple/http/errors/IntegrationsValidationError")
 
 				const unknown = yield* chat
-					.completeInstall(INITIATOR, TEST_CONNECTOR, callback("never-issued", "workspace-8"))
+					.completeInstall(TEST_CONNECTOR, callback("never-issued", "workspace-8"), ME)
 					.pipe(Effect.flip)
 				assert.strictEqual(unknown._tag, "@maple/http/errors/IntegrationsValidationError")
 
 				const { url } = yield* chat.beginInstall(ORG, USER, TEST_CONNECTOR, CALLBACK)
 				yield* TestClock.adjust(STATE_TTL_MS + 1)
 				const expired = yield* chat
-					.completeInstall(INITIATOR, TEST_CONNECTOR, callback(stateFrom(url), "workspace-8"))
+					.completeInstall(TEST_CONNECTOR, callback(stateFrom(url), "workspace-8"), ME)
 					.pipe(Effect.flip)
 				assert.strictEqual(expired._tag, "@maple/http/errors/IntegrationsValidationError")
 				const statuses = yield* chat.list(ORG)
@@ -527,7 +549,7 @@ describe("ChatWorkspaceService", () => {
 				const chat = yield* ChatWorkspaceService
 				const { url } = yield* chat.beginInstall(ORG, USER, TEST_CONNECTOR, CALLBACK)
 				const failure = yield* chat
-					.completeInstall(INITIATOR, TEST_CONNECTOR, callback(stateFrom(url), "workspace-9"))
+					.completeInstall(TEST_CONNECTOR, callback(stateFrom(url), "workspace-9"), ME)
 					.pipe(Effect.flip)
 				assert.strictEqual(failure._tag, "@maple/http/errors/IntegrationsForbiddenError")
 				// The other org keeps it, and the bot still resolves it to them.
@@ -551,9 +573,9 @@ describe("ChatWorkspaceService", () => {
 				yield* chat.updateSettings(ORG, id, { approver: "moderators" })
 				const { url } = yield* chat.beginInstall(ORG, USER, TEST_CONNECTOR, CALLBACK)
 				yield* chat.completeInstall(
-					INITIATOR,
 					TEST_CONNECTOR,
 					callback(stateFrom(url), "workspace-10", "Renamed"),
+					ME,
 				)
 				const statuses = yield* chat.list(ORG)
 				const workspace = statuses[0]?.workspaces[0]
@@ -637,7 +659,7 @@ describe("ChatWorkspaceService", () => {
 				const { url } = yield* chat.beginInstall(ORG, USER, TEST_CONNECTOR, CALLBACK)
 				const params = callback(stateFrom(url), "workspace-cred", "Acme")
 				params.set("credentials", '{"token":"a-workspaces-own-token"}')
-				yield* chat.completeInstall(INITIATOR, TEST_CONNECTOR, params)
+				yield* chat.completeInstall(TEST_CONNECTOR, params, ME)
 
 				const resolved = yield* chat.resolve(TEST_CONNECTOR, "workspace-cred")
 				assert.strictEqual(
@@ -663,11 +685,7 @@ describe("ChatWorkspaceService", () => {
 			yield* Effect.gen(function* () {
 				const chat = yield* ChatWorkspaceService
 				const { url } = yield* chat.beginInstall(ORG, USER, TEST_CONNECTOR, CALLBACK)
-				yield* chat.completeInstall(
-					INITIATOR,
-					TEST_CONNECTOR,
-					callback(stateFrom(url), "workspace-plain"),
-				)
+				yield* chat.completeInstall(TEST_CONNECTOR, callback(stateFrom(url), "workspace-plain"), ME)
 				const resolved = yield* chat.resolve(TEST_CONNECTOR, "workspace-plain")
 				assert.isTrue(Option.isSome(resolved))
 				assert.isUndefined(Option.getOrUndefined(resolved)?.credentials)
@@ -697,33 +715,12 @@ describe("ChatWorkspaceService", () => {
 			yield* Effect.gen(function* () {
 				const chat = yield* ChatWorkspaceService
 				const { url } = yield* chat.beginLink(ORG, USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
-				const states = yield* OAuthStateRepository
-				const stored = yield* states.findByState(stateFrom(url))
+				const stored = yield* storedState(testDb, stateFrom(url))
 				assert.strictEqual(
 					Option.getOrUndefined(stored)?.provider,
 					`chat_identity:${IDENTITY_CONNECTOR}`,
 				)
 				assert.strictEqual(Option.getOrUndefined(stored)?.initiatedByUserId, USER)
-			}).pipe(Effect.provide(makeLayer(testDb, { registry: [identityConnector] })))
-		}),
-	)
-
-	it.effect("refuses a link URL finished by another Maple user, and links no account", () =>
-		Effect.gen(function* () {
-			const testDb = createTestDb(trackedDbs)
-			yield* Effect.gen(function* () {
-				const chat = yield* ChatWorkspaceService
-				const { url } = yield* chat.beginLink(ORG, USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
-				const failure = yield* chat
-					.completeLink(
-						{ orgId: ORG, userId: OTHER_USER },
-						IDENTITY_CONNECTOR,
-						identityCallback(stateFrom(url), "account-victim"),
-					)
-					.pipe(Effect.flip)
-				assert.strictEqual(failure._tag, "@maple/http/errors/IntegrationsValidationError")
-				assert.isUndefined((yield* chat.list(ORG, USER))[0]?.identity)
-				assert.isUndefined((yield* chat.list(ORG, OTHER_USER))[0]?.identity)
 			}).pipe(Effect.provide(makeLayer(testDb, { registry: [identityConnector] })))
 		}),
 	)
@@ -735,7 +732,6 @@ describe("ChatWorkspaceService", () => {
 				const chat = yield* ChatWorkspaceService
 				const { url } = yield* chat.beginLink(ORG, USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
 				const linked = yield* chat.completeLink(
-					INITIATOR,
 					IDENTITY_CONNECTOR,
 					// A rival Maple user named in the callback, which is exactly the thing
 					// that must not be read: the state row is the only authority here.
@@ -744,6 +740,7 @@ describe("ChatWorkspaceService", () => {
 						user_id: OTHER_USER,
 						org_id: OTHER_ORG,
 					}),
+					ME,
 				)
 				assert.strictEqual(linked.orgId, ORG)
 				assert.strictEqual(linked.displayName, "ada")
@@ -770,20 +767,16 @@ describe("ChatWorkspaceService", () => {
 				const install = yield* chat.beginInstall(ORG, USER, IDENTITY_CONNECTOR, CALLBACK)
 				const asLink = yield* chat
 					.completeLink(
-						INITIATOR,
 						IDENTITY_CONNECTOR,
 						identityCallback(stateFrom(install.url), "account-2"),
+						ME,
 					)
 					.pipe(Effect.flip)
 				assert.strictEqual(asLink._tag, "@maple/http/errors/IntegrationsValidationError")
 
 				const link = yield* chat.beginLink(ORG, USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
 				const asInstall = yield* chat
-					.completeInstall(
-						INITIATOR,
-						IDENTITY_CONNECTOR,
-						callback(stateFrom(link.url), "workspace-11"),
-					)
+					.completeInstall(IDENTITY_CONNECTOR, callback(stateFrom(link.url), "workspace-11"), ME)
 					.pipe(Effect.flip)
 				assert.strictEqual(asInstall._tag, "@maple/http/errors/IntegrationsValidationError")
 
@@ -802,11 +795,7 @@ describe("ChatWorkspaceService", () => {
 				const { url } = yield* chat.beginLink(ORG, USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
 				yield* TestClock.adjust(STATE_TTL_MS + 1)
 				const expired = yield* chat
-					.completeLink(
-						INITIATOR,
-						IDENTITY_CONNECTOR,
-						identityCallback(stateFrom(url), "account-3"),
-					)
+					.completeLink(IDENTITY_CONNECTOR, identityCallback(stateFrom(url), "account-3"), ME)
 					.pipe(Effect.flip)
 				assert.strictEqual(expired._tag, "@maple/http/errors/IntegrationsValidationError")
 				const statuses = yield* chat.list(ORG, USER)

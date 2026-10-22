@@ -165,7 +165,7 @@ const storeGrant = (orgId: OrgId) =>
 		const { state } = yield* oauth.startConnect(orgId, asUserId("user_1"), {
 			callbackUrl: CALLBACK_URL,
 		})
-		return yield* oauth.completeConnect({ orgId, userId: asUserId("user_1") }, "auth-code", state)
+		return yield* oauth.completeConnect("auth-code", state, { orgId, userId: asUserId("user_1") })
 	})
 
 /** Each integration source with the scrape targets and connections that send as it. */
