@@ -20,6 +20,7 @@ import {
 import { Clock, Context, Effect, Layer, Option } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
+import type { OAuthFlowInitiator } from "@maple/backend/services/auth/oauth/oauth-state"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { BACKFILL_WINDOW_MS } from "@maple/backend/services/integrations/vcs/VcsSyncService"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
@@ -32,8 +33,9 @@ import { githubWebBaseUrl } from "./github-hosts"
 //
 // Flow: the dashboard opens the GitHub App install URL (carrying our `state`).
 // After install GitHub redirects to the callback with `installation_id` and the
-// `state` echoed back in the query; the callback validates `state` (→ org) and
-// finishes here. Account metadata comes from the App JWT
+// `state` echoed back in the query; the signed-in dashboard posts that query back
+// and finishes here, redeeming `state` only for the Maple user who started it.
+// Account metadata comes from the App JWT
 // (`GET /app/installations/{id}`); sync later mints its own installation tokens.
 //
 // Security: anyone can guess an `installation_id` (it's a small number), so before
@@ -92,7 +94,9 @@ export interface GithubConnectServiceApi {
 		 * OAuth `code` from the callback. We exchange it to confirm the user can
 		 * manage `installationId`. Required to connect a new installation.
 		 */
-		code?: string,
+		code: string | undefined,
+		/** The signed-in Maple user finishing the connect; must be the one who started it. */
+		initiator: OAuthFlowInitiator,
 	) => Effect.Effect<
 		{ readonly orgId: OrgId; readonly returnTo: string | null },
 		IntegrationsValidationError | IntegrationsUpstreamError | IntegrationsPersistenceError
@@ -272,42 +276,22 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 			const completeConnect = Effect.fn("GithubConnectService.completeConnect")(function* (
 				installationId: string,
 				state: string,
-				code?: string,
+				code: string | undefined,
+				initiator: OAuthFlowInitiator,
 			) {
-				const now = yield* Clock.currentTimeMillis
-				const stateRowOpt = yield* asPersistence(states.findByState(state))
-				if (Option.isNone(stateRowOpt)) {
-					yield* Effect.annotateCurrentSpan({
-						"vcs.connect.outcome": "state_not_found",
-						"vcs.connect.reason": "no state row for supplied secret",
-					})
-					return yield* new IntegrationsValidationError({
-						message: "Connect session not recognized — restart the connect flow",
-					})
-				}
-				const stateRow = stateRowOpt.value
-				// Single-use: consume immediately, before any upstream call.
-				yield* asPersistence(states.deleteByState(state))
-				if (stateRow.provider !== GITHUB_PROVIDER) {
-					yield* Effect.annotateCurrentSpan({
-						orgId: stateRow.orgId,
-						"vcs.connect.outcome": "provider_mismatch",
-						"vcs.connect.reason": `state provider "${stateRow.provider}" != "${GITHUB_PROVIDER}"`,
-					})
-					return yield* new IntegrationsValidationError({
-						message: "Connect session provider mismatch — restart the connect flow",
-					})
-				}
-				if (stateRow.expiresAt < now) {
-					yield* Effect.annotateCurrentSpan({
-						orgId: stateRow.orgId,
-						"vcs.connect.outcome": "state_expired",
-						"vcs.connect.reason": "state TTL elapsed before callback",
-					})
-					return yield* new IntegrationsValidationError({
-						message: "Connect session expired — restart the connect flow",
-					})
-				}
+				// Single-use, and only for the Maple user and org that started it: consumed before
+				// any upstream call. Unknown, foreign and expired states all fail here.
+				const stateRow = yield* states.consume({ state, provider: GITHUB_PROVIDER, initiator }).pipe(
+					Effect.catchTag("@maple/http/errors/OAuthStatePersistenceError", (error) =>
+						Effect.fail(new IntegrationsPersistenceError({ message: error.message })),
+					),
+					Effect.tapError(() =>
+						Effect.annotateCurrentSpan({
+							"vcs.connect.outcome": "state_rejected",
+							"vcs.connect.reason": "state unknown, expired, or minted by another identity",
+						}),
+					),
+				)
 
 				// Don't let one org claim an installation another org already owns.
 				// (Same org is fine — that's just reconnecting your own.)

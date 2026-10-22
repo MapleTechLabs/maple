@@ -7,12 +7,13 @@
  */
 import { OrgId, UserId } from "@maple/domain"
 import { prReplySessionId, prReviewSessionId } from "@maple/domain/chat-session"
-import { Effect, Exit, Layer, Schema, Stream } from "effect"
+import { Cause, Effect, Exit, Layer, Schema, Stream } from "effect"
 import { LanguageModel } from "effect/ai"
 import type { Prompt, Response } from "effect/ai"
 import * as AiModel from "effect/ai/Model"
 import { assert, describe, it } from "vitest"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 import { layerLlm, type ResolvedModel } from "../platform/Llm"
@@ -202,6 +203,131 @@ describe("runChatTurn diagnosis rejections", () => {
 		)
 		assert.lengthOf(filed, 1)
 		assert.deepInclude(filed[0], { suggestedActions: ["Roll back"] })
+		assert.lengthOf(prompts, 2, "the landed submission ends the run")
+	})
+
+	it("ends the turn on a landed submit_diagnosis, without another model call or an error span", async () => {
+		const { model, prompts } = scriptedModel([
+			callTool("submit_diagnosis", { summary: "s", evidence: "p99 tripled" }),
+			answer("I have filed the diagnosis."),
+		])
+		const events: Array<ChatTurnEvent> = []
+		const effect = runChatTurn({
+			sessionId: `${TENANT.orgId}:inv-0199a4d1-9f3c-7c8e-b2a1-3f5e7d9c1b40`,
+			messageId: "msg-1",
+			tenant: TENANT,
+			origin: { kind: "autonomous" },
+			toolExecutor: rejectingExecutor,
+			model,
+			submitDiagnosis: () => Effect.void,
+			text: "Investigate.",
+			history: [],
+			usage: makeRunUsage(),
+			holdsTurn: () => true,
+			append: (event) => events.push(event),
+		})
+		const { spans, tracer } = makeRecordingTracer()
+
+		const exit = await Effect.runPromiseExit(
+			effect.pipe(Effect.provide(llmClients), Effect.withTracer(tracer)),
+		)
+
+		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted, `run failed: ${String(exit)}`)
+		assert.lengthOf(prompts, 1)
+		assert.isFalse(events.some((event) => event.type === "text-delta"))
+		// Settling is not a failure: Maple's own error tracking would file every investigation.
+		const failed = spans.filter(
+			(span) =>
+				span.status._tag === "Ended" &&
+				Exit.isFailure(span.status.exit) &&
+				!Cause.hasInterruptsOnly(span.status.exit.cause),
+		)
+		assert.deepEqual(
+			failed.map((span) => span.name),
+			[],
+		)
+		assert.deepEqual(events.at(-1), { type: "turn-end", messageId: "msg-1", reason: "stop" })
+	})
+
+	it("keeps a landed submission when the turn dies after it", async () => {
+		const filed: Array<unknown> = []
+		const { model, prompts } = scriptedModel([
+			callTool("submit_diagnosis", { summary: "s", evidence: "p99 tripled" }),
+			answer("I have filed the diagnosis."),
+		])
+		const effect = runChatTurn({
+			sessionId: `${TENANT.orgId}:inv-0199a4d1-9f3c-7c8e-b2a1-3f5e7d9c1b40`,
+			messageId: "msg-1",
+			tenant: TENANT,
+			origin: { kind: "autonomous" },
+			toolExecutor: rejectingExecutor,
+			model,
+			submitDiagnosis: (_org, _id, request) => Effect.sync(() => filed.push(request.report)),
+			text: "Investigate.",
+			history: [],
+			usage: makeRunUsage(),
+			holdsTurn: () => true,
+			// The sink dies on the submission's own result, after the report has landed.
+			append: (event) => {
+				if (event.type === "tool-result") throw new Error("sink crashed")
+			},
+		})
+
+		const exit = await Effect.runPromiseExit(effect.pipe(Effect.provide(llmClients)))
+
+		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted, `run failed: ${String(exit)}`)
+		assert.lengthOf(prompts, 1)
+		assert.lengthOf(filed, 1)
+	})
+
+	it("lets the calls batched with a landed submission finish before the turn ends", async () => {
+		const { model, prompts } = scriptedModel([
+			[
+				{ type: "tool-call", id: "call-1", name: "run_sql", params: { sql: "select 1" } },
+				{
+					type: "tool-call",
+					id: "call-2",
+					name: "submit_diagnosis",
+					params: { summary: "s", evidence: "p99 tripled" },
+				},
+				{ type: "finish", reason: "tool-calls", usage: USAGE },
+			],
+			answer("I have filed the diagnosis."),
+		])
+		const events: Array<ChatTurnEvent> = []
+		const slowExecutor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
+			execute: () =>
+				Effect.sleep("20 millis").pipe(
+					Effect.as({ content: [{ type: "text" as const, text: "1 row" }] }),
+				),
+		}
+		const effect = runChatTurn({
+			sessionId: `${TENANT.orgId}:inv-0199a4d1-9f3c-7c8e-b2a1-3f5e7d9c1b40`,
+			messageId: "msg-1",
+			tenant: TENANT,
+			origin: { kind: "autonomous" },
+			toolExecutor: slowExecutor,
+			model,
+			submitDiagnosis: () => Effect.void,
+			text: "Investigate.",
+			history: [],
+			usage: makeRunUsage(),
+			holdsTurn: () => true,
+			append: (event) => events.push(event),
+		})
+
+		const exit = await Effect.runPromiseExit(effect.pipe(Effect.provide(llmClients)))
+
+		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted, `run failed: ${String(exit)}`)
+		assert.lengthOf(prompts, 1)
+		assert.deepInclude(
+			events.map(
+				(event) => event.type === "tool-result" && { callId: event.callId, output: event.output },
+			),
+			{ callId: "call-1", output: "1 row" },
+		)
+		assert.deepEqual(events.at(-1), { type: "turn-end", messageId: "msg-1", reason: "stop" })
 	})
 })
 

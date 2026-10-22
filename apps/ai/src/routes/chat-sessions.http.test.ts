@@ -30,7 +30,7 @@ const config = ConfigProvider.layer(
 		TINYBIRD_TOKEN: "test-token",
 		MAPLE_AUTH_MODE: "self_hosted",
 		MAPLE_ROOT_PASSWORD: "test-root-password",
-		MAPLE_DEFAULT_ORG_ID: "default",
+		MAPLE_DEFAULT_ORG_ID: "org_chat",
 		MAPLE_APP_BASE_URL: "https://app.example.com",
 		MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
 		MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
@@ -126,12 +126,58 @@ const mintApiKey = (testDb: TestDb) =>
 		),
 	)
 
+/**
+ * A signed-in session for the session's org: the self-hosted root login, its default org.
+ * Minted on the real clock, since the handler verifies the token's expiry against it.
+ */
+const mintSession = (testDb: TestDb) =>
+	Effect.promise(() =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				const auth = yield* AuthService
+				const login = yield* auth.loginSelfHosted("test-root-password").pipe(Effect.orDie)
+				return login.token
+			}).pipe(
+				Effect.provide(
+					AuthService.layer.pipe(
+						Layer.provide(Layer.mergeAll(testDb.layer, Env.layer.pipe(Layer.provide(config)))),
+					),
+				),
+			),
+		),
+	)
+
 describe("ChatSessionsRouter", () => {
-	it.effect("starts a turn for an API-key caller of the session's own org", () => {
+	it.effect("refuses an API key of the session's own org: chat is session-only", () => {
 		const testDb = createTestDb(trackedDbs)
 		const turns: Array<BeginTurnInput> = []
 		return Effect.gen(function* () {
 			const key = yield* mintApiKey(testDb)
+			yield* withHandler(
+				testDb,
+				turns,
+				Effect.fnUntraced(function* (handler) {
+					const posted = yield* send(handler, { authorization: `Bearer ${key}` })
+					assert.strictEqual(posted.status, 401)
+					const history = yield* Effect.promise(() =>
+						handler(
+							new Request(`http://api.localhost${SESSION_PATH}/history`, {
+								headers: { authorization: `Bearer ${key}` },
+							}),
+						),
+					)
+					assert.strictEqual(history.status, 401)
+					assert.strictEqual(turns.length, 0)
+				}),
+			)
+		})
+	})
+
+	it.effect("starts a turn for a signed-in caller of the session's own org", () => {
+		const testDb = createTestDb(trackedDbs)
+		const turns: Array<BeginTurnInput> = []
+		return Effect.gen(function* () {
+			const key = yield* mintSession(testDb)
 			yield* withHandler(
 				testDb,
 				turns,
@@ -171,11 +217,11 @@ describe("ChatSessionsRouter", () => {
 		)
 	})
 
-	it.effect("stamps an ordinary caller's turn as `app`", () => {
+	it.effect("stamps a signed-in caller's turn as `app`", () => {
 		const testDb = createTestDb(trackedDbs)
 		const turns: Array<BeginTurnInput> = []
 		return Effect.gen(function* () {
-			const key = yield* mintApiKey(testDb)
+			const key = yield* mintSession(testDb)
 			yield* withHandler(
 				testDb,
 				turns,
@@ -193,7 +239,7 @@ describe("ChatSessionsRouter", () => {
 		const testDb = createTestDb(trackedDbs)
 		const turns: Array<BeginTurnInput> = []
 		return Effect.gen(function* () {
-			const key = yield* mintApiKey(testDb)
+			const key = yield* mintSession(testDb)
 			yield* withHandler(
 				testDb,
 				turns,

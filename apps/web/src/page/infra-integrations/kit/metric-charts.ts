@@ -34,10 +34,6 @@ export const metricChartRows = <Row extends Bucketed>(
 		}),
 	)
 
-/** Whether any bucket has a value for any of the chart's series. */
-export const hasMetricData = <Row extends Bucketed>(chart: MetricChart<Row>, buckets: ReadonlyArray<Row>) =>
-	buckets.some((row) => chart.series.some(([, pick]) => pick(row) !== null))
-
 export const metricChartsLoading = <M>(h: HtmlBuilder<M>, count: number): Html =>
 	h.div(
 		[h.Class(GRID)],

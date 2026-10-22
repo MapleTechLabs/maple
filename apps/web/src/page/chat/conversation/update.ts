@@ -13,14 +13,12 @@ import { applyChatEvent, finalizeStreamingText, taskOf } from "../kit/fold"
 import { transcriptMarkdown } from "../kit/rich-text"
 import { initMinimap, updateMinimap } from "../kit/turn-minimap"
 import { TextPart } from "../kit/ui-message"
-import { highlightedFences, highlightKey } from "../kit/code-highlight"
+import { highlight, highlightedFences, highlightKey } from "../kit/code-highlight"
 import {
 	AbortTurn,
 	CopyCode,
 	DecideApproval,
 	DownloadCode,
-	DownloadDiagram,
-	HighlightCode,
 	LoadHistory,
 	ParseMarkdown,
 	PostMessage,
@@ -49,7 +47,10 @@ type MarkdownEntry = Model["markdown"][string]
 const parsedPrefix = (cache: Model["markdown"], text: string): MarkdownEntry | undefined =>
 	Object.entries(cache)
 		.filter(([key, entry]) => !entry.isStale && key !== text && text.startsWith(key))
-		.reduce<[string, MarkdownEntry] | undefined>((best, pair) => (best === undefined || pair[0].length > best[0].length ? pair : best), undefined)?.[1]
+		.reduce<[string, MarkdownEntry] | undefined>(
+			(best, pair) => (best === undefined || pair[0].length > best[0].length ? pair : best),
+			undefined,
+		)?.[1]
 
 /**
  * The cache keeps only the bodies on screen (a body still parsing shows its previous version's
@@ -68,15 +69,22 @@ const followMarkdown = (result: Return): Return => {
 		}),
 	)
 	const missing = wanted.filter(
-		(text) => (markdown[text]?.isStale ?? true) && !model.markdownPending.some((pending) => text.startsWith(pending)),
+		(text) =>
+			(markdown[text]?.isStale ?? true) &&
+			!model.markdownPending.some((pending) => text.startsWith(pending)),
 	)
-	const fences = Object.values(markdown).flatMap(({ document }) => (document === null ? [] : highlightedFences(document.blocks)))
+	const fences = Object.values(markdown).flatMap(({ document }) =>
+		document === null ? [] : highlightedFences(document.blocks),
+	)
 	const keys = new Set(fences.map((fence) => highlightKey(fence.language, fence.code)))
 	const highlights = Object.fromEntries(Object.entries(model.highlights).filter(([key]) => keys.has(key)))
-	const coloured = requestHighlights({ ...model, markdown, highlights, markdownPending: [...model.markdownPending, ...missing] }, fences)
+	const coloured = withHighlights(
+		{ ...model, markdown, highlights, markdownPending: [...model.markdownPending, ...missing] },
+		fences,
+	)
 	return withCommands(
-		{ ...result, model: coloured.model },
-		[...(missing.length === 0 ? [] : [ParseMarkdown({ texts: missing })]), ...(coloured.commands ?? [])],
+		{ ...result, model: coloured },
+		missing.length === 0 ? [] : [ParseMarkdown({ texts: missing })],
 	)
 }
 
@@ -86,7 +94,9 @@ const followCharts = (result: Return): Return => {
 	if (model.chartRuntime !== null) return result
 	const hasChart = transcriptMarkdown(model.messages).some((text) => chartFences(text).length > 0)
 	return hasChart
-		? withCommands({ ...result, model: { ...model, chartRuntime: ChartRuntime.Loading() } }, [LoadChartRuntime()])
+		? withCommands({ ...result, model: { ...model, chartRuntime: ChartRuntime.Loading() } }, [
+				LoadChartRuntime(),
+			])
 		: result
 }
 
@@ -115,8 +125,6 @@ export const init = (tabId: string, sessionId: string, readOnly: ReadOnly = null
 		highlights: {},
 		minimap: initMinimap(),
 		taskSheets: {},
-		diagramMenu: null,
-		fullscreenDiagram: null,
 		markdown: {},
 		markdownPending: [],
 	},
@@ -134,7 +142,10 @@ const send = (model: Model, raw: string, context: SendContext): Return => {
 	const sent: Return = {
 		model: {
 			...model,
-			messages: [...model.messages, { id: localId, role: "user", parts: [TextPart.make({ text: outgoing, state: "done" })] }],
+			messages: [
+				...model.messages,
+				{ id: localId, role: "user", parts: [TextPart.make({ text: outgoing, state: "done" })] },
+			],
 			status: "submitted",
 			error: null,
 			failedSend: null,
@@ -145,7 +156,9 @@ const send = (model: Model, raw: string, context: SendContext): Return => {
 			PostMessage({ sessionId: model.sessionId, generation, localId, text: outgoing, raw: trimmed }),
 		],
 	}
-	return isFirst ? { ...sent, outMessage: OutMessage.SentFirstMessage({ title: trimmed.slice(0, 40) }) } : sent
+	return isFirst
+		? { ...sent, outMessage: OutMessage.SentFirstMessage({ title: trimmed.slice(0, 40) }) }
+		: sent
 }
 
 /** Folds one event; a top-level `turn-start`/`turn-end` moves the composer status. */
@@ -160,28 +173,33 @@ const foldEvent = (model: Model, event: ChatEvent, nowMs: number): Model => {
 		: { ...next, status: "ready", stream: null }
 }
 
-/** Each fence not coloured yet, marked in flight and handed to Shiki. */
-const requestHighlights = (
+/** Each fence not coloured yet, coloured by sugar-high. */
+const withHighlights = (
 	model: Model,
 	fences: ReadonlyArray<{ readonly language: string; readonly code: string }>,
-): Return => {
-	const missing = fences.filter((fence, index) => {
-		const key = highlightKey(fence.language, fence.code)
-		return !(key in model.highlights) && fences.findIndex((other) => highlightKey(other.language, other.code) === key) === index
-	})
-	return {
-		model: {
-			...model,
-			highlights: { ...model.highlights, ...Object.fromEntries(missing.map((fence) => [highlightKey(fence.language, fence.code), null])) },
-		},
-		commands: missing.map((fence) => HighlightCode({ key: highlightKey(fence.language, fence.code), ...fence })),
-	}
+): Model => {
+	const missing = fences.filter((fence) => !(highlightKey(fence.language, fence.code) in model.highlights))
+	return missing.length === 0
+		? model
+		: {
+				...model,
+				highlights: {
+					...model.highlights,
+					...Object.fromEntries(
+						missing.map((fence) => [
+							highlightKey(fence.language, fence.code),
+							highlight(fence.language, fence.code),
+						]),
+					),
+				},
+			}
 }
 
 const toggle = (ids: ReadonlyArray<string>, id: string): ReadonlyArray<string> =>
 	ids.includes(id) ? ids.filter((other) => other !== id) : [...ids, id]
 
-const without = (ids: ReadonlyArray<string>, id: string): ReadonlyArray<string> => ids.filter((other) => other !== id)
+const without = (ids: ReadonlyArray<string>, id: string): ReadonlyArray<string> =>
+	ids.filter((other) => other !== id)
 
 const toast = (type: "success" | "error", title: string) => OutMessage.RequestedToast({ type, title })
 
@@ -191,7 +209,12 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 			if (generation !== model.generation) return { model }
 			return Result.match(result, {
 				onSuccess: (history) => {
-					const loaded: Model = { ...model, historyReady: true, historyError: null, messages: history.messages }
+					const loaded: Model = {
+						...model,
+						historyReady: true,
+						historyError: null,
+						messages: history.messages,
+					}
 					// A turn already running when this device connected: resume its tail.
 					return history.running
 						? {
@@ -213,13 +236,16 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 				? { model }
 				: {
 						model: { ...model, historyError: null, generation: model.generation + 1 },
-						commands: [LoadHistory({ sessionId: model.sessionId, generation: model.generation + 1 })],
+						commands: [
+							LoadHistory({ sessionId: model.sessionId, generation: model.generation + 1 }),
+						],
 					},
 		CompletedTrackMessageSent: () => ({ model }),
 		ChangedDraft: ({ text }) => ({ model: { ...model, draft: text } }),
 		// `form.reset()` runs before `onSubmit`, so the composer clears even when nothing is sent.
 		// Before the history is read the draft stays: a send then would drop the history.
-		SubmittedComposer: () => (model.historyReady ? send({ ...model, draft: "" }, model.draft, context) : { model }),
+		SubmittedComposer: () =>
+			model.historyReady ? send({ ...model, draft: "" }, model.draft, context) : { model },
 		ClickedSuggestion: ({ text }) => send(model, text, context),
 		ClickedRetrySend: ({ text }) => send(model, text, context),
 		ClickedContinue: () => send(model, "Continue.", context),
@@ -245,7 +271,9 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 				onSuccess: (sent) => ({
 					model: {
 						...model,
-						messages: model.messages.map((entry) => (entry.id === localId ? { ...entry, id: sent.messageId } : entry)),
+						messages: model.messages.map((entry) =>
+							entry.id === localId ? { ...entry, id: sent.messageId } : entry,
+						),
 						generation: tail,
 						stream: { generation: tail, cursor: sent.cursor },
 						lastSeq: sent.cursor,
@@ -275,57 +303,62 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 			const result = CopyButton.update(model.copies[id] ?? CopyButton.init(), child)
 			return {
 				model: { ...model, copies: { ...model.copies, [id]: result.model } },
-				commands: Command.mapMessages(result.commands ?? [], (inner) => Message.GotCopyMessage({ id, message: inner })),
+				commands: Command.mapMessages(result.commands ?? [], (inner) =>
+					Message.GotCopyMessage({ id, message: inner }),
+				),
 			}
 		},
 		CompletedParseMarkdown: ({ parsed }) => ({
 			model: {
 				...model,
-				markdown: { ...model.markdown, ...Object.fromEntries(parsed.map(({ text, document }) => [text, { document, isStale: false }])) },
-				markdownPending: model.markdownPending.filter((text) => !parsed.some((entry) => entry.text === text)),
+				markdown: {
+					...model.markdown,
+					...Object.fromEntries(
+						parsed.map(({ text, document }) => [text, { document, isStale: false }]),
+					),
+				},
+				markdownPending: model.markdownPending.filter(
+					(text) => !parsed.some((entry) => entry.text === text),
+				),
 			},
 		}),
 		ClickedCopyCode: ({ code }) => ({ model, commands: [CopyCode({ code })] }),
-		ClickedDownloadCode: ({ code, language }) => ({ model, commands: [DownloadCode({ code, language })] }),
-		ToggledDiagramMenu: ({ menuId }) => ({ model: { ...model, diagramMenu: model.diagramMenu === menuId ? null : menuId } }),
-		PressedOutsideDiagramMenu: ({ menuId }) => ({ model: model.diagramMenu === menuId ? { ...model, diagramMenu: null } : model }),
-		// `ct` closes on an `.mmd` at once, and after the render for SVG and PNG.
-		ClickedDiagramFormat: ({ menuId, code, format }) => ({
-			model: format === "mmd" && model.diagramMenu === menuId ? { ...model, diagramMenu: null } : model,
-			commands: [DownloadDiagram({ menuId, code, format })],
+		ClickedDownloadCode: ({ code, language }) => ({
+			model,
+			commands: [DownloadCode({ code, language })],
 		}),
-		CompletedDownloadDiagram: ({ menuId, isSaved }) => ({
-			model: isSaved && model.diagramMenu === menuId ? { ...model, diagramMenu: null } : model,
-		}),
-		ClickedDiagramFullscreen: ({ code }) => ({ model: { ...model, fullscreenDiagram: code } }),
-		ClosedDiagramFullscreen: () => ({ model: { ...model, fullscreenDiagram: null } }),
-		CompletedMountDiagramOverlay: () => ({ model }),
 		CompletedCodeAction: () => ({ model }),
-		CompletedMermaidDiagram: () => ({ model }),
-		CompletedMountMath: () => ({ model }),
 		CompletedMountJump: () => ({ model }),
 		CompletedMountClock: () => ({ model }),
 		GotTaskSheetMessage: ({ toolCallId, message: child }) => {
-			const sheet = Dialog.update(model.taskSheets[toolCallId] ?? Dialog.init(taskSheetId(toolCallId), "sheet"), child)
+			const sheet = Dialog.update(
+				model.taskSheets[toolCallId] ?? Dialog.init(taskSheetId(toolCallId), "sheet"),
+				child,
+			)
 			return {
 				model: { ...model, taskSheets: { ...model.taskSheets, [toolCallId]: sheet.model } },
-				commands: Command.mapMessages(sheet.commands ?? [], (inner) => Message.GotTaskSheetMessage({ toolCallId, message: inner })),
+				commands: Command.mapMessages(sheet.commands ?? [], (inner) =>
+					Message.GotTaskSheetMessage({ toolCallId, message: inner }),
+				),
 			}
 		},
-		CompletedHighlightCode: ({ key, highlighted }) => ({
-			model: { ...model, highlights: { ...model.highlights, [key]: highlighted } },
-		}),
 		GotChartMessage: ({ id, message: child }) => {
 			const chart = Chart.update(model.charts[id] ?? Chart.init(), child)
 			return {
 				model: { ...model, charts: { ...model.charts, [id]: chart.model } },
-				commands: Command.mapMessages(chart.commands ?? [], (inner) => Message.GotChartMessage({ id, message: inner })),
+				commands: Command.mapMessages(chart.commands ?? [], (inner) =>
+					Message.GotChartMessage({ id, message: inner }),
+				),
 			}
 		},
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: ChartRuntime.Ready() } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: ChartRuntime.Failed({ reason }) } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: ChartRuntime.Failed({ reason }) },
+		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		GotMinimapMessage: ({ message: child }) => ({ model: { ...model, minimap: updateMinimap(model.minimap, child) } }),
+		GotMinimapMessage: ({ message: child }) => ({
+			model: { ...model, minimap: updateMinimap(model.minimap, child) },
+		}),
 		ClickedApprove: ({ toolCallId, tool }) => decide(model, toolCallId, tool, "approve"),
 		ClickedDeny: ({ toolCallId }) => decide(model, toolCallId, "", "deny"),
 		CompletedDecideApproval: ({ toolCallId, tool, decision, result }) => {
@@ -339,11 +372,17 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 					decision === "deny"
 						? { model: resolve("denied") }
 						: outcome.isError
-							? { model: settled, outMessage: toast("error", outcome.content || `Couldn't apply ${tool}`) }
+							? {
+									model: settled,
+									outMessage: toast("error", outcome.content || `Couldn't apply ${tool}`),
+								}
 							: { model: resolve("applied"), outMessage: toast("success", "Change applied") },
 				onFailure: (): Return => ({
 					model: settled,
-					outMessage: toast("error", decision === "deny" ? "Failed to deny this change" : `Failed to apply ${tool}`),
+					outMessage: toast(
+						"error",
+						decision === "deny" ? "Failed to deny this change" : `Failed to apply ${tool}`,
+					),
 				}),
 			})
 		},

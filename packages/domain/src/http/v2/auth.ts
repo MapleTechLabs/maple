@@ -1,6 +1,6 @@
 import { HttpApiMiddleware, HttpApiSecurity, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { ApiKeyLookupPersistenceError } from "../api-keys"
+import { ApiKeyLookupPersistenceError, type ApiKeyKind } from "../api-keys"
 import { AuthorizationUnavailableError, Context, UnauthorizedError } from "../current-tenant"
 import {
 	V2InsufficientScope,
@@ -139,13 +139,20 @@ export const requiredScopeForRoute = (method: string, routePath: string): Requir
 }
 
 /**
- * Endpoints any API key of the org may call, whatever its scopes: an agent holding a
+ * Endpoints any standard API key of the org may call, whatever its scopes: an agent holding a
  * narrow key must still be able to report a problem with Maple and see what it reported.
  */
 const SCOPE_EXEMPT_ROUTES = new Set(["POST /v2/agent_feedback", "GET /v2/agent_feedback"])
 
-/** Whether `method` on the matched route template skips the scope check. */
-export const isScopeExemptRoute = (method: string, routePath: string): boolean => {
+/**
+ * Key kinds the exemption extends to. Device credentials are bounded by the server that minted
+ * them, so their scopes are the whole of their authority and nothing is exempt for them.
+ */
+const SCOPE_EXEMPT_KINDS: ReadonlySet<ApiKeyKind> = new Set<ApiKeyKind>(["standard"])
+
+/** Whether `method` on the matched route template skips the scope check for a key of `kind`. */
+export const isScopeExemptRoute = (method: string, routePath: string, kind: ApiKeyKind): boolean => {
+	if (!SCOPE_EXEMPT_KINDS.has(kind)) return false
 	// A loop, not a regex: the route path is request-derived, and `/\/+$/` backtracks on long runs of `/`.
 	let end = routePath.length
 	while (end > 1 && routePath[end - 1] === "/") end--
