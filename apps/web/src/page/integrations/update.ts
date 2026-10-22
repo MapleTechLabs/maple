@@ -30,7 +30,8 @@ import { ChartRuntime } from "../../charts/chart-runtime"
 import { isMultiAccount } from "./view-cloudflare"
 import * as Connect from "./update-connect"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
-import { LoadCustomer, LoadSession, ReadClock, StripChatParams } from "./command"
+import { CompleteOAuthReturn, LoadCustomer, LoadSession, ReadClock, StripChatParams } from "./command"
+import type { OAuthReturnOutcome } from "./oauth-return"
 import { chain, requestStatus, STATUS_NAMES } from "./update-status"
 import { Message } from "./message"
 import type { Model, Statuses } from "./model"
@@ -67,6 +68,35 @@ const handleChatCallback = (model: Model, withToast: boolean): Return => {
 						description: "",
 					}),
 				}
+}
+
+/** A chat return's outcome, as the `chat*` search params `chatCallbackOf` toasts and strips. */
+const chatSearchOf = (outcome: OAuthReturnOutcome, chat: NonNullable<OAuthReturnOutcome["chat"]>): Search => {
+	const ok = outcome.status === "success"
+	const integration = outcome.connector === null ? {} : { integration: `chat-${outcome.connector}` }
+	const reason = ok || chat.reason === null ? {} : { chat_reason: chat.reason }
+	if (chat.kind === "workspace") {
+		const name = chat.name === null ? {} : { chat_workspace: chat.name }
+		return { ...integration, chat: ok ? "connected" : "error", ...name, ...reason }
+	}
+	const name = chat.name === null ? {} : { chat_identity_name: chat.name }
+	return { ...integration, chat_identity: ok ? "linked" : "error", ...name, ...reason }
+}
+
+/**
+ * The finished provider return: a chat flow reports through its search params, a popup whose
+ * opener took the outcome waits to close, and anything else reports here.
+ */
+const completedOAuthReturn = (
+	model: Model,
+	context: PageContext,
+	outcome: OAuthReturnOutcome | null,
+): Return => {
+	if (outcome === null) return { model }
+	if (outcome.chat !== null)
+		return navigateTo(model, hrefOfSearch(chatSearchOf(outcome, outcome.chat)), true)
+	if (outcome.provider === null || (outcome.isHandedOff && outcome.status === "success")) return { model }
+	return Connect.receivedCallback(model, context, outcome.provider, outcome.status, outcome.message)
 }
 
 const navigateTo = (model: Model, url: string, isReplace: boolean): Return => ({
@@ -112,7 +142,10 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		(next: Model) => handleChatCallback(next, false),
 	])
 	const session = isClerkAuthEnabled ? [LoadSession()] : []
-	return { ...loaded, commands: [ReadClock(), ...session, ...(loaded.commands ?? [])] }
+	return {
+		...loaded,
+		commands: [ReadClock(), CompleteOAuthReturn(), ...session, ...(loaded.commands ?? [])],
+	}
 }
 
 export const routeChanged = (
@@ -449,6 +482,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		EndedConnectGrace: ({ attempt }) => Connect.endedGrace(model, attempt),
 		ReceivedConnectMessage: ({ provider, status, message: text }) =>
 			Connect.receivedCallback(model, context, provider, status, text),
+		CompletedOAuthReturn: ({ outcome }) => completedOAuthReturn(model, context, outcome),
 		ClickedRetryStatus: ({ name }) => requestStatus(model, context, name, "Supersede"),
 		ClickedDisconnect: () => withDisconnectDialog(model, Dialog.open(model.disconnect.dialog)),
 		GotDisconnectDialogMessage: ({ message: child }) =>

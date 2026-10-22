@@ -36,6 +36,7 @@ import { FormFieldName } from "./prometheus-form-field"
 import * as ToggleGroup from "../../ui/toggle-group"
 import * as Chart from "../../charts/chart"
 import { ConnectProvider } from "./connect"
+import { OAuthReturnOutcome } from "./oauth-return"
 import { FleetRead } from "../infra-integrations/gcp/data"
 import { SupabaseProjectRow } from "../infra-integrations/supabase/model"
 import { Capability, GcpFlags, SetupMethod } from "./gcp-configure-schema"
@@ -310,5 +311,7 @@ export const Message = defineMessageUnion({
 		status: Schema.String,
 		message: Schema.NullOr(Schema.String),
 	},
+	/** The provider return this page was opened with, finished (`null`: there was none). */
+	CompletedOAuthReturn: { outcome: Schema.NullOr(OAuthReturnOutcome) },
 })
 export type Message = typeof Message.Type
