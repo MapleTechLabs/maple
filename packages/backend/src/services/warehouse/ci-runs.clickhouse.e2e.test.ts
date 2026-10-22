@@ -1,12 +1,11 @@
 // SAFETY-FILE: JSON in this test is emitted by ClickHouse before its fields are asserted.
-// `ci_runs` and `ci_jobs` are filtered projections of `github-actions` traces, and a projection
-// that silently drops or doubles rows reads as plausible CI numbers. So this proves rows: spans
-// shaped like CiTraceService's, inserted into `traces` on a database built from the real
-// migration chain, must land in the projections exactly, and migration 0047's backfill must
-// rebuild them without doubling the rows the views already wrote.
+// CiTraceService-shaped spans on the real migration chain must land in `ci_runs` / `ci_jobs`
+// exactly, 0047's backfill must never double or drop a row, and the CI queries must read them.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { migrations, renderStatementFull } from "@maple/domain/clickhouse"
+import { isBackfill, migrations, renderStatementFull } from "@maple/domain/clickhouse"
+import * as CH from "@maple/query-engine/ch"
+import { DateTime } from "effect"
 import {
 	applyRealMigrations,
 	clickhouseE2eEnabled,
@@ -16,6 +15,7 @@ import {
 
 const database = uniqueDatabase("maple_ci_runs_e2e")
 const ORG_ID = "org_ci_runs_e2e"
+const READS_ORG_ID = "org_ci_reads_e2e"
 
 // Anchored to now: `traces` carries a 30-day TTL enforced at insert.
 const BASE_MS = Date.now() - 2 * 3_600_000
@@ -121,7 +121,7 @@ const SPANS: ReadonlyArray<SeedSpan> = [
 	},
 ]
 
-const insert = (spans: ReadonlyArray<SeedSpan>) =>
+const insert = (spans: ReadonlyArray<SeedSpan>, orgId = ORG_ID) =>
 	clickhouseExec(
 		`INSERT INTO traces
 		 (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, StatusMessage, SampleRate, SpanAttributes, ResourceAttributes)
@@ -130,7 +130,7 @@ const insert = (spans: ReadonlyArray<SeedSpan>) =>
 					const attributes = Object.entries(span.attributes)
 						.map(([key, value]) => `'${key}', '${value}'`)
 						.join(", ")
-					return `('${ORG_ID}', '${chDateTime(BASE_MS + index * 1000)}', '${span.traceId}', '${span.spanId}', '${span.parentSpanId}', '${span.name}', 'Internal', '${span.service ?? "github-actions"}', ${span.durationNs}, '${span.status ?? "Unset"}', '', 1, map(${attributes}), ${REPO})`
+					return `('${orgId}', '${chDateTime(BASE_MS + index * 1000)}', '${span.traceId}', '${span.spanId}', '${span.parentSpanId}', '${span.name}', 'Internal', '${span.service ?? "github-actions"}', ${span.durationNs}, '${span.status ?? "Unset"}', '', 1, map(${attributes}), ${REPO})`
 				})
 				.join("\n,")}`,
 		database,
@@ -155,15 +155,56 @@ const jobs = () =>
 		 FROM ci_jobs WHERE OrgId = '${ORG_ID}' ORDER BY TraceId, Job`,
 	)
 
-const backfills = migrations
-	.find((migration) => migration.version === 47)!
-	.statements.filter((statement) => typeof statement !== "string")
+const pipelineRun = (
+	traceId: string,
+	pipeline: string,
+	result: string,
+	revision: string,
+	pullRequest: string,
+	attempt = "1",
+) =>
+	run(traceId, result, {
+		"cicd.pipeline.name": pipeline,
+		"vcs.ref.head.revision": revision,
+		"vcs.change.id": pullRequest,
+		"maple.cicd.run_attempt": attempt,
+	})
+
+// Oldest first: each span starts a second after the one before.
+const READ_SPANS: ReadonlyArray<SeedSpan> = [
+	pipelineRun("r1", "CI", "success", "a", "5"),
+	job("r1", "build", "success", { "maple.cicd.queue_duration_ms": "1000" }),
+	pipelineRun("r2", "CI", "failure", "b", "5"),
+	job("r2", "build", "failure", {
+		"maple.cicd.queue_duration_ms": "2000",
+		"maple.cicd.failure.reason": "boom",
+	}),
+	// Cancelled before a runner took it: a zero-length job never ran.
+	{ ...job("r2", "lint", "cancellation"), durationNs: 0 },
+	pipelineRun("r3", "Deploy", "success", "b", ""),
+	pipelineRun("r4", "CI", "skip", "c", "6"),
+	pipelineRun("r5", "CI", "timeout", "c", "6", "2"),
+	job("r5", "build", "failure", { "maple.cicd.queue_duration_ms": "3000", "maple.cicd.run_attempt": "2" }),
+]
+
+const readWindow = {
+	orgId: READS_ORG_ID,
+	startTime: chDateTime(BASE_MS - 60_000),
+	endTime: chDateTime(BASE_MS + 60_000),
+}
+const read = (query: Parameters<typeof CH.compileUnsafe>[0], params: Record<string, unknown> = readWindow) =>
+	runJson(CH.compileUnsafe(query, params).sql.replace(/\s*FORMAT JSON\s*$/, ""))
+const traceIds = (rows: ReadonlyArray<Record<string, unknown>>) => rows.map((row) => row.traceId)
+
+const ciMigration = migrations.filter((migration) => migration.version === 47)
+const backfills = ciMigration.flatMap((migration) => migration.statements.filter(isBackfill))
 
 describe.skipIf(!clickhouseE2eEnabled)("ci_runs / ci_jobs materialization", () => {
 	beforeAll(async () => {
 		await clickhouseExec(`CREATE DATABASE ${database}`)
 		await applyRealMigrations(database)
 		await insert(SPANS)
+		await insert(READ_SPANS, READS_ORG_ID)
 	}, 180_000)
 
 	afterAll(async () => {
@@ -255,5 +296,92 @@ describe.skipIf(!clickhouseE2eEnabled)("ci_runs / ci_jobs materialization", () =
 			await clickhouseExec(renderStatementFull(backfill, database), database)
 		assert.deepStrictEqual(await runs(), liveRuns)
 		assert.deepStrictEqual(await jobs(), liveJobs)
+	})
+
+	it("keeps runs older than raw retention when the whole migration is applied again", async () => {
+		const expired = "org_ci_expired_e2e"
+		await clickhouseExec(
+			`INSERT INTO ci_runs (OrgId, Timestamp, TraceId, SpanId, Pipeline, Result) VALUES ('${expired}', now64(9) - INTERVAL 200 DAY, 'gone', 'run-gone', 'CI', 'success')`,
+			database,
+		)
+		const before = await runs()
+		for (const statement of ciMigration.flatMap((migration) => migration.statements))
+			await clickhouseExec(renderStatementFull(statement, database), database)
+		assert.deepStrictEqual(await runs(), before)
+		const kept = await runJson(`SELECT TraceId FROM ci_runs WHERE OrgId = '${expired}'`)
+		assert.deepStrictEqual(kept, [{ TraceId: "gone" }])
+	})
+
+	it("counts runs that ran, failures apart from cancellations", async () => {
+		const [totals] = await read(CH.ciRunTotalsQuery({}))
+		assert.deepInclude(totals, { runs: 4, succeeded: 2, failed: 2, cancelled: 0 })
+		const series = await read(CH.ciRunSeriesQuery({}), { ...readWindow, bucketSeconds: 86_400 })
+		assert.strictEqual(
+			series.reduce((sum, row) => sum + Number(row.runs), 0),
+			4,
+		)
+	})
+
+	it("keeps each workflow's run counts and latest result", async () => {
+		const rows = await read(CH.ciPipelineStatsQuery({}))
+		assert.deepStrictEqual(
+			rows.map(({ pipeline, runs, failed, lastResult }) => ({ pipeline, runs, failed, lastResult })),
+			[
+				{ pipeline: "CI", runs: 3, failed: 2, lastResult: "timeout" },
+				{ pipeline: "Deploy", runs: 1, failed: 0, lastResult: "success" },
+			],
+		)
+		const [ci] = await read(
+			CH.ciPipelineStatsQuery({ owner: "acme", repository: "api", pipeline: "Deploy" }),
+		)
+		assert.strictEqual(ci?.pipeline, "Deploy")
+	})
+
+	it("counts jobs that ran, with reruns and queue time", async () => {
+		const [build, ...others] = await read(CH.ciJobStatsQuery({}))
+		assert.deepInclude(build, { job: "build", runs: 3, failed: 2, retried: 1, p50QueueMs: 2000 })
+		assert.deepStrictEqual(others, [])
+		const [queue] = await read(CH.ciQueueTotalsQuery({}))
+		assert.deepInclude(queue, { jobs: 3, p50QueueMs: 2000 })
+	})
+
+	it("lists runs newest first, pages after a cursor, and filters by pull request", async () => {
+		const all = await read(CH.ciRunsQuery({}))
+		assert.deepStrictEqual(traceIds(all), ["r5", "r4", "r3", "r2", "r1"])
+		assert.deepInclude(all[0], { attempt: 2, pullRequest: 6, durationMs: 120_000 })
+		assert.strictEqual(all[2]?.pullRequest, 0)
+
+		const startedAt = DateTime.makeUnsafe(`${String(all[1]?.startedAt).replace(" ", "T")}Z`)
+		const after = await read(CH.ciRunsQuery({ before: { startedAt, traceId: "r4" } }), {
+			...readWindow,
+			beforeStartedAt: startedAt,
+			beforeTraceId: "r4",
+		})
+		assert.deepStrictEqual(traceIds(after), ["r3", "r2", "r1"])
+		assert.deepStrictEqual(traceIds(await read(CH.ciRunsQuery({ pullRequest: 5 }))), ["r2", "r1"])
+	})
+
+	it("finds a workflow's red streak and the failed jobs of its runs", async () => {
+		const ran = await read(CH.ciRunsQuery({ pipeline: "CI", ranOnly: true }))
+		assert.deepStrictEqual(traceIds(ran), ["r5", "r2", "r1"])
+		const streak = CH.ciRedStreak(
+			ran.map((row) => ({ result: String(row.result), revision: String(row.revision) })),
+		)
+		assert.deepStrictEqual(
+			{
+				failedRuns: streak?.failedRuns,
+				first: streak?.firstFailed.revision,
+				green: streak?.lastGreen?.revision,
+			},
+			{ failedRuns: 2, first: "b", green: "a" },
+		)
+		const failed = await read(CH.ciFailedJobsQuery({ traceIds: ["r2", "r5"] }))
+		assert.deepStrictEqual(
+			failed.map(({ traceId, job, reason }) => ({ traceId, job, reason })),
+			[
+				{ traceId: "r2", job: "build", reason: "boom" },
+				{ traceId: "r5", job: "build", reason: "" },
+			],
+		)
 	})
 })

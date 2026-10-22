@@ -395,7 +395,7 @@ jobs:
                   src/services/warehouse/alert-window-alignment.clickhouse.e2e.test.ts
                   src/services/warehouse/web-analytics-parity.clickhouse.e2e.test.ts
                   src/services/warehouse/trace-facets-hourly-materialization.clickhouse.e2e.test.ts
-                  src/services/warehouse/ci-runs-materialization.clickhouse.e2e.test.ts
+                  src/services/warehouse/ci-runs.clickhouse.e2e.test.ts
 
             # Every SQL shape the product emits, against the real analyzer: unit tests
             # only compare SQL text, which is how a NO_COMMON_TYPE reached production.

@@ -33,6 +33,7 @@ import {
 	errorFingerprintsMinutely,
 	aiTraceIndex,
 	aiCrawlerRequests,
+	CI_SERVICE_NAME,
 	ciJobs,
 	ciRuns,
 	TRACE_BUCKET_EXPR,
@@ -1237,9 +1238,6 @@ export const aiCrawlerRequestsMv = defineMaterializedView("ai_crawler_requests_m
 		}),
 	],
 })
-
-/** `service.name` of the CI traces CiTraceService writes. */
-const CI_SERVICE_NAME = "github-actions"
 
 /** Populates `ci_runs` with the root span of each CI trace: one row per workflow run attempt. */
 export const ciRunsMv = defineMaterializedView("ci_runs_mv", {

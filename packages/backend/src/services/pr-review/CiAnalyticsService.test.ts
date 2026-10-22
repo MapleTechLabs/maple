@@ -40,10 +40,10 @@ const run = (n: number, result: string, startedAt: number, extra: Record<string,
 	repository: "web",
 	branch: "main",
 	revision: `sha${n}`,
-	attempt: "1",
+	attempt: 1,
 	trigger: "push",
 	actor: "ada",
-	pullRequest: "",
+	pullRequest: 0,
 	durationMs: 60_000,
 	startedAt: wire(startedAt),
 	...extra,
@@ -136,8 +136,8 @@ describe("CiAnalyticsService.analytics", () => {
 				})
 				assert.isAbove(reads.length, 0)
 				for (const read of reads) {
-					assert.include(read.sql, "ResourceAttributes['vcs.owner.name'] = 'acme'")
-					assert.include(read.sql, "ResourceAttributes['vcs.repository.name'] = 'web'")
+					assert.include(read.sql, ".Owner = 'acme'")
+					assert.include(read.sql, ".Repository = 'web'")
 				}
 			}),
 		),
@@ -205,11 +205,8 @@ describe("CiAnalyticsService.analytics", () => {
 					})
 					// The red workflow's own runs are read, skipped ones left out.
 					const runsRead = reads.find((read) => read.context === "ciWorkflowRuns")
-					assert.include(runsRead?.sql ?? "", "traces.SpanAttributes['cicd.pipeline.name'] = 'CI'")
-					assert.include(
-						runsRead?.sql ?? "",
-						"traces.ResourceAttributes['vcs.owner.name'] = 'acme'",
-					)
+					assert.include(runsRead?.sql ?? "", "ci_runs.Pipeline = 'CI'")
+					assert.include(runsRead?.sql ?? "", "ci_runs.Owner = 'acme'")
 					assert.include(runsRead?.sql ?? "", "!= 'skip'")
 					const red = analytics.pipelines[0]?.red
 					assert.strictEqual(red?.failedRuns, 2)
@@ -296,7 +293,7 @@ describe("CiAnalyticsService.listRuns", () => {
 		withService(
 			{
 				ciRuns: [
-					run(3, "failure", END - HOUR, { pullRequest: "42", attempt: "2" }),
+					run(3, "failure", END - HOUR, { pullRequest: 42, attempt: 2 }),
 					run(2, "success", END - 2 * HOUR),
 					run(1, "success", END - 3 * HOUR),
 				],
@@ -337,7 +334,7 @@ describe("CiAnalyticsService.listRuns", () => {
 					assert.notInclude(jobsRead?.sql ?? "", traceId(2))
 
 					// A failed run's jobs are read up to the end of the run, not the window.
-					assert.include(jobsRead?.sql ?? "", `traces.Timestamp <= '${wire(END - HOUR + 61_000)}'`)
+					assert.include(jobsRead?.sql ?? "", `ci_jobs.Timestamp <= '${wire(END - HOUR + 61_000)}'`)
 
 					yield* service.listRuns(tenant, {
 						startTime: END - 24 * HOUR,
@@ -346,7 +343,7 @@ describe("CiAnalyticsService.listRuns", () => {
 						cursor: page.nextCursor ?? undefined,
 					})
 					const lastRead = reads.filter((read) => read.context === "ciRuns").at(-1)
-					assert.include(lastRead?.sql ?? "", `traces.TraceId < '${traceId(2)}'`)
+					assert.include(lastRead?.sql ?? "", `ci_runs.TraceId < '${traceId(2)}'`)
 				}),
 		),
 	)

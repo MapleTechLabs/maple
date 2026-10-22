@@ -40,7 +40,7 @@ export interface CiAnalyticsServiceApi {
 
 const HOUR = 3_600
 const DAY = 86_400
-/** Raw CI traces are scanned per read; past two weeks a big org's scan outlasts the query budget. */
+/** The longest window the CI page offers: two weeks. */
 export const CI_MAX_SPAN_MS = 14 * DAY * 1000
 /** Runs read per possibly red workflow to find where its streak began. */
 const STREAK_RUNS = 200
@@ -72,14 +72,6 @@ const decodeCursor = (cursor: string) => {
 
 /** A quantile over no rows is NaN or null; the contract says null. */
 const finiteOrNull = (value: number | null) => (value !== null && Number.isFinite(value) ? value : null)
-const attemptOf = (attempt: string) => {
-	const parsed = Number(attempt)
-	return Number.isInteger(parsed) && parsed > 0 ? parsed : 1
-}
-const pullRequestOf = (value: string) => {
-	const parsed = Number(value)
-	return value !== "" && Number.isInteger(parsed) && parsed > 0 ? parsed : null
-}
 
 type CiSeriesRow = {
 	readonly bucket: DateTime.Utc
@@ -451,10 +443,11 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 								branch: run.branch,
 								revision: run.revision,
 								runId: run.runId,
-								attempt: attemptOf(run.attempt),
+								// 0 when the span carried none: an attempt counts from 1, and no run is pull request 0.
+								attempt: Math.max(run.attempt, 1),
 								trigger: run.trigger,
 								actor: run.actor,
-								pullRequest: pullRequestOf(run.pullRequest),
+								pullRequest: run.pullRequest === 0 ? null : run.pullRequest,
 								result: run.result,
 								durationMs: run.durationMs,
 								startedAt: DateTime.toEpochMillis(run.startedAt),
