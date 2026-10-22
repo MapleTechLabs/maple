@@ -172,7 +172,7 @@ describe("rawSqlIssue", () => {
 		"SELECT * FROM \"file\"('/etc/hosts', LineAsString) WHERE $__orgFilter",
 		"SELECT * FROM default.`s3` /* c */ ('https://x/y') WHERE $__orgFilter",
 	])("rejects a quoted function name: %s", (sql) => {
-		expect(rawSqlIssue(sql)?.message).toContain("Quoted function names")
+		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
 	})
 
 	// Syntax the masker does not lex, so it and the server would disagree on what is code.

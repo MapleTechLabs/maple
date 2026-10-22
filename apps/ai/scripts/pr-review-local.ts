@@ -22,6 +22,8 @@
  * commit's worktree, as production's sandbox does; this runs model-written code on your machine).
  * `--historical` disables execution and reads outside the selected head's ancestry.
  * `--number <n>` preserves the PR identity when replaying a local range.
+ * `--code-mode` offers `run_code`, its programs run in-process (not isolated) on your machine;
+ * `--code-only` also withholds the direct tools it can call.
  */
 import { spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
@@ -66,6 +68,7 @@ import { makeReviewLedger } from "@/chat/review-ledger"
 import { runChatTurn } from "@/chat/run"
 import { makeRunUsage, savedFindingsRequest } from "@/chat/tools"
 import type { McpToolExecutorApi } from "@/mcp/dispatcher"
+import { inProcessCodeExecutorLayer } from "@yielded/agent-testing/code-executor-substitute"
 import {
 	annotatePatch,
 	renderChangedFiles,
@@ -94,6 +97,10 @@ interface Args {
 	/** Let `sandbox_exec` run `node` and `bun`, which production's sandbox offers. Off by default. */
 	readonly allowExec: boolean
 	readonly historical?: boolean
+	/** Offer `run_code`; programs run in the in-process executor, which is not a security boundary. */
+	readonly codeMode: boolean
+	/** With `codeMode`, reads go only through `run_code`. */
+	readonly codeOnly: boolean
 }
 
 const usage = () => {
@@ -108,7 +115,13 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	const positional: Array<string> = []
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i] ?? ""
-		if (arg === "--post" || arg === "--allow-exec" || arg === "--historical") {
+		if (
+			arg === "--post" ||
+			arg === "--allow-exec" ||
+			arg === "--historical" ||
+			arg === "--code-mode" ||
+			arg === "--code-only"
+		) {
 			flags.set(arg.slice(2), "true")
 		} else if (arg.startsWith("--")) {
 			const value = argv[i + 1]
@@ -139,6 +152,8 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		range,
 		allowExec: flags.get("allow-exec") === "true",
 		historical: flags.has("historical"),
+		codeMode: flags.has("code-mode") || flags.has("code-only"),
+		codeOnly: flags.has("code-only"),
 	}
 }
 
@@ -986,6 +1001,9 @@ export const reviewLocally = async (
 			...(promptOverride === undefined
 				? undefined
 				: { agent: { ...AGENTS["pr-review"], prompt: promptOverride } }),
+			...(args.codeMode
+				? { codeExecutor: inProcessCodeExecutorLayer, codeOnly: args.codeOnly }
+				: undefined),
 			text: turn.text,
 			history: turn.history,
 			usage,
@@ -1114,6 +1132,7 @@ export const reviewLocally = async (
 					pr: pr.html_url,
 					headSha: pr.head.sha,
 					model: model.name,
+					codeMode: args.codeOnly ? "only" : args.codeMode ? "on" : "off",
 					usage,
 					durationMs,
 					endReason,
@@ -1219,6 +1238,7 @@ export const reviewLocally = async (
 				pr: pr.html_url,
 				headSha: pr.head.sha,
 				model: model.name,
+				codeMode: args.codeOnly ? "only" : args.codeMode ? "on" : "off",
 				usage,
 				durationMs,
 				endReason,

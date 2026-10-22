@@ -144,46 +144,44 @@ const layerFor = (
 			abort: async () => undefined,
 		})),
 	)
-	const base = Layer.mergeAll(
-		testRepoLayer(testDb),
-		registry,
-		testDb.layer,
-		workerEnv,
-	)
+	const base = Layer.mergeAll(testRepoLayer(testDb), registry, testDb.layer, workerEnv)
 	return Layer.effect(PrReviewConversationService, PrReviewConversationService.make).pipe(
 		Layer.provideMerge(Layer.effect(PrReviewService, PrReviewService.make)),
 		Layer.provideMerge(base),
 	)
 }
 
-const seed = Effect.gen(function* () {
-	const repo = yield* VcsRepository
-	yield* repo.upsertInstallation({
-		orgId,
-		provider: "github",
-		externalInstallationId: "42",
-		accountLogin: "octo",
-		accountType: "organization",
-		externalAccountId: "100",
-		accountAvatarUrl: null,
-		repositorySelection: "all",
-		installedByUserId: asUserId("user_1"),
+const seedRepo = (isPrivate: boolean) =>
+	Effect.gen(function* () {
+		const repo = yield* VcsRepository
+		yield* repo.upsertInstallation({
+			orgId,
+			provider: "github",
+			externalInstallationId: "42",
+			accountLogin: "octo",
+			accountType: "organization",
+			externalAccountId: "100",
+			accountAvatarUrl: null,
+			repositorySelection: "all",
+			installedByUserId: asUserId("user_1"),
+		})
+		yield* upsertReposFor(repo, "42", [
+			{
+				externalRepoId: "7",
+				owner: "octo",
+				name: "repo",
+				fullName: "octo/repo",
+				defaultBranch: "main",
+				htmlUrl: "https://github.com/octo/repo",
+				isPrivate,
+				isArchived: false,
+			},
+		])
+		const stored = Option.getOrThrow(yield* repo.resolveRepository(orgId, "github", "7"))
+		yield* repo.setPrReviewEnabled(orgId, stored.id, true)
 	})
-	yield* upsertReposFor(repo, "42", [
-		{
-			externalRepoId: "7",
-			owner: "octo",
-			name: "repo",
-			fullName: "octo/repo",
-			defaultBranch: "main",
-			htmlUrl: "https://github.com/octo/repo",
-			isPrivate: true,
-			isArchived: false,
-		},
-	])
-	const stored = Option.getOrThrow(yield* repo.resolveRepository(orgId, "github", "7"))
-	yield* repo.setPrReviewEnabled(orgId, stored.id, true)
-})
+
+const seed = seedRepo(true)
 
 const comment = (overrides: Partial<PullRequestCommentJob> = {}): PullRequestCommentJob => ({
 	kind: "pull-request-comment",
@@ -264,19 +262,34 @@ describe("PrReviewConversationService", () => {
 		}).pipe(Effect.provide(layerFor(testDb, recorded)))
 	})
 
-	it.effect("ignores people outside the repository and comments on disabled repositories", () => {
+	it.effect("ignores people outside a public repository and comments on disabled repositories", () => {
 		const testDb = createTestDb(trackedDbs)
 		const recorded = record()
 		return Effect.gen(function* () {
 			const conversations = yield* PrReviewConversationService
 			assert.equal((yield* conversations.onPullRequestComment(orgId, comment())).skipReason, "disabled")
-			yield* seed
+			yield* seedRepo(false)
 			assert.equal(
 				(yield* conversations.onPullRequestComment(orgId, comment({ authorAssociation: "NONE" })))
 					.skipReason,
 				"not_collaborator",
 			)
 			assert.lengthOf(recorded.begun, 0)
+		}).pipe(Effect.provide(layerFor(testDb, recorded)))
+	})
+
+	it.effect("answers a private repository's commenter whatever association the webhook reports", () => {
+		const testDb = createTestDb(trackedDbs)
+		const recorded = record()
+		return Effect.gen(function* () {
+			yield* seed
+			const conversations = yield* PrReviewConversationService
+			const outcome = yield* conversations.onPullRequestComment(
+				orgId,
+				comment({ authorAssociation: "CONTRIBUTOR" }),
+			)
+			assert.equal(outcome.outcome, "started")
+			assert.lengthOf(recorded.begun, 1)
 		}).pipe(Effect.provide(layerFor(testDb, recorded)))
 	})
 

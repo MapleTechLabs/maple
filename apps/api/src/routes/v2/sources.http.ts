@@ -11,12 +11,13 @@ import {
 	timestampOrNull,
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
-import type { V2Source, V2SourceUpdateParams } from "@maple/domain/http/v2"
+import type { V2Source, V2SourceDeleteResponse, V2SourceUpdateParams } from "@maple/domain/http/v2"
 import { GcpConnectorId, ScrapeTargetId } from "@maple/domain/primitives"
 import { Effect, Option, Schema } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
+import { SourceRemovalService } from "@maple/backend/services/integrations/SourceRemovalService"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { timestampMs } from "@maple/backend/platform/time"
 import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
@@ -95,6 +96,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 	Effect.gen(function* () {
 		const sources = yield* SourcesService
 		const sourceUsage = yield* SourceUsageService
+		const removal = yield* SourceRemovalService
 
 		const adminTenant = (action: string) =>
 			Effect.gen(function* () {
@@ -253,13 +255,18 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* adminTenant("delete")
-					const deleted = yield* sources.delete(tenant.orgId, params.id)
+					const { source: deleted, cleanupScript } = yield* removal.remove(tenant.orgId, params.id)
 					yield* recordHttpAudit("source.deleted", {
 						resourceId: deleted.id,
-						metadata: { name: deleted.name },
+						metadata: { name: deleted.name, platform: deleted.platform, kind: deleted.kind },
 					})
 
-					return { id: deleted.id, object: "source" as const, deleted: true as const }
+					const response: V2SourceDeleteResponse = {
+						id: deleted.id,
+						object: "source",
+						deleted: true,
+					}
+					return cleanupScript === null ? response : { ...response, cleanup_script: cleanupScript }
 				}),
 			)
 	}),

@@ -8,6 +8,7 @@
 import { evaluatePermission } from "@maple/domain/permission"
 import type { ChatMessage, ChatTurnOrigin } from "@maple/domain/chat-session"
 import * as AgentRuntime from "@yielded/agent/agent-runtime"
+import type { CodeExecutor } from "@yielded/agent/code-executor"
 import type { RunBudgetHook } from "@yielded/agent/run-options"
 import type * as RunEvent from "@yielded/agent/run-event"
 import * as ThreadHistory from "@yielded/agent/thread-history"
@@ -17,6 +18,7 @@ import { Prompt, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
 import { mapleToolPhrase } from "../mcp/tools/registry"
+import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import { withRunSessionAttributes } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -27,6 +29,7 @@ import { makeTextSanitizer, settledTurnEnd, toChatEvents, type ChatTurnEvent } f
 import { makeReviewCoverage, type ReviewCoverage } from "./review-coverage"
 import type { ReviewLedger } from "./review-ledger"
 import { buildReviewFanout } from "./review-fanout"
+import { buildCodeMode, CODE_MODE_GUIDANCE, CODE_MODE_TOOLS } from "./code-mode"
 import {
 	accumulateUsage,
 	buildChatToolkit,
@@ -110,6 +113,10 @@ export interface ChatRunInput {
 	readonly review?: ReviewTurnState
 	/** The agent to run as; defaults to the session's. The local review runner passes a variant. */
 	readonly agent?: AgentDefinition
+	/** Runs `run_code` programs for an agent that offers it; absent, the tool is not offered. */
+	readonly codeExecutor?: Layer.Layer<CodeExecutor>
+	/** Withhold the direct tools `run_code` can call, so reads go through programs. The eval's variant. */
+	readonly codeOnly?: boolean
 	/** The message the user just sent, which is this run's input. */
 	readonly text: string
 	readonly history: ReadonlyArray<ChatMessage>
@@ -208,31 +215,64 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 					sessionAttributes,
 				))
 
-	// A review's own pass may hand groups of a large pull request's files to child reviewers.
+	// Read-only tools only: a program cannot hold a proposal for approval, and a write it made before
+	// failing could not be retried safely.
+	const codeTools = Object.fromEntries(
+		Object.entries(maple.toolkit.tools).filter(
+			([name]) =>
+				CODE_MODE_TOOLS.has(name) &&
+				evaluatePermission(profile.ruleset, name) === "allow" &&
+				!MUTATING_TOOL_NAMES.has(name),
+		),
+	)
+	const codeMode =
+		agent.codeMode === true && input.codeExecutor !== undefined
+			? buildCodeMode(codeTools, maple.layer, input.codeExecutor, input.codeOnly === true)
+			: undefined
+	// What the model is offered directly; the handlers still serve every Maple tool to programs.
+	const direct =
+		codeMode !== undefined && input.codeOnly === true
+			? Toolkit.make(...Object.values(maple.toolkit.tools).filter((tool) => !(tool.name in codeTools)))
+			: maple.toolkit
+
+	// A review's own pass may hand groups of a large pull request's files to child reviewers, who
+	// read with the same tools, `run_code` included.
 	const fanout =
 		completion?.tool === SUBMIT_REVIEW && completion.autonomous
 			? buildReviewFanout(
-					maple.toolkit,
+					Toolkit.merge(direct, ...(codeMode === undefined ? [] : [codeMode.toolkit])),
 					input.model,
 					startedAt + Duration.toMillis(Duration.fromInputUnsafe(agent.budget.maxDuration)),
+					codeMode === undefined ? undefined : CODE_MODE_GUIDANCE,
 				)
 			: undefined
 
 	const toolkit = Toolkit.merge(
-		maple.toolkit,
+		direct,
 		...(completion === undefined ? [] : [completion.toolkit]),
 		...(fanout === undefined ? [] : [fanout.toolkit]),
+		...(codeMode === undefined ? [] : [codeMode.toolkit]),
 	)
 	const handlers = Layer.mergeAll(
 		maple.layer,
 		...(completion === undefined ? [] : [completion.layer]),
+		...(codeMode === undefined ? [] : [codeMode.layer]),
 		// The children run the parent's own tool handlers, so those are provided into the fan-out.
-		...(fanout === undefined ? [] : [fanout.layer.pipe(Layer.provide(maple.layer))]),
+		...(fanout === undefined
+			? []
+			: [
+					fanout.layer.pipe(
+						Layer.provide(
+							codeMode === undefined ? maple.layer : Layer.merge(maple.layer, codeMode.layer),
+						),
+					),
+				]),
 	)
 
 	// Not declared to the engine, which would then require the tool on every call; see
 	// `buildDiagnosisCompletion`. A landed submission still settles the run, below.
-	const run = chatAgent({ ...agent, prompt: profile.prompt }, toolkit, input.model, {
+	const prompt = codeMode === undefined ? profile.prompt : `${profile.prompt}\n\n${CODE_MODE_GUIDANCE}`
+	const run = chatAgent({ ...agent, prompt }, toolkit, input.model, {
 		autonomous: input.origin.kind === "autonomous",
 	})
 	const usage = accumulateUsage(input.usage)
@@ -281,6 +321,17 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		Stream.runForEach((event) =>
 			Effect.sync(() => {
 				if (event._tag === "CompactionPerformed") compactions += 1
+				if (
+					(event._tag === "SubagentCompleted" ||
+						event._tag === "SubagentFailed" ||
+						event._tag === "SubagentInterrupted") &&
+					event.usage !== undefined
+				) {
+					input.usage.delegated.modelCalls += event.usage.modelCalls
+					input.usage.delegated.input += event.usage.inputTokens
+					input.usage.delegated.output += event.usage.outputTokens
+					input.usage.delegated.costMicrousd += event.usage.costMicrousd
+				}
 				if (settledTerminal(event)) return
 				for (const chat of toChatEvents(event, context)) input.append(chat)
 			}),

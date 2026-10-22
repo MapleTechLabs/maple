@@ -87,6 +87,7 @@
 		"vitest": "catalog:"
 	},
 	"overrides": {
+		"@effect/platform-browser": "4.0.4",
 		"@effect/sql-d1": "4.0.4",
 		"@effect/sql-sqlite-do": "4.0.4",
 		"workerd": "1.20261002.1"
