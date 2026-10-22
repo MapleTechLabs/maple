@@ -6,7 +6,6 @@
 )]
 
 use std::collections::HashMap;
-use std::io::Read;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -18,7 +17,7 @@ use axum::http::StatusCode;
 use axum::routing::post;
 use axum::Router;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use flate2::read::GzDecoder;
+use maple_ingest::decompress::gunzip_bounded;
 use maple_ingest::telemetry::{
     ClickHouseBreakerConfig, DatasourceNames, SamplingPolicy, TelemetryPipeline, TinybirdConfig,
 };
@@ -122,7 +121,7 @@ impl BenchFixture {
                 batch_max_rows: 5_000,
                 batch_max_bytes: 4 * 1024 * 1024,
                 queue_max_age: Duration::ZERO,
-            batch_max_wait: Duration::from_millis(10),
+                batch_max_wait: Duration::from_millis(10),
                 export_concurrency_per_shard: 1,
                 export_max_attempts: 20,
                 clickhouse_export_timeout: Duration::from_secs(5),
@@ -159,13 +158,12 @@ async fn fake_tinybird_import(
     if !query.contains_key("name") {
         return StatusCode::BAD_REQUEST;
     }
-    let mut decoded = String::new();
-    if GzDecoder::new(&body[..])
-        .read_to_string(&mut decoded)
-        .is_err()
-    {
+    let Some(decoded) = gunzip_bounded(&body, usize::MAX)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+    else {
         return StatusCode::BAD_REQUEST;
-    }
+    };
     state.rows.fetch_add(
         decoded.lines().filter(|line| !line.is_empty()).count() as u64,
         Ordering::Relaxed,

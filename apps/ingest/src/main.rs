@@ -14,7 +14,8 @@ mod autumn;
 mod sources;
 mod task_protection;
 
-use std::io::{Read, Write};
+use std::collections::HashSet;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -40,13 +41,13 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use chrono::DateTime;
 use dashmap::DashMap;
-use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use hmac::{Hmac, Mac};
 use maple_ingest::ai_session;
 use maple_ingest::aws::CredentialsProvider as AwsCredentialsProvider;
 use maple_ingest::clickhouse_insert_mappings::SCHEMA_VERSION as CLICKHOUSE_SCHEMA_VERSION;
+use maple_ingest::decompress::{gunzip_bounded, gunzip_len_bounded, GunzipError};
 use maple_ingest::gcp_logging;
 use maple_ingest::gcp_push_auth::{GooglePushAuth, PushAuthError};
 use maple_ingest::metrics;
@@ -217,6 +218,8 @@ struct AppConfig {
     /// The 401 body for a key this instance does not know. See
     /// `invalid_ingest_key_message`.
     invalid_key_message: &'static str,
+    /// `INGEST_BLOCKED_KEYS`: keys refused at origin whatever header spelling carries them.
+    blocked_ingest_keys: Arc<HashSet<String>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -732,6 +735,9 @@ impl AppConfig {
             shutdown_drain_secs,
             wal_store,
             invalid_key_message,
+            blocked_ingest_keys: Arc::new(parse_blocked_ingest_keys(
+                std::env::var("INGEST_BLOCKED_KEYS").ok().as_deref(),
+            )),
         })
     }
 }
@@ -815,6 +821,8 @@ struct IngestKeyResolver {
     /// (org id, claim as received) to whether it names one of the org's pull sources,
     /// for `maple_source_id` values sent with the default keys.
     source_claims: Cache<(String, String), SourceClaim>,
+    /// Emergency block list, checked before any cache or store lookup.
+    blocked_keys: Arc<HashSet<String>>,
 }
 
 /// How often one token source's `last_used_at` is rewritten per gateway instance.
@@ -2864,6 +2872,7 @@ async fn main() {
             source_claims: source_claims_cache(Duration::from_secs(
                 config.ingest_key_cache_ttl_secs,
             )),
+            blocked_keys: Arc::clone(&config.blocked_ingest_keys),
         },
         org_inflight_limiter: OrgInFlightLimiter::new(config.org_max_in_flight),
         key_rate_limiter: SourceRateLimiter::new(config.rate_limit_fleet_size),
@@ -4428,23 +4437,12 @@ async fn handle_product_events_inner(
     Ok(count)
 }
 
-/// Decompressed length of a gzip payload, without materializing it.
-///
-/// Same number `read_to_string(...).len()` would produce, and the same
-/// rejection of malformed gzip — it just doesn't keep the bytes. Used on the
-/// blob-store path, where the decompressed text is never needed but `ByteSize`
-/// and the per-session budget are still denominated in decompressed bytes.
-fn decompressed_len(body: &[u8]) -> Result<u64, std::io::Error> {
-    let mut decoder = GzDecoder::new(body);
-    std::io::copy(&mut decoder, &mut std::io::sink())
-}
-
 /// Bounded gunzip of a replay chunk into text. Invalid UTF-8 reads as the
 /// same error `read_to_string` raised, so the rejection fingerprint holds.
-fn gunzip_replay_text(body: &[u8], max_decoded: usize) -> Result<String, BoundedGunzipError> {
+fn gunzip_replay_text(body: &[u8], max_decoded: usize) -> Result<String, GunzipError> {
     let bytes = gunzip_bounded(body, max_decoded)?;
     String::from_utf8(bytes).map_err(|_| {
-        BoundedGunzipError::Invalid(std::io::Error::new(
+        GunzipError::Invalid(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "stream did not contain valid UTF-8",
         ))
@@ -4601,19 +4599,17 @@ async fn handle_replay_blob_inner(
     // is denominated in *decompressed* bytes. So decode and discard, counting.
     // What that avoids is the part that actually cost: materializing a
     // multi-megabyte String, JSON-escaping it, and pushing it through the WAL.
+    // Both branches stop at the same decoded ceiling as the OTLP routes.
+    let max_decoded = state.config.max_decoded_body_bytes;
+    let gunzip_rejection = |e: GunzipError| match e {
+        GunzipError::Invalid(e) => replay_gunzip_rejection(headers, &body, &e),
+        GunzipError::TooLarge => ApiError::payload_too_large("decompressed replay chunk too large"),
+    };
     let (events_json, byte_size) = if state.replay_blob_store.is_some() {
-        (
-            None,
-            decompressed_len(&body).map_err(|e| replay_gunzip_rejection(headers, &body, &e))?,
-        )
+        let byte_size = gunzip_len_bounded(&body, max_decoded).map_err(gunzip_rejection)?;
+        (None, byte_size)
     } else {
-        let events_json = gunzip_replay_text(&body, state.config.max_decoded_body_bytes)
-            .map_err(|e| match e {
-                BoundedGunzipError::Invalid(e) => replay_gunzip_rejection(headers, &body, &e),
-                BoundedGunzipError::TooLarge => {
-                    ApiError::payload_too_large("decompressed replay chunk too large")
-                }
-            })?;
+        let events_json = gunzip_replay_text(&body, max_decoded).map_err(gunzip_rejection)?;
         let byte_size = events_json.len() as u64;
         (Some(events_json), byte_size)
     };
@@ -6160,26 +6156,6 @@ fn detect_payload_format(content_type: &str) -> Result<PayloadFormat, ApiError> 
     ))
 }
 
-#[derive(Debug)]
-enum BoundedGunzipError {
-    Invalid(std::io::Error),
-    TooLarge,
-}
-
-/// Gunzips `body`, stopping once more than `max_decoded` bytes have come out.
-fn gunzip_bounded(body: &[u8], max_decoded: usize) -> Result<Vec<u8>, BoundedGunzipError> {
-    let read_limit = u64::try_from(max_decoded).unwrap_or(u64::MAX).saturating_add(1);
-    let mut decompressed = Vec::new();
-    GzDecoder::new(body)
-        .take(read_limit)
-        .read_to_end(&mut decompressed)
-        .map_err(BoundedGunzipError::Invalid)?;
-    if decompressed.len() > max_decoded {
-        return Err(BoundedGunzipError::TooLarge);
-    }
-    Ok(decompressed)
-}
-
 #[hotpath::measure]
 fn decode_payload(
     body: &Bytes,
@@ -6189,8 +6165,8 @@ fn decode_payload(
     match content_encoding {
         None => Ok(body.to_vec()),
         Some("gzip") => gunzip_bounded(body.as_ref(), max_decoded).map_err(|e| match e {
-            BoundedGunzipError::Invalid(_) => ApiError::bad_request("Invalid gzip body"),
-            BoundedGunzipError::TooLarge => {
+            GunzipError::Invalid(_) => ApiError::bad_request("Invalid gzip body"),
+            GunzipError::TooLarge => {
                 ApiError::payload_too_large("Decompressed request body too large")
             }
         }),
@@ -7142,6 +7118,11 @@ impl IngestKeyResolver {
 
     #[hotpath::measure]
     async fn resolve_ingest_key(&self, raw_key: &str) -> Result<Option<ResolvedIngestKey>, String> {
+        // `raw_key` is already normalized by `extract_ingest_key`, so no header
+        // spelling the edge rule misses can carry a blocked key past this.
+        if self.blocked_keys.contains(raw_key) {
+            return Ok(None);
+        }
         // Recorded on `ingest.authenticate` when this runs under the HTTP path;
         // a no-op elsewhere (the field is only declared on that span).
         if let Some(identity) = self.cache.get(raw_key).await {
@@ -8548,6 +8529,16 @@ impl KeyStore for StaticKeyStore {
     }
 }
 
+/// Same comma-separated `INGEST_BLOCKED_KEYS` the edge WAF rule is built from.
+fn parse_blocked_ingest_keys(raw: Option<&str>) -> HashSet<String> {
+    raw.unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 fn infer_ingest_key_type(raw_key: &str) -> Option<IngestKeyType> {
     if raw_key.starts_with("maple_pk_") {
         return Some(IngestKeyType::Public);
@@ -8904,6 +8895,14 @@ mod tests {
     // top-level import avoids an unused-import warning in non-test bin builds.
     use opentelemetry_proto::tonic::metrics::v1::metric;
     use std::sync::atomic::AtomicBool;
+
+    /// The blob path's length count, unbounded and with its `io::Error`, for the rejection tests.
+    fn decompressed_len(body: &[u8]) -> Result<u64, std::io::Error> {
+        gunzip_len_bounded(body, usize::MAX).map_err(|e| match e {
+            GunzipError::Invalid(e) => e,
+            GunzipError::TooLarge => std::io::Error::other("unreachable under usize::MAX"),
+        })
+    }
 
     #[test]
     fn self_trace_sample_ratio_must_be_in_the_unit_interval() {
@@ -9996,6 +9995,7 @@ mod tests {
             recent_key_uses: recent_key_uses_cache(),
             recent_key_rejections: recent_key_rejections_cache(),
             source_claims: source_claims_cache(Duration::from_mins(1)),
+            blocked_keys: Arc::default(),
         }
     }
 
@@ -10021,10 +10021,10 @@ mod tests {
         headers: HeaderMap,
         body: Bytes,
     ) -> StatusCode {
-        let mut decoded = String::new();
-        GzDecoder::new(&body[..])
-            .read_to_string(&mut decoded)
-            .expect("fake ClickHouse should receive gzip NDJSON");
+        let decoded = String::from_utf8(
+            gunzip_bounded(&body, usize::MAX).expect("fake ClickHouse should receive gzip NDJSON"),
+        )
+        .expect("fake ClickHouse should receive UTF-8 NDJSON");
 
         drop(
             tx.send(FakeClickHouseImport {
@@ -10219,6 +10219,7 @@ mod tests {
                 shutdown_drain_secs: 1,
                 wal_store: None,
                 invalid_key_message: "Invalid ingest key",
+                blocked_ingest_keys: Arc::default(),
             },
             #[expect(
                 clippy::useless_conversion,
@@ -10242,6 +10243,7 @@ mod tests {
                 recent_key_uses: recent_key_uses_cache(),
                 recent_key_rejections: recent_key_rejections_cache(),
                 source_claims: source_claims_cache(Duration::from_mins(1)),
+                blocked_keys: Arc::default(),
             },
             org_inflight_limiter: OrgInFlightLimiter::new(100),
             key_rate_limiter: SourceRateLimiter::new(1),
@@ -10844,6 +10846,83 @@ mod tests {
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
+    #[tokio::test]
+    async fn replay_blob_gzip_bomb_is_refused_before_upload_and_budget() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/{*path}", axum::routing::put(fake_r2_put))
+            .with_state(tx);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let (raw_key, org_id) = ("maple_sk_test_replay_bomb", "org_replay_bomb");
+        let queue_dir = unique_main_test_dir("replay-blob-bomb");
+        let state = replay_blob_test_state(raw_key, org_id, queue_dir.clone()).await;
+        let mut state = with_replay_blob_store(state, format!("http://{addr}"));
+        state.config.max_decoded_body_bytes = 1024 * 1024;
+
+        let bomb = gzip_bytes(&"a".repeat(4 * 1024 * 1024));
+        assert!(bomb.len() < 64 * 1024, "fixture should compress well");
+        let error =
+            handle_replay_blob_inner(&state, &replay_blob_headers(raw_key, "sess_bomb", 0), bomb)
+                .await
+                .expect_err("a chunk inflating past the decoded limit must be refused");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(rx.try_recv().is_err(), "a refused chunk must not be stored");
+        assert_eq!(
+            state
+                .replay_session_budget
+                .add(org_id, "sess_bomb", 0)
+                .await,
+            0,
+            "a refused chunk must not be charged to the session"
+        );
+
+        handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(raw_key, "sess_bomb", 1),
+            gzip_bytes(r#"[{"type":2,"timestamp":1}]"#),
+        )
+        .await
+        .expect("a normal chunk is still accepted");
+        assert!(rx.recv().await.is_some(), "the normal chunk is stored");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn inline_replay_and_otlp_refuse_gzip_bombs() {
+        let queue_dir = unique_main_test_dir("inline-bomb");
+        let (raw_key, org_id) = ("maple_sk_test_inline_bomb", "org_inline_bomb");
+        let mut state = replay_blob_test_state(raw_key, org_id, queue_dir.clone()).await;
+        state.config.max_decoded_body_bytes = 1024 * 1024;
+        let bomb = || gzip_bytes(&"a".repeat(4 * 1024 * 1024));
+
+        let error = handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(raw_key, "sess_inline_bomb", 0),
+            bomb(),
+        )
+        .await
+        .expect_err("inline replay must refuse a gzip bomb");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+
+        let mut headers = test_headers(raw_key);
+        headers.insert(CONTENT_ENCODING, "gzip".parse().unwrap());
+        let (error, error_kind) = handle_signal_inner(&state, &headers, bomb(), Signal::Logs)
+            .await
+            .expect_err("OTLP must refuse a gzip bomb");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(error_kind, "payload_too_large");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
     #[test]
     fn decode_payload_gunzips_within_the_decoded_limit() {
         let payload = r#"{"resourceSpans":[]}"#;
@@ -10885,14 +10964,14 @@ mod tests {
         );
         assert!(matches!(
             gunzip_replay_text(&gzip_bytes(events), events.len() - 1),
-            Err(BoundedGunzipError::TooLarge)
+            Err(GunzipError::TooLarge)
         ));
 
         let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
         encoder.write_all(&[0xff, 0xfe]).unwrap();
         let not_utf8 = encoder.finish().unwrap();
         match gunzip_replay_text(&not_utf8, 1024) {
-            Err(BoundedGunzipError::Invalid(error)) => {
+            Err(GunzipError::Invalid(error)) => {
                 assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
             }
             other => panic!("expected an invalid-data error, got {other:?}"),
@@ -12130,6 +12209,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn blocked_key_is_refused_in_every_header_spelling() {
+        let (forward_url, _forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("blocked-key");
+        let store = Arc::new(FakeKeyStore::default());
+        let (blocked, allowed) = ("maple_sk_test_blocked", "maple_sk_test_allowed");
+        for raw_key in [blocked, allowed] {
+            store.insert_private(
+                raw_key,
+                KeyRow {
+                    org_id: "org_blocked_key".to_owned(),
+                    self_managed: false,
+                    clickhouse_ready: false,
+                },
+            );
+        }
+        let mut state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_millis(5),
+        )
+        .await;
+        state.resolver.blocked_keys = Arc::new(parse_blocked_ingest_keys(Some(blocked)));
+
+        let body = || Bytes::from(test_log_request("blocked").encode_to_vec());
+        for (name, value) in [
+            ("authorization", format!("Bearer {blocked}")),
+            ("authorization", format!("bearer {blocked}")),
+            ("authorization", format!("BEARER {blocked}")),
+            ("authorization", format!("Bearer  {blocked}\t")),
+            ("x-maple-ingest-key", format!(" {blocked} ")),
+        ] {
+            let mut headers = HeaderMap::new();
+            headers.insert(name, value.parse().unwrap());
+            headers.insert(CONTENT_TYPE, "application/x-protobuf".parse().unwrap());
+            let (error, _) = handle_signal_inner(&state, &headers, body(), Signal::Logs)
+                .await
+                .expect_err("a blocked key must be refused");
+            assert_eq!(error.status, StatusCode::UNAUTHORIZED, "{name}: {value:?}");
+            let grpc = resolve_grpc_ingest_key(&state, &headers).await;
+            assert!(
+                matches!(&grpc, Err(status) if status.code() == tonic::Code::Unauthenticated),
+                "gRPC must refuse a blocked key: {name}: {value:?}"
+            );
+        }
+
+        let (response, ..) =
+            handle_signal_inner(&state, &test_headers(allowed), body(), Signal::Logs)
+                .await
+                .expect("an unblocked key still ingests");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[test]
+    fn blocked_keys_parse_like_the_edge_rule() {
+        let keys = parse_blocked_ingest_keys(Some(" maple_sk_a, ,maple_pk_b,"));
+        assert_eq!(keys.len(), 2);
+        assert!(keys.contains("maple_sk_a") && keys.contains("maple_pk_b"));
+        assert!(parse_blocked_ingest_keys(None).is_empty());
+    }
+
+    #[tokio::test]
     async fn logpush_gate_precedes_decode_and_admits_an_allowed_org() {
         let (forward_url, mut forward_rx) = spawn_forward_collector().await;
         let queue_dir = unique_main_test_dir("logpush-gate");
@@ -13364,6 +13507,7 @@ mod tests {
             recent_key_uses: recent_key_uses_cache(),
             recent_key_rejections: recent_key_rejections_cache(),
             source_claims: source_claims_cache(Duration::from_mins(1)),
+            blocked_keys: Arc::default(),
         };
         let resolved = resolver
             .resolve_ingest_key("maple_src_static_backend_key_0000000000000")
