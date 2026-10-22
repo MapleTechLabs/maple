@@ -148,6 +148,8 @@ interface Seen {
 	rules?: ReadonlyArray<AlertRuleDocument>
 	/** The timing a raw-SQL preview reports. */
 	queryTiming?: Record<string, unknown>
+	/** A raw-SQL preview whose range was too heavy to chart: no series. */
+	seriesFailure?: "query_too_slow" | "query_too_much_memory"
 }
 
 const layer = (seen: Seen) =>
@@ -208,16 +210,20 @@ const layer = (seen: Seen) =>
 						],
 						comparator: "gt",
 						truncatedToStart: null,
-						series: [
-							{
-								groupKey: "__total__",
-								points: [
-									point("2026-09-24T09:50:00.000Z"),
-									point("2026-09-24T09:55:00.000Z"),
-								],
-							},
-						],
+						series:
+							seen.seriesFailure === undefined
+								? [
+										{
+											groupKey: "__total__",
+											points: [
+												point("2026-09-24T09:50:00.000Z"),
+												point("2026-09-24T09:55:00.000Z"),
+											],
+										},
+									]
+								: [],
 						wouldFire: [],
+						...(seen.seriesFailure === undefined ? undefined : { seriesFailure: seen.seriesFailure }),
 						...(seen.queryTiming === undefined ? undefined : { queryTiming: seen.queryTiming }),
 					}),
 				)
@@ -924,5 +930,12 @@ describe("alert tools", () => {
 		expect(text(unfinished)).toContain("One check did not finish within 25s")
 		expect(text(unfinished)).toContain("It fits no check interval")
 		expect(text(unfinished)).not.toContain("evaluation_interval_minutes=")
+
+		const heavy = await ok("preview_alert_rule", { rule_id: RULE_ID }, { ...seen, seriesFailure: "query_too_much_memory" })
+		expect(text(heavy)).toContain("ran out of memory charting this whole range")
+		expect(text(heavy)).toContain("The range was too heavy to chart")
+		expect(text(heavy)).not.toContain("returned no series")
+		// The one-check timing still says which interval fits.
+		expect(text(heavy)).toContain("One check took 7.8s")
 	})
 })
