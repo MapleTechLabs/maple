@@ -605,6 +605,8 @@ describe("SupabaseConnectionService log drains", () => {
 				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsUpstreamError")
 				assert.deepStrictEqual(fake.state.drains.get(REF_A), [DATADOG_DRAIN])
 				assert.strictEqual(yield* tokenSourceCount(testDb), 0)
+				// A 5xx is transient for every other call, but a create is never retried.
+				assert.strictEqual(drainCalls(fake, "POST").length, 1)
 			}).pipe(Effect.provide(makeLayer(testDb, fake)))
 		},
 	)

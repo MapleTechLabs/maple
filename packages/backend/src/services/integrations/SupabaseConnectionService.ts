@@ -505,9 +505,10 @@ export class SupabaseConnectionService extends Context.Service<
 					),
 				)
 			yield* Effect.annotateCurrentSpan({ "maple.supabase.log_drain_id": drain.id })
-			const undo = deleteUpstreamDrain(orgId, ref, drain.id).pipe(
-				Effect.andThen(deleteDrainSource(orgId, sourceId)),
-				bestEffort("drain rollback", orgId, ref),
+			// Each half runs on its own: a failed upstream delete must not leave the token live.
+			const undo = Effect.andThen(
+				deleteUpstreamDrain(orgId, ref, drain.id).pipe(bestEffort("drain rollback", orgId, ref)),
+				deleteDrainSource(orgId, sourceId).pipe(bestEffort("drain source rollback", orgId, ref)),
 			)
 			// Conditional on no drain recorded, so a concurrent enable cannot leave a second one behind.
 			// Polling stops in the same write: the drain now delivers this project's logs.

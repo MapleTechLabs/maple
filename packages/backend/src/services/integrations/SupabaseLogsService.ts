@@ -219,6 +219,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 							// a drain turned on since the read still wins.
 							.where(($) => [
 								$.id.eq(project.id),
+								$.removedAt.isNull(),
 								...(enabled ? [$.logsEnabled.eq(false), $.logDrainEnabled.eq(false)] : []),
 							]),
 					),
