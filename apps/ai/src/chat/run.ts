@@ -115,6 +115,8 @@ export interface ChatRunInput {
 	readonly agent?: AgentDefinition
 	/** Runs `run_code` programs for an agent that offers it; absent, the tool is not offered. */
 	readonly codeExecutor?: Layer.Layer<CodeExecutor>
+	/** Withhold the direct tools `run_code` can call, so reads go through programs. The eval's variant. */
+	readonly codeOnly?: boolean
 	/** The message the user just sent, which is this run's input. */
 	readonly text: string
 	readonly history: ReadonlyArray<ChatMessage>
@@ -215,28 +217,30 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 
 	// Read-only tools only: a program cannot hold a proposal for approval, and a write it made before
 	// failing could not be retried safely.
+	const codeTools = Object.fromEntries(
+		Object.entries(maple.toolkit.tools).filter(
+			([name]) =>
+				CODE_MODE_TOOLS.has(name) &&
+				evaluatePermission(profile.ruleset, name) === "allow" &&
+				!MUTATING_TOOL_NAMES.has(name),
+		),
+	)
 	const codeMode =
 		agent.codeMode === true && input.codeExecutor !== undefined
-			? buildCodeMode(
-					Object.fromEntries(
-						Object.entries(maple.toolkit.tools).filter(
-							([name]) =>
-								CODE_MODE_TOOLS.has(name) &&
-								evaluatePermission(profile.ruleset, name) === "allow" &&
-								!MUTATING_TOOL_NAMES.has(name),
-						),
-					),
-					maple.layer,
-					input.codeExecutor,
-				)
+			? buildCodeMode(codeTools, maple.layer, input.codeExecutor, input.codeOnly === true)
 			: undefined
+	// What the model is offered directly; the handlers still serve every Maple tool to programs.
+	const direct =
+		codeMode !== undefined && input.codeOnly === true
+			? Toolkit.make(...Object.values(maple.toolkit.tools).filter((tool) => !(tool.name in codeTools)))
+			: maple.toolkit
 
 	// A review's own pass may hand groups of a large pull request's files to child reviewers, who
 	// read with the same tools, `run_code` included.
 	const fanout =
 		completion?.tool === SUBMIT_REVIEW && completion.autonomous
 			? buildReviewFanout(
-					Toolkit.merge(maple.toolkit, ...(codeMode === undefined ? [] : [codeMode.toolkit])),
+					Toolkit.merge(direct, ...(codeMode === undefined ? [] : [codeMode.toolkit])),
 					input.model,
 					startedAt + Duration.toMillis(Duration.fromInputUnsafe(agent.budget.maxDuration)),
 					codeMode === undefined ? undefined : CODE_MODE_GUIDANCE,
@@ -244,7 +248,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 			: undefined
 
 	const toolkit = Toolkit.merge(
-		maple.toolkit,
+		direct,
 		...(completion === undefined ? [] : [completion.toolkit]),
 		...(fanout === undefined ? [] : [fanout.toolkit]),
 		...(codeMode === undefined ? [] : [codeMode.toolkit]),
@@ -317,6 +321,17 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		Stream.runForEach((event) =>
 			Effect.sync(() => {
 				if (event._tag === "CompactionPerformed") compactions += 1
+				if (
+					(event._tag === "SubagentCompleted" ||
+						event._tag === "SubagentFailed" ||
+						event._tag === "SubagentInterrupted") &&
+					event.usage !== undefined
+				) {
+					input.usage.delegated.modelCalls += event.usage.modelCalls
+					input.usage.delegated.input += event.usage.inputTokens
+					input.usage.delegated.output += event.usage.outputTokens
+					input.usage.delegated.costMicrousd += event.usage.costMicrousd
+				}
 				if (settledTerminal(event)) return
 				for (const chat of toChatEvents(event, context)) input.append(chat)
 			}),

@@ -240,11 +240,11 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 				.map((p) => (p === "committed" ? undefined : p)) ?? [undefined])
 	const repeats = positiveInt(opts.get("repeats"), 1, "repeats")
 	const codeModes = (opts.get("code-mode") ?? "off").split(",").map((mode) => {
-		if (mode !== "on" && mode !== "off") {
-			console.error(`--code-mode takes off, on or off,on; got ${mode}`)
+		if (mode !== "off" && mode !== "on" && mode !== "only") {
+			console.error(`--code-mode takes a list of off, on and only; got ${mode}`)
 			process.exit(2)
 		}
-		return mode === "on"
+		return mode
 	})
 	// Resolve every ref before spending tokens. No live PR comments/checks enter a replay.
 	for (const c of cases) {
@@ -320,7 +320,11 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 					"--prompt-file",
 					promptFile,
 					...(variant.model === undefined ? [] : ["--model", variant.model]),
-					...(variant.codeMode ? ["--code-mode"] : []),
+					...(variant.codeMode === "on"
+						? ["--code-mode"]
+						: variant.codeMode === "only"
+							? ["--code-only"]
+							: []),
 				])
 				const report = JSON.parse(readFileSync(join(dir, "report.json"), "utf8"))
 				const findings: ReadonlyArray<Finding> = report?.report?.findings ?? []
@@ -336,6 +340,8 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 					findings,
 					calls: report?.tools?.length,
 					llmCalls: report?.usage?.charges?.length,
+					// The review_files children's own spend, which `usage` above does not include.
+					delegated: report?.usage?.delegated,
 					usage: report?.usage,
 					seconds: report ? report.durationMs / 1000 : null,
 					closedOut: report?.closedOut,
@@ -392,7 +398,7 @@ const score = (argv: ReadonlyArray<string>) => {
 				findings: Schema.Array(Schema.Unknown),
 				model: Schema.String,
 				prompt: Schema.Int,
-				codeMode: Schema.optionalKey(Schema.Boolean),
+				codeMode: Schema.optionalKey(Schema.Literals(["off", "on", "only"])),
 			}),
 		),
 	)(JSON.parse(readFileSync(join(dir, "results.json"), "utf8")))
@@ -408,7 +414,7 @@ const score = (argv: ReadonlyArray<string>) => {
 				runId: run.runId,
 				model: run.model,
 				prompt: run.prompt,
-				codeMode: run.codeMode === true,
+				codeMode: run.codeMode ?? "off",
 				caseId,
 				expected: c.expected,
 				status: !run.submitted ? "failed" : scored === null ? "ungraded" : "graded",
@@ -418,8 +424,7 @@ const score = (argv: ReadonlyArray<string>) => {
 	)
 	writeFileSync(join(dir, "scores.json"), JSON.stringify(rows, null, "\t"))
 	console.table(rows)
-	const label = (r: (typeof rows)[number]) =>
-		`${r.model} / prompt ${r.prompt}${r.codeMode ? " / run_code" : ""}`
+	const label = (r: (typeof rows)[number]) => `${r.model} / prompt ${r.prompt} / run_code ${r.codeMode}`
 	const variants = [...new Set(rows.map(label))]
 	const summary = variants.map((variant) => {
 		const selected = rows.filter((r) => label(r) === variant)
@@ -453,7 +458,7 @@ if (import.meta.main) {
 	else if (command === "score") score(rest)
 	else {
 		console.error(
-			"usage: review:eval mine [--ref ref] [--since date] [--limit n] | run [--cases ids] [--models ids] [--prompts committed,path] [--code-mode off,on] [--repeats n] [--split development|holdout] [--dry-run] | score --dir path",
+			"usage: review:eval mine [--ref ref] [--since date] [--limit n] | run [--cases ids] [--models ids] [--prompts committed,path] [--code-mode off,on,only] [--repeats n] [--split development|holdout] [--dry-run] | score --dir path",
 		)
 		process.exit(2)
 	}

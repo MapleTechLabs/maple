@@ -260,6 +260,7 @@ describe("run_code", () => {
 			callTool("submit_review", { verdict: "clean", summary: "Adds a retry." }),
 		])
 		const { executor, dispatched } = recordingExecutor()
+		const usage = makeRunUsage()
 
 		const exit = await Effect.runPromiseExit(
 			runChatTurn({
@@ -275,7 +276,7 @@ describe("run_code", () => {
 				codeExecutor: inProcessCodeExecutorLayer,
 				text: "Review pull request #1.",
 				history: [],
-				usage: makeRunUsage(),
+				usage,
 				holdsTurn: () => true,
 				append: () => {},
 			}).pipe(Effect.provide(llmClients)),
@@ -286,6 +287,35 @@ describe("run_code", () => {
 		assert.include(offered[1], RUN_CODE)
 		assert.include(JSON.stringify(prompts[1]!.content[0]), "Reading with run_code")
 		assert.include(dispatched, "pr_file_diff")
+		// The child's two model calls, counted apart from the parent's own usage.
+		assert.strictEqual(usage.delegated.modelCalls, 2)
+	})
+
+	it("withholds the direct read tools in code-only runs, keeping their schemas in run_code", async () => {
+		const { model, offered } = scriptedModel([answer("Hi.")])
+		await Effect.runPromiseExit(
+			runChatTurn({
+				sessionId: INVESTIGATION,
+				messageId: "msg-1",
+				tenant: TENANT,
+				origin: { kind: "autonomous" },
+				toolExecutor: recordingExecutor().executor,
+				model,
+				submitDiagnosis: () => Effect.void,
+				codeExecutor: inProcessCodeExecutorLayer,
+				codeOnly: true,
+				text: "Investigate.",
+				history: [],
+				usage: makeRunUsage(),
+				holdsTurn: () => true,
+				append: () => {},
+			}).pipe(Effect.provide(llmClients)),
+		)
+
+		assert.include(offered[0], RUN_CODE)
+		assert.include(offered[0], "submit_diagnosis")
+		assert.notInclude(offered[0], "list_services")
+		assert.notInclude(offered[0], "run_sql")
 	})
 
 	it("lists only registered, read-only tools", () => {

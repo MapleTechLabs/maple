@@ -94,13 +94,15 @@ export const buildCodeMode = <T extends Tool.Any, H, E, R>(
 	tools: Readonly<Record<string, T>>,
 	handlers: Layer.Layer<H, E, R>,
 	executor: Layer.Layer<CodeExecutor>,
+	/** The direct tools are withheld, so the description carries their schemas instead. */
+	only = false,
 ) => {
 	const methods = Object.keys(tools).sort()
 	if (methods.length === 0) return undefined
 	const definition = CodeMode.make(RUN_CODE, {
 		description: description(methods),
-		// The direct tools are offered alongside, so the model has every schema already.
-		includeDeclarations: false,
+		// Offered alongside the direct tools, the model has every schema already.
+		includeDeclarations: only,
 		tools: { maple: tools },
 		limits: LIMITS,
 		maxEgressBytes: MAX_EGRESS_BYTES,
