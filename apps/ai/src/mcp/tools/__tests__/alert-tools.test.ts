@@ -876,7 +876,7 @@ describe("alert tools", () => {
 		expect(output.rule.slowedIntervalMinutes).toBe(10)
 		expect(output.rule.lastEvaluationErrorKind).toBe("query_too_slow")
 		expect(text(result)).toContain("Window: 30m, checked every 10m (slowed down from 5m)")
-		expect(text(result)).toContain("hit its time limit 3 checks in a row")
+		expect(text(result)).toContain("hit its time or memory limit 3 checks in a row")
 		expect(text(result)).toContain("Editing the rule resets that")
 		expect(text(result)).toContain("Last error kind: query_too_slow")
 
