@@ -42,6 +42,7 @@ export const PLATFORMS = {
 		icon: "CloudflareBrandIcon",
 	},
 	gcp: { label: "Google Cloud", description: "Logs, metrics and resources", icon: "GoogleCloudIcon" },
+	aws: { label: "AWS", description: "A read-only role in an account", icon: "AwsIcon" },
 	railway: { label: "Railway", description: "Service metrics", icon: "RailwayIcon" },
 	planetscale: { label: "PlanetScale", description: "Database metrics", icon: "PlanetScaleIcon" },
 	github: { label: "GitHub", description: "Repositories, CI and deploys", icon: "GithubIcon" },

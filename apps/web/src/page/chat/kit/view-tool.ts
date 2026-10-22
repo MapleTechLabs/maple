@@ -61,6 +61,7 @@ const statusGlyph = <M>(h: HtmlBuilder<M>, status: ToolStatus, live: boolean, to
 			? dotLoader(h)
 			: spinner(h, "size-3.5 text-muted-foreground motion-reduce:animate-none")
 	if (status === "error") return icon(h, "CircleXmarkIcon", { className: "size-3.5" })
+	if (status === "stopped") return icon(h, "CircleWarningIcon", { className: "size-3.5 text-muted-foreground" })
 	return icon(h, toolIcon(toolName), { className: "size-3.5" })
 }
 
@@ -137,8 +138,10 @@ export const toolRow = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>
 	const status = deriveToolStatus(part.state)
 	const label = status === "running" ? toolActivity(part.toolName) : toolLabel(part.toolName)
 	const summary = toolSummary(part.input)
-	const line = traceLine(h, status === "completed" ? {} : { status }, [
+	const line = traceLine(h, status === "completed" || status === "stopped" ? {} : { status }, [
 		traceIcon(h, [statusGlyph(h, status, live, part.toolName)], live ? "size-5" : undefined),
+		// The glyph is hidden from assistive tech, so the state is said in words.
+		...(status === "stopped" ? [h.span([h.Class("sr-only")], ["Stopped"])] : []),
 		h.span(
 			[h.Class("min-w-0 truncate motion-reduce:shimmer-none font-medium"), h.DataAttribute("slot", "trace-title"), h.Title(label)],
 			[label],

@@ -18,7 +18,7 @@ const cronCases = [
 		],
 	],
 	["*/15 * * * *", ["digest", "supabaseInsights"]],
-	["0 * * * *", ["serviceMapRollup", "supabaseDiscovery"]],
+	["0 * * * *", ["serviceMapRollup", "supabaseDiscovery", "awsConnections"]],
 	["* * * * *", ["alert", "alertLongQuery", "error", "escalation", "fixVerification", "supabaseLogs"]],
 ] as const
 
@@ -32,6 +32,7 @@ const recordingTicks = (
 		alert: tick("alert"),
 		alertLongQuery: tick("alertLongQuery"),
 		anomaly: tick("anomaly"),
+		awsConnections: tick("awsConnections"),
 		cloudflareAnalytics: tick("cloudflareAnalytics"),
 		digest: tick("digest"),
 		error: tick("error"),
