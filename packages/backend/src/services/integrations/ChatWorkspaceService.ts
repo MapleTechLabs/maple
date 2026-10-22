@@ -31,6 +31,11 @@ import { Env } from "@maple/backend/platform/Env"
 import { sealChatWorkspaceCredentials } from "@maple/backend/services/integrations/chat-workspace-credentials"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
 import {
+	isStateInitiator,
+	stateInitiatorMismatch,
+	type OAuthStateInitiator,
+} from "@maple/backend/services/auth/oauth/state-initiator"
+import {
 	linkChatIdentity,
 	listChatIdentities,
 	unlinkChatIdentity,
@@ -135,6 +140,8 @@ export interface ChatWorkspaceServiceApi {
 		IntegrationsNotFoundError | IntegrationsConfigurationError | IntegrationsPersistenceError
 	>
 	readonly completeInstall: (
+		/** The signed-in user finishing the flow; must be the one that started it. */
+		initiator: OAuthStateInitiator,
 		connectorId: ChatConnectorId,
 		params: URLSearchParams,
 	) => Effect.Effect<
@@ -157,6 +164,8 @@ export interface ChatWorkspaceServiceApi {
 		IntegrationsNotFoundError | IntegrationsConfigurationError | IntegrationsPersistenceError
 	>
 	readonly completeLink: (
+		/** The signed-in user finishing the flow; must be the one that started it. */
+		initiator: OAuthStateInitiator,
 		connectorId: ChatConnectorId,
 		params: URLSearchParams,
 	) => Effect.Effect<
@@ -349,17 +358,14 @@ const make: Effect.Effect<
 		return { url }
 	})
 
-	// The same known gap the other OAuth install service in this directory
-	// documents: `state` is unguessable, single-use and TTL-bounded, but it is not
-	// bound to the browser that started the install, so an attacker who gets a
-	// chat-workspace manager to complete THEIR authorize URL links that manager's
-	// workspace to the attacker's org. Closing it is the same architecture call,
-	// unmade for the same reason — that service's `completeInstall` lists the three
-	// options. What is closed here: the workspace identity comes from the
-	// connector, which must read it from whatever the platform bound to the
-	// callback credential, and a workspace already linked to another org is
+	// `state` is unguessable, single-use and TTL-bounded, and it is redeemed only by the Maple
+	// user and org that started the install: the authorize URL is transferable, so a manager who
+	// completes somebody else's URL is refused rather than linking their workspace to that org.
+	// The workspace identity comes from the connector, which must read it from whatever the
+	// platform bound to the callback credential, and a workspace already linked to another org is
 	// rejected below rather than moved.
 	const completeInstall = Effect.fn("ChatWorkspaceService.completeInstall")(function* (
+		initiator: OAuthStateInitiator,
 		connectorId: ChatConnectorId,
 		params: URLSearchParams,
 	) {
@@ -390,6 +396,7 @@ const make: Effect.Effect<
 				}),
 			)
 		}
+		if (!isStateInitiator(row, initiator)) return yield* Effect.fail(stateInitiatorMismatch())
 		const orgId = yield* decodeOrgId(row.orgId).pipe(
 			Effect.mapError(
 				(error) =>
@@ -520,14 +527,13 @@ const make: Effect.Effect<
 	/**
 	 * Bind the chat account that just authorized to the Maple user who started the link.
 	 *
-	 * That user comes from the state row's `initiatedByUserId`, never from the session on the
-	 * callback request. The callback is a top-level redirect the chat platform issues, so the
-	 * browser that opens it need not be the browser that began the link — binding on a cookie
-	 * would let somebody finish a link in a different session, onto whichever Maple user happened
-	 * to be signed in there. The state row is the only thing that knows both halves, and it is
-	 * unguessable, single-use and TTL-bounded.
+	 * The platform's callback is public, so it only hands the query to the dashboard; the signed-in
+	 * dashboard finishes here, and the state row is redeemed only when that session is the user
+	 * and org the row names. A link URL forwarded to somebody else therefore cannot attach their
+	 * chat account to the sender's Maple user.
 	 */
 	const completeLink = Effect.fn("ChatWorkspaceService.completeLink")(function* (
+		initiator: OAuthStateInitiator,
 		connectorId: ChatConnectorId,
 		params: URLSearchParams,
 	) {
@@ -558,6 +564,7 @@ const make: Effect.Effect<
 				new IntegrationsValidationError({ message: "Link state expired — start the link again" }),
 			)
 		}
+		if (!isStateInitiator(row, initiator)) return yield* Effect.fail(stateInitiatorMismatch())
 		const orgId = yield* decodeOrgId(row.orgId).pipe(
 			Effect.mapError(
 				(error) =>

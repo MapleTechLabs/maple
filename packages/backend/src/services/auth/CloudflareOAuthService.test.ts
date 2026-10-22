@@ -100,6 +100,7 @@ const withOAuthApp = {
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
+const INITIATOR = { orgId: asOrgId("org_a"), userId: asUserId("user_a") }
 
 describe("CloudflareOAuthService", () => {
 	it.effect("reports not-connected for a fresh org", () => {
@@ -184,7 +185,7 @@ describe("CloudflareOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 			})
-			const result = yield* service.completeConnect("auth-code", state)
+			const result = yield* service.completeConnect(INITIATOR, "auth-code", state)
 			assert.strictEqual(result.orgId, "org_a")
 
 			const status = yield* service.getStatus(asOrgId("org_a"))
@@ -221,7 +222,7 @@ describe("CloudflareOAuthService", () => {
 			const service = yield* CloudflareOAuthService
 			// No state row was ever seeded — a forged/expired-and-purged callback.
 			const error = yield* service
-				.completeConnect("auth-code", "state-that-was-never-issued")
+				.completeConnect(INITIATOR, "auth-code", "state-that-was-never-issued")
 				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			if (error._tag === "@maple/http/errors/IntegrationsValidationError") {
@@ -244,7 +245,7 @@ describe("CloudflareOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 			})
-			const result = yield* service.completeConnect("auth-code", state)
+			const result = yield* service.completeConnect(INITIATOR, "auth-code", state)
 			assert.strictEqual(result.orgId, "org_a")
 
 			// Both accounts surface, in the grant's order.
@@ -321,7 +322,7 @@ describe("CloudflareOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 			})
-			const error = yield* service.completeConnect("auth-code", state).pipe(Effect.flip)
+			const error = yield* service.completeConnect(INITIATOR, "auth-code", state).pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 			if (error._tag === "@maple/http/errors/IntegrationsValidationError") {
 				assert.include(error.message, "refresh token")
@@ -357,7 +358,7 @@ describe("CloudflareOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 			})
-			yield* service.completeConnect("auth-code", state)
+			yield* service.completeConnect(INITIATOR, "auth-code", state)
 
 			const result = yield* service.disconnect(asOrgId("org_a"))
 			assert.strictEqual(result.disconnected, true)
@@ -411,7 +412,7 @@ describe("CloudflareOAuthService", () => {
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 			})
-			yield* service.completeConnect("auth-code", state)
+			yield* service.completeConnect(INITIATOR, "auth-code", state)
 			const [connected] = yield* owners()
 			assert.deepStrictEqual(connected, {
 				source: connected!.source,
@@ -488,7 +489,7 @@ describe("CloudflareOAuthService", () => {
 				const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
 					callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
 				})
-				return yield* service.completeConnect("auth-code", state)
+				return yield* service.completeConnect(INITIATOR, "auth-code", state)
 			})
 
 		return Effect.gen(function* () {

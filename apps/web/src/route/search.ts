@@ -252,6 +252,8 @@ export const IntegrationsSearch = Schema.Struct({
 	chat_workspace: Schema.optional(Schema.String),
 	chat_identity: Schema.optional(Schema.String),
 	chat_identity_name: Schema.optional(Schema.String),
+	/** A provider callback the API forwarded here to finish as the signed-in user (query in the fragment). */
+	callback: Schema.optional(Schema.String),
 })
 
 export const McpAuthorizeSearch = Schema.Struct({

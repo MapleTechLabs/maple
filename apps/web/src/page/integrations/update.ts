@@ -8,6 +8,12 @@ import * as CopyButton from "../../ui/copy-button"
 import * as Dialog from "../../ui/dialog"
 import { chatConnectorOf, integrationOfSearch } from "./catalog"
 import { chatCallbackOf } from "./chat-callback"
+import {
+	CompleteChatCallback,
+	CompleteOAuthCallback,
+	forwardedCallbackOf,
+	StripCallback,
+} from "./forwarded-callback"
 import { initConnect } from "./connect"
 import { Disconnect, DISCONNECTS } from "./disconnect"
 import { initGithubCard } from "./github"
@@ -69,6 +75,27 @@ const handleChatCallback = (model: Model, withToast: boolean): Return => {
 				}
 }
 
+/** A provider callback the API forwarded here (`?callback=`): finish it as the signed-in user. */
+const handleForwardedCallback = (model: Model): Return => {
+	if (model.search.callback === undefined) return { model }
+	const forwarded = forwardedCallbackOf(model.search)
+	if (forwarded === null) {
+		const { callback: _, ...rest } = model.search
+		return navigateTo(model, hrefOfSearch(rest), true)
+	}
+	return {
+		model,
+		commands: [
+			forwarded.kind === "oauth"
+				? CompleteOAuthCallback({ provider: forwarded.provider })
+				: CompleteChatCallback({
+						connector: forwarded.connector,
+						kind: forwarded.kind === "chat-install" ? "install" : "identity",
+					}),
+		],
+	}
+}
+
 const navigateTo = (model: Model, url: string, isReplace: boolean): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({ url, isReplace }),
@@ -110,6 +137,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		(next: Model) => requestCustomer(next, context),
 		(next: Model) => enterIntegration(next, context),
 		(next: Model) => handleChatCallback(next, false),
+		(next: Model) => handleForwardedCallback(next),
 	])
 	const session = isClerkAuthEnabled ? [LoadSession()] : []
 	return { ...loaded, commands: [ReadClock(), ...session, ...(loaded.commands ?? [])] }
@@ -217,6 +245,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const callback = chatCallbackOf(model.search)
 			return callback === null ? { model } : navigateTo(model, hrefOfSearch(callback.next), true)
 		},
+		CompletedOAuthCallback: ({ provider, status, message: text, returnTo, isRelayed }) => {
+			// The popup closes itself once the page that opened it has the result.
+			if (isRelayed && status === "success") return { model }
+			const href =
+				status === "success" && returnTo !== null ? returnTo : hrefOfSearch({ integration: provider })
+			const received = Connect.receivedCallback(model, context, provider, status, text)
+			return { ...received, commands: [...(received.commands ?? []), StripCallback({ href })] }
+		},
+		CompletedChatCallback: ({ search }) => navigateTo(model, hrefOfSearch(search), true),
+		StrippedCallback: ({ href }) => navigateTo(model, href, true),
 		ClickedConnect: () => Connect.clickedConnect(model),
 		ClickedChatInstall: () => Chat.clickedInstall(model),
 		CompletedLoadCloudflareUsage: ({ key, result }) => ({

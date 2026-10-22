@@ -35,6 +35,7 @@ import {
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { deleteSourcesOf, createIntegrationSource } from "@maple/backend/services/org/integration-sources"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
+import { isStateInitiator, stateInitiatorMismatch, type OAuthStateInitiator } from "./state-initiator"
 import type { EnvConfig } from "@maple/backend/platform/Env"
 
 export const OAUTH_STATE_TTL_MS = 10 * 60_000 // 10 minutes
@@ -205,8 +206,10 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		const deleteAuthState = (state: string) =>
 			dbExecute((db) => db.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.state.eq(state)])))
 
+		/** The live state row, redeemable only by the Maple user and org that started the flow. */
 		const requireStateRow = Effect.fn("OAuthConnectionHelpers.requireStateRow")(function* (
 			state: string,
+			initiator: OAuthStateInitiator,
 		) {
 			const rows = yield* dbExecute((db) =>
 				db.run(
@@ -231,6 +234,10 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 						message: "OAuth state expired — restart the connect flow",
 					}),
 				)
+			}
+			if (!isStateInitiator(row, initiator)) {
+				yield* deleteAuthState(state)
+				return yield* Effect.fail(stateInitiatorMismatch())
 			}
 			return row satisfies OAuthAuthStateRow
 		})

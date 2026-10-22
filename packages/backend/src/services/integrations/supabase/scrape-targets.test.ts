@@ -69,7 +69,7 @@ const finalize = (fake: Fake) =>
 			},
 		)
 		fake.state.codeChallenge = new URL(redirectUrl).searchParams.get("code_challenge")
-		const granted = yield* oauth.completeConnect("code", state)
+		const granted = yield* oauth.completeConnect({ orgId: ORG, userId: USER }, "code", state)
 		return yield* (yield* SupabaseConnectionService).finalizeConnect(
 			granted.orgId,
 			granted.connectedByUserId,

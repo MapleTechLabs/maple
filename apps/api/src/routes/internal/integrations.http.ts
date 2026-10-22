@@ -70,6 +70,7 @@ import { GithubConnectService } from "@maple/backend/services/integrations/vcs/v
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
+import { makeIntegrationCompleter } from "./integrations-complete"
 import { requireAdmin as requireAdminRole } from "@maple/backend/services/auth/auth"
 import {
 	CLOUDFLARE_CALLBACK_PATH,
@@ -136,6 +137,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const gcp = yield* GcpConnectorService
 		const edgeCache = yield* EdgeCacheService
 		const env = yield* Env
+		const completer = yield* makeIntegrationCompleter
 
 		return (
 			handlers
@@ -731,6 +733,27 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							pullRequests,
 						})
 					}).pipe(Effect.withSpan("HttpIntegrations.vcsPullRequests")),
+				)
+				.handle("oauthComplete", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* completer.completeOAuth(
+							{ orgId: tenant.orgId, userId: tenant.userId },
+							payload.provider,
+							payload.query,
+						)
+					}),
+				)
+				.handle("chatComplete", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* completer.completeChat(
+							{ orgId: tenant.orgId, userId: tenant.userId },
+							payload.connector,
+							payload.kind,
+							payload.query,
+						)
+					}),
 				)
 		)
 	}),

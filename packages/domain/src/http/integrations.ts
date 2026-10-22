@@ -9,6 +9,7 @@ import {
 	SourceId,
 	SupabaseProjectRef,
 	UserId,
+	ChatConnectorId,
 } from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
@@ -1334,6 +1335,51 @@ export type IntegrationHttpError =
 	| IntegrationsUpstreamError
 	| IntegrationsPersistenceError
 
+/** The popup providers whose public OAuth callback hands the query to the dashboard to finish. */
+export const OAuthCallbackProvider = Schema.Literals([
+	"hazel",
+	"github",
+	"cloudflare",
+	"planetscale",
+	"supabase",
+])
+export type OAuthCallbackProvider = typeof OAuthCallbackProvider.Type
+
+/** The provider's callback query string, forwarded verbatim by the public callback. */
+const CallbackQuery = Schema.String.check(Schema.isMaxLength(8 * 1024))
+
+export class OAuthCompleteRequest extends Schema.Class<OAuthCompleteRequest>("OAuthCompleteRequest")({
+	provider: OAuthCallbackProvider,
+	query: CallbackQuery,
+}) {}
+
+/** Failures are an outcome, not an error: the copy is what the popup shows. */
+export class OAuthCompleteResponse extends Schema.Class<OAuthCompleteResponse>("OAuthCompleteResponse")({
+	status: Schema.Literals(["success", "error"]),
+	message: Schema.String,
+	returnTo: Schema.NullOr(IntegrationReturnPath),
+}) {}
+
+export const ChatCallbackKind = Schema.Literals(["install", "identity"])
+export type ChatCallbackKind = typeof ChatCallbackKind.Type
+
+/** A closed set rather than a message: the dashboard maps each code to its own copy. */
+export const ChatCallbackReason = Schema.Literals(["state", "conflict", "unconfigured", "unknown", "failed"])
+export type ChatCallbackReason = typeof ChatCallbackReason.Type
+
+export class ChatCompleteRequest extends Schema.Class<ChatCompleteRequest>("ChatCompleteRequest")({
+	connector: ChatConnectorId,
+	kind: ChatCallbackKind,
+	query: CallbackQuery,
+}) {}
+
+export class ChatCompleteResponse extends Schema.Class<ChatCompleteResponse>("ChatCompleteResponse")({
+	status: Schema.Literals(["success", "error"]),
+	reason: Schema.NullOr(ChatCallbackReason),
+	/** The workspace or account display name the platform reported. Untrusted. */
+	name: Schema.NullOr(Schema.String),
+}) {}
+
 /**
  * Dashboard control surface for the Hazel, Cloudflare, Railway and GitHub
  * integrations, plus VCS lookups. Internal transport: session-only, absent from
@@ -1731,6 +1777,20 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
+		}),
+	)
+	.add(
+		// The public callbacks only forward the provider's query here. The signed-in session
+		// finishing the flow must be the user and org that started it (`OAuthStateInitiator`).
+		HttpApiEndpoint.post("oauthComplete", "/oauth/complete", {
+			payload: OAuthCompleteRequest,
+			success: OAuthCompleteResponse,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("chatComplete", "/chat/complete", {
+			payload: ChatCompleteRequest,
+			success: ChatCompleteResponse,
 		}),
 	)
 	.prefix("/internal/integrations")

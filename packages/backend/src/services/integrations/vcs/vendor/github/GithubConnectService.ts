@@ -25,6 +25,11 @@ import { BACKFILL_WINDOW_MS } from "@maple/backend/services/integrations/vcs/Vcs
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import { GithubAppClient, type GithubAppError } from "./GithubAppClient"
 import { githubWebBaseUrl } from "./github-hosts"
+import {
+	isStateInitiator,
+	stateInitiatorMismatch,
+	type OAuthStateInitiator,
+} from "@maple/backend/services/auth/oauth/state-initiator"
 
 // The dashboard connect flow for the GitHub App. Bridges a real GitHub
 // installation into a `vcs_installations` row owned by a Maple org, then hands
@@ -86,6 +91,8 @@ export interface GithubConnectServiceApi {
 		IntegrationsValidationError | IntegrationsPersistenceError
 	>
 	readonly completeConnect: (
+		/** The signed-in user finishing the install; must be the one that started it. */
+		initiator: OAuthStateInitiator,
 		installationId: string,
 		state: string,
 		/**
@@ -270,6 +277,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 			})
 
 			const completeConnect = Effect.fn("GithubConnectService.completeConnect")(function* (
+				initiator: OAuthStateInitiator,
 				installationId: string,
 				state: string,
 				code?: string,
@@ -307,6 +315,15 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					return yield* new IntegrationsValidationError({
 						message: "Connect session expired — restart the connect flow",
 					})
+				}
+				// The install URL is transferable: whoever finishes it must be the Maple user who started it.
+				if (!isStateInitiator(stateRow, initiator)) {
+					yield* Effect.annotateCurrentSpan({
+						orgId: stateRow.orgId,
+						"vcs.connect.outcome": "initiator_mismatch",
+						"vcs.connect.reason": "callback finished by a different Maple user or org",
+					})
+					return yield* stateInitiatorMismatch()
 				}
 
 				// Don't let one org claim an installation another org already owns.

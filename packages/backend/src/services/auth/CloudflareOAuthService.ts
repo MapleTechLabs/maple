@@ -22,6 +22,7 @@ import {
 	makeOAuthConnectionHelpers,
 	OAUTH_STATE_TTL_MS,
 } from "./oauth/connection-helpers"
+import type { OAuthStateInitiator } from "./oauth/state-initiator"
 
 const CLOUDFLARE_PROVIDER = "cloudflare"
 
@@ -144,6 +145,8 @@ export interface CloudflareOAuthServiceApi {
 		IntegrationsValidationError | IntegrationsPersistenceError
 	>
 	readonly completeConnect: (
+		/** The signed-in user finishing the flow; must be the one that started it. */
+		initiator: OAuthStateInitiator,
 		code: string,
 		state: string,
 	) => Effect.Effect<
@@ -268,11 +271,12 @@ export class CloudflareOAuthService extends Context.Service<
 		})
 
 		const completeConnect = Effect.fn("CloudflareOAuthService.completeConnect")(function* (
+			initiator: OAuthStateInitiator,
 			code: string,
 			state: string,
 		) {
 			const config = yield* resolveConfig(env)
-			const stateRow = yield* oauth.requireStateRow(state)
+			const stateRow = yield* oauth.requireStateRow(state, initiator)
 			yield* oauth.deleteAuthState(state)
 
 			if (!stateRow.codeVerifier) {

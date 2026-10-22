@@ -83,6 +83,18 @@ export const Message = defineMessageUnion({
 	ClickedSettingsTab: { tab: Schema.String },
 	/** The chat callback toast went out; the return params are stripped next (a replace). */
 	CompletedChatToast: {},
+	/** A forwarded provider callback finished (`oauthComplete`); `isRelayed`: the opener got it. */
+	CompletedOAuthCallback: {
+		provider: ConnectProvider,
+		status: Schema.Literals(["success", "error"]),
+		message: Schema.String,
+		returnTo: Schema.NullOr(Schema.String),
+		isRelayed: Schema.Boolean,
+	},
+	/** A forwarded chat install or account-link callback finished (`chatComplete`). */
+	CompletedChatCallback: { search: Schema.Record(Schema.String, Schema.String) },
+	/** The URL cleanup after a forwarded callback's toast. */
+	StrippedCallback: { href: Schema.String },
 	/** The header or card Connect button: a new popup attempt for the page's provider. */
 	ClickedConnect: {},
 	SucceededStartConnect: { attempt: Schema.Number },

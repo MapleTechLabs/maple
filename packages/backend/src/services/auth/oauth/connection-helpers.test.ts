@@ -21,6 +21,7 @@ const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
 const ORG = asOrgId("org_oauth_helpers")
 const USER = asUserId("user_oauth_helpers")
+const INITIATOR = { orgId: ORG, userId: USER }
 
 const baseConfig = {
 	PORT: "3472",
@@ -193,7 +194,9 @@ describe("requireStateRow", () => {
 		const fetch = fetchLayer(() => jsonResponse({ error: "unexpected" }, 500))
 		return Effect.gen(function* () {
 			const helpers = yield* makeHelpers()
-			const error = yield* helpers.requireStateRow("state-that-was-never-issued").pipe(Effect.flip)
+			const error = yield* helpers
+				.requireStateRow("state-that-was-never-issued", INITIATOR)
+				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
 		}).pipe(Effect.provide(provideBase(testDb, fetch)))
 	})
@@ -407,8 +410,71 @@ describe("requireStateRow provider scoping", () => {
 					}),
 				),
 			)
-			const error = yield* helpers.requireStateRow("state-of-another-provider").pipe(Effect.flip)
+			const error = yield* helpers
+				.requireStateRow("state-of-another-provider", INITIATOR)
+				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+		}).pipe(
+			Effect.provide(
+				provideBase(
+					testDb,
+					fetchLayer(() => freshTokens()),
+				),
+			),
+		)
+	})
+})
+
+describe("requireStateRow initiator binding", () => {
+	const insertState = (helpers: Effect.Success<ReturnType<typeof makeHelpers>>, state: string) =>
+		helpers.dbExecute((db) =>
+			db.run(
+				PG.insertInto(OAuthAuthStates).values({
+					state,
+					orgId: ORG,
+					provider: "test-provider",
+					initiatedByUserId: USER,
+					redirectUri: "https://api.example.com/callback",
+					returnTo: null,
+					codeVerifier: null,
+					createdAt: Date.now(),
+					expiresAt: Date.now() + 60_000,
+				}),
+			),
+		)
+
+	it.live.each([
+		["another user in the same org", { orgId: ORG, userId: asUserId("user_somebody_else") }],
+		["the same user in another org", { orgId: asOrgId("org_somebody_else"), userId: USER }],
+	])("refuses a forwarded authorization finished by %s, and burns the state", ([, finisher]) => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const helpers = yield* makeHelpers()
+			yield* insertState(helpers, "forwarded-state")
+			const error = yield* helpers.requireStateRow("forwarded-state", finisher).pipe(Effect.flip)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+			assert.include(error.message, "different Maple user or organization")
+			// The initiator cannot redeem it afterwards either: the forwarded state is spent.
+			const replay = yield* helpers.requireStateRow("forwarded-state", INITIATOR).pipe(Effect.flip)
+			assert.include(replay.message, "not recognized")
+		}).pipe(
+			Effect.provide(
+				provideBase(
+					testDb,
+					fetchLayer(() => freshTokens()),
+				),
+			),
+		)
+	})
+
+	it.live("returns the row to the user and org that started the flow", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const helpers = yield* makeHelpers()
+			yield* insertState(helpers, "own-state")
+			const row = yield* helpers.requireStateRow("own-state", INITIATOR)
+			assert.strictEqual(row.orgId, ORG)
+			assert.strictEqual(row.initiatedByUserId, USER)
 		}).pipe(
 			Effect.provide(
 				provideBase(

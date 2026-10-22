@@ -285,7 +285,7 @@
 				"apps/api/src/runtime/service-graph.ts",
 				"packages/backend/src/services/integrations/vcs/VcsProviderRegistry.ts",
 				"apps/api/src/routes/internal/integrations.http.ts",
-				"apps/api/src/routes/integrations-callback.http.ts",
+				"apps/api/src/routes/internal/integrations-complete.ts",
 				"packages/backend/src/services/integrations/vcs/vendor/**",
 				"packages/backend/src/services/integrations/vcs/__tests__/**"
 			],
