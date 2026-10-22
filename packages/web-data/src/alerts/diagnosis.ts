@@ -5,8 +5,12 @@ import type {
 	AlertIncidentDocument,
 	AlertRuleDocument,
 } from "@maple/domain/http"
-import { alertQueryLimits, alertRuleIntervalMinutes } from "@maple/query-engine/datetime"
-import { AlertEvaluationErrorKind } from "@maple/domain/http"
+import {
+	alertQueryLimits,
+	alertRuleIntervalMinutes,
+	nextSlowerAlertInterval,
+} from "@maple/query-engine/datetime"
+import { ALERT_EVALUATION_INTERVALS, AlertEvaluationErrorKind } from "@maple/domain/http"
 import { Option, Schema } from "effect"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { countLabel } from "@maple/ui/lib/format"
@@ -21,6 +25,27 @@ const evaluationCadence = (rule: AlertRuleDocument): string => {
 }
 
 const decodeErrorKind = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
+
+/**
+ * The interval a slowed rule ran at just before its latest slowdown: the step the scheduler
+ * took to reach the slowed interval, from the rule's own interval or an earlier slowdown.
+ */
+const intervalBeforeSlowdown = (rule: AlertRuleDocument): number => {
+	const base = alertRuleIntervalMinutes({ ...rule, slowedIntervalMinutes: null })
+	const slowed = rule.slowedIntervalMinutes
+	if (slowed === null) return base
+	const steps = [
+		base,
+		...ALERT_EVALUATION_INTERVALS.filter((minutes) => minutes > base && minutes < slowed),
+	]
+	return (
+		steps.findLast(
+			(from) =>
+				nextSlowerAlertInterval(from, rule.windowMinutes, "time") === slowed ||
+				nextSlowerAlertInterval(from, rule.windowMinutes, "memory") === slowed,
+		) ?? base
+	)
+}
 
 /** What a failing query's kind means for its author, in plain words. */
 const queryFailureCause = (
@@ -197,9 +222,9 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	const errorAt = parseMs(errorState?.last_evaluated_at ?? rule.lastEvaluatedAt)
 	const slowedAt = parseMs(rule.slowedAt)
 	const isErrorBeforeSlowdown = slowedAt != null && errorAt != null && errorAt <= slowedAt
-	const intervalMinutes = alertRuleIntervalMinutes(
-		isErrorBeforeSlowdown ? { ...rule, slowedIntervalMinutes: null } : rule,
-	)
+	const intervalMinutes = isErrorBeforeSlowdown
+		? intervalBeforeSlowdown(rule)
+		: alertRuleIntervalMinutes(rule)
 	const limitSeconds = alertQueryLimits(intervalMinutes).timeSeconds
 	const slowedLine =
 		rule.slowedIntervalMinutes !== null && rule.slowedAt !== null

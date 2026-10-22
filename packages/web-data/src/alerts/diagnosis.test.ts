@@ -162,6 +162,22 @@ describe("buildDiagnosis", () => {
 		expect(failedAt(11)).toBe("The query takes longer than the 5 s a check allows")
 		// One since then ran at every 5 minutes, under 15 s.
 		expect(failedAt(2)).toBe("The query takes longer than the 15 s a check allows")
+
+		// Slowed twice (1 -> 5 -> 10 min): the failure before the second step ran every 5 min, under 15 s.
+		const twice = stage(
+			diagnose({
+				rule: makeRule({ ...rawSlowed, windowMinutes: 10, slowedIntervalMinutes: 10 }),
+				states: [
+					makeState({
+						last_error: "Timeout exceeded",
+						last_error_kind: "query_too_slow",
+						last_evaluated_at: iso(11 * 60_000),
+					}),
+				],
+			}),
+			"query",
+		).summary
+		expect(twice).toBe("The query takes longer than the 15 s a check allows")
 	})
 
 	it("keeps raw SQL limits out of a built-in rule's timeout", () => {
