@@ -92,6 +92,8 @@ describe("isTrustedCallbackOrigin", () => {
 		for (const [origin, appBaseUrl] of [
 			["https://api.maple.dev", "https://app.maple.dev"],
 			["https://api-pr-12.maple.dev", "https://app-pr-12.maple.dev"],
+			// A self-hosted install served over plain http keeps its own scheme.
+			["http://api.maple.internal", "http://app.maple.internal"],
 		] as const) {
 			assert.isTrue(isTrustedCallbackOrigin(origin, appBaseUrl), `${origin} vs ${appBaseUrl}`)
 		}
@@ -122,6 +124,9 @@ describe("isTrustedCallbackOrigin", () => {
 			// Local dev and deployed hosts are separate families in both directions.
 			["https://evil.localhost", "https://app.maple.dev"],
 			["https://api.maple.dev", "http://127.0.0.1:3471"],
+			// A forwarded `http` scheme on an https deployment.
+			["http://api.maple.dev", "https://app.maple.dev"],
+			["http://app.maple.dev", "https://app.maple.dev"],
 		] as const) {
 			assert.isFalse(isTrustedCallbackOrigin(origin, appBaseUrl), `${origin} vs ${appBaseUrl}`)
 		}
