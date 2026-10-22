@@ -545,3 +545,52 @@ export const rawAlertSampleCountWarning = (sql: string, minimumSampleCount: numb
 	minimumSampleCount > 1 && !rawAlertSqlSelectsSamples(sql)
 		? `Minimum sample count ${minimumSampleCount} counts returned rows (one per bucket) because the query has no \`samples\` column. Select an event count as \`samples\` (e.g. \`count() AS samples\`) to gate on volume.`
 		: null
+
+export type RawAlertPerformanceHintCode = "no_service_filter" | "body_wildcard_match"
+
+/** A change likely to make an alert query cheaper, pointing at the line it is about. */
+export interface RawAlertPerformanceHint {
+	readonly code: RawAlertPerformanceHintCode
+	readonly message: string
+	/** 1-based line of the SQL the hint is about. */
+	readonly line: number
+}
+
+const lineAt = (sql: string, index: number): number => sql.slice(0, index).split("\n").length
+
+/**
+ * Cheap, text-only guesses at what makes an alert query slow. Logs and traces are
+ * sorted by service after org and time, so a service filter skips most of the data,
+ * and a `Body` wildcard match has to read every log body in the window.
+ */
+export const rawAlertPerformanceHints = (sql: string): ReadonlyArray<RawAlertPerformanceHint> => {
+	const masked = maskLiteralsAndComments(sql)
+	const table = /\bFROM\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)?(logs|traces)\b/i.exec(masked)
+	const tableName = table?.[1]?.toLowerCase()
+	const serviceHint: ReadonlyArray<RawAlertPerformanceHint> =
+		table !== null && tableName !== undefined && !/\bServiceName\b/.test(masked)
+			? [
+					{
+						code: "no_service_filter",
+						message: `Filter ${tableName} on a service, e.g. \`AND ServiceName = 'checkout'\`. Rows are stored by service, so the query skips every other service's data.`,
+						line: lineAt(sql, table.index),
+					},
+				]
+			: []
+	// Masking keeps offsets, so the pattern's literal is read from the original text.
+	const bodyHints = Array.from(masked.matchAll(/\bBody\s+(?:NOT\s+)?I?LIKE\b/gi))
+		.filter((match) =>
+			sql
+				.slice(match.index + match[0].length)
+				.trimStart()
+				.startsWith("'%"),
+		)
+		.slice(0, 1)
+		.map((match): RawAlertPerformanceHint => ({
+			code: "body_wildcard_match",
+			message:
+				"A `Body` match starting with `%` reads every log body in the window. Match a structured attribute instead, e.g. `LogAttributes['event'] = 'webhook.failed'`, or filter on a service first.",
+			line: lineAt(sql, match.index),
+		}))
+	return [...serviceHint, ...bodyHints]
+}

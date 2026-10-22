@@ -5,6 +5,7 @@ import {
 	cacheSnapSecondsForRange,
 	alertEvaluationIntervalMinutes,
 	alertQueryLimits,
+	alertIntervalsFitting,
 	alertRuleIntervalMinutes,
 	nextSlowerAlertInterval,
 	alertWindowBucketSeconds,
@@ -323,6 +324,16 @@ describe("alertRuleIntervalMinutes", () => {
 				slowedIntervalMinutes: 5,
 			}),
 		).toBe(30)
+	})
+})
+
+describe("alertIntervalsFitting", () => {
+	it("keeps a fifth of each limit spare", () => {
+		expect(alertIntervalsFitting(900)).toEqual([1, 5, 10, 15, 30, 60])
+		expect(alertIntervalsFitting(4_500)).toEqual([5, 10, 15, 30, 60])
+		expect(alertIntervalsFitting(7_800)).toEqual([5, 10, 15, 30, 60])
+		expect(alertIntervalsFitting(15_000)).toEqual([10, 15, 30, 60])
+		expect(alertIntervalsFitting(21_000)).toEqual([])
 	})
 })
 

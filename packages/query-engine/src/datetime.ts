@@ -1086,7 +1086,15 @@ export const alertQueryLimits = (intervalMinutes: number): AlertQueryLimits =>
 				: { timeSeconds: 5, memoryBytes: 256_000_000 }
 
 // The intervals a rule can pick (`ALERT_EVALUATION_INTERVALS` in `@maple/domain/http`, kept out of this module).
-const ALERT_SLOWDOWN_INTERVALS = [1, 5, 10, 15, 30, 60] as const
+const ALERT_PICKABLE_INTERVALS = [1, 5, 10, 15, 30, 60] as const
+
+/** Check intervals a query taking `elapsedMs` fits, keeping a fifth of each limit spare. */
+export const alertIntervalsFitting = (
+	elapsedMs: number,
+): ReadonlyArray<(typeof ALERT_PICKABLE_INTERVALS)[number]> =>
+	ALERT_PICKABLE_INTERVALS.filter(
+		(interval) => elapsedMs <= alertQueryLimits(interval).timeSeconds * 1000 * 0.8,
+	)
 
 /**
  * The next interval up that raises the limit the query ran out of, at most `windowMinutes`
@@ -1099,7 +1107,7 @@ export const nextSlowerAlertInterval = (
 ): number | null => {
 	const current = alertQueryLimits(intervalMinutes)
 	return (
-		ALERT_SLOWDOWN_INTERVALS.find((candidate) => {
+		ALERT_PICKABLE_INTERVALS.find((candidate) => {
 			const limits = alertQueryLimits(candidate)
 			return (
 				candidate > intervalMinutes &&

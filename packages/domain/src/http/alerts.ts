@@ -761,6 +761,21 @@ export class AlertRulePreviewFiringSpan extends Schema.Class<AlertRulePreviewFir
 	severity: AlertSeverity,
 }) {}
 
+/** How long one check of a raw SQL rule takes, timed once on the latest window. */
+export class AlertQueryTiming extends Schema.Class<AlertQueryTiming>("AlertQueryTiming")({
+	/** Milliseconds one check took, or null when it did not finish within `probeLimitMs`. */
+	elapsedMs: Schema.NullOr(Schema.Number),
+	/** Why it did not finish, when it did not. */
+	failure: Schema.NullOr(Schema.Literals(["query_too_slow", "query_too_much_memory"])),
+	/** The longest any check may run, so the timing stops there. */
+	probeLimitMs: Schema.Number,
+	/** The rule's check interval and that interval's time limit. */
+	intervalMinutes: Schema.Number,
+	limitMs: Schema.Number,
+	/** Intervals whose time limit the query fits with a fifth to spare. */
+	fitsIntervalMinutes: Schema.Array(AlertEvaluationIntervalMinutes),
+}) {}
+
 /**
  * Evaluator-faithful preview of an alert rule over a time range: the exact
  * per-window observations the scheduler computes (tumbling `windowMinutes`
@@ -780,6 +795,8 @@ export class AlertRulePreviewResponse extends Schema.Class<AlertRulePreviewRespo
 	truncatedToStart: Schema.NullOr(IsoDateTimeString),
 	series: Schema.Array(AlertRulePreviewSeries),
 	wouldFire: Schema.Array(AlertRulePreviewFiringSpan),
+	/** Raw SQL rules only: how long one check takes against each interval's limit. */
+	queryTiming: Schema.optionalKey(AlertQueryTiming),
 }) {}
 
 export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("AlertIncidentDocument")({

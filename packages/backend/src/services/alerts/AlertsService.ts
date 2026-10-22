@@ -11,6 +11,7 @@ import {
 	type AlertLifecycleInput,
 } from "@maple/alerting-core"
 import {
+	alertIntervalsFitting,
 	alertQueryLimits,
 	alertRuleIntervalMinutes,
 	nextSlowerAlertInterval,
@@ -49,6 +50,7 @@ import {
 	AlertRulePreviewPoint,
 	AlertRulePreviewResponse,
 	AlertRulePreviewSeries,
+	AlertQueryTiming,
 	type AlertRulePreviewRequest,
 	AlertSeverity as AlertSeveritySchema,
 	type AlertSeverity,
@@ -1604,6 +1606,62 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			})
 
 			/**
+			 * Times one check of a raw SQL rule on the latest window under the top interval's
+			 * limit, so the editor can say which intervals the query fits. Evaluation is not
+			 * cached, so the time is the query's own. Null when it fails for another reason:
+			 * the preview's series query reports that.
+			 */
+			const probeQueryTiming = Effect.fn("AlertsService.probeQueryTiming")(function* (
+				orgId: OrgId,
+				rule: NormalizedRule,
+			) {
+				const probeIntervalMinutes = 60
+				const probeLimitMs = alertQueryLimits(probeIntervalMinutes).timeSeconds * 1000
+				const endMs = snapAlertWindowEndMs(yield* now)
+				const source = yield* planEvaluateSource(rule.compiledPlan, {
+					windowMinutes: rule.windowMinutes,
+					evaluationIntervalMinutes: probeIntervalMinutes,
+				})
+				const startedAt = yield* now
+				const exit = yield* Effect.exit(
+					queryEngine.evaluate(systemTenant(orgId), {
+						startTime: formatWarehouseDateTime(endMs - rule.windowMinutes * 60_000),
+						endTime: formatWarehouseDateTime(endMs),
+						source,
+						reducer: rule.compiledPlan.reducer,
+						sampleCountStrategy: rule.compiledPlan.sampleCountStrategy,
+					}),
+				)
+				const elapsedMs = (yield* now) - startedAt
+				const failure = Exit.isFailure(exit)
+					? Option.match(Cause.findErrorOption(exit.cause), {
+							onNone: () => "other" as const,
+							// The engine's own 30s ceiling is a query that did not finish either.
+							onSome: (error) =>
+								error._tag === "@maple/http/errors/QueryEngineTimeoutError"
+									? ("query_too_slow" as const)
+									: evaluationErrorKind(error),
+						})
+					: null
+				if (failure !== null && failure !== "query_too_slow" && failure !== "query_too_much_memory") {
+					return undefined
+				}
+				const intervalMinutes = alertRuleIntervalMinutes(rule)
+				yield* Effect.annotateCurrentSpan({
+					"maple.alert.query_timing.elapsed_ms": elapsedMs,
+					"maple.alert.query_timing.failure": failure ?? "none",
+				})
+				return new AlertQueryTiming({
+					elapsedMs: failure === null ? elapsedMs : null,
+					failure,
+					probeLimitMs,
+					intervalMinutes,
+					limitMs: alertQueryLimits(intervalMinutes).timeSeconds * 1000,
+					fitsIntervalMinutes: failure === null ? alertIntervalsFitting(elapsedMs) : [],
+				})
+			})
+
+			/**
 			 * Evaluator-faithful preview of a rule over a time range. Runs the exact
 			 * compiled plan the scheduler runs, at the evaluator's tumbling
 			 * `windowMinutes` buckets, and simulates the consecutive-breach state
@@ -1640,6 +1698,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				if (plan.kind === "raw_sql") {
 					yield* requireAdmin(roles)
 				}
+				// Alongside the series query, which spans many windows and so says nothing about one check.
+				const queryTiming = yield* Effect.forkChild(
+					plan.kind === "raw_sql" ? probeQueryTiming(orgId, normalized) : Effect.succeed(undefined),
+				)
 
 				const windowMs = normalized.windowMinutes * 60_000
 				const requestedStartMs = parseWarehouseDateTime(request.startTime)
@@ -1866,6 +1928,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					"result.wouldFireCount": wouldFire.length,
 				})
 
+				const timing = yield* Fiber.join(queryTiming)
 				return new AlertRulePreviewResponse({
 					bucketSeconds: windowMs / 1000,
 					windowMinutes: normalized.windowMinutes,
@@ -1876,6 +1939,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					truncatedToStart,
 					series,
 					wouldFire,
+					...(timing === undefined ? undefined : { queryTiming: timing }),
 				})
 			})
 
