@@ -62,7 +62,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
-import { validateExternalUrl } from "@maple/safe-fetch"
+import { readTextWithin, validateExternalUrl } from "@maple/safe-fetch"
 
 /**
  * Resolved per-org backend config, returned to the runtime SQL layer.
@@ -802,6 +802,9 @@ const mapStatusToError = (
 	)
 }
 
+/** Schema reads and DDL answers are small; a body past this is not ClickHouse's. */
+const CLICKHOUSE_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
 const execClickHouseWithClient = (client: HttpClient.HttpClient, config: ClickHouseExecConfig, sql: string) =>
 	Effect.gen(function* () {
 		const request = HttpClientRequest.post(buildClickHouseUrl(config), {
@@ -810,18 +813,28 @@ const execClickHouseWithClient = (client: HttpClient.HttpClient, config: ClickHo
 		const response = yield* client
 			.execute(request)
 			.pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }))
-		const text = yield* response.text
+		const text = yield* readTextWithin(response, CLICKHOUSE_MAX_RESPONSE_BYTES)
 		return { status: response.status, text }
 	}).pipe(
 		// Transport-level failures (DNS, connection reset/refused, body read) →
-		// retryable "unreachable" with no status.
-		Effect.mapError(
-			(error) =>
-				new OrgClickHouseSettingsUpstreamUnavailableError({
-					message: `Could not reach ClickHouse: ${error.message}`,
-					statusCode: null,
-				}),
-		),
+		// retryable "unreachable" with no status. An oversized body is rejected:
+		// retrying would read the same answer again.
+		Effect.catchTags({
+			"@maple/safe-fetch/ResponseTooLargeError": (error) =>
+				Effect.fail(
+					new OrgClickHouseSettingsUpstreamRejectedError({
+						message: `ClickHouse ${error.message}`,
+						statusCode: null,
+					}),
+				),
+			HttpClientError: (error) =>
+				Effect.fail(
+					new OrgClickHouseSettingsUpstreamUnavailableError({
+						message: `Could not reach ClickHouse: ${error.message}`,
+						statusCode: null,
+					}),
+				),
+		}),
 		Effect.flatMap(
 			({
 				status,

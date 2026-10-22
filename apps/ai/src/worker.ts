@@ -87,6 +87,8 @@ const props = Effect.gen(function* () {
 		env: {
 			...mapleDbEnv(db, "ai"),
 			...(Option.isSome(sandbox) ? { SANDBOX: sandbox.value } : undefined),
+			// Runs the agents' `run_code` programs, each in a fresh Dynamic Worker with no network.
+			CODE_LOADER: Cloudflare.WorkerLoader(),
 			...env,
 			...devEnv,
 		},

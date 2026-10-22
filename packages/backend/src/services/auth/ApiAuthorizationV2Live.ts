@@ -180,7 +180,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 							)
 						}
 						if (
-							!isScopeExemptRoute(request.method, route.path) &&
+							!isScopeExemptRoute(request.method, route.path, resolved.kind) &&
 							!scopeAllows(resolved.scopes, required)
 						) {
 							const message = `This API key does not have the "${required.family}:${required.access}" scope required for this request.`

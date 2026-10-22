@@ -82,6 +82,8 @@ services:
             INGEST_FORWARD_TIMEOUT_MS: 10000
             INGEST_MAX_REQUEST_BODY_BYTES: 20971520
             INGEST_REQUIRE_TLS: "false"
+            # Self-hosted ClickHouse usually sits on an internal name (e.g. clickhouse:8123).
+            INGEST_CLICKHOUSE_ALLOW_PRIVATE_ENDPOINTS: "true"
         depends_on:
             otel-collector:
                 condition: service_started
