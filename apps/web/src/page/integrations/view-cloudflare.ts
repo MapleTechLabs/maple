@@ -101,25 +101,31 @@ const accountCountOf = (model: Model): number =>
 /** Whether the grant covers several accounts (labels the header actions and the confirmation). */
 export const isMultiAccount = (model: Model): boolean => accountCountOf(model) > 1
 
+const isBusy = (model: Model): boolean => model.connect.isStarting || model.disconnect.isPending
+
+/** Reconnect, or Edit accounts while the grant covers several. */
+export const cloudflareReconnectButton = (h: H, model: Model): Html =>
+	button(
+		h,
+		{
+			size: "sm",
+			variant: "outline",
+			isDisabled: isBusy(model),
+			isLoading: model.connect.isStarting,
+			attributes: [h.OnClick(Message.ClickedConnect())],
+		},
+		[isMultiAccount(model) ? "Edit accounts" : "Reconnect"],
+	)
+
 /** `CloudflareHeaderActions`: reconnect (or edit accounts) and disconnect, while connected. */
 export const cloudflareHeaderActions = (h: H, model: Model): ReadonlyArray<Html> => {
 	const multi = isMultiAccount(model)
-	const busy = model.connect.isStarting || model.disconnect.isPending
+	const busy = isBusy(model)
 	return [
 		h.div(
 			[h.Class("flex items-center gap-2")],
 			[
-				button(
-					h,
-					{
-						size: "sm",
-						variant: "outline",
-						isDisabled: busy,
-						isLoading: model.connect.isStarting,
-						attributes: [h.OnClick(Message.ClickedConnect())],
-					},
-					[multi ? "Edit accounts" : "Reconnect"],
-				),
+				cloudflareReconnectButton(h, model),
 				button(
 					h,
 					{

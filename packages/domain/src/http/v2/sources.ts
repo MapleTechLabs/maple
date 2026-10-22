@@ -348,11 +348,17 @@ export const V2SourceDeleteResponse = Schema.Struct({
 	id: SourcePublicId,
 	object: Schema.Literal("source"),
 	deleted: Schema.Literal(true),
+	cleanup_script: Schema.optionalKey(
+		Schema.String.annotate({
+			description:
+				"Google Cloud sources only: a shell script that removes what the connector's setup created in the project.",
+		}),
+	),
 }).annotate({
 	identifier: "SourceDeleteResponse",
 	title: "Source delete response",
 	description:
-		"Confirmation that a source was deleted. Senders using its token are rejected within a minute.",
+		"Confirmation that a source was deleted. Senders using its token are rejected within a minute; an integration source's integration is disconnected.",
 	examples: [wireExample({ id: "src_aXunrkWtzvXSkw9Z2smcft", object: "source", deleted: true })],
 })
 export type V2SourceDeleteResponse = Schema.Schema.Type<typeof V2SourceDeleteResponse>
@@ -510,7 +516,7 @@ export class V2SourcesApiGroup extends HttpApiGroup.make("sources")
 				identifier: "deleteSource",
 				summary: "Delete a source",
 				description:
-					"Permanently deletes a push source. Senders using its token are rejected within a minute. The default source and integration sources cannot be deleted here. Requires an org-admin role and the `sources:write` scope.",
+					"Permanently deletes a source. Senders using a push source's token are rejected within a minute. Deleting an integration source disconnects its integration: Maple revokes the credential it holds and stops collecting. Data already stored is kept until retention ends. The default source cannot be deleted. Requires an org-admin role and the `sources:write` scope.",
 			}),
 		),
 	)

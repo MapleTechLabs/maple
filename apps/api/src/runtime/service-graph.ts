@@ -65,6 +65,7 @@ import { SupportChannelService } from "@maple/backend/services/support/SupportCh
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
+import { SourceRemovalService } from "@maple/backend/services/integrations/SourceRemovalService"
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
@@ -162,6 +163,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	WebAnalyticsDigestService.layer,
 	DemoService.layer,
 	GithubConnectService.layer,
+	SourceRemovalService.layer,
 	PrReviewAnalyticsService.layer,
 	CiAnalyticsService.layer,
 	VcsCommitService.layer,
