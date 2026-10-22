@@ -51,7 +51,11 @@ export const intervalOptions = (form: RuleForm, timing: AlertQueryTiming | null)
 		label,
 		limitSeconds: alertQueryLimits(minutes).timeSeconds,
 		isLongerThanWindow: window !== null && minutes > window,
-		isTooSlow: timing !== null && !timing.fitsIntervalMinutes.some((fits) => fits <= minutes),
+		// A query out of memory says nothing about its time.
+		isTooSlow:
+			timing !== null &&
+			timing.failure !== "query_too_much_memory" &&
+			!timing.fitsIntervalMinutes.some((fits) => fits <= minutes),
 	})
 	return [
 		option(AUTO_INTERVAL, auto, `Auto · ${minutesLabel(auto)}`),
