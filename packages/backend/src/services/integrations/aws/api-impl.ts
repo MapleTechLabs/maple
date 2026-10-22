@@ -62,7 +62,7 @@ const StsAnswer = Schema.Union([
 const decodeStsAnswer = Schema.decodeUnknownEffect(StsAnswer)
 
 /**
- * A rejected `AssumeRoleWithWebIdentity`. A missing OIDC provider, or one that does not list
+ * A rejected `AssumeRoleWithWebIdentity`. A missing OIDC provider, one whose thumbprint is stale, or one that does not list
  * Maple's audience, is the customer's setup not being done; a token STS cannot verify is Maple's.
  * The issuer is permanent: were `MAPLE_API_BASE_URL` to change, every account would answer "no
  * provider" and read as disconnected.
@@ -71,7 +71,8 @@ const stsError = (code: string, detail: string | undefined): AwsApiError => {
 	const message = `AssumeRoleWithWebIdentity: ${detail === undefined || detail === "" ? code : detail.slice(0, 300)}`
 	if (THROTTLE_CODES.has(code)) return new AwsApiError({ message, kind: "throttled", code })
 	const setupMissing =
-		code === "InvalidIdentityToken" && /no openid ?connect provider|audience/iu.test(detail ?? "")
+		code === "InvalidIdentityToken" &&
+		/no openid ?connect provider|audience|thumbprint/iu.test(detail ?? "")
 	if (code === "AccessDenied" || code === "IDPRejectedClaim" || setupMissing) {
 		return new AwsApiError({ message, kind: "assume_denied", code })
 	}
