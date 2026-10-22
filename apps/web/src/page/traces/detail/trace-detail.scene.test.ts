@@ -1,6 +1,7 @@
 import { OrgId, SpanId, TraceId } from "@maple/domain"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import { Lazy } from "foldkit/test"
 import { describe, expect, test } from "vitest"
 import * as Dialog from "../../../ui/dialog"
 import { MountDialog } from "../../../ui/dialog"
@@ -195,5 +196,13 @@ describe("trace detail", () => {
 			Message.GotSpanSheetMessage({ message: Dialog.Message.PressedEscape() }),
 		)
 		expect(urlOf(dismissed)).toBe(`/traces/${TRACE}`)
+	})
+})
+
+describe("trace detail lazy views", () => {
+	test("an unchanged trace reuses its anatomy, callout and flow layers", () => {
+		const flow = loaded({ view: "flow" }).model
+		expect(flow.flow).not.toBeNull()
+		Lazy.expectAllReused({ view, model: flow })
 	})
 })
