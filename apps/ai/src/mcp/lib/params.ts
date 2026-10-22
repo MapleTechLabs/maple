@@ -79,9 +79,17 @@ export const oneOf = <const L extends ReadonlyArray<string>>(values: L, descript
 export const optionalOneOf = <const L extends ReadonlyArray<string>>(values: L, description: string) =>
 	Schema.optional(Schema.Literals(values)).annotate({ description })
 
+/** `"auto"`, a value a schema-validating client can send where the published schema cannot say null. */
+const AutoAsNull = Schema.Literal("auto").pipe(
+	Schema.decodeTo(
+		Schema.Null,
+		SchemaTransformation.transform({ decode: () => null, encode: () => "auto" as const }),
+	),
+)
+
 /**
- * A closed set of numbers in the schema's `enum` (a numeric string decodes too), or `null` to
- * clear the value. The published schema drops the null branch, so the description must say it.
+ * A closed set of numbers in the schema's `enum` (a numeric string decodes too), or `"auto"` to
+ * clear the value. `null` clears it too, but the published schema drops the null branch.
  */
 export const optionalNullableNumberOneOf = <const L extends ReadonlyArray<number>>(
 	values: L,
@@ -89,7 +97,7 @@ export const optionalNullableNumberOneOf = <const L extends ReadonlyArray<number
 ) => {
 	const literals = Schema.Literals(values)
 	return Schema.optional(
-		Schema.NullOr(Schema.Union([literals, NumericString.pipe(Schema.decodeTo(literals))])),
+		Schema.NullOr(Schema.Union([literals, NumericString.pipe(Schema.decodeTo(literals)), AutoAsNull])),
 	).annotate({ description })
 }
 

@@ -44,7 +44,7 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 	window_minutes: P.optionalNumber("Evaluation window in minutes"),
 	evaluation_interval_minutes: P.optionalNullableNumberOneOf(
 		ALERT_EVALUATION_INTERVALS,
-		"Minutes between checks, at most window_minutes. A raw_query rule checked less often gets a longer query time limit: 5s under 5 min, 15s at 5, 25s at 10 or more. Omit to keep the current one; pass null to derive it from the window (a fifth, 1 to 5). Any edit also clears a slowdown the scheduler applied.",
+		"Minutes between checks, at most window_minutes. A raw_query rule checked less often gets a longer query time limit: 5s under 5 min, 15s at 5, 25s at 10 or more. Omit to keep the current one; pass \"auto\" to derive it from the window (a fifth, 1 to 5). Any edit also clears a slowdown the scheduler applied.",
 	),
 	services: P.optionalList("Service scope (replaces the current one; an empty list means all services)"),
 	environments: P.optionalList(

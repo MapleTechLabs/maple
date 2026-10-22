@@ -873,6 +873,10 @@ describe("alert tools", () => {
 		expect(seen.updated?.evaluationIntervalMinutes).toBeNull()
 
 		await ok("update_alert_rule", { rule_id: RULE_ID, evaluation_interval_minutes: 15 }, seen)
+		await ok("update_alert_rule", { rule_id: RULE_ID, evaluation_interval_minutes: "auto" }, seen)
+		expect(seen.updated?.evaluationIntervalMinutes).toBeNull()
+
+		await ok("update_alert_rule", { rule_id: RULE_ID, evaluation_interval_minutes: 15 }, seen)
 		expect(seen.updated?.evaluationIntervalMinutes).toBe(15)
 	})
 
@@ -913,6 +917,8 @@ describe("alert tools", () => {
 		)
 		expect(text(result)).toContain("Line 2: Filter traces on a service")
 		expect(text(result)).toContain("evaluation_interval_minutes=5")
+		// The suggested update carries the window the preview answered with, overridden or not.
+		expect(text(result)).toContain("window_minutes=5 evaluation_interval_minutes=5")
 
 		const unfinished = await ok(
 			"preview_alert_rule",
