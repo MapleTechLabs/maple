@@ -13,7 +13,7 @@ import type { RunBudgetHook } from "@yielded/agent/run-options"
 import type * as RunEvent from "@yielded/agent/run-event"
 import * as ThreadHistory from "@yielded/agent/thread-history"
 import { ThreadId } from "@yielded/agent/identifiers"
-import { Cause, Clock, Duration, Effect, Layer, Schema, Stream } from "effect"
+import { Cause, Clock, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import { Prompt, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
@@ -25,7 +25,13 @@ import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
-import { makeTextSanitizer, settledTurnEnd, toChatEvents, type ChatTurnEvent } from "./events"
+import {
+	makeTextSanitizer,
+	settledTurnEnd,
+	toChatEvents,
+	type ChatTurnEvent,
+	type ProgramCall,
+} from "./events"
 import { makeReviewCoverage, type ReviewCoverage } from "./review-coverage"
 import type { ReviewLedger } from "./review-ledger"
 import { buildReviewFanout } from "./review-fanout"
@@ -81,6 +87,9 @@ export const promptFromHistory = (history: ReadonlyArray<ChatMessage>): Readonly
 	}))
 }
 
+/** The `n` of a program call's `<program call id>#<n>`: the order the program made its calls in. */
+const programCallIndex = (callId: string): number => Number(callId.slice(callId.lastIndexOf("#") + 1))
+
 /** One replayed turn, in the shape `Prompt.make` accepts. */
 export interface PromptMessage {
 	readonly role: "user" | "assistant"
@@ -125,6 +134,14 @@ export interface ChatRunInput {
 	/** False once the turn slot has been released, which stops the run writing into a moved-on session. */
 	readonly holdsTurn: () => boolean
 	readonly append: (event: ChatTurnEvent) => void
+	/** Each `review_files` child as it ends, with the history it ran: the eval's record of it. */
+	readonly onChildSettled?: (child: SettledChild) => void
+}
+
+/** A child reviewer's ending and the conversation it ran, when the history could be read. */
+export interface SettledChild {
+	readonly event: RunEvent.SubagentCompleted | RunEvent.SubagentFailed | RunEvent.SubagentInterrupted
+	readonly history: Prompt.Prompt | undefined
 }
 
 export interface ReviewTurnState {
@@ -167,6 +184,8 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		: undefined
 	// A call's UI payload, held until its result event is written. Never part of what the model reads.
 	const uiByCall = new Map<string, ToolUiPayload>()
+	// The same for a `run_code` program's calls (`<program call id>#<n>`), drawn when it settles.
+	const programCalls = new Map<string, ProgramCall>()
 	const sessionAttributes = agentSessionSpanAttributes(input.model.tags)
 	const maple = buildChatToolkit(
 		input.toolExecutor,
@@ -175,13 +194,17 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		profile.surface,
 		sessionAttributes,
 		coverage?.observe,
-		(toolCallId, ui) => uiByCall.set(toolCallId, ui),
+		(toolCallId, ui, call) =>
+			toolCallId.includes("#")
+				? programCalls.set(toolCallId, { ...call, callId: toolCallId, ui })
+				: uiByCall.set(toolCallId, ui),
 	)
 	// One completion per session kind. The session id decides which, so a review session can never
 	// be handed the diagnosis tool or the other way round.
 	const completion: RunCompletion | undefined =
 		buildDiagnosisCompletion(
 			input.sessionId,
+			input.messageId,
 			input.tenant,
 			input.origin,
 			input.submitDiagnosis,
@@ -242,8 +265,10 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 			? buildReviewFanout(
 					Toolkit.merge(direct, ...(codeMode === undefined ? [] : [codeMode.toolkit])),
 					input.model,
+					input.usage,
 					startedAt + Duration.toMillis(Duration.fromInputUnsafe(agent.budget.maxDuration)),
 					codeMode === undefined ? undefined : CODE_MODE_GUIDANCE,
+					Object.keys(codeTools),
 				)
 			: undefined
 
@@ -300,8 +325,35 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 			uiByCall.delete(toolCallId)
 			return ui
 		},
+		programCallsOf: (toolCallId: string) => {
+			const calls = [...programCalls.values()]
+				.filter((call) => call.callId.startsWith(`${toolCallId}#`))
+				.sort((a, b) => programCallIndex(a.callId) - programCallIndex(b.callId))
+			calls.forEach((call) => programCalls.delete(call.callId))
+			return calls
+		},
 		sanitizer,
 	}
+	// The children's turns are saved to the run's own `ThreadHistory`, under their own thread ids.
+	const childSettled = (event: RunEvent.RunEvent) =>
+		input.onChildSettled === undefined ||
+		(event._tag !== "SubagentCompleted" &&
+			event._tag !== "SubagentFailed" &&
+			event._tag !== "SubagentInterrupted")
+			? Effect.void
+			: ThreadHistory.ThreadHistory.pipe(
+					Effect.flatMap((history) => history.load(event.childThreadId)),
+					// A read that failed is not a child that saved nothing: say so, then go on without it.
+					Effect.tapError((error) =>
+						Effect.logWarning("Could not read a child reviewer's history").pipe(
+							Effect.annotateLogs({ childThreadId: event.childThreadId, cause: String(error) }),
+						),
+					),
+					Effect.option,
+					Effect.map((history) =>
+						input.onChildSettled?.({ event, history: Option.getOrUndefined(history) }),
+					),
+				)
 	// Once the submission lands, the run's own ending (the guard's interrupt) is not the turn's.
 	const settledTerminal = (event: RunEvent.RunEvent) =>
 		submitted() &&
@@ -319,22 +371,25 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		// in-flight model call drains.
 		Stream.takeWhile(() => input.holdsTurn()),
 		Stream.runForEach((event) =>
-			Effect.sync(() => {
-				if (event._tag === "CompactionPerformed") compactions += 1
-				if (
-					(event._tag === "SubagentCompleted" ||
-						event._tag === "SubagentFailed" ||
-						event._tag === "SubagentInterrupted") &&
-					event.usage !== undefined
-				) {
-					input.usage.delegated.modelCalls += event.usage.modelCalls
-					input.usage.delegated.input += event.usage.inputTokens
-					input.usage.delegated.output += event.usage.outputTokens
-					input.usage.delegated.costMicrousd += event.usage.costMicrousd
-				}
-				if (settledTerminal(event)) return
-				for (const chat of toChatEvents(event, context)) input.append(chat)
-			}),
+			Effect.andThen(
+				childSettled(event),
+				Effect.sync(() => {
+					if (event._tag === "CompactionPerformed") compactions += 1
+					if (
+						(event._tag === "SubagentCompleted" ||
+							event._tag === "SubagentFailed" ||
+							event._tag === "SubagentInterrupted") &&
+						event.usage !== undefined
+					) {
+						input.usage.delegated.modelCalls += event.usage.modelCalls
+						input.usage.delegated.input += event.usage.inputTokens
+						input.usage.delegated.output += event.usage.outputTokens
+						input.usage.delegated.costMicrousd += event.usage.costMicrousd
+					}
+					if (settledTerminal(event)) return
+					for (const chat of toChatEvents(event, context)) input.append(chat)
+				}),
+			),
 		),
 		// The gate's refusal is how a run stops on a proposal: the turn finished, it did not fail.
 		Effect.catchIf(

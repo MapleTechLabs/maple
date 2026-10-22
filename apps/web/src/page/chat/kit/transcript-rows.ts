@@ -5,10 +5,16 @@ import type { ToolPart, UIMessage, UIMessagePart } from "./ui-message"
 
 // Messages to rows, merging runs of tool-only turns.
 
-export type ToolStatus = "running" | "completed" | "error"
+export type ToolStatus = "running" | "completed" | "error" | "stopped"
 
 export const deriveToolStatus = (state: string): ToolStatus =>
-	state === "output-available" ? "completed" : state === "output-error" ? "error" : "running"
+	state === "output-available"
+		? "completed"
+		: state === "output-error"
+			? "error"
+			: state === "output-stopped"
+				? "stopped"
+				: "running"
 
 export const isToolPart = (part: UIMessagePart): part is ToolPart => part._tag === "dynamic-tool"
 

@@ -23,7 +23,7 @@ describe("resolveMapleProfile", () => {
 		expect(profile("dev-alice").deploys.ingest).toBe(false)
 	})
 
-	it("runs a `preview:web` PR on its own database with nothing on AWS", () => {
+	it("runs a `preview:web` PR on its own database without the AWS services", () => {
 		const full = profile("pr-12")
 		const web = resolveMapleProfile(parseMapleDeployment("pr-12"), { webOnlyPreview: true })
 		expect(web.deploys).toEqual({ ...full.deploys, sharedApps: false, ingest: false, electric: false })
@@ -46,6 +46,21 @@ describe("resolveMapleProfile", () => {
 			"pr-12": "none",
 			"dev-alice": "none",
 			"dev-alice-eu": "none",
+		})
+	})
+
+	// Customer AWS stacks trust one Maple IAM user each; dev signs with the shared dev user.
+	it("gives every deployed instance and preview its own AWS integration identity", () => {
+		const web = resolveMapleProfile(parseMapleDeployment("pr-12"), { webOnlyPreview: true })
+		expect(web.deploys.awsIntegrationPrincipal).toBe(true)
+		expect(
+			Object.fromEntries(DEPLOYMENTS.map((raw) => [raw, profile(raw).deploys.awsIntegrationPrincipal])),
+		).toEqual({
+			prd: true,
+			"prd-eu": true,
+			"pr-12": true,
+			"dev-alice": false,
+			"dev-alice-eu": false,
 		})
 	})
 })

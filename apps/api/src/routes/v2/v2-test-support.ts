@@ -48,8 +48,10 @@ import { HttpV2DashboardsLive } from "./dashboards.http"
 import { HttpV2IngestKeysLive } from "./ingest-keys.http"
 import { HttpV2SourcesLive } from "./sources.http"
 import { HttpV2ChatIntegrationsLive } from "./integrations-chat.http"
+import { HttpV2AwsIntegrationsLive } from "./integrations-aws.http"
 import { HttpV2GcpIntegrationsLive } from "./integrations-gcp.http"
 import { HttpV2PlanetScaleIntegrationsLive } from "./integrations.http"
+import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
 import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
 import { HttpV2ErrorIssuesLive } from "./error-issues.http"
 import { HttpV2AnomaliesLive } from "./anomalies.http"
@@ -173,6 +175,7 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		HttpV2McpConnectionsLive.pipe(Layer.provide(McpConnectionsService.layer)),
 		// Same, plus the Env every harness provides as well.
 		HttpV2GcpIntegrationsLive.pipe(Layer.provide(GcpConnectorService.layer)),
+		HttpV2AwsIntegrationsLive.pipe(Layer.provide(AwsConnectionService.layer)),
 		// Real reads over whichever `WarehouseQueryService` stub the test provides.
 		HttpV2SessionReplaysLive.pipe(
 			Layer.provide(

@@ -1,4 +1,10 @@
-import { GcpConnectorPublicId, ScrapeTargetPublicId, SourcePublicId, type V2Source } from "@maple/domain/http/v2"
+import {
+	AwsConnectionPublicId,
+	GcpConnectorPublicId,
+	ScrapeTargetPublicId,
+	SourcePublicId,
+	type V2Source,
+} from "@maple/domain/http/v2"
 import {
 	isPushSourcePlatform,
 	type PullSourcePlatform,
@@ -89,6 +95,7 @@ const VIA = {
 	railway: "API token",
 	planetscale: "OAuth",
 	github: "GitHub App",
+	aws: "IAM role",
 	supabase: "OAuth",
 } as const satisfies Record<PullSourcePlatform, string>
 
@@ -109,9 +116,12 @@ export const scrapeTargetIdOf = (source: V2Source): ScrapeTargetId | null =>
 		: Option.getOrNull(decodeScrapeTargetId(source.integration_id))
 
 const decodeGcpConnectorId = Schema.decodeUnknownOption(GcpConnectorPublicId)
+const decodeAwsConnectionId = Schema.decodeUnknownOption(AwsConnectionPublicId)
 
-/** The record an integration source's card focuses on: its scrape target or Google Cloud connector. */
-export const focusIdOf = (source: V2Source): string | null =>
-	source.platform === "gcp" && source.integration_id !== null
-		? Option.getOrNull(decodeGcpConnectorId(source.integration_id))
-		: scrapeTargetIdOf(source)
+/** The record an integration source's card focuses on: its scrape target, connector or connection. */
+export const focusIdOf = (source: V2Source): string | null => {
+	if (source.integration_id === null) return scrapeTargetIdOf(source)
+	if (source.platform === "gcp") return Option.getOrNull(decodeGcpConnectorId(source.integration_id))
+	if (source.platform === "aws") return Option.getOrNull(decodeAwsConnectionId(source.integration_id))
+	return scrapeTargetIdOf(source)
+}
