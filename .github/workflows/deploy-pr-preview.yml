@@ -293,6 +293,10 @@ jobs:
         if: ${{ needs.deploy-pr-preview.outputs.smoke == 'success' }}
         runs-on: ubuntu-latest
         timeout-minutes: 20
+        # Checkout and the Infisical OIDC exchange; none of the workflow's write scopes.
+        permissions:
+            contents: read
+            id-token: write
         # The Infisical identity is scoped to this environment.
         environment: pr-preview
         defaults:
