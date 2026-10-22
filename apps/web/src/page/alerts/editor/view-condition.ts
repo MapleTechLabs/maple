@@ -329,7 +329,7 @@ const slowdownNotice = (h: H, model: ConditionView, form: RuleForm): ReadonlyArr
 const intervalNote = (form: RuleForm, option: ReturnType<typeof intervalOptions>[number] | undefined): string => {
 	if (option === undefined) return ""
 	if (option.isLongerThanWindow) return "Longer than the window, so data between checks would go unread."
-	if (option.isTooSlow) return `The query takes longer than the ${option.limitSeconds} s this interval allows.`
+	if (option.isTooSlow) return `The query needs more than the ${option.limitSeconds} s this interval allows, with room to spare.`
 	if (form.signalType !== "raw_query") {
 		const auto = autoIntervalMinutes(form)
 		return option.value === AUTO_INTERVAL || option.minutes === auto
