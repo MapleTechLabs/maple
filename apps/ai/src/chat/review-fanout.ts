@@ -108,7 +108,8 @@ export const childFailureMessage = (failure: unknown): string =>
 		? `The child reviewer ran out of its ${Duration.format(WORKER_DURATION)} before answering, so this ` +
 			"group has no findings. Read its most important files yourself with pr_file_diff, then name " +
 			"what you did not read on the review."
-		: `The child reviewer failed (${Predicate.hasProperty(failure, "_tag") ? String(failure._tag) : "unknown"}) ` +
+		: `The child reviewer failed (${Predicate.hasProperty(failure, "_tag") ? String(failure._tag) : "unknown"}` +
+			`${Predicate.hasProperty(failure, "message") && typeof failure.message === "string" && failure.message !== "" ? `: ${failure.message}` : ""}) ` +
 			"before answering, so this group has no findings. Read its files yourself with pr_file_diff."
 
 /** The engine's own line telling the model to stop and deliver, appended to the outgoing prompt. */
@@ -156,6 +157,8 @@ export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 	deadlineMs: number,
 	/** Appended to the worker's instructions, as to the parent's: how to use a tool only some runs have. */
 	guidance?: string,
+	/** Tools the child calls only from `run_code` programs; the grant must name them too. */
+	programmatic: ReadonlyArray<string> = [],
 ) => {
 	const worker = Agent.make("pr-review-worker", {
 		input: Schema.String,
@@ -173,6 +176,12 @@ export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 			"Call it once per group, several in one message to run them in parallel. It answers the group's " +
 			"confirmed findings, one per line; verify any you doubt before you file it with submit_review.",
 		target: worker,
+		// The default grant is the toolkit's own names; a tool reached only through `run_code` is
+		// refused unless named here as well.
+		grant: Subagent.SubagentGrant.make({
+			allowedToolNames: [...new Set([...Object.keys(toolkit.tools), ...programmatic])],
+			maxDepth: 1,
+		}),
 		parameters: ReviewFilesParameters,
 		success: ReviewFilesResult,
 		failure: Schema.String,
