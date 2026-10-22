@@ -326,6 +326,7 @@ describe("supabase card", () => {
 					name: "storefront already sends logs to Maple through the drain maple by hand",
 				}),
 			).toBeDisabled(),
+			expectView(role("switch", { name: "Collect logs for storefront" })).toBeDisabled(),
 		)
 	})
 

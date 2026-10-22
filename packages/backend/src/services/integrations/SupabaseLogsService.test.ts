@@ -526,6 +526,33 @@ describe("SupabaseLogsService", () => {
 		},
 	)
 
+	it.effect("polling cannot start next to a drain to Maple set up in Supabase", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeWorld()
+		world.supabase.state.drains.set(REF_B, [
+			{
+				id: "drain-manual",
+				attributes: {
+					name: "maple by hand",
+					backend_type: "otlp",
+					config: { endpoint: "https://ingest.example.com/v1/logs" },
+				},
+			},
+		])
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connectWithLogs(world)
+				const refused = yield* Effect.flip(
+					(yield* SupabaseLogsService).setLogsEnabled(ORG, asRef(REF_B), true),
+				)
+				assert.strictEqual(refused._tag, "@maple/http/errors/IntegrationsValidationError")
+				assert.include(refused.message, "maple by hand")
+			}),
+		)
+	})
+
 	it.effect("polling cannot start while a log drain delivers the project's logs", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeWorld()

@@ -424,6 +424,25 @@ export class SupabaseConnectionService extends Context.Service<
 				project,
 				existing.filter((drain) => drain.managedByMaple).map((drain) => drain.id),
 			)
+			// Mark the drain pending: a disable that lands before the final write clears the mark,
+			// and the final write then fails its condition and undoes the drain.
+			const claimed = yield* dbExecute((db) =>
+				db.run(
+					PG.update(SupabaseProjects)
+						.set({ logDrainEnabled: true, logDrainError: null, updatedAt: now })
+						.where(($) => [$.id.eq(project.id), $.logDrainId.isNull()])
+						.returning("id"),
+				),
+			)
+			// Another enable stored its drain first.
+			if (claimed.length === 0) return
+			const releasePending = dbExecute((db) =>
+				db.run(
+					PG.update(SupabaseProjects)
+						.set({ logDrainEnabled: false, updatedAt: now })
+						.where(($) => [$.id.eq(project.id), $.logDrainId.isNull()]),
+				),
+			).pipe(bestEffort("pending drain release", orgId, ref))
 			const minted = yield* sources
 				.create(orgId, userId, {
 					name: `Supabase logs: ${project.name}`.slice(0, 100),
@@ -443,6 +462,7 @@ export class SupabaseConnectionService extends Context.Service<
 						"@maple/http/errors/SourcePersistenceError": (error) =>
 							Effect.fail(new IntegrationsPersistenceError({ message: error.message })),
 					}),
+					Effect.onError(() => releasePending),
 				)
 			const sourceId = minted.source.id
 			const token = Redacted.make(minted.secret)
@@ -467,7 +487,7 @@ export class SupabaseConnectionService extends Context.Service<
 					}),
 					// A timeout or 5xx may still have stored the drain; sweep it so it is not billed unrecorded.
 					Effect.onError(() =>
-						removeSource.pipe(
+						Effect.andThen(releasePending, removeSource).pipe(
 							Effect.andThen(
 								listDrains(orgId, ref).pipe(
 									Effect.flatMap((listed) =>
@@ -509,10 +529,14 @@ export class SupabaseConnectionService extends Context.Service<
 							logsError: null,
 							updatedAt: now,
 						})
-						.where(($) => [$.id.eq(project.id), $.logDrainId.isNull()])
+						.where(($) => [
+							$.id.eq(project.id),
+							$.logDrainId.isNull(),
+							$.logDrainEnabled.eq(true),
+						])
 						.returning("id"),
 				),
-			).pipe(Effect.onError(() => undo))
+			).pipe(Effect.onError(() => Effect.andThen(undo, releasePending)))
 			if (stored.length === 0) yield* undo
 		})
 

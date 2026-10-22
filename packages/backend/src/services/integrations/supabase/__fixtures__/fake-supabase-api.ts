@@ -126,6 +126,8 @@ export interface FakeSupabaseState {
 	drainCreateStatus: number | null
 	/** Stores the drain, then answers 502: a create Maple never hears succeed. */
 	drainCreateFailsAfterStore: boolean
+	/** Runs after a drain create is stored and before it answers, e.g. to land a concurrent disable. */
+	afterDrainCreate: (() => Promise<void>) | null
 	/** Forces drain listings to answer this status. */
 	drainListStatus: number | null
 	/** Forces drain deletes to answer this status. */
@@ -163,6 +165,7 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		drains: new Map(),
 		drainCreateStatus: null,
 		drainCreateFailsAfterStore: false,
+		afterDrainCreate: null,
 		drainListStatus: null,
 		drainDeleteStatus: null,
 		issued: 0,
@@ -284,7 +287,11 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		const requestInit: RequestInit & { readonly duplex: "half" } = { ...init, duplex: "half" }
 		const request = new Request(input, requestInit)
 		const body = await request.text()
-		return handle(request, body)
+		const response = handle(request, body)
+		const created =
+			request.method === "POST" && new URL(request.url).pathname.endsWith("/analytics/log-drains")
+		if (created && state.afterDrainCreate !== null) await state.afterDrainCreate()
+		return response
 	}
 
 	return { state, fetch }

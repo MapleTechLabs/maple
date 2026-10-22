@@ -211,7 +211,7 @@ const projectRow = (h: H, model: Model, project: Project): Html => {
 				id: `supabase-logs-${project.ref}`,
 				isChecked: logsEnabled,
 				// A drain already delivers the project's logs; polling too would store them twice.
-				isDisabled: isLocked || drainEnabled,
+				isDisabled: isLocked || drainEnabled || manual !== undefined,
 				label: `Collect logs for ${project.name}`,
 				onToggle: Message.ToggledSupabaseLogs({ ref: project.ref, enabled: !logsEnabled }),
 			}),

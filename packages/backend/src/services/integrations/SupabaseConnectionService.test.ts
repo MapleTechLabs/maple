@@ -667,6 +667,26 @@ describe("SupabaseConnectionService log drains", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})
 
+	it.effect("a disable that lands while the drain is being created wins, and the drain is undone", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)] })
+		return Effect.gen(function* () {
+			const service = yield* SupabaseConnectionService
+			yield* connect(fake)
+			// The disable's write, as it lands between the create and the enable's final write.
+			fake.state.afterDrainCreate = () =>
+				executeSql(
+					testDb,
+					"UPDATE supabase_projects SET log_drain_enabled = false WHERE project_ref = $1 AND log_drain_id IS NULL",
+					[REF_A],
+				)
+			const status = yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+			assert.isFalse(status.projects[0]?.logDrainEnabled ?? true)
+			assert.deepStrictEqual(fake.state.drains.get(REF_A), [])
+			assert.strictEqual(yield* tokenSourceCount(testDb), 0)
+		}).pipe(Effect.provide(makeLayer(testDb, fake)))
+	})
+
 	it.effect("asking for a drain and polling at once is refused", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)] })
