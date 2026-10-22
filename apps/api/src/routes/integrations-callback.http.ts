@@ -220,6 +220,8 @@ interface CallbackRoute {
 	/** `maple.integration.provider` on the shared, fixed-name callback span. */
 	readonly provider: string
 	readonly label: string
+	/** Where the dashboard finishes it: the page that mounts there, so its outcome is shown. */
+	readonly page: "/integrations" | "/sources/new"
 	readonly messageType: string
 	/** Checks that need no session; a returned message refuses the callback here. */
 	readonly precheck: (params: URLSearchParams) => string | null
@@ -244,6 +246,7 @@ const ROUTES: ReadonlyArray<CallbackRoute> = [
 		flow: "hazel",
 		provider: "hazel",
 		label: "Hazel",
+		page: "/integrations",
 		messageType: HAZEL_MESSAGE_TYPE,
 		precheck: requireCodeAndState,
 	},
@@ -252,6 +255,7 @@ const ROUTES: ReadonlyArray<CallbackRoute> = [
 		flow: "github",
 		provider: "github",
 		label: "GitHub",
+		page: "/sources/new",
 		messageType: GITHUB_MESSAGE_TYPE,
 		precheck: requireInstallation,
 	},
@@ -260,6 +264,7 @@ const ROUTES: ReadonlyArray<CallbackRoute> = [
 		flow: "cloudflare",
 		provider: "cloudflare",
 		label: "Cloudflare",
+		page: "/sources/new",
 		messageType: CLOUDFLARE_MESSAGE_TYPE,
 		precheck: requireCodeAndState,
 	},
@@ -268,6 +273,7 @@ const ROUTES: ReadonlyArray<CallbackRoute> = [
 		flow: "planetscale",
 		provider: "planetscale",
 		label: "PlanetScale",
+		page: "/sources/new",
 		messageType: PLANETSCALE_MESSAGE_TYPE,
 		precheck: requireCodeAndState,
 	},
@@ -276,6 +282,7 @@ const ROUTES: ReadonlyArray<CallbackRoute> = [
 		flow: "supabase",
 		provider: "supabase",
 		label: "Supabase",
+		page: "/sources/new",
 		messageType: SUPABASE_MESSAGE_TYPE,
 		precheck: requireCodeAndState,
 	},
@@ -336,7 +343,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 						flow: route.flow,
 						query: url.search.replace(/^\?/, ""),
 					})
-					return HttpServerResponse.redirect(`${appBaseUrl}/integrations?${search}${hash}`)
+					return HttpServerResponse.redirect(`${appBaseUrl}${route.page}?${search}${hash}`)
 				},
 				// Every branch returns a response, so the status is the only signal of a rejection.
 				Effect.tap((response) =>

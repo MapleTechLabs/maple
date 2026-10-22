@@ -108,6 +108,6 @@ export const completeOAuthReturn: Effect.Effect<OAuthReturnOutcome | null, never
 			complete: (request) =>
 				client.integrations
 					.oauthComplete({ payload: request })
-					.pipe(Effect.catch(() => Effect.succeed(UNREACHABLE))),
+					.pipe(Effect.orElseSucceed(() => UNREACHABLE)),
 		})
 	})

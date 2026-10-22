@@ -53,8 +53,9 @@ describe("provider callbacks", () => {
 		// Any browser can land here with a valid state: the request carries no Maple session.
 		const response = await handler(get(`${CLOUDFLARE_CALLBACK_PATH}?code=victim-code&state=${state}`))
 		expect(response.status).toBe(302)
+		// Straight to the page that finishes it, not one the dashboard redirects away from.
 		const location = new URL(response.headers.get("location") ?? "")
-		expect(location.origin + location.pathname).toBe("https://app.example.com/integrations")
+		expect(location.origin + location.pathname).toBe("https://app.example.com/sources/new")
 		expect(location.searchParams.get("integration")).toBe("cloudflare")
 		const handed = Option.getOrThrow(decodeOAuthReturnHash(location.hash))
 		expect(handed.flow).toBe("cloudflare")
