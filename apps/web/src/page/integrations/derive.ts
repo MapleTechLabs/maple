@@ -272,11 +272,23 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 				(connection) => connection.verified_at !== null && connection.last_check_error !== null,
 			).length
 			const pending = status.connections.some((connection) => connection.verified_at === null)
+			// A verified stack older than the connection's modules needs redeploying, as its row says.
+			const outdated = status.connections.some(
+				(connection) => connection.verified_at !== null && connection.setup_outdated,
+			)
 			const issue =
-				failing > 0 ? `${countLabel(failing, "account")} failing` : pending ? "Finish setup" : null
+				failing > 0
+					? `${countLabel(failing, "account")} failing`
+					: pending
+						? "Finish setup"
+						: outdated
+							? "Update the stack"
+							: null
 			// A stack not deployed yet is setup in progress, not a failure.
 			const health: Pick<IntegrationOverview & { kind: "connected" }, "health" | "stateLabel"> =
-				failing === 0 && pending ? { health: "pending", stateLabel: "Finish setup" } : attentionOr(issue)
+				failing === 0 && pending
+					? { health: "pending", stateLabel: "Finish setup" }
+					: attentionOr(issue)
 			return {
 				kind: "connected",
 				...health,
@@ -574,6 +586,9 @@ export const settingsNavVisibility = (
 	isClerk: boolean,
 ): Visibility => {
 	if (!isClerk) return { isClerk, isAdmin: true, canAccessDataPlatform: true }
-	const hasByoc = AsyncData.getOrElse(AsyncData.map(model.customer.data, hasBringYourOwnCloudAddOn), () => false)
+	const hasByoc = AsyncData.getOrElse(
+		AsyncData.map(model.customer.data, hasBringYourOwnCloudAddOn),
+		() => false,
+	)
 	return { isClerk, isAdmin: model.isAdmin, canAccessDataPlatform: model.isAdmin && hasByoc }
 }
