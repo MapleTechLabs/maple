@@ -189,6 +189,16 @@ describe("aws card", () => {
 		expect(overview?.kind === "connected" && overview.issue).toBe("Finish setup")
 	})
 
+	test("a verified connection whose stack is outdated needs attention, as its row says", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
+		const model = withStatus(entered(), [connection({ verified_at, setup_outdated: true })])
+		const overview = overviewOf(model.statuses, model.nowMs, "aws")
+		expect(overview?.kind === "connected" && overview.health).toBe("attention")
+		expect(overview?.kind === "connected" && overview.issue).toBe("Update the stack")
+		const current = withStatus(entered(), [connection({ verified_at })])
+		expect(overviewOf(current.statuses, current.nowMs, "aws")).toMatchObject({ issue: null })
+	})
+
 	test("a status read that finds the open setup verified closes it", () => {
 		const waiting = pageUpdate(
 			withStatus(entered(), [connection()]),
@@ -250,7 +260,11 @@ describe("aws card", () => {
 			reopened,
 			Message.CompletedAwsDisconnect({
 				id: connectionId,
-				removed: { connectionId, accountId: "123456789012", cleanupScript: "aws cloudformation delete-stack" },
+				removed: {
+					connectionId,
+					accountId: "123456789012",
+					cleanupScript: "aws cloudformation delete-stack",
+				},
 				error: null,
 			}),
 		).model
