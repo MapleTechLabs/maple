@@ -78,7 +78,8 @@ const LIMITS = CodeExecutionLimits.make({
 const description = (methods: ReadonlyArray<string>) =>
 	[
 		"Run a JavaScript program that calls Maple tools, for several independent reads at once or for reading a lot and keeping a little.",
-		"`maple.<tool>(input)` takes the same input as the tool of that name and resolves to its text result; a failed call rejects.",
+		"`code` is one async arrow function, `async () => { ... }`, never a bare function body.",
+		"`maple.<tool>(input)` takes the same input as the tool of that name and resolves to its text result; a failed call rejects. When a call may fail, use `Promise.allSettled` so one failure does not discard the other results.",
 		"Return only what you need (matching lines, a summary, counts): the whole result is added to the conversation.",
 		'Example: async () => { const files = ["src/a.ts", "src/b.ts"]; const diffs = await Promise.all(files.map((path) => maple.pr_file_diff({ repository: "owner/name", number: 1, path }))); return diffs.map((diff) => diff.split("\\n").filter((line) => line.includes("catch"))) }',
 		`Up to ${LIMITS.maxHostCalls} calls, ${Duration.toSeconds(LIMITS.maxWallTime)} s and ${MAX_EGRESS_BYTES / 1024} KiB of result per program; past that the program fails and returns nothing.`,
