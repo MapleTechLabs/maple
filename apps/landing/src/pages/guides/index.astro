@@ -8,72 +8,14 @@ import Breadcrumb from "../../components/Breadcrumb.astro";
 import SeoHead from "../../components/SeoHead.astro";
 import { formatDate, readingTime } from "../../lib/blog";
 import type { BlogPost } from "../../lib/blog";
+import { allGuides, guideCategories } from "../../lib/guides";
 
 const pageTitle = "Guides to APM, Observability & OpenTelemetry | Maple";
 const pageDescription =
     "Practical guides to application performance monitoring, observability, OpenTelemetry, latency, and choosing an open-source observability stack.";
 
-const coreGuides = [
-    {
-        href: "/observability",
-        label: "Foundation",
-        title: "What is observability?",
-        description: "Understand traces, logs, and metrics, and why correlation matters more than collecting each signal in isolation.",
-        read: "8 min",
-    },
-    {
-        href: "/opentelemetry",
-        label: "Open standard",
-        title: "What is OpenTelemetry?",
-        description: "Learn how vendor-neutral instrumentation keeps telemetry portable across languages, collectors, and backends.",
-        read: "7 min",
-    },
-    {
-        href: "/best-open-source-observability-tools",
-        label: "Field guide",
-        title: "Best open-source observability tools",
-        description: "Compare the leading open-source options by architecture, signals, license, operating cost, and best fit.",
-        read: "14 min",
-    },
-    {
-        href: "/guides/what-is-apdex",
-        label: "Metric",
-        title: "What is Apdex?",
-        description: "How Apdex turns response times into one satisfaction score, how to pick its target T, and when it beats a p95 alert.",
-        read: "10 min",
-    },
-    {
-        href: "/guides/uptime-monitoring",
-        label: "Availability",
-        title: "Uptime monitoring with traces and HTTP checks",
-        description: "Alert on error rate, throughput and Apdex from the traces you already send, add Collector HTTP checks for endpoints and certificates, and see which failures each one catches.",
-        read: "7 min",
-    },
-    {
-        href: "/guides/prometheus-metrics",
-        label: "Metrics",
-        title: "Prometheus metrics, explained",
-        description: "The four metric types with examples, the handful worth watching, and how to collect and chart them.",
-        read: "7 min",
-    },
-    {
-        href: "/guides/dynatrace-pricing",
-        label: "Pricing",
-        title: "Dynatrace pricing, explained",
-        description: "The DPS rate card, cost per host and per GiB, what OpenTelemetry data costs, and a worked monthly bill for a small fleet.",
-        read: "9 min",
-    },
-];
-
-const investigationGuides = [
-    {
-        href: "/guides/api-latency",
-        label: "API performance",
-        title: "When API p99 jumps but p50 doesn't",
-        description: "Measure the right latency clock, isolate the slow requests, and trace a regression to the release and operation responsible.",
-        read: "14 min",
-    },
-];
+// The featured card above the categories; its category grid skips it.
+const featuredHref = "/guides/what-is-apm";
 
 const fieldNotes = (await getCollection("blog") as BlogPost[])
     .filter((post) => (!post.data.draft || import.meta.env.DEV) && post.data.category === "guides")
@@ -84,11 +26,7 @@ const itemListJsonLd = {
     "@context": "https://schema.org",
     "@type": "ItemList",
     name: "Maple observability guides",
-    itemListElement: [
-        { href: "/guides/what-is-apm", title: "What is APM, and why is it important?" },
-        ...coreGuides,
-        ...investigationGuides,
-    ].map((guide, index) => ({
+    itemListElement: allGuides.map((guide, index) => ({
         "@type": "ListItem",
         position: index + 1,
         name: guide.title,
@@ -120,6 +58,17 @@ const itemListJsonLd = {
                     Plain-English foundations and hands-on investigations for engineers running production software.
                     Start with APM, then read about observability, OpenTelemetry, and the signals you debug with.
                 </p>
+                <nav class="mt-10 flex flex-wrap gap-2" aria-label="Guide categories">
+                    {guideCategories.map((category) => (
+                        <a
+                            href={`#${category.id}`}
+                            class="inline-flex items-center gap-2 rounded-full border border-border px-3.5 py-1.5 font-mono text-[11px] text-fg-muted transition-colors hover:border-primary/45 hover:text-fg"
+                        >
+                            {category.title}
+                            <span class="text-fg-muted/70">{category.guides.length}</span>
+                        </a>
+                    ))}
+                </nav>
             </div>
         </header>
 
@@ -132,7 +81,7 @@ const itemListJsonLd = {
                 </div>
 
                 <a
-                    href="/guides/what-is-apm"
+                    href={featuredHref}
                     class="group grid overflow-hidden rounded-xl border border-border bg-bg-deep transition-colors hover:border-primary/45 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring md:grid-cols-[1.05fr_0.95fr]"
                 >
                     <div class="flex flex-col justify-center p-7 md:p-10 lg:p-14">
@@ -199,62 +148,58 @@ const itemListJsonLd = {
             </div>
         </section>
 
-        <section class="border-b border-border py-16 md:py-24" aria-labelledby="guide-library">
-            <div class="mx-auto max-w-6xl px-6">
-                <div class="mb-9 flex items-end justify-between gap-6">
-                    <div>
-                        <p class="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-muted">02 · Foundations</p>
-                        <h2 id="guide-library" class="mt-3 font-display text-3xl font-medium tracking-[-0.025em] text-fg">Build the mental model</h2>
-                    </div>
-                    <p class="hidden max-w-[38ch] text-right text-xs leading-relaxed text-fg-muted md:block">
-                        Read in any order. Each guide answers one question and none of them assume a vendor or stack.
-                    </p>
-                </div>
+        {guideCategories.map((category, categoryIndex) => {
+            const guides = category.guides.filter((guide) => guide.href !== featuredHref);
+            if (guides.length === 0) return null;
+            return (
+                <section id={category.id} class="scroll-mt-24 border-b border-border py-16 md:py-24" aria-labelledby={`${category.id}-title`}>
+                    <div class="mx-auto max-w-6xl px-6">
+                        <div class="mb-9 flex items-end justify-between gap-6">
+                            <div>
+                                <p class="font-mono text-xs text-primary">{String(categoryIndex + 2).padStart(2, "0")}</p>
+                                <h2 id={`${category.id}-title`} class="mt-3 font-display text-3xl font-medium tracking-[-0.025em] text-fg">{category.title}</h2>
+                            </div>
+                            <p class="hidden max-w-[38ch] text-right text-xs leading-relaxed text-fg-muted md:block">{category.description}</p>
+                        </div>
 
-                <div class="grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-2 xl:grid-cols-3">
-                    {coreGuides.map((guide, index) => (
-                        <a
-                            href={guide.href}
+                        <div
                             class:list={[
-                                "group flex min-h-[280px] flex-col bg-bg p-6 transition-colors hover:bg-bg-deep focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring md:p-8",
-                                // An odd count leaves a hole in the last row; the last card fills it.
-                                index === coreGuides.length - 1 && coreGuides.length % 2 === 1 && "md:col-span-2",
+                                "grid gap-px overflow-hidden rounded-xl border border-border bg-border",
+                                // One column per guide, up to three, so no row is left with a hole.
+                                guides.length === 2 && "md:grid-cols-2",
+                                guides.length >= 3 && "md:grid-cols-3",
                             ]}
                         >
-                            <div class="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">
-                                <span>{guide.label}</span>
-                                <span>{String(index + 2).padStart(2, "0")}</span>
-                            </div>
-                            <h3 class="mt-10 font-display text-2xl font-medium leading-tight tracking-[-0.02em] text-fg transition-colors group-hover:text-primary">
-                                {guide.title}
-                            </h3>
-                            <p class="mt-4 text-[13px] leading-[1.65] text-fg-muted">{guide.description}</p>
-                            <div class="mt-auto flex items-center justify-between pt-8 font-mono text-[10px] text-fg-muted">
-                                <span>{guide.read}</span>
-                                <span class="text-fg transition-transform group-hover:translate-x-1 group-hover:text-primary motion-reduce:transition-none">→</span>
-                            </div>
-                        </a>
-                    ))}
-                </div>
-            </div>
-        </section>
+                            {guides.map((guide) => (
+                                <a
+                                    href={guide.href}
+                                    class="group flex min-h-[240px] flex-col bg-bg p-6 transition-colors hover:bg-bg-deep focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring md:p-8"
+                                >
+                                    <span class="font-mono text-[10px] uppercase tracking-[0.12em] text-fg-muted">{guide.label}</span>
+                                    <h3 class="mt-8 font-display text-2xl font-medium leading-tight tracking-[-0.02em] text-fg transition-colors group-hover:text-primary">
+                                        {guide.title}
+                                    </h3>
+                                    <p class="mt-4 max-w-[68ch] text-[13px] leading-[1.65] text-fg-muted">{guide.description}</p>
+                                    <div class="mt-auto flex items-center justify-between pt-8 font-mono text-[10px] text-fg-muted">
+                                        <span>{guide.read}</span>
+                                        <span class="text-fg transition-transform group-hover:translate-x-1 group-hover:text-primary motion-reduce:transition-none">→</span>
+                                    </div>
+                                </a>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+            );
+        })}
 
-        {(investigationGuides.length > 0 || fieldNotes.length > 0) && (
+        {fieldNotes.length > 0 && (
             <section class="py-16 md:py-24" aria-labelledby="field-notes">
                 <div class="mx-auto max-w-6xl px-6">
-                    <p class="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-muted">03 · Field notes</p>
-                    <h2 id="field-notes" class="mt-3 font-display text-3xl font-medium tracking-[-0.025em] text-fg">Investigations you can run</h2>
+                    <p class="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-muted">
+                        {String(guideCategories.length + 2).padStart(2, "0")} · Field notes
+                    </p>
+                    <h2 id="field-notes" class="mt-3 font-display text-3xl font-medium tracking-[-0.025em] text-fg">From the blog</h2>
                     <div class="mt-9 divide-y divide-border border-y border-border">
-                        {investigationGuides.map((guide) => (
-                            <a href={guide.href} class="group grid gap-3 py-6 transition-colors sm:grid-cols-[9rem_1fr_auto] sm:items-center sm:gap-6">
-                                <span class="font-mono text-[10px] uppercase tracking-[0.12em] text-primary">{guide.label}</span>
-                                <div>
-                                    <h3 class="font-display text-lg font-medium text-fg transition-colors group-hover:text-primary">{guide.title}</h3>
-                                    <p class="mt-1.5 max-w-[68ch] text-xs leading-relaxed text-fg-muted">{guide.description}</p>
-                                </div>
-                                <span class="font-mono text-[10px] text-fg-muted">{guide.read} →</span>
-                            </a>
-                        ))}
                         {fieldNotes.map((post) => (
                             <a href={`/blog/${post.id}`} class="group grid gap-3 py-6 transition-colors sm:grid-cols-[9rem_1fr_auto] sm:items-center sm:gap-6">
                                 <time datetime={post.data.date.toISOString()} class="font-mono text-[10px] text-fg-muted">

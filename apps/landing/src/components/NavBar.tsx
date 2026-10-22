@@ -20,6 +20,7 @@ import { formatStars } from "../lib/github-stars"
 import { features } from "../lib/features"
 import { featurePath, useCasePath } from "../lib/page-registry"
 import { useCases } from "../lib/use-cases"
+import { guideCategories, guideHref } from "../lib/guides"
 import { identifyLanding } from "../lib/telemetry"
 import { GithubStarButton, Octocat } from "./GithubStarButton"
 import { LogoContextMenu } from "./LogoContextMenu"
@@ -156,6 +157,16 @@ export function NavBarInner({ locale = "en", stars, signedIn }: NavBarProps & { 
 		},
 	]
 
+	// Guides are English-only, so their titles are plain strings, not messages.
+	const guideGroups: { title: string; links: MenuLink[] }[] = guideCategories.map((category) => ({
+		title: category.title,
+		links: category.guides.map((guide) => ({
+			href: guideHref(guide, locale),
+			label: () => guide.title,
+			desc: () => guide.navDesc,
+		})),
+	}))
+
 	const mobileGroups: { title: string; links: MenuLink[] }[] = [
 		{ title: m.nav_features(), links: featureLinks },
 		{ title: m.nav_use_cases(), links: useCaseLinks },
@@ -242,6 +253,45 @@ export function NavBarInner({ locale = "en", stars, signedIn }: NavBarProps & { 
 										</span>
 										<span className="inline-flex items-center gap-1 text-xs text-primary transition-transform group-hover/cta:translate-x-0.5">
 											{m.nav_product_footer_cta()}
+										</span>
+									</NavigationMenuLink>
+								</div>
+							</NavigationMenuContent>
+						</NavigationMenuItem>
+
+						<NavigationMenuItem>
+							<NavigationMenuTrigger className="h-10 bg-transparent hover:bg-muted/20 text-[15px] text-fg-muted hover:text-fg data-popup-open:text-fg">
+								{m.nav_guides()}
+							</NavigationMenuTrigger>
+							<NavigationMenuContent className="p-0">
+								<div className="w-[820px] max-w-[calc(100vw-1.5rem)]">
+									<div className="grid grid-cols-4 gap-x-2 p-4">
+										{guideGroups.map((group, index) => (
+											<div
+												key={group.title}
+												className={cn(index > 0 && "border-l border-border pl-2")}
+											>
+												<div className="px-2">
+													<Eyebrow>{group.title}</Eyebrow>
+												</div>
+												<div className="mt-2 flex flex-col gap-0.5">
+													{group.links.map((link) => (
+														<MegaLink key={link.href} link={link} />
+													))}
+												</div>
+											</div>
+										))}
+									</div>
+
+									<NavigationMenuLink
+										href="/guides"
+										className="group/cta flex items-center justify-between rounded-none border-t border-border bg-muted/10 px-6 py-3.5 hover:bg-muted/20"
+									>
+										<span className="text-xs font-medium text-fg">
+											{m.nav_guides_footer()}
+										</span>
+										<span className="inline-flex items-center gap-1 text-xs text-primary transition-transform group-hover/cta:translate-x-0.5">
+											{m.nav_guides_footer_cta()}
 										</span>
 									</NavigationMenuLink>
 								</div>
@@ -344,6 +394,37 @@ export function NavBarInner({ locale = "en", stars, signedIn }: NavBarProps & { 
 							</span>
 							<div className="mt-3 flex flex-col gap-5">
 								{mobileGroups.map((group) => (
+									<div key={group.title}>
+										<span className="text-[10px] text-fg-muted uppercase tracking-wider">
+											{group.title}
+										</span>
+										<div className="mt-1.5 flex flex-col gap-1">
+											{group.links.map((link) => (
+												<a
+													key={link.href}
+													href={link.href}
+													onClick={() => setMenuOpen(false)}
+													className="text-xs text-fg-muted hover:text-fg transition-colors py-1.5"
+												>
+													{link.label()}
+												</a>
+											))}
+										</div>
+									</div>
+								))}
+							</div>
+						</div>
+
+						<div className="py-4 border-b border-border">
+							<a
+								href="/guides"
+								onClick={() => setMenuOpen(false)}
+								className="text-[11px] text-primary uppercase tracking-wider font-medium"
+							>
+								{m.nav_guides()}
+							</a>
+							<div className="mt-3 flex flex-col gap-5">
+								{guideGroups.map((group) => (
 									<div key={group.title}>
 										<span className="text-[10px] text-fg-muted uppercase tracking-wider">
 											{group.title}

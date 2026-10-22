@@ -493,6 +493,8 @@
 	"nav_docs": "\ubb38\uc11c",
 	"nav_local": "Maple Local",
 	"nav_guides": "\uac00\uc774\ub4dc",
+	"nav_guides_footer": "\ud504\ub85c\ub355\uc158 \uc5d4\uc9c0\ub2c8\uc5b4\ub97c \uc704\ud55c \uc2e4\uc804 \uac00\uc774\ub4dc",
+	"nav_guides_footer_cta": "\ubaa8\ub4e0 \uac00\uc774\ub4dc \u2192",
 	"nav_blog": "\ube14\ub85c\uadf8",
 	"nav_customers": "\uace0\uac1d \uc0ac\ub840",
 	"nav_changelog": "\ubcc0\uacbd \ub0b4\uc5ed",

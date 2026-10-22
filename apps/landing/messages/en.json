@@ -504,6 +504,8 @@
 	"nav_docs": "Docs",
 	"nav_local": "Maple Local",
 	"nav_guides": "Guides",
+	"nav_guides_footer": "Practical guides for production engineers",
+	"nav_guides_footer_cta": "All guides \u2192",
 	"nav_blog": "Blog",
 	"nav_customers": "Customers",
 	"nav_changelog": "Changelog",
