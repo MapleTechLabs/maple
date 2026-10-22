@@ -125,7 +125,12 @@ impl Delivery {
                 let mut request = ExportMetricsServiceRequest::decode_length_delimited(&mut buffer)
                     .map_err(|_| RecordError::Unreadable)?;
                 // Empty messages decode from a byte or two each but cost far more in memory:
-                // keep only what carries metrics, so a run of zero bytes allocates nothing.
+                // keep only what carries a metric, which the point cap then counts.
+                for resource in &mut request.resource_metrics {
+                    resource
+                        .scope_metrics
+                        .retain(|scope| !scope.metrics.is_empty());
+                }
                 request
                     .resource_metrics
                     .retain(|resource| !resource.scope_metrics.is_empty());
@@ -1106,6 +1111,13 @@ mod tests {
         )]);
         let mut padded = one.clone();
         padded.resource_metrics.push(ResourceMetrics::default());
+        padded.resource_metrics.push(ResourceMetrics {
+            scope_metrics: vec![ScopeMetrics::default(); 3],
+            ..ResourceMetrics::default()
+        });
+        padded.resource_metrics[0]
+            .scope_metrics
+            .push(ScopeMetrics::default());
         // Zero bytes are empty requests, one per byte.
         let mut record = vec![0_u8; 4096];
         record.extend(length_delimited(&[padded]));
