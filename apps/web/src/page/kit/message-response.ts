@@ -194,6 +194,23 @@ const codeBlock = <M>(
 /** A surface's own element views over Streamdown's (the chat's tables and chart fences). */
 export type ViewOverrides = (views: Markdown.Views) => Partial<Markdown.Views>
 
+const markdownLink = <M>(h: HtmlBuilder<M>, url: string, content: ReadonlyArray<Html | string>): Html =>
+	h.a(
+		[
+			...streamdown("link", "wrap-anywhere font-medium text-primary underline")(h),
+			h.Href(url),
+			h.Attribute("rel", "noreferrer"),
+			h.Attribute("target", "_blank"),
+		],
+		content,
+	)
+
+const imageLabel = (url: string, alt: string): string => (alt.trim() === "" ? url : alt)
+
+// Model output and transcripts are untrusted: an image is a link the reader opens, never a fetch.
+const markdownImage = <M>(h: HtmlBuilder<M>, url: string, alt: string): Html =>
+	markdownLink(h, url, [imageLabel(url, alt)])
+
 const viewsFor = <M>(
 	h: HtmlBuilder<M>,
 	actions?: CodeActions<M>,
@@ -204,16 +221,24 @@ const viewsFor = <M>(
 		InlineCode: ({ value }) =>
 			h.code(streamdown("inline-code", "rounded bg-muted px-1.5 py-0.5 font-mono text-sm")(h), [value]),
 		Strong: (_strong, content) => h.span(streamdown("strong", "font-semibold")(h), content),
-		Link: ({ url }, content) =>
-			h.a(
-				[
-					...streamdown("link", "wrap-anywhere font-medium text-primary underline")(h),
-					h.Href(url),
-					h.Attribute("rel", "noreferrer"),
-					h.Attribute("target", "_blank"),
-				],
-				content,
+		// Link text is re-rendered with images as plain labels, at any nesting depth
+		// (`[**![a](u)**](d)`), so a linked image never puts an anchor inside an anchor.
+		Link: (link) =>
+			markdownLink(
+				h,
+				link.url,
+				Markdown.viewBlocks(
+					{ blocks: [{ _tag: "Paragraph", content: link.content }] },
+					{
+						views: {
+							...viewsFor(h, actions, overrides),
+							Paragraph: (_paragraph, inline) => h.span([], inline),
+							Image: ({ url, alt }) => h.span([], [imageLabel(url, alt)]),
+						},
+					},
+				),
 			),
+		Image: ({ url, alt }) => markdownImage(h, url, alt),
 		Heading: ({ level }, content) => {
 			const attributes = streamdown(`heading-${level}`, HEADING_CLASSES[level])(h)
 			if (level === 1) return h.h1(attributes, content)

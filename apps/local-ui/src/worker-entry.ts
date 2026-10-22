@@ -9,7 +9,8 @@ interface AssetsBinding {
 
 /**
  * This page can POST SQL to every visitor's loopback `maple start`, so an
- * injected script must not run. Vite emits only external module scripts; the
+ * injected script must not run. Every script is an external same-origin file
+ * (the pre-paint theme script is `public/theme-init.js`, never inline); the
  * inline-style allowance covers the highlighted JSON views' `style` attributes.
  */
 const CONTENT_SECURITY_POLICY = [
