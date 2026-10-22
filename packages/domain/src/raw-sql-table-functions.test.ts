@@ -34,7 +34,36 @@ describe("rawSqlIssue table sources", () => {
 	})
 
 	it.each([
+		// Doubled quotes inside a literal or quoted identifier do not end it.
+		"SELECT '' AS e FROM url('http://x/', CSV, 'a String') WHERE $__orgFilter",
+		"SELECT 'it''s' AS e FROM url('http://x/') WHERE $__orgFilter",
+		"SELECT 'a\\\\' AS e FROM url('http://x/') WHERE $__orgFilter",
+		"SELECT `a``b` FROM url('http://x/') WHERE $__orgFilter",
+		'SELECT "a""b" FROM url(\'http://x/\') WHERE $__orgFilter',
+		// Modifiers and join constraints do not end the FROM list.
+		"SELECT * FROM traces FINAL, url('http://x/') u WHERE $__orgFilter",
+		"SELECT * FROM traces SAMPLE 0.1, url('http://x/') u WHERE $__orgFilter",
+		"SELECT * FROM traces t JOIN logs l ON 1 = 1, url('http://x/') u WHERE $__orgFilter(t)",
+		"SELECT * FROM traces t JOIN logs l USING (TraceId), url('http://x/') u WHERE $__orgFilter(t)",
+		// Other table positions.
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN (FROM url('http://x/') SELECT *)",
+		"SELECT * FROM (url('http://x/')) WHERE $__orgFilter",
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN url('http://x/')",
+		// A reader name is refused in any position.
+		"SELECT file('/x') AS f FROM traces WHERE $__orgFilter",
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanId = (SELECT 1 FROM t WHERE 1 = url('http://x/'))",
+	])("rejects table functions the walker must not miss: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
+	})
+
+	it.each([
 		"SELECT number FROM numbers(10) WHERE $__orgFilter",
+		"SELECT * FROM traces FINAL WHERE $__orgFilter",
+		"SELECT 'it''s', `a``b` AS c FROM traces WHERE $__orgFilter",
+		"SELECT * FROM traces t JOIN logs l USING (TraceId) WHERE $__orgFilter(t)",
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN (SELECT SpanId FROM logs)",
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN ('a', 'b')",
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN tuple('a', 'b')",
 		"SELECT * FROM traces t JOIN numbers(3) n ON 1 = 1 WHERE $__orgFilter(t)",
 		"SELECT * FROM generateSeries(1, 3) WHERE $__orgFilter",
 		"SELECT URLHash(Url) AS h, file FROM traces WHERE $__orgFilter",

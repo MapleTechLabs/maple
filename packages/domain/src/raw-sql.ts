@@ -68,7 +68,7 @@ const INTO_OUTFILE_RE = /\bINTO\s+OUTFILE\b/i
  * outside the query, so they are the one call form allowed in a table position.
  *
  * Everything else written as `name(...)` after FROM/JOIN reaches outside this
- * warehouse — `url`, `s3`, `remote`, `file`, `mysql`, `loop`, `view`, and the
+ * warehouse: `url`, `s3`, `remote`, `file`, `mysql`, `loop`, `view`, and the
  * many lake-format and object-store readers ClickHouse keeps adding. On BYO and
  * self-hosted clusters that is a working SSRF/file-read primitive with the
  * response handed back as rows, untouched by per-org credentials or the row cap.
@@ -80,6 +80,56 @@ const INTO_OUTFILE_RE = /\bINTO\s+OUTFILE\b/i
  * of a blocked name resolves to the same token and is refused all the same.
  */
 const ALLOWED_TABLE_FUNCTIONS = new Set(["numbers", "generateseries"])
+
+// Defense in depth: known readers are refused as a call in ANY position, so a
+// table position the walker misses still cannot reach them. Families are
+// prefixes (ClickHouse suffixes them: `icebergS3Cluster`); the rest are exact
+// because they prefix real scalars (`URLHash`, `hiveHash`, `generateRandomStructure`).
+// `file` is also a scalar, and it reads the server's files, so it stays here.
+const READER_PREFIXES = [
+	"iceberg",
+	"deltalake",
+	"hudi",
+	"paimon",
+	"s3",
+	"cosn",
+	"oss",
+	"gcs",
+	"azureblobstorage",
+	"hdfs",
+	"remote",
+	"cluster",
+	"mysql",
+	"postgresql",
+	"mongodb",
+	"redis",
+	"sqlite",
+	"odbc",
+	"jdbc",
+	"executable",
+	"arrowflight",
+	"ytsaurus",
+	"mergetree",
+]
+const READER_NAMES = new Set([
+	"url",
+	"urlcluster",
+	"file",
+	"filecluster",
+	"input",
+	"dictionary",
+	"hive",
+	"merge",
+	"loop",
+	"view",
+	"generaterandom",
+	"timeseriesdata",
+	"timeseriesmetrics",
+	"timeseriestags",
+	"primes",
+])
+const isReaderName = (name: string): boolean =>
+	READER_NAMES.has(name) || READER_PREFIXES.some((prefix) => name.startsWith(prefix))
 
 interface SqlToken {
 	readonly v: string
@@ -122,10 +172,12 @@ const tokenizeSql = (sql: string): ReadonlyArray<SqlToken> => {
 				const d = sql.charAt(i)
 				if (d === "\\") {
 					i += 2
+				} else if (d === "'" && sql.charAt(i + 1) === "'") {
+					// A doubled quote escapes itself.
+					i += 2
 				} else if (d === "'") {
-					// A doubled quote escapes itself; a lone one ends the literal.
-					i += sql.charAt(i + 1) === "'" ? 2 : 1
-					if (sql.charAt(i - 1) === "'" && sql.charAt(i - 2) !== "'") break
+					i++
+					break
 				} else {
 					i++
 				}
@@ -167,6 +219,7 @@ const tokenizeSql = (sql: string): ReadonlyArray<SqlToken> => {
 }
 
 // Keywords that end the FROM list, so a later comma no longer introduces a table.
+// FINAL, SAMPLE, ON and USING qualify one item; a comma after them is a new table.
 const CLAUSE_BOUNDARY = new Set([
 	"where",
 	"prewhere",
@@ -181,19 +234,16 @@ const CLAUSE_BOUNDARY = new Set([
 	"intersect",
 	"window",
 	"qualify",
-	"sample",
 	"format",
 	"into",
-	"on",
-	"using",
-	"final",
 	"select",
 	"with",
 ])
 
 /**
- * The first table source that is a disallowed table function, or null. A table
- * source is a token right after FROM/JOIN or a comma in the FROM list; when it is
+ * The first disallowed table function, or null. Any known reader called anywhere
+ * is refused. Beyond that, a table source is a token right after FROM/JOIN, a
+ * comma in the FROM list, or a `(` in either position; when it is
  * an identifier immediately followed by `(` it is a table function, and only the
  * in-memory generators are allowed. `FROM (SELECT ...)` is a subquery, a bare
  * `FROM traces` a table, and `urlHash(...)` or `EXTRACT(x FROM y)` sit in an
@@ -211,10 +261,13 @@ const disallowedTableFunction = (sql: string): string | null => {
 			if (t.v === "(") {
 				const prev = tokens[i - 1]
 				const next = tokens[i + 1]
-				const sub = next !== undefined && next.ident && (next.v === "select" || next.v === "with")
-				parenKind.push(sub ? "sub" : prev !== undefined && prev.ident ? "call" : "group")
+				// FROM-first queries (`(FROM t SELECT ...)`) are subqueries too.
+				const sub =
+					next?.ident === true && (next.v === "select" || next.v === "with" || next.v === "from")
+				const call = prev?.ident === true && prev.v !== "in" && !armed
+				parenKind.push(sub ? "sub" : call ? "call" : "group")
 				depth++
-				armed = false
+				// `FROM (x(...))`: a paren in a table position keeps it one.
 			} else if (t.v === ")") {
 				parenKind.pop()
 				depth--
@@ -227,6 +280,8 @@ const disallowedTableFunction = (sql: string): string | null => {
 			}
 			continue
 		}
+		const after = tokens[i + 1]
+		if (after !== undefined && !after.ident && after.v === "(" && isReaderName(t.v)) return t.v
 		if (t.v === "from" || (t.v === "join" && (tokens[i - 1]?.v ?? "") !== "array")) {
 			if (parenKind[parenKind.length - 1] !== "call") {
 				armed = true
