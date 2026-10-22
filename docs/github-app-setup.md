@@ -75,7 +75,7 @@ This closes the loop after a user installs your app, so Maple can record the ins
 3. Check **Request user authorization (OAuth) during installation**. **Do not skip this. It is a security control.** See the box below.
 4. Leave **Expire user authorization tokens** at its default (checked).
 
-> **Why this is required (confused-deputy guard).** `installation_id` values are small, **enumerable** integers and are not tied to the connect `state`. Without OAuth, anyone who starts a connect flow could submit _someone else's_ `installation_id` and bind another org's private repos to their own Maple org. With OAuth on, GitHub also returns a `code`. Maple exchanges it and calls `GET /user/installations` to confirm the user administers that installation before binding it. GitHub delivers `code`, `installation_id`, and `state` to the Callback URL above. There is no separate Setup URL.
+> **Why this is required (confused-deputy guard).** `installation_id` values are small, **enumerable** integers and are not tied to the connect `state`. Without OAuth, anyone who starts a connect flow could submit _someone else's_ `installation_id` and bind another org's private repos to their own Maple org. With OAuth on, GitHub also returns a `code`. Maple exchanges it, calls `GET /user/installations` to confirm the user can access that installation, then confirms they administer its account (an active org `admin` via `GET /user/memberships/orgs/{org}`, or the personal account itself) before binding it. GitHub delivers `code`, `installation_id`, and `state` to the Callback URL above. There is no separate Setup URL.
 
 ---
 
@@ -114,7 +114,7 @@ On repositories where a Maple admin has switched on the pull request review, Map
 
 > **Upgrading an existing App?** Adding a permission to an App that is already installed makes GitHub ask every installation's admin to accept the new permissions. Until they do, Maple still records each review but cannot post it: the review's row keeps a publish error and nothing appears on the pull request. CI logs behave the same way: until the installation accepts **Actions: Read**, GitHub refuses every job log download with `403 Resource not accessible by integration` and those repositories get traces without logs. To fix it, accept the permission request on GitHub (Settings → Applications → the App → Review request).
 
-3. Leave **Organization permissions** and **Account permissions** entirely at **No access**.
+3. Under **Organization permissions**, set **Members** to **Read-only**. Maple uses it only during connect, to confirm the person connecting an organization installation is an admin of that organization. Without it, connecting an organization is refused. Leave every other organization permission and all **Account permissions** at **No access**.
 
 ---
 
@@ -259,6 +259,7 @@ After setting the variables, **restart the Maple API** so they take effect. Mapl
 | Repository → Checks        | Read and write                                   |
 | Repository → Metadata      | Read-only (mandatory)                            |
 | Repository → Actions       | Read-only (CI job logs)                          |
+| Organization → Members     | Read-only (connect-time admin check)             |
 
 ### Subscribed webhook events
 

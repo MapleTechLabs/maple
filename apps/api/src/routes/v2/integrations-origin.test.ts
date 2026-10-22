@@ -80,55 +80,73 @@ describe("resolveRequestOrigin (untrusted — reflects client-controlled headers
 })
 
 /**
- * The security boundary for an OAuth callback origin. The resolved origin
- * is embedded in the authorize URL, persisted as `oauth_auth_states.redirectUri`
- * and replayed as `redirect_uri` in the token exchange, so an attacker-chosen
- * host would mint an authorize URL pointing at their own callback. Only hosts in
- * the same family as the trusted `MAPLE_APP_BASE_URL` are accepted; everything
- * else fails closed (the install handler answers 503).
+ * The security boundary for an OAuth callback origin: the resolved origin is
+ * persisted and replayed as `redirect_uri`, so only the deploy's configured
+ * origins (plus its own preview hosts, or local hosts in development) pass.
  */
+const production = {
+	MAPLE_APP_BASE_URL: "https://app.maple.dev",
+	MAPLE_API_BASE_URL: "https://api.maple.dev",
+	MAPLE_ENVIRONMENT: "production",
+}
+const preview = {
+	MAPLE_APP_BASE_URL: "https://app-pr-12.maple.dev",
+	MAPLE_API_BASE_URL: "https://api-pr-12.maple.dev",
+	MAPLE_ENVIRONMENT: "pr-12",
+}
+const development = {
+	MAPLE_APP_BASE_URL: "https://web.localhost",
+	MAPLE_API_BASE_URL: "https://api.localhost",
+	MAPLE_ENVIRONMENT: "development",
+}
+
 describe("isTrustedCallbackOrigin", () => {
-	it("accepts sibling hosts under the same registrable domain, per stage", () => {
-		for (const [origin, appBaseUrl] of [
-			["https://api.maple.dev", "https://app.maple.dev"],
-			["https://api-pr-12.maple.dev", "https://app-pr-12.maple.dev"],
-			// A self-hosted install served over plain http keeps its own scheme.
-			["http://api.maple.internal", "http://app.maple.internal"],
+	it("accepts the configured app and API origins", () => {
+		for (const [origin, config] of [
+			["https://api.maple.dev", production],
+			["https://app.maple.dev", production],
+			["https://api.maple.dev/", production],
+			["http://api.maple.internal", { ...production, MAPLE_API_BASE_URL: "http://api.maple.internal" }],
 		] as const) {
-			assert.isTrue(isTrustedCallbackOrigin(origin, appBaseUrl), `${origin} vs ${appBaseUrl}`)
+			assert.isTrue(isTrustedCallbackOrigin(origin, config), origin)
 		}
 	})
 
-	it("accepts the local-dev family: *.localhost siblings and loopback ports", () => {
-		for (const [origin, appBaseUrl] of [
-			["https://api.localhost", "https://web.localhost"],
-			// Worktree dev hosts nest another label under *.localhost.
-			["https://wt.api.localhost", "https://wt.web.localhost"],
-			// Raw-port dev servers put web and api on different loopback ports.
-			["http://127.0.0.1:3472", "http://127.0.0.1:3471"],
-		] as const) {
-			assert.isTrue(isTrustedCallbackOrigin(origin, appBaseUrl), `${origin} vs ${appBaseUrl}`)
-		}
+	it("accepts a preview's own hosts only on that preview deploy", () => {
+		assert.isTrue(isTrustedCallbackOrigin("https://api-pr-12.maple.dev", preview))
+		assert.isTrue(isTrustedCallbackOrigin("https://app-pr-12.maple.dev", preview))
+		assert.isFalse(isTrustedCallbackOrigin("https://api-pr-13.maple.dev", preview))
+		assert.isFalse(isTrustedCallbackOrigin("https://api-pr-12.maple.dev", production))
 	})
 
-	it("rejects a spoofed forwarded host and every other foreign origin", () => {
-		for (const [origin, appBaseUrl] of [
-			// The spoof case: exactly what `resolveRequestOrigin` hands back for a
-			// request carrying `x-forwarded-host: public.example.com`.
-			["https://public.example.com", "https://app.maple.dev"],
-			["https://evil.dev", "https://app.maple.dev"],
-			// A suffix-only lookalike must not match the trusted parent domain.
-			["https://api.maple.dev.evil.com", "https://app.maple.dev"],
-			// No host at all (relative url, no host headers).
-			["", "https://app.maple.dev"],
-			// Local dev and deployed hosts are separate families in both directions.
-			["https://evil.localhost", "https://app.maple.dev"],
-			["https://api.maple.dev", "http://127.0.0.1:3471"],
-			// A forwarded `http` scheme on an https deployment.
-			["http://api.maple.dev", "https://app.maple.dev"],
-			["http://app.maple.dev", "https://app.maple.dev"],
+	it("accepts local hosts only in development with a local app origin", () => {
+		for (const origin of ["https://api.localhost", "https://wt.api.localhost", "http://127.0.0.1:3472"]) {
+			assert.isTrue(isTrustedCallbackOrigin(origin, development), origin)
+			assert.isFalse(isTrustedCallbackOrigin(origin, production), origin)
+		}
+		assert.isFalse(
+			isTrustedCallbackOrigin("https://api.localhost", {
+				...production,
+				MAPLE_ENVIRONMENT: "development",
+			}),
+		)
+	})
+
+	it("rejects sibling lookalikes, spoofed forwarded hosts and scheme downgrades", () => {
+		for (const [origin, config] of [
+			["https://evil.maple.dev", production],
+			["https://app-pr-1.maple.dev", production],
+			["https://evil.maple.dev", preview],
+			["https://public.example.com", production],
+			["https://api.maple.dev.evil.com", production],
+			["https://api.maple.dev:8443", production],
+			["", production],
+			["javascript:alert(1)", production],
+			["http://api.maple.dev", production],
+			["https://evil.localhost", production],
+			["https://api.maple.dev", development],
 		] as const) {
-			assert.isFalse(isTrustedCallbackOrigin(origin, appBaseUrl), `${origin} vs ${appBaseUrl}`)
+			assert.isFalse(isTrustedCallbackOrigin(origin, config), origin)
 		}
 	})
 })
