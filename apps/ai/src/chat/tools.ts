@@ -124,11 +124,19 @@ export interface RunUsage {
 	cacheRead: number
 	/** The same calls as AI credit charges, in Autumn's exclusive pools; see {@link recordCharge}. */
 	readonly charges: Array<Mutable<AiModelSpend>>
+	/** What the run's child agents (`review_files`) spent, as the engine reports each one ending. */
+	readonly delegated: { modelCalls: number; input: number; output: number; costMicrousd: number }
 }
 
 type Mutable<A> = { -readonly [K in keyof A]: A[K] }
 
-export const makeRunUsage = (): RunUsage => ({ input: 0, output: 0, cacheRead: 0, charges: [] })
+export const makeRunUsage = (): RunUsage => ({
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	charges: [],
+	delegated: { modelCalls: 0, input: 0, output: 0, costMicrousd: 0 },
+})
 
 /**
  * Below every long-context tier models.dev lists (the smallest is 32k). Autumn picks a model's
