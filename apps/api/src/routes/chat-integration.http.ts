@@ -36,9 +36,13 @@ export const ChatCallbackRouter = HttpRouter.use((router) =>
 		const env = yield* Env
 		const appBaseUrl = env.MAPLE_APP_BASE_URL.replace(/\/$/, "")
 
-		const callback = (span: string, kind: DashboardCallbackKind, outcome: string) =>
-			Effect.fn(span)(function* (req: HttpServerRequest.HttpServerRequest) {
-				// Every branch is a 302: this span is the callback's only trace root (ApiObservabilityLive).
+		const callback = (span: string, path: string, kind: DashboardCallbackKind, outcome: string) =>
+			// Server-kind like `IntegrationsCallbackRouter`: the auto server span is suppressed for these
+			// paths (ApiObservabilityLive), so this is the callback's only trace root. Every branch is a 302.
+			Effect.fn(span, {
+				kind: "server",
+				attributes: { "http.route": path, "http.request.method": "GET" },
+			})(function* (req: HttpServerRequest.HttpServerRequest) {
 				yield* Effect.annotateCurrentSpan({ "http.response.status_code": 302 })
 				const routeParams = yield* HttpRouter.params
 				const connector = decodeConnectorParam(routeParams.connector)
@@ -52,11 +56,20 @@ export const ChatCallbackRouter = HttpRouter.use((router) =>
 				)
 			})
 
-		yield* router.add("GET", CHAT_CALLBACK_PATH, callback("ChatOAuth.callback", "chat-install", "chat"))
+		yield* router.add(
+			"GET",
+			CHAT_CALLBACK_PATH,
+			callback("ChatOAuth.callback", CHAT_CALLBACK_PATH, "chat-install", "chat"),
+		)
 		yield* router.add(
 			"GET",
 			CHAT_IDENTITY_CALLBACK_PATH,
-			callback("ChatOAuth.identityCallback", "chat-identity", "chat_identity"),
+			callback(
+				"ChatOAuth.identityCallback",
+				CHAT_IDENTITY_CALLBACK_PATH,
+				"chat-identity",
+				"chat_identity",
+			),
 		)
 	}),
 )
