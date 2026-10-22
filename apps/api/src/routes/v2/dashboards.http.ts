@@ -14,6 +14,8 @@ import {
 	LIST_LIMIT_DEFAULT,
 	paginateArray,
 	PublicIdPrefixes,
+	scopeAllows,
+	V2InsufficientPermissions,
 	V2ParameterInvalid,
 	V2ParameterMissing,
 	V2TimeRangeInvalid,
@@ -41,6 +43,21 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
 import { convertPersesDashboardToPortable } from "@maple/backend/services/dashboards/perses-dashboard-import"
+
+const SHARED_TELEMETRY_FAMILIES = ["traces", "logs", "metrics"] as const
+
+/**
+ * A share link serves the board's telemetry to whoever holds it, so a scoped
+ * key must be able to read that telemetry itself to mint or rotate one.
+ */
+const requireShareableScopes = (scopes: ReadonlyArray<string> | undefined) =>
+	SHARED_TELEMETRY_FAMILIES.every((family) => scopeAllows(scopes, { family, access: "read" }))
+		? Effect.void
+		: Effect.fail(
+				V2InsufficientPermissions.make(
+					'Sharing a dashboard requires the "traces:read", "logs:read" and "metrics:read" scopes, because the link serves its telemetry.',
+				),
+			)
 
 const toV2Dashboard = (dashboard: DashboardDocument): V2Dashboard => ({
 	id: dashboard.id,
@@ -296,6 +313,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 			mode: DashboardShareMode,
 		) =>
 			Effect.gen(function* () {
+				yield* requireShareableScopes(context.tenant.scopes)
 				const created = yield* shares.upsert(
 					context.tenant.orgId,
 					context.tenant.userId,
@@ -324,6 +342,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 		const rotateShare = (dashboardId: DashboardId, widgetId: string | null) =>
 			Effect.gen(function* () {
 				const context = yield* openScope(dashboardId, widgetId)
+				yield* requireShareableScopes(context.tenant.scopes)
 				const rotated = yield* shares.rotate(
 					context.tenant.orgId,
 					context.tenant.userId,

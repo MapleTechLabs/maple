@@ -55,7 +55,12 @@ import { WireValue } from "../../wire"
 import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp } from "./envelopes"
-import { V2ParameterInvalid, V2ParameterMissing, V2TimeRangeInvalid } from "./errors"
+import {
+	V2InsufficientPermissions,
+	V2ParameterInvalid,
+	V2ParameterMissing,
+	V2TimeRangeInvalid,
+} from "./errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { publicErrors } from "./public-error"
 
@@ -1244,6 +1249,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			payload: V2DashboardShareParams,
 			success: V2DashboardShare,
 			error: [
+				V2InsufficientPermissions.schema,
 				sharePersistence,
 				shareNotConfigured,
 				dashboardPersistence,
@@ -1265,6 +1271,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			params: { id: DashboardPublicId, widget_id: Schema.String },
 			success: V2DashboardShare,
 			error: [
+				V2InsufficientPermissions.schema,
 				sharePersistence,
 				shareNotConfigured,
 				shareNotFound,
@@ -1315,6 +1322,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			payload: V2DashboardShareParams,
 			success: V2DashboardShare,
 			error: [
+				V2InsufficientPermissions.schema,
 				sharePersistence,
 				shareNotConfigured,
 				dashboardPersistence,
@@ -1335,6 +1343,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			params: { id: DashboardPublicId },
 			success: V2DashboardShare,
 			error: [
+				V2InsufficientPermissions.schema,
 				sharePersistence,
 				shareNotConfigured,
 				shareNotFound,
