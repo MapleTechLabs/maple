@@ -7,47 +7,42 @@ import Breadcrumb from "../../components/Breadcrumb.astro";
 import FAQ from "../../components/FAQ.astro";
 import SeoHead from "../../components/SeoHead.astro";
 import TableOfContents from "../../components/TableOfContents.astro";
-import LanguageTabs from "../../components/docs/LanguageTabs.astro";
-import LanguageTab from "../../components/docs/LanguageTab.astro";
 import { CONTRIBUTORS } from "../../lib/changelog-meta";
 import { highlight } from "../../lib/guide-highlight";
 
 const pageTitle = "Loguru for Python: setup, JSON and OpenTelemetry | Maple";
 const pageDescription =
-    "How to use Loguru in Python: set the log level, rotate files, write JSON, route stdlib logging through it, and send Loguru logs to OpenTelemetry.";
+    "How to use Loguru in Python: install it, set the log level, write files and JSON, add context, and send Loguru logs to OpenTelemetry.";
 const published = "2026-10-19";
-const updatedLabel = "October 20, 2026";
+const updatedLabel = "October 22, 2026";
 const author = CONTRIBUTORS.jeremyfunk;
 const authorUrl = `https://github.com/${author.github}`;
 
 const toc = [
-    { depth: 2, slug: "what-is-loguru", text: "What Loguru is" },
+    { depth: 2, slug: "get-started", text: "Get started" },
     { depth: 3, slug: "install", text: "pip install loguru" },
     { depth: 3, slug: "first-line", text: "from loguru import logger" },
-    { depth: 2, slug: "configure", text: "Levels, sinks and files" },
+    { depth: 2, slug: "configure", text: "Levels, files and formats" },
     { depth: 3, slug: "set-level", text: "Set the log level" },
     { depth: 3, slug: "levels", text: "Loguru levels" },
-    { depth: 3, slug: "files", text: "Rotate and retain files" },
+    { depth: 3, slug: "files", text: "Write to a file" },
     { depth: 3, slug: "format", text: "Change the format" },
     { depth: 2, slug: "structured", text: "JSON logs and context" },
     { depth: 3, slug: "json", text: "JSON output" },
     { depth: 3, slug: "context", text: "bind and contextualize" },
-    { depth: 2, slug: "exceptions", text: "Exceptions and processes" },
-    { depth: 3, slug: "catch", text: "logger.catch" },
-    { depth: 3, slug: "multiprocessing", text: "enqueue=True" },
+    { depth: 2, slug: "exceptions", text: "Exceptions" },
     { depth: 2, slug: "stdlib", text: "Loguru and logging" },
-    { depth: 3, slug: "intercept", text: "Intercept stdlib logging" },
+    { depth: 3, slug: "intercept", text: "Library logs" },
     { depth: 3, slug: "comparison", text: "Loguru vs logging" },
     { depth: 2, slug: "opentelemetry", text: "Send logs to OpenTelemetry" },
     { depth: 3, slug: "bridge", text: "The bridge sink" },
-    { depth: 3, slug: "rules", text: "Rules the bridge needs" },
-    { depth: 3, slug: "check", text: "Check the output" },
+    { depth: 3, slug: "in-a-request", text: "Log inside a request" },
     { depth: 3, slug: "maple", text: "Loguru logs in Maple" },
 ];
 const sectionNav = toc.filter((h) => h.depth === 2);
 
-// One color per system a log record passes through, used by the badges, the
-// record-path diagram, the comparison table and the code highlighting.
+// One color per system a log line passes through, used by the badges, the
+// diagram and the code highlighting.
 const systems = {
     loguru: { name: "Loguru", color: "var(--chart-1)" },
     stdlib: { name: "logging", color: "var(--chart-2)" },
@@ -55,14 +50,16 @@ const systems = {
 } as const;
 
 const levels = [
-    { name: "TRACE", no: 5, method: "logger.trace()", stdlib: "None", otel: "UNSPECIFIED (0)" },
-    { name: "DEBUG", no: 10, method: "logger.debug()", stdlib: "DEBUG", otel: "DEBUG (5)" },
-    { name: "INFO", no: 20, method: "logger.info()", stdlib: "INFO", otel: "INFO (9)" },
-    { name: "SUCCESS", no: 25, method: "logger.success()", stdlib: "None", otel: "INFO4 (12)" },
-    { name: "WARNING", no: 30, method: "logger.warning()", stdlib: "WARNING", otel: "WARN (13)" },
-    { name: "ERROR", no: 40, method: "logger.error(), logger.exception()", stdlib: "ERROR", otel: "ERROR (17)" },
-    { name: "CRITICAL", no: 50, method: "logger.critical()", stdlib: "CRITICAL", otel: "FATAL (21)" },
+    { name: "TRACE", no: 5, method: "logger.trace()" },
+    { name: "DEBUG", no: 10, method: "logger.debug()" },
+    { name: "INFO", no: 20, method: "logger.info()" },
+    { name: "SUCCESS", no: 25, method: "logger.success()" },
+    { name: "WARNING", no: 30, method: "logger.warning()" },
+    { name: "ERROR", no: 40, method: "logger.error()" },
+    { name: "CRITICAL", no: 50, method: "logger.critical()" },
 ];
+
+const installCommand = "pip install loguru";
 
 const quickstartCode = String.raw`from loguru import logger
 
@@ -70,186 +67,116 @@ logger.debug("Starting worker")
 logger.info("Processed {} orders in {:.1f}s", 42, 1.234)
 logger.warning("Disk usage at {percent}%", percent=91)`;
 
-const quickstartOutput = String.raw`2026-10-20 18:36:42.094 | DEBUG    | __main__:<module>:3 - Starting worker
-2026-10-20 18:36:42.094 | INFO     | __main__:<module>:4 - Processed 42 orders in 1.2s
-2026-10-20 18:36:42.094 | WARNING  | __main__:<module>:5 - Disk usage at 91%`;
+const quickstartOutput = String.raw`2026-10-22 20:37:59.500 | DEBUG    | __main__:<module>:3 - Starting worker
+2026-10-22 20:37:59.500 | INFO     | __main__:<module>:4 - Processed 42 orders in 1.2s
+2026-10-22 20:37:59.500 | WARNING  | __main__:<module>:5 - Disk usage at 91%`;
 
 const anatomy = [
-    ["2026-10-20 18:36:42.094", "{time}", "When it was logged"],
-    ["INFO", "{level}", "Severity"],
-    ["__main__:<module>:4", "{name}:{function}:{line}", "Where it was logged"],
+    ["2026-10-22 20:37:59.500", "{time}", "When it was logged"],
+    ["INFO", "{level}", "How severe"],
+    ["__main__:<module>:4", "{name}:{function}:{line}", "Where in your code"],
     ["Processed 42 orders", "{message}", "Your text"],
 ];
 
 const setLevelCode = String.raw`import sys
 from loguru import logger
 
-logger.remove()                       # drop the default DEBUG sink
-logger.add(sys.stderr, level="INFO")  # INFO and above to stderr`;
+logger.remove()                       # remove the default terminal sink
+logger.add(sys.stderr, level="INFO")  # add it back, INFO and above
 
-const filterCode = String.raw`logger.add(sys.stderr, filter={"": "INFO", "botocore": "WARNING"})`;
+logger.debug("Hidden")
+logger.info("Shown")`;
 
-const customLevelCode = String.raw`logger.level("AUDIT", no=35, color="<magenta>")
+const setLevelOutput = String.raw`2026-10-22 20:37:59.561 | INFO     | __main__:<module>:8 - Shown`;
+
+const customLevelCode = String.raw`from loguru import logger
+
+logger.level("AUDIT", no=35, color="<magenta>")
 logger.log("AUDIT", "Role changed for user {}", 1042)`;
+
+const customLevelOutput = String.raw`2026-10-22 20:37:59.616 | AUDIT    | __main__:<module>:4 - Role changed for user 1042`;
 
 const fileCode = String.raw`from loguru import logger
 
 logger.add(
     "logs/app.log",
-    level="INFO",
-    rotation="100 MB",
-    retention="14 days",
-    compression="gz",
-    encoding="utf-8",
+    rotation="100 MB",    # start a new file once this one reaches 100 MB
+    retention="14 days",  # delete rotated files older than 14 days
+    compression="gz",     # gzip each rotated file
 )
-logger.add("logs/errors.log", level="ERROR", rotation="00:00", retention=10)`;
+logger.info("Written to the terminal and to logs/app.log")`;
 
 const formatCode = String.raw`import sys
 from loguru import logger
 
 logger.remove()
-logger.add(
-    sys.stderr,
-    format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | {name}:{line} | {message} | {extra}",
-)
-logger.info("User {user} signed in", user="ada")`;
+logger.add(sys.stderr, format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | {message}")
+logger.info("User signed in")`;
 
-const formatOutput = String.raw`18:36:54 | INFO     | __main__:9 | User ada signed in | {'user': 'ada'}`;
+const formatOutput = String.raw`20:37:59 | INFO     | User signed in`;
 
 const serializeCode = String.raw`import sys
 from loguru import logger
 
 logger.remove()
 logger.add(sys.stdout, serialize=True)
-logger.bind(order_id="ord_123").info("Payment captured")`;
+logger.info("Payment captured")`;
 
-const serializeOutput = String.raw`{"text": "2026-10-20 18:36:58.617 | INFO     | __main__:<module>:6 - Payment captured\n",
- "record": {"extra": {"order_id": "ord_123"}, "level": {"name": "INFO", "no": 20},
-            "message": "Payment captured", "name": "__main__", "line": 6,
-            "elapsed": {...}, "exception": null, "file": {...}, "function": "<module>",
-            "module": "app", "process": {...}, "thread": {...}, "time": {...}}}`;
+const serializeOutput = String.raw`{"text": "2026-10-22 20:40:30.469 | INFO     | __main__:<module>:6 - Payment captured\n",
+ "record": {"elapsed": {...}, "exception": null, "extra": {}, "file": {...},
+            "function": "<module>", "level": {"icon": "ℹ️", "name": "INFO", "no": 20},
+            "line": 6, "message": "Payment captured", "module": "app", "name": "__main__",
+            "process": {...}, "thread": {...}, "time": {...}}}`;
 
-const jsonSinkCode = String.raw`import json
-import sys
-from loguru import logger
-
-
-def json_sink(message):
-    record = message.record
-    entry = {
-        "time": record["time"].isoformat(),
-        "level": record["level"].name,
-        "logger": record["name"],
-        "message": record["message"],
-        **record["extra"],
-    }
-    if record["exception"] is not None:
-        entry["exception"] = repr(record["exception"].value)
-    sys.stdout.write(json.dumps(entry, default=str) + "\n")
-
-
-logger.remove()
-logger.add(json_sink)
-logger.bind(order_id="ord_123").warning("Retrying webhook", attempt=2)`;
-
-const jsonSinkOutput = String.raw`{"time": "2026-10-20T18:36:58.671549+02:00", "level": "WARNING", "logger": "__main__", "message": "Retrying webhook", "order_id": "ord_123", "attempt": 2}`;
-
-const bindCode = String.raw`log = logger.bind(order_id="ord_123", customer_id=1042)
-log.info("Payment captured")   # extra = {'order_id': 'ord_123', 'customer_id': 1042}
-logger.info("Unrelated line")  # extra = {}`;
-
-const contextualizeCode = String.raw`import sys
+const contextCode = String.raw`import sys
 from loguru import logger
 
 logger.remove()
-logger.configure(extra={"request_id": "-"})
-logger.add(sys.stderr, format="{time:HH:mm:ss} | {level: <8} | {extra[request_id]} | {message}")
+logger.add(sys.stderr, format="{level: <7} | {message} | {extra}")
+
+log = logger.bind(user="ada")
+log.info("Signed in")
 
 
 def charge_card():
     logger.info("Charging card")
 
 
-def handle_request(request_id):
-    with logger.contextualize(request_id=request_id):
-        logger.info("Request started")
-        charge_card()
-    logger.info("Request finished")
+with logger.contextualize(request_id="req_9f2c"):
+    logger.info("Request started")
+    charge_card()
 
+logger.info("Request finished")`;
 
-handle_request("req_9f2c")`;
-
-const contextualizeOutput = String.raw`18:37:06 | INFO     | req_9f2c | Request started
-18:37:06 | INFO     | req_9f2c | Charging card
-18:37:06 | INFO     | - | Request finished`;
+const contextOutput = String.raw`INFO    | Signed in | {'user': 'ada'}
+INFO    | Request started | {'request_id': 'req_9f2c'}
+INFO    | Charging card | {'request_id': 'req_9f2c'}
+INFO    | Request finished | {}`;
 
 const catchCode = String.raw`from loguru import logger
 
 
 @logger.catch
-def divide(a, b):
-    return a / b
+def main():
+    order = {"id": "ord_123", "total": 40, "quantity": 0}
+    print(order["total"] / order["quantity"])
 
 
-divide(1, 0)  # logged with a traceback at ERROR, returns None
+main()`;
 
-try:
-    {}["missing"]
-except KeyError:
-    logger.exception("Lookup failed")`;
-
-const diagnoseCode = String.raw`from loguru import logger
-
-
-def charge(order):
-    try:
-        return order["total"] / order["quantity"]
-    except ZeroDivisionError:
-        logger.exception("Charge failed")
-
-
-charge({"id": "ord_123", "total": 40, "quantity": 0})`;
-
-const diagnoseOutput = String.raw`2026-10-20 18:37:06.146 | ERROR    | __main__:charge:8 - Charge failed
+const catchOutput = String.raw`2026-10-22 18:38:39.486 | ERROR    | __main__:<module>:10 - An error has been caught in function '<module>', process 'MainProcess' (14), thread 'MainThread' (281473511032000):
 Traceback (most recent call last):
 
-  File "/srv/app/main.py", line 11, in <module>
-    charge({"id": "ord_123", "total": 40, "quantity": 0})
-    └ <function charge at 0x101948a40>
+> File "/srv/app/main.py", line 10, in <module>
+    main()
+    └ <function main at 0xffffa7f73110>
 
-> File "/srv/app/main.py", line 6, in charge
-    return order["total"] / order["quantity"]
-           │                └ {'id': 'ord_123', 'total': 40, 'quantity': 0}
-           └ {'id': 'ord_123', 'total': 40, 'quantity': 0}
+  File "/srv/app/main.py", line 7, in main
+    print(order["total"] / order["quantity"])
+          │                └ {'id': 'ord_123', 'total': 40, 'quantity': 0}
+          └ {'id': 'ord_123', 'total': 40, 'quantity': 0}
 
 ZeroDivisionError: division by zero`;
-
-const productionSinkCode = String.raw`logger.add(sys.stderr, level="INFO", diagnose=False)`;
-
-const enqueueCode = String.raw`import multiprocessing
-
-from loguru import logger
-
-
-def set_logger(parent_logger):
-    global logger
-    logger = parent_logger
-
-
-def work(n):
-    logger.info("Worker processed item {}", n)
-
-
-if __name__ == "__main__":
-    context = multiprocessing.get_context("spawn")
-
-    logger.remove()
-    logger.add("logs/workers.log", enqueue=True, context=context)
-
-    with context.Pool(4, initializer=set_logger, initargs=(logger,)) as pool:
-        pool.map(work, range(8))
-
-    logger.complete()`;
 
 const interceptCode = String.raw`# intercept.py
 import inspect
@@ -265,7 +192,7 @@ class InterceptHandler(logging.Handler):
         except ValueError:
             level = record.levelno
 
-        # Walk past the logging module's frames so Loguru reports the real caller.
+        # Report the line that called logging, not a line inside the logging module.
         frame, depth = inspect.currentframe(), 0
         while frame is not None and (depth == 0 or frame.f_code.co_filename == logging.__file__):
             frame = frame.f_back
@@ -276,55 +203,30 @@ class InterceptHandler(logging.Handler):
 
 logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)`;
 
-const interceptTabs = [
-    {
-        id: "script",
-        label: "Script",
-        run: "python main.py",
-        code: String.raw`# main.py
+const interceptUsageCode = String.raw`# main.py
 import logging
 
-import intercept  # noqa: F401  (installs the InterceptHandler)
+import intercept  # noqa: F401
 from loguru import logger
 
-logger.info("Loguru record")
-logging.getLogger("payments.client").warning("Retrying %s", "ord_123")`,
-        note: "Import intercept before any library that configures logging at import time. Both lines now come out of the same Loguru sink.",
-    },
-    {
-        id: "fastapi",
-        label: "FastAPI + uvicorn",
-        run: "uvicorn main:app",
-        code: String.raw`# main.py
-import logging
+logger.info("From Loguru")
+logging.getLogger("payments.client").warning("Retrying %s", "ord_123")`;
 
-from fastapi import FastAPI
+const interceptUsageOutput = String.raw`2026-10-22 20:42:11.692 | INFO     | __main__:<module>:7 - From Loguru
+2026-10-22 20:42:11.692 | WARNING  | __main__:<module>:8 - Retrying ord_123`;
 
-import intercept  # noqa: F401  (installs the InterceptHandler)
+const otelInstall = String.raw`pip install loguru \
+    opentelemetry-sdk \
+    opentelemetry-exporter-otlp-proto-http \
+    opentelemetry-instrumentation-logging`;
 
-# uvicorn gives its loggers their own handlers and stops propagation,
-# so their records never reach the root logger. Undo that.
-for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
-    logging.getLogger(name).handlers = []
-    logging.getLogger(name).propagate = True
-
-app = FastAPI()
-
-
-@app.get("/")
-def index():
-    return {"ok": True}`,
-        note: "uvicorn sets up its loggers before it imports main.py, so clearing them at import time works. If you start the server from code instead, uvicorn.run(app, log_config=None) skips uvicorn's logging setup and the loop is not needed.",
-    },
-];
-
-const bridgeCode = String.raw`# telemetry.py, below the logger_provider setup
+const bridgeCode = String.raw`# telemetry.py, after the logger_provider setup
 from loguru import logger
 from opentelemetry.instrumentation.logging.handler import LoggingHandler
 
 otel_logger = logging.getLogger("loguru.otel")
 otel_logger.setLevel(logging.DEBUG)
-otel_logger.propagate = False
+otel_logger.propagate = False  # keep these records away from the root logger
 otel_logger.addHandler(LoggingHandler(logger_provider=logger_provider, log_code_attributes=True))
 
 
@@ -348,103 +250,63 @@ def otel_sink(message):
 logger.add(
     otel_sink,
     level="INFO",
+    # Skip the SDK's own logs: a failed export would otherwise log itself again.
     filter=lambda record: not record["name"].startswith("opentelemetry"),
 )`;
 
-const consoleSwapCode = String.raw`from opentelemetry.sdk._logs.export import ConsoleLogRecordExporter, SimpleLogRecordProcessor
-
-logger_provider.add_log_record_processor(SimpleLogRecordProcessor(ConsoleLogRecordExporter()))`;
-
-const bridgeUsageCode = String.raw`# checkout.py
+const requestCode = String.raw`# checkout.py
+import intercept  # noqa: F401
 import telemetry  # noqa: F401
-from opentelemetry import trace
 from loguru import logger
+from opentelemetry import trace
 
 tracer = trace.get_tracer("checkout")
 
 with tracer.start_as_current_span("POST /checkout"):
     logger.bind(order_id="ord_123").info("Charging card")`;
 
-const bridgeOutput = String.raw`{
-    "body": "Charging card",
-    "severity_number": 9,
-    "severity_text": "INFO",
-    "attributes": {
-        "order_id": "ord_123",
-        "code.file.path": "/srv/app/checkout.py",
-        "code.function.name": "<module>",
-        "code.line.number": 9
-    },
-    "trace_id": "0xd874a182c641f8a0013ca9e3e57beff8",
-    "span_id": "0x05b2d343c0372249",
-    ...
-}`;
-
-const rules = [
-    {
-        title: "No enqueue=True on this sink",
-        body: "<code>LoggingHandler</code> reads the active span of the thread that runs it. From Loguru's queue thread it finds none, and every record exports with an all-zero trace ID. The SDK's batch processor already exports in the background.",
-    },
-    {
-        title: "Filter out opentelemetry records",
-        body: "When an export fails, the exporter logs an error through <code>logging</code>. The InterceptHandler routes it into Loguru, and without the <code>filter</code> it would be queued for the next export, which fails and logs again.",
-    },
-    {
-        title: "propagate = False on loguru.otel",
-        body: "Without it, the rebuilt record also travels up to the root logger, where the InterceptHandler hands it back to Loguru. Loguru detects the re-entry and prints a logging error instead of the line.",
-    },
-    {
-        title: "Bound keys must not clash",
-        body: "Every <code>bind()</code> value becomes a log attribute. <code>makeRecord</code> rejects keys that already exist on a <code>LogRecord</code>, such as <code>name</code>, <code>module</code> or <code>message</code>, so pick names like <code>user_name</code>.",
-    },
-];
-
 const comparison = [
     ["First log line", "<code>from loguru import logger</code>", "<code>basicConfig()</code>, then <code>getLogger(__name__)</code>"],
-    ["Rotating files", "<code>rotation</code>, <code>retention</code>, <code>compression</code> on <code>add()</code>", "<code>RotatingFileHandler</code>; compression needs a custom <code>rotator</code>"],
-    ["JSON output", "<code>serialize=True</code> or a function sink", "A custom <code>Formatter</code> or a third-party package"],
-    ["Context fields", "<code>bind()</code>, <code>contextualize()</code>", "<code>extra=</code> per call, <code>LoggerAdapter</code>, or a filter"],
-    ["Several processes", "<code>enqueue=True</code>", "<code>QueueHandler</code> and <code>QueueListener</code>"],
-    ["Message placeholders", "<code>{}</code>, <code>{name}</code>", "<code>%s</code>"],
+    ["Rotating log files", "<code>rotation</code> and <code>retention</code> on <code>add()</code>", "<code>RotatingFileHandler</code>"],
+    ["JSON output", "<code>serialize=True</code>", "A custom <code>Formatter</code> or a third-party package"],
+    ["Context fields", "<code>bind()</code>, <code>contextualize()</code>", "<code>extra=</code> on each call, or a <code>LoggerAdapter</code>"],
     ["Used by libraries", "Rarely", "Nearly all of them"],
-    ["OpenTelemetry", "Through a bridge sink", "<code>LoggingHandler</code> attaches directly"],
 ];
 
 const faqs = [
     {
         question: "What is Loguru in Python?",
         answer:
-            "Loguru is a third-party logging library for Python. You import one ready-made logger with from loguru import logger and call it, and it writes colored lines to stderr with no setup. Every other destination, such as a rotating file, JSON output or a function, is added with logger.add().",
+            "Loguru is a logging library for Python that works as soon as you import it. You call from loguru import logger and start logging, and it prints readable, colored lines to your terminal. Files, JSON output and other destinations are added with logger.add().",
     },
     {
         question: "Is Loguru free?",
-        answer:
-            "Yes. Loguru is open source under the MIT license and installs from PyPI with pip install loguru. The current release is 0.7.3.",
+        answer: "Yes. Loguru is open source under the MIT license and installs from PyPI with pip install loguru.",
     },
     {
         question: "How do I set the log level in Loguru?",
         answer:
-            "The default sink writes DEBUG and above and cannot be changed after it is added. Call logger.remove() to drop it, then logger.add(sys.stderr, level=\"INFO\"). To change the default sink's level without code changes, start the process with the environment variable LOGURU_LEVEL=INFO.",
+            "Remove the default sink and add it back with a level: logger.remove(), then logger.add(sys.stderr, level=\"INFO\"). To change it without editing code, set the environment variable LOGURU_LEVEL=INFO before starting the app.",
     },
     {
         question: "What are the Loguru levels?",
         answer:
-            "TRACE (5), DEBUG (10), INFO (20), SUCCESS (25), WARNING (30), ERROR (40) and CRITICAL (50). The numbers match the standard logging module, with TRACE and SUCCESS added. logger.level(\"NAME\", no=35) registers a custom level.",
+            "TRACE (5), DEBUG (10), INFO (20), SUCCESS (25), WARNING (30), ERROR (40) and CRITICAL (50). They match the standard logging module's numbers, plus TRACE and SUCCESS. logger.level(\"NAME\", no=35) adds your own.",
     },
     {
         question: "Should I use Loguru or the standard logging module?",
         answer:
-            "Loguru takes less setup in an application you own: rotation, JSON output and context fields are single arguments. Libraries should use the standard logging module so the application decides where records go. An application on Loguru picks up those library records with an InterceptHandler on the root logger.",
+            "Loguru takes less setup in an application: files, JSON and context are one argument each. Libraries should log with the standard logging module so the application decides where the lines go. An application on Loguru can forward those library logs with an InterceptHandler.",
     },
     {
         question: "How do I send Loguru logs to OpenTelemetry?",
         answer:
-            "The OpenTelemetry Python SDK receives logs through a LoggingHandler for the standard logging module, and Loguru does not call logging handlers. Add a Loguru sink that rebuilds each record as a logging.LogRecord and hands it to a dedicated stdlib logger with the LoggingHandler attached. Keep that sink synchronous, without enqueue=True, so records carry the trace ID of the active span.",
+            "The OpenTelemetry Python SDK collects logs from the standard logging module. Add a Loguru sink that turns each line into a logging record and hands it to a logger with OpenTelemetry's LoggingHandler attached. Lines logged during a request then carry its trace ID.",
     },
     {
         question: "Why do I get ModuleNotFoundError: No module named 'loguru'?",
         answer:
-            "Loguru is installed for a different Python interpreter than the one running your code, usually another virtual environment. Install it with the interpreter that runs the app, python -m pip install loguru, and check that your editor and process manager use the same environment.",
+            "Loguru is installed for a different Python than the one running your code, usually another virtual environment. Install it with the same interpreter that runs the app: python -m pip install loguru.",
     },
 ];
 
@@ -455,7 +317,7 @@ const articleJsonLd = {
     headline: "Loguru for Python",
     description: pageDescription,
     datePublished: published,
-    dateModified: "2026-10-20",
+    dateModified: "2026-10-22",
     author: { "@type": "Person", name: author.name, url: authorUrl },
     publisher: {
         "@type": "Organization",
@@ -489,20 +351,20 @@ const articleJsonLd = {
             <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-20 md:pt-28">
                 <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
                     <span class="border border-primary/40 px-2 py-1 text-primary">Logging</span>
-                    <span>10 min read</span>
+                    <span>7 min read</span>
                 </div>
                 <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
                     Loguru for Python
                 </h1>
                 <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
-                    Set up Loguru in an application, then send its logs to OpenTelemetry with the trace ID of the request that wrote them.
+                    Start logging with Loguru in two lines, then send its logs to OpenTelemetry so each line links to the request that wrote it.
                 </p>
                 <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
                     <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
                         <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
                         <span>By {author.name}</span>
                     </a>
-                    <time datetime="2026-10-20">Updated {updatedLabel}</time>
+                    <time datetime="2026-10-22">Updated {updatedLabel}</time>
                 </div>
             </div>
         </header>
@@ -521,35 +383,28 @@ const articleJsonLd = {
             </aside>
 
             <article class="loguru-guide min-w-0">
-                <section id="what-is-loguru" class="scroll-mt-24">
-                    <p class="guide-eyebrow"><span>01</span> · Definition</p>
-                    <h2>What Loguru is</h2>
+                <section id="get-started" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>01</span> · Basics</p>
+                    <h2>Get started with Loguru</h2>
 
                     <div class="guide-answer">
-                        <p><strong>Loguru</strong> is a logging library for Python. You import one ready-made <code>logger</code> and call it. Where the lines go, which levels pass and how they look is set with one method, <code>logger.add()</code>.</p>
+                        <p><strong>Loguru</strong> is a Python logging library that works the moment you import it. There is one ready-made <code>logger</code>, nothing to configure, and the output is easy to read from the first line.</p>
                     </div>
 
                     <p>
-                        Loguru is free and MIT-licensed, and the current release is 0.7.3. It sits next to the standard <code>logging</code> module rather than replacing it: your dependencies keep logging through <code>logging</code>, and <a href="#intercept">an intercept handler</a> sends their records into Loguru. Each system on this page has its own color:
-                    </p>
-                    <p class="sys-legend">
-                        {Object.values(systems).map((s) => <span class="sys-badge" style={`--sys: ${s.color}`}>{s.name}</span>)}
+                        With the standard <code>logging</code> module, you set up a handler and a format before your logs look useful. Loguru skips that step. When you want more, such as a log file that rotates or JSON output, you add it with one call to <code>logger.add()</code>. Loguru is free and open source under the MIT license.
                     </p>
 
                     <h3 id="install" class="scroll-mt-24">pip install loguru</h3>
-                    <p class="cmd-line"><span>Install</span><code>python -m pip install loguru</code></p>
-                    <p>
-                        <code>ModuleNotFoundError: No module named 'loguru'</code> means the package went into a different interpreter than the one running your code, usually another virtual environment. <code>python -m pip</code> installs into the interpreter you name, so use the same <code>python</code> that starts the app.
-                    </p>
+                    <pre><code>{installCommand}</code></pre>
+                    <p>In a uv project, run <code>uv add loguru</code> instead.</p>
 
                     <h3 id="first-line" class="scroll-mt-24">from loguru import logger</h3>
-                    <p>
-                        The imported <code>logger</code> already has one destination, colored lines on <code>sys.stderr</code> for <code>DEBUG</code> and above. There is no <code>getLogger(__name__)</code> step: Loguru reads the calling module from the stack.
-                    </p>
+                    <p>Import <code>logger</code> and start logging. Loguru prints colored lines to your terminal out of the box:</p>
                     <pre><code set:html={highlight(quickstartCode, "python-logging")} /></pre>
                     <pre class="pre-output"><code set:html={highlight(quickstartOutput, "loguru-output")} /></pre>
 
-                    <div class="anatomy" role="img" aria-label="The parts of a default Loguru line: the time comes from {time}, INFO from {level}, __main__:<module>:4 from {name}:{function}:{line}, and the text from {message}.">
+                    <div class="anatomy" role="img" aria-label="The parts of a Loguru line: the time, the level INFO, the place in your code __main__:<module>:4, and your message.">
                         <div class="anatomy__line" aria-hidden="true">
                             {anatomy.map(([text, field, body], index) => (
                                 <>
@@ -563,39 +418,33 @@ const articleJsonLd = {
                         </div>
                     </div>
                     <p>
-                        Each part is a field of the log <strong>record</strong>, the dict Loguru builds for every call. The same field names drive <a href="#format">custom formats</a>, <a href="#json">JSON output</a> and the <a href="#bridge">OpenTelemetry bridge</a>. Messages use <code>str.format</code> placeholders, <code>{"{}"}</code> and <code>{"{percent}"}</code>, not <code>%s</code>. Keyword arguments fill named placeholders and are also stored in the record's <code>extra</code> dict.
+                        Placeholders work like <code>str.format()</code>: <code>{"{}"}</code> takes the next argument and <code>{"{percent}"}</code> takes the keyword argument of that name.
                     </p>
                 </section>
 
                 <section id="configure" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>02</span> · Configure</p>
-                    <h2>Levels, sinks and files</h2>
+                    <h2>Levels, files and formats</h2>
                     <p>
-                        A <strong>sink</strong> is a destination for log lines: a stream such as <code>sys.stderr</code>, a file path, a function or a coroutine. Each <code>logger.add()</code> call adds one sink with its own level, format and filter, and returns an integer ID that <code>logger.remove(id)</code> takes. The default sink is <code>sys.stderr</code> at <code>DEBUG</code>.
+                        Loguru calls each place it writes logs to a <strong>sink</strong>. A fresh <code>logger</code> has one sink, your terminal. <code>logger.add()</code> adds a sink and <code>logger.remove()</code> takes sinks away.
                     </p>
 
                     <h3 id="set-level" class="scroll-mt-24">Set the log level</h3>
-                    <p>A sink's level is fixed when it is added, so replace the default sink with your own:</p>
+                    <p>The terminal sink shows every level from <code>DEBUG</code> up. To show less, remove it and add it back with the level you want:</p>
                     <pre><code set:html={highlight(setLevelCode, "python-logging")} /></pre>
+                    <pre class="pre-output"><code set:html={highlight(setLevelOutput, "loguru-output")} /></pre>
                     <p>
-                        <code>logger.remove()</code> without an ID removes every sink. To change the default sink's level without editing code, start the process with <code>LOGURU_LEVEL=INFO</code>. A dict <code>filter</code> sets a minimum per module instead, here <code>INFO</code> overall and <code>WARNING</code> for <code>botocore</code>:
+                        <code>logger.remove()</code> with no arguments removes every sink. To change the level without touching code, start the app with the environment variable <code>LOGURU_LEVEL=INFO</code>.
                     </p>
-                    <pre><code set:html={highlight(filterCode, "python-logging")} /></pre>
 
                     <h3 id="levels" class="scroll-mt-24">Loguru levels</h3>
                     <p>
-                        Loguru keeps the standard library's level numbers and adds <code>TRACE</code> and <code>SUCCESS</code>. The last column is the severity a record gets once it reaches OpenTelemetry through the <a href="#bridge">bridge sink</a>:
+                        Loguru uses the standard library's level numbers and adds <code>TRACE</code> and <code>SUCCESS</code>. A sink set to a level shows that level and everything above it.
                     </p>
                     <div class="guide-table">
                         <table>
                             <thead>
-                                <tr>
-                                    <th>Level</th>
-                                    <th>No.</th>
-                                    <th>Method</th>
-                                    <th><span class="sys-badge" style={`--sys: ${systems.stdlib.color}`}>logging</span></th>
-                                    <th><span class="sys-badge" style={`--sys: ${systems.otel.color}`}>OpenTelemetry</span></th>
-                                </tr>
+                                <tr><th>Level</th><th>No.</th><th>Method</th></tr>
                             </thead>
                             <tbody>
                                 {levels.map((l) => (
@@ -603,49 +452,28 @@ const articleJsonLd = {
                                         <td><span class={`level level--${l.name.toLowerCase()}`}>{l.name}</span></td>
                                         <td>{l.no}</td>
                                         <td><code>{l.method}</code></td>
-                                        <td>{l.stdlib === "None" ? <span class="muted">None</span> : <code>{l.stdlib}</code>}</td>
-                                        <td><code>{l.otel}</code></td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
-                    <p>
-                        A level on a sink is a minimum: <code>level="INFO"</code> passes <code>INFO</code>, <code>SUCCESS</code> and everything above. Register a custom level with a number, then log to it by name:
-                    </p>
+                    <p>To add your own level, give it a name and a number. The number decides where it sorts:</p>
                     <pre><code set:html={highlight(customLevelCode, "python-logging")} /></pre>
-                    <p>
-                        The number decides where a custom level sorts and which OpenTelemetry severity it gets: 35 exports as <code>WARN4</code>. The <a href="/guides/python-logging-levels">Python logging levels guide</a> covers which level to pick for a message.
-                    </p>
+                    <pre class="pre-output"><code set:html={highlight(customLevelOutput, "loguru-output")} /></pre>
 
-                    <h3 id="files" class="scroll-mt-24">Rotate, retain and compress files</h3>
-                    <p>Pass a path to <code>logger.add()</code> and the sink writes a file. Rotation, retention and compression are arguments on the same call:</p>
+                    <h3 id="files" class="scroll-mt-24">Write logs to a file</h3>
+                    <p>Pass a file path to <code>logger.add()</code>. Loguru can also start a new file when the current one gets big, delete old files and compress them:</p>
                     <pre><code set:html={highlight(fileCode, "python-logging")} /></pre>
-                    <div class="guide-table">
-                        <table>
-                            <thead>
-                                <tr><th>Argument</th><th>Accepts</th><th>Examples</th></tr>
-                            </thead>
-                            <tbody>
-                                <tr><td><code>rotation</code></td><td>A size, a time of day, an interval or a weekday</td><td><code>"100 MB"</code>, <code>"00:00"</code>, <code>"1 week"</code>, <code>"monday at 12:00"</code></td></tr>
-                                <tr><td><code>retention</code></td><td>A maximum age, or the number of rotated files to keep</td><td><code>"14 days"</code>, <code>10</code></td></tr>
-                                <tr><td><code>compression</code></td><td>An archive format for each rotated file</td><td><code>"gz"</code>, <code>"zip"</code>, <code>"tar.gz"</code></td></tr>
-                            </tbody>
-                        </table>
-                    </div>
                     <p>
-                        On rotation, Loguru renames the current file with a timestamp, for example <code>app.2026-10-20_18-36-50_867066.log.gz</code>, and starts a new <code>app.log</code>. Retention only counts files that match the sink's own name, so <code>app.log</code> and <code>errors.log</code> clean up independently.
+                        <code>rotation</code> also takes a time of day, such as <code>"00:00"</code> for a new file every midnight, or an interval such as <code>"1 week"</code>.
                     </p>
 
                     <h3 id="format" class="scroll-mt-24">Change the format</h3>
                     <p>
-                        <code>format</code> is a template over the record fields from the default line. Tags such as <code>&lt;green&gt;</code> and <code>&lt;level&gt;</code> add color, and Loguru strips them when the sink is a file or a stream that is not a terminal.
+                        The <code>format</code> argument sets what each line shows. Names in braces are filled in for every line, and tags like <code>&lt;green&gt;</code> add color. Loguru leaves the colors out when it writes to a file.
                     </p>
                     <pre><code set:html={highlight(formatCode, "python-logging")} /></pre>
                     <pre class="pre-output"><code set:html={highlight(formatOutput, "loguru-output")} /></pre>
-                    <p>
-                        <code>{"{time:YYYY-MM-DD HH:mm:ss.SSS}"}</code> formats the timestamp, and <code>{"{extra[request_id]}"}</code> reads one key from <code>extra</code>. Other fields include <code>module</code>, <code>function</code>, <code>file</code>, <code>process</code>, <code>thread</code> and <code>elapsed</code>.
-                    </p>
                 </section>
 
                 <section id="structured" class="scroll-mt-24">
@@ -653,88 +481,59 @@ const articleJsonLd = {
                     <h2>JSON logs and context</h2>
 
                     <h3 id="json" class="scroll-mt-24">JSON output with serialize=True</h3>
-                    <p>
-                        <code>serialize=True</code> writes each record as one JSON line holding the formatted <code>text</code> and the whole <code>record</code> (trimmed here):
-                    </p>
+                    <p>Add a sink with <code>serialize=True</code> and each line comes out as a JSON object holding everything Loguru knows about the call (trimmed here):</p>
                     <pre><code set:html={highlight(serializeCode, "python-logging")} /></pre>
                     <pre class="pre-output"><code set:html={highlight(serializeOutput, "json")} /></pre>
                     <p>
-                        Log pipelines usually want a flat object with context at the top level. A function sink builds exactly that: Loguru calls it with each formatted message, and <code>message.record</code> is the same record dict.
+                        To ship logs to a backend as structured data, the <a href="#opentelemetry">OpenTelemetry setup</a> below sends each line with its fields and the trace ID of its request.
                     </p>
-                    <pre><code set:html={highlight(jsonSinkCode, "python-logging")} /></pre>
-                    <pre class="pre-output"><code set:html={highlight(jsonSinkOutput, "json")} /></pre>
 
-                    <h3 id="context" class="scroll-mt-24">bind() and contextualize()</h3>
+                    <h3 id="context" class="scroll-mt-24">Add context with bind() and contextualize()</h3>
                     <p>
-                        <code>logger.bind()</code> returns a new logger that adds fixed values to <code>extra</code> on every record. The global <code>logger</code> is unchanged, so pass the bound logger to the code that should carry the values:
+                        Context is extra data that travels with a log line, such as a user name or a request ID. Loguru keeps it in a dict called <code>extra</code> and gives you two ways to fill it:
                     </p>
-                    <pre><code set:html={highlight(bindCode, "python-logging")} /></pre>
+                    <ul class="guide-list">
+                        <li><code>logger.bind()</code> returns a copy of the logger with fixed values. Lines logged through the copy carry them, and the global <code>logger</code> stays as it was.</li>
+                        <li><code>logger.contextualize()</code> adds values to every line logged inside a <code>with</code> block, including lines from the functions it calls.</li>
+                    </ul>
+                    <pre><code set:html={highlight(contextCode, "python-logging")} /></pre>
+                    <pre class="pre-output"><code set:html={highlight(contextOutput, "loguru-output")} /></pre>
                     <p>
-                        <code>logger.contextualize()</code> sets values for everything logged inside a <code>with</code> block, including functions that use the plain global <code>logger</code>. It stores them in a <code>contextvars</code> variable, so each asyncio task and thread sees its own. Set a request ID this way once, in middleware:
-                    </p>
-                    <pre><code set:html={highlight(contextualizeCode, "python-logging")} /></pre>
-                    <pre class="pre-output"><code set:html={highlight(contextualizeOutput, "loguru-output")} /></pre>
-                    <p>
-                        <code>logger.configure(extra=...)</code> sets the default <code>"-"</code>. Without it, the format's <code>{"{extra[request_id]}"}</code> raises a <code>KeyError</code> for records logged outside the block, and Loguru prints a logging error to stderr in place of the line.
+                        Each thread and each asyncio task sees its own <code>contextualize()</code> values, so a web app can set the request ID once per request in middleware.
                     </p>
                 </section>
 
                 <section id="exceptions" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>04</span> · Errors</p>
-                    <h2>Exceptions and multiple processes</h2>
-
-                    <h3 id="catch" class="scroll-mt-24">logger.catch and logger.exception</h3>
+                    <h2>Log exceptions with their variables</h2>
                     <p>
-                        <code>@logger.catch</code> logs any exception the function raises at <code>ERROR</code> with its traceback, then swallows it. Use it on the entry point of a script or a worker thread, where an uncaught exception would otherwise vanish; <code>@logger.catch(reraise=True)</code> logs and re-raises. Inside an <code>except</code> block, <code>logger.exception()</code> logs the current exception.
+                        <code>@logger.catch</code> logs any exception the function raises, with its traceback, and lets the program carry on. Loguru's tracebacks also show the value of each variable in them:
                     </p>
                     <pre><code set:html={highlight(catchCode, "python-logging")} /></pre>
+                    <pre class="pre-output"><code set:html={highlight(catchOutput, "loguru-output")} /></pre>
                     <p>
-                        Loguru tracebacks show the value of each variable in each frame. The <code>diagnose</code> argument controls that, and it is on by default:
+                        Inside an <code>except</code> block, <code>logger.exception("Charge failed")</code> does the same for the exception you caught.
                     </p>
-                    <pre><code set:html={highlight(diagnoseCode, "python-logging")} /></pre>
-                    <pre class="pre-output"><code set:html={highlight(diagnoseOutput, "loguru-output")} /></pre>
                     <div class="guide-callout">
-                        <p class="guide-kicker">Turn diagnose off in production</p>
+                        <p class="guide-kicker">Hide variable values in production</p>
                         <p>
-                            The values that make the traceback useful on your machine are request bodies, tokens and customer data in production, and the Loguru docs warn that <code>diagnose</code> can leak them. Add production sinks with <code>diagnose=False</code>, or start the process with <code>LOGURU_DIAGNOSE=NO</code> for the default sink.
+                            They can contain passwords, tokens and customer data. Add production sinks with <code>diagnose=False</code>, or start the app with <code>LOGURU_DIAGNOSE=NO</code> for the default terminal sink.
                         </p>
                     </div>
-                    <pre><code set:html={highlight(productionSinkCode, "python-logging")} /></pre>
-
-                    <h3 id="multiprocessing" class="scroll-mt-24">Several processes with enqueue=True</h3>
-                    <p>
-                        Sinks are thread-safe without any option. <code>enqueue=True</code> puts a multiprocessing queue in front of the sink, with a background thread that drains it. Log calls stop waiting for disk or network writes, and several processes can write to one file without interleaving lines.
-                    </p>
-                    <p>
-                        Child processes need the configured logger. With the <code>spawn</code> start method, the default on macOS and Windows, a child imports your module again and gets a fresh default logger, so pass the parent's logger to each worker:
-                    </p>
-                    <pre><code set:html={highlight(enqueueCode, "python-logging")} /></pre>
-                    <p>
-                        <code>context=</code> builds the sink's queue with the pool's start method. Without it, the queue uses the interpreter's default, and on Linux, where Python 3.12 defaults to <code>fork</code>, the <code>spawn</code> pool fails with <code>RuntimeError: A SemLock created in a fork context is being shared with a process in a spawn context</code>. <code>logger.complete()</code> waits until the queue is empty; call it before the process exits or the last records are lost.
-                    </p>
                 </section>
 
                 <section id="stdlib" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>05</span> · Standard library</p>
                     <h2>Loguru and the logging module</h2>
 
-                    <h3 id="intercept" class="scroll-mt-24"><span class="sys-dot" style={`--sys: ${systems.stdlib.color}`}></span>Intercept standard logging</h3>
+                    <h3 id="intercept" class="scroll-mt-24"><span class="sys-dot" style={`--sys: ${systems.stdlib.color}`}></span>Send library logs through Loguru</h3>
                     <p>
-                        Libraries such as requests, SQLAlchemy, botocore and uvicorn log through the standard <code>logging</code> module and never call Loguru. An <code>InterceptHandler</code> on the root logger, the logger every other <code>logging</code> logger passes its records up to, re-logs each record through Loguru so one set of sinks writes everything:
+                        Libraries like requests, SQLAlchemy and uvicorn log with the standard <code>logging</code> module, so their lines skip your Loguru sinks. The Loguru docs include a small handler that forwards them. Save it as <code>intercept.py</code>:
                     </p>
                     <pre><code set:html={highlight(interceptCode, "python-logging")} /></pre>
-                    <p>
-                        <code>level=0</code> lets every record through to Loguru, where the sink levels decide what is written. <code>force=True</code> removes handlers that something else already put on the root logger. The <code>depth</code> loop makes Loguru report the line that logged, not a line inside <code>logging/__init__.py</code>. Import the module once, at startup:
-                    </p>
-                    <LanguageTabs tabs={interceptTabs.map(({ id, label }) => ({ id, label }))} label="Application type">
-                        {interceptTabs.map((t) => (
-                            <LanguageTab id={t.id}>
-                                <p class="client-install"><span>Run</span><code>{t.run}</code></p>
-                                <pre><code set:html={highlight(t.code, "python-logging")} /></pre>
-                                <p class="tab-note">{t.note}</p>
-                            </LanguageTab>
-                        ))}
-                    </LanguageTabs>
+                    <p>Import it once, first thing at startup, and lines from both come out of the same sinks:</p>
+                    <pre><code set:html={highlight(interceptUsageCode, "python-logging")} /></pre>
+                    <pre class="pre-output"><code set:html={highlight(interceptUsageOutput, "loguru-output")} /></pre>
 
                     <h3 id="comparison" class="scroll-mt-24">Loguru vs the logging module</h3>
                     <div class="guide-table">
@@ -754,7 +553,7 @@ const articleJsonLd = {
                         </table>
                     </div>
                     <p>
-                        For an application, Loguru replaces most of the setup code. For a library, use <code>logging</code>, so the application decides where records go.
+                        Loguru suits applications. If you write a library, log with <code>logging</code> so the application that uses it decides where the lines go.
                     </p>
                 </section>
 
@@ -762,10 +561,13 @@ const articleJsonLd = {
                     <p class="guide-eyebrow"><span>06</span> · OpenTelemetry</p>
                     <h2>Send Loguru logs to OpenTelemetry</h2>
                     <p>
-                        The OpenTelemetry Python SDK receives logs through <code>LoggingHandler</code>, a handler for the standard <code>logging</code> module. When a record is logged inside an active <strong>span</strong>, the unit of work a trace is made of, the handler adds the span's trace ID and span ID, which is what links a log line to its request. Loguru never calls <code>logging</code> handlers, so its records reach OpenTelemetry only through a sink that hands them over:
+                        OpenTelemetry is the open standard for collecting traces, metrics and logs. A <strong>trace</strong> records one request as it moves through your code. A log line sent through OpenTelemetry during a request carries that request's trace ID, so a backend such as Maple can show the line next to the request that wrote it.
+                    </p>
+                    <p>
+                        The OpenTelemetry Python SDK collects logs from the standard <code>logging</code> module only. Loguru needs one extra sink, a bridge that hands each line over:
                     </p>
 
-                    <figure class="flow" aria-label="The path of a log record. Your code calls the Loguru logger directly. Library records go to the root logger, where the InterceptHandler passes them to Loguru. Loguru writes to stderr and files, and to otel_sink, which skips records from opentelemetry modules. otel_sink rebuilds the record on the loguru.otel stdlib logger, whose LoggingHandler adds the trace and span IDs and passes it to the LoggerProvider, which exports it over OTLP to Maple. Export errors go back to the root logger and through Loguru to stderr, never to otel_sink. propagate = False stops loguru.otel from passing records back to the root logger.">
+                    <figure class="flow" aria-label="The path of a log line. Your code calls the Loguru logger. Library logs go to the root logger, where the InterceptHandler passes them to Loguru. Loguru writes to the terminal and files, and to otel_sink, the bridge. otel_sink hands the line to the loguru.otel logger, whose LoggingHandler adds the trace and span IDs and passes it to the LoggerProvider, which exports it to Maple.">
                         <svg viewBox="0 0 760 372" aria-hidden="true">
                             <defs>
                                 {["loguru", "stdlib", "otel", "primary"].map((k) => (
@@ -781,7 +583,7 @@ const articleJsonLd = {
 
                             <rect x="0" y="150" width="150" height="64" rx="8" class="flow__box flow__box--stdlib" />
                             <text x="75" y="177" text-anchor="middle" class="flow__title">Libraries</text>
-                            <text x="75" y="197" text-anchor="middle" class="flow__mono flow__mono--stdlib">logging.getLogger()</text>
+                            <text x="75" y="197" text-anchor="middle" class="flow__mono flow__mono--stdlib">logging</text>
 
                             <rect x="205" y="150" width="160" height="64" rx="8" class="flow__box flow__box--stdlib" />
                             <text x="285" y="177" text-anchor="middle" class="flow__title">Root logger</text>
@@ -789,91 +591,76 @@ const articleJsonLd = {
 
                             <rect x="420" y="24" width="150" height="64" rx="8" class="flow__box flow__box--loguru flow__box--strong" />
                             <text x="495" y="51" text-anchor="middle" class="flow__title">Loguru logger</text>
-                            <text x="495" y="71" text-anchor="middle" class="flow__mono flow__mono--loguru">one record, every sink</text>
+                            <text x="495" y="71" text-anchor="middle" class="flow__mono flow__mono--loguru">every sink</text>
 
                             <rect x="610" y="24" width="150" height="64" rx="8" class="flow__box flow__box--loguru" />
-                            <text x="685" y="51" text-anchor="middle" class="flow__title">stderr, files</text>
+                            <text x="685" y="51" text-anchor="middle" class="flow__title">Terminal, files</text>
                             <text x="685" y="71" text-anchor="middle" class="flow__mono">your other sinks</text>
 
                             <rect x="610" y="150" width="150" height="64" rx="8" class="flow__box flow__box--loguru" />
                             <text x="685" y="177" text-anchor="middle" class="flow__title">otel_sink</text>
-                            <text x="685" y="197" text-anchor="middle" class="flow__mono flow__mono--loguru">skips opentelemetry.*</text>
+                            <text x="685" y="197" text-anchor="middle" class="flow__mono flow__mono--loguru">the bridge</text>
 
                             <rect x="610" y="290" width="150" height="64" rx="8" class="flow__box flow__box--stdlib" />
                             <text x="685" y="317" text-anchor="middle" class="flow__title">loguru.otel</text>
-                            <text x="685" y="337" text-anchor="middle" class="flow__mono flow__mono--stdlib">propagate = False</text>
+                            <text x="685" y="337" text-anchor="middle" class="flow__mono flow__mono--stdlib">a logging logger</text>
 
                             <rect x="420" y="290" width="150" height="64" rx="8" class="flow__box flow__box--otel" />
                             <text x="495" y="317" text-anchor="middle" class="flow__title">LoggingHandler</text>
-                            <text x="495" y="337" text-anchor="middle" class="flow__mono flow__mono--otel">+ trace_id, span_id</text>
+                            <text x="495" y="337" text-anchor="middle" class="flow__mono flow__mono--otel">+ trace ID</text>
 
                             <rect x="205" y="290" width="160" height="64" rx="8" class="flow__box flow__box--otel" />
                             <text x="285" y="317" text-anchor="middle" class="flow__title">LoggerProvider</text>
-                            <text x="285" y="337" text-anchor="middle" class="flow__mono flow__mono--otel">batch + OTLP exporter</text>
+                            <text x="285" y="337" text-anchor="middle" class="flow__mono flow__mono--otel">exports in batches</text>
 
                             <rect x="0" y="290" width="150" height="64" rx="8" class="flow__box flow__box--primary" />
                             <text x="75" y="317" text-anchor="middle" class="flow__title">Maple</text>
-                            <text x="75" y="337" text-anchor="middle" class="flow__mono">/v1/logs</text>
+                            <text x="75" y="337" text-anchor="middle" class="flow__mono">Logs page</text>
 
                             <line x1="150" y1="56" x2="414" y2="56" marker-end="url(#flow-head-loguru)" class="flow__line flow__line--loguru" />
                             <line x1="150" y1="182" x2="199" y2="182" marker-end="url(#flow-head-stdlib)" class="flow__line flow__line--stdlib" />
                             <line x1="365" y1="160" x2="452" y2="94" marker-end="url(#flow-head-loguru)" class="flow__line flow__line--loguru" />
-                            <text x="420" y="140" class="flow__mono flow__mono--loguru">re-logged</text>
+                            <text x="420" y="140" class="flow__mono flow__mono--loguru">forwarded</text>
                             <line x1="570" y1="56" x2="604" y2="56" marker-end="url(#flow-head-loguru)" class="flow__line flow__line--loguru" />
                             <line x1="545" y1="88" x2="632" y2="145" marker-end="url(#flow-head-loguru)" class="flow__line flow__line--loguru" />
                             <line x1="685" y1="214" x2="685" y2="284" marker-end="url(#flow-head-stdlib)" class="flow__line flow__line--stdlib" />
-                            <text x="677" y="254" text-anchor="end" class="flow__mono flow__mono--stdlib">makeRecord()</text>
                             <line x1="610" y1="322" x2="576" y2="322" marker-end="url(#flow-head-otel)" class="flow__line flow__line--otel" />
                             <line x1="420" y1="322" x2="371" y2="322" marker-end="url(#flow-head-otel)" class="flow__line flow__line--otel" />
                             <line x1="205" y1="322" x2="156" y2="322" marker-end="url(#flow-head-primary)" class="flow__line flow__line--primary" />
-
-                            <line x1="250" y1="290" x2="250" y2="220" marker-end="url(#flow-head-stdlib)" class="flow__line flow__line--stdlib flow__line--dashed" />
-                            <text x="243" y="258" text-anchor="end" class="flow__mono flow__mono--stdlib">export errors</text>
-
-                            <line x1="616" y1="292" x2="372" y2="210" class="flow__line flow__line--blocked" />
-                            <g transform="translate(494 251)" class="flow__cross"><line x1="-6" y1="-6" x2="6" y2="6" /><line x1="-6" y1="6" x2="6" y2="-6" /></g>
-                            <text x="486" y="270" text-anchor="end" class="flow__mono flow__mono--blocked">no loop back</text>
                         </svg>
                     </figure>
-                    <p class="guide-caption">Solid arrows are the path every record takes. Export errors from the SDK travel the stdlib path into Loguru and out to stderr, and <code>otel_sink</code> skips them. <code>propagate = False</code> keeps rebuilt records from returning to the root logger.</p>
 
                     <h3 id="bridge" class="scroll-mt-24"><span class="sys-dot" style={`--sys: ${systems.otel.color}`}></span>The bridge sink</h3>
-                    <p class="cmd-line"><span>Install</span><code>python -m pip install loguru opentelemetry-sdk opentelemetry-exporter-otlp-proto-http opentelemetry-instrumentation-logging</code></p>
+                    <pre><code>{otelInstall}</code></pre>
                     <p>
-                        Maple's <a href="/docs/guides/instrumentation-python">Python instrumentation guide</a> sets up the SDK in a <code>telemetry.py</code> module: a tracer provider for spans and a <code>logger_provider</code> that batches log records and exports them over OTLP, the OpenTelemetry protocol, to Maple's ingest endpoint. Add the bridge to the end of that module:
+                        Maple's <a href="/docs/guides/instrumentation-python">Python instrumentation guide</a> sets up OpenTelemetry in a <code>telemetry.py</code> file, including a <code>logger_provider</code> that sends logs to Maple. Add the bridge to the end of that file:
                     </p>
                     <pre><code set:html={highlight(bridgeCode, "python-logging")} /></pre>
                     <p>
-                        <code>otel_sink</code> copies the level, message, file, line, function, exception and <code>extra</code> of each Loguru record into a <code>logging.LogRecord</code>, then hands it to the <code>loguru.otel</code> logger. <code>log_code_attributes=True</code> exports the file, function and line as <code>code.*</code> attributes. Setting <code>levelname</code> sends <code>SUCCESS</code> or a custom level's name as the severity text. The handler comes from <code>opentelemetry-instrumentation-logging</code>; the copy in <code>opentelemetry.sdk._logs</code> is deprecated and warns when it is created.
-                    </p>
-                    <p>
-                        The Python guide's version of the module ends with a line that attaches a <code>LoggingHandler</code> to the root logger. If you installed the <a href="#intercept">InterceptHandler</a>, delete that line: <code>logging</code> records already reach the bridge through Loguru, and with both handlers each of them is exported twice. Without the InterceptHandler, keep it, so <code>logging</code> records go out through the root handler and Loguru records through the bridge.
+                        The guide's <code>telemetry.py</code> ends with a line that attaches a <code>LoggingHandler</code> to the root logger. If you use <code>intercept.py</code>, delete that line, or every library log is sent twice.
                     </p>
 
-                    <h3 id="rules" class="scroll-mt-24">Rules the bridge needs</h3>
-                    <div class="guide-checklist">
-                        {rules.map((r, index) => (
-                            <div><span>{String(index + 1).padStart(2, "0")}</span><div><h4>{r.title}</h4><p set:html={r.body} /></div></div>
-                        ))}
+                    <h3 id="in-a-request" class="scroll-mt-24">Log inside a request</h3>
+                    <p>
+                        A <strong>span</strong> is one timed step of a trace. Web framework instrumentation starts a span for each request, and every line logged while it runs carries its trace ID. Here the span is started by hand:
+                    </p>
+                    <pre><code set:html={highlight(requestCode, "python-logging")} /></pre>
+                    <p>
+                        <code>order_id</code> arrives as a log attribute next to the file, function and line, and the record carries the trace ID of the <code>POST /checkout</code> span.
+                    </p>
+                    <div class="guide-callout">
+                        <p class="guide-kicker">Two ways to break the bridge</p>
+                        <ul>
+                            <li>Adding <code>otel_sink</code> with <code>enqueue=True</code>. The queue hands the line to another thread with no active span, so the trace ID arrives as all zeros.</li>
+                            <li>A <code>bind()</code> key that <code>logging</code> already uses, such as <code>name</code>, <code>module</code> or <code>message</code>. <code>logging</code> rejects it and the line never reaches OpenTelemetry. Use names like <code>user_name</code>.</li>
+                        </ul>
                     </div>
-
-                    <h3 id="check" class="scroll-mt-24">Check the output before exporting</h3>
-                    <p>
-                        To see what the bridge sends, register a console exporter in <code>telemetry.py</code> next to the OTLP one. It prints every record to stdout as JSON:
-                    </p>
-                    <pre><code set:html={highlight(consoleSwapCode, "python-logging")} /></pre>
-                    <p>Then log inside a span:</p>
-                    <pre><code set:html={highlight(bridgeUsageCode, "python-logging")} /></pre>
-                    <pre class="pre-output"><code set:html={highlight(bridgeOutput, "json")} /></pre>
-                    <p>
-                        The <code>bind()</code> value is an attribute, and <code>trace_id</code> matches the <code>POST /checkout</code> span. A record logged outside any span, or from an <code>enqueue=True</code> sink, shows a <code>trace_id</code> of all zeros.
-                    </p>
 
                     <h3 id="maple" class="scroll-mt-24">Loguru logs in Maple</h3>
                     <ol class="guide-steps">
                         <li>
                             <span>01</span>
-                            <div><h4>Point telemetry.py at Maple</h4><p>Set <code>MAPLE_ENDPOINT</code> and your ingest key as the <a href="/docs/guides/instrumentation-python">Python guide</a> describes, and remove the console exporter. Records from the bridge arrive like any other OpenTelemetry log.</p></div>
+                            <div><h4>Point telemetry.py at Maple</h4><p>Set <code>MAPLE_ENDPOINT</code> and your ingest key as the <a href="/docs/guides/instrumentation-python">Python guide</a> describes. Lines from the bridge arrive like any other OpenTelemetry log.</p></div>
                         </li>
                         <li>
                             <span>02</span>
@@ -882,7 +669,7 @@ const articleJsonLd = {
                         </li>
                         <li>
                             <span>03</span>
-                            <div><h4>Open a record</h4><p>Click a row, then <strong>Open detail</strong>. Bound values such as <code>order_id</code> and the <code>code.*</code> attributes are under <strong>Log Attributes</strong>, and the <code>trace:</code> link opens the request the line belongs to.</p>
+                            <div><h4>Open a line</h4><p>Click a row, then <strong>Open detail</strong>. Bound values such as <code>order_id</code> are under <strong>Log Attributes</strong>, and the <code>trace:</code> link opens the request the line belongs to.</p>
                                 <figure class="guide-figure"><img src="/screenshots/guides/loguru-02-log-detail.webp" data-zoomable alt="The log detail sheet for Charging card: the trace link and span ID in the meta strip, and Log Attributes code.file.path, code.function.name, code.line.number and order_id." width="1342" height="866" loading="lazy" /></figure></div>
                         </li>
                     </ol>
@@ -903,11 +690,8 @@ const articleJsonLd = {
                     <ul>
                         <li><a href="https://loguru.readthedocs.io/en/stable/api/logger.html" target="_blank" rel="noopener noreferrer">Loguru docs: the logger API</a></li>
                         <li><a href="https://loguru.readthedocs.io/en/stable/overview.html#entirely-compatible-with-standard-logging" target="_blank" rel="noopener noreferrer">Loguru docs: compatibility with standard logging</a></li>
-                        <li><a href="https://loguru.readthedocs.io/en/stable/resources/recipes.html" target="_blank" rel="noopener noreferrer">Loguru docs: recipes</a></li>
                         <li><a href="https://pypi.org/project/loguru/" target="_blank" rel="noopener noreferrer">PyPI: loguru</a></li>
                         <li><a href="https://pypi.org/project/opentelemetry-instrumentation-logging/" target="_blank" rel="noopener noreferrer">PyPI: opentelemetry-instrumentation-logging</a></li>
-                        <li><a href="https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitynumber" target="_blank" rel="noopener noreferrer">OpenTelemetry: log severity numbers</a></li>
-                        <li><a href="https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods" target="_blank" rel="noopener noreferrer">Python docs: multiprocessing start methods</a></li>
                         <li><a href="/docs/guides/instrumentation-python">Maple docs: Python instrumentation</a></li>
                         <li><a href="/docs/explore/logs">Maple docs: Logs</a></li>
                     </ul>
@@ -921,6 +705,30 @@ const articleJsonLd = {
     <Footer />
 </Layout>
 
+<script>
+    import { bindCopyButtons } from "../../lib/copy-to-clipboard";
+
+    // A copy button on every code block, as on the docs pages. Output blocks get none.
+    const article = document.querySelector(".loguru-guide");
+    if (article) {
+        for (const pre of article.querySelectorAll<HTMLPreElement>("pre:not(.pre-output)")) {
+            pre.dataset.copy = pre.textContent ?? "";
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "code-copy";
+            button.textContent = "copy";
+            button.setAttribute("aria-label", "Copy code");
+            pre.appendChild(button);
+        }
+        bindCopyButtons({
+            root: article,
+            hostSelector: "pre[data-copy]",
+            buttonSelector: ".code-copy",
+            track: { event: "docs_snippet_copied", key: "snippet" },
+        });
+    }
+</script>
+
 <style is:global>
     .loguru-guide { max-width: 46rem; font-family: var(--font-display); }
     .loguru-guide section + section { margin-top: 5.5rem; }
@@ -929,24 +737,22 @@ const articleJsonLd = {
     .loguru-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
     .loguru-guide h3 { display: flex; align-items: center; gap: 0.6rem; margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
     .loguru-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
-    .loguru-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption, .cmd-line, .sys-legend), .loguru-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .loguru-guide > section > p:not(.guide-eyebrow, .guide-kicker), .loguru-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
     .loguru-guide strong { font-weight: 600; color: var(--foreground); }
     .loguru-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); overflow-wrap: anywhere; }
-    .loguru-guide pre { margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
+    .loguru-guide pre { position: relative; margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
     .loguru-guide pre code { overflow-wrap: normal; }
+    .loguru-guide pre[data-copy] { padding-right: 4.5rem; }
     .loguru-guide .pre-output code { white-space: pre-wrap; }
     .loguru-guide td code { white-space: nowrap; overflow-wrap: normal; }
-    .loguru-guide .guide-caption code { font-size: 10px; }
     .loguru-guide pre + .pre-output { margin-top: -1rem; border-top-left-radius: 0; border-top-right-radius: 0; background: color-mix(in oklab, var(--background) 70%, var(--bg-deep)); }
     .loguru-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
     .loguru-guide a:not(.guide-button):hover { color: var(--foreground); }
-    .loguru-guide .guide-caption { margin: 0.7rem 0 0; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
     .loguru-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
     .loguru-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
     .loguru-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
 
     /* One color per system: set --sys on the element. */
-    .loguru-guide .sys-legend { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 1.15rem; }
     .loguru-guide .sys-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in oklab, var(--sys) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--sys) 14%, transparent); padding: 0.15rem 0.6rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; text-transform: none; color: color-mix(in oklab, var(--sys) 70%, var(--foreground)); white-space: nowrap; }
     .loguru-guide .sys-dot { width: 0.6rem; height: 0.6rem; flex: none; border-radius: 999px; background: var(--sys); box-shadow: 0 0 0 4px color-mix(in oklab, var(--sys) 18%, transparent); }
 
@@ -967,9 +773,6 @@ const articleJsonLd = {
     .loguru-guide .level { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; }
     .loguru-guide .muted { color: var(--muted-foreground); }
 
-    .loguru-guide .cmd-line { display: flex; align-items: baseline; overflow-x: auto; gap: 0.6rem; margin: 1rem 0 1.25rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.6rem 1.1rem; }
-    .loguru-guide .cmd-line span, .loguru-guide .client-install span { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
-    .loguru-guide .cmd-line code, .loguru-guide .client-install code { white-space: nowrap; overflow-wrap: normal; border: 0 !important; background: transparent !important; padding: 0 !important; font-size: 11.5px; }
 
     .anatomy { margin: 1.5rem 0 1.75rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.4rem 1.25rem 1.2rem; }
     .anatomy__line { display: flex; align-items: flex-start; gap: 0.6em; width: max-content; font-family: var(--font-mono); font-size: clamp(11px, 1.6vw, 13px); }
@@ -993,24 +796,16 @@ const articleJsonLd = {
     .flow__mono--loguru { fill: color-mix(in oklab, var(--chart-1) 75%, var(--foreground)); }
     .flow__mono--stdlib { fill: color-mix(in oklab, var(--chart-2) 75%, var(--foreground)); }
     .flow__mono--otel { fill: color-mix(in oklab, var(--chart-5) 75%, var(--foreground)); }
-    .flow__mono--blocked { fill: var(--destructive); }
     .flow__line { stroke-width: 1.5; }
     .flow__line--loguru { stroke: var(--chart-1); }
     .flow__line--stdlib { stroke: var(--chart-2); }
     .flow__line--otel { stroke: var(--chart-5); }
     .flow__line--primary { stroke: color-mix(in oklab, var(--foreground) 60%, transparent); }
-    .flow__line--dashed { stroke-dasharray: 4 3; }
-    .flow__line--blocked { stroke: color-mix(in oklab, var(--destructive) 70%, transparent); stroke-dasharray: 4 3; }
-    .flow__cross line { stroke: var(--destructive); stroke-width: 2; }
     .flow__head--loguru { fill: var(--chart-1); }
     .flow__head--stdlib { fill: var(--chart-2); }
     .flow__head--otel { fill: var(--chart-5); }
     .flow__head--primary { fill: color-mix(in oklab, var(--foreground) 60%, transparent); }
 
-    .loguru-guide .lt { margin: 1.5rem 0; }
-    .loguru-guide .lt pre { margin: 0; border-radius: 0; }
-    .loguru-guide .client-install { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 0; border: 1px solid var(--border); border-bottom: 0; background: var(--bg-elevated); padding: 0.55rem 1.1rem; }
-    .loguru-guide .tab-note { margin: 0; border: 1px solid var(--border); border-top: 0; border-radius: 0 0 0.5rem 0.5rem; padding: 0.75rem 1.1rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
 
     .loguru-guide .guide-table { margin: 1.75rem 0 2rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
     .loguru-guide table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
@@ -1021,11 +816,10 @@ const articleJsonLd = {
 
     .loguru-guide .guide-callout { margin: 2rem 0 1rem; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: color-mix(in oklab, var(--warning) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
     .loguru-guide .guide-callout .guide-kicker { color: var(--warning); }
+    .loguru-guide .guide-list { margin: 0 0 1.15rem; padding-left: 1.2rem; list-style: disc; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .loguru-guide .guide-list li + li { margin-top: 0.4rem; }
+    .loguru-guide .guide-callout ul { display: grid; gap: 0.5rem; margin: 0.6rem 0 0; padding-left: 1.1rem; list-style: disc; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
     .loguru-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
-    .loguru-guide .guide-checklist { display: grid; gap: 1px; margin: 1.5rem 0 2rem; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
-    .loguru-guide .guide-checklist > div { display: grid; grid-template-columns: 2rem 1fr; gap: 0.8rem; background: var(--background); padding: 1.15rem 1.25rem; }
-    .loguru-guide .guide-checklist span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 9px; color: var(--chart-5); }
-    .loguru-guide .guide-checklist p { margin: 0.35rem 0 0; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
     .loguru-guide .guide-steps { margin: 1.75rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
     .loguru-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.2rem 0; }
     .loguru-guide .guide-steps > li > span { display: grid; width: 1.9rem; height: 1.9rem; place-items: center; border: 1px solid color-mix(in oklab, var(--primary) 45%, transparent); border-radius: 0.4rem; background: color-mix(in oklab, var(--primary) 12%, transparent); font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
@@ -1042,8 +836,15 @@ const articleJsonLd = {
     .loguru-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
     .loguru-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
     .loguru-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
+    /* Copy buttons, injected by the script above; same look as the docs code blocks. */
+    .loguru-guide .code-copy { position: absolute; top: 0.5rem; right: 0.5rem; cursor: pointer; border: 1px solid var(--border); border-radius: 5px; background: color-mix(in oklab, var(--bg-elevated) 85%, var(--background)); padding: 3px 8px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-foreground); opacity: 0; transition: color 150ms ease, border-color 150ms ease; }
+    .loguru-guide pre:hover .code-copy, .loguru-guide .code-copy:focus-visible, .loguru-guide .code-copy.is-done { opacity: 1; }
+    .loguru-guide .code-copy:hover { border-color: color-mix(in oklab, var(--primary) 50%, var(--border)); color: var(--primary); }
+    .loguru-guide .code-copy.is-done { border-color: color-mix(in oklab, var(--chart-3) 55%, var(--border)); color: var(--chart-3); }
+    @media (hover: none) {
+        .loguru-guide .code-copy { opacity: 1; }
+    }
     @media (min-width: 640px) {
-        .loguru-guide .guide-checklist { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .loguru-guide .guide-maple { padding: 2rem; }
     }
     @media (prefers-reduced-motion: reduce) {
