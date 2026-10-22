@@ -6,7 +6,7 @@ import {
 	SandboxImplementation,
 	SandboxSpawnError,
 	type SandboxError,
-} from "@yielded/agent/sandbox"
+} from "@maple/backend/sandbox/contract"
 import {
 	SandboxExecOutput,
 	SandboxGrepOutput,

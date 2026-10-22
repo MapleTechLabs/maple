@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { OrgId } from "@maple/domain/http"
-import { Sandbox, SandboxExited, SandboxOutput, SandboxStarted } from "@yielded/agent/sandbox"
+import { Sandbox, SandboxExited, SandboxOutput, SandboxStarted } from "@maple/backend/sandbox/contract"
 import { Duration, Effect, Layer, Schema, Stream } from "effect"
 import { gitPathspec, RepoSandboxService } from "./RepoSandboxService"
 import { IMPLEMENTATION } from "./CloudflareRepoSandbox"
@@ -253,12 +253,12 @@ describe("the git commands the tools build, against a real repository", () => {
 				const failure = yield* service
 					.listFiles(ORG, { repository: "octo/shop" }, { path })
 					.pipe(Effect.flip)
-				assert.strictEqual(failure._tag, "SandboxUnsupportedRequestError")
+				assert.strictEqual(failure._tag, "@maple/backend/sandbox/SandboxUnsupportedRequestError")
 			}
 			const cwdFailure = yield* service
 				.exec(ORG, { repository: "octo/shop" }, { command: "true", args: [], cwd: "/etc" })
 				.pipe(Effect.flip)
-			assert.strictEqual(cwdFailure._tag, "SandboxUnsupportedRequestError")
+			assert.strictEqual(cwdFailure._tag, "@maple/backend/sandbox/SandboxUnsupportedRequestError")
 		}).pipe(Effect.provide(overRepo())),
 	)
 })

@@ -33,8 +33,8 @@ const PARENT_FINISH = Duration.seconds(90)
 
 /**
  * Why a group may not start with `leftMs` of the parent's run left, or undefined when it may. The
- * engine does not stop a child at the parent's deadline, so a child started late ends the parent's
- * run mid-answer and its findings are lost with it.
+ * engine caps a child at the parent's deadline, so a child started late is cut off mid-read and
+ * the parent is left too little time to verify and submit.
  */
 export const fanoutTimeRefusal = (leftMs: number): string | undefined => {
 	const needed =
