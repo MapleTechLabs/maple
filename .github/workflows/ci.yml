@@ -582,7 +582,8 @@ jobs:
         needs: changes
         if: ${{ needs.changes.outputs.ingest == 'true' }}
         runs-on: ubuntu-latest
-        timeout-minutes: 20
+        # A cold cache (Cargo.lock change) compiles the crate graph twice, debug and release.
+        timeout-minutes: 30
         env:
             CARGO_TERM_COLOR: never
         defaults:
