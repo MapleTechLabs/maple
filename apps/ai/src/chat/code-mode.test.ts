@@ -243,6 +243,49 @@ describe("run_code", () => {
 		assert.isAtMost(dispatched.length, 2)
 	})
 
+	it("gives a review's child reviewers run_code and its guidance", async () => {
+		const { model, prompts, offered } = scriptedModel([
+			callTool("review_files", {
+				repository: "o/r",
+				number: 1,
+				headSha: "abc123",
+				paths: ["src/a.ts"],
+			}),
+			callTool(RUN_CODE, {
+				code: 'async () => (await maple.pr_file_diff({ repository: "o/r", number: 1, paths: ["src/a.ts"] })).length',
+			}),
+			answer("NO FINDINGS"),
+			callTool("submit_review", { verdict: "clean", summary: "Adds a retry." }),
+		])
+		const { executor, dispatched } = recordingExecutor()
+
+		const exit = await Effect.runPromiseExit(
+			runChatTurn({
+				sessionId: prReviewSessionId(TENANT.orgId, "7f1d3c2e-9a4b-4c8d-8e2f-1a2b3c4d5e6f"),
+				messageId: "msg-1",
+				tenant: TENANT,
+				origin: { kind: "autonomous" },
+				toolExecutor: executor,
+				model,
+				submitDiagnosis: () => Effect.die("no investigation in a review session"),
+				submitReview: () => Effect.void,
+				review: { coverage: { observe: () => {}, unread: () => [] }, ledger: makeReviewLedger() },
+				codeExecutor: inProcessCodeExecutorLayer,
+				text: "Review pull request #1.",
+				history: [],
+				usage: makeRunUsage(),
+				holdsTurn: () => true,
+				append: () => {},
+			}).pipe(Effect.provide(llmClients)),
+		)
+
+		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted, `run failed: ${String(exit)}`)
+		// Model call 2 is the child's first.
+		assert.include(offered[1], RUN_CODE)
+		assert.include(JSON.stringify(prompts[1]!.content[0]), "Reading with run_code")
+		assert.include(dispatched, "pr_file_diff")
+	})
+
 	it("lists only registered, read-only tools", () => {
 		const registered = new Set(mapleToolCatalog.map((definition) => definition.name))
 		const unknown = [...CODE_MODE_TOOLS].filter(

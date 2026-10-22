@@ -29,7 +29,7 @@ import { makeTextSanitizer, settledTurnEnd, toChatEvents, type ChatTurnEvent } f
 import { makeReviewCoverage, type ReviewCoverage } from "./review-coverage"
 import type { ReviewLedger } from "./review-ledger"
 import { buildReviewFanout } from "./review-fanout"
-import { buildCodeMode, CODE_MODE_TOOLS } from "./code-mode"
+import { buildCodeMode, CODE_MODE_GUIDANCE, CODE_MODE_TOOLS } from "./code-mode"
 import {
 	accumulateUsage,
 	buildChatToolkit,
@@ -213,16 +213,6 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 					sessionAttributes,
 				))
 
-	// A review's own pass may hand groups of a large pull request's files to child reviewers.
-	const fanout =
-		completion?.tool === SUBMIT_REVIEW && completion.autonomous
-			? buildReviewFanout(
-					maple.toolkit,
-					input.model,
-					startedAt + Duration.toMillis(Duration.fromInputUnsafe(agent.budget.maxDuration)),
-				)
-			: undefined
-
 	// Read-only tools only: a program cannot hold a proposal for approval, and a write it made before
 	// failing could not be retried safely.
 	const codeMode =
@@ -241,6 +231,18 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 				)
 			: undefined
 
+	// A review's own pass may hand groups of a large pull request's files to child reviewers, who
+	// read with the same tools, `run_code` included.
+	const fanout =
+		completion?.tool === SUBMIT_REVIEW && completion.autonomous
+			? buildReviewFanout(
+					Toolkit.merge(maple.toolkit, ...(codeMode === undefined ? [] : [codeMode.toolkit])),
+					input.model,
+					startedAt + Duration.toMillis(Duration.fromInputUnsafe(agent.budget.maxDuration)),
+					codeMode === undefined ? undefined : CODE_MODE_GUIDANCE,
+				)
+			: undefined
+
 	const toolkit = Toolkit.merge(
 		maple.toolkit,
 		...(completion === undefined ? [] : [completion.toolkit]),
@@ -252,12 +254,21 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		...(completion === undefined ? [] : [completion.layer]),
 		...(codeMode === undefined ? [] : [codeMode.layer]),
 		// The children run the parent's own tool handlers, so those are provided into the fan-out.
-		...(fanout === undefined ? [] : [fanout.layer.pipe(Layer.provide(maple.layer))]),
+		...(fanout === undefined
+			? []
+			: [
+					fanout.layer.pipe(
+						Layer.provide(
+							codeMode === undefined ? maple.layer : Layer.merge(maple.layer, codeMode.layer),
+						),
+					),
+				]),
 	)
 
 	// Not declared to the engine, which would then require the tool on every call; see
 	// `buildDiagnosisCompletion`. A landed submission still settles the run, below.
-	const run = chatAgent({ ...agent, prompt: profile.prompt }, toolkit, input.model, {
+	const prompt = codeMode === undefined ? profile.prompt : `${profile.prompt}\n\n${CODE_MODE_GUIDANCE}`
+	const run = chatAgent({ ...agent, prompt }, toolkit, input.model, {
 		autonomous: input.origin.kind === "autonomous",
 	})
 	const usage = accumulateUsage(input.usage)

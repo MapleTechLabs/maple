@@ -52,6 +52,11 @@ export const CODE_MODE_TOOLS: ReadonlySet<string> = new Set([
 	"search_sessions",
 ])
 
+/** Appended to the system prompt of a run that offers `run_code`, and to its child reviewers'. */
+export const CODE_MODE_GUIDANCE = `## Reading with run_code
+
+\`run_code\` is your default way to read. Every tool call re-sends this whole conversation, so one program that makes ten reads and returns what matters costs a tenth of ten calls. Use it whenever you need more than one read, or a large read of which you keep a part: the diffs of several files, a grep then the files it hits, a query per service. Return the lines, rows or counts you will use, not whole results. Call a tool directly when you need exactly one result in full.`
+
 /** What a program may hand back to the conversation; a tool's own answer is capped at 50 KiB. */
 const MAX_EGRESS_BYTES = 128 * 1024
 
