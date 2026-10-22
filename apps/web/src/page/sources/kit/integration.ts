@@ -10,7 +10,7 @@ const DISCONNECTS = {
 	gcp: "Maple stops accepting its logs and metrics",
 	railway: "Maple deletes its Railway API token",
 	planetscale: "Maple drops its PlanetScale access and the metrics scrape",
-	github: "Maple forgets this installation's repositories and commits",
+	github: "Maple deletes this installation's repositories, branches and commits",
 	supabase: "Maple removes its log drains and revokes its Supabase access",
 } as const satisfies Record<PullSourcePlatform, string>
 
@@ -21,10 +21,14 @@ export const deleteConsequences = (source: V2Source): ReadonlyArray<string> => {
 	return [
 		DISCONNECTS[platform],
 		"Nothing new is collected or billed",
-		"Data already stored stays until retention ends",
-		...(platform === "github" ? ["Uninstall the GitHub App on GitHub to revoke its access there"] : []),
+		...(keepsStoredData(source)
+			? ["Data already stored stays until retention ends"]
+			: ["Uninstall the GitHub App on GitHub to revoke its access there"]),
 	]
 }
+
+/** Deleting keeps what the source already stored, except GitHub's repositories and commits, which go with it. */
+export const keepsStoredData = (source: V2Source): boolean => source.platform !== "github"
 
 /** Google Cloud's removal has a cleanup step, so its Delete opens the integration's own dialog. */
 export const hasOwnRemoval = (source: V2Source): boolean => source.platform === "gcp"

@@ -328,7 +328,10 @@ const afterConnectionWrite = (
 	const source = Option.getOrNull(sourceOf(model))
 	const focus = source === null ? null : focusIdOf(source)
 	const isGone =
-		(child._tag === "CompletedDisconnect" && child.integration === source?.platform) ||
+		(child._tag === "CompletedDisconnect" &&
+			// A multi-account Cloudflare grant disconnects as "cloudflare-multi".
+			(child.integration === source?.platform ||
+				(source?.platform === "cloudflare" && child.integration === "cloudflare-multi"))) ||
 		((child._tag === "CompletedTargetDelete" || child._tag === "CompletedGcpDisconnect") &&
 			child.id === focus)
 	if (!isGone) return andThen(step, (next) => loadList(next, context, "Supersede"))

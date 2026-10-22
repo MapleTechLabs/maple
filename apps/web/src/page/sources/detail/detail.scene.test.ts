@@ -476,6 +476,36 @@ describe("integration sources", () => {
 		expect(left.outMessage?._tag === "RequestedNavigation" && left.outMessage.url).toBe("/sources")
 	})
 
+	test("a multi-account Cloudflare disconnect leaves for the list too", () => {
+		const left = pageUpdate(
+			loaded(prometheus({ platform: "cloudflare", name: "Cloudflare" }), "connection"),
+			Message.GotConnectionMessage({
+				message: IntegrationMessage.CompletedDisconnect({
+					integration: "cloudflare-multi",
+					failure: null,
+				}),
+			}),
+		)
+		expect(left.outMessage?._tag === "RequestedNavigation" && left.outMessage.url).toBe("/sources")
+	})
+
+	test("a GitHub delete says its repositories and commits go with it", () => {
+		const opened = pageUpdate(
+			loaded(prometheus({ platform: "github", name: "GitHub acme" })),
+			Message.ClickedDelete(),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			resolveTheme,
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(
+				text("Maple deletes this installation's repositories, branches and commits"),
+			).toExist(),
+			expectView(text("Data already stored stays until retention ends")).not.toExist(),
+		)
+	})
+
 	test("an integration's settings pause and delete it, with no rules to set", () => {
 		const model = loaded(prometheus(), "settings")
 		scene(

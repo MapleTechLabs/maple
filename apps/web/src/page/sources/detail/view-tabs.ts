@@ -8,6 +8,7 @@ import { settingsSection, settingsSections } from "../../settings/kit/section"
 import { rulesOutcome } from "../kit/rules"
 import * as RulesView from "../kit/rules-view"
 import * as Setup from "../kit/setup"
+import { keepsStoredData } from "../kit/integration"
 import { platformMeta } from "../kit/platforms"
 import { hasToken, pausedLabel } from "../kit/shared"
 import { sourceStatusBadge } from "../kit/status"
@@ -195,7 +196,9 @@ const deleteSection = (h: H, source: V2Source): Html =>
 						h.span(
 							[h.Class("text-muted-foreground text-xs leading-relaxed")],
 							[
-								"Nothing new is collected or billed. Data already stored stays until retention ends.",
+								keepsStoredData(source)
+									? "Nothing new is collected or billed. Data already stored stays until retention ends."
+									: "Nothing new is collected, and its repositories and commits are deleted.",
 							],
 						),
 					],
