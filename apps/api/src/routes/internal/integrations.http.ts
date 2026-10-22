@@ -76,6 +76,7 @@ import {
 	GITHUB_CALLBACK_PATH,
 	HAZEL_CALLBACK_PATH,
 } from "@/routes/integrations-callback.http"
+import { isTrustedCallbackOrigin, resolveRequestOrigin } from "@/routes/v2/integrations.http"
 
 const asExternalUserId = Schema.decodeUnknownSync(ExternalUserId)
 const asUserId = Schema.decodeUnknownSync(UserId)
@@ -87,32 +88,6 @@ const asUserId = Schema.decodeUnknownSync(UserId)
  * callback handler.
  */
 const CLOUDFLARE_PRIME_TIMEOUT = "20 seconds"
-
-const resolveRequestOrigin = (req: HttpServerRequest.HttpServerRequest): string => {
-	const headers = req.headers as Record<string, string | undefined>
-	const forwardedHost = headers["x-forwarded-host"]
-	const forwardedProto = headers["x-forwarded-proto"]
-	const host = forwardedHost ?? headers.host
-	if (host) {
-		const proto =
-			forwardedProto ?? (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https")
-		return `${proto}://${host}`
-	}
-	// Fall back to parsing req.url which is absolute under wrangler/CF Workers.
-	return Option.match(Option.liftThrowable(() => new URL(req.url))(), {
-		onNone: () => "",
-		onSome: (parsed) => `${parsed.protocol}//${parsed.host}`,
-	})
-}
-
-const resolveCallbackUrl = (req: HttpServerRequest.HttpServerRequest): string =>
-	`${resolveRequestOrigin(req)}${HAZEL_CALLBACK_PATH}`
-
-const resolveGithubCallbackUrl = (req: HttpServerRequest.HttpServerRequest): string =>
-	`${resolveRequestOrigin(req)}${GITHUB_CALLBACK_PATH}`
-
-const resolveCloudflareCallbackUrl = (req: HttpServerRequest.HttpServerRequest): string =>
-	`${resolveRequestOrigin(req)}${CLOUDFLARE_CALLBACK_PATH}`
 
 const requireAdmin = (roles: ReadonlyArray<RoleName>) =>
 	requireAdminRole(
@@ -136,6 +111,19 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const gcp = yield* GcpConnectorService
 		const edgeCache = yield* EdgeCacheService
 		const env = yield* Env
+
+		// The callback URL is replayed as `redirect_uri` and its origin comes from a
+		// client-settable header, so it must belong to the app's own host family.
+		const trustedCallbackUrl = (path: string) =>
+			Effect.gen(function* () {
+				const origin = resolveRequestOrigin(yield* HttpServerRequest.HttpServerRequest)
+				if (!isTrustedCallbackOrigin(origin, env.MAPLE_APP_BASE_URL)) {
+					return yield* new IntegrationsForbiddenError({
+						message: "Integrations cannot be connected from this host",
+					})
+				}
+				return `${origin}${path}`
+			})
 
 		return (
 			handlers
@@ -165,9 +153,9 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						const req = yield* HttpServerRequest.HttpServerRequest
+						const callbackUrl = yield* trustedCallbackUrl(HAZEL_CALLBACK_PATH)
 						const result = yield* hazel.startConnect(tenant.orgId, tenant.userId, {
-							callbackUrl: resolveCallbackUrl(req),
+							callbackUrl,
 							returnTo: payload.returnTo,
 						})
 						return new HazelStartConnectResponse(result)
@@ -413,9 +401,9 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						const req = yield* HttpServerRequest.HttpServerRequest
+						const callbackUrl = yield* trustedCallbackUrl(CLOUDFLARE_CALLBACK_PATH)
 						const result = yield* cloudflare.startConnect(tenant.orgId, tenant.userId, {
-							callbackUrl: resolveCloudflareCallbackUrl(req),
+							callbackUrl,
 							returnTo: payload.returnTo,
 						})
 						return new CloudflareStartConnectResponse(result)
@@ -491,9 +479,9 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						const req = yield* HttpServerRequest.HttpServerRequest
+						const callbackUrl = yield* trustedCallbackUrl(SUPABASE_CALLBACK_PATH)
 						const result = yield* supabaseOAuth.startConnect(tenant.orgId, tenant.userId, {
-							callbackUrl: `${resolveRequestOrigin(req)}${SUPABASE_CALLBACK_PATH}`,
+							callbackUrl,
 							returnTo: payload.returnTo,
 						})
 						return new SupabaseConnectResponse(result)
@@ -561,9 +549,9 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						const req = yield* HttpServerRequest.HttpServerRequest
+						const callbackUrl = yield* trustedCallbackUrl(GITHUB_CALLBACK_PATH)
 						const result = yield* github.startConnect(tenant.orgId, tenant.userId, {
-							callbackUrl: resolveGithubCallbackUrl(req),
+							callbackUrl,
 							returnTo: payload.returnTo,
 						})
 						return new GithubStartConnectResponse(result)
