@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { CreateSourceRequest, OrgId, ScrapeTargetDeleteResponse, UserId } from "@maple/domain/http"
-import { GcpProjectId, SourceId } from "@maple/domain/primitives"
+import { AwsAccountId, GcpProjectId, SourceId } from "@maple/domain/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -12,6 +12,7 @@ import {
 } from "@maple/backend/platform/test-pglite"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
+import { AwsConnectionService } from "./AwsConnectionService"
 import { GcpConnectorService } from "./GcpConnectorService"
 import { PlanetScaleConnectionService } from "./PlanetScaleConnectionService"
 import { RailwayMetricsService } from "./RailwayMetricsService"
@@ -42,6 +43,7 @@ const user = Schema.decodeUnknownSync(UserId)("user_a")
 const decodeSourceId = Schema.decodeUnknownSync(SourceId)
 
 const projectId = Schema.decodeUnknownSync(GcpProjectId)("acme-prod")
+const accountId = Schema.decodeUnknownSync(AwsAccountId)("123456789012")
 
 const die = () => Effect.die("not used by SourceRemovalService")
 
@@ -92,6 +94,32 @@ const makeLayer = (testDb: TestDb, calls: string[]) => {
 						lastResourcesError: null,
 					},
 					cleanupScript: "gcloud logging sinks delete maple",
+				}),
+		}),
+		Layer.succeed(AwsConnectionService, {
+			status: die,
+			create: die,
+			update: die,
+			setup: die,
+			check: die,
+			checkDue: die,
+			delete: (_orgId, connectionId) =>
+				Effect.as(record(`aws:${connectionId}`), {
+					connection: {
+						id: connectionId,
+						accountId,
+						roleArn: "arn:aws:iam::123456789012:role/MapleIntegration-abc",
+						externalId: "external",
+						modules: [],
+						grantedModules: null,
+						templateVersion: null,
+						setupOutdated: false,
+						verifiedAt: null,
+						lastCheckedAt: null,
+						lastCheckError: null,
+						createdAt: 0,
+					},
+					cleanupScript: "aws cloudformation delete-stack",
 				}),
 		}),
 		Layer.succeed(CloudflareOAuthService, {
@@ -280,6 +308,30 @@ describe("SourceRemovalService", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, calls)))
 		},
 	)
+
+	it.effect("deletes an AWS source by deleting its connection and answers with the cleanup script", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: string[] = []
+		const connection = "0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4e01"
+		return Effect.gen(function* () {
+			yield* Effect.promise(async () => {
+				await insertSource(testDb, SOURCE_A, "aws")
+				await executeSql(
+					testDb,
+					`INSERT INTO aws_connections (id, org_id, source_id, account_id, external_id, modules, created_by,
+						created_at, updated_at)
+					 VALUES ($1, $2, $3, '123456789012', 'external', '[]', 'user_a', now(), now())`,
+					[connection, org, SOURCE_A],
+				)
+			})
+			const removal = yield* SourceRemovalService
+			const removed = yield* removal.remove(org, decodeSourceId(SOURCE_A))
+
+			assert.deepStrictEqual(calls, [`aws:${connection}`])
+			assert.strictEqual(removed.cleanupScript, "aws cloudformation delete-stack")
+			assert.strictEqual(yield* sourceCount(testDb, SOURCE_A), 0)
+		}).pipe(Effect.provide(makeLayer(testDb, calls)))
+	})
 
 	it.effect("deletes a token source directly and refuses the default source", () => {
 		const testDb = createTestDb(trackedDbs)

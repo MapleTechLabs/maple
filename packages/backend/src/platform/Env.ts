@@ -161,6 +161,14 @@ export interface EnvConfig {
 	 * poller signs in with it. Unset: nothing is polled.
 	 */
 	readonly MAPLE_GCP_SERVICE_ACCOUNT_KEY: Option.Option<Redacted.Redacted<string>>
+	/**
+	 * Maple's own AWS identity (an IAM user ARN in Maple's account). Customer roles trust it, with
+	 * their connection's external id. Unset with its keys: AWS cannot be connected.
+	 */
+	readonly MAPLE_AWS_PRINCIPAL_ARN: Option.Option<string>
+	/** An access key of that IAM user. It can only `sts:AssumeRole` into Maple integration roles. */
+	readonly MAPLE_AWS_ACCESS_KEY_ID: Option.Option<string>
+	readonly MAPLE_AWS_SECRET_ACCESS_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly CLOUDFLARE_OAUTH_CLIENT_ID: Option.Option<string>
 	readonly CLOUDFLARE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	readonly CLOUDFLARE_OAUTH_SCOPES: string
@@ -277,6 +285,9 @@ const envConfig = Config.all({
 	GITHUB_API_BASE_URL: stringWithDefault("GITHUB_API_BASE_URL", "https://api.github.com"),
 	MAPLE_GCP_SERVICE_ACCOUNT_EMAIL: optionalString("MAPLE_GCP_SERVICE_ACCOUNT_EMAIL"),
 	MAPLE_GCP_SERVICE_ACCOUNT_KEY: optionalRedacted("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
+	MAPLE_AWS_PRINCIPAL_ARN: optionalString("MAPLE_AWS_PRINCIPAL_ARN"),
+	MAPLE_AWS_ACCESS_KEY_ID: optionalString("MAPLE_AWS_ACCESS_KEY_ID"),
+	MAPLE_AWS_SECRET_ACCESS_KEY: optionalRedacted("MAPLE_AWS_SECRET_ACCESS_KEY"),
 	CLOUDFLARE_OAUTH_CLIENT_ID: optionalString("CLOUDFLARE_OAUTH_CLIENT_ID"),
 	CLOUDFLARE_OAUTH_CLIENT_SECRET: optionalRedacted("CLOUDFLARE_OAUTH_CLIENT_SECRET"),
 	// Cloudflare OAuth scope ids are DOT-delimited (mirroring API-token permission names;

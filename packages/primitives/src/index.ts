@@ -131,6 +131,24 @@ export const GcpResourceNumber = Schema.String.check(Schema.isPattern(/^[0-9]{1,
 )
 export type GcpResourceNumber = Schema.Schema.Type<typeof GcpResourceNumber>
 
+export const AwsConnectionId = MapleUuidId("@maple/AwsConnectionId", "AWS Connection ID")
+export type AwsConnectionId = Schema.Schema.Type<typeof AwsConnectionId>
+
+// Twelve digits, as AWS prints it. It is interpolated into role ARNs and setup scripts.
+export const AwsAccountId = Schema.String.check(Schema.isPattern(/^[0-9]{12}$/u)).pipe(
+	Schema.brand("@maple/AwsAccountId"),
+	Schema.annotate({ identifier: "@maple/AwsAccountId", title: "AWS Account ID" }),
+)
+export type AwsAccountId = Schema.Schema.Type<typeof AwsAccountId>
+
+/**
+ * What an AWS connection lets Maple read. Each module is its own managed policy on the role, so
+ * turning one on is a stack update, not a reconnect.
+ */
+export const AWS_MODULES = ["observability", "inventory", "security", "cost"] as const
+export const AwsModule = Schema.Literals(AWS_MODULES)
+export type AwsModule = Schema.Schema.Type<typeof AwsModule>
+
 /** What a Google Cloud connector covers: one project, or everything under a folder or organization. */
 export const GcpScopeType = Schema.Literals(["project", "folder", "organization"])
 export type GcpScopeType = Schema.Schema.Type<typeof GcpScopeType>
@@ -306,6 +324,7 @@ export const PULL_SOURCE_PLATFORMS = [
 	"railway",
 	"planetscale",
 	"github",
+	"aws",
 	"supabase",
 ] as const
 

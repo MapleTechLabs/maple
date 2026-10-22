@@ -95,6 +95,19 @@ export const LoadGcp = Command.define("LoadIntegrationsGcpStatus", {
 		),
 })
 
+export const LoadAws = Command.define("LoadIntegrationsAwsStatus", {
+	args: Args,
+	messages: [Message.CompletedLoadAws],
+	execute: ({ key }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			return yield* client.awsIntegration.status()
+		}).pipe(
+			settle,
+			Effect.map((result) => Message.CompletedLoadAws({ key, result })),
+		),
+})
+
 /** Shared with the sidebar and /infra/supabase through `IntegrationStatuses`. */
 export const LoadSupabase = Command.define("LoadIntegrationsSupabaseStatus", {
 	args: RefreshArgs,

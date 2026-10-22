@@ -2,12 +2,13 @@ import type { V2Source } from "@maple/domain/http/v2"
 import type { PullSourcePlatform } from "@maple/domain/primitives"
 import { integrationPlatformOf } from "./shared"
 
-// What deleting an integration source disconnects. Google Cloud keeps its own removal dialog.
+// What deleting an integration source disconnects. Google Cloud and AWS keep their own removal dialog.
 
 const DISCONNECTS = {
 	prometheus: "Maple stops scraping its targets and removes them",
 	cloudflare: "Maple revokes its read-only Cloudflare token",
 	gcp: "Maple stops accepting its logs and metrics",
+	aws: "Maple stops assuming its role in the account",
 	railway: "Maple deletes its Railway API token",
 	planetscale: "Maple drops its PlanetScale access and the metrics scrape",
 	github: "Maple deletes this installation's repositories, branches and commits",
@@ -30,5 +31,6 @@ export const deleteConsequences = (source: V2Source): ReadonlyArray<string> => {
 /** Deleting keeps what the source already stored, except GitHub's repositories and commits, which go with it. */
 export const keepsStoredData = (source: V2Source): boolean => source.platform !== "github"
 
-/** Google Cloud's removal has a cleanup step, so its Delete opens the integration's own dialog. */
-export const hasOwnRemoval = (source: V2Source): boolean => source.platform === "gcp"
+/** Google Cloud's and AWS's removal have a cleanup step, so their Delete opens the integration's own dialog. */
+export const hasOwnRemoval = (source: V2Source): boolean =>
+	source.platform === "gcp" || source.platform === "aws"

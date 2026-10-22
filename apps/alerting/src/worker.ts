@@ -72,6 +72,10 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		supabaseOAuthEnv,
 		// Sign-in for the Google Cloud metrics poller; unset leaves its tick a no-op.
 		optionalSecret("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
+		// Maple's AWS identity for the hourly connection check; unset leaves its tick a no-op.
+		optionalPlain("MAPLE_AWS_PRINCIPAL_ARN"),
+		optionalPlain("MAPLE_AWS_ACCESS_KEY_ID"),
+		optionalSecret("MAPLE_AWS_SECRET_ACCESS_KEY"),
 		// Ticks post pull-request replies through the GitHub App; without it each one fails.
 		githubAppSourceEnv,
 		// Outbound config for `chat` destinations' connectors.
