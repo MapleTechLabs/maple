@@ -112,3 +112,33 @@ describe("handleRequest API proxy", () => {
 		expect(forwarded[0]?.headers.get("traceparent")).toBe(`00-${browserTraceId}-${client?.spanId}-01`)
 	})
 })
+
+describe("document security headers", () => {
+	const headersFor = async (path: string) => {
+		const response = await handleRequest(new Request(`https://app.maple.test${path}`), { ASSETS: assets })
+		return {
+			csp: response.headers.get("content-security-policy"),
+			frame: response.headers.get("x-frame-options"),
+			referrer: response.headers.get("referrer-policy"),
+			sniff: response.headers.get("x-content-type-options"),
+		}
+	}
+
+	it("app documents refuse framing, plugins and base retargeting, and send only the origin cross-site", async () => {
+		expect(await headersFor("/traces")).toEqual({
+			csp: "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+			frame: "DENY",
+			referrer: "strict-origin-when-cross-origin",
+			sniff: "nosniff",
+		})
+	})
+
+	it("share documents stay frameable and keep no-referrer", async () => {
+		expect(await headersFor("/share/tok")).toEqual({
+			csp: "object-src 'none'; base-uri 'self'",
+			frame: null,
+			referrer: "no-referrer",
+			sniff: "nosniff",
+		})
+	})
+})
