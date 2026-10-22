@@ -490,7 +490,9 @@ list of yields. What it composes lives beside it:
 The Rust OTLP gateway (`apps/ingest`) runs on an ECS EC2 fleet of Graviton c7gd instances,
 one task per host in host networking, with the WAL on the local NVMe instance store. That is
 the only ingest path. The OTel collector and Electric (`apps/electric`) run as ECS Fargate
-services.
+services. The Prometheus scraper (`apps/scraper`, US prd only) is a Fargate singleton in the
+same VPC with no inbound traffic; its image is the single-file bundle `alchemy:build-deps`
+writes to `apps/scraper/dist`, and ECS replaces the task when its `/health` goes stale.
 
 - `AWS.providers()` is registered unconditionally: the `Alchemy.Stack` options are evaluated
   before `Alchemy.Stage` is readable, so it cannot be stage-derived.
