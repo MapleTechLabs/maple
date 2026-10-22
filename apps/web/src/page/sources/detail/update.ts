@@ -25,6 +25,7 @@ import {
 } from "../kit/shared"
 import { initEmbedded } from "../../integrations/embed"
 import * as Integrations from "../../integrations/update"
+import { connectionsOf as awsConnectionsOf } from "../../integrations/update-aws"
 import { gcpConnectors } from "../../integrations/update-gcp"
 import { Message as IntegrationMessage } from "../../integrations/message"
 import type { Model as IntegrationModel } from "../../integrations/model"
@@ -308,9 +309,13 @@ const leaveFor = (step: Return, url: string): Return => {
 }
 
 /**
+/** The AWS integration page keeps a removed connection's cleanup script. */
+const AWS_CLEANUP_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "aws" } }))
+
+/**
  * A write in the Connection tab changes this source too: removing what it stands for (its own
- * target or connector, or the whole integration) deletes the source, so the page leaves for the
- * list; a toggle or edit re-reads it so the header follows.
+ * target or connection, or the whole integration) deletes the source, so the page leaves for the
+ * list; a toggle, edit or check re-reads it so the header follows.
  */
 const afterConnectionWrite = (
 	model: Model,
@@ -318,13 +323,25 @@ const afterConnectionWrite = (
 	step: Return,
 	context: PageContext,
 ): Return => {
+	// An AWS check rewrites the source's health; a background one only matters once it verifies. A
+	// click during a background check makes it the user's, which only the card's model knows.
+	const isAwsCheck =
+		child._tag === "CompletedAwsCheck" &&
+		(child.connection?.verified_at != null ||
+			!(
+				model.connection?.awsCard.checking.find((entry) => entry.id === child.id)?.quiet ??
+				child.quiet
+			))
+	const isAwsDisconnect = child._tag === "CompletedAwsDisconnect" && child.removed !== null
 	const isWrite =
 		child._tag === "CompletedTargetDelete" ||
 		child._tag === "CompletedToggle" ||
 		child._tag === "CompletedSave" ||
 		child._tag === "CompletedDisconnect" ||
-		child._tag === "CompletedGcpDisconnect"
-	if (!isWrite || child.failure !== null) return step
+		child._tag === "CompletedGcpDisconnect" ||
+		isAwsCheck ||
+		isAwsDisconnect
+	if (!isWrite || ("failure" in child && child.failure !== null)) return step
 	const source = Option.getOrNull(sourceOf(model))
 	const focus = source === null ? null : focusIdOf(source)
 	const isGone =
@@ -332,19 +349,47 @@ const afterConnectionWrite = (
 			// A multi-account Cloudflare grant disconnects as "cloudflare-multi".
 			(child.integration === source?.platform ||
 				(source?.platform === "cloudflare" && child.integration === "cloudflare-multi"))) ||
-		((child._tag === "CompletedTargetDelete" || child._tag === "CompletedGcpDisconnect") &&
+		((child._tag === "CompletedTargetDelete" ||
+			child._tag === "CompletedGcpDisconnect" ||
+			child._tag === "CompletedAwsDisconnect") &&
 			child.id === focus)
-	if (!isGone) return andThen(step, (next) => loadList(next, context, "Supersede"))
-	return leaveFor(step, child._tag === "CompletedGcpDisconnect" ? GCP_CLEANUP_HREF : SOURCES_HREF)
+	if (!isGone)
+		// The re-read can be newer than the page clock: read it again so "ago" stays in the past.
+		return andThen(step, (next) => {
+			const reloaded = loadList(next, context, "Supersede")
+			return { ...reloaded, commands: [ReadSourceClock(), ...(reloaded.commands ?? [])] }
+		})
+	if (child._tag === "CompletedGcpDisconnect") return leaveFor(step, GCP_CLEANUP_HREF)
+	if (child._tag === "CompletedAwsDisconnect") return leaveFor(step, AWS_CLEANUP_HREF)
+	return leaveFor(step, SOURCES_HREF)
 }
 
-/** Google Cloud removes through its own dialog (cleanup script first); the rest confirm here. */
+/** Google Cloud and AWS remove through their own dialog (cleanup script first); the rest confirm here. */
 const clickedDelete = (model: Model, context: PageContext): Return => {
 	const source = Option.getOrNull(sourceOf(model))
 	const focus = source === null ? null : focusIdOf(source)
 	// A source whose connector is already gone has nothing to clean up: the generic dialog deletes it.
 	if (source === null || !hasOwnRemoval(source) || focus === null)
 		return liftDialog(model, "deleteDialog", Dialog.open(model.deleteDialog))
+	if (source.platform === "aws") {
+		const connection =
+			model.connection === null
+				? undefined
+				: awsConnectionsOf(model.connection).find((entry) => entry.id === focus)
+		if (model.connection === null || connection === undefined)
+			return {
+				model,
+				outMessage: toast("error", "Couldn't load the AWS connection", "Try again in a moment."),
+			}
+		return liftConnection(
+			model,
+			Integrations.update(
+				model.connection,
+				IntegrationMessage.ClickedAwsDisconnect({ id: connection.id }),
+				context,
+			),
+		)
+	}
 	const connector =
 		model.connection === null
 			? undefined

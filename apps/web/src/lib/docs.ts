@@ -35,6 +35,7 @@ export const DOCS = {
 	kubernetes: "/docs/infrastructure/kubernetes",
 	cloudflare: "/docs/integrations/cloudflare",
 	gcp: "/docs/integrations/gcp",
+	aws: "/docs/integrations/aws",
 	gcpOpenTelemetry: "/docs/integrations/gcp-opentelemetry",
 	gcpManualSetup: "/docs/integrations/gcp-manual-setup",
 	gcpInfrastructureAsCode: "/docs/integrations/gcp-infrastructure-as-code",
