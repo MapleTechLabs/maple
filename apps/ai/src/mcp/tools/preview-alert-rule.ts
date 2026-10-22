@@ -243,6 +243,7 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 					start: span.start,
 					end: span.end,
 				})),
+				...(preview.seriesFailure === undefined ? undefined : { seriesFailure: preview.seriesFailure }),
 				...(preview.queryTiming === undefined
 					? undefined
 					: {
@@ -393,7 +394,14 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 				],
 				...(output.warnings.length > 0 ? { notices: output.warnings } : undefined),
 				...(output.groups.length === 0
-					? { empty: { message: "The preview returned no series for this range." } }
+					? {
+							empty: {
+								message:
+									output.seriesFailure === undefined
+										? "The preview returned no series for this range."
+										: "The range was too heavy to chart; see the notice above.",
+							},
+						}
 					: undefined),
 				blocks: output.groups.length === 0 ? timingBlocks : blocks,
 				...(output.groups.length > shownGroups.length
