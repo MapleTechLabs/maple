@@ -1,0 +1,115 @@
+/**
+ * `run_code`: one tool whose input is a JavaScript program that calls the turn's read-only Maple
+ * tools as `maple.<tool>(input)`. A model batches reads and keeps only what it needs, instead of
+ * paying a full model round trip, and a re-sent prompt, per call.
+ *
+ * The program runs in the `CodeExecutor` the caller provides: a Dynamic Worker with no network in
+ * production, the in-process substitute in tests. Its only authority is calling these tools back
+ * through the engine, so tenancy, rulesets, spans and review coverage are the tools' own.
+ */
+import { CodeExecutionLimits, type CodeExecutor } from "@yielded/agent/code-executor"
+import * as CodeMode from "@yielded/agent/code-mode"
+import { Duration, Layer } from "effect"
+import { type Tool, Toolkit } from "effect/ai"
+import { TOOL_CONCURRENCY } from "./budgets"
+import { PR_REVIEW_TOOLS } from "./permissions"
+
+export const RUN_CODE = "run_code"
+
+/**
+ * The reads a program may make: every read tool an investigation or a review called in the week to
+ * 2026-10-22, plus the review's own. Curated rather than "every allowed tool" because the executor
+ * takes at most 64 methods per namespace, and the read-only catalogue is larger.
+ */
+export const CODE_MODE_TOOLS: ReadonlySet<string> = new Set([
+	...PR_REVIEW_TOOLS,
+	"ci_runs",
+	"compare_commits",
+	"compare_periods",
+	"describe_warehouse_tables",
+	"diagnose_service",
+	"find_slow_traces",
+	"get_agent_session_transcript",
+	"get_alert_rule",
+	"get_incident_timeline",
+	"get_session_transcript",
+	"ingest_freshness",
+	"inspect_infra",
+	"inspect_span",
+	"inspect_trace",
+	"list_agent_sessions",
+	"list_alert_checks",
+	"list_alert_incidents",
+	"list_alert_rules",
+	"list_error_issue_events",
+	"list_error_issues",
+	"list_infra",
+	"list_integrations",
+	"mine_log_patterns",
+	"query_data",
+	"run_sql",
+	"search_logs",
+	"search_sessions",
+])
+
+/** Appended to the system prompt of a run that offers `run_code`, and to its child reviewers'. */
+export const CODE_MODE_GUIDANCE = `## Reading with run_code
+
+\`run_code\` is your default way to read. Every tool call re-sends this whole conversation, so one program that makes ten reads and returns what matters costs a tenth of ten calls. Use it whenever you need more than one read, or a large read of which you keep a part: the diffs of several files, a grep then the files it hits, a query per service. Return the lines, rows or counts you will use, not whole results. Call a tool directly when you need exactly one result in full.`
+
+/** What a program may hand back to the conversation; a tool's own answer is capped at 50 KiB. */
+const MAX_EGRESS_BYTES = 128 * 1024
+
+const LIMITS = CodeExecutionLimits.make({
+	maxSourceBytes: 64 * 1024,
+	// 32 calls, 4 at a time (a direct batch's fan-out), finish inside this even at the 5-10 s a
+	// warehouse query can take.
+	maxWallTime: Duration.seconds(120),
+	maxHostCalls: 32,
+	maxHostCallConcurrency: TOOL_CONCURRENCY,
+	// No `cpuMillis`: the Dynamic Worker's platform CPU limit stops a runaway loop, and the test
+	// executor refuses a limit it cannot enforce.
+	maxLogBytes: 64 * 1024,
+	maxResultBytes: MAX_EGRESS_BYTES,
+	maxHostCallArgumentBytes: 64 * 1024,
+	maxHostCallResultBytes: 1024 * 1024,
+})
+
+const description = (methods: ReadonlyArray<string>) =>
+	[
+		"Run a JavaScript program that calls Maple tools, for several independent reads at once or for reading a lot and keeping a little.",
+		"`code` is one async arrow function, `async () => { ... }`, never a bare function body.",
+		"`maple.<tool>(input)` takes the same input as the tool of that name and resolves to its text result; a failed call rejects. When a call may fail, use `Promise.allSettled` so one failure does not discard the other results.",
+		"Return only what you need (matching lines, a summary, counts): the whole result is added to the conversation.",
+		'Example: async () => { const files = ["src/a.ts", "src/b.ts"]; const results = await Promise.allSettled(files.map((path) => maple.pr_file_diff({ repository: "owner/name", number: 1, path }))); return results.map((r, i) => r.status === "fulfilled" ? { file: files[i], lines: r.value.split("\\n").filter((line) => line.includes("catch")) } : { file: files[i], error: String(r.reason) }) }',
+		`Up to ${LIMITS.maxHostCalls} calls, ${Duration.toSeconds(LIMITS.maxWallTime)} s and ${MAX_EGRESS_BYTES / 1024} KiB of result per program; past that the program fails and returns nothing.`,
+		`Methods: ${methods.map((method) => `maple.${method}`).join(", ")}.`,
+	].join("\n")
+
+/**
+ * `run_code` over `tools`, or undefined when there is nothing to call. `handlers` provides those
+ * tools' handlers; the program's calls run through them.
+ */
+export const buildCodeMode = <T extends Tool.Any, H, E, R>(
+	tools: Readonly<Record<string, T>>,
+	handlers: Layer.Layer<H, E, R>,
+	executor: Layer.Layer<CodeExecutor>,
+	/** The direct tools are withheld, so the description carries their schemas instead. */
+	only = false,
+) => {
+	const methods = Object.keys(tools).sort()
+	if (methods.length === 0) return undefined
+	const definition = CodeMode.make(RUN_CODE, {
+		description: description(methods),
+		// Offered alongside the direct tools, the model has every schema already.
+		includeDeclarations: only,
+		tools: { maple: tools },
+		limits: LIMITS,
+		maxEgressBytes: MAX_EGRESS_BYTES,
+	})
+	return {
+		tool: RUN_CODE,
+		toolkit: Toolkit.make(definition.tool),
+		layer: definition.handlers.pipe(Layer.provide(handlers), Layer.provide(executor)),
+	}
+}
