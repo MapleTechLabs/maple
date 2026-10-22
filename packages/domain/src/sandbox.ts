@@ -42,9 +42,20 @@ export const SANDBOX_RUN_AS_USER = "maple-agent"
  */
 export const SANDBOX_COMMAND_ENV = {
 	PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-	HOME: "/tmp",
 	LANG: "C.UTF-8",
+	// No global or system git config, so one command cannot change what git shows the next.
+	GIT_CONFIG_GLOBAL: "/dev/null",
+	GIT_CONFIG_NOSYSTEM: "1",
 } as const satisfies Readonly<Record<string, string>>
+
+/** Set by the wrapper per command: a fresh, empty directory removed once the command returns. */
+export const SANDBOX_COMMAND_HOME_VAR = "HOME"
+
+/** Every name an agent command's environment holds: the fixed ones above plus its own HOME. */
+export const SANDBOX_COMMAND_ENV_NAMES: ReadonlyArray<string> = [
+	...Object.keys(SANDBOX_COMMAND_ENV),
+	SANDBOX_COMMAND_HOME_VAR,
+].sort()
 
 /**
  * Trailer the wrapper prints after the command's own output, carrying the real

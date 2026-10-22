@@ -45,6 +45,8 @@ export const PrReviewSkipReason = Schema.Literals([
 	"agent_unavailable",
 	/** A push to a pull request that already had its repository's `automaticReviewLimit` reviews. */
 	"automatic_limit",
+	/** An automatic review of a pull request whose author is not an owner, member or collaborator. */
+	"external_author",
 ]).annotate({ identifier: "@maple/PrReviewSkipReason", title: "Pull Request Review Skip Reason" })
 export type PrReviewSkipReason = Schema.Schema.Type<typeof PrReviewSkipReason>
 

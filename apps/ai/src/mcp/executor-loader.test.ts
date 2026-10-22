@@ -5,6 +5,7 @@ import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { McpToolExecutor } from "./dispatcher"
@@ -63,6 +64,7 @@ const mcpClient = async (loader: ReturnType<typeof McpToolExecutorLoader.layerFr
 	const db = createTestDb(createdDbs)
 	const services = Layer.mergeAll(
 		ApiKeysService.layer,
+		ErrorActorsService.layer,
 		AuthService.layer,
 		Layer.succeed(McpToolRateLimiter, { check: () => Effect.succeed("allowed" as const) }),
 	).pipe(Layer.provideMerge(Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig)))))

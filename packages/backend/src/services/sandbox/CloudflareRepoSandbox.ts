@@ -15,7 +15,7 @@
  */
 import { OrgId } from "@maple/domain/http"
 import {
-	SANDBOX_COMMAND_ENV,
+	SANDBOX_COMMAND_ENV_NAMES,
 	SandboxCheckout,
 	SandboxExecRequest,
 	type SandboxExecResponse,
@@ -109,9 +109,9 @@ export const admit = (
 				"this sandbox can only switch egress off entirely; it cannot enforce a destination allowlist",
 			)
 		// The container pins one fixed environment, so the allowlist is honoured only
-		// when it names exactly that set. A narrower request would still see all three,
+		// when it names exactly that set. A narrower request would still see all of them,
 		// and a request this cannot enforce is one the contract says to refuse.
-		const supportedEnv = Object.keys(SANDBOX_COMMAND_ENV)
+		const supportedEnv = SANDBOX_COMMAND_ENV_NAMES
 		const requestedEnv = new Set(request.environment.allow)
 		if (requestedEnv.size !== supportedEnv.length || supportedEnv.some((name) => !requestedEnv.has(name)))
 			return yield* unsupported(

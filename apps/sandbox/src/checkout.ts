@@ -12,6 +12,7 @@
  */
 import {
 	SANDBOX_COMMAND_ENV,
+	SANDBOX_COMMAND_HOME_VAR,
 	SANDBOX_CHECKOUT_GRACE_MINUTES,
 	SANDBOX_MAX_CHECKOUTS,
 	SANDBOX_MIRROR_DIR,
@@ -120,9 +121,11 @@ const utf8 = new TextEncoder()
 export const wrapCommand = (
 	request: Pick<SandboxExecRequest, "command" | "args" | "maxOutputBytes">,
 ): string => {
-	const environment = Object.entries(SANDBOX_COMMAND_ENV)
-		.map(([name, value]) => `${name}=${shellQuote(value)}`)
-		.join(" ")
+	// HOME is the per-command directory `$h`, expanded by this program rather than quoted.
+	const environment = [
+		...Object.entries(SANDBOX_COMMAND_ENV).map(([name, value]) => `${name}=${shellQuote(value)}`),
+		`${SANDBOX_COMMAND_HOME_VAR}="$h"`,
+	].join(" ")
 	// `runuser` first, then `env -i`: the command starts from an empty environment
 	// and receives only the names the contract's allowlist covers. The other order
 	// looks equivalent and is not — `runuser` adds `USER` and `LOGNAME` after
@@ -136,13 +139,18 @@ export const wrapCommand = (
 	// that asked for no egress never runs with some.
 	return [
 		`o=$(mktemp) && e=$(mktemp)`,
+		// A fresh HOME per command, so nothing one command writes there reaches the next.
+		`h=$(mktemp -d) || h=`,
+		`if [ -n "$h" ] && ! chown ${SANDBOX_RUN_AS_USER} "$h"; then rmdir "$h"; h=; fi`,
 		`if unshare -n true 2>/dev/null; then ns=isolated; else ns=unavailable; fi`,
 		`rc=0`,
-		`if [ "$ns" = isolated ]; then { unshare -n ${dropped}; } >"$o" 2>"$e"; rc=$?; fi`,
+		`if [ "$ns" = isolated ] && [ -z "$h" ]; then echo "could not create a home directory" >"$e"; rc=1; fi`,
+		`if [ "$ns" = isolated ] && [ -n "$h" ]; then { unshare -n ${dropped}; } >"$o" 2>"$e"; rc=$?; fi`,
 		`ob=$(wc -c <"$o") && eb=$(wc -c <"$e")`,
 		`head -c ${limit} "$o"`,
 		`head -c ${limit} "$e" >&2`,
 		`rm -f "$o" "$e"`,
+		`if [ -n "$h" ]; then rm -rf "$h"; fi`,
 		`printf '\n${SANDBOX_TRAILER} %s %s %s %s\n' "$rc" "$ob" "$eb" "$ns"`,
 	].join("\n")
 }

@@ -4,6 +4,7 @@ import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import type { RateLimiterApi } from "@maple/backend/services/auth/ApiV2RateLimiter"
@@ -57,6 +58,7 @@ const testConfig = () =>
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
 			MAPLE_APP_BASE_URL: "https://app.example.com",
+			MAPLE_API_BASE_URL: "https://api.example.com",
 			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
 			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
 		}),
@@ -68,6 +70,7 @@ describe("MCP HTTP authorization", () => {
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
@@ -112,6 +115,7 @@ describe("MCP HTTP authorization", () => {
 		let executedOrgId: string | undefined
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer((tenant) => {
 				executedOrgId = tenant.orgId
@@ -230,6 +234,7 @@ describe("MCP HTTP authorization", () => {
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
@@ -311,6 +316,7 @@ describe("MCP HTTP authorization", () => {
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
@@ -423,6 +429,7 @@ describe("MCP HTTP authorization", () => {
 		let executed = false
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(() => {
 				executed = true
@@ -493,6 +500,7 @@ describe("MCP HTTP authorization", () => {
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),
@@ -547,6 +555,7 @@ describe("MCP HTTP authorization", () => {
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
 			ApiKeysService.layer,
+			ErrorActorsService.layer,
 			AuthService.layer,
 			makeMcpToolExecutorStubLayer(),
 			makeRateLimiterStubLayer(),

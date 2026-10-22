@@ -5,6 +5,7 @@
  * knows the container.
  */
 import type { OrgId } from "@maple/domain/http"
+import { SANDBOX_COMMAND_ENV_NAMES } from "@maple/domain/sandbox"
 import {
 	Sandbox,
 	SandboxEnvironment,
@@ -143,7 +144,7 @@ const limits = (timeoutSeconds: number) =>
 		maxWallTime: Duration.seconds(timeoutSeconds),
 	})
 
-const environment = new SandboxEnvironment({ allow: ["PATH", "HOME", "LANG"] })
+const environment = new SandboxEnvironment({ allow: SANDBOX_COMMAND_ENV_NAMES })
 
 /** A workspace-relative path as the contract's absolute cwd/argument. */
 const inWorkspace = (relative: string | undefined): string =>
