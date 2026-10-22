@@ -378,7 +378,8 @@ describe("AwsConnectionService", () => {
 			assert.strictEqual(first.due, 80)
 			assert.isAbove(first.checked, 0)
 			assert.isBelow(first.checked, 80)
-			assert.strictEqual(aws.assumed.length, first.checked)
+			// At most once per check: a call that sees other calls' 9s jumps can time out unassumed.
+			assert.isAtMost(aws.assumed.length, first.checked)
 			aws.beforeEachCall = Effect.void
 			yield* TestClock.adjust("1 hour")
 			assert.strictEqual((yield* service.checkDue()).checked, 80)
