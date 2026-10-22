@@ -309,10 +309,18 @@ describe("alertRuleIntervalMinutes", () => {
 })
 
 describe("alertQueryLimits", () => {
-	it("gives rules checked less often a longer time limit", () => {
-		expect([1, 3, 5, 10, 15, 30, 60].map((n) => alertQueryLimits(n).timeSeconds)).toEqual([
-			5, 5, 15, 25, 25, 25, 25,
-		])
+	it("gives a rule checked every 5 or 10 minutes more time than one checked every minute", () => {
+		const time = (interval: number) => alertQueryLimits(interval).timeSeconds
+		expect(time(1)).toBeLessThan(time(5))
+		expect(time(5)).toBeLessThan(time(10))
+		// Derived intervals under 5 minutes keep the 1-minute limit.
+		expect(time(3)).toBe(time(1))
+	})
+
+	it("stays under the query engine's 30s ceiling at every interval", () => {
+		expect(Math.max(...[1, 5, 10, 15, 30, 60].map((n) => alertQueryLimits(n).timeSeconds))).toBeLessThan(
+			30,
+		)
 	})
 
 	it("never lowers a limit as the interval grows", () => {

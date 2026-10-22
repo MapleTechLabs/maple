@@ -1602,7 +1602,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			 * shows once the rule is live.
 			 *
 			 * Fidelity caveat: the live scheduler slides its window every check
-			 * (`alertEvaluationIntervalMinutes`) while the preview uses tumbling
+			 * (`alertRuleIntervalMinutes`) while the preview uses tumbling
 			 * windows, so `wouldFire` spans are approximate between bucket boundaries.
 			 */
 			const previewRule = Effect.fn("AlertsService.previewRule")(function* (
@@ -3638,7 +3638,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 			// Raw SQL rules allowed more than the 1-minute query time limit run in their own
 			// lane, so a 25s query holds neither the standard lane's slots nor its 30s claim.
-			// Its evaluations all end by the deadline, so the claim outlives the longest one.
+			// Evaluations end by 60s, leaving the writes and tail inside the cron's 110s.
 			const SCHEDULER_LANES = {
 				standard: {
 					concurrency: 5,
@@ -3653,7 +3653,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					concurrency: 2,
 					lockTtlMs: 100_000,
 					claimChunkSize: 2,
-					tickBudgetMs: () => 90_000,
+					tickBudgetMs: () => 60_000,
 					evalTimeoutMs: longQueryEvalMs,
 					// Starts a rule only with room for its whole time limit, so a slow query is never cut short.
 					startRoomMs: longQueryEvalMs,
@@ -3662,7 +3662,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 			// Unchanged-state ticks skip the alert_rule_states upsert so the Electric
 			// shape stays quiet; lastEvaluatedAt is refreshed at most this often. Under
-			// the 5-minute longest check interval, so claim jitter cannot skip a refresh.
+			// 5 minutes, so claim jitter cannot skip a refresh on a 5-minute rule.
 			const STATE_HEARTBEAT_MS = 4.5 * 60_000
 
 			// `alert_rules.last_scheduled_at` is still exposed on the API and read by the
@@ -4787,7 +4787,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			) {
 				const tickStart = yield* now
 				const evaluation = yield* Effect.exit(evaluateScheduledRules(lane))
-				const deliveryResult = yield* processQueuedDeliveries()
+				// One lane drains: the standard lane runs every minute, and its drain has its own 20s budget.
+				const deliveryResult =
+					lane === "standard"
+						? yield* processQueuedDeliveries()
+						: { processedCount: 0, failureCount: 0 }
 				const evaluated = yield* evaluation
 				yield* Effect.annotateCurrentSpan("maple.alerting.rules_deferred", evaluated.deferredCount)
 				yield* Metric.update(AlertingMetrics.tickDurationMs, (yield* now) - tickStart)
