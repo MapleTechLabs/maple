@@ -239,6 +239,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 				?.split(",")
 				.map((p) => (p === "committed" ? undefined : p)) ?? [undefined])
 	const repeats = positiveInt(opts.get("repeats"), 1, "repeats")
+	const codeModes = (opts.get("code-mode") ?? "off").split(",").map((mode) => mode === "on")
 	// Resolve every ref before spending tokens. No live PR comments/checks enter a replay.
 	for (const c of cases) {
 		if (!c.range || !/^[a-f0-9]{40}\.\.[a-f0-9]{40}$/.test(c.range)) {
@@ -257,7 +258,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 	)
 	const groups = [...new Set(cases.map((c) => c.range))]
 	console.log(
-		`${cases.length} labels, ${groups.length} unique replays × ${models.length} models × ${prompts.length} prompts × ${repeats} repeats`,
+		`${cases.length} labels, ${groups.length} unique replays × ${models.length} models × ${prompts.length} prompts × ${codeModes.length} code modes × ${repeats} repeats`,
 	)
 	if (opts.has("dry-run")) return
 	const out = join(SCRIPT_DIR, ".pr-review-evals", new Date().toISOString().replace(/[:.]/g, "-"))
@@ -272,6 +273,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 				dirty: git(["status", "--porcelain"]),
 				models,
 				prompts,
+				codeModes,
 				repeats,
 				historical: true,
 				budget: PR_REVIEW_BUDGET,
@@ -286,7 +288,9 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 	const results: Array<Record<string, unknown>> = []
 	const grades: Array<Grade & { runId: string }> = []
 	// Rotate variants between repetitions to reduce provider/cache/order bias.
-	const variants = models.flatMap((model) => prompts.map((_, prompt) => ({ model, prompt })))
+	const variants = models.flatMap((model) =>
+		prompts.flatMap((_, prompt) => codeModes.map((codeMode) => ({ model, prompt, codeMode }))),
+	)
 	for (let repeat = 0; repeat < repeats; repeat++)
 		for (const range of groups) {
 			const labels = cases.filter((c) => c.range === range)
@@ -310,6 +314,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 					"--prompt-file",
 					promptFile,
 					...(variant.model === undefined ? [] : ["--model", variant.model]),
+					...(variant.codeMode ? ["--code-mode"] : []),
 				])
 				const report = JSON.parse(readFileSync(join(dir, "report.json"), "utf8"))
 				const findings: ReadonlyArray<Finding> = report?.report?.findings ?? []
@@ -318,11 +323,13 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 					repeat,
 					model: report?.model ?? variant.model ?? "default",
 					prompt: variant.prompt,
+					codeMode: variant.codeMode,
 					submitted: report?.report !== undefined,
 					cases: labels.map((c) => c.id),
 					run: dir,
 					findings,
 					calls: report?.tools?.length,
+					llmCalls: report?.usage?.charges?.length,
 					usage: report?.usage,
 					seconds: report ? report.durationMs / 1000 : null,
 					closedOut: report?.closedOut,
@@ -379,6 +386,7 @@ const score = (argv: ReadonlyArray<string>) => {
 				findings: Schema.Array(Schema.Unknown),
 				model: Schema.String,
 				prompt: Schema.Int,
+				codeMode: Schema.optionalKey(Schema.Boolean),
 			}),
 		),
 	)(JSON.parse(readFileSync(join(dir, "results.json"), "utf8")))
@@ -394,6 +402,7 @@ const score = (argv: ReadonlyArray<string>) => {
 				runId: run.runId,
 				model: run.model,
 				prompt: run.prompt,
+				codeMode: run.codeMode === true,
 				caseId,
 				expected: c.expected,
 				status: !run.submitted ? "failed" : scored === null ? "ungraded" : "graded",
@@ -403,9 +412,11 @@ const score = (argv: ReadonlyArray<string>) => {
 	)
 	writeFileSync(join(dir, "scores.json"), JSON.stringify(rows, null, "\t"))
 	console.table(rows)
-	const variants = [...new Set(rows.map((r) => `${r.model} / prompt ${r.prompt}`))]
+	const label = (r: (typeof rows)[number]) =>
+		`${r.model} / prompt ${r.prompt}${r.codeMode ? " / run_code" : ""}`
+	const variants = [...new Set(rows.map(label))]
 	const summary = variants.map((variant) => {
-		const selected = rows.filter((r) => `${r.model} / prompt ${r.prompt}` === variant)
+		const selected = rows.filter((r) => label(r) === variant)
 		const graded = selected.filter((r) => r.status === "graded")
 		const positives = graded.filter((r) => r.expected === "present")
 		const controls = graded.filter((r) => r.expected === "absent")
@@ -436,7 +447,7 @@ if (import.meta.main) {
 	else if (command === "score") score(rest)
 	else {
 		console.error(
-			"usage: review:eval mine [--ref ref] [--since date] [--limit n] | run [--cases ids] [--models ids] [--prompts committed,path] [--repeats n] [--split development|holdout] [--dry-run] | score --dir path",
+			"usage: review:eval mine [--ref ref] [--since date] [--limit n] | run [--cases ids] [--models ids] [--prompts committed,path] [--code-mode off,on] [--repeats n] [--split development|holdout] [--dry-run] | score --dir path",
 		)
 		process.exit(2)
 	}

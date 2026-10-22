@@ -8,6 +8,7 @@
 import { evaluatePermission } from "@maple/domain/permission"
 import type { ChatMessage, ChatTurnOrigin } from "@maple/domain/chat-session"
 import * as AgentRuntime from "@yielded/agent/agent-runtime"
+import type { CodeExecutor } from "@yielded/agent/code-executor"
 import type { RunBudgetHook } from "@yielded/agent/run-options"
 import type * as RunEvent from "@yielded/agent/run-event"
 import * as ThreadHistory from "@yielded/agent/thread-history"
@@ -17,6 +18,7 @@ import { Prompt, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
 import { mapleToolPhrase } from "../mcp/tools/registry"
+import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import { withRunSessionAttributes } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -27,6 +29,7 @@ import { makeTextSanitizer, settledTurnEnd, toChatEvents, type ChatTurnEvent } f
 import { makeReviewCoverage, type ReviewCoverage } from "./review-coverage"
 import type { ReviewLedger } from "./review-ledger"
 import { buildReviewFanout } from "./review-fanout"
+import { buildCodeMode, CODE_MODE_TOOLS } from "./code-mode"
 import {
 	accumulateUsage,
 	buildChatToolkit,
@@ -110,6 +113,8 @@ export interface ChatRunInput {
 	readonly review?: ReviewTurnState
 	/** The agent to run as; defaults to the session's. The local review runner passes a variant. */
 	readonly agent?: AgentDefinition
+	/** Runs `run_code` programs for an agent that offers it; absent, the tool is not offered. */
+	readonly codeExecutor?: Layer.Layer<CodeExecutor>
 	/** The message the user just sent, which is this run's input. */
 	readonly text: string
 	readonly history: ReadonlyArray<ChatMessage>
@@ -218,14 +223,34 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 				)
 			: undefined
 
+	// Read-only tools only: a program cannot hold a proposal for approval, and a write it made before
+	// failing could not be retried safely.
+	const codeMode =
+		agent.codeMode === true && input.codeExecutor !== undefined
+			? buildCodeMode(
+					Object.fromEntries(
+						Object.entries(maple.toolkit.tools).filter(
+							([name]) =>
+								CODE_MODE_TOOLS.has(name) &&
+								evaluatePermission(profile.ruleset, name) === "allow" &&
+								!MUTATING_TOOL_NAMES.has(name),
+						),
+					),
+					maple.layer,
+					input.codeExecutor,
+				)
+			: undefined
+
 	const toolkit = Toolkit.merge(
 		maple.toolkit,
 		...(completion === undefined ? [] : [completion.toolkit]),
 		...(fanout === undefined ? [] : [fanout.toolkit]),
+		...(codeMode === undefined ? [] : [codeMode.toolkit]),
 	)
 	const handlers = Layer.mergeAll(
 		maple.layer,
 		...(completion === undefined ? [] : [completion.layer]),
+		...(codeMode === undefined ? [] : [codeMode.layer]),
 		// The children run the parent's own tool handlers, so those are provided into the fan-out.
 		...(fanout === undefined ? [] : [fanout.layer.pipe(Layer.provide(maple.layer))]),
 	)

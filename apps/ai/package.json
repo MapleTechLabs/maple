@@ -29,6 +29,7 @@
 		"@maple/query-model": "workspace:*",
 		"@maple/widgets": "workspace:*",
 		"@yielded/agent": "0.1.0-beta.189",
+		"@yielded/agent-platform-cloudflare": "0.1.0-beta.189",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
@@ -36,6 +37,7 @@
 		"@effect/language-service": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@types/node": "catalog:tooling",
+		"@yielded/agent-testing": "0.1.0-beta.189",
 		"gpt-tokenizer": "^4.0.0",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
