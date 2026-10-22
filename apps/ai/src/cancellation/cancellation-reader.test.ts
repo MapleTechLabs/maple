@@ -1,46 +1,101 @@
 import { describe, expect, it } from "vitest"
 import { normalizeAnswer } from "./cancellation-reader"
 
-const read = (verdict: "agree" | "override" | "context", reason: string | null, note: string | null) => {
-	const { verdict: v, reason: r, note: n } = normalizeAnswer({ verdict, category: null, reason, note }, "m")
-	return { verdict: v, reason: r, note: n }
+const context = { surveyAnswer: null, companyClues: true }
+
+const answer = {
+	company: null,
+	findings: [],
+	verdict: "agree" as const,
+	category: null,
+	reason: null,
+	conclusion: "Stopped sending after the trial.",
 }
 
 describe("normalizeAnswer", () => {
-	it("keeps an override that names its reason", () => {
-		expect(read("override", " Needed SSO ", "Said so on Stripe.")).toEqual({
-			verdict: "override",
-			reason: "Needed SSO",
-			note: "Said so on Stripe.",
-		})
-	})
-
-	it("reads an override with no reason as context, or as agreement when it said nothing", () => {
-		expect(read("override", "  ", "Hit the paywall.")).toEqual({
-			verdict: "context",
-			reason: null,
-			note: "Hit the paywall.",
-		})
-		expect(read("override", null, null)).toEqual({ verdict: "agree", reason: null, note: null })
-	})
-
-	it("files an override under its category, and under other when it gave none", () => {
-		const answer = { verdict: "override" as const, reason: "Needed SSO", note: null }
-		expect(normalizeAnswer({ ...answer, category: "missing_features" }, "m").category).toBe(
-			"missing_features",
-		)
-		expect(normalizeAnswer({ ...answer, category: null }, "m").category).toBe("other")
+	it("keeps an override that names its reason, filed under other when it gave no label", () => {
+		const read = normalizeAnswer({ ...answer, verdict: "override", reason: " Needed SSO " }, "m", context)
+		expect([read.verdict, read.reason, read.category]).toEqual(["override", "Needed SSO", "other"])
 		expect(
-			normalizeAnswer({ ...answer, verdict: "context", category: "cost", note: "x" }, "m").category,
-		).toBeNull()
+			normalizeAnswer(
+				{ ...answer, verdict: "override", reason: "Needed SSO", category: "missing_features" },
+				"m",
+			).category,
+		).toBe("missing_features")
 	})
 
-	it("drops what an agreement or an empty note would add", () => {
-		expect(read("agree", "Cost", "Same as the rules.")).toEqual({
-			verdict: "agree",
-			reason: null,
-			note: null,
-		})
-		expect(read("context", null, " ")).toEqual({ verdict: "agree", reason: null, note: null })
+	it("reads an override without a reason, or a label on an agreement, as plain agreement", () => {
+		for (const read of [
+			normalizeAnswer({ ...answer, verdict: "override", reason: "  ", category: "cost" }, "m", context),
+			normalizeAnswer({ ...answer, reason: "Cost", category: "cost" }, "m", context),
+		]) {
+			expect([read.verdict, read.reason, read.category]).toEqual(["agree", null, null])
+		}
+	})
+
+	it("drops blank findings and keeps at most three", () => {
+		const findings = [" a ", "", "b", "  ", "c", "d", "e"]
+		expect(normalizeAnswer({ ...answer, findings }, "m", context).findings).toEqual(["a", "b", "c"])
+	})
+
+	it('reads a field the model wrote out as "null" or "unknown" as empty', () => {
+		const company = {
+			name: "Acme",
+			oneLiner: "null",
+			location: " Unknown ",
+			confidence: "low" as const,
+			basis: "domain",
+		}
+		const read = normalizeAnswer({ ...answer, company, findings: ["null", "Real one."] }, "m", context)
+		expect([read.company?.oneLiner, read.company?.location, read.findings]).toEqual([
+			null,
+			null,
+			["Real one."],
+		])
+	})
+
+	it("drops a company guess whose name is only punctuation and a placeholder", () => {
+		for (const name of [": null", "null,", "-", " Unknown. "]) {
+			const company = {
+				name,
+				oneLiner: null,
+				location: null,
+				confidence: "medium" as const,
+				basis: "x",
+			}
+			expect(normalizeAnswer({ ...answer, company }, "m", context).company).toBeNull()
+		}
+	})
+
+	it("drops a low-confidence guess with no company domain or homepage behind it", () => {
+		const company = {
+			name: "Acme",
+			oneLiner: null,
+			location: null,
+			confidence: "low" as const,
+			basis: "org name",
+		}
+		expect(
+			normalizeAnswer({ ...answer, company }, "m", { ...context, companyClues: false }).company,
+		).toBeNull()
+		expect(normalizeAnswer({ ...answer, company }, "m", context).company?.name).toBe("Acme")
+	})
+
+	it("files an override under the category the customer's survey answer names, over other", () => {
+		const read = normalizeAnswer(
+			{ ...answer, verdict: "override", reason: "Overage bill", category: "other" },
+			"m",
+			{ ...context, surveyAnswer: "too_expensive" },
+		)
+		expect(read.category).toBe("cost")
+	})
+
+	it("drops a company guess without a name", () => {
+		const company = { name: " ", oneLiner: "x", location: null, confidence: "low" as const, basis: "y" }
+		expect(normalizeAnswer({ ...answer, company }, "m", context).company).toBeNull()
+		expect(
+			normalizeAnswer({ ...answer, company: { ...company, name: "Acme", location: " " } }, "m", context)
+				.company,
+		).toEqual({ ...company, name: "Acme", location: null })
 	})
 })

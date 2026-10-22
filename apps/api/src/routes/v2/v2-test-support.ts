@@ -94,6 +94,7 @@ import { HttpV2WidgetCredentialsLive } from "./widget-credentials.http"
 export const OrgMembersServiceStubLayer = Layer.succeed(OrgMembersService, {
 	listMembers: () => Effect.succeed([]),
 	listOrganizationsOf: () => Effect.succeed([]),
+	listMemberActivity: () => Effect.succeed([]),
 	resolveMembers: () => Effect.succeed([]),
 })
 

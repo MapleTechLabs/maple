@@ -38,6 +38,11 @@ import {
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { CancellationReader } from "./CancellationReader"
+import { CancellationAppEvidenceReader } from "./evidence-app"
+import { CancellationBillingEvidenceReader } from "./evidence-billing"
+import { CancellationCompanyEvidenceReader } from "./evidence-company"
+import type { CancellationEvidenceInput } from "./evidence-input"
+import { CancellationTelemetryEvidenceReader } from "./evidence-telemetry"
 import { CancellationReviewService, type CancellationToReview } from "./CancellationReviewService"
 
 const trackedDbs: TestDb[] = []
@@ -82,6 +87,10 @@ interface World {
 	/** What the model answers; null is no answer. */
 	modelRead: CancellationModelRead | null
 	modelRequests: Array<CancellationModelRequest>
+	/** What each evidence reader was asked, by section. */
+	evidenceInputs: Array<{ section: string; input: CancellationEvidenceInput }>
+	/** The evidence readers fail, as a down source would. */
+	evidenceDown: boolean
 	queries: Array<{ orgId: string; sql: string }>
 	posts: Array<Record<string, unknown>>
 }
@@ -102,6 +111,8 @@ const freshWorld = (): World => ({
 	stripeSubscriptions: [],
 	modelRead: null,
 	modelRequests: [],
+	evidenceInputs: [],
+	evidenceDown: false,
 	queries: [],
 	posts: [],
 })
@@ -234,25 +245,34 @@ const stubs = (world: World) =>
 				Effect.succeed({ statusCode: 200, response: { data: world.stripeSubscriptions } }),
 		}),
 		Layer.mock(AuditLogService)({
-			list: () =>
-				Effect.succeed([
-					// An access record: never one of the changes the model reads.
-					{
-						action: "telemetry.read",
-						actorType: "user",
-						actorLabel: "a@acme.test",
-						outcome: "allowed",
-						occurredAt: new Date(CANCELED_AT - DAY_MS + 60_000),
-					} as never,
-					{
-						action: "ingest_key.revoke",
-						actorType: "user",
-						actorLabel: "a@acme.test",
-						outcome: "allowed",
-						occurredAt: new Date(CANCELED_AT - DAY_MS),
-					} as never,
-				]),
+			// Filters the way the query does, before the limit.
+			list: (_orgId, filters) =>
+				Effect.succeed(
+					[
+						// An access record: never one of the changes the model reads.
+						{
+							action: "telemetry.read",
+							actorType: "user",
+							actorLabel: "a@acme.test",
+							outcome: "allowed",
+							occurredAt: new Date(CANCELED_AT - DAY_MS + 60_000),
+						} as never,
+						{
+							action: "ingest_key.revoke",
+							actorType: "user",
+							actorLabel: "a@acme.test",
+							outcome: "allowed",
+							occurredAt: new Date(CANCELED_AT - DAY_MS),
+						} as never,
+					].filter(
+						(entry: { action: string }) =>
+							!(filters.excludeActionSuffixes ?? []).some((suffix) =>
+								entry.action.endsWith(suffix),
+							),
+					),
+				),
 		}),
+		...evidenceStubs(world),
 		Layer.succeed(CancellationReader, {
 			read: (request) =>
 				Effect.sync(() => {
@@ -287,6 +307,58 @@ const stubs = (world: World) =>
 				}),
 		}),
 	)
+
+/** Each section stands for itself (the readers are tested on their own): read, nothing found. */
+const EVIDENCE = {
+	company: {
+		orgName: "Acme Inc.",
+		orgNameIsPersonal: false,
+		region: "us",
+		billing: null,
+		emailDomains: null,
+		homepage: null,
+		people: null,
+	},
+	billing: { subscriptions: null, invoices: null, billingControls: null, charges: null },
+	app: {
+		integrations: [],
+		onboarding: null,
+		alerts: null,
+		anomalies: null,
+		investigations: null,
+		errorIssues: null,
+		agentFeedback: [],
+		priorCancellations: [],
+		scrapeTargets: null,
+		apiKeys: null,
+		digest: null,
+	},
+	telemetry: {
+		services: null,
+		resourceAttributes: [],
+		alertChecks: null,
+		errors: null,
+		productEvents: [],
+		auditActions: [],
+		auditActors: null,
+		toolCalls: [],
+	},
+} as const
+
+const evidenceReader = <K extends keyof typeof EVIDENCE>(world: World, section: K) => ({
+	read: (input: CancellationEvidenceInput) =>
+		Effect.suspend(() => {
+			world.evidenceInputs.push({ section, input })
+			return world.evidenceDown ? Effect.die("down") : Effect.succeed(EVIDENCE[section])
+		}),
+})
+
+const evidenceStubs = (world: World) => [
+	Layer.succeed(CancellationCompanyEvidenceReader, evidenceReader(world, "company")),
+	Layer.succeed(CancellationBillingEvidenceReader, evidenceReader(world, "billing")),
+	Layer.succeed(CancellationAppEvidenceReader, evidenceReader(world, "app")),
+	Layer.succeed(CancellationTelemetryEvidenceReader, evidenceReader(world, "telemetry")),
+]
 
 const makeLayer = (world: World, testDb: TestDb) =>
 	Layer.effect(CancellationReviewService, CancellationReviewService.make).pipe(
@@ -473,10 +545,18 @@ describe("CancellationReviewService", () => {
 				{ type: "navigation", url: "https://app.maple.dev/billing", message: "" },
 			]
 			world.modelRead = new CancellationModelRead({
+				company: {
+					name: "Acme Robotics",
+					oneLiner: "Warehouse robots",
+					location: null,
+					confidence: "medium",
+					basis: "domain",
+				},
+				findings: ["Hit the SSO paywall on the members page the day before cancelling."],
 				verdict: "override",
 				category: "missing_features",
 				reason: "Needed SSO",
-				note: "Told Stripe they need SSO and hit the SSO paywall the day before.",
+				conclusion: "Left because SSO is not on their plan.",
 				model: "test-model",
 			})
 			const testDb = createTestDb(trackedDbs)
@@ -494,6 +574,7 @@ describe("CancellationReviewService", () => {
 			assert.deepStrictEqual(request?.sessions?.[0]?.problems, ["SSO is not available on your plan"])
 			assert.deepStrictEqual(request?.auditLog?.[0], {
 				at: new Date(CANCELED_AT - DAY_MS).toISOString(),
+				daysBeforeCancel: 1,
 				action: "ingest_key.revoke",
 				actor: "user",
 				outcome: "allowed",
@@ -501,6 +582,16 @@ describe("CancellationReviewService", () => {
 			// No person's email reaches the model.
 			assert.notInclude(JSON.stringify(request), "@acme.test")
 			assert.strictEqual(request?.ruleReason, "stopped_sending")
+			// Every section reaches the model, and every reader got the org, its members and Stripe.
+			assert.deepStrictEqual(
+				[request?.company, request?.billing, request?.app, request?.telemetry],
+				[EVIDENCE.company, EVIDENCE.billing, EVIDENCE.app, EVIDENCE.telemetry],
+			)
+			for (const { input } of world.evidenceInputs) {
+				assert.strictEqual(input.orgId, ORG)
+				assert.strictEqual(input.ownOrgId, OWN_ORG)
+				assert.isAbove(input.members?.length ?? 0, 0)
+			}
 			// The sessions are read under Maple's own org, never the customer's.
 			assert.isTrue(
 				world.queries
@@ -515,7 +606,9 @@ describe("CancellationReviewService", () => {
 				blocks,
 				"*Likely reason:* Needed SSO  _(model's read; rules said: Stopped sending telemetry)_",
 			)
-			assert.include(blocks, ":robot_face: Told Stripe they need SSO")
+			assert.include(blocks, ":office: *Acme Robotics*: Warehouse robots")
+			assert.include(blocks, "Hit the SSO paywall on the members page")
+			assert.include(blocks, ":robot_face: *Model's read:* Left because SSO is not on their plan.")
 			assert.include(blocks, "*Told Stripe:* missing features “No SSO”")
 			assert.include(
 				blocks,
@@ -631,6 +724,15 @@ describe("CancellationReviewService", () => {
 
 			assert.strictEqual(yield* review(world, testDb), "posted")
 			assert.include(String(world.posts[0]?.blocks), "Could not read: app visits")
+
+			const blind = freshWorld()
+			blind.evidenceDown = true
+			assert.strictEqual(yield* review(blind, createTestDb(trackedDbs)), "posted")
+			assert.include(
+				String(blind.posts[0]?.blocks),
+				"company, billing history, app state, telemetry detail",
+			)
+			assert.isNull(blind.modelRequests[0]?.company)
 		}),
 	)
 
@@ -651,7 +753,7 @@ describe("CancellationReviewService", () => {
 		}),
 	)
 
-	it.effect("fails a report Slack could not be reached for, and posts it once the lease is over", () =>
+	it.effect("fails a report Slack could not be reached for, and posts it on the next attempt", () =>
 		Effect.gen(function* () {
 			const world = freshWorld()
 			world.slack = "unreachable"
@@ -660,12 +762,30 @@ describe("CancellationReviewService", () => {
 			assert.strictEqual(yield* failedStep(world, testDb), "post")
 			assert.isNull((yield* storedReview(testDb))?.posted_at)
 
+			// The failed attempt handed its claim back: the retry need not wait out the lease.
 			world.slack = "ok"
-			// A redelivery seconds later finds the first delivery's claim still fresh and waits.
+			assert.strictEqual(yield* review(world, testDb), "posted")
+			assert.strictEqual(world.posts.length, 1)
+		}),
+	)
+
+	it.effect("waits while another delivery holds the claim, and takes it over once the lease is over", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			const testDb = createTestDb(trackedDbs)
+			// Another delivery claimed the review a moment ago and is still gathering it.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO cancellation_reviews (id, org_id, plan_id, subscription_started_at, canceled_at, created_at, updated_at)
+					 VALUES ('other', $1, $2, $3, $4, $5, $5)`,
+					[ORG, job.planId, job.startedAt, job.canceledAt, CANCELED_AT],
+				),
+			)
+
 			assert.strictEqual(yield* failedStep(world, testDb), "claim")
 			assert.strictEqual(world.posts.length, 0)
-			// Svix's next attempt, minutes on, takes the review over.
-			assert.strictEqual(yield* review(world, testDb, job, CANCELED_AT + 5 * 60_000), "posted")
+			assert.strictEqual(yield* review(world, testDb, job, CANCELED_AT + 6 * 60_000), "posted")
 		}),
 	)
 

@@ -1,4 +1,4 @@
-import { createClerkClient } from "@clerk/backend"
+import { type ClerkClient, createClerkClient, type OrganizationMembership } from "@clerk/backend"
 import {
 	AlertMemberDirectoryNotConfiguredError,
 	AlertMemberDirectoryUnavailableError,
@@ -6,7 +6,7 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { Context, Effect, Layer, Option, Redacted, Stream } from "effect"
+import { Array as Arr, Context, Effect, Layer, Option, Redacted, Stream } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
@@ -16,6 +16,17 @@ export interface OrgMember {
 	readonly name: string | null
 	/** Provider-hosted avatar; Clerk serves one for every user, initials included. */
 	readonly imageUrl: string | null
+}
+
+/** One membership's role and timestamps. */
+export interface MemberActivity {
+	/** First and last name; only for telling a person's name from a company's. */
+	readonly name: string | null
+	readonly role: string
+	readonly joinedAtMs: number
+	/** Null when the user never signed in, or Clerk no longer has the user. */
+	readonly lastSignInAtMs: number | null
+	readonly lastActiveAtMs: number | null
 }
 
 export interface UserOrganization {
@@ -49,6 +60,13 @@ export interface OrgMembersServiceApi {
 		ReadonlyArray<UserOrganization>,
 		AlertMemberDirectoryNotConfiguredError | AlertMemberDirectoryUnavailableError
 	>
+	/** Every membership of the org with its role, join time and the user's last sign-in and activity. */
+	readonly listMemberActivity: (
+		orgId: OrgId,
+	) => Effect.Effect<
+		ReadonlyArray<MemberActivity>,
+		AlertMemberDirectoryNotConfiguredError | AlertMemberDirectoryUnavailableError
+	>
 	readonly resolveMembers: (
 		orgId: OrgId,
 		userIds: ReadonlyArray<UserId>,
@@ -68,17 +86,14 @@ const make = Effect.gen(function* () {
 			? createClerkClient({ secretKey: Redacted.value(env.CLERK_SECRET_KEY.value) })
 			: null
 
-	const listMembers = Effect.fn("OrgMembersService.listMembers")(function* (orgId: OrgId) {
-		yield* Effect.annotateCurrentSpan("orgId", orgId)
-		if (clerk === null) {
-			return yield* Effect.fail(
-				new AlertMemberDirectoryNotConfiguredError({
-					message: "Workspace member lookup requires Clerk authentication",
-				}),
-			)
-		}
+	const notConfigured = new AlertMemberDirectoryNotConfiguredError({
+		message: "Workspace member lookup requires Clerk authentication",
+	})
+
+	/** Every membership of the org, one Clerk call per 100. */
+	const listMemberships = (clerk: ClerkClient, orgId: OrgId) => {
 		const PAGE_SIZE = 100
-		return yield* Stream.paginate(0, (offset: number) =>
+		return Stream.paginate(0, (offset: number) =>
 			clerkRequest("Clerk.organizations.getOrganizationMembershipList", { orgId }, () =>
 				clerk.organizations.getOrganizationMembershipList({
 					organizationId: orgId,
@@ -94,22 +109,71 @@ const make = Effect.gen(function* () {
 						}),
 				),
 				Effect.map((page) => {
-					const members = page.data.flatMap((member): Array<OrgMember> => {
-						const userId = member.publicUserData?.userId
-						const email = member.publicUserData?.identifier
-						if (!userId || !email) return []
-						const name =
-							[member.publicUserData?.firstName, member.publicUserData?.lastName]
-								.filter(Boolean)
-								.join(" ") || null
-						return [{ userId, email, name, imageUrl: member.publicUserData?.imageUrl ?? null }]
-					})
 					const next = offset + page.data.length
 					const done = next >= page.totalCount || page.data.length === 0
-					return [members, done ? Option.none<number>() : Option.some(next)] as const
+					return [page.data, done ? Option.none<number>() : Option.some(next)] as const
 				}),
 			),
 		).pipe(Stream.runCollect)
+	}
+
+	const memberName = (member: OrganizationMembership): string | null =>
+		[member.publicUserData?.firstName, member.publicUserData?.lastName].filter(Boolean).join(" ") || null
+
+	const listMembers = Effect.fn("OrgMembersService.listMembers")(function* (orgId: OrgId) {
+		yield* Effect.annotateCurrentSpan("orgId", orgId)
+		if (clerk === null) return yield* Effect.fail(notConfigured)
+		const memberships = yield* listMemberships(clerk, orgId)
+		return memberships.flatMap((member): Array<OrgMember> => {
+			const userId = member.publicUserData?.userId
+			const email = member.publicUserData?.identifier
+			if (!userId || !email) return []
+			return [
+				{
+					userId,
+					email,
+					name: memberName(member),
+					imageUrl: member.publicUserData?.imageUrl ?? null,
+				},
+			]
+		})
+	})
+
+	const listMemberActivity = Effect.fn("OrgMembersService.listMemberActivity")(function* (orgId: OrgId) {
+		yield* Effect.annotateCurrentSpan("orgId", orgId)
+		if (clerk === null) return yield* Effect.fail(notConfigured)
+		const memberships = yield* listMemberships(clerk, orgId)
+		const userIds = memberships.flatMap((member) => member.publicUserData?.userId ?? [])
+		// Clerk filters by at most 100 user ids per call.
+		const users = yield* Effect.forEach(
+			Arr.chunksOf(userIds, 100),
+			(chunk) =>
+				clerkRequest(
+					"Clerk.users.getUserList",
+					{ "maple.organization.member.requested_count": chunk.length },
+					() => clerk.users.getUserList({ userId: [...chunk], limit: chunk.length }),
+				).pipe(
+					Effect.mapError(
+						(cause) =>
+							new AlertMemberDirectoryUnavailableError({
+								message: `Failed to read the members of ${orgId}`,
+								cause,
+							}),
+					),
+				),
+			{ concurrency: 2 },
+		)
+		const byId = new Map(users.flatMap((page) => page.data).map((user) => [user.id, user]))
+		return memberships.map((member): MemberActivity => {
+			const user = byId.get(member.publicUserData?.userId ?? "")
+			return {
+				name: memberName(member),
+				role: member.role,
+				joinedAtMs: member.createdAt,
+				lastSignInAtMs: user?.lastSignInAt ?? null,
+				lastActiveAtMs: user?.lastActiveAt ?? null,
+			}
+		})
 	})
 
 	const listOrganizationsOf = Effect.fn("OrgMembersService.listOrganizationsOf")(function* (
@@ -174,7 +238,12 @@ const make = Effect.gen(function* () {
 		return resolved
 	})
 
-	return { listMembers, listOrganizationsOf, resolveMembers } satisfies OrgMembersServiceApi
+	return {
+		listMembers,
+		listMemberActivity,
+		listOrganizationsOf,
+		resolveMembers,
+	} satisfies OrgMembersServiceApi
 })
 
 export class OrgMembersService extends Context.Service<OrgMembersService, OrgMembersServiceApi>()(

@@ -120,7 +120,16 @@ describe("StripeClient request construction", () => {
 			customer: CUS,
 			status: "all",
 			limit: "100",
+			"expand[]": "data.discounts",
 		})
+	})
+
+	it("listCharges GETs the customer's latest charges", async () => {
+		const { captured } = await withFetch({ data: [] }, (stripe) => stripe.listCharges(CUS))
+		assert.strictEqual(captured?.method, "GET")
+		const url = new URL(captured?.url ?? "")
+		assert.strictEqual(`${url.origin}${url.pathname}`, `${API_URL}/v1/charges`)
+		assert.deepStrictEqual(Object.fromEntries(url.searchParams), { customer: CUS, limit: "20" })
 	})
 
 	it("updateCustomer POSTs form-encoded name + nested address", async () => {
