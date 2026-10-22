@@ -180,6 +180,26 @@ describe("buildDiagnosis", () => {
 		expect(twice).toBe("The query takes longer than the 15 s a check allows")
 	})
 
+	it("names the memory a check had and which intervals get more", () => {
+		const query = stage(
+			diagnose({
+				rule: makeRule({
+					signalType: "raw_query",
+					rawQuerySql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+					rawQueryReducer: "identity",
+					windowMinutes: 30,
+					evaluationIntervalMinutes: 5,
+				}),
+				states: [makeState({ last_error: "Memory limit exceeded", last_error_kind: "query_too_much_memory" })],
+			}),
+			"query",
+		)
+		expect(query.summary).toBe("The query needs more memory than a check allows")
+		expect(query.evidence).toContain(
+			"Checked every 5 min, which allows 512 MB per check. Rules checked every 5 or 10 min get 512 MB, every 15 min or more 1 GB.",
+		)
+	})
+
 	it("reads the step before a slowdown from the limit the failures hit", () => {
 		const rule = (slowedIntervalMinutes: number, kind: "query_too_slow" | "query_too_much_memory") =>
 			makeRule({

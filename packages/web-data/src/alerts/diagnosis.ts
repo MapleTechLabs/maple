@@ -52,6 +52,9 @@ export const intervalBeforeSlowdown = (
 }
 
 /** What a failing query's kind means for its author, in plain words. */
+const formatMemory = (bytes: number): string =>
+	bytes >= 1_000_000_000 ? `${bytes / 1_000_000_000} GB` : `${bytes / 1_000_000} MB`
+
 const queryFailureCause = (
 	kind: AlertEvaluationErrorKind | null,
 	isRawSql: boolean,
@@ -75,7 +78,7 @@ const queryFailureCause = (
 		return {
 			summary: "The query needs more memory than a check allows",
 			evidence: [
-				`Checked ${every}. Rules checked less often get more memory.`,
+				`Checked ${every}, which allows ${formatMemory(alertQueryLimits(intervalMinutes).memoryBytes)} per check. Rules checked every 5 or 10 min get 512 MB, every 15 min or more 1 GB.`,
 				"Narrow the query or group by fewer values.",
 			],
 		}
