@@ -77,6 +77,7 @@ import {
 	HAZEL_CALLBACK_PATH,
 } from "@/routes/integrations-callback.http"
 import { isTrustedCallbackOrigin, resolveRequestOrigin } from "@/routes/v2/integrations.http"
+import { makeOAuthCompleter } from "@/routes/oauth-complete"
 
 const asExternalUserId = Schema.decodeUnknownSync(ExternalUserId)
 const asUserId = Schema.decodeUnknownSync(UserId)
@@ -111,6 +112,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const gcp = yield* GcpConnectorService
 		const edgeCache = yield* EdgeCacheService
 		const env = yield* Env
+		const completeOAuth = yield* makeOAuthCompleter
 
 		// The callback URL is replayed as `redirect_uri` and its origin comes from a
 		// client-settable header, so it must belong to the app's own host family.
@@ -127,6 +129,13 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 
 		return (
 			handlers
+				// The caller's own session is the proof: a state only redeems for the user who began it.
+				.handle("oauthComplete", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* completeOAuth(payload, { orgId: tenant.orgId, userId: tenant.userId })
+					}),
+				)
 				.handle("hazelStatus", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
