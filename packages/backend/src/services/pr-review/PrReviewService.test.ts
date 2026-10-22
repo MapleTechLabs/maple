@@ -314,7 +314,7 @@ const breakingTelemetry = new PrReviewTelemetry({
 	removed: [],
 })
 
-const seed = (enabled: boolean) =>
+const seed = (enabled: boolean, isPrivate = true) =>
 	Effect.gen(function* () {
 		const repo = yield* VcsRepository
 		yield* repo.upsertInstallation({
@@ -336,7 +336,7 @@ const seed = (enabled: boolean) =>
 				fullName: "octo/repo",
 				defaultBranch: "main",
 				htmlUrl: "https://github.com/octo/repo",
-				isPrivate: true,
+				isPrivate,
 				isArchived: false,
 			},
 		])
@@ -571,25 +571,40 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		}).pipe(Effect.provide(layerFor(testDb)))
 	})
 
-	it.effect("reviews an outside author's pull request only when a member asks for it", () => {
+	it.effect(
+		"reviews an outside author's pull request on a public repository only when a member asks for it",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const begun: Array<Begun> = []
+			return Effect.gen(function* () {
+				yield* seed(true, false)
+				const reviews = yield* PrReviewService
+				const contributor = yield* reviews.onPullRequestEvent(
+					orgId,
+					job({ authorAssociation: "CONTRIBUTOR" }),
+				)
+				assert.equal(contributor.skipReason, "external_author")
+				const { authorAssociation: _association, ...unknownAuthor } = job()
+				assert.equal(
+					(yield* reviews.onPullRequestEvent(orgId, unknownAuthor)).skipReason,
+					"external_author",
+				)
+				assert.equal(begun.length, 0)
+				const asked = yield* reviews.reviewNow(orgId, job({ authorAssociation: "NONE" }))
+				assert.equal(asked.outcome, "started")
+				assert.equal(begun.length, 1)
+			}).pipe(Effect.provide(layerFor(testDb, { begun })))
+		},
+	)
+
+	it.effect("reviews a private repository's pull request whatever association the webhook reports", () => {
 		const testDb = createTestDb(trackedDbs)
 		const begun: Array<Begun> = []
 		return Effect.gen(function* () {
 			yield* seed(true)
 			const reviews = yield* PrReviewService
-			const contributor = yield* reviews.onPullRequestEvent(
-				orgId,
-				job({ authorAssociation: "CONTRIBUTOR" }),
-			)
-			assert.equal(contributor.skipReason, "external_author")
-			const { authorAssociation: _association, ...unknownAuthor } = job()
-			assert.equal(
-				(yield* reviews.onPullRequestEvent(orgId, unknownAuthor)).skipReason,
-				"external_author",
-			)
-			assert.equal(begun.length, 0)
-			const asked = yield* reviews.reviewNow(orgId, job({ authorAssociation: "NONE" }))
-			assert.equal(asked.outcome, "started")
+			const member = yield* reviews.onPullRequestEvent(orgId, job({ authorAssociation: "CONTRIBUTOR" }))
+			assert.equal(member.outcome, "started")
 			assert.equal(begun.length, 1)
 		}).pipe(Effect.provide(layerFor(testDb, { begun })))
 	})
