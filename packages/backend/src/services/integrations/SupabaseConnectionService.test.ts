@@ -550,6 +550,24 @@ describe("SupabaseConnectionService log drains", () => {
 		},
 	)
 
+	it.effect("on a Free plan the refused drain listing surfaces the plan error and creates nothing", () => {
+		const testDb = createTestDb(trackedDbs)
+		// Live 2026-10-22: Free answers the drain listing 403 before a create could answer 402.
+		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)], drainListStatus: 403 })
+		return Effect.gen(function* () {
+			const service = yield* SupabaseConnectionService
+			yield* connect(fake)
+			const error = yield* service
+				.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+				.pipe(Effect.flip)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsPlanRequiredError")
+			assert.strictEqual(error.message, "Log drains need a Supabase Pro plan or higher.")
+			assert.strictEqual(drainCalls(fake, "POST").length, 0)
+			assert.strictEqual(yield* tokenSourceCount(testDb), 0)
+			assert.isFalse((yield* service.getStatus(ORG)).projects[0]?.logDrainEnabled ?? true)
+		}).pipe(Effect.provide(makeLayer(testDb, fake)))
+	})
+
 	it.effect("a Free plan 402 deletes the minted source and surfaces the plan error", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)], drainCreateStatus: 402 })

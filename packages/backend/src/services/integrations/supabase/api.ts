@@ -18,6 +18,8 @@ export class SupabaseApiError extends Schema.TaggedError<SupabaseApiError>()(
 	},
 ) {}
 
+export const DRAINS_PLAN_MESSAGE = "Log drains need a Supabase Pro plan or higher."
+
 /** Supabase answered 402: the organization's plan does not include the feature (log drains need Pro). */
 export class SupabasePlanRequiredError extends Schema.TaggedError<SupabasePlanRequiredError>()(
 	"@maple/supabase/SupabasePlanRequiredError",
@@ -339,19 +341,17 @@ export const createLogDrain = Effect.fn("SupabaseApi.createLogDrain")(function* 
 	const text = yield* send(httpClient, request, what, { retry: false }).pipe(
 		Effect.catchIf(
 			(error) => error.status === 402,
-			() =>
-				Effect.fail(
-					new SupabasePlanRequiredError({
-						message: "Log drains need a Supabase Pro plan or higher.",
-					}),
-				),
+			() => Effect.fail(new SupabasePlanRequiredError({ message: DRAINS_PLAN_MESSAGE })),
 		),
 	)
 	const created = yield* decodeCreatedDrain(text).pipe(Effect.mapError(() => unexpectedBody(what)))
 	return created.data
 })
 
-/** `GET /v2/projects/{ref}/analytics/log-drains`; a drain with an undecodable shape is skipped. */
+/**
+ * `GET /v2/projects/{ref}/analytics/log-drains`; a drain with an undecodable shape is skipped.
+ * None when the plan has no drains: Free answers 403 "does not have access to this API" (live, 2026-10-22).
+ */
 export const listLogDrains = Effect.fn("SupabaseApi.listLogDrains")(function* (
 	httpClient: HttpClient.HttpClient,
 	baseUrl: string,
@@ -367,14 +367,24 @@ export const listLogDrains = Effect.fn("SupabaseApi.listLogDrains")(function* (
 			HttpClientRequest.acceptJson,
 		),
 		what,
+	).pipe(
+		Effect.map(Option.some),
+		Effect.catchIf(
+			(error) => error.kind === "forbidden",
+			() => Effect.succeed(Option.none<string>()),
+		),
 	)
-	const list = yield* decodeDrainList(text).pipe(Effect.mapError(() => unexpectedBody(what)))
+	if (Option.isNone(text)) {
+		yield* Effect.annotateCurrentSpan({ "maple.supabase.log_drains_available": false })
+		return Option.none<ReadonlyArray<SupabaseLogDrain>>()
+	}
+	const list = yield* decodeDrainList(text.value).pipe(Effect.mapError(() => unexpectedBody(what)))
 	const drains = list.data.flatMap((item) => Option.toArray(decodeDrain(item)))
 	yield* Effect.annotateCurrentSpan({
 		"maple.supabase.log_drains_listed": list.data.length,
 		"maple.supabase.log_drains_skipped": list.data.length - drains.length,
 	})
-	return drains
+	return Option.some<ReadonlyArray<SupabaseLogDrain>>(drains)
 })
 
 /** `DELETE /v2/projects/{ref}/analytics/log-drains/{id}`. A 404 means it is already gone. */

@@ -53,6 +53,7 @@ import {
 } from "@maple/backend/services/org/integration-sources"
 import {
 	createLogDrain,
+	DRAINS_PLAN_MESSAGE,
 	deleteLogDrain,
 	listLogDrains,
 	listProjects,
@@ -409,9 +410,12 @@ export class SupabaseConnectionService extends Context.Service<
 				project.logDrainId !== null &&
 				project.logDrainSourceId !== null
 			if (healthy) return
-			const existing = (yield* listDrains(orgId, ref)).map((drain) =>
-				summarizeDrain(orgId, drain, project.logDrainId),
-			)
+			const listed = yield* listDrains(orgId, ref)
+			// Free refuses the listing before a create could answer 402, so the plan gate shows here.
+			if (Option.isNone(listed)) {
+				return yield* new IntegrationsPlanRequiredError({ message: DRAINS_PLAN_MESSAGE })
+			}
+			const existing = listed.value.map((drain) => summarizeDrain(orgId, drain, project.logDrainId))
 			const manual = existing.find((drain) => drain.toMaple && !drain.managedByMaple)
 			if (manual !== undefined) {
 				return yield* new IntegrationsValidationError({
@@ -493,7 +497,7 @@ export class SupabaseConnectionService extends Context.Service<
 									Effect.flatMap((listed) =>
 										deleteOrphanDrains(
 											project,
-											listed
+											Option.getOrElse(listed, () => [])
 												.filter((drain) => isOurs(orgId, drain))
 												.map((drain) => drain.id),
 										),
@@ -557,7 +561,10 @@ export class SupabaseConnectionService extends Context.Service<
 				live,
 				(row) =>
 					Effect.gen(function* () {
-						const drains = (yield* listDrains(orgId, row.projectRef)).map((drain) =>
+						const listed = yield* listDrains(orgId, row.projectRef)
+						// A plan without drains keeps the (empty) snapshot; nothing to record.
+						if (Option.isNone(listed)) return
+						const drains = listed.value.map((drain) =>
 							summarizeDrain(orgId, drain, row.logDrainId),
 						)
 						const drainError = !row.logDrainEnabled
@@ -1070,10 +1077,12 @@ export class SupabaseConnectionService extends Context.Service<
 			const listedNow =
 				request.logsEnabled === true
 					? yield* listDrains(orgId, ref).pipe(
-							Effect.map((listed) =>
-								listed.map((drain) => summarizeDrain(orgId, drain, project.logDrainId)),
+							Effect.map(
+								Option.map((listed) =>
+									listed.map((drain) => summarizeDrain(orgId, drain, project.logDrainId)),
+								),
 							),
-							Effect.option,
+							Effect.orElseSucceed(() => Option.none<ReadonlyArray<SupabaseLogDrainSummary>>()),
 						)
 					: Option.none()
 			// A good live listing replaces the snapshot, so the polling switch's own check agrees with it.
