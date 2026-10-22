@@ -43,7 +43,7 @@
 		"@maple/widgets": "workspace:*",
 		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect",
-		"@yielded/agent": "0.1.0-beta.166"
+		"@yielded/agent": "0.1.0-beta.189"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",

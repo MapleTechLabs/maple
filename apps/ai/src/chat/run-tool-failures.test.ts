@@ -202,6 +202,36 @@ describe("runChatTurn diagnosis rejections", () => {
 		)
 		assert.lengthOf(filed, 1)
 		assert.deepInclude(filed[0], { suggestedActions: ["Roll back"] })
+		assert.lengthOf(prompts, 2, "the landed submission ends the run")
+	})
+
+	it("ends the turn on a landed submit_diagnosis, without another model call", async () => {
+		const { model, prompts } = scriptedModel([
+			callTool("submit_diagnosis", { summary: "s", evidence: "p99 tripled" }),
+			answer("I have filed the diagnosis."),
+		])
+		const events: Array<ChatTurnEvent> = []
+		const effect = runChatTurn({
+			sessionId: `${TENANT.orgId}:inv-0199a4d1-9f3c-7c8e-b2a1-3f5e7d9c1b40`,
+			messageId: "msg-1",
+			tenant: TENANT,
+			origin: { kind: "autonomous" },
+			toolExecutor: rejectingExecutor,
+			model,
+			submitDiagnosis: () => Effect.void,
+			text: "Investigate.",
+			history: [],
+			usage: makeRunUsage(),
+			holdsTurn: () => true,
+			append: (event) => events.push(event),
+		})
+
+		const exit = await Effect.runPromiseExit(effect.pipe(Effect.provide(llmClients)))
+
+		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted, `run failed: ${String(exit)}`)
+		assert.lengthOf(prompts, 1)
+		assert.isFalse(events.some((event) => event.type === "text-delta"))
+		assert.deepEqual(events.at(-1), { type: "turn-end", messageId: "msg-1", reason: "stop" })
 	})
 })
 

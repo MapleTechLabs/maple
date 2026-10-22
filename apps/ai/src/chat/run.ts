@@ -8,6 +8,7 @@
 import { evaluatePermission } from "@maple/domain/permission"
 import type { ChatMessage, ChatTurnOrigin } from "@maple/domain/chat-session"
 import * as AgentRuntime from "@yielded/agent/agent-runtime"
+import type * as RunEvent from "@yielded/agent/run-event"
 import * as ThreadHistory from "@yielded/agent/thread-history"
 import { ThreadId } from "@yielded/agent/identifiers"
 import { Clock, Duration, Effect, Layer, Schema, Stream } from "effect"
@@ -20,7 +21,7 @@ import { withRunSessionAttributes } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
-import { makeTextSanitizer, toChatEvents, type ChatTurnEvent } from "./events"
+import { makeTextSanitizer, settledTurnEnd, toChatEvents, type ChatTurnEvent } from "./events"
 import { makeReviewCoverage, type ReviewCoverage } from "./review-coverage"
 import type { ReviewLedger } from "./review-ledger"
 import { buildReviewFanout } from "./review-fanout"
@@ -227,13 +228,17 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		...(fanout === undefined ? [] : [fanout.layer.pipe(Layer.provide(maple.layer))]),
 	)
 
-	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
+	// Not declared to the engine, which would then require the tool on every call; see
+	// `buildDiagnosisCompletion`. A landed submission still settles the run, below.
 	const run = chatAgent({ ...agent, prompt: profile.prompt }, toolkit, input.model, {
 		autonomous: input.origin.kind === "autonomous",
-		...(completion === undefined
-			? undefined
-			: { completion: { tool: completion.tool, required: false } }),
 	})
+	const usage = accumulateUsage(input.usage)
+	const settles = (event: RunEvent.RunEvent): boolean =>
+		completion !== undefined &&
+		event._tag === "ToolCallSucceeded" &&
+		event.toolName === completion.tool &&
+		completion.submitted()
 
 	// A gated tool is announced exactly like any other and refuses when dispatched, so only the
 	// ruleset knows the call is a proposal.
@@ -249,27 +254,32 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		// Not a budget: the ceilings live in the agent's policy. This is the only place the engine
 		// reports token usage as it accrues — the event stream carries none — and `submit_diagnosis`
 		// reads the running total mid-run, so a hook that merely observes is what fills it.
-		budget: accumulateUsage(input.usage),
+		budget: {
+			...usage,
+			// A landed submission settles the run: the next model or tool pull never starts.
+			guard: (effect) => (completion?.submitted() === true ? Effect.interrupt : usage.guard(effect)),
+		},
 	}).pipe(
 		// An abort clears the claim; the run notices at the next event rather than only after the
 		// in-flight model call drains.
 		Stream.takeWhile(() => input.holdsTurn()),
+		Stream.takeUntil(settles),
 		Stream.runForEach((event) =>
 			Effect.sync(() => {
 				if (event._tag === "CompactionPerformed") compactions += 1
-				for (const chat of toChatEvents(event, {
+				const context = {
 					messageId: input.messageId,
 					isProposed,
 					labelOf: mapleToolPhrase,
-					uiOf: (toolCallId) => {
+					uiOf: (toolCallId: string) => {
 						const ui = uiByCall.get(toolCallId)
 						uiByCall.delete(toolCallId)
 						return ui
 					},
 					sanitizer,
-				})) {
-					input.append(chat)
 				}
+				for (const chat of toChatEvents(event, context)) input.append(chat)
+				if (settles(event)) for (const chat of settledTurnEnd(context)) input.append(chat)
 			}),
 		),
 		// The gate's refusal is how a run stops on a proposal: the turn finished, it did not fail.

@@ -221,6 +221,12 @@ const flushed = (context: AdapterContext): ReadonlyArray<ChatTurnEvent> => {
 	return text === "" ? [] : [tagged(context, { type: "text-delta", messageId: context.messageId, text })]
 }
 
+/** The end of a turn that a landed submit tool settled, in place of the engine's `RunCompleted`. */
+export const settledTurnEnd = (context: AdapterContext): ReadonlyArray<ChatTurnEvent> => [
+	...flushed(context),
+	tagged(context, { type: "turn-end", messageId: context.messageId, reason: "stop" }),
+]
+
 /** Stamp an event with the ref that routes it into a parent's task card. */
 const tagged = <E extends ChatTurnEvent>(context: AdapterContext, event: E): E =>
 	context.task === undefined ? event : { ...event, task: context.task }

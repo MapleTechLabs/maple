@@ -35,7 +35,7 @@ import {
 	type SandboxError,
 	type SandboxEvent,
 	type SandboxRequest,
-} from "@yielded/agent/sandbox"
+} from "@maple/backend/sandbox/contract"
 import { Duration, Effect, Layer, Option, Schedule, Schema, Stream } from "effect"
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import {
