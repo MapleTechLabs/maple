@@ -31,6 +31,26 @@ describe("a turn that ends with calls unsettled", () => {
 		assert.deepStrictEqual(toolStates(messages[0]), ["output-stopped", "proposed"])
 	})
 
+	it("stops a sub-agent's unsettled calls when the sub-agent's own turn ends", () => {
+		const task = { id: "t1", agent: "pr-review-worker", parentMessageId: "a1" }
+		const sequence: ReadonlyArray<ChatEventInput> = [
+			{ type: "turn-start", messageId: "a1" },
+			{ type: "tool-call", messageId: "a1", callId: "t1", name: "task_pr-review-worker", input: {} },
+			{ type: "turn-start", messageId: "t1", task },
+			{ type: "tool-call", messageId: "t1", callId: "s1", name: "pr_file_diff", input: {}, task },
+			{ type: "turn-end", messageId: "t1", reason: "error", task },
+		]
+		const [message] = sequence.reduce<ReadonlyArray<UIMessage>>(
+			(folded, input, index) =>
+				applyChatEvent(folded, decodeChatEventPayload(encodeChatEventPayload(input), index + 1), 10),
+			[],
+		)
+		const card = message?.parts.find((part) => part._tag === "task")
+		assert.strictEqual(card?._tag === "task" ? card.status : undefined, "error")
+		const nested = card?._tag === "task" ? card.messages.flatMap((child) => toolStates(child) ?? []) : []
+		assert.deepStrictEqual(nested, ["output-stopped"])
+	})
+
 	it("stops them after a reload", () => {
 		const message = historyMessageToUIMessage(
 			new ChatMessage({

@@ -140,6 +140,8 @@ export const toolRow = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>
 	const summary = toolSummary(part.input)
 	const line = traceLine(h, status === "completed" || status === "stopped" ? {} : { status }, [
 		traceIcon(h, [statusGlyph(h, status, live, part.toolName)], live ? "size-5" : undefined),
+		// The glyph is hidden from assistive tech, so the state is said in words.
+		...(status === "stopped" ? [h.span([h.Class("sr-only")], ["Stopped"])] : []),
 		h.span(
 			[h.Class("min-w-0 truncate motion-reduce:shimmer-none font-medium"), h.DataAttribute("slot", "trace-title"), h.Title(label)],
 			[label],

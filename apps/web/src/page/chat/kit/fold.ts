@@ -288,13 +288,23 @@ const taskStatusAfter = (event: ChatEvent, status: TaskPart["status"]): TaskPart
 				? "error"
 				: "aborted"
 
+type SubAgentEvent = Exclude<ChatEvent, { readonly type: "user-message" }>
+
+/** A sub-agent's event as its own transcript sees it. */
+const ownEvent = (event: SubAgentEvent): ChatEvent => {
+	const { task: _task, ...own } = event
+	return own
+}
+
 /** A sub-agent's event folds into its `task` part through the same reducer; a missing parent drops it. */
-const applyTaskEvent = (messages: Messages, event: ChatEvent, task: ChatTaskRef, nowMs: number): Messages =>
+const applyTaskEvent = (messages: Messages, event: SubAgentEvent, task: ChatTaskRef, nowMs: number): Messages =>
 	updateMessage(messages, task.parentMessageId, (message) => ({
 		...message,
 		parts: message.parts.map((part): UIMessagePart => {
 			if (part._tag !== "task" || part.toolCallId !== task.id) return part
-			const nested = applyChatEvent(part.messages, event, nowMs)
+			// Untagged: still tagged, the inner fold routed it back to the parent and dropped it, so a
+			// card stayed empty until a reload.
+			const nested = applyChatEvent(part.messages, ownEvent(event), nowMs)
 			return {
 				...part,
 				status: taskStatusAfter(event, part.status),
