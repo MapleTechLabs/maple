@@ -84,11 +84,7 @@ const whereKey = (isOpen: boolean) =>
 		dismiss: Message.DismissedWhereSuggestions(),
 	})
 
-const suggestionList = (
-	h: H,
-	model: Model,
-	suggestions: ReturnType<typeof whereAutocompleteOf>["suggestions"],
-): Html =>
+const suggestionList = (h: H, model: Model, suggestions: ReturnType<typeof whereAutocompleteOf>["suggestions"]): Html =>
 	suggestionListbox(h, {
 		suggestions,
 		activeIndex: model.whereEditor.activeIndex,

@@ -17,13 +17,11 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 	}),
 	incidents: entry(byOrg, {
 		modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
-		dependenciesToStream: ({ orgId }) =>
-			incidentRows(orgId, (rows) => Message.UpdatedIncidents({ orgId, rows })),
+		dependenciesToStream: ({ orgId }) => incidentRows(orgId, (rows) => Message.UpdatedIncidents({ orgId, rows })),
 	}),
 	states: entry(byOrg, {
 		modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
-		dependenciesToStream: ({ orgId }) =>
-			ruleStateRows(orgId, (rows) => Message.UpdatedRuleStates({ orgId, rows })),
+		dependenciesToStream: ({ orgId }) => ruleStateRows(orgId, (rows) => Message.UpdatedRuleStates({ orgId, rows })),
 	}),
 	destinations: entry(byOrg, {
 		modelToDependencies: ({ context }) => ({ orgId: context.orgId }),

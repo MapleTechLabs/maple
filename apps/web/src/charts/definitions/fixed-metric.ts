@@ -63,9 +63,7 @@ const bucketTooltip =
 	(points: ReadonlyArray<Point>): Option.Option<ChartTooltip> =>
 		Option.map(Option.fromNullishOr(points[0]), ({ datum }) => {
 			// `resolveTooltipHighlight`: the series nearest the cursor is emphasised.
-			const highlighted = focus.highlight(
-				series.map((entry) => [entry.label, entry.value(datum)] as const),
-			)
+			const highlighted = focus.highlight(series.map((entry) => [entry.label, entry.value(datum)] as const))
 			const base = {
 				heading: formatBucketLabel(datum.bucket, model.axisContext, "tooltip"),
 				rows: series.flatMap((entry) => {
@@ -82,9 +80,7 @@ const bucketTooltip =
 							]
 				}),
 			}
-			return highlighted === undefined
-				? ChartTooltip.Bucket(base)
-				: ChartTooltip.Bucket({ ...base, highlighted })
+			return highlighted === undefined ? ChartTooltip.Bucket(base) : ChartTooltip.Bucket({ ...base, highlighted })
 		})
 
 const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
@@ -283,11 +279,7 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
 		tooltip: spec.showTooltip ? cursorTooltip<TimeseriesRow>(focus.anchor) : false,
 	})
 	const series = [{ label: "Error rate", color, value: read("errorRate"), format: formatErrorRate }]
-	return {
-		definition,
-		focusKeyOf: (point) => point.datum.bucket,
-		tooltipOf: bucketTooltip(model, series, focus),
-	}
+	return { definition, focusKeyOf: (point) => point.datum.bucket, tooltipOf: bucketTooltip(model, series, focus) }
 }
 
 const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
@@ -393,11 +385,7 @@ const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue
 	})
 	const format = (score: number) => score.toFixed(2)
 	const series = [{ label: "Apdex", color, value: read("apdexScore"), format }]
-	return {
-		definition,
-		focusKeyOf: (point) => point.datum.bucket,
-		tooltipOf: bucketTooltip(model, series, focus),
-	}
+	return { definition, focusKeyOf: (point) => point.datum.bucket, tooltipOf: bucketTooltip(model, series, focus) }
 }
 
 export const buildFixedMetric = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {

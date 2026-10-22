@@ -11,11 +11,7 @@ const editDistance = (a: string, b: string): number => {
 		previous[0] = i
 		for (let j = 1; j <= b.length; j++) {
 			const above = previous[j]!
-			previous[j] = Math.min(
-				above + 1,
-				previous[j - 1]! + 1,
-				diagonal + (a[i - 1] === b[j - 1] ? 0 : 1),
-			)
+			previous[j] = Math.min(above + 1, previous[j - 1]! + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1))
 			diagonal = above
 		}
 	}
@@ -93,8 +89,7 @@ const hintFor = (
 ): string | undefined => {
 	if (known === undefined || known.includes(value)) return undefined
 	const close = closestMatches(value, known)
-	if (close.length > 0)
-		return `${label} "${value}" was not seen in this window. Did you mean ${quoted(close)}?`
+	if (close.length > 0) return `${label} "${value}" was not seen in this window. Did you mean ${quoted(close)}?`
 	return complete ? `${label} "${value}" was not seen in this window; ${whereToLook}.` : undefined
 }
 

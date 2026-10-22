@@ -46,72 +46,56 @@ const initTab = (model: Model, tab: AccountTab, _context: PageContext): Return =
 			const step = Profile.init()
 			return {
 				model: { ...model, tab: { _tag: "Profile", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) =>
-					Message.GotProfileMessage({ message }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotProfileMessage({ message })),
 			}
 		}
 		case "Password": {
 			const step = Password.init()
 			return {
 				model: { ...model, tab: { _tag: "Password", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) =>
-					Message.GotPasswordMessage({ message }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotPasswordMessage({ message })),
 			}
 		}
 		case "Emails": {
 			const step = Emails.init()
 			return {
 				model: { ...model, tab: { _tag: "Emails", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) =>
-					Message.GotEmailsMessage({ message }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotEmailsMessage({ message })),
 			}
 		}
 		case "Passkeys": {
 			const step = Passkeys.init()
 			return {
 				model: { ...model, tab: { _tag: "Passkeys", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) =>
-					Message.GotPasskeysMessage({ message }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotPasskeysMessage({ message })),
 			}
 		}
 		case "Connections": {
 			const step = Connections.init()
 			return {
 				model: { ...model, tab: { _tag: "Connections", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) =>
-					Message.GotConnectionsMessage({ message }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotConnectionsMessage({ message })),
 			}
 		}
 		case "Sessions": {
 			const step = Sessions.init()
 			return {
 				model: { ...model, tab: { _tag: "Sessions", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) =>
-					Message.GotSessionsMessage({ message }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotSessionsMessage({ message })),
 			}
 		}
 		case "TwoFactor": {
 			const step = TwoFactor.init()
 			return {
 				model: { ...model, tab: { _tag: "TwoFactor", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) =>
-					Message.GotTwoFactorMessage({ message }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotTwoFactorMessage({ message })),
 			}
 		}
 		case "EmailPreferences": {
 			const step = EmailPreferences.init()
 			return {
 				model: { ...model, tab: { _tag: "EmailPreferences", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (message) =>
-					Message.GotEmailPreferencesMessage({ message }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotEmailPreferencesMessage({ message })),
 			}
 		}
 		case "Unported":
@@ -124,10 +108,7 @@ const enter = (model: Model, context: PageContext): Return => {
 	if (!isClerkAuthEnabled)
 		return {
 			model: { ...model, tab: null },
-			outMessage: PageOutMessage.RequestedNavigation({
-				url: hrefOf(AppRoute.Settings({ search: {} })),
-				isReplace: true,
-			}),
+			outMessage: PageOutMessage.RequestedNavigation({ url: hrefOf(AppRoute.Settings({ search: {} })), isReplace: true }),
 		}
 	const tab = activeTabOf(model)
 	return isTabCurrent(model.tab, tab) ? { model } : initTab(model, tab, context)
@@ -167,9 +148,7 @@ const updateTab = (model: Model, message: Message): Return =>
 			const step = Password.update(model.tab.model, inner)
 			return {
 				model: { ...model, tab: { _tag: "Password", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (child) =>
-					Message.GotPasswordMessage({ message: child }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotPasswordMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},
@@ -178,9 +157,7 @@ const updateTab = (model: Model, message: Message): Return =>
 			const step = Emails.update(model.tab.model, inner)
 			return {
 				model: { ...model, tab: { _tag: "Emails", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (child) =>
-					Message.GotEmailsMessage({ message: child }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotEmailsMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},
@@ -189,9 +166,7 @@ const updateTab = (model: Model, message: Message): Return =>
 			const step = Passkeys.update(model.tab.model, inner)
 			return {
 				model: { ...model, tab: { _tag: "Passkeys", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (child) =>
-					Message.GotPasskeysMessage({ message: child }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotPasskeysMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},
@@ -200,9 +175,7 @@ const updateTab = (model: Model, message: Message): Return =>
 			const step = Connections.update(model.tab.model, inner)
 			return {
 				model: { ...model, tab: { _tag: "Connections", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (child) =>
-					Message.GotConnectionsMessage({ message: child }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotConnectionsMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},
@@ -211,9 +184,7 @@ const updateTab = (model: Model, message: Message): Return =>
 			const step = Sessions.update(model.tab.model, inner)
 			return {
 				model: { ...model, tab: { _tag: "Sessions", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (child) =>
-					Message.GotSessionsMessage({ message: child }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotSessionsMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},
@@ -222,9 +193,7 @@ const updateTab = (model: Model, message: Message): Return =>
 			const step = TwoFactor.update(model.tab.model, inner)
 			return {
 				model: { ...model, tab: { _tag: "TwoFactor", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (child) =>
-					Message.GotTwoFactorMessage({ message: child }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotTwoFactorMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},
@@ -233,9 +202,7 @@ const updateTab = (model: Model, message: Message): Return =>
 			const step = EmailPreferences.update(model.tab.model, inner)
 			return {
 				model: { ...model, tab: { _tag: "EmailPreferences", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (child) =>
-					Message.GotEmailPreferencesMessage({ message: child }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotEmailPreferencesMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},
@@ -244,9 +211,7 @@ const updateTab = (model: Model, message: Message): Return =>
 			const step = Profile.update(model.tab.model, inner)
 			return {
 				model: { ...model, tab: { _tag: "Profile", model: step.model } },
-				commands: Command.mapMessages(step.commands ?? [], (child) =>
-					Message.GotProfileMessage({ message: child }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotProfileMessage({ message: child })),
 				outMessage: step.outMessage,
 			}
 		},

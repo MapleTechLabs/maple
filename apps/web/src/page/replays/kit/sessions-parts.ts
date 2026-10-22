@@ -1,3 +1,4 @@
+
 import type { SessionTag } from "@maple/domain/query-engine"
 import { countLabel } from "@maple/ui/lib/format"
 import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
@@ -71,19 +72,13 @@ export const columnHeader = <M>(h: HtmlBuilder<M>): Html =>
 export const livePill = <M>(h: HtmlBuilder<M>, isCompact: boolean): Html =>
 	badge(
 		h,
-		{
-			variant: "ok",
-			pill: true,
-			size: isCompact ? "xs" : "default",
-			className: isCompact ? "tracking-wide" : "gap-1.5",
-		},
+		{ variant: "ok", pill: true, size: isCompact ? "xs" : "default", className: isCompact ? "tracking-wide" : "gap-1.5" },
 		[statusDot(h, { tone: "ok" }), isCompact ? "LIVE" : "Live"],
 	)
 
 /** `ErrorCountPill`. */
 export const errorCountPill = <M>(h: HtmlBuilder<M>, count: number): Html =>
-	badge(
-		h,
-		{ pill: true, size: "xs", mono: true, className: cn("gap-1.5", TONE_SOFT.crit, TONE_BORDER.crit) },
-		[statusDot(h, { tone: "crit", size: "sm" }), countLabel(count, "error")],
-	)
+	badge(h, { pill: true, size: "xs", mono: true, className: cn("gap-1.5", TONE_SOFT.crit, TONE_BORDER.crit) }, [
+		statusDot(h, { tone: "crit", size: "sm" }),
+		countLabel(count, "error"),
+	])

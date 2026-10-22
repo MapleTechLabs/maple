@@ -53,11 +53,7 @@ export type FilterKey = typeof FilterKey.Type
 export const Message = defineMessageUnion({
 	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
 	/** Any slot's answer; `key` is what it was requested under, so a stale one is dropped. */
-	CompletedFetch: {
-		slot: SlotName,
-		key: Schema.String,
-		result: Schema.Result(Schema.Unknown, LoadFailure),
-	},
+	CompletedFetch: { slot: SlotName, key: Schema.String, result: Schema.Result(Schema.Unknown, LoadFailure) },
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	TickedLivePoll: {},
 	ClickedReload: {},
@@ -78,10 +74,7 @@ export const Message = defineMessageUnion({
 	ClickedPanelSort: {
 		panel: Schema.String,
 		key: Schema.Literals(["name", "count", "views"]),
-		current: Schema.Struct({
-			key: Schema.Literals(["name", "count", "views"]),
-			dir: Schema.Literals(["asc", "desc"]),
-		}),
+		current: Schema.Struct({ key: Schema.Literals(["name", "count", "views"]), dir: Schema.Literals(["asc", "desc"]) }),
 	},
 	ClickedExpandPanel: { panel: Schema.String },
 	ClickedExpandedRow: { key: FilterKey, value: Schema.String },

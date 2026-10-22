@@ -23,10 +23,7 @@ const { values } = parseArgs({
 	},
 })
 
-const base = (values.url ?? process.env.MAPLE_DEV_ALERTING_URL ?? "https://alerting.localhost").replace(
-	/\/$/,
-	"",
-)
+const base = (values.url ?? process.env.MAPLE_DEV_ALERTING_URL ?? "https://alerting.localhost").replace(/\/$/, "")
 const cron = values.cron ?? MINUTE_CRON
 const target = `${base}/cdn-cgi/handler/scheduled?cron=${encodeURIComponent(cron)}`
 

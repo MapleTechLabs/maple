@@ -117,105 +117,64 @@ const clearLabel = (model: Model) => [model.tag, model.group].filter((value) => 
 const page = (model: Model, h: HtmlBuilder<Message>): Html => {
 	const rows = labSessions(model.nowMs)
 	const visible = visibleRows(model, rows)
-	return h.div(
-		[h.Class("flex h-svh flex-col gap-4 p-6")],
-		[
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					...(model.tag !== null || model.group !== null
-						? [
-								h.button(
-									[
-										h.Type("button"),
-										h.OnClick(Message.ClickedClear()),
-										h.Class("rounded border border-border px-2 py-1 text-xs"),
-									],
-									["Clear ", clearLabel(model)],
-								),
-							]
-						: []),
-					...WIDTHS.map((option) => widthButton(h, model, option)),
-				],
-			),
-			h.div(
-				[
-					h.Class("flex min-h-0 flex-1 flex-col"),
-					...(model.width === null ? [] : [h.Style({ width: `${model.width}px` })]),
-				],
-				[
-					h.div(
-						[h.DataAttribute("slot", "page-layout"), h.Class(pageLayoutStyles)],
-						[
-							h.main(
-								[
-									h.Id("main-content"),
-									h.DataAttribute("slot", "page-content"),
-									h.Class(pageContentStyles),
-								],
-								[
-									h.div(
-										[
-											h.DataAttribute("slot", "page-sticky-area"),
-											h.Class(cn(pageStickyAreaStyles, "pb-3")),
-										],
-										[
-											replaysToolbar(h, {
-												query: model.query,
-												onInput: (value) => Message.ChangedSearch({ value }),
-												onClear: Message.ChangedSearch({ value: "" }),
-												errorSessions: rows.filter((row) => row.errorCount > 0)
-													.length,
-												isErrorsOnly: model.isErrorsOnly,
-												onToggleErrorsOnly: Message.ToggledErrorsOnly(),
-												engagedSessions: rows.filter((row) =>
-													row.tags.includes("engaged"),
-												).length,
-												isEngagedOnly: model.isEngagedOnly,
-												onToggleEngagedOnly: Message.ToggledEngagedOnly(),
-											}),
-										],
-									),
-									h.div(
-										[
-											h.DataAttribute("slot", "page-scroll-area"),
-											h.Class(cn(pageScrollAreaStyles, "pt-0")),
-										],
-										[
-											sessionsList(
-												h,
-												{
-													items: sessionListItems(visible, {
-														collapse: !model.isEngagedOnly && model.tag === null,
-														expanded: model.expanded,
-														nowMs: model.nowMs,
-													}),
-													nowMs: model.nowMs,
-													timeZone: model.timeZone,
-													durationP95: 1_200_000,
-													onOpen: (session) =>
-														Message.ClickedSession({
-															sessionId: session.sessionId,
-														}),
-													onToggleRun: (key) => Message.ToggledRun({ key }),
-													onFilterTag: (tag) => Message.ClickedTag({ tag }),
-													onFilterGroup: (group) => Message.ClickedGroup({ group }),
-												},
-												{
-													window: model.virtualWindow,
-													mount: h.OnMount(VirtualizeList()),
-												},
-											),
-										],
-									),
-								],
-							),
-						],
-					),
-				],
-			),
-		],
-	)
+	return h.div([h.Class("flex h-svh flex-col gap-4 p-6")], [
+		h.div([h.Class("flex items-center gap-2")], [
+			...(model.tag !== null || model.group !== null
+				? [
+						h.button(
+							[
+								h.Type("button"),
+								h.OnClick(Message.ClickedClear()),
+								h.Class("rounded border border-border px-2 py-1 text-xs"),
+							],
+							["Clear ", clearLabel(model)],
+						),
+					]
+				: []),
+			...WIDTHS.map((option) => widthButton(h, model, option)),
+		]),
+		h.div(
+			[
+				h.Class("flex min-h-0 flex-1 flex-col"),
+				...(model.width === null ? [] : [h.Style({ width: `${model.width}px` })]),
+			],
+			[
+				h.div([h.DataAttribute("slot", "page-layout"), h.Class(pageLayoutStyles)], [
+					h.main([h.Id("main-content"), h.DataAttribute("slot", "page-content"), h.Class(pageContentStyles)], [
+						h.div([h.DataAttribute("slot", "page-sticky-area"), h.Class(cn(pageStickyAreaStyles, "pb-3"))], [
+							replaysToolbar(h, {
+								query: model.query,
+								onInput: (value) => Message.ChangedSearch({ value }),
+								onClear: Message.ChangedSearch({ value: "" }),
+								errorSessions: rows.filter((row) => row.errorCount > 0).length,
+								isErrorsOnly: model.isErrorsOnly,
+								onToggleErrorsOnly: Message.ToggledErrorsOnly(),
+								engagedSessions: rows.filter((row) => row.tags.includes("engaged")).length,
+								isEngagedOnly: model.isEngagedOnly,
+								onToggleEngagedOnly: Message.ToggledEngagedOnly(),
+							}),
+						]),
+						h.div([h.DataAttribute("slot", "page-scroll-area"), h.Class(cn(pageScrollAreaStyles, "pt-0"))], [
+							sessionsList(h, {
+								items: sessionListItems(visible, {
+									collapse: !model.isEngagedOnly && model.tag === null,
+									expanded: model.expanded,
+									nowMs: model.nowMs,
+								}),
+								nowMs: model.nowMs,
+								timeZone: model.timeZone,
+								durationP95: 1_200_000,
+								onOpen: (session) => Message.ClickedSession({ sessionId: session.sessionId }),
+								onToggleRun: (key) => Message.ToggledRun({ key }),
+								onFilterTag: (tag) => Message.ClickedTag({ tag }),
+								onFilterGroup: (group) => Message.ClickedGroup({ group }),
+							}, { window: model.virtualWindow, mount: h.OnMount(VirtualizeList()) }),
+						]),
+					]),
+				]),
+			],
+		),
+	])
 }
 
 const VirtualizeList = Mount.defineStream("VirtualizeLabReplaysList", {
@@ -234,10 +193,7 @@ const Flags = Schema.Struct({ nowMs: Schema.Number, timeZone: Schema.String })
 export const lab = defineLabWithFlags("Session replays list", {
 	Model,
 	Flags,
-	flags: Effect.all({
-		nowMs: Clock.currentTimeMillis,
-		timeZone: Effect.map(viewerFlags, (flags) => flags.timeZone),
-	}),
+	flags: Effect.all({ nowMs: Clock.currentTimeMillis, timeZone: Effect.map(viewerFlags, (flags) => flags.timeZone) }),
 	init: ({ nowMs, timeZone }) => ({
 		model: {
 			nowMs,

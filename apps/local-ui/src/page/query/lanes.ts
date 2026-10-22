@@ -7,17 +7,7 @@ export const lanes = (model: Model): ReadonlyArray<Lane> => {
 	const { run } = model
 	const running: ReadonlyArray<Lane> =
 		run._tag === "Running"
-			? [
-					{
-						scope: RunQuery.name,
-						key: String(run.id),
-						isInFlight: true,
-						stop: () => RunQuery.Interrupt({ id: run.id }, outcomeOf),
-					},
-				]
+			? [{ scope: RunQuery.name, key: String(run.id), isInFlight: true, stop: () => RunQuery.Interrupt({ id: run.id }, outcomeOf) }]
 			: []
-	return [
-		...slotLane(FetchTables.name, model.tables, (key) => FetchTables.Interrupt({ key }, outcomeOf)),
-		...running,
-	]
+	return [...slotLane(FetchTables.name, model.tables, (key) => FetchTables.Interrupt({ key }, outcomeOf)), ...running]
 }

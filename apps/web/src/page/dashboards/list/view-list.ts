@@ -53,10 +53,7 @@ const disabledReason = (h: H, child: Html): Html =>
 /** `TagFilterMenu`: disabled with its reason while no dashboard carries a tag. */
 const tagFilter = (h: H, model: Model, allTags: ReadonlyArray<string>): Html =>
 	allTags.length === 0
-		? disabledReason(
-				h,
-				button(h, { variant: "outline", className: "shrink-0", isDisabled: true }, ["Tags"]),
-			)
+		? disabledReason(h, button(h, { variant: "outline", className: "shrink-0", isDisabled: true }, ["Tags"]))
 		: h.submodel({
 				slotId: "dashboards-tag-filter",
 				model: model.tagFilter,
@@ -65,7 +62,7 @@ const tagFilter = (h: H, model: Model, allTags: ReadonlyArray<string>): Html =>
 				toParentMessage: (message) => Message.GotTagFilterMessage({ message }),
 			})
 
-const sortEntries = (sort: DashboardSortOption): ReadonlyArray<MenuView.MenuEntry> => [
+const sortEntries =(sort: DashboardSortOption): ReadonlyArray<MenuView.MenuEntry> => [
 	{
 		_tag: "RadioGroup",
 		label: "Sort by",
@@ -144,11 +141,7 @@ const toolbar = (h: H, model: Model, dashboards: ReadonlyArray<ListDashboard>, s
 /** The reason in the menu itself: a tooltip would break the menu's roving focus. */
 const READ_ONLY_NOTE: ReadonlyArray<MenuView.MenuEntry> = [
 	{ _tag: "Separator" },
-	{
-		_tag: "Label",
-		label: "Dashboard store unreachable, writes are disabled",
-		className: "font-normal text-3xs leading-snug",
-	},
+	{ _tag: "Label", label: "Dashboard store unreachable, writes are disabled", className: "font-normal text-3xs leading-snug" },
 ]
 
 /** Export reads what the list holds, so it survives a write failure; the rest write, so they don't. */
@@ -160,13 +153,7 @@ const rowMenuEntries = (isReadOnly: boolean): ReadonlyArray<MenuView.MenuEntry> 
 			{ _tag: "Item", value: "duplicate", label: "Duplicate", isDisabled: isReadOnly },
 			{ _tag: "Item", value: "tags", label: "Edit tags…", isDisabled: isReadOnly },
 			{ _tag: "Separator" },
-			{
-				_tag: "Item",
-				value: "delete",
-				label: "Delete…",
-				variant: "destructive",
-				isDisabled: isReadOnly,
-			},
+			{ _tag: "Item", value: "delete", label: "Delete…", variant: "destructive", isDisabled: isReadOnly },
 			...(isReadOnly ? READ_ONLY_NOTE : []),
 		],
 	},

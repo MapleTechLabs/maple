@@ -15,12 +15,7 @@ import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
 import * as Combobox from "../../ui/combobox"
 import * as Popover from "../../ui/popover"
-import {
-	readEffectiveTimeZone,
-	readSelectedTimeZone,
-	SYSTEM_VALUE,
-	writeSelectedTimeZone,
-} from "../../platform/time-zone"
+import { readEffectiveTimeZone, readSelectedTimeZone, SYSTEM_VALUE, writeSelectedTimeZone } from "../../platform/time-zone"
 import { PageOutMessage } from "../contract"
 import { zoneListView } from "./timezone-select-view"
 import { formatUtcOffset, readZoneRows, ZoneRow } from "./timezone-zones"
@@ -50,11 +45,7 @@ export const Model = Schema.Struct({
 	 * it is the system zone, read when the footer mounts (each open) and after a pick.
 	 */
 	utcOffset: Schema.NullOr(
-		Schema.Struct({
-			timeZone: Schema.String,
-			label: Schema.String,
-			isSystem: Schema.optionalKey(Schema.Boolean),
-		}),
+		Schema.Struct({ timeZone: Schema.String, label: Schema.String, isSystem: Schema.optionalKey(Schema.Boolean) }),
 	),
 	/** `TimezoneSelect`'s combobox and its rows, frozen at its open. */
 	zones: Combobox.Model,
@@ -81,11 +72,7 @@ export const Message = defineMessageUnion({
 	ClickedPreset: { value: Schema.String, maxRangeSeconds: MaxRange },
 	ChangedShorthand: { value: Schema.String },
 	PressedShorthandEnter: { maxRangeSeconds: MaxRange },
-	ResolvedUtcOffset: {
-		timeZone: Schema.String,
-		label: Schema.String,
-		isSystem: Schema.optionalKey(Schema.Boolean),
-	},
+	ResolvedUtcOffset: { timeZone: Schema.String, label: Schema.String, isSystem: Schema.optionalKey(Schema.Boolean) },
 	ClickedTimeZoneTrigger: {},
 	ResolvedZoneRows: { rows: Schema.Array(ZoneRow) },
 	GotTimeZoneComboboxMessage: { message: Combobox.Message },
@@ -170,8 +157,7 @@ const isValidShorthand = (value: string): boolean => resolveRelativeRangeToWareh
 
 /** `isTimeRangeWithin`; a relative value is sized by `relativeRangeSeconds` (a month is 30 days). */
 const isWithin = (seconds: number | null, maxRangeSeconds: number | undefined): boolean =>
-	maxRangeSeconds === undefined ||
-	(seconds !== null && Number.isFinite(seconds) && seconds >= 0 && seconds <= maxRangeSeconds)
+	maxRangeSeconds === undefined || (seconds !== null && Number.isFinite(seconds) && seconds >= 0 && seconds <= maxRangeSeconds)
 
 const rejected = (model: Model, maxRangeSeconds: number): Return => ({
 	model,
@@ -194,18 +180,10 @@ export const ResolveCustomToday = Command.define("ResolveCustomRangeToday", {
 		timeZone: Schema.String,
 	},
 	messages: [Message.ResolvedCustomToday],
-	execute: (seed) =>
-		Effect.map(CustomRange.readToday(seed.timeZone), (days) =>
-			Message.ResolvedCustomToday({ ...seed, ...days }),
-		),
+	execute: (seed) => Effect.map(CustomRange.readToday(seed.timeZone), (days) => Message.ResolvedCustomToday({ ...seed, ...days })),
 })
 
-const customStep = (
-	model: Model,
-	custom: CustomRange.Model,
-	inner: CustomRange.Message,
-	maxRangeSeconds: number | undefined,
-): Return => {
+const customStep = (model: Model, custom: CustomRange.Model, inner: CustomRange.Message, maxRangeSeconds: number | undefined): Return => {
 	const next = CustomRange.update(custom, inner)
 	const stepped = { ...model, custom: next.model }
 	return Option.match(Option.fromNullishOr(next.outMessage), {
@@ -213,15 +191,9 @@ const customStep = (
 		onSome: CustomRange.OutMessage.match<Return>({
 			CancelledRange: () => ({ model: { ...stepped, tab: "relative", custom: null } }),
 			AppliedRange: ({ startTime, endTime }) =>
-				isWithin(
-					(parseWarehouseDateTime(endTime) - parseWarehouseDateTime(startTime)) / 1000,
-					maxRangeSeconds,
-				)
+				isWithin((parseWarehouseDateTime(endTime) - parseWarehouseDateTime(startTime)) / 1000, maxRangeSeconds)
 					? {
-							...liftPopover(
-								{ ...stepped, tab: "relative", custom: null },
-								Popover.close(model.popover),
-							),
+							...liftPopover({ ...stepped, tab: "relative", custom: null }, Popover.close(model.popover)),
 							outMessage: OutMessage.SelectedCustomRange({ startTime, endTime }),
 						}
 					: rejected(stepped, maxRangeSeconds ?? 0),
@@ -232,14 +204,9 @@ const customStep = (
 /** `TimezoneSelect`'s combobox; `onValueChange` stores the pick (the picker itself stays open). */
 const zonesStep = (model: Model, inner: Combobox.Message): Return => {
 	const next = Combobox.update(model.zones, inner)
-	const commands = Command.mapMessages(next.commands ?? [], (message) =>
-		Message.GotTimeZoneComboboxMessage({ message }),
-	)
+	const commands = Command.mapMessages(next.commands ?? [], (message) => Message.GotTimeZoneComboboxMessage({ message }))
 	return next.outMessage?._tag === "ChangedValue" && next.outMessage.value.length > 0
-		? {
-				model: { ...model, zones: next.model },
-				commands: [...commands, SelectTimeZone({ value: next.outMessage.value })],
-			}
+		? { model: { ...model, zones: next.model }, commands: [...commands, SelectTimeZone({ value: next.outMessage.value })] }
 		: { model: { ...model, zones: next.model }, commands }
 }
 
@@ -278,9 +245,7 @@ export const update = (model: Model, message: Message): Return =>
 		},
 		GotTimeZoneComboboxMessage: ({ message: inner }) => zonesStep(model, inner),
 		ClickedCustomRange: ({ _tag, ...seed }) => ({ model, commands: [ResolveCustomToday(seed)] }),
-		ResolvedCustomToday: (seed) => ({
-			model: { ...model, tab: "custom", custom: CustomRange.init(seed) },
-		}),
+		ResolvedCustomToday: (seed) => ({ model: { ...model, tab: "custom", custom: CustomRange.init(seed) } }),
 		GotCustomRangeMessage: ({ message: inner, maxRangeSeconds }) =>
 			model.custom === null ? { model } : customStep(model, model.custom, inner, maxRangeSeconds),
 	})
@@ -423,9 +388,7 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 						h.Value(model.shorthand),
 						h.OnInput((value) => Message.ChangedShorthand({ value })),
 						h.OnKeyDownPreventDefault((key) =>
-							key === "Enter"
-								? Option.some(Message.PressedShorthandEnter(withMax(inputs)))
-								: Option.none(),
+							key === "Enter" ? Option.some(Message.PressedShorthandEnter(withMax(inputs))) : Option.none(),
 						),
 						h.Placeholder("1m · 2h · 4d · 6w · today"),
 						h.Class(
@@ -467,11 +430,7 @@ export { formatUtcOffset }
 const readPreference = Effect.map(
 	Effect.all([readEffectiveTimeZone, readSelectedTimeZone, Clock.currentTimeMillis]),
 	([timeZone, selected, nowMs]) =>
-		Message.ResolvedUtcOffset({
-			timeZone,
-			label: formatUtcOffset(timeZone, nowMs),
-			isSystem: Option.isNone(selected),
-		}),
+		Message.ResolvedUtcOffset({ timeZone, label: formatUtcOffset(timeZone, nowMs), isSystem: Option.isNone(selected) }),
 )
 
 /**
@@ -503,13 +462,7 @@ export const SelectTimeZone = Command.define("SelectTimeZone", {
 /** Marks the page-level picker's trigger, the one "D" opens. */
 const HOTKEY_ATTRIBUTE = "time-range-hotkey"
 
-type KeyPress = Readonly<{
-	key: string
-	metaKey: boolean
-	ctrlKey: boolean
-	altKey: boolean
-	shiftKey: boolean
-}>
+type KeyPress = Readonly<{ key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }>
 
 /** The `time.open` combo: a bare "D" (either case), no modifier held. */
 export const isOpenKey = (event: KeyPress): boolean =>
@@ -545,9 +498,7 @@ const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: str
 	return h.div(
 		[
 			h.Id(anchorId),
-			h.Class(
-				"flex items-center justify-between gap-3 border-t border-border/70 bg-muted/20 px-4 py-2",
-			),
+			h.Class("flex items-center justify-between gap-3 border-t border-border/70 bg-muted/20 px-4 py-2"),
 		],
 		[
 			eyebrow(h, {}, ["Timezone"]),
@@ -603,12 +554,7 @@ const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: str
 							slotId: "timezone-list",
 							model: model.zones,
 							view: zoneListView,
-							viewInputs: {
-								rows: model.zoneRows,
-								triggerId,
-								anchorId,
-								popoverId: model.popover.id,
-							},
+							viewInputs: { rows: model.zoneRows, triggerId, anchorId, popoverId: model.popover.id },
 							toParentMessage: (message) => Message.GotTimeZoneComboboxMessage({ message }),
 						}),
 					]
@@ -661,28 +607,28 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 								Message.GotCustomRangeMessage({ message, ...withMax(inputs) }),
 						})
 					: h.div(
-							[h.Class("flex flex-col")],
+					[h.Class("flex flex-col")],
+					[
+						h.div(
+							[h.Class("flex flex-col sm:flex-row sm:items-stretch")],
 							[
 								h.div(
-									[h.Class("flex flex-col sm:flex-row sm:items-stretch")],
 									[
-										h.div(
-											[
-												h.Class(
-													"w-full shrink-0 border-b border-border/70 sm:w-[168px] sm:border-r sm:border-b-0",
-												),
-											],
-											[presetList(h, inputs)],
-										),
-										h.div(
-											[h.Class("min-w-0 flex-1 space-y-5 p-4")],
-											[shorthandInput(h, model, inputs), quickSelect(h, inputs)],
+										h.Class(
+											"w-full shrink-0 border-b border-border/70 sm:w-[168px] sm:border-r sm:border-b-0",
 										),
 									],
+									[presetList(h, inputs)],
 								),
-								timezoneFooter(h, model, inputs.timeZone ?? "UTC"),
+								h.div(
+									[h.Class("min-w-0 flex-1 space-y-5 p-4")],
+									[shorthandInput(h, model, inputs), quickSelect(h, inputs)],
+								),
 							],
 						),
+						timezoneFooter(h, model, inputs.timeZone ?? "UTC"),
+					],
+				),
 			],
 		},
 	}),

@@ -32,14 +32,7 @@ const truncateValue = (value: string): string =>
 
 /** Only chips that add to the message: log attributes whose value the body does not spell out. */
 export const rowChips = (log: LocalLog): ReadonlyArray<RowChip> =>
-	pickImportantAttributes(
-		{
-			...log,
-			logAttributes: { ...log.logAttributes },
-			resourceAttributes: { ...log.resourceAttributes },
-		},
-		Number.POSITIVE_INFINITY,
-	)
+	pickImportantAttributes({ ...log, logAttributes: { ...log.logAttributes }, resourceAttributes: { ...log.resourceAttributes } }, Number.POSITIVE_INFINITY)
 		.filter((attr) => attr.source === "log" && !(attr.value.length >= 3 && log.body.includes(attr.value)))
 		.slice(0, VISIBLE_CHIPS)
 		.map((attr) => ({
@@ -51,10 +44,7 @@ export const rowChips = (log: LocalLog): ReadonlyArray<RowChip> =>
 		}))
 
 /** The row's one line: the first, or the first that matches the search; and how many are hidden. */
-export const firstLineOf = (
-	body: string,
-	search: string | undefined,
-): Readonly<{ text: string; hidden: number }> => {
+export const firstLineOf = (body: string, search: string | undefined): Readonly<{ text: string; hidden: number }> => {
 	const lines = stripAnsi(body).split("\n")
 	const needle = search?.toLowerCase()
 	const match = needle ? lines.find((line) => line.toLowerCase().includes(needle)) : undefined

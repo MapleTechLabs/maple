@@ -42,26 +42,10 @@ const headerActions = (h: H, model: Model, incident: AnomalyIncidentDocument, ti
 		[
 			badge(h, { variant: "outline", className: isStale ? SEVERITY_TONE.resolved.badge : tone.badge }, [
 				...(isOpen && !isStale
-					? [
-							h.span(
-								[h.Class("flex items-center gap-1.5")],
-								[statusDot(h, { tone: tone.tone }), incident.severity],
-							),
-						]
+					? [h.span([h.Class("flex items-center gap-1.5")], [statusDot(h, { tone: tone.tone }), incident.severity])]
 					: isStale
-						? [
-								"Stale · last seen ",
-								relativeTime(h, {
-									value: incident.lastTriggeredAt,
-									nowMs: model.nowMs,
-									timeZone,
-								}),
-							]
-						: [
-								incident.resolveReason !== null
-									? RESOLVE_REASON_LABEL[incident.resolveReason]
-									: "Resolved",
-							]),
+						? ["Stale · last seen ", relativeTime(h, { value: incident.lastTriggeredAt, nowMs: model.nowMs, timeZone })]
+						: [incident.resolveReason !== null ? RESOLVE_REASON_LABEL[incident.resolveReason] : "Resolved"]),
 			]),
 			button(
 				h,
@@ -78,12 +62,7 @@ const headerActions = (h: H, model: Model, incident: AnomalyIncidentDocument, ti
 				? [
 						button(
 							h,
-							{
-								size: "sm",
-								variant: "outline",
-								isDisabled: isBusy,
-								attributes: [h.OnClick(Message.ClickedResolve())],
-							},
+							{ size: "sm", variant: "outline", isDisabled: isBusy, attributes: [h.OnClick(Message.ClickedResolve())] },
 							["Resolve"],
 						),
 					]
@@ -99,12 +78,7 @@ const resolveDescription = (incident: AnomalyIncidentDocument): string =>
 			: ""
 	}. If the signal keeps deviating, the detector waits out a one-hour cooldown before re-opening it.`
 
-const loadedBody = (
-	h: H,
-	model: Model,
-	incident: AnomalyIncidentDocument,
-	timeZone: string,
-): ReadonlyArray<Html> => {
+const loadedBody = (h: H, model: Model, incident: AnomalyIncidentDocument, timeZone: string): ReadonlyArray<Html> => {
 	const isBusy = model.busy !== null
 	return [
 		h.div(
@@ -117,11 +91,9 @@ const loadedBody = (
 				h.section(
 					[h.AriaLabelledBy("linked-issue-heading")],
 					[
-						eyebrow(
-							h,
-							{ as: "h2", className: "mb-3 block", attributes: [h.Id("linked-issue-heading")] },
-							["Linked issue"],
-						),
+						eyebrow(h, { as: "h2", className: "mb-3 block", attributes: [h.Id("linked-issue-heading")] }, [
+							"Linked issue",
+						]),
 						linkedIssueCard(h, model, incident, isBusy),
 					],
 				),
@@ -171,20 +143,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					])
 				: state._tag === "Failed"
 					? dashboardPage(h, {}, [
-							errorState(h, {
-								failure: state.failure,
-								title: "Failed to load anomaly",
-								onRetry: Message.ClickedRetry(),
-							}),
+							errorState(h, { failure: state.failure, title: "Failed to load anomaly", onRetry: Message.ClickedRetry() }),
 						])
 					: dashboardPage(h, {}, [
 							h.div(
 								[h.Class("space-y-4")],
-								[
-									skeleton(h, "h-24 w-full"),
-									skeleton(h, "h-64 w-full"),
-									skeleton(h, "h-32 w-full"),
-								],
+								[skeleton(h, "h-24 w-full"), skeleton(h, "h-64 w-full"), skeleton(h, "h-32 w-full")],
 							),
 						])
 	return h.div([h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: CHART_TOKENS }))], [page])

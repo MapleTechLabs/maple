@@ -43,13 +43,7 @@ export const endKeyboardMove = (
 	const gridAnnouncement = isCommit
 		? `${move.label} dropped at ${position}.`
 		: `Move cancelled. ${move.label} is back at ${position}.`
-	return commitLayout(
-		{ ...model, keyboardMove: null, gridAnnouncement },
-		context,
-		move.widgetId,
-		move.origin,
-		final,
-	)
+	return commitLayout({ ...model, keyboardMove: null, gridAnnouncement }, context, move.widgetId, move.origin, final)
 }
 
 const pickUp = (model: Model, message: KeyMessage): Return => {

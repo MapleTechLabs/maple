@@ -92,9 +92,7 @@ export const attentionPanel = (h: H, model: Model, strip: HealthStrip | null, ti
 						? [
 								h.ul(
 									[h.AriaLabel("Needs attention")],
-									items
-										.slice(0, MAX_ATTENTION_ITEMS)
-										.map((item) => itemRow(h, item, timeZone)),
+									items.slice(0, MAX_ATTENTION_ITEMS).map((item) => itemRow(h, item, timeZone)),
 								),
 							]
 						: failures.length > 0

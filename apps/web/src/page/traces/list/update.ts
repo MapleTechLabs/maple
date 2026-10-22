@@ -268,10 +268,7 @@ export const routeChanged = (
 		search: route.search,
 		durationDraft: isSameDuration ? model.durationDraft : durationDraftOf(route.search),
 	}
-	const resolve = (): Return => ({
-		model: next,
-		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
-	})
+	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
 	return routeWindowStep(model.search, route.search, {
 		resolve,
 		requestAll: (mode) =>

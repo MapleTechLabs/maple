@@ -19,11 +19,7 @@ const run = (model: Model, messages: ReadonlyArray<Message>) =>
 const stat = (id: string, endpoint: string, target?: { sectionId: string; tabId: string }) => ({
 	id,
 	visualization: "stat",
-	dataSource: {
-		kind: "route",
-		endpoint,
-		transform: { reduceToValue: { field: "value", aggregate: "first" } },
-	},
+	dataSource: { kind: "route", endpoint, transform: { reduceToValue: { field: "value", aggregate: "first" } } },
 	display: { title: id, unit: "number" },
 	layout: { x: 0, y: 0, w: 3, h: 2 },
 	...target,
@@ -66,9 +62,7 @@ const ready = (): Model =>
 		Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
 		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(live) }),
 		Message.RevealedWidget({ widgetId: "w" }),
-		Message.GotMoreMenuMessage({
-			message: { _tag: "ClickedItem", index: 4, item: { kind: "Item", value: "history" } },
-		}),
+		Message.GotMoreMenuMessage({ message: { _tag: "ClickedItem", index: 4, item: { kind: "Item", value: "history" } } }),
 		Message.CompletedFetchVersions({ generation: 1, result: Result.succeed([version]) }),
 	])
 
@@ -79,10 +73,7 @@ const keyOf = (model: Model, widgetId: string) => {
 
 const previewed = () => {
 	const opened = run(ready(), [Message.ClickedVersion({ versionId: version.id })])
-	return pageUpdate(
-		opened,
-		Message.CompletedFetchSnapshot({ versionId: version.id, result: Result.succeed(snapshot) }),
-	)
+	return pageUpdate(opened, Message.CompletedFetchSnapshot({ versionId: version.id, result: Result.succeed(snapshot) }))
 }
 
 describe("previewing a version", () => {
@@ -97,40 +88,26 @@ describe("previewing a version", () => {
 	})
 
 	test("auto-refresh pauses while a version is previewed", () => {
-		const seconds = (model: Model) =>
-			subscriptions.autoRefresh.modelToDependencies({ model, context }).seconds
+		const seconds = (model: Model) => subscriptions.autoRefresh.modelToDependencies({ model, context }).seconds
 		const viewing = { ...ready(), search: {} }
 		expect(seconds(viewing)).toBe(60)
 		expect(seconds(run(viewing, [Message.ClickedVersion({ versionId: version.id })]))).toBe(0)
 	})
 
 	test("a preview's groups collapse locally and leave the URL alone", () => {
-		const collapsed = pageUpdate(
-			previewed().model,
-			Message.ClickedSectionChevron({ sectionId: "s1", collapsed: true }),
-		)
+		const collapsed = pageUpdate(previewed().model, Message.ClickedSectionChevron({ sectionId: "s1", collapsed: true }))
 		expect(collapsed.outMessage).toBeUndefined()
 		expect(collapsed.model.history.sectionView).toEqual({ collapsed: "s1" })
-		expect(pageUpdate(collapsed.model, Message.ClickedCancelPreview()).model.history.sectionView).toEqual(
-			{},
-		)
+		expect(pageUpdate(collapsed.model, Message.ClickedCancelPreview()).model.history.sectionView).toEqual({})
 	})
 
 	test("view-state changes keep edit mode in the URL while writes are unavailable", () => {
 		const failed = pageUpdate(
-			run(init(ROUTE, context).model, [
-				Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(live) }),
-			]),
+			run(init(ROUTE, context).model, [Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(live) })]),
 			Message.CompletedWrite({ result: Result.fail("Write failed") }),
 		).model
-		expect(
-			pageUpdate(failed, Message.ClickedSectionChevron({ sectionId: "s1", collapsed: true }))
-				.outMessage,
-		).toEqual(
-			PageOutMessage.RequestedNavigation({
-				url: "/dashboards/dash_hist?mode=edit&collapsed=s1",
-				isReplace: true,
-			}),
+		expect(pageUpdate(failed, Message.ClickedSectionChevron({ sectionId: "s1", collapsed: true })).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/dashboards/dash_hist?mode=edit&collapsed=s1", isReplace: true }),
 		)
 	})
 })

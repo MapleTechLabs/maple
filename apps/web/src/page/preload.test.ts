@@ -43,9 +43,7 @@ describe("intent preload", () => {
 		const nextWindow = preloadRoute(AppRoute.Trace({ traceId: "a".repeat(32), search: {} }), context, 0)
 		const nextKey = Option.getOrThrow(Preload.keyOfCommand(nextWindow[0]!))
 		const entered = Preload.held(Preload.init(), holder, preloaded(), () => [keyOf()])
-		const moved = Preload.held(entered.model, holder, nextWindow, () =>
-			Preload.liveKeysOf({ slot: { key: nextKey, data: { _tag: "Loading" } } }),
-		)
+		const moved = Preload.held(entered.model, holder, nextWindow, () => Preload.liveKeysOf({ slot: { key: nextKey, data: { _tag: "Loading" } } }))
 		expect(moved.released).toEqual([keyOf()])
 		expect(moved.model.heldKeys).toEqual([nextKey])
 		const stillShown = Preload.held(entered.model, holder, nextWindow, () => [keyOf(), nextKey])

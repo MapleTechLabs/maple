@@ -35,13 +35,7 @@ export type RulesViewConfig<P> = Readonly<{
 }>
 
 /** A Base UI field outside a form: never dirty, touched or focused in a capture. */
-const STATIC: FieldState = {
-	isInvalid: false,
-	isDirty: false,
-	isFilled: false,
-	isFocused: false,
-	isTouched: false,
-}
+const STATIC: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
 
 const idsOf = (prefix: string, name: string): FieldIds => ({
 	control: `${prefix}-${name}`,
@@ -50,11 +44,7 @@ const idsOf = (prefix: string, name: string): FieldIds => ({
 	description: `${prefix}-${name}-description`,
 })
 
-const signalCard = <P>(
-	h: HtmlBuilder<P>,
-	config: RulesViewConfig<P>,
-	signal: (typeof SIGNALS)[number],
-): Html => {
+const signalCard = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>, signal: (typeof SIGNALS)[number]): Html => {
 	const isChecked = config.model.signals.includes(signal.value)
 	const inputId = `${config.idPrefix}-signal-${signal.value}`
 	return h.label(
@@ -71,8 +61,7 @@ const signalCard = <P>(
 		[
 			...Checkbox.view(h, {
 				model: { isChecked },
-				toParentMessage: () =>
-					config.toParentMessage(Message.ToggledSignal({ signal: signal.value })),
+				toParentMessage: () => config.toParentMessage(Message.ToggledSignal({ signal: signal.value })),
 				id: `${inputId}-root`,
 				inputId,
 				isDisabled: config.isDisabled ?? false,
@@ -161,19 +150,11 @@ const attributeRows = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html =
 							isDisabled,
 							attributes: [h.OnClick(config.toParentMessage(Message.ClickedAddAttribute()))],
 						},
-						[
-							icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
-							"Add attribute",
-						],
+						[icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }), "Add attribute"],
 					),
 					...(attributeProblem === null
 						? []
-						: [
-								h.span(
-									[h.Class("text-destructive text-xs"), h.Role("alert")],
-									[attributeProblem],
-								),
-							]),
+						: [h.span([h.Class("text-destructive text-xs"), h.Role("alert")], [attributeProblem])]),
 				],
 			),
 		],
@@ -199,16 +180,11 @@ export const view = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => 
 		[
 			field(h, { state: STATIC }, [
 				fieldLabel(h, { ids: signalsIds, state: STATIC }, "Signals"),
-				h.div(
-					[h.Class("grid gap-2 sm:grid-cols-2")],
-					SIGNALS.map((signal) => signalCard(h, config, signal)),
-				),
+				h.div([h.Class("grid gap-2 sm:grid-cols-2")], SIGNALS.map((signal) => signalCard(h, config, signal))),
 				fieldDescription(
 					h,
 					{ ids: signalsIds, state: STATIC },
-					model.signals.length === 0
-						? "Allow at least one signal."
-						: "Anything else is rejected with a 403.",
+					model.signals.length === 0 ? "Allow at least one signal." : "Anything else is rejected with a 403.",
 				),
 			]),
 			field(h, { state: STATIC }, [
@@ -238,11 +214,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => 
 			field(h, { state: STATIC }, [
 				fieldLabel(h, { ids: expiryIds, state: STATIC }, "Expires"),
 				ToggleGroup.view(h, {
-					model: toggleModel(
-						"Expires",
-						choices.map((choice) => choice.value),
-						model.expiry,
-					),
+					model: toggleModel("Expires", choices.map((choice) => choice.value), model.expiry),
 					toParentMessage: (message) => toParentMessage(Message.GotExpiryMessage({ message })),
 					variant: "outline",
 					size: "sm",
@@ -261,11 +233,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: RulesViewConfig<P>): Html => 
 			]),
 			field(h, { state: STATIC }, [
 				fieldLabel(h, { ids: attributeIds, state: STATIC }, "Resource attributes"),
-				fieldDescription(
-					h,
-					{ ids: attributeIds, state: STATIC },
-					"Written on everything this source sends.",
-				),
+				fieldDescription(h, { ids: attributeIds, state: STATIC }, "Written on everything this source sends."),
 				attributeRows(h, config),
 			]),
 		],

@@ -104,11 +104,7 @@ describe("logs list", () => {
 			init({ search: {} }, context).model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual([
-			FetchFirstPage.name,
-			FetchVolume.name,
-			FetchAttributeKeys.name,
-		])
+		expect(names(resolved.commands)).toEqual([FetchFirstPage.name, FetchVolume.name, FetchAttributeKeys.name])
 		const mounted = pageUpdate(resolved.model, Message.MountedFilterRail())
 		expect(names(mounted.commands)).toEqual([FetchFacets.name])
 		expect(names(pageUpdate(mounted.model, Message.MountedFilterRail()).commands)).toEqual([])
@@ -224,14 +220,8 @@ describe("logs list", () => {
 	})
 
 	test("an empty volume strip labels its axis in the locale read on entry", () => {
-		const base = pageUpdate(
-			windowed(),
-			Message.CompletedReadPreferences({ wrap: false, density: "comfortable", locale: "de-DE" }),
-		).model
-		const model = pageUpdate(
-			base,
-			Message.CompletedFetchVolume({ key: base.volume.key ?? "", result: Result.succeed([]) }),
-		).model
+		const base = pageUpdate(windowed(), Message.CompletedReadPreferences({ wrap: false, density: "comfortable", locale: "de-DE" })).model
+		const model = pageUpdate(base, Message.CompletedFetchVolume({ key: base.volume.key ?? "", result: Result.succeed([]) })).model
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
@@ -294,40 +284,24 @@ describe("logs list", () => {
 		const filtered = routeChanged(reloaded, { search: { severities: ["ERROR"] } }, context)
 		expect(names(filtered.commands)).not.toContain("ResolveLogsWindow")
 		expect(filtered.commands?.[0]?.args).toMatchObject({ window, search: { severities: ["ERROR"] } })
-		const moved = routeChanged(
-			filtered.model,
-			{ search: { severities: ["ERROR"], timePreset: "1h" } },
-			context,
-		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
-			["ResolveLogsWindow", "Refresh"],
-		])
+		const moved = routeChanged(filtered.model, { search: { severities: ["ERROR"], timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveLogsWindow", "Refresh"]])
 	})
 
 	test("dragging across the volume bars zooms to those buckets, as a replace", () => {
 		const base = windowed({ timePreset: "1h" })
-		const buckets = ["11:00", "11:05", "11:10"].map((t) => ({
-			bucket: `2026-10-01 ${t}:00`,
-			counts: { INFO: 4 },
-		}))
+		const buckets = ["11:00", "11:05", "11:10"].map((t) => ({ bucket: `2026-10-01 ${t}:00`, counts: { INFO: 4 } }))
 		const loaded = pageUpdate(
 			base,
 			Message.CompletedFetchVolume({ key: base.volume.key ?? "", result: Result.succeed(buckets) }),
 		).model
 		const focus = (key: string) =>
-			Message.GotVolumeChartMessage({
-				message: Chart.Message.ChangedChartFocus({ maybeKey: Option.some(key) }),
-			})
-		const pressed = [
-			focus(buckets[0].bucket),
-			Message.PressedVolumeChart(),
-			focus(buckets[1].bucket),
-		].reduce((model, message) => pageUpdate(model, message).model, loaded)
-		expect(pressed.volumeBrush).toEqual({
-			left: buckets[0].bucket,
-			right: buckets[1].bucket,
-			isSelecting: true,
-		})
+			Message.GotVolumeChartMessage({ message: Chart.Message.ChangedChartFocus({ maybeKey: Option.some(key) }) })
+		const pressed = [focus(buckets[0].bucket), Message.PressedVolumeChart(), focus(buckets[1].bucket)].reduce(
+			(model, message) => pageUpdate(model, message).model,
+			loaded,
+		)
+		expect(pressed.volumeBrush).toEqual({ left: buckets[0].bucket, right: buckets[1].bucket, isSelecting: true })
 		const released = pageUpdate(pressed, Message.ReleasedVolumeChart())
 		expect(released.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({

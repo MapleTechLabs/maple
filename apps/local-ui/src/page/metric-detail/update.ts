@@ -87,101 +87,58 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			const dependents = loadDependents(next, context)
 			return { model: settleRefresh(dependents.model), commands: dependents.commands }
 		},
-		FailedFetchEntry: ({ key, failure }) => ({
-			model: settleRefresh({ ...model, entry: accept(model.entry, key, Result.fail(failure)) }),
-		}),
-		SucceededFetchTimeseries: ({ key, points, fetchedAtMs }) => ({
-			model: settleRefresh({
-				...model,
-				timeseries: accept(model.timeseries, key, Result.succeed(points), fetchedAtMs),
-			}),
-		}),
-		FailedFetchTimeseries: ({ key, failure }) => ({
-			model: settleRefresh({
-				...model,
-				timeseries: accept(model.timeseries, key, Result.fail(failure)),
-			}),
-		}),
-		SucceededFetchBreakdown: ({ key, rows, fetchedAtMs }) => ({
-			model: settleRefresh({
-				...model,
-				breakdown: accept(model.breakdown, key, Result.succeed(rows), fetchedAtMs),
-			}),
-		}),
+		FailedFetchEntry: ({ key, failure }) =>
+			({ model: settleRefresh({ ...model, entry: accept(model.entry, key, Result.fail(failure)) }) }),
+		SucceededFetchTimeseries: ({ key, points, fetchedAtMs }) =>
+			({ model: settleRefresh({ ...model, timeseries: accept(model.timeseries, key, Result.succeed(points), fetchedAtMs) }) }),
+		FailedFetchTimeseries: ({ key, failure }) =>
+			({ model: settleRefresh({ ...model, timeseries: accept(model.timeseries, key, Result.fail(failure)) }) }),
+		SucceededFetchBreakdown: ({ key, rows, fetchedAtMs }) =>
+			({ model: settleRefresh({ ...model, breakdown: accept(model.breakdown, key, Result.succeed(rows), fetchedAtMs) }) }),
 		FoundCachedEntry: ({ request, cached }) => {
 			if (model.entry.key !== request.key) return { model }
-			const next = {
-				...model,
-				entry: acceptCached(model.entry, request.key, cached, cached.isFresh),
-				entryUpdatedAtMs: cached.updatedAtMs,
-			}
+			const next = { ...model, entry: acceptCached(model.entry, request.key, cached, cached.isFresh), entryUpdatedAtMs: cached.updatedAtMs }
 			const dependents = loadDependents(next, context)
 			const fetch = cached.isFresh ? [] : [FetchEntry({ ...request, readsCache: false })]
-			return {
-				model: settleRefresh(dependents.model),
-				commands: [...fetch, ...(dependents.commands ?? [])],
-			}
+			return { model: settleRefresh(dependents.model), commands: [...fetch, ...(dependents.commands ?? [])] }
 		},
 		FoundCachedTimeseries: ({ request, cached }) =>
 			model.timeseries.key === request.key
 				? {
-						model: settleRefresh({
-							...model,
-							timeseries: acceptCached(model.timeseries, request.key, cached, cached.isFresh),
-						}),
+						model: settleRefresh({ ...model, timeseries: acceptCached(model.timeseries, request.key, cached, cached.isFresh) }),
 						commands: cached.isFresh ? [] : [FetchTimeseries({ ...request, readsCache: false })],
 					}
 				: { model },
 		FoundCachedBreakdown: ({ request, cached }) =>
 			model.breakdown.key === request.key
 				? {
-						model: settleRefresh({
-							...model,
-							breakdown: acceptCached(model.breakdown, request.key, cached, cached.isFresh),
-						}),
+						model: settleRefresh({ ...model, breakdown: acceptCached(model.breakdown, request.key, cached, cached.isFresh) }),
 						commands: cached.isFresh ? [] : [FetchBreakdown({ ...request, readsCache: false })],
 					}
 				: { model },
-		FailedFetchBreakdown: ({ key, failure }) => ({
-			model: settleRefresh({ ...model, breakdown: accept(model.breakdown, key, Result.fail(failure)) }),
-		}),
-		ClickedBack: () => ({
-			model,
-			outMessage: PageOutMessage.RequestedBack({ fallbackHash: backFallbackHash(context) }),
-		}),
+		FailedFetchBreakdown: ({ key, failure }) =>
+			({ model: settleRefresh({ ...model, breakdown: accept(model.breakdown, key, Result.fail(failure)) }) }),
+		ClickedBack: () => ({ model, outMessage: PageOutMessage.RequestedBack({ fallbackHash: backFallbackHash(context) }) }),
 		ClickedRefresh: () =>
-			model.isRefreshing
-				? { model }
-				: { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
+			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
 		CompletedReadRefreshClock: ({ nowMs }) => {
 			const next = snapToMinute(nowMs)
 			// `advance()`: a new minute re-anchors the window (new keys); else refetch in place.
 			if (Option.getOrNull(model.maybeAnchorMs) !== next)
-				return load(
-					{ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false },
-					context,
-				)
+				return load({ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false }, context)
 			const refetch = load({ ...model, nowMs }, context, true)
-			return {
-				model: settleRefresh(refetch.model),
-				commands: refetch.commands,
-				outMessage: PageOutMessage.RefetchedInPlace(),
-			}
+			return { model: settleRefresh(refetch.model), commands: refetch.commands, outMessage: PageOutMessage.RefetchedInPlace() }
 		},
 		ChangedRange: ({ range }) => setRange(model, context, range),
 		ClickedWidenRange: () => setRange(model, context, WIDEST_RANGE),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
 		GotChartMessage: ({ message: child }) => {
 			const next = Chart.update(model.chart, child)
 			return {
 				model: { ...model, chart: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (chart) =>
-					Message.GotChartMessage({ message: chart }),
-				),
+				commands: Command.mapMessages(next.commands ?? [], (chart) => Message.GotChartMessage({ message: chart })),
 			}
 		},
 	})

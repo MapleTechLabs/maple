@@ -1,11 +1,7 @@
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { filterSection } from "@maple/web/ui/filters/filter-section"
-import {
-	filterSidebarBody,
-	filterSidebarFrame,
-	filterSidebarHeader,
-} from "@maple/web/ui/filters/filter-sidebar"
+import { filterSidebarBody, filterSidebarFrame, filterSidebarHeader } from "@maple/web/ui/filters/filter-sidebar"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -20,8 +16,7 @@ import { toSections } from "./update"
 const optionsOf = (slot: Slot<ReadonlyArray<FacetOption>>) =>
 	Option.getOrElse(AsyncData.getData(slot.data), (): ReadonlyArray<FacetOption> => [])
 
-const isFetching = (slot: Slot<unknown>) =>
-	AsyncData.isLoading(slot.data) || AsyncData.isRefreshing(slot.data)
+const isFetching = (slot: Slot<unknown>) => AsyncData.isLoading(slot.data) || AsyncData.isRefreshing(slot.data)
 
 const severityColor = (name: string): string | undefined =>
 	Object.hasOwn(SEVERITY_COLORS, name) ? SEVERITY_COLORS[name] : undefined
@@ -29,15 +24,9 @@ const severityColor = (name: string): string | undefined =>
 export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: LogFilters): Html =>
 	filterSidebarFrame(
 		h,
-		{
-			className: "w-56 shrink-0 px-4",
-			isWaiting: isFetching(model.services) || isFetching(model.severities),
-		},
+		{ className: "w-56 shrink-0 px-4", isWaiting: isFetching(model.services) || isFetching(model.severities) },
 		[
-			filterSidebarHeader(
-				h,
-				activeFilterCount(filters) > 0 ? { onClear: Message.ClickedClearSidebarFilters() } : {},
-			),
+			filterSidebarHeader(h, activeFilterCount(filters) > 0 ? { onClear: Message.ClickedClearSidebarFilters() } : {}),
 			...filterSidebarBody(
 				h,
 				"logs-filters",

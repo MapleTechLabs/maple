@@ -26,8 +26,7 @@ const fetchPage = (cursor: string | undefined) =>
 export const FetchInvestigations = Command.define("FetchInvestigations", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchFirstPage],
-	execute: ({ key }) =>
-		Effect.map(fetchPage(undefined), (result) => Message.CompletedFetchFirstPage({ key, result })),
+	execute: ({ key }) => Effect.map(fetchPage(undefined), (result) => Message.CompletedFetchFirstPage({ key, result })),
 })
 
 export const FetchMoreInvestigations = Command.define("FetchMoreInvestigations", {
@@ -117,6 +116,5 @@ export const MountInvestigationRows = Mount.defineStream("MountInvestigationRows
 export const ReadInvestigationsIsAdmin = Command.define("ReadInvestigationsIsAdmin", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedReadIsAdmin],
-	execute: ({ orgId }) =>
-		Effect.map(readIsAdmin, (isAdmin) => Message.CompletedReadIsAdmin({ orgId, isAdmin })),
+	execute: ({ orgId }) => Effect.map(readIsAdmin, (isAdmin) => Message.CompletedReadIsAdmin({ orgId, isAdmin })),
 })

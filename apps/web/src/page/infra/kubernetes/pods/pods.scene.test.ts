@@ -47,22 +47,12 @@ const pod = (podName: string): PodRow => ({
 const windowed = (search: Model["search"] = {}) =>
 	pageUpdate(
 		init({ search }, context).model,
-		Message.GotFrameMessage({
-			message: Frame.Message.CompletedResolveWindow({
-				window,
-				nowMs: NOW,
-				locale: "en-US",
-				mode: "Load",
-			}),
-		}),
+		Message.GotFrameMessage({ message: Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" }) }),
 	)
 
 describe("pods list", () => {
 	test("the Ended scope swaps the lifecycle; the other scopes narrow the live fleet", () => {
-		expect(podsInput(windowed({ scope: "ended" }).model, window)).toMatchObject({
-			scope: undefined,
-			lifecycle: "ended",
-		})
+		expect(podsInput(windowed({ scope: "ended" }).model, window)).toMatchObject({ scope: undefined, lifecycle: "ended" })
 		expect(podsInput(windowed({ scope: "saturated" }).model, window)).toMatchObject({
 			scope: "saturated",
 			lifecycle: "live",
@@ -97,23 +87,14 @@ describe("pods list", () => {
 			model,
 			Message.CompletedFetchPods({
 				key: model.pods.key ?? "",
-				result: Result.succeed({
-					data: [pod("payment-1"), pod("payment-2"), pod("payment-3")],
-					totalCount: 3,
-				}),
+				result: Result.succeed({ data: [pod("payment-1"), pod("payment-2"), pod("payment-3")], totalCount: 3 }),
 			}),
 		)
 	}
-	const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-		(commands ?? []).map(({ name }) => name)
+	const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
 
 	test("the window read brings the browser locale the peek counter formats with", () => {
-		const read = Frame.Message.CompletedResolveWindow({
-			window,
-			nowMs: NOW,
-			locale: "ar-EG",
-			mode: "Load",
-		})
+		const read = Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "ar-EG", mode: "Load" })
 		const model = pageUpdate(windowed().model, Message.GotFrameMessage({ message: read })).model
 		expect(model.frame.locale).toBe("ar-EG")
 	})
@@ -152,33 +133,20 @@ describe("pods list", () => {
 				}),
 			),
 		).model
-		const retried = pageUpdate(
-			failed,
-			Message.GotPeekMessage({ message: PeekMessage.Message.ClickedRetrySummary() }),
-		)
+		const retried = pageUpdate(failed, Message.GotPeekMessage({ message: PeekMessage.Message.ClickedRetrySummary() }))
 		expect(names(retried.commands)).toEqual(["FetchInfraPodPeekSummary"])
 	})
 
 	test("a step replaces the peek with the next row; closing clears it", () => {
 		const { model } = peekedPage()
-		const stepped = pageUpdate(
-			model,
-			Message.GotPeekMessage({ message: PeekMessage.Message.ClickedStep({ step: 1 }) }),
-		)
+		const stepped = pageUpdate(model, Message.GotPeekMessage({ message: PeekMessage.Message.ClickedStep({ step: 1 }) }))
 		expect(stepped.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({
-				url: "/infra/kubernetes/pods?peek=shop%2Fpayment-3",
-				isReplace: true,
-			}),
+			PageOutMessage.RequestedNavigation({ url: "/infra/kubernetes/pods?peek=shop%2Fpayment-3", isReplace: true }),
 		)
 		const closed = pageUpdate(
 			model,
-			Message.GotPeekMessage({
-				message: PeekMessage.Message.GotDialogMessage({ message: Dialog.Message.PressedEscape() }),
-			}),
+			Message.GotPeekMessage({ message: PeekMessage.Message.GotDialogMessage({ message: Dialog.Message.PressedEscape() }) }),
 		)
-		expect(closed.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/infra/kubernetes/pods", isReplace: true }),
-		)
+		expect(closed.outMessage).toEqual(PageOutMessage.RequestedNavigation({ url: "/infra/kubernetes/pods", isReplace: true }))
 	})
 })

@@ -33,44 +33,23 @@ const quiet = (h: HtmlBuilder<Message>, range: string): Html =>
 				hint: ["Widen the time range, or send some traffic to this service."],
 			}),
 			...(range !== WIDEST_RANGE
-				? [
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								attributes: [h.OnClick(Message.ClickedWidenRange())],
-							},
-							["Widen to 30 days"],
-						),
-					]
+				? [button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedWidenRange())] }, ["Widen to 30 days"])]
 				: []),
 		],
 	)
 
-const loaded = (
-	h: HtmlBuilder<Message>,
-	model: Model,
-	inputs: PageViewInputs,
-	stats: Parameters<typeof statCards>[1],
-): Html => {
+const loaded = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, stats: Parameters<typeof statCards>[1]): Html => {
 	const range = rangeOf(inputs.context)
 	const bounds = Option.getOrNull(boundsOf(model, inputs.context))
 	const context =
-		model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
-			? { theme: model.themeColors, nowMs: model.nowMs }
-			: null
+		model.themeColors !== null && isChartRuntimeReady(model.chartRuntime) ? { theme: model.themeColors, nowMs: model.nowMs } : null
 	const goldenFailure = failureWithoutData(model.golden)
 	const charts =
 		bounds === null
 			? []
 			: [
 					Option.isSome(goldenFailure)
-						? errorState(h, {
-								label: "service charts",
-								failure: goldenFailure.value,
-								onRetry: Message.ClickedRetryGoldenSignals(),
-							})
+						? errorState(h, { label: "service charts", failure: goldenFailure.value, onRetry: Message.ClickedRetryGoldenSignals() })
 						: goldenSignals(
 								h,
 								model,
@@ -91,8 +70,7 @@ const loaded = (
 								unit: "requests_per_sec",
 								isPending: isPending(model.timeseries) && topSpanNames(model).length > 0,
 								chart: model.charts["operations-throughput"] ?? Chart.init(),
-								toChartMessage: (message) =>
-									Message.GotChartMessage({ chartId: "operations-throughput", message }),
+								toChartMessage: (message) => Message.GotChartMessage({ chartId: "operations-throughput", message }),
 								theme: context === null ? null : context.theme,
 								nowMs: model.nowMs,
 							}),
@@ -103,15 +81,10 @@ const loaded = (
 }
 
 const content = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs): Html => {
-	if (isPending(model.overview))
-		return h.div([h.Class("flex h-full items-center justify-center")], [spinner(h)])
+	if (isPending(model.overview)) return h.div([h.Class("flex h-full items-center justify-center")], [spinner(h)])
 	const failure = failureWithoutData(model.overview)
 	if (Option.isSome(failure))
-		return errorState(h, {
-			label: "service",
-			failure: failure.value,
-			onRetry: Message.ClickedRetryOverview(),
-		})
+		return errorState(h, { label: "service", failure: failure.value, onRetry: Message.ClickedRetryOverview() })
 	const overview = Option.getOrNull(AsyncData.getData(model.overview.data))
 	return overview === null ? quiet(h, rangeOf(inputs.context)) : loaded(h, model, inputs, overview.stats)
 }

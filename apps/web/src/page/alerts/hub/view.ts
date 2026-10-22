@@ -64,9 +64,7 @@ const tabBar = (h: H, model: Model, overview: Option.Option<AlertsOverviewReady>
 										h.Class(
 											cn(
 												"font-mono text-xs tabular-nums",
-												tab.value === "inbox"
-													? "text-severity-error"
-													: "text-muted-foreground",
+												tab.value === "inbox" ? "text-severity-error" : "text-muted-foreground",
 											),
 										),
 									],
@@ -87,11 +85,7 @@ const headerActions = (h: H, model: Model): Html =>
 				? [
 						button(
 							h,
-							{
-								size: "sm",
-								variant: "outline",
-								attributes: [h.OnClick(Message.ClickedNewDestination())],
-							},
+							{ size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedNewDestination())] },
 							[icon(h, "PlusIcon"), "New destination"],
 						),
 					]
@@ -163,8 +157,7 @@ const deleteDialog = (h: H, model: Model): Html => {
 		title: `Delete ${target?.name ?? "destination"}?`,
 		description: "Alert rules will stop notifying this destination. This cannot be undone.",
 		confirmLabel: "Delete destination",
-		isPending:
-			model.confirmDeleteId !== null && model.deletingDestinationIds.includes(model.confirmDeleteId),
+		isPending: model.confirmDeleteId !== null && model.deletingDestinationIds.includes(model.confirmDeleteId),
 		onConfirm: Message.ClickedConfirmDeleteDestination(),
 	})
 }
@@ -175,15 +168,19 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return h.div(
 		[h.Class("contents")],
 		[
-			dashboardPage(h, { actions: headerActions(h, model), tabs: tabBar(h, model, overview, tab) }, [
-				tab === "routing"
-					? routingTab(h, model, {
-							destinations: destinationsOf(model),
-							timeZone: inputs.context.timeZone,
-							nowMs: model.nowMs ?? 0,
-						})
-					: hubBody(h, model, overview, tab),
-			]),
+			dashboardPage(
+				h,
+				{ actions: headerActions(h, model), tabs: tabBar(h, model, overview, tab) },
+				[
+					tab === "routing"
+						? routingTab(h, model, {
+								destinations: destinationsOf(model),
+								timeZone: inputs.context.timeZone,
+								nowMs: model.nowMs ?? 0,
+							})
+						: hubBody(h, model, overview, tab),
+				],
+			),
 			deleteDialog(h, model),
 			h.submodel({
 				slotId: "alerts-destination",

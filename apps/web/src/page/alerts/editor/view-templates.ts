@@ -27,11 +27,7 @@ const tileHead = (h: H, iconName: IconName, title: string, subtitle: string): Ht
 				[h.Class("flex items-center gap-2")],
 				[
 					h.span(
-						[
-							h.Class(
-								"flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary",
-							),
-						],
+						[h.Class("flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary")],
 						[icon(h, iconName, { size: 18 })],
 					),
 					h.span([h.Class("font-medium text-sm")], [title]),
@@ -53,8 +49,7 @@ const tiles = (h: H): ReadonlyArray<Html> => [
 						inlineCode(h, { className: "text-2xs text-muted-foreground" }, [template.summary]),
 						icon(h, "ChevronRightIcon", {
 							size: 14,
-							className:
-								"text-muted-foreground transition-transform group-hover:translate-x-0.5",
+							className: "text-muted-foreground transition-transform group-hover:translate-x-0.5",
 						}),
 					],
 				),
@@ -65,10 +60,7 @@ const tiles = (h: H): ReadonlyArray<Html> => [
 		[h.Type("button"), h.Class(TILE_CLASS), h.OnClick(Message.ClickedStartBlank())],
 		[
 			tileHead(h, "AlertWarningIcon", "Start blank", "Build a rule from scratch."),
-			h.p(
-				[h.Class("text-muted-foreground text-xs")],
-				["Begin with the defaults and pick a signal yourself."],
-			),
+			h.p([h.Class("text-muted-foreground text-xs")], ["Begin with the defaults and pick a signal yourself."]),
 		],
 	),
 	h.a(
@@ -109,11 +101,7 @@ const overlay = (h: H, templates: Model["templates"]): Html =>
 					[
 						button(
 							h,
-							{
-								variant: "ghost",
-								size: "sm",
-								attributes: [h.OnClick(Message.ClickedSkipTemplates())],
-							},
+							{ variant: "ghost", size: "sm", attributes: [h.OnClick(Message.ClickedSkipTemplates())] },
 							["Skip — use defaults"],
 						),
 					],

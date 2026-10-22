@@ -180,10 +180,13 @@ declare global {
 	}
 }
 
-export class ClerkLoadError extends Schema.TaggedError<ClerkLoadError>()("@maple/web/ClerkLoadError", {
-	message: Schema.String,
-	cause: Schema.Defect(),
-}) {}
+export class ClerkLoadError extends Schema.TaggedError<ClerkLoadError>()(
+	"@maple/web/ClerkLoadError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
 
 /**
  * An organization as the app reads it (`useOrganization`, `useOrganizationList`): its public
@@ -390,10 +393,13 @@ export const freshClerkSessionToken = sessionToken(true)
 // clerk-js resources for the Clerk-only settings tabs and `/account`: ported markup over the
 // vanilla resource API.
 
-export class ClerkActionError extends Schema.TaggedError<ClerkActionError>()("@maple/web/ClerkActionError", {
-	message: Schema.String,
-	cause: Schema.Defect(),
-}) {}
+export class ClerkActionError extends Schema.TaggedError<ClerkActionError>()(
+	"@maple/web/ClerkActionError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
 
 const stringField = (value: unknown, key: string): string | undefined =>
 	Predicate.hasProperty(value, key) && typeof value[key] === "string" ? value[key] : undefined

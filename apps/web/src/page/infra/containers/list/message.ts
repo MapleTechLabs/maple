@@ -9,24 +9,11 @@ import { ContainerCounts, ContainerFacets, ContainersPage } from "./model"
 export const ContainerScope = Schema.Literals(["saturated", "elevated", "stale"])
 export type ContainerScope = typeof ContainerScope.Type
 
-export const ContainerSortKey = Schema.Literals([
-	"saturation",
-	"cpuPct",
-	"memoryPct",
-	"containerName",
-	"lastSeen",
-])
+export const ContainerSortKey = Schema.Literals(["saturation", "cpuPct", "memoryPct", "containerName", "lastSeen"])
 export type ContainerSortKey = typeof ContainerSortKey.Type
 
 /** A facet by its include param. */
-export const Facet = Schema.Literals([
-	"containerNames",
-	"images",
-	"hostNames",
-	"composeProjects",
-	"composeServices",
-	"environments",
-])
+export const Facet = Schema.Literals(["containerNames", "images", "hostNames", "composeProjects", "composeServices", "environments"])
 export type Facet = typeof Facet.Type
 
 export const FilterParam = Schema.Literals([

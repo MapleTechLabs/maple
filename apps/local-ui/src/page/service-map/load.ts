@@ -30,23 +30,14 @@ export const load = (
 		onNone: () => ({ model }),
 		onSome: (bounds) => {
 			const durationSeconds = durationSecondsOf(context)
-			const key = keyOf("service-map", {
-				durationSeconds,
-				bounds: `${bounds.startTime}/${bounds.endTime}`,
-			})
+			const key = keyOf("service-map", { durationSeconds, bounds: `${bounds.startTime}/${bounds.endTime}` })
 			return Option.match(request(model.data, key, force), {
 				onNone: () => ({ model }),
 				onSome: (data) => ({
 					model: { ...model, data },
 					// A new window reads the cache first; a refetch of the same one goes to the server.
 					commands: [
-						FetchServiceMap({
-							key,
-							...bounds,
-							durationSeconds,
-							apiBase: context.env.apiBase,
-							readsCache: model.data.key !== key,
-						}),
+						FetchServiceMap({ key, ...bounds, durationSeconds, apiBase: context.env.apiBase, readsCache: model.data.key !== key }),
 					],
 				}),
 			})

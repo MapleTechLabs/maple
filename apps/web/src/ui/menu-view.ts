@@ -209,10 +209,7 @@ const withItemTooltip = (
 			triggerIds: [id],
 			toContent: () => tooltip.content,
 			toView: ({ trigger, portal }) =>
-				h.div(
-					[...trigger(id)],
-					[item, ...(portal !== null && model.itemTooltip.triggerId === id ? [portal] : [])],
-				),
+				h.div([...trigger(id)], [item, ...(portal !== null && model.itemTooltip.triggerId === id ? [portal] : [])]),
 		},
 	})
 }
@@ -321,13 +318,8 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 						: [h.div([h.Class(entry.itemsClassName)], rows)]),
 			],
 		})
-	const subClassName = Option.getOrUndefined(
-		Option.flatMapNullishOr(maybeEntry, (entry) => entry.className),
-	)
-	const separatorAfter = Option.match(maybeEntry, {
-		onNone: () => undefined,
-		onSome: (entry) => entry.separatorAfter,
-	})
+	const subClassName = Option.getOrUndefined(Option.flatMapNullishOr(maybeEntry, (entry) => entry.className))
+	const separatorAfter = Option.match(maybeEntry, { onNone: () => undefined, onSome: (entry) => entry.separatorAfter })
 	const placement = [
 		h.DataAttribute("align", submenu.align),
 		h.DataAttribute("open", ""),
@@ -344,10 +336,10 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 			[
 				h.div(
 					[
-						h.Class(cn(dropdownMenuPositionerStyles, !model.isOpen && "pointer-events-none")),
-						...placement,
-						h.Role("presentation"),
-					],
+					h.Class(cn(dropdownMenuPositionerStyles, !model.isOpen && "pointer-events-none")),
+					...placement,
+					h.Role("presentation"),
+				],
 					[
 						h.div(
 							[
@@ -364,9 +356,7 @@ const submenuPortal = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Ht
 								keyHandler(h, SUBMENU_KEYS, (key) =>
 									Message.PressedSubmenuKey({
 										key,
-										values: items.map((item) =>
-											item.isDisabled === true ? null : item.value,
-										),
+										values: items.map((item) => (item.isDisabled === true ? null : item.value)),
 									}),
 								),
 							],

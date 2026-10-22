@@ -88,10 +88,7 @@ export const InspectCliDevice = Command.define("InspectCliDevice", {
 		}).pipe(
 			Effect.catch((error) =>
 				Effect.succeed(
-					Message.FailedInspectCliDevice({
-						userCode,
-						message: endpointMessage(error, INSPECT_FALLBACK),
-					}),
+					Message.FailedInspectCliDevice({ userCode, message: endpointMessage(error, INSPECT_FALLBACK) }),
 				),
 			),
 		),
@@ -128,8 +125,7 @@ const inspect = (model: Model, code: string): UpdateReturn => {
 	if (normalized.replace("-", "").length !== 8) {
 		return {
 			model: modifyFields(model, {
-				state: () =>
-					State.Failed({ message: "Enter the eight-character code shown in your terminal." }),
+				state: () => State.Failed({ message: "Enter the eight-character code shown in your terminal." }),
 			}),
 		}
 	}
@@ -207,3 +203,4 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			model: modifyFields(model, { state: () => State.Failed({ message: failure }) }),
 		}),
 	})
+

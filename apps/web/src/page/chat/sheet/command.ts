@@ -48,8 +48,7 @@ export const ReleaseFocus = Command.define("ReleaseChatSheetFocus", {
 	messages: [Message.CompletedReleaseFocus],
 	execute: Effect.sync(() => {
 		const active = document.activeElement
-		if (active instanceof HTMLElement && active.closest(`#${Dialog.popupId(SHEET_ID)}`) !== null)
-			active.blur()
+		if (active instanceof HTMLElement && active.closest(`#${Dialog.popupId(SHEET_ID)}`) !== null) active.blur()
 		return Message.CompletedReleaseFocus()
 	}),
 })
@@ -61,12 +60,7 @@ export const EnsureStoredTab = Command.define("EnsureChatSheetTab", {
 	execute: ({ orgId, tabId }) =>
 		Effect.gen(function* () {
 			const nowMs = yield* Clock.currentTimeMillis
-			yield* ensureStoredTab(
-				orgId,
-				tabId,
-				tabId === QUICK_CHAT_TAB_ID ? "Quick chat" : "New Chat",
-				nowMs,
-			)
+			yield* ensureStoredTab(orgId, tabId, tabId === QUICK_CHAT_TAB_ID ? "Quick chat" : "New Chat", nowMs)
 			return Message.CompletedEnsureStoredTab({ tabId })
 		}),
 })
@@ -104,14 +98,11 @@ export const MountFocusVisibleTrigger = Mount.defineStream("MountChatSheetFocusV
 	args: { triggerId: Schema.String },
 	messages: [Message.FocusedVisibleTrigger, Message.MovedOverTrigger],
 	execute: ({ element, triggerId }) =>
-		Stream.callback<
-			ReturnType<typeof Message.FocusedVisibleTrigger> | ReturnType<typeof Message.MovedOverTrigger>
-		>((queue) =>
+		Stream.callback<ReturnType<typeof Message.FocusedVisibleTrigger> | ReturnType<typeof Message.MovedOverTrigger>>((queue) =>
 			Effect.acquireRelease(
 				Effect.sync(() => {
 					const onFocus = () => {
-						if (element.matches(":focus-visible"))
-							Queue.offerUnsafe(queue, Message.FocusedVisibleTrigger({ triggerId }))
+						if (element.matches(":focus-visible")) Queue.offerUnsafe(queue, Message.FocusedVisibleTrigger({ triggerId }))
 					}
 					const onMove = () => Queue.offerUnsafe(queue, Message.MovedOverTrigger({ triggerId }))
 					element.addEventListener("focus", onFocus)

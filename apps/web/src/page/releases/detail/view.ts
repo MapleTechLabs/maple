@@ -127,17 +127,11 @@ const overview = (h: H, model: Model, clock: Clock): Html => {
 					[h.Class("flex flex-col gap-3")],
 					[
 						deploySummary(h, group, clock),
-						deployServices(
-							h,
-							group,
-							model.search.environments,
-							{
-								startTime: model.search.startTime,
-								endTime: model.search.endTime,
-								timePreset: model.search.timePreset,
-							},
-							overlaysOf(model, clock),
-						),
+						deployServices(h, group, model.search.environments, {
+							startTime: model.search.startTime,
+							endTime: model.search.endTime,
+							timePreset: model.search.timePreset,
+						}, overlaysOf(model, clock)),
 						releaseChangeset(h, changesetState(model, previousSha(group)), clock),
 						deployIssues(h, model, clock),
 					],

@@ -37,11 +37,7 @@ type H = HtmlBuilder<Message>
 export const SPAN_DIALOG_ID = "agent-session-span"
 
 /** Each span opens on its own payload until the reader picks a tab: an error, messages, a tool call. */
-export const activeTab = (
-	model: Model,
-	span: AiSessionSpan,
-	toolResults: SessionToolResults,
-): SpanDetailTab =>
+export const activeTab = (model: Model, span: AiSessionSpan, toolResults: SessionToolResults): SpanDetailTab =>
 	model.spanTab ??
 	(spanFailed(span)
 		? "details"
@@ -112,12 +108,10 @@ const expansion = (
 									variant: "outline",
 									size: "sm",
 									className: "h-6.5 gap-1.5 text-xs",
-									href: `${hrefOf(AppRoute.Trace({ traceId: span.traceId, search: {} }))}${orderedSearch(
-										[
-											["t", span.timestamp],
-											["spanId", span.spanId],
-										],
-									)}`,
+									href: `${hrefOf(AppRoute.Trace({ traceId: span.traceId, search: {} }))}${orderedSearch([
+										["t", span.timestamp],
+										["spanId", span.spanId],
+									])}`,
 								},
 								["Open in Traces", icon(h, "ExternalLinkIcon")],
 							),
@@ -134,24 +128,15 @@ const expansion = (
 }
 
 /** The same wording the waterfall's headers use for the fallback partition. */
-const turnOrdinal = (turn: SessionTurn): string =>
-	`${turn.anchorKind === "trace" ? "Segment" : "Turn"} ${turn.index}`
+const turnOrdinal = (turn: SessionTurn): string => `${turn.anchorKind === "trace" ? "Segment" : "Turn"} ${turn.index}`
 
 /** The overlay of the Overview, Traces and Flow views; only the Flow names the span's turn. */
-export const viewPopover = (
-	h: H,
-	model: Model,
-	data: SessionData,
-	view: SessionView,
-	timeZone: string,
-): Html => {
+export const viewPopover = (h: H, model: Model, data: SessionData, view: SessionView, timeZone: string): Html => {
 	const spanId = model.search.span
 	const found =
 		spanId === undefined
 			? undefined
-			: data.turns
-					.flatMap((turn) => turn.spans.map((span) => ({ span, turn })))
-					.find(({ span }) => span.spanId === spanId)
+			: data.turns.flatMap((turn) => turn.spans.map((span) => ({ span, turn }))).find(({ span }) => span.spanId === spanId)
 	return spanPopover(
 		h,
 		model,
@@ -214,9 +199,7 @@ export const spanPopover = (h: H, model: Model, inputs: SpanPopoverInputs | unde
 	})
 
 const tabCount = (h: H, count: number): ReadonlyArray<Html> =>
-	count === 0
-		? []
-		: [h.span([h.Class("font-mono text-3xs text-muted-foreground tabular-nums")], [String(count)])]
+	count === 0 ? [] : [h.span([h.Class("font-mono text-3xs text-muted-foreground tabular-nums")], [String(count)])]
 
 const isSpanTab = (value: string): value is SpanDetailTab =>
 	value === "details" || value === "messages" || value === "tools" || value === "logs"

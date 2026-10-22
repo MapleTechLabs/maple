@@ -18,22 +18,12 @@ export type PageShellOptions<M> = Readonly<{
 	onOpenFilters: M
 }>
 
-export const pageShell = <M>(
-	h: HtmlBuilder<M>,
-	options: PageShellOptions<M>,
-	children: ReadonlyArray<Html>,
-): Html => {
+export const pageShell = <M>(h: HtmlBuilder<M>, options: PageShellOptions<M>, children: ReadonlyArray<Html>): Html => {
 	const count = options.activeFilterCount ?? 0
 	return h.div(
 		[h.Class("flex h-full min-h-0"), h.DataAttribute("slot", "page-body")],
 		[
-			h.aside(
-				[
-					h.Class("hidden h-full border-r py-1 md:block"),
-					h.DataAttribute("slot", "page-filter-sidebar"),
-				],
-				[options.sidebar],
-			),
+			h.aside([h.Class("hidden h-full border-r py-1 md:block"), h.DataAttribute("slot", "page-filter-sidebar")], [options.sidebar]),
 			h.div(
 				[h.Class("flex min-w-0 flex-1 flex-col")],
 				[
@@ -47,25 +37,13 @@ export const pageShell = <M>(
 									size: "sm",
 									className: "gap-1.5",
 									// The drawer hands focus back here on close.
-									attributes: [
-										h.Id(triggerId(FILTER_DRAWER_ID)),
-										h.OnClick(options.onOpenFilters),
-									],
+									attributes: [h.Id(triggerId(FILTER_DRAWER_ID)), h.OnClick(options.onOpenFilters)],
 								},
 								[
 									icon(h, "FilterIcon"),
 									"Filters",
 									...(count > 0
-										? [
-												h.span(
-													[
-														h.Class(
-															"rounded-sm bg-primary/15 px-1 text-[10px] tabular-nums text-primary",
-														),
-													],
-													[String(count)],
-												),
-											]
+										? [h.span([h.Class("rounded-sm bg-primary/15 px-1 text-[10px] tabular-nums text-primary")], [String(count)])]
 										: []),
 								],
 							),

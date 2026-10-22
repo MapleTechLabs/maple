@@ -38,23 +38,12 @@ export const MARKER_LABELS = {
 
 const EVENT_INCREMENTAL = 3
 const EVENT_META = 4
-const SOURCE = {
-	mouseMove: 1,
-	mouseInteraction: 2,
-	scroll: 3,
-	viewportResize: 4,
-	input: 5,
-	touchMove: 6,
-	drag: 12,
-}
+const SOURCE = { mouseMove: 1, mouseInteraction: 2, scroll: 3, viewportResize: 4, input: 5, touchMove: 6, drag: 12 }
 const INTERACTION_CLICK = 2
 const INTERACTION_TOUCH_START = 7
 
 const IDLE_THRESHOLD_MS = 2000
-const MARKER_COALESCE_MS = { click: 150, input: 800, scroll: 400, nav: 0 } satisfies Record<
-	ActionKind,
-	number
->
+const MARKER_COALESCE_MS = { click: 150, input: 800, scroll: 400, nav: 0 } satisfies Record<ActionKind, number>
 
 const isMovementNoise = (source: number | undefined): boolean =>
 	source === SOURCE.mouseMove ||
@@ -139,14 +128,8 @@ const step = (state: MetaState, raw: unknown, ev: RawEvent): MetaState => {
 		const href = ev.data.href
 		if (href === undefined || timestamp === undefined) return sized
 		const navigated =
-			sized.lastHref !== undefined && href !== sized.lastHref
-				? pushMarker(sized, "nav", timestamp - startTime)
-				: sized
-		return {
-			...navigated,
-			lastHref: href,
-			firstHref: navigated.firstHref ?? { href, ms: timestamp - startTime },
-		}
+			sized.lastHref !== undefined && href !== sized.lastHref ? pushMarker(sized, "nav", timestamp - startTime) : sized
+		return { ...navigated, lastHref: href, firstHref: navigated.firstHref ?? { href, ms: timestamp - startTime } }
 	}
 	if (!isIncremental || timestamp === undefined) return idled
 	const ms = timestamp - startTime
@@ -165,24 +148,14 @@ const timestampOf = (event: unknown): number | undefined => {
 	return decoded !== undefined && decoded._tag === "Some" ? decoded.value.timestamp : undefined
 }
 
-const scan = (
-	events: ReadonlyArray<unknown>,
-	startTime: number,
-	prevMeaningfulTs: number | undefined,
-): MetaState =>
+const scan = (events: ReadonlyArray<unknown>, startTime: number, prevMeaningfulTs: number | undefined): MetaState =>
 	events.reduce<MetaState>(
 		(state, raw) => {
 			const decoded = asRawEvent(raw)
 			return decoded._tag === "Some" ? step(state, raw, decoded.value) : state
 		},
 		{
-			meta: {
-				recordedWidth: 1280,
-				recordedHeight: 720,
-				startTime,
-				actionMarkers: [],
-				inactiveIntervals: [],
-			},
+			meta: { recordedWidth: 1280, recordedHeight: 720, startTime, actionMarkers: [], inactiveIntervals: [] },
 			prevMeaningfulTs,
 			firstMeaningfulTs: undefined,
 			lastMsByKind: {},
@@ -220,11 +193,7 @@ export const deriveRangeMeta = (
 	events: ReadonlyArray<unknown>,
 	originMs: number,
 ): RangeMeta => {
-	const { meta, prevMeaningfulTs, firstMeaningfulTs, firstHref, lastHref } = scan(
-		events,
-		originMs,
-		undefined,
-	)
+	const { meta, prevMeaningfulTs, firstMeaningfulTs, firstHref, lastHref } = scan(events, originMs, undefined)
 	return {
 		fromChunkSeq: range.fromChunkSeq,
 		toChunkSeq: range.toChunkSeq,
@@ -261,9 +230,7 @@ export const combineRangeMetas = (originMs: number, ranges: ReadonlyArray<RangeM
 		recordedWidth: 1280,
 		recordedHeight: 720,
 		startTime: originMs,
-		actionMarkers: [...sorted.flatMap((range) => range.actionMarkers), ...navs].toSorted(
-			(a, b) => a.ms - b.ms,
-		),
+		actionMarkers: [...sorted.flatMap((range) => range.actionMarkers), ...navs].toSorted((a, b) => a.ms - b.ms),
 		inactiveIntervals: [...sorted.flatMap((range) => range.inactiveIntervals), ...gaps].toSorted(
 			(a, b) => a.start - b.start,
 		),

@@ -72,17 +72,10 @@ export const bucketTooltipBody = <Message>(
 				? []
 				: [
 						h.div(
-							[
-								h.Class(
-									"flex items-center justify-between gap-3 border-border/50 border-t pt-1.5 leading-none",
-								),
-							],
+							[h.Class("flex items-center justify-between gap-3 border-border/50 border-t pt-1.5 leading-none")],
 							[
 								h.span([h.Class("text-muted-foreground")], ["Total"]),
-								h.span(
-									[h.Class("font-mono font-semibold text-foreground tabular-nums")],
-									[tooltip.total],
-								),
+								h.span([h.Class("font-mono font-semibold text-foreground tabular-nums")], [tooltip.total]),
 							],
 						),
 					]),

@@ -18,8 +18,7 @@ const RESTING = { transform: "", boxShadow: "", zIndex: "", position: "" }
 
 const rowsOf = (container: Element): ReadonlyArray<HTMLElement> =>
 	[...container.children].filter(
-		(child): child is HTMLElement =>
-			child instanceof HTMLElement && child.hasAttribute(`data-${ROW_ATTRIBUTE}`),
+		(child): child is HTMLElement => child instanceof HTMLElement && child.hasAttribute(`data-${ROW_ATTRIBUTE}`),
 	)
 
 const centreOf = (row: HTMLElement): number => {
@@ -48,11 +47,7 @@ const startDrag = (container: Element, event: PointerEvent, emit: (message: Move
 		const centre = (centres[from] ?? 0) + move.clientY - startY
 		const target = targetIndex(centres, from, centre)
 		if (target !== drag.at)
-			emit(
-				Message.ChangedProduct({
-					edit: ProductEdit.MovedListColumn({ index: drag.at, delta: target - drag.at }),
-				}),
-			)
+			emit(Message.ChangedProduct({ edit: ProductEdit.MovedListColumn({ index: drag.at, delta: target - drag.at }) }))
 		drag.at = target
 		rowsOf(container).forEach((other, index) =>
 			index === target

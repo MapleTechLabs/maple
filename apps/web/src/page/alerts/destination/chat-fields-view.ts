@@ -11,25 +11,13 @@ import type { FieldState } from "../../../ui/input"
 import { icon } from "../../../ui/icon"
 import { refreshButton } from "../../../ui/refresh-button"
 import { destinationProvider } from "../shared/providers"
-import {
-	CHANNEL_COMBOBOX_ID,
-	channelsOf,
-	labelOf,
-	Message as ChatMessage,
-	type Model as ChatModel,
-} from "./chat-fields"
+import { CHANNEL_COMBOBOX_ID, channelsOf, labelOf, Message as ChatMessage, type Model as ChatModel } from "./chat-fields"
 import type { DestinationForm } from "./form"
 
 // `ChatDestinationFields`' view. TODO(destination-dialog): the input's clear button and the
 // "Showing N of M" status line under a capped list.
 
-const IDLE: FieldState = {
-	isInvalid: false,
-	isDirty: false,
-	isFilled: false,
-	isFocused: false,
-	isTouched: false,
-}
+const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
 /** The label points at the combobox input (`htmlFor="destination-chat-channel"`). */
 const IDS: FieldIds = {
 	control: Combobox.inputId(CHANNEL_COMBOBOX_ID),
@@ -37,24 +25,14 @@ const IDS: FieldIds = {
 	error: "destination-chat-channel-error",
 }
 
-type Inputs<M> = Readonly<{
-	model: ChatModel
-	form: DestinationForm
-	isEditing: boolean
-	toMessage: (message: ChatMessage) => M
-}>
+type Inputs<M> = Readonly<{ model: ChatModel; form: DestinationForm; isEditing: boolean; toMessage: (message: ChatMessage) => M }>
 
 const errorOf = (model: ChatModel) =>
 	AsyncData.isFailure(model.channels.data) || AsyncData.isStale(model.channels.data)
 		? AsyncData.getError(model.channels.data)
 		: Option.none()
 
-const status = <M>(
-	h: HtmlBuilder<M>,
-	inputs: Inputs<M>,
-	connectorName: string,
-	isLoading: boolean,
-): ReadonlyArray<Html> => {
+const status = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, connectorName: string, isLoading: boolean): ReadonlyArray<Html> => {
 	const failure = errorOf(inputs.model)
 	const channels = channelsOf(inputs.model)
 	if (Option.isSome(failure) && failure.value.code === "integration_not_connected")
@@ -68,11 +46,7 @@ const status = <M>(
 						{
 							size: "xs",
 							variant: "outline",
-							href: hrefOf(
-								AppRoute.Integrations({
-									search: { integration: `chat-${inputs.form.chatConnector}` },
-								}),
-							),
+							href: hrefOf(AppRoute.Integrations({ search: { integration: `chat-${inputs.form.chatConnector}` } })),
 							attributes: [h.Target("_blank"), h.Rel("noreferrer")],
 						},
 						[`Open ${connectorName} integration`, icon(h, "ArrowRightIcon")],
@@ -89,22 +63,14 @@ const status = <M>(
 					fieldError(
 						h,
 						{ ids: IDS, className: "text-2xs", state: IDLE },
-						isPermission
-							? "Listing a workspace's channels is limited to org admins."
-							: `Couldn't load ${connectorName} channels.`,
+						isPermission ? "Listing a workspace's channels is limited to org admins." : `Couldn't load ${connectorName} channels.`,
 					),
 					...(isPermission
 						? []
 						: [
 								button(
 									h,
-									{
-										size: "xs",
-										variant: "ghost",
-										attributes: [
-											h.OnClick(inputs.toMessage(ChatMessage.ClickedRefreshChannels())),
-										],
-									},
+									{ size: "xs", variant: "ghost", attributes: [h.OnClick(inputs.toMessage(ChatMessage.ClickedRefreshChannels()))] },
 									["Retry"],
 								),
 							]),
@@ -116,9 +82,7 @@ const status = <M>(
 		? [
 				h.p(
 					[h.Class("text-2xs text-muted-foreground")],
-					[
-						"No channels returned. Make sure the Maple bot can see at least one channel, then hit Refresh.",
-					],
+					["No channels returned. Make sure the Maple bot can see at least one channel, then hit Refresh."],
 				),
 			]
 		: []
@@ -126,10 +90,7 @@ const status = <M>(
 
 const header = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, isLoading: boolean): Html => {
 	const { form } = inputs
-	const storedName =
-		inputs.isEditing && form.chatChannelId.length === 0 && form.chatChannelName.length > 0
-			? form.chatChannelName
-			: null
+	const storedName = inputs.isEditing && form.chatChannelId.length === 0 && form.chatChannelName.length > 0 ? form.chatChannelName : null
 	return h.div(
 		[h.Class("flex items-center justify-between gap-2")],
 		[
@@ -142,10 +103,7 @@ const header = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, isLoading: boolean): Ht
 						: [
 								h.span(
 									[h.Class("truncate text-2xs text-muted-foreground")],
-									[
-										"Currently ",
-										h.span([h.Class("font-medium text-foreground")], [`#${storedName}`]),
-									],
+									["Currently ", h.span([h.Class("font-medium text-foreground")], [`#${storedName}`])],
 								),
 							]),
 					refreshButton(h, {
@@ -169,9 +127,7 @@ export const chatFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 			[
 				h.p(
 					[h.Class("text-xs text-muted-foreground")],
-					[
-						"This destination's chat workspace isn't available. Create a new destination from a linked workspace instead.",
-					],
+					["This destination's chat workspace isn't available. Create a new destination from a linked workspace instead."],
 				),
 			],
 		)
@@ -179,10 +135,7 @@ export const chatFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 	const isLoading = AsyncData.isLoading(model.channels.data) || AsyncData.isRefreshing(model.channels.data)
 	const channels = channelsOf(model)
 	const selected = channels.find((channel) => channel.id === form.chatChannelId)
-	const query = resolveSearchQuery(
-		model.combobox.inputValue,
-		selected === undefined ? undefined : { name: selected.name, is_private: selected.private },
-	)
+	const query = resolveSearchQuery(model.combobox.inputValue, selected === undefined ? undefined : { name: selected.name, is_private: selected.private })
 	const picker = channelPickerView(
 		channels.map((channel) => ({ ...channel, is_private: channel.private, is_member: true })),
 		query,
@@ -199,11 +152,7 @@ export const chatFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 			viewInputs: {
 				items: [...byLabel.keys()],
 				placeholder: isLoading ? "Loading channels…" : "Search channels…",
-				emptyText: isLoading
-					? "Loading channels…"
-					: channels.length === 0
-						? "No channels loaded yet."
-						: "No matching channels.",
+				emptyText: isLoading ? "Loading channels…" : channels.length === 0 ? "No channels loaded yet." : "No matching channels.",
 				startAddon: icon(h, "MagnifierIcon"),
 				className: "w-full",
 				renderItem: (label) => {
@@ -213,9 +162,7 @@ export const chatFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 							[h.Class("flex items-center gap-2")],
 							[
 								h.span([h.Class("truncate")], [`#${channel?.name ?? label}`]),
-								...(channel?.private === true
-									? [h.span([h.Class("text-2xs text-muted-foreground")], ["private"])]
-									: []),
+								...(channel?.private === true ? [h.span([h.Class("text-2xs text-muted-foreground")], ["private"])] : []),
 							],
 						),
 					]
@@ -230,9 +177,7 @@ export const chatFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 				icon(h, "CircleInfoIcon", { size: 12, className: "mt-0.5 shrink-0" }),
 				h.span(
 					[],
-					[
-						"Private channels are listed once the Maple bot has been added to them. Use Send test after saving to check it can post.",
-					],
+					["Private channels are listed once the Maple bot has been added to them. Use Send test after saving to check it can post."],
 				),
 			],
 		),

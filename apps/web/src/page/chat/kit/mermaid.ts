@@ -48,13 +48,11 @@ const wirePanZoom = (frame: HTMLElement, fit: number): (() => void) => {
 		frame.querySelectorAll("[data-mermaid-control]").forEach((button) => {
 			if (!(button instanceof HTMLButtonElement)) return
 			const control = button.dataset.mermaidControl
-			button.disabled =
-				(control === "in" && view.zoom >= MAX_ZOOM) || (control === "out" && view.zoom <= minZoom)
+			button.disabled = (control === "in" && view.zoom >= MAX_ZOOM) || (control === "out" && view.zoom <= minZoom)
 		})
 	}
 	const onClick = (event: Event) => {
-		const control =
-			event.target instanceof Element ? event.target.closest("[data-mermaid-control]") : null
+		const control = event.target instanceof Element ? event.target.closest("[data-mermaid-control]") : null
 		if (!(control instanceof HTMLElement)) return
 		const kind = control.dataset.mermaidControl
 		if (kind === "in") view.zoom = Math.min(MAX_ZOOM, view.zoom + ZOOM_STEP)
@@ -79,10 +77,7 @@ const wirePanZoom = (frame: HTMLElement, fit: number): (() => void) => {
 	}
 	const onWheel = (event: WheelEvent) => {
 		event.preventDefault()
-		view.zoom = Math.max(
-			minZoom,
-			Math.min(MAX_ZOOM, view.zoom + (event.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP)),
-		)
+		view.zoom = Math.max(minZoom, Math.min(MAX_ZOOM, view.zoom + (event.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP)))
 		apply()
 	}
 	apply()
@@ -133,8 +128,7 @@ export const MountMermaid = Mount.define("MountChatMermaid", {
 					const slot = element.querySelector("[role=img]")
 					if (slot instanceof HTMLElement) slot.innerHTML = svg
 					const drawn = slot?.querySelector("svg")
-					if (!(element instanceof HTMLElement) || !(drawn instanceof SVGSVGElement))
-						return () => {}
+					if (!(element instanceof HTMLElement) || !(drawn instanceof SVGSVGElement)) return () => {}
 					if (isFullscreen) return wirePanZoom(element, fullscreenFit(element, drawn))
 					element.style.height = `${pinSize(drawn)}px`
 					return wirePanZoom(element, 1)
@@ -162,9 +156,7 @@ export const MountDiagramMenu = Mount.defineStream("MountChatDiagramMenu", {
 				target: () => document,
 				type: "mousedown",
 				filterMapEvent: (event) =>
-					event.composedPath().includes(element.parentElement ?? element)
-						? Option.none()
-						: Option.some(DiagramMessage.PressedOutsideDiagramMenu()),
+					event.composedPath().includes(element.parentElement ?? element) ? Option.none() : Option.some(DiagramMessage.PressedOutsideDiagramMenu()),
 			}),
 		),
 })
@@ -185,23 +177,16 @@ export const MountDiagramFullscreen = Mount.defineStream("MountChatDiagramFullsc
 					target: () => document,
 					type: "keydown",
 					filterMapEvent: (event) =>
-						event.key === "Escape"
-							? Option.some(DiagramMessage.PressedEscapeDiagramFullscreen())
-							: Option.none(),
+						event.key === "Escape" ? Option.some(DiagramMessage.PressedEscapeDiagramFullscreen()) : Option.none(),
 				})
 				// The dialog's children stop their clicks, so only one on the dialog itself closes it.
 				const backdrop = Dom.streamFromEventFilterMap({
 					target: () => element,
 					type: "click",
 					filterMapEvent: (event) =>
-						event.target === element
-							? Option.some(DiagramMessage.PressedDiagramBackdrop())
-							: Option.none(),
+						event.target === element ? Option.some(DiagramMessage.PressedDiagramBackdrop()) : Option.none(),
 				})
-				return Stream.concat(
-					Stream.make(DiagramMessage.CompletedMountDiagramOverlay()),
-					Stream.merge(escapes, backdrop),
-				)
+				return Stream.concat(Stream.make(DiagramMessage.CompletedMountDiagramOverlay()), Stream.merge(escapes, backdrop))
 			}),
 		),
 })

@@ -170,3 +170,4 @@ export const breadcrumbsOf = (model: Model) => {
 		{ label: model.rules === null ? "Loading…" : rule === null ? "Not found" : rule.name },
 	]
 }
+

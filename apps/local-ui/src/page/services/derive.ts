@@ -23,10 +23,7 @@ export const activeFilterCount = (filters: ServicesFilters): number =>
 const dataOf = (slot: Model["catalog"]): Catalog => Option.getOrElse(AsyncData.getData(slot.data), () => [])
 
 /** The rows: the filtered catalog, narrowed client-side by the name search. */
-export const visibleEntries = (
-	model: Model,
-	filters: ServicesFilters,
-): ReadonlyArray<ServiceCatalogEntry> => {
+export const visibleEntries = (model: Model, filters: ServicesFilters): ReadonlyArray<ServiceCatalogEntry> => {
 	const all = dataOf(model.catalog)
 	const needle = filters.search?.toLowerCase()
 	return needle ? all.filter((entry) => entry.serviceName.toLowerCase().includes(needle)) : all
@@ -52,13 +49,7 @@ export const facetsOf = (model: Model, filters: ServicesFilters) => {
 	const all = dataOf(unfilteredSlot(model, filters))
 	const { env, ns } = filters
 	return {
-		envFacets: countBy(
-			ns ? all.filter((e) => e.serviceNamespaces.includes(ns)) : all,
-			(e) => e.deploymentEnvironments,
-		),
-		nsFacets: countBy(
-			env ? all.filter((e) => e.deploymentEnvironments.includes(env)) : all,
-			(e) => e.serviceNamespaces,
-		),
+		envFacets: countBy(ns ? all.filter((e) => e.serviceNamespaces.includes(ns)) : all, (e) => e.deploymentEnvironments),
+		nsFacets: countBy(env ? all.filter((e) => e.deploymentEnvironments.includes(env)) : all, (e) => e.serviceNamespaces),
 	}
 }

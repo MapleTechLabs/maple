@@ -81,10 +81,8 @@ const facets: ReplaysFacets = {
 }
 
 const windowed = (search = {}): Model =>
-	pageUpdate(
-		init({ search }, context).model,
-		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
-	).model
+	pageUpdate(init({ search }, context).model, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }))
+		.model
 
 const loaded = (first: ReplaysPage, search = {}): Model => {
 	const base = windowed(search)
@@ -123,16 +121,10 @@ describe("replays list", () => {
 
 	test("a first page for a superseded window is dropped", () => {
 		const first = windowed()
-		const second = pageUpdate(
-			first,
-			Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Load" }),
-		)
+		const second = pageUpdate(first, Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Load" }))
 		const late = pageUpdate(
 			second.model,
-			Message.CompletedFetchFirstPage({
-				key: first.firstPage.key ?? "",
-				result: Result.succeed(page([session("a")])),
-			}),
+			Message.CompletedFetchFirstPage({ key: first.firstPage.key ?? "", result: Result.succeed(page([session("a")])) }),
 		)
 		expect(allRows(late.model)).toEqual([])
 	})
@@ -148,19 +140,11 @@ describe("replays list", () => {
 	test("page 2 under a new search waits for its own first page and its cursor", () => {
 		const model = loaded(page([session("a")], "cursor-1"))
 		const filtered = routeChanged(model, { search: { browser: "Safari" } }, context).model
-		const moved = pageUpdate(
-			filtered,
-			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
-		).model
+		const moved = pageUpdate(filtered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
 		expect(names(pageUpdate(moved, Message.ReachedListEnd()).commands)).toEqual([])
-		const own = Message.CompletedFetchFirstPage({
-			key: moved.firstPage.key ?? "",
-			result: Result.succeed(page([session("b")], "cursor-2")),
-		})
+		const own = Message.CompletedFetchFirstPage({ key: moved.firstPage.key ?? "", result: Result.succeed(page([session("b")], "cursor-2")) })
 		const settled = pageUpdate(moved, own).model
-		expect(pageUpdate(settled, Message.ReachedListEnd()).commands?.[0]?.args).toMatchObject({
-			cursor: "cursor-2",
-		})
+		expect(pageUpdate(settled, Message.ReachedListEnd()).commands?.[0]?.args).toMatchObject({ cursor: "cursor-2" })
 	})
 
 	test("after a Reload a browser filter reads under the kept window; only a new preset re-resolves", () => {
@@ -168,43 +152,22 @@ describe("replays list", () => {
 		const filtered = routeChanged(reloaded, { search: { browser: "Safari" } }, context)
 		expect(names(filtered.commands)).toContain(FetchFirstPage.name)
 		expect(names(filtered.commands)).not.toContain("ResolveReplaysWindow")
-		const moved = routeChanged(
-			filtered.model,
-			{ search: { browser: "Safari", timePreset: "1h" } },
-			context,
-		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
-			["ResolveReplaysWindow", "Refresh"],
-		])
+		const moved = routeChanged(filtered.model, { search: { browser: "Safari", timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveReplaysWindow", "Refresh"]])
 	})
 
 	test("a Reload under the same key drops the page 2 already in flight: it is appended once", () => {
 		const model = loaded(page([session("a")], "cursor-1"))
 		const first = pageUpdate(model, Message.ReachedListEnd())
 		const answer = (generation: number) =>
-			Message.CompletedFetchNextPage({
-				key: model.pagination.key ?? "",
-				generation,
-				cursor: "cursor-1",
-				result: Result.succeed(page([session("b")])),
-			})
-		const reloaded = pageUpdate(
-			first.model,
-			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" }),
-		).model
+			Message.CompletedFetchNextPage({ key: model.pagination.key ?? "", generation, cursor: "cursor-1", result: Result.succeed(page([session("b")])) })
+		const reloaded = pageUpdate(first.model, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" })).model
 		const late = pageUpdate(reloaded, answer(first.model.pagination.generation)).model
-		const refreshed = Message.CompletedFetchFirstPage({
-			key: late.firstPage.key ?? "",
-			result: Result.succeed(page([session("a")], "cursor-1")),
-		})
+		const refreshed = Message.CompletedFetchFirstPage({ key: late.firstPage.key ?? "", result: Result.succeed(page([session("a")], "cursor-1")) })
 		const again = pageUpdate(pageUpdate(late, refreshed).model, Message.ReachedListEnd())
 		expect(names(again.commands)).toEqual([FetchNextPage.name])
 		const appended = pageUpdate(again.model, answer(again.model.pagination.generation)).model
-		expect(
-			allRows(pageUpdate(appended, answer(again.model.pagination.generation)).model).map(
-				(row) => row.sessionId,
-			),
-		).toEqual(["a", "b"])
+		expect(allRows(pageUpdate(appended, answer(again.model.pagination.generation)).model).map((row) => row.sessionId)).toEqual(["a", "b"])
 	})
 
 	test("the errors chip and a sidebar option navigate with the new search", () => {
@@ -212,27 +175,21 @@ describe("replays list", () => {
 		expect(pageUpdate(model, Message.ToggledErrorsOnly()).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/replays?hasErrors=true", isReplace: false }),
 		)
-		expect(
-			pageUpdate(model, Message.ToggledFacetOption({ facet: "browser", name: "Safari" })).outMessage,
-		).toEqual(PageOutMessage.RequestedNavigation({ url: "/replays?browser=Safari", isReplace: false }))
+		expect(pageUpdate(model, Message.ToggledFacetOption({ facet: "browser", name: "Safari" })).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/replays?browser=Safari", isReplace: false }),
+		)
 		const ticked = routeChanged(model, { search: { browser: "Safari" } }, context).model
-		expect(
-			pageUpdate(ticked, Message.ToggledFacetOption({ facet: "browser", name: "Safari" })).outMessage,
-		).toEqual(PageOutMessage.RequestedNavigation({ url: "/replays", isReplace: false }))
+		expect(pageUpdate(ticked, Message.ToggledFacetOption({ facet: "browser", name: "Safari" })).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/replays", isReplace: false }),
+		)
 	})
 
 	test("a row opens its replay with the start time hint", () => {
 		const model = loaded(page([session("srep_1")]))
 		expect(
-			pageUpdate(
-				model,
-				Message.ClickedSession({ sessionId: "srep_1", startTime: "2026-10-01 11:00:00" }),
-			).outMessage,
+			pageUpdate(model, Message.ClickedSession({ sessionId: "srep_1", startTime: "2026-10-01 11:00:00" })).outMessage,
 		).toEqual(
-			PageOutMessage.RequestedNavigation({
-				url: "/replays/srep_1?t=2026-10-01+11%3A00%3A00",
-				isReplace: false,
-			}),
+			PageOutMessage.RequestedNavigation({ url: "/replays/srep_1?t=2026-10-01+11%3A00%3A00", isReplace: false }),
 		)
 	})
 
@@ -254,12 +211,7 @@ describe("replays list", () => {
 			Mount.resolve(WatchListEnd, Message.ReachedListEnd()),
 			Command.resolve(
 				FetchNextPage,
-				Message.CompletedFetchNextPage({
-					key: "",
-					generation: 0,
-					cursor: "cursor-1",
-					result: Result.succeed(page([])),
-				}),
+				Message.CompletedFetchNextPage({ key: "", generation: 0, cursor: "cursor-1", result: Result.succeed(page([])) }),
 			),
 			expectView(text("Maria Garcia")).toExist(),
 		)
@@ -296,16 +248,10 @@ describe("replays list", () => {
 
 	test("the end sentinel re-observes once a refreshed first page settles, like ReachEndSentinel", () => {
 		const model = pageUpdate(loaded(page([session("a")], "cursor-1")), rowsWindow(1)).model
-		const refreshing = pageUpdate(
-			model,
-			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" }),
-		).model
+		const refreshing = pageUpdate(model, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" })).model
 		const settled = pageUpdate(
 			refreshing,
-			Message.CompletedFetchFirstPage({
-				key: refreshing.firstPage.key ?? "",
-				result: Result.succeed(page([session("a")], "cursor-1")),
-			}),
+			Message.CompletedFetchFirstPage({ key: refreshing.firstPage.key ?? "", result: Result.succeed(page([session("a")], "cursor-1")) }),
 		).model
 		const keys: Array<unknown> = []
 		const recordKey = tap<Model, Message>((simulation) => {
@@ -329,12 +275,7 @@ describe("replays list", () => {
 			Mount.resolve(WatchListEnd, Message.ReachedListEnd()),
 			Command.resolve(
 				FetchNextPage,
-				Message.CompletedFetchNextPage({
-					key: "",
-					generation: 0,
-					cursor: "cursor-1",
-					result: Result.succeed(page([])),
-				}),
+				Message.CompletedFetchNextPage({ key: "", generation: 0, cursor: "cursor-1", result: Result.succeed(page([])) }),
 			),
 		)
 		expect(keys).toHaveLength(2)

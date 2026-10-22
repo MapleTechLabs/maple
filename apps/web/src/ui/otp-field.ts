@@ -156,11 +156,7 @@ export const otpField = <ParentMessage>(
 				...(config.isInvalid === undefined ? [] : [h.AriaInvalid(config.isInvalid)]),
 				...(config.labelledBy === undefined ? [] : [h.AriaLabelledBy(config.labelledBy)]),
 				h.Class(cn(otpFieldStyles, config.className)),
-				...fillAttributes(
-					h,
-					config.model,
-					config.model.slots.some((slot) => slot !== ""),
-				),
+				...fillAttributes(h, config.model, config.model.slots.some((slot) => slot !== "")),
 				h.DataAttribute("size", config.size ?? "default"),
 				h.DataAttribute("slot", "otp-field"),
 				h.Role("group"),

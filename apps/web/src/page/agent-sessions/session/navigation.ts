@@ -19,12 +19,7 @@ export const freshLists = {
 	landed: false,
 } satisfies Pick<Model, "waterfallWindow" | "transcriptWindow" | "focusedSpanId" | "scroll" | "landed">
 
-const scrollTo = (
-	model: Model,
-	index: number,
-	align: "auto" | "center",
-	reveal: boolean,
-): Model["scroll"] => ({
+const scrollTo = (model: Model, index: number, align: "auto" | "center", reveal: boolean): Model["scroll"] => ({
 	seq: (model.scroll?.seq ?? 0) + 1,
 	index,
 	align,
@@ -49,23 +44,14 @@ export const land = (model: Model): Model => {
 		if (landingId === undefined) return model
 		const target = spanRows(model).find((row) => row.spanId === landingId)
 		if (target === undefined) return model
-		return {
-			...model,
-			landed: true,
-			focusedSpanId: landingId,
-			scroll: scrollTo(model, target.index, "center", true),
-		}
+		return { ...model, landed: true, focusedSpanId: landingId, scroll: scrollTo(model, target.index, "center", true) }
 	}
 	if (view === "transcript") {
 		if (model.search.span === undefined) return model
 		const index = transcriptRows(model, sessionData(model)).findIndex(
 			(row) => "span" in row && row.span.spanId === model.search.span,
 		)
-		return {
-			...model,
-			landed: true,
-			scroll: index === -1 ? model.scroll : scrollTo(model, index, "center", false),
-		}
+		return { ...model, landed: true, scroll: index === -1 ? model.scroll : scrollTo(model, index, "center", false) }
 	}
 	return model
 }
@@ -74,16 +60,9 @@ export const land = (model: Model): Model => {
 export const moveCursor = (model: Model, delta: 1 | -1): Model => {
 	const rows = spanRows(model)
 	if (rows.length === 0) return model
-	const current =
-		model.focusedSpanId === null ? -1 : rows.findIndex((row) => row.spanId === model.focusedSpanId)
+	const current = model.focusedSpanId === null ? -1 : rows.findIndex((row) => row.spanId === model.focusedSpanId)
 	const next =
-		delta === 1
-			? current < 0
-				? 0
-				: Math.min(current + 1, rows.length - 1)
-			: current <= 0
-				? 0
-				: current - 1
+		delta === 1 ? (current < 0 ? 0 : Math.min(current + 1, rows.length - 1)) : current <= 0 ? 0 : current - 1
 	const target = rows[next]
 	if (target === undefined) return model
 	return { ...model, focusedSpanId: target.spanId, scroll: scrollTo(model, target.index, "auto", false) }

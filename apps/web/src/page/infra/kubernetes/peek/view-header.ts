@@ -12,22 +12,13 @@ import type { PodRow } from "../pod-data"
 // `SheetDetailHeader` as the peek uses it: the "Pod" eyebrow, the mono title with its status, and
 // the workload chips.
 
-export type HeaderInputs = Readonly<{
-	dialogId: string
-	referenceTime: string
-	nowMs: number
-	timeZone: string
-}>
+export type HeaderInputs = Readonly<{ dialogId: string; referenceTime: string; nowMs: number; timeZone: string }>
 
 const chip = <M>(h: HtmlBuilder<M>, prefix: string, value: string | null | undefined): ReadonlyArray<Html> =>
 	value ? [heroChip(h, [`${prefix} `, value])] : []
 
 export const peekHeader = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: HeaderInputs): Html => {
-	const badge = hostStatusBadge(h, {
-		quiet: true,
-		lastSeen: pod.lastSeen,
-		referenceMs: inputs.referenceTime,
-	})
+	const badge = hostStatusBadge(h, { quiet: true, lastSeen: pod.lastSeen, referenceMs: inputs.referenceTime })
 	return dialogHeader(
 		h,
 		"sheet",
@@ -37,12 +28,7 @@ export const peekHeader = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: HeaderInpu
 			]),
 			h.h2(
 				[
-					h.Class(
-						cn(
-							SheetStyles.sheetTitleStyles,
-							"flex flex-wrap items-center gap-2 text-title leading-tight font-mono",
-						),
-					),
+					h.Class(cn(SheetStyles.sheetTitleStyles, "flex flex-wrap items-center gap-2 text-title leading-tight font-mono")),
 					h.DataAttribute("slot", "sheet-title"),
 					h.Id(titleId(inputs.dialogId)),
 				],

@@ -108,15 +108,7 @@ const nextPage = (model: Model): Commands => {
 	const agentCursor = lastAgent === undefined ? first.nextCursor : lastAgent.nextCursor
 	const window = windowOf(model.search)
 	const fetch = (scope: "ai" | "app", after: NonNullable<SpansPage["nextCursor"]>) => [
-		FetchMorePage({
-			key,
-			sessionId: model.sessionId,
-			window,
-			scope,
-			after,
-			limit: model.more.limit,
-			index: landedCount(model.more),
-		}),
+		FetchMorePage({ key, sessionId: model.sessionId, window, scope, after, limit: model.more.limit, index: landedCount(model.more) }),
 	]
 	if (agentCursor !== null) return fetch("ai", agentCursor)
 	const appCursor = lastApp === undefined ? first.nextCursor : lastApp.nextCursor
@@ -360,9 +352,7 @@ const stepSpanPanel = (model: Model, message: SpanPanelMessage): Return => {
 	const step = SpanPanel.updateState(model.spanPanel, message)
 	return {
 		model: { ...model, spanPanel: step.model },
-		commands: Command.mapMessages(step.commands ?? [], (inner) =>
-			Message.GotSpanPanelMessage({ message: inner }),
-		),
+		commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotSpanPanelMessage({ message: inner })),
 	}
 }
 
@@ -459,18 +449,14 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		ToggledRow: ({ key }) => ({ model: { ...model, openRows: toggledIn(model.openRows, key) } }),
 		ClickedSpan: ({ spanId }) => selectSpan(model, spanId),
 		ClickedWaterfallSpan: ({ spanId }) =>
-			selectSpan(
-				{ ...model, focusedSpanId: spanId },
-				model.search.span === spanId ? undefined : spanId,
-			),
+			selectSpan({ ...model, focusedSpanId: spanId }, model.search.span === spanId ? undefined : spanId),
 		PressedSpanKey: ({ key }) => pressedSpanKey(model, key),
 		GotSpanDialogMessage: ({ message: inner }) => stepSpanDialog(model, inner),
 		GotSpanPanelMessage: ({ message: inner }) => stepSpanPanel(model, inner),
 		PickedSpanTab: ({ tab }) => (tab === null ? { model } : { model: { ...model, spanTab: tab } }),
 		ClickedCloseSpan: () => selectSpan(model, undefined),
 		GotCloseTooltipMessage: ({ message: inner }) => stepCloseTooltip(model, inner),
-		CheckedCloseFocus: ({ triggerId, isFocusVisible }) =>
-			checkedCloseFocus(model, triggerId, isFocusVisible),
+		CheckedCloseFocus: ({ triggerId, isFocusVisible }) => checkedCloseFocus(model, triggerId, isFocusVisible),
 		ClickedOpenInTraceView: () => {
 			const search = { ...model.search, span: undefined }
 			return navigate(
@@ -517,10 +503,7 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		CompletedCodeAction: ({ code, isCopied }) => {
 			if (!isCopied) return { model }
 			const generation = model.codeCopy.generation + 1
-			return {
-				model: { ...model, codeCopy: { code, generation } },
-				commands: [WaitCodeCopied({ generation })],
-			}
+			return { model: { ...model, codeCopy: { code, generation } }, commands: [WaitCodeCopied({ generation })] }
 		},
 		ElapsedCodeCopied: ({ generation }) =>
 			generation === model.codeCopy.generation

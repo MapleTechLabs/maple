@@ -10,11 +10,7 @@ import type { Model, SharedDashboard, ShareWidget } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
-const context: PageContext = {
-	orgId: Schema.decodeSync(OrgId)("public"),
-	pinnedNamespace: null,
-	timeZone: "UTC",
-}
+const context: PageContext = { orgId: Schema.decodeSync(OrgId)("public"), pinnedNamespace: null, timeZone: "UTC" }
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
@@ -71,13 +67,8 @@ describe("share", () => {
 
 	test("a reload drops batches queued for the old window", () => {
 		const flushed = update(measured(6), Message.CompletedFlushFrame())
-		const reloaded = update(
-			flushed.model,
-			Message.CompletedResolveReloadClock({ nowMs: NOW + 5 * 60_000 }),
-		).model
-		const queuedKeys = reloaded.queuedBatches.flatMap((batch) =>
-			batch.requests.map((request) => request.key),
-		)
+		const reloaded = update(flushed.model, Message.CompletedResolveReloadClock({ nowMs: NOW + 5 * 60_000 })).model
+		const queuedKeys = reloaded.queuedBatches.flatMap((batch) => batch.requests.map((request) => request.key))
 		expect(queuedKeys.every((key) => key.includes("12:05:00"))).toBe(true)
 	})
 
@@ -95,14 +86,7 @@ describe("share", () => {
 
 	test("a tile the answer left out settles as a failure, not loading", () => {
 		const flushed = update(measured(1), Message.CompletedFlushFrame()).model
-		const answered = update(
-			flushed,
-			Message.CompletedFetchBatch({
-				batchId: flushed.sentBatchId,
-				keys: { w0: flushed.requested.w0 ?? "" },
-				states: {},
-			}),
-		)
+		const answered = update(flushed, Message.CompletedFetchBatch({ batchId: flushed.sentBatchId, keys: { w0: flushed.requested.w0 ?? "" }, states: {} }))
 		expect(answered.model.states.w0?._tag).toBe("Error")
 	})
 
@@ -111,9 +95,7 @@ describe("share", () => {
 		expect(names(update(settled, Message.CompletedFlushFrame()).commands)).toEqual([])
 		const clicked = update(settled, Message.ClickedReload())
 		expect(names(clicked.commands)).toEqual([ResolveReloadClock.name])
-		expect(
-			names(update(clicked.model, Message.CompletedResolveReloadClock({ nowMs: NOW })).commands),
-		).toContain(FetchBatch.name)
+		expect(names(update(clicked.model, Message.CompletedResolveReloadClock({ nowMs: NOW })).commands)).toContain(FetchBatch.name)
 	})
 
 	test("a reload or an auto-refresh tick moves a relative window to the current time", () => {
@@ -129,15 +111,7 @@ describe("share", () => {
 	test("an unknown link renders the unavailable card", () => {
 		scene(
 			{ update: (model, message) => update(model, message), view },
-			given(
-				update(
-					init({ token: "tok", search: {} }).model,
-					Message.CompletedResolveShare({
-						token: "tok",
-						resolve: { _tag: "Failed", error: { _tag: "NotFound" } },
-					}),
-				).model,
-			),
+			given(update(init({ token: "tok", search: {} }).model, Message.CompletedResolveShare({ token: "tok", resolve: { _tag: "Failed", error: { _tag: "NotFound" } } })).model),
 			Mount.resolve(ResolveThemeColors, Message.ResolvedThemeColors({ colors: {} })),
 			expectView(text("This link isn't available")).toExist(),
 		)

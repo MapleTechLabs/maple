@@ -1,10 +1,6 @@
 import { TimeRangeSchema } from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
-import {
-	REFRESH_INTERVAL_OPTIONS,
-	resolveRefreshIntervalSeconds,
-	variableValuesFromSearch,
-} from "../../lib/dashboard-controls/search-params"
+import { REFRESH_INTERVAL_OPTIONS, resolveRefreshIntervalSeconds, variableValuesFromSearch } from "../../lib/dashboard-controls/search-params"
 import { Option, Schema } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "../../charts/chart"
@@ -14,16 +10,7 @@ import * as Menu from "../../ui/menu"
 import { type PageReturn, PageOutMessage } from "../contract"
 import { presetLabel } from "../kit/time-controls"
 import { withActiveTab, withSectionCollapsed } from "../../lib/dashboards/section-view-state"
-import {
-	DATA_UNAVAILABLE_MESSAGE,
-	FetchBatch,
-	GoToSignIn,
-	ReadFrame,
-	ResolveClock,
-	ResolveReloadClock,
-	ResolveShare,
-	WaitFlushFrame,
-} from "./command"
+import { DATA_UNAVAILABLE_MESSAGE, FetchBatch, GoToSignIn, ReadFrame, ResolveClock, ResolveReloadClock, ResolveShare, WaitFlushFrame } from "./command"
 import { Message } from "./message"
 import type { Model, QueuedBatch, SharedDashboard, ShareWindow, WidgetState } from "./model"
 
@@ -45,20 +32,13 @@ export const resolveShareWindow = (model: Model, share: SharedDashboard): ShareW
 		const range = resolveTimeRangeWindow({ type: "relative", value: search.range }, options)
 		if (range !== null) return { ...range, label: presetLabel(search.range) }
 	}
-	const timeRange = Option.getOrElse(
-		decodeTimeRange(share.dashboard.timeRange),
-		() => DEFAULT_SHARE_TIME_RANGE,
-	)
+	const timeRange = Option.getOrElse(decodeTimeRange(share.dashboard.timeRange), () => DEFAULT_SHARE_TIME_RANGE)
 	const resolved =
-		resolveTimeRangeWindow(timeRange, options) ??
-		resolveTimeRangeWindow(DEFAULT_SHARE_TIME_RANGE, options)
+		resolveTimeRangeWindow(timeRange, options) ?? resolveTimeRangeWindow(DEFAULT_SHARE_TIME_RANGE, options)
 	if (resolved === null) return null
 	return {
 		...resolved,
-		label:
-			timeRange.type === "relative"
-				? presetLabel(timeRange.value)
-				: `${resolved.startTime} - ${resolved.endTime}`,
+		label: timeRange.type === "relative" ? presetLabel(timeRange.value) : `${resolved.startTime} - ${resolved.endTime}`,
 	}
 }
 
@@ -70,9 +50,7 @@ export const refreshSecondsOf = (model: Model): number => {
 	return resolveRefreshIntervalSeconds(model.search.refresh, share?.dashboard.refreshIntervalSeconds)
 }
 
-const variableValuesOf = (model: Model): Record<string, string> => ({
-	...variableValuesFromSearch(model.search),
-})
+const variableValuesOf = (model: Model): Record<string, string> => ({ ...variableValuesFromSearch(model.search) })
 
 /** Queued batches cut down to the widgets still requested under the same key; empty ones drop. */
 const liveBatches = (
@@ -107,10 +85,7 @@ const flush = (model: Model): Return => {
 		requests: pending.slice(i * BATCH_MAX, (i + 1) * BATCH_MAX),
 	}))
 	const [first, ...rest] = batches
-	const requested = {
-		...model.requested,
-		...Object.fromEntries(pending.map((request) => [request.widgetId, request.key])),
-	}
+	const requested = { ...model.requested, ...Object.fromEntries(pending.map((request) => [request.widgetId, request.key])) }
 	return {
 		model: {
 			...model,
@@ -126,18 +101,13 @@ const flush = (model: Model): Return => {
 			queuedBatches: [...liveBatches(model.queuedBatches, requested), ...rest],
 			sentBatchId: first === undefined ? model.sentBatchId : model.sentBatchId + 1,
 		},
-		commands:
-			first === undefined
-				? []
-				: [FetchBatch({ token: model.token, batchId: model.sentBatchId + 1, ...first })],
+		commands: first === undefined ? [] : [FetchBatch({ token: model.token, batchId: model.sentBatchId + 1, ...first })],
 	}
 }
 
 const withWindow = (model: Model): Model => {
 	const share = shareOf(model)
-	return share === null || model.nowMs === 0
-		? model
-		: { ...model, window: resolveShareWindow(model, share) }
+	return share === null || model.nowMs === 0 ? model : { ...model, window: resolveShareWindow(model, share) }
 }
 
 const reload = (model: Model): Return => {
@@ -185,14 +155,11 @@ export const init = (route: Route): Return => ({
 })
 
 /** A new search (`?refresh=`, `?range=`): the window re-resolves and changed keys refetch. */
-export const routeChanged = (model: Model, route: Route): Return =>
-	flush(withWindow({ ...model, search: route.search }))
+export const routeChanged = (model: Model, route: Route): Return => flush(withWindow({ ...model, search: route.search }))
 
 const decodeInterval = (value: string): Option.Option<number> => {
 	const seconds = Number(value)
-	return REFRESH_INTERVAL_OPTIONS.some((option) => option === seconds)
-		? Option.some(seconds)
-		: Option.none()
+	return REFRESH_INTERVAL_OPTIONS.some((option) => option === seconds) ? Option.some(seconds) : Option.none()
 }
 
 export const update = (model: Model, message: Message): Return =>
@@ -215,33 +182,23 @@ export const update = (model: Model, message: Message): Return =>
 			const [next, ...rest] = isCurrent ? liveBatches(model.queuedBatches, model.requested) : []
 			// A widget the answer left out settles as a failure instead of loading forever.
 			const missing: WidgetState = { _tag: "Error", message: DATA_UNAVAILABLE_MESSAGE, kind: "runtime" }
-			const settled = {
-				...Object.fromEntries(Object.keys(keys).map((widgetId) => [widgetId, missing])),
-				...states,
-			}
-			const isLive = Object.keys(settled).some(
-				(widgetId) => model.requested[widgetId] === keys[widgetId],
-			)
+			const settled = { ...Object.fromEntries(Object.keys(keys).map((widgetId) => [widgetId, missing])), ...states }
+			const isLive = Object.keys(settled).some((widgetId) => model.requested[widgetId] === keys[widgetId])
 			return {
-				model: {
-					...model,
-					queuedBatches: isCurrent ? rest : model.queuedBatches,
-					sentBatchId: next === undefined ? model.sentBatchId : model.sentBatchId + 1,
-					// A batch whose widgets all moved on is skipped whole, its variables included.
-					variables: isLive && variables !== undefined ? variables : model.variables,
-					states: {
-						...model.states,
-						...Object.fromEntries(
-							Object.entries(settled).filter(
-								([widgetId]) => model.requested[widgetId] === keys[widgetId],
-							),
-						),
-					},
+			model: {
+				...model,
+				queuedBatches: isCurrent ? rest : model.queuedBatches,
+				sentBatchId: next === undefined ? model.sentBatchId : model.sentBatchId + 1,
+				// A batch whose widgets all moved on is skipped whole, its variables included.
+				variables: isLive && variables !== undefined ? variables : model.variables,
+				states: {
+					...model.states,
+					...Object.fromEntries(
+						Object.entries(settled).filter(([widgetId]) => model.requested[widgetId] === keys[widgetId]),
+					),
 				},
-				commands:
-					next === undefined
-						? []
-						: [FetchBatch({ token: model.token, batchId: model.sentBatchId + 1, ...next })],
+			},
+			commands: next === undefined ? [] : [FetchBatch({ token: model.token, batchId: model.sentBatchId + 1, ...next })],
 			}
 		},
 		ClickedReload: () => ({ model, commands: [ResolveReloadClock()] }),
@@ -249,16 +206,12 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedResolveReloadClock: ({ nowMs }) => reload({ ...model, nowMs }),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
 		GotChartMessage: ({ widgetId, message: inner }) => {
 			const next = Chart.update(model.charts[widgetId] ?? Chart.init(), inner)
 			return {
 				model: { ...model, charts: { ...model.charts, [widgetId]: next.model } },
-				commands: Command.mapMessages(next.commands ?? [], (chart) =>
-					Message.GotChartMessage({ widgetId, message: chart }),
-				),
+				commands: Command.mapMessages(next.commands ?? [], (chart) => Message.GotChartMessage({ widgetId, message: chart })),
 			}
 		},
 		ClickedSortColumn: ({ widgetId, field, isText }) => {
@@ -273,20 +226,15 @@ export const update = (model: Model, message: Message): Return =>
 		},
 		GotRefreshMenuMessage: ({ message: inner }) => {
 			const next = Menu.update(model.refreshMenu, inner)
-			const commands = Command.mapMessages(next.commands ?? [], (menu) =>
-				Message.GotRefreshMenuMessage({ message: menu }),
-			)
-			const picked =
-				next.outMessage === undefined ? Option.none<number>() : decodeInterval(next.outMessage.value)
+			const commands = Command.mapMessages(next.commands ?? [], (menu) => Message.GotRefreshMenuMessage({ message: menu }))
+			const picked = next.outMessage === undefined ? Option.none<number>() : decodeInterval(next.outMessage.value)
 			return Option.match(picked, {
 				onNone: () => ({ model: { ...model, refreshMenu: next.model }, commands }),
 				onSome: (refresh) => ({
 					model: { ...model, refreshMenu: next.model },
 					commands,
 					outMessage: PageOutMessage.RequestedNavigation({
-						url: hrefOf(
-							AppRoute.Share({ token: model.token, search: { ...model.search, refresh } }),
-						),
+						url: hrefOf(AppRoute.Share({ token: model.token, search: { ...model.search, refresh } })),
 						isReplace: true,
 					}),
 				}),

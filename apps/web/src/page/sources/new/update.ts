@@ -24,8 +24,7 @@ type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
 type NewRoute = Extract<AppRoute, { readonly _tag: "SourcesNew" }>
 
-const navigate = (url: string): PageOutMessage =>
-	PageOutMessage.RequestedNavigation({ url, isReplace: false })
+const navigate = (url: string): PageOutMessage => PageOutMessage.RequestedNavigation({ url, isReplace: false })
 
 /** Step 2's form, fresh for each platform pick. */
 const withForm = (model: Model, platform: PushSourcePlatform | null): Model => ({
@@ -40,9 +39,7 @@ const withForm = (model: Model, platform: PushSourcePlatform | null): Model => (
 /** The form's list read; `refresh` when it mounts again in the same visit (the atom was dropped). */
 const readList = (model: Model, context: PageContext, refresh: boolean): Return => {
 	const key = sourcesListKey(context.orgId)
-	const next = refresh
-		? Option.some(Keyed.supersede(model.list, key))
-		: Keyed.request(model.list, key, "Load")
+	const next = refresh ? Option.some(Keyed.supersede(model.list, key)) : Keyed.request(model.list, key, "Load")
 	return Option.match(next, {
 		onNone: () => ({ model }),
 		onSome: (list) => ({
@@ -100,9 +97,7 @@ export const init = (route: NewRoute, context: PageContext): Return => {
 	)
 	const lifted = liftIntegrations(model, embedded)
 	// An integration's step reads the list too: once connected it links to the source it made.
-	return platform === null && integration === null
-		? lifted
-		: merge(lifted, readList(lifted.model, context, false))
+	return platform === null && integration === null ? lifted : merge(lifted, readList(lifted.model, context, false))
 }
 
 export const routeChanged = (model: Model, route: NewRoute, context: PageContext): Return => {
@@ -130,9 +125,7 @@ export const routeChanged = (model: Model, route: NewRoute, context: PageContext
 	if (model.created !== null) return { ...entered, model: next }
 	// Back to the picker clears the form's list; an integration's step reads it again.
 	if (platform === null)
-		return integration === null
-			? { ...entered, model: next }
-			: merge(entered, readList(next, context, false))
+		return integration === null ? { ...entered, model: next } : merge(entered, readList(next, context, false))
 	return merge(entered, readList(next, context, true))
 }
 
@@ -147,12 +140,7 @@ export const isReceiving = (model: Model): boolean => {
 	return latest !== null && latest.last_used_at !== null
 }
 
-const readCreated = (
-	model: Model,
-	context: PageContext,
-	source: V2Source,
-	mode: Keyed.RequestMode,
-): Return => {
+const readCreated = (model: Model, context: PageContext, source: V2Source, mode: Keyed.RequestMode): Return => {
 	const key = sourceRetrieveKey(context.orgId, source.id)
 	return Option.match(Keyed.request(model.firstData, key, mode), {
 		onNone: () => ({ model }),
@@ -177,10 +165,7 @@ const submit = (model: Model): Return => {
 }
 
 const delegate = <Child, ChildMessage>(
-	step: {
-		readonly model: Child
-		readonly commands?: ReadonlyArray<Command.Command<ChildMessage, never, Resources>>
-	},
+	step: { readonly model: Child; readonly commands?: ReadonlyArray<Command.Command<ChildMessage, never, Resources>> },
 	set: (child: Child) => Model,
 	wrap: (message: ChildMessage) => Message,
 ): Return => ({ model: set(step.model), commands: Command.mapMessages(step.commands ?? [], wrap) })
@@ -189,10 +174,7 @@ const delegate = <Child, ChildMessage>(
 const pollUnlessReceiving = (step: Return): Return =>
 	step.model.created === null || isReceiving(step.model) || step.model.firstData.key === null
 		? step
-		: {
-				...step,
-				commands: [...(step.commands ?? []), WaitFirstDataPoll({ key: step.model.firstData.key })],
-			}
+		: { ...step, commands: [...(step.commands ?? []), WaitFirstDataPoll({ key: step.model.firstData.key })] }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -213,9 +195,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			)
 			// A connect just finished or a target was added: its source is new, so read the list again.
 			return integration !== null &&
-				(added ||
-					(!isIntegrationConnected(model, integration) &&
-						isIntegrationConnected(step.model, integration)))
+				(added || (!isIntegrationConnected(model, integration) && isIntegrationConnected(step.model, integration)))
 				? merge(step, readList(step.model, context, true))
 				: step
 		},
@@ -247,21 +227,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						setup: Setup.init(source.platform),
 					}
 					const read = readCreated(created, context, source, "Load")
-					return {
-						model: read.model,
-						commands: [...(refreshed.commands ?? []), ...(read.commands ?? [])],
-					}
+					return { model: read.model, commands: [...(refreshed.commands ?? []), ...(read.commands ?? [])] }
 				},
 			}),
-		CompletedFetchList: ({ key, result }) => ({
-			model: { ...model, list: Keyed.accept(model.list, key, result) },
-		}),
+		CompletedFetchList: ({ key, result }) => ({ model: { ...model, list: Keyed.accept(model.list, key, result) } }),
 		CompletedFetchSource: ({ key, result }) =>
 			key !== model.firstData.key
 				? { model }
-				: pollUnlessReceiving({
-						model: { ...model, firstData: Keyed.accept(model.firstData, key, result) },
-					}),
+				: pollUnlessReceiving({ model: { ...model, firstData: Keyed.accept(model.firstData, key, result) } }),
 		ElapsedPoll: ({ key }) =>
 			key !== model.firstData.key || model.created === null || isReceiving(model)
 				? { model }

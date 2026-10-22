@@ -1,9 +1,5 @@
 import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
-import {
-	sidebarMobileHeaderStyles,
-	sidebarMobileInnerStyles,
-	sidebarMobileStyles,
-} from "@maple/ui/styles/ui/sidebar"
+import { sidebarMobileHeaderStyles, sidebarMobileInnerStyles, sidebarMobileStyles } from "@maple/ui/styles/ui/sidebar"
 import { icon } from "@maple/web/ui/icon"
 import { leftSheet } from "@maple/web/ui/sheet"
 import {
@@ -33,19 +29,11 @@ import { activeSection, NAV_GROUPS } from "./nav"
 const ACTIVE_RAIL = `${ROW_LANE} data-[active=true]:rounded-l-none data-[active=true]:before:bg-sidebar-primary data-[active=true]:text-sidebar-primary`
 
 /** `AppSidebar`'s children, shared by the desktop rail and the mobile sheet. */
-const sidebarRegions = (
-	h: HtmlBuilder<Message>,
-	model: Model,
-	linkQuery: URLSearchParams,
-): ReadonlyArray<Html> => {
+const sidebarRegions = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSearchParams): ReadonlyArray<Html> => {
 	const active = activeSection(model.route)
 	const state = model.isSidebarOpen ? "expanded" : "collapsed"
 	return [
-		sidebarHeader(
-			h,
-			[localLockup(h)],
-			"h-12 flex-row items-center px-4 group-data-[collapsible=icon]:px-2",
-		),
+		sidebarHeader(h, [localLockup(h)], "h-12 flex-row items-center px-4 group-data-[collapsible=icon]:px-2"),
 		sidebarContent(
 			h,
 			NAV_GROUPS.map((group) =>
@@ -64,8 +52,7 @@ const sidebarRegions = (
 											isActive: active === item.section,
 											href: hrefFor(`/${item.section}`, linkQuery),
 											hasTooltip: true,
-											attributes:
-												active === item.section ? [h.AriaCurrent("page")] : [],
+											attributes: active === item.section ? [h.AriaCurrent("page")] : [],
 										},
 										[icon(h, item.icon, { size: 18 }), h.span([], [item.label])],
 									),

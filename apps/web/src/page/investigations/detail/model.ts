@@ -21,15 +21,8 @@ export const Sync = Schema.Union([
 export type Sync = typeof Sync.Type
 
 /** `SignalsCard`'s two reads: log volume by severity, and the service's overview row. */
-export const LogBucket = Schema.Struct({
-	bucket: Schema.String,
-	series: Schema.Record(Schema.String, Schema.Number),
-})
-export const TracesRow = Schema.Struct({
-	spanCount: Schema.Number,
-	p95LatencyMs: Schema.Number,
-	errorRate: Schema.Number,
-})
+export const LogBucket = Schema.Struct({ bucket: Schema.String, series: Schema.Record(Schema.String, Schema.Number) })
+export const TracesRow = Schema.Struct({ spanCount: Schema.Number, p95LatencyMs: Schema.Number, errorRate: Schema.Number })
 /** One `getServiceOverview` row; the card picks its service's busiest at render. */
 export const OverviewRow = Schema.Struct({ ...TracesRow.fields, serviceName: Schema.String })
 export type OverviewRow = typeof OverviewRow.Type

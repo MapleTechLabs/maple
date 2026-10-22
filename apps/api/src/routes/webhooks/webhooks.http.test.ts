@@ -99,9 +99,7 @@ const recordingCancellationReviews = (fail = false) => {
 	const layer = Layer.succeed(CancellationReviewService, {
 		review: (cancellation) =>
 			fail
-				? Effect.fail(
-						new CancellationReviewError({ message: "Autumn did not answer", step: "billing" }),
-					)
+				? Effect.fail(new CancellationReviewError({ message: "Autumn did not answer", step: "billing" }))
 				: Effect.sync(() => {
 						reviewed.push(cancellation)
 						return "posted" as const
@@ -470,10 +468,7 @@ describe("AutumnWebhookRouter", () => {
 			const { handler, dispose } = HttpRouter.toWebHandler(
 				makeRouterLayer(
 					AutumnWebhookRouter,
-					{
-						AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET,
-						MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS",
-					},
+					{ AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET, MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS" },
 					events.layer,
 					undefined,
 					undefined,
@@ -540,10 +535,7 @@ describe("AutumnWebhookRouter", () => {
 			const { handler, dispose } = HttpRouter.toWebHandler(
 				makeRouterLayer(
 					AutumnWebhookRouter,
-					{
-						AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET,
-						MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS",
-					},
+					{ AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET, MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS" },
 					events.layer,
 					undefined,
 					undefined,

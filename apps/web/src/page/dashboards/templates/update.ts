@@ -154,27 +154,30 @@ const planPreview = (model: Model, context: PageContext): Return => {
 	// `ResolvedDashboardVariablesProvider` declares no variables, so nothing waits on one.
 	const variables = { names: [], values: previewVariableValues(preview.variables) }
 	const initial: PreviewPlan = { gates: model.gates, requests: model.requests, commands: [], asked: [] }
-	const planned = shown.reduce((state, widget) => {
-		const gate = planWidget({
-			orgId: context.orgId,
-			dataSource: widget.dataSource,
-			window,
-			...(widget.timeRange === undefined ? undefined : { widgetTimeRange: widget.timeRange }),
-			variables,
-		})
-		const gates = { ...state.gates, [widget.id]: gate }
-		if (gate._tag !== "Request" || state.asked.includes(gate.request.key)) return { ...state, gates }
-		const { key, endpoint, params } = gate.request
-		return Option.match(Keyed.request(state.requests[key] ?? Keyed.idle(), key, "Load"), {
-			onNone: () => ({ ...state, gates }),
-			onSome: (slot) => ({
-				gates,
-				requests: { ...state.requests, [key]: slot },
-				commands: [...state.commands, FetchWidget({ key, endpoint, params })],
-				asked: [...state.asked, key],
-			}),
-		})
-	}, initial)
+	const planned = shown.reduce(
+		(state, widget) => {
+			const gate = planWidget({
+				orgId: context.orgId,
+				dataSource: widget.dataSource,
+				window,
+				...(widget.timeRange === undefined ? undefined : { widgetTimeRange: widget.timeRange }),
+				variables,
+			})
+			const gates = { ...state.gates, [widget.id]: gate }
+			if (gate._tag !== "Request" || state.asked.includes(gate.request.key)) return { ...state, gates }
+			const { key, endpoint, params } = gate.request
+			return Option.match(Keyed.request(state.requests[key] ?? Keyed.idle(), key, "Load"), {
+				onNone: () => ({ ...state, gates }),
+				onSome: (slot) => ({
+					gates,
+					requests: { ...state.requests, [key]: slot },
+					commands: [...state.commands, FetchWidget({ key, endpoint, params })],
+					asked: [...state.asked, key],
+				}),
+			})
+		},
+		initial,
+	)
 	return {
 		model: {
 			...model,
@@ -290,18 +293,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = Dialog.update(model.panelSheet, inner)
 			const stepped = {
 				model: { ...model, panelSheet: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (dialog) =>
-					Message.GotPanelSheetMessage({ message: dialog }),
-				),
+				commands: Command.mapMessages(next.commands ?? [], (dialog) => Message.GotPanelSheetMessage({ message: dialog })),
 			}
 			return next.outMessage?._tag === "Closed"
-				? {
-						...stepped,
-						outMessage: PageOutMessage.RequestedNavigation({
-							url: selectionHref(undefined),
-							isReplace: true,
-						}),
-					}
+				? { ...stepped, outMessage: PageOutMessage.RequestedNavigation({ url: selectionHref(undefined), isReplace: true }) }
 				: stepped
 		},
 		ClickedRetry: () =>

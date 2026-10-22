@@ -19,25 +19,17 @@ interface PillState {
 	readonly title: string
 }
 
-const STATUS_TONE = { live: "ok", idle: "neutral", warn: "warn", down: "crit" } satisfies Record<
-	IngestTone,
-	Tone
->
+const STATUS_TONE = { live: "ok", idle: "neutral", warn: "warn", down: "crit" } satisfies Record<IngestTone, Tone>
 
 /** `describeStatus`: the label and tone for one status. */
 export const describeStatus = (maybeState: Option.Option<ServerState>, port: string): PillState => {
-	if (Option.isNone(maybeState))
-		return { tone: "idle", label: "Connecting", title: `Looking for Maple Local on port ${port}` }
+	if (Option.isNone(maybeState)) return { tone: "idle", label: "Connecting", title: `Looking for Maple Local on port ${port}` }
 	const data = maybeState.value
 	const last = data.lastIngestAtMs
 	const lastLabel = last === null ? null : formatRelativeFrom(last, data.checkedAtMs)
 	if (data.reachability === "refused")
 		return data.misses >= MISSES_BEFORE_DOWN || !data.hasConnected
-			? {
-					tone: "down",
-					label: "Offline",
-					title: `Nothing is answering on port ${port}. Is maple start running?`,
-				}
+			? { tone: "down", label: "Offline", title: `Nothing is answering on port ${port}. Is maple start running?` }
 			: { tone: "warn", label: "Reconnecting", title: `Maple Local on port ${port} stopped answering` }
 	if (data.reachability === "rejected")
 		return {
@@ -52,11 +44,7 @@ export const describeStatus = (maybeState: Option.Option<ServerState>, port: str
 			title: data.rejection?.detail || `Maple Local answered ${data.rejection?.status ?? "5xx"}`,
 		}
 	if (data.reachability === "busy")
-		return {
-			tone: "warn",
-			label: "Busy",
-			title: "Maple Local is running a slow query and will answer when it finishes",
-		}
+		return { tone: "warn", label: "Busy", title: "Maple Local is running a slow query and will answer when it finishes" }
 	if (last !== null && data.checkedAtMs - last < FRESH_MS)
 		return { tone: "live", label: "Receiving", title: `Last telemetry arrived ${lastLabel}` }
 	if (lastLabel !== null)
@@ -74,11 +62,7 @@ export const describeStatus = (maybeState: Option.Option<ServerState>, port: str
 	}
 }
 
-export const ingestStatus = <M>(
-	h: HtmlBuilder<M>,
-	maybeState: Option.Option<ServerState>,
-	port: string,
-): Html => {
+export const ingestStatus = <M>(h: HtmlBuilder<M>, maybeState: Option.Option<ServerState>, port: string): Html => {
 	const state = describeStatus(maybeState, port)
 	return h.span(
 		[

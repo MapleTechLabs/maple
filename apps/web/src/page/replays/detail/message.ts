@@ -25,10 +25,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchTranscript: result(Schema.Array(EventRow)),
 	CompletedFetchTraceSummaries: result(Schema.Array(TraceSummary)),
 	CompletedFetchRange: result(RangeRows),
-	CompletedFetchSpans: {
-		traceId: Schema.String,
-		result: Schema.Result(Schema.Array(SpanRow), LoadFailure),
-	},
+	CompletedFetchSpans: { traceId: Schema.String, result: Schema.Result(Schema.Array(SpanRow), LoadFailure) },
 	/** The engine Mount built its engine (`engine.totalTimeMs`). */
 	ReadiedEngine: { seedVersion: Schema.Number, totalMs: Schema.Number },
 	/** The engine clock while playing, or after a jump over an idle gap. */

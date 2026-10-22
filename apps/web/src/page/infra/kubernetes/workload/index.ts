@@ -17,7 +17,6 @@ export const page = definePage(
 		routeChanged,
 		contextChanged,
 		view,
-		breadcrumbs: (model) =>
-			kubernetesBreadcrumbs("workloads", model.search, [{ label: model.workloadName }]),
+		breadcrumbs: (model) => kubernetesBreadcrumbs("workloads", model.search, [{ label: model.workloadName }]),
 	},
 )

@@ -91,7 +91,7 @@ export const ShareMessage = defineMessageUnion({
 })
 export type ShareMessage = typeof ShareMessage.Type
 
-export const boardShareOf = (shares: ReadonlyArray<ShareRow>): ShareRow | undefined =>
+export const boardShareOf =(shares: ReadonlyArray<ShareRow>): ShareRow | undefined =>
 	shares.find((share) => share.widgetId === null)
 
 export const chartShareOf = (shares: ReadonlyArray<ShareRow>, widgetId: string): ShareRow | undefined =>

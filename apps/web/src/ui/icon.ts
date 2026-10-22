@@ -57,13 +57,7 @@ export const icon = <Message>(
 	name: IconName,
 	options: IconOptions<Message> = {},
 ): Html =>
-	renderNode(
-		h,
-		ICON_TREES[name],
-		options,
-		String(options.size ?? ICON_DEFAULT_SIZES[name] ?? 24),
-		options.id ?? name,
-	)
+	renderNode(h, ICON_TREES[name], options, String(options.size ?? ICON_DEFAULT_SIZES[name] ?? 24), options.id ?? name)
 
 /** `style={{ color }}` when the call site has a colour. */
 export const iconColor = (color: string | undefined): Pick<IconOptions<never>, "style"> =>

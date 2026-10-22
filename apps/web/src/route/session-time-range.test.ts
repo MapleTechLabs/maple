@@ -24,24 +24,16 @@ describe("session time range", () => {
 		const year = { timePreset: "90d" }
 		expect(withSessionRange(traces, "/traces", year, NOW, "UTC")).toEqual(Option.none())
 		const services = AppRoute.Services({ search: {} })
-		expect(withSessionRange(services, "/services", year, NOW, "UTC")).toEqual(
-			Option.some("/services?timePreset=90d"),
-		)
+		expect(withSessionRange(services, "/services", year, NOW, "UTC")).toEqual(Option.some("/services?timePreset=90d"))
 	})
 
 	test("a page without the middleware is left alone", () => {
 		const dashboards = AppRoute.Dashboards({ search: {} })
-		expect(withSessionRange(dashboards, "/dashboards", { timePreset: "1d" }, NOW, "UTC")).toEqual(
-			Option.none(),
-		)
+		expect(withSessionRange(dashboards, "/dashboards", { timePreset: "1d" }, NOW, "UTC")).toEqual(Option.none())
 	})
 
 	test("only a preset or both bounds are remembered", () => {
-		expect(completeRangeOf(AppRoute.Traces({ search: { startTime: "2026-10-01 00:00:00" } }))).toEqual(
-			Option.none(),
-		)
-		expect(completeRangeOf(AppRoute.Traces({ search: { timePreset: "1d" } }))).toEqual(
-			Option.some({ timePreset: "1d" }),
-		)
+		expect(completeRangeOf(AppRoute.Traces({ search: { startTime: "2026-10-01 00:00:00" } }))).toEqual(Option.none())
+		expect(completeRangeOf(AppRoute.Traces({ search: { timePreset: "1d" } }))).toEqual(Option.some({ timePreset: "1d" }))
 	})
 })

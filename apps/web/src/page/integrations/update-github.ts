@@ -203,16 +203,12 @@ export const gotBranchDialog = (model: Model, message: Dialog.Message): Return =
 export const confirmedBranch = (model: Model): Return => {
 	const pending = model.githubCard.pendingBranch
 	const card = model.githubCard
-	if (pending === null || card.savingBranches.some((entry) => entry.repoId === pending.repoId))
-		return { model }
-	return chain(
-		withCard(model, { pendingBranch: null, savingBranches: [...card.savingBranches, pending] }),
-		[
-			(next) => branchDialogStep(next, Dialog.close(next.githubCard.branchDialog)),
-			(next) => popoverStep(next, pending.repoId, Popover.close(popoverOf(next, pending.repoId))),
-			(next) => ({ model: next, commands: [SetTrackedBranch(pending)] }),
-		],
-	)
+	if (pending === null || card.savingBranches.some((entry) => entry.repoId === pending.repoId)) return { model }
+	return chain(withCard(model, { pendingBranch: null, savingBranches: [...card.savingBranches, pending] }), [
+		(next) => branchDialogStep(next, Dialog.close(next.githubCard.branchDialog)),
+		(next) => popoverStep(next, pending.repoId, Popover.close(popoverOf(next, pending.repoId))),
+		(next) => ({ model: next, commands: [SetTrackedBranch(pending)] }),
+	])
 }
 
 export const completedTrackedBranch = (

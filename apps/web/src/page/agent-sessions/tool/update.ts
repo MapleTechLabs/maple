@@ -192,12 +192,7 @@ export const routeChanged = (
 	// `useEffectiveTimeRange` re-resolves only on a time change; every other change reads its new keys.
 	return isSameTime(model.search, route.search)
 		? followModal(context)(requestAll(next, context, "Load"))
-		: {
-				model: next,
-				commands: [
-					resolveCommand(route.search, context, model.refreshVersion === 0 ? "Load" : "Refresh"),
-				],
-			}
+		: { model: next, commands: [resolveCommand(route.search, context, model.refreshVersion === 0 ? "Load" : "Refresh")] }
 }
 
 const isSameTime = (a: Search, b: Search): boolean =>
@@ -244,9 +239,7 @@ const modalContextOf = (
 /** The modal's step lifted: its search asks are set at once (nothing re-opens it meanwhile), then pushed. */
 const liftModal = (model: Model, step: ErrorModalUpdate.Return): Return => {
 	const lifted: Model = { ...model, errorModal: step.model }
-	const commands = Command.mapMessages(step.commands ?? [], (message) =>
-		Message.GotErrorModalMessage({ message }),
-	)
+	const commands = Command.mapMessages(step.commands ?? [], (message) => Message.GotErrorModalMessage({ message }))
 	if (step.outMessage === undefined) return { model: lifted, commands }
 	const { error, session, variant } = step.outMessage
 	const search = { ...model.search, error, session, variant }
@@ -259,10 +252,7 @@ const followModal =
 	(result: Return): Return => {
 		const followed = liftModal(
 			result.model,
-			ErrorModalUpdate.follow(
-				result.model.errorModal,
-				modalContextOf(result.model, context, detailMode),
-			),
+			ErrorModalUpdate.follow(result.model.errorModal, modalContextOf(result.model, context, detailMode)),
 		)
 		return {
 			...result,
@@ -282,10 +272,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		GotErrorModalMessage: ({ message: inner }) =>
-			liftModal(
-				model,
-				ErrorModalUpdate.update(model.errorModal, inner, modalContextOf(model, context)),
-			),
+			liftModal(model, ErrorModalUpdate.update(model.errorModal, inner, modalContextOf(model, context))),
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
 			requestAll({ ...model, window, nowMs }, context, mode),
 		CompletedFetchSeries: ({ key, result }) => ({

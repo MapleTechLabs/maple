@@ -62,22 +62,8 @@ const clientSnippets = (h: H, model: Model, client: McpClient): ReadonlyArray<Ht
 				h.div(
 					[h.Class("space-y-4")],
 					[
-						snippet(
-							h,
-							model,
-							"claude-code:0",
-							["Run in your terminal"],
-							claudeCodeCommand(mcpEndpoint, apiKey),
-							"bash",
-						),
-						snippet(
-							h,
-							model,
-							"claude-code:1",
-							["Or add to ", code(h, ".mcp.json"), " in your project"],
-							json,
-							"json",
-						),
+						snippet(h, model, "claude-code:0", ["Run in your terminal"], claudeCodeCommand(mcpEndpoint, apiKey), "bash"),
+						snippet(h, model, "claude-code:1", ["Or add to ", code(h, ".mcp.json"), " in your project"], json, "json"),
 					],
 				),
 			]
@@ -100,16 +86,7 @@ const clientSnippets = (h: H, model: Model, client: McpClient): ReadonlyArray<Ht
 				),
 			]
 		case "windsurf":
-			return [
-				snippet(
-					h,
-					model,
-					"windsurf:0",
-					["Add to ", code(h, "~/.codeium/windsurf/mcp_config.json")],
-					json,
-					"json",
-				),
-			]
+			return [snippet(h, model, "windsurf:0", ["Add to ", code(h, "~/.codeium/windsurf/mcp_config.json")], json, "json")]
 		case "other":
 			return [
 				snippet(
@@ -136,8 +113,7 @@ const oauthNote = (h: H, model: Model): Html =>
 						{
 							variant: "link",
 							size: "xs",
-							className:
-								"h-auto p-0 align-baseline text-xs underline underline-offset-2 hover:no-underline",
+							className: "h-auto p-0 align-baseline text-xs underline underline-offset-2 hover:no-underline",
 							attributes: [h.OnClick(Message.ClickedCreateMcpKey())],
 						},
 						["Create an MCP key"],
@@ -182,17 +158,13 @@ const connectSection = (h: H, model: Model): Html =>
 							variant: "underline",
 							labels: CLIENT_LABELS,
 							panelClassName: "pt-3",
-							panel: (value) =>
-								isMcpClient(value) ? clientSnippets(h, model, value) : undefined,
+							panel: (value) => (isMcpClient(value) ? clientSnippets(h, model, value) : undefined),
 						},
 					}),
 					h.div(
 						[h.Class("space-y-1 border-t pt-3 text-xs")],
 						[
-							h.p(
-								[h.Class("text-muted-foreground")],
-								["Your client opens Maple in the browser to approve access."],
-							),
+							h.p([h.Class("text-muted-foreground")], ["Your client opens Maple in the browser to approve access."]),
 							oauthNote(h, model),
 						],
 					),

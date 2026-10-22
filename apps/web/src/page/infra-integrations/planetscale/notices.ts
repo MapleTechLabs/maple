@@ -75,8 +75,7 @@ export const inventoryNotice = <M>(
 						" ",
 						options.lastInventoryAt === null
 							? "never"
-							: relativeTime(h, {
-									tooltip: "title",
+							: relativeTime(h, { tooltip: "title",
 									value: options.lastInventoryAt,
 									nowMs: options.nowMs,
 									timeZone: options.timeZone,

@@ -44,10 +44,7 @@ export const connectButton = (h: HtmlBuilder<Message>, model: Model): Html =>
 								slot: "popover-trigger",
 								attributes: [h.AriaLabel("Connect your app"), ...trigger],
 							},
-							[
-								icon(h, "ConnectionIcon"),
-								h.span([h.Class("group-data-[collapsible=icon]:hidden")], ["Connect"]),
-							],
+							[icon(h, "ConnectionIcon"), h.span([h.Class("group-data-[collapsible=icon]:hidden")], ["Connect"])],
 						),
 					),
 				),

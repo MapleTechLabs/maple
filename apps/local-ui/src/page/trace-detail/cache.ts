@@ -36,8 +36,5 @@ export const traceFromCached =
 		if (!isCachedDetail(value)) return Option.none()
 		if (value.spans.length === 0) return Option.some(Option.none())
 		const { spans, rootSpans, totalDurationMs, traceStartTime } = value
-		return Option.map(
-			decodeTrace({ traceId, spans, rootSpans, totalDurationMs, traceStartTime }),
-			Option.some,
-		)
+		return Option.map(decodeTrace({ traceId, spans, rootSpans, totalDurationMs, traceStartTime }), Option.some)
 	}

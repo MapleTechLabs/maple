@@ -97,9 +97,7 @@ export const fetchSessionFacets = (filters: SessionFilters, bounds: TimeBounds, 
 		),
 		(rows): SessionFacets => {
 			const pick = (facetType: string) =>
-				rows
-					.filter((row) => row.facetType === facetType && row.name)
-					.map((row) => ({ name: row.name, count: row.count }))
+				rows.filter((row) => row.facetType === facetType && row.name).map((row) => ({ name: row.name, count: row.count }))
 			return {
 				service: pick("service"),
 				browser: pick("browser"),

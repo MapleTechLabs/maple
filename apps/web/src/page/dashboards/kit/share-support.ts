@@ -46,9 +46,7 @@ export interface UnsupportedShareWidget {
 }
 
 /** Widgets that will render as unavailable tiles for a viewer. */
-export const unsupportedShareWidgets = (
-	widgets: ReadonlyArray<WidgetLike>,
-): ReadonlyArray<UnsupportedShareWidget> =>
+export const unsupportedShareWidgets = (widgets: ReadonlyArray<WidgetLike>): ReadonlyArray<UnsupportedShareWidget> =>
 	widgets
 		.filter((widget) => !isShareSupported(widget.dataSource))
 		.map((widget) => ({ id: widget.id, title: widget.display?.title ?? widget.id }))

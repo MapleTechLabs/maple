@@ -36,10 +36,7 @@ export type ErrorTypeRow = typeof ErrorTypeRow.Type
 
 export const FacetOption = Schema.Struct({ name: Schema.String, count: Schema.Number })
 
-export const ErrorsFacets = Schema.Struct({
-	services: Schema.Array(FacetOption),
-	environments: Schema.Array(FacetOption),
-})
+export const ErrorsFacets = Schema.Struct({ services: Schema.Array(FacetOption), environments: Schema.Array(FacetOption) })
 export type ErrorsFacets = typeof ErrorsFacets.Type
 
 export const ErrorTrace = Schema.Struct({
@@ -58,10 +55,7 @@ export type ErrorTrace = typeof ErrorTrace.Type
 export const fetchErrorsSummary = (filters: ErrorsFilters, bounds: TimeBounds, apiBase: string) =>
 	Effect.map(
 		queryFirstRow(
-			CH.compile(
-				CH.errorsSummaryQuery({ ...sharedFilters(filters), rootOnly: filters.rootOnly }),
-				localParams(bounds),
-			),
+			CH.compile(CH.errorsSummaryQuery({ ...sharedFilters(filters), rootOnly: filters.rootOnly }), localParams(bounds)),
 			apiBase,
 		),
 		(row): ErrorsSummary | null =>
@@ -101,10 +95,7 @@ export const fetchErrorsByType = (filters: ErrorsFilters, bounds: TimeBounds, ap
 export const fetchErrorsFacets = (filters: ErrorsFilters, bounds: TimeBounds, apiBase: string) =>
 	Effect.map(
 		queryRows(
-			CH.compileUnion(
-				CH.errorsFacetsQuery({ ...sharedFilters(filters), rootOnly: filters.rootOnly }),
-				localParams(bounds),
-			),
+			CH.compileUnion(CH.errorsFacetsQuery({ ...sharedFilters(filters), rootOnly: filters.rootOnly }), localParams(bounds)),
 			apiBase,
 		),
 		(rows): ErrorsFacets => {
@@ -115,21 +106,11 @@ export const fetchErrorsFacets = (filters: ErrorsFilters, bounds: TimeBounds, ap
 	)
 
 /** The most recently errored traces of one fingerprint. */
-export const fetchErrorTraces = (
-	fingerprintHash: string,
-	filters: ErrorsFilters,
-	bounds: TimeBounds,
-	apiBase: string,
-) =>
+export const fetchErrorTraces = (fingerprintHash: string, filters: ErrorsFilters, bounds: TimeBounds, apiBase: string) =>
 	Effect.map(
 		queryRows(
 			CH.compile(
-				CH.errorDetailTracesQuery({
-					fingerprintHash,
-					rootOnly: filters.rootOnly,
-					...sharedFilters(filters),
-					limit: 10,
-				}),
+				CH.errorDetailTracesQuery({ fingerprintHash, rootOnly: filters.rootOnly, ...sharedFilters(filters), limit: 10 }),
 				localParams(bounds),
 			),
 			apiBase,

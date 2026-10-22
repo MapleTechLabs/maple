@@ -52,11 +52,7 @@ export const Message = defineMessageUnion({
 	/** The diagram toolbar's download menu (`menuId` tells the inline and fullscreen ones apart). */
 	ToggledDiagramMenu: { menuId: Schema.String },
 	PressedOutsideDiagramMenu: { menuId: Schema.String },
-	ClickedDiagramFormat: {
-		menuId: Schema.String,
-		code: Schema.String,
-		format: Schema.Literals(["svg", "png", "mmd"]),
-	},
+	ClickedDiagramFormat: { menuId: Schema.String, code: Schema.String, format: Schema.Literals(["svg", "png", "mmd"]) },
 	CompletedDownloadDiagram: { menuId: Schema.String, isSaved: Schema.Boolean },
 	ClickedDiagramFullscreen: { code: Schema.String },
 	/** The exit button, a click on the backdrop, or Escape. */

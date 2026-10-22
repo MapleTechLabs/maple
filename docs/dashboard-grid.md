@@ -7,10 +7,10 @@ resize and keyboard rearranging. It replaced react-grid-layout 2.3.0 (and its `r
 
 ## Pieces
 
-| Where                                                                  | What                                                                                                           |
-| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `lib/grid-engine/src/layout.ts`                                        | Pure layout ops: `normalizeLayout`, `compact`, `moveItem`, `resizeItem`, `nudgeItem`, clamping, `changedItems` |
-| `lib/grid-engine/src/geometry.ts`                                      | Cells <-> px: `itemRect`, `cellAt`, `sizeAt`                                                                   |
+| Where                                                                          | What                                                                                                           |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `lib/grid-engine/src/layout.ts`                                                | Pure layout ops: `normalizeLayout`, `compact`, `moveItem`, `resizeItem`, `nudgeItem`, clamping, `changedItems` |
+| `lib/grid-engine/src/geometry.ts`                                              | Cells <-> px: `itemRect`, `cellAt`, `sizeAt`                                                                   |
 | `apps/web/src/page/dashboards/view/grid.ts`, `view-grid.ts`            | The canvas grid per container: normalizes the stored layout, places cells with `grid-column`/`grid-row`        |
 | `apps/web/src/page/dashboards/view/gesture.ts`, `keyboard-move.ts`     | Pointer drag and resize, keyboard rearranging                                                                  |
 | `apps/web/src/page/dashboards/view/layout-commit.ts`                   | The single commit on drop                                                                                      |
@@ -43,11 +43,11 @@ resize and keyboard rearranging. It replaced react-grid-layout 2.3.0 (and its `r
 
 ## Tests
 
-| Layer                                                                                              | Where                                               | Run                                                        |
-| -------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------- |
-| Engine invariants (fast-check): no overlaps, in bounds, packed, idempotent, identity kept, settles | `lib/grid-engine/test/properties.test.ts`           | `bun run --cwd lib/grid-engine test`                       |
-| Frozen react-grid-layout answers                                                                   | `lib/grid-engine/test/golden.test.ts`               | same                                                       |
-| Geometry by hand and round-trip                                                                    | `lib/grid-engine/test/geometry.test.ts`             | same                                                       |
+| Layer                                                                                              | Where                                                       | Run                                                                |
+| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------ |
+| Engine invariants (fast-check): no overlaps, in bounds, packed, idempotent, identity kept, settles | `lib/grid-engine/test/properties.test.ts`                   | `bun run --cwd lib/grid-engine test`                               |
+| Frozen react-grid-layout answers                                                                   | `lib/grid-engine/test/golden.test.ts`                       | same                                                               |
+| Geometry by hand and round-trip                                                                    | `lib/grid-engine/test/geometry.test.ts`                     | same                                                               |
 | Dashboard view: grid, narrow tiers, sections, share, history (Scene tests)                         | `apps/web/src/page/dashboards/view/*.scene.test.ts` | `bunx vitest run src/page/dashboards/view` (in `apps/web`) |
 
 ## Measured against react-grid-layout

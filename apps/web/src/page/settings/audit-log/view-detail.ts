@@ -1,10 +1,5 @@
 import { auditActionLabel, auditResourceLabel } from "@maple/domain/audit-actions"
-import {
-	encodePublicId,
-	PublicIdPrefixes,
-	type V2AuditChanges,
-	type V2AuditLogEntry,
-} from "@maple/domain/http/v2"
+import { encodePublicId, PublicIdPrefixes, type V2AuditChanges, type V2AuditLogEntry } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import type { AuditResourceLink } from "../../../components/settings/audit-log-resource"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
@@ -46,10 +41,8 @@ export const resourceHref = (link: AuditResourceLink): string => {
 	}
 }
 
-const isPlaceholder = (value: unknown): value is string =>
-	typeof value === "string" && /^<[a-z]+>$/.test(value)
-const formatScalar = (value: unknown): string =>
-	typeof value === "string" ? value : (JSON.stringify(value) ?? "undefined")
+const isPlaceholder = (value: unknown): value is string => typeof value === "string" && /^<[a-z]+>$/.test(value)
+const formatScalar = (value: unknown): string => (typeof value === "string" ? value : (JSON.stringify(value) ?? "undefined"))
 
 const parseJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
@@ -67,10 +60,8 @@ const metadataBlock = (value: unknown): string | null => {
 }
 
 const changeValue = (h: H, value: unknown): Html => {
-	if (isPlaceholder(value))
-		return h.span([h.Class("text-muted-foreground/70 italic")], [value.slice(1, -1)])
-	if (value === undefined || value === null || value === "")
-		return h.span([h.Class("text-muted-foreground/60")], [EMPTY_VALUE])
+	if (isPlaceholder(value)) return h.span([h.Class("text-muted-foreground/70 italic")], [value.slice(1, -1)])
+	if (value === undefined || value === null || value === "") return h.span([h.Class("text-muted-foreground/60")], [EMPTY_VALUE])
 	return h.span([h.Class("break-all")], [formatScalar(value)])
 }
 
@@ -161,21 +152,15 @@ export const auditDetail = (h: H, model: Model, entry: V2AuditLogEntry, timeZone
 						"@2xl:grid-cols-[minmax(6rem,max-content)_minmax(0,1fr)_minmax(6rem,max-content)_minmax(0,1fr)] @2xl:gap-x-6",
 				},
 				[
-					keyValue(h, { wrap: true, label: "Occurred" }, [
-						h.span([h.Class("tabular-nums")], [formatFull(entry.occurred_at)]),
-					]),
-					keyValue(h, { wrap: true, label: "Recorded" }, [
-						h.span([h.Class("tabular-nums")], [formatFull(entry.recorded_at)]),
-					]),
+					keyValue(h, { wrap: true, label: "Occurred" }, [h.span([h.Class("tabular-nums")], [formatFull(entry.occurred_at)])]),
+					keyValue(h, { wrap: true, label: "Recorded" }, [h.span([h.Class("tabular-nums")], [formatFull(entry.recorded_at)])]),
 					keyValue(h, { wrap: true, label: "Actor" }, [
 						h.span(
 							[h.Class("flex min-w-0 flex-wrap items-center gap-1.5")],
 							[
 								badge(h, { variant: actor.variant, size: "sm" }, [actor.label]),
 								...(entry.actor_name === null ? [] : [h.span([], [entry.actor_name])]),
-								...(entry.actor_id === null
-									? []
-									: [identifier(h, model, entry.actor_id, "Actor id")]),
+								...(entry.actor_id === null ? [] : [identifier(h, model, entry.actor_id, "Actor id")]),
 							],
 						),
 					]),
@@ -189,9 +174,7 @@ export const auditDetail = (h: H, model: Model, entry: V2AuditLogEntry, timeZone
 										[
 											" · ",
 											entry.origin_ip ?? "unknown IP",
-											...(entry.origin_country === null
-												? []
-												: [` (${entry.origin_country})`]),
+											...(entry.origin_country === null ? [] : [` (${entry.origin_country})`]),
 										],
 									),
 								]),
@@ -201,17 +184,13 @@ export const auditDetail = (h: H, model: Model, entry: V2AuditLogEntry, timeZone
 							[h.Class("flex flex-wrap items-center gap-1.5")],
 							[
 								...(actionText === null ? [] : [h.span([], [actionText])]),
-								inlineCode(h, { variant: "plain", className: "text-2xs text-foreground" }, [
-									entry.action,
-								]),
+								inlineCode(h, { variant: "plain", className: "text-2xs text-foreground" }, [entry.action]),
 								entry.outcome === "denied"
 									? badge(h, { variant: "crit", size: "sm" }, ["Denied"])
 									: badge(h, { variant: "ok", size: "sm" }, ["Allowed"]),
 							],
 						),
-						...(entry.denial_reason === null
-							? []
-							: [h.p([h.Class("text-muted-foreground mt-0.5")], [entry.denial_reason])]),
+						...(entry.denial_reason === null ? [] : [h.p([h.Class("text-muted-foreground mt-0.5")], [entry.denial_reason])]),
 					]),
 					keyValue(h, { wrap: true, label: "Resource" }, [
 						entry.resource_type === null && entry.resource_id === null
@@ -221,66 +200,27 @@ export const auditDetail = (h: H, model: Model, entry: V2AuditLogEntry, timeZone
 									[
 										...(entry.resource_type === null
 											? []
-											: [
-													h.span(
-														[],
-														[
-															auditResourceLabel(entry.resource_type) ??
-																entry.resource_type,
-														],
-													),
-												]),
-										...(entry.resource_id === null
-											? []
-											: [identifier(h, model, entry.resource_id, "Resource id")]),
+											: [h.span([], [auditResourceLabel(entry.resource_type) ?? entry.resource_type])]),
+										...(entry.resource_id === null ? [] : [identifier(h, model, entry.resource_id, "Resource id")]),
 									],
 								),
 					]),
 					...(entry.affected_user === null
 						? []
-						: [
-								keyValue(h, { wrap: true, label: "Affected user" }, [
-									identifier(h, model, entry.affected_user, "Affected user id"),
-								]),
-							]),
+						: [keyValue(h, { wrap: true, label: "Affected user" }, [identifier(h, model, entry.affected_user, "Affected user id")])]),
 					...(entry.request_id === null
 						? []
-						: [
-								keyValue(h, { wrap: true, label: "Request" }, [
-									identifier(h, model, entry.request_id, "Request id"),
-								]),
-							]),
+						: [keyValue(h, { wrap: true, label: "Request" }, [identifier(h, model, entry.request_id, "Request id")])]),
 					keyValue(h, { wrap: true, label: "Entry" }, [
-						identifier(
-							h,
-							model,
-							encodePublicId(PublicIdPrefixes.auditLogEntry, entry.id),
-							"Entry id",
-						),
+						identifier(h, model, encodePublicId(PublicIdPrefixes.auditLogEntry, entry.id), "Entry id"),
 					]),
 				],
 			),
 			...(changes !== null && changes.fields.length > 0
-				? [
-						h.section(
-							[h.Class("space-y-1.5")],
-							[
-								eyebrow(h, { variant: "mono", as: "h4" }, ["Changes"]),
-								changesTable(h, changes),
-							],
-						),
-					]
+				? [h.section([h.Class("space-y-1.5")], [eyebrow(h, { variant: "mono", as: "h4" }, ["Changes"]), changesTable(h, changes)])]
 				: []),
 			...(metadata !== null && Object.keys(metadata).length > 0
-				? [
-						h.section(
-							[h.Class("space-y-1.5")],
-							[
-								eyebrow(h, { variant: "mono", as: "h4" }, ["Details"]),
-								...metadataList(h, metadata),
-							],
-						),
-					]
+				? [h.section([h.Class("space-y-1.5")], [eyebrow(h, { variant: "mono", as: "h4" }, ["Details"]), ...metadataList(h, metadata)])]
 				: []),
 		],
 	)

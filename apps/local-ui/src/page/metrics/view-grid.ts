@@ -11,14 +11,7 @@ import { serviceDot } from "@maple/web/ui/values"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { hrefFor } from "../../route"
 import type { MetricEntry } from "./catalog"
-import {
-	CARD_ROW_HEIGHT,
-	columnsFor,
-	type GridViewport,
-	previewValues,
-	sparklineValues,
-	visibleRows,
-} from "./derive"
+import { CARD_ROW_HEIGHT, columnsFor, type GridViewport, previewValues, sparklineValues, visibleRows } from "./derive"
 import type { SparklinePoint } from "./fetch"
 import { MeasureGrid } from "./command"
 import { Message } from "./message"
@@ -43,8 +36,7 @@ export type GridInputs = Readonly<{
 }>
 
 const sparkline = (h: H, theme: ThemeColors, entry: MetricEntry, values: ReadonlyArray<number>): Html => {
-	const token =
-		validateCssColor(METRIC_TYPE_COLORS.get(entry.metricType) ?? "var(--chart-1)") ?? "var(--chart-1)"
+	const token = validateCssColor(METRIC_TYPE_COLORS.get(entry.metricType) ?? "var(--chart-1)") ?? "var(--chart-1)"
 	const slotId = `local-metric-spark-${entry.metricName} ${entry.metricType}`
 	return h.div(
 		[h.Class("h-full w-full")],
@@ -77,24 +69,14 @@ const footer = (h: H, entry: MetricEntry, services: string): Html => {
 			h.span(
 				[h.Class("flex min-w-0 items-center gap-1.5")],
 				[
-					...(entry.serviceNames.length === 1 && only !== undefined
-						? [serviceDot(h, { serviceName: only, size: "sm" })]
-						: []),
+					...(entry.serviceNames.length === 1 && only !== undefined ? [serviceDot(h, { serviceName: only, size: "sm" })] : []),
 					h.span([h.Class("truncate")], [services]),
 				],
 			),
 			h.span(
 				[h.Class("flex shrink-0 items-center gap-1.5")],
 				[
-					...(unit
-						? [
-								badge(
-									h,
-									{ variant: "outline", size: "xs", mono: true, className: "text-4xs" },
-									[unit],
-								),
-							]
-						: []),
+					...(unit ? [badge(h, { variant: "outline", size: "xs", mono: true, className: "text-4xs" }, [unit])] : []),
 					isCounter(entry) ? "rate" : "avg",
 				],
 			),
@@ -104,15 +86,8 @@ const footer = (h: H, entry: MetricEntry, services: string): Html => {
 
 const previewCard = (h: H, inputs: GridInputs, entry: MetricEntry): Html => {
 	const values = previewValues(entry, inputs.points?.get(entry.metricName) ?? [])
-	const services =
-		entry.serviceNames.length === 1
-			? (entry.serviceNames[0] ?? "")
-			: `${entry.serviceNames.length} services`
-	const status = inputs.isLoading
-		? "Loading…"
-		: inputs.isFailed
-			? "Preview unavailable"
-			: "One datapoint so far"
+	const services = entry.serviceNames.length === 1 ? (entry.serviceNames[0] ?? "") : `${entry.serviceNames.length} services`
+	const status = inputs.isLoading ? "Loading…" : inputs.isFailed ? "Preview unavailable" : "One datapoint so far"
 	return h.a(
 		[
 			h.Href(hrefFor(`/metrics/${encodeURIComponent(entry.metricName)}`, inputs.query)),
@@ -124,24 +99,14 @@ const previewCard = (h: H, inputs: GridInputs, entry: MetricEntry): Html => {
 		[
 			h.div(
 				[h.Class("flex w-full items-start justify-between gap-2")],
-				[
-					truncatedText(h, {
-						text: entry.metricName,
-						mono: true,
-						className: "text-xs font-medium",
-					}),
-					metricTypeBadge(h, entry.metricType),
-				],
+				[truncatedText(h, { text: entry.metricName, mono: true, className: "text-xs font-medium" }), metricTypeBadge(h, entry.metricType)],
 			),
 			h.div(
 				[h.AriaHidden(true), h.Class("h-12 w-full")],
 				[
 					values.length >= 2
 						? sparkline(h, inputs.theme, entry, sparklineValues(values))
-						: h.div(
-								[h.Class("flex h-full items-center text-3xs text-muted-foreground")],
-								[status],
-							),
+						: h.div([h.Class("flex h-full items-center text-3xs text-muted-foreground")], [status]),
 				],
 			),
 			footer(h, entry, services),
@@ -154,10 +119,7 @@ export const metricGrid = (h: H, inputs: GridInputs): Html => {
 	const columns = columnsFor(inputs.viewport.width)
 	const rowCount = Math.ceil(inputs.entries.length / columns)
 	return h.div(
-		[
-			h.Class(cn("h-full overflow-auto", inputs.isDimmed && "opacity-60 transition-opacity")),
-			h.OnMount(MeasureGrid()),
-		],
+		[h.Class(cn("h-full overflow-auto", inputs.isDimmed && "opacity-60 transition-opacity")), h.OnMount(MeasureGrid())],
 		[
 			h.div(
 				[h.Class("relative m-4"), h.Style({ height: `${rowCount * CARD_ROW_HEIGHT}px` })],

@@ -228,10 +228,7 @@ export const listPanel = (h: H, model: Model, state: EditorState): ReadonlyArray
 						rows: 1,
 						textareaClassName: "min-h-[32px] resize-y text-xs",
 						onInput: (value) => product(ProductEdit.ChangedListWhere({ value })),
-						autocomplete: autocompleteFor(
-							model,
-							listField(model, null, state.listWhereClause, source),
-						),
+						autocomplete: autocompleteFor(model, listField(model, null, state.listWhereClause, source)),
 					}),
 					...warningList(h, filterWarnings(source, state.listWhereClause)),
 					...performanceHints(h, state),

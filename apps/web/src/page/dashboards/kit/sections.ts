@@ -1,9 +1,4 @@
-import {
-	type DashboardDocument,
-	findNextPosition,
-	type SectionTarget,
-	withSectionTarget,
-} from "@maple/domain/http"
+import { type DashboardDocument, findNextPosition, type SectionTarget, withSectionTarget } from "@maple/domain/http"
 import { sortWidgetsForLayout, widgetsInContainer } from "./layout"
 import type { DocumentFields } from "./store"
 
@@ -14,11 +9,7 @@ type Section = NonNullable<DashboardDocument["sections"]>[number]
 type Widget = DashboardDocument["widgets"][number]
 type NowIso = DashboardDocument["updatedAt"]
 
-const touch = (
-	document: DashboardDocument,
-	sections: ReadonlyArray<Section>,
-	nowIso: NowIso,
-): DocumentFields => ({
+const touch = (document: DashboardDocument, sections: ReadonlyArray<Section>, nowIso: NowIso): DocumentFields => ({
 	...document,
 	sections,
 	updatedAt: nowIso,
@@ -46,19 +37,10 @@ export const withAddedSection = (
 	nowIso: NowIso,
 	title = "New group",
 ): DocumentFields =>
-	touch(
-		document,
-		[...(document.sections ?? []), { id: ids.sectionId, title, tabs: [{ id: ids.tabId, title }] }],
-		nowIso,
-	)
+	touch(document, [...(document.sections ?? []), { id: ids.sectionId, title, tabs: [{ id: ids.tabId, title }] }], nowIso)
 
 /** `renameSection`: with a single tab the header is the tab label, so both move together. */
-export const withRenamedSection = (
-	document: DashboardDocument,
-	sectionId: string,
-	title: string,
-	nowIso: NowIso,
-) =>
+export const withRenamedSection = (document: DashboardDocument, sectionId: string, title: string, nowIso: NowIso) =>
 	mapSection(document, sectionId, nowIso, (section) => {
 		const [only] = section.tabs
 		return section.tabs.length === 1 && only !== undefined
@@ -94,8 +76,7 @@ export const withReorderedSections = (
 ): DocumentFields => {
 	const sections = document.sections ?? []
 	const moved = sections[fromIndex]
-	if (fromIndex === toIndex || moved === undefined || toIndex < 0 || toIndex >= sections.length)
-		return document
+	if (fromIndex === toIndex || moved === undefined || toIndex < 0 || toIndex >= sections.length) return document
 	const without = sections.filter((_, index) => index !== fromIndex)
 	return touch(document, [...without.slice(0, toIndex), moved, ...without.slice(toIndex)], nowIso)
 }
@@ -143,11 +124,7 @@ export const withAddedTab = (
 	tabId: string,
 	nowIso: NowIso,
 	title = "New tab",
-) =>
-	mapSection(document, sectionId, nowIso, (section) => ({
-		...section,
-		tabs: [...section.tabs, { id: tabId, title }],
-	}))
+) => mapSection(document, sectionId, nowIso, (section) => ({ ...section, tabs: [...section.tabs, { id: tabId, title }] }))
 
 /** `renameTab`: renaming the only tab renames the group with it. */
 export const withRenamedTab = (
@@ -188,11 +165,7 @@ export const withoutTab = (
 			? document.widgets.filter((widget) => !isDoomed(widget))
 			: document.widgets.map((widget) =>
 					isDoomed(widget)
-						? {
-								...widget,
-								tabId: destination.id,
-								layout: { ...widget.layout, y: widget.layout.y + offset },
-							}
+						? { ...widget, tabId: destination.id, layout: { ...widget.layout, y: widget.layout.y + offset } }
 						: widget,
 				)
 	return {

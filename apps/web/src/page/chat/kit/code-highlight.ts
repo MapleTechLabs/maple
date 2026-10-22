@@ -23,9 +23,7 @@ export const highlightedFences = (
 		switch (block._tag) {
 			case "CodeBlock": {
 				const language = Option.getOrElse(block.maybeLanguage, () => "")
-				return language === "chart" || language === "mermaid" || language === "math"
-					? []
-					: [{ language, code: block.value }]
+				return language === "chart" || language === "mermaid" || language === "math" ? [] : [{ language, code: block.value }]
 			}
 			case "List":
 				return block.items.flatMap((item) => highlightedFences(item.blocks))
@@ -48,11 +46,7 @@ type ShikiToken = Readonly<{ content: string; color?: string; bgColor?: string; 
 type StyleEntry = readonly [string, string]
 
 /** Sets `name` in the entry list, keeping the first position a key took (object key order). */
-const setEntry = (
-	entries: ReadonlyArray<StyleEntry>,
-	name: string,
-	value: string,
-): ReadonlyArray<StyleEntry> =>
+const setEntry = (entries: ReadonlyArray<StyleEntry>, name: string, value: string): ReadonlyArray<StyleEntry> =>
 	entries.some(([key]) => key === name)
 		? entries.map((entry): StyleEntry => (entry[0] === name ? [name, value] : entry))
 		: [...entries, [name, value]]
@@ -64,11 +58,7 @@ const tokenOf = (token: ShikiToken): CodeToken => {
 	const extra = Object.entries(Option.getOrElse(decodeStyle(token.htmlStyle), () => ({})))
 	const entries = extra.reduce(
 		(acc, [key, value]) =>
-			setEntry(
-				acc,
-				key === "color" ? "--sdm-c" : key === "background-color" ? "--sdm-tbg" : key,
-				value,
-			),
+			setEntry(acc, key === "color" ? "--sdm-c" : key === "background-color" ? "--sdm-tbg" : key, value),
 		withFill,
 	)
 	return {
@@ -85,8 +75,7 @@ export const highlight = (language: string, code: string) =>
 			const requested = language.trim().toLowerCase()
 			const alias = bundledLanguagesInfo.find((info) => (info.aliases ?? []).includes(requested))?.id
 			const resolved = alias ?? requested
-			const isBundled = (value: string): value is keyof typeof bundledLanguages =>
-				value in bundledLanguages
+			const isBundled = (value: string): value is keyof typeof bundledLanguages => value in bundledLanguages
 			return Effect.tryPromise(() =>
 				codeToTokens(code, {
 					lang: isBundled(resolved) ? resolved : "text",

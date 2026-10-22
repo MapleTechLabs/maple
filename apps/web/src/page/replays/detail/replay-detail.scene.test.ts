@@ -105,10 +105,7 @@ const loaded = (): Model => {
 		Message.CompletedFetchManifest({ key: start.manifest.key ?? "", result: Result.succeed(manifest) }),
 		Message.CompletedFetchTranscript({
 			key: start.transcript.key ?? "",
-			result: Result.succeed([
-				event("custom", "add_to_cart"),
-				event("error", "PaymentError: declined"),
-			]),
+			result: Result.succeed([event("custom", "add_to_cart"), event("error", "PaymentError: declined")]),
 		}),
 	].reduce((model, message) => pageUpdate(model, message).model, start)
 }
@@ -116,22 +113,10 @@ const loaded = (): Model => {
 const seeded = (): Model => {
 	const model = loaded()
 	const rows = [
-		{
-			chunk_seq: 0,
-			events: [
-				{
-					type: 4,
-					timestamp: 1,
-					data: { width: 1280, height: 720, href: "https://shop.acme.test/" },
-				},
-			],
-		},
+		{ chunk_seq: 0, events: [{ type: 4, timestamp: 1, data: { width: 1280, height: 720, href: "https://shop.acme.test/" } }] },
 		{ chunk_seq: 1, events: [{ type: 2, timestamp: 2, data: {} }] },
 	]
-	return pageUpdate(
-		model,
-		Message.CompletedFetchRange({ key: model.loader.range.key ?? "", result: Result.succeed(rows) }),
-	).model
+	return pageUpdate(model, Message.CompletedFetchRange({ key: model.loader.range.key ?? "", result: Result.succeed(rows) })).model
 }
 
 const mounted = [
@@ -142,28 +127,17 @@ const mounted = [
 describe("replay detail", () => {
 	test("entry asks for the session, its manifest and its transcript", () => {
 		expect(names(entered().commands)).toEqual(
-			expect.arrayContaining([
-				"ResolveReplayClock",
-				FetchDetail.name,
-				FetchManifest.name,
-				FetchTranscript.name,
-			]),
+			expect.arrayContaining(["ResolveReplayClock", FetchDetail.name, FetchManifest.name, FetchTranscript.name]),
 		)
 	})
 
 	test("a loaded session subscribes to 0–0, then the planned opening range, and its traces", () => {
 		const start = entered().model
-		const detailed = pageUpdate(
-			start,
-			Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.succeed(session) }),
-		)
+		const detailed = pageUpdate(start, Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.succeed(session) }))
 		expect(names(detailed.commands)).toEqual([FetchRange.name, FetchTraceSummaries.name])
 		const planned = pageUpdate(
 			detailed.model,
-			Message.CompletedFetchManifest({
-				key: start.manifest.key ?? "",
-				result: Result.succeed(manifest),
-			}),
+			Message.CompletedFetchManifest({ key: start.manifest.key ?? "", result: Result.succeed(manifest) }),
 		)
 		expect(names(planned.commands)).toEqual([FetchRange.name])
 		expect(planned.model.loader.queue).toEqual([{ fromChunkSeq: 0, toChunkSeq: 1 }])
@@ -171,10 +145,7 @@ describe("replay detail", () => {
 
 	test("the opening range becomes the seed, and an answer for a superseded range is dropped", () => {
 		const model = loaded()
-		const stale = pageUpdate(
-			model,
-			Message.CompletedFetchRange({ key: "stale", result: Result.succeed([]) }),
-		)
+		const stale = pageUpdate(model, Message.CompletedFetchRange({ key: "stale", result: Result.succeed([]) }))
 		expect(stale.model.loader.seedCount).toBe(0)
 		expect(seeded().loader.seedCount).toBe(1)
 		expect(seeded().loader.seedVersion).toBe(1)
@@ -227,10 +198,7 @@ describe("replay detail", () => {
 		).model
 		const reopened = pageUpdate(pageUpdate(failed, toggle).model, toggle)
 		expect(names(reopened.commands)).toEqual(["FetchReplayTraceSpans"])
-		const succeeded = pageUpdate(
-			reopened.model,
-			Message.CompletedFetchSpans({ traceId, result: Result.succeed([]) }),
-		).model
+		const succeeded = pageUpdate(reopened.model, Message.CompletedFetchSpans({ traceId, result: Result.succeed([]) })).model
 		expect(names(pageUpdate(pageUpdate(succeeded, toggle).model, toggle).commands)).toEqual([])
 	})
 
@@ -257,37 +225,15 @@ describe("replay detail", () => {
 			is_checkpoint: isCheckpoint,
 		})
 		const long: Manifest = {
-			chunks: [
-				big(0, 0, true, 4_000_000),
-				big(1, 10, false, 3_000_000),
-				big(2, 300, true, 4_000_000),
-				big(3, 301, false, 1_000),
-			],
+			chunks: [big(0, 0, true, 4_000_000), big(1, 10, false, 3_000_000), big(2, 300, true, 4_000_000), big(3, 301, false, 1_000)],
 			maxBytesPerRequest: 6_000_000,
 			maxChunksPerRequest: 16,
 		}
-		const page = (seconds: number) => ({
-			type: 4,
-			timestamp: at(seconds).getTime(),
-			data: { width: 1280, height: 720, href: "https://shop.acme.test/" },
-		})
+		const page = (seconds: number) => ({ type: 4, timestamp: at(seconds).getTime(), data: { width: 1280, height: 720, href: "https://shop.acme.test/" } })
 		const snapshot = (seconds: number) => ({ type: 2, timestamp: at(seconds).getTime() + 1, data: {} })
-		const click = (seconds: number) => ({
-			type: 3,
-			timestamp: at(seconds).getTime(),
-			data: { source: 2, type: 2 },
-		})
-		const answer = (
-			model: Model,
-			rows: ReadonlyArray<{ chunk_seq: number; events: ReadonlyArray<unknown> }>,
-		) =>
-			pageUpdate(
-				model,
-				Message.CompletedFetchRange({
-					key: model.loader.range.key ?? "",
-					result: Result.succeed(rows),
-				}),
-			).model
+		const click = (seconds: number) => ({ type: 3, timestamp: at(seconds).getTime(), data: { source: 2, type: 2 } })
+		const answer = (model: Model, rows: ReadonlyArray<{ chunk_seq: number; events: ReadonlyArray<unknown> }>) =>
+			pageUpdate(model, Message.CompletedFetchRange({ key: model.loader.range.key ?? "", result: Result.succeed(rows) })).model
 
 		const start = entered().model
 		const opened = [
@@ -295,10 +241,7 @@ describe("replay detail", () => {
 			Message.CompletedFetchManifest({ key: start.manifest.key ?? "", result: Result.succeed(long) }),
 		].reduce((model, message) => pageUpdate(model, message).model, start)
 		const seeded = answer(opened, [{ chunk_seq: 0, events: [page(0), snapshot(0), click(1)] }])
-		const ready = pageUpdate(
-			seeded,
-			Message.ReadiedEngine({ seedVersion: seeded.loader.seedVersion, totalMs: 1000 }),
-		).model
+		const ready = pageUpdate(seeded, Message.ReadiedEngine({ seedVersion: seeded.loader.seedVersion, totalMs: 1000 })).model
 		expect(seedShiftMs(ready.loader)).toBe(0)
 
 		const seeking = pageUpdate(ready, Message.RequestedSeek({ displayMs: 302_000 })).model
@@ -324,10 +267,7 @@ describe("replay detail", () => {
 		const model = loaded()
 		const failed = pageUpdate(
 			model,
-			Message.CompletedFetchRange({
-				key: model.loader.range.key ?? "",
-				result: Result.fail(toLoadFailure(new Error("down"))),
-			}),
+			Message.CompletedFetchRange({ key: model.loader.range.key ?? "", result: Result.fail(toLoadFailure(new Error("down"))) }),
 		).model
 		const ticked = pageUpdate(failed, Message.TickedEngine({ seedVersion: 0, currentMs: 100 }))
 		expect(names(ticked.commands)).toEqual([])

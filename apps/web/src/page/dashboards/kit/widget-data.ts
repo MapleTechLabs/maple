@@ -99,12 +99,8 @@ export const planWidget = (input: PlanInput): WidgetGate => {
 						),
 						endTime: planned.window.endTime,
 					},
-					...(input.maxDataPoints === undefined
-						? undefined
-						: { maxDataPoints: input.maxDataPoints }),
-					...(input.variables === undefined
-						? undefined
-						: { variableValues: input.variables.values }),
+					...(input.maxDataPoints === undefined ? undefined : { maxDataPoints: input.maxDataPoints }),
+					...(input.variables === undefined ? undefined : { variableValues: input.variables.values }),
 				})
 			: planned
 	if (plan.kind === "disabled") {

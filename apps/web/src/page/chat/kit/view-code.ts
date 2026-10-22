@@ -61,13 +61,7 @@ const glyph = <M>(h: HtmlBuilder<M>, d: string, size: string): Html =>
 const ACTION_CLASS =
 	"cursor-pointer p-1 text-muted-foreground transition-all hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
 
-const action = <M>(
-	h: HtmlBuilder<M>,
-	label: string,
-	d: string,
-	slot: string | null,
-	onClick: M | null,
-): Html =>
+const action = <M>(h: HtmlBuilder<M>, label: string, d: string, slot: string | null, onClick: M | null): Html =>
 	h.button(
 		[
 			h.AriaLabel(label),
@@ -99,28 +93,14 @@ const actionsBar = <M>(h: HtmlBuilder<M>, slot: string, children: ReadonlyArray<
 const TOKEN_CLASS = "text-[var(--sdm-c,inherit)] dark:text-[var(--shiki-dark,var(--sdm-c,inherit))]"
 const TOKEN_FILL_CLASS = "bg-[var(--sdm-tbg)] dark:bg-[var(--shiki-dark-bg,var(--sdm-tbg))]"
 
-const codeLines = <M>(
-	h: HtmlBuilder<M>,
-	code: string,
-	highlighted: HighlightedCode | null,
-): ReadonlyArray<Html> =>
+const codeLines = <M>(h: HtmlBuilder<M>, code: string, highlighted: HighlightedCode | null): ReadonlyArray<Html> =>
 	highlighted === null
-		? code
-				.split("\n")
-				.map((line) =>
-					h.span(
-						[h.Class(LINE_CLASS)],
-						[
-							h.span(
-								[
-									h.Class(cn(TOKEN_CLASS, TOKEN_FILL_CLASS)),
-									h.Style({ "--sdm-c": "inherit", "--sdm-tbg": "transparent" }),
-								],
-								[line],
-							),
-						],
-					),
-				)
+		? code.split("\n").map((line) =>
+				h.span(
+					[h.Class(LINE_CLASS)],
+					[h.span([h.Class(cn(TOKEN_CLASS, TOKEN_FILL_CLASS)), h.Style({ "--sdm-c": "inherit", "--sdm-tbg": "transparent" })], [line])],
+				),
+			)
 		: highlighted.lines.map((line) =>
 				h.span(
 					[h.Class(LINE_CLASS)],
@@ -145,9 +125,7 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, value: string
 	const languageClass = highlighted === null ? undefined : `language-${language}`
 	return h.div(
 		[
-			h.Class(
-				"relative my-4 flex w-full flex-col gap-2 rounded-xl border border-border bg-sidebar p-2",
-			),
+			h.Class("relative my-4 flex w-full flex-col gap-2 rounded-xl border border-border bg-sidebar p-2"),
 			h.DataAttribute("language", language),
 			h.DataAttribute("streamdown", "code-block"),
 			h.Attribute("dir", "ltr"),
@@ -163,23 +141,12 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, value: string
 				[h.span([h.Class("ml-1 font-mono lowercase")], [language])],
 			),
 			actionsBar(h, "code-block-actions", [
-				action(
-					h,
-					"Download file",
-					DOWNLOAD_PATH,
-					"code-block-download-button",
-					host.onDownload(code, language),
-				),
+				action(h, "Download file", DOWNLOAD_PATH, "code-block-download-button", host.onDownload(code, language)),
 				action(h, "Copy Code", COPY_PATH, "code-block-copy-button", host.onCopy(code)),
 			]),
 			h.div(
 				[
-					h.Class(
-						cn(
-							languageClass,
-							"overflow-y-auto overflow-x-auto rounded-md border border-border bg-background p-4 text-sm",
-						),
-					),
+					h.Class(cn(languageClass, "overflow-y-auto overflow-x-auto rounded-md border border-border bg-background p-4 text-sm")),
 					h.DataAttribute("language", language),
 					h.DataAttribute("streamdown", "code-block-body"),
 					h.Style({ "max-height": "400px" }),
@@ -187,20 +154,10 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, value: string
 				[
 					h.pre(
 						[
-							h.Class(
-								cn(
-									languageClass,
-									"bg-[var(--sdm-bg,inherit)] dark:bg-[var(--shiki-dark-bg,var(--sdm-bg,inherit))]",
-								),
-							),
+							h.Class(cn(languageClass, "bg-[var(--sdm-bg,inherit)] dark:bg-[var(--shiki-dark-bg,var(--sdm-bg,inherit))]")),
 							h.Style({ "--sdm-bg": "transparent", "--sdm-fg": "inherit" }),
 						],
-						[
-							h.code(
-								[h.Class("[counter-increment:line_0] [counter-reset:line]")],
-								codeLines(h, code, highlighted),
-							),
-						],
+						[h.code([h.Class("[counter-increment:line_0] [counter-reset:line]")], codeLines(h, code, highlighted))],
 					),
 				],
 			),
@@ -211,13 +168,7 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, value: string
 const ZOOM_CLASS =
 	"flex items-center justify-center rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 
-const zoomButton = <M>(
-	h: HtmlBuilder<M>,
-	label: string,
-	d: string,
-	slot: string,
-	isResettable: boolean,
-): Html =>
+const zoomButton = <M>(h: HtmlBuilder<M>, label: string, d: string, slot: string, isResettable: boolean): Html =>
 	h.button(
 		[
 			h.AriaLabel(label),
@@ -233,26 +184,18 @@ const zoomButton = <M>(
 export const mermaidBlock = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, code: string): Html =>
 	h.div(
 		[
-			h.Class(
-				"group relative my-4 flex w-full flex-col gap-2 rounded-xl border border-border bg-sidebar p-2 language-mermaid",
-			),
+			h.Class("group relative my-4 flex w-full flex-col gap-2 rounded-xl border border-border bg-sidebar p-2 language-mermaid"),
 			h.DataAttribute("streamdown", "mermaid-block"),
 		],
 		[
-			h.div(
-				[h.Class("flex h-8 items-center text-muted-foreground text-xs")],
-				[h.span([h.Class("ml-1 font-mono lowercase")], ["mermaid"])],
-			),
+			h.div([h.Class("flex h-8 items-center text-muted-foreground text-xs")], [h.span([h.Class("ml-1 font-mono lowercase")], ["mermaid"])]),
 			actionsBar(h, "mermaid-block-actions", [
 				diagramDownload(h, host, `inline:${code}`, code),
 				action(h, "Copy Code", COPY_PATH, "code-block-copy-button", host.onCopy(code)),
 				action(h, "View fullscreen", FULLSCREEN_PATH, null, host.onFullscreen(code)),
 				...(host.fullscreenDiagram === code ? [fullscreenOverlay(h, host, code)] : []),
 			]),
-			h.div(
-				[h.Class("overflow-hidden rounded-md border border-border bg-background")],
-				[mermaidFrame(h, host, code, false)],
-			),
+			h.div([h.Class("overflow-hidden rounded-md border border-border bg-background")], [mermaidFrame(h, host, code, false)]),
 		],
 	)
 
@@ -277,9 +220,7 @@ const fullscreenOverlay = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, code: string
 					h.button(
 						[
 							h.AriaLabel("Exit fullscreen"),
-							h.Class(
-								"rounded-md p-2 text-muted-foreground transition-all hover:bg-muted hover:text-foreground",
-							),
+							h.Class("rounded-md p-2 text-muted-foreground transition-all hover:bg-muted hover:text-foreground"),
 							h.OnClick(host.onExitFullscreen),
 							h.Title("Exit fullscreen"),
 							h.Type("button"),
@@ -288,10 +229,7 @@ const fullscreenOverlay = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, code: string
 					),
 				],
 			),
-			h.div(
-				[h.Class("flex size-full items-center justify-center p-4"), h.Role("presentation")],
-				[mermaidFrame(h, host, code, true)],
-			),
+			h.div([h.Class("flex size-full items-center justify-center p-4"), h.Role("presentation")], [mermaidFrame(h, host, code, true)]),
 		],
 	)
 
@@ -322,9 +260,7 @@ const diagramDownload = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, menuId: string
 								h.button(
 									[
 										h.AriaLabel(`Download diagram as ${label}`),
-										h.Class(
-											"w-full px-3 py-2 text-left text-sm transition-colors hover:bg-muted/40",
-										),
+										h.Class("w-full px-3 py-2 text-left text-sm transition-colors hover:bg-muted/40"),
 										h.OnClick(host.onDiagramFormat(menuId, code, format)),
 										h.Title(`Download diagram as ${label}`),
 										h.Type("button"),
@@ -354,11 +290,7 @@ const mermaidFrame = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, code: string, isF
 				[
 					h.Class(
 						isFullscreen
-							? cn(
-									"relative flex flex-col",
-									"h-full w-full",
-									cn("size-full overflow-hidden", FULLSCREEN_SVG_CLASS),
-								)
+							? cn("relative flex flex-col", "h-full w-full", cn("size-full overflow-hidden", FULLSCREEN_SVG_CLASS))
 							: "relative flex flex-col min-h-28 w-full max-h-[min(70vh,40rem)] overflow-hidden",
 					),
 					h.Style({ cursor: "grab" }),
@@ -395,13 +327,7 @@ const mermaidFrame = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, code: string, isF
 						],
 						[
 							h.div(
-								[
-									h.AriaLabel("Mermaid chart"),
-									h.Class(
-										cn("flex justify-center", isFullscreen && "size-full items-center"),
-									),
-									h.Role("img"),
-								],
+								[h.AriaLabel("Mermaid chart"), h.Class(cn("flex justify-center", isFullscreen && "size-full items-center")), h.Role("img")],
 								[],
 							),
 						],
@@ -410,3 +336,4 @@ const mermaidFrame = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, code: string, isF
 			),
 		],
 	)
+

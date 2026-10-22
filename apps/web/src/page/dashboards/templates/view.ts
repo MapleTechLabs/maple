@@ -79,13 +79,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const selected = selectedOf(model)
 	const isSheet = inputs.isBelowLg === true
 	const panel = (template: NonNullable<typeof selected>) =>
-		detailPanel(
-			h,
-			model,
-			template,
-			metrics === null ? undefined : readiness.get(template.id),
-			inputs.context.timeZone,
-		)
+		detailPanel(h, model, template, metrics === null ? undefined : readiness.get(template.id), inputs.context.timeZone)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: WIDGET_CHART_TOKENS }))],
 		[
@@ -120,23 +114,23 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 										],
 										[templateList(h, model, readiness)],
 									),
-									...(isSheet
-										? []
-										: [
-												h.div(
-													[
-														h.Class(
-															"bg-background min-w-0 grow overflow-y-auto [--panel-surface:var(--background)]",
-														),
-													],
-													[selected === null ? panelRestState(h) : panel(selected)],
-												),
-											]),
+									...(isSheet ? [] : [h.div(
+										[
+											h.Class(
+												"bg-background min-w-0 grow overflow-y-auto [--panel-surface:var(--background)]",
+											),
+										],
+										[
+											selected === null ? panelRestState(h) : panel(selected),
+										],
+									)]),
 								],
 							),
 				],
 			),
-			...(isSheet && selected !== null ? [panelSheet(h, model, panel(selected))] : []),
+			...(isSheet && selected !== null
+				? [panelSheet(h, model, panel(selected))]
+				: []),
 		],
 	)
 })
@@ -157,18 +151,8 @@ const panelSheet = (h: H, model: Model, content: Html): Html =>
 					h,
 					"sheet",
 					[
-						DialogView.dialogTitle(
-							h,
-							"sheet",
-							PANEL_SHEET_ID,
-							selectedOf(model)?.name ?? "Template",
-						),
-						DialogView.dialogDescription(
-							h,
-							"sheet",
-							PANEL_SHEET_ID,
-							"What this template builds and what it needs.",
-						),
+						DialogView.dialogTitle(h, "sheet", PANEL_SHEET_ID, selectedOf(model)?.name ?? "Template"),
+						DialogView.dialogDescription(h, "sheet", PANEL_SHEET_ID, "What this template builds and what it needs."),
 					],
 					"sr-only",
 				),

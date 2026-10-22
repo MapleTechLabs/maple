@@ -39,9 +39,7 @@ export const transcriptMarkdown = (messages: ReadonlyArray<UIMessage>): Readonly
 				return [
 					...(part.answer === undefined ? [] : [part.answer]),
 					...part.messages.flatMap((child) =>
-						child.parts.flatMap((leaf) =>
-							leaf._tag === "text" && leaf.text !== "" ? [leaf.text] : [],
-						),
+						child.parts.flatMap((leaf) => (leaf._tag === "text" && leaf.text !== "" ? [leaf.text] : [])),
 					),
 				]
 			return []

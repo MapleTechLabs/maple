@@ -29,10 +29,7 @@ const REGION_CARDS = {
 		accent: "#5B7CFF",
 		check: "border-[#5B7CFF] bg-[#5B7CFF] text-white",
 	},
-} as const satisfies Record<
-	Region,
-	{ name: string; place: string; residency: string; accent: string; check: string }
->
+} as const satisfies Record<Region, { name: string; place: string; residency: string; accent: string; check: string }>
 
 const residency = (h: H, region: Region, isActive: boolean): Html => {
 	const card = REGION_CARDS[region]
@@ -42,24 +39,11 @@ const residency = (h: H, region: Region, isActive: boolean): Html => {
 				"inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-2xs font-medium text-muted-foreground",
 			),
 			...(isActive
-				? [
-						h.Style({
-							color: card.accent,
-							"border-color": `${card.accent}66`,
-							"background-color": `${card.accent}14`,
-						}),
-					]
+				? [h.Style({ color: card.accent, "border-color": `${card.accent}66`, "background-color": `${card.accent}14` })]
 				: []),
 		],
 		[
-			h.span(
-				[
-					h.AriaHidden(true),
-					h.Class("size-1.5 rounded-full"),
-					h.Style({ "background-color": card.accent }),
-				],
-				[],
-			),
+			h.span([h.AriaHidden(true), h.Class("size-1.5 rounded-full"), h.Style({ "background-color": card.accent })], []),
 			card.residency,
 		],
 	)
@@ -103,15 +87,9 @@ export const regionStep = (h: H, choice: RegionChoice): Html =>
 					h.div(
 						[h.Class("space-y-3 text-center")],
 						[
-							h.div(
-								[h.AriaHidden(true), h.Class("mx-auto mb-6 w-fit text-primary")],
-								[icon(h, "MapleMark", { size: 56 })],
-							),
+							h.div([h.AriaHidden(true), h.Class("mx-auto mb-6 w-fit text-primary")], [icon(h, "MapleMark", { size: 56 })]),
 							eyebrow(h, { variant: "label", className: "text-primary" }, ["Before you start"]),
-							h.h1(
-								[h.Class("text-3xl font-semibold tracking-tight")],
-								["Where should your data live?"],
-							),
+							h.h1([h.Class("text-3xl font-semibold tracking-tight")], ["Where should your data live?"]),
 							h.p(
 								[h.Class("mx-auto max-w-md text-sm leading-relaxed text-muted-foreground")],
 								[
@@ -122,10 +100,7 @@ export const regionStep = (h: H, choice: RegionChoice): Html =>
 					),
 					h.fieldset(
 						[h.Class("grid min-w-0 gap-3 sm:grid-cols-2")],
-						[
-							h.legend([h.Class("sr-only")], ["Data region"]),
-							...MapleRegion.literals.map((region) => regionCard(h, choice, region)),
-						],
+						[h.legend([h.Class("sr-only")], ["Data region"]), ...MapleRegion.literals.map((region) => regionCard(h, choice, region))],
 					),
 					h.p(
 						[

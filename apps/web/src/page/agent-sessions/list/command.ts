@@ -233,13 +233,9 @@ export const MountRowClicks = Mount.defineStream("MountAgentSessionsRowClicks", 
 							shiftKey: event.shiftKey,
 							altKey: event.altKey,
 							isInsideLink: event.target.closest("a") !== null,
-							rowUrl:
-								event.target
-									.closest("tr[data-session-href]")
-									?.getAttribute("data-session-href") ?? null,
+							rowUrl: event.target.closest("tr[data-session-href]")?.getAttribute("data-session-href") ?? null,
 						})
-						if (Option.isSome(url))
-							Queue.offerUnsafe(queue, Message.ClickedSessionRow({ url: url.value }))
+						if (Option.isSome(url)) Queue.offerUnsafe(queue, Message.ClickedSessionRow({ url: url.value }))
 					}
 					element.addEventListener("click", onClick)
 					return onClick
@@ -256,10 +252,8 @@ export const VirtualizeSessions = Mount.defineStream("VirtualizeAgentSessions", 
 		viewStateChanges.pipe(
 			Stream.switchMap((viewState) =>
 				viewState === "Live" && element instanceof HTMLElement
-					? virtualize(
-							element,
-							{ overscan: 10, isMeasured: true, rows: ":scope > tr[data-index]" },
-							(window) => Message.ChangedListWindow({ window }),
+					? virtualize(element, { overscan: 10, isMeasured: true, rows: ":scope > tr[data-index]" }, (window) =>
+							Message.ChangedListWindow({ window }),
 						)
 					: Stream.never,
 			),

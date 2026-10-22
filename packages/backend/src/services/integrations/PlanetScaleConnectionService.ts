@@ -571,10 +571,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 								(yield* createIntegrationSource(
 									db,
 									orgId,
-									{
-										platform: "planetscale",
-										name: integrationSourceName.planetscale(organization),
-									},
+									{ platform: "planetscale", name: integrationSourceName.planetscale(organization) },
 									now,
 								))
 							const [target] = yield* db.run(
@@ -591,12 +588,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 							)
 							const previousSourceId = target?.sourceId ?? null
 							if (previousSourceId !== sourceId) {
-								yield* deleteSourcesOf(
-									db,
-									orgId,
-									[{ sourceId: previousSourceId }],
-									"prometheus",
-								)
+								yield* deleteSourcesOf(db, orgId, [{ sourceId: previousSourceId }], "prometheus")
 							}
 							if (claimed.length !== 1) {
 								return yield* Effect.fail(

@@ -85,12 +85,9 @@ export const onboardingLayout = <M>(
 			h.div(
 				[
 					h.AriaHidden(true),
-					h.Class(
-						"pointer-events-none absolute inset-0 [mask-image:linear-gradient(to_bottom,black,transparent_60%)]",
-					),
+					h.Class("pointer-events-none absolute inset-0 [mask-image:linear-gradient(to_bottom,black,transparent_60%)]"),
 					h.Style({
-						"background-image":
-							"radial-gradient(circle at 1px 1px, hsl(var(--foreground) / 0.04) 1px, transparent 0)",
+						"background-image": "radial-gradient(circle at 1px 1px, hsl(var(--foreground) / 0.04) 1px, transparent 0)",
 						"background-size": "24px 24px",
 					}),
 				],
@@ -106,10 +103,7 @@ export const onboardingLayout = <M>(
 							h.span([h.Class("text-base font-semibold tracking-tight")], ["Maple"]),
 						],
 					),
-					h.div(
-						[h.Class("flex items-center gap-1.5")],
-						Array.from({ length: totalSteps }, (_, index) => stepPill(h, index < currentStep)),
-					),
+					h.div([h.Class("flex items-center gap-1.5")], Array.from({ length: totalSteps }, (_, index) => stepPill(h, index < currentStep))),
 					accountCluster(stepLabel(h, `Step ${currentStep} of ${totalSteps}`)),
 				],
 			),
@@ -151,10 +145,7 @@ export const roleStep = (h: H, state: QuickStartState): Html => {
 					h.div(
 						[h.Class("space-y-3 text-center")],
 						[
-							h.div(
-								[h.AriaHidden(true), h.Class("mx-auto mb-6 w-fit text-primary")],
-								[icon(h, "MapleMark", { size: 56 })],
-							),
+							h.div([h.AriaHidden(true), h.Class("mx-auto mb-6 w-fit text-primary")], [icon(h, "MapleMark", { size: 56 })]),
 							eyebrow(h, { variant: "label", className: "text-primary" }, ["Welcome to Maple"]),
 							h.h1([h.Class("text-3xl font-semibold tracking-tight")], ["What's your role?"]),
 							h.p(
@@ -188,11 +179,7 @@ export const roleStep = (h: H, state: QuickStartState): Html => {
 							h.AriaAtomic(true),
 							h.Class("min-h-10 text-center text-xs leading-relaxed text-muted-foreground"),
 						],
-						[
-							role === null
-								? "A little about you. Then a look inside."
-								: ONBOARDING_ROLES[role].greeting,
-						],
+						[role === null ? "A little about you. Then a look inside." : ONBOARDING_ROLES[role].greeting],
 					),
 					h.div(
 						[h.Class("flex items-center justify-end")],
@@ -233,10 +220,7 @@ export const intentStep = (h: H, state: QuickStartState): Html => {
 					h.div(
 						[h.Class("space-y-3 text-center")],
 						[
-							h.h1(
-								[h.Class("text-3xl font-semibold tracking-tight")],
-								["What do you want to see first?"],
-							),
+							h.h1([h.Class("text-3xl font-semibold tracking-tight")], ["What do you want to see first?"]),
 							h.p(
 								[h.Class("text-sm leading-relaxed text-muted-foreground")],
 								["Pick any. Setup guidance follows what you choose."],
@@ -246,10 +230,7 @@ export const intentStep = (h: H, state: QuickStartState): Html => {
 					h.fieldset(
 						[h.Class("grid min-w-0 gap-2.5 sm:grid-cols-2")],
 						[
-							h.legend(
-								[h.Class("sr-only")],
-								["Surfaces to start with — choose any that apply"],
-							),
+							h.legend([h.Class("sr-only")], ["Surfaces to start with — choose any that apply"]),
 							...ONBOARDING_INTENT_IDS.map((id) =>
 								optionCard(h, {
 									type: "checkbox",
@@ -265,9 +246,7 @@ export const intentStep = (h: H, state: QuickStartState): Html => {
 					),
 					h.div(
 						[
-							h.Class(
-								"flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2 border-b pb-5 text-xs",
-							),
+							h.Class("flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2 border-b pb-5 text-xs"),
 							h.AriaLive("polite"),
 							h.AriaAtomic(true),
 						],
@@ -343,10 +322,7 @@ export type QuickStartParts = Readonly<{
  * AnimatePresence remounts it, so no card is patched over from the previous step.
  */
 export const motionStep = <M>(h: HtmlBuilder<M>, step: string, child: Html): Html =>
-	h.div(
-		[h.Key(step), h.Class("flex flex-1 flex-col"), h.Style({ opacity: "1", transform: "none" })],
-		[child],
-	)
+	h.div([h.Key(step), h.Class("flex flex-1 flex-col"), h.Style({ opacity: "1", transform: "none" })], [child])
 
 export const view = (h: H, model: Model, parts: QuickStartParts): Html | null => {
 	const state = model.state
@@ -365,11 +341,7 @@ export const view = (h: H, model: Model, parts: QuickStartParts): Html | null =>
 				: step === "team"
 					? parts.teamStep(state)
 					: parts.planStep
-	return onboardingLayout(
-		h,
-		STEP_IDS.indexOf(step) + 1 + regionOffset,
-		STEP_IDS.length + regionOffset,
-		parts.accountCluster,
-		[motionStep(h, step, content)],
-	)
+	return onboardingLayout(h, STEP_IDS.indexOf(step) + 1 + regionOffset, STEP_IDS.length + regionOffset, parts.accountCluster, [
+		motionStep(h, step, content),
+	])
 }

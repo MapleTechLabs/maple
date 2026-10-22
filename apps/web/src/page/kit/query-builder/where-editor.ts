@@ -49,8 +49,7 @@ const suggestionsOf = <M>(h: HtmlBuilder<M>, options: WhereEditorOptions<M>) => 
 	if (ac === undefined) {
 		const onEnter = options.onEnter
 		return {
-			onKey: (key: string) =>
-				key === "Enter" && onEnter !== undefined ? Option.some(onEnter) : Option.none<M>(),
+			onKey: (key: string) => (key === "Enter" && onEnter !== undefined ? Option.some(onEnter) : Option.none<M>()),
 			mounts: [],
 			listbox: [],
 		}
@@ -73,13 +72,9 @@ const suggestionsOf = <M>(h: HtmlBuilder<M>, options: WhereEditorOptions<M>) => 
 						suggestions: autocomplete.suggestions,
 						activeIndex: caret.activeIndex,
 						anchor: caret.anchor,
-						onApply: (index) =>
-							toMessage(WhereFieldMessage.AppliedSuggestion({ fieldId, index })),
+						onApply: (index) => toMessage(WhereFieldMessage.AppliedSuggestion({ fieldId, index })),
 						keepFocus: h.OnMount(
-							Mount.mapMessage(
-								MountWhereFieldListbox({ fieldId, textareaId: ac.spec.textareaId }),
-								toMessage,
-							),
+							Mount.mapMessage(MountWhereFieldListbox({ fieldId, textareaId: ac.spec.textareaId }), toMessage),
 						),
 					}),
 				]
@@ -117,11 +112,7 @@ export const whereEditor = <M>(h: HtmlBuilder<M>, options: WhereEditorOptions<M>
 }
 
 /** The colored tokens drawn over a transparent textarea, matching its box. */
-export const highlightOverlay = <M>(
-	h: HtmlBuilder<M>,
-	whereClause: string,
-	textareaClassName: string,
-): ReadonlyArray<Html> =>
+export const highlightOverlay = <M>(h: HtmlBuilder<M>, whereClause: string, textareaClassName: string): ReadonlyArray<Html> =>
 	whereClause.length === 0
 		? []
 		: [
@@ -137,16 +128,9 @@ export const highlightOverlay = <M>(
 					],
 					[
 						h.div(
-							[
-								h.Class(
-									"px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] break-words whitespace-pre-wrap",
-								),
-							],
+							[h.Class("px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] break-words whitespace-pre-wrap")],
 							tokenizeWhereClause(whereClause).map((token) =>
-								h.span(
-									[h.Style({ color: WHERE_CLAUSE_TOKEN_COLOR[token.type] })],
-									[token.text],
-								),
+								h.span([h.Style({ color: WHERE_CLAUSE_TOKEN_COLOR[token.type] })], [token.text]),
 							),
 						),
 					],

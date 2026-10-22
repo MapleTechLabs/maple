@@ -23,9 +23,7 @@ describe("cloudflare card", () => {
 
 	test("the ingest poll re-reads the clock, so a discovering connection can turn stalled", () => {
 		const model = init({ search: { integration: "cloudflare" } }, context).model
-		expect(names(pageUpdate(model, Message.TickedCloudflareIngest()).commands)).toContain(
-			"ReadIntegrationsClock",
-		)
+		expect(names(pageUpdate(model, Message.TickedCloudflareIngest()).commands)).toContain("ReadIntegrationsClock")
 	})
 
 	test("zone sort flips the active column; a new column starts by its natural order", () => {

@@ -54,12 +54,8 @@ describe("code review settings", () => {
 	})
 
 	test("a rules save during a model save waits for it, then writes both changes", () => {
-		const settingsArgs = (result: {
-			readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }>
-		}) =>
-			(result.commands ?? [])
-				.filter((command) => command.name === "SaveCodeReviewSettings")
-				.map((command) => command.args)
+		const settingsArgs = (result: { readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> }) =>
+			(result.commands ?? []).filter((command) => command.name === "SaveCodeReviewSettings").map((command) => command.args)
 		const picked = pageUpdate(
 			loaded().model,
 			Message.GotModelSelectMessage({
@@ -68,14 +64,9 @@ describe("code review settings", () => {
 		)
 		const edited = pageUpdate(
 			picked.model,
-			Message.GotDefaultsFormMessage({
-				message: RulesForm.Message.ChangedText({ field: "instructions", value: "Be terse." }),
-			}),
+			Message.GotDefaultsFormMessage({ message: RulesForm.Message.ChangedText({ field: "instructions", value: "Be terse." }) }),
 		).model
-		const queued = pageUpdate(
-			edited,
-			Message.GotDefaultsFormMessage({ message: RulesForm.Message.ClickedSave() }),
-		)
+		const queued = pageUpdate(edited, Message.GotDefaultsFormMessage({ message: RulesForm.Message.ClickedSave() }))
 		expect(settingsArgs(queued)).toEqual([])
 		const modelSaved = pageUpdate(
 			queued.model,
@@ -107,12 +98,7 @@ describe("code review settings", () => {
 		).model
 		const saved = pageUpdate(
 			toggled,
-			Message.CompletedSetPrReview({
-				repositoryId: INFRA,
-				fullName: "acme-shop/infra",
-				isEnabled: true,
-				result: Result.void,
-			}),
+			Message.CompletedSetPrReview({ repositoryId: INFRA, fullName: "acme-shop/infra", isEnabled: true, result: Result.void }),
 		)
 		expect(names(saved.commands)).toEqual(["FetchCodeReviewSettingsStatus"])
 		const late = pageUpdate(
@@ -144,22 +130,14 @@ describe("code review settings", () => {
 	})
 
 	test("a failed save rolls back to the last confirmed value, not the stale read", () => {
-		const saves = (result: {
-			readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }>
-		}) =>
-			(result.commands ?? [])
-				.filter((command) => command.name === "SaveCodeReviewSettings")
-				.map((command) => command.args)
-		const form = (model: Model, message: RulesForm.Message) =>
-			pageUpdate(model, Message.GotDefaultsFormMessage({ message }))
+		const saves = (result: { readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> }) =>
+			(result.commands ?? []).filter((command) => command.name === "SaveCodeReviewSettings").map((command) => command.args)
+		const form = (model: Model, message: RulesForm.Message) => pageUpdate(model, Message.GotDefaultsFormMessage({ message }))
 		const typed = (model: Model, value: string) =>
 			form(model, RulesForm.Message.ChangedText({ field: "instructions", value })).model
 		// A lands, then B goes out before the settings re-read answers, with a model pick queued behind it.
 		const savingA = form(typed(loaded().model, "Rules A."), RulesForm.Message.ClickedSave()).model
-		const savedA = pageUpdate(
-			savingA,
-			Message.CompletedSaveSettings({ purpose: "defaults", label: "", result: Result.void }),
-		)
+		const savedA = pageUpdate(savingA, Message.CompletedSaveSettings({ purpose: "defaults", label: "", result: Result.void }))
 		const savingB = form(typed(savedA.model, "Rules B."), RulesForm.Message.ClickedSave()).model
 		const picked = pageUpdate(
 			savingB,
@@ -169,11 +147,7 @@ describe("code review settings", () => {
 		).model
 		const failedB = pageUpdate(
 			picked,
-			Message.CompletedSaveSettings({
-				purpose: "defaults",
-				label: "",
-				result: Result.fail(toLoadFailure("boom")),
-			}),
+			Message.CompletedSaveSettings({ purpose: "defaults", label: "", result: Result.fail(toLoadFailure("boom")) }),
 		)
 		expect(saves(failedB)).toEqual([
 			{
@@ -206,11 +180,7 @@ describe("code review settings", () => {
 		).model
 		const late = pageUpdate(
 			onB,
-			Message.CompletedSaveRepoConfig({
-				repositoryId: INFRA,
-				fullName: "acme-shop/infra",
-				result: Result.void,
-			}),
+			Message.CompletedSaveRepoConfig({ repositoryId: INFRA, fullName: "acme-shop/infra", result: Result.void }),
 		)
 		expect(late.model.configuring).toBe(WEB)
 		expect(late.model.repoConfig.key).toBe(onB.repoConfig.key)
@@ -242,24 +212,13 @@ describe("code review settings, entered from another tab", () => {
 	test("a status re-read after a switch is still handed over to the next entry", () => {
 		const saved = pageUpdate(
 			loaded().model,
-			Message.CompletedSetPrReview({
-				repositoryId: INFRA,
-				fullName: "acme-shop/infra",
-				isEnabled: true,
-				result: Result.void,
-			}),
+			Message.CompletedSetPrReview({ repositoryId: INFRA, fullName: "acme-shop/infra", isEnabled: true, result: Result.void }),
 		).model
 		const reread = pageUpdate(
 			saved,
-			Message.CompletedFetchStatus({
-				key: saved.githubStatus.key ?? "",
-				result: Result.succeed(status),
-			}),
+			Message.CompletedFetchStatus({ key: saved.githubStatus.key ?? "", result: Result.succeed(status) }),
 		).model
-		const entered = init({}, context, {
-			retained: { ...emptyRetained, ...retainedOf(reread, NOW) },
-			nowMs: NOW,
-		})
+		const entered = init({}, context, { retained: { ...emptyRetained, ...retainedOf(reread, NOW) }, nowMs: NOW })
 		expect(entered.model.repoList.pinned).toEqual([WEB])
 	})
 })

@@ -26,10 +26,7 @@ type H = HtmlBuilder<Message>
 const railSection = (h: H, title: string, aside: Html | undefined, children: ReadonlyArray<Html>): Html =>
 	h.section(
 		[h.Class("flex flex-col gap-3 border-border border-t pt-6 first:border-t-0 first:pt-0")],
-		[
-			sectionHeading(h, { variant: "eyebrow", as: "h3", title, actions: aside, className: "mb-0" }),
-			...children,
-		],
+		[sectionHeading(h, { variant: "eyebrow", as: "h3", title, actions: aside, className: "mb-0" }), ...children],
 	)
 
 const sharePercent = (value: number, total: number): number => (total <= 0 ? 0 : (value / total) * 100)

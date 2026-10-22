@@ -146,7 +146,9 @@ export function Flamegraph({
 	const handleReset = () => setFocusedSpan(null)
 
 	if (rootSpans.length === 0) {
-		return <EmptyMessage className="border p-8 text-sm">No spans found for this trace</EmptyMessage>
+		return (
+			<EmptyMessage className="border p-8 text-sm">No spans found for this trace</EmptyMessage>
+		)
 	}
 
 	const ROW_HEIGHT = 32
@@ -276,10 +278,16 @@ export function Flamegraph({
 			<div className="flex items-center justify-between border-t bg-muted/30 px-3 py-2 text-2xs text-muted-foreground">
 				<div className="flex items-center gap-3 text-foreground/30">
 					<span>
-						<Kbd className="h-4 font-mono text-3xs">Click</Kbd> select
+						<Kbd className="h-4 font-mono text-3xs">
+							Click
+						</Kbd>{" "}
+						select
 					</span>
 					<span>
-						<Kbd className="h-4 font-mono text-3xs">Shift+Click</Kbd> zoom
+						<Kbd className="h-4 font-mono text-3xs">
+							Shift+Click
+						</Kbd>{" "}
+						zoom
 					</span>
 				</div>
 				<div className="flex items-center gap-3">

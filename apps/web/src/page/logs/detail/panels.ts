@@ -117,9 +117,7 @@ export const FetchContext = Command.define("FetchLogContext", {
 	},
 	messages: [Message.CompletedFetchContext],
 	execute: ({ key, side, log, instance, pinnedNamespace }) =>
-		Effect.suspend(() =>
-			listLogs({ data: contextInput(log, instance, side, pinnedNamespace) ?? {} }),
-		).pipe(
+		Effect.suspend(() => listLogs({ data: contextInput(log, instance, side, pinnedNamespace) ?? {} })).pipe(
 			Effect.map((response) => response.data),
 			Effect.mapError(toLoadFailure),
 			Effect.result,

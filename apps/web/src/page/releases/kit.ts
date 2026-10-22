@@ -85,12 +85,7 @@ export const commitRangesKey = (ranges: Iterable<Readonly<{ base: string; head: 
 		.join(",")
 
 /** `CommitAvatar`. TODO(avatar-error): a broken avatar URL does not fall back to initials. */
-export const commitAvatar = <M>(
-	h: HtmlBuilder<M>,
-	url: string | null,
-	name: string,
-	isCompact = true,
-): Html => {
+export const commitAvatar = <M>(h: HtmlBuilder<M>, url: string | null, name: string, isCompact = true): Html => {
 	const size = isCompact ? "size-5" : "size-7"
 	return url === null
 		? h.div(

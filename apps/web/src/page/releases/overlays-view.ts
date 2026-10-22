@@ -43,16 +43,11 @@ export const releaseHealthPill = <M>(
 						pill: true,
 						mono: true,
 						className: cn("cursor-default font-normal", PILL_CLASS[health], className),
-						attributes: [
-							...trigger(triggerId),
-							...childAttributes([h.DataAttribute("slot", "tooltip-trigger")]),
-						],
+						attributes: [...trigger(triggerId), ...childAttributes([h.DataAttribute("slot", "tooltip-trigger")])],
 					},
 					[
 						label ?? RELEASE_HEALTH_LABEL[health],
-						...(portal !== null && overlays.model.healthTooltip.triggerId === triggerId
-							? [portal]
-							: []),
+						...(portal !== null && overlays.model.healthTooltip.triggerId === triggerId ? [portal] : []),
 					],
 				),
 		},
@@ -77,16 +72,11 @@ export const commitTrigger = <M>(
 		viewInputs: {
 			triggerIds: [id],
 			className: "w-80 p-0",
-			toContent: () => [
-				commitDetailBody(h, overlays.model.commitDetails[sha] ?? AsyncData.Loading(), overlays.clock),
-			],
+			toContent: () => [commitDetailBody(h, overlays.model.commitDetails[sha] ?? AsyncData.Loading(), overlays.clock)],
 			toView: ({ triggerFor, portal }) =>
 				h.span(
 					[h.Class(cn("cursor-default", className)), ...triggerFor(id)],
-					[
-						...children,
-						...(portal !== null && overlays.model.commitCard.triggerId === id ? [portal] : []),
-					],
+					[...children, ...(portal !== null && overlays.model.commitCard.triggerId === id ? [portal] : [])],
 				),
 		},
 	})

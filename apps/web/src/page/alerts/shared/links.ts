@@ -20,7 +20,8 @@ export const ruleHref = (rawRuleId: string, search: typeof AlertRuleSearch.Type 
 export const incidentHref = (incidentId: string): string =>
 	hrefOf(AppRoute.AlertIncident({ incidentId, search: {} }))
 
-export const alertsHref = (search: typeof AlertsSearch.Type): string => hrefOf(AppRoute.Alerts({ search }))
+export const alertsHref = (search: typeof AlertsSearch.Type): string =>
+	hrefOf(AppRoute.Alerts({ search }))
 
 export const createHref = (search: typeof AlertsCreateSearch.Type): string =>
 	hrefOf(AppRoute.AlertsCreate({ search }))

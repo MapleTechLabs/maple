@@ -130,8 +130,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			model: { ...model, isAdmin, seenKey: seenKey === "" ? null : seenKey, isSeen },
 		}),
 		GotPopoverMessage: ({ message: child }) => popoverStep(model, child),
-		ClickedPointer: () =>
-			model.popover.isOpen ? { model } : popoverStep(model, Popover.Message.ClickedTrigger()),
+		ClickedPointer: () => (model.popover.isOpen ? { model } : popoverStep(model, Popover.Message.ClickedTrigger())),
 		ClickedGotIt: () => markSeen(model),
 		ClickedStep: () => popoverStep(model, Popover.Message.ClickedClose()),
 		ClickedDone: () => popoverStep(model, Popover.Message.ClickedClose()),
@@ -143,9 +142,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			model: { ...model, isClaimPending: false, isJustClaimed: true },
 			commands: [LoadChecklist()],
 		}),
-		FailedClaim: ({ message: failure }) => ({
-			model: { ...model, isClaimPending: false, claimError: failure },
-		}),
+		FailedClaim: ({ message: failure }) => ({ model: { ...model, isClaimPending: false, claimError: failure } }),
 		TickedClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		CompletedSaveSeen: () => ({ model }),
 	})
@@ -162,9 +159,5 @@ export const ClaimReward = Command.define("ClaimOnboardingReward", {
 		// `onboarding_reward_claimed` once the credit landed.
 		yield* trackProduct("onboarding_reward_claimed")
 		return Message.SucceededClaim()
-	}).pipe(
-		Effect.catch((error) =>
-			Effect.succeed(Message.FailedClaim({ message: displayError(error).message })),
-		),
-	),
+	}).pipe(Effect.catch((error) => Effect.succeed(Message.FailedClaim({ message: displayError(error).message })))),
 })

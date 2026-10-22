@@ -60,16 +60,12 @@ export const RequestPreviewTicket = Command.define("RequestPreviewTicket", {
 	execute: ({ key }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiClient
-			const result = yield* client.authPublic.previewSignIn({
-				payload: new PreviewSignInRequest({ key }),
-			})
+			const result = yield* client.authPublic.previewSignIn({ payload: new PreviewSignInRequest({ key }) })
 			return Message.SucceededRequestPreviewTicket({ ticket: result.ticket })
 		}).pipe(
 			Effect.catch((error) =>
 				Effect.succeed(
-					Message.FailedRequestPreviewTicket({
-						message: endpointMessage(error, "Preview sign-in failed"),
-					}),
+					Message.FailedRequestPreviewTicket({ message: endpointMessage(error, "Preview sign-in failed") }),
 				),
 			),
 		),

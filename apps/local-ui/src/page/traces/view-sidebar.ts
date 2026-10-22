@@ -2,11 +2,7 @@ import { getServiceColor } from "@maple/ui/lib/colors"
 import { button } from "@maple/web/ui/button"
 import { filterSection, singleCheckboxFilter } from "@maple/web/ui/filters/filter-section"
 import type * as FilterSections from "@maple/web/ui/filters/filter-sections"
-import {
-	filterSidebarBody,
-	filterSidebarFrame,
-	filterSidebarHeader,
-} from "@maple/web/ui/filters/filter-sidebar"
+import { filterSidebarBody, filterSidebarFrame, filterSidebarHeader } from "@maple/web/ui/filters/filter-sidebar"
 import { formatValue } from "@maple/web/ui/filters/range-format"
 import { type RangePreset, rangeFilterSection } from "@maple/web/ui/filters/range-filter-section"
 import { Option } from "effect"
@@ -26,12 +22,8 @@ const durationPresets = (maybeStats: Option.Option<DurationStats>): ReadonlyArra
 	const p50 = Math.round(stats?.p50DurationMs ?? 0)
 	const p95 = Math.round(stats?.p95DurationMs ?? 0)
 	return [
-		...(stats !== null && stats.p50DurationMs > 0
-			? [{ key: "p50", label: "> p50", value: formatValue(p50, "ms"), min: p50 }]
-			: []),
-		...(stats !== null && stats.p95DurationMs > 0
-			? [{ key: "p95", label: "> p95", value: formatValue(p95, "ms"), min: p95 }]
-			: []),
+		...(stats !== null && stats.p50DurationMs > 0 ? [{ key: "p50", label: "> p50", value: formatValue(p50, "ms"), min: p50 }] : []),
+		...(stats !== null && stats.p95DurationMs > 0 ? [{ key: "p95", label: "> p95", value: formatValue(p95, "ms"), min: p95 }] : []),
 		{ key: "1s", label: "> 1s", min: 1000 },
 	]
 }
@@ -57,12 +49,7 @@ const facet = (
 		onToggle: (name) => Message.ToggledFacetOption({ param, name }),
 	})
 
-const durationSection = (
-	h: HtmlBuilder<Message>,
-	model: Model,
-	filters: TraceFilters,
-	maybeStats: Option.Option<DurationStats>,
-) =>
+const durationSection = (h: HtmlBuilder<Message>, model: Model, filters: TraceFilters, maybeStats: Option.Option<DurationStats>) =>
 	rangeFilterSection(h, {
 		title: "Duration",
 		unit: "ms",
@@ -94,23 +81,13 @@ const spanScopeSidebar = (h: HtmlBuilder<Message>, filters: TraceFilters): Html 
 			}),
 			button(
 				h,
-				{
-					variant: "outline",
-					size: "sm",
-					className: "mt-2 w-full",
-					attributes: [h.OnClick(Message.ClickedExitSpanScope())],
-				},
+				{ variant: "outline", size: "sm", className: "mt-2 w-full", attributes: [h.OnClick(Message.ClickedExitSpanScope())] },
 				["Filter root spans instead"],
 			),
 		]),
 	])
 
-export const sidebar = (
-	h: HtmlBuilder<Message>,
-	model: Model,
-	filters: TraceFilters,
-	activeFilterCount: number,
-): Html => {
+export const sidebar = (h: HtmlBuilder<Message>, model: Model, filters: TraceFilters, activeFilterCount: number): Html => {
 	if (filters.scope === "spans") return spanScopeSidebar(h, filters)
 	const maybeFacets = AsyncData.getData(model.facets.data)
 	const facets = Option.getOrNull(maybeFacets)
@@ -124,17 +101,9 @@ export const sidebar = (
 		}),
 		facet(h, model, "Environment", "env", facets?.deploymentEnvs ?? [], filters.env),
 		facet(h, model, "Namespace", "ns", facets?.namespaces ?? [], filters.ns, { isSearchable: true }),
-		facet(h, model, "Service", "service", services, filters.service, {
-			isSearchable: true,
-			colorOf: getServiceColor,
-		}),
+		facet(h, model, "Service", "service", services, filters.service, { isSearchable: true, colorOf: getServiceColor }),
 		facet(h, model, "Root span", "span", facets?.spanNames ?? [], filters.span, { isSearchable: true }),
-		durationSection(
-			h,
-			model,
-			filters,
-			Option.flatMap(maybeFacets, (loaded) => loaded.maybeDurationStats),
-		),
+		durationSection(h, model, filters, Option.flatMap(maybeFacets, (loaded) => loaded.maybeDurationStats)),
 		facet(h, model, "HTTP method", "method", facets?.httpMethods ?? [], filters.method),
 		facet(h, model, "Status code", "status", facets?.httpStatusCodes ?? [], filters.status),
 	]

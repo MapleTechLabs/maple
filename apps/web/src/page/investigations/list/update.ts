@@ -20,15 +20,7 @@ import {
 	ReadInvestigationsIsAdmin,
 	WaitInvestigationsSearch,
 } from "./command"
-import {
-	isLoadingMoreOf,
-	KIND_FILTER_VALUES,
-	nextCursorOf,
-	SORT_OPTIONS,
-	type Search,
-	sortValueOf,
-	viewOf,
-} from "./derive"
+import { isLoadingMoreOf, KIND_FILTER_VALUES, nextCursorOf, SORT_OPTIONS, type Search, sortValueOf, viewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -37,8 +29,7 @@ type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
 const VIEWS = ["active", "history"]
 
-const firstPageKey = (context: PageContext) =>
-	requestKey(context.orgId, "investigations.list", { query: { limit: PAGE_SIZE } })
+const firstPageKey = (context: PageContext) => requestKey(context.orgId, "investigations.list", { query: { limit: PAGE_SIZE } })
 
 const loadFirstPage = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const key = firstPageKey(context)
@@ -88,24 +79,15 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Investigations({ search }))
 
-export const routeChanged = (
-	model: Model,
-	route: { readonly search: Search },
-	_context: PageContext,
-): Return => {
+export const routeChanged = (model: Model, route: { readonly search: Search }, _context: PageContext): Return => {
 	const search = route.search
 	if (searchHref(model.search) === searchHref(search)) return { model }
 	return {
 		model: {
 			...model,
 			search,
-			searchDraft:
-				(model.searchDraft.trim() || undefined) === search.q ? model.searchDraft : (search.q ?? ""),
-			tabs: {
-				...model.tabs,
-				selected: viewOf(search),
-				highlightedIndex: VIEWS.indexOf(viewOf(search)),
-			},
+			searchDraft: (model.searchDraft.trim() || undefined) === search.q ? model.searchDraft : (search.q ?? ""),
+			tabs: { ...model.tabs, selected: viewOf(search), highlightedIndex: VIEWS.indexOf(viewOf(search)) },
 			kindSelect: { ...model.kindSelect, value: search.kind ?? "all" },
 			sortSelect: { ...model.sortSelect, value: sortValueOf(search) },
 		},
@@ -144,9 +126,7 @@ const create = (model: Model, title: string): Return =>
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedFetchFirstPage: ({ key, result }) => ({
-			model: { ...model, firstPage: Keyed.accept(model.firstPage, key, result) },
-		}),
+		CompletedFetchFirstPage: ({ key, result }) => ({ model: { ...model, firstPage: Keyed.accept(model.firstPage, key, result) } }),
 		CompletedFetchMorePage: ({ key, cursor, result }) => ({
 			model: {
 				...model,
@@ -163,20 +143,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetry: () => loadFirstPage(model, context, "Refresh"),
 		ClickedLoadMore: () => {
 			const cursor = nextCursorOf(model)
-			if (
-				cursor === null ||
-				isLoadingMoreOf(model) ||
-				model.morePages.some((more) => more.cursor === cursor)
-			)
-				return { model }
-			const key = requestKey(context.orgId, "investigations.list", {
-				query: { limit: PAGE_SIZE, cursor },
-			})
+			if (cursor === null || isLoadingMoreOf(model) || model.morePages.some((more) => more.cursor === cursor)) return { model }
+			const key = requestKey(context.orgId, "investigations.list", { query: { limit: PAGE_SIZE, cursor } })
 			return {
-				model: {
-					...model,
-					morePages: [...model.morePages, { cursor, page: { key, data: AsyncData.Loading() } }],
-				},
+				model: { ...model, morePages: [...model.morePages, { cursor, page: { key, data: AsyncData.Loading() } }] },
 				commands: [FetchMoreInvestigations({ key, cursor })],
 			}
 		},
@@ -188,32 +158,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				// The create invalidates the `investigations` reactivity key, so the list is re-read as it leaves.
 				onSuccess: (id) => ({
 					...loadFirstPage({ ...model, isCreating: false }, context, "Refresh"),
-					outMessage: PageOutMessage.RequestedNavigation({
-						url: hrefOf(AppRoute.Investigation({ id, search: {} })),
-						isReplace: false,
-					}),
+					outMessage: PageOutMessage.RequestedNavigation({ url: hrefOf(AppRoute.Investigation({ id, search: {} })), isReplace: false }),
 				}),
 				onFailure: (failure) => ({
 					model: { ...model, isCreating: false },
-					outMessage: PageOutMessage.RequestedToast({
-						type: "error",
-						title: failure.title,
-						description: failure.message,
-					}),
+					outMessage: PageOutMessage.RequestedToast({ type: "error", title: failure.title, description: failure.message }),
 				}),
 			}),
 		ChangedSearchDraft: ({ value }) => {
 			const searchGeneration = model.searchGeneration + 1
-			return {
-				model: { ...model, searchDraft: value, searchGeneration },
-				commands: [WaitInvestigationsSearch({ generation: searchGeneration })],
-			}
+			return { model: { ...model, searchDraft: value, searchGeneration }, commands: [WaitInvestigationsSearch({ generation: searchGeneration })] }
 		},
 		ElapsedSearchDebounce: ({ generation }) => {
 			const q = model.searchDraft.trim() || undefined
-			return generation === model.searchGeneration && q !== model.search.q
-				? navigate(model, { ...model.search, q })
-				: { model }
+			return generation === model.searchGeneration && q !== model.search.q ? navigate(model, { ...model.search, q }) : { model }
 		},
 		ClickedClearFilters: () => navigate(model, { ...model.search, kind: undefined, q: undefined }),
 		ClickedRow: ({ id }) => ({
@@ -229,16 +187,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotTabsMessage: ({ message: inner }) => {
 			const next = Tabs.update(model.tabs, inner)
 			const updated = { ...model, tabs: next.model }
-			const commands: Commands = Command.mapMessages(next.commands ?? [], (tabs) =>
-				Message.GotTabsMessage({ message: tabs }),
-			)
+			const commands: Commands = Command.mapMessages(next.commands ?? [], (tabs) => Message.GotTabsMessage({ message: tabs }))
 			if (inner._tag !== "ClickedTab") return { model: updated, commands }
 			const value = model.tabs.values[inner.index]
 			if (value === undefined || value === model.tabs.selected) return { model: updated, commands }
-			return {
-				...navigate(updated, { ...model.search, view: value === "history" ? "history" : undefined }),
-				commands,
-			}
+			return { ...navigate(updated, { ...model.search, view: value === "history" ? "history" : undefined }), commands }
 		},
 		GotKindSelectMessage: ({ message: inner }) =>
 			selectStep(
@@ -259,11 +212,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(next, value) => {
 					const [key, direction] = value.split(":")
 					const sort = key === "severity" || key === "confidence" ? key : undefined
-					return navigate(next, {
-						...model.search,
-						sort,
-						dir: direction === "desc" ? undefined : "asc",
-					})
+					return navigate(next, { ...model.search, sort, dir: direction === "desc" ? undefined : "asc" })
 				},
 			),
 	})

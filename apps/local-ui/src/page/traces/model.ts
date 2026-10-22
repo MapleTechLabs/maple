@@ -21,10 +21,7 @@ export const TraceRow = Schema.Struct({
 export type TraceRow = typeof TraceRow.Type
 
 /** The paged list's data: every loaded page, and whether a full last page asks for more. */
-export const TracePages = Schema.Struct({
-	pages: Schema.Array(Schema.Array(TraceRow)),
-	hasNextPage: Schema.Boolean,
-})
+export const TracePages = Schema.Struct({ pages: Schema.Array(Schema.Array(TraceRow)), hasNextPage: Schema.Boolean })
 export type TracePages = typeof TracePages.Type
 
 export const FacetOption = Schema.Struct({ name: Schema.String, count: Schema.Number })

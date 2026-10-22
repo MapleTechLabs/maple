@@ -48,9 +48,7 @@ export const MountNamespaceSearch = Mount.defineStream("MountNamespaceSearch", {
 	execute: ({ element }) =>
 		Stream.callback<typeof Message.CompletedMountNamespaceSearch.Type>((queue) =>
 			containSearchKeys(element).pipe(
-				Effect.andThen(
-					Effect.sync(() => Queue.offerUnsafe(queue, Message.CompletedMountNamespaceSearch())),
-				),
+				Effect.andThen(Effect.sync(() => Queue.offerUnsafe(queue, Message.CompletedMountNamespaceSearch()))),
 				Effect.andThen(Effect.never),
 			),
 		),

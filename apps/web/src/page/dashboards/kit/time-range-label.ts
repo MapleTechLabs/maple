@@ -12,12 +12,7 @@ const epochOf = (value: string): number | null =>
 	Option.getOrNull(Option.map(DateTime.make(normalizeTimestampInput(value)), DateTime.toEpochMillis))
 
 /** An absolute window: "Last N units" when it ends now, else both ends in the zone. */
-export const timeRangeDisplay = (
-	startTime: string,
-	endTime: string,
-	timeZone: string,
-	nowMs: number,
-): string => {
+export const timeRangeDisplay = (startTime: string, endTime: string, timeZone: string, nowMs: number): string => {
 	const start = epochOf(startTime)
 	const end = epochOf(endTime)
 	if (start === null || end === null) return `${startTime} - ${endTime}`
@@ -33,8 +28,7 @@ export const timeRangeDisplay = (
 		if (weeks < 5) return plural(weeks, "week")
 		return plural(Math.round(days / 30), "month")
 	}
-	const format = (epochMs: number) =>
-		formatTimestampInTimezone(new Date(epochMs), { timeZone, style: "range" })
+	const format = (epochMs: number) => formatTimestampInTimezone(new Date(epochMs), { timeZone, style: "range" })
 	return `${format(start)} - ${format(end)}`
 }
 

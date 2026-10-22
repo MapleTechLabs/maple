@@ -205,7 +205,8 @@ sdk.start();`,
 			},
 			{
 				title: "gRPC services",
-				description: "Client and server gRPC spans with service name, method, and status attributes.",
+				description:
+					"Client and server gRPC spans with service name, method, and status attributes.",
 			},
 			{
 				title: "Logs with trace context",

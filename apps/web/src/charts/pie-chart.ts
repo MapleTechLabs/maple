@@ -163,29 +163,21 @@ const donutCenterTotal = (
 			if (holeRadius <= CENTER_TOTAL_MIN_INNER_R) return h.empty
 			return h.div(
 				[
-					h.Class(
-						"absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center leading-none",
-					),
+					h.Class("absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center leading-none"),
 					h.Style({ left: `${rect.x + rect.width / 2}px`, top: `${rect.y + rect.height / 2}px` }),
 				],
 				[
 					h.span(
 						[
 							h.Class("font-semibold text-foreground tabular-nums"),
-							h.Style({
-								"font-size": `${Math.min(22, holeRadius * 0.6)}px`,
-								"letter-spacing": "-0.02em",
-							}),
+							h.Style({ "font-size": `${Math.min(22, holeRadius * 0.6)}px`, "letter-spacing": "-0.02em" }),
 						],
 						[fmtCenterTotal(total, unit)],
 					),
 					h.span(
 						[
 							h.Class("pt-1 text-muted-foreground uppercase"),
-							h.Style({
-								"font-size": `${Math.min(10, holeRadius * 0.28)}px`,
-								"letter-spacing": "0.04em",
-							}),
+							h.Style({ "font-size": `${Math.min(10, holeRadius * 0.28)}px`, "letter-spacing": "0.04em" }),
 						],
 						["total"],
 					),
@@ -273,10 +265,7 @@ export const view = Submodel.defineView<Model, Message, PieChartInputs>((model, 
 				legend,
 				legendPlacement: tableLegend ? "right" : "bottom",
 				...(inputs.donut === true
-					? {
-							reportPlot: true,
-							overlay: donutCenterTotal(h, model, total, unit, inputs.innerRadius),
-						}
+					? { reportPlot: true, overlay: donutCenterTotal(h, model, total, unit, inputs.innerRadius) }
 					: undefined),
 				tooltipBody: (portal) =>
 					Option.flatMap(model.tooltip, (tooltip) => tooltipBody(h, tooltip, unit, portal)),

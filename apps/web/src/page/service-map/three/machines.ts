@@ -1,5 +1,9 @@
 import { fade, type InkPalette, type MachineKind } from "../../../components/service-map/three/appearance"
-import { health, HEALTH_COLOR, type SpatialView } from "../../../components/service-map/three/spatial-layout"
+import {
+	health,
+	HEALTH_COLOR,
+	type SpatialView,
+} from "../../../components/service-map/three/spatial-layout"
 import type { Node3D } from "../../../components/service-map/three/types"
 import * as THREE from "three"
 import { resolveMachineBadge } from "./badge-art"

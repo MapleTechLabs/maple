@@ -66,8 +66,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 		}),
 		/** The destination dialog's workspace connect popup (`useChatWorkspaceConnect`). */
 		destinationChatConnect: entry(ChatConnectStream.Dependencies.fields, {
-			modelToDependencies: ({ model }) =>
-				DestinationDialog.chatConnectDependencies(model.destinationDialog),
+			modelToDependencies: ({ model }) => DestinationDialog.chatConnectDependencies(model.destinationDialog),
 			dependenciesToStream: (dependencies) =>
 				Stream.map(DestinationDialog.chatConnectStream(dependencies), (message) =>
 					Message.GotDestinationDialogMessage({ message }),
@@ -80,9 +79,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: () =>
 					Stream.tick(CLOCK_TICK).pipe(
 						Stream.drop(1),
-						Stream.mapEffect(() =>
-							Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-						),
+						Stream.mapEffect(() => Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs }))),
 					),
 			},
 		),

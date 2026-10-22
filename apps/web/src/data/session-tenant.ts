@@ -40,9 +40,7 @@ export const makeSessionTenantCache = (
 			})
 
 		return {
-			get: Effect.flatMap(token, (forToken) =>
-				Effect.flatMap(entryFor(forToken), (entry) => Deferred.await(entry.result)),
-			),
+			get: Effect.flatMap(token, (forToken) => Effect.flatMap(entryFor(forToken), (entry) => Deferred.await(entry.result))),
 		}
 	})
 
@@ -50,10 +48,9 @@ export const makeSessionTenantCache = (
  * `retainedQuery("auth", "session", {})`: one `GET /api/auth/session` per session token, shared by
  * every reader (the shell's tenant lookup, the alerts pages' admin check).
  */
-export class SessionTenant extends Context.Service<
-	SessionTenant,
-	{ readonly get: Effect.Effect<Tenant, unknown> }
->()("@maple/web/SessionTenant") {
+export class SessionTenant extends Context.Service<SessionTenant, { readonly get: Effect.Effect<Tenant, unknown> }>()(
+	"@maple/web/SessionTenant",
+) {
 	static readonly layer = Layer.effect(
 		this,
 		Effect.gen(function* () {

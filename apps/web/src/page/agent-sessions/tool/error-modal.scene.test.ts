@@ -72,9 +72,9 @@ describe("agent tool error modal", () => {
 		expect(names(opened.commands)).toEqual(
 			expect.arrayContaining(["FetchAgentToolErrorDetail", "FetchAgentToolErrorSamples"]),
 		)
-		expect(names(pageUpdate(opened.model, modal(ErrorModal.Message.ClickedCopyLink())).commands)).toEqual(
-			["CopyAgentToolErrorLink"],
-		)
+		expect(names(pageUpdate(opened.model, modal(ErrorModal.Message.ClickedCopyLink())).commands)).toEqual([
+			"CopyAgentToolErrorLink",
+		])
 	})
 
 	test("a stale ?error= the window no longer holds opens nothing and reads nothing", () => {
@@ -92,10 +92,7 @@ describe("agent tool error modal", () => {
 			modal(
 				ErrorModal.Message.CompletedFetchSamples({
 					key,
-					result: Result.succeed({
-						occurrences: [occurrence("a"), occurrence("b")],
-						nextCursor: cursor,
-					}),
+					result: Result.succeed({ occurrences: [occurrence("a"), occurrence("b")], nextCursor: cursor }),
 				}),
 			),
 		).model
@@ -108,13 +105,8 @@ describe("agent tool error modal", () => {
 
 	test("↓ opens the next group, dropping the narrowing; Close drops the group from the URL", () => {
 		const opened = withErrors({ error: "42", session: "s1" }).model
-		expect(
-			pageUpdate(opened, modal(ErrorModal.Message.PressedModalKey({ key: "StepDown" }))).outMessage,
-		).toEqual(
-			PageOutMessage.RequestedNavigation({
-				url: "/agent-sessions/tools/Bash?error=%2243%22",
-				isReplace: false,
-			}),
+		expect(pageUpdate(opened, modal(ErrorModal.Message.PressedModalKey({ key: "StepDown" }))).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/agent-sessions/tools/Bash?error=%2243%22", isReplace: false }),
 		)
 		const closed = pageUpdate(opened, modal(ErrorModal.Message.ClickedClose()))
 		expect(closed.outMessage).toEqual(
@@ -143,10 +135,7 @@ describe("agent tool error modal", () => {
 			),
 		).model
 		const reloaded = pageUpdate(answered, Message.ClickedReload()).model
-		const resolved = pageUpdate(
-			reloaded,
-			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" }),
-		)
+		const resolved = pageUpdate(reloaded, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" }))
 		expect(names(resolved.commands)).toContain("FetchAgentToolErrorDetail")
 	})
 })

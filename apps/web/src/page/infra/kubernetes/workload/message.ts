@@ -50,8 +50,7 @@ export const FetchSummary = Command.define("FetchInfraWorkloadSummary", {
 export const FetchPods = Command.define("FetchInfraWorkloadPods", {
 	args: { key: Schema.String, input: PodsInput },
 	messages: [Message.CompletedFetchPods],
-	execute: ({ key, input }) =>
-		Effect.map(fetchPods(input), (result) => Message.CompletedFetchPods({ key, result })),
+	execute: ({ key, input }) => Effect.map(fetchPods(input), (result) => Message.CompletedFetchPods({ key, result })),
 })
 
 export const SeriesInput = Schema.Struct({

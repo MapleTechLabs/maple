@@ -253,11 +253,14 @@ const sessionCell = (h: H, row: DisplayRow, context: RowContext): Html => {
 						row,
 						context,
 						"ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @min-[400px]/page:hidden",
-					),
+									),
 				],
 			),
 			h.div(
-				[h.Class("mt-0.5 flex min-w-0 items-baseline gap-1.5 text-xs"), ...triggerAttributes(h)],
+				[
+					h.Class("mt-0.5 flex min-w-0 items-baseline gap-1.5 text-xs"),
+					...triggerAttributes(h),
+				],
 				[
 					h.span(
 						[h.Class("shrink-0 text-muted-foreground/70")],
@@ -378,22 +381,28 @@ const errorChips = (h: H, row: DisplayRow): Html => {
 		[
 			...(row.turnErrorCount > 0
 				? [
-						errorChip(h, {
-							iconName: "FaceRobotIcon",
-							count: row.turnErrorCount,
-							noun: "turn",
-							className: TURN_CHIP,
-						}),
+						errorChip(
+							h,
+							{
+								iconName: "FaceRobotIcon",
+								count: row.turnErrorCount,
+								noun: "turn",
+								className: TURN_CHIP,
+							},
+						),
 					]
 				: []),
 			...(row.toolErrorCount > 0
 				? [
-						errorChip(h, {
-							iconName: "GearIcon",
-							count: row.toolErrorCount,
-							noun: "tool",
-							className: TOOL_CHIP,
-						}),
+						errorChip(
+							h,
+							{
+								iconName: "GearIcon",
+								count: row.toolErrorCount,
+								noun: "tool",
+								className: TOOL_CHIP,
+							},
+						),
 					]
 				: []),
 			...(classified === 0 && other > 0
@@ -491,23 +500,23 @@ export const sessionsTable = (
 					tableBody(
 						h,
 						[
-							...windowRows(h, options.rows, options.context, options.virtual?.window),
-							...(options.isLoadingMore
-								? [
-										h.tr(
-											[h.Key("loading")],
-											[
-												h.td(
-													[
-														h.Attribute("colspan", String(COLUMNS.length)),
-														h.Class("p-2"),
-													],
-													[loadingMoreRow(h, "Loading more sessions…")],
-												),
-											],
-										),
-									]
-								: []),
+						...windowRows(h, options.rows, options.context, options.virtual?.window),
+						...(options.isLoadingMore
+							? [
+									h.tr(
+										[h.Key("loading")],
+										[
+											h.td(
+												[
+													h.Attribute("colspan", String(COLUMNS.length)),
+													h.Class("p-2"),
+												],
+												[loadingMoreRow(h, "Loading more sessions…")],
+											),
+										],
+									),
+								]
+							: []),
 						],
 						undefined,
 						options.virtual === undefined

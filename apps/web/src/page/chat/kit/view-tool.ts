@@ -4,23 +4,10 @@ import { defineMessageUnion } from "foldkit/message"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
 import { spinner } from "../../../ui/spinner"
-import {
-	trace,
-	traceCollapsible,
-	traceDescription,
-	traceIcon,
-	traceLine,
-	traceTitle,
-} from "../../../ui/trace"
+import { trace, traceCollapsible, traceDescription, traceIcon, traceLine, traceTitle } from "../../../ui/trace"
 import { dotLoader } from "./dot-loader"
 import { toolActivity, toolIcon, toolLabel } from "./tool-metadata"
-import {
-	extractOutputText,
-	extractStructuredData,
-	inputRecord,
-	type StructuredPayload,
-	toolSummary,
-} from "./tool-output"
+import { extractOutputText, extractStructuredData, inputRecord, type StructuredPayload, toolSummary } from "./tool-output"
 import { deriveToolStatus, type ToolStatus } from "./transcript-rows"
 import type { ToolPart } from "./ui-message"
 
@@ -66,20 +53,13 @@ export const MountRunningClock = Mount.define("MountChatRunningClock", {
 export const runningClock = <M>(h: HtmlBuilder<M>, mount: PanelHost<M>["clockMount"]): ReadonlyArray<Html> =>
 	mount === undefined
 		? []
-		: [
-				h.span(
-					[
-						h.Class("shrink-0 tabular-nums text-2xs text-muted-foreground/60"),
-						h.Attribute("hidden", ""),
-						h.OnMount(mount),
-					],
-					[],
-				),
-			]
+		: [h.span([h.Class("shrink-0 tabular-nums text-2xs text-muted-foreground/60"), h.Attribute("hidden", ""), h.OnMount(mount)], [])]
 
 const statusGlyph = <M>(h: HtmlBuilder<M>, status: ToolStatus, live: boolean, toolName: string): Html => {
 	if (status === "running")
-		return live ? dotLoader(h) : spinner(h, "size-3.5 text-muted-foreground motion-reduce:animate-none")
+		return live
+			? dotLoader(h)
+			: spinner(h, "size-3.5 text-muted-foreground motion-reduce:animate-none")
 	if (status === "error") return icon(h, "CircleXmarkIcon", { className: "size-3.5" })
 	return icon(h, toolIcon(toolName), { className: "size-3.5" })
 }
@@ -124,24 +104,12 @@ const panelContent = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>):
 						[],
 						[
 							h.p([h.Class("mb-1 font-medium text-severity-error")], ["Error"]),
-							h.pre(
-								[
-									h.Class(
-										"max-h-40 overflow-auto whitespace-pre-wrap text-severity-error/80",
-									),
-								],
-								[part.errorText],
-							),
+							h.pre([h.Class("max-h-40 overflow-auto whitespace-pre-wrap text-severity-error/80")], [part.errorText]),
 						],
 					),
 				]),
 		...Option.match(structured, {
-			onSome: (data) => [
-				h.div(
-					[h.Class("text-foreground")],
-					host.structured === undefined ? [] : [host.structured(data)],
-				),
-			],
+			onSome: (data) => [h.div([h.Class("text-foreground")], host.structured === undefined ? [] : [host.structured(data)])],
 			onNone: () =>
 				outputText === null
 					? []
@@ -150,10 +118,7 @@ const panelContent = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>):
 								[],
 								[
 									h.p([h.Class("mb-1 font-medium")], ["Result"]),
-									h.pre(
-										[h.Class("max-h-80 overflow-auto whitespace-pre-wrap")],
-										[outputText],
-									),
+									h.pre([h.Class("max-h-80 overflow-auto whitespace-pre-wrap")], [outputText]),
 								],
 							),
 						],
@@ -175,22 +140,12 @@ export const toolRow = <M>(h: HtmlBuilder<M>, part: ToolPart, host: PanelHost<M>
 	const line = traceLine(h, status === "completed" ? {} : { status }, [
 		traceIcon(h, [statusGlyph(h, status, live, part.toolName)], live ? "size-5" : undefined),
 		h.span(
-			[
-				h.Class("min-w-0 truncate motion-reduce:shimmer-none font-medium"),
-				h.DataAttribute("slot", "trace-title"),
-				h.Title(label),
-			],
+			[h.Class("min-w-0 truncate motion-reduce:shimmer-none font-medium"), h.DataAttribute("slot", "trace-title"), h.Title(label)],
 			[label],
 		),
 		...(summary === undefined
 			? []
-			: [
-					traceDescription(
-						h,
-						[summary],
-						"min-w-0 shrink truncate font-mono text-2xs text-muted-foreground/60",
-					),
-				]),
+			: [traceDescription(h, [summary], "min-w-0 shrink truncate font-mono text-2xs text-muted-foreground/60")]),
 		...(status === "running" && live ? runningClock(h, host.clockMount) : []),
 	])
 	if (!hasPanel(part)) return line
@@ -222,12 +177,7 @@ const tally = (names: ReadonlyArray<string>): ReadonlyArray<Tally> =>
 const NAMED_TOOLS = 3
 
 /** A run of tool calls behind one line, collapsed by default; the header names the work. */
-export const toolGroup = <M>(
-	h: HtmlBuilder<M>,
-	parts: ReadonlyArray<ToolPart>,
-	keyHint: string,
-	host: PanelHost<M>,
-): Html => {
+export const toolGroup = <M>(h: HtmlBuilder<M>, parts: ReadonlyArray<ToolPart>, keyHint: string, host: PanelHost<M>): Html => {
 	const running = parts.filter((part) => deriveToolStatus(part.state) === "running")
 	const errorCount = parts.filter((part) => deriveToolStatus(part.state) === "error").length
 	const current = running[running.length - 1]
@@ -251,39 +201,19 @@ export const toolGroup = <M>(
 								h.span(
 									[],
 									[
-										...(index > 0
-											? [h.span([h.Class("text-muted-foreground/40")], [" · "])]
-											: []),
+										...(index > 0 ? [h.span([h.Class("text-muted-foreground/40")], [" · "])] : []),
 										tool.label,
 										...(tool.count > 1
-											? [
-													h.span(
-														[
-															h.Class(
-																"font-normal tabular-nums text-muted-foreground/60",
-															),
-														],
-														[" ", `×${tool.count}`],
-													),
-												]
+											? [h.span([h.Class("font-normal tabular-nums text-muted-foreground/60")], [" ", `×${tool.count}`])]
 											: []),
 									],
 								),
 							),
-							...(hidden > 0
-								? [
-										h.span(
-											[h.Class("font-normal text-muted-foreground/60")],
-											[` +${hidden} more`],
-										),
-									]
-								: []),
+							...(hidden > 0 ? [h.span([h.Class("font-normal text-muted-foreground/60")], [` +${hidden} more`])] : []),
 						],
 						"font-medium",
 					),
-					...(errorCount > 0
-						? [traceDescription(h, [`${errorCount}`, " failed"], "text-severity-error")]
-						: []),
+					...(errorCount > 0 ? [traceDescription(h, [`${errorCount}`, " failed"], "text-severity-error")] : []),
 				])
 	const id = `group:${parts[0]?.toolCallId ?? keyHint}`
 	return trace(
@@ -294,13 +224,7 @@ export const toolGroup = <M>(
 				panelId: `${id}:panel`,
 				onToggle: host.onToggle(id),
 				line,
-				content: () => [
-					trace(
-						h,
-						parts.map((part) => toolRow(h, part, host)),
-						"max-h-[55vh] overflow-y-auto",
-					),
-				],
+				content: () => [trace(h, parts.map((part) => toolRow(h, part, host)), "max-h-[55vh] overflow-y-auto")],
 			}),
 		],
 		undefined,
@@ -309,12 +233,7 @@ export const toolGroup = <M>(
 }
 
 /** A buffer of tool calls: a bare line for one, a group for several. */
-export const toolNodes = <M>(
-	h: HtmlBuilder<M>,
-	parts: ReadonlyArray<ToolPart>,
-	keyHint: string,
-	host: PanelHost<M>,
-): ReadonlyArray<Html> => {
+export const toolNodes = <M>(h: HtmlBuilder<M>, parts: ReadonlyArray<ToolPart>, keyHint: string, host: PanelHost<M>): ReadonlyArray<Html> => {
 	const [only] = parts
 	if (only === undefined) return []
 	return parts.length === 1 ? [toolStandalone(h, only, host)] : [toolGroup(h, parts, keyHint, host)]

@@ -6,8 +6,7 @@ import { isFormReady } from "./dialog"
 import type { DestinationForm } from "./form"
 import { init, Message, type Model, reset, update } from "./hazel-fields"
 
-const names = (step: { readonly commands: ReadonlyArray<{ readonly name: string }> }) =>
-	step.commands.map(({ name }) => name)
+const names = (step: { readonly commands: ReadonlyArray<{ readonly name: string }> }) => step.commands.map(({ name }) => name)
 const form = defaultDestinationForm("hazel-oauth")
 const org = { id: "org_hz_1", name: "Acme", logoUrl: null }
 
@@ -15,18 +14,12 @@ const connected = (): Model => {
 	const mounted = reset(init(), form).model
 	const status = update(
 		mounted,
-		Message.CompletedFetchStatus({
-			key: mounted.status.key ?? "",
-			result: Result.succeed({ connected: true, account: "ada@acme.test" }),
-		}),
+		Message.CompletedFetchStatus({ key: mounted.status.key ?? "", result: Result.succeed({ connected: true, account: "ada@acme.test" }) }),
 		form,
 	).model
 	return update(
 		status,
-		Message.CompletedFetchOrganizations({
-			key: status.organizations.key ?? "",
-			result: Result.succeed([org]),
-		}),
+		Message.CompletedFetchOrganizations({ key: status.organizations.key ?? "", result: Result.succeed([org]) }),
 		form,
 	).model
 }
@@ -72,10 +65,7 @@ describe("hazel destination fields", () => {
 	test("a confirmed disconnect clears the picked organization and channel", () => {
 		const confirmed = update(connected(), Message.ConfirmedDisconnect(), form)
 		expect(names(confirmed)).toContain("DisconnectAlertHazel")
-		const done = update(confirmed.model, Message.CompletedDisconnect(), {
-			...form,
-			hazelOrganizationId: "org_hz_1",
-		})
+		const done = update(confirmed.model, Message.CompletedDisconnect(), { ...form, hazelOrganizationId: "org_hz_1" })
 		expect(done.form?.hazelOrganizationId).toBe("")
 	})
 })

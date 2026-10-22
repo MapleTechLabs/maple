@@ -4,6 +4,7 @@ import { Message } from "./model"
 import { init, update } from "./update"
 
 describe("timeline lab", () => {
+
 	test("opens on the Timeline tab, and a span picked there opens its events", () => {
 		const opened = init().model
 		expect(opened.timeline?.rootSpans.length).toBe(1)

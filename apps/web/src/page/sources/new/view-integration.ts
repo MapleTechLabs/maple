@@ -26,10 +26,7 @@ export const isIntegrationConnected = (model: Model, integration: DataIntegratio
 		: overviewOf(model.integrations.statuses, model.integrations.nowMs, integration)?.kind === "connected"
 
 /** The sources an integration feeds. */
-const sourcesOfIntegration = (
-	model: Model,
-	integration: Exclude<DataIntegration, "warpstream">,
-): ReadonlyArray<V2Source> =>
+const sourcesOfIntegration = (model: Model, integration: Exclude<DataIntegration, "warpstream">): ReadonlyArray<V2Source> =>
 	AsyncData.getOrElse(model.list.data, (): ReadonlyArray<V2Source> => []).filter(
 		(source) => source.platform === integration,
 	)
@@ -45,12 +42,8 @@ const connectedNotice = (h: H, model: Model, integration: DataIntegration): Html
 		alertDescription(h, ["Each account or target it collects from shows up as its own source."]),
 		alertAction(h, [
 			only === undefined
-				? linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.Sources()) }, [
-						"View sources",
-					])
-				: linkButton(h, { size: "sm", variant: "outline", href: sourceHref(only, "connection") }, [
-						"Open source",
-					]),
+				? linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.Sources()) }, ["View sources"])
+				: linkButton(h, { size: "sm", variant: "outline", href: sourceHref(only, "connection") }, ["Open source"]),
 		]),
 	])
 }

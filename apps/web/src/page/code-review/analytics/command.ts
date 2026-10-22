@@ -14,3 +14,4 @@ export const FetchAnalytics = Command.define("FetchCodeReviewAnalytics", {
 			Effect.map((result) => Message.CompletedFetchAnalytics({ key, result })),
 		),
 })
+

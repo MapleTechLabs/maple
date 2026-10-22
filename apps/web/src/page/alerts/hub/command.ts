@@ -47,8 +47,7 @@ export const FetchRoutingDeliveries = Command.define("FetchAlertsRoutingDeliveri
 export const FetchHubSession = Command.define("FetchAlertsHubSession", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedFetchSession],
-	execute: ({ orgId }) =>
-		Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchSession({ orgId, isAdmin })),
+	execute: ({ orgId }) => Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchSession({ orgId, isAdmin })),
 })
 
 export const ToggleRule = Command.define("ToggleAlertRule", {

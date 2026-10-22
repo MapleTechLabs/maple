@@ -26,13 +26,7 @@ export const toolbarStats = <M>(h: HtmlBuilder<M>, children: Children, className
 
 export const toolbarStat = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{
-		value: number | string
-		label: string
-		hasDot?: boolean
-		isDanger?: boolean
-		tone?: Tone
-	}>,
+	options: Readonly<{ value: number | string; label: string; hasDot?: boolean; isDanger?: boolean; tone?: Tone }>,
 ): Html =>
 	h.span(
 		[h.Class("flex items-center gap-1.5 whitespace-nowrap text-sm")],
@@ -90,13 +84,7 @@ export const refreshButton = <M>(
 					isDisabled: options.isSpinning,
 					attributes: [h.AriaLabel("Reload"), h.Title("Reload"), h.OnClick(options.onRefresh)],
 				},
-				[
-					icon(
-						h,
-						"ArrowRotateClockwiseIcon",
-						options.isSpinning ? { className: "animate-spin" } : {},
-					),
-				],
+				[icon(h, "ArrowRotateClockwiseIcon", options.isSpinning ? { className: "animate-spin" } : {})],
 			),
 		],
 	)
@@ -124,14 +112,8 @@ export const timeRangeSelect = <M>(h: HtmlBuilder<M>, value: string, onChange: (
 			}),
 			nativeSelect(
 				h,
-				{
-					size: "sm",
-					defaultValue: value,
-					attributes: [h.AriaLabel("Time range"), h.OnChange(onChange)],
-				},
-				TIME_RANGES.map((range) =>
-					nativeOption(range.key, RANGE_LABELS.get(range.key) ?? range.label),
-				),
+				{ size: "sm", defaultValue: value, attributes: [h.AriaLabel("Time range"), h.OnChange(onChange)] },
+				TIME_RANGES.map((range) => nativeOption(range.key, RANGE_LABELS.get(range.key) ?? range.label)),
 			),
 		],
 	)
@@ -139,14 +121,7 @@ export const timeRangeSelect = <M>(h: HtmlBuilder<M>, value: string, onChange: (
 /** `ToolbarSearch`: the draft lives in the page Model and commits after the page's debounce. */
 export const toolbarSearch = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{
-		id: string
-		value: string
-		placeholder: string
-		onInput: (value: string) => M
-		onClear: M
-		className?: string
-	}>,
+	options: Readonly<{ id: string; value: string; placeholder: string; onInput: (value: string) => M; onClear: M; className?: string }>,
 ): Html =>
 	searchInput(h, {
 		id: options.id,

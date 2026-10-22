@@ -1,10 +1,6 @@
 import type { AlertSeverity } from "@maple/domain/http"
 import { alertEvaluationIntervalMinutes } from "@maple/query-engine/datetime"
-import {
-	comparatorSupportsTiers,
-	isRangeComparator,
-	thresholdUnitLabel,
-} from "@maple/web-data/alerts/form-utils"
+import { comparatorSupportsTiers, isRangeComparator, thresholdUnitLabel } from "@maple/web-data/alerts/form-utils"
 import { cn } from "@maple/ui/lib/utils"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
@@ -30,18 +26,12 @@ type H = HtmlBuilder<Message>
 const COMPARATOR_SELECT_ID = "rule-comparator"
 
 /** What the card reads off the Model: the dirty and saved values, and the comparator select's state. */
-type ConditionView = Pick<Model, "mountedForm" | "savedForm"> &
-	Readonly<{ comparatorSelect: Select.Model | undefined }>
+type ConditionView = Pick<Model, "mountedForm" | "savedForm"> & Readonly<{ comparatorSelect: Select.Model | undefined }>
 
 /** `COMPARATOR_ITEMS`, in `comparatorLabels` order. */
 const COMPARATOR_ITEMS = [...COMPARATOR_WORDS].map(([value, label]) => ({ value, label }))
 
-const SEVERITY_OPTIONS: ReadonlyArray<{
-	value: AlertSeverity
-	label: string
-	selected: string
-	dot: string
-}> = [
+const SEVERITY_OPTIONS: ReadonlyArray<{ value: AlertSeverity; label: string; selected: string; dot: string }> = [
 	{
 		value: "warning",
 		label: "Warning",
@@ -88,16 +78,11 @@ const severityPicker = (h: H, value: AlertSeverity): Html => {
 					cn(
 						"inline-flex h-8 cursor-pointer select-none items-center justify-center gap-1.5 rounded-sm border border-transparent px-2.5 text-xs font-medium",
 						"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-						isSelected
-							? option.selected
-							: "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+						isSelected ? option.selected : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
 					),
 					{
 						children: [
-							statusDot(h, {
-								tone: "custom",
-								className: isSelected ? option.dot : "bg-muted-foreground/40",
-							}),
+							statusDot(h, { tone: "custom", className: isSelected ? option.dot : "bg-muted-foreground/40" }),
 							option.label,
 						],
 					},
@@ -116,10 +101,7 @@ const tierLabel = (h: H, severity: AlertSeverity): Html => {
 		h.span(
 			[
 				h.Class(
-					cn(
-						"inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium",
-						option?.selected,
-					),
+					cn("inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium", option?.selected),
 				),
 			],
 			[statusDot(h, { tone: "custom", className: option?.dot ?? "" }), option?.label ?? ""],
@@ -370,13 +352,15 @@ const thresholdsSection = (h: H, model: ConditionView, form: RuleForm, saved: Ru
 	)
 }
 
+
 const slot = createLazy()
-const viewOf = stableSlice((model: Model): ConditionView => ({
-	mountedForm: model.mountedForm,
-	savedForm: model.savedForm,
-	comparatorSelect: model.selects[COMPARATOR_SELECT_ID],
-}))
+const viewOf = stableSlice(
+	(model: Model): ConditionView => ({
+		mountedForm: model.mountedForm,
+		savedForm: model.savedForm,
+		comparatorSelect: model.selects[COMPARATOR_SELECT_ID],
+	}),
+)
 
 /** The condition card under the chart; `form` is the evaluated draft (`evaluatedFormOf`). */
-export const conditionFields = (h: H, model: Model, form: RuleForm): Html =>
-	slot(condition, [h, viewOf(model), form])
+export const conditionFields = (h: H, model: Model, form: RuleForm): Html => slot(condition, [h, viewOf(model), form])

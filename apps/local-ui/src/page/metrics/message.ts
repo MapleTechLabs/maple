@@ -23,11 +23,7 @@ export const Message = defineMessageUnion({
 	SucceededFetchSummary: { key: Schema.String, rows: Schema.Array(SummaryRow), fetchedAtMs: Schema.Number },
 	FailedFetchSummary: { key: Schema.String, failure: LoadFailure },
 	FoundCachedSummary: { request: SummaryRequest, cached: CachedOf(Schema.Array(SummaryRow)) },
-	SucceededFetchSparklines: {
-		key: Schema.String,
-		sparklines: Schema.Array(MetricSparkline),
-		fetchedAtMs: Schema.Number,
-	},
+	SucceededFetchSparklines: { key: Schema.String, sparklines: Schema.Array(MetricSparkline), fetchedAtMs: Schema.Number },
 	FailedFetchSparklines: { key: Schema.String, failure: LoadFailure },
 	FoundCachedSparklines: { request: SparklinesRequest, cached: CachedOf(Schema.Array(MetricSparkline)) },
 	ClickedRefresh: {},

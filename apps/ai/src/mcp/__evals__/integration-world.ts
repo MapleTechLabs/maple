@@ -245,13 +245,7 @@ export const seedIntegrationWorld = async (rt: EvalRuntime) => {
 		 FROM scrape_targets t WHERE t.source_id = s.id AND s.platform = 'prometheus'`,
 		[],
 	)
-	const reported = (
-		platform: string,
-		okMinutesAgo: number,
-		error: string | null,
-		total: number,
-		unhealthy: number,
-	) =>
+	const reported = (platform: string, okMinutesAgo: number, error: string | null, total: number, unhealthy: number) =>
 		sql(
 			`UPDATE sources SET last_poll_at = $2, last_poll_ok_at = $2, last_poll_error = $3,
 				poll_resources = $4::jsonb WHERE platform = $1`,

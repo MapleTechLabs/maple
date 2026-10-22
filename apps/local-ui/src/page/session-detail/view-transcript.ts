@@ -36,8 +36,7 @@ const body = <M>(h: HtmlBuilder<M>, event: TranscriptEvent): Html => {
 	const muted = "truncate text-xs text-muted-foreground"
 	if (event.type === "navigation") return line(h, muted, [event.url || "-"])
 	if (event.type === "click") return line(h, muted, [event.targetText || event.targetSelector || "element"])
-	if (event.type === "input")
-		return line(h, "truncate font-mono text-xs text-muted-foreground", [event.targetSelector || "input"])
+	if (event.type === "input") return line(h, "truncate font-mono text-xs text-muted-foreground", [event.targetSelector || "input"])
 	if (event.type === "console") return line(h, "break-words text-xs text-muted-foreground", [event.message])
 	if (event.type === "network")
 		return line(h, muted, [
@@ -46,12 +45,7 @@ const body = <M>(h: HtmlBuilder<M>, event: TranscriptEvent): Html => {
 			event.netUrl,
 			h.span(
 				[h.Class(cn("ml-1.5 tabular-nums", event.netStatus >= 400 && "text-severity-error"))],
-				[
-					event.netStatus ? String(event.netStatus) : "-",
-					" · ",
-					String(Math.round(event.netDurationMs)),
-					"ms",
-				],
+				[event.netStatus ? String(event.netStatus) : "-", " · ", String(Math.round(event.netDurationMs)), "ms"],
 			),
 		])
 	if (event.type === "error")
@@ -62,11 +56,7 @@ const body = <M>(h: HtmlBuilder<M>, event: TranscriptEvent): Html => {
 				...(event.errorStack
 					? [
 							h.pre(
-								[
-									h.Class(
-										"mt-1 max-h-24 overflow-auto whitespace-pre-wrap rounded bg-muted/50 p-1.5 font-mono text-[10px] text-muted-foreground",
-									),
-								],
+								[h.Class("mt-1 max-h-24 overflow-auto whitespace-pre-wrap rounded bg-muted/50 p-1.5 font-mono text-[10px] text-muted-foreground")],
 								[event.errorStack],
 							),
 						]
@@ -76,11 +66,7 @@ const body = <M>(h: HtmlBuilder<M>, event: TranscriptEvent): Html => {
 	return line(h, muted, [event.message])
 }
 
-export const transcript = <M>(
-	h: HtmlBuilder<M>,
-	events: ReadonlyArray<TranscriptEvent>,
-	startTime: WarehouseTime,
-): Html =>
+export const transcript = <M>(h: HtmlBuilder<M>, events: ReadonlyArray<TranscriptEvent>, startTime: WarehouseTime): Html =>
 	h.ol(
 		[h.Class("space-y-3")],
 		events.map((event) =>
@@ -92,9 +78,7 @@ export const transcript = <M>(
 							h.Class(
 								cn(
 									"mt-0.5 grid size-6 shrink-0 place-items-center rounded-full",
-									isErrorEvent(event)
-										? "bg-severity-error/10 text-severity-error"
-										: "bg-muted text-muted-foreground",
+									isErrorEvent(event) ? "bg-severity-error/10 text-severity-error" : "bg-muted text-muted-foreground",
 								),
 							),
 						],
@@ -108,11 +92,7 @@ export const transcript = <M>(
 								[
 									h.span([h.Class("text-xs font-medium capitalize")], [event.type]),
 									h.span(
-										[
-											h.Class(
-												"shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground",
-											),
-										],
+										[h.Class("shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground")],
 										[offsetLabel(startTime, event.timestamp)],
 									),
 								],

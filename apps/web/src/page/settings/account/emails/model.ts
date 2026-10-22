@@ -35,12 +35,7 @@ export const Message = defineMessageUnion({
 	GotAddDialogMessage: { message: Dialog.Message },
 	ChangedEmail: { value: Schema.String },
 	SubmittedAdd: {},
-	CompletedCreate: {
-		result: Schema.Result(
-			Schema.Struct({ addressId: Schema.String, email: Schema.String }),
-			Schema.String,
-		),
-	},
+	CompletedCreate: { result: Schema.Result(Schema.Struct({ addressId: Schema.String, email: Schema.String }), Schema.String) },
 	GotCodeMessage: { message: OtpField.Message },
 	CompletedVerify: done,
 	CompletedPrepare: { addressId: Schema.String, email: Schema.String, ...done },

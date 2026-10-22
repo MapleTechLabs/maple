@@ -18,8 +18,7 @@ const contextAt = (search: string): PageContext => ({
 })
 const context = contextAt("")
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
 
 const entry = (metricName: string, metricType: string, serviceNames: ReadonlyArray<string>): MetricEntry => ({
 	metricName,
@@ -38,20 +37,14 @@ const entered = () => pageUpdate(init(context).model, Message.CompletedReadClock
 const withList = (model: Model, entries: ReadonlyArray<MetricEntry>, ctx = context) =>
 	update(
 		model,
-		Message.SucceededFetchList({
-			key: model.list.key ?? "",
-			data: { entries, serviceFacets: [] },
-			fetchedAtMs: NOW,
-		}),
+		Message.SucceededFetchList({ key: model.list.key ?? "", data: { entries, serviceFacets: [] }, fetchedAtMs: NOW }),
 		ctx,
 	)
 
 describe("local metrics list", () => {
 	test("entry reads the clock, then asks for the catalog and the type summary", () => {
 		expect(names(init(context).commands)).toContain("ReadMetricsClock")
-		expect(names(entered().commands)).toEqual(
-			expect.arrayContaining(["FetchLocalMetricsList", "FetchLocalMetricsSummary"]),
-		)
+		expect(names(entered().commands)).toEqual(expect.arrayContaining(["FetchLocalMetricsList", "FetchLocalMetricsSummary"]))
 	})
 
 	test("the listed metrics ask for one sparkline batch", () => {
@@ -65,11 +58,7 @@ describe("local metrics list", () => {
 		const searched = update(first, Message.CompletedReadClock({ nowMs: NOW }), contextAt("q=http")).model
 		const dropped = update(
 			searched,
-			Message.SucceededFetchList({
-				key: first.list.key ?? "",
-				data: { entries: [], serviceFacets: [] },
-				fetchedAtMs: NOW,
-			}),
+			Message.SucceededFetchList({ key: first.list.key ?? "", data: { entries: [], serviceFacets: [] }, fetchedAtMs: NOW }),
 			contextAt("q=http"),
 		)
 		expect(dropped.model.list).toEqual(searched.list)

@@ -32,23 +32,13 @@ const template = Schema.decodeUnknownSync(Schema.toType(V2DashboardTemplate))({
 
 const selected = (): Model => {
 	const entered = init({ search: { template: "service-health" } }, context).model
-	return update(
-		entered,
-		Message.CompletedFetchTemplates({
-			key: entered.templates.key ?? "",
-			result: Result.succeed([template]),
-		}),
-		context,
-	).model
+	return update(entered, Message.CompletedFetchTemplates({ key: entered.templates.key ?? "", result: Result.succeed([template]) }), context).model
 }
 
 describe("templates below lg", () => {
 	test("the selected template's panel opens in a sheet", () => {
 		scene(
-			{
-				update: (model, message) => update(model, message, context),
-				view: withViewInputs(pageView, { context, isBelowLg: true })(),
-			},
+			{ update: (model, message) => update(model, message, context), view: withViewInputs(pageView, { context, isBelowLg: true })() },
 			given(selected()),
 			Mount.resolve(ResolveThemeColors, Message.ResolvedThemeColors({ colors: {} })),
 			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
@@ -58,11 +48,7 @@ describe("templates below lg", () => {
 	})
 
 	test("dismissing the sheet clears the selection", () => {
-		const dismissed = update(
-			selected(),
-			Message.GotPanelSheetMessage({ message: Dialog.Message.PressedEscape() }),
-			context,
-		)
+		const dismissed = update(selected(), Message.GotPanelSheetMessage({ message: Dialog.Message.PressedEscape() }), context)
 		expect(dismissed.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/dashboards/templates", isReplace: true }),
 		)

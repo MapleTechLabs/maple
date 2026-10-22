@@ -59,15 +59,11 @@ export const whereStep = (model: Model, message: WhereFieldMessage, inputs: Pane
 	const next = updateWhereFields(model.whereFields, message, {
 		specOf: (queryId) => {
 			const query = inputs.queryOf(queryId)
-			return query === undefined
-				? undefined
-				: whereSpecOf(query, inputs.baseValuesOf(query), inputs.window)
+			return query === undefined ? undefined : whereSpecOf(query, inputs.baseValuesOf(query), inputs.window)
 		},
 		orgId: inputs.orgId,
 	})
-	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
-		Message.GotWhereField({ message: inner }),
-	)
+	const commands = Command.mapMessages(next.commands ?? [], (inner) => Message.GotWhereField({ message: inner }))
 	const updated = { ...model, whereFields: next.fields }
 	return next.change === undefined
 		? { model: updated, commands }

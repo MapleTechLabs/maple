@@ -23,15 +23,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const range = rangeOf(context)
 	const entry = entryOf(model)
 	const content = (): Html => {
-		if (isPending(model.entry))
-			return h.div([h.Class("flex h-full items-center justify-center")], [spinner(h)])
+		if (isPending(model.entry)) return h.div([h.Class("flex h-full items-center justify-center")], [spinner(h)])
 		const failure = failureWithoutData(model.entry)
 		if (Option.isSome(failure))
-			return errorState(h, {
-				label: "metric",
-				failure: failure.value,
-				onRetry: Message.ClickedRefresh(),
-			})
+			return errorState(h, { label: "metric", failure: failure.value, onRetry: Message.ClickedRefresh() })
 		const maybeBounds = boundsOf(model, context)
 		if (entry === null || Option.isNone(maybeBounds))
 			return h.div(
@@ -45,11 +40,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						? [
 								button(
 									h,
-									{
-										variant: "outline",
-										size: "sm",
-										attributes: [h.OnClick(Message.ClickedWidenRange())],
-									},
+									{ variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedWidenRange())] },
 									["Widen to 30 days"],
 								),
 							]

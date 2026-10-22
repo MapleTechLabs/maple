@@ -22,14 +22,7 @@ const view = withViewInputs(pageView, { context })()
 const windowed = () =>
 	pageUpdate(
 		init(route, context).model,
-		Message.GotFrameMessage({
-			message: Frame.Message.CompletedResolveWindow({
-				window,
-				nowMs: NOW,
-				locale: "en-US",
-				mode: "Load",
-			}),
-		}),
+		Message.GotFrameMessage({ message: Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" }) }),
 	)
 
 describe("container detail", () => {

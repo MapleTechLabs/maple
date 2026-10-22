@@ -6,8 +6,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { Message } from "./message"
 
-const v2 = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-	effect.pipe(Effect.mapError(toLoadFailure), Effect.result)
+const v2 = <A, E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(Effect.mapError(toLoadFailure), Effect.result)
 
 export const ReadAnomalyClock = Command.define("ReadAnomalyClock", {
 	messages: [Message.ReadClock],
@@ -66,9 +65,7 @@ export const CreateInvestigation = Command.define("CreateAnomalyInvestigation", 
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const result = yield* v2(
-				Effect.map(client.investigations.create({ payload }), (investigation) =>
-					String(investigation.id),
-				),
+				Effect.map(client.investigations.create({ payload }), (investigation) => String(investigation.id)),
 			)
 			return Message.CompletedInvestigate({ result })
 		}),
@@ -91,9 +88,7 @@ export const SetIncidentIssue = Command.define("SetAnomalyIncidentIssue", {
 	execute: ({ id, issueId }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const result = yield* v2(
-				client.anomalies.setIncidentIssue({ params: { id }, payload: { issue_id: issueId } }),
-			)
+			const result = yield* v2(client.anomalies.setIncidentIssue({ params: { id }, payload: { issue_id: issueId } }))
 			return Message.CompletedSetIssue({ issueId, result })
 		}),
 })

@@ -47,11 +47,7 @@ describe("clerkTryReverified", () => {
 	test("any other failure is Clerk's own message, without a challenge", async () => {
 		const open = stubClerk("verified")
 		const exit = await Effect.runPromiseExit(
-			clerkTryReverified("Failed", () =>
-				Promise.reject({
-					errors: [{ code: "form_password_incorrect", longMessage: "Wrong password" }],
-				}),
-			),
+			clerkTryReverified("Failed", () => Promise.reject({ errors: [{ code: "form_password_incorrect", longMessage: "Wrong password" }] })),
 		)
 		expect(Exit.isFailure(exit) && exit.cause.toString()).toContain("Wrong password")
 		expect(open).not.toHaveBeenCalled()

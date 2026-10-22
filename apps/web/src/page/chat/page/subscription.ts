@@ -32,39 +32,29 @@ const typeAnywhere: Stream.Stream<Message> = Dom.streamFromEventFilterMapPrevent
 	},
 })
 
-export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
-	(entry) => ({
-		tails: entry(
-			{ tails: Schema.Array(Tail) },
-			{
-				modelToDependencies: ({ model }) => ({
-					tails: Object.values(model.conversations).flatMap(tailOf),
-				}),
-				dependenciesToStream: ({ tails }) =>
-					tails.length === 0
-						? Stream.empty
-						: tailsMessages(tails, (tabId, message) =>
-								Message.GotConversationMessage({ tabId, message }),
-							),
-			},
-		),
-		newChatKey: entry(
-			{ isTabs: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({
-					isTabs: model.shared === null && model.tabs !== null,
-				}),
-				dependenciesToStream: ({ isTabs }) => (isTabs ? newChatKey : Stream.empty),
-			},
-		),
-		typeAnywhere: entry(
-			{ isWritable: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({
-					isWritable: model.shared === null && model.tabs !== null,
-				}),
-				dependenciesToStream: ({ isWritable }) => (isWritable ? typeAnywhere : Stream.empty),
-			},
-		),
-	}),
-)
+export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()((entry) => ({
+	tails: entry(
+		{ tails: Schema.Array(Tail) },
+		{
+			modelToDependencies: ({ model }) => ({ tails: Object.values(model.conversations).flatMap(tailOf) }),
+			dependenciesToStream: ({ tails }) =>
+				tails.length === 0
+					? Stream.empty
+					: tailsMessages(tails, (tabId, message) => Message.GotConversationMessage({ tabId, message })),
+		},
+	),
+	newChatKey: entry(
+		{ isTabs: Schema.Boolean },
+		{
+			modelToDependencies: ({ model }) => ({ isTabs: model.shared === null && model.tabs !== null }),
+			dependenciesToStream: ({ isTabs }) => (isTabs ? newChatKey : Stream.empty),
+		},
+	),
+	typeAnywhere: entry(
+		{ isWritable: Schema.Boolean },
+		{
+			modelToDependencies: ({ model }) => ({ isWritable: model.shared === null && model.tabs !== null }),
+			dependenciesToStream: ({ isWritable }) => (isWritable ? typeAnywhere : Stream.empty),
+		},
+	),
+}))

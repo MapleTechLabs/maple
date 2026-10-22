@@ -31,64 +31,33 @@ const document = Schema.decodeUnknownSync(DashboardDocument)({
 	schemaVersion: 3,
 })
 
-const withShares = (
-	rows: ReadonlyArray<{ widgetId: string | null; mode: "public" | "org"; token: string }>,
-): Model =>
+const withShares = (rows: ReadonlyArray<{ widgetId: string | null; mode: "public" | "org"; token: string }>): Model =>
 	[
 		Message.CompletedReadClock({ nowMs: 0 }),
 		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
 		share(ShareMessage.CompletedFetchShares({ seq: 1, result: Result.succeed(rows) })),
-	].reduce(
-		(model, message) => pageUpdate(model, message).model,
-		init({ dashboardId: "dash_share", search: {} }, context).model,
-	)
+	].reduce((model, message) => pageUpdate(model, message).model, init({ dashboardId: "dash_share", search: {} }, context).model)
 
 describe("dashboard sharing", () => {
 	test("a picked access writes once and holds the pick until the list confirms it", () => {
 		const opened = openShare(withShares([])).model
-		const picked = pageUpdate(
-			opened,
-			share(
-				ShareMessage.GotAccessMessage({
-					message: RadioGroup.Message.SelectedRadio({ value: "public" }),
-				}),
-			),
-		)
+		const picked = pageUpdate(opened, share(ShareMessage.GotAccessMessage({ message: RadioGroup.Message.SelectedRadio({ value: "public" }) })))
 		expect(names(picked.commands)).toEqual([WriteShare.name])
 		expect(picked.model.sharing.pendingAccess).toBe("public")
-		const again = pageUpdate(
-			picked.model,
-			share(
-				ShareMessage.GotAccessMessage({
-					message: RadioGroup.Message.SelectedRadio({ value: "org" }),
-				}),
-			),
-		)
+		const again = pageUpdate(picked.model, share(ShareMessage.GotAccessMessage({ message: RadioGroup.Message.SelectedRadio({ value: "org" }) })))
 		expect(names(again.commands)).toEqual([])
 		const written = pageUpdate(picked.model, share(ShareMessage.CompletedWrite({ error: null })))
 		expect(names(written.commands)).toEqual([FetchShares.name])
 		const listed = pageUpdate(
 			written.model,
-			share(
-				ShareMessage.CompletedFetchShares({
-					seq: 2,
-					result: Result.succeed([{ widgetId: null, mode: "public", token: "t" }]),
-				}),
-			),
+			share(ShareMessage.CompletedFetchShares({ seq: 2, result: Result.succeed([{ widgetId: null, mode: "public", token: "t" }]) })),
 		)
 		expect(listed.model.sharing.pendingAccess).toBeNull()
 	})
 
 	test("a failed write drops the pick and shows the error", () => {
 		const opened = openShare(withShares([])).model
-		const picked = pageUpdate(
-			opened,
-			share(
-				ShareMessage.GotAccessMessage({
-					message: RadioGroup.Message.SelectedRadio({ value: "org" }),
-				}),
-			),
-		)
+		const picked = pageUpdate(opened, share(ShareMessage.GotAccessMessage({ message: RadioGroup.Message.SelectedRadio({ value: "org" }) })))
 		const failed = pageUpdate(picked.model, share(ShareMessage.CompletedWrite({ error: "Nope" })))
 		expect(failed.model.sharing.pendingAccess).toBeNull()
 		expect(failed.model.sharing.error).toBe("Nope")
@@ -110,18 +79,9 @@ describe("dashboard sharing", () => {
 		const made = pageUpdate(orgOnly, share(ShareMessage.ClickedMakePublic())).model
 		const boardDone = pageUpdate(made, share(ShareMessage.CompletedWrite({ error: null }))).model
 		const minted = pageUpdate(boardDone, share(ShareMessage.CompletedWrite({ error: null }))).model
-		const rows = [
-			{ widgetId: null, mode: "public" as const, token: "t" },
-			{ widgetId: "w1", mode: "public" as const, token: "c" },
-		]
-		const latest = pageUpdate(
-			minted,
-			share(ShareMessage.CompletedFetchShares({ seq: 3, result: Result.succeed(rows) })),
-		).model
-		const stale = pageUpdate(
-			latest,
-			share(ShareMessage.CompletedFetchShares({ seq: 2, result: Result.succeed(rows.slice(0, 1)) })),
-		).model
+		const rows = [{ widgetId: null, mode: "public" as const, token: "t" }, { widgetId: "w1", mode: "public" as const, token: "c" }]
+		const latest = pageUpdate(minted, share(ShareMessage.CompletedFetchShares({ seq: 3, result: Result.succeed(rows) }))).model
+		const stale = pageUpdate(latest, share(ShareMessage.CompletedFetchShares({ seq: 2, result: Result.succeed(rows.slice(0, 1)) }))).model
 		expect(AsyncData.getOrElse(stale.sharing.shares, () => [])).toHaveLength(2)
 	})
 

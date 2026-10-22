@@ -186,11 +186,7 @@ describe("agent sessions list", () => {
 		const reached = pageUpdate(loaded(rows), Message.ReachedListEnd()).model
 		const key = reached.morePages.filterKey
 		const more = Array.from({ length: 50 }, (_, index) => session(`more_${index}`))
-		const answer = Message.CompletedFetchNextPage({
-			key,
-			offset: 50,
-			result: Result.succeed({ data: more, ranked: 50 }),
-		})
+		const answer = Message.CompletedFetchNextPage({ key, offset: 50, result: Result.succeed({ data: more, ranked: 50 }) })
 		const once = pageUpdate(reached, answer).model
 		const twice = pageUpdate(once, answer).model
 		expect(pageRows(twice, key)).toHaveLength(100)
@@ -301,9 +297,7 @@ describe("agent sessions list", () => {
 			Mount.resolve(MountTable, Message.PaintedTable()),
 			Mount.resolve(VirtualizeSessions, Message.ChangedListWindow({ window: ONE_ROW })),
 			Mount.resolve(MountRowClicks, Message.ClickedSessionRow({ url: "/agent-sessions/conv_a" })),
-			expectOutMessage(
-				PageOutMessage.RequestedNavigation({ url: "/agent-sessions/conv_a", isReplace: false }),
-			),
+			expectOutMessage(PageOutMessage.RequestedNavigation({ url: "/agent-sessions/conv_a", isReplace: false })),
 		)
 	})
 })

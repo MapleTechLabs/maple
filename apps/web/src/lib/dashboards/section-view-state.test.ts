@@ -22,10 +22,7 @@ const section = (
 	tabs: tabIds.map((tabId) => ({ id: tabId, title: tabId })),
 })
 
-const widget = (
-	id: string,
-	membership?: { sectionId: string; tabId: string },
-): { id: string } & SectionMembership => ({
+const widget = (id: string, membership?: { sectionId: string; tabId: string }): { id: string } & SectionMembership => ({
 	id,
 	...(membership ?? {}),
 })

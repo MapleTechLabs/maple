@@ -16,87 +16,73 @@ type H = HtmlBuilder<Message>
 const providerRow = (h: H, model: Model, user: AccountUser, provider: (typeof PROVIDERS)[number]): Html => {
 	const account = user.externalAccounts.find((entry) => entry.provider === provider.id)
 	const isBusy = model.busy === provider.id
-	const ids = {
-		control: `connection-${provider.id}`,
-		label: `connection-${provider.id}-label`,
-		description: `connection-${provider.id}-description`,
-	}
+	const ids = { control: `connection-${provider.id}`, label: `connection-${provider.id}-label`, description: `connection-${provider.id}-description` }
 	return settingRow(h, {
-		ids,
-		className: "p-4",
-		icon: h.div([h.Class("text-muted-foreground")], [icon(h, provider.icon, { size: 18 })]),
-		label: h.span(
-			[h.Class("flex items-center gap-1.5")],
-			[
-				provider.label,
-				...(account !== undefined && !account.isVerified
-					? [badge(h, { variant: "outline", className: "text-muted-foreground" }, ["Incomplete"])]
-					: []),
-			],
-		),
-		description: h.span(
-			[h.Class("block truncate")],
-			[
-				account === undefined
-					? `Connect your ${provider.label} account`
-					: account.emailAddress || account.username || "Connected",
-			],
-		),
-		control:
-			account === undefined
-				? [
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								isLoading: isBusy,
-								attributes: [h.OnClick(Message.ClickedConnect({ provider: provider.id }))],
-							},
-							["Connect"],
-						),
-					]
-				: [
-						...(account.isVerified
-							? []
-							: [
-									button(
-										h,
-										{
-											variant: "outline",
-											size: "sm",
-											isDisabled: isBusy,
-											attributes: [
-												h.OnClick(
-													Message.ClickedRetry({
-														provider: provider.id,
-														accountId: account.id,
-													}),
-												),
-											],
-										},
-										["Retry"],
-									),
-								]),
-						button(
-							h,
-							{
-								variant: "ghost",
-								size: "sm",
-								isDisabled: isBusy,
-								attributes: [
-									h.OnClick(
-										Message.ClickedDisconnect({
-											provider: provider.id,
-											accountId: account.id,
-										}),
-									),
-								],
-							},
-							["Disconnect"],
-						),
+				ids,
+				className: "p-4",
+				icon: h.div([h.Class("text-muted-foreground")], [icon(h, provider.icon, { size: 18 })]),
+				label: h.span(
+					[h.Class("flex items-center gap-1.5")],
+					[
+						provider.label,
+						...(account !== undefined && !account.isVerified
+							? [badge(h, { variant: "outline", className: "text-muted-foreground" }, ["Incomplete"])]
+							: []),
 					],
-	})
+				),
+				description: h.span(
+					[h.Class("block truncate")],
+					[
+						account === undefined
+							? `Connect your ${provider.label} account`
+							: account.emailAddress || account.username || "Connected",
+					],
+				),
+				control:
+					account === undefined
+						? [
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "sm",
+										isLoading: isBusy,
+										attributes: [h.OnClick(Message.ClickedConnect({ provider: provider.id }))],
+									},
+									["Connect"],
+								),
+							]
+						: [
+								...(account.isVerified
+									? []
+									: [
+											button(
+												h,
+												{
+													variant: "outline",
+													size: "sm",
+													isDisabled: isBusy,
+													attributes: [
+														h.OnClick(Message.ClickedRetry({ provider: provider.id, accountId: account.id })),
+													],
+												},
+												["Retry"],
+											),
+										]),
+								button(
+									h,
+									{
+										variant: "ghost",
+										size: "sm",
+										isDisabled: isBusy,
+										attributes: [
+											h.OnClick(Message.ClickedDisconnect({ provider: provider.id, accountId: account.id })),
+										],
+									},
+									["Disconnect"],
+								),
+							],
+			})
 }
 
 const loaded = (h: H, model: Model, user: AccountUser): Html => {
@@ -112,12 +98,7 @@ const loaded = (h: H, model: Model, user: AccountUser): Html => {
 				],
 				padded: false,
 			},
-			[
-				h.div(
-					[h.Class("divide-y")],
-					PROVIDERS.map((provider) => providerRow(h, model, user, provider)),
-				),
-			],
+			[h.div([h.Class("divide-y")], PROVIDERS.map((provider) => providerRow(h, model, user, provider)))],
 		),
 		confirmDialog(h, {
 			slotId: "account-disconnect",
@@ -132,7 +113,6 @@ const loaded = (h: H, model: Model, user: AccountUser): Html => {
 	])
 }
 
-export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>(
-	(model, _inputs, h) =>
-		!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model, model.user),
+export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>((model, _inputs, h) =>
+	!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model, model.user),
 )

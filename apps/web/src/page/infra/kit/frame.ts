@@ -35,12 +35,7 @@ export const init = (id: string): Model => ({
 })
 
 export const Message = defineMessageUnion({
-	CompletedResolveWindow: {
-		window: TimeWindow,
-		nowMs: Schema.Number,
-		locale: Schema.String,
-		mode: RequestMode,
-	},
+	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, locale: Schema.String, mode: RequestMode },
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedResetTimeRange: {},

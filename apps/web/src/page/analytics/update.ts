@@ -86,10 +86,7 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): 
 
 const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 	model,
-	outMessage: PageOutMessage.RequestedNavigation({
-		url: hrefOf(AppRoute.Analytics({ search })),
-		isReplace,
-	}),
+	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOf(AppRoute.Analytics({ search })), isReplace }),
 })
 
 /** `onFilterChange`: an empty value drops out of the URL. */
@@ -127,9 +124,7 @@ const seedPanels = (model: Model): Model => {
 	]
 	return seeds.reduce<Model>(
 		(next, [panel, hasViews]) =>
-			next.panels[panel] === undefined
-				? withPanel(next, panel, { sortKey: hasViews ? "views" : "count" })
-				: next,
+			next.panels[panel] === undefined ? withPanel(next, panel, { sortKey: hasViews ? "views" : "count" }) : next,
 		model,
 	)
 }
@@ -206,26 +201,18 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Analytics({ search }))
 
-export const routeChanged = (
-	model: Model,
-	route: { readonly search: Search },
-	context: PageContext,
-): Return => {
+export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	// A tab switch unmounts the other tab's cards, and with them their tab, search and sort.
 	const isSameTab = tabOf(model.search) === tabOf(route.search)
 	const next = { ...model, search: route.search, panels: isSameTab ? model.panels : {} }
 	return routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({
-			model: next,
-			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
-		}),
+		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
 		requestAll: (mode) => withRequests(next, context, mode),
 	})
 }
 
-export const contextChanged = (model: Model, context: PageContext): Return =>
-	withRequests(model, context, "Load")
+export const contextChanged = (model: Model, context: PageContext): Return => withRequests(model, context, "Load")
 
 const lift = <A>(
 	model: Model,
@@ -260,31 +247,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			withRequests({ ...model, window, nowMs }, context, mode),
 		CompletedFetch: ({ key, result }) => ({ model: delivered(model, key, result) }),
 		CompletedLoadSignalPresence: ({ result }) =>
-			withRequests(
-				seedPanels({ ...model, presence: AsyncData.settle(model.presence, result) }),
-				context,
-				"Load",
-			),
+			withRequests(seedPanels({ ...model, presence: AsyncData.settle(model.presence, result) }), context, "Load"),
 		TickedLivePoll: () => refreshOnly(model, context, ["live"]),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
 				model: reloaded,
-				commands: [
-					resolveCommand(reloaded, context, "Refresh"),
-					CompleteReloadSpin({ version: reloaded.refreshVersion }),
-				],
+				commands: [resolveCommand(reloaded, context, "Refresh"), CompleteReloadSpin({ version: reloaded.refreshVersion })],
 			}
 		},
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		ClickedResetTimeRange: () =>
-			navigate(model, {
-				...model.search,
-				startTime: undefined,
-				endTime: undefined,
-				timePreset: DEFAULT_PRESET,
-			}),
+			navigate(model, { ...model.search, startTime: undefined, endTime: undefined, timePreset: DEFAULT_PRESET }),
 		ClickedRetrySummary: () => refreshOnly(model, context, ["summary"]),
 		ClickedRetryBreakdowns: () => refreshOnly(model, context, ["breakdowns"]),
 		ToggledFilter: ({ key, value }) => {
@@ -293,19 +268,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ChangedFilter: ({ key, value }) => navigate(model, withFilter(model.search, key, value)),
 		ToggledTraffic: ({ which, isOn }) =>
-			navigate(
-				model,
-				withFilter(
-					model.search,
-					"traffic",
-					toggleTraffic(filtersOf(model.search).traffic, which, isOn),
-				),
-			),
+			navigate(model, withFilter(model.search, "traffic", toggleTraffic(filtersOf(model.search).traffic, which, isOn))),
 		ClickedClearFilters: () => navigate(model, clearedFilters(model.search)),
 		PickedMetric: ({ metric }) => ({ model: { ...model, pickedMetric: metric } }),
-		PickedPanelTab: ({ panel, index }) => ({
-			model: withPanel(model, panel, { pickedTab: index, query: "" }),
-		}),
+		PickedPanelTab: ({ panel, index }) => ({ model: withPanel(model, panel, { pickedTab: index, query: "" }) }),
 		ChangedPanelQuery: ({ panel, value }) => ({ model: withPanel(model, panel, { query: value }) }),
 		ClickedPanelSort: ({ panel, key, current }) => {
 			const next = nextSort<"name" | "count" | "views">(current, key, { stringKeys: ["name"] })
@@ -320,10 +286,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const filters = filtersOf(model.search)
 			return {
 				...closed,
-				outMessage: navigate(
-					model,
-					withFilter(model.search, key, toggleFilterValue(filters[key], value)),
-				).outMessage,
+				outMessage: navigate(model, withFilter(model.search, key, toggleFilterValue(filters[key], value))).outMessage,
 			}
 		},
 		FailedFavicon: ({ host }) =>
@@ -354,13 +317,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		GotChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.chart, inner)
-			return lift(model, next.commands, (m) => Message.GotChartMessage({ message: m }), {
-				chart: next.model,
-			})
+			return lift(model, next.commands, (m) => Message.GotChartMessage({ message: m }), { chart: next.model })
 		},
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
 	})

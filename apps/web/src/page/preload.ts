@@ -47,19 +47,12 @@ export const intended = (model: Model, href: string): Option.Option<{ model: Mod
 	model.intents[href] !== undefined
 		? Option.none()
 		: Option.some({
-				model: {
-					...model,
-					version: model.version + 1,
-					intents: { ...model.intents, [href]: model.version + 1 },
-				},
+				model: { ...model, version: model.version + 1, intents: { ...model.intents, [href]: model.version + 1 } },
 				version: model.version + 1,
 			})
 
 /** `cancelPreload` on mouse leave or blur. */
-export const ended = (model: Model, href: string): Model => ({
-	...model,
-	intents: without(model.intents, href),
-})
+export const ended = (model: Model, href: string): Model => ({ ...model, intents: without(model.intents, href) })
 
 /** The delay elapsed: `Some` when the link is still intended (the timer was not cancelled). */
 export const elapsed = (model: Model, href: string, version: number): Option.Option<Model> =>
@@ -159,8 +152,7 @@ const pointerEntries: Stream.Stream<LinkIntent> = Stream.mergeAll(
 		Dom.streamFromEventFilterMap({
 			target: () => document,
 			type: "mousemove",
-			filterMapEvent: (event) =>
-				Option.some<PointerSample>({ x: event.clientX, y: event.clientY, href: null }),
+			filterMapEvent: (event) => Option.some<PointerSample>({ x: event.clientX, y: event.clientY, href: null }),
 		}),
 		Dom.streamFromEventFilterMap({
 			target: () => document,
@@ -178,9 +170,7 @@ const pointerEntries: Stream.Stream<LinkIntent> = Stream.mergeAll(
 		() => Option.none<Position>(),
 		(last, sample): readonly [Option.Option<Position>, ReadonlyArray<LinkIntent>] => [
 			Option.some({ x: sample.x, y: sample.y }),
-			sample.href !== null && isPointerEntry(last, sample.x, sample.y)
-				? [intent(sample.href, false)]
-				: [],
+			sample.href !== null && isPointerEntry(last, sample.x, sample.y) ? [intent(sample.href, false)] : [],
 		],
 	),
 )
@@ -201,8 +191,7 @@ export const linkIntents: Stream.Stream<LinkIntent> = Stream.mergeAll(
 		Dom.streamFromEventFilterMap({
 			target: () => document,
 			type: "focusin",
-			filterMapEvent: (event) =>
-				Option.map(internalLink(event.target), (link) => intent(link.href, false)),
+			filterMapEvent: (event) => Option.map(internalLink(event.target), (link) => intent(link.href, false)),
 		}),
 		Dom.streamFromEventFilterMap({
 			target: () => document,
@@ -212,8 +201,7 @@ export const linkIntents: Stream.Stream<LinkIntent> = Stream.mergeAll(
 		Dom.streamFromEventFilterMap({
 			target: () => document,
 			type: "touchstart",
-			filterMapEvent: (event) =>
-				Option.map(internalLink(event.target), (link) => intent(link.href, true)),
+			filterMapEvent: (event) => Option.map(internalLink(event.target), (link) => intent(link.href, true)),
 		}),
 	],
 	{ concurrency: "unbounded" },

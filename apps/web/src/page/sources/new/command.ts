@@ -37,8 +37,7 @@ export const FetchCreatedSource = Command.define("FetchCreatedSource", {
 export const WaitFirstDataPoll = Command.define("WaitFirstDataPoll", {
 	args: { key: Schema.String },
 	messages: [Message.ElapsedPoll],
-	execute: ({ key }) =>
-		Effect.sleep(Duration.millis(POLL_MS)).pipe(Effect.as(Message.ElapsedPoll({ key }))),
+	execute: ({ key }) => Effect.sleep(Duration.millis(POLL_MS)).pipe(Effect.as(Message.ElapsedPoll({ key }))),
 })
 
 /** `sources.create` with the rules payload; the expiry resolves against the clock at submit. */

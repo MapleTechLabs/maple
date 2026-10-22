@@ -17,7 +17,10 @@ import {
 	type WorkflowEventSinkApi,
 } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { isSourcePaused, stampedSourceId } from "@maple/backend/services/org/integration-sources"
+import {
+	isSourcePaused,
+	stampedSourceId,
+} from "@maple/backend/services/org/integration-sources"
 import { isRefusal, makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
 import { jobLogRecords, type OtlpLogsPayload, workflowJobLogsToOtlp } from "./logs"
 import { type OtlpTracesPayload, workflowJobToOtlp, workflowRunToOtlp } from "./otlp"
@@ -37,15 +40,13 @@ const make = Effect.gen(function* () {
 	// A refused key (billing, revoked) cannot succeed on retry; everything else gets two more tries.
 	const post = (ingestKey: string, payload: OtlpTracesPayload | OtlpLogsPayload) => {
 		const signal = "resourceLogs" in payload ? "logs" : "traces"
-		return ingest
-			.send({ signal, ingestKey, payload, label: `CI ${signal}`, timeout: INGEST_TIMEOUT })
-			.pipe(
-				Effect.retry({
-					schedule: Schedule.exponential(Duration.millis(250)),
-					times: 2,
-					while: (error) => !isRefusal(error),
-				}),
-			)
+		return ingest.send({ signal, ingestKey, payload, label: `CI ${signal}`, timeout: INGEST_TIMEOUT }).pipe(
+			Effect.retry({
+				schedule: Schedule.exponential(Duration.millis(250)),
+				times: 2,
+				while: (error) => !isRefusal(error),
+			}),
+		)
 	}
 
 	// The installation's source: its `src_` id and whether it is paused. Never fails: without it the

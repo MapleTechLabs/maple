@@ -153,12 +153,7 @@ export const executeSql = async (db: TestDb, sql: string, params: unknown[] = []
  */
 export const insertTestSource = async (
 	db: TestDb,
-	source: {
-		readonly orgId: string
-		readonly platform: string
-		readonly name?: string
-		readonly id?: string
-	},
+	source: { readonly orgId: string; readonly platform: string; readonly name?: string; readonly id?: string },
 ): Promise<string> => {
 	const id = source.id ?? crypto.randomUUID()
 	await db.pglite.query(

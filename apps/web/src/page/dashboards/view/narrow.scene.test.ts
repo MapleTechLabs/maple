@@ -38,10 +38,7 @@ const revealed = (): Model =>
 		Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
 		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
 		Message.RevealedWidget({ widgetId: "logs" }),
-	].reduce(
-		(model, message) => pageUpdate(model, message).model,
-		init({ dashboardId: "dash_wide", search: {} }, context).model,
-	)
+	].reduce((model, message) => pageUpdate(model, message).model, init({ dashboardId: "dash_wide", search: {} }, context).model)
 
 describe("a list wider than the cap", () => {
 	test("is blocked until narrowed, then asks for the capped window", () => {
@@ -51,9 +48,6 @@ describe("a list wider than the cap", () => {
 		expect(gate?._tag).toBe("Request")
 		expect((narrowed.commands ?? []).map(({ name }) => name)).toContain(FetchWidget.name)
 		const params = gate?._tag === "Request" ? gate.request.params : {}
-		expect([params["startTime"], params["endTime"]]).toEqual([
-			"2026-09-24 12:00:00",
-			"2026-10-01 12:00:00",
-		])
+		expect([params["startTime"], params["endTime"]]).toEqual(["2026-09-24 12:00:00", "2026-10-01 12:00:00"])
 	})
 })

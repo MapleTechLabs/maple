@@ -32,13 +32,11 @@ export type OptionsSource =
 type Window = Readonly<{ startTime: string; endTime: string }>
 
 const names = (rows: ReadonlyArray<{ readonly name: string }>) => rows.map((row) => row.name)
-const values = (rows: ReadonlyArray<{ readonly attributeValue: string }>) =>
-	rows.map((row) => row.attributeValue)
+const values = (rows: ReadonlyArray<{ readonly attributeValue: string }>) => rows.map((row) => row.attributeValue)
 
 /** `readVariableOptions`'s request for one variable, keyed so a window change refetches. */
 export const optionsSourceOf = (orgId: string, variable: Variable, window: Window | null): OptionsSource => {
-	if (variable.type === "custom")
-		return { _tag: "Inline", options: variable.options.map((option) => option.value) }
+	if (variable.type === "custom") return { _tag: "Inline", options: variable.options.map((option) => option.value) }
 	const query = dashboardVariableOptionsQuery(variable)
 	if (query === null || window === null) return { _tag: "None" }
 	return { _tag: "Query", key: requestKey(orgId, "dashboardVariableOptions", { query, window }) }
@@ -50,31 +48,33 @@ export const fetchVariableOptions = (variable: Variable, window: Window) => {
 	if (query === null) return Effect.succeed<ReadonlyArray<string>>([])
 	if (query.kind === "attributeValues") {
 		const data = { ...window, attributeKey: query.attributeKey }
-		return query.source === "metrics"
-			? Effect.map(
-					getMetricAttributeValues({
-						data: {
-							...data,
-							metricNames: query.metricNames,
-							metricType: query.metricType,
-							scope: query.scope === "resource" ? "resource" : "metric",
-						},
-					}),
-					(response) => values(response.data),
-				)
-			: query.scope === "resource"
-				? Effect.map(getResourceAttributeValues({ data }), (response) => values(response.data))
-				: Effect.map(getSpanAttributeValues({ data }), (response) => values(response.data))
+		return (
+				query.source === "metrics"
+					? Effect.map(
+							getMetricAttributeValues({
+								data: {
+									...data,
+									metricNames: query.metricNames,
+									metricType: query.metricType,
+									scope: query.scope === "resource" ? "resource" : "metric",
+								},
+							}),
+							(response) => values(response.data),
+						)
+					: query.scope === "resource"
+						? Effect.map(getResourceAttributeValues({ data }), (response) => values(response.data))
+						: Effect.map(getSpanAttributeValues({ data }), (response) => values(response.data))
+		)
 	}
-	return query.source === "logs"
-		? Effect.map(
-				getLogsFacetValues({ data: { ...window, facet: query.facet ?? "severity" } }),
-				(response) => names(response.data),
-			)
-		: Effect.map(
-				getTracesFacetValues({ data: { ...window, facet: query.facet ?? "service" } }),
-				(response) => names(response.data),
-			)
+	return (
+		query.source === "logs"
+				? Effect.map(getLogsFacetValues({ data: { ...window, facet: query.facet ?? "severity" } }), (response) =>
+						names(response.data),
+					)
+				: Effect.map(getTracesFacetValues({ data: { ...window, facet: query.facet ?? "service" } }), (response) =>
+						names(response.data),
+					)
+	)
 }
 
 export type OptionsState = Readonly<{ options: ReadonlyArray<string>; loading: boolean }>
@@ -135,8 +135,7 @@ export const optionsByNameOf = (
 		variables.map((variable) => {
 			const source = optionsSourceOf(orgId, variable, window)
 			if (source._tag === "Inline") return [variable.name, { options: source.options, loading: false }]
-			if (source._tag === "None")
-				return [variable.name, { options: [], loading: variable.type === "query" }]
+			if (source._tag === "None") return [variable.name, { options: [], loading: variable.type === "query" }]
 			const slot = slots[variable.name]
 			const data = slot === undefined || slot.key !== source.key ? AsyncData.Idle() : slot.data
 			return [

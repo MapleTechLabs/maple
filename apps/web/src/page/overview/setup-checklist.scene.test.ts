@@ -68,14 +68,8 @@ const pageMounts = [
 ] as const
 /** The guided setup's two underline tab lists (snippets and package managers). */
 const tabMounts = [
-	Mount.resolve<string, Tabs.Message>(
-		Tabs.MeasureTabIndicator,
-		Tabs.Message.MeasuredIndicator({ rect: RECT }),
-	),
-	Mount.resolve<string, Tabs.Message>(
-		Tabs.MeasureTabIndicator,
-		Tabs.Message.MeasuredIndicator({ rect: RECT }),
-	),
+	Mount.resolve<string, Tabs.Message>(Tabs.MeasureTabIndicator, Tabs.Message.MeasuredIndicator({ rect: RECT })),
+	Mount.resolve<string, Tabs.Message>(Tabs.MeasureTabIndicator, Tabs.Message.MeasuredIndicator({ rect: RECT })),
 ] as const
 
 describe("overview setup checklist", () => {
@@ -161,10 +155,7 @@ describe("overview setup checklist", () => {
 	})
 
 	test("a sent test event re-reads the clock before asking the overview again", () => {
-		const sent = pageUpdate(
-			entered(true).read.model,
-			setup(SetupMessage.CompletedSendTestEvent({ isSent: true })),
-		)
+		const sent = pageUpdate(entered(true).read.model, setup(SetupMessage.CompletedSendTestEvent({ isSent: true })))
 		expect(names(sent.commands)).toEqual(["ResolveSetupChecklistPollWindow"])
 	})
 

@@ -36,9 +36,7 @@ const RAMP: ReadonlyArray<readonly [number, number, number, number]> = [
 
 const rampColor = (fraction: number): string => {
 	const x = fraction < 0 ? 0 : fraction > 1 ? 1 : fraction
-	const index = RAMP.findIndex(
-		(stop, i) => i < RAMP.length - 1 && x >= stop[0] && x <= (RAMP[i + 1]?.[0] ?? 1),
-	)
+	const index = RAMP.findIndex((stop, i) => i < RAMP.length - 1 && x >= stop[0] && x <= (RAMP[i + 1]?.[0] ?? 1))
 	const lo = RAMP[index === -1 ? 0 : index] ?? [0, 0, 0, 0]
 	const hi = RAMP[index === -1 ? RAMP.length - 1 : index + 1] ?? lo
 	const t = (x - lo[0]) / (hi[0] - lo[0] || 1)
@@ -113,8 +111,7 @@ const scale = (min: number, max: number, span: number, options: GaugeOptions) =>
 	const angleFor = (tickValue: number) => START_ANGLE + ((tickValue - min) / span) * SWEEP
 	const ticks = [min, max, ...(options.thresholds ?? []).map((threshold) => threshold.value)]
 		.filter(
-			(tickValue, index, all) =>
-				tickValue >= min && tickValue <= max && all.indexOf(tickValue) === index,
+			(tickValue, index, all) => tickValue >= min && tickValue <= max && all.indexOf(tickValue) === index,
 		)
 		.map((tickValue) => ({ value: tickValue, angle: angleFor(tickValue) }))
 	const boundLabels: ReadonlyArray<GaugeLabel> = [min, max].map((boundValue, index) => {
@@ -155,7 +152,10 @@ export const gaugeGeometry = (rawValue: unknown, options: GaugeOptions) => {
 		value !== null
 			? `${options.prefix ?? ""}${formatValueByUnit(value, options.unit)}${options.suffix ?? ""}`
 			: EMPTY_VALUE
-	const valueFontSize = Math.min(VALUE_FONT_SIZE, VALUE_MAX_WIDTH / (formattedValue.length * MONO_ADVANCE))
+	const valueFontSize = Math.min(
+		VALUE_FONT_SIZE,
+		VALUE_MAX_WIDTH / (formattedValue.length * MONO_ADVANCE),
+	)
 	const { segments, rim } = arcs(value, fraction)
 	const { ticks, boundLabels, labels } = scale(min, max, span, options)
 	const widestLabel = labels.reduce(

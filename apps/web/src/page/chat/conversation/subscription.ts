@@ -17,14 +17,7 @@ export type Tail = typeof Tail.Type
 export const tailOf = (model: Model): ReadonlyArray<Tail> =>
 	model.stream === null
 		? []
-		: [
-				{
-					tabId: model.tabId,
-					sessionId: model.sessionId,
-					generation: model.stream.generation,
-					cursor: model.stream.cursor,
-				},
-			]
+		: [{ tabId: model.tabId, sessionId: model.sessionId, generation: model.stream.generation, cursor: model.stream.cursor }]
 
 /**
  * One tail's Messages, each stamped with the clock (a new assistant turn's `createdAt`). A tail
@@ -41,11 +34,7 @@ export const tailMessages = <M>(
 				toMessage(
 					tail.tabId,
 					output._tag === "Events"
-						? Message.ReceivedChatEvents({
-								generation: tail.generation,
-								events: output.events,
-								nowMs,
-							})
+						? Message.ReceivedChatEvents({ generation: tail.generation, events: output.events, nowMs })
 						: Message.FailedChatStream({ generation: tail.generation, message: output.message }),
 				),
 			),

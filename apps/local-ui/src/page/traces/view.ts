@@ -42,18 +42,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const hasNextPage = Option.exists(maybeData, (data) => data.hasNextPage)
 	const content = (): Html => {
 		if (isPending(model.traces))
-			return tableSkeleton(h, {
-				className: "rounded-none border-0",
-				rows: 12,
-				columns: SKELETON_COLUMNS,
-			})
+			return tableSkeleton(h, { className: "rounded-none border-0", rows: 12, columns: SKELETON_COLUMNS })
 		const failure = failureWithoutData(model.traces)
 		if (Option.isSome(failure))
-			return errorState(h, {
-				label: "traces",
-				failure: failure.value,
-				onRetry: Message.ClickedRefresh(),
-			})
+			return errorState(h, { label: "traces", failure: failure.value, onRetry: Message.ClickedRefresh() })
 		if (rows.length === 0)
 			return signalEmptyState(h, {
 				signal: "traces",
@@ -63,12 +55,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onWidenRange: Message.ClickedWidenRange(),
 				maybePresence: inputs.presenceOf("traces"),
 				nowMs: inputs.presenceNowMs,
-				guide: {
-					id: "traces-empty",
-					endpoint: context.env.otlpEndpoint,
-					copies: model.copies,
-					toCopyMessage: toCopy,
-				},
+				guide: { id: "traces-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
 			})
 		return h.div(
 			[h.Class(cn(model.traces.isPlaceholder && "opacity-60 transition-opacity"))],
@@ -84,16 +71,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							tableHead(h, ["Started"], "text-right"),
 						]),
 					]),
-					tableBody(
-						h,
-						rows.map((row) => traceRow(h, row, query, model.nowMs, context.timeFormat)),
-					),
+					tableBody(h, rows.map((row) => traceRow(h, row, query, model.nowMs, context.timeFormat))),
 				]),
-				listFooter(h, {
-					hasMore: hasNextPage,
-					isLoading: model.isFetchingNextPage,
-					onLoadMore: Message.ClickedLoadMore(),
-				}),
+				listFooter(h, { hasMore: hasNextPage, isLoading: model.isFetchingNextPage, onLoadMore: Message.ClickedLoadMore() }),
 			].filter((child) => child !== null),
 		)
 	}

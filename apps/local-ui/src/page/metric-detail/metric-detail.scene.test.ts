@@ -22,8 +22,7 @@ const contextAt = (search: string, canGoBack = false): PageContext => ({
 })
 const context = contextAt("range=1h&spanId=abc")
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
 
 const entry: MetricEntry = {
 	metricName: "http.server.request.duration",
@@ -38,10 +37,7 @@ const entry: MetricEntry = {
 }
 
 const entered = () =>
-	pageUpdate(
-		init(context, "http.server.request.duration").model,
-		Message.CompletedReadClock({ nowMs: NOW }),
-	)
+	pageUpdate(init(context, "http.server.request.duration").model, Message.CompletedReadClock({ nowMs: NOW }))
 
 describe("local metric detail", () => {
 	test("entry asks for the metric's catalog entry, then its timeseries and breakdown", () => {
@@ -51,28 +47,20 @@ describe("local metric detail", () => {
 			step.model,
 			Message.SucceededFetchEntry({ key: step.model.entry.key ?? "", entry, fetchedAtMs: NOW }),
 		)
-		expect(names(found.commands)).toEqual(
-			expect.arrayContaining(["FetchLocalMetricTimeseries", "FetchLocalMetricBreakdown"]),
-		)
+		expect(names(found.commands)).toEqual(expect.arrayContaining(["FetchLocalMetricTimeseries", "FetchLocalMetricBreakdown"]))
 	})
 
 	test("an entry answer for a superseded window is dropped", () => {
 		const first = entered().model
 		const later = pageUpdate(first, Message.CompletedReadRefreshClock({ nowMs: NOW + 120_000 })).model
-		const dropped = pageUpdate(
-			later,
-			Message.SucceededFetchEntry({ key: first.entry.key ?? "", entry, fetchedAtMs: NOW }),
-		)
+		const dropped = pageUpdate(later, Message.SucceededFetchEntry({ key: first.entry.key ?? "", entry, fetchedAtMs: NOW }))
 		expect(dropped.model.entry).toEqual(later.entry)
 		expect(names(dropped.commands)).toEqual([])
 	})
 
 	test("a missing metric asks for nothing more", () => {
 		const step = entered()
-		const missing = pageUpdate(
-			step.model,
-			Message.SucceededFetchEntry({ key: step.model.entry.key ?? "", entry: null, fetchedAtMs: NOW }),
-		)
+		const missing = pageUpdate(step.model, Message.SucceededFetchEntry({ key: step.model.entry.key ?? "", entry: null, fetchedAtMs: NOW }))
 		expect(names(missing.commands)).toEqual([])
 	})
 
@@ -83,17 +71,8 @@ describe("local metric detail", () => {
 
 	test("last seen reads the root's newer clock, as legacy reads the time at each render", () => {
 		const step = entered()
-		const found = pageUpdate(
-			step.model,
-			Message.SucceededFetchEntry({ key: step.model.entry.key ?? "", entry, fetchedAtMs: NOW }),
-		).model
-		const inputs: PageViewInputs = {
-			context,
-			presenceOf: () => Option.none(),
-			presenceNowMs: NOW,
-			clockMs: NOW + 20 * 60_000,
-			hasNewDataSince: () => false,
-		}
+		const found = pageUpdate(step.model, Message.SucceededFetchEntry({ key: step.model.entry.key ?? "", entry, fetchedAtMs: NOW })).model
+		const inputs: PageViewInputs = { context, presenceOf: () => Option.none(), presenceNowMs: NOW, clockMs: NOW + 20 * 60_000, hasNewDataSince: () => false }
 		scene(
 			{ update: pageUpdate, view: withViewInputs(pageView, inputs)() },
 			given(found),

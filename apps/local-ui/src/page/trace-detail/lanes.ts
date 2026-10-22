@@ -8,11 +8,7 @@ export const lanes = (model: Model): ReadonlyArray<Lane> => [
 	...(model.panel === null
 		? []
 		: [
-				...slotLane(FetchSpanDetail.name, model.panel.detail, (key) =>
-					FetchSpanDetail.Interrupt({ key }, outcomeOf),
-				),
-				...slotLane(FetchSpanLogs.name, model.panel.logs, (key) =>
-					FetchSpanLogs.Interrupt({ key }, outcomeOf),
-				),
+				...slotLane(FetchSpanDetail.name, model.panel.detail, (key) => FetchSpanDetail.Interrupt({ key }, outcomeOf)),
+				...slotLane(FetchSpanLogs.name, model.panel.logs, (key) => FetchSpanLogs.Interrupt({ key }, outcomeOf)),
 			]),
 ]

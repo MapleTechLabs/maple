@@ -75,8 +75,7 @@ export const CAPABILITIES = {
 			"resumes-now": "Stores this connection's logs again, at once.",
 		},
 		later: {
-			"stops-now":
-				"Keeps forwarding them to Pub/Sub, billed by Google, until the change is applied in Google Cloud.",
+			"stops-now": "Keeps forwarding them to Pub/Sub, billed by Google, until the change is applied in Google Cloud.",
 			"resumes-now": "Nothing to apply: the log sink is still there and forwarding.",
 		},
 	},
@@ -90,16 +89,14 @@ export const CAPABILITIES = {
 			"starts-after-script": "Starts once it's set up in Google Cloud",
 			"resumes-now": "Read again from the next 5-minute read",
 			"stops-now": "Maple stops reading when you save",
-			"removed-by-script":
-				"Its service account stays in Google Cloud until the change is applied there",
+			"removed-by-script": "Its service account stays in Google Cloud until the change is applied there",
 		},
 		now: {
 			"stops-now": "Stops reading this connection's metrics and resources from the next 5-minute read.",
 			"resumes-now": "Reads this connection's metrics and resources again from the next 5-minute read.",
 		},
 		later: {
-			"stops-now":
-				"Keeps the read-only service account and its roles until the change is applied in Google Cloud.",
+			"stops-now": "Keeps the read-only service account and its roles until the change is applied in Google Cloud.",
 			"resumes-now": "Nothing to apply: the read-only service account is still there.",
 		},
 	},

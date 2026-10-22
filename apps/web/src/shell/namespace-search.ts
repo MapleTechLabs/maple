@@ -28,12 +28,7 @@ export const namespaceRows = (
 		pinned,
 		(name) => !observed.includes(name) && (trimmed === "" || name.toLowerCase().includes(trimmed)),
 	)
-	return {
-		isFiltered: trimmed !== "",
-		matches,
-		unseenPin,
-		isNoMatch: matches.length === 0 && trimmed !== "",
-	}
+	return { isFiltered: trimmed !== "", matches, unseenPin, isNoMatch: matches.length === 0 && trimmed !== "" }
 }
 
 /** `<div className="p-1 pb-1.5"><Input autoFocus placeholder size="sm" /></div>`. */
@@ -53,11 +48,7 @@ export const namespaceSearchRow = <Message>(
 			input(h, {
 				id: options.id,
 				size: "sm",
-				attributes: [
-					h.Placeholder("Search namespaces…"),
-					h.Value(options.query),
-					...options.attributes,
-				],
+				attributes: [h.Placeholder("Search namespaces…"), h.Value(options.query), ...options.attributes],
 			}),
 		],
 	)

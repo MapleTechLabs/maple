@@ -73,8 +73,7 @@ export const headerSummary = (
 			newest === null || epochOf(dashboard.updatedAt) > epochOf(newest) ? dashboard.updatedAt : newest,
 		null,
 	)
-	if (latest !== null)
-		parts.push(`last edited ${formatRelativeTimeOrDate(latest, nowMs, timeZone, locale)}`)
+	if (latest !== null) parts.push(`last edited ${formatRelativeTimeOrDate(latest, nowMs, timeZone, locale)}`)
 	const empty = dashboards.filter((dashboard) => dashboard.widgetCount === 0).length
 	if (empty > 0) parts.push(`${empty} with no widgets`)
 	return parts.join(" · ")

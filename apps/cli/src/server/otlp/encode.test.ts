@@ -273,10 +273,7 @@ describe("value-level spot checks", () => {
 								{
 									name: "h",
 									histogram: {
-										dataPoints: [
-											histogramPoint("0"),
-											histogramPoint("18446744073709551615"),
-										],
+										dataPoints: [histogramPoint("0"), histogramPoint("18446744073709551615")],
 									},
 								},
 							],

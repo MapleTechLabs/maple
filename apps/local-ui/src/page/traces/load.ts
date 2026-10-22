@@ -16,10 +16,7 @@ export const boundsOf = (model: Model, context: PageContext): Option.Option<Time
 
 /** The cache key: `["local", name, filters, boundsKey(bounds)]`. */
 const keyFor = (name: string, context: PageContext, bounds: TimeBounds): string =>
-	keyOf(name, {
-		filters: filtersOf(queryOf(context.location)),
-		bounds: `${bounds.startTime}/${bounds.endTime}`,
-	})
+	keyOf(name, { filters: filtersOf(queryOf(context.location)), bounds: `${bounds.startTime}/${bounds.endTime}` })
 
 /** A cached result is on screen: fetch the real one (`readsCache: false`), unless it is fresh. */
 export const fetchAfterCache = (
@@ -33,18 +30,9 @@ export const fetchAfterCache = (
 		: Option.match(boundsOf(model, context), {
 				onNone: () => [],
 				onSome: (bounds) => {
-					const args = {
-						search: context.location.search,
-						...bounds,
-						apiBase: context.env.apiBase,
-						readsCache: false,
-					}
+					const args = { search: context.location.search, ...bounds, apiBase: context.env.apiBase, readsCache: false }
 					const key = model[which].key ?? ""
-					return [
-						which === "traces"
-							? FetchTraces({ key, ...args, pageCount: 1 })
-							: FetchFacets({ key, ...args }),
-					]
+					return [which === "traces" ? FetchTraces({ key, ...args, pageCount: 1 }) : FetchFacets({ key, ...args })]
 				},
 			})
 
@@ -65,8 +53,7 @@ export const load = (
 			const tracesKey = keyFor("traces", context, bounds)
 			const pageCount = Option.match(AsyncData.getData(model.traces.data), {
 				onNone: () => 1,
-				onSome: (data) =>
-					force && model.traces.key === tracesKey ? Math.max(1, data.pages.length) : 1,
+				onSome: (data) => (force && model.traces.key === tracesKey ? Math.max(1, data.pages.length) : 1),
 			})
 			const traces = request(model.traces, tracesKey, force)
 			const facetsKey = keyFor("trace-facets", context, bounds)
@@ -80,17 +67,8 @@ export const load = (
 					pageGeneration: Option.isSome(traces) ? model.pageGeneration + 1 : model.pageGeneration,
 				},
 				commands: Array.getSomes([
-					Option.map(traces, () =>
-						FetchTraces({
-							key: tracesKey,
-							...args,
-							pageCount,
-							readsCache: model.traces.key !== tracesKey,
-						}),
-					),
-					Option.map(facets, () =>
-						FetchFacets({ key: facetsKey, ...args, readsCache: model.facets.key !== facetsKey }),
-					),
+					Option.map(traces, () => FetchTraces({ key: tracesKey, ...args, pageCount, readsCache: model.traces.key !== tracesKey })),
+					Option.map(facets, () => FetchFacets({ key: facetsKey, ...args, readsCache: model.facets.key !== facetsKey })),
 				]),
 			}
 		},

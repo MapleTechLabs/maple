@@ -32,13 +32,7 @@ export const SeriesRequest = Schema.Union([
 	}),
 	Schema.TaggedStruct("node", {
 		nodeName: Schema.String,
-		metric: Schema.Literals([
-			"cpu_usage",
-			"cpu_utilization",
-			"memory_usage",
-			"memory_utilization",
-			"uptime",
-		]),
+		metric: Schema.Literals(["cpu_usage", "cpu_utilization", "memory_usage", "memory_utilization", "uptime"]),
 		...Window,
 	}),
 	Schema.TaggedStruct("host", {
@@ -60,38 +54,22 @@ const load = (request: SeriesRequest) => {
 		case "container": {
 			const { containerName, hostName, metric, startTime, endTime, bucketSeconds } = request
 			const data = { containerName, hostName, metric, startTime, endTime, bucketSeconds }
-			return {
-				operation: "containerInfraTimeseries",
-				data,
-				read: Effect.map(containerInfraTimeseries({ data }), toSeries),
-			}
+			return { operation: "containerInfraTimeseries", data, read: Effect.map(containerInfraTimeseries({ data }), toSeries) }
 		}
 		case "pod": {
 			const { podName, namespace, metric, startTime, endTime, bucketSeconds } = request
 			const data = { podName, namespace, metric, startTime, endTime, bucketSeconds }
-			return {
-				operation: "podInfraTimeseries",
-				data,
-				read: Effect.map(podInfraTimeseries({ data }), toSeries),
-			}
+			return { operation: "podInfraTimeseries", data, read: Effect.map(podInfraTimeseries({ data }), toSeries) }
 		}
 		case "node": {
 			const { nodeName, metric, startTime, endTime, bucketSeconds } = request
 			const data = { nodeName, metric, startTime, endTime, bucketSeconds }
-			return {
-				operation: "nodeInfraTimeseries",
-				data,
-				read: Effect.map(nodeInfraTimeseries({ data }), toSeries),
-			}
+			return { operation: "nodeInfraTimeseries", data, read: Effect.map(nodeInfraTimeseries({ data }), toSeries) }
 		}
 		case "host": {
 			const { hostName, metric, startTime, endTime, bucketSeconds } = request
 			const data = { hostName, metric, startTime, endTime, bucketSeconds }
-			return {
-				operation: "hostInfraTimeseries",
-				data,
-				read: Effect.map(hostInfraTimeseries({ data }), toSeries),
-			}
+			return { operation: "hostInfraTimeseries", data, read: Effect.map(hostInfraTimeseries({ data }), toSeries) }
 		}
 	}
 }

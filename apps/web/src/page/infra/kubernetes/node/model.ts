@@ -14,13 +14,7 @@ import { PodsPage } from "../pod-data"
 export const NodeSummary = NodeDetailSummaryResponse.fields.data
 export type NodeSummary = NodeDetailSummaryResponse["data"]
 
-export const NodeMetric = Schema.Literals([
-	"cpu_usage",
-	"cpu_utilization",
-	"memory_usage",
-	"memory_utilization",
-	"uptime",
-])
+export const NodeMetric = Schema.Literals(["cpu_usage", "cpu_utilization", "memory_usage", "memory_utilization", "uptime"])
 export type NodeMetric = typeof NodeMetric.Type
 
 export const Model = Schema.Struct({

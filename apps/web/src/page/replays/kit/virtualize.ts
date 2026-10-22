@@ -31,25 +31,17 @@ const keysOf = (list: HTMLElement): ReadonlyArray<string> => {
 const marginBetween = (list: HTMLElement, scroller: HTMLElement): number =>
 	Math.max(
 		0,
-		Math.round(
-			list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop,
-		),
+		Math.round(list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop),
 	)
 
 const sameWindow = (a: VirtualWindow, b: VirtualWindow): boolean =>
 	a.totalSize === b.totalSize &&
 	a.scrollMargin === b.scrollMargin &&
 	a.rows.length === b.rows.length &&
-	a.rows.every(
-		(row, i) =>
-			row.index === b.rows[i]?.index && row.start === b.rows[i]?.start && row.end === b.rows[i]?.end,
-	)
+	a.rows.every((row, i) => row.index === b.rows[i]?.index && row.start === b.rows[i]?.start && row.end === b.rows[i]?.end)
 
 /** Runs the virtualizer for the list element; every window change becomes `toMessage(window)`. */
-export const virtualizeSessions = <A>(
-	list: HTMLElement,
-	toMessage: (window: VirtualWindow) => A,
-): Stream.Stream<A> =>
+export const virtualizeSessions = <A>(list: HTMLElement, toMessage: (window: VirtualWindow) => A): Stream.Stream<A> =>
 	Stream.callback<A>((queue) =>
 		Effect.acquireRelease(
 			Effect.sync(() => {
@@ -57,9 +49,7 @@ export const virtualizeSessions = <A>(
 				const state = { keys: keysOf(list), scrollMargin: 0, last: emptyWindow, isScheduled: false }
 				const emit = (instance: Virtualizer<HTMLElement, HTMLElement>) => {
 					const next: VirtualWindow = {
-						rows: instance
-							.getVirtualItems()
-							.map((item) => ({ index: item.index, start: item.start, end: item.end })),
+						rows: instance.getVirtualItems().map((item) => ({ index: item.index, start: item.start, end: item.end })),
 						totalSize: instance.getTotalSize(),
 						scrollMargin: state.scrollMargin,
 					}
@@ -95,9 +85,7 @@ export const virtualizeSessions = <A>(
 					schedule(virtualizer)
 				}
 				const measureRows = () =>
-					list
-						.querySelectorAll<HTMLElement>(":scope > [data-index]")
-						.forEach((node) => virtualizer.measureElement(node))
+					list.querySelectorAll<HTMLElement>(":scope > [data-index]").forEach((node) => virtualizer.measureElement(node))
 				const rowObserver = new MutationObserver(measureRows)
 				rowObserver.observe(list, { childList: true })
 				const keysObserver = new MutationObserver(() => {

@@ -24,3 +24,4 @@ export const FetchReviewAuthors = Command.define("FetchCodeReviewReviewAuthors",
 			Effect.map((result) => Message.CompletedFetchAuthors({ key, result })),
 		),
 })
+

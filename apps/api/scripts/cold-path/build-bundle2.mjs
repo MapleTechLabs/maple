@@ -79,7 +79,10 @@ const sourceOverride = {
 const build = await rolldown({
 	input,
 	external: ["lightningcss", "fsevents"],
-	plugins: [sourceOverride, cloudflareRolldown({ compatibilityDate: "2026-10-01" })],
+	plugins: [
+		sourceOverride,
+		cloudflareRolldown({ compatibilityDate: "2026-10-01" }),
+	],
 	checks: { unresolvedImport: false, ineffectiveDynamicImport: false },
 })
 await build.write({

@@ -21,15 +21,11 @@ const ID = "0199a061-0000-7000-8000-000000000001"
 const context: PageContext = { orgId: Schema.decodeSync(OrgId)(ORG), pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
 
 // Matched by name: the canvas Mount is mapped into the page, so it resolves with the lifted Message.
 const paned = () =>
-	Mount.resolve(
-		{ name: AttachFlowCanvas.name },
-		Message.GotCanvasMessage({ message: Canvas.Message.ResizedPane({ width: 1102, height: 222 }) }),
-	)
+	Mount.resolve({ name: AttachFlowCanvas.name }, Message.GotCanvasMessage({ message: Canvas.Message.ResizedPane({ width: 1102, height: 222 }) }))
 
 // The canvas links' Mount answers with a plain click on a trace link.
 const TRACE_HREF = "/traces/6843a8853182b32339b2dd5120d423f2"
@@ -42,11 +38,7 @@ const row = (overrides: Readonly<Record<string, unknown>>) => ({
 	org_id: ORG,
 	status: "diagnosed",
 	seeded_by: "system",
-	subject_json: {
-		type: "incident",
-		incidentKind: "anomaly",
-		incidentId: "0199a060-0000-7000-8000-000000000001",
-	},
+	subject_json: { type: "incident", incidentKind: "anomaly", incidentId: "0199a060-0000-7000-8000-000000000001" },
 	snapshot_json: {
 		title: "payment-svc p95 latency above baseline",
 		scope: "payment-svc",
@@ -62,14 +54,7 @@ const row = (overrides: Readonly<Record<string, unknown>>) => ({
 		suspectedCause: "The rollout halved the pool size.",
 		severityAssessment: "critical",
 		affectedScope: "POST /charge",
-		evidence: [
-			{
-				traceIds: ["6843a8853182b32339b2dd5120d423f2"],
-				logPatterns: [],
-				relatedServices: ["checkout-api"],
-				note: "Pool wait dominates.",
-			},
-		],
+		evidence: [{ traceIds: ["6843a8853182b32339b2dd5120d423f2"], logPatterns: [], relatedServices: ["checkout-api"], note: "Pool wait dominates." }],
 		suggestedActions: ["Roll payment-svc back to 3.4.1"],
 		confidence: "high",
 	},
@@ -94,59 +79,30 @@ const investigationOf = (overrides: Readonly<Record<string, unknown>> = {}): V2I
 	return decoded
 }
 
-const entered = (search: Model["search"] = {}) => ({
-	...init(AppRoute.Investigation({ id: ID, search }), context).model,
-	nowMs: NOW,
-})
+const entered = (search: Model["search"] = {}) => ({ ...init(AppRoute.Investigation({ id: ID, search }), context).model, nowMs: NOW })
 const synced = (model: Model, investigation: V2Investigation) =>
-	pageUpdate(
-		model,
-		Message.SyncedInvestigation({
-			orgId: ORG,
-			id: ID,
-			attempt: 0,
-			sync: { _tag: "Ready", investigation },
-		}),
-	)
+	pageUpdate(model, Message.SyncedInvestigation({ orgId: ORG, id: ID, attempt: 0, sync: { _tag: "Ready", investigation } }))
 
 describe("investigation detail", () => {
 	test("entry reads the clock and waits on the live shape", () => {
 		const start = init(AppRoute.Investigation({ id: ID, search: {} }), context)
 		expect(names(start.commands)).toEqual(["ReadInvestigationClock"])
 		expect(start.model.sync._tag).toBe("Loading")
-		scene(
-			{ update: pageUpdate, view },
-			given(start.model),
-			expectView(role("img", { name: "Loading the provenance graph" })).toExist(),
-		)
+		scene({ update: pageUpdate, view }, given(start.model), expectView(role("img", { name: "Loading the provenance graph" })).toExist())
 	})
 
 	test("a malformed id is not found without a request", () => {
 		const start = init(AppRoute.Investigation({ id: "not-a-uuid", search: {} }), context)
-		scene(
-			{ update: pageUpdate, view },
-			given(start.model),
-			expectView(text("This investigation is unavailable")).toExist(),
-		)
+		scene({ update: pageUpdate, view }, given(start.model), expectView(text("This investigation is unavailable")).toExist())
 	})
 
 	test("a lost live connection offers a retry", () => {
-		const failed = pageUpdate(
-			entered(),
-			Message.SyncedInvestigation({ orgId: ORG, id: ID, attempt: 0, sync: { _tag: "Failed" } }),
-		).model
-		scene(
-			{ update: pageUpdate, view },
-			given(failed),
-			expectView(text("This investigation could not be loaded")).toExist(),
-		)
+		const failed = pageUpdate(entered(), Message.SyncedInvestigation({ orgId: ORG, id: ID, attempt: 0, sync: { _tag: "Failed" } })).model
+		scene({ update: pageUpdate, view }, given(failed), expectView(text("This investigation could not be loaded")).toExist())
 	})
 
 	test("Try again resubscribes the live shape, and the dropped stream's answer is ignored", () => {
-		const failed = pageUpdate(
-			entered(),
-			Message.SyncedInvestigation({ orgId: ORG, id: ID, attempt: 0, sync: { _tag: "Failed" } }),
-		).model
+		const failed = pageUpdate(entered(), Message.SyncedInvestigation({ orgId: ORG, id: ID, attempt: 0, sync: { _tag: "Failed" } })).model
 		const deps = (model: Model) => subscriptions.investigation.modelToDependencies({ model, context })
 		scene(
 			{ update: pageUpdate, view },
@@ -156,10 +112,7 @@ describe("investigation detail", () => {
 		)
 		const retried = pageUpdate(failed, Message.ClickedRetrySync()).model
 		expect(deps(retried)).not.toEqual(deps(failed))
-		const stale = pageUpdate(
-			retried,
-			Message.SyncedInvestigation({ orgId: ORG, id: ID, attempt: 0, sync: { _tag: "Failed" } }),
-		)
+		const stale = pageUpdate(retried, Message.SyncedInvestigation({ orgId: ORG, id: ID, attempt: 0, sync: { _tag: "Failed" } }))
 		expect(stale.model.sync._tag).toBe("Loading")
 	})
 
@@ -186,13 +139,8 @@ describe("investigation detail", () => {
 			{ serviceName: "checkout-api", spanCount: 457, p95LatencyMs: 12, errorRate: 0 },
 			{ serviceName: "payment-svc", spanCount: 731, p95LatencyMs: 40, errorRate: 0 },
 		]
-		const loaded = pageUpdate(
-			first.model,
-			Message.CompletedFetchTraces({ key, result: Result.succeed(rows) }),
-		).model
-		const evidence = [
-			{ traceIds: [], logPatterns: [], relatedServices: ["payment-svc"], note: "Pool wait dominates." },
-		]
+		const loaded = pageUpdate(first.model, Message.CompletedFetchTraces({ key, result: Result.succeed(rows) })).model
+		const evidence = [{ traceIds: [], logPatterns: [], relatedServices: ["payment-svc"], note: "Pool wait dominates." }]
 		const moved = investigationOf({ report_json: { ...row({}).report_json, evidence } })
 		const resynced = synced(loaded, moved)
 		expect(names(resynced.commands)).not.toContain("FetchInvestigationSignalTraces")
@@ -208,11 +156,7 @@ describe("investigation detail", () => {
 	test("the Evidence tab reads no signals and lists the findings", () => {
 		const step = synced(entered({ tab: "evidence" }), investigationOf())
 		expect(names(step.commands)).toEqual([])
-		scene(
-			{ update: pageUpdate, view },
-			given(step.model),
-			expectView(text("Pool wait dominates.")).toExist(),
-		)
+		scene({ update: pageUpdate, view }, given(step.model), expectView(text("Pool wait dominates.")).toExist())
 	})
 
 	test("Resolve writes once and toasts", () => {
@@ -221,32 +165,15 @@ describe("investigation detail", () => {
 		expect(names(started.commands)).toEqual(["ResolveInvestigation"])
 		expect(pageUpdate(started.model, Message.ClickedPrimary()).commands ?? []).toHaveLength(0)
 		const done = pageUpdate(started.model, Message.CompletedResolve({ result: Result.void }))
-		expect(done.outMessage).toEqual(
-			PageOutMessage.RequestedToast({
-				type: "success",
-				title: "Investigation resolved",
-				description: "",
-			}),
-		)
-		const failed = pageUpdate(
-			started.model,
-			Message.CompletedResolve({ result: Result.fail(toLoadFailure(new Error("down"))) }),
-		)
+		expect(done.outMessage).toEqual(PageOutMessage.RequestedToast({ type: "success", title: "Investigation resolved", description: "" }))
+		const failed = pageUpdate(started.model, Message.CompletedResolve({ result: Result.fail(toLoadFailure(new Error("down"))) }))
 		expect(failed.outMessage?._tag).toBe("RequestedToast")
 		expect(failed.model.busy).toBeNull()
 	})
 
 	test("a failed run's primary action restarts it", () => {
-		const ready = synced(
-			entered(),
-			investigationOf({ status: "failed", report_json: null, diagnosed_at: null }),
-		).model
-		scene(
-			{ update: pageUpdate, view },
-			given(ready),
-			...canvas(),
-			expectView(role("button", { name: "Retry" })).toExist(),
-		)
+		const ready = synced(entered(), investigationOf({ status: "failed", report_json: null, diagnosed_at: null })).model
+		scene({ update: pageUpdate, view }, given(ready), ...canvas(), expectView(role("button", { name: "Retry" })).toExist())
 		expect(names(pageUpdate(ready, Message.ClickedPrimary()).commands)).toEqual(["RestartInvestigation"])
 	})
 
@@ -255,51 +182,27 @@ describe("investigation detail", () => {
 		expect(pageUpdate(ready, Message.ClickedAction({ index: 0 })).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: `/investigations/${ID}?action=0`, isReplace: true }),
 		)
-		const opened = routeChanged(
-			ready,
-			AppRoute.Investigation({ id: ID, search: { action: 0 } }),
-			context,
-		).model
+		const opened = routeChanged(ready, AppRoute.Investigation({ id: ID, search: { action: 0 } }), context).model
 		expect(opened.actionSheet.isOpen).toBe(true)
-		const stale = routeChanged(
-			ready,
-			AppRoute.Investigation({ id: ID, search: { action: "abc" } }),
-			context,
-		).model
+		const stale = routeChanged(ready, AppRoute.Investigation({ id: ID, search: { action: "abc" } }), context).model
 		expect(stale.actionSheet.isOpen).toBe(false)
 	})
 
 	test("the action panel opens only on Overview, for an action the graph drew", () => {
 		const ready = synced(entered(), investigationOf()).model
-		const missing = routeChanged(
-			ready,
-			AppRoute.Investigation({ id: ID, search: { action: 3 } }),
-			context,
-		).model
+		const missing = routeChanged(ready, AppRoute.Investigation({ id: ID, search: { action: 3 } }), context).model
 		expect(missing.actionSheet.isOpen).toBe(false)
-		const offTab = routeChanged(
-			ready,
-			AppRoute.Investigation({ id: ID, search: { tab: "evidence", action: 0 } }),
-			context,
-		).model
+		const offTab = routeChanged(ready, AppRoute.Investigation({ id: ID, search: { tab: "evidence", action: 0 } }), context).model
 		expect(offTab.actionSheet.isOpen).toBe(false)
-		const early = routeChanged(
-			entered(),
-			AppRoute.Investigation({ id: ID, search: { action: 0 } }),
-			context,
-		).model
+		const early = routeChanged(entered(), AppRoute.Investigation({ id: ID, search: { action: 0 } }), context).model
 		expect(early.actionSheet.isOpen).toBe(false)
 		expect(synced(early, investigationOf()).model.actionSheet.isOpen).toBe(true)
 	})
 
 	test("a lost shape (nothing synced within 30 s) becomes Failed, a synced one is mirrored", async () => {
-		const timedOut = await Effect.runPromise(
-			Stream.runCollect(withLoadWatchdog(Stream.never, "failed", "5 millis")),
-		)
+		const timedOut = await Effect.runPromise(Stream.runCollect(withLoadWatchdog(Stream.never, "failed", "5 millis")))
 		expect(timedOut).toEqual(["failed"])
-		const live = await Effect.runPromise(
-			Stream.runCollect(withLoadWatchdog(Stream.make("ready", "changed"), "failed", "1 second")),
-		)
+		const live = await Effect.runPromise(Stream.runCollect(withLoadWatchdog(Stream.make("ready", "changed"), "failed", "1 second")))
 		expect(live).toEqual(["ready", "changed"])
 	})
 

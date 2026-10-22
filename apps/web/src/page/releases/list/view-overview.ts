@@ -28,12 +28,8 @@ export type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePr
 
 const MAX_SHOWN = 16
 
-export const liveNow = (
-	h: H,
-	live: ReadonlyArray<LiveVersion>,
-	timeSearch: TimeSearch,
-	environments: ReadonlyArray<string> | undefined,
-): Html | null => {
+
+export const liveNow = (h: H, live: ReadonlyArray<LiveVersion>, timeSearch: TimeSearch, environments: ReadonlyArray<string> | undefined): Html | null => {
 	if (live.length === 0) return null
 	const shown = live.slice(0, MAX_SHOWN)
 	const hidden = live.length - shown.length
@@ -44,14 +40,8 @@ export const liveNow = (
 			[
 				eyebrow(h, {}, ["Live now"]),
 				behind > 0
-					? h.span(
-							[h.Class("text-2xs text-severity-warn")],
-							[`${countLabel(behind, "service")} not on the latest release`],
-						)
-					: h.span(
-							[h.Class("text-2xs text-muted-foreground/70")],
-							["Every service is on its latest release"],
-						),
+					? h.span([h.Class("text-2xs text-severity-warn")], [`${countLabel(behind, "service")} not on the latest release`])
+					: h.span([h.Class("text-2xs text-muted-foreground/70")], ["Every service is on its latest release"]),
 			],
 		),
 		h.div(
@@ -63,15 +53,8 @@ export const liveNow = (
 						{
 							variant: "outline",
 							size: "xs",
-							className: cn(
-								"font-normal",
-								version.behind > 0 && "border-severity-warn/40 bg-severity-warn/5",
-							),
-							href: releaseHref(version.commitSha, {
-								...timeSearch,
-								environments,
-								service: version.serviceName,
-							}),
+							className: cn("font-normal", version.behind > 0 && "border-severity-warn/40 bg-severity-warn/5"),
+							href: releaseHref(version.commitSha, { ...timeSearch, environments, service: version.serviceName }),
 							attributes: [
 								h.Key(version.serviceName),
 								...(version.behind > 0
@@ -86,37 +69,17 @@ export const liveNow = (
 						[
 							serviceDot(h, { serviceName: version.serviceName }),
 							h.span([], [version.serviceName]),
-							h.span(
-								[h.Class("font-mono text-2xs text-muted-foreground")],
-								[shortReleaseLabel(version.commitSha)],
-							),
+							h.span([h.Class("font-mono text-2xs text-muted-foreground")], [shortReleaseLabel(version.commitSha)]),
 							...(version.share < ROLLOUT_COMPLETE_SHARE
-								? [
-										h.span(
-											[h.Class("font-mono text-3xs tabular-nums text-primary")],
-											[formatPercent(version.share)],
-										),
-									]
+								? [h.span([h.Class("font-mono text-3xs tabular-nums text-primary")], [formatPercent(version.share)])]
 								: []),
 							...(version.behind > 0
-								? [
-										h.span(
-											[h.Class("font-mono text-3xs tabular-nums text-severity-warn")],
-											[String(version.behind), " behind"],
-										),
-									]
+								? [h.span([h.Class("font-mono text-3xs tabular-nums text-severity-warn")], [String(version.behind), " behind"])]
 								: []),
 						],
 					),
 				),
-				...(hidden > 0
-					? [
-							h.span(
-								[h.Class("self-center px-1 text-2xs text-muted-foreground/70")],
-								[`+${hidden}`],
-							),
-						]
-					: []),
+				...(hidden > 0 ? [h.span([h.Class("self-center px-1 text-2xs text-muted-foreground/70")], [`+${hidden}`])] : []),
 			],
 		),
 	])
@@ -135,47 +98,25 @@ interface Marker {
 }
 
 const buildLanes = (impacts: ReadonlyArray<ReleaseServiceImpact>) => {
-	const byService = new Map<
-		string,
-		{ serviceName: string; spanCount: number; dots: Array<ReleaseServiceImpact> }
-	>()
+	const byService = new Map<string, { serviceName: string; spanCount: number; dots: Array<ReleaseServiceImpact> }>()
 	impacts.forEach((impact) => {
 		const lane = byService.get(impact.serviceName)
-		if (lane === undefined)
-			byService.set(impact.serviceName, {
-				serviceName: impact.serviceName,
-				spanCount: impact.spanCount,
-				dots: [impact],
-			})
-		else
-			byService.set(impact.serviceName, {
-				...lane,
-				spanCount: lane.spanCount + impact.spanCount,
-				dots: [...lane.dots, impact],
-			})
+		if (lane === undefined) byService.set(impact.serviceName, { serviceName: impact.serviceName, spanCount: impact.spanCount, dots: [impact] })
+		else byService.set(impact.serviceName, { ...lane, spanCount: lane.spanCount + impact.spanCount, dots: [...lane.dots, impact] })
 	})
-	return [...byService.values()].toSorted(
-		(a, b) => b.spanCount - a.spanCount || a.serviceName.localeCompare(b.serviceName),
-	)
+	return [...byService.values()].toSorted((a, b) => b.spanCount - a.spanCount || a.serviceName.localeCompare(b.serviceName))
 }
 
 const worstHealth = (members: ReadonlyArray<ReleaseServiceImpact>): ReleaseHealth =>
 	RELEASE_HEALTH_ORDER.find((band) => members.some((member) => member.health === band)) ?? "healthy"
 
 /** `clusterMarkers`: greedy left-to-right, a dot joins the open marker within `mergeRatio`. */
-const clusterMarkers = (
-	dots: ReadonlyArray<ReleaseServiceImpact>,
-	startMs: number,
-	endMs: number,
-	mergeRatio: number,
-): ReadonlyArray<Marker> => {
+const clusterMarkers = (dots: ReadonlyArray<ReleaseServiceImpact>, startMs: number, endMs: number, mergeRatio: number): ReadonlyArray<Marker> => {
 	const span = Math.max(1, endMs - startMs)
 	const placed = dots
 		.map((dot) => ({ dot, ratio: Math.min(1, Math.max(0, (toEpochMs(dot.firstSeen) - startMs) / span)) }))
 		.toSorted((a, b) => a.ratio - b.ratio)
-	const groups = placed.reduce<
-		ReadonlyArray<{ anchor: number; items: ReadonlyArray<(typeof placed)[number]> }>
-	>((acc, item) => {
+	const groups = placed.reduce<ReadonlyArray<{ anchor: number; items: ReadonlyArray<(typeof placed)[number]> }>>((acc, item) => {
 		const open = acc[acc.length - 1]
 		return open !== undefined && item.ratio - open.anchor < mergeRatio
 			? [...acc.slice(0, -1), { ...open, items: [...open.items, item] }]
@@ -211,10 +152,7 @@ const markerTitle = (marker: Marker, nowMs: number, timeZone: string): string =>
 		return `${shortReleaseLabel(newest.commitSha)} · ${ago(newest.firstSeen)}${figure ? ` · ${figure}` : ""}`
 	}
 	const oldest = marker.members[marker.members.length - 1] ?? newest
-	const listed = marker.members
-		.slice(0, 6)
-		.map((member) => shortReleaseLabel(member.commitSha))
-		.join(", ")
+	const listed = marker.members.slice(0, 6).map((member) => shortReleaseLabel(member.commitSha)).join(", ")
 	const more = marker.members.length > 6 ? `, +${marker.members.length - 6} more` : ""
 	return `${countLabel(marker.members.length, "deploy")} · ${ago(oldest.firstSeen)} → ${ago(newest.firstSeen)}\n${listed}${more}`
 }
@@ -237,10 +175,7 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 	const endMs = toEpochMs(input.endTime)
 	const usable = input.trackWidth - TRACK_INSET_PX * 2
 	const mergeRatio = usable > MERGE_PX ? MERGE_PX / usable : FALLBACK_MERGE_RATIO
-	const lanes = buildLanes(input.impacts).map((lane) => ({
-		...lane,
-		markers: clusterMarkers(lane.dots, startMs, endMs, mergeRatio),
-	}))
+	const lanes = buildLanes(input.impacts).map((lane) => ({ ...lane, markers: clusterMarkers(lane.dots, startMs, endMs, mergeRatio) }))
 	const visible = lanes.slice(0, MAX_LANES)
 	const hidden = lanes.length - visible.length
 	const twoColumns = "grid-cols-[minmax(0,160px)_1fr]"
@@ -254,14 +189,7 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 				RELEASE_HEALTH_ORDER.map((band) =>
 					h.span(
 						[h.Class("inline-flex items-center gap-1")],
-						[
-							statusDot(h, {
-								tone: "custom",
-								size: "lg",
-								className: RELEASE_HEALTH_DOT_CLASS[band],
-							}),
-							RELEASE_HEALTH_LABEL[band],
-						],
+						[statusDot(h, { tone: "custom", size: "lg", className: RELEASE_HEALTH_DOT_CLASS[band] }), RELEASE_HEALTH_LABEL[band]],
 					),
 				),
 			),
@@ -275,10 +203,7 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 						[
 							h.span(
 								[h.Class("flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground")],
-								[
-									serviceDot(h, { serviceName: lane.serviceName }),
-									truncatedText(h, { text: lane.serviceName }),
-								],
+								[serviceDot(h, { serviceName: lane.serviceName }), truncatedText(h, { text: lane.serviceName })],
 							),
 							h.div(
 								[
@@ -292,30 +217,20 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 									return [
 										h.a(
 											[
-												h.Key(
-													`${newest.commitSha}:${newest.environment}:${marker.ratio}`,
-												),
+												h.Key(`${newest.commitSha}:${newest.environment}:${marker.ratio}`),
 												h.Href(
 													releaseHref(newest.commitSha, {
 														service: newest.serviceName,
-														environments:
-															input.environments ??
-															(newest.environment
-																? [newest.environment]
-																: undefined),
+														environments: input.environments ?? (newest.environment ? [newest.environment] : undefined),
 														...input.timeSearch,
 													}),
 												),
 												h.Title(markerTitle(marker, input.nowMs, input.timeZone)),
-												h.AriaLabel(
-													`${lane.serviceName}: ${count === 1 ? shortReleaseLabel(newest.commitSha) : `${count} deploys`}`,
-												),
+												h.AriaLabel(`${lane.serviceName}: ${count === 1 ? shortReleaseLabel(newest.commitSha) : `${count} deploys`}`),
 												h.Class(
 													"group absolute top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center focus-visible:outline-none",
 												),
-												h.Style({
-													left: `calc(${TRACK_INSET_PX}px + ${marker.ratio} * (100% - ${TRACK_INSET_PX * 2}px))`,
-												}),
+												h.Style({ left: `calc(${TRACK_INSET_PX}px + ${marker.ratio} * (100% - ${TRACK_INSET_PX * 2}px))` }),
 											],
 											[
 												h.span([
@@ -360,13 +275,8 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 						h.span([]),
 						h.div(
 							[
-								h.Class(
-									"flex justify-between font-mono text-3xs tabular-nums text-muted-foreground/70",
-								),
-								h.Style({
-									"padding-left": `${TRACK_INSET_PX}px`,
-									"padding-right": `${TRACK_INSET_PX}px`,
-								}),
+								h.Class("flex justify-between font-mono text-3xs tabular-nums text-muted-foreground/70"),
+								h.Style({ "padding-left": `${TRACK_INSET_PX}px`, "padding-right": `${TRACK_INSET_PX}px` }),
 							],
 							axisLabels(startMs, endMs, input.timeZone).map((label) => h.span([], [label])),
 						),

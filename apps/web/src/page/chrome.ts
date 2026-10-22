@@ -11,7 +11,13 @@ import { resolveLegacySettingsTab } from "./settings/nav"
  * Signed-in routes rendered without `DashboardLayout`: onboarding and auth handoffs with
  * their own layouts and the not-found screen. `/chat` keeps the shell, without its top bar (`view.ts`).
  */
-const isBareRoute = AppRoute.isAnyOf(["CliLogin", "McpAuthorize", "QuickStart", "SelectPlan", "NotFound"])
+const isBareRoute = AppRoute.isAnyOf([
+	"CliLogin",
+	"McpAuthorize",
+	"QuickStart",
+	"SelectPlan",
+	"NotFound",
+])
 
 export const rendersShell = (route: AppRoute): boolean => !isPublicRoute(route) && !isBareRoute(route)
 

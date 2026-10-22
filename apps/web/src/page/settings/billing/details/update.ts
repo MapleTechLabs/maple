@@ -1,4 +1,9 @@
-import { TAX_ID_TYPES, defaultTaxIdTypeFor, isTaxIdType, taxIdLabel } from "@maple/domain/billing-tax-ids"
+import {
+	TAX_ID_TYPES,
+	defaultTaxIdTypeFor,
+	isTaxIdType,
+	taxIdLabel,
+} from "@maple/domain/billing-tax-ids"
 import {
 	AddBillingTaxIdRequest,
 	BillingAddress,
@@ -23,20 +28,10 @@ type Return = PageReturn<Model, Message>
 export type Step = Readonly<{ step: Return; isProfileStale: boolean }>
 
 // Type picker order: the handful most customers want, then the rest by label.
-const FEATURED_TYPES: ReadonlyArray<string> = [
-	"eu_vat",
-	"gb_vat",
-	"ch_vat",
-	"us_ein",
-	"ca_gst_hst",
-	"au_abn",
-	"in_gst",
-]
+const FEATURED_TYPES: ReadonlyArray<string> = ["eu_vat", "gb_vat", "ch_vat", "us_ein", "ca_gst_hst", "au_abn", "in_gst"]
 export const TYPE_OPTIONS = [
 	...FEATURED_TYPES.flatMap((type) => TAX_ID_TYPES.filter((info) => info.type === type)),
-	...TAX_ID_TYPES.filter((info) => !FEATURED_TYPES.includes(info.type)).sort((a, b) =>
-		a.label.localeCompare(b.label),
-	),
+	...TAX_ID_TYPES.filter((info) => !FEATURED_TYPES.includes(info.type)).sort((a, b) => a.label.localeCompare(b.label)),
 ].map((info) => ({ value: info.type, label: info.label }))
 
 /** Countries by name, in the picker's order; the combobox filters on the name. */
@@ -51,9 +46,7 @@ const SaveDetails = Command.define("UpdateBillingProfile", {
 	args: { payload: UpdateBillingProfileRequest },
 	messages: [Message.CompletedSave],
 	execute: ({ payload }) =>
-		Effect.flatMap(MapleInternalApiClient, (client) =>
-			client.billing.updateBillingProfile({ payload }),
-		).pipe(
+		Effect.flatMap(MapleInternalApiClient, (client) => client.billing.updateBillingProfile({ payload })).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedSave({ result })),
@@ -150,14 +143,8 @@ const fresh = (step: Return): Step => ({ step, isProfileStale: false })
 const stale = (step: Return): Step => ({ step, isProfileStale: true })
 
 const liftRemove = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
-	model: {
-		...model,
-		removeDialog: step.model,
-		...(step.outMessage?._tag === "Closed" && { removingTax: null }),
-	},
-	commands: Command.mapMessages(step.commands ?? [], (message) =>
-		Message.GotRemoveDialogMessage({ message }),
-	),
+	model: { ...model, removeDialog: step.model, ...(step.outMessage?._tag === "Closed" && { removingTax: null }) },
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRemoveDialogMessage({ message })),
 })
 
 const addTax = (model: Model): Return => {
@@ -173,18 +160,14 @@ const addTax = (model: Model): Return => {
 
 export const update = (model: Model, message: Message): Step =>
 	Message.match<Step>(message, {
-		GotDialogMessage: ({ message: child }) =>
-			fresh(liftDialog(model, Dialog.update(model.dialog, child))),
+		GotDialogMessage: ({ message: child }) => fresh(liftDialog(model, Dialog.update(model.dialog, child))),
 		ChangedField: ({ field, value }) => fresh({ model: { ...model, [field]: value } }),
 		GotCountryMessage: ({ message: child }) => {
 			const step = Combobox.update(model.countryBox, child)
-			const picked =
-				step.outMessage?._tag === "ChangedValue" ? codeOfName(step.outMessage.value) : undefined
+			const picked = step.outMessage?._tag === "ChangedValue" ? codeOfName(step.outMessage.value) : undefined
 			return fresh({
 				model: { ...model, countryBox: step.model, ...(picked !== undefined && { country: picked }) },
-				commands: Command.mapMessages(step.commands ?? [], (inner) =>
-					Message.GotCountryMessage({ message: inner }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotCountryMessage({ message: inner })),
 			})
 		},
 		SubmittedDetails: () => {
@@ -222,13 +205,10 @@ export const update = (model: Model, message: Message): Step =>
 			const step = Select.update(model.taxType, child)
 			return fresh({
 				model: { ...model, taxType: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (inner) =>
-					Message.GotTaxTypeMessage({ message: inner }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotTaxTypeMessage({ message: inner })),
 			})
 		},
-		ChangedTaxValue: ({ value }) =>
-			fresh({ model: { ...model, taxValue: value, isMissingTaxValue: false } }),
+		ChangedTaxValue: ({ value }) => fresh({ model: { ...model, taxValue: value, isMissingTaxValue: false } }),
 		// Inside the details form, Enter adds the ID instead of submitting the form.
 		PressedTaxKey: ({ key }) => fresh(key === "Enter" ? addTax(model) : { model }),
 		ClickedAddTax: () => fresh(addTax(model)),
@@ -245,10 +225,8 @@ export const update = (model: Model, message: Message): Step =>
 						outMessage: toast("error", "The tax ID could not be added.", error.message),
 					}),
 			}),
-		ClickedRemoveTax: ({ taxId }) =>
-			fresh(liftRemove({ ...model, removingTax: taxId }, Dialog.open(model.removeDialog))),
-		GotRemoveDialogMessage: ({ message: child }) =>
-			fresh(liftRemove(model, Dialog.update(model.removeDialog, child))),
+		ClickedRemoveTax: ({ taxId }) => fresh(liftRemove({ ...model, removingTax: taxId }, Dialog.open(model.removeDialog))),
+		GotRemoveDialogMessage: ({ message: child }) => fresh(liftRemove(model, Dialog.update(model.removeDialog, child))),
 		ClickedConfirmRemoveTax: () =>
 			Option.match(Option.fromNullishOr(model.removingTax), {
 				onNone: () => fresh({ model }),
@@ -270,15 +248,9 @@ export const update = (model: Model, message: Message): Step =>
 			const next = { ...model, removingTaxIds: model.removingTaxIds.filter((id) => id !== taxId.id) }
 			return Result.match(result, {
 				onSuccess: () =>
-					stale({
-						model: next,
-						outMessage: toast("success", `Removed ${taxIdLabel(taxId.type)} ${taxId.value}`),
-					}),
+					stale({ model: next, outMessage: toast("success", `Removed ${taxIdLabel(taxId.type)} ${taxId.value}`) }),
 				onFailure: (error) =>
-					fresh({
-						model: next,
-						outMessage: toast("error", "The tax ID could not be removed.", error.message),
-					}),
+					fresh({ model: next, outMessage: toast("error", "The tax ID could not be removed.", error.message) }),
 			})
 		},
 	})

@@ -100,12 +100,7 @@ describe("buildRawSpec", () => {
 			),
 		).toMatchObject({ filters: { spanName: "reset", matchModes: { spanName: "contains" } } })
 		const logs = buildRawSpec(
-			params({
-				source: "logs",
-				attribute_key: "code.file",
-				attribute_value: "a.ts",
-				environments: ["prod"],
-			}),
+			params({ source: "logs", attribute_key: "code.file", attribute_value: "a.ts", environments: ["prod"] }),
 			resolved({ groupBy: "service" }),
 		)
 		expect(logs).toMatchObject({

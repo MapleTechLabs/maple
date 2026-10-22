@@ -61,10 +61,7 @@ describe("time range picker offset", () => {
 			{ update, view: sceneView() },
 			given(opened()),
 			Mount.resolve(Popover.MountPopover, Popover.Message.CompletedMountPopover()),
-			Mount.resolve(
-				MountUtcOffset,
-				Message.ResolvedUtcOffset({ timeZone: "Europe/Berlin", label: "UTC+2" }),
-			),
+			Mount.resolve(MountUtcOffset, Message.ResolvedUtcOffset({ timeZone: "Europe/Berlin", label: "UTC+2" })),
 			expectView(text("UTC+2")).toExist(),
 		)
 	})
@@ -77,22 +74,16 @@ describe("time range picker maximum range", () => {
 		const refused = update(opened(), Message.ClickedPreset({ value: "6w", maxRangeSeconds: CI_MAX }))
 		expect(refused.outMessage).toEqual(OutMessage.RejectedRange({ maxRangeSeconds: CI_MAX }))
 		expect(refused.model.popover.isOpen).toBe(true)
-		expect(
-			update(opened(), Message.ClickedPreset({ value: "2w", maxRangeSeconds: CI_MAX })).outMessage,
-		).toEqual(OutMessage.SelectedPreset({ presetValue: "2w" }))
-		const typed = update(
-			{ ...opened(), shorthand: "2mo" },
-			Message.PressedShorthandEnter({ maxRangeSeconds: CI_MAX }),
+		expect(update(opened(), Message.ClickedPreset({ value: "2w", maxRangeSeconds: CI_MAX })).outMessage).toEqual(
+			OutMessage.SelectedPreset({ presetValue: "2w" }),
 		)
+		const typed = update({ ...opened(), shorthand: "2mo" }, Message.PressedShorthandEnter({ maxRangeSeconds: CI_MAX }))
 		expect(typed.outMessage).toEqual(OutMessage.RejectedRange({ maxRangeSeconds: CI_MAX }))
 		expect(typed.model.shorthand).toBe("")
 	})
 
 	test("the refusal toast names the maximum in days", () => {
-		expect(rejectedToast(CI_MAX)).toMatchObject({
-			type: "error",
-			title: "This page supports a maximum range of 14 days",
-		})
+		expect(rejectedToast(CI_MAX)).toMatchObject({ type: "error", title: "This page supports a maximum range of 14 days" })
 	})
 })
 
@@ -105,10 +96,7 @@ const openCustom = () => [
 	Mount.resolve(Popover.MountPopover, Popover.Message.CompletedMountPopover()),
 	Mount.resolve(MountUtcOffset, Message.ResolvedUtcOffset({ timeZone: "Europe/Berlin", label: "UTC+2" })),
 	click(customButton),
-	Command.resolve(
-		ResolveCustomToday(SEED),
-		Message.ResolvedCustomToday({ ...SEED, today: TODAY, lastDay: TODAY }),
-	),
+	Command.resolve(ResolveCustomToday(SEED), Message.ResolvedCustomToday({ ...SEED, today: TODAY, lastDay: TODAY })),
 	Mount.expectEnded(MountUtcOffset),
 ]
 
@@ -139,25 +127,16 @@ describe("time range picker custom range", () => {
 	})
 
 	test("Apply picks the absolute window through the zone and closes the picker", () => {
-		const seeded = update(
-			opened(),
-			Message.ResolvedCustomToday({ ...SEED, today: TODAY, lastDay: TODAY }),
-		).model
+		const seeded = update(opened(), Message.ResolvedCustomToday({ ...SEED, today: TODAY, lastDay: TODAY })).model
 		const custom = (model: typeof seeded, message: CustomRange.Message) =>
 			update(model, Message.GotCustomRangeMessage({ message })).model
 		const edited = custom(
 			custom(seeded, CustomRange.Message.ClickedDay({ date: Calendar.make(2026, 10, 16) })),
 			CustomRange.Message.ChangedEndTime({ value: "18:45" }),
 		)
-		const applied = update(
-			edited,
-			Message.GotCustomRangeMessage({ message: CustomRange.Message.ClickedApply() }),
-		)
+		const applied = update(edited, Message.GotCustomRangeMessage({ message: CustomRange.Message.ClickedApply() }))
 		expect(applied.outMessage).toEqual(
-			OutMessage.SelectedCustomRange({
-				startTime: "2026-10-14 08:00:00",
-				endTime: "2026-10-16 16:45:00",
-			}),
+			OutMessage.SelectedCustomRange({ startTime: "2026-10-14 08:00:00", endTime: "2026-10-16 16:45:00" }),
 		)
 		expect(applied.model.popover.isOpen).toBe(false)
 		expect(applied.model.tab).toBe("relative")
@@ -169,10 +148,7 @@ describe("time range picker custom range", () => {
 			given(opened()),
 			...openCustom(),
 			click(role("button", { name: "Cancel" })),
-			Mount.resolve(
-				MountUtcOffset,
-				Message.ResolvedUtcOffset({ timeZone: "Europe/Berlin", label: "UTC+2" }),
-			),
+			Mount.resolve(MountUtcOffset, Message.ResolvedUtcOffset({ timeZone: "Europe/Berlin", label: "UTC+2" })),
 			expectView(customButton).toExist(),
 			expectView(role("button", { name: "Apply" })).toBeAbsent(),
 		)

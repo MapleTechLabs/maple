@@ -17,10 +17,7 @@ const subscriptions = labShellSubscriptions<Model, Message>(toShell)
 export const lab = defineLabWithFlags("Alerts", {
 	Model,
 	Flags: Schema.Struct({ ...AlertsLabFlags.fields, ...LabShellFlags.fields }),
-	flags: Effect.map(Effect.all([alertsLabFlags, labShellFlags]), ([alerts, shell]) => ({
-		...alerts,
-		...shell,
-	})),
+	flags: Effect.map(Effect.all([alertsLabFlags, labShellFlags]), ([alerts, shell]) => ({ ...alerts, ...shell })),
 	init,
 	update,
 	view,

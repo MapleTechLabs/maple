@@ -21,11 +21,7 @@ export const servicesSkeleton = (h: HtmlBuilder<Message>): Html =>
 				rows: 8,
 				columns: [
 					{ header: "Service", skeleton: "w-40" },
-					...NUMBER_COLUMNS.map((header) => ({
-						header,
-						headClassName: "text-right",
-						skeleton: "ml-auto w-12",
-					})),
+					...NUMBER_COLUMNS.map((header) => ({ header, headClassName: "text-right", skeleton: "ml-auto w-12" })),
 				],
 			}),
 		],
@@ -34,32 +30,16 @@ export const servicesSkeleton = (h: HtmlBuilder<Message>): Html =>
 const serviceRow = (h: HtmlBuilder<Message>, entry: ServiceCatalogEntry, query: URLSearchParams): Html =>
 	linkRow(h, undefined, [
 		tableCell(h, [
-			rowLink(
-				h,
-				{
-					href: hrefFor(`/services/${encodeURIComponent(entry.serviceName)}`, query),
-					className: "flex items-center gap-2",
-				},
-				[
-					serviceDot(h, { serviceName: entry.serviceName }),
-					h.span([h.Class("font-medium")], [entry.serviceName]),
-					...(entry.serviceNamespaces.length > 0
-						? [
-								h.span(
-									[h.Class("truncate text-xs text-muted-foreground")],
-									[entry.serviceNamespaces.join(", ")],
-								),
-							]
-						: []),
-				],
-			),
+			rowLink(h, { href: hrefFor(`/services/${encodeURIComponent(entry.serviceName)}`, query), className: "flex items-center gap-2" }, [
+				serviceDot(h, { serviceName: entry.serviceName }),
+				h.span([h.Class("font-medium")], [entry.serviceName]),
+				...(entry.serviceNamespaces.length > 0
+					? [h.span([h.Class("truncate text-xs text-muted-foreground")], [entry.serviceNamespaces.join(", ")])]
+					: []),
+			]),
 		]),
 		tableCell(h, [formatNumber(entry.spanCount)], "text-right tabular-nums"),
-		tableCell(
-			h,
-			[formatNumber(entry.errorCount)],
-			cn("text-right tabular-nums", entry.errorCount > 0 && "text-severity-error"),
-		),
+		tableCell(h, [formatNumber(entry.errorCount)], cn("text-right tabular-nums", entry.errorCount > 0 && "text-severity-error")),
 		tableCell(h, [errorRateValue(h, { rate: entry.errorRate })], "text-right"),
 		tableCell(h, [latencyValue(h, { ms: entry.p50LatencyMs, scale: "p50" })], "text-right"),
 		tableCell(h, [latencyValue(h, { ms: entry.p95LatencyMs, scale: "p95" })], "text-right"),
@@ -80,15 +60,9 @@ export const servicesTable = (
 				[
 					table(h, {}, [
 						tableHeader(h, [
-							tableRow(h, [
-								tableHead(h, ["Service"]),
-								...NUMBER_COLUMNS.map((header) => tableHead(h, [header], "text-right")),
-							]),
+							tableRow(h, [tableHead(h, ["Service"]), ...NUMBER_COLUMNS.map((header) => tableHead(h, [header], "text-right"))]),
 						]),
-						tableBody(
-							h,
-							entries.map((entry) => serviceRow(h, entry, query)),
-						),
+						tableBody(h, entries.map((entry) => serviceRow(h, entry, query))),
 					]),
 				],
 			),

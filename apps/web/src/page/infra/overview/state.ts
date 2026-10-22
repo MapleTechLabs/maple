@@ -17,8 +17,7 @@ export const sourceState = (model: Model, id: SourceId): SourceState =>
 	AsyncData.matchData(model.sources[id].data, {
 		onEmpty: (): SourceState => ({ status: "loading" }),
 		onFailure: (): SourceState => ({ status: "error" }),
-		onData: ({ summary }): SourceState =>
-			summary === null ? { status: "error" } : { status: "ready", summary },
+		onData: ({ summary }): SourceState => (summary === null ? { status: "error" } : { status: "ready", summary }),
 	})
 
 const SOURCE_SURFACES = {

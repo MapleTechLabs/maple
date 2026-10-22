@@ -21,12 +21,7 @@ const healthDotClass = (errorRate: number): string => TONE_FILL[HEALTH_TONE[erro
 
 export const panelHeader = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{
-		accentColor: string
-		errorRate: number
-		title: string
-		subtitle?: ReadonlyArray<Html | string>
-	}>,
+	options: Readonly<{ accentColor: string; errorRate: number; title: string; subtitle?: ReadonlyArray<Html | string> }>,
 	actions: ReadonlyArray<Html>,
 ): Html =>
 	h.div(
@@ -35,32 +30,15 @@ export const panelHeader = <M>(
 			h.div(
 				[h.Class("flex min-w-0 items-center gap-2")],
 				[
-					h.div(
-						[
-							h.Class("h-[18px] w-[3px] shrink-0 rounded-sm"),
-							h.Style({ "background-color": options.accentColor }),
-						],
-						[],
-					),
-					h.div(
-						[h.Class(cn("size-1.5 shrink-0 rounded-full", healthDotClass(options.errorRate)))],
-						[],
-					),
+					h.div([h.Class("h-[18px] w-[3px] shrink-0 rounded-sm"), h.Style({ "background-color": options.accentColor })], []),
+					h.div([h.Class(cn("size-1.5 shrink-0 rounded-full", healthDotClass(options.errorRate)))], []),
 					h.div(
 						[h.Class("flex min-w-0 flex-col")],
 						[
-							h.span(
-								[h.Class("truncate text-sm font-semibold text-foreground")],
-								[options.title],
-							),
+							h.span([h.Class("truncate text-sm font-semibold text-foreground")], [options.title]),
 							...(options.subtitle === undefined
 								? []
-								: [
-										h.span(
-											[h.Class("truncate text-[10px] text-muted-foreground")],
-											options.subtitle,
-										),
-									]),
+								: [h.span([h.Class("truncate text-[10px] text-muted-foreground")], options.subtitle)]),
 						],
 					),
 				],
@@ -80,14 +58,7 @@ export const metricTile = <M>(
 		[h.Class("space-y-0.5"), ...(options.title === undefined ? [] : [h.Title(options.title)])],
 		[
 			h.span([h.Class("text-[10px] text-muted-foreground")], [options.label]),
-			h.p(
-				[
-					h.Class(
-						cn("font-mono text-xl font-semibold tabular-nums text-foreground", options.className),
-					),
-				],
-				[options.value],
-			),
+			h.p([h.Class(cn("font-mono text-xl font-semibold tabular-nums text-foreground", options.className))], [options.value]),
 			...(options.unit ? [h.span([h.Class("text-[10px] text-muted-foreground")], [options.unit])] : []),
 		],
 	)
@@ -104,10 +75,7 @@ export interface PeerRow {
 	readonly samplingWeight: number
 }
 
-type EdgeLike = Pick<
-	ServiceMapEdgeRow,
-	"callCount" | "estimatedCallCount" | "errorRate" | "hasSampling" | "samplingWeight"
->
+type EdgeLike = Pick<ServiceMapEdgeRow, "callCount" | "estimatedCallCount" | "errorRate" | "hasSampling" | "samplingWeight">
 
 export const rates = (edge: EdgeLike, durationSeconds: number) => {
 	const safe = Math.max(durationSeconds, 1)
@@ -124,10 +92,7 @@ const peerRow = <M>(h: HtmlBuilder<M>, row: PeerRow): Html => {
 	const name = h.span(
 		[h.Class("flex min-w-0 items-center gap-1.5")],
 		[
-			h.span(
-				[h.Class("h-3.5 w-[3px] shrink-0 rounded-sm"), h.Style({ "background-color": row.color })],
-				[],
-			),
+			h.span([h.Class("h-3.5 w-[3px] shrink-0 rounded-sm"), h.Style({ "background-color": row.color })], []),
 			h.span([h.Class("truncate text-foreground")], [row.label]),
 		],
 	)
@@ -137,23 +102,15 @@ const peerRow = <M>(h: HtmlBuilder<M>, row: PeerRow): Html => {
 			h.Class(
 				cn(
 					"flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-xs",
-					errorRateLevel(row.errorRate) === "crit"
-						? "border-severity-error/[0.12] bg-severity-error/[0.04]"
-						: "border-border bg-card",
+					errorRateLevel(row.errorRate) === "crit" ? "border-severity-error/[0.12] bg-severity-error/[0.04]" : "border-border bg-card",
 				),
 			),
 			...(row.hasSampling
-				? [
-						h.Title(
-							`Estimated x${row.samplingWeight.toFixed(0)} from ${formatRate(row.tracedReqPerSec)} traced req/s`,
-						),
-					]
+				? [h.Title(`Estimated x${row.samplingWeight.toFixed(0)} from ${formatRate(row.tracedReqPerSec)} traced req/s`)]
 				: []),
 		],
 		[
-			row.href === undefined
-				? name
-				: h.a([h.Href(row.href), h.Class("min-w-0 hover:underline")], [name]),
+			row.href === undefined ? name : h.a([h.Href(row.href), h.Class("min-w-0 hover:underline")], [name]),
 			h.span(
 				[h.Class("flex shrink-0 items-center gap-2 text-[10px]")],
 				[
@@ -162,14 +119,7 @@ const peerRow = <M>(h: HtmlBuilder<M>, row: PeerRow): Html => {
 						[...(row.hasSampling ? ["~"] : []), formatRate(row.reqPerSec), " req/s"],
 					),
 					h.span(
-						[
-							h.Class(
-								cn(
-									"font-mono tabular-nums",
-									errorRateClass(row.errorRate, { neutral: "text-severity-info" }),
-								),
-							),
-						],
+						[h.Class(cn("font-mono tabular-nums", errorRateClass(row.errorRate, { neutral: "text-severity-info" })))],
 						[formatErrorRate(row.errorRate)],
 					),
 				],
@@ -179,11 +129,7 @@ const peerRow = <M>(h: HtmlBuilder<M>, row: PeerRow): Html => {
 }
 
 /** `PeerList`: nothing when there are no peers. */
-export const peerList = <M>(
-	h: HtmlBuilder<M>,
-	title: string,
-	rows: ReadonlyArray<PeerRow>,
-): ReadonlyArray<Html> =>
+export const peerList = <M>(h: HtmlBuilder<M>, title: string, rows: ReadonlyArray<PeerRow>): ReadonlyArray<Html> =>
 	rows.length === 0
 		? []
 		: [
@@ -192,10 +138,7 @@ export const peerList = <M>(
 					[
 						h.div([h.Class("h-px bg-border")], []),
 						sectionTitle(h, title),
-						h.div(
-							[h.Class("space-y-1.5")],
-							rows.map((row) => peerRow(h, row)),
-						),
+						h.div([h.Class("space-y-1.5")], rows.map((row) => peerRow(h, row))),
 					],
 				),
 			]

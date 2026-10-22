@@ -752,6 +752,12 @@ export class PrReviewConversationService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(PrReviewService.layer, VcsRepository.layer, VcsProviderRegistry.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				PrReviewService.layer,
+				VcsRepository.layer,
+				VcsProviderRegistry.layer,
+			),
+		),
 	)
 }

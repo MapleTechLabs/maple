@@ -21,7 +21,11 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 		{
 			modelToDependencies: ({ model }) => ({ isActive: isActive(model) }),
 			dependenciesToStream: ({ isActive: active }) =>
-				active ? pollTicks(POLL).pipe(Stream.map(() => Message.TickedPoll())) : Stream.empty,
+				active
+					? pollTicks(POLL).pipe(
+							Stream.map(() => Message.TickedPoll()),
+						)
+					: Stream.empty,
 		},
 	),
 }))

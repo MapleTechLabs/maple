@@ -29,10 +29,8 @@ const settled = (): Model => ({
 	probe: { isInFlight: false, version: 1 },
 	presence: AsyncData.Success({ data: { rows: [], nowMs: 1_000 } }),
 })
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
-const argsOf = (commands: ReadonlyArray<{ readonly args?: unknown }> | undefined) =>
-	(commands ?? []).map(({ args }) => args)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const argsOf = (commands: ReadonlyArray<{ readonly args?: unknown }> | undefined) => (commands ?? []).map(({ args }) => args)
 
 describe("refresh in place", () => {
 	test("re-probes the server, and the next empty state reads the presence again", () => {
@@ -55,9 +53,7 @@ describe("superseded requests", () => {
 	/** /logs with its list and both facets in flight. */
 	const loadingLogs = (): Model => {
 		const opened = update(settled(), Message.ChangedUrl({ url: urlOf("#/logs") })).model
-		const clocked = PageMessage.GotLogsMessage({
-			message: LogsMessage.CompletedReadClock({ nowMs: NOW }),
-		})
+		const clocked = PageMessage.GotLogsMessage({ message: LogsMessage.CompletedReadClock({ nowMs: NOW }) })
 		return updatePageMessage(opened, clocked).model
 	}
 	const stops = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
@@ -84,13 +80,7 @@ describe("superseded requests", () => {
 	test("an answer that lands stops nothing", () => {
 		const model = loadingLogs()
 		const key = model.page._tag === "LogsPage" ? (model.page.logs.key ?? "") : ""
-		const answer = LogsMessage.SucceededFetchLogs({
-			key,
-			data: { pages: [[]], hasNextPage: false },
-			fetchedAtMs: NOW,
-		})
-		expect(
-			stops(updatePageMessage(model, PageMessage.GotLogsMessage({ message: answer })).commands),
-		).toEqual([])
+		const answer = LogsMessage.SucceededFetchLogs({ key, data: { pages: [[]], hasNextPage: false }, fetchedAtMs: NOW })
+		expect(stops(updatePageMessage(model, PageMessage.GotLogsMessage({ message: answer })).commands)).toEqual([])
 	})
 })

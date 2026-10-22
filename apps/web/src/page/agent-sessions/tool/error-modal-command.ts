@@ -11,9 +11,7 @@ export const FetchErrorDetail = Command.define("FetchAgentToolErrorDetail", {
 	args: { key: Schema.String, selection: Selection, fingerprint: Schema.String },
 	messages: [Message.CompletedFetchDetail],
 	execute: ({ key, selection, fingerprint }) =>
-		getAiToolErrorDetail({
-			data: { ...toInput(selection), tool: selection.tool ?? "", fingerprint },
-		}).pipe(
+		getAiToolErrorDetail({ data: { ...toInput(selection), tool: selection.tool ?? "", fingerprint } }).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchDetail({ key, result })),
@@ -33,14 +31,7 @@ export const FetchErrorSamples = Command.define("FetchAgentToolErrorSamples", {
 	messages: [Message.CompletedFetchSamples],
 	execute: ({ key, selection, fingerprint, session, variant, before }) =>
 		getAiToolErrorSamples({
-			data: {
-				...toInput(selection),
-				tool: selection.tool ?? "",
-				fingerprint,
-				session,
-				variant,
-				before,
-			},
+			data: { ...toInput(selection), tool: selection.tool ?? "", fingerprint, session, variant, before },
 		}).pipe(
 			Effect.map((page) => ({ occurrences: page.occurrences, nextCursor: page.nextCursor })),
 			Effect.mapError(toLoadFailure),
@@ -53,9 +44,9 @@ export const FetchErrorSamples = Command.define("FetchAgentToolErrorSamples", {
 export const CopyErrorLink = Command.define("CopyAgentToolErrorLink", {
 	messages: [Message.CompletedCopyLink],
 	execute: Effect.tryPromise(() => navigator.clipboard.writeText(window.location.href)).pipe(
-		Effect.as(Message.CompletedCopyLink({ isCopied: true })),
-		Effect.orElseSucceed(() => Message.CompletedCopyLink({ isCopied: false })),
-	),
+			Effect.as(Message.CompletedCopyLink({ isCopied: true })),
+			Effect.orElseSucceed(() => Message.CompletedCopyLink({ isCopied: false })),
+		),
 })
 
 export const CopyErrorArguments = Command.define("CopyAgentToolErrorArguments", {
@@ -87,8 +78,7 @@ const isTyping = (event: KeyboardEvent): boolean =>
 	event.metaKey ||
 	event.ctrlKey ||
 	event.altKey ||
-	(event.target instanceof HTMLElement &&
-		event.target.closest("input, textarea, [contenteditable='true']") !== null)
+	(event.target instanceof HTMLElement && event.target.closest("input, textarea, [contenteditable='true']") !== null)
 
 /** Where the open group sits in the Errors read: ↑/↓ step (and claim the key) only inside it. */
 export type GroupPosition = Readonly<{ index: number; total: number }>
@@ -122,9 +112,7 @@ export const modalKeys = (position: GroupPosition): Stream.Stream<Message> =>
 			type: "keydown",
 			filterMapEvent: (event) => {
 				const key = SAMPLE_KEYS.get(event.key)
-				return key === undefined || isTyping(event)
-					? Option.none()
-					: Option.some(Message.PressedModalKey({ key }))
+				return key === undefined || isTyping(event) ? Option.none() : Option.some(Message.PressedModalKey({ key }))
 			},
 		}),
 	)

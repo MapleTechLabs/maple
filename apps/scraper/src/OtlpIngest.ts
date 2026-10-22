@@ -59,10 +59,7 @@ export class OtlpIngest extends Context.Service<OtlpIngest, OtlpIngestApi>()("@m
 				)
 			}).pipe(
 				// Inside the chunk span, so only an exhausted retry errors it.
-				Effect.retry({
-					schedule: TRANSIENT_RETRY,
-					while: (error) => isTransientStatus(error.statusCode),
-				}),
+				Effect.retry({ schedule: TRANSIENT_RETRY, while: (error) => isTransientStatus(error.statusCode) }),
 				withScrapeSpan("OtlpIngest.send_chunk", {
 					attributes: { "maple.otlp.chunk_index": index, "maple.otlp.chunk_count": count },
 				}),

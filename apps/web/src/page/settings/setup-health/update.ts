@@ -31,23 +31,15 @@ export const revisit = (model: Model): Return =>
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
-		CompletedFetchAudit: ({ result }) => ({
-			model: { ...model, audit: AsyncData.settle(model.audit, result) },
-		}),
+		CompletedFetchAudit: ({ result }) => ({ model: { ...model, audit: AsyncData.settle(model.audit, result) } }),
 		// `useAtomRefresh`: the report stays while the audit re-runs (`waiting` spins Re-run).
 		ClickedRerun: () =>
 			AsyncData.isRefreshing(model.audit)
 				? { model }
 				: {
-						model: {
-							...model,
-							audit: Option.getOrElse(AsyncData.revalidate(model.audit), () => model.audit),
-						},
+						model: { ...model, audit: Option.getOrElse(AsyncData.revalidate(model.audit), () => model.audit) },
 						commands: [FetchSetupAudit()],
 					},
-		ClickedRetry: () => ({
-			model: { ...model, audit: AsyncData.Loading() },
-			commands: [FetchSetupAudit()],
-		}),
+		ClickedRetry: () => ({ model: { ...model, audit: AsyncData.Loading() }, commands: [FetchSetupAudit()] }),
 		ToggledPassing: () => ({ model: { ...model, isPassingOpen: !model.isPassingOpen } }),
 	})

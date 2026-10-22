@@ -1,4 +1,8 @@
-import { TIMELINE_LAB_EVENTS, TIMELINE_LAB_MARKERS, TIMELINE_LAB_TRACE } from "../timeline-fixture"
+import {
+	TIMELINE_LAB_EVENTS,
+	TIMELINE_LAB_MARKERS,
+	TIMELINE_LAB_TRACE,
+} from "../timeline-fixture"
 import { Option, Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as SpanPanel from "../../page/traces/detail/span-panel"

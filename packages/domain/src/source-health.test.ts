@@ -37,9 +37,9 @@ describe("sourceHealth", () => {
 			problem: "Rate limited",
 		})
 		expect(sourceHealth({ ...refused, lastRejectedAt: now - 20 * MINUTE }, now).status).toBe("healthy")
-		expect(sourceHealth({ ...refused, status: "paused", lastRejectedAt: now - MINUTE }, now).status).toBe(
-			"paused",
-		)
+		expect(
+			sourceHealth({ ...refused, status: "paused", lastRejectedAt: now - MINUTE }, now).status,
+		).toBe("paused")
 	})
 
 	it("judges a polled integration by its last good poll, not by data arriving", () => {

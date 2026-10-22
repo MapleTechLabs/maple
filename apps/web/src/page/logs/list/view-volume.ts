@@ -61,9 +61,7 @@ const volumePlot = Submodel.defineView<Chart.Model, Chart.Message, PlotInputs>((
 		className: "h-full w-full",
 		tooltipBody: (portal) =>
 			Option.flatMap(model.tooltip, (tooltip) =>
-				tooltip._tag === "Bucket"
-					? Option.some(bucketTooltipBody(h, tooltip, portal))
-					: Option.none(),
+				tooltip._tag === "Bucket" ? Option.some(bucketTooltipBody(h, tooltip, portal)) : Option.none(),
 			),
 	}),
 )
@@ -258,12 +256,7 @@ export const volumeChart = (h: HtmlBuilder<Message>, model: Model, timeZone: str
 											model: model.volumeChart,
 											view: volumePlot,
 											viewInputs: {
-												spec: volumeSpec(
-													buckets,
-													model.themeColors,
-													timeZone,
-													model.volumeBrush,
-												),
+												spec: volumeSpec(buckets, model.themeColors, timeZone, model.volumeBrush),
 											},
 											toParentMessage: (message) =>
 												Message.GotVolumeChartMessage({ message }),

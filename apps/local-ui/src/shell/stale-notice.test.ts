@@ -11,10 +11,7 @@ const shownAt = (atMs: number, extra: Readonly<{ isStandIn?: boolean; isRefreshi
 	rows: {
 		...idle<ReadonlyArray<number>>(),
 		key: "k",
-		data:
-			extra.isRefreshing === true
-				? AsyncData.Refreshing({ data: [1] })
-				: AsyncData.Success({ data: [1] }),
+		data: extra.isRefreshing === true ? AsyncData.Refreshing({ data: [1] }) : AsyncData.Success({ data: [1] }),
 		updatedAtMs: atMs,
 		isStandIn: extra.isStandIn ?? false,
 	},
@@ -37,11 +34,7 @@ describe("stale data notice", () => {
 
 	test("a busy server and a gone one say so; only the gone one offers Try again", () => {
 		const standIn = shownAt(NOW - 3_600_000, { isStandIn: true, isRefreshing: true })
-		expect(notice(standIn, { isBusy: true })).toEqual({
-			tone: "warn",
-			text: "Maple Local is busy. Showing results from 11:00 AM.",
-			isRetrying: false,
-		})
+		expect(notice(standIn, { isBusy: true })).toEqual({ tone: "warn", text: "Maple Local is busy. Showing results from 11:00 AM.", isRetrying: false })
 		expect(notice(standIn, { isDisconnected: true })?.isRetrying).toBe(true)
 	})
 
@@ -52,18 +45,11 @@ describe("stale data notice", () => {
 	})
 
 	test("an older day shows its date", () => {
-		expect(notice(shownAt(NOW - 26 * 3_600_000, { isStandIn: true }))?.text).toBe(
-			"Loading newer results. Showing results from Sep 30, 10:00 AM.",
-		)
+		expect(notice(shownAt(NOW - 26 * 3_600_000, { isStandIn: true }))?.text).toBe("Loading newer results. Showing results from Sep 30, 10:00 AM.")
 	})
 
 	test("an expanded error card's failed traces refresh counts as a failed refresh", () => {
-		const refreshed = {
-			...shownAt(NOW - 60_000).rows,
-			data: AsyncData.settle(AsyncData.Refreshing({ data: [1] }), Result.fail({ message: "down" })),
-		}
-		expect(
-			shownDataOf({ cards: { abc: { isExpanded: true, traces: refreshed } } }, NOW).refreshFailed,
-		).toBe(true)
+		const refreshed = { ...shownAt(NOW - 60_000).rows, data: AsyncData.settle(AsyncData.Refreshing({ data: [1] }), Result.fail({ message: "down" })) }
+		expect(shownDataOf({ cards: { abc: { isExpanded: true, traces: refreshed } } }, NOW).refreshFailed).toBe(true)
 	})
 })

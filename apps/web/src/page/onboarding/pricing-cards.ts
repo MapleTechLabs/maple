@@ -82,15 +82,9 @@ export const AttachPlan = Command.define("AttachPlan", {
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			const successUrl = yield* Effect.sync(() => buildCheckoutSuccessUrl(window.location.href))
-			const result = yield* client.billing.attach({
-				payload: new AttachRequest({ planId, successUrl }),
-			})
+			const result = yield* client.billing.attach({ payload: new AttachRequest({ planId, successUrl }) })
 			return Message.SucceededAttach({ paymentUrl: result.paymentUrl ?? null })
-		}).pipe(
-			Effect.catch((error) =>
-				Effect.succeed(Message.FailedAttach({ message: displayError(error).message })),
-			),
-		),
+		}).pipe(Effect.catch((error) => Effect.succeed(Message.FailedAttach({ message: displayError(error).message })))),
 })
 
 export const OpenCheckout = Command.define("OpenCheckout", {
@@ -104,9 +98,7 @@ export const TrackCheckoutReturned = Command.define("TrackCheckoutReturned", {
 	args: { confirmed: Schema.Boolean },
 	messages: [Message.CompletedTrackCheckoutReturned],
 	execute: ({ confirmed }) =>
-		trackProduct("plan_checkout_returned", { confirmed }).pipe(
-			Effect.as(Message.CompletedTrackCheckoutReturned()),
-		),
+		trackProduct("plan_checkout_returned", { confirmed }).pipe(Effect.as(Message.CompletedTrackCheckoutReturned())),
 })
 
 /** `useBillingActions().attach`: checkout intent, recorded before the tab leaves for Stripe. */
@@ -114,9 +106,7 @@ export const TrackCheckoutStarted = Command.define("TrackCheckoutStarted", {
 	args: { planId: Schema.String },
 	messages: [Message.CompletedTrackCheckoutStarted],
 	execute: ({ planId }) =>
-		trackProduct("plan_checkout_started", { plan_id: planId }).pipe(
-			Effect.as(Message.CompletedTrackCheckoutStarted()),
-		),
+		trackProduct("plan_checkout_started", { plan_id: planId }).pipe(Effect.as(Message.CompletedTrackCheckoutStarted())),
 })
 
 const ENTERPRISE_CONTACT_URL = "https://cal.com/david-granzin/30min?overlayCalendar=true"
@@ -132,9 +122,7 @@ export const OpenEnterpriseContact = Command.define("OpenEnterpriseContact", {
 /** `CHECKOUT_CONFIRM_POLL_MS`: the customer is re-read this often while confirming. */
 export const WaitCheckoutPoll = Command.define("WaitCheckoutPoll", {
 	messages: [Message.ElapsedCheckoutPoll],
-	execute: Effect.sleep(Duration.millis(CHECKOUT_CONFIRM_POLL_MS)).pipe(
-		Effect.as(Message.ElapsedCheckoutPoll()),
-	),
+	execute: Effect.sleep(Duration.millis(CHECKOUT_CONFIRM_POLL_MS)).pipe(Effect.as(Message.ElapsedCheckoutPoll())),
 })
 
 /** `CHECKOUT_CONFIRM_TIMEOUT_MS`: then the offer comes back, with the timed-out note. */
@@ -149,34 +137,24 @@ export const WaitCheckoutTimeout = Command.define("WaitCheckoutTimeout", {
  * A return from Stripe while the customer is still planless waits on the sync. Once the plan
  * shows up, the root's plan gate takes the page away (the plan picker and the wizard both leave).
  */
-export const initReturning = (
-	isReturning: boolean,
-): { readonly model: Model; readonly commands: ReadonlyArray<Command.Command<Message, never, Resources>> } =>
+export const initReturning = (isReturning: boolean): { readonly model: Model; readonly commands: ReadonlyArray<Command.Command<Message, never, Resources>> } =>
 	isReturning
-		? {
-				model: { ...init(), checkoutReturn: "Confirming" },
-				commands: [LoadPlans(), WaitCheckoutPoll(), WaitCheckoutTimeout()],
-			}
+		? { model: { ...init(), checkoutReturn: "Confirming" }, commands: [LoadPlans(), WaitCheckoutPoll(), WaitCheckoutTimeout()] }
 		: { model: init(), commands: [LoadPlans()] }
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
 export const update = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
-		SucceededLoadPlans: ({ response }) => ({
-			model: { ...model, plans: PlansData.Success({ data: response }) },
-		}),
+		SucceededLoadPlans: ({ response }) => ({ model: { ...model, plans: PlansData.Success({ data: response }) } }),
 		FailedLoadPlans: ({ failure }) => ({
 			model: { ...model, plans: PlansData.Failure({ error: failure }) },
 		}),
 		// TODO(plan-change): an upgrade or downgrade previews the change in a ConfirmDialog first;
 		// only a planless org reaches these screens, where every plan is a new subscription.
 		ClickedPlan: ({ planId }) => {
-			const plan = AsyncData.getOrElse(model.plans, () => ({ plans: [] })).plans.find(
-				(found) => found.id === planId,
-			)
-			const isChange =
-				plan !== undefined && (getScenario(plan) === "upgrade" || getScenario(plan) === "downgrade")
+			const plan = AsyncData.getOrElse(model.plans, () => ({ plans: [] })).plans.find((found) => found.id === planId)
+			const isChange = plan !== undefined && (getScenario(plan) === "upgrade" || getScenario(plan) === "downgrade")
 			return model.loadingPlanId !== null || isChange
 				? { model }
 				: { model: { ...model, loadingPlanId: planId }, commands: [AttachPlan({ planId })] }
@@ -194,9 +172,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 						model,
 						commands: [
 							LoadPlans(),
-							...(model.loadingPlanId === null
-								? []
-								: [TrackCheckoutStarted({ planId: model.loadingPlanId })]),
+							...(model.loadingPlanId === null ? [] : [TrackCheckoutStarted({ planId: model.loadingPlanId })]),
 							OpenCheckout({ url: paymentUrl }),
 						],
 						outMessage: OutMessage.ChangedPlan({ isLeavingForCheckout: true }),

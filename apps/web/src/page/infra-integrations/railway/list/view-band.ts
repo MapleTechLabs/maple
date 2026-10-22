@@ -62,8 +62,7 @@ export const railwayFleetBand = <M>(h: HtmlBuilder<M>, inputs: FleetBandInputs):
 	const subline = inputs.authFailed
 		? "Railway rejected the token"
 		: sync.lastSyncedAt !== null
-			? relativeTime(h, {
-					tooltip: "title",
+			? relativeTime(h, { tooltip: "title",
 					value: sync.lastSyncedAt,
 					nowMs: inputs.nowMs,
 					timeZone: inputs.timeZone,

@@ -84,9 +84,7 @@ const queryDataSchema = Schema.Struct({
 	attribute_key: P.optionalText(
 		"Attribute to filter on, or to group by with group_by=attribute. Span (or log/metric label) and resource attributes both work; the scope is resolved automatically",
 	),
-	attribute_value: P.optionalText(
-		"Exact value for attribute_key. Also applies when grouping by the same key",
-	),
+	attribute_value: P.optionalText("Exact value for attribute_key. Also applies when grouping by the same key"),
 	attribute_scope: P.optionalOneOf(
 		ATTRIBUTE_SCOPES,
 		"Where attribute_key lives: 'span' (span, log or metric-datapoint attributes) or 'resource' (deployment.environment, k8s.pod.name...). Resolved from the known keys when omitted",
@@ -195,8 +193,7 @@ export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<st
 			return withFilters({
 				...(params.service && { serviceName: params.service }),
 				...(params.span_name && { spanName: params.span_name }),
-				...(params.span_name &&
-					resolved.spanNameContains && { matchModes: { spanName: "contains" } }),
+				...(params.span_name && resolved.spanNameContains && { matchModes: { spanName: "contains" } }),
 				...(params.root_spans_only && { rootSpansOnly: true }),
 				...environmentsOf(params),
 				...(params.commit_shas &&
@@ -223,9 +220,7 @@ export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<st
 				...(params.page_path && { pagePaths: [params.page_path] }),
 				...(params.service && { serviceNames: [params.service] }),
 				...(groupKey !== undefined && { groupByAttributeKey: groupKey }),
-				...(attributeFilterOf(params) !== undefined && {
-					attributeFilters: [attributeFilterOf(params)],
-				}),
+				...(attributeFilterOf(params) !== undefined && { attributeFilters: [attributeFilterOf(params)] }),
 			})
 		case "metrics":
 			return {
@@ -337,8 +332,7 @@ const nextCallsFor = (output: Output): ReadonlyArray<NextCall> => {
 	}
 }
 
-const isWeightedCount = (output: Output) =>
-	output.queryContext.source === "traces" && output.metric === "count"
+const isWeightedCount = (output: Output) => output.queryContext.source === "traces" && output.metric === "count"
 
 /** Trace counts are sample-weighted; latencies are not (tail sampling skews them). */
 const samplingNote = (output: Output): string | undefined => {
@@ -629,10 +623,8 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				? yield* emptyResultHints(
 						{
 							service: params.service,
-							environments:
-								params.source === "product_events" ? undefined : params.environments,
-							attributeKey:
-								params.source === "product_events" ? undefined : params.attribute_key,
+							environments: params.source === "product_events" ? undefined : params.environments,
+							attributeKey: params.source === "product_events" ? undefined : params.attribute_key,
 							spanName: params.source === "traces" ? params.span_name : undefined,
 						},
 						{ startTime: st, endTime: et },

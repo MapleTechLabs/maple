@@ -6,7 +6,5 @@ import type { Model } from "./model"
 export const lanes = (model: Model): ReadonlyArray<Lane> => [
 	...slotLane(FetchList.name, model.list, (key) => FetchList.Interrupt({ key }, outcomeOf)),
 	...slotLane(FetchSummary.name, model.summary, (key) => FetchSummary.Interrupt({ key }, outcomeOf)),
-	...slotLane(FetchSparklines.name, model.sparklines, (key) =>
-		FetchSparklines.Interrupt({ key }, outcomeOf),
-	),
+	...slotLane(FetchSparklines.name, model.sparklines, (key) => FetchSparklines.Interrupt({ key }, outcomeOf)),
 ]

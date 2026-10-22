@@ -98,8 +98,11 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 
 /** The settings rail with "Integrations" the active link, gated like `/settings`. */
 const settingsNav = (h: HtmlBuilder<Message>, model: Model): Html =>
-	navShell(h, visibleSections(settingsNavVisibility(model, isClerkAuthEnabled)), "integrations", (tab) =>
-		Message.ClickedSettingsTab({ tab }),
+	navShell(
+		h,
+		visibleSections(settingsNavVisibility(model, isClerkAuthEnabled)),
+		"integrations",
+		(tab) => Message.ClickedSettingsTab({ tab }),
 	)
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {

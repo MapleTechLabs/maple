@@ -9,20 +9,9 @@ import { canGoBack } from "./navigation"
 import { shownDataOf } from "./data/shown"
 import { type PageContext, PageOutMessage } from "./page/contract"
 import { stopSuperseded } from "./data/lanes"
-import {
-	initPage,
-	lanesOf,
-	locationChanged,
-	pageKeyOf,
-	type PageMessage,
-	refreshPage,
-	updatePage,
-} from "./page/registry"
+import { initPage, lanesOf, locationChanged, pageKeyOf, type PageMessage, refreshPage, updatePage } from "./page/registry"
 
-export type RootReturn = Readonly<{
-	model: Model
-	commands?: ReadonlyArray<Command.Command<Message, never, Resources>>
-}>
+export type RootReturn = Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> }>
 
 export const pageContextOf = (model: Model): PageContext => ({
 	env: model.env,
@@ -39,23 +28,15 @@ const requestPresence = (model: Model): RootReturn => {
 	if (AsyncData.isLoading(model.presence) || AsyncData.isRefreshing(model.presence)) return { model }
 	const lastReadAtMs = model.isPresenceStale
 		? null
-		: Option.match(AsyncData.getData(model.presence), {
-				onNone: () => null,
-				onSome: (result) => result.nowMs,
-			})
+		: Option.match(AsyncData.getData(model.presence), { onNone: () => null, onSome: (result) => result.nowMs })
 	const presence = Option.getOrElse(AsyncData.revalidateOrLoad(model.presence), () => model.presence)
-	return {
-		model: { ...model, presence, isPresenceStale: false },
-		commands: [FetchSignalPresence({ apiBase: model.env.apiBase, lastReadAtMs })],
-	}
+	return { model: { ...model, presence, isPresenceStale: false }, commands: [FetchSignalPresence({ apiBase: model.env.apiBase, lastReadAtMs })] }
 }
 
 /** One step of the Filters drawer's Dialog, its Commands lifted. */
 export const filterDrawerStep = (model: Model, step: ReturnType<typeof Dialog.update>): RootReturn => ({
 	model: { ...model, filterDrawer: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) =>
-		Message.GotFilterDrawerMessage({ message }),
-	),
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotFilterDrawerMessage({ message })),
 })
 
 /** Start a probe now, retiring any pending timer. */
@@ -90,20 +71,10 @@ export const foldPageOut = (model: Model, outMessage: PageOutMessage): RootRetur
 /** Folds one page step's Model, Commands and OutMessage into the root. */
 const applyPage = (
 	model: Model,
-	step: Readonly<{
-		model: Model["page"]
-		commands?: ReadonlyArray<Command.Command<PageMessage, never, Resources>>
-		outMessage?: PageOutMessage
-	}>,
+	step: Readonly<{ model: Model["page"]; commands?: ReadonlyArray<Command.Command<PageMessage, never, Resources>>; outMessage?: PageOutMessage }>,
 ): RootReturn => {
-	const withPage = {
-		...model,
-		page: step.model,
-		hasCache: model.hasCache || shownDataOf(step.model, 0).hasData,
-	}
-	const stops = stopSuperseded(lanesOf(model.page), lanesOf(step.model), (outcome) =>
-		Message.CompletedCancelPageFetch({ outcome }),
-	)
+	const withPage = { ...model, page: step.model, hasCache: model.hasCache || shownDataOf(step.model, 0).hasData }
+	const stops = stopSuperseded(lanesOf(model.page), lanesOf(step.model), (outcome) => Message.CompletedCancelPageFetch({ outcome }))
 	const pageCommands = [...stops, ...Command.mapMessages(step.commands ?? [], toPageMessage)]
 	if (step.outMessage === undefined) return { model: withPage, commands: pageCommands }
 	const folded = foldPageOut(withPage, step.outMessage)

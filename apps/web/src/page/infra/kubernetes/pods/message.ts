@@ -11,14 +11,7 @@ import { PodCounts, PodFacets } from "./model"
 export const PodScope = Schema.Literals(["saturated", "elevated", "unbounded", "ended"])
 export type PodScope = typeof PodScope.Type
 
-export const PodSortKey = Schema.Literals([
-	"saturation",
-	"cpuUsage",
-	"cpuLimitPct",
-	"memoryLimitPct",
-	"podName",
-	"lastSeen",
-])
+export const PodSortKey = Schema.Literals(["saturation", "cpuUsage", "cpuLimitPct", "memoryLimitPct", "podName", "lastSeen"])
 
 export const Facet = Schema.Literals([
 	"namespaces",

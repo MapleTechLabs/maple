@@ -5,11 +5,7 @@ import type { Attribute, Html } from "foldkit/html"
 import type { Message, Model } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
 import { timeseriesLegend } from "./timeseries-legend"
-import {
-	bucketTimeseries,
-	MAX_BAR_SERIES,
-	OTHER_LABEL,
-} from "@maple/ui/components/charts/_shared/bucket-series"
+import { bucketTimeseries, MAX_BAR_SERIES, OTHER_LABEL } from "@maple/ui/components/charts/_shared/bucket-series"
 import { ChartSpec, ChartTooltip, type TimeseriesAxisSpec } from "./chart-spec"
 import { bucketTooltipBody } from "./bucket-tooltip"
 import { plotFrame } from "./plot-frame"
@@ -51,9 +47,7 @@ type Row = Readonly<Record<string, string | number | boolean>>
 /** `bucketBarSeries`: past `MAX_BAR_SERIES` the long tail folds into one "Other" series. */
 export const bucketBarSeries = (data: ReadonlyArray<Row>): ReadonlyArray<Row> => {
 	const seriesKeys = [
-		...new Set(
-			data.flatMap((row) => Object.keys(row).filter((key) => key !== "bucket" && key !== "partial")),
-		),
+		...new Set(data.flatMap((row) => Object.keys(row).filter((key) => key !== "bucket" && key !== "partial"))),
 	]
 	if (seriesKeys.length <= MAX_BAR_SERIES) return data
 	const { rows } = bucketTimeseries(data, seriesKeys, MAX_BAR_SERIES)
@@ -125,3 +119,4 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 		],
 	)
 })
+

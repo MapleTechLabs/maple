@@ -65,9 +65,7 @@ const CEILINGS: ReadonlyMap<RouteTag, number> = new Map<RouteTag, number>([
 ])
 
 const searchOf = (route: AppRoute): Option.Option<Readonly<Record<string, unknown>>> =>
-	Predicate.hasProperty(route, "search") && Predicate.isReadonlyObject(route.search)
-		? Option.some(route.search)
-		: Option.none()
+	Predicate.hasProperty(route, "search") && Predicate.isReadonlyObject(route.search) ? Option.some(route.search) : Option.none()
 
 const isSet = (value: unknown): value is string => typeof value === "string" && value !== ""
 
@@ -87,12 +85,7 @@ const epochOf = (value: string): Option.Option<number> =>
 	Option.map(DateTime.make(normalizeTimestampInput(value)), DateTime.toEpochMillis)
 
 /** `isTimeRangeWithin`, a preset resolved against the clock first (`relativeToAbsolute`). */
-export const isWithin = (
-	stored: SessionTimeRange,
-	maxSeconds: number,
-	nowMs: number,
-	timeZone: string,
-): boolean => {
+export const isWithin = (stored: SessionTimeRange, maxSeconds: number, nowMs: number, timeZone: string): boolean => {
 	const range =
 		stored.timePreset !== undefined
 			? Option.fromNullishOr(resolveRelativeRangeToWarehouse(stored.timePreset, nowMs, timeZone))

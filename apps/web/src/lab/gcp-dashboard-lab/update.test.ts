@@ -29,10 +29,7 @@ describe("gcp dashboard lab", () => {
 	})
 
 	test("a tab switch stays in the lab's own search", () => {
-		const next = update(
-			opened().model,
-			Message.ClickedSectionTab({ sectionId: "gcp-services", tabId: "gke" }),
-		)
+		const next = update(opened().model, Message.ClickedSectionTab({ sectionId: "gcp-services", tabId: "gke" }))
 		const document = next.model.document
 		const view = resolveSectionView(document?.sections ?? [], document?.widgets ?? [], next.model.search)
 		expect(view.activeTabs.get("gcp-services")).toBe("gke")
@@ -40,10 +37,7 @@ describe("gcp dashboard lab", () => {
 	})
 
 	test("a picked project narrows the series of widgets that filter on it", () => {
-		const drafted = update(
-			opened().model,
-			Message.ChangedVariableDraft({ name: "project", value: "acme-staging" }),
-		)
+		const drafted = update(opened().model, Message.ChangedVariableDraft({ name: "project", value: "acme-staging" }))
 		const picked = update(drafted.model, Message.CommittedVariableDraft({ name: "project" })).model
 		expect(variableValuesFromSearch(picked.search).project).toBe("acme-staging")
 		const widget = picked.document?.widgets.find((candidate) => candidate.id === "run-requests")

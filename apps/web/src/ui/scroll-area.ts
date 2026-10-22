@@ -59,7 +59,7 @@ export const trackScrollbar = (viewport: HTMLElement): (() => void) => {
 		targets.forEach((element) => element?.toggleAttribute("data-hovering", isOver))
 	}
 	const leave = () => {
-		;[root, scrollbar].forEach((element) => element?.removeAttribute("data-hovering"))
+		[root, scrollbar].forEach((element) => element?.removeAttribute("data-hovering"))
 	}
 	measure()
 	const observer = new ResizeObserver(measure)

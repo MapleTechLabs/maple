@@ -69,18 +69,13 @@ type Return = Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<
 
 const liftConversation = (model: Model, step: Conversation.Return): Return => ({
 	model: { ...model, conversation: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) =>
-		Message.GotConversationMessage({ message }),
-	),
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotConversationMessage({ message })),
 })
 
 const NO_CONTEXT: Conversation.SendContext = { preamble: "" }
 
 const init = (flags: Flags): Return => {
-	const started = Conversation.withMessages(
-		Conversation.init("lab", "org_lab:lab"),
-		buildChatLabMessages(flags.nowMs),
-	)
+	const started = Conversation.withMessages(Conversation.init("lab", "org_lab:lab"), buildChatLabMessages(flags.nowMs))
 	// The fixture is the history: the conversation's own history read never runs here.
 	const lifted = liftConversation(
 		{
@@ -93,10 +88,7 @@ const init = (flags: Flags): Return => {
 			timeZone: flags.timeZone,
 			toasts: initLabToasts(),
 		},
-		{
-			...started,
-			commands: (started.commands ?? []).filter((command) => command.name !== "LoadChatHistory"),
-		},
+		{ ...started, commands: (started.commands ?? []).filter((command) => command.name !== "LoadChatHistory") },
 	)
 	return { ...lifted, commands: [...(lifted.commands ?? []), LoadKnownServices()] }
 }
@@ -120,16 +112,10 @@ const update = (model: Model, message: Message): Return =>
 		ToggledStreaming: () => {
 			const isLoading = !model.isLoading
 			return {
-				model: {
-					...model,
-					isLoading,
-					conversation: { ...model.conversation, status: isLoading ? "streaming" : "ready" },
-				},
+				model: { ...model, isLoading, conversation: { ...model.conversation, status: isLoading ? "streaming" : "ready" } },
 			}
 		},
-		DismissedContext: ({ id }) => ({
-			model: { ...model, dismissedContexts: [...model.dismissedContexts, id] },
-		}),
+		DismissedContext: ({ id }) => ({ model: { ...model, dismissedContexts: [...model.dismissedContexts, id] } }),
 		ClickedLabApprove: ({ toolCallId }) => resolve(model, toolCallId, "applied"),
 		ClickedLabDeny: ({ toolCallId }) => resolve(model, toolCallId, "denied"),
 		GotConversationMessage: ({ message: child }) =>
@@ -149,9 +135,7 @@ const toConversation = (message: ConversationMessage) => Message.GotConversation
 const toolbarButton = (h: H, label: string, isActive: boolean, onClick: Message): Html =>
 	h.button(
 		[
-			h.Class(
-				cn("rounded-md border px-2 py-1 transition-colors hover:bg-accent", isActive && "bg-accent"),
-			),
+			h.Class(cn("rounded-md border px-2 py-1 transition-colors hover:bg-accent", isActive && "bg-accent")),
 			h.Type("button"),
 			h.OnClick(onClick),
 		],
@@ -179,9 +163,7 @@ const labView = (model: Model, h: H): Html => {
 						resolved: conversation.resolvedApprovals[part.toolCallId],
 						isRawOpen: conversation.openPanels.includes(`raw:${part.toolCallId}`),
 						isDeciding: false,
-						onToggleRaw: toConversation(
-							ConversationMessage.ToggledPanel({ id: `raw:${part.toolCallId}` }),
-						),
+						onToggleRaw: toConversation(ConversationMessage.ToggledPanel({ id: `raw:${part.toolCallId}` })),
 						onApprove: Message.ClickedLabApprove({ toolCallId: part.toolCallId }),
 						onDeny: Message.ClickedLabDeny({ toolCallId: part.toolCallId }),
 					}),
@@ -195,19 +177,9 @@ const labView = (model: Model, h: H): Html => {
 				[
 					h.span([h.Class("font-semibold")], ["Chat transcript"]),
 					...WIDTHS.map((option) =>
-						toolbarButton(
-							h,
-							option.label,
-							model.width === option.value,
-							Message.ClickedWidth({ width: option.value }),
-						),
+						toolbarButton(h, option.label, model.width === option.value, Message.ClickedWidth({ width: option.value })),
 					),
-					toolbarButton(
-						h,
-						model.isLoading ? "Streaming" : "Idle",
-						model.isLoading,
-						Message.ToggledStreaming(),
-					),
+					toolbarButton(h, model.isLoading ? "Streaming" : "Idle", model.isLoading, Message.ToggledStreaming()),
 				],
 			),
 			h.div(
@@ -216,11 +188,8 @@ const labView = (model: Model, h: H): Html => {
 					h.div(
 						[h.Class("flex min-h-0 flex-col border-x"), h.Style({ width: `${model.width}px` })],
 						[
-							transcript(
-								h,
-								{ ...host, isLoading: model.isLoading },
-								conversation.messages,
-								() => h.p([h.Class("text-sm text-muted-foreground")], ["Nothing here yet."]),
+							transcript(h, { ...host, isLoading: model.isLoading }, conversation.messages, () =>
+								h.p([h.Class("text-sm text-muted-foreground")], ["Nothing here yet."]),
 							),
 							h.div(
 								[h.Class("shrink-0 px-4 pb-4")],
@@ -232,12 +201,9 @@ const labView = (model: Model, h: H): Html => {
 										status: model.isLoading ? "streaming" : "ready",
 										onStop: undefined,
 										isDisabled: false,
-										onInput: (text) =>
-											toConversation(ConversationMessage.ChangedDraft({ text })),
+										onInput: (text) => toConversation(ConversationMessage.ChangedDraft({ text })),
 										onSubmit: toConversation(ConversationMessage.SubmittedComposer()),
-										chips: contextChips(h, contexts, (id) =>
-											Message.DismissedContext({ id }),
-										),
+										chips: contextChips(h, contexts, (id) => Message.DismissedContext({ id })),
 									}),
 								],
 							),
@@ -255,6 +221,6 @@ export const lab = defineLabWithFlags<Model, Message, Flags>("Chat transcript", 
 	flags: Effect.zipWith(viewerFlags, Clock.currentTimeMillis, (viewer, nowMs) => ({ ...viewer, nowMs })),
 	init,
 	update,
-	view: (model, h) =>
-		labRoot(h, model.toasts, (message) => Message.GotToastMessage({ message }), labView(model, h)),
+	view: (model, h) => labRoot(h, model.toasts, (message) => Message.GotToastMessage({ message }), labView(model, h)),
 })
+

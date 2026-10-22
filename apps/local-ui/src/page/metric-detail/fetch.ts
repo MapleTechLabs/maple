@@ -13,11 +13,7 @@ const HARD_SERIES_LIMIT = 60
 /** The chart draws at most `HARD_SERIES_LIMIT` lines, so the query caps the series too. */
 const SERIES_CAP = { groupBy: ["service"], seriesLimit: HARD_SERIES_LIMIT }
 
-export const SeriesPoint = Schema.Struct({
-	bucket: Schema.String,
-	series: Schema.String,
-	value: Schema.Number,
-})
+export const SeriesPoint = Schema.Struct({ bucket: Schema.String, series: Schema.String, value: Schema.Number })
 export type SeriesPoint = typeof SeriesPoint.Type
 
 export const BreakdownRow = Schema.Struct({
@@ -31,52 +27,28 @@ export type BreakdownRow = typeof BreakdownRow.Type
 /** The catalog rows for one metric, folded across services. */
 export const fetchMetricEntry = (metricName: string, bounds: TimeBounds, apiBase: string) =>
 	Effect.map(
-		queryRows(
-			CH.compile(CH.listMetricsQuery({ search: metricName, limit: 50 }), localParams(bounds)),
-			apiBase,
-		),
-		(rows): MetricEntry | null =>
-			foldCatalogRows(rows.filter((r) => r.metricName === metricName)).entries[0] ?? null,
+		queryRows(CH.compile(CH.listMetricsQuery({ search: metricName, limit: 50 }), localParams(bounds)), apiBase),
+		(rows): MetricEntry | null => foldCatalogRows(rows.filter((r) => r.metricName === metricName)).entries[0] ?? null,
 	)
 
 /** The timeseries: counters plot their per-second rate, the rest their average. */
-export const fetchMetricTimeseries = (
-	entry: MetricEntry,
-	bounds: TimeBounds,
-	bucketSeconds: number,
-	apiBase: string,
-) =>
+export const fetchMetricTimeseries = (entry: MetricEntry, bounds: TimeBounds, bucketSeconds: number, apiBase: string) =>
 	Effect.gen(function* () {
 		const params = { ...localParams(bounds), bucketSeconds, metricName: entry.metricName }
 		if (isCounter(entry)) {
 			const rows = yield* queryRows(
 				CH.compile(
-					CH.metricsTimeseriesRateQuery({
-						metricName: entry.metricName,
-						bucketSeconds,
-						...SERIES_CAP,
-					}),
+					CH.metricsTimeseriesRateQuery({ metricName: entry.metricName, bucketSeconds, ...SERIES_CAP }),
 					params,
 				),
 				apiBase,
 			)
-			return rows.map((r): SeriesPoint => ({
-				bucket: DateTime.formatIso(r.bucket),
-				series: r.groupName || "value",
-				value: r.rateValue,
-			}))
+			return rows.map((r): SeriesPoint => ({ bucket: DateTime.formatIso(r.bucket), series: r.groupName || "value", value: r.rateValue }))
 		}
 		const metricType = entry.metricType
 		if (!isMetricType(metricType)) return []
-		const rows = yield* queryRows(
-			CH.compile(CH.metricsTimeseriesQuery({ metricType, ...SERIES_CAP }), params),
-			apiBase,
-		)
-		return rows.map((r): SeriesPoint => ({
-			bucket: DateTime.formatIso(r.bucket),
-			series: r.groupName || "value",
-			value: r.avgValue,
-		}))
+		const rows = yield* queryRows(CH.compile(CH.metricsTimeseriesQuery({ metricType, ...SERIES_CAP }), params), apiBase)
+		return rows.map((r): SeriesPoint => ({ bucket: DateTime.formatIso(r.bucket), series: r.groupName || "value", value: r.avgValue }))
 	})
 
 /** The per-service table. */
@@ -85,10 +57,7 @@ export const fetchMetricBreakdown = (entry: MetricEntry, bounds: TimeBounds, api
 	if (!isMetricType(metricType)) return Effect.succeed<ReadonlyArray<BreakdownRow>>([])
 	return Effect.map(
 		queryRows(
-			CH.compile(CH.metricsBreakdownQuery({ metricType, limit: 20 }), {
-				...localParams(bounds),
-				metricName: entry.metricName,
-			}),
+			CH.compile(CH.metricsBreakdownQuery({ metricType, limit: 20 }), { ...localParams(bounds), metricName: entry.metricName }),
 			apiBase,
 		),
 		(rows): ReadonlyArray<BreakdownRow> =>

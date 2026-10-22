@@ -34,9 +34,7 @@ export const ContainersInput = Schema.Struct({
 	excludedComposeServices: StringList,
 	excludedEnvironments: StringList,
 	scope: Schema.optional(Schema.Literals(["saturated", "elevated", "stale"])),
-	sortBy: Schema.optional(
-		Schema.Literals(["saturation", "cpuPct", "memoryPct", "containerName", "lastSeen"]),
-	),
+	sortBy: Schema.optional(Schema.Literals(["saturation", "cpuPct", "memoryPct", "containerName", "lastSeen"])),
 	sortDir: Schema.optional(Schema.Literals(["asc", "desc"])),
 	limit: Schema.optional(Schema.Number),
 	offset: Schema.optional(Schema.Number),
@@ -95,6 +93,5 @@ export const FetchFacets = Command.define("FetchInfraContainerFacets", {
 export const DebounceSearch = Command.define("DebounceInfraContainersSearch", {
 	args: { query: Schema.String },
 	messages: [Message.ElapsedSearchDebounce],
-	execute: ({ query }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ query })),
+	execute: ({ query }) => Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ query })),
 })

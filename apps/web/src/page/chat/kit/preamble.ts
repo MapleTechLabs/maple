@@ -40,15 +40,10 @@ export const activeContextsOf = (
 	referrerPath: string | null,
 	dismissed: ReadonlyArray<string>,
 ): ReadonlyArray<AutoContext> =>
-	referrerPath === null
-		? []
-		: deriveAutoContexts(referrerPath).filter((context) => !dismissed.includes(context.id))
+	referrerPath === null ? [] : deriveAutoContexts(referrerPath).filter((context) => !dismissed.includes(context.id))
 
 /** The first message's context block for the page the user came from; "" with no contexts. */
-export const pageContextPreamble = (
-	pathname: string | null,
-	contexts: ReadonlyArray<AutoContext>,
-): string => {
+export const pageContextPreamble = (pathname: string | null, contexts: ReadonlyArray<AutoContext>): string => {
 	if (pathname === null || contexts.length === 0) return ""
 	return [
 		"",
@@ -103,10 +98,7 @@ const SIGNAL_TOOL_HINTS = new Map([
 	],
 	["p95_latency", LATENCY_HINT],
 	["p99_latency", LATENCY_HINT],
-	[
-		"apdex",
-		"- Investigate both latency and errors: `find_slow_traces`, `find_errors`, and `get_service_top_operations`.",
-	],
+	["apdex", "- Investigate both latency and errors: `find_slow_traces`, `find_errors`, and `get_service_top_operations`."],
 	[
 		"throughput",
 		"- Use `compare_periods` to contrast the alert window against the prior equivalent window.\n- `service_map` can reveal upstream dependencies that dropped or surged.",
@@ -131,11 +123,7 @@ const toolHints = (ctx: InvestigationContext): string =>
 			"- Use `diagnose_service` and `explore_attributes` on the affected service.")
 
 const subjectPhrase = (kind: InvestigationContext["kind"]): string =>
-	kind === "error"
-		? "an error issue"
-		: kind === "freeform"
-			? "a free-form subject"
-			: `a${kind === "anomaly" ? "n" : ""} ${kind}`
+	kind === "error" ? "an error issue" : kind === "freeform" ? "a free-form subject" : `a${kind === "anomaly" ? "n" : ""} ${kind}`
 
 /** `formatInvestigationContextBlock`, trimmed. */
 export const investigationPreamble = (ctx: InvestigationContext): string => {

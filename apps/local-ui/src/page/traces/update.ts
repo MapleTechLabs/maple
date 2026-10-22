@@ -8,13 +8,7 @@ import { accept, acceptCached, canExtend, idle } from "../../data/slot"
 import { queryOf } from "../../route"
 import { type PageContext, PageOutMessage, replaceParams, withParams } from "../contract"
 import { updateCopy } from "../kit/copies"
-import {
-	FetchNextPage,
-	ReadClock,
-	ReadRefreshClock,
-	WaitDurationDebounce,
-	WaitSearchDebounce,
-} from "./command"
+import { FetchNextPage, ReadClock, ReadRefreshClock, WaitDurationDebounce, WaitSearchDebounce } from "./command"
 import { nextCursor } from "./fetch-traces"
 import { clearedFilters, filtersOf } from "./filters"
 import { boundsOf, fetchAfterCache, load } from "./load"
@@ -44,9 +38,7 @@ const syncDuration = (duration: Model["duration"], query: URLSearchParams): Mode
 		: durationDraftOf(query, duration.version)
 }
 
-export const init = (
-	context: PageContext,
-): Readonly<{ model: Model; commands: ReadonlyArray<Command.Command<Message, never, Resources>> }> => {
+export const init = (context: PageContext): Readonly<{ model: Model; commands: ReadonlyArray<Command.Command<Message, never, Resources>> }> => {
 	const query = queryOf(context.location)
 	const q = query.get("q") ?? ""
 	return {
@@ -80,11 +72,7 @@ export const locationChanged = (model: Model, context: PageContext): UpdateRetur
 	return load({ ...model, search, duration: syncDuration(model.duration, query) }, context)
 }
 
-const navigate = (
-	model: Model,
-	context: PageContext,
-	updates: Record<string, string | null>,
-): UpdateReturn => ({
+const navigate = (model: Model, context: PageContext, updates: Record<string, string | null>): UpdateReturn => ({
 	model,
 	outMessage: replaceParams(context.location, updates),
 })
@@ -96,12 +84,7 @@ const setRange = (model: Model, context: PageContext, range: string): UpdateRetu
 })
 
 /** `emit` + `onRangeChange`: a reversed pair is a typo, so it is swapped; values are rounded. */
-const commitDuration = (
-	model: Model,
-	context: PageContext,
-	min: number | undefined,
-	max: number | undefined,
-) => {
+const commitDuration = (model: Model, context: PageContext, min: number | undefined, max: number | undefined) => {
 	const [low, high] = min !== undefined && max !== undefined && min > max ? [max, min] : [min, max]
 	return navigate(model, context, {
 		minDur: low === undefined ? null : String(Math.round(low)),
@@ -121,18 +104,10 @@ const settleRefresh = (model: Model): Model => {
 /** `fetchNextPage`: the cursor after the last loaded page. */
 const loadMore = (model: Model, context: PageContext): UpdateReturn => {
 	const maybeNext = Option.flatMap(AsyncData.getData(model.traces.data), (data) =>
-		Option.fromNullishOr(
-			data.hasNextPage ? nextCursor(data.pages[data.pages.length - 1] ?? []) : undefined,
-		),
+		Option.fromNullishOr(data.hasNextPage ? nextCursor(data.pages[data.pages.length - 1] ?? []) : undefined),
 	)
 	const maybeBounds = boundsOf(model, context)
-	if (
-		model.isFetchingNextPage ||
-		!canExtend(model.traces) ||
-		model.traces.key === null ||
-		Option.isNone(maybeNext) ||
-		Option.isNone(maybeBounds)
-	)
+	if (model.isFetchingNextPage || !canExtend(model.traces) || model.traces.key === null || Option.isNone(maybeNext) || Option.isNone(maybeBounds))
 		return { model }
 	return {
 		model: { ...model, isFetchingNextPage: true },
@@ -145,10 +120,7 @@ const loadMore = (model: Model, context: PageContext): UpdateReturn => {
 				apiBase: context.env.apiBase,
 				cursorTimestamp: maybeNext.value.timestamp,
 				cursorTraceId: maybeNext.value.traceId,
-				pages: Option.match(AsyncData.getData(model.traces.data), {
-					onNone: () => [],
-					onSome: (data) => data.pages,
-				}),
+				pages: Option.match(AsyncData.getData(model.traces.data), { onNone: () => [], onSome: (data) => data.pages }),
 			}),
 		],
 	}
@@ -163,11 +135,7 @@ const appendPage = (model: Model, key: string, page: ReadonlyArray<TraceRow>): M
 	}))
 	return Option.match(data, {
 		onNone: () => ({ ...model, isFetchingNextPage: false }),
-		onSome: (next) => ({
-			...model,
-			isFetchingNextPage: false,
-			traces: { ...model.traces, key, data: AsyncData.Success({ data: next }), isPlaceholder: false },
-		}),
+		onSome: (next) => ({ ...model, isFetchingNextPage: false, traces: { ...model.traces, key, data: AsyncData.Success({ data: next }), isPlaceholder: false } }),
 	})
 }
 
@@ -189,99 +157,56 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		},
 		FoundCachedTraces: ({ key, cached }) => {
 			if (model.traces.key !== key) return { model }
-			const next = {
-				...model,
-				traces: acceptCached(model.traces, key, cached, cached.isFresh),
-				tracesUpdatedAtMs: cached.updatedAtMs,
-			}
-			const step = {
-				model: settleRefresh(next),
-				commands: fetchAfterCache(next, context, "traces", cached.isFresh),
-			}
+			const next = { ...model, traces: acceptCached(model.traces, key, cached, cached.isFresh), tracesUpdatedAtMs: cached.updatedAtMs }
+			const step = { model: settleRefresh(next), commands: fetchAfterCache(next, context, "traces", cached.isFresh) }
 			// A cached empty list renders `SignalEmptyState` as a fetched one does.
-			const isEmpty = Option.exists(AsyncData.getData(next.traces.data), (data) =>
-				data.pages.every((page) => page.length === 0),
-			)
+			const isEmpty = Option.exists(AsyncData.getData(next.traces.data), (data) => data.pages.every((page) => page.length === 0))
 			return isEmpty ? { ...step, outMessage: PageOutMessage.RequestedSignalPresence() } : step
 		},
 		FoundCachedFacets: ({ key, cached }) => {
 			if (model.facets.key !== key) return { model }
 			const next = { ...model, facets: acceptCached(model.facets, key, cached, cached.isFresh) }
-			return {
-				model: settleRefresh(next),
-				commands: fetchAfterCache(next, context, "facets", cached.isFresh),
-			}
+			return { model: settleRefresh(next), commands: fetchAfterCache(next, context, "facets", cached.isFresh) }
 		},
-		FailedFetchTraces: ({ key, failure }) => ({
-			model: settleRefresh({ ...model, traces: accept(model.traces, key, Result.fail(failure)) }),
-		}),
+		FailedFetchTraces: ({ key, failure }) =>
+			({ model: settleRefresh({ ...model, traces: accept(model.traces, key, Result.fail(failure)) }) }),
 		ClickedLoadMore: () => loadMore(model, context),
 		SucceededFetchNextPage: ({ key, generation, page }) =>
 			generation === model.pageGeneration ? { model: appendPage(model, key, page) } : { model },
 		FailedFetchNextPage: ({ key, generation, failure }) =>
 			generation !== model.pageGeneration
 				? { model }
-				: {
-						model: {
-							...model,
-							isFetchingNextPage: false,
-							traces: accept(model.traces, key, Result.fail(failure)),
-						},
-					},
-		SucceededFetchFacets: ({ key, facets, fetchedAtMs }) => ({
-			model: settleRefresh({
-				...model,
-				facets: accept(model.facets, key, Result.succeed(facets), fetchedAtMs),
-			}),
-		}),
-		FailedFetchFacets: ({ key, failure }) => ({
-			model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.fail(failure)) }),
-		}),
+				: { model: { ...model, isFetchingNextPage: false, traces: accept(model.traces, key, Result.fail(failure)) } },
+		SucceededFetchFacets: ({ key, facets, fetchedAtMs }) =>
+			({ model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.succeed(facets), fetchedAtMs) }) }),
+		FailedFetchFacets: ({ key, failure }) =>
+			({ model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.fail(failure)) }) }),
 		ClickedOpenFilters: () => ({ model, outMessage: PageOutMessage.RequestedFilterDrawer() }),
 		ClickedRefresh: () =>
-			model.isRefreshing
-				? { model }
-				: { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
+			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
 		CompletedReadRefreshClock: ({ nowMs }) => {
 			const next = snapToMinute(nowMs)
 			// `advance()`: a new minute re-anchors the window (new keys); else refetch in place.
 			if (Option.getOrNull(model.maybeAnchorMs) !== next)
-				return load(
-					{ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false },
-					context,
-				)
+				return load({ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false }, context)
 			const refetch = load({ ...model, nowMs }, context, true)
-			return {
-				model: settleRefresh(refetch.model),
-				commands: refetch.commands,
-				outMessage: PageOutMessage.RefetchedInPlace(),
-			}
+			return { model: settleRefresh(refetch.model), commands: refetch.commands, outMessage: PageOutMessage.RefetchedInPlace() }
 		},
 		ChangedSearch: ({ text }) => {
 			const version = model.search.version + 1
-			return {
-				model: { ...model, search: { ...model.search, text, version } },
-				commands: [WaitSearchDebounce({ version })],
-			}
+			return { model: { ...model, search: { ...model.search, text, version } }, commands: [WaitSearchDebounce({ version })] }
 		},
 		ClickedClearSearch: () => {
 			const version = model.search.version + 1
-			return {
-				model: { ...model, search: { ...model.search, text: "", version } },
-				commands: [WaitSearchDebounce({ version })],
-			}
+			return { model: { ...model, search: { ...model.search, text: "", version } }, commands: [WaitSearchDebounce({ version })] }
 		},
 		ElapsedSearchDebounce: ({ version }) => {
 			if (version !== model.search.version) return { model }
 			const trimmed = model.search.text.trim()
-			return navigate({ ...model, search: { ...model.search, sent: trimmed } }, context, {
-				q: trimmed === "" ? null : trimmed,
-			})
+			return navigate({ ...model, search: { ...model.search, sent: trimmed } }, context, { q: trimmed === "" ? null : trimmed })
 		},
-		ToggledErrorsOnly: () =>
-			navigate(model, context, { errors: filters.errorsOnly === true ? null : "1" }),
-		ToggledFacetOption: ({ param, name }) =>
-			navigate(model, context, { [param]: query.get(param) === name ? null : name }),
+		ToggledErrorsOnly: () => navigate(model, context, { errors: filters.errorsOnly === true ? null : "1" }),
+		ToggledFacetOption: ({ param, name }) => navigate(model, context, { [param]: query.get(param) === name ? null : name }),
 		ChangedDurationDraft: ({ min, max }) => {
 			const version = model.duration.version + 1
 			return {
@@ -292,30 +217,15 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		ElapsedDurationDebounce: ({ version }) =>
 			version !== model.duration.version
 				? { model }
-				: commitDuration(
-						model,
-						context,
-						parseRange(model.duration.min, "ms"),
-						parseRange(model.duration.max, "ms"),
-					),
+				: commitDuration(model, context, parseRange(model.duration.min, "ms"), parseRange(model.duration.max, "ms")),
 		CommittedDurationDraft: () => {
 			const min = parseRange(model.duration.min, "ms")
 			const max = parseRange(model.duration.max, "ms")
-			const duration = {
-				...model.duration,
-				version: model.duration.version + 1,
-				min: formatCompact(min, "ms"),
-				max: formatCompact(max, "ms"),
-			}
+			const duration = { ...model.duration, version: model.duration.version + 1, min: formatCompact(min, "ms"), max: formatCompact(max, "ms") }
 			return commitDuration({ ...model, duration }, context, min, max)
 		},
 		AppliedDuration: ({ min, max }) => {
-			const duration = {
-				...model.duration,
-				version: model.duration.version + 1,
-				min: formatCompact(min ?? undefined, "ms"),
-				max: formatCompact(max ?? undefined, "ms"),
-			}
+			const duration = { ...model.duration, version: model.duration.version + 1, min: formatCompact(min ?? undefined, "ms"), max: formatCompact(max ?? undefined, "ms") }
 			return commitDuration({ ...model, duration }, context, min ?? undefined, max ?? undefined)
 		},
 		ClickedClearFilters: () => navigate(model, context, clearedFilters()),
@@ -324,16 +234,12 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		ClickedWidenRange: () => setRange(model, context, WIDEST_RANGE),
 		GotFilterSectionsMessage: ({ message: child }) => {
 			const next = FilterSections.update(model.sections, child)
-			return {
-				model: { ...model, sections: next.model },
-				commands: Command.mapMessages(next.commands ?? [], toSections),
-			}
+			return { model: { ...model, sections: next.model }, commands: Command.mapMessages(next.commands ?? [], toSections) }
 		},
 		GotCopyMessage: ({ id, message: child }) => {
-			const next = updateCopy(model.copies, id, child, (copyId, copyMessage) =>
-				Message.GotCopyMessage({ id: copyId, message: copyMessage }),
-			)
+			const next = updateCopy(model.copies, id, child, (copyId, copyMessage) => Message.GotCopyMessage({ id: copyId, message: copyMessage }))
 			return { model: { ...model, copies: next.copies }, commands: next.commands }
 		},
 	})
 }
+

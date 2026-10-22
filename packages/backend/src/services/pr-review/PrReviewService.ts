@@ -2966,7 +2966,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
-			Layer.mergeAll(VcsRepository.layer, VcsProviderRegistry.layer, PrReviewTelemetryService.layer),
+			Layer.mergeAll(
+				VcsRepository.layer,
+				VcsProviderRegistry.layer,
+				PrReviewTelemetryService.layer,
+			),
 		),
 	)
 }

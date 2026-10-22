@@ -13,70 +13,57 @@ import { isMounted } from "../../../ui/overlay/transition"
 
 type Inputs = Readonly<{ allTags: ReadonlyArray<string> }>
 
-export const tagFilterView = Submodel.defineView<Combobox.Model, Combobox.Message, Inputs>(
-	(model, inputs, h) => {
-		const selected = model.selected
-		const triggerId = `${model.id}-trigger`
-		const isVisible = isMounted(model.isOpen, model.animation)
-		const searchModel = { ...model, inputValue: Combobox.queryOf(model) }
-		return h.div(
-			[h.Class("contents")],
-			[
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "default",
-						className: "shrink-0 gap-1.5",
-						slot: "combobox-trigger",
-						attributes: [
-							...(isVisible ? [h.AriaControls(`${model.id}-popup`)] : []),
-							h.AriaExpanded(model.isOpen),
-							h.AriaHasPopup("dialog"),
-							h.AriaLabel("Tags"),
-							...(model.isOpen
-								? [
-										h.DataAttribute("popup-open", ""),
-										h.DataAttribute("popup-side", model.side),
-										h.DataAttribute("pressed", ""),
-									]
-								: []),
-							...(selected.length === 0 ? [h.DataAttribute("placeholder", "")] : []),
-							h.Id(triggerId),
-							h.Role("combobox"),
-							h.Tabindex(0),
-							h.OnClick(Combobox.Message.ClickedTriggerOf({ items: inputs.allTags })),
-						],
-					},
-					[
-						"Tags",
-						...(selected.length === 0
-							? []
-							: [
-									h.span(
-										[
-											h.Class(
-												cn(
-													badgeVariants({
-														className:
-															"ml-1.5 h-4 px-1.5 py-0 font-mono text-4xs",
-													}),
-												),
-											),
-											h.DataAttribute("slot", "badge"),
-										],
-										[String(selected.length)],
-									),
-								]),
-						icon(h, "ChevronDownIcon", { className: "text-muted-foreground" }),
+export const tagFilterView = Submodel.defineView<Combobox.Model, Combobox.Message, Inputs>((model, inputs, h) => {
+	const selected = model.selected
+	const triggerId = `${model.id}-trigger`
+	const isVisible = isMounted(model.isOpen, model.animation)
+	const searchModel = { ...model, inputValue: Combobox.queryOf(model) }
+	return h.div(
+		[h.Class("contents")],
+		[
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "default",
+					className: "shrink-0 gap-1.5",
+					slot: "combobox-trigger",
+					attributes: [
+						...(isVisible ? [h.AriaControls(`${model.id}-popup`)] : []),
+						h.AriaExpanded(model.isOpen),
+						h.AriaHasPopup("dialog"),
+						h.AriaLabel("Tags"),
+						...(model.isOpen
+							? [h.DataAttribute("popup-open", ""), h.DataAttribute("popup-side", model.side), h.DataAttribute("pressed", "")]
+							: []),
+						...(selected.length === 0 ? [h.DataAttribute("placeholder", "")] : []),
+						h.Id(triggerId),
+						h.Role("combobox"),
+						h.Tabindex(0),
+						h.OnClick(Combobox.Message.ClickedTriggerOf({ items: inputs.allTags })),
 					],
-				),
-				hiddenInput(h, { ...model, mode: "single", inputValue: selected.join(",") }),
-				...(isVisible ? [popup(h, model, searchModel, inputs, triggerId)] : []),
-			],
-		)
-	},
-)
+				},
+				[
+					"Tags",
+					...(selected.length === 0
+						? []
+						: [
+								h.span(
+									[
+										h.Class(cn(badgeVariants({ className: "ml-1.5 h-4 px-1.5 py-0 font-mono text-4xs" }))),
+										h.DataAttribute("slot", "badge"),
+									],
+									[String(selected.length)],
+								),
+							]),
+					icon(h, "ChevronDownIcon", { className: "text-muted-foreground" }),
+				],
+			),
+			hiddenInput(h, { ...model, mode: "single", inputValue: selected.join(",") }),
+			...(isVisible ? [popup(h, model, searchModel, inputs, triggerId)] : []),
+		],
+	)
+})
 
 const popup = (
 	h: HtmlBuilder<Combobox.Message>,
@@ -92,10 +79,7 @@ const popup = (
 		anchorSelector: `#${triggerId}`,
 		className: "w-64",
 		renderItem: (tag) => [
-			h.span(
-				[h.Class("flex min-w-0 items-center gap-2")],
-				[h.span([h.Class("min-w-0 flex-1 truncate")], [tag])],
-			),
+			h.span([h.Class("flex min-w-0 items-center gap-2")], [h.span([h.Class("min-w-0 flex-1 truncate")], [tag])]),
 		],
 		trigger: {
 			returnFocusId: triggerId,

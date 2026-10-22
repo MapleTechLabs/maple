@@ -8,23 +8,19 @@ const fakePresence = Effect.gen(function* () {
 	const present = yield* Ref.make(true)
 	const changes = yield* Queue.unbounded<void>()
 	const presence: Presence = { isPresent: () => Ref.getUnsafe(present), changes: Stream.fromQueue(changes) }
-	const set = (isPresent: boolean) =>
-		Effect.andThen(Ref.set(present, isPresent), Queue.offer(changes, undefined))
+	const set = (isPresent: boolean) => Effect.andThen(Ref.set(present, isPresent), Queue.offer(changes, undefined))
 	return { presence, set }
 })
 
 const counted = (presence: Presence) =>
 	Effect.gen(function* () {
 		const ticks = yield* Ref.make(0)
-		yield* Effect.forkChild(
-			Stream.runForEach(pollTicks("10 seconds", presence), () => Ref.update(ticks, (n) => n + 1)),
-		)
+		yield* Effect.forkChild(Stream.runForEach(pollTicks("10 seconds", presence), () => Ref.update(ticks, (n) => n + 1)))
 		yield* Effect.yieldNow
 		return ticks
 	})
 
-const run = <A, E>(effect: Effect.Effect<A, E>) =>
-	Effect.runPromise(effect.pipe(Effect.provide(TestClock.layer())))
+const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect.pipe(Effect.provide(TestClock.layer())))
 
 describe("pollTicks", () => {
 	test("ticks once per interval, the first after a full interval", () =>
@@ -111,9 +107,7 @@ describe("whenPresent", () => {
 				expect(yield* Stream.runCollect(whenPresent(presence))).toEqual([undefined])
 				yield* set(false)
 				const waits = yield* Ref.make(0)
-				yield* Effect.forkChild(
-					Stream.runForEach(whenPresent(presence), () => Ref.update(waits, (n) => n + 1)),
-				)
+				yield* Effect.forkChild(Stream.runForEach(whenPresent(presence), () => Ref.update(waits, (n) => n + 1)))
 				yield* Effect.yieldNow
 				expect(yield* Ref.get(waits)).toBe(0)
 				yield* set(true)

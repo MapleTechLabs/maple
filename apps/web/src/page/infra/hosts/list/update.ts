@@ -67,9 +67,8 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model: install.model,
 		commands: [
-			Command.mapMessage(
-				Frame.resolve(install.model.frame, scopeOf(install.model, context), "Load"),
-				(message) => Message.GotFrameMessage({ message }),
+			Command.mapMessage(Frame.resolve(install.model.frame, scopeOf(install.model, context), "Load"), (message) =>
+				Message.GotFrameMessage({ message }),
 			),
 			...(install.commands ?? []),
 		],
@@ -87,9 +86,7 @@ export const routeChanged = (
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = { ...model, search: route.search }
 	const toFrame = (message: Frame.Message) => Message.GotFrameMessage({ message })
-	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) =>
-		requestAll(moved, context, mode),
-	)
+	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return =>
@@ -120,9 +117,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			navigate(model, { ...model.search, q: value === "" ? undefined : value }),
 		ChangedScope: ({ scope }) => navigate(model, { ...model.search, scope }),
 		ClickedClearSearch: () => navigate(model, { ...model.search, q: undefined, scope: undefined }),
-		ClickedSort: ({ key }) => ({
-			model: { ...model, sort: nextSort(model.sort, key, { stringKeys: ["hostName"] }) },
-		}),
+		ClickedSort: ({ key }) => ({ model: { ...model, sort: nextSort(model.sort, key, { stringKeys: ["hostName"] }) } }),
 		GotFrameMessage: ({ message: inner }) => updateFrame(model, inner, context),
 		GotInstallMessage: ({ message: inner }) =>
 			liftInstall(model, InstallModal.update(model.install, inner)),

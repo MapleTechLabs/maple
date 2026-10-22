@@ -185,13 +185,13 @@ To trace at a proxy you run, enable the logger in its `config.yaml`:
 
 ```yaml
 model_list:
-    - model_name: gpt-4o-mini
-      litellm_params:
-          model: openrouter/openai/gpt-4o-mini
-          api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openrouter/openai/gpt-4o-mini
+      api_key: os.environ/OPENROUTER_API_KEY
 
 litellm_settings:
-    callbacks: ["otel"]
+  callbacks: ["otel"]
 ```
 
 Set these in the proxy's environment:

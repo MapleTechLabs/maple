@@ -53,22 +53,15 @@ const credentials = (h: H, model: Model): Html =>
 				: model.keys._tag === "Pending" || model.keys.privateKey === ""
 					? h.div(
 							[h.Class("space-y-1")],
-							[
-								h.span([h.Class("text-xs text-muted-foreground")], ["Private ingest key"]),
-								skeleton(h, "h-8 w-full"),
-							],
+							[h.span([h.Class("text-xs text-muted-foreground")], ["Private ingest key"]), skeleton(h, "h-8 w-full")],
 						)
 					: copyableField(h, {
 							id: "setup-private-key",
 							label: "Private ingest key",
 							value: model.keys.privateKey,
 							copy: model.copies.privateKey,
-							toCopyMessage: (message) =>
-								Message.GotCopyMessage({ field: "privateKey", message }),
-							masked: {
-								isVisible: model.isPrivateKeyVisible,
-								onToggle: Message.ClickedRevealPrivateKey(),
-							},
+							toCopyMessage: (message) => Message.GotCopyMessage({ field: "privateKey", message }),
+							masked: { isVisible: model.isPrivateKeyVisible, onToggle: Message.ClickedRevealPrivateKey() },
 						}),
 		],
 	)
@@ -96,8 +89,7 @@ const guidedSetup = (h: H, model: Model, framework: string): Html =>
 						snippetCopies: model.snippetCopies,
 						toSetupTabs: (message) => Message.GotSetupTabsMessage({ message }),
 						toPackageTabs: (message) => Message.GotPackageTabsMessage({ message }),
-						toSnippetCopy: (snippet, message) =>
-							Message.GotSnippetCopyMessage({ snippet, message }),
+						toSnippetCopy: (snippet, message) => Message.GotSnippetCopyMessage({ snippet, message }),
 						variant: "boxed",
 					}),
 				],
@@ -124,10 +116,7 @@ const sendTestEventStrip = (h: H, model: Model): Html =>
 			h.div(
 				[h.Class("flex items-center gap-2")],
 				[
-					h.span(
-						[h.Class("hidden text-2xs text-muted-foreground sm:inline")],
-						["Not ready to instrument?"],
-					),
+					h.span([h.Class("hidden text-2xs text-muted-foreground sm:inline")], ["Not ready to instrument?"]),
 					button(
 						h,
 						{
@@ -154,20 +143,13 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 				h,
 				[
 					h.div(
-						[
-							h.Class(
-								"flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary",
-							),
-						],
+						[h.Class("flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary")],
 						[icon(h, "CircleCheckIcon", { size: 20 })],
 					),
 					h.div(
 						[h.Class("min-w-0 flex-1 basis-40")],
 						[
-							h.p(
-								[h.Class("text-sm font-semibold tracking-tight")],
-								["First trace received — you're live"],
-							),
+							h.p([h.Class("text-sm font-semibold tracking-tight")], ["First trace received — you're live"]),
 							h.p(
 								[h.Class("text-xs text-muted-foreground mt-0.5")],
 								[
@@ -193,10 +175,7 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 							variant: "ghost",
 							size: "sm",
 							className: "size-8 p-0 shrink-0",
-							attributes: [
-								h.AriaLabel("Dismiss"),
-								h.OnClick(Message.ClickedDismissCelebration()),
-							],
+							attributes: [h.AriaLabel("Dismiss"), h.OnClick(Message.ClickedDismissCelebration())],
 						},
 						[icon(h, "XmarkIcon", {})],
 					),
@@ -208,13 +187,7 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 	)
 
 /** `SetupChecklistCard` while waiting: the collapsible "Connect your app" card. */
-const waitingCard = (
-	h: H,
-	model: Model,
-	isExpanded: boolean,
-	framework: string,
-	intents: Parameters<typeof getOnboardingSetupHint>[0],
-): Html =>
+const waitingCard = (h: H, model: Model, isExpanded: boolean, framework: string, intents: Parameters<typeof getOnboardingSetupHint>[0]): Html =>
 	card(
 		h,
 		[
@@ -225,11 +198,7 @@ const waitingCard = (
 						onClick: Message.ClickedToggleExpanded(),
 						className: "flex-1 px-5 py-4 hover:bg-muted/30",
 						leading: h.span(
-							[
-								h.Class(
-									"flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary",
-								),
-							],
+							[h.Class("flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary")],
 							[icon(h, "CodeIcon", { size: 16 })],
 						),
 						title: "Connect your app to see real data",

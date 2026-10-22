@@ -54,9 +54,7 @@ export const AGENT_FRAMEWORK_GUIDES: readonly AgentGuide[] = [
 		"typescript",
 		"python",
 	]),
-	guide("claude-api", "Claude API & SDK", "Built-in SDK tracing and Console export", "claude", [
-		"typescript",
-	]),
+	guide("claude-api", "Claude API & SDK", "Built-in SDK tracing and Console export", "claude", ["typescript"]),
 	guide("google-adk", "Google ADK", "Runners, sub-agents and sessions", "googleadk", [
 		"python",
 		"typescript",

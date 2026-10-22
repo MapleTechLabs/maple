@@ -87,10 +87,7 @@ export const graphRowsOf = (
 }> => ({
 	edges: data.edges.map((row) => ({ ...row })),
 	dbEdges: data.dbEdges.map((row) => ({ ...row })),
-	serviceOverviews: data.overviews.map((row) => ({
-		...row,
-		commits: row.commits.map((commit) => ({ ...commit })),
-	})),
+	serviceOverviews: data.overviews.map((row) => ({ ...row, commits: row.commits.map((commit) => ({ ...commit })) })),
 	platforms: new Map(data.platforms),
 	runtimes: new Map(data.runtimes),
 })

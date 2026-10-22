@@ -22,22 +22,15 @@ export const runTest = (model: Model, isSending: boolean): Return => {
 	const form = model.form
 	if (form === null || model.isDryRunning || model.isSendingTest) return { model }
 	if (!isRulePreviewReady(form))
-		return {
-			model,
-			outMessage: errorToast("Complete the rule name, query, and threshold before testing"),
-		}
+		return { model, outMessage: errorToast("Complete the rule name, query, and threshold before testing") }
 	return {
 		model: isSending ? { ...model, isSendingTest: true } : { ...model, isDryRunning: true },
-		commands: [
-			RunRuleTest({ key: previewIdentityKey(form), payload: buildRuleTestParamsV2(form, isSending) }),
-		],
+		commands: [RunRuleTest({ key: previewIdentityKey(form), payload: buildRuleTestParamsV2(form, isSending) })],
 	}
 }
 
 export const completeTest = (model: Model, message: Extract<Message, { _tag: "CompletedTest" }>): Return => {
-	const settled: Model = message.isSending
-		? { ...model, isSendingTest: false }
-		: { ...model, isDryRunning: false }
+	const settled: Model = message.isSending ? { ...model, isSendingTest: false } : { ...model, isDryRunning: false }
 	return Result.match(message.result, {
 		onSuccess: (dryRun) => ({
 			model: { ...settled, dryRun },
@@ -47,10 +40,7 @@ export const completeTest = (model: Model, message: Extract<Message, { _tag: "Co
 				description: "",
 			}),
 		}),
-		onFailure: (error) => ({
-			model: settled,
-			outMessage: errorToast("Failed to preview rule", error.message),
-		}),
+		onFailure: (error) => ({ model: settled, outMessage: errorToast("Failed to preview rule", error.message) }),
 	})
 }
 
@@ -69,9 +59,7 @@ export const completeSave = (model: Model, message: Extract<Message, { _tag: "Co
 		onSuccess: () => ({
 			model: { ...model, isSaving: false },
 			commands:
-				model.editingRuleId === null && model.form !== null
-					? [TrackRuleCreated({ signal: model.form.signalType })]
-					: [],
+				model.editingRuleId === null && model.form !== null ? [TrackRuleCreated({ signal: model.form.signalType })] : [],
 			outMessage: PageOutMessage.RequestedNavigation({
 				url: alertsHref({}),
 				isReplace: false,

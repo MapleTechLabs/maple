@@ -233,11 +233,7 @@ const attr = (attributes: OtlpRequest["resourceSpans"][number]["resource"]["attr
 // Installation 42 of `org_ci` with its source, as VcsRepository.upsertInstallation writes it.
 const seedInstallation = (testDb: TestDb, options: { readonly paused?: boolean } = {}) =>
 	Effect.promise(async () => {
-		const sourceId = await insertTestSource(testDb, {
-			orgId: "org_ci",
-			platform: "github",
-			name: "GitHub octo",
-		})
+		const sourceId = await insertTestSource(testDb, { orgId: "org_ci", platform: "github", name: "GitHub octo" })
 		if (options.paused === true) {
 			await executeSql(testDb, "UPDATE sources SET paused_at = now() WHERE id = $1", [sourceId])
 		}

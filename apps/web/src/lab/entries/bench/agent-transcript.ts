@@ -44,9 +44,9 @@ type Message = typeof Message.Type
 const InstallTranscriptBench = Mount.define("InstallTranscriptBench", {
 	messages: [Message.CompletedBenchInstall],
 	execute: () =>
-		Effect.acquireRelease(Effect.sync(installTranscriptBench), (uninstall) =>
-			Effect.sync(uninstall),
-		).pipe(Effect.as(Message.CompletedBenchInstall())),
+		Effect.acquireRelease(Effect.sync(installTranscriptBench), (uninstall) => Effect.sync(uninstall)).pipe(
+			Effect.as(Message.CompletedBenchInstall()),
+		),
 })
 
 type Return = Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> }>

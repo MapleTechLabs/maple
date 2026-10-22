@@ -20,11 +20,7 @@ import { heroChip } from "../../kit/hero-chip"
 import { k8sChart } from "../../kit/k8s-chart"
 import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
 import { noMetricsMessage, pageHero } from "../../kit/page-parts"
-import {
-	metaRow,
-	resourceAttributesCard,
-	resourceAttributesCardSkeleton,
-} from "../../kit/resource-attributes"
+import { metaRow, resourceAttributesCard, resourceAttributesCardSkeleton } from "../../kit/resource-attributes"
 import { sectionHeading } from "../../../kit/section-heading"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
 import { kubernetesViewTabs, pickTimeSearch } from "../../kit/view-tabs"
@@ -70,13 +66,7 @@ const rightPanel = (h: H, model: Model): Html | undefined => {
 
 /** `CapacityStat`. */
 const capacityStat = (h: H, eyebrow: string, fraction: number, subline: string): Html =>
-	statRailItem(h, {
-		eyebrow,
-		value: formatPercent(fraction),
-		tone: severityLevel(fraction),
-		subline,
-		compact: true,
-	})
+	statRailItem(h, { eyebrow, value: formatPercent(fraction), tone: severityLevel(fraction), subline, compact: true })
 
 const stats = (h: H, summary: Summary): Html =>
 	statRail(h, { columns: 4 }, [
@@ -102,9 +92,7 @@ const podsOnNode = (h: H, model: Model, inputs: PageViewInputs): Html =>
 		onFailure: (failure) => errorState(h, { failure, title: "Failed to load pods on this node" }),
 		onData: (page) =>
 			page.data.length === 0
-				? emptyMessage(h, { dashed: true, className: "py-12" }, [
-						"No pods reporting on this node in the selected window.",
-					])
+				? emptyMessage(h, { dashed: true, className: "py-12" }, ["No pods reporting on this node in the selected window."])
 				: podTable(h, page.data, {
 						sortBy: "saturation",
 						sortDir: "desc",
@@ -128,12 +116,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(
-						h,
-						model.frame,
-						{ search: model.search, defaultPreset: DEFAULT_PRESET },
-						toFrame,
-					),
+					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
 					tabs: kubernetesViewTabs(h, "nodes", model.search),
 					rightPanel: rightPanel(h, model),
 				},
@@ -149,12 +132,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 									summary === null
 										? undefined
 										: [
-												...(summary.kubeletVersion
-													? [heroChip(h, ["kubelet ", summary.kubeletVersion])]
-													: []),
-												...(summary.containerRuntime
-													? [heroChip(h, ["runtime ", summary.containerRuntime])]
-													: []),
+												...(summary.kubeletVersion ? [heroChip(h, ["kubelet ", summary.kubeletVersion])] : []),
+												...(summary.containerRuntime ? [heroChip(h, ["runtime ", summary.containerRuntime])] : []),
 											],
 							}),
 							summary === null ? noMetricsMessage(h, "node") : stats(h, summary),
@@ -182,10 +161,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							),
 							h.div(
 								[h.Class("space-y-3")],
-								[
-									sectionHeading(h, { as: "h3", title: "Pods on this node" }),
-									podsOnNode(h, model, inputs),
-								],
+								[sectionHeading(h, { as: "h3", title: "Pods on this node" }), podsOnNode(h, model, inputs)],
 							),
 						],
 					),

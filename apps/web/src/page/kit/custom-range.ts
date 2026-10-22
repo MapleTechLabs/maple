@@ -1,9 +1,4 @@
-import {
-	parseWarehouseDateTime,
-	formatWarehouseDateTime,
-	zonedDateParts,
-	zonedPartsToEpochMs,
-} from "@maple/query-engine/datetime"
+import { parseWarehouseDateTime, formatWarehouseDateTime, zonedDateParts, zonedPartsToEpochMs } from "@maple/query-engine/datetime"
 import { Effect, Option, Schema } from "effect"
 import type { Update } from "foldkit"
 import * as Calendar from "foldkit/calendar"
@@ -54,10 +49,7 @@ const pad = (value: number) => String(value).padStart(2, "0")
 /** The window's ends as the zone's calendar day and `HH:mm` (stored times are UTC warehouse strings). */
 const wallClock = (value: string, timeZone: string) => {
 	const parts = zonedDateParts(parseWarehouseDateTime(value), timeZone)
-	return {
-		day: Calendar.make(parts.year, parts.month, parts.day),
-		clock: `${pad(parts.hour)}:${pad(parts.minute)}`,
-	}
+	return { day: Calendar.make(parts.year, parts.month, parts.day), clock: `${pad(parts.hour)}:${pad(parts.minute)}` }
 }
 
 const validEnd = (value: string | null) =>
@@ -118,8 +110,7 @@ export const addToRange = (range: Range, date: CalendarDate): Range => {
 	const cleared: Range = { maybeFrom: Option.none(), maybeTo: Option.none() }
 	if (Option.isNone(range.maybeFrom)) return Option.isNone(range.maybeTo) ? span(date, date) : cleared
 	const start = range.maybeFrom.value
-	if (Option.isNone(range.maybeTo))
-		return Calendar.isBefore(date, start) ? span(date, start) : span(start, date)
+	if (Option.isNone(range.maybeTo)) return Calendar.isBefore(date, start) ? span(date, start) : span(start, date)
 	const end = range.maybeTo.value
 	if (Calendar.isEqual(start, date) && Calendar.isEqual(end, date)) return cleared
 	if (Calendar.isEqual(start, date)) return span(start, date)
@@ -139,14 +130,7 @@ export const appliedRange = (model: Model): Option.Option<{ startTime: string; e
 		({ from, to, start, end }) => {
 			const instant = (day: CalendarDate, time: { hours: number; minutes: number }) =>
 				zonedPartsToEpochMs(
-					{
-						year: day.year,
-						month: day.month,
-						day: day.day,
-						hour: time.hours,
-						minute: time.minutes,
-						second: 0,
-					},
+					{ year: day.year, month: day.month, day: day.day, hour: time.hours, minute: time.minutes, second: 0 },
 					model.timeZone,
 				)
 			return {

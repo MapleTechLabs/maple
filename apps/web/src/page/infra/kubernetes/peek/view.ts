@@ -55,11 +55,7 @@ const peekSummary = (h: H, model: Model, pod: PodRow): Html => {
 	return AsyncData.matchData(data, {
 		onEmpty: () => skeleton(h, "h-[88px] w-full rounded-md"),
 		onFailure: (failure) =>
-			errorState(h, {
-				failure,
-				title: "Failed to load pod metrics",
-				onRetry: Message.ClickedRetrySummary(),
-			}),
+			errorState(h, { failure, title: "Failed to load pod metrics", onRetry: Message.ClickedRetrySummary() }),
 		onData: (summary) =>
 			summary === null || summary === undefined
 				? emptyMessage(h, { dashed: true }, ["No metrics arrived for this pod in this window."])
@@ -91,13 +87,7 @@ const peekCharts = (h: H, model: Model, pod: PodRow, timeZone: string): Html =>
 		),
 	)
 
-const stepButton = (
-	h: H,
-	label: string,
-	iconName: "ArrowUpIcon" | "ArrowDownIcon",
-	isEnabled: boolean,
-	step: 1 | -1,
-) =>
+const stepButton = (h: H, label: string, iconName: "ArrowUpIcon" | "ArrowDownIcon", isEnabled: boolean, step: 1 | -1) =>
 	iconButton(
 		h,
 		{
@@ -121,19 +111,10 @@ const peekFooter = (h: H, peek: Peek, timeSearch: TimeSearch, locale: string): H
 					stepButton(h, "Next pod", "ArrowDownIcon", peek.index < peek.count - 1, 1),
 					h.span(
 						[h.Class("ml-1 font-mono text-2xs tabular-nums text-muted-foreground")],
-						[
-							(peek.index + 1).toLocaleString(locale),
-							" of",
-							" ",
-							peek.count.toLocaleString(locale),
-						],
+						[(peek.index + 1).toLocaleString(locale), " of", " ", peek.count.toLocaleString(locale)],
 					),
 					h.span(
-						[
-							h.Class(
-								"ml-2 hidden items-center gap-1 text-2xs text-muted-foreground sm:inline-flex",
-							),
-						],
+						[h.Class("ml-2 hidden items-center gap-1 text-2xs text-muted-foreground sm:inline-flex")],
 						[kbd(h, undefined, ["↑"]), kbd(h, undefined, ["↓"]), " walk the list"],
 					),
 				],

@@ -58,11 +58,7 @@ const trace: TraceData = {
 
 const entered = init(context, TRACE_ID)
 const answered = (model: Model, answer: Option.Option<TraceData>, ctx = context) =>
-	update(
-		model,
-		Message.SucceededFetchTrace({ key: model.trace.key ?? "", trace: answer, fetchedAtMs: NOW }),
-		ctx,
-	)
+	update(model, Message.SucceededFetchTrace({ key: model.trace.key ?? "", trace: answer, fetchedAtMs: NOW }), ctx)
 
 describe("local trace detail", () => {
 	test("entry asks for the span hierarchy of the trace", () => {
@@ -70,10 +66,7 @@ describe("local trace detail", () => {
 	})
 
 	test("an answer for a superseded key is dropped", () => {
-		const stale = pageUpdate(
-			entered.model,
-			Message.SucceededFetchTrace({ key: "stale", trace: Option.some(trace), fetchedAtMs: NOW }),
-		)
+		const stale = pageUpdate(entered.model, Message.SucceededFetchTrace({ key: "stale", trace: Option.some(trace), fetchedAtMs: NOW }))
 		expect(stale.model.trace).toEqual(entered.model.trace)
 		expect(stale.model.timeline).toBeNull()
 	})
@@ -93,18 +86,14 @@ describe("local trace detail", () => {
 		expect(loaded.panel).toBeNull()
 		const selected = locationChanged(loaded, contextAt(`spanId=${SPAN_ID}`))
 		expect(selected.model.panel?.span.spanId).toBe(SPAN_ID)
-		expect((selected.commands ?? []).map(({ name }) => name)).toEqual(
-			expect.arrayContaining([FetchSpanLogs.name, FetchSpanDetail.name]),
-		)
+		expect((selected.commands ?? []).map(({ name }) => name)).toEqual(expect.arrayContaining([FetchSpanLogs.name, FetchSpanDetail.name]))
 	})
 
 	test("Escape with a panel open drops the span from the hash", () => {
 		const ctx = contextAt(`spanId=${SPAN_ID}`)
 		const open = answered(init(ctx, TRACE_ID).model, Option.some(trace), ctx).model
 		const closed = update(open, Message.PressedEscape(), ctx)
-		expect(closed.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ hash: `#/traces/${TRACE_ID}`, isReplace: true }),
-		)
+		expect(closed.outMessage).toEqual(PageOutMessage.RequestedNavigation({ hash: `#/traces/${TRACE_ID}`, isReplace: true }))
 	})
 
 	test("a row of the span's Logs tab opens the log sheet on that log", () => {
@@ -124,11 +113,7 @@ describe("local trace detail", () => {
 			resourceAttributes: {},
 		}
 		const logsKey = open.panel?.logs.key ?? ""
-		const withLogs = update(
-			open,
-			Message.SucceededFetchSpanLogs({ key: logsKey, logs: [spanLog], fetchedAtMs: NOW }),
-			ctx,
-		).model
+		const withLogs = update(open, Message.SucceededFetchSpanLogs({ key: logsKey, logs: [spanLog], fetchedAtMs: NOW }), ctx).model
 		const clicked = update(withLogs, Message.ClickedSpanLog({ log: spanLog }), ctx).model
 		const sheet = Option.getOrNull(clicked.panel?.maybeLogSheet ?? Option.none())
 		expect([sheet?.dialog.isOpen, sheet?.log.body]).toEqual([true, "card declined"])
@@ -144,21 +129,13 @@ describe("local trace detail", () => {
 
 	test("a refetch that adds spans rebuilds the open tab on the new tree", () => {
 		const loaded = answered(entered.model, Option.some(trace)).model
-		const child = {
-			...span,
-			spanId: Schema.decodeSync(SpanId)("2222222222222222"),
-			parentSpanId: SPAN_ID,
-			spanName: "db",
-		}
+		const child = { ...span, spanId: Schema.decodeSync(SpanId)("2222222222222222"), parentSpanId: SPAN_ID, spanName: "db" }
 		const grown: TraceData = {
 			...trace,
 			spans: [span, child],
 			rootSpans: [{ ...span, children: [{ ...child, children: [], depth: 1 }], depth: 0 }],
 		}
-		const refetched = answered(
-			pageUpdate(loaded, Message.ClickedRefresh()).model,
-			Option.some(grown),
-		).model
+		const refetched = answered(pageUpdate(loaded, Message.ClickedRefresh()).model, Option.some(grown)).model
 		expect(refetched.timeline?.rootSpans[0]?.children.map((node) => node.spanName)).toEqual(["db"])
 	})
 })

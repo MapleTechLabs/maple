@@ -19,10 +19,7 @@ export const Message = defineMessageUnion({
 	UpdatedIncidents: rows(AlertIncidentRowSchema),
 	UpdatedRules: rows(AlertRuleRowSchema),
 	UpdatedRuleStates: rows(AlertRuleStateRowSchema),
-	CompletedFetchPreview: {
-		key: Schema.String,
-		result: Schema.Result(AlertRulePreviewResponse, PreviewFailure),
-	},
+	CompletedFetchPreview: { key: Schema.String, result: Schema.Result(AlertRulePreviewResponse, PreviewFailure) },
 	CompletedFetchDeliveries: {
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(AlertDeliveryEventDocument), LoadFailure),

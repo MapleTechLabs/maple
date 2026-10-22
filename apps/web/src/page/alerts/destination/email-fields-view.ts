@@ -11,24 +11,13 @@ import { icon } from "../../../ui/icon"
 import { field, fieldDescription, fieldError, type FieldIds, fieldLabel } from "../../../ui/field"
 import type { FieldState } from "../../../ui/input"
 import { isMounted } from "../../../ui/overlay/transition"
-import {
-	Message as EmailMessage,
-	type MemberOption,
-	type Model as EmailModel,
-	visibleIds,
-} from "./email-fields"
+import { Message as EmailMessage, type MemberOption, type Model as EmailModel, visibleIds } from "./email-fields"
 import type { DestinationForm } from "./form"
 
 // `EmailMemberPicker`'s `MultiSelectCombobox` (packages/ui/src/components/multi-select-combobox.tsx)
 // in chips mode: each chip and row shows the member's avatar and name, never the user id.
 
-const IDLE: FieldState = {
-	isInvalid: false,
-	isDirty: false,
-	isFilled: false,
-	isFocused: false,
-	isTouched: false,
-}
+const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
 const IDS: FieldIds = {
 	control: Combobox.inputId("destination-email-members"),
 	label: "destination-email-members-label",
@@ -37,11 +26,7 @@ const IDS: FieldIds = {
 }
 
 type H = HtmlBuilder<Combobox.Message>
-type PickerInputs = Readonly<{
-	byId: ReadonlyMap<string, MemberOption>
-	placeholder: string
-	emptyText: string
-}>
+type PickerInputs = Readonly<{ byId: ReadonlyMap<string, MemberOption>; placeholder: string; emptyText: string }>
 
 const avatar = <M>(h: HtmlBuilder<M>, option: MemberOption | undefined): Html =>
 	avatarFallback(h, { className: "size-5" }, initialsFrom(option?.label ?? ""))
@@ -57,10 +42,7 @@ const chip = (h: H, option: MemberOption | undefined, value: string, isOpen: boo
 		],
 		[
 			avatar(h, option),
-			h.span(
-				[h.Class(C.comboboxChipTextStyles), h.Title(option?.label ?? value)],
-				[option?.label ?? value],
-			),
+			h.span([h.Class(C.comboboxChipTextStyles), h.Title(option?.label ?? value)], [option?.label ?? value]),
 			h.button(
 				[
 					h.AriaDisabled(false),
@@ -99,12 +81,7 @@ const picker = Submodel.defineView<Combobox.Model, Combobox.Message, PickerInput
 						...inputAttributes(
 							h,
 							model,
-							{
-								slot: "combobox-chips-input",
-								placeholder: inputs.placeholder,
-								items,
-								isUnfiltered: true,
-							},
+							{ slot: "combobox-chips-input", placeholder: inputs.placeholder, items, isUnfiltered: true },
 							(message) => message,
 						),
 						h.AriaLabelledBy(IDS.label),
@@ -128,22 +105,10 @@ const picker = Submodel.defineView<Combobox.Model, Combobox.Message, PickerInput
 										[h.Class("flex min-w-0 items-center gap-2")],
 										[
 											avatar(h, option),
-											h.span(
-												[h.Class("min-w-0 flex-1 truncate")],
-												[option?.label ?? value],
-											),
+											h.span([h.Class("min-w-0 flex-1 truncate")], [option?.label ?? value]),
 											...(option?.meta == null
 												? []
-												: [
-														h.span(
-															[
-																h.Class(
-																	"shrink-0 text-muted-foreground text-xs tabular-nums",
-																),
-															],
-															[option.meta],
-														),
-													]),
+												: [h.span([h.Class("shrink-0 text-muted-foreground text-xs tabular-nums")], [option.meta])]),
 										],
 									),
 								]
@@ -155,11 +120,7 @@ const picker = Submodel.defineView<Combobox.Model, Combobox.Message, PickerInput
 	)
 })
 
-type Inputs<M> = Readonly<{
-	model: EmailModel
-	form: DestinationForm
-	toMessage: (message: EmailMessage) => M
-}>
+type Inputs<M> = Readonly<{ model: EmailModel; form: DestinationForm; toMessage: (message: EmailMessage) => M }>
 
 export const emailFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 	const { model, form } = inputs
@@ -185,13 +146,7 @@ export const emailFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 			`Alert emails go to the selected workspace members (up to ${MAX_EMAIL_MEMBER_RECIPIENTS}).`,
 		),
 		...(isTooMany
-			? [
-					fieldError(
-						h,
-						{ ids: IDS, className: "text-2xs", state: IDLE },
-						`Select at most ${MAX_EMAIL_MEMBER_RECIPIENTS} members.`,
-					),
-				]
+			? [fieldError(h, { ids: IDS, className: "text-2xs", state: IDLE }, `Select at most ${MAX_EMAIL_MEMBER_RECIPIENTS} members.`)]
 			: []),
 	])
 }

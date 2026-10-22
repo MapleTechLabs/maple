@@ -51,9 +51,7 @@ const trafficData = (inputs: Resolved) => {
 	const primaryPoints = inputs.metric.series(inputs.source)
 	const companionPoints = inputs.companion?.series(inputs.source) ?? []
 	const byBucket = new Map<string, { primary?: number; companion?: number }>()
-	primaryPoints.forEach((point) =>
-		byBucket.set(point.bucket, { ...byBucket.get(point.bucket), primary: point.value }),
-	)
+	primaryPoints.forEach((point) => byBucket.set(point.bucket, { ...byBucket.get(point.bucket), primary: point.value }))
 	companionPoints.forEach((point) =>
 		byBucket.set(point.bucket, { ...byBucket.get(point.bucket), companion: point.value }),
 	)
@@ -74,20 +72,12 @@ const trafficData = (inputs: Resolved) => {
 		{ key: "primary", descriptor: inputs.metric, token: "--primary", total: sum(primaryPoints) },
 		...(inputs.companion === undefined
 			? []
-			: [
-					{
-						key: "companion" as const,
-						descriptor: inputs.companion,
-						token: "--chart-2",
-						total: sum(companionPoints),
-					},
-				]),
+			: [{ key: "companion" as const, descriptor: inputs.companion, token: "--chart-2", total: sum(companionPoints) }]),
 	]
 	return { points, series }
 }
 
-const sum = (points: ReadonlyArray<{ readonly value: number }>) =>
-	points.reduce((total, point) => total + point.value, 0)
+const sum = (points: ReadonlyArray<{ readonly value: number }>) => points.reduce((total, point) => total + point.value, 0)
 
 export const trafficChart = Submodel.defineView<Model, Message, TrafficInputs>((model, raw, h): Html => {
 	const inputs = {
@@ -127,10 +117,7 @@ export const trafficChart = Submodel.defineView<Model, Message, TrafficInputs>((
 	return chartCard(
 		h,
 		{
-			title:
-				companion === undefined
-					? inputs.metric.label
-					: `${inputs.metric.label} & ${companion.label.toLowerCase()}`,
+			title: companion === undefined ? inputs.metric.label : `${inputs.metric.label} & ${companion.label.toLowerCase()}`,
 			legend,
 		},
 		[
@@ -150,9 +137,7 @@ export const trafficChart = Submodel.defineView<Model, Message, TrafficInputs>((
 								className: "h-full w-full",
 								tooltipBody: (portal) =>
 									Option.flatMap(model.tooltip, (tooltip) =>
-										tooltip._tag === "Bucket"
-											? Option.some(bucketTooltipBody(h, tooltip, portal))
-											: Option.none(),
+										tooltip._tag === "Bucket" ? Option.some(bucketTooltipBody(h, tooltip, portal)) : Option.none(),
 									),
 							}),
 						],

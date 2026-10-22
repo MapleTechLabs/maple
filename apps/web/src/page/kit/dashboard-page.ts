@@ -70,11 +70,7 @@ export const pageContent = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>)
 	)
 
 /** `PageLayout.Header` + `HeaderActions`. */
-export const pageHeader = <M>(
-	h: HtmlBuilder<M>,
-	titleContent: Html | undefined,
-	actions: Html | undefined,
-): Html =>
+export const pageHeader = <M>(h: HtmlBuilder<M>, titleContent: Html | undefined, actions: Html | undefined): Html =>
 	h.div(
 		[h.DataAttribute("slot", "page-header"), h.Class(pageHeaderStyles)],
 		[
@@ -161,9 +157,7 @@ export const dashboardPage = <M>(
 		...(options.filters === undefined ? [] : [filterRail(h, options.filters, options.filtersWidth)]),
 		pageContent(h, [
 			...(sticky.length > 0 ? [stickyArea(h, sticky, options.isScrolled)] : []),
-			options.fill === true
-				? fillArea(h, children)
-				: scrollArea(h, children, options.scrollClassName, options.width, options.gap),
+			options.fill === true ? fillArea(h, children) : scrollArea(h, children, options.scrollClassName, options.width, options.gap),
 		]),
 		...(options.rightPanel === undefined
 			? []

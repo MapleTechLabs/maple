@@ -674,9 +674,7 @@ const chatPreview = (nowMs: number, range: { start: number; end: number }): Aler
 		windowMinutes: 5,
 		threshold: 0.05,
 		thresholdUpper: null,
-		thresholds: [
-			{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] },
-		],
+		thresholds: [{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] }],
 		comparator: "gt",
 		truncatedToStart: null,
 		series: [{ groupKey: "maple-chat", points }],

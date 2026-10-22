@@ -68,9 +68,7 @@ const advanced = (h: H, model: Model): Html => {
 					...(isOpen ? [h.AriaControls(ADVANCED_PANEL_ID)] : []),
 					h.AriaDisabled(false),
 					h.AriaExpanded(isOpen),
-					h.Class(
-						"text-muted-foreground hover:text-foreground group flex items-center gap-1.5 text-sm",
-					),
+					h.Class("text-muted-foreground hover:text-foreground group flex items-center gap-1.5 text-sm"),
 					...(isOpen ? [h.DataAttribute("panel-open", "")] : []),
 					h.DataAttribute("slot", "collapsible-trigger"),
 					h.Tabindex(0),
@@ -93,11 +91,7 @@ const advanced = (h: H, model: Model): Html => {
 								h.DataAttribute("open", ""),
 								h.DataAttribute("slot", "collapsible-panel"),
 								h.Id(ADVANCED_PANEL_ID),
-								h.Style({
-									"--collapsible-panel-height": "auto",
-									"--collapsible-panel-width": "auto",
-									"animation-name": "none",
-								}),
+								h.Style({ "--collapsible-panel-height": "auto", "--collapsible-panel-width": "auto", "animation-name": "none" }),
 							],
 							[
 								panel(h, { padded: true, className: "mt-3" }, [
@@ -121,24 +115,14 @@ export const createSourceForm = (h: H, model: Model, platform: PushSourcePlatfor
 	return h.form(
 		[h.Class("flex w-full max-w-2xl flex-col gap-4"), h.OnSubmit(Message.SubmittedForm())],
 		[
-			panel(h, { padded: true, className: "gap-4" }, [
-				header(h, platform),
-				nameField(h, model, platform),
-			]),
+			panel(h, { padded: true, className: "gap-4" }, [header(h, platform), nameField(h, model, platform)]),
 			advanced(h, model),
 			h.footer(
 				[h.Class("flex items-center gap-3 border-t pt-4")],
 				[
-					h.span(
-						[h.Class("text-muted-foreground grow text-xs")],
-						["The token is shown once, on the next step."],
-					),
-					button(h, { variant: "outline", attributes: [h.OnClick(Message.ClickedBack())] }, [
-						"Back",
-					]),
-					button(h, { type: "submit", isDisabled: !isValid, isLoading: model.isSaving }, [
-						"Create source",
-					]),
+					h.span([h.Class("text-muted-foreground grow text-xs")], ["The token is shown once, on the next step."]),
+					button(h, { variant: "outline", attributes: [h.OnClick(Message.ClickedBack())] }, ["Back"]),
+					button(h, { type: "submit", isDisabled: !isValid, isLoading: model.isSaving }, ["Create source"]),
 				],
 			),
 		],

@@ -128,7 +128,9 @@ export const FetchSpans = Command.define("FetchReplayTraceSpans", {
 	execute: ({ traceId, timestamp }) =>
 		Option.match(decodeTraceId(traceId), {
 			onNone: () =>
-				Effect.succeed(Message.CompletedFetchSpans({ traceId, result: Result.succeed([]) })),
+				Effect.succeed(
+					Message.CompletedFetchSpans({ traceId, result: Result.succeed([]) }),
+				),
 			onSome: (id) =>
 				getSpanHierarchy({ data: { traceId: id, timestamp } }).pipe(
 					Effect.map((response) =>
@@ -206,13 +208,7 @@ export const WatchPlayerKeys = Mount.defineStream("WatchReplayPlayerKeys", {
 			Effect.acquireRelease(
 				Effect.sync(() => {
 					const onKey = (event: KeyboardEvent) => {
-						if (
-							event.metaKey ||
-							event.ctrlKey ||
-							event.altKey ||
-							isEditableTarget(event.target) ||
-							isDialogOpen()
-						)
+						if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target) || isDialogOpen())
 							return
 						if (event.code === "Space") {
 							event.preventDefault()
@@ -221,18 +217,14 @@ export const WatchPlayerKeys = Mount.defineStream("WatchReplayPlayerKeys", {
 							event.preventDefault()
 							Queue.offerUnsafe(
 								queue,
-								Message.RequestedSeekBy({
-									deltaMs: event.code === "ArrowLeft" ? -5000 : 5000,
-								}),
+								Message.RequestedSeekBy({ deltaMs: event.code === "ArrowLeft" ? -5000 : 5000 }),
 							)
 						}
 					}
 					const onFullscreen = () =>
 						Queue.offerUnsafe(
 							queue,
-							Message.ChangedFullscreen({
-								isFullscreen: isFigureFullscreen(document.fullscreenElement),
-							}),
+							Message.ChangedFullscreen({ isFullscreen: isFigureFullscreen(document.fullscreenElement) }),
 						)
 					window.addEventListener("keydown", onKey)
 					document.addEventListener("fullscreenchange", onFullscreen)
@@ -245,6 +237,7 @@ export const WatchPlayerKeys = Mount.defineStream("WatchReplayPlayerKeys", {
 			).pipe(Effect.flatMap(() => Effect.never)),
 		),
 })
+
 
 /** Where a press landed along a scrub surface (`msFromClientX`), as a 0 to 1 share. */
 export const MeasureScrub = Command.define("MeasureReplayScrub", {

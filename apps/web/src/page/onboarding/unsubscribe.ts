@@ -66,8 +66,7 @@ export const Unsubscribe = Command.define("Unsubscribe", {
 			Effect.catch((error) =>
 				Effect.succeed(
 					Message.FailedUnsubscribe({
-						isInvalidToken:
-							error._tag === "@maple/http/errors/DigestUnsubscribeTokenInvalidError",
+						isInvalidToken: error._tag === "@maple/http/errors/DigestUnsubscribeTokenInvalidError",
 					}),
 				),
 			),
@@ -111,10 +110,7 @@ const confirm = (h: H, token: string, state: State): ReadonlyArray<Html> => [
 		[
 			button(
 				h,
-				{
-					isLoading: state._tag === "Pending",
-					attributes: [h.OnClick(Message.ClickedUnsubscribe())],
-				},
+				{ isLoading: state._tag === "Pending", attributes: [h.OnClick(Message.ClickedUnsubscribe())] },
 				["Unsubscribe"],
 			),
 		],
@@ -133,10 +129,7 @@ const done = (h: H, token: string): ReadonlyArray<Html> => [
 		[
 			linkButton(
 				h,
-				{
-					variant: "outline",
-					href: hrefOf(AppRoute.Account({ search: { tab: "email-preferences" } })),
-				},
+				{ variant: "outline", href: hrefOf(AppRoute.Account({ search: { tab: "email-preferences" } })) },
 				["Notification settings"],
 			),
 		],
@@ -150,9 +143,7 @@ export const view = (h: H, model: Model): Html =>
 		model.token === null
 			? [
 					authTitle(h, ["Invalid unsubscribe link"]),
-					authDescription(h, [
-						"This link is incomplete. Use the unsubscribe link from the email itself.",
-					]),
+					authDescription(h, ["This link is incomplete. Use the unsubscribe link from the email itself."]),
 				]
 			: model.state._tag === "Done"
 				? done(h, model.token)

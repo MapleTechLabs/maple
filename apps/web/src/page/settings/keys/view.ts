@@ -1,4 +1,8 @@
-import { buildKeyRows, filterKeyRows, type KeyTypeFilter } from "../../../components/settings/keys-table"
+import {
+	buildKeyRows,
+	filterKeyRows,
+	type KeyTypeFilter,
+} from "../../../components/settings/keys-table"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
@@ -34,10 +38,7 @@ const STATUS_LABELS = { active: "Active", expired: "Expired", revoked: "Revoked"
 const createKeyButton = (h: H, model: Model): Html => {
 	const plus = icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] })
 	if (!model.isAdmin)
-		return button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedCreateKey())] }, [
-			plus,
-			"Create MCP key",
-		])
+		return button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedCreateKey())] }, [plus, "Create MCP key"])
 	return h.div(
 		[h.Class("flex")],
 		[
@@ -104,10 +105,9 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 				view: SelectView.view,
 				toParentMessage: (message) => Message.GotStatusSelectMessage({ message }),
 				viewInputs: {
-					entries: STATUS_VALUES.map((status): SelectView.SelectEntry => ({
-						_tag: "Item",
-						item: { value: status, label: STATUS_LABELS[status] },
-					})),
+					entries: STATUS_VALUES.map(
+						(status): SelectView.SelectEntry => ({ _tag: "Item", item: { value: status, label: STATUS_LABELS[status] } }),
+					),
 					ariaLabel: "Key status",
 					size: "sm",
 					className: "w-36",
@@ -115,10 +115,7 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 					renderItem: (option) => [
 						option.label,
 						" · ",
-						String(
-							new Map<string, number>(Object.entries(counts.statusCounts)).get(option.value) ??
-								0,
-						),
+						String(new Map<string, number>(Object.entries(counts.statusCounts)).get(option.value) ?? 0),
 					],
 					toView: (parts) => h.div([h.Class("contents")], parts),
 				},
@@ -147,11 +144,7 @@ const SYNC_UNAVAILABLE = makeClientErrorBody({
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const rows = buildKeyRows({ apiKeys: model.apiKeys ?? [], now: inputs.nowMs })
-	const counts = filterKeyRows(rows, {
-		type: model.typeFilter,
-		status: model.statusFilter,
-		search: model.search,
-	})
+	const counts = filterKeyRows(rows, { type: model.typeFilter, status: model.statusFilter, search: model.search })
 	const isLoading = model.apiKeys === null && !model.isLoadFailed
 	const isFailed = model.apiKeys === null && model.isLoadFailed
 	return settingsSections(h, "wide", [
@@ -176,12 +169,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 								className: "py-12",
 							})
 						: isLoading
-							? skeletonList(h, {
-									rows: 3,
-									rowClassName: "h-[52px]",
-									gap: "2",
-									className: "p-4",
-								})
+							? skeletonList(h, { rows: 3, rowClassName: "h-[52px]", gap: "2", className: "p-4" })
 							: counts.visible.length === 0
 								? keysEmpty(h, model)
 								: keysTable(h, model, counts.visible, inputs),

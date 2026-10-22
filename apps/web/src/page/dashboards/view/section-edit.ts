@@ -29,11 +29,7 @@ export const SectionEdit = defineTaggedUnion({
 	DeleteSection: { sectionId: Schema.String, action: Schema.Literals(["ungroup", "delete"]) },
 	AddTab: { sectionId: Schema.String },
 	RenameTab: { sectionId: Schema.String, tabId: Schema.String, title: Schema.String },
-	DeleteTab: {
-		sectionId: Schema.String,
-		tabId: Schema.String,
-		action: Schema.Literals(["move", "delete"]),
-	},
+	DeleteTab: { sectionId: Schema.String, tabId: Schema.String, action: Schema.Literals(["move", "delete"]) },
 	MoveWidget: { widgetId: Schema.String, target: Target },
 })
 export type SectionEdit = typeof SectionEdit.Type
@@ -52,8 +48,7 @@ export const applySectionEdit = (
 			withSectionCollapsedDefault(document, sectionId, collapsed, nowIso),
 		SetCollapsible: ({ sectionId, collapsible }) =>
 			withSectionCollapsible(document, sectionId, collapsible, nowIso),
-		ReorderSections: ({ fromIndex, toIndex }) =>
-			withReorderedSections(document, fromIndex, toIndex, nowIso),
+		ReorderSections: ({ fromIndex, toIndex }) => withReorderedSections(document, fromIndex, toIndex, nowIso),
 		DeleteSection: ({ sectionId, action }) => withoutSection(document, sectionId, action, nowIso),
 		AddTab: ({ sectionId }) => withAddedTab(document, sectionId, nextId(), nowIso),
 		RenameTab: ({ sectionId, tabId, title }) => withRenamedTab(document, sectionId, tabId, title, nowIso),

@@ -37,11 +37,7 @@ const chipsView = (h: HtmlBuilder<Message>, log: LocalLog, index: number): Reado
 	if (chips.length === 0) return []
 	return [
 		h.div(
-			[
-				h.Class(
-					"hidden h-5 min-w-0 max-w-[30%] flex-wrap items-center justify-end gap-1 overflow-hidden md:flex",
-				),
-			],
+			[h.Class("hidden h-5 min-w-0 max-w-[30%] flex-wrap items-center justify-end gap-1 overflow-hidden md:flex")],
 			chips.map((chip) => {
 				const ref = { index, logKey: key, key: chip.key }
 				return h.button(
@@ -54,13 +50,9 @@ const chipsView = (h: HtmlBuilder<Message>, log: LocalLog, index: number): Reado
 						h.OnMouseLeave(Message.LeftChip({ chip: ref })),
 						h.OnFocus(Message.FocusedChip({ chip: ref })),
 						h.OnBlur(Message.BlurredChip({ chip: ref })),
-						h.OnClick(Message.ClickedChip({ text: `${chip.key}=${chip.value}` }), {
-							propagation: "Stop",
-						}),
+						h.OnClick(Message.ClickedChip({ text: `${chip.key}=${chip.value}` }), { propagation: "Stop" }),
 						h.OnKeyDownPreventDefault((pressed) =>
-							pressed === "Escape"
-								? Option.some(Message.PressedChipEscape({ chip: ref }))
-								: Option.none(),
+							pressed === "Escape" ? Option.some(Message.PressedChipEscape({ chip: ref })) : Option.none(),
 						),
 					],
 					[
@@ -76,15 +68,7 @@ const chipsView = (h: HtmlBuilder<Message>, log: LocalLog, index: number): Reado
 
 export const logRow = (
 	h: HtmlBuilder<Message>,
-	options: Readonly<{
-		log: LocalLog
-		index: number
-		search: string | undefined
-		top: number
-		isSelected: boolean
-		nowMs: number
-		timeFormat: TimeFormat
-	}>,
+	options: Readonly<{ log: LocalLog; index: number; search: string | undefined; top: number; isSelected: boolean; nowMs: number; timeFormat: TimeFormat }>,
 ): Html => {
 	const { log, search } = options
 	const firstLine = firstLineOf(log.body, search)
@@ -112,16 +96,11 @@ export const logRow = (
 			h.Role("listitem"),
 			h.AriaLabel(`${severity} ${log.serviceName}: ${log.body.slice(0, 120)}`),
 			h.OnClick(open),
-			h.OnKeyDownPreventDefault((key) =>
-				key === "Enter" || key === " " ? Option.some(open) : Option.none(),
-			),
+			h.OnKeyDownPreventDefault((key) => (key === "Enter" || key === " " ? Option.some(open) : Option.none())),
 		],
 		[
 			h.span(
-				[
-					h.Class("w-36 shrink-0 truncate text-foreground/75 tabular-nums"),
-					h.Title(formatUtcTitle(log.timestamp)),
-				],
+				[h.Class("w-36 shrink-0 truncate text-foreground/75 tabular-nums"), h.Title(formatUtcTitle(log.timestamp))],
 				[formatTimestamp(options.timeFormat, log.timestamp, { nowMs: options.nowMs })],
 			),
 			h.span(
@@ -149,21 +128,14 @@ export const logRow = (
 							h.Class(
 								cn(
 									"min-w-0 truncate",
-									QUIET_SEVERITIES.has(severity)
-										? "text-muted-foreground"
-										: "text-foreground",
+									QUIET_SEVERITIES.has(severity) ? "text-muted-foreground" : "text-foreground",
 								),
 							),
 						],
 						highlightedText(h, firstLine.text, search),
 					),
 					...(firstLine.hidden > 0
-						? [
-								badge(h, { variant: "meta", size: "xs", className: "shrink-0" }, [
-									"+",
-									countLabel(firstLine.hidden, "line"),
-								]),
-							]
+						? [badge(h, { variant: "meta", size: "xs", className: "shrink-0" }, ["+", countLabel(firstLine.hidden, "line")])]
 						: []),
 				],
 			),

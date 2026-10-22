@@ -109,12 +109,7 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>) => (
  * Follows the list: opens on a peeked row (warming it and its neighbours), closes when the key no
  * longer matches a row. The URL already says so, so the dialog's own Opened/Closed are dropped.
  */
-export const sync = (
-	model: Model,
-	context: PageContext,
-	window: TimeWindow | null,
-	peek: Peek | null,
-): Return => {
+export const sync = (model: Model, context: PageContext, window: TimeWindow | null, peek: Peek | null): Return => {
 	if (peek === null) return liftDialog(model, Dialog.close(model.dialog))
 	const opened = liftDialog(model, Dialog.open(model.dialog))
 	const isOpening = !model.dialog.isOpen
@@ -152,25 +147,17 @@ export const update = (
 		PressedStepKey: ({ step }) => ({ model, outMessage: OutMessage.RequestedStep({ step }) }),
 		// `useAtomRefresh` on the summary atom alone: the charts are not re-read.
 		ClickedRetrySummary: () =>
-			peek === null || window === null
-				? { model }
-				: request(model, context, window, [peek.pod], "Refresh", true),
+			peek === null || window === null ? { model } : request(model, context, window, [peek.pod], "Refresh", true),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		GotChartMessage: ({ id, message: inner }) => {
 			const chart = model.charts[id] ?? Chart.init()
-			return {
-				model: { ...model, charts: { ...model.charts, [id]: Chart.update(chart, inner).model } },
-			}
+			return { model: { ...model, charts: { ...model.charts, [id]: Chart.update(chart, inner).model } } }
 		},
 		GotDialogMessage: ({ message: inner }) => {
 			const result = Dialog.update(model.dialog, inner)
 			const lifted = liftDialog(model, result)
-			return result.outMessage?._tag === "Closed"
-				? { ...lifted, outMessage: OutMessage.Closed() }
-				: lifted
+			return result.outMessage?._tag === "Closed" ? { ...lifted, outMessage: OutMessage.Closed() } : lifted
 		},
 	})

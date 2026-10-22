@@ -17,10 +17,7 @@ export const OrgInfo = Schema.Struct({
 export type OrgInfo = typeof OrgInfo.Type
 
 /** One filtered page of admins: the count gates leaving, the first name fills the notice. */
-export const AdminsInfo = Schema.Struct({
-	count: Schema.Number,
-	firstAdminName: Schema.NullOr(Schema.String),
-})
+export const AdminsInfo = Schema.Struct({ count: Schema.Number, firstAdminName: Schema.NullOr(Schema.String) })
 export type AdminsInfo = typeof AdminsInfo.Type
 
 /** `null`: no active organization (the empty state). */

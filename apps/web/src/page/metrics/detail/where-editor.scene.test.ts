@@ -15,17 +15,9 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 /** The editor focused with `text` typed and the caret at its end. */
 const typed = (text: string): Model => {
 	const base = init({ metricName: "http.server.request.duration", search: {} }, context).model
-	const focused = pageUpdate(
-		base,
-		Message.GotCaretMessage({ message: CaretMessage.FocusedEditor({ cursor: 0, anchor }) }),
-	)
+	const focused = pageUpdate(base, Message.GotCaretMessage({ message: CaretMessage.FocusedEditor({ cursor: 0, anchor }) }))
 	const changed = pageUpdate(focused, Message.ChangedWhereInput({ value: text }))
-	return pageUpdate(
-		changed,
-		Message.GotCaretMessage({
-			message: CaretMessage.MovedCaret({ cursor: text.length, anchor, keyUp: null }),
-		}),
-	)
+	return pageUpdate(changed, Message.GotCaretMessage({ message: CaretMessage.MovedCaret({ cursor: text.length, anchor, keyUp: null }) }))
 }
 
 describe("where editor suggestions", () => {
@@ -47,9 +39,7 @@ describe("where editor suggestions", () => {
 		expect(dismissed.whereEditor.isDismissed).toBe(true)
 		const moved = pageUpdate(
 			dismissed,
-			Message.GotCaretMessage({
-				message: CaretMessage.MovedCaret({ cursor: 2, anchor, keyUp: "Escape" }),
-			}),
+			Message.GotCaretMessage({ message: CaretMessage.MovedCaret({ cursor: 2, anchor, keyUp: "Escape" }) }),
 		)
 		expect(moved.whereEditor.isDismissed).toBe(false)
 	})

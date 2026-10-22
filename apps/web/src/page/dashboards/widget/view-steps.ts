@@ -256,13 +256,7 @@ const rowActions = (h: H, index: number, total: number): Html =>
 	)
 
 /** The event step's attribute filter line, its parse error under it. */
-const filterLine = (
-	h: H,
-	model: Model,
-	scope: StepScope,
-	step: StepDraft & { kind: "event" },
-	index: number,
-): Html => {
+const filterLine = (h: H, model: Model, scope: StepScope, step: StepDraft & { kind: "event" }, index: number): Html => {
 	const filterClause = step.filterClause ?? ""
 	const parsed = parseFunnelStepFilter(filterClause)
 	return h.div(

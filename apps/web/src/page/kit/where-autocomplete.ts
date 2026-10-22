@@ -33,13 +33,7 @@ export type CaretMessage = typeof CaretMessage.Type
 
 const anchorOf = (element: HTMLTextAreaElement): AnchorRect => {
 	const rect = element.getBoundingClientRect()
-	return {
-		left: rect.left,
-		top: rect.top,
-		bottom: rect.bottom,
-		width: rect.width,
-		viewportHeight: window.innerHeight,
-	}
+	return { left: rect.left, top: rect.top, bottom: rect.bottom, width: rect.width, viewportHeight: window.innerHeight }
 }
 
 const caretOf = (element: HTMLTextAreaElement) => element.selectionStart ?? element.value.length
@@ -50,33 +44,18 @@ export const caretEvents = (element: Element): Stream.Stream<CaretMessage> => {
 	const moved = (keyUp: string | null) =>
 		CaretMessage.MovedCaret({ cursor: caretOf(element), anchor: anchorOf(element), keyUp })
 	const on = (type: "input" | "click" | "select") =>
-		Dom.streamFromEventFilterMap({
-			target: element,
-			type,
-			filterMapEvent: () => Option.some(moved(null)),
-		})
+		Dom.streamFromEventFilterMap({ target: element, type, filterMapEvent: () => Option.some(moved(null)) })
 	const streams: ReadonlyArray<Stream.Stream<CaretMessage>> = [
 		on("input"),
 		on("click"),
 		on("select"),
-		Dom.streamFromEventFilterMap({
-			target: element,
-			type: "keyup",
-			filterMapEvent: (event) => Option.some(moved(event.key)),
-		}),
+		Dom.streamFromEventFilterMap({ target: element, type: "keyup", filterMapEvent: (event) => Option.some(moved(event.key)) }),
 		Dom.streamFromEventFilterMap({
 			target: element,
 			type: "focus",
-			filterMapEvent: () =>
-				Option.some(
-					CaretMessage.FocusedEditor({ cursor: caretOf(element), anchor: anchorOf(element) }),
-				),
+			filterMapEvent: () => Option.some(CaretMessage.FocusedEditor({ cursor: caretOf(element), anchor: anchorOf(element) })),
 		}),
-		Dom.streamFromEventFilterMap({
-			target: element,
-			type: "blur",
-			filterMapEvent: () => Option.some(CaretMessage.BlurredEditor()),
-		}),
+		Dom.streamFromEventFilterMap({ target: element, type: "blur", filterMapEvent: () => Option.some(CaretMessage.BlurredEditor()) }),
 	]
 	return Stream.mergeAll(streams, { concurrency: "unbounded" })
 }
@@ -105,12 +84,7 @@ const anchorEvents = (textareaId: string): Stream.Stream<CaretMessage> => {
 	}
 	const streams: ReadonlyArray<Stream.Stream<CaretMessage>> = [
 		Dom.streamFromEventFilterMap({ target: window, type: "resize", filterMapEvent: measured }),
-		Dom.streamFromEventFilterMap({
-			target: window,
-			type: "scroll",
-			filterMapEvent: measured,
-			options: { capture: true },
-		}),
+		Dom.streamFromEventFilterMap({ target: window, type: "scroll", filterMapEvent: measured, options: { capture: true } }),
 	]
 	return Stream.mergeAll(streams, { concurrency: "unbounded" })
 }

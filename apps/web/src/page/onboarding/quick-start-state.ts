@@ -10,12 +10,7 @@ export const STEP_IDS = ["role", "intent", "team", "plan"] as const
 export type StepId = (typeof STEP_IDS)[number]
 
 const IntentSchema = Schema.Literals(ONBOARDING_INTENT_IDS)
-const StoredIntentSchema = Schema.Literals([
-	...ONBOARDING_INTENT_IDS,
-	"slow_requests",
-	"consolidate",
-	"visibility",
-])
+const StoredIntentSchema = Schema.Literals([...ONBOARDING_INTENT_IDS, "slow_requests", "consolidate", "visibility"])
 const CURRENT_INTENT = {
 	traces: "traces",
 	logs: "logs",
@@ -50,9 +45,7 @@ const StoredQualifyAnswers = Schema.Struct({
 		decode: SchemaGetter.transform(({ role, roleDetail, intent, intents }) => ({
 			role: role === "engineer" ? "backend" : role,
 			roleDetail: roleDetail ?? "",
-			intents: [
-				...new Set((intents ?? (intent ? [intent] : [])).map((stored) => CURRENT_INTENT[stored])),
-			],
+			intents: [...new Set((intents ?? (intent ? [intent] : [])).map((stored) => CURRENT_INTENT[stored]))],
 		})),
 		encode: SchemaGetter.transform(({ role, roleDetail, intents }) => ({ role, roleDetail, intents })),
 	}),
@@ -124,11 +117,7 @@ export const toggledIntent = (answers: QualifyAnswers, intent: OnboardingIntent)
 		: [...answers.intents, intent],
 })
 
-export const pickedRole = (
-	answers: QualifyAnswers,
-	role: OnboardingRole,
-	detail: string,
-): QualifyAnswers => ({
+export const pickedRole = (answers: QualifyAnswers, role: OnboardingRole, detail: string): QualifyAnswers => ({
 	...answers,
 	role,
 	roleDetail: detail,

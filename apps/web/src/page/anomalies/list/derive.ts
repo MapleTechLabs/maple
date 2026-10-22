@@ -64,8 +64,7 @@ export const GROUP_LABEL = { critical: "Critical", warning: "Warning", resolved:
 export const groupKeyOf = (incident: AnomalyIncidentDocument): GroupKey =>
 	incident.status !== "open" ? "resolved" : incident.severity
 
-const clusterKey = (incident: AnomalyIncidentDocument) =>
-	`${incident.serviceName}\u0000${incident.deploymentEnv}`
+const clusterKey = (incident: AnomalyIncidentDocument) => `${incident.serviceName}\u0000${incident.deploymentEnv}`
 
 /** Buckets by group; each bucket clusters by service+env, clusters by freshest incident. */
 export const groupIncidents = (
@@ -99,9 +98,7 @@ export interface ServiceCluster {
 }
 
 /** `clusterByService`: consecutive same-service runs. */
-export const clusterByService = (
-	incidents: ReadonlyArray<AnomalyIncidentDocument>,
-): ReadonlyArray<ServiceCluster> =>
+export const clusterByService = (incidents: ReadonlyArray<AnomalyIncidentDocument>): ReadonlyArray<ServiceCluster> =>
 	incidents.reduce<ReadonlyArray<ServiceCluster>>((clusters, incident) => {
 		const key = clusterKey(incident)
 		const last = clusters[clusters.length - 1]
@@ -109,12 +106,7 @@ export const clusterByService = (
 			? [...clusters.slice(0, -1), { ...last, incidents: [...last.incidents, incident] }]
 			: [
 					...clusters,
-					{
-						key,
-						serviceName: incident.serviceName,
-						deploymentEnv: incident.deploymentEnv,
-						incidents: [incident],
-					},
+					{ key, serviceName: incident.serviceName, deploymentEnv: incident.deploymentEnv, incidents: [incident] },
 				]
 	}, [])
 
@@ -134,13 +126,8 @@ export const facetsOf = (incidents: ReadonlyArray<AnomalyIncidentDocument>) => {
 		severity,
 		signals,
 		services: byCount(incidents.map((incident) => incident.serviceName)),
-		envs: byCount(
-			incidents
-				.filter((incident) => incident.deploymentEnv !== "")
-				.map((incident) => incident.deploymentEnv),
-		),
-		severityLabel: (name: string) =>
-			name === "critical" || name === "warning" ? SEVERITY_LABEL[name] : name,
+		envs: byCount(incidents.filter((incident) => incident.deploymentEnv !== "").map((incident) => incident.deploymentEnv)),
+		severityLabel: (name: string) => (name === "critical" || name === "warning" ? SEVERITY_LABEL[name] : name),
 		signalLabel: (name: string) => {
 			const entry = signals.find(([signal]) => signal === name)
 			return entry === undefined ? name : SIGNAL_LABEL[entry[0] satisfies AnomalySignalType]

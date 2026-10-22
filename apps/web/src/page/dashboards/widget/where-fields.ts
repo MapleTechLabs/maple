@@ -18,8 +18,7 @@ import { providerValuesOf } from "./where-inputs"
 
 export const LIST_FILTER_ID = "widget-list-filter"
 export const populationFilterId = (scope: StepScope): string => `widget-${scope}-population`
-export const stepFilterId = (scope: StepScope, index: number): string =>
-	`widget-step-${scope}-${index}-filter`
+export const stepFilterId = (scope: StepScope, index: number): string => `widget-step-${scope}-${index}-filter`
 
 /** A field on screen: its spec, and the edit its applied text makes. */
 export type WhereField = Readonly<{ spec: WhereFieldSpec; edit: (expression: string) => ProductEdit }>
@@ -28,10 +27,7 @@ const noValues = () => null
 
 /** `useFunnelSuggestions().facets`: each facet's names under its population field. */
 const facetsOf = (model: Model): WhereClauseAutocompleteValues["productEventFacets"] => {
-	const rows = Option.getOrElse(
-		AsyncData.getData(model.suggestions.facets?.data ?? AsyncData.Idle()),
-		() => [],
-	)
+	const rows = Option.getOrElse(AsyncData.getData(model.suggestions.facets?.data ?? AsyncData.Idle()), () => [])
 	return rows.reduce<Partial<Record<FunnelPopulationFilterField, Array<string>>>>((facets, row) => {
 		const field = row.field
 		return field === null ? facets : { ...facets, [field]: [...(facets[field] ?? []), row.name] }
@@ -57,7 +53,7 @@ export const listField = (
 })
 
 /** A population filter: the session dimensions, their values from the facets. */
-export const populationField = (model: Model, scope: StepScope, expression: string): WhereField => ({
+export const populationField =(model: Model, scope: StepScope, expression: string): WhereField => ({
 	spec: {
 		expression,
 		textareaId: populationFilterId(scope),
@@ -90,9 +86,7 @@ export const whereFieldsOf = (model: Model, window: TimeWindow | null): Readonly
 	const state = model.state
 	if (state === null) return new Map()
 	const steps = state.funnel.steps.flatMap((step, index): ReadonlyArray<readonly [string, WhereField]> =>
-		step.kind === "event"
-			? [[stepFilterId("funnel", index), stepField("funnel", index, step.filterClause ?? "")]]
-			: [],
+		step.kind === "event" ? [[stepFilterId("funnel", index), stepField("funnel", index, step.filterClause ?? "")]] : [],
 	)
 	return new Map<string, WhereField>([
 		[LIST_FILTER_ID, listField(model, window, state.listWhereClause, state.listDataSource)],
@@ -110,7 +104,7 @@ export const autocompleteFor = (model: Model, field: WhereField): WhereEditorAut
 	toMessage: (message) => Message.GotWhereFieldMessage({ message }),
 })
 
-export const whereFieldsInputsOf = (model: Model, context: PageContext): WhereFieldsInputs => {
+export const whereFieldsInputsOf =(model: Model, context: PageContext): WhereFieldsInputs => {
 	const fields = whereFieldsOf(model, autocompleteWindowOf(model, context))
 	return { specOf: (fieldId) => fields.get(fieldId)?.spec, orgId: context.orgId }
 }

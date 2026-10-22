@@ -23,17 +23,12 @@ const ready = (): Model =>
 describe("MCP authorize", () => {
 	test("a link without a request id fails at once", () => {
 		const entered = init(undefined)
-		expect(entered.model.state).toEqual(
-			State.Failed({ message: "This authorization link is incomplete." }),
-		)
+		expect(entered.model.state).toEqual(State.Failed({ message: "This authorization link is incomplete." }))
 		expect(entered.commands ?? []).toEqual([])
 	})
 
 	test("a request that is no longer pending reads as already used", () => {
-		const next = update(
-			init("mcpreq_1").model,
-			Message.SucceededInspectMcpAuthorization({ info, isPending: false }),
-		)
+		const next = update(init("mcpreq_1").model, Message.SucceededInspectMcpAuthorization({ info, isPending: false }))
 		expect(next.model.state).toEqual(
 			State.Failed({ message: "This authorization request has already been used." }),
 		)
@@ -61,10 +56,7 @@ describe("MCP authorize", () => {
 			{ update, view },
 			given(ready()),
 			click(role("button", { name: "Deny" })),
-			Command.resolve(
-				DecideMcpAuthorization,
-				Message.FailedDecideMcpAuthorization({ message: "Already used" }),
-			),
+			Command.resolve(DecideMcpAuthorization, Message.FailedDecideMcpAuthorization({ message: "Already used" })),
 			expectView(role("alert")).toHaveText("Already used"),
 		)
 	})
@@ -102,13 +94,8 @@ describe("unsubscribe", () => {
 			{ update: Unsubscribe.update, view: unsubscribeView },
 			given(Unsubscribe.init("web-analytics.token")),
 			click(role("button", { name: "Unsubscribe" })),
-			Command.resolve(
-				Unsubscribe.Unsubscribe,
-				Unsubscribe.Message.FailedUnsubscribe({ isInvalidToken: true }),
-			),
-			expectView(
-				text("This unsubscribe link is invalid. Use the link from the email itself."),
-			).toExist(),
+			Command.resolve(Unsubscribe.Unsubscribe, Unsubscribe.Message.FailedUnsubscribe({ isInvalidToken: true })),
+			expectView(text("This unsubscribe link is invalid. Use the link from the email itself.")).toExist(),
 		)
 	})
 

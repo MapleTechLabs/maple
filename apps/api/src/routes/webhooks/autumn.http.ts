@@ -91,28 +91,24 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 							Option.match(decodeOrgId(rawOrgId), {
 								// Not an id this instance could have issued; nothing to review.
 								onNone: () =>
-									Effect.logWarning(
-										"Autumn customer id is not an org id; cancellation not reviewed",
-									).pipe(Effect.annotateLogs({ rawOrgId })),
+									Effect.logWarning("Autumn customer id is not an org id; cancellation not reviewed").pipe(
+										Effect.annotateLogs({ rawOrgId }),
+									),
 								onSome: (orgId) =>
 									cancellationReviews.review({ ...cancellation, orgId, receivedAt }),
 							}),
 						{ discard: true },
 					).pipe(
 						Effect.as(true),
-						Effect.catchTag(
-							"@maple/backend/cancellation-review/CancellationReviewError",
-							(error) =>
-								Effect.logWarning(
-									"Cancellation review did not finish; asking Svix to redeliver",
-								).pipe(
-									Effect.annotateLogs({
-										orgId: data.value.customer_id,
-										step: error.step,
-										error: error.message,
-									}),
-									Effect.as(false),
-								),
+						Effect.catchTag("@maple/backend/cancellation-review/CancellationReviewError", (error) =>
+							Effect.logWarning("Cancellation review did not finish; asking Svix to redeliver").pipe(
+								Effect.annotateLogs({
+									orgId: data.value.customer_id,
+									step: error.step,
+									error: error.message,
+								}),
+								Effect.as(false),
+							),
 						),
 					)
 					if (!reviewed) {

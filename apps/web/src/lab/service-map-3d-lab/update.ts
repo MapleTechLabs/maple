@@ -26,9 +26,9 @@ export type Message = typeof Message.Type
 export const Flags = Schema.Struct({ reducedMotion: Schema.Boolean })
 export type Flags = typeof Flags.Type
 
-export const flags = Effect.sync((): Flags => ({
-	reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-}))
+export const flags = Effect.sync(
+	(): Flags => ({ reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches }),
+)
 
 type Return = Update.Return<Model, Message, Resources>
 

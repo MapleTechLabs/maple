@@ -56,12 +56,10 @@ through `WarehouseQueryService.compiledQuery()`. Never `fetch()` `/v0/sql`.
 Add a query in `packages/query-engine/src/ch/queries/*.ts`, export from `src/ch/index.ts`:
 
 ```typescript
-const rows =
-	yield *
-	warehouse.compiledQuery(tenant, CH.compile(CH.myQuery({ limit: 50 }), { orgId, startTime, endTime }), {
-		profile: "list",
-		context: "myQuery",
-	})
+const rows = yield* warehouse.compiledQuery(tenant, CH.compile(CH.myQuery({ limit: 50 }), { orgId, startTime, endTime }), {
+  profile: "list",
+  context: "myQuery",
+})
 ```
 
 - Every query **must** filter `OrgId` (`$.OrgId.eq(param.string("orgId"))`); enforced at runtime.
@@ -112,10 +110,10 @@ truthiness.
 - **UI:** the dashboard (`apps/web`) and Maple Local (`apps/local-ui`) are Foldkit + `@foldkit/ui` +
   Tailwind 4, Nucleo icons.
   Add icons to `apps/web/src/ui/icons.generated.ts` (element trees) from the local Nucleo DB:
-    ```bash
-    sqlite3 "~/Library/Application Support/Nucleo/icons/data.sqlite3" \
-      "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"
-    ```
+  ```bash
+  sqlite3 "~/Library/Application Support/Nucleo/icons/data.sqlite3" \
+    "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"
+  ```
 - `@/` resolves to each app's source.
 - **Tests:** assert behavior, not source. `test-slop/*` rules (`scripts/oxlint-plugins/test-slop.mjs`)
   ban constant-vs-literal pins, existence-only/does-not-throw tests, Tailwind class pins and tests that

@@ -28,10 +28,7 @@ describe("agent session detail", () => {
 	})
 
 	test("the clock read brings the browser locale the token titles format with", () => {
-		const clocked = pageUpdate(
-			entered().model,
-			Message.CompletedResolveClock({ nowMs: 1, locale: "de-DE" }),
-		)
+		const clocked = pageUpdate(entered().model, Message.CompletedResolveClock({ nowMs: 1, locale: "de-DE" }))
 		expect(clocked.model.locale).toBe("de-DE")
 	})
 
@@ -53,34 +50,12 @@ describe("agent session detail", () => {
 	test("a dropped later page asks for nothing: each page is fetched once", () => {
 		const { model } = entered()
 		const key = model.firstPage.key ?? ""
-		const cursor = (spanId: string) =>
-			Schema.decodeSync(AiSessionSpanCursor)({ timestamp: "2026-10-01 12:00:00", spanId })
-		const first = pageUpdate(
-			model,
-			Message.CompletedFetchFirstPage({
-				key,
-				result: Result.succeed({ data: [], nextCursor: cursor("s1") }),
-			}),
-		)
+		const cursor = (spanId: string) => Schema.decodeSync(AiSessionSpanCursor)({ timestamp: "2026-10-01 12:00:00", spanId })
+		const first = pageUpdate(model, Message.CompletedFetchFirstPage({ key, result: Result.succeed({ data: [], nextCursor: cursor("s1") }) }))
 		expect(names(first.commands)).toEqual(["FetchAgentSessionMorePage"])
 		const page = (at: number, next: string | null) =>
-			Message.CompletedFetchMorePage({
-				key,
-				index: at,
-				scope: "ai",
-				isTooLarge: false,
-				result: Result.succeed({ data: [], nextCursor: next === null ? null : cursor(next) }),
-			})
-		const stale = pageUpdate(
-			first.model,
-			Message.CompletedFetchMorePage({
-				key: "old",
-				index: 0,
-				scope: "ai",
-				isTooLarge: false,
-				result: Result.succeed({ data: [], nextCursor: null }),
-			}),
-		)
+			Message.CompletedFetchMorePage({ key, index: at, scope: "ai", isTooLarge: false, result: Result.succeed({ data: [], nextCursor: next === null ? null : cursor(next) }) })
+		const stale = pageUpdate(first.model, Message.CompletedFetchMorePage({ key: "old", index: 0, scope: "ai", isTooLarge: false, result: Result.succeed({ data: [], nextCursor: null }) }))
 		expect(names(stale.commands)).toEqual([])
 		const second = pageUpdate(stale.model, page(0, "s2"))
 		expect(names(second.commands)).toEqual(["FetchAgentSessionMorePage"])
@@ -91,10 +66,7 @@ describe("agent session detail", () => {
 
 	test("a stale first page is dropped and asks for nothing", () => {
 		const { model } = entered()
-		const nextCursor = Schema.decodeSync(AiSessionSpanCursor)({
-			timestamp: "2026-10-01 12:00:00",
-			spanId: "s1",
-		})
+		const nextCursor = Schema.decodeSync(AiSessionSpanCursor)({ timestamp: "2026-10-01 12:00:00", spanId: "s1" })
 		const late = pageUpdate(
 			model,
 			Message.CompletedFetchFirstPage({ key: "old", result: Result.succeed({ data: [], nextCursor }) }),
@@ -171,10 +143,7 @@ describe("agent session detail", () => {
 		const scrolled = pageUpdate(loaded, Message.ChangedTranscriptWindow({ window }))
 		expect(scrolled.commands ?? []).toEqual([])
 		expect(sessionData(scrolled.model)).toBe(sessionData(loaded))
-		const reloaded = pageUpdate(
-			scrolled.model,
-			Message.CompletedFetchFirstPage({ key, result: Result.succeed({ data: [], nextCursor: null }) }),
-		)
+		const reloaded = pageUpdate(scrolled.model, Message.CompletedFetchFirstPage({ key, result: Result.succeed({ data: [], nextCursor: null }) }))
 		expect(sessionData(reloaded.model)).not.toBe(sessionData(loaded))
 	})
 })

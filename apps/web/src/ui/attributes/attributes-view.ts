@@ -278,13 +278,7 @@ const attributesSearch = (h: H, model: Model): Html =>
 const sectionOf = (h: H, model: Model, inputs: PanelInputs, source: AttributeSource, title: string) =>
 	attributesSection(
 		h,
-		{
-			model,
-			source,
-			canFilter: inputs.canFilter,
-			idPrefix: source,
-			hasCommitShaValues: inputs.hasCommitShaValues,
-		},
+		{ model, source, canFilter: inputs.canFilter, idPrefix: source, hasCommitShaValues: inputs.hasCommitShaValues },
 		{
 			attributes: source === "log" ? inputs.logAttributes : inputs.resourceAttributes,
 			title,

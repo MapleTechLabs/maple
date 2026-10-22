@@ -39,12 +39,7 @@ export const filtersOf = (search: Search) => ({
 /** `search.kind ?? "deployment"`. */
 export const kindOf = (search: Search): WorkloadKind => search.kind ?? "deployment"
 
-type RequestStep = (
-	model: Model,
-	context: PageContext,
-	window: TimeWindow,
-	mode: Frame.RequestMode,
-) => Step<Model, Message>
+type RequestStep = (model: Model, context: PageContext, window: TimeWindow, mode: Frame.RequestMode) => Step<Model, Message>
 
 const workloadsStep: RequestStep = (model, context, window, mode) => {
 	const input: WorkloadsInput = {
@@ -110,61 +105,41 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 }
 
 /** `q` and `status` filter the loaded list; the facets and the window re-request. */
-export const routeChanged = (
-	model: Model,
-	route: { readonly search: Search },
-	context: PageContext,
-): Return => {
+export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	const href = (search: Search) => hrefOf(AppRoute.InfraKubernetesWorkloads({ search }))
 	if (href(model.search) === href(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) =>
-		requestAll(moved, context, mode),
-	)
+	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
 }
 
-export const contextChanged = (model: Model, context: PageContext): Return =>
-	requestAll(model, context, "Load")
+export const contextChanged = (model: Model, context: PageContext): Return => requestAll(model, context, "Load")
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		CompletedFetchWorkloads: ({ key, result }) => ({
-			model: { ...model, workloads: Keyed.accept(model.workloads, key, result) },
-		}),
+		CompletedFetchWorkloads: ({ key, result }) => ({ model: { ...model, workloads: Keyed.accept(model.workloads, key, result) } }),
 		CompletedFetchFacets: ({ key, result }) => ({
 			model: { ...model, facets: Keyed.accept(model.facets, key, result) },
 		}),
-		ChangedQuery: ({ value }) =>
-			navigate(model, { ...model.search, q: value === "" ? undefined : value }),
+		ChangedQuery: ({ value }) => navigate(model, { ...model.search, q: value === "" ? undefined : value }),
 		ChangedScope: ({ scope }) => navigate(model, { ...model.search, scope }),
 		ChangedKind: ({ kind }) => navigate(model, { ...model.search, kind, workloadNames: undefined }),
 		ClickedClearSearch: () => navigate(model, { ...model.search, q: undefined, scope: undefined }),
-		ClickedSort: ({ key }) => ({
-			model: {
-				...model,
-				sort: nextSort(model.sort, key, { stringKeys: ["workloadName"], resettable: true }),
-			},
-		}),
+		ClickedSort: ({ key }) => ({ model: { ...model, sort: nextSort(model.sort, key, { stringKeys: ["workloadName"], resettable: true }) } }),
 		ToggledFacetOption: ({ facet, name }) =>
 			navigate(model, {
 				...model.search,
 				[facet]: toggledValue({ selected: model.search[facet], excluded: undefined }, name).selected,
 			}),
-		ClickedClearFilters: () =>
-			navigate(model, { ...pickTimeSearch(model.search), kind: model.search.kind }),
+		ClickedClearFilters: () => navigate(model, { ...pickTimeSearch(model.search), kind: model.search.kind }),
 		ClickedRetryWorkloads: () =>
 			model.frame.window === null
 				? { model }
-				: applySteps<Model, Message>(model, [
-						workloadsStep(model, context, model.frame.window, "Refresh"),
-					]),
+				: applySteps<Model, Message>(model, [workloadsStep(model, context, model.frame.window, "Refresh")]),
 		GotFilterSectionsMessage: ({ message: inner }) => {
 			const next = FilterSections.update(model.filterSections, inner)
 			return {
 				model: { ...model, filterSections: next.model },
-				commands: Command.mapMessages(next.commands, (m) =>
-					Message.GotFilterSectionsMessage({ message: m }),
-				),
+				commands: Command.mapMessages(next.commands, (m) => Message.GotFilterSectionsMessage({ message: m })),
 			}
 		},
 		GotFrameMessage: ({ message: inner }) =>
@@ -176,9 +151,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = InstallModal.update(model.install, inner)
 			return {
 				model: { ...model, install: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (m) =>
-					Message.GotInstallMessage({ message: m }),
-				),
+				commands: Command.mapMessages(next.commands ?? [], (m) => Message.GotInstallMessage({ message: m })),
 			}
 		},
 	})

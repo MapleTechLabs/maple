@@ -1,9 +1,4 @@
-import {
-	AlertCheckDocument,
-	AlertDeliveryEventDocument,
-	AlertIncidentId,
-	AlertRulePreviewResponse,
-} from "@maple/domain/http"
+import { AlertCheckDocument, AlertDeliveryEventDocument, AlertIncidentId, AlertRulePreviewResponse } from "@maple/domain/http"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -38,10 +33,7 @@ export const Message = defineMessageUnion({
 		result: Schema.Result(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
 	},
 	CompletedFetchChecks: { key: Schema.String, result: Schema.Result(ChecksResponse, LoadFailure) },
-	CompletedFetchPreview: {
-		key: Schema.String,
-		result: Schema.Result(AlertRulePreviewResponse, PreviewFailure),
-	},
+	CompletedFetchPreview: { key: Schema.String, result: Schema.Result(AlertRulePreviewResponse, PreviewFailure) },
 	ClickedStateFilter: { filter: StateFilter },
 	ClickedCheckStatusFilter: { filter: CheckStatusFilter },
 	ClickedSignalSource: { source: SignalSource },
@@ -56,10 +48,7 @@ export const Message = defineMessageUnion({
 	CompletedLoadMoreChecks: {
 		generation: Schema.Number,
 		result: Schema.Result(
-			Schema.Struct({
-				checks: Schema.Array(AlertCheckDocument),
-				nextCursor: Schema.NullOr(Schema.String),
-			}),
+			Schema.Struct({ checks: Schema.Array(AlertCheckDocument), nextCursor: Schema.NullOr(Schema.String) }),
 			LoadFailure,
 		),
 	},

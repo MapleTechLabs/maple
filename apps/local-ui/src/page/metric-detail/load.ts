@@ -1,11 +1,5 @@
 import type { Resources } from "../../platform/resources"
-import {
-	boundsForRange,
-	type ChartWindow,
-	chartWindow,
-	parseClickHouseDateTime,
-	type TimeBounds,
-} from "../../lib/time"
+import { boundsForRange, type ChartWindow, chartWindow, parseClickHouseDateTime, type TimeBounds } from "../../lib/time"
 import { isMetricType } from "../../lib/units"
 import { Array, Option } from "effect"
 import { AsyncData, type Command } from "foldkit"
@@ -40,16 +34,10 @@ export const loadDependents = (model: Model, context: PageContext, force = false
 	const apiBase = context.env.apiBase
 	const { bucketSeconds } = chartOf(model, bounds)
 	const identity = { metricName: entry.metricName, metricType: entry.metricType, bounds: boundsKey(bounds) }
-	const timeseriesKey = keyOf("metric-timeseries", {
-		...identity,
-		isMonotonic: entry.isMonotonic,
-		bucketSeconds,
-	})
+	const timeseriesKey = keyOf("metric-timeseries", { ...identity, isMonotonic: entry.isMonotonic, bucketSeconds })
 	const breakdownKey = keyOf("metric-breakdown", identity)
 	const timeseries = request(model.timeseries, timeseriesKey, force)
-	const breakdown = isMetricType(entry.metricType)
-		? request(model.breakdown, breakdownKey, force)
-		: Option.none()
+	const breakdown = isMetricType(entry.metricType) ? request(model.breakdown, breakdownKey, force) : Option.none()
 	return {
 		model: {
 			...model,
@@ -58,24 +46,9 @@ export const loadDependents = (model: Model, context: PageContext, force = false
 		},
 		commands: Array.getSomes([
 			Option.map(timeseries, () =>
-				FetchTimeseries({
-					key: timeseriesKey,
-					entry,
-					bucketSeconds,
-					...bounds,
-					apiBase,
-					readsCache: !force && model.timeseries.key !== timeseriesKey,
-				}),
+				FetchTimeseries({ key: timeseriesKey, entry, bucketSeconds, ...bounds, apiBase, readsCache: !force && model.timeseries.key !== timeseriesKey }),
 			),
-			Option.map(breakdown, () =>
-				FetchBreakdown({
-					key: breakdownKey,
-					entry,
-					...bounds,
-					apiBase,
-					readsCache: !force && model.breakdown.key !== breakdownKey,
-				}),
-			),
+			Option.map(breakdown, () => FetchBreakdown({ key: breakdownKey, entry, ...bounds, apiBase, readsCache: !force && model.breakdown.key !== breakdownKey })),
 		]),
 	}
 }
@@ -93,13 +66,7 @@ export const load = (model: Model, context: PageContext, force = false): Step =>
 				commands: [
 					...Array.getSomes([
 						Option.map(entry, () =>
-							FetchEntry({
-								key,
-								metricName: model.metricName,
-								...bounds,
-								apiBase: context.env.apiBase,
-								readsCache: !force && model.entry.key !== key,
-							}),
+							FetchEntry({ key, metricName: model.metricName, ...bounds, apiBase: context.env.apiBase, readsCache: !force && model.entry.key !== key }),
 						),
 					]),
 					...(dependents.commands ?? []),

@@ -26,69 +26,46 @@ const padded = (h: HtmlBuilder<Message>, id: string, children: ReadonlyArray<Htm
 ]
 
 const tracePanel = (h: HtmlBuilder<Message>, model: Model, log: LocalLog, href: string): Html =>
-	h.div(
-		[h.Class("space-y-3")],
-		[
-			keyValueList(h, { className: "gap-1 rounded-md border p-2" }, [
-				keyValue(h, { label: "Trace ID", mono: true }, [
-					copyableValue(h, model.copies, { id: "detail-trace-id", value: log.traceId }, [
-						log.traceId,
-					]),
-				]),
-				...(log.spanId
-					? [
-							keyValue(h, { label: "Span ID", mono: true }, [
-								copyableValue(h, model.copies, { id: "detail-span-id", value: log.spanId }, [
-									log.spanId,
-								]),
-							]),
-						]
-					: []),
+	h.div([h.Class("space-y-3")], [
+		keyValueList(h, { className: "gap-1 rounded-md border p-2" }, [
+			keyValue(h, { label: "Trace ID", mono: true }, [
+				copyableValue(h, model.copies, { id: "detail-trace-id", value: log.traceId }, [log.traceId]),
 			]),
-			linkButton(
-				h,
-				{
-					variant: "outline",
-					size: "sm",
-					className: "w-full gap-1.5",
-					href,
-					attributes: [h.OnClick(Message.ClosedSheet())],
-				},
-				[icon(h, "PulseIcon"), "Open trace"],
-			),
-		],
-	)
+			...(log.spanId
+				? [
+						keyValue(h, { label: "Span ID", mono: true }, [
+							copyableValue(h, model.copies, { id: "detail-span-id", value: log.spanId }, [log.spanId]),
+						]),
+					]
+				: []),
+		]),
+		linkButton(
+			h,
+			{ variant: "outline", size: "sm", className: "w-full gap-1.5", href, attributes: [h.OnClick(Message.ClosedSheet())] },
+			[icon(h, "PulseIcon"), "Open trace"],
+		),
+	])
 
 const rawPanel = (h: HtmlBuilder<Message>, model: Model, log: LocalLog): Html => {
 	const payload = buildLogJsonPayload(log)
-	return h.div(
-		[],
-		[
-			h.div(
-				[h.Class("mb-2 flex items-center justify-between")],
-				[
-					h.span([h.Class("text-xs font-medium text-muted-foreground")], ["JSON Payload"]),
-					CopyButton.view(h, {
-						model: copyOf(model.copies, "detail-raw"),
-						toParentMessage: (message) => Message.GotCopyMessage({ id: "detail-raw", message }),
-						value: payload,
-						label: "Log JSON",
-						idleLabel: "Copy",
-						iconSize: 10,
-						className: "h-5 px-1.5 text-[10px]",
-					}),
-				],
-			),
-			h.pre(
-				[
-					h.Class(
-						"whitespace-pre-wrap break-all rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed",
-					),
-				],
-				[h.code([h.InnerHTML(highlightJson(payload))], [])],
-			),
-		],
-	)
+	return h.div([], [
+		h.div([h.Class("mb-2 flex items-center justify-between")], [
+			h.span([h.Class("text-xs font-medium text-muted-foreground")], ["JSON Payload"]),
+			CopyButton.view(h, {
+				model: copyOf(model.copies, "detail-raw"),
+				toParentMessage: (message) => Message.GotCopyMessage({ id: "detail-raw", message }),
+				value: payload,
+				label: "Log JSON",
+				idleLabel: "Copy",
+				iconSize: 10,
+				className: "h-5 px-1.5 text-[10px]",
+			}),
+		]),
+		h.pre(
+			[h.Class("whitespace-pre-wrap break-all rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed")],
+			[h.code([h.InnerHTML(highlightJson(payload))], [])],
+		),
+	])
 }
 
 export const detailTabs = (h: HtmlBuilder<Message>, model: Model): Html => {
@@ -101,21 +78,12 @@ export const detailTabs = (h: HtmlBuilder<Message>, model: Model): Html => {
 					slotId: "log-detail-attributes-panel",
 					model: model.attributes,
 					view: AttributesView.view,
-					viewInputs: {
-						logAttributes: log.logAttributes,
-						resourceAttributes: log.resourceAttributes,
-						canFilter: false,
-						logTitle: "Log attributes",
-						hasCommitShaValues: false,
-					},
+					viewInputs: { logAttributes: log.logAttributes, resourceAttributes: log.resourceAttributes, canFilter: false, logTitle: "Log attributes", hasCommitShaValues: false },
 					toParentMessage: (message) => Message.GotAttributesMessage({ message }),
 				}),
 			])
 		if (value === "trace")
-			return Option.match(maybeHref, {
-				onNone: () => undefined,
-				onSome: (href) => padded(h, "log-detail-trace", [tracePanel(h, model, log, href)]),
-			})
+			return Option.match(maybeHref, { onNone: () => undefined, onSome: (href) => padded(h, "log-detail-trace", [tracePanel(h, model, log, href)]) })
 		return padded(h, "log-detail-raw", [rawPanel(h, model, log)])
 	}
 	return h.submodel({

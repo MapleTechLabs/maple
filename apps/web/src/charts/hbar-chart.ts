@@ -107,9 +107,7 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 						[
 							truncatedText(h, {
 								text: bar.name,
-								className: bar.unnamed
-									? "italic text-muted-foreground"
-									: "text-foreground/90",
+								className: bar.unnamed ? "italic text-muted-foreground" : "text-foreground/90",
 							}),
 							h.div(
 								[
@@ -131,10 +129,7 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 							h.span(
 								[h.Class("shrink-0 text-right tabular-nums text-muted-foreground")],
 								[
-									h.span(
-										[h.Class("text-foreground/90")],
-										[fmtValue(bar.value, inputs.unit)],
-									),
+									h.span([h.Class("text-foreground/90")], [fmtValue(bar.value, inputs.unit)]),
 									h.span([h.Class("px-1 text-muted-foreground/50")], ["·"]),
 									h.span([], [formatPercent(bar.pctOfTotal, PCT_FLOOR)]),
 								],

@@ -19,11 +19,7 @@ const content = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs):
 	if (isPending(model.data)) return serviceMapLoading(h)
 	const failure = failureWithoutData(model.data)
 	if (Option.isSome(failure))
-		return errorState(h, {
-			label: "the service map",
-			failure: failure.value,
-			onRetry: Message.ClickedRetry(),
-		})
+		return errorState(h, { label: "the service map", failure: failure.value, onRetry: Message.ClickedRetry() })
 	return Option.match(AsyncData.getData(model.data.data), {
 		onNone: () => null,
 		onSome: (data) => mapCanvas(h, model, data, Option.getOrUndefined(model.maybeMap), inputs),
@@ -36,10 +32,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const serviceCount = Option.match(source, { onNone: () => 0, onSome: (graph) => graph.services.length })
 	const nodeCount = Option.match(source, { onNone: () => 0, onSome: (graph) => graph.rawNodes.length })
 	const edgeCount = Option.match(maybeData, { onNone: () => 0, onSome: (data) => data.edges.length })
-	const isEdgeless = Option.exists(
-		maybeData,
-		(data) => data.overviews.length > 0 && data.edges.length === 0,
-	)
+	const isEdgeless = Option.exists(maybeData, (data) => data.overviews.length > 0 && data.edges.length === 0)
 	const body = content(h, model, inputs)
 	return h.div(
 		[h.Class("flex h-full flex-col")],

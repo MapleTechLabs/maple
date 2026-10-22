@@ -9,14 +9,7 @@ import { FetchShares } from "./command"
 import { ReadOrigin, WriteShare } from "./command-share"
 import { Message } from "./message"
 import type { Model } from "./model"
-import {
-	type Access,
-	boardShareOf,
-	chartShareOf,
-	ShareMessage,
-	type ShareWrite,
-	type SharingState,
-} from "./share"
+import { type Access, boardShareOf, chartShareOf, ShareMessage, type ShareWrite, type SharingState } from "./share"
 
 // The share and embed dialogs' steps. Writes never stack: one runs at a time, as `useAsyncAction`
 // guards them, and each success re-reads the share list.
@@ -43,12 +36,7 @@ export const openShare = (model: Model): Return => {
 	const opened = Dialog.open(model.sharing.dialog)
 	return {
 		model: withSharing(model, { dialog: opened.model, pendingAccess: null, error: null }),
-		commands: [
-			...Command.mapMessages(opened.commands ?? [], (message) =>
-				wrap(ShareMessage.GotDialogMessage({ message })),
-			),
-			ReadOrigin(),
-		],
+		commands: [...Command.mapMessages(opened.commands ?? [], (message) => wrap(ShareMessage.GotDialogMessage({ message }))), ReadOrigin()],
 	}
 }
 
@@ -57,8 +45,7 @@ export const openShare = (model: Model): Return => {
  * that failed to re-read still opens the dialog, which shows the error.
  */
 export const openEmbed = (model: Model, widgetId: string): Return => {
-	if (!AsyncData.isSuccess(model.sharing.shares) && !AsyncData.isFailure(model.sharing.shares))
-		return { model }
+	if (!AsyncData.isSuccess(model.sharing.shares) && !AsyncData.isFailure(model.sharing.shares)) return { model }
 	const opened = Dialog.open(model.sharing.embedDialog)
 	const shares = sharesOf(model)
 	const next = withSharing(model, {
@@ -69,9 +56,7 @@ export const openEmbed = (model: Model, widgetId: string): Return => {
 		error: null,
 	})
 	const commands = [
-		...Command.mapMessages(opened.commands ?? [], (message) =>
-			wrap(ShareMessage.GotEmbedDialogMessage({ message })),
-		),
+		...Command.mapMessages(opened.commands ?? [], (message) => wrap(ShareMessage.GotEmbedDialogMessage({ message }))),
 		ReadOrigin(),
 	]
 	const mint =
@@ -102,15 +87,10 @@ const fetched = (model: Model, result: ShareMessage & { _tag: "CompletedFetchSha
 
 const pickAccess = (model: Model, message: RadioGroup.Message): Return => {
 	const next = RadioGroup.update(RadioGroup.init(model.sharing.pendingAccess ?? undefined), message)
-	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
-		wrap(ShareMessage.GotAccessMessage({ message: inner })),
-	)
+	const commands = Command.mapMessages(next.commands ?? [], (inner) => wrap(ShareMessage.GotAccessMessage({ message: inner })))
 	const access = message._tag === "CompletedFocusRadio" ? undefined : message.value
 	if (access !== "off" && access !== "org" && access !== "public") return { model, commands }
-	const written = write(model, withSharing(model, { pendingAccess: access }), {
-		_tag: "SetBoardMode",
-		access,
-	})
+	const written = write(model, withSharing(model, { pendingAccess: access }), { _tag: "SetBoardMode", access })
 	return { ...written, commands: [...commands, ...(written.commands ?? [])] }
 }
 
@@ -124,12 +104,7 @@ const dialogStep = (
 	commands: Command.mapMessages(next.commands ?? [], (message) => wrap(toMessage(message))),
 })
 
-const copyStep = (
-	model: Model,
-	key: "linkCopy" | "snippetCopy",
-	message: CopyButton.Message,
-	toMessage: (message: CopyButton.Message) => ShareMessage,
-): Return => {
+const copyStep = (model: Model, key: "linkCopy" | "snippetCopy", message: CopyButton.Message, toMessage: (message: CopyButton.Message) => ShareMessage): Return => {
 	const next = CopyButton.update(model.sharing[key], message)
 	return {
 		model: withSharing(model, { [key]: next.model }),
@@ -143,11 +118,7 @@ const replace = (model: Model): Return => {
 		ShareMessage.GotReplaceDialogMessage({ message }),
 	)
 	const widgetId = model.sharing.embedDialog.isOpen ? model.sharing.embedWidgetId : null
-	const written = write(
-		closed.model,
-		closed.model,
-		widgetId === null ? { _tag: "RotateBoard" } : { _tag: "RotateChart", widgetId },
-	)
+	const written = write(closed.model, closed.model, widgetId === null ? { _tag: "RotateBoard" } : { _tag: "RotateChart", widgetId })
 	return { ...written, commands: [...(closed.commands ?? []), ...(written.commands ?? [])] }
 }
 
@@ -156,9 +127,7 @@ export const shareStep = (model: Model, _context: PageContext, message: ShareMes
 		CompletedFetchShares: (result) => fetched(model, result),
 		GotOrigin: ({ origin }) => ({ model: withSharing(model, { origin }) }),
 		GotDialogMessage: ({ message: inner }) =>
-			dialogStep(model, "dialog", Dialog.update(model.sharing.dialog, inner), (m) =>
-				ShareMessage.GotDialogMessage({ message: m }),
-			),
+			dialogStep(model, "dialog", Dialog.update(model.sharing.dialog, inner), (m) => ShareMessage.GotDialogMessage({ message: m })),
 		GotAccessMessage: ({ message: inner }) => pickAccess(model, inner),
 		ClickedReplace: () =>
 			dialogStep(model, "replaceDialog", Dialog.open(model.sharing.replaceDialog), (m) =>
@@ -172,14 +141,7 @@ export const shareStep = (model: Model, _context: PageContext, message: ShareMes
 		CompletedWrite: ({ error }) => {
 			const queued = model.sharing.queuedChart
 			if (error !== null)
-				return {
-					model: withSharing(model, {
-						isBusy: false,
-						error,
-						pendingAccess: null,
-						queuedChart: null,
-					}),
-				}
+				return { model: withSharing(model, { isBusy: false, error, pendingAccess: null, queuedChart: null }) }
 			const fetchSeq = model.sharing.fetchSeq + 1
 			const refetch = FetchShares({ dashboardId: model.dashboardId, seq: fetchSeq })
 			return queued === null
@@ -188,10 +150,7 @@ export const shareStep = (model: Model, _context: PageContext, message: ShareMes
 						model: withSharing(model, { queuedChart: null, fetchSeq }),
 						commands: [
 							refetch,
-							WriteShare({
-								dashboardId: model.dashboardId,
-								write: { _tag: "MintChart", widgetId: queued },
-							}),
+							WriteShare({ dashboardId: model.dashboardId, write: { _tag: "MintChart", widgetId: queued } }),
 						],
 					}
 		},
@@ -205,9 +164,7 @@ export const shareStep = (model: Model, _context: PageContext, message: ShareMes
 			const next = Tabs.update(model.sharing.embedTabs, inner)
 			return {
 				model: withSharing(model, { embedTabs: next.model }),
-				commands: Command.mapMessages(next.commands ?? [], (m) =>
-					wrap(ShareMessage.GotEmbedTabsMessage({ message: m })),
-				),
+				commands: Command.mapMessages(next.commands ?? [], (m) => wrap(ShareMessage.GotEmbedTabsMessage({ message: m }))),
 			}
 		},
 		GotSnippetCopyMessage: ({ message: inner }) =>
@@ -216,9 +173,6 @@ export const shareStep = (model: Model, _context: PageContext, message: ShareMes
 			const widgetId = model.sharing.embedWidgetId
 			if (widgetId === null) return { model }
 			const queuedChart = chartShareOf(sharesOf(model), widgetId) === undefined ? widgetId : null
-			return write(model, withSharing(model, { queuedChart }), {
-				_tag: "SetBoardMode",
-				access: "public",
-			})
+			return write(model, withSharing(model, { queuedChart }), { _tag: "SetBoardMode", access: "public" })
 		},
 	})

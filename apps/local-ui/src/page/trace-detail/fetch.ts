@@ -22,9 +22,7 @@ export const fetchTrace = (traceId: string, apiBase: string) =>
 	Effect.map(
 		queryRows(CH.compile(CH.spanHierarchyQuery({ traceId }), { orgId: LOCAL_ORG_ID }), apiBase),
 		(rows): Option.Option<TraceData> => {
-			const detail = buildTraceDetail(
-				rows.map((row) => ({ ...row, startTime: DateTime.formatIso(row.startTime) })),
-			)
+			const detail = buildTraceDetail(rows.map((row) => ({ ...row, startTime: DateTime.formatIso(row.startTime) })))
 			if (detail.spans.length === 0) return Option.none()
 			return Option.map(decodeTraceId(traceId), (id) => ({
 				traceId: id,
@@ -69,10 +67,7 @@ export const fetchSpanLogs = (
 					endTime: toClickHouseDateTime(startMs + Math.max(0, spanDurationMs) + HOUR_MS),
 				}
 	return Effect.map(
-		queryRows(
-			CH.compile(CH.logsListQuery({ traceId, spanId, limit: LOG_LIMIT }), localParams(bounds)),
-			apiBase,
-		),
+		queryRows(CH.compile(CH.logsListQuery({ traceId, spanId, limit: LOG_LIMIT }), localParams(bounds)), apiBase),
 		(rows) =>
 			rows.map((row): SpanLog => {
 				const log = normalizeLog(row)

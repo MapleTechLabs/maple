@@ -153,10 +153,7 @@ const timeRangeField = (h: H, model: Model, state: EditorState, timeZone: string
 								view: TimeRangePicker.view,
 								viewInputs: {
 									label: widgetTimeRangeLabel(state.timeRange, timeZone, model.nowMs ?? 0),
-									selectedPreset:
-										state.timeRange.type === "relative"
-											? state.timeRange.value
-											: undefined,
+									selectedPreset: state.timeRange.type === "relative" ? state.timeRange.value : undefined,
 									presets: TimeRangePicker.PRESET_VALUES,
 									timeZone,
 									hasHotkey: false,
@@ -228,18 +225,18 @@ export const legendField = (h: H, state: EditorState, hasSeriesStats = true): Ht
 	])
 
 const seriesStats = (h: H, state: EditorState): Html =>
-	h.div(
-		[h.Class("pt-0.5")],
-		[
-			checkboxRow(
-				h,
-				"qb-series-stats",
-				"Show Min/Max/Mean/Last stats",
-				state.seriesStatsEnabled,
-				Message.ToggledSeriesStats(),
-			),
-		],
-	)
+		h.div(
+			[h.Class("pt-0.5")],
+			[
+				checkboxRow(
+					h,
+					"qb-series-stats",
+					"Show Min/Max/Mean/Last stats",
+					state.seriesStatsEnabled,
+					Message.ToggledSeriesStats(),
+				),
+			],
+		)
 
 /** `QueryOptions`: comparison and its % change. */
 export const queryOptions = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => [

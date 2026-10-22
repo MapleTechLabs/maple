@@ -144,9 +144,7 @@ describe("widget editor", () => {
 	test("a failed time-range save is reported, a saved one is quiet", () => {
 		const model = opened().model
 		expect(pageUpdate(model, Message.CompletedSaveTimeRange({ error: null })).outMessage).toBeUndefined()
-		expect(
-			pageUpdate(model, Message.CompletedSaveTimeRange({ error: "Dashboard is read-only" })).outMessage,
-		).toEqual(
+		expect(pageUpdate(model, Message.CompletedSaveTimeRange({ error: "Dashboard is read-only" })).outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "error",
 				title: "Dashboard is read-only",
@@ -189,10 +187,7 @@ describe("widget lowering", () => {
 	})
 
 	test("the Raw SQL tab is an unsaved change; Apply writes the SQL only once it scopes to the org", () => {
-		const sqlTab = pageUpdate(
-			opened().model,
-			Message.GotSourceTabsMessage({ message: Tabs.Message.ClickedTab({ index: 1 }) }),
-		).model
+		const sqlTab = pageUpdate(opened().model, Message.GotSourceTabsMessage({ message: Tabs.Message.ClickedTab({ index: 1 }) })).model
 		expect(isDirty(sqlTab)).toBe(true)
 		expect(previewWidgetOf(sqlTab)?.dataSource).toMatchObject({ kind: "raw_sql" })
 		const unscoped = pageUpdate(sqlTab, Message.ChangedSql({ value: "SELECT 1 AS value" })).model

@@ -34,11 +34,7 @@ describe("connect panel scene", () => {
 			expect(text("Waiting for telemetry")).toExist(),
 			Command.resolve(
 				FetchKeys({ orgId: ORG }),
-				Message.SucceededLoadKeys({
-					orgId: ORG,
-					publicKey: "maple_pk_0123456789abcdef",
-					privateKey: "maple_sk_x",
-				}),
+				Message.SucceededLoadKeys({ orgId: ORG, publicKey: "maple_pk_0123456789abcdef", privateKey: "maple_sk_x" }),
 			),
 			expect(selector("#connect-public-key")).toHaveValue("maple_pk_01234•••••••cdef"),
 			Command.resolve(ResolveWindow({ orgId: ORG }), Message.ResolvedWindow({ orgId: ORG, window })),
@@ -68,131 +64,69 @@ describe("connect panel scene", () => {
 				FetchOverview({ orgId: ORG, window, request: 1, pinnedNamespace: "prod" }),
 				Message.FailedLoadOverview({ orgId: ORG, request: 1 }),
 			),
-			expect(role("link", { name: "Settings → Ingestion" })).toHaveAttr(
-				"href",
-				"/settings?tab=ingestion",
-			),
+			expect(role("link", { name: "Settings → Ingestion" })).toHaveAttr("href", "/settings?tab=ingestion"),
 			expect(text("Waiting for telemetry")).toExist(),
 		)
 	})
 })
 
 describe("connect panel update", () => {
-	const open = (model: Model) =>
-		update(model, Message.GotPopoverMessage({ message: Popover.Message.ClickedTrigger() }), context)
+	const open = (model: Model) => update(model, Message.GotPopoverMessage({ message: Popover.Message.ClickedTrigger() }), context)
 
 	test("another org's late answers are dropped and the poll re-reads the clock", () => {
-		const opened = update(
-			open(init()).model,
-			Message.ResolvedWindow({ orgId: ORG, window }),
-			context,
-		).model
-		const stale = update(
-			opened,
-			Message.SucceededLoadKeys({ orgId: "org_b", publicKey: "pk", privateKey: "sk" }),
-			context,
-		)
+		const opened = update(open(init()).model, Message.ResolvedWindow({ orgId: ORG, window }), context).model
+		const stale = update(opened, Message.SucceededLoadKeys({ orgId: "org_b", publicKey: "pk", privateKey: "sk" }), context)
 		expectVitest(stale.model.keys).toEqual({ _tag: "Loading" })
-		const answered = update(
-			opened,
-			Message.SucceededLoadOverview({ orgId: ORG, request: 1, services: [] }),
-			context,
-		).model
+		const answered = update(opened, Message.SucceededLoadOverview({ orgId: ORG, request: 1, services: [] }), context).model
 		const polled = update(answered, Message.TickedPoll(), context)
 		expectVitest(polled.commands?.map((command) => command.name)).toEqual(["ResolveConnectWindow"])
 	})
 
 	test("a poll during a slow overview read waits for it, and the slow answer lands", () => {
-		const opened = update(
-			open(init()).model,
-			Message.ResolvedWindow({ orgId: ORG, window }),
-			context,
-		).model
+		const opened = update(open(init()).model, Message.ResolvedWindow({ orgId: ORG, window }), context).model
 		expectVitest(update(opened, Message.TickedPoll(), context).commands ?? []).toEqual([])
 		const services = [{ serviceName: "checkout", spanCount: 3 }]
-		const landed = update(
-			opened,
-			Message.SucceededLoadOverview({ orgId: ORG, request: 1, services }),
-			context,
-		).model
+		const landed = update(opened, Message.SucceededLoadOverview({ orgId: ORG, request: 1, services }), context).model
 		expectVitest(landed.services).toEqual(services)
 		const polled = update(landed, Message.TickedPoll(), context)
 		expectVitest(polled.commands?.map((command) => command.name)).toEqual(["ResolveConnectWindow"])
 	})
 
 	test("a poll asks the overview for the last hour up to now and takes its answer", () => {
-		const opened = update(
-			open(init()).model,
-			Message.ResolvedWindow({ orgId: ORG, window }),
-			context,
-		).model
+		const opened = update(open(init()).model, Message.ResolvedWindow({ orgId: ORG, window }), context).model
 		const later = { startTime: "2026-10-19 10:05:00", endTime: "2026-10-19 11:05:00" }
 		const polled = update(opened, Message.ResolvedWindow({ orgId: ORG, window: later }), context)
 		expectVitest(polled.commands?.map((command) => command.args)).toEqual([
 			{ orgId: ORG, window: later, request: 2, pinnedNamespace: "prod" },
 		])
 		const services = [{ serviceName: "checkout", spanCount: 3 }]
-		const landed = update(
-			polled.model,
-			Message.SucceededLoadOverview({ orgId: ORG, request: 2, services }),
-			context,
-		)
+		const landed = update(polled.model, Message.SucceededLoadOverview({ orgId: ORG, request: 2, services }), context)
 		expectVitest(landed.model.services).toEqual(services)
 	})
 
 	test("a failed poll keeps the services already found", () => {
-		const opened = update(
-			open(init()).model,
-			Message.ResolvedWindow({ orgId: ORG, window }),
-			context,
-		).model
+		const opened = update(open(init()).model, Message.ResolvedWindow({ orgId: ORG, window }), context).model
 		const services = [{ serviceName: "checkout", spanCount: 3 }]
-		const found = update(
-			opened,
-			Message.SucceededLoadOverview({ orgId: ORG, request: 1, services }),
-			context,
-		).model
+		const found = update(opened, Message.SucceededLoadOverview({ orgId: ORG, request: 1, services }), context).model
 		const failed = update(found, Message.FailedLoadOverview({ orgId: ORG, request: 1 }), context)
 		expectVitest(failed.model.services).toEqual(services)
 	})
 
 	test("a failure from an earlier opening does not end the read in flight, even for the same window", () => {
-		const first = update(
-			open(init()).model,
-			Message.ResolvedWindow({ orgId: ORG, window }),
-			context,
-		).model
-		const closed = update(
-			first,
-			Message.GotPopoverMessage({ message: Popover.Message.ClickedClose() }),
-			context,
-		).model
-		const opened = update(
-			open(closed).model,
-			Message.ResolvedWindow({ orgId: ORG, window }),
-			context,
-		).model
+		const first = update(open(init()).model, Message.ResolvedWindow({ orgId: ORG, window }), context).model
+		const closed = update(first, Message.GotPopoverMessage({ message: Popover.Message.ClickedClose() }), context).model
+		const opened = update(open(closed).model, Message.ResolvedWindow({ orgId: ORG, window }), context).model
 		const stale = update(opened, Message.FailedLoadOverview({ orgId: ORG, request: 1 }), context)
 		expectVitest(stale.model.isOverviewInFlight).toBe(true)
 		expectVitest(update(stale.model, Message.TickedPoll(), context).commands ?? []).toEqual([])
 	})
 
 	test("a reopen in the same org keeps the keys it read and does not read them again", () => {
-		const ready = update(
-			open(init()).model,
-			Message.SucceededLoadKeys({ orgId: ORG, publicKey: "pk", privateKey: "sk" }),
-			context,
-		)
-		const closed = update(
-			ready.model,
-			Message.GotPopoverMessage({ message: Popover.Message.ClickedClose() }),
-			context,
-		)
+		const ready = update(open(init()).model, Message.SucceededLoadKeys({ orgId: ORG, publicKey: "pk", privateKey: "sk" }), context)
+		const closed = update(ready.model, Message.GotPopoverMessage({ message: Popover.Message.ClickedClose() }), context)
 		expectVitest(update(closed.model, Message.TickedPoll(), context).commands ?? []).toEqual([])
 		const reopened = open(closed.model)
-		expectVitest(reopened.commands?.map((command) => command.name)).not.toContain(
-			"FetchConnectIngestKeys",
-		)
+		expectVitest(reopened.commands?.map((command) => command.name)).not.toContain("FetchConnectIngestKeys")
 		expectVitest(reopened.model.keys._tag).toBe("Ready")
 	})
 })

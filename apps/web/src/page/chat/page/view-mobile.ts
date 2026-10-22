@@ -13,8 +13,7 @@ import { chatSidebar } from "./view-sidebar"
 type H = HtmlBuilder<Message>
 
 const header = (h: H, model: Model): Html => {
-	const activeTitle =
-		model.tabs?.tabs.find((tab) => tab.id === model.tabs?.activeTabId)?.title ?? "New chat"
+	const activeTitle = model.tabs?.tabs.find((tab) => tab.id === model.tabs?.activeTabId)?.title ?? "New chat"
 	return h.header(
 		[h.Class("flex h-12 shrink-0 items-center gap-1 border-b bg-sidebar px-2 text-sidebar-foreground")],
 		[
@@ -50,12 +49,7 @@ const header = (h: H, model: Model): Html => {
 			),
 			iconButton(
 				h,
-				{
-					label: "New chat",
-					size: "icon",
-					className: "size-9",
-					attributes: [h.OnClick(Message.ClickedNewChat())],
-				},
+				{ label: "New chat", size: "icon", className: "size-9", attributes: [h.OnClick(Message.ClickedNewChat())] },
 				[icon(h, "PlusIcon")],
 			),
 		],

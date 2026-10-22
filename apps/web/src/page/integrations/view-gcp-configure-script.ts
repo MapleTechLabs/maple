@@ -59,10 +59,7 @@ const promptButton = (h: H, configure: ConfigureModel, prompt: string | null): H
 			isDisabled: prompt === null,
 			attributes: prompt === null ? [] : [h.OnClick(Message.ClickedGcpCopyPrompt({ prompt }))],
 		},
-		[
-			...(isCopied ? [icon(h, "CheckIcon", { size: 12 })] : []),
-			isCopied ? "Prompt copied" : "Copy prompt for coding agent",
-		],
+		[...(isCopied ? [icon(h, "CheckIcon", { size: 12 })] : []), isCopied ? "Prompt copied" : "Copy prompt for coding agent"],
 	)
 }
 
@@ -83,9 +80,7 @@ export const fileCard = (h: H, model: Model, configure: ConfigureModel, options:
 						[h.Class("font-mono text-xs text-muted-foreground")],
 						[
 							promptShown ? "Prompt for a coding agent" : name,
-							...(shown === null || promptShown
-								? []
-								: [` · ${countLabel(shown.split("\n").length, "line")}`]),
+							...(shown === null || promptShown ? [] : [` · ${countLabel(shown.split("\n").length, "line")}`]),
 						],
 					),
 					h.span(
@@ -94,17 +89,13 @@ export const fileCard = (h: H, model: Model, configure: ConfigureModel, options:
 							...(prompt === undefined ? [] : [promptButton(h, configure, prompt)]),
 							CopyButton.view(h, {
 								model: model.gcpCard.copies[COPY_ID] ?? CopyButton.init(),
-								toParentMessage: (message) =>
-									Message.GotGcpCopyMessage({ id: COPY_ID, message }),
+								toParentMessage: (message) => Message.GotGcpCopyMessage({ id: COPY_ID, message }),
 								value: copyable ?? "",
 								label: promptShown ? "prompt" : name,
 								idleLabel: secret ? "Copy script" : "Copy",
 								variant: children === undefined ? "default" : "outline",
 								size: "sm",
-								className: cn(
-									children === undefined &&
-										"text-primary-foreground hover:text-primary-foreground",
-								),
+								className: cn(children === undefined && "text-primary-foreground hover:text-primary-foreground"),
 								attributes: copyable === null ? [h.Disabled(true)] : [],
 							}),
 							...(children ?? []),
@@ -163,16 +154,9 @@ const fileText = (
 
 const footerText = (configure: ConfigureModel, name: string, secret: boolean): string => {
 	if (!configure.isPromptShown)
-		return secret
-			? "Holds this connection's secret. Don't share or commit it."
-			: "No secrets in this file. Safe to commit."
+		return secret ? "Holds this connection's secret. Don't share or commit it." : "No secrets in this file. Safe to commit."
 	const copied = configure.promptCopied
-	const status =
-		copied === false
-			? "Couldn't copy: select the prompt and copy it."
-			: copied === true
-				? "Copied."
-				: "Copying."
+	const status = copied === false ? "Couldn't copy: select the prompt and copy it." : copied === true ? "Copied." : "Copying."
 	return `${status} It ends with the full ${name}.`
 }
 

@@ -79,11 +79,7 @@ const serviceNameOf = (name: string): string =>
  * Setup snippets for a push platform, most specific first. `token` is the full token right
  * after create or roll, otherwise a masked placeholder built from the prefix.
  */
-export const sourceSnippets = (
-	platform: SourcePlatform,
-	token: string,
-	name: string,
-): ReadonlyArray<SourceSnippet> => {
+export const sourceSnippets = (platform: SourcePlatform, token: string, name: string): ReadonlyArray<SourceSnippet> => {
 	const serviceName = serviceNameOf(name)
 	switch (platform) {
 		case "kubernetes":

@@ -43,26 +43,21 @@ const header = (h: H, model: Model, inputs: PageViewInputs): Html =>
 const rightPanel = (h: H, model: Model, inputs: PageViewInputs): Html | undefined => {
 	const data = model.summary.data
 	const summary = AsyncData.getOrElse(data, () => null)
-	if (summary !== null)
-		return hostMetadataPanel(h, model, summary, model.frame.nowMs, inputs.context.timeZone)
-	return AsyncData.isLoading(data) || AsyncData.isIdle(data)
-		? resourceAttributesCardSkeleton(h, "ServerIcon")
-		: undefined
+	if (summary !== null) return hostMetadataPanel(h, model, summary, model.frame.nowMs, inputs.context.timeZone)
+	return AsyncData.isLoading(data) || AsyncData.isIdle(data) ? resourceAttributesCardSkeleton(h, "ServerIcon") : undefined
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	h.div(
-		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
+		[
+			h.Class("contents"),
+			h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS })),
+		],
 		[
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(
-						h,
-						model.frame,
-						{ search: model.search, defaultPreset: DEFAULT_PRESET },
-						toFrame,
-					),
+					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
 					rightPanel: rightPanel(h, model, inputs),
 				},
 				[

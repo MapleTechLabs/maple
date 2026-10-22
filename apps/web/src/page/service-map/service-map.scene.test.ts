@@ -122,13 +122,7 @@ describe("service map page: requests", () => {
 		)
 		const resolved = pageUpdate(
 			entry.model,
-			Message.CompletedResolveWindow({
-				window,
-				timeZone: "UTC",
-				facetsWindow,
-				nowMs: NOW,
-				mode: "Load",
-			}),
+			Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: NOW, mode: "Load" }),
 		)
 		expect(names(resolved.commands)).toEqual(
 			expect.arrayContaining([
@@ -145,9 +139,7 @@ describe("service map page: requests", () => {
 	test("a zone change re-resolves the window in the new zone; a pin change does not", () => {
 		const model = windowed({ timePreset: "today" })
 		const rezoned = contextChanged(model, { ...context, timeZone: "Europe/Berlin" })
-		expect(
-			rezoned.commands?.find((command) => command.name === "ResolveServiceMapWindow")?.args,
-		).toMatchObject({
+		expect(rezoned.commands?.find((command) => command.name === "ResolveServiceMapWindow")?.args).toMatchObject({
 			preset: "today",
 			timeZone: "Europe/Berlin",
 		})
@@ -191,60 +183,25 @@ describe("service map page: requests", () => {
 		const windowedModel = windowed()
 		const loaded = pageUpdate(
 			windowedModel,
-			Message.CompletedFetchFacets({
-				key: windowedModel.facets.key ?? "",
-				result: Result.succeed(["production"]),
-			}),
+			Message.CompletedFetchFacets({ key: windowedModel.facets.key ?? "", result: Result.succeed(["production"]) }),
 		).model
 		const empty = withBundle(loaded, EMPTY_BUNDLE)
-		const refreshed = Message.CompletedResolveWindow({
-			window,
-			timeZone: "UTC",
-			facetsWindow,
-			nowMs: NOW,
-			mode: "Refresh",
-		})
+		const refreshed = Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: NOW, mode: "Refresh" })
 		scene(
 			{ update: pageUpdate, view },
 			given(empty),
 			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
 			click(role("button", { name: "Reload" })),
 			Command.resolve(ResolveWindow, refreshed),
-			Command.expectHas(
-				FetchFacets({ key: empty.facets.key ?? "", window: facetsWindow, refresh: true }),
-			),
+			Command.expectHas(FetchFacets({ key: empty.facets.key ?? "", window: facetsWindow, refresh: true })),
 			Command.resolveAll(
 				[CompleteReloadSpin, Message.CompletedReloadSpin({ version: 1 })],
-				[
-					FetchFacets,
-					Message.CompletedFetchFacets({
-						key: empty.facets.key ?? "",
-						result: Result.succeed(["production"]),
-					}),
-				],
-				[
-					FetchBundle,
-					Message.CompletedFetchBundle({
-						key: empty.bundle.key ?? "",
-						result: Result.succeed(new MapBundle(EMPTY_BUNDLE)),
-					}),
-				],
+				[FetchFacets, Message.CompletedFetchFacets({ key: empty.facets.key ?? "", result: Result.succeed(["production"]) })],
+				[FetchBundle, Message.CompletedFetchBundle({ key: empty.bundle.key ?? "", result: Result.succeed(new MapBundle(EMPTY_BUNDLE)) })],
 			),
 		)
-		const entry = pageUpdate(
-			windowedModel,
-			Message.CompletedFetchFacets({ key: windowedModel.facets.key ?? "", result: Result.succeed([]) }),
-		)
-		const reentered = pageUpdate(
-			entry.model,
-			Message.CompletedResolveWindow({
-				window,
-				timeZone: "UTC",
-				facetsWindow,
-				nowMs: NOW,
-				mode: "Load",
-			}),
-		)
+		const entry = pageUpdate(windowedModel, Message.CompletedFetchFacets({ key: windowedModel.facets.key ?? "", result: Result.succeed([]) }))
+		const reentered = pageUpdate(entry.model, Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: NOW, mode: "Load" }))
 		expect(names(reentered.commands)).not.toContain("FetchServiceMapFacets")
 	})
 
@@ -294,14 +251,8 @@ describe("service map page: navigation", () => {
 		const scoped = routeChanged(reloaded, { search: { environment: "production" } }, context)
 		expect(names(scoped.commands)).not.toContain("ResolveServiceMapWindow")
 		expect(scoped.model.window).toEqual(reloaded.window)
-		const moved = routeChanged(
-			scoped.model,
-			{ search: { environment: "production", timePreset: "1h" } },
-			context,
-		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
-			["ResolveServiceMapWindow", "Refresh"],
-		])
+		const moved = routeChanged(scoped.model, { search: { environment: "production", timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveServiceMapWindow", "Refresh"]])
 	})
 
 	test("the view switch and the environment select navigate", () => {
@@ -343,22 +294,13 @@ describe("service map page: environment default across a refetch", () => {
 		const model = windowed()
 		const loaded = pageUpdate(
 			model,
-			Message.CompletedFetchFacets({
-				key: model.facets.key ?? "",
-				result: Result.succeed(["staging"]),
-			}),
+			Message.CompletedFetchFacets({ key: model.facets.key ?? "", result: Result.succeed(["staging"]) }),
 		).model
 		expect(selectedEnvironment(loaded)).toBe(ALL_ENVIRONMENTS)
 		const later = { startTime: "2026-09-30 13:00:00", endTime: "2026-10-01 13:00:00" }
 		const refreshed = pageUpdate(
 			loaded,
-			Message.CompletedResolveWindow({
-				window,
-				timeZone: "UTC",
-				facetsWindow: later,
-				nowMs: NOW,
-				mode: "Refresh",
-			}),
+			Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow: later, nowMs: NOW, mode: "Refresh" }),
 		)
 		expect(selectedEnvironment(refreshed.model)).toBe(ALL_ENVIRONMENTS)
 		expect(refreshed.model.facetsWindow).toEqual(facetsWindow)
@@ -369,20 +311,11 @@ describe("service map page: environment default across a refetch", () => {
 		const model = windowed()
 		const loaded = pageUpdate(
 			model,
-			Message.CompletedFetchFacets({
-				key: model.facets.key ?? "",
-				result: Result.succeed(["staging"]),
-			}),
+			Message.CompletedFetchFacets({ key: model.facets.key ?? "", result: Result.succeed(["staging"]) }),
 		).model
 		const refreshed = pageUpdate(
 			loaded,
-			Message.CompletedResolveWindow({
-				window,
-				timeZone: "UTC",
-				facetsWindow,
-				nowMs: NOW,
-				mode: "Refresh",
-			}),
+			Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: NOW, mode: "Refresh" }),
 		).model
 		const failed = pageUpdate(
 			refreshed,

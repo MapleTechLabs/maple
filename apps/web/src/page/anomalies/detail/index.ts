@@ -14,17 +14,13 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message>()
 		{ isOpen: Schema.Boolean },
 		{
 			modelToDependencies: ({ model }) => ({
-				isOpen: incidentOf(model).pipe(
-					(incident) => incident._tag === "Some" && incident.value.status === "open",
-				),
+				isOpen: incidentOf(model).pipe((incident) => incident._tag === "Some" && incident.value.status === "open"),
 			}),
 			dependenciesToStream: ({ isOpen }) =>
 				isOpen
 					? pollTicks(Duration.seconds(15)).pipe(
 							Stream.mapEffect(() =>
-								Effect.map(Clock.currentTimeMillis, (nowMs) =>
-									Message.TickedLiveRefresh({ nowMs }),
-								),
+								Effect.map(Clock.currentTimeMillis, (nowMs) => Message.TickedLiveRefresh({ nowMs })),
 							),
 						)
 					: Stream.empty,

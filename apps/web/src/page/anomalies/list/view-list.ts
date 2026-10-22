@@ -53,20 +53,13 @@ const group = (
 					),
 					statusDot(h, { tone: SEVERITY_TONE[key].tone, size: "lg" }),
 					h.span([h.Class("shrink-0 text-sm font-medium text-foreground")], [GROUP_LABEL[key]]),
-					h.span(
-						[h.Class("text-xs text-muted-foreground tabular-nums")],
-						[String(incidents.length)],
-					),
+					h.span([h.Class("text-xs text-muted-foreground tabular-nums")], [String(incidents.length)]),
 				],
 			),
 			...(isOpen
 				? [
 						h.div(
-							[
-								h.Id(`anomaly-group-${key}`),
-								h.Role("list"),
-								h.Class("divide-y divide-border/40"),
-							],
+							[h.Id(`anomaly-group-${key}`), h.Role("list"), h.Class("divide-y divide-border/40")],
 							clusterByService(incidents).map((cluster) =>
 								h.div(
 									[h.Key(cluster.key + (cluster.incidents[0]?.id ?? ""))],
@@ -80,24 +73,10 @@ const group = (
 															),
 														],
 														[
-															serviceDot(h, {
-																serviceName: cluster.serviceName,
-																size: "sm",
-															}),
-															h.span(
-																[h.Class("font-medium text-foreground/80")],
-																[cluster.serviceName],
-															),
-															...(cluster.deploymentEnv
-																? [h.span([], [cluster.deploymentEnv])]
-																: []),
-															h.span(
-																[h.Class("tabular-nums")],
-																[
-																	String(cluster.incidents.length),
-																	" anomalies",
-																],
-															),
+															serviceDot(h, { serviceName: cluster.serviceName, size: "sm" }),
+															h.span([h.Class("font-medium text-foreground/80")], [cluster.serviceName]),
+															...(cluster.deploymentEnv ? [h.span([], [cluster.deploymentEnv])] : []),
+															h.span([h.Class("tabular-nums")], [String(cluster.incidents.length), " anomalies"]),
 														],
 													),
 												]
@@ -144,9 +123,7 @@ const quietEmpty = (h: H, model: Model, status: StatusTab, excludedHint: Html | 
 					emptyDescription(h, [
 						PURPOSE,
 						...(presence.status === "absent"
-							? [
-									" Anomaly detection learns a baseline from your traces and logs. Send telemetry to start.",
-								]
+							? [" Anomaly detection learns a baseline from your traces and logs. Send telemetry to start."]
 							: []),
 					]),
 				]),
@@ -156,11 +133,7 @@ const quietEmpty = (h: H, model: Model, status: StatusTab, excludedHint: Html | 
 								emptyActions(h, [
 									linkButton(
 										h,
-										{
-											size: "sm",
-											className: "gap-2",
-											href: hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } })),
-										},
+										{ size: "sm", className: "gap-2", href: hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } })) },
 										[icon(h, "ConnectionIcon"), "Set up tracing"],
 									),
 									docsLink(h, "instrumentation", "Setup guide"),
@@ -171,15 +144,9 @@ const quietEmpty = (h: H, model: Model, status: StatusTab, excludedHint: Html | 
 						? [
 								emptyContent(h, [
 									emptyActions(h, [
-										linkButton(
-											h,
-											{
-												variant: "outline",
-												size: "sm",
-												href: hrefOf(AppRoute.AlertsCreate({ search: {} })),
-											},
-											["Create an alert rule"],
-										),
+										linkButton(h, { variant: "outline", size: "sm", href: hrefOf(AppRoute.AlertsCreate({ search: {} })) }, [
+											"Create an alert rule",
+										]),
 										docsLink(h, "alertRules", "Alert rules"),
 									]),
 								]),
@@ -230,9 +197,7 @@ export const listBody = (h: H, model: Model, input: BodyInput): Html => {
 	return h.div(
 		[],
 		[
-			...groupIncidents(input.incidents).map(([key, incidents]) =>
-				group(h, model, key, incidents, input.timeZone),
-			),
+			...groupIncidents(input.incidents).map(([key, incidents]) => group(h, model, key, incidents, input.timeZone)),
 			...(footer === null ? [] : [footer]),
 		],
 	)

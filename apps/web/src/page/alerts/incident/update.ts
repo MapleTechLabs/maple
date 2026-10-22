@@ -72,39 +72,26 @@ const followData = (model: Model, context: PageContext): Return =>
 			})
 			const steps: ReadonlyArray<{ patch: Partial<Model>; commands: Commands }> = [
 				...Option.toArray(
-					Option.map(
-						sameKey(model.deliveries, deliveriesKey)
-							? Option.none()
-							: Keyed.request(model.deliveries, deliveriesKey, "Load"),
-						(deliveries) => ({
-							patch: { deliveries },
-							commands: [FetchIncidentDeliveries({ key: deliveriesKey, incidentId })],
-						}),
-					),
+					Option.map(sameKey(model.deliveries, deliveriesKey) ? Option.none() : Keyed.request(model.deliveries, deliveriesKey, "Load"), (deliveries) => ({
+						patch: { deliveries },
+						commands: [FetchIncidentDeliveries({ key: deliveriesKey, incidentId })],
+					})),
 				),
 				...Option.toArray(
-					Option.map(
-						sameKey(model.investigation, investigationKey)
-							? Option.none()
-							: Keyed.request(model.investigation, investigationKey, "Load"),
-						(investigation) => ({
-							patch: { investigation },
-							commands: [FetchIncidentInvestigation({ key: investigationKey, incidentId })],
-						}),
-					),
+					Option.map(sameKey(model.investigation, investigationKey)
+						? Option.none()
+						: Keyed.request(model.investigation, investigationKey, "Load"), (investigation) => ({
+						patch: { investigation },
+						commands: [FetchIncidentInvestigation({ key: investigationKey, incidentId })],
+					})),
 				),
 				...Option.toArray(
 					Option.flatMap(view.payload, (payload) => {
 						const key = requestKey(context.orgId, "alertRules.preview", payload)
-						return Option.map(
-							sameKey(model.preview, key)
-								? Option.none()
-								: Keyed.request(model.preview, key, "Load"),
-							(preview) => ({
-								patch: { preview },
-								commands: [FetchIncidentPreview({ key, payload })],
-							}),
-						)
+						return Option.map(sameKey(model.preview, key) ? Option.none() : Keyed.request(model.preview, key, "Load"), (preview) => ({
+							patch: { preview },
+							commands: [FetchIncidentPreview({ key, payload })],
+						}))
 					}),
 				),
 			]
@@ -133,15 +120,10 @@ const createPayload = (model: Model): Option.Option<V2InvestigationCreateParams>
 			severity: incident.severity === "critical" ? ("critical" as const) : ("medium" as const),
 			facts: [
 				{ label: "Signal", value: signalLabels[incident.signalType] },
-				{
-					label: "Observed",
-					value: formatSignalValue(incident.signalType, incident.lastObservedValue),
-				},
+				{ label: "Observed", value: formatSignalValue(incident.signalType, incident.lastObservedValue) },
 				{ label: "Threshold", value: formatSignalValue(incident.signalType, incident.threshold) },
 			],
-			references: incident.errorIssueId
-				? [{ label: "Issue", url: `/errors/issues/${incident.errorIssueId}` }]
-				: [],
+			references: incident.errorIssueId ? [{ label: "Issue", url: `/errors/issues/${incident.errorIssueId}` }] : [],
 			incidentStartedAt: incident.firstTriggeredAt,
 			incidentEndedAt: incident.resolvedAt,
 		},
@@ -155,12 +137,7 @@ const incidentRowOf = (model: Model, rows: Model["incidents"]) =>
 	Option.fromNullishOr((rows ?? []).find((row) => row.id === model.incidentId))
 
 /** `clockAtSync`: once the incident row itself changes, the minute clock is read again. */
-const withIncidents = (
-	model: Model,
-	context: PageContext,
-	orgId: string,
-	rows: Model["incidents"],
-): Return => {
+const withIncidents = (model: Model, context: PageContext, orgId: string, rows: Model["incidents"]): Return => {
 	const next = withRows(model, context, orgId, { incidents: rows })
 	const before = incidentRowOf(model, model.incidents)
 	const after = incidentRowOf(model, rows)
@@ -216,17 +193,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 			}),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		GotChartMessage: ({ message: child }) => {
 			const next = Chart.update(model.chart, child)
 			return {
 				model: { ...model, chart: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (message) =>
-					Message.GotChartMessage({ message }),
-				),
+				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotChartMessage({ message })),
 			}
 		},
 	})

@@ -34,9 +34,7 @@ const stringifySearch = (decoded: unknown): Record<string, string> =>
  */
 export const orderedSearch = (entries: ReadonlyArray<readonly [string, string | undefined]>): string => {
 	const query = new URLSearchParams(
-		entries.flatMap(([key, value]) =>
-			Option.toArray(Option.map(stringifyValue(value), (raw) => [key, raw])),
-		),
+		entries.flatMap(([key, value]) => Option.toArray(Option.map(stringifyValue(value), (raw) => [key, raw]))),
 	).toString()
 	return query === "" ? "" : `?${query}`
 }

@@ -33,9 +33,7 @@ const sessionRow = (h: H, model: Model, session: SessionRow, inputs: Inputs): Ht
 								className: "shrink-0 text-muted-foreground",
 							}),
 							truncatedText(h, { text: session.device, className: "text-xs font-medium" }),
-							...(isCurrent
-								? [badge(h, { variant: "secondary", className: "shrink-0" }, ["This device"])]
-								: []),
+							...(isCurrent ? [badge(h, { variant: "secondary", className: "shrink-0" }, ["This device"])] : []),
 						],
 					),
 				],
@@ -61,11 +59,7 @@ const sessionRow = (h: H, model: Model, session: SessionRow, inputs: Inputs): Ht
 					: [
 							button(
 								h,
-								{
-									variant: "ghost",
-									size: "sm",
-									attributes: [h.OnClick(Message.ClickedSignOut({ session }))],
-								},
+								{ variant: "ghost", size: "sm", attributes: [h.OnClick(Message.ClickedSignOut({ session }))] },
 								["Sign out"],
 							),
 						],
@@ -87,15 +81,7 @@ const body = (h: H, model: Model, inputs: Inputs): ReadonlyArray<Html> => {
 					[h.Class("flex items-center justify-between gap-4")],
 					[
 						h.p([h.Class(cn("text-sm", TONE_TEXT.crit))], [state.message]),
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								attributes: [h.OnClick(Message.ClickedRetry())],
-							},
-							["Retry"],
-						),
+						button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedRetry())] }, ["Retry"]),
 					],
 				),
 			]
@@ -110,10 +96,7 @@ const body = (h: H, model: Model, inputs: Inputs): ReadonlyArray<Html> => {
 							tableHead(h, [], "w-24"),
 						]),
 					]),
-					tableBody(
-						h,
-						state.sessions.map((session) => sessionRow(h, model, session, inputs)),
-					),
+					tableBody(h, state.sessions.map((session) => sessionRow(h, model, session, inputs))),
 				]),
 			]
 	}
@@ -126,9 +109,7 @@ export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, 
 			{
 				id: "account-sessions",
 				title: "Active sessions",
-				description: [
-					"Devices currently signed in to your account. Sign out any you do not recognise.",
-				],
+				description: ["Devices currently signed in to your account. Sign out any you do not recognise."],
 				padded: model.state._tag !== "Ready",
 			},
 			body(h, model, inputs),

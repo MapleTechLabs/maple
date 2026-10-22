@@ -43,9 +43,7 @@ export const init = (flags: AlertsLabFlags & LabShellFlags): Return => {
 			shell: shell.model,
 		},
 		commands: [
-			...(shell.commands ?? []).map(
-				Command.mapMessage((message) => Message.GotShellMessage({ message })),
-			),
+			...(shell.commands ?? []).map(Command.mapMessage((message) => Message.GotShellMessage({ message }))),
 			Command.mapMessage(LoadChartRuntime(), (message) =>
 				message._tag === "CompletedLoadChartRuntime"
 					? Message.CompletedLoadChartRuntime()
@@ -72,9 +70,7 @@ const hubStep = (model: Model, message: Message & { _tag: "GotHubMessage" }): Re
 	const next = AlertsHub.update(model.hub, inner, LAB_CONTEXT)
 	return {
 		model: { ...model, hub: next.model },
-		commands: Command.mapMessages(next.commands ?? [], (child) =>
-			Message.GotHubMessage({ message: child }),
-		),
+		commands: Command.mapMessages(next.commands ?? [], (child) => Message.GotHubMessage({ message: child })),
 	}
 }
 
@@ -85,15 +81,11 @@ export const update = (model: Model, message: Message): Return =>
 			const next = Chart.update(model.chart, inner)
 			return {
 				model: { ...model, chart: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (child) =>
-					Message.GotChartMessage({ message: child }),
-				),
+				commands: Command.mapMessages(next.commands ?? [], (child) => Message.GotChartMessage({ message: child })),
 			}
 		},
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
 		GotShellMessage: ({ message: inner }) => foldShell(model, inner),
 	})

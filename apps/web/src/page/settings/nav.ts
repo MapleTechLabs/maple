@@ -67,13 +67,7 @@ const navSections: ReadonlyArray<NavShellSection<SettingsTab>> = [
 		id: "access",
 		title: "Access",
 		items: [
-			{
-				kind: "link",
-				id: "integrations",
-				label: "Integrations",
-				icon: "GridIcon",
-				href: "/integrations",
-			},
+			{ kind: "link", id: "integrations", label: "Integrations", icon: "GridIcon", href: "/integrations" },
 			tab("keys", "KeyIcon"),
 			tab("mcp", "SquareTerminalIcon"),
 			tab("ai", "ChatBubbleSparkleIcon"),
@@ -82,11 +76,7 @@ const navSections: ReadonlyArray<NavShellSection<SettingsTab>> = [
 	{
 		id: "data",
 		title: "Data",
-		items: [
-			tab("ingestion", "ServerIcon"),
-			tab("data-platform", "DatabaseIcon"),
-			tab("setup-health", "CircleCheckIcon"),
-		],
+		items: [tab("ingestion", "ServerIcon"), tab("data-platform", "DatabaseIcon"), tab("setup-health", "CircleCheckIcon")],
 	},
 	{ id: "alerting", title: "Alerting", items: [tab("automation", "ShieldIcon")] },
 ]
@@ -108,25 +98,17 @@ const isVisible = (id: string, visibility: Visibility): boolean => {
 /** `useVisibleSettingsSections().visibleSections`. */
 export const visibleSections = (visibility: Visibility): ReadonlyArray<NavShellSection<SettingsTab>> =>
 	navSections
-		.map((section) => ({
-			...section,
-			items: section.items.filter((row) => isVisible(row.id, visibility)),
-		}))
+		.map((section) => ({ ...section, items: section.items.filter((row) => isVisible(row.id, visibility)) }))
 		.filter((section) => section.items.length > 0)
 
 /** The tab rows only: `/integrations` is a route and never a fallback tab. */
-export const visibleTabs = (
-	sections: ReadonlyArray<NavShellSection<SettingsTab>>,
-): ReadonlyArray<SettingsTab> =>
+export const visibleTabs = (sections: ReadonlyArray<NavShellSection<SettingsTab>>): ReadonlyArray<SettingsTab> =>
 	sections.flatMap((section) => section.items.flatMap((row) => (row.kind === "tab" ? [row.id] : [])))
 
 const DEFAULT_SETTINGS_TAB_ORDER: ReadonlyArray<SettingsTab> = ["general", "ingestion"]
 
 /** `resolveActiveSettingsTab`. */
-export const resolveActiveSettingsTab = (
-	requested: string | undefined,
-	tabs: ReadonlyArray<SettingsTab>,
-): SettingsTab =>
+export const resolveActiveSettingsTab = (requested: string | undefined, tabs: ReadonlyArray<SettingsTab>): SettingsTab =>
 	Option.getOrElse(
 		Option.orElse(
 			Array.findFirst(tabs, (id) => id === requested),

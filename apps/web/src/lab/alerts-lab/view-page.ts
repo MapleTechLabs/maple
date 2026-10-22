@@ -18,8 +18,7 @@ type H = HtmlBuilder<Message>
 
 /** `IncidentFrame`: `IncidentHeader` (a page header) over `IncidentBody`, from the fixture. */
 const incidentFrame = (h: H, model: Model, fixture: AlertsLabFixture): Html => {
-	const { incident, rule, ruleIncidents, states, preview, range, deliveries, investigation } =
-		fixture.incident
+	const { incident, rule, ruleIncidents, states, preview, range, deliveries, investigation } = fixture.incident
 	const entries = buildIncidentTimeline({
 		incident,
 		deliveries,
@@ -42,9 +41,7 @@ const incidentFrame = (h: H, model: Model, fixture: AlertsLabFixture): Html => {
 							{
 								variant: "outline",
 								size: "sm",
-								href: hrefOf(
-									AppRoute.Investigation({ id: String(investigation.id), search: {} }),
-								),
+								href: hrefOf(AppRoute.Investigation({ id: String(investigation.id), search: {} })),
 							},
 							[icon(h, "ChatBubbleSparkleIcon"), "Open investigation"],
 						),
@@ -92,17 +89,10 @@ const pageBody = (h: H, model: Model): Html => {
 							slotId: "alerts-lab-hub",
 							model: model.hub,
 							view: hubSections,
-							viewInputs: {
-								fixture,
-								status: model.status,
-								timeZone: model.timeZone,
-								nowMs: model.nowMs,
-							},
+							viewInputs: { fixture, status: model.status, timeZone: model.timeZone, nowMs: model.nowMs },
 							toParentMessage: (message) => Message.GotHubMessage({ message }),
 						}),
-						section(h, "incident", "Incident: critical error rate on maple-chat", [
-							incidentFrame(h, model, fixture),
-						]),
+						section(h, "incident", "Incident: critical error rate on maple-chat", [incidentFrame(h, model, fixture)]),
 					],
 				),
 			]),

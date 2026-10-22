@@ -7,12 +7,8 @@ export const lanes = (model: Model): ReadonlyArray<Lane> => [
 	...slotLane(FetchLogs.name, model.logs, (key) => FetchLogs.Interrupt({ key }, outcomeOf)),
 	...slotLane(FetchPatterns.name, model.patterns, (key) => FetchPatterns.Interrupt({ key }, outcomeOf)),
 	...slotLane(FetchServices.name, model.services, (key) => FetchServices.Interrupt({ key }, outcomeOf)),
-	...slotLane(FetchSeverities.name, model.severities, (key) =>
-		FetchSeverities.Interrupt({ key }, outcomeOf),
-	),
-	...(model.logs.key === null
-		? []
-		: [nextPageLane(model.logs.key, model.pageGeneration, model.isFetchingNextPage)]),
+	...slotLane(FetchSeverities.name, model.severities, (key) => FetchSeverities.Interrupt({ key }, outcomeOf)),
+	...(model.logs.key === null ? [] : [nextPageLane(model.logs.key, model.pageGeneration, model.isFetchingNextPage)]),
 ]
 
 /** The next page in flight: one per list generation, retired by a reload or a new key. */

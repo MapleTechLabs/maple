@@ -23,12 +23,7 @@ export const Team = Schema.Struct({
 })
 export type Team = typeof Team.Type
 
-export const ready = (
-	name: string,
-	invited: ReadonlyArray<string>,
-	canManage: boolean,
-	reason: string | null,
-): Team => ({
+export const ready = (name: string, invited: ReadonlyArray<string>, canManage: boolean, reason: string | null): Team => ({
 	isLoaded: true,
 	name,
 	savedName: name,
@@ -68,15 +63,9 @@ export const LoadTeam = Command.define("LoadOnboardingTeam", {
 			return TeamMessage.LoadedTeam({ name: "My workspace", canManage: false, invitations: [] })
 		const organization = maybeOrganization.value
 		const invitations = organization.isAdmin
-			? yield* clerkTry("Failed to load invitations", organization.pendingInvitations).pipe(
-					Effect.orElseSucceed(() => []),
-				)
+			? yield* clerkTry("Failed to load invitations", organization.pendingInvitations).pipe(Effect.orElseSucceed(() => []))
 			: []
-		return TeamMessage.LoadedTeam({
-			name: organization.name,
-			canManage: organization.isAdmin,
-			invitations,
-		})
+		return TeamMessage.LoadedTeam({ name: organization.name, canManage: organization.isAdmin, invitations })
 	}),
 })
 
@@ -136,10 +125,7 @@ export const updateTeam = (team: Team, message: TeamMessage): TeamStep =>
 							pending: null,
 							name: value,
 							savedName: value,
-							feedback: {
-								message: "Workspace name saved. Make yourself at home.",
-								isError: false,
-							},
+							feedback: { message: "Workspace name saved. Make yourself at home.", isError: false },
 						}
 					: {
 							...team,

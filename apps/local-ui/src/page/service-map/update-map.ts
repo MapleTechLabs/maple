@@ -22,30 +22,19 @@ const merge = (first: UpdateReturn, next: UpdateReturn): UpdateReturn => ({
  * Folds a map step into the page; `onLayoutChange` / `onViewPrefsChange` write localStorage
  * whenever the map's drags, cameras or declutter prefs moved.
  */
-export const withMapStep = (
-	model: Model,
-	step: Update.Return<ServiceMap.Model, ServiceMap.Message>,
-): UpdateReturn => {
+export const withMapStep = (model: Model, step: Update.Return<ServiceMap.Model, ServiceMap.Message>): UpdateReturn => {
 	const map = step.model
 	const previous = Option.getOrUndefined(model.maybeMap)
 	const isPrefsChanged =
 		previous !== undefined &&
-		(previous.minTrafficPct !== map.minTrafficPct ||
-			previous.collapsedNamespaces !== map.collapsedNamespaces)
+		(previous.minTrafficPct !== map.minTrafficPct || previous.collapsedNamespaces !== map.collapsedNamespaces)
 	const isLayoutChanged = previous !== undefined && previous.snapshots !== map.snapshots
 	return {
 		model: { ...model, maybeMap: Option.some(map) },
 		commands: [
 			...Command.mapMessages(step.commands ?? [], toMap),
 			...(isPrefsChanged
-				? [
-						SaveViewPrefs({
-							prefs: {
-								minTrafficPct: map.minTrafficPct,
-								collapsedNamespaces: map.collapsedNamespaces,
-							},
-						}),
-					]
+				? [SaveViewPrefs({ prefs: { minTrafficPct: map.minTrafficPct, collapsedNamespaces: map.collapsedNamespaces } })]
 				: []),
 			...(isLayoutChanged ? [SaveLayout({ snapshots: map.snapshots })] : []),
 		],

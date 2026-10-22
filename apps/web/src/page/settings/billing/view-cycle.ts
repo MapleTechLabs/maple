@@ -53,12 +53,7 @@ export const SPEND_THEME_TOKENS = ["--primary", "--border", "--background"]
 
 const figure = (
 	h: H,
-	options: Readonly<{
-		label: string
-		value: string
-		note: ReadonlyArray<Html | string>
-		valueClassName?: string
-	}>,
+	options: Readonly<{ label: string; value: string; note: ReadonlyArray<Html | string>; valueClassName?: string }>,
 ): Html =>
 	h.div(
 		[h.Class("flex min-w-0 flex-col gap-2 p-4")],
@@ -98,9 +93,7 @@ const spendPlot = Submodel.defineView<Chart.Model, Chart.Message, PlotInputs>((m
 		className: "h-full w-full",
 		tooltipBody: (portal) =>
 			Option.flatMap(model.tooltip, (tooltip) =>
-				tooltip._tag === "Bucket"
-					? Option.some(bucketTooltipBody(h, tooltip, portal))
-					: Option.none(),
+				tooltip._tag === "Bucket" ? Option.some(bucketTooltipBody(h, tooltip, portal)) : Option.none(),
 			),
 	}),
 )
@@ -128,10 +121,7 @@ const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResp
 		})),
 		bands: BANDS.map((band) => ({ key: band, label: bandLabel(band, spend), color: bandColor(band) })),
 		primary,
-		chrome: {
-			border: resolveColor(colors, "--border"),
-			background: resolveColor(colors, "--background"),
-		},
+		chrome: { border: resolveColor(colors, "--border"), background: resolveColor(colors, "--background") },
 		projected,
 		yMax,
 		currency: spend.currency,
@@ -142,10 +132,7 @@ const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResp
 			h.div(
 				[h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 pt-3")],
 				[
-					h.span(
-						[h.Class("text-2xs font-medium text-muted-foreground")],
-						["Cumulative spend by feature"],
-					),
+					h.span([h.Class("text-2xs font-medium text-muted-foreground")], ["Cumulative spend by feature"]),
 					// Colors only: the amounts live in the figures and the cost breakdown.
 					seriesLegend(h, {
 						className: "gap-x-4",
@@ -155,16 +142,7 @@ const spendChart = (h: H, model: Model, spend: SpendModel, daily: DailySpendResp
 								label: bandLabel(band, spend),
 								color: bandColor(band),
 							})),
-							...(hasFuture
-								? [
-										{
-											key: "projected",
-											label: "Projection",
-											color: primary,
-											swatch: "dashed" as const,
-										},
-									]
-								: []),
+							...(hasFuture ? [{ key: "projected", label: "Projection", color: primary, swatch: "dashed" as const }] : []),
 						],
 					}),
 				],
@@ -242,10 +220,7 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html => {
 						attributes: [h.AriaHidden(true)],
 					}),
 					h.span([h.Class("text-xs font-medium")], ["Cost breakdown"]),
-					h.span(
-						[h.Class("truncate text-2xs text-muted-foreground")],
-						["What makes up the amount spent so far"],
-					),
+					h.span([h.Class("truncate text-2xs text-muted-foreground")], ["What makes up the amount spent so far"]),
 				],
 			),
 			...(isOpen
@@ -256,39 +231,25 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html => {
 								h.DataAttribute("open", ""),
 								h.DataAttribute("slot", "collapsible-panel"),
 								h.Id("billing-cost-breakdown"),
-								h.Style({
-									"--collapsible-panel-height": "auto",
-									"--collapsible-panel-width": "auto",
-									"animation-name": "none",
-								}),
+								h.Style({ "--collapsible-panel-height": "auto", "--collapsible-panel-width": "auto", "animation-name": "none" }),
 							],
 							[
 								h.div(
 									[h.Class("divide-y divide-border/60")],
 									costBreakdown(spend).map((line) =>
 										h.div(
-											[
-												h.Key(line.key),
-												h.Class("flex items-baseline justify-between gap-4 py-2"),
-											],
+											[h.Key(line.key), h.Class("flex items-baseline justify-between gap-4 py-2")],
 											[
 												h.div(
 													[h.Class("min-w-0")],
 													[
 														h.p([h.Class("text-sm")], [line.label]),
-														h.p(
-															[h.Class("text-2xs text-muted-foreground")],
-															[line.detail],
-														),
+														h.p([h.Class("text-2xs text-muted-foreground")], [line.detail]),
 													],
 												),
 												h.span(
 													[h.Class("shrink-0 font-mono text-sm tabular-nums")],
-													[
-														line.cents === null
-															? "Not itemized"
-															: dollars(line.cents, spend.currency),
-													],
+													[line.cents === null ? "Not itemized" : dollars(line.cents, spend.currency)],
 												),
 											],
 										),
@@ -298,9 +259,7 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html => {
 									? [
 											h.p(
 												[h.Class("pt-1 text-2xs text-muted-foreground")],
-												[
-													"Some items are on pricing we can't itemize; your invoice has the exact amount.",
-												],
+												["Some items are on pricing we can't itemize; your invoice has the exact amount."],
 											),
 										]
 									: []),
@@ -353,10 +312,7 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 					[
 						h.span([], [period]),
 						h.span([h.Class("text-muted-foreground")], ["·"]),
-						h.span(
-							[h.Class("text-muted-foreground")],
-							["Day ", String(spend.dayOfCycle), " of ", String(spend.cycleDays)],
-						),
+						h.span([h.Class("text-muted-foreground")], ["Day ", String(spend.dayOfCycle), " of ", String(spend.cycleDays)]),
 					],
 				),
 			],
@@ -367,9 +323,7 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 				figure(h, {
 					label: "Spent so far",
 					value: dollars(spend.spendCents, spend.currency),
-					note: [
-						spend.partial ? "At least; some items aren't itemized" : "Excludes taxes and credits",
-					],
+					note: [spend.partial ? "At least; some items aren't itemized" : "Excludes taxes and credits"],
 				}),
 				figure(h, {
 					label: "Projected",
@@ -389,9 +343,7 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 										h.span(
 											[h.Class("flex flex-wrap items-center gap-x-1.5")],
 											[
-												inputs.uncappedCount === 1
-													? "1 feature has no cap"
-													: `${inputs.uncappedCount} features have no cap`,
+												inputs.uncappedCount === 1 ? "1 feature has no cap" : `${inputs.uncappedCount} features have no cap`,
 												...(model.isAdmin
 													? [
 															h.button(
@@ -399,9 +351,7 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 																	h.Class(
 																		"font-medium text-primary hover:underline disabled:pointer-events-none disabled:opacity-50",
 																	),
-																	...(model.isSavingCap
-																		? [h.Disabled(true)]
-																		: []),
+																	...(model.isSavingCap ? [h.Disabled(true)] : []),
 																	h.Type("button"),
 																	h.OnClick(Message.ClickedSetCaps()),
 																],

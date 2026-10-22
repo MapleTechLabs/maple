@@ -33,13 +33,7 @@ const formatBucketRange = (bucket: Readonly<{ start: number; end: number }>, tim
 	return `${time(bucket.start)}–${time(bucket.end)}`
 }
 
-const checkDelta = (
-	h: H,
-	rule: AlertRuleDocument,
-	observed: number,
-	threshold: number,
-	isBreached: boolean,
-): ReadonlyArray<Html> => {
+const checkDelta = (h: H, rule: AlertRuleDocument, observed: number, threshold: number, isBreached: boolean): ReadonlyArray<Html> => {
 	const delta = observed - threshold
 	if (!Number.isFinite(delta) || delta === 0) return []
 	return [
@@ -65,9 +59,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 			[skeleton(h, "h-24 w-full"), skeleton(h, "h-48 w-full"), skeleton(h, "h-64 w-full")],
 		)
 	const loaded = new Map(
-		[...(inputs.page?.checks ?? []), ...model.extraChecks].map(
-			(check) => [checkKey(check), check] as const,
-		),
+		[...(inputs.page?.checks ?? []), ...model.extraChecks].map((check) => [checkKey(check), check] as const),
 	)
 	const loadedChecks = [...loaded.values()]
 	if (loadedChecks.length === 0)
@@ -110,17 +102,12 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 	const bucket = model.selectedBucket
 	const rowSource = bucket != null ? model.bucketChecks : loadedChecks
 	const filtered =
-		model.checkStatusFilter === "all"
-			? rowSource
-			: rowSource.filter((c) => c.status === model.checkStatusFilter)
+		model.checkStatusFilter === "all" ? rowSource : rowSource.filter((c) => c.status === model.checkStatusFilter)
 	const times = rowSource
 		.map((c) => new Date(c.timestamp).getTime())
 		.filter((t) => Number.isFinite(t))
 		.sort((a, b) => b - a)
-	const gaps = times
-		.slice(1)
-		.map((t, i) => (times[i] ?? t) - t)
-		.sort((a, b) => a - b)
+	const gaps = times.slice(1).map((t, i) => (times[i] ?? t) - t).sort((a, b) => a - b)
 	const medianGapMs = gaps.length === 0 ? null : (gaps[Math.floor(gaps.length / 2)] ?? null)
 	const gapBefore = (index: number): number | null => {
 		if (index === 0 || medianGapMs == null || medianGapMs <= 0) return null
@@ -130,8 +117,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 		const missing = Math.round((prev - current) / medianGapMs) - 1
 		return missing >= 1 ? missing : null
 	}
-	const nextCursor =
-		model.nextCursorOverride === undefined ? (inputs.page?.nextCursor ?? null) : model.nextCursorOverride
+	const nextCursor = model.nextCursorOverride === undefined ? (inputs.page?.nextCursor ?? null) : model.nextCursorOverride
 	const isGrouped = (rule.groupBy?.length ?? 0) > 0
 	const filterOptions: ReadonlyArray<{ value: CheckStatusFilter; label: string }> = [
 		{ value: "all", label: "All" },
@@ -145,32 +131,24 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 		[h.Class("space-y-4")],
 		[
 			sectionHeading(h, { title: "Checks" }),
-			statRail(h, { columns: totals.errored > 0 ? 5 : 4 }, [
-				statRailItem(h, { size: "sm", eyebrow: "Total checks", value: String(totals.total) }),
-				statRailItem(h, {
-					size: "sm",
-					eyebrow: "Breached",
-					value: String(totals.breached),
-					tone: totals.breached > 0 ? "crit" : "neutral",
-				}),
-				statRailItem(h, {
-					size: "sm",
-					eyebrow: "Healthy",
-					value: String(totals.healthy),
-					tone: "ok",
-				}),
-				...(totals.errored > 0
-					? [
-							statRailItem(h, {
-								size: "sm",
-								eyebrow: "Failed",
-								value: String(totals.errored),
-								tone: "crit",
-							}),
-						]
-					: []),
-				statRailItem(h, { size: "sm", eyebrow: "Transitions", value: String(totals.transitions) }),
-			]),
+			statRail(
+				h,
+				{ columns: totals.errored > 0 ? 5 : 4 },
+				[
+					statRailItem(h, { size: "sm", eyebrow: "Total checks", value: String(totals.total) }),
+					statRailItem(h, {
+						size: "sm",
+						eyebrow: "Breached",
+						value: String(totals.breached),
+						tone: totals.breached > 0 ? "crit" : "neutral",
+					}),
+					statRailItem(h, { size: "sm", eyebrow: "Healthy", value: String(totals.healthy), tone: "ok" }),
+					...(totals.errored > 0
+						? [statRailItem(h, { size: "sm", eyebrow: "Failed", value: String(totals.errored), tone: "crit" })]
+						: []),
+					statRailItem(h, { size: "sm", eyebrow: "Transitions", value: String(totals.transitions) }),
+				],
+			),
 			h.div(
 				[h.Class("space-y-3")],
 				[
@@ -186,32 +164,20 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 											h.h3([h.Class("text-sm font-semibold")], ["All checks"]),
 											...(bucket != null
 												? [
-														badge(
-															h,
-															{
-																variant: "secondary",
-																className: "gap-1.5 font-mono text-xs",
-															},
-															[
-																formatBucketRange(bucket, timeZone),
-																iconButton(
-																	h,
-																	{
-																		size: "icon-2xs",
-																		label: "Clear bucket filter",
-																		hasTooltip: false,
-																		className:
-																			"text-muted-foreground hover:text-foreground",
-																		attributes: [
-																			h.OnClick(
-																				Message.ClickedClearBucket(),
-																			),
-																		],
-																	},
-																	[icon(h, "XmarkIcon")],
-																),
-															],
-														),
+														badge(h, { variant: "secondary", className: "gap-1.5 font-mono text-xs" }, [
+															formatBucketRange(bucket, timeZone),
+															iconButton(
+																h,
+																{
+																	size: "icon-2xs",
+																	label: "Clear bucket filter",
+																	hasTooltip: false,
+																	className: "text-muted-foreground hover:text-foreground",
+																	attributes: [h.OnClick(Message.ClickedClearBucket())],
+																},
+																[icon(h, "XmarkIcon")],
+															),
+														]),
 													]
 												: []),
 										],
@@ -265,17 +231,11 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 																h.Attribute("colspan", isGrouped ? "6" : "5"),
 																h.Attribute(
 																	"class",
-																	cn(
-																		tableCellStyles,
-																		"bg-muted/40 py-1.5 text-2xs text-muted-foreground",
-																	),
+																	cn(tableCellStyles, "bg-muted/40 py-1.5 text-2xs text-muted-foreground"),
 																),
 																h.DataAttribute("slot", "table-cell"),
 															],
-															[
-																countLabel(skipped, "evaluation"),
-																" hidden by the status filter",
-															],
+															[countLabel(skipped, "evaluation"), " hidden by the status filter"],
 														),
 													],
 													"hover:bg-transparent",
@@ -294,12 +254,7 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 									[
 										h.span(
 											[h.Class("text-2xs text-muted-foreground")],
-											[
-												String(loadedChecks.length),
-												" of ",
-												String(totals.total),
-												" loaded",
-											],
+											[String(loadedChecks.length), " of ", String(totals.total), " loaded"],
 										),
 										button(
 											h,
@@ -321,19 +276,8 @@ export const checksPanel = (h: H, model: Model, inputs: ChecksPanelInputs): Html
 	)
 }
 
-const checkRow = (
-	h: H,
-	rule: AlertRuleDocument,
-	check: AlertCheckDocument,
-	isGrouped: boolean,
-	timeZone: string,
-): Html => {
-	const state =
-		check.status === "breached" || check.status === "error"
-			? "firing"
-			: check.status === "healthy"
-				? "ok"
-				: "pending"
+const checkRow = (h: H, rule: AlertRuleDocument, check: AlertCheckDocument, isGrouped: boolean, timeZone: string): Html => {
+	const state = check.status === "breached" || check.status === "error" ? "firing" : check.status === "healthy" ? "ok" : "pending"
 	const transitionTone =
 		check.incidentTransition === "opened"
 			? "text-severity-error"
@@ -343,13 +287,7 @@ const checkRow = (
 					? "text-muted-foreground"
 					: ""
 	const label =
-		check.status === "breached"
-			? "Breached"
-			: check.status === "healthy"
-				? "Healthy"
-				: check.status === "error"
-					? "Failed"
-					: "Skipped"
+		check.status === "breached" ? "Breached" : check.status === "healthy" ? "Healthy" : check.status === "error" ? "Failed" : "Skipped"
 	return tableRow(
 		h,
 		[
@@ -364,15 +302,11 @@ const checkRow = (
 			tableCell(h, [alertStatusBadge(h, state, { label })]),
 			tableCell(h, [
 				check.status === "error"
-					? truncatedText(
-							h,
-							{
-								text: check.errorMessage ?? "",
-								tooltip: "title",
-								className: cn("max-w-[320px] text-xs", TONE_TEXT.crit),
-							},
-							[check.errorMessage ?? "Evaluation failed"],
-						)
+					? truncatedText(h, {
+							text: check.errorMessage ?? "",
+							tooltip: "title",
+							className: cn("max-w-[320px] text-xs", TONE_TEXT.crit),
+						}, [check.errorMessage ?? "Evaluation failed"])
 					: check.observedValue == null
 						? h.span([h.Class("text-muted-foreground")], [EMPTY_VALUE])
 						: h.div(
@@ -381,10 +315,7 @@ const checkRow = (
 									h.span(
 										[
 											h.Class(
-												cn(
-													"font-mono font-medium tabular-nums",
-													check.status === "breached" && "text-severity-error",
-												),
+												cn("font-mono font-medium tabular-nums", check.status === "breached" && "text-severity-error"),
 											),
 										],
 										[formatSignalValue(rule.signalType, check.observedValue)],
@@ -393,13 +324,7 @@ const checkRow = (
 										[h.Class("font-mono text-xs text-muted-foreground/60 tabular-nums")],
 										["/", " ", formatSignalValue(rule.signalType, check.threshold)],
 									),
-									...checkDelta(
-										h,
-										rule,
-										check.observedValue,
-										check.threshold,
-										check.status === "breached",
-									),
+									...checkDelta(h, rule, check.observedValue, check.threshold, check.status === "breached"),
 								],
 							),
 			]),
@@ -417,10 +342,7 @@ const checkRow = (
 							h,
 							[
 								h.span(
-									[
-										h.Class("block max-w-[180px] truncate"),
-										h.Title(check.groupKey || "all"),
-									],
+									[h.Class("block max-w-[180px] truncate"), h.Title(check.groupKey || "all")],
 									[check.groupKey || "all"],
 								),
 							],
@@ -436,9 +358,6 @@ const checkRow = (
 						]),
 			]),
 		],
-		cn(
-			check.status === "breached" && "bg-severity-error/[0.04]",
-			check.status === "error" && "bg-severity-warn/[0.05]",
-		),
+		cn(check.status === "breached" && "bg-severity-error/[0.04]", check.status === "error" && "bg-severity-warn/[0.05]"),
 	)
 }

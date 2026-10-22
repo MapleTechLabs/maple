@@ -54,10 +54,7 @@ describe("code review analytics", () => {
 	})
 
 	test("after a Reload an author pick reads under the kept window; only a new preset re-resolves", () => {
-		const reloaded = pageUpdate(
-			answered(windowed().model, 3, ["ada-l"]),
-			frame(FrameMessage.ClickedReload()),
-		).model
+		const reloaded = pageUpdate(answered(windowed().model, 3, ["ada-l"]), frame(FrameMessage.ClickedReload())).model
 		const filtered = navigated(reloaded, { author: "ada-l" })
 		expect(names(filtered.commands)).toEqual(["FetchCodeReviewAnalytics"])
 		const moved = navigated(filtered.model, { author: "ada-l", timePreset: "1h" })

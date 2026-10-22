@@ -11,10 +11,7 @@ import { LocalLog } from "../kit/log-sheet/model"
 
 export { LocalLog } from "../kit/log-sheet/model"
 
-export const LogPages = Schema.Struct({
-	pages: Schema.Array(Schema.Array(LocalLog)),
-	hasNextPage: Schema.Boolean,
-})
+export const LogPages = Schema.Struct({ pages: Schema.Array(Schema.Array(LocalLog)), hasNextPage: Schema.Boolean })
 export type LogPages = typeof LogPages.Type
 
 export const FacetOption = Schema.Struct({ name: Schema.String, count: Schema.Number })

@@ -12,8 +12,7 @@ import { Message } from "./setup-checklist"
 export const ReadSetupState = Command.define("ReadSetupChecklistState", {
 	args: { storageKey: Schema.String },
 	messages: [Message.ReadState],
-	execute: ({ storageKey }) =>
-		Effect.map(readQuickStartState(storageKey), (state) => Message.ReadState({ state })),
+	execute: ({ storageKey }) => Effect.map(readQuickStartState(storageKey), (state) => Message.ReadState({ state })),
 })
 
 export const SaveSetupState = Command.define("SaveSetupChecklistState", {
@@ -27,9 +26,7 @@ export const SaveSetupState = Command.define("SaveSetupChecklistState", {
 export const FetchSetupKeys = Command.define("FetchSetupChecklistKeys", {
 	messages: [Message.SucceededLoadKeys, Message.FailedLoadKeys],
 	execute: Effect.flatMap(MapleApiV2Client, (client) => client.ingestKeys.retrieve()).pipe(
-		Effect.map((keys) =>
-			Message.SucceededLoadKeys({ publicKey: keys.public_key, privateKey: keys.private_key }),
-		),
+		Effect.map((keys) => Message.SucceededLoadKeys({ publicKey: keys.public_key, privateKey: keys.private_key })),
 		Effect.orElseSucceed(() => Message.FailedLoadKeys()),
 	),
 })

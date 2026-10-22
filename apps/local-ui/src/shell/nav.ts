@@ -3,15 +3,7 @@ import { AppRoute } from "../route"
 
 // The sidebar nav: grouped and iconed like apps/web's sidebar.
 
-export type Section =
-	| "traces"
-	| "logs"
-	| "metrics"
-	| "services"
-	| "service-map"
-	| "errors"
-	| "sessions"
-	| "query"
+export type Section = "traces" | "logs" | "metrics" | "services" | "service-map" | "errors" | "sessions" | "query"
 
 export interface NavItem {
 	readonly section: Section

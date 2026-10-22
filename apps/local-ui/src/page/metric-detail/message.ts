@@ -10,26 +10,14 @@ import { BreakdownRow, SeriesPoint } from "./fetch"
 
 export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number },
-	SucceededFetchEntry: {
-		key: Schema.String,
-		entry: Schema.NullOr(MetricEntry),
-		fetchedAtMs: Schema.Number,
-	},
+	SucceededFetchEntry: { key: Schema.String, entry: Schema.NullOr(MetricEntry), fetchedAtMs: Schema.Number },
 	FailedFetchEntry: { key: Schema.String, failure: LoadFailure },
 	/** The result cache answered first; `request` is the read the fetch then repeats. */
 	FoundCachedEntry: { request: EntryRequest, cached: CachedOf(Schema.NullOr(MetricEntry)) },
-	SucceededFetchTimeseries: {
-		key: Schema.String,
-		points: Schema.Array(SeriesPoint),
-		fetchedAtMs: Schema.Number,
-	},
+	SucceededFetchTimeseries: { key: Schema.String, points: Schema.Array(SeriesPoint), fetchedAtMs: Schema.Number },
 	FailedFetchTimeseries: { key: Schema.String, failure: LoadFailure },
 	FoundCachedTimeseries: { request: TimeseriesRequest, cached: CachedOf(Schema.Array(SeriesPoint)) },
-	SucceededFetchBreakdown: {
-		key: Schema.String,
-		rows: Schema.Array(BreakdownRow),
-		fetchedAtMs: Schema.Number,
-	},
+	SucceededFetchBreakdown: { key: Schema.String, rows: Schema.Array(BreakdownRow), fetchedAtMs: Schema.Number },
 	FailedFetchBreakdown: { key: Schema.String, failure: LoadFailure },
 	FoundCachedBreakdown: { request: BreakdownRequest, cached: CachedOf(Schema.Array(BreakdownRow)) },
 	ClickedBack: {},

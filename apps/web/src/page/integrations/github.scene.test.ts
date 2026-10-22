@@ -109,17 +109,11 @@ describe("github card", () => {
 		const base = init({ search: { integration: "github" } }, context).model
 		const model = pageUpdate(
 			base,
-			Message.CompletedLoadGithub({
-				key: base.statuses.github.key ?? "",
-				result: Result.succeed(twoRepos),
-			}),
+			Message.CompletedLoadGithub({ key: base.statuses.github.key ?? "", result: Result.succeed(twoRepos) }),
 		).model
 		const otherId = twoRepos.repositories[1]?.id ?? repoId
 		const confirm = (from: Model, id: typeof repoId) =>
-			pageUpdate(
-				pageUpdate(from, Message.ClickedBranch({ repoId: id, branch: "release" })).model,
-				Message.ConfirmedBranch(),
-			)
+			pageUpdate(pageUpdate(from, Message.ClickedBranch({ repoId: id, branch: "release" })).model, Message.ConfirmedBranch())
 		const savingFirst = confirm(model, repoId)
 		const savingBoth = confirm(savingFirst.model, otherId)
 		expect(names(savingBoth.commands)).toContain("SetGithubTrackedBranch")

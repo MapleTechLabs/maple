@@ -20,11 +20,7 @@ export const Totals = Schema.Struct({
 })
 export type Totals = typeof Totals.Type
 
-export const ConnectionDraft = Schema.Struct({
-	url: Schema.String,
-	user: Schema.String,
-	database: Schema.String,
-})
+export const ConnectionDraft = Schema.Struct({ url: Schema.String, user: Schema.String, database: Schema.String })
 export type ConnectionDraft = typeof ConnectionDraft.Type
 
 export const ConnectionField = Schema.Literals(["url", "user", "database"])

@@ -58,11 +58,7 @@ export type StatusBadgeOptions = Readonly<{
 	className?: string
 }>
 
-export const sourceStatusBadge = <M>(
-	h: HtmlBuilder<M>,
-	source: V2Source,
-	options: StatusBadgeOptions,
-): Html => {
+export const sourceStatusBadge = <M>(h: HtmlBuilder<M>, source: V2Source, options: StatusBadgeOptions): Html => {
 	const { status, last_data_at: lastDataAt } = source.health
 	const time =
 		(options.showTime ?? true) && status === "healthy" && lastDataAt !== null
@@ -79,9 +75,7 @@ export const sourceStatusBadge = <M>(
 				[
 					LABEL[status],
 					...(time === null ? [] : [h.span([h.Class("text-muted-foreground")], [" ", "· ", time])]),
-					...(rollup === null
-						? []
-						: [h.span([h.Class("text-muted-foreground")], [" ", "· ", rollup])]),
+					...(rollup === null ? [] : [h.span([h.Class("text-muted-foreground")], [" ", "· ", rollup])]),
 				],
 			),
 		],

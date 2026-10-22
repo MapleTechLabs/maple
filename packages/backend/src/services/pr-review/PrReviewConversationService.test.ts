@@ -144,7 +144,12 @@ const layerFor = (
 			abort: async () => undefined,
 		})),
 	)
-	const base = Layer.mergeAll(testRepoLayer(testDb), registry, testDb.layer, workerEnv)
+	const base = Layer.mergeAll(
+		testRepoLayer(testDb),
+		registry,
+		testDb.layer,
+		workerEnv,
+	)
 	return Layer.effect(PrReviewConversationService, PrReviewConversationService.make).pipe(
 		Layer.provideMerge(Layer.effect(PrReviewService, PrReviewService.make)),
 		Layer.provideMerge(base),

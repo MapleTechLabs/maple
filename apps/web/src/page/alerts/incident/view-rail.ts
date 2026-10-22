@@ -56,28 +56,17 @@ const groupsSection = <M>(
 				return h.li(
 					[h.Key(row.group_key), h.Class("flex items-center gap-2 text-sm")],
 					[
-						statusDot(h, {
-							tone: breached ? "crit" : row.last_status == null ? "neutral" : "ok",
-						}),
+						statusDot(h, { tone: breached ? "crit" : row.last_status == null ? "neutral" : "ok" }),
 						open != null && !current
 							? h.a(
-									[
-										h.Href(incidentHref(open.id)),
-										h.Class("min-w-0 flex-1 truncate hover:underline"),
-									],
+									[h.Href(incidentHref(open.id)), h.Class("min-w-0 flex-1 truncate hover:underline")],
 									[row.group_key],
 								)
-							: h.span(
-									[h.Class(cn("min-w-0 flex-1 truncate", current && "font-medium"))],
-									[row.group_key],
-								),
+							: h.span([h.Class(cn("min-w-0 flex-1 truncate", current && "font-medium"))], [row.group_key]),
 						h.span(
 							[
 								h.Class(
-									cn(
-										"font-mono text-xs tabular-nums",
-										breached ? "text-severity-error" : "text-muted-foreground",
-									),
+									cn("font-mono text-xs tabular-nums", breached ? "text-severity-error" : "text-muted-foreground"),
 								),
 							],
 							[formatSignalValue(rule.signalType, row.last_value)],
@@ -87,12 +76,7 @@ const groupsSection = <M>(
 			}),
 		),
 		...(rows.length > GROUP_ROW_LIMIT
-			? [
-					h.p(
-						[h.Class("text-muted-foreground text-xs")],
-						[String(rows.length - GROUP_ROW_LIMIT), " more groups"],
-					),
-				]
+			? [h.p([h.Class("text-muted-foreground text-xs")], [String(rows.length - GROUP_ROW_LIMIT), " more groups"])]
 			: []),
 	])
 }
@@ -100,10 +84,7 @@ const groupsSection = <M>(
 const evidenceLink = <M>(h: HtmlBuilder<M>, detail: string, link: Html): Html =>
 	h.li([h.Class("space-y-0.5")], [link, h.p([h.Class("text-muted-foreground text-xs")], [detail])])
 
-const incidentServices = (
-	rule: AlertRuleDocument | null,
-	incident: AlertIncidentDocument,
-): ReadonlyArray<string> => {
+const incidentServices = (rule: AlertRuleDocument | null, incident: AlertIncidentDocument): ReadonlyArray<string> => {
 	const group = incidentGroup(incident)
 	if (group != null && rule?.groupBy?.length === 1 && rule.groupBy[0] === "service.name") return [group]
 	return rule?.serviceNames ?? []
@@ -116,10 +97,7 @@ const evidenceSection = <M>(
 	window: Readonly<{ start: number; end: number }>,
 ): Html => {
 	const services = incidentServices(rule, incident)
-	const range = {
-		startTime: formatWarehouseDateTime(window.start),
-		endTime: formatWarehouseDateTime(window.end),
-	}
+	const range = { startTime: formatWarehouseDateTime(window.start), endTime: formatWarehouseDateTime(window.end) }
 	const scope = services.length > 0 ? services.join(", ") : "all services"
 	const servicesSearch = services.length > 0 ? [...services] : undefined
 	return railSection(h, ["Evidence"], null, [
@@ -133,14 +111,7 @@ const evidenceSection = <M>(
 								"The error issue behind this alert",
 								h.a(
 									[
-										h.Href(
-											hrefOf(
-												AppRoute.ErrorIssue({
-													issueId: incident.errorIssueId,
-													search: {},
-												}),
-											),
-										),
+										h.Href(hrefOf(AppRoute.ErrorIssue({ issueId: incident.errorIssueId, search: {} }))),
 										h.Class("hover:underline"),
 									],
 									["Linked error issue"],
@@ -205,10 +176,7 @@ const ruleSection = <M>(
 	return railSection(
 		h,
 		["Rule"],
-		h.a(
-			[h.Href(createHref({ ruleId: rule.id })), h.Class("text-primary text-xs hover:underline")],
-			["Edit rule"],
-		),
+		h.a([h.Href(createHref({ ruleId: rule.id })), h.Class("text-primary text-xs hover:underline")], ["Edit rule"]),
 		[
 			h.div(
 				[h.Class("space-y-2")],

@@ -31,10 +31,7 @@ export const offsetPager = <M>(
 	const page = Math.floor(options.offset / options.pageSize) + 1
 	const pages = Math.max(1, Math.ceil(options.total / options.pageSize))
 	return h.div(
-		[
-			h.Class(cn(listFooterStyles, listFooterStartStyles, "px-0 py-1")),
-			h.DataAttribute("slot", "list-footer"),
-		],
+		[h.Class(cn(listFooterStyles, listFooterStartStyles, "px-0 py-1")), h.DataAttribute("slot", "list-footer")],
 		[
 			h.span([], [pageRangeLabel(options.offset, options.shown, options.total, options.noun)]),
 			h.div(
@@ -53,12 +50,7 @@ export const offsetPager = <M>(
 					),
 					button(
 						h,
-						{
-							variant: "outline",
-							size: "sm",
-							isDisabled: !hasNext,
-							attributes: [h.OnClick(options.onPage(1))],
-						},
+						{ variant: "outline", size: "sm", isDisabled: !hasNext, attributes: [h.OnClick(options.onPage(1))] },
 						["Next"],
 					),
 				],

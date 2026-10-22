@@ -63,3 +63,4 @@ export type UIMessage = typeof UIMessage.Type
 /** Composer status (`ChatStatus`). */
 export const ChatStatus = Schema.Literals(["submitted", "streaming", "ready", "error"])
 export type ChatStatus = typeof ChatStatus.Type
+

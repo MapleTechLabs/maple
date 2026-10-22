@@ -93,10 +93,7 @@ export const traceCollapsible = <M>(
 								h.DataAttribute("open", ""),
 								h.DataAttribute("slot", "trace-collapsible-content"),
 								h.Id(options.panelId),
-								h.Style({
-									"--collapsible-panel-height": "auto",
-									"--collapsible-panel-width": "auto",
-								}),
+								h.Style({ "--collapsible-panel-height": "auto", "--collapsible-panel-width": "auto" }),
 							],
 							[
 								h.div(
@@ -110,7 +107,7 @@ export const traceCollapsible = <M>(
 		],
 	)
 
-export const traceDescription = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
+export const traceDescription =<M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	h.span(
 		[h.DataAttribute("slot", "trace-description"), h.Class(cn(traceDescriptionStyles, className))],
 		children,

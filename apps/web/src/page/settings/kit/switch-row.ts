@@ -19,19 +19,11 @@ export type SwitchRowOptions<M> = Readonly<{
 	before?: ReadonlyArray<Html>
 }>
 
-export const switchRow = <M>(
-	h: HtmlBuilder<M>,
-	options: SwitchRowOptions<M>,
-	children: ReadonlyArray<Html> = [],
-): Html =>
+export const switchRow = <M>(h: HtmlBuilder<M>, options: SwitchRowOptions<M>, children: ReadonlyArray<Html> = []): Html =>
 	settingRow(
 		h,
 		{
-			ids: {
-				control: `${options.id}-input`,
-				label: `${options.id}-label`,
-				description: `${options.id}-description`,
-			},
+			ids: { control: `${options.id}-input`, label: `${options.id}-label`, description: `${options.id}-description` },
 			label: options.label,
 			...(options.description !== undefined && { description: options.description }),
 			...(options.className !== undefined && { className: options.className }),

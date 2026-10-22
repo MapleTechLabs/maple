@@ -29,14 +29,7 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-export const FormField = Schema.Literals([
-	"name",
-	"label",
-	"defaultValue",
-	"options",
-	"attributeKey",
-	"metricNames",
-])
+export const FormField = Schema.Literals(["name", "label", "defaultValue", "options", "attributeKey", "metricNames"])
 export type FormField = typeof FormField.Type
 
 export const Message = defineMessageUnion({

@@ -34,28 +34,18 @@ export const InvitationRow = Schema.Struct({
 export type InvitationRow = typeof InvitationRow.Type
 
 /** One page of a Clerk paginated list and the list's total. */
-const PageOf = <S extends Schema.Top>(row: S) =>
-	Schema.Struct({ rows: Schema.Array(row), total: Schema.Number })
+const PageOf = <S extends Schema.Top>(row: S) => Schema.Struct({ rows: Schema.Array(row), total: Schema.Number })
 export const MembersPage = PageOf(MemberRow)
 export const InvitationsPage = PageOf(InvitationRow)
 
 /** `useOrganization({ memberships: { infinite: true } })`: the pages loaded so far, flattened. */
 const ListOf = <S extends Schema.Top>(row: S) =>
-	Schema.Struct({
-		rows: Schema.Array(row),
-		total: Schema.Number,
-		page: Schema.Number,
-		isFetchingMore: Schema.Boolean,
-	})
+	Schema.Struct({ rows: Schema.Array(row), total: Schema.Number, page: Schema.Number, isFetchingMore: Schema.Boolean })
 export const MembersData = AsyncData.Schema(ListOf(MemberRow), LoadFailure)
 export const InvitationsData = AsyncData.Schema(ListOf(InvitationRow), LoadFailure)
 
 /** A role change waiting on the inline confirm strip under the member's row. */
-export const PendingRoleChange = Schema.Struct({
-	memberId: Schema.String,
-	name: Schema.String,
-	next: OrgRole,
-})
+export const PendingRoleChange = Schema.Struct({ memberId: Schema.String, name: Schema.String, next: OrgRole })
 
 export const Model = Schema.Struct({
 	isAdmin: Schema.Boolean,
@@ -91,11 +81,7 @@ const done = <A extends Schema.Top>(schema: A) => ({ result: Schema.Result(schem
 export const Message = defineMessageUnion({
 	CompletedFetchOrganization: { name: Schema.NullOr(Schema.String) },
 	CompletedFetchAdminName: { name: Schema.NullOr(Schema.String) },
-	CompletedFetchMembers: {
-		page: Schema.Number,
-		generation: Schema.Number,
-		result: Schema.Result(MembersPage, LoadFailure),
-	},
+	CompletedFetchMembers: { page: Schema.Number, generation: Schema.Number, result: Schema.Result(MembersPage, LoadFailure) },
 	CompletedFetchInvitations: {
 		page: Schema.Number,
 		generation: Schema.Number,
@@ -121,11 +107,6 @@ export const Message = defineMessageUnion({
 	ClickedConfirmRevoke: {},
 	CompletedRevoke: { email: Schema.String, ...done(Schema.Void) },
 	/** `revoked` false: the old invitation still stands; true: it is gone and the new one may not be. */
-	CompletedResend: {
-		id: Schema.String,
-		email: Schema.String,
-		isRevoked: Schema.Boolean,
-		...done(Schema.Void),
-	},
+	CompletedResend: { id: Schema.String, email: Schema.String, isRevoked: Schema.Boolean, ...done(Schema.Void) },
 })
 export type Message = typeof Message.Type

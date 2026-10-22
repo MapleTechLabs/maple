@@ -5,11 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 export const noEdgesNotice = <M>(h: HtmlBuilder<M>): Html => {
 	const strong = (text: string) => h.span([h.Class("font-medium text-foreground")], [text])
 	return h.div(
-		[
-			h.Class(
-				"flex shrink-0 items-start gap-2 border-b bg-muted/30 px-4 py-2 text-xs text-muted-foreground",
-			),
-		],
+		[h.Class("flex shrink-0 items-start gap-2 border-b bg-muted/30 px-4 py-2 text-xs text-muted-foreground")],
 		[
 			icon(h, "CircleInfoIcon", { size: 14, className: "mt-px shrink-0" }),
 			h.p(

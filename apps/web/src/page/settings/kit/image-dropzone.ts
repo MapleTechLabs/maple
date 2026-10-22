@@ -56,12 +56,7 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 		[
 			button(
 				h,
-				{
-					variant: "outline",
-					size: "sm",
-					isLoading: options.isUploading,
-					attributes: [h.OnClick(options.onPick)],
-				},
+				{ variant: "outline", size: "sm", isLoading: options.isUploading, attributes: [h.OnClick(options.onPick)] },
 				[icon(h, "UploadIcon", { className: "mr-1.5" }), options.changeLabel],
 			),
 			...(options.onRemove === undefined
@@ -109,9 +104,7 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 						? [
 								h.OnClick(options.onPick),
 								h.OnKeyDownPreventDefault((key) =>
-									key === "Enter" || key === " "
-										? Option.some(options.onPick)
-										: Option.none(),
+									key === "Enter" || key === " " ? Option.some(options.onPick) : Option.none(),
 								),
 								h.OnDragOver(options.onDragOver),
 								h.OnDragLeave(options.onDragLeave),
@@ -141,10 +134,7 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 				: [
 						h.div(
 							[h.Class("min-w-0 flex-1 space-y-1")],
-							[
-								h.div([h.Class("text-sm font-medium text-foreground")], [options.title]),
-								...hintLine,
-							],
+							[h.div([h.Class("text-sm font-medium text-foreground")], [options.title]), ...hintLine],
 						),
 						...(isReadOnly ? [] : [actions]),
 					]),

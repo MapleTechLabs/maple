@@ -23,10 +23,7 @@ export const Message = defineMessageUnion({
 	ClickedConnect: { provider: ProviderId },
 	ClickedRetry: { provider: ProviderId, accountId: Schema.String },
 	/** `null` redirect: the provider gave no consent URL. */
-	CompletedStart: {
-		provider: ProviderId,
-		result: Schema.Result(Schema.NullOr(Schema.String), Schema.String),
-	},
+	CompletedStart: { provider: ProviderId, result: Schema.Result(Schema.NullOr(Schema.String), Schema.String) },
 	CompletedRedirect: {},
 	ClickedDisconnect: { provider: ProviderId, accountId: Schema.String },
 	GotRemoveDialogMessage: { message: Dialog.Message },

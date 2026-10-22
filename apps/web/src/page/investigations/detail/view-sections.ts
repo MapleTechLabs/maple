@@ -1,13 +1,5 @@
 import type { V2Investigation } from "@maple/domain/http/v2"
-import {
-	countLabel,
-	EMPTY_VALUE,
-	formatDuration,
-	formatErrorRate,
-	formatLatency,
-	formatNumber,
-	pluralize,
-} from "@maple/ui/lib/format"
+import { countLabel, EMPTY_VALUE, formatDuration, formatErrorRate, formatLatency, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { toEpochMs } from "@maple/ui/lib/time-format"
@@ -24,14 +16,7 @@ import { skeleton } from "../../../ui/skeleton"
 import { serviceDot } from "../../../ui/values"
 import { sectionHeading } from "../../kit/section-heading"
 import { ORIGIN } from "../kit"
-import {
-	busiestRowOf,
-	type ChipPlace,
-	servicesTouched,
-	signalServiceOf,
-	signalWindowOf,
-	traceTipId,
-} from "./derive"
+import { busiestRowOf, type ChipPlace, servicesTouched, signalServiceOf, signalWindowOf, traceTipId } from "./derive"
 import { Message } from "./message"
 import type { Escalation, LogBucket, Model, OverviewRow, TracesRow } from "./model"
 
@@ -53,10 +38,7 @@ const STRIP = [
 ].join(" ")
 
 const factLane = (h: H, label: string, children: ReadonlyArray<Html>): Html =>
-	h.div(
-		[h.Class("flex min-w-0 flex-col gap-1.5")],
-		[eyebrow(h, {}, [label]), h.div([h.Class("min-w-0 text-sm")], children)],
-	)
+	h.div([h.Class("flex min-w-0 flex-col gap-1.5")], [eyebrow(h, {}, [label]), h.div([h.Class("min-w-0 text-sm")], children)])
 
 const incidentWindow = (snapshot: V2Investigation["snapshot"], timeZone: string): string => {
 	const startedAt = snapshot.incidentStartedAt
@@ -92,20 +74,14 @@ export const impactStrip = (h: H, investigation: V2Investigation, timeZone: stri
 					: h.span(
 							[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1.5")],
 							services.map((service) =>
-								h.keyed("span")(
-									service,
-									[h.Class("flex items-center gap-1.5")],
-									[
-										serviceDot(h, { serviceName: service, size: "sm" }),
-										h.span([h.Class("text-foreground")], [service]),
-									],
-								),
+								h.keyed("span")(service, [h.Class("flex items-center gap-1.5")], [
+									serviceDot(h, { serviceName: service, size: "sm" }),
+									h.span([h.Class("text-foreground")], [service]),
+								]),
 							),
 						),
 			]),
-			factLane(h, "Incident window", [
-				h.span([h.Class("text-foreground tabular-nums")], [incidentWindow(snapshot, timeZone)]),
-			]),
+			factLane(h, "Incident window", [h.span([h.Class("text-foreground tabular-nums")], [incidentWindow(snapshot, timeZone)])]),
 			...(occurrences != null && Number.isFinite(occurrences)
 				? [
 						factLane(h, "Blast radius", [
@@ -114,10 +90,7 @@ export const impactStrip = (h: H, investigation: V2Investigation, timeZone: stri
 								[
 									h.span([h.Class("tabular-nums")], [formatNumber(occurrences)]),
 									" ",
-									h.span(
-										[h.Class("text-muted-foreground")],
-										[pluralize(occurrences, "event")],
-									),
+									h.span([h.Class("text-muted-foreground")], [pluralize(occurrences, "event")]),
 								],
 							),
 						]),
@@ -139,25 +112,14 @@ const figure = (h: H, value: string, unit: string, tone?: string): Html =>
 	)
 
 const rowSkeleton = (h: H, label: string, height: string): Html =>
-	h.div(
-		[h.Class("flex items-center gap-4")],
-		[rowLabel(h, label), skeleton(h, cn("flex-1 rounded-md", height))],
-	)
+	h.div([h.Class("flex items-center gap-4")], [rowLabel(h, label), skeleton(h, cn("flex-1 rounded-md", height))])
 
 const rowNote = (h: H, label: string, note: string): Html =>
-	h.div(
-		[h.Class("flex items-baseline gap-4")],
-		[rowLabel(h, label), h.span([h.Class("text-sm text-muted-foreground")], [note])],
-	)
+	h.div([h.Class("flex items-baseline gap-4")], [rowLabel(h, label), h.span([h.Class("text-sm text-muted-foreground")], [note])])
 
 const segment = (h: H, share: number, color: string): ReadonlyArray<Html> =>
 	Number.isFinite(share) && share >= 0.005
-		? [
-				h.span([
-					h.Class("w-full shrink-0"),
-					h.Style({ height: `${Math.min(100, share * 100)}%`, "background-color": color }),
-				]),
-			]
+		? [h.span([h.Class("w-full shrink-0"), h.Style({ height: `${Math.min(100, share * 100)}%`, "background-color": color })])]
 		: []
 
 const logsRow = (h: H, points: ReadonlyArray<typeof LogBucket.Type>): Html => {
@@ -174,11 +136,7 @@ const logsRow = (h: H, points: ReadonlyArray<typeof LogBucket.Type>): Html => {
 		return { bucket: point.bucket, total, errors, warnings }
 	})
 	const totals = bars.reduce(
-		(sum, bar) => ({
-			lines: sum.lines + bar.total,
-			errors: sum.errors + bar.errors,
-			warnings: sum.warnings + bar.warnings,
-		}),
+		(sum, bar) => ({ lines: sum.lines + bar.total, errors: sum.errors + bar.errors, warnings: sum.warnings + bar.warnings }),
 		{ lines: 0, errors: 0, warnings: 0 },
 	)
 	const peak = Math.max(...bars.map((bar) => bar.total), 1)
@@ -190,18 +148,8 @@ const logsRow = (h: H, points: ReadonlyArray<typeof LogBucket.Type>): Html => {
 				[
 					rowLabel(h, "Logs"),
 					figure(h, formatNumber(totals.lines), "lines"),
-					figure(
-						h,
-						formatNumber(totals.errors),
-						"errors",
-						totals.errors > 0 ? "text-severity-error" : undefined,
-					),
-					figure(
-						h,
-						formatNumber(totals.warnings),
-						"warnings",
-						totals.warnings > 0 ? "text-severity-warn" : undefined,
-					),
+					figure(h, formatNumber(totals.errors), "errors", totals.errors > 0 ? "text-severity-error" : undefined),
+					figure(h, formatNumber(totals.warnings), "warnings", totals.warnings > 0 ? "text-severity-warn" : undefined),
 				],
 			),
 			h.div(
@@ -210,21 +158,14 @@ const logsRow = (h: H, points: ReadonlyArray<typeof LogBucket.Type>): Html => {
 					h.keyed("span")(
 						bar.bucket,
 						[
-							h.Title(
-								`${formatNumber(bar.total)} lines${bar.errors ? ` · ${formatNumber(bar.errors)} errors` : ""}`,
-							),
+							h.Title(`${formatNumber(bar.total)} lines${bar.errors ? ` · ${formatNumber(bar.errors)} errors` : ""}`),
 							h.Class("flex min-w-0 flex-1 flex-col justify-end overflow-hidden rounded-[1px]"),
-							h.Style({
-								height: `${bar.total === 0 ? 0 : Math.max(6, (bar.total / peak) * 100)}%`,
-							}),
+							h.Style({ height: `${bar.total === 0 ? 0 : Math.max(6, (bar.total / peak) * 100)}%` }),
 						],
 						[
 							...segment(h, bar.errors / bar.total, SEVERITY_COLORS.ERROR ?? ""),
 							...segment(h, bar.warnings / bar.total, SEVERITY_COLORS.WARN ?? ""),
-							h.span([
-								h.Class("flex-1"),
-								h.Style({ "background-color": SEVERITY_COLORS.INFO ?? "" }),
-							]),
+							h.span([h.Class("flex-1"), h.Style({ "background-color": SEVERITY_COLORS.INFO ?? "" })]),
 						],
 					),
 				),
@@ -256,16 +197,9 @@ export const signalsCard = (h: H, model: Model, investigation: V2Investigation):
 						rowLabel(h, "Traces"),
 						figure(h, formatNumber(row.spanCount), "spans"),
 						figure(h, formatLatency(row.p95LatencyMs), "p95"),
-						figure(
-							h,
-							formatErrorRate(row.errorRate),
-							"error rate",
-							row.errorRate > 0 ? "text-severity-error" : undefined,
-						),
+						figure(h, formatErrorRate(row.errorRate), "error rate", row.errorRate > 0 ? "text-severity-error" : undefined),
 						h.span([h.Class("flex-1")]),
-						link(h, "/traces", "shrink-0 text-xs text-primary hover:underline", [
-							"View traces →",
-						]),
+						link(h, "/traces", "shrink-0 text-xs text-primary hover:underline", ["View traces →"]),
 					],
 				)
 	const traces = AsyncData.match(model.traces.data, {
@@ -281,22 +215,11 @@ export const signalsCard = (h: H, model: Model, investigation: V2Investigation):
 			[h.Class("flex items-center gap-2")],
 			[
 				serviceDot(h, { serviceName: service }),
-				h.span(
-					[h.Class("min-w-0 truncate font-mono text-sm text-foreground"), h.Title(service)],
-					[service],
-				),
+				h.span([h.Class("min-w-0 truncate font-mono text-sm text-foreground"), h.Title(service)], [service]),
 				window.label
-					? h.span(
-							[h.Class("min-w-0 flex-1 truncate text-xs text-muted-foreground")],
-							["· ", window.label],
-						)
+					? h.span([h.Class("min-w-0 flex-1 truncate text-xs text-muted-foreground")], ["· ", window.label])
 					: h.span([h.Class("flex-1")]),
-				link(
-					h,
-					`/services/${encodeURIComponent(service)}`,
-					"shrink-0 text-xs text-primary hover:underline",
-					["Open service →"],
-				),
+				link(h, `/services/${encodeURIComponent(service)}`, "shrink-0 text-xs text-primary hover:underline", ["Open service →"]),
 			],
 		),
 		logs,
@@ -334,17 +257,11 @@ const escalationPair = (h: H, attempt: typeof Escalation.Type | null): ReadonlyA
 			h.span(
 				[
 					h.Class(attempt.status === "failed" ? "text-severity-error" : "text-foreground"),
-					h.Title(
-						attempt.destinations
-							.map((destination) => `${destination.name}: ${destination.status}`)
-							.join("\n"),
-					),
+					h.Title(attempt.destinations.map((destination) => `${destination.name}: ${destination.status}`).join("\n")),
 				],
 				[
 					ESCALATION_LABEL[attempt.status],
-					attempt.destinations.length > 0
-						? ` · ${countLabel(attempt.destinations.length, "destination")}`
-						: "",
+					attempt.destinations.length > 0 ? ` · ${countLabel(attempt.destinations.length, "destination")}` : "",
 					failedCount > 0 ? ` · ${failedCount} failed` : "",
 				],
 			),
@@ -355,15 +272,7 @@ const escalationPair = (h: H, attempt: typeof Escalation.Type | null): ReadonlyA
 const referenceLink = (h: H, label: string, url: string): Html =>
 	url.startsWith("/")
 		? link(h, url, "truncate text-primary hover:underline", [label])
-		: h.a(
-				[
-					h.Href(url),
-					h.Attribute("rel", "noreferrer"),
-					h.Attribute("target", "_blank"),
-					h.Class("truncate text-primary hover:underline"),
-				],
-				[label],
-			)
+		: h.a([h.Href(url), h.Attribute("rel", "noreferrer"), h.Attribute("target", "_blank"), h.Class("truncate text-primary hover:underline")], [label])
 
 /** `InvestigationMeta`: the audit trail under the finding. */
 export const investigationMeta = (h: H, model: Model, investigation: V2Investigation): Html => {
@@ -375,10 +284,7 @@ export const investigationMeta = (h: H, model: Model, investigation: V2Investiga
 		input === null && output === null
 			? null
 			: `${input === null ? EMPTY_VALUE : formatNumber(input)} in · ${output === null ? EMPTY_VALUE : formatNumber(output)} out`
-	const opened =
-		investigation.seeded_by === "system"
-			? "Opened automatically by Maple"
-			: "Opened by a member of your team"
+	const opened = investigation.seeded_by === "system" ? "Opened automatically by Maple" : "Opened by a member of your team"
 	return h.section(
 		[h.Class("flex shrink-0 flex-col gap-3 border-t pt-5")],
 		[
@@ -386,9 +292,7 @@ export const investigationMeta = (h: H, model: Model, investigation: V2Investiga
 			h.div(
 				[h.Class("flex flex-wrap items-baseline gap-x-8 gap-y-2.5 text-xs")],
 				[
-					pair(h, "Origin", [
-						h.span([h.Class("text-foreground")], [ORIGIN[investigation.seeded_by]]),
-					]),
+					pair(h, "Origin", [h.span([h.Class("text-foreground")], [ORIGIN[investigation.seeded_by]])]),
 					...(issueId
 						? [
 								pair(h, "Issue", [
@@ -396,9 +300,7 @@ export const investigationMeta = (h: H, model: Model, investigation: V2Investiga
 										[
 											h.Href(`/errors/issues/${issueId}`),
 											h.Title(issueId),
-											h.Class(
-												"max-w-60 truncate font-mono text-primary hover:underline",
-											),
+											h.Class("max-w-60 truncate font-mono text-primary hover:underline"),
 										],
 										[issueId],
 									),
@@ -406,28 +308,13 @@ export const investigationMeta = (h: H, model: Model, investigation: V2Investiga
 							]
 						: []),
 					...(subject.type === "incident"
-						? [
-								pair(h, "Incident", [
-									h.code(
-										[
-											h.Title(subject.incident_id),
-											h.Class("max-w-60 truncate font-mono"),
-										],
-										[subject.incident_id],
-									),
-								]),
-							]
+						? [pair(h, "Incident", [h.code([h.Title(subject.incident_id), h.Class("max-w-60 truncate font-mono")], [subject.incident_id])])]
 						: []),
-					...snapshot.references.map((reference) =>
-						pair(h, reference.label, [referenceLink(h, reference.label, reference.url)]),
-					),
+					...snapshot.references.map((reference) => pair(h, reference.label, [referenceLink(h, reference.label, reference.url)])),
 					...(issueId ? escalation(h, model) : []),
 				],
 			),
-			h.p(
-				[h.Class("text-2xs text-muted-foreground")],
-				[[investigation.model, tokens, opened].filter(Boolean).join(" · ")],
-			),
+			h.p([h.Class("text-2xs text-muted-foreground")], [[investigation.model, tokens, opened].filter(Boolean).join(" · ")]),
 		],
 	)
 }
@@ -449,10 +336,7 @@ export const followUpComposer = (h: H): Html =>
 				["Ask a follow-up — challenge the cause, widen the window, check another service…"],
 			),
 			h.span(
-				[
-					h.AriaHidden(true),
-					h.Class("flex size-6.5 shrink-0 items-center justify-center rounded-md bg-muted"),
-				],
+				[h.AriaHidden(true), h.Class("flex size-6.5 shrink-0 items-center justify-center rounded-md bg-muted")],
 				[icon(h, "ArrowUpIcon", { size: 12, className: "text-muted-foreground" })],
 			),
 		],
@@ -464,12 +348,7 @@ type EvidenceItem = NonNullable<V2Investigation["report"]>["evidence"][number]
 export type TipTrigger = (id: string) => ReadonlyArray<ChildAttribute>
 
 /** `EvidenceChips`: the traces (full id on a tooltip) and log patterns behind a finding. */
-export const evidenceChips = (
-	h: H,
-	item: EvidenceItem,
-	place: ChipPlace,
-	trigger: TipTrigger,
-): Html | null =>
+export const evidenceChips = (h: H, item: EvidenceItem, place: ChipPlace, trigger: TipTrigger): Html | null =>
 	item.traceIds.length === 0 && item.logPatterns.length === 0
 		? null
 		: h.div(
@@ -478,29 +357,16 @@ export const evidenceChips = (
 					...item.traceIds.map((traceId) =>
 						h.keyed("a")(
 							traceId,
+							[h.Href(`/traces/${traceId}`), h.Class("rounded"), ...trigger(traceTipId(place, traceId))],
 							[
-								h.Href(`/traces/${traceId}`),
-								h.Class("rounded"),
-								...trigger(traceTipId(place, traceId)),
-							],
-							[
-								inlineCode(
-									h,
-									{
-										className:
-											"px-1.5 py-0.5 text-2xs text-primary transition-colors hover:bg-muted/70",
-									},
-									[shortId(traceId, "generic", { ellipsis: true })],
-								),
+								inlineCode(h, { className: "px-1.5 py-0.5 text-2xs text-primary transition-colors hover:bg-muted/70" }, [
+									shortId(traceId, "generic", { ellipsis: true }),
+								]),
 							],
 						),
 					),
 					...item.logPatterns.map((pattern) =>
-						inlineCode(
-							h,
-							{ className: "bg-muted/60 px-1.5 py-0.5 text-2xs text-muted-foreground" },
-							[pattern],
-						),
+						inlineCode(h, { className: "bg-muted/60 px-1.5 py-0.5 text-2xs text-muted-foreground" }, [pattern]),
 					),
 				],
 			)
@@ -511,16 +377,9 @@ const causeRecap = (h: H, investigation: V2Investigation): ReadonlyArray<Html> =
 	return cause
 		? [
 				h.div(
+					[h.Class("flex shrink-0 items-baseline gap-3 overflow-hidden rounded-r-xl border bg-card py-3 pl-0 pr-5")],
 					[
-						h.Class(
-							"flex shrink-0 items-baseline gap-3 overflow-hidden rounded-r-xl border bg-card py-3 pl-0 pr-5",
-						),
-					],
-					[
-						h.span([
-							h.AriaHidden(true),
-							h.Class("h-full w-[3px] shrink-0 self-stretch bg-primary"),
-						]),
+						h.span([h.AriaHidden(true), h.Class("h-full w-[3px] shrink-0 self-stretch bg-primary")]),
 						eyebrow(h, { className: "shrink-0 pl-4 text-primary" }, ["Cause"]),
 						h.p([h.Class("min-w-0 flex-1 text-sm text-foreground")], [cause]),
 					],
@@ -529,8 +388,7 @@ const causeRecap = (h: H, investigation: V2Investigation): ReadonlyArray<Html> =
 		: []
 }
 
-const hasContent = (item: EvidenceItem) =>
-	item.note !== "" || item.traceIds.length > 0 || item.logPatterns.length > 0
+const hasContent = (item: EvidenceItem) => item.note !== "" || item.traceIds.length > 0 || item.logPatterns.length > 0
 
 /** `EvidenceTab`. */
 export const evidenceTab = (h: H, investigation: V2Investigation, trigger: TipTrigger): Html => {
@@ -570,24 +428,13 @@ export const evidenceTab = (h: H, investigation: V2Investigation, trigger: TipTr
 								[h.Class("flex items-start gap-4 border-b px-1 py-4")],
 								[
 									h.span(
-										[
-											h.Class(
-												"mt-0.5 w-5.5 shrink-0 font-mono text-xs font-medium text-muted-foreground tabular-nums",
-											),
-										],
+										[h.Class("mt-0.5 w-5.5 shrink-0 font-mono text-xs font-medium text-muted-foreground tabular-nums")],
 										[String(index + 1).padStart(2, "0")],
 									),
 									h.div(
 										[h.Class("flex min-w-0 flex-1 flex-col gap-2")],
 										[
-											...(item.note
-												? [
-														h.p(
-															[h.Class("text-sm leading-6 text-foreground")],
-															[item.note],
-														),
-													]
-												: []),
+											...(item.note ? [h.p([h.Class("text-sm leading-6 text-foreground")], [item.note])] : []),
 											...(chips === null ? [] : [chips]),
 										],
 									),

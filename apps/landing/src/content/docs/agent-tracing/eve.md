@@ -105,9 +105,9 @@ Keep the `auth` list your project already uses. A public channel sends its messa
 
 1. Copy the public ingest key (`maple_pk_…`) from **Settings → Ingestion** ([US](https://app.maple.dev/settings?tab=ingestion) or [EU](https://app.eu.maple.dev/settings?tab=ingestion)) and add it to `.env.local` in your project:
 
-    ```env
-    MAPLE_INGEST_KEY=maple_pk_...
-    ```
+   ```env
+   MAPLE_INGEST_KEY=maple_pk_...
+   ```
 
 2. Start the agent with `eve dev` and send it two messages, one of which uses a tool. eve sends the traces to Maple a few seconds after each reply.
 3. Open **Agent Sessions** in Maple ([US](https://app.maple.dev/agent-sessions) or [EU](https://app.eu.maple.dev/agent-sessions)).
@@ -131,23 +131,23 @@ Then:
 3. Add the two files from this guide.
 4. If the old file did more than send traces to Maple, move each part:
 
-| In the old `agent/instrumentation.ts`                 | After the upgrade                                                                                          |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Another exporter in `registerOTel({ traceExporter })` | Its own file with `otelIntegration({ traceExporter })`                                                     |
-| `serviceName`                                         | `service.name` in [`otel.ts`](#name-the-service)                                                           |
-| `functionId`                                          | `otel({ functionId })`                                                                                     |
-| `recordInputs`, `recordOutputs`                       | Not needed: message text depends on [whether the conversation is public](#show-message-text-in-production) |
-| `events["step.started"]` returning `runtimeContext`   | `otelIntegration({ runtimeContext })`                                                                      |
+| In the old `agent/instrumentation.ts` | After the upgrade |
+| --- | --- |
+| Another exporter in `registerOTel({ traceExporter })` | Its own file with `otelIntegration({ traceExporter })` |
+| `serviceName` | `service.name` in [`otel.ts`](#name-the-service) |
+| `functionId` | `otel({ functionId })` |
+| `recordInputs`, `recordOutputs` | Not needed: message text depends on [whether the conversation is public](#show-message-text-in-production) |
+| `events["step.started"]` returning `runtimeContext` | `otelIntegration({ runtimeContext })` |
 
 ## Troubleshooting
 
 - **Nothing arrives.** eve doesn't report failed exports, so check the key. The startup log must not say `MAPLE_INGEST_KEY is not set`. Then send this request with your key in place of `YOUR_INGEST_KEY`. `200` means the key works; `401` says what is wrong, including a key from the other region:
 
-    ```bash
-    curl -s -w "%{http_code}\n" -X POST https://ingest.maple.dev/v1/traces \
-      -H "Authorization: Bearer YOUR_INGEST_KEY" \
-      -H "Content-Type: application/json" -d '{"resourceSpans":[]}'
-    ```
+  ```bash
+  curl -s -w "%{http_code}\n" -X POST https://ingest.maple.dev/v1/traces \
+    -H "Authorization: Bearer YOUR_INGEST_KEY" \
+    -H "Content-Type: application/json" -d '{"resourceSpans":[]}'
+  ```
 
 - **Sessions have no message text.** The conversation isn't public. [Mark the channel public](#show-message-text-in-production). Setting a `tracePolicy` in `otel()` doesn't change this.
 - **Thousands of `workflow.*`, `world.*` and `step.*` spans.** The `exportPolicy` line is missing from `maple.ts`.

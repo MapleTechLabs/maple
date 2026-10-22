@@ -35,16 +35,10 @@ export const detailHeader = (
 	h.div(
 		[h.Class("flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2")],
 		[
-			button(
-				h,
-				{
-					variant: "ghost",
-					size: "sm",
-					className: "gap-1.5",
-					attributes: [h.OnClick(Message.ClickedBack())],
-				},
-				[icon(h, "ArrowLeftIcon"), options.backLabel],
-			),
+			button(h, { variant: "ghost", size: "sm", className: "gap-1.5", attributes: [h.OnClick(Message.ClickedBack())] }, [
+				icon(h, "ArrowLeftIcon"),
+				options.backLabel,
+			]),
 			h.span(
 				[h.Class("flex min-w-0 items-center gap-2")],
 				[
@@ -53,33 +47,13 @@ export const detailHeader = (
 				],
 			),
 			...options.environments.map((environment) =>
-				badge(
-					h,
-					{
-						variant: "outline",
-						className: "px-1.5 py-0 text-[10px]",
-						attributes: [h.Key(environment)],
-					},
-					[environment],
-				),
+				badge(h, { variant: "outline", className: "px-1.5 py-0 text-[10px]", attributes: [h.Key(environment)] }, [environment]),
 			),
 			h.div(
 				[h.Class("ml-auto flex items-center gap-2")],
 				[
-					linkButton(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							href: tracesHref(options.serviceName, options.range),
-						},
-						["View traces"],
-					),
-					refreshButton(h, {
-						isSpinning: options.isRefreshing,
-						hasNewData: options.hasNewData,
-						onRefresh: Message.ClickedRefresh(),
-					}),
+					linkButton(h, { variant: "outline", size: "sm", href: tracesHref(options.serviceName, options.range) }, ["View traces"]),
+					refreshButton(h, { isSpinning: options.isRefreshing, hasNewData: options.hasNewData, onRefresh: Message.ClickedRefresh() }),
 					timeRangeSelect(h, options.range, (range) => Message.ChangedRange({ range })),
 				],
 			),
@@ -87,32 +61,12 @@ export const detailHeader = (
 	)
 
 /** `StatCard`: `valueClassName` comes after `danger`, so the latency ramp wins. */
-const statCard = (
-	h: HtmlBuilder<Message>,
-	label: string,
-	value: string,
-	isDanger = false,
-	valueClassName?: string,
-): Html =>
+const statCard = (h: HtmlBuilder<Message>, label: string, value: string, isDanger = false, valueClassName?: string): Html =>
 	h.div(
 		[h.Class("rounded-md border bg-card px-3 py-2")],
 		[
-			h.div(
-				[h.Class("text-[10px] font-medium uppercase tracking-wider text-muted-foreground")],
-				[label],
-			),
-			h.div(
-				[
-					h.Class(
-						cn(
-							"text-lg font-semibold tabular-nums",
-							isDanger && "text-severity-error",
-							valueClassName,
-						),
-					),
-				],
-				[value],
-			),
+			h.div([h.Class("text-[10px] font-medium uppercase tracking-wider text-muted-foreground")], [label]),
+			h.div([h.Class(cn("text-lg font-semibold tabular-nums", isDanger && "text-severity-error", valueClassName))], [value]),
 		],
 	)
 
@@ -122,33 +76,9 @@ export const statCards = (h: HtmlBuilder<Message>, stats: ServiceCatalogEntry): 
 		[
 			statCard(h, "Spans", formatNumber(stats.spanCount)),
 			statCard(h, "Errors", formatNumber(stats.errorCount), stats.errorCount > 0),
-			statCard(
-				h,
-				"Error rate",
-				formatErrorRate(stats.errorRate),
-				false,
-				errorRateClass(stats.errorRate, { neutral: "" }),
-			),
-			statCard(
-				h,
-				"p50",
-				formatDuration(stats.p50LatencyMs),
-				false,
-				latencyToneClass(stats.p50LatencyMs, "p50"),
-			),
-			statCard(
-				h,
-				"p95",
-				formatDuration(stats.p95LatencyMs),
-				false,
-				latencyToneClass(stats.p95LatencyMs, "p95"),
-			),
-			statCard(
-				h,
-				"p99",
-				formatDuration(stats.p99LatencyMs),
-				false,
-				latencyToneClass(stats.p99LatencyMs, "p99"),
-			),
+			statCard(h, "Error rate", formatErrorRate(stats.errorRate), false, errorRateClass(stats.errorRate, { neutral: "" })),
+			statCard(h, "p50", formatDuration(stats.p50LatencyMs), false, latencyToneClass(stats.p50LatencyMs, "p50")),
+			statCard(h, "p95", formatDuration(stats.p95LatencyMs), false, latencyToneClass(stats.p95LatencyMs, "p95")),
+			statCard(h, "p99", formatDuration(stats.p99LatencyMs), false, latencyToneClass(stats.p99LatencyMs, "p99")),
 		],
 	)

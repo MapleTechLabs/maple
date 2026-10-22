@@ -44,19 +44,13 @@ const ready = (): Model =>
 describe("a write failing behind an open dialog", () => {
 	test("the variables dialog's Save still writes", () => {
 		const failed = run(ready(), [menuPick("variables"), failedWrite])
-		const saved = pageUpdate(
-			failed,
-			Message.GotVariablesManagerMessage({ message: ManagerModel.Message.SubmittedForm() }),
-		)
+		const saved = pageUpdate(failed, Message.GotVariablesManagerMessage({ message: ManagerModel.Message.SubmittedForm() }))
 		expect(names(saved.commands)).toContain(SaveVariables.name)
 	})
 
 	test("the tag editor's Save still writes", () => {
 		const failed = run(ready(), [menuPick("tags"), failedWrite])
-		const saved = pageUpdate(
-			failed,
-			Message.GotTagEditorMessage({ message: TagEditor.Message.ClickedSaveTags() }),
-		)
+		const saved = pageUpdate(failed, Message.GotTagEditorMessage({ message: TagEditor.Message.ClickedSaveTags() }))
 		expect(names(saved.commands)).toContain(SaveTags.name)
 	})
 

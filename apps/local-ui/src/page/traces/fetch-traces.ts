@@ -15,18 +15,11 @@ export interface TraceCursor {
 	readonly traceId: string
 }
 
-const rootScopedPage = (
-	filters: TraceFilters,
-	bounds: TimeBounds,
-	cursor: TraceCursor | undefined,
-	apiBase: string,
-) => {
+const rootScopedPage = (filters: TraceFilters, bounds: TimeBounds, cursor: TraceCursor | undefined, apiBase: string) => {
 	// HTTP method/status have no first-class list opts; the web app filters them as attributes too.
 	const attributeFilters = [
 		...(filters.method ? [{ key: "http.method", value: filters.method, mode: "equals" as const }] : []),
-		...(filters.status
-			? [{ key: "http.status_code", value: filters.status, mode: "equals" as const }]
-			: []),
+		...(filters.status ? [{ key: "http.status_code", value: filters.status, mode: "equals" as const }] : []),
 	]
 	const compiled = CH.compile(
 		CH.traceListQuery({
@@ -46,17 +39,19 @@ const rootScopedPage = (
 		localParams(bounds),
 	)
 	return Effect.map(queryRows(compiled, apiBase), (rows) =>
-		rows.map((row): TraceRow => ({
-			traceId: row.traceId,
-			startTime: row.startTime,
-			durationMs: row.durationMicros / 1000,
-			spanCount: row.spanCount,
-			services: row.services,
-			rootSpanName: row.rootSpanName,
-			rootSpanKind: row.rootSpanKind,
-			rootSpanAttributes: parseAttributes(row.rootSpanAttributes),
-			hasError: row.hasError === 1,
-		})),
+		rows.map(
+			(row): TraceRow => ({
+				traceId: row.traceId,
+				startTime: row.startTime,
+				durationMs: row.durationMicros / 1000,
+				spanCount: row.spanCount,
+				services: row.services,
+				rootSpanName: row.rootSpanName,
+				rootSpanKind: row.rootSpanKind,
+				rootSpanAttributes: parseAttributes(row.rootSpanAttributes),
+				hasError: row.hasError === 1,
+			}),
+		),
 	)
 }
 
@@ -69,12 +64,7 @@ const httpAttributes = (row: CH.TraceSummaryOutput): Record<string, string> => {
 }
 
 /** Span mode: the summaries read the roots-only MV, so counts and services come from a follow-up. */
-const spanScopedPage = (
-	filters: TraceFilters,
-	bounds: TimeBounds,
-	cursor: TraceCursor | undefined,
-	apiBase: string,
-) =>
+const spanScopedPage = (filters: TraceFilters, bounds: TimeBounds, cursor: TraceCursor | undefined, apiBase: string) =>
 	Effect.gen(function* () {
 		const params = localParams(bounds)
 		const summaries = yield* queryRows(
@@ -101,22 +91,21 @@ const spanScopedPage = (
 		const stats =
 			traceIds.length === 0
 				? []
-				: yield* queryRows(
-						CH.compile(CH.traceSpanStatsByTraceIdsQuery({ traceIds }), params),
-						apiBase,
-					)
+				: yield* queryRows(CH.compile(CH.traceSpanStatsByTraceIdsQuery({ traceIds }), params), apiBase)
 		const statsByTrace = new Map(stats.map((row) => [row.traceId, row]))
-		return summaries.map((row): TraceRow => ({
-			traceId: row.traceId,
-			startTime: row.startTime,
-			durationMs: row.durationMs,
-			spanCount: statsByTrace.get(row.traceId)?.spanCount ?? null,
-			services: statsByTrace.get(row.traceId)?.services ?? [row.rootServiceName],
-			rootSpanName: row.rootSpanName,
-			rootSpanKind: row.rootSpanKind,
-			rootSpanAttributes: httpAttributes(row),
-			hasError: row.hasError > 0,
-		}))
+		return summaries.map(
+			(row): TraceRow => ({
+				traceId: row.traceId,
+				startTime: row.startTime,
+				durationMs: row.durationMs,
+				spanCount: statsByTrace.get(row.traceId)?.spanCount ?? null,
+				services: statsByTrace.get(row.traceId)?.services ?? [row.rootServiceName],
+				rootSpanName: row.rootSpanName,
+				rootSpanKind: row.rootSpanKind,
+				rootSpanAttributes: httpAttributes(row),
+				hasError: row.hasError > 0,
+			}),
+		)
 	})
 
 /** One page of either scope. */

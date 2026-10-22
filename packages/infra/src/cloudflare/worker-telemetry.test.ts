@@ -41,10 +41,7 @@ describe("MapleHttpTracingLive", () => {
 								FetchHttpClient.Fetch,
 								async () =>
 									new Response("ok", {
-										headers: {
-											"x-ratelimit-remaining": "9",
-											"set-cookie": "session=secret",
-										},
+										headers: { "x-ratelimit-remaining": "9", "set-cookie": "session=secret" },
 									}),
 							),
 						),

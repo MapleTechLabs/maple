@@ -6,10 +6,7 @@ import { Schema } from "effect"
 export const DraftState = <S extends Schema.Top>(value: S) =>
 	Schema.Struct({
 		edits: Schema.NullOr(
-			Schema.Struct({
-				value,
-				committedOver: Schema.NullOr(Schema.Struct({ saved: value, sent: value })),
-			}),
+			Schema.Struct({ value, committedOver: Schema.NullOr(Schema.Struct({ saved: value, sent: value })) }),
 		),
 		inFlight: Schema.NullOr(Schema.Struct({ submitted: value, sent: Schema.NullOr(value), base: value })),
 	})
@@ -48,8 +45,7 @@ export const settle = <T>(state: DraftState<T>, saved: T, isEqual: Equal<T>): Dr
 }
 
 /** What the form shows: the edits, else the saved value. */
-export const draftOf = <T>(state: DraftState<T>, saved: T): T =>
-	state.edits === null ? saved : state.edits.value
+export const draftOf = <T>(state: DraftState<T>, saved: T): T => (state.edits === null ? saved : state.edits.value)
 
 export const isDirty = <T>(state: DraftState<T>, saved: T, isEqual: Equal<T>): boolean => {
 	const current = settle(state, saved, isEqual)

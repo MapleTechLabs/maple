@@ -49,10 +49,7 @@ export const routeFrame = <Model extends FrameHost, Message>(
 	wrap: (message: Frame.Message) => Message,
 	requestAll: (model: Model, mode: Frame.RequestMode) => PageReturn<Model, Message>,
 ): PageReturn<Model, Message> => {
-	const resolve = (): PageReturn<Model, Message> => ({
-		model: next,
-		commands: [resolveFrame(next.frame, scope, wrap)],
-	})
+	const resolve = (): PageReturn<Model, Message> => ({ model: next, commands: [resolveFrame(next.frame, scope, wrap)] })
 	return routeWindowStep(previous, scope.search, {
 		resolve,
 		requestAll: (mode) => (next.frame.window === null ? resolve() : requestAll(next, mode)),

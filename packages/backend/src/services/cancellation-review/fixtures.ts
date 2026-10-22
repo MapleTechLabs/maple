@@ -42,11 +42,7 @@ const healthy: Fields = {
 	billing: { lastInvoiceTotal: 39, previousInvoiceTotal: 39, overAllowance: [] },
 }
 
-const fixture = (
-	id: string,
-	expected: CancellationReason,
-	overrides: Partial<Fields>,
-): CancellationFixture => ({
+const fixture = (id: string, expected: CancellationReason, overrides: Partial<Fields>): CancellationFixture => ({
 	id,
 	expected,
 	snapshot: new CancellationSnapshot({ ...healthy, ...overrides }),
@@ -120,15 +116,19 @@ export const CANCELLATION_FIXTURES: ReadonlyArray<CancellationFixture> = [
 			overAllowance: ["logs", "traces"],
 		},
 	}),
-	fixture("bill-jump-then-off", "cost", {
-		ingest: { recent: volume(20, 16), prior: volume(160, 30), daysSinceLastData: 12 },
-		visits: {
-			recent: { activeDays: 9, peakDailyUsers: 3 },
-			prior: { activeDays: 20, peakDailyUsers: 4 },
-			daysSinceLastVisit: 2,
+	fixture(
+		"bill-jump-then-off",
+		"cost",
+		{
+			ingest: { recent: volume(20, 16), prior: volume(160, 30), daysSinceLastData: 12 },
+			visits: {
+				recent: { activeDays: 9, peakDailyUsers: 3 },
+				prior: { activeDays: 20, peakDailyUsers: 4 },
+				daysSinceLastVisit: 2,
+			},
+			billing: { lastInvoiceTotal: 260, previousInvoiceTotal: 45, overAllowance: [] },
 		},
-		billing: { lastInvoiceTotal: 260, previousInvoiceTotal: 45, overAllowance: [] },
-	}),
+	),
 	fixture("past-due", "payment_failure", {
 		plan: { ...healthy.plan, phase: "ended", pastDue: true, daysUntilEnd: 0 },
 	}),
@@ -144,19 +144,27 @@ export const CANCELLATION_FIXTURES: ReadonlyArray<CancellationFixture> = [
 		},
 		adoption: { ...noAdoption, dashboards: 2, alertRules: 3 },
 	}),
-	fixture("drifting-away", "not_engaged", {
-		visits: {
-			recent: { activeDays: 1, peakDailyUsers: 1 },
-			prior: { activeDays: 14, peakDailyUsers: 3 },
-			daysSinceLastVisit: 9,
+	fixture(
+		"drifting-away",
+		"not_engaged",
+		{
+			visits: {
+				recent: { activeDays: 1, peakDailyUsers: 1 },
+				prior: { activeDays: 14, peakDailyUsers: 3 },
+				daysSinceLastVisit: 9,
+			},
 		},
-	}),
-	fixture("quieter-month", "unclear", {
-		ingest: { recent: volume(17, 30), prior: volume(38, 30), daysSinceLastData: 0 },
-		visits: {
-			recent: { activeDays: 15, peakDailyUsers: 3 },
-			prior: { activeDays: 19, peakDailyUsers: 4 },
-			daysSinceLastVisit: 1,
+	),
+	fixture(
+		"quieter-month",
+		"unclear",
+		{
+			ingest: { recent: volume(17, 30), prior: volume(38, 30), daysSinceLastData: 0 },
+			visits: {
+				recent: { activeDays: 15, peakDailyUsers: 3 },
+				prior: { activeDays: 19, peakDailyUsers: 4 },
+				daysSinceLastVisit: 1,
+			},
 		},
-	}),
+	),
 ]

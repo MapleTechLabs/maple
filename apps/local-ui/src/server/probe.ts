@@ -14,10 +14,7 @@ const legacyLastSeen = (apiBase: string) =>
 		const now = yield* Clock.currentTimeMillis
 		const compiled = CH.compileUnion(
 			CH.orgTelemetryPulseQuery(),
-			localParams({
-				startTime: toClickHouseDateTime(now - LEGACY_WINDOW_MS),
-				endTime: toClickHouseDateTime(now + 60 * 1000),
-			}),
+			localParams({ startTime: toClickHouseDateTime(now - LEGACY_WINDOW_MS), endTime: toClickHouseDateTime(now + 60 * 1000) }),
 		)
 		const rows = yield* queryRows(compiled, apiBase)
 		return rows
@@ -32,17 +29,11 @@ const legacyLastSeen = (apiBase: string) =>
 	)
 
 export const probeServer = (apiBase: string): Effect.Effect<ProbeOutcome, never, HttpClient.HttpClient> =>
-	Effect.flatMap(
-		probeLocalStatus(apiBase, PROBE_TIMEOUT_MS),
-		(probe): Effect.Effect<ProbeOutcome, never, HttpClient.HttpClient> => {
-			if (probe._tag === "Ok")
-				return Effect.succeed(ProbeOutcome.Ok({ lastIngestAtMs: probe.status.lastIngestAtMs }))
-			if (probe._tag === "Legacy")
-				return Effect.map(legacyLastSeen(apiBase), (maybeLastSeen) =>
-					ProbeOutcome.Legacy({ maybeLastSeen }),
-				)
-			if (probe._tag === "Busy") return Effect.succeed(ProbeOutcome.Busy())
-			if (probe._tag === "Refused") return Effect.succeed(ProbeOutcome.Refused())
-			return Effect.succeed(ProbeOutcome.Rejected({ status: probe.status, detail: probe.detail }))
-		},
-	)
+	Effect.flatMap(probeLocalStatus(apiBase, PROBE_TIMEOUT_MS), (probe): Effect.Effect<ProbeOutcome, never, HttpClient.HttpClient> => {
+		if (probe._tag === "Ok") return Effect.succeed(ProbeOutcome.Ok({ lastIngestAtMs: probe.status.lastIngestAtMs }))
+		if (probe._tag === "Legacy")
+			return Effect.map(legacyLastSeen(apiBase), (maybeLastSeen) => ProbeOutcome.Legacy({ maybeLastSeen }))
+		if (probe._tag === "Busy") return Effect.succeed(ProbeOutcome.Busy())
+		if (probe._tag === "Refused") return Effect.succeed(ProbeOutcome.Refused())
+		return Effect.succeed(ProbeOutcome.Rejected({ status: probe.status, detail: probe.detail }))
+	})

@@ -36,8 +36,7 @@ export const FetchSourceUsage = Command.define("FetchSourceUsage", {
 		),
 })
 
-const write = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-	effect.pipe(Effect.mapError(toLoadFailure), Effect.result)
+const write = <A, E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(Effect.mapError(toLoadFailure), Effect.result)
 
 /** `pause({ until })`: `hours` from now, or `null` for until resumed. */
 export const PauseSource = Command.define("PauseSource", {
@@ -49,10 +48,7 @@ export const PauseSource = Command.define("PauseSource", {
 			const until = hours === null ? null : new Date(now + hours * HOUR_MS).toISOString()
 			const client = yield* MapleApiV2Client
 			return yield* client.sources.pause({ params: { id }, payload: { until } })
-		}).pipe(
-			write,
-			Effect.map((result) => Message.CompletedPause({ result })),
-		),
+		}).pipe(write, Effect.map((result) => Message.CompletedPause({ result }))),
 })
 
 export const ResumeSource = Command.define("ResumeSource", {
@@ -99,8 +95,5 @@ export const SaveSource = Command.define("SaveSource", {
 				params: { id },
 				payload: expiresAt === undefined ? payload : { ...payload, expires_at: expiresAt },
 			})
-		}).pipe(
-			write,
-			Effect.map((result) => Message.CompletedSave({ result })),
-		),
+		}).pipe(write, Effect.map((result) => Message.CompletedSave({ result }))),
 })

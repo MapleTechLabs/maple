@@ -37,17 +37,12 @@ export const copyableField = <M>(h: HtmlBuilder<M>, options: CopyableFieldOption
 	return h.div(
 		[h.Class(copyableFieldStyles)],
 		[
-			...(options.label === undefined
-				? []
-				: [h.label([h.Class(copyableFieldLabelStyles)], [options.label])]),
+			...(options.label === undefined ? [] : [h.label([h.Class(copyableFieldLabelStyles)], [options.label])]),
 			inputGroup(h, {}, [
 				inputGroupInput(h, {
 					id: options.id,
 					className: copyableFieldInputStyles,
-					attributes: [
-						h.Readonly(true),
-						h.Value(isHidden ? maskKey(options.value) : options.value),
-					],
+					attributes: [h.Readonly(true), h.Value(isHidden ? maskKey(options.value) : options.value)],
 				}),
 				inputGroupAddon(h, { align: "inline-end" }, [
 					...(masked === undefined
@@ -64,9 +59,7 @@ export const copyableField = <M>(h: HtmlBuilder<M>, options: CopyableFieldOption
 									[
 										icon(h, "EyeIcon", {
 											size: 14,
-											className: masked.isVisible
-												? copyableFieldRevealVisibleStyles
-												: undefined,
+											className: masked.isVisible ? copyableFieldRevealVisibleStyles : undefined,
 										}),
 									],
 								),

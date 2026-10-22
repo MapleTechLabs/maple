@@ -1,12 +1,5 @@
 import { Option } from "effect"
-import {
-	MISSES_BEFORE_DOWN,
-	POLL_MS,
-	ProbeOutcome,
-	RECHECK_MS,
-	type Rejection,
-	type ServerState,
-} from "./state"
+import { MISSES_BEFORE_DOWN, POLL_MS, ProbeOutcome, RECHECK_MS, type Rejection, type ServerState } from "./state"
 
 /** `probe` in use-local-server-status.ts: the next state from the previous one and an outcome. */
 export const nextServerState = (
@@ -33,12 +26,7 @@ export const nextServerState = (
 		}),
 		Legacy: ({ maybeLastSeen }): ServerState =>
 			Option.match(maybeLastSeen, {
-				onNone: (): ServerState => ({
-					...base,
-					reachability: "busy",
-					legacy: true,
-					hasConnected: true,
-				}),
+				onNone: (): ServerState => ({ ...base, reachability: "busy", legacy: true, hasConnected: true }),
 				onSome: (lastIngestAtMs): ServerState => ({
 					...base,
 					reachability: "connected",
@@ -48,11 +36,7 @@ export const nextServerState = (
 				}),
 			}),
 		Busy: (): ServerState => ({ ...base, reachability: "busy", hasConnected: true }),
-		Refused: (): ServerState => ({
-			...base,
-			reachability: "refused",
-			misses: (previous?.misses ?? 0) + 1,
-		}),
+		Refused: (): ServerState => ({ ...base, reachability: "refused", misses: (previous?.misses ?? 0) + 1 }),
 		Rejected: ({ status, detail }): ServerState => ({
 			...base,
 			// A 4xx is this page being turned away; a 5xx is the server failing a request.

@@ -264,9 +264,7 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				// turn, and a caller-supplied one named a message that never existed — so the
 				// `turn-end` it recorded matched nothing and no client ever cleared its streaming
 				// state.
-				const aborted = yield* sessionCall("abort", resolved.session.stub.abort("user")).pipe(
-					Effect.option,
-				)
+				const aborted = yield* sessionCall("abort", resolved.session.stub.abort("user")).pipe(Effect.option)
 				if (Option.isNone(aborted)) return problem("The chat session is unavailable", 503)
 				return HttpServerResponse.empty({ status: 204 })
 			}),

@@ -61,7 +61,7 @@ export const V2ApiKey = Schema.Struct({
 	// which V2Scope rejects, and failing it turned the whole list into a 500.
 	scopes: Schema.NullOr(Schema.Array(Schema.String)).annotate({
 		description:
-			'The scopes granted to the key, or `null` for a legacy key with full access. MCP OAuth tokens (`kind: "mcp"`) carry `mcp:tools`.',
+			"The scopes granted to the key, or `null` for a legacy key with full access. MCP OAuth tokens (`kind: \"mcp\"`) carry `mcp:tools`.",
 		examples: [["dashboards:read", "alerts:write"]],
 	}),
 	revoked: Schema.Boolean.annotate({

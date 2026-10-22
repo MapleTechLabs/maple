@@ -1160,9 +1160,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 									.select(($) => ({ ...$, labelsJson: PG.undecoded($.labelsJson) }))
 									.where(($) => [
 										$.enabled.eq(true),
-										interval === undefined
-											? undefined
-											: $.scrapeIntervalSeconds.eq(interval),
+										interval === undefined ? undefined : $.scrapeIntervalSeconds.eq(interval),
 									]),
 							),
 							// A paused source is not scraped. Paused sources are few, so they are read whole.
@@ -1189,10 +1187,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			 */
 			const reportSources = Effect.fnUntraced(function* (
 				db: MapleDb,
-				batchTargets: ReadonlyArray<{
-					readonly id: ScrapeTargetId
-					readonly sourceId: SourceId | null
-				}>,
+				batchTargets: ReadonlyArray<{ readonly id: ScrapeTargetId; readonly sourceId: SourceId | null }>,
 			) {
 				const [first, ...rest] = Arr.dedupe(
 					batchTargets.flatMap((target) => (target.sourceId === null ? [] : [target.sourceId])),

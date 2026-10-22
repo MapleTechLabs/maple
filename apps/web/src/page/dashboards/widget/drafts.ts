@@ -176,10 +176,7 @@ const LegacyParams = Schema.Struct({
 	bucketSeconds: Schema.optional(Schema.Unknown),
 	groupBy: Schema.optional(Schema.Unknown),
 	filters: Schema.optional(
-		Schema.Struct({
-			metricName: Schema.optional(Schema.Unknown),
-			metricType: Schema.optional(Schema.Unknown),
-		}),
+		Schema.Struct({ metricName: Schema.optional(Schema.Unknown), metricType: Schema.optional(Schema.Unknown) }),
 	),
 })
 const decodeLegacyParams = Schema.decodeUnknownOption(LegacyParams)
@@ -196,8 +193,7 @@ export const legacyQueryDraft = (raw: Readonly<Record<string, unknown>>): QueryD
 		...fallback,
 		whereClause: formatFiltersAsWhereClause({ ...raw }),
 		aggregation: typeof params.metric === "string" ? params.metric : fallback.aggregation,
-		stepInterval:
-			typeof params.bucketSeconds === "number" ? String(params.bucketSeconds) : fallback.stepInterval,
+		stepInterval: typeof params.bucketSeconds === "number" ? String(params.bucketSeconds) : fallback.stepInterval,
 		addOns: { ...fallback.addOns, groupBy: Array.isArray(params.groupBy) && params.groupBy.length > 0 },
 		groupBy,
 	}

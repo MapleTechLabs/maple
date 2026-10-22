@@ -168,9 +168,7 @@ export const reportPoll = (db: MapleDb, sourceId: SourceId | null, outcome: Poll
 					PG.or(
 						$.lastPollAt.isNull(),
 						$.lastPollAt.lt(now - POLL_REPORT_INTERVAL_MS),
-						outcome._tag === "Disconnected"
-							? $.disconnectedAt.isNull()
-							: $.disconnectedAt.isNotNull(),
+						outcome._tag === "Disconnected" ? $.disconnectedAt.isNull() : $.disconnectedAt.isNotNull(),
 						error === null
 							? $.lastPollError.isNotNull()
 							: PG.or($.lastPollError.isNull(), $.lastPollError.neq(error)),
@@ -193,11 +191,7 @@ const scrapeOverrides = (
 	const enabled = group.filter((target) => target.enabled)
 	return enabled.length === 0
 		? { turnedOff: SCRAPING_OFF }
-		: {
-				staleAfterMs: Math.max(
-					...enabled.map((target) => scrapeStaleAfterMs(target.scrapeIntervalSeconds)),
-				),
-			}
+		: { staleAfterMs: Math.max(...enabled.map((target) => scrapeStaleAfterMs(target.scrapeIntervalSeconds))) }
 }
 
 const overridesBySource = (
@@ -208,16 +202,13 @@ const overridesBySource = (
 	}>,
 ) => {
 	const bySource = Arr.groupBy(
-		targets.flatMap((target) =>
-			target.sourceId === null ? [] : [{ ...target, sourceId: target.sourceId }],
-		),
+		targets.flatMap((target) => (target.sourceId === null ? [] : [{ ...target, sourceId: target.sourceId }])),
 		(target) => target.sourceId,
 	)
 	return new Map(
-		Object.values(bySource).map((group): readonly [SourceId, SourceHealthOverrides] => [
-			group[0].sourceId,
-			scrapeOverrides(group),
-		]),
+		Object.values(bySource).map(
+			(group): readonly [SourceId, SourceHealthOverrides] => [group[0].sourceId, scrapeOverrides(group)],
+		),
 	)
 }
 
@@ -244,21 +235,9 @@ export const readSourceOwners = Effect.fnUntraced(function* (db: MapleDb, orgId:
 					.select("id", "sourceId", "enabled", "scrapeIntervalSeconds")
 					.where(($) => [$.orgId.eq(orgId), $.managedBy.isNull()]),
 			),
-			db.run(
-				PG.from(GcpConnectors)
-					.select("id", "sourceId")
-					.where(($) => [$.orgId.eq(orgId)]),
-			),
-			db.run(
-				PG.from(RailwayConnections)
-					.select("id", "sourceId")
-					.where(($) => [$.orgId.eq(orgId)]),
-			),
-			db.run(
-				PG.from(PlanetscaleConnections)
-					.select("id", "sourceId")
-					.where(($) => [$.orgId.eq(orgId)]),
-			),
+			db.run(PG.from(GcpConnectors).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
+			db.run(PG.from(RailwayConnections).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
+			db.run(PG.from(PlanetscaleConnections).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
 			db.run(
 				PG.from(SupabaseConnections)
 					.select("id", "sourceId")
@@ -269,11 +248,7 @@ export const readSourceOwners = Effect.fnUntraced(function* (db: MapleDb, orgId:
 					.select("id", "sourceId")
 					.where(($) => [$.orgId.eq(orgId), $.sourceId.isNotNull()]),
 			),
-			db.run(
-				PG.from(VcsInstallations)
-					.select("id", "sourceId")
-					.where(($) => [$.orgId.eq(orgId)]),
-			),
+			db.run(PG.from(VcsInstallations).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
 		],
 		{ concurrency: "unbounded" },
 	)

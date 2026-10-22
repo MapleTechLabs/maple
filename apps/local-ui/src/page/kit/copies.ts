@@ -18,10 +18,7 @@ export const updateCopy = <M>(
 	message: CopyButton.Message,
 	toMessage: (id: string, message: CopyButton.Message) => M,
 ): Readonly<{ copies: Copies; commands: ReadonlyArray<Command.Command<M>> }> => {
-	const next: Update.Return<CopyButton.Model, CopyButton.Message> = CopyButton.update(
-		copyOf(copies, id),
-		message,
-	)
+	const next: Update.Return<CopyButton.Model, CopyButton.Message> = CopyButton.update(copyOf(copies, id), message)
 	return {
 		copies: Record.set(copies, id, next.model),
 		commands: Command.mapMessages(next.commands ?? [], (child) => toMessage(id, child)),

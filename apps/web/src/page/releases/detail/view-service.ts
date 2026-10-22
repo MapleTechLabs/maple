@@ -167,15 +167,7 @@ const metaLine = (
 				: [h.span([], [formatPercent(impact.share), " of the latest traffic"])]),
 			...(impact.health === "healthy"
 				? []
-				: [
-						releaseHealthPill(
-							h,
-							overlaysOf(model, clock),
-							"release-meta-pill",
-							impact.health,
-							releaseHealthFigure(impact),
-						),
-					]),
+				: [releaseHealthPill(h, overlaysOf(model, clock), "release-meta-pill", impact.health, releaseHealthFigure(impact))]),
 		],
 	)
 
@@ -356,10 +348,7 @@ const loadedBody = (h: H, model: Model, derived: ServiceDerived, serviceName: st
 		[h.Class("flex flex-col gap-3")],
 		[
 			metaLine(h, model, impact, serviceName, clock),
-			h.div(
-				[h.Class("grid gap-3 lg:grid-cols-2")],
-				[releaseComparison(h, impact, overlaysOf(model, clock)), rail],
-			),
+			h.div([h.Class("grid gap-3 lg:grid-cols-2")], [releaseComparison(h, impact, overlaysOf(model, clock)), rail]),
 			releaseChangeset(h, changesetState(model, impact.baseline?.commitSha), clock),
 			seriesBar(h, model, serviceName),
 			metricsGridOf(

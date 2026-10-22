@@ -46,12 +46,7 @@ const board = (h: H, model: Model, document: DashboardDocument): Html => {
 				[
 					dashboardSections(
 						h,
-						{
-							model,
-							timeZone: CONTEXT.timeZone,
-							variables: values,
-							renderTile: (widget) => labTile(h, model, widget, values),
-						},
+						{ model, timeZone: CONTEXT.timeZone, variables: values, renderTile: (widget) => labTile(h, model, widget, values) },
 						document,
 					),
 				],

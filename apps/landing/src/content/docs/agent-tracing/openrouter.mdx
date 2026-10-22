@@ -31,15 +31,15 @@ Your ingest key is in **Settings → Ingestion**. If your organization is in the
 1. In OpenRouter, open [Settings → Observability](https://openrouter.ai/settings/observability) and turn on **Enable Broadcast**. In an organization account, only an admin can change this.
 2. Click the edit icon next to **OpenTelemetry Collector** and set **Endpoint** to the full traces URL. OpenRouter doesn't append `/v1/traces`. EU organizations use `https://ingest.eu.maple.dev/v1/traces`.
 
-    ```text
-    https://ingest.maple.dev/v1/traces
-    ```
+   ```text
+   https://ingest.maple.dev/v1/traces
+   ```
 
 3. Set **Headers** to your Maple ingest key:
 
-    ```json
-    { "Authorization": "Bearer YOUR_INGEST_KEY" }
-    ```
+   ```json
+   { "Authorization": "Bearer YOUR_INGEST_KEY" }
+   ```
 
 4. Click **Test Connection**. OpenRouter only saves the destination if the test passes.
 

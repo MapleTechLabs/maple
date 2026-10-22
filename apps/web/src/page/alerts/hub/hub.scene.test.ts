@@ -1,16 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
 import { Result, Schema } from "effect"
-import {
-	click,
-	expect as expectView,
-	expectOutMessage,
-	given,
-	role,
-	scene,
-	text,
-	withViewInputs,
-} from "foldkit/scene"
+import { click, expect as expectView, expectOutMessage, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import * as Menu from "../../../ui/menu"
@@ -25,8 +16,7 @@ const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
 const RULE_2 = Schema.decodeSync(AlertRuleId)(ruleId(2))
 const DESTINATION = Schema.decodeSync(AlertDestinationId)(destinationRow().id)
 
@@ -40,10 +30,7 @@ const loaded = (search: Model["search"] = {}): Model =>
 			orgId: ORG,
 			rows: [ruleRow(1), ruleRow(2, { name: "Payment p95 latency" }), ruleRow(4, { enabled: false })],
 		}),
-		Message.UpdatedRuleStates({
-			orgId: ORG,
-			rows: [stateRow(1), stateRow(2, { last_status: "breached", last_value: 1840 })],
-		}),
+		Message.UpdatedRuleStates({ orgId: ORG, rows: [stateRow(1), stateRow(2, { last_status: "breached", last_value: 1840 })] }),
 		Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow({ rule_name: "Payment p95 latency" })] }),
 		Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
 		Message.CompletedFetchSession({ orgId: ORG, isAdmin: true }),
@@ -52,11 +39,7 @@ const loaded = (search: Model["search"] = {}): Model =>
 describe("alerts hub", () => {
 	test("entry reads the clock, the session and the deliveries list; Routing adds its own read", () => {
 		expect(names(entered().commands)).toEqual(
-			expect.arrayContaining([
-				"ReadAlertsHubClock",
-				"FetchAlertsHubSession",
-				"FetchAlertsHubDeliveries",
-			]),
+			expect.arrayContaining(["ReadAlertsHubClock", "FetchAlertsHubSession", "FetchAlertsHubDeliveries"]),
 		)
 		expect(names(entered().commands)).not.toContain("FetchAlertsRoutingDeliveries")
 		expect(names(entered({ tab: "routing" }).commands)).toContain("FetchAlertsRoutingDeliveries")
@@ -100,11 +83,7 @@ describe("alerts hub", () => {
 	test("an org with no rules gets the two-step empty state", () => {
 		const empty = pageUpdate(loaded(), Message.UpdatedRules({ orgId: ORG, rows: [] })).model
 		const noDestinations = pageUpdate(empty, Message.UpdatedDestinations({ orgId: ORG, rows: [] })).model
-		scene(
-			{ update: pageUpdate, view },
-			given(noDestinations),
-			expectView(text("Two steps to your first alert")).toExist(),
-		)
+		scene({ update: pageUpdate, view }, given(noDestinations), expectView(text("Two steps to your first alert")).toExist())
 	})
 
 	test("a status chip writes its bucket to the URL, and pressing it again clears it", () => {
@@ -129,15 +108,9 @@ describe("alerts hub", () => {
 	})
 
 	test("disabling a rule sends one PATCH at a time and a failed write says so", () => {
-		const toggling = pageUpdate(
-			loaded({ tab: "rules" }),
-			Message.ClickedToggleRule({ ruleId: RULE_2, isEnabled: false }),
-		)
+		const toggling = pageUpdate(loaded({ tab: "rules" }), Message.ClickedToggleRule({ ruleId: RULE_2, isEnabled: false }))
 		expect(names(toggling.commands)).toEqual(["ToggleAlertRule"])
-		const again = pageUpdate(
-			toggling.model,
-			Message.ClickedToggleRule({ ruleId: RULE_2, isEnabled: false }),
-		)
+		const again = pageUpdate(toggling.model, Message.ClickedToggleRule({ ruleId: RULE_2, isEnabled: false }))
 		expect(again.commands ?? []).toHaveLength(0)
 		const failed = pageUpdate(
 			toggling.model,
@@ -146,11 +119,7 @@ describe("alerts hub", () => {
 				result: Result.fail(toLoadFailure(new Error("boom"))),
 			}),
 		)
-		scene(
-			{ update: pageUpdate, view },
-			given(failed.model),
-			expectView(text("Failed to update the rule. Try again.")).toExist(),
-		)
+		scene({ update: pageUpdate, view }, given(failed.model), expectView(text("Failed to update the rule. Try again.")).toExist())
 	})
 
 	test("a destination test toasts the outcome and revalidates both delivery reads", () => {
@@ -166,11 +135,7 @@ describe("alerts hub", () => {
 		)
 		expect(done.model.testingDestinationIds).toEqual([])
 		expect(done.outMessage).toEqual(
-			PageOutMessage.RequestedToast({
-				type: "success",
-				title: "Test notification sent",
-				description: "",
-			}),
+			PageOutMessage.RequestedToast({ type: "success", title: "Test notification sent", description: "" }),
 		)
 	})
 
@@ -180,10 +145,7 @@ describe("alerts hub", () => {
 			name: "Eng alerts",
 			config_json: { summary: "#alerts", channelLabel: null, chatConnector: "slack" },
 		})
-		const model = pageUpdate(
-			loaded({ tab: "routing" }),
-			Message.UpdatedDestinations({ orgId: ORG, rows: [chat] }),
-		).model
+		const model = pageUpdate(loaded({ tab: "routing" }), Message.UpdatedDestinations({ orgId: ORG, rows: [chat] })).model
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
@@ -195,46 +157,32 @@ describe("alerts hub", () => {
 	test("a rule listed under several tags has a menu per tag, and each acts on that rule", () => {
 		const tagged = pageUpdate(
 			loaded({ tab: "rules" }),
-			Message.UpdatedRules({
-				orgId: ORG,
-				rows: [ruleRow(2, { tags_json: ["team:payments", "tier:p1"] })],
-			}),
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { tags_json: ["team:payments", "tier:p1"] })] }),
 		).model
 		const menus = ["team:payments", "tier:p1"].map((tag) => ruleMenuId(RULE_2, tag))
 		expect(new Set(menus).size).toBe(2)
-		const opened = pageUpdate(
-			tagged,
-			Message.GotRowMenuMessage({
-				menuId: menus[1] ?? "",
-				message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value: "open" } }),
-			}),
-		)
+		const opened = pageUpdate(tagged, Message.GotRowMenuMessage({
+			menuId: menus[1] ?? "",
+			message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value: "open" } }),
+		}))
 		expect(opened.outMessage?._tag).toBe("RequestedNavigation")
 	})
 
 	test("delete asks first, then sends the DELETE and closes on success", () => {
 		const routing = loaded({ tab: "routing" })
-		const asked = pageUpdate(
-			routing,
-			Message.GotRowMenuMessage({
-				menuId: `destination:${DESTINATION}`,
-				message: Menu.Message.ClickedItem({ index: 2, item: { kind: "Item", value: "delete" } }),
-			}),
-		)
+		const asked = pageUpdate(routing, Message.GotRowMenuMessage({
+			menuId: `destination:${DESTINATION}`,
+			message: Menu.Message.ClickedItem({ index: 2, item: { kind: "Item", value: "delete" } }),
+		}))
 		expect(asked.model.confirmDeleteId).toBe(DESTINATION)
 		expect(asked.model.deleteDialog.isOpen).toBe(true)
 		const deleting = pageUpdate(asked.model, Message.ClickedConfirmDeleteDestination())
 		expect(names(deleting.commands)).toEqual(["DeleteAlertDestination"])
 		const done = pageUpdate(
 			deleting.model,
-			Message.CompletedDeleteDestination({
-				destinationId: DESTINATION,
-				result: Result.succeed(undefined),
-			}),
+			Message.CompletedDeleteDestination({ destinationId: DESTINATION, result: Result.succeed(undefined) }),
 		)
 		expect(done.model.deleteDialog.isOpen).toBe(false)
-		expect(done.outMessage).toEqual(
-			PageOutMessage.RequestedToast({ type: "success", title: "Destination deleted", description: "" }),
-		)
+		expect(done.outMessage).toEqual(PageOutMessage.RequestedToast({ type: "success", title: "Destination deleted", description: "" }))
 	})
 })

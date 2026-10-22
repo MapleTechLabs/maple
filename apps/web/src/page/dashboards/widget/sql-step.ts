@@ -65,29 +65,15 @@ export const sqlStep = (model: Model, message: SqlMessage): Return => {
 	const rawSql = model.rawSql
 	switch (message._tag) {
 		case "ChangedSql":
-			return {
-				model: withSql(model, (sql) => ({ ...sql, draft: { ...sql.draft, sql: message.value } })),
-			}
+			return { model: withSql(model, (sql) => ({ ...sql, draft: { ...sql.draft, sql: message.value } })) }
 		case "ChangedSqlBucket":
 			return {
-				model: withSql(model, (sql) => ({
-					...sql,
-					draft: { ...sql.draft, granularitySeconds: bucketOf(message.value) },
-				})),
+				model: withSql(model, (sql) => ({ ...sql, draft: { ...sql.draft, granularitySeconds: bucketOf(message.value) } })),
 			}
 		case "ClickedSqlToken":
 			return rawSql === null
 				? { model }
-				: {
-						model,
-						commands: [
-							InsertSqlToken({
-								id: SQL_TEXTAREA_ID,
-								sql: rawSql.draft.sql,
-								token: message.token,
-							}),
-						],
-					}
+				: { model, commands: [InsertSqlToken({ id: SQL_TEXTAREA_ID, sql: rawSql.draft.sql, token: message.token })] }
 		case "CompletedInsertSqlToken":
 			return {
 				model: withSql(model, (sql) => ({ ...sql, draft: { ...sql.draft, sql: message.sql } })),

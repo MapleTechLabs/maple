@@ -40,14 +40,7 @@ const row = (containerName: string): ContainerRow => ({
 const windowed = (search: Model["search"] = {}) =>
 	pageUpdate(
 		init({ search }, context).model,
-		Message.GotFrameMessage({
-			message: Frame.Message.CompletedResolveWindow({
-				window,
-				nowMs: NOW,
-				locale: "en-US",
-				mode: "Load",
-			}),
-		}),
+		Message.GotFrameMessage({ message: Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" }) }),
 	)
 
 const loaded = (rows: ReadonlyArray<ContainerRow>, search: Model["search"] = {}) => {
@@ -76,18 +69,12 @@ describe("containers list", () => {
 	test("the server sees the debounced search, not each keystroke", () => {
 		const typed = pageUpdate(windowed().model, Message.ElapsedSearchDebounce({ query: "red" }))
 		expect(typed.commands ?? []).toHaveLength(0)
-		const settled = pageUpdate(
-			{ ...windowed({ q: "redis" }).model },
-			Message.ElapsedSearchDebounce({ query: "redis" }),
-		)
+		const settled = pageUpdate({ ...windowed({ q: "redis" }).model }, Message.ElapsedSearchDebounce({ query: "redis" }))
 		expect(containersInput(settled.model, window).search).toBe("redis")
 	})
 
 	test("a sort header cycles the direction on its key", () => {
-		const sorted = pageUpdate(
-			loaded([row("a")], { sortBy: "cpuPct" }),
-			Message.ClickedSort({ key: "cpuPct" }),
-		)
+		const sorted = pageUpdate(loaded([row("a")], { sortBy: "cpuPct" }), Message.ClickedSort({ key: "cpuPct" }))
 		expect(sorted.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
 				url: "/infra/containers?sortBy=cpuPct&sortDir=asc",

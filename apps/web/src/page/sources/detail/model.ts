@@ -18,11 +18,7 @@ import { Model as IntegrationModel } from "../../integrations/model"
 // `/sources/$sourceId`.
 
 /** `RevealedToken`: the one-time token from a roll, held while this page is open. */
-export const RevealedToken = Schema.Struct({
-	sourceId: SourceId,
-	secret: Schema.String,
-	rolled: Schema.Boolean,
-})
+export const RevealedToken = Schema.Struct({ sourceId: SourceId, secret: Schema.String, rolled: Schema.Boolean })
 export type RevealedToken = typeof RevealedToken.Type
 
 /** The one write in flight (`useAsyncAction`'s pending, the delete dialog's running state). */

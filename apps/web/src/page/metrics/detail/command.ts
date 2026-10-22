@@ -1,9 +1,5 @@
 import { MetricsQueryDraftSchema, QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
-import {
-	getMetricAttributeKeys,
-	getMetricAttributeValues,
-	listMetrics,
-} from "@maple/web-data/warehouse/metrics"
+import { getMetricAttributeKeys, getMetricAttributeValues, listMetrics } from "@maple/web-data/warehouse/metrics"
 import { getQueryBuilderBreakdown } from "@maple/web-data/warehouse/query-builder-breakdown"
 import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
 import { Clock, Duration, Effect, Schema, Stream } from "effect"
@@ -197,17 +193,14 @@ export const CompleteReloadSpin = Command.define("CompleteMetricReloadSpin", {
 /** The where textarea's caret, focus and blur, read off the native events. */
 export const MountWhereCaret = Mount.defineStream("MountMetricWhereCaret", {
 	messages: [Message.GotCaretMessage],
-	execute: ({ element }) =>
-		Stream.map(caretEvents(element), (message) => Message.GotCaretMessage({ message })),
+	execute: ({ element }) => Stream.map(caretEvents(element), (message) => Message.GotCaretMessage({ message })),
 })
 
 /** The open list: the textarea keeps focus while a row is pressed, and the list follows it. */
 export const MountKeepWhereFocus = Mount.defineStream("MountMetricKeepWhereFocus", {
 	messages: [Message.GotCaretMessage],
 	execute: ({ element }) =>
-		Stream.map(listboxEvents(element, WHERE_TEXTAREA_ID), (message) =>
-			Message.GotCaretMessage({ message }),
-		),
+		Stream.map(listboxEvents(element, WHERE_TEXTAREA_ID), (message) => Message.GotCaretMessage({ message })),
 })
 
 export const PlaceWhereCaret = Command.define("PlaceMetricWhereCaret", {

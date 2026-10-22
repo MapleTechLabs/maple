@@ -115,8 +115,7 @@ if (command === "start") {
 		fail(`Check failed for ${refused.map((t) => t.region.id).join(", ")}; no deployment was created.`)
 	}
 	const failed = targets.filter(
-		({ region, auth }) =>
-			!runTb(region, auth, ["deployment", "create", "--no-auto", "--no-wait", ...destructive]),
+		({ region, auth }) => !runTb(region, auth, ["deployment", "create", "--no-auto", "--no-wait", ...destructive]),
 	)
 	if (failed.length > 0)
 		fail(`Could not create a deployment for ${failed.map((t) => t.region.id).join(", ")}.`)

@@ -19,15 +19,10 @@ const firstDataStatus = (h: H, model: Model, created: Created): Html => {
 	const receiving = isReceiving(model)
 	return panel(h, { className: "flex-row items-center gap-3 px-4 py-3" }, [
 		receiving ? statusDot(h, { tone: "ok", size: "lg" }) : spinner(h, "size-3.5"),
-		h.span(
-			[h.Class("grow text-sm font-medium")],
-			[receiving ? "Receiving data" : "Waiting for first data"],
-		),
-		linkButton(
-			h,
-			{ variant: receiving ? "default" : "outline", size: "sm", href: sourceHref(created.source) },
-			[receiving ? "Open source" : "Skip for now"],
-		),
+		h.span([h.Class("grow text-sm font-medium")], [receiving ? "Receiving data" : "Waiting for first data"]),
+		linkButton(h, { variant: receiving ? "default" : "outline", size: "sm", href: sourceHref(created.source) }, [
+			receiving ? "Open source" : "Skip for now",
+		]),
 	])
 }
 

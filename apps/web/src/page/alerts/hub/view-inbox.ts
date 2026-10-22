@@ -73,12 +73,7 @@ export const inboxTab = <M>(h: HtmlBuilder<M>, data: AlertsOverviewReady): Html 
 							isQuiet ? "Nothing firing" : `${firing} firing`,
 							...(isQuiet ? [quietStreak(h, incidents, now)] : []),
 							...(held > 0
-								? [
-										h.span(
-											[h.Class("text-muted-foreground font-normal")],
-											[" · ", String(held), " waiting on data"],
-										),
-									]
+								? [h.span([h.Class("text-muted-foreground font-normal")], [" · ", String(held), " waiting on data"])]
 								: []),
 						],
 					),
@@ -102,11 +97,7 @@ export const inboxTab = <M>(h: HtmlBuilder<M>, data: AlertsOverviewReady): Html 
 	)
 }
 
-const quietStreak = <M>(
-	h: HtmlBuilder<M>,
-	incidents: ReadonlyArray<AlertIncidentDocument>,
-	now: number,
-): Html => {
+const quietStreak = <M>(h: HtmlBuilder<M>, incidents: ReadonlyArray<AlertIncidentDocument>, now: number): Html => {
 	const quietFor = quietForMs(incidents, now)
 	return h.span(
 		[h.Class("font-normal text-muted-foreground")],
@@ -116,11 +107,7 @@ const quietStreak = <M>(
 
 // OPEN INCIDENTS
 
-const openIncidentsList = <M>(
-	h: HtmlBuilder<M>,
-	incidents: ReadonlyArray<AlertIncidentDocument>,
-	now: number,
-) =>
+const openIncidentsList = <M>(h: HtmlBuilder<M>, incidents: ReadonlyArray<AlertIncidentDocument>, now: number) =>
 	h.div(
 		[h.Class("overflow-x-auto rounded-md border")],
 		[
@@ -170,9 +157,7 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 						[h.Class("flex min-w-0 items-center gap-2")],
 						[
 							isHeld
-								? badge(h, { variant: "outline", className: "text-muted-foreground" }, [
-										"Held",
-									])
+								? badge(h, { variant: "outline", className: "text-muted-foreground" }, ["Held"])
 								: severityBadge(h, incident.severity),
 							h.a(
 								[
@@ -186,10 +171,7 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 					),
 					h.p(
 						[h.Class("truncate text-xs text-muted-foreground")],
-						[
-							incident.ruleName,
-							...(incident.groupKey !== null ? [` · ${incident.groupKey}`] : []),
-						],
+						[incident.ruleName, ...(incident.groupKey !== null ? [` · ${incident.groupKey}`] : [])],
 					),
 				],
 			),
@@ -198,10 +180,7 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 				[
 					isHeld
 						? h.span([h.Class("text-muted-foreground")], ["no data"])
-						: h.span(
-								[h.Class(tone)],
-								[formatSignalValue(incident.signalType, incident.lastObservedValue)],
-							),
+						: h.span([h.Class(tone)], [formatSignalValue(incident.signalType, incident.lastObservedValue)]),
 					h.span(
 						[h.Class("text-muted-foreground")],
 						[" / ", formatSignalValue(incident.signalType, incident.threshold)],
@@ -271,20 +250,10 @@ const fireStrip = <M>(
 				],
 			),
 			shown.length === 0
-				? h.p(
-						[h.Class("border-t py-4 text-sm text-muted-foreground")],
-						["No rule fired in the last 24 hours."],
-					)
-				: h.ul(
-						[h.Class("divide-y border-y")],
-						shown.map((lane) => fireLaneRow(h, lane)),
-					),
+				? h.p([h.Class("border-t py-4 text-sm text-muted-foreground")], ["No rule fired in the last 24 hours."])
+				: h.ul([h.Class("divide-y border-y")], shown.map((lane) => fireLaneRow(h, lane))),
 			h.div(
-				[
-					h.Class(
-						"grid grid-cols-[minmax(0,180px)_minmax(0,1fr)] gap-4 font-mono text-2xs text-muted-foreground",
-					),
-				],
+				[h.Class("grid grid-cols-[minmax(0,180px)_minmax(0,1fr)] gap-4 font-mono text-2xs text-muted-foreground")],
 				[
 					h.span([], [footer]),
 					h.div(
@@ -303,10 +272,7 @@ const fireStrip = <M>(
 
 const fireLaneRow = <M>(h: HtmlBuilder<M>, lane: FireLane): Html =>
 	h.li(
-		[
-			h.Key(lane.ruleId),
-			h.Class("grid grid-cols-[minmax(0,180px)_minmax(0,1fr)] items-center gap-4 py-2"),
-		],
+		[h.Key(lane.ruleId), h.Class("grid grid-cols-[minmax(0,180px)_minmax(0,1fr)] items-center gap-4 py-2")],
 		[
 			h.a(
 				[
@@ -357,10 +323,7 @@ const blindSpotsList = <M>(h: HtmlBuilder<M>, spots: ReadonlyArray<BlindSpot>): 
 				[h.Class("flex items-baseline justify-between gap-4")],
 				[
 					eyebrow(h, { as: "h3" }, ["Blind spots"]),
-					h.span(
-						[h.Class("font-mono text-xs text-muted-foreground")],
-						["rules that can't fire or notify"],
-					),
+					h.span([h.Class("font-mono text-xs text-muted-foreground")], ["rules that can't fire or notify"]),
 				],
 			),
 			spots.length === 0
@@ -368,10 +331,7 @@ const blindSpotsList = <M>(h: HtmlBuilder<M>, spots: ReadonlyArray<BlindSpot>): 
 						[h.Class("border-t py-4 text-sm text-muted-foreground")],
 						["Every enabled rule is evaluating and routed somewhere."],
 					)
-				: h.ul(
-						[h.Class("divide-y border-t")],
-						spots.map((spot) => blindSpotRow(h, spot)),
-					),
+				: h.ul([h.Class("divide-y border-t")], spots.map((spot) => blindSpotRow(h, spot))),
 		],
 	)
 
@@ -390,10 +350,7 @@ const blindSpotRow = <M>(h: HtmlBuilder<M>, spot: BlindSpot): Html => {
 				[h.Class("min-w-0")],
 				[
 					h.p([h.Class("truncate text-sm")], [spot.rule.name]),
-					h.p(
-						[h.Class("truncate text-xs text-muted-foreground"), h.Title(spot.detail)],
-						[spot.detail],
-					),
+					h.p([h.Class("truncate text-xs text-muted-foreground"), h.Title(spot.detail)], [spot.detail]),
 				],
 			),
 			h.a(
@@ -444,17 +401,9 @@ const headroomList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<RuleHeadroom>, n
 						[h.Class("border-t py-4 text-sm text-muted-foreground")],
 						["No rule has reported a value yet. The first checks land within a minute."],
 					)
-				: h.ul(
-						[h.Class("divide-y border-y")],
-						shown.map((row) => headroomRow(h, row, now)),
-					),
+				: h.ul([h.Class("divide-y border-y")], shown.map((row) => headroomRow(h, row, now))),
 			...(hidden > 0
-				? [
-						h.p(
-							[h.Class("font-mono text-2xs text-muted-foreground")],
-							["+ ", countLabel(hidden, "more rule")],
-						),
-					]
+				? [h.p([h.Class("font-mono text-2xs text-muted-foreground")], ["+ ", countLabel(hidden, "more rule")])]
 				: []),
 		],
 	)
@@ -479,12 +428,7 @@ const headroomRow = <M>(h: HtmlBuilder<M>, row: RuleHeadroom, now: number): Html
 						[rule.name],
 					),
 					...(row.groupKey !== null
-						? [
-								h.p(
-									[h.Class("truncate font-mono text-2xs text-muted-foreground")],
-									[row.groupKey],
-								),
-							]
+						? [h.p([h.Class("truncate font-mono text-2xs text-muted-foreground")], [row.groupKey])]
 						: []),
 				],
 			),

@@ -7,11 +7,7 @@ import { panel, panelHeader } from "../../../../ui/panel"
 import { middleTruncate } from "../../../../ui/middle-truncate"
 import { formatValueWithUnit } from "../../../../components/infra/chart-units"
 import { LINKED_CURSOR_STYLE, MountLinkedCursor } from "../../../../charts/linked-cursor"
-import {
-	INFRA_METRIC_CHART_HEIGHT,
-	type InfraSeriesInfo,
-	metricView as metricChartView,
-} from "../../../../charts/infra-metric-chart"
+import { INFRA_METRIC_CHART_HEIGHT, type InfraSeriesInfo, metricView as metricChartView } from "../../../../charts/infra-metric-chart"
 import { chartError, chartLoading, chartPlotArea } from "../../../../ui/chart-state"
 import { attributeSection, metaRow, resourceAttributesCard } from "../../kit/resource-attributes"
 import { seriesLegend } from "../../../kit/series-legend"
@@ -23,18 +19,8 @@ import type { HostSummary, Model } from "./model"
 
 type H = HtmlBuilder<Message>
 
-export const hostMetadataPanel = (
-	h: H,
-	model: Model,
-	summary: NonNullable<HostSummary>,
-	nowMs: number,
-	timeZone: string,
-): Html => {
-	const row = (
-		label: string,
-		value: string,
-		extra: Readonly<{ copyable?: boolean; copyValue?: string; tooltip?: string }>,
-	) =>
+export const hostMetadataPanel = (h: H, model: Model, summary: NonNullable<HostSummary>, nowMs: number, timeZone: string): Html => {
+	const row = (label: string, value: string, extra: Readonly<{ copyable?: boolean; copyValue?: string; tooltip?: string }>) =>
 		metaRow(h, {
 			label,
 			value,
@@ -70,14 +56,13 @@ export const hostMetadataPanel = (
 	)
 }
 
-export const METRIC_STRIPS: ReadonlyArray<Readonly<{ metric: HostMetric; label: string; caption: string }>> =
-	[
-		{ metric: "cpu", label: "CPU", caption: "Per-mode utilization · stacked area" },
-		{ metric: "memory", label: "Memory", caption: "Used / cached / free · stacked" },
-		{ metric: "filesystem", label: "Filesystem", caption: "Mountpoint utilization" },
-		{ metric: "network", label: "Network", caption: "Throughput in/out per device" },
-		{ metric: "load15", label: "Load 15m", caption: "Linux load average" },
-	]
+export const METRIC_STRIPS: ReadonlyArray<Readonly<{ metric: HostMetric; label: string; caption: string }>> = [
+	{ metric: "cpu", label: "CPU", caption: "Per-mode utilization · stacked area" },
+	{ metric: "memory", label: "Memory", caption: "Used / cached / free · stacked" },
+	{ metric: "filesystem", label: "Filesystem", caption: "Mountpoint utilization" },
+	{ metric: "network", label: "Network", caption: "Throughput in/out per device" },
+	{ metric: "load15", label: "Load 15m", caption: "Linux load average" },
+]
 
 const SERIES_LABELS = new Map<HostMetric, string>([
 	["cpu", "CPU"],
@@ -101,8 +86,7 @@ const stripChart = (h: H, model: Model, metric: HostMetric, timeZone: string): H
 						slotId: `host-chart-${metric}`,
 						model: model.charts[metric] ?? Chart.init(),
 						view: metricChartView,
-						toParentMessage: (message: Chart.Message) =>
-							Message.GotChartMessage({ metric, message }),
+						toParentMessage: (message: Chart.Message) => Message.GotChartMessage({ metric, message }),
 						viewInputs: {
 							chartId: `host-${metric}`,
 							rows: series.rows,
@@ -124,10 +108,7 @@ const stripChart = (h: H, model: Model, metric: HostMetric, timeZone: string): H
 /** `MetricStrip`. */
 const metricStrip = (h: H, model: Model, strip: (typeof METRIC_STRIPS)[number], timeZone: string): Html =>
 	h.section(
-		[
-			h.Key(strip.metric),
-			h.Class("grid grid-cols-1 gap-0 border-t first:border-t-0 lg:grid-cols-[160px_1fr]"),
-		],
+		[h.Key(strip.metric), h.Class("grid grid-cols-1 gap-0 border-t first:border-t-0 lg:grid-cols-[160px_1fr]")],
 		[
 			h.div(
 				[h.Class("border-b px-1 py-3 lg:border-b-0 lg:border-r lg:py-5")],
@@ -136,10 +117,7 @@ const metricStrip = (h: H, model: Model, strip: (typeof METRIC_STRIPS)[number], 
 					h.div([h.Class("mt-1 text-2xs leading-relaxed text-muted-foreground")], [strip.caption]),
 				],
 			),
-			h.div(
-				[h.Class("lg:pl-4")],
-				[chartPlotArea(h, INFRA_METRIC_CHART_HEIGHT, [stripChart(h, model, strip.metric, timeZone)])],
-			),
+			h.div([h.Class("lg:pl-4")], [chartPlotArea(h, INFRA_METRIC_CHART_HEIGHT, [stripChart(h, model, strip.metric, timeZone)])]),
 		],
 	)
 
@@ -148,10 +126,7 @@ export const metricsPanel = (h: H, model: Model, timeZone: string): Html =>
 	panel(h, { className: "overflow-visible" }, [
 		panelHeader(h, {
 			title: "Metrics",
-			action: h.span(
-				[h.Class("text-xs tabular-nums text-muted-foreground")],
-				[countLabel(METRIC_STRIPS.length, "signal")],
-			),
+			action: h.span([h.Class("text-xs tabular-nums text-muted-foreground")], [countLabel(METRIC_STRIPS.length, "signal")]),
 		}),
 		h.div(
 			[h.Class("px-4"), h.Style(LINKED_CURSOR_STYLE), h.OnMount(MountLinkedCursor())],

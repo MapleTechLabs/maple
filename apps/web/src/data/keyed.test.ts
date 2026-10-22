@@ -75,9 +75,7 @@ describe("Keyed slots", () => {
 		expect(afterOld).toEqual(superseded)
 		const key = superseded.key
 		expect(Keyed.accept(afterOld, key, Result.succeed(2)).data).toEqual(AsyncData.Success({ data: 2 }))
-		expect(Keyed.request(Keyed.accept(afterOld, key, Result.succeed(2)), morning, "Load")).toEqual(
-			Option.none(),
-		)
+		expect(Keyed.request(Keyed.accept(afterOld, key, Result.succeed(2)), morning, "Load")).toEqual(Option.none())
 		expect(Keyed.supersede(superseded, morning).key).not.toBe(key)
 	})
 
@@ -90,9 +88,7 @@ describe("Keyed slots", () => {
 		const failed = Keyed.accept(polled, polled.key, Result.fail("timeout"))
 		const retried = requested(failed, morning, "Refresh")
 		expect(Keyed.accept(retried, morning, Result.succeed(1))).toEqual(retried)
-		expect(Keyed.accept(retried, retried.key, Result.succeed(3)).data).toEqual(
-			AsyncData.Success({ data: 3 }),
-		)
+		expect(Keyed.accept(retried, retried.key, Result.succeed(3)).data).toEqual(AsyncData.Success({ data: 3 }))
 	})
 
 	test("requestFor: `Supersede` always re-reads, the other modes defer to `request`", () => {

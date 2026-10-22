@@ -50,89 +50,66 @@ export const apiKeyRows = <M>(
 		),
 	)
 
-export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
-	(entry) => ({
-		apiKeys: entry(
-			{ orgId: Schema.String, isReading: Schema.Boolean },
-			{
-				modelToDependencies: ({ model, context }) => ({
-					orgId: context.orgId,
-					isReading: readsApiKeys(model),
-				}),
-				dependenciesToStream: ({ orgId, isReading }) =>
-					isReading
-						? apiKeyRows(orgId, (rows) => Message.UpdatedApiKeys({ orgId, rows }))
-						: Stream.empty,
-			},
-		),
-		/** `useCollectionLoadFailed` while a tab waits on the first `api_keys` answer. */
-		apiKeysLoad: entry(
-			{ orgId: Schema.String, isWatching: Schema.Boolean },
-			{
-				modelToDependencies: ({ model, context }) => ({
-					orgId: context.orgId,
-					isWatching: readsApiKeys(model) && model.apiKeys === null && !model.isApiKeysLoadFailed,
-				}),
-				dependenciesToStream: ({ orgId, isWatching }) =>
-					isWatching
-						? collectionLoadFailed(`api_keys:${orgId}`, () =>
-								Message.FailedLoadApiKeys({ orgId }),
-							)
-						: Stream.empty,
-			},
-		),
-		/** `useAlertDestinationsList()` while the Automation tab routes to them. */
-		destinations: entry(
-			{ orgId: Schema.String, isReading: Schema.Boolean },
-			{
-				modelToDependencies: ({ model, context }) => ({
-					orgId: context.orgId,
-					isReading: model.tab?._tag === "Automation",
-				}),
-				dependenciesToStream: ({ orgId, isReading }) =>
-					isReading
-						? destinationRows(orgId, (rows) =>
-								Message.GotAutomationMessage({
-									message: AutomationMessage.UpdatedDestinations({
-										destinations: rows.map(rowToAlertDestinationDocument),
-									}),
-								}),
-							)
-						: Stream.empty,
-			},
-		),
-		ingestPoll: entry(
-			{ isPolling: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({ isPolling: model.tab?._tag === "Ingestion" }),
-				dependenciesToStream: ({ isPolling }) =>
-					isPolling
-						? pollTicks(INGEST_POLL).pipe(
-								Stream.map(() =>
-									Message.GotIngestionMessage({ message: IngestionMessage.TickedPoll() }),
-								),
-							)
-						: Stream.empty,
-			},
-		),
-		/** `useIntervalRefresh(refreshStatus, { intervalMs: 2_000, enabled: runActive })`. */
-		applyPoll: entry(
-			{ isPolling: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({
-					isPolling: model.tab?._tag === "DataPlatform" && isRunActive(model.tab.model),
-				}),
-				dependenciesToStream: ({ isPolling }) =>
-					isPolling
-						? pollTicks("2 seconds").pipe(
-								Stream.map(() =>
-									Message.GotDataPlatformMessage({
-										message: DataPlatformMessage.TickedApplyPoll(),
-									}),
-								),
-							)
-						: Stream.empty,
-			},
-		),
-	}),
-)
+export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()((entry) => ({
+	apiKeys: entry(
+		{ orgId: Schema.String, isReading: Schema.Boolean },
+		{
+			modelToDependencies: ({ model, context }) => ({ orgId: context.orgId, isReading: readsApiKeys(model) }),
+			dependenciesToStream: ({ orgId, isReading }) => (isReading ? apiKeyRows(orgId, (rows) => Message.UpdatedApiKeys({ orgId, rows })) : Stream.empty),
+		},
+	),
+	/** `useCollectionLoadFailed` while a tab waits on the first `api_keys` answer. */
+	apiKeysLoad: entry(
+		{ orgId: Schema.String, isWatching: Schema.Boolean },
+		{
+			modelToDependencies: ({ model, context }) => ({
+				orgId: context.orgId,
+				isWatching: readsApiKeys(model) && model.apiKeys === null && !model.isApiKeysLoadFailed,
+			}),
+			dependenciesToStream: ({ orgId, isWatching }) =>
+				isWatching ? collectionLoadFailed(`api_keys:${orgId}`, () => Message.FailedLoadApiKeys({ orgId })) : Stream.empty,
+		},
+	),
+	/** `useAlertDestinationsList()` while the Automation tab routes to them. */
+	destinations: entry(
+		{ orgId: Schema.String, isReading: Schema.Boolean },
+		{
+			modelToDependencies: ({ model, context }) => ({ orgId: context.orgId, isReading: model.tab?._tag === "Automation" }),
+			dependenciesToStream: ({ orgId, isReading }) =>
+				isReading
+					? destinationRows(orgId, (rows) =>
+							Message.GotAutomationMessage({
+								message: AutomationMessage.UpdatedDestinations({ destinations: rows.map(rowToAlertDestinationDocument) }),
+							}),
+						)
+					: Stream.empty,
+		},
+	),
+	ingestPoll: entry(
+		{ isPolling: Schema.Boolean },
+		{
+			modelToDependencies: ({ model }) => ({ isPolling: model.tab?._tag === "Ingestion" }),
+			dependenciesToStream: ({ isPolling }) =>
+				isPolling
+					? pollTicks(INGEST_POLL).pipe(
+							Stream.map(() => Message.GotIngestionMessage({ message: IngestionMessage.TickedPoll() })),
+						)
+					: Stream.empty,
+		},
+	),
+	/** `useIntervalRefresh(refreshStatus, { intervalMs: 2_000, enabled: runActive })`. */
+	applyPoll: entry(
+		{ isPolling: Schema.Boolean },
+		{
+			modelToDependencies: ({ model }) => ({
+				isPolling: model.tab?._tag === "DataPlatform" && isRunActive(model.tab.model),
+			}),
+			dependenciesToStream: ({ isPolling }) =>
+				isPolling
+					? pollTicks("2 seconds").pipe(
+							Stream.map(() => Message.GotDataPlatformMessage({ message: DataPlatformMessage.TickedApplyPoll() })),
+						)
+					: Stream.empty,
+		},
+	),
+}))

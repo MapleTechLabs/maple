@@ -39,10 +39,7 @@ const sourceLabel = <M>(h: HtmlBuilder<M>, id: SourceId): Html =>
 /** The name truncates; the metric after it ("at 97% CPU") always stays visible. */
 const findingTitle = <M>(h: HtmlBuilder<M>, { subject, title }: Finding): Html =>
 	subject === undefined || subject === "" || !title.startsWith(subject)
-		? h.span(
-				[h.Class("truncate text-sm text-foreground group-hover:text-primary"), h.Title(title)],
-				[title],
-			)
+		? h.span([h.Class("truncate text-sm text-foreground group-hover:text-primary"), h.Title(title)], [title])
 		: h.span(
 				[h.Class("flex min-w-0 text-sm text-foreground group-hover:text-primary"), h.Title(title)],
 				[
@@ -53,10 +50,7 @@ const findingTitle = <M>(h: HtmlBuilder<M>, { subject, title }: Finding): Html =
 
 export const findingRow = <M>(h: HtmlBuilder<M>, finding: Finding, time: TimeSearch): Html =>
 	h.a(
-		[
-			h.Class(cn(ROW_CLASS, FINDINGS_ROW_CLASS, FINDING_ORDER[finding.tone])),
-			h.Href(findingHref(finding.target, time)),
-		],
+		[h.Class(cn(ROW_CLASS, FINDINGS_ROW_CLASS, FINDING_ORDER[finding.tone])), h.Href(findingHref(finding.target, time))],
 		[
 			finding.tone === "stale"
 				? statusDot(h, { tone: "custom", size: "lg", className: STALE_DOT })
@@ -64,10 +58,7 @@ export const findingRow = <M>(h: HtmlBuilder<M>, finding: Finding, time: TimeSea
 			sourceLabel(h, finding.source),
 			h.span(
 				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
-				[
-					findingTitle(h, finding),
-					h.span([h.Class("truncate text-xs text-muted-foreground")], [finding.detail]),
-				],
+				[findingTitle(h, finding), h.span([h.Class("truncate text-xs text-muted-foreground")], [finding.detail])],
 			),
 			icon(h, "ChevronRightIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 		],
@@ -86,19 +77,11 @@ const findingRowError = <M>(h: HtmlBuilder<M>, id: SourceId): Html =>
 		[
 			statusDot(h, { tone: "neutral", size: "lg" }),
 			sourceLabel(h, id),
-			h.span(
-				[h.Class("text-sm text-muted-foreground")],
-				["Couldn't check this source. Its page shows the error."],
-			),
+			h.span([h.Class("text-sm text-muted-foreground")], ["Couldn't check this source. Its page shows the error."]),
 		],
 	)
 
-const rowsOf = <M>(
-	h: HtmlBuilder<M>,
-	id: SourceId,
-	state: SourceState,
-	time: TimeSearch,
-): ReadonlyArray<Html> =>
+const rowsOf = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState, time: TimeSearch): ReadonlyArray<Html> =>
 	state.status === "ready"
 		? state.summary.findings.map((finding) => findingRow(h, finding, time))
 		: state.status === "loading"

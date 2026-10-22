@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 
-import { applyWhereClauseSuggestion, getWhereClauseAutocomplete } from "./where-clause-autocomplete"
+import {
+	applyWhereClauseSuggestion,
+	getWhereClauseAutocomplete,
+} from "./where-clause-autocomplete"
 
 describe("where clause autocomplete", () => {
 	it("suggests keys at an empty query", () => {

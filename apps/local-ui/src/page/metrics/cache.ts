@@ -18,9 +18,7 @@ export const sparklinesToCached = (sparklines: ReadonlyArray<MetricSparkline>) =
 export const sparklinesFromCached = (value: CacheValue): Option.Option<ReadonlyArray<MetricSparkline>> => {
 	if (!(value instanceof Map)) return Option.none()
 	const entries = Array.fromIterable(value.entries()).map(([metricName, points]) =>
-		typeof metricName === "string" && isPoints(points)
-			? Option.some({ metricName, points })
-			: Option.none(),
+		typeof metricName === "string" && isPoints(points) ? Option.some({ metricName, points }) : Option.none(),
 	)
 	return Option.all(entries)
 }

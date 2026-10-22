@@ -52,8 +52,7 @@ const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 					// Only a showing menu swaps the row for its trigger: a press alone must keep the row's
 					// DOM (and the focused checkbox in it).
 					rowMenu:
-						model.rowMenuTarget === signal.id &&
-						isMounted(model.rowMenu.isOpen, model.rowMenu.animation)
+						model.rowMenuTarget === signal.id && isMounted(model.rowMenu.isOpen, model.rowMenu.animation)
 							? model.rowMenu
 							: null,
 				}),

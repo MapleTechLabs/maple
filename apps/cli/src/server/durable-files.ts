@@ -60,9 +60,7 @@ const warnedDirectories = new Set<string>()
 const warnUnhardenedDirectory = (path: string): void => {
 	if (warnedDirectories.has(path)) return
 	warnedDirectories.add(path)
-	process.emitWarning(
-		`cannot chmod ${path} to 0700 (owned by another user); continuing, it is already owner-only`,
-	)
+	process.emitWarning(`cannot chmod ${path} to 0700 (owned by another user); continuing, it is already owner-only`)
 }
 
 /** Like {@link ensurePrivateDirectory}, but an already-existing directory keeps

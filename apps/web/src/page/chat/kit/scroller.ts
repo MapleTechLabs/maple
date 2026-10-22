@@ -43,8 +43,7 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 
 	const items = (): ReadonlyArray<HTMLElement> =>
 		Array.from(content.children).filter(
-			(child): child is HTMLElement =>
-				child instanceof HTMLElement && !child.hasAttribute("data-message-scroller-spacer"),
+			(child): child is HTMLElement => child instanceof HTMLElement && !child.hasAttribute("data-message-scroller-spacer"),
 		)
 	const paddings = () => {
 		const style = getComputedStyle(content)
@@ -54,8 +53,7 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 		const top = viewport.getBoundingClientRect().top
 		const pad = paddings()
 		return items().reduce(
-			(bottom, item) =>
-				Math.max(bottom, item.getBoundingClientRect().bottom - top + viewport.scrollTop + pad.end),
+			(bottom, item) => Math.max(bottom, item.getBoundingClientRect().bottom - top + viewport.scrollTop + pad.end),
 			pad.start + pad.end,
 		)
 	}
@@ -69,9 +67,7 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 		spacer.style.marginTop = value > 0 ? `${-gap}px` : ""
 	}
 	const syncButton = () => {
-		const isEnd =
-			mode !== "following-bottom" &&
-			contentBottom() - viewport.scrollTop - viewport.clientHeight > EDGE_THRESHOLD
+		const isEnd = mode !== "following-bottom" && contentBottom() - viewport.scrollTop - viewport.clientHeight > EDGE_THRESHOLD
 		if (!(button instanceof HTMLElement)) return
 		button.dataset.active = String(isEnd)
 		button.toggleAttribute("inert", !isEnd)
@@ -91,8 +87,7 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 	}
 	/** `scrollToElement(…, { align: "start" }, { keepPreviousPeek: true })`. */
 	const anchorTo = (element: HTMLElement) => {
-		const offset =
-			element.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
+		const offset = element.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
 		const target = offset - paddings().start - PREVIOUS_PEEK
 		setSpacer(target + viewport.clientHeight - contentBottom())
 		anchored = element
@@ -101,8 +96,7 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 	}
 	/** `scrollToMessage(id, { align: "start" })`: a permalink's message at the top, left where it lands. */
 	const jumpTo = (element: HTMLElement, behavior: ScrollBehavior = "auto") => {
-		const offset =
-			element.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
+		const offset = element.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
 		const target = offset - paddings().start
 		setSpacer(target + viewport.clientHeight - contentBottom())
 		anchored = null
@@ -151,8 +145,7 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 	}
 	const onResize = () => {
 		if (mode === "following-bottom") return toEnd("auto")
-		if (mode === "anchored-to-message" && anchored !== null && anchored.isConnected)
-			return anchorTo(anchored)
+		if (mode === "anchored-to-message" && anchored !== null && anchored.isConnected) return anchorTo(anchored)
 		return syncButton()
 	}
 	const onUserScroll = () => {
@@ -235,27 +228,14 @@ export const MountJumpToMessage = Mount.define("MountChatJumpToMessage", {
 					const root = element.closest("[data-slot=message-scroller]")
 					const viewport = root?.querySelector("[data-slot=message-scroller-viewport]")
 					const target = root?.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`)
-					if (
-						!(element instanceof HTMLElement) ||
-						root == null ||
-						!(viewport instanceof HTMLElement) ||
-						target == null
-					)
+					if (!(element instanceof HTMLElement) || root == null || !(viewport instanceof HTMLElement) || target == null)
 						return () => {}
 					const observer = new IntersectionObserver(
-						(entries) =>
-							entries.forEach((entry) =>
-								element.toggleAttribute("hidden", entry.isIntersecting),
-							),
-						{
-							root: viewport,
-							rootMargin: `${-PREVIOUS_PEEK}px 0px 0px 0px`,
-							threshold: [0, 0.01, 0.5, 1],
-						},
+						(entries) => entries.forEach((entry) => element.toggleAttribute("hidden", entry.isIntersecting)),
+						{ root: viewport, rootMargin: `${-PREVIOUS_PEEK}px 0px 0px 0px`, threshold: [0, 0.01, 0.5, 1] },
 					)
 					observer.observe(target)
-					const onClick = () =>
-						root.dispatchEvent(new CustomEvent(SCROLL_TO_MESSAGE, { detail: messageId }))
+					const onClick = () => root.dispatchEvent(new CustomEvent(SCROLL_TO_MESSAGE, { detail: messageId }))
 					element.addEventListener("click", onClick)
 					return () => {
 						observer.disconnect()

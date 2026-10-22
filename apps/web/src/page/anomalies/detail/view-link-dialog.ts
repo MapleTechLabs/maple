@@ -78,12 +78,7 @@ const item = (h: H, model: Model, issue: ErrorIssueDocument, index: number, time
 		],
 	)
 
-const listBody = (
-	h: H,
-	model: Model,
-	incident: AnomalyIncidentDocument,
-	timeZone: string,
-): ReadonlyArray<Html> => {
+const listBody = (h: H, model: Model, incident: AnomalyIncidentDocument, timeZone: string): ReadonlyArray<Html> => {
 	const query = model.linkCombobox.inputValue
 	if (AsyncData.isLoading(model.linkIssues.data) || AsyncData.isIdle(model.linkIssues.data))
 		return [
@@ -137,12 +132,7 @@ const listBody = (
 	]
 }
 
-export const linkIssueDialog = (
-	h: H,
-	model: Model,
-	incident: AnomalyIncidentDocument,
-	timeZone: string,
-): Html =>
+export const linkIssueDialog = (h: H, model: Model, incident: AnomalyIncidentDocument, timeZone: string): Html =>
 	h.submodel({
 		slotId: "anomaly-link-issue-dialog",
 		model: model.linkDialog,
@@ -165,49 +155,31 @@ export const linkIssueDialog = (
 									groups: [
 										{
 											label: "",
-											items: filteredOf(model, incident).map((issue) => ({
-												title: String(issue.id),
-											})),
+											items: filteredOf(model, incident).map((issue) => ({ title: String(issue.id) })),
 										},
 									],
 								},
 								toCombobox,
 							),
-							scrollArea(
-								h,
-								{
-									idPrefix: `${model.linkCombobox.id}-scroll`,
-									scrollFade: true,
-									scrollbarGutter: true,
-								},
-								[
-									h.div(
-										[
-											h.Class(cn(A.autocompleteListStyles, commandListStyles)),
-											h.DataAttribute("empty", ""),
-											h.DataAttribute("slot", "command-list"),
-											h.Id(Combobox.listId(model.linkCombobox.id)),
-											h.Role("listbox"),
-											h.Tabindex(-1),
-										],
-										listBody(h, model, incident, timeZone),
-									),
-								],
-							),
+							scrollArea(h, { idPrefix: `${model.linkCombobox.id}-scroll`, scrollFade: true, scrollbarGutter: true }, [
+								h.div(
+									[
+										h.Class(cn(A.autocompleteListStyles, commandListStyles)),
+										h.DataAttribute("empty", ""),
+										h.DataAttribute("slot", "command-list"),
+										h.Id(Combobox.listId(model.linkCombobox.id)),
+										h.Role("listbox"),
+										h.Tabindex(-1),
+									],
+									listBody(h, model, incident, timeZone),
+								),
+							]),
 							h.div(
-								[
-									h.Class(
-										"flex items-center justify-between border-t border-border/60 px-3 py-2",
-									),
-								],
+								[h.Class("flex items-center justify-between border-t border-border/60 px-3 py-2")],
 								[
 									h.span(
 										[h.Class("text-xs text-muted-foreground")],
-										[
-											model.linkAllServices
-												? "Showing issues across all services"
-												: `Scoped to ${incident.serviceName}`,
-										],
+										[model.linkAllServices ? "Showing issues across all services" : `Scoped to ${incident.serviceName}`],
 									),
 									h.button(
 										[
@@ -215,11 +187,7 @@ export const linkIssueDialog = (
 											h.OnClick(Message.ToggledLinkScope()),
 											h.Class("text-xs text-primary hover:underline"),
 										],
-										[
-											model.linkAllServices
-												? `Only ${incident.serviceName}`
-												: "Search all services",
-										],
+										[model.linkAllServices ? `Only ${incident.serviceName}` : "Search all services"],
 									),
 								],
 							),

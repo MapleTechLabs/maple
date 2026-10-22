@@ -68,11 +68,7 @@ export const sourceSummary = (variable: Variable): string => {
 	}
 }
 
-export const newVariable = (): Variable => ({
-	name: "",
-	type: "query",
-	source: { kind: "facet", facet: "service" },
-})
+export const newVariable = (): Variable => ({ name: "", type: "query", source: { kind: "facet", facet: "service" } })
 
 /** `withType`: retyped, keeping the shared base fields. */
 export const withType = (variable: Variable, type: Variable["type"]): Variable => {
@@ -93,21 +89,15 @@ export const withType = (variable: Variable, type: Variable["type"]): Variable =
 }
 
 /** `draftError`: the first problem with a draft, computed live. */
-export const draftError = (
-	draft: Variable,
-	index: number,
-	drafts: ReadonlyArray<Variable>,
-): string | null => {
+export const draftError = (draft: Variable, index: number, drafts: ReadonlyArray<Variable>): string | null => {
 	if (draft.name === "") return "Name is required."
-	if (!isValidVariableName(draft.name))
-		return "Names start with a letter, then letters, digits, or underscores."
+	if (!isValidVariableName(draft.name)) return "Names start with a letter, then letters, digits, or underscores."
 	if (drafts.some((other, i) => i !== index && other.name === draft.name))
 		return `Another variable is already named "${draft.name}".`
 	if (draft.type === "query" && draft.source.kind !== "facet" && draft.source.attributeKey.trim() === "")
 		return "Pick the attribute key to list values for."
 	if (draft.type === "query" && draft.source.kind === "metric") {
-		if (draft.source.metricNames.some((name) => name === ""))
-			return "Name at least one metric to list values from."
+		if (draft.source.metricNames.some((name) => name === "")) return "Name at least one metric to list values from."
 		if (draft.source.metricNames.length > 20) return "List at most 20 metrics."
 	}
 	return null
@@ -115,9 +105,7 @@ export const draftError = (
 
 /** The "Values from" select's value for a query source. */
 export const sourceValueOf = (variable: QueryVariable): string =>
-	variable.source.kind === "facet"
-		? `facet:${variable.source.facet}`
-		: `${variable.source.kind}:${variable.source.scope}`
+	variable.source.kind === "facet" ? `facet:${variable.source.facet}` : `${variable.source.kind}:${variable.source.scope}`
 
 /** The "Values from" pick applied to a query variable. */
 export const withSourceValue = (variable: QueryVariable, value: string): Variable => {

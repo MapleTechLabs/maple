@@ -26,21 +26,19 @@ export const LoadTabs = Command.define("LoadChatTabs", {
 export const SaveTabs = Command.define("SaveChatTabs", {
 	args: { orgId: Schema.String, state: TabsState },
 	messages: [Message.CompletedSaveTabs],
-	execute: ({ orgId, state }) => Effect.as(writeTabs(orgId, state), Message.CompletedSaveTabs()),
+	execute: ({ orgId, state }) =>
+		Effect.as(writeTabs(orgId, state), Message.CompletedSaveTabs()),
 })
 
 export const CreateTab = Command.define("CreateChatTab", {
 	messages: [Message.CreatedTab],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) =>
-		Message.CreatedTab({ id: crypto.randomUUID(), nowMs }),
-	),
+	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CreatedTab({ id: crypto.randomUUID(), nowMs })),
 })
 
 export const StampRename = Command.define("StampChatRename", {
 	args: { id: Schema.String, title: Schema.String },
 	messages: [Message.StampedRename],
-	execute: ({ id, title }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) => Message.StampedRename({ id, title, nowMs })),
+	execute: ({ id, title }) => Effect.map(Clock.currentTimeMillis, (nowMs) => Message.StampedRename({ id, title, nowMs })),
 })
 
 /** `ensureTab`'s clock, for a subject that arrives on a later route change. */
@@ -50,11 +48,7 @@ export const StampSubjectTab = Command.define("StampChatSubjectTab", {
 })
 
 /** `shareUrl`: a read-only link carrying the tab id, its title and an optional message. */
-export const shareUrl = (
-	origin: string,
-	tab: { readonly id: string; readonly title: string },
-	messageId?: string,
-) => {
+export const shareUrl = (origin: string, tab: { readonly id: string; readonly title: string }, messageId?: string) => {
 	const url = new URL("/chat", origin)
 	url.searchParams.set("shared", tab.id)
 	const title = tab.title.trim()

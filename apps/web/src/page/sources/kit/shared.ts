@@ -1,9 +1,4 @@
-import {
-	GcpConnectorPublicId,
-	ScrapeTargetPublicId,
-	SourcePublicId,
-	type V2Source,
-} from "@maple/domain/http/v2"
+import { GcpConnectorPublicId, ScrapeTargetPublicId, SourcePublicId, type V2Source } from "@maple/domain/http/v2"
 import {
 	isPushSourcePlatform,
 	type PullSourcePlatform,

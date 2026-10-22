@@ -63,9 +63,7 @@ const flagsOf = (model: Model, month: CalendarDate, date: CalendarDate, tabbable
 	const isComplete = from !== null && to !== null
 	const isSelected =
 		from !== null &&
-		(to === null
-			? Calendar.isEqual(date, from)
-			: Calendar.isAfterOrEqual(date, from) && Calendar.isBeforeOrEqual(date, to))
+		(to === null ? Calendar.isEqual(date, from) : Calendar.isAfterOrEqual(date, from) && Calendar.isBeforeOrEqual(date, to))
 	return {
 		isDisabled: Calendar.isAfter(date, model.lastDay),
 		isOutside: date.month !== month.month || date.year !== month.year,
@@ -126,11 +124,7 @@ const navButton = (h: HtmlBuilder<Message>, direction: "Previous" | "Next"): Htm
 	h.button(
 		[
 			h.AriaLabel(`Go to the ${direction} Month`),
-			h.Class(
-				direction === "Previous"
-					? calendarClassNames.button_previous
-					: calendarClassNames.button_next,
-			),
+			h.Class(direction === "Previous" ? calendarClassNames.button_previous : calendarClassNames.button_next),
 			h.Type("button"),
 			h.OnClick(direction === "Previous" ? Message.ClickedPreviousMonth() : Message.ClickedNextMonth()),
 		],
@@ -141,32 +135,17 @@ const navButton = (h: HtmlBuilder<Message>, direction: "Previous" | "Next"): Htm
 		],
 	)
 
-const monthGrid = (
-	h: HtmlBuilder<Message>,
-	model: Model,
-	first: CalendarDate,
-	tabbable: CalendarDate,
-): Html => {
+const monthGrid = (h: HtmlBuilder<Message>, model: Model, first: CalendarDate, tabbable: CalendarDate): Html => {
 	const caption = `${MONTH_NAMES[first.month - 1] ?? ""} ${first.year}`
 	return h.div(
 		[h.Class(calendarClassNames.month)],
 		[
 			h.div(
 				[h.Class(calendarClassNames.month_caption)],
-				[
-					h.span(
-						[h.AriaLive("polite"), h.Class(calendarClassNames.caption_label), h.Role("status")],
-						[caption],
-					),
-				],
+				[h.span([h.AriaLive("polite"), h.Class(calendarClassNames.caption_label), h.Role("status")], [caption])],
 			),
 			h.table(
-				[
-					h.AriaLabel(caption),
-					h.AriaMultiSelectable(true),
-					h.Class("rdp-month_grid"),
-					h.Role("grid"),
-				],
+				[h.AriaLabel(caption), h.AriaMultiSelectable(true), h.Class("rdp-month_grid"), h.Role("grid")],
 				[
 					h.thead(
 						[h.AriaHidden(true)],
@@ -175,11 +154,7 @@ const monthGrid = (
 								[h.Class("rdp-weekdays")],
 								DAY_NAMES.map((name) =>
 									h.th(
-										[
-											h.AriaLabel(name),
-											h.Attribute("class", calendarClassNames.weekday),
-											h.Scope("col"),
-										],
+										[h.AriaLabel(name), h.Attribute("class", calendarClassNames.weekday), h.Scope("col")],
 										[name.slice(0, 2)],
 									),
 								),
@@ -205,13 +180,9 @@ const monthGrid = (
 const tabbableOf = (model: Model, first: CalendarDate): CalendarDate => {
 	const last = Calendar.lastOfMonth(Calendar.addMonths(first, 1))
 	const isShown = (date: CalendarDate) =>
-		Calendar.isAfterOrEqual(date, first) &&
-		Calendar.isBeforeOrEqual(date, last) &&
-		!Calendar.isAfter(date, model.lastDay)
+		Calendar.isAfterOrEqual(date, first) && Calendar.isBeforeOrEqual(date, last) && !Calendar.isAfter(date, model.lastDay)
 	return Option.getOrElse(
-		Option.orElse(Option.filter(model.maybeFrom, isShown), () =>
-			Option.filter(Option.some(model.today), isShown),
-		),
+		Option.orElse(Option.filter(model.maybeFrom, isShown), () => Option.filter(Option.some(model.today), isShown)),
 		() => first,
 	)
 }
@@ -224,11 +195,7 @@ const timeField = (
 	toMessage: (value: string) => Message,
 ): Html =>
 	h.div(
-		[
-			h.DataAttribute("slot", "field"),
-			h.Class(cn(fieldStyles, "flex-1 items-stretch gap-1")),
-			h.DataAttribute("filled", ""),
-		],
+		[h.DataAttribute("slot", "field"), h.Class(cn(fieldStyles, "flex-1 items-stretch gap-1")), h.DataAttribute("filled", "")],
 		[
 			h.label(
 				[
@@ -244,13 +211,7 @@ const timeField = (
 				id,
 				type: "time",
 				className: "font-mono",
-				fieldState: {
-					isInvalid: false,
-					isDirty: false,
-					isFilled: value !== "",
-					isFocused: false,
-					isTouched: false,
-				},
+				fieldState: { isInvalid: false, isDirty: false, isFilled: value !== "", isFocused: false, isTouched: false },
 				attributes: [h.Value(value), h.OnInput(toMessage), h.AriaLabelledBy(`${id}-label`)],
 			}),
 		],
@@ -296,28 +257,16 @@ export const view = defineView<Model, Message, Record<string, never>>((model, _i
 					timeField(h, "custom-range-start", "Start time", model.startInput, (value) =>
 						Message.ChangedStartTime({ value }),
 					),
-					timeField(h, "custom-range-end", "End time", model.endInput, (value) =>
-						Message.ChangedEndTime({ value }),
-					),
+					timeField(h, "custom-range-end", "End time", model.endInput, (value) => Message.ChangedEndTime({ value })),
 				],
 			),
 			h.div(
 				[h.Class("flex justify-end gap-2")],
 				[
-					button(
-						h,
-						{ variant: "ghost", size: "sm", attributes: [h.OnClick(Message.ClickedCancel())] },
-						["Cancel"],
-					),
-					button(
-						h,
-						{
-							size: "sm",
-							isDisabled: !isValidRange,
-							attributes: [h.OnClick(Message.ClickedApply())],
-						},
-						["Apply"],
-					),
+					button(h, { variant: "ghost", size: "sm", attributes: [h.OnClick(Message.ClickedCancel())] }, ["Cancel"]),
+					button(h, { size: "sm", isDisabled: !isValidRange, attributes: [h.OnClick(Message.ClickedApply())] }, [
+						"Apply",
+					]),
 				],
 			),
 		],

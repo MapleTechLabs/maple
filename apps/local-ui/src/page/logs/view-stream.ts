@@ -10,17 +10,9 @@ import { logRow } from "./view-row"
 import { ObserveLogsViewport, ROW_HEIGHT, virtualWindow } from "./virtualize"
 
 /** `LogListMode`'s virtualized stream: only the rows in (or near) the scroller's view are built. */
-export const logStream = (
-	h: HtmlBuilder<Message>,
-	model: Model,
-	search: string | undefined,
-	timeFormat: TimeFormat,
-): Html => {
+export const logStream = (h: HtmlBuilder<Message>, model: Model, search: string | undefined, timeFormat: TimeFormat): Html => {
 	const rows = rowsOf(model)
-	const selectedKey = Option.match(model.maybeDetail, {
-		onNone: () => null,
-		onSome: (detail) => logKey(detail.log),
-	})
+	const selectedKey = Option.match(model.maybeDetail, { onNone: () => null, onSome: (detail) => logKey(detail.log) })
 	return h.div(
 		[
 			h.Role("list"),
@@ -48,9 +40,7 @@ export const logStream = (
 							]
 				}),
 			),
-			...(model.isFetchingNextPage
-				? [h.div([h.Class("flex justify-center p-3")], [spinner(h, "size-4")])]
-				: []),
+			...(model.isFetchingNextPage ? [h.div([h.Class("flex justify-center p-3")], [spinner(h, "size-4")])] : []),
 		],
 	)
 }

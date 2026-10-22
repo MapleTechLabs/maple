@@ -30,10 +30,7 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 	return h.div(
 		[h.Class("flex h-9 items-center gap-[9px] px-6 font-mono text-xs")],
 		[
-			h.span(
-				[h.Class("text-muted-foreground")],
-				["Showing ", formatToolCount(shown), " of ", formatToolCount(total)],
-			),
+			h.span([h.Class("text-muted-foreground")], ["Showing ", formatToolCount(shown), " of ", formatToolCount(total)]),
 			...(paging === "more"
 				? [
 						h.button(
@@ -51,9 +48,7 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 						? [
 								h.button(
 									[
-										h.Class(
-											"text-severity-error transition-colors hover:text-foreground",
-										),
+										h.Class("text-severity-error transition-colors hover:text-foreground"),
 										h.Type("button"),
 										h.OnClick(Message.ClickedLoadMore()),
 									],
@@ -105,11 +100,7 @@ export const samplesPane = (
 		[h.Class("flex min-w-0 grow flex-col overflow-hidden")],
 		[
 			h.div(
-				[
-					h.Class(
-						"flex h-12 shrink-0 items-center justify-between gap-4 border-b border-border px-6 font-mono",
-					),
-				],
+				[h.Class("flex h-12 shrink-0 items-center justify-between gap-4 border-b border-border px-6 font-mono")],
 				[
 					h.div(
 						[h.Class("flex items-baseline gap-2")],
@@ -117,22 +108,14 @@ export const samplesPane = (
 							h.span([h.Class("text-xs font-medium text-foreground")], ["Samples"]),
 							h.span(
 								[h.Class("text-2xs leading-3.5 tabular-nums text-muted-foreground/70")],
-								[
-									formatToolCount(options.total),
-									" failed ",
-									pluralize(options.total, "call"),
-									" · newest first",
-								],
+								[formatToolCount(options.total), " failed ", pluralize(options.total, "call"), " · newest first"],
 							),
 						],
 					),
 					h.div(
 						[h.Class("flex items-center gap-2")],
 						[
-							h.span(
-								[h.Class("pr-1 text-2xs text-muted-foreground/60 max-md:hidden")],
-								["j / k"],
-							),
+							h.span([h.Class("pr-1 text-2xs text-muted-foreground/60 max-md:hidden")], ["j / k"]),
 							iconButton(
 								h,
 								{
@@ -147,11 +130,7 @@ export const samplesPane = (
 							),
 							h.span(
 								[h.Class("w-[72px] text-center text-xs tabular-nums text-foreground")],
-								[
-									rows.length === 0 ? "0" : String(current + 1),
-									" of ",
-									formatToolCount(options.total),
-								],
+								[rows.length === 0 ? "0" : String(current + 1), " of ", formatToolCount(options.total)],
 							),
 							iconButton(
 								h,
@@ -186,11 +165,7 @@ const sampleRow = (
 ): Html => {
 	const time = formatTimestampInTimezone(row.timestamp, { timeZone: inputs.timeZone })
 	return h.div(
-		[
-			h.Key(row.spanId),
-			h.DataAttribute("slot", "tool-error-sample"),
-			h.Class("border-b border-border/50"),
-		],
+		[h.Key(row.spanId), h.DataAttribute("slot", "tool-error-sample"), h.Class("border-b border-border/50")],
 		[
 			h.div(
 				[
@@ -240,11 +215,7 @@ const sampleRow = (
 						? []
 						: [
 								h.span(
-									[
-										h.Class(
-											"hidden min-w-0 shrink truncate text-xs text-muted-foreground/70 xl:block",
-										),
-									],
+									[h.Class("hidden min-w-0 shrink truncate text-xs text-muted-foreground/70 xl:block")],
 									[row.service],
 								),
 							]),
@@ -265,11 +236,7 @@ const sampleRow = (
 						? []
 						: [
 								h.span(
-									[
-										h.Class(
-											"hidden shrink-0 text-2xs tabular-nums text-muted-foreground/70 md:block",
-										),
-									],
+									[h.Class("hidden shrink-0 text-2xs tabular-nums text-muted-foreground/70 md:block")],
 									["args ", formatToolCount(row.argumentsBytes), " B"],
 								),
 							]),
@@ -281,21 +248,16 @@ const sampleRow = (
 						[
 							// The call's own timestamp narrows the trace read to one partition.
 							h.Href(
-								`${hrefOf(AppRoute.Trace({ traceId: row.traceId, search: {} }))}${orderedSearch(
-									[
-										["spanId", row.spanId],
-										["t", formatWarehouseDateTime(row.timestamp)],
-									],
-								)}`,
+								`${hrefOf(AppRoute.Trace({ traceId: row.traceId, search: {} }))}${orderedSearch([
+									["spanId", row.spanId],
+									["t", formatWarehouseDateTime(row.timestamp)],
+								])}`,
 							),
 							h.Class(
 								"relative flex shrink-0 items-center gap-[5px] text-2xs text-muted-foreground transition-colors hover:text-foreground",
 							),
 						],
-						[
-							"Open trace",
-							icon(h, "ExternalLinkIcon", { size: 11, attributes: [h.AriaHidden(true)] }),
-						],
+						["Open trace", icon(h, "ExternalLinkIcon", { size: 11, attributes: [h.AriaHidden(true)] })],
 					),
 				],
 			),

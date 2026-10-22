@@ -23,12 +23,7 @@ export type VirtualWindow = typeof VirtualWindow.Type
 export const emptyWindow: VirtualWindow = { items: [], totalSize: 0, scrollMargin: 0 }
 
 /** A scroll the view asks for; `seq` makes a repeat of the same index a new request. */
-export type ScrollRequest = Readonly<{
-	seq: number
-	index: number
-	align: "auto" | "center"
-	reveal: boolean
-}>
+export type ScrollRequest = Readonly<{ seq: number; index: number; align: "auto" | "center"; reveal: boolean }>
 
 export type VirtualConfig = Readonly<{
 	overscan: number
@@ -52,12 +47,7 @@ export const virtualAttributes = <M>(
 	h.DataAttribute(ESTIMATES, estimates.join(",")),
 	...(scroll === undefined
 		? []
-		: [
-				h.DataAttribute(
-					SCROLL,
-					`${scroll.seq}:${scroll.index}:${scroll.align}:${scroll.reveal ? 1 : 0}`,
-				),
-			]),
+		: [h.DataAttribute(SCROLL, `${scroll.seq}:${scroll.index}:${scroll.align}:${scroll.reveal ? 1 : 0}`)]),
 ]
 
 const keysOf = (list: HTMLElement): ReadonlyArray<string> => {
@@ -73,21 +63,14 @@ const estimatesOf = (list: HTMLElement): ReadonlyArray<number> => {
 const marginBetween = (list: HTMLElement, scroller: HTMLElement): number =>
 	Math.max(
 		0,
-		Math.round(
-			list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop,
-		),
+		Math.round(list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop),
 	)
 
-const sameItems = (
-	a: ReadonlyArray<VirtualItem>,
-	b: ReadonlyArray<VirtualItem>,
-	isIndexOnly: boolean,
-): boolean =>
+const sameItems = (a: ReadonlyArray<VirtualItem>, b: ReadonlyArray<VirtualItem>, isIndexOnly: boolean): boolean =>
 	a.length === b.length &&
 	a.every(
 		(item, i) =>
-			item.index === b[i]?.index &&
-			(isIndexOnly || (item.start === b[i]?.start && item.end === b[i]?.end)),
+			item.index === b[i]?.index && (isIndexOnly || (item.start === b[i]?.start && item.end === b[i]?.end)),
 	)
 
 const scrollOf = (list: HTMLElement): (ScrollRequest & { raw: string }) | undefined => {
@@ -135,9 +118,7 @@ const applyDirect = (instance: Instance, state: State, container: HTMLElement | 
 }
 
 const windowOf = (instance: Instance, state: State, isDirect: boolean): VirtualWindow => ({
-	items: instance
-		.getVirtualItems()
-		.map((item) => ({ index: item.index, start: item.start, end: item.end })),
+	items: instance.getVirtualItems().map((item) => ({ index: item.index, start: item.start, end: item.end })),
 	totalSize: isDirect ? 0 : instance.getTotalSize(),
 	scrollMargin: state.scrollMargin,
 })
@@ -145,14 +126,9 @@ const windowOf = (instance: Instance, state: State, isDirect: boolean): VirtualW
 const isSameWindow = (a: VirtualWindow, b: VirtualWindow, isDirect: boolean): boolean =>
 	a.totalSize === b.totalSize && a.scrollMargin === b.scrollMargin && sameItems(a.items, b.items, isDirect)
 
-const setUp = (
-	list: HTMLElement,
-	config: VirtualConfig,
-	offer: (window: VirtualWindow) => void,
-): (() => void) => {
+const setUp = (list: HTMLElement, config: VirtualConfig, offer: (window: VirtualWindow) => void): (() => void) => {
 	const scroller = list.closest<HTMLElement>('[data-slot="page-scroll-area"]') ?? list
-	const container =
-		config.container === undefined ? null : list.querySelector<HTMLElement>(config.container)
+	const container = config.container === undefined ? null : list.querySelector<HTMLElement>(config.container)
 	const isDirect = container !== null
 	const state: State = {
 		keys: keysOf(list),
@@ -207,8 +183,7 @@ const setUp = (
 			state.isMeasuring = true
 			list.querySelectorAll<HTMLElement>(config.rows).forEach((node) => {
 				const key = state.keys[Number(node.getAttribute("data-index"))]
-				if (key === undefined || virtualizer.elementsCache.get(key) !== node)
-					virtualizer.measureElement(node)
+				if (key === undefined || virtualizer.elementsCache.get(key) !== node) virtualizer.measureElement(node)
 			})
 			state.isMeasuring = false
 		}
@@ -231,9 +206,7 @@ const setUp = (
 	// measures, or the new rows are measured under the old keys.
 	const observer = new MutationObserver((records) => {
 		const isInput = (record: MutationRecord) =>
-			record.target === list &&
-			record.type === "attributes" &&
-			record.attributeName !== `data-${SCROLL}`
+			record.target === list && record.type === "attributes" && record.attributeName !== `data-${SCROLL}`
 		if (records.some(isInput)) {
 			state.keys = keysOf(list)
 			state.estimates = estimatesOf(list)

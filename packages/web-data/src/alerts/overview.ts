@@ -119,3 +119,4 @@ export const deriveOverview = (inputs: OverviewInputs): AlertsOverviewReady => {
 		timelineRange: { min: now - DAY_MS, max: now },
 	}
 }
+

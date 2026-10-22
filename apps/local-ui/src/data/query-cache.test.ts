@@ -10,21 +10,12 @@ const OTHER = ["local", "trace", "t2"]
 
 beforeEach(() => {
 	vi.stubGlobal("window", { location: new URL("http://127.0.0.1:4318/") })
-	vi.stubGlobal("document", {
-		visibilityState: "visible",
-		addEventListener: () => undefined,
-		removeEventListener: () => undefined,
-	})
+	vi.stubGlobal("document", { visibilityState: "visible", addEventListener: () => undefined, removeEventListener: () => undefined })
 })
 afterEach(() => vi.unstubAllGlobals())
 
 const run = <A>(program: Effect.Effect<A, never, LocalQueryCache>) =>
-	Effect.runPromise(
-		program.pipe(
-			Effect.provide(LocalQueryCache.layer.pipe(Layer.provideMerge(TestClock.layer()))),
-			Effect.scoped,
-		),
-	)
+	Effect.runPromise(program.pipe(Effect.provide(LocalQueryCache.layer.pipe(Layer.provideMerge(TestClock.layer()))), Effect.scoped))
 
 const isCached = (key: ReadonlyArray<unknown>) =>
 	Effect.gen(function* () {

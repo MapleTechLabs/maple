@@ -172,10 +172,7 @@ describe("source detail", () => {
 		)
 		expect(names(resumed.commands)).toEqual(["FetchSourceDetailList"])
 		const final = [
-			Message.CompletedFetchList({
-				key: resumed.model.list.key ?? "",
-				result: Result.succeed([source()]),
-			}),
+			Message.CompletedFetchList({ key: resumed.model.list.key ?? "", result: Result.succeed([source()]) }),
 			Message.CompletedFetchList({
 				key: paused.list.key ?? "",
 				result: Result.succeed([source({ status: "paused" })]),

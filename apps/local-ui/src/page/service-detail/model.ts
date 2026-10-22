@@ -28,11 +28,7 @@ export const OperationRow = Schema.Struct({
 export type OperationRow = typeof OperationRow.Type
 
 /** `SeriesPoint` (lib/chart-series.ts): one long-form (bucket, series, value) row. */
-export const SeriesPoint = Schema.Struct({
-	bucket: Schema.String,
-	series: Schema.String,
-	value: Schema.Number,
-})
+export const SeriesPoint = Schema.Struct({ bucket: Schema.String, series: Schema.String, value: Schema.Number })
 export type SeriesPoint = typeof SeriesPoint.Type
 
 /** `GoldenSignalRow` (lib/golden-signals.ts): one warehouse bucket of entry-span signals. */

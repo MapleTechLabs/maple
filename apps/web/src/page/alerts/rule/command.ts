@@ -64,10 +64,7 @@ export const FetchRuleChecks = Command.define("FetchAlertRuleChecks", {
 			const client = yield* MapleApiV2Client
 			const [response, summary] = yield* Effect.all(
 				[
-					client.alertRules.checks({
-						params: { id: ruleId },
-						query: { since, until, limit: PAGE_LIMIT },
-					}),
+					client.alertRules.checks({ params: { id: ruleId }, query: { since, until, limit: PAGE_LIMIT } }),
 					client.alertRules.checksSummary({ params: { id: ruleId }, query: { since, until } }),
 				],
 				{ concurrency: "unbounded" },
@@ -107,10 +104,7 @@ export const FetchBucketChecks = Command.define("FetchAlertRuleBucketChecks", {
 	execute: ({ request, ruleId, since, until }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const page = yield* client.alertRules.checks({
-				params: { id: ruleId },
-				query: { since, until, limit: PAGE_LIMIT },
-			})
+			const page = yield* client.alertRules.checks({ params: { id: ruleId }, query: { since, until, limit: PAGE_LIMIT } })
 			return page.data.map(v2CheckToDocument)
 		}).pipe(
 			Effect.mapError(toLoadFailure),

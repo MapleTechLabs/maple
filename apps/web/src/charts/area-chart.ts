@@ -8,7 +8,11 @@ import { ChartSpec, ChartTooltip, type TimeseriesAxisSpec } from "./chart-spec"
 import { bucketTooltipBody } from "./bucket-tooltip"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
-import { SERIES_FALLBACK_COLOR, seriesColorTokens, seriesDefinitionsOf } from "./timeseries"
+import {
+	SERIES_FALLBACK_COLOR,
+	seriesColorTokens,
+	seriesDefinitionsOf,
+} from "./timeseries"
 import { timeseriesLegend } from "./timeseries-legend"
 
 // Port of `QueryBuilderAreaChart` + `Timeseries.Frame` (packages/ui/src/components/charts/area/,

@@ -115,17 +115,13 @@ export const init = (route: Route, context: PageContext): Return => {
 }
 
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
-	const href = (search: Search) =>
-		hrefOf(AppRoute.InfraKubernetesNode({ nodeName: model.nodeName, search }))
+	const href = (search: Search) => hrefOf(AppRoute.InfraKubernetesNode({ nodeName: model.nodeName, search }))
 	if (href(model.search) === href(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) =>
-		requestAll(moved, context, mode),
-	)
+	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
 }
 
-export const contextChanged = (model: Model, context: PageContext): Return =>
-	requestAll(model, context, "Load")
+export const contextChanged = (model: Model, context: PageContext): Return => requestAll(model, context, "Load")
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -136,12 +132,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const slot = model.series[metric]
 			return slot === undefined
 				? { model }
-				: {
-						model: {
-							...model,
-							series: { ...model.series, [metric]: Keyed.accept(slot, key, result) },
-						},
-					}
+				: { model: { ...model, series: { ...model.series, [metric]: Keyed.accept(slot, key, result) } } }
 		},
 		ClickedMetric: ({ metric }) =>
 			metric === model.metric ? { model } : requestAll({ ...model, metric }, context, "Load"),
@@ -149,15 +140,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, pods: Keyed.accept(model.pods, key, result) },
 		}),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		GotChartMessage: ({ metric, message: inner }) => {
 			const chart = model.charts[metric] ?? Chart.init()
-			return {
-				model: { ...model, charts: { ...model.charts, [metric]: Chart.update(chart, inner).model } },
-			}
+			return { model: { ...model, charts: { ...model.charts, [metric]: Chart.update(chart, inner).model } } }
 		},
 		GotFrameMessage: ({ message: inner }) =>
 			liftFrame(model, inner, scopeOf(model, context), toFrame, {

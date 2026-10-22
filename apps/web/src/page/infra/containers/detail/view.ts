@@ -16,11 +16,7 @@ import * as Frame from "../../kit/frame"
 import { k8sChart } from "../../kit/k8s-chart"
 import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
 import { pageHero } from "../../kit/page-parts"
-import {
-	metaRow,
-	resourceAttributesCard,
-	resourceAttributesCardSkeleton,
-} from "../../kit/resource-attributes"
+import { metaRow, resourceAttributesCard, resourceAttributesCardSkeleton } from "../../kit/resource-attributes"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import { Message } from "./message"
 import type { ContainerMetric, ContainerSummary, Model } from "./model"
@@ -68,12 +64,7 @@ const rightPanel = (h: H, model: Model): Html | undefined => {
 
 const stats = (h: H, summary: Summary): Html =>
 	statRail(h, {}, [
-		statRailItem(h, {
-			eyebrow: "CPU",
-			value: formatPercent(summary.cpuPct),
-			tone: severityLevel(summary.cpuPct),
-			compact: true,
-		}),
+		statRailItem(h, { eyebrow: "CPU", value: formatPercent(summary.cpuPct), tone: severityLevel(summary.cpuPct), compact: true }),
 		statRailItem(h, {
 			eyebrow: "Memory vs limit",
 			value: formatPercent(summary.memoryPct),
@@ -103,26 +94,14 @@ const noData = (h: H, model: Model): Html =>
 			[
 				...(Frame.canWidenTimeRange(model.search, DEFAULT_PRESET)
 					? [
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									attributes: [h.OnClick(Message.ClickedWidenRange())],
-								},
-								["Show last 7 days"],
-							),
+							button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedWidenRange())] }, [
+								"Show last 7 days",
+							]),
 						]
 					: []),
-				linkButton(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						href: hrefOf(AppRoute.InfraContainers({ search: {} })),
-					},
-					["Back to containers"],
-				),
+				linkButton(h, { variant: "outline", size: "sm", href: hrefOf(AppRoute.InfraContainers({ search: {} })) }, [
+					"Back to containers",
+				]),
 			],
 		),
 	])
@@ -131,11 +110,7 @@ const summaryArea = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.summary.data, {
 		onEmpty: () => statRailLoading(h, 5),
 		onFailure: (failure) =>
-			errorState(h, {
-				failure,
-				title: "Failed to load container metrics",
-				onRetry: Message.ClickedRetrySummary(),
-			}),
+			errorState(h, { failure, title: "Failed to load container metrics", onRetry: Message.ClickedRetrySummary() }),
 		onData: (summary) => (summary === null ? noData(h, model) : stats(h, summary)),
 	})
 
@@ -150,12 +125,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(
-						h,
-						model.frame,
-						{ search: model.search, defaultPreset: DEFAULT_PRESET },
-						toFrame,
-					),
+					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
 					rightPanel: rightPanel(h, model),
 					scrollClassName: "gap-6",
 				},

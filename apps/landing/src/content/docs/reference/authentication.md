@@ -11,7 +11,7 @@ Maple uses two kinds of credential. **Ingest keys** send telemetry. **API keys**
 | ------------------ | ----------- | ---------------------------------------- | ---------------------------------------------- | ---------------------------- |
 | Public ingest key  | `maple_pk_` | **Settings → Ingestion**                 | Send telemetry                                 | Yes                          |
 | Private ingest key | `maple_sk_` | **Settings → Ingestion**                 | Send telemetry                                 | No                           |
-| API key            | `maple_ak_` | **Settings → Keys**                      | REST API and MCP server, limited by its scopes | No                           |
+| API key            | `maple_ak_` | **Settings → Keys**                  | REST API and MCP server, limited by its scopes | No                           |
 | MCP key            | `maple_ak_` | **Settings → MCP**                       | MCP server only                                | No                           |
 | OAuth token        |             | Issued to an MCP client when you sign in | MCP server only                                | No                           |
 

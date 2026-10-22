@@ -117,9 +117,9 @@ describe("gcpManualSteps", () => {
 
 	it("opens a folder's console pages on the folder", () => {
 		const steps = gcpManualSteps(plan(connector({ ...ORGANIZATION, scope_type: "folder" })))
-		expect(
-			steps.find((step) => step.title === "Create the Log Router sink on the folder")?.consoleUrl,
-		).toContain("folder=123456789012")
+		expect(steps.find((step) => step.title === "Create the Log Router sink on the folder")?.consoleUrl).toContain(
+			"folder=123456789012",
+		)
 	})
 })
 
@@ -152,16 +152,12 @@ describe("gcpRemovalList", () => {
 	})
 
 	it("lists everything not known to be gone for a disconnect", () => {
-		const loggingOnly = connector({
-			logs_enabled: true,
-			applied_logs_enabled: true,
-			applied_metrics_enabled: false,
-		})
+		const loggingOnly = connector({ logs_enabled: true, applied_logs_enabled: true, applied_metrics_enabled: false })
 		expect(gcpRemovalList(loggingOnly)).toEqual([])
 		expect(gcpRemovalList(loggingOnly, "all").map((item) => item.name)).toHaveLength(4)
-		expect(
-			gcpRemovalList(connector({ applied_logs_enabled: false, applied_metrics_enabled: false }), "all"),
-		).toEqual([])
+		expect(gcpRemovalList(connector({ applied_logs_enabled: false, applied_metrics_enabled: false }), "all")).toEqual(
+			[],
+		)
 	})
 })
 

@@ -50,16 +50,11 @@ describe("service map result cache", () => {
 		const key = ["local", "service-map", 3600, "2026-10-01 11:00:00/2026-10-01 13:00:00"]
 		const entry = { key, data: Option.getOrThrow(asCacheValue(data)), updatedAtMs: 1_000 }
 		const restored = parseSaved(serialize(new Map([[hashKey(key), entry]])), 2_000).get(hashKey(key))
-		expect(Option.flatMap(Option.fromNullishOr(restored), (saved) => mapFromCached(saved.data))).toEqual(
-			Option.some(data),
-		)
+		expect(Option.flatMap(Option.fromNullishOr(restored), (saved) => mapFromCached(saved.data))).toEqual(Option.some(data))
 	})
 
 	test("an older build's shape is not offered as the map", () => {
-		const olderBuildEntry = Option.flatMap(
-			asCacheValue({ ...data, platforms: { storefront: "web" } }),
-			mapFromCached,
-		)
+		const olderBuildEntry = Option.flatMap(asCacheValue({ ...data, platforms: { storefront: "web" } }), mapFromCached)
 		expect(Option.isNone(olderBuildEntry)).toBe(true)
 	})
 })

@@ -14,10 +14,7 @@ export const traceDetailLoading = (h: HtmlBuilder<Message>): Html =>
 				[
 					skeleton(h, "h-8 w-32"),
 					skeleton(h, "h-1.5 w-full rounded-full"),
-					h.div(
-						[h.Class("flex gap-4")],
-						[skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24")],
-					),
+					h.div([h.Class("flex gap-4")], [skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24"), skeleton(h, "h-4 w-24")]),
 				],
 			),
 			skeletonList(h, {

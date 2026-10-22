@@ -36,19 +36,9 @@ const node = (nodeName: string, lastSeen = "2026-10-01 12:00:00"): NodeRow => ({
 const loaded = (nodes: ReadonlyArray<NodeRow>, search: Model["search"] = {}) => {
 	const model = pageUpdate(
 		init({ search }, context).model,
-		Message.GotFrameMessage({
-			message: Frame.Message.CompletedResolveWindow({
-				window,
-				nowMs: NOW,
-				locale: "en-US",
-				mode: "Load",
-			}),
-		}),
+		Message.GotFrameMessage({ message: Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" }) }),
 	).model
-	return pageUpdate(
-		model,
-		Message.CompletedFetchNodes({ key: model.nodes.key ?? "", result: Result.succeed(nodes) }),
-	).model
+	return pageUpdate(model, Message.CompletedFetchNodes({ key: model.nodes.key ?? "", result: Result.succeed(nodes) })).model
 }
 
 describe("nodes list", () => {
@@ -62,10 +52,7 @@ describe("nodes list", () => {
 	})
 
 	test("a facet tick writes the node to the URL", () => {
-		const ticked = pageUpdate(
-			loaded([node("live-1")]),
-			Message.ToggledFacetOption({ facet: "nodeNames", name: "live-1" }),
-		)
+		const ticked = pageUpdate(loaded([node("live-1")]), Message.ToggledFacetOption({ facet: "nodeNames", name: "live-1" }))
 		expect(ticked.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
 				url: "/infra/kubernetes/nodes?nodeNames=%5B%22live-1%22%5D",

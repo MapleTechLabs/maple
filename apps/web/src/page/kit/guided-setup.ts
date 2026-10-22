@@ -58,9 +58,7 @@ export const frameworkPicker = <M>(
 					h.Class(
 						cn(
 							"flex items-center gap-1.5 border font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-							compact
-								? "rounded-full px-2.5 py-1 font-mono text-2xs leading-3.5"
-								: "rounded-lg px-3 py-2 text-xs gap-2",
+							compact ? "rounded-full px-2.5 py-1 font-mono text-2xs leading-3.5" : "rounded-lg px-3 py-2 text-xs gap-2",
 							isActive
 								? compact
 									? "border-primary text-primary"
@@ -111,11 +109,7 @@ const block = <M>(
 		toCopyMessage: (message) => parts.toSnippetCopy(key, message),
 	})
 
-const packageManagerBlock = <M>(
-	h: HtmlBuilder<M>,
-	parts: InstructionsParts<M>,
-	packages: ReadonlyArray<string>,
-): Html =>
+const packageManagerBlock = <M>(h: HtmlBuilder<M>, parts: InstructionsParts<M>, packages: ReadonlyArray<string>): Html =>
 	h.submodel({
 		slotId: `${parts.slot}-package-tabs`,
 		model: parts.packageTabs,
@@ -140,9 +134,7 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 	const padding = isBoxed ? "p-3" : "px-4 pt-3 pb-4"
 	const apiKey = parts.apiKey
 	const interpolate = (template: string) =>
-		template
-			.replace(/\{\{INGEST_URL\}\}/g, ingestUrl)
-			.replace(/\{\{API_KEY\}\}/g, apiKey || "<your-api-key>")
+		template.replace(/\{\{INGEST_URL\}\}/g, ingestUrl).replace(/\{\{API_KEY\}\}/g, apiKey || "<your-api-key>")
 	const install = snippet.install
 	const tabs = h.submodel({
 		slotId: `${parts.slot}-setup-tabs`,
@@ -166,14 +158,7 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 					]
 				if (value === "instrument")
 					return [
-						block(
-							h,
-							parts,
-							"instrument",
-							interpolate(snippet.instrument),
-							snippet.label.toLowerCase(),
-							REPLAY_BLOCK_CLASS,
-						),
+						block(h, parts, "instrument", interpolate(snippet.instrument), snippet.label.toLowerCase(), REPLAY_BLOCK_CLASS),
 					]
 				return [
 					h.p(
@@ -186,14 +171,7 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 						],
 					),
 					block(h, parts, "skill-command", ONBOARD_SKILL_COMMAND, "shell"),
-					block(
-						h,
-						parts,
-						"skill-prompt",
-						onboardSkillPrompt(ingestUrl, apiKey),
-						"shell",
-						REPLAY_BLOCK_CLASS,
-					),
+					block(h, parts, "skill-prompt", onboardSkillPrompt(ingestUrl, apiKey), "shell", REPLAY_BLOCK_CLASS),
 				]
 			},
 		},

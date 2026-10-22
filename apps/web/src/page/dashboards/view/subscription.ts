@@ -50,60 +50,59 @@ const autoScroll = (scroller: HTMLElement, clientY: number): boolean => {
  * The gesture's window listeners and its per-frame step: each frame auto-scrolls if the pointer
  * is near the edge and reports the pointer with the grid's position, so the tile stays under it.
  */
-export const pointerEvents = (widgetId: string) =>
-	Stream.callback<PointerMessage>((queue) =>
-		Effect.acquireRelease(
-			Effect.sync(() => {
-				// The gesture's own grid: a sectioned board has one per container.
-				const grid =
-					document
-						.querySelector<HTMLElement>(`[data-grid-item="${CSS.escape(widgetId)}"]`)
-						?.closest<HTMLElement>("[data-dashboard-grid]") ?? null
-				const scroller = grid === null ? null : nearestScroller(grid)
-				const pointer = { x: 0, y: 0, frame: 0 }
-				const step = () => {
-					pointer.frame = 0
-					if (grid === null) return
-					const isScrolled = scroller !== null && autoScroll(scroller, pointer.y)
-					const rect = grid.getBoundingClientRect()
-					Queue.offerUnsafe(
-						queue,
-						Message.MovedPointer({
-							clientX: pointer.x,
-							clientY: pointer.y,
-							gridLeft: rect.left,
-							gridTop: rect.top,
-						}),
-					)
-					if (isScrolled) pointer.frame = requestAnimationFrame(step)
-				}
-				const onMove = (event: PointerEvent) => {
-					pointer.x = event.clientX
-					pointer.y = event.clientY
-					if (pointer.frame === 0) pointer.frame = requestAnimationFrame(step)
-				}
-				const onUp = () => Queue.offerUnsafe(queue, Message.ReleasedPointer())
-				const onCancel = () => Queue.offerUnsafe(queue, Message.CancelledPointer())
-				const onKey = (event: KeyboardEvent) => {
-					if (event.key !== "Escape") return
-					event.preventDefault()
-					Queue.offerUnsafe(queue, Message.CancelledPointer())
-				}
-				window.addEventListener("pointermove", onMove)
-				window.addEventListener("pointerup", onUp)
-				window.addEventListener("pointercancel", onCancel)
-				window.addEventListener("keydown", onKey)
-				return () => {
-					cancelAnimationFrame(pointer.frame)
-					window.removeEventListener("pointermove", onMove)
-					window.removeEventListener("pointerup", onUp)
-					window.removeEventListener("pointercancel", onCancel)
-					window.removeEventListener("keydown", onKey)
-				}
-			}),
-			(detach) => Effect.sync(detach),
-		).pipe(Effect.flatMap(() => Effect.never)),
-	)
+export const pointerEvents = (widgetId: string) => Stream.callback<PointerMessage>((queue) =>
+	Effect.acquireRelease(
+		Effect.sync(() => {
+			// The gesture's own grid: a sectioned board has one per container.
+			const grid =
+				document
+					.querySelector<HTMLElement>(`[data-grid-item="${CSS.escape(widgetId)}"]`)
+					?.closest<HTMLElement>("[data-dashboard-grid]") ?? null
+			const scroller = grid === null ? null : nearestScroller(grid)
+			const pointer = { x: 0, y: 0, frame: 0 }
+			const step = () => {
+				pointer.frame = 0
+				if (grid === null) return
+				const isScrolled = scroller !== null && autoScroll(scroller, pointer.y)
+				const rect = grid.getBoundingClientRect()
+				Queue.offerUnsafe(
+					queue,
+					Message.MovedPointer({
+						clientX: pointer.x,
+						clientY: pointer.y,
+						gridLeft: rect.left,
+						gridTop: rect.top,
+					}),
+				)
+				if (isScrolled) pointer.frame = requestAnimationFrame(step)
+			}
+			const onMove = (event: PointerEvent) => {
+				pointer.x = event.clientX
+				pointer.y = event.clientY
+				if (pointer.frame === 0) pointer.frame = requestAnimationFrame(step)
+			}
+			const onUp = () => Queue.offerUnsafe(queue, Message.ReleasedPointer())
+			const onCancel = () => Queue.offerUnsafe(queue, Message.CancelledPointer())
+			const onKey = (event: KeyboardEvent) => {
+				if (event.key !== "Escape") return
+				event.preventDefault()
+				Queue.offerUnsafe(queue, Message.CancelledPointer())
+			}
+			window.addEventListener("pointermove", onMove)
+			window.addEventListener("pointerup", onUp)
+			window.addEventListener("pointercancel", onCancel)
+			window.addEventListener("keydown", onKey)
+			return () => {
+				cancelAnimationFrame(pointer.frame)
+				window.removeEventListener("pointermove", onMove)
+				window.removeEventListener("pointerup", onUp)
+				window.removeEventListener("pointercancel", onCancel)
+				window.removeEventListener("keydown", onKey)
+			}
+		}),
+		(detach) => Effect.sync(detach),
+	).pipe(Effect.flatMap(() => Effect.never)),
+)
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
 	(entry) => ({
@@ -134,8 +133,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 			{ widgetId: Schema.NullOr(Schema.String) },
 			{
 				modelToDependencies: ({ model }) => ({ widgetId: model.gesture?.widgetId ?? null }),
-				dependenciesToStream: ({ widgetId }) =>
-					widgetId === null ? Stream.empty : pointerEvents(widgetId),
+				dependenciesToStream: ({ widgetId }) => (widgetId === null ? Stream.empty : pointerEvents(widgetId)),
 			},
 		),
 		/** `useIntervalRefresh`: paused in edit mode and in a preview; paused while hidden or offline. */

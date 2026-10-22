@@ -50,9 +50,7 @@ const formSkeleton = (h: H): Html =>
 	)
 
 /** The rules list's `SYNC_UNAVAILABLE`, shown through `ErrorState`. */
-const SYNC_UNAVAILABLE = {
-	message: "Live sync is unavailable, so alerts couldn’t be loaded. Reload to try again.",
-}
+const SYNC_UNAVAILABLE = { message: "Live sync is unavailable, so alerts couldn’t be loaded. Reload to try again." }
 
 /** `AlertRuleFormLoadError`: the rules stream stopped, so the rule being edited can never load. */
 const loadError = (h: H): Html =>
@@ -73,23 +71,11 @@ const noticeBanner = (h: H, notices: ReadonlyArray<Notice>): ReadonlyArray<Html>
 	notices.length === 0
 		? []
 		: [
-				alert(
-					h,
-					{
-						variant: notices.some((notice) => notice.severity === "error") ? "crit" : "warn",
-						className: "rounded-md",
-					},
-					[
-						icon(h, "CircleWarningIcon", { size: 14 }),
-						alertTitle(h, ["Review chart alert draft"]),
-						alertDescription(h, [
-							h.div(
-								[h.Class("space-y-1")],
-								notices.map((notice) => h.p([], [notice.message])),
-							),
-						]),
-					],
-				),
+				alert(h, { variant: notices.some((notice) => notice.severity === "error") ? "crit" : "warn", className: "rounded-md" }, [
+					icon(h, "CircleWarningIcon", { size: 14 }),
+					alertTitle(h, ["Review chart alert draft"]),
+					alertDescription(h, [h.div([h.Class("space-y-1")], notices.map((notice) => h.p([], [notice.message])))]),
+				]),
 			]
 
 // `never[]` holds nothing, so sharing one is safe; a fresh `[]` would change the slice every render.
@@ -100,20 +86,21 @@ const NONE: Array<never> = []
  * message), kept by reference while the rest is unchanged: the query, condition, noise and chart
  * sections skip those edits. A critical tier's destinations stay, inside `escalation`.
  */
-const evaluatedFormOf = stableSlice((form: RuleForm): RuleForm => ({
-	...form,
-	name: "",
-	notes: "",
-	tags: NONE,
-	destinationIds: NONE,
-	notificationTitle: "",
-	notificationBody: "",
-}))
+const evaluatedFormOf = stableSlice(
+	(form: RuleForm): RuleForm => ({
+		...form,
+		name: "",
+		notes: "",
+		tags: NONE,
+		destinationIds: NONE,
+		notificationTitle: "",
+		notificationBody: "",
+	}),
+)
 
 const surface = (h: H, model: Model, form: RuleForm, timeZone: string): ReadonlyArray<Html> => {
 	const evaluated = evaluatedFormOf(form)
-	const isNotifyMissing =
-		form.destinationIds.length === 0 || deriveTierIssues(form).includes("Critical destinations")
+	const isNotifyMissing = form.destinationIds.length === 0 || deriveTierIssues(form).includes("Critical destinations")
 	return [
 		h.div(
 			[h.Class(cn("mx-auto w-full space-y-10", RULE_FORM_MAX_WIDTH))],
@@ -154,12 +141,7 @@ const surface = (h: H, model: Model, form: RuleForm, timeZone: string): Readonly
 					[
 						ruleStep(
 							h,
-							{
-								number: 3,
-								hasDivider: false,
-								title: "Who gets notified",
-								status: isNotifyMissing ? "missing" : "done",
-							},
+							{ number: 3, hasDivider: false, title: "Who gets notified", status: isNotifyMissing ? "missing" : "done" },
 							[notificationsSection(h, model, form)],
 						),
 						ruleStep(

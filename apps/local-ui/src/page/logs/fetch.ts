@@ -33,12 +33,7 @@ const normalizeLog = (row: LogsListOutput): LocalLog => ({
 })
 
 /** One page, newest first, keyset-paged on the full row identity. */
-export const fetchLogsPage = (
-	filters: LogFilters,
-	bounds: TimeBounds,
-	cursor: LogCursor | undefined,
-	apiBase: string,
-) =>
+export const fetchLogsPage = (filters: LogFilters, bounds: TimeBounds, cursor: LogCursor | undefined, apiBase: string) =>
 	Effect.map(
 		queryRows(
 			CH.compile(
@@ -56,21 +51,15 @@ export const fetchLogsPage = (
 		(rows) => rows.map(normalizeLog),
 	)
 
-const toOptions = (
-	rows: ReadonlyArray<{ readonly name: string; readonly count: number }>,
-): Array<FacetOption> => rows.filter((row) => row.name).map((row) => ({ name: row.name, count: row.count }))
+const toOptions = (rows: ReadonlyArray<{ readonly name: string; readonly count: number }>): Array<FacetOption> =>
+	rows.filter((row) => row.name).map((row) => ({ name: row.name, count: row.count }))
 
 /** Severity facet: every filter except severity itself, ordered by level, not count. */
 export const fetchSeverities = (filters: LogFilters, bounds: TimeBounds, apiBase: string) =>
 	Effect.map(
 		queryRows(
 			CH.compile(
-				CH.logsBreakdownQuery({
-					groupBy: "severity",
-					limit: 20,
-					serviceName: filters.service,
-					search: filters.search,
-				}),
+				CH.logsBreakdownQuery({ groupBy: "severity", limit: 20, serviceName: filters.service, search: filters.search }),
 				localParams(bounds),
 			),
 			apiBase,

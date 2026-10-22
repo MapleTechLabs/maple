@@ -8,14 +8,7 @@ import type { QueryDraft } from "./draft"
 // `onDataSourceChange` callbacks), as data the host applies.
 
 /** A query's free-text fields under the add-on toggles. */
-export const QueryTextField = Schema.Literals([
-	"whereClause",
-	"stepInterval",
-	"having",
-	"orderBy",
-	"limit",
-	"legend",
-])
+export const QueryTextField = Schema.Literals(["whereClause", "stepInterval", "having", "orderBy", "limit", "legend"])
 export type QueryTextField = typeof QueryTextField.Type
 
 export const AddOnKey = Schema.Literals(["groupBy", "having", "orderBy", "limit", "legend"])
@@ -60,10 +53,7 @@ export const withRootOnly = (whereClause: string, isRootOnly: boolean): string =
 export const applyQueryChange = (query: QueryDraft, change: QueryChange): QueryDraft =>
 	QueryChange.match<QueryDraft>(change, {
 		SetSource: ({ source }) => resetQueryForDataSource(query, source),
-		SetRootOnly: ({ isRootOnly }) => ({
-			...query,
-			whereClause: withRootOnly(query.whereClause, isRootOnly),
-		}),
+		SetRootOnly: ({ isRootOnly }) => ({ ...query, whereClause: withRootOnly(query.whereClause, isRootOnly) }),
 		SetAggregation: ({ aggregation }) => ({ ...query, aggregation }),
 		SetOrderDirection: ({ direction }) => ({ ...query, orderByDirection: direction }),
 		SetText: ({ field, value }) => ({ ...query, [field]: value }),
@@ -78,11 +68,7 @@ export const applyQueryChange = (query: QueryDraft, change: QueryChange): QueryD
 						metricName,
 						metricType,
 						isMonotonic,
-						aggregation: resetAggregationForMetricType(
-							query.aggregation,
-							metricType,
-							isMonotonic,
-						),
+						aggregation: resetAggregationForMetricType(query.aggregation, metricType, isMonotonic),
 					},
 		SetMetricBreakdown: ({ value }) => ({
 			...query,

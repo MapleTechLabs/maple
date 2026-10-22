@@ -21,17 +21,7 @@ export const parseNonNegativeInt = (raw: string | null): number | undefined => {
 	return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : undefined
 }
 
-export const FILTER_KEYS = [
-	"service",
-	"span",
-	"errors",
-	"method",
-	"status",
-	"env",
-	"ns",
-	"minDur",
-	"maxDur",
-] as const
+export const FILTER_KEYS = ["service", "span", "errors", "method", "status", "env", "ns", "minDur", "maxDur"] as const
 
 export const filtersOf = (query: URLSearchParams): TraceFilters => ({
 	search: query.get("q") || undefined,
@@ -47,8 +37,7 @@ export const filtersOf = (query: URLSearchParams): TraceFilters => ({
 	scope: query.get("scope") === "spans" ? "spans" : "root",
 })
 
-export const activeFilterCount = (query: URLSearchParams): number =>
-	FILTER_KEYS.filter((key) => query.get(key)).length
+export const activeFilterCount = (query: URLSearchParams): number => FILTER_KEYS.filter((key) => query.get(key)).length
 
 /** `clearFilters`: every sidebar filter, the search and the span scope. */
 export const clearedFilters = (): Readonly<Record<string, null>> => ({

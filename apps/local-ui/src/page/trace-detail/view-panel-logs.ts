@@ -26,9 +26,7 @@ const severityBadge = (h: H, severityText: string): Html => {
 		{
 			variant: "secondary",
 			className: cn("font-mono text-3xs uppercase", "shrink-0"),
-			attributes: [
-				h.Style({ color, "background-color": `color-mix(in oklch, ${color} 10%, transparent)` }),
-			],
+			attributes: [h.Style({ color, "background-color": `color-mix(in oklch, ${color} 10%, transparent)` })],
 		},
 		[label],
 	)
@@ -46,10 +44,7 @@ const logRow = (h: H, log: SpanLog, nowMs: number, timeFormat: TimeFormat): Html
 			h.div(
 				[h.Class("flex items-center gap-2 text-[10px] text-muted-foreground")],
 				[
-					h.span(
-						[h.Class("font-mono"), h.Title(formatUtcTitle(log.timestamp))],
-						[formatTimestamp(timeFormat, log.timestamp, { nowMs })],
-					),
+					h.span([h.Class("font-mono"), h.Title(formatUtcTitle(log.timestamp))], [formatTimestamp(timeFormat, log.timestamp, { nowMs })]),
 					severityBadge(h, log.severityText),
 				],
 			),
@@ -58,32 +53,19 @@ const logRow = (h: H, log: SpanLog, nowMs: number, timeFormat: TimeFormat): Html
 	)
 
 /** The rows, then the sheet beside them. */
-export const spanLogs = (
-	h: H,
-	panel: PanelModel,
-	nowMs: number,
-	timeFormat: TimeFormat,
-): ReadonlyArray<Html> => {
+export const spanLogs = (h: H, panel: PanelModel, nowMs: number, timeFormat: TimeFormat): ReadonlyArray<Html> => {
 	if (isPending(panel.logs))
-		return [
-			skeletonList(h, {
-				rows: 3,
-				gap: "2",
-				className: "p-2",
-				renderRow: () =>
-					h.div([h.Class("space-y-1")], [skeleton(h, "h-3 w-24"), skeleton(h, "h-4 w-full")]),
-			}),
-		]
+		return [skeletonList(h, {
+			rows: 3,
+			gap: "2",
+			className: "p-2",
+			renderRow: () => h.div([h.Class("space-y-1")], [skeleton(h, "h-3 w-24"), skeleton(h, "h-4 w-full")]),
+		})]
 	if (Option.isSome(failureWithoutData(panel.logs)))
 		return [h.div([h.Class("p-4 text-center text-sm text-destructive")], ["Failed to load logs"])]
 	const logs = Option.getOrElse(AsyncData.getData(panel.logs.data), () => [])
 	if (logs.length === 0)
-		return [
-			h.div(
-				[h.Class("p-4 text-center text-sm text-muted-foreground")],
-				["No logs found for this span"],
-			),
-		]
+		return [h.div([h.Class("p-4 text-center text-sm text-muted-foreground")], ["No logs found for this span"])]
 	const sheet = Option.match(panel.maybeLogSheet, {
 		onNone: () => [],
 		onSome: (model) => [
@@ -96,11 +78,5 @@ export const spanLogs = (
 			}),
 		],
 	})
-	return [
-		h.div(
-			[h.Class("divide-y")],
-			logs.map((log) => logRow(h, log, nowMs, timeFormat)),
-		),
-		...sheet,
-	]
+	return [h.div([h.Class("divide-y")], logs.map((log) => logRow(h, log, nowMs, timeFormat))), ...sheet]
 }

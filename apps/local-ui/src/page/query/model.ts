@@ -15,12 +15,7 @@ export type ResultRow = typeof ResultRow.Type
 export const RunState = defineTaggedUnion({
 	Idle: {},
 	Running: { id: Schema.Number, sql: Schema.String },
-	Succeeded: {
-		id: Schema.Number,
-		sql: Schema.String,
-		rows: Schema.Array(ResultRow),
-		elapsedMs: Schema.Number,
-	},
+	Succeeded: { id: Schema.Number, sql: Schema.String, rows: Schema.Array(ResultRow), elapsedMs: Schema.Number },
 	Failed: { id: Schema.Number, sql: Schema.String, title: Schema.String, detail: Schema.String },
 })
 export type RunState = typeof RunState.Type

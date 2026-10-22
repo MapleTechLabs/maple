@@ -64,12 +64,7 @@ export const Model = Schema.Struct({
 	preload: Preload.Model,
 	/** The window this tab remembers for the org (`route/session-time-range.ts`); `nowMs` is when read. */
 	sessionTimeRange: Schema.NullOr(
-		Schema.Struct({
-			orgId: Schema.String,
-			value: SessionTimeRange,
-			nowMs: Schema.Number,
-			isLoaded: Schema.Boolean,
-		}),
+		Schema.Struct({ orgId: Schema.String, value: SessionTimeRange, nowMs: Schema.Number, isLoaded: Schema.Boolean }),
 	),
 	/** `useTimezonePreference().effectiveTimezone`, read at boot. */
 	timeZone: Schema.String,

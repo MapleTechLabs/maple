@@ -54,21 +54,11 @@ const loaded = (model: Model, workers: ReadonlyArray<WorkerRow>, releases: Reado
 describe("cloudflare worker", () => {
 	test("after a Reload an account change reads under the kept window; only a new preset re-resolves", () => {
 		const reloaded = pageUpdate(windowed().model, Message.ClickedReload()).model
-		const scoped = routeChanged(
-			reloaded,
-			{ scriptName: "edge-router", search: { account: "acct_b" } },
-			context,
-		)
+		const scoped = routeChanged(reloaded, { scriptName: "edge-router", search: { account: "acct_b" } }, context)
 		expect(names(scoped.commands)).not.toContain("ResolveCloudflareWorkerWindow")
 		expect(scoped.model.window).toEqual(window)
-		const moved = routeChanged(
-			scoped.model,
-			{ scriptName: "edge-router", search: { account: "acct_b", timePreset: "1h" } },
-			context,
-		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
-			["ResolveCloudflareWorkerWindow", "Refresh"],
-		])
+		const moved = routeChanged(scoped.model, { scriptName: "edge-router", search: { account: "acct_b", timePreset: "1h" } }, context)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveCloudflareWorkerWindow", "Refresh"]])
 	})
 
 	test("the window asks for the detail, the list rollups and the releases of the script", () => {

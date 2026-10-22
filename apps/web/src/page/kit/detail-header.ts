@@ -22,9 +22,7 @@ export const detailEyebrow = <M>(
 				h,
 				{ as: "div", className: cn("flex flex-wrap items-center gap-x-2 gap-y-1", className) },
 				shown.flatMap((segment, index) => [
-					...(index > 0
-						? [h.span([h.AriaHidden(true), h.Class("text-muted-foreground/40")], ["·"])]
-						: []),
+					...(index > 0 ? [h.span([h.AriaHidden(true), h.Class("text-muted-foreground/40")], ["·"])] : []),
 					h.span([h.Class("truncate")], [segment]),
 				]),
 			)

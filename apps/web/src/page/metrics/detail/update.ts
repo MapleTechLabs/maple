@@ -319,10 +319,7 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 		whereInput: route.search.where ?? "",
 		stepInput: route.search.step ?? "",
 	})
-	const resolve = (): Return => ({
-		model: next,
-		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
-	})
+	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
 	return routeWindowStep(model.search, route.search, {
 		resolve,
 		requestAll: (mode) => (next.window === null ? resolve() : requestContent(next, context, mode)),
@@ -457,9 +454,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		AppliedWhereSuggestion: ({ index }) => appliedSuggestion(model, index, context, summaryOf(model)),
 		CompletedPlaceWhereCaret: () => ({ model }),
 		PressedWhereTab: () =>
-			isWhereOpen(model)
-				? pressedTab(model, model.whereEditor.activeIndex, context, summaryOf(model))
-				: { model },
+			isWhereOpen(model) ? pressedTab(model, model.whereEditor.activeIndex, context, summaryOf(model)) : { model },
 		PressedWhereEnterOnList: () =>
 			isWhereOpen(model)
 				? appliedSuggestion(model, model.whereEditor.activeIndex, context, summaryOf(model))

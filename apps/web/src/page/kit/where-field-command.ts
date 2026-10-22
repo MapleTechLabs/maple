@@ -14,16 +14,8 @@ const valuesOf = (response: { readonly data: ReadonlyArray<{ readonly attributeV
 
 /** One active key's values: span or resource attributes over the provider's window, or a metric's. */
 export const WhereValuesRequest = Schema.Union([
-	Schema.TaggedStruct("Span", {
-		startTime: Schema.String,
-		endTime: Schema.String,
-		attributeKey: Schema.String,
-	}),
-	Schema.TaggedStruct("Resource", {
-		startTime: Schema.String,
-		endTime: Schema.String,
-		attributeKey: Schema.String,
-	}),
+	Schema.TaggedStruct("Span", { startTime: Schema.String, endTime: Schema.String, attributeKey: Schema.String }),
+	Schema.TaggedStruct("Resource", { startTime: Schema.String, endTime: Schema.String, attributeKey: Schema.String }),
 	Schema.TaggedStruct("Metric", {
 		attributeKey: Schema.String,
 		metricName: Schema.String,
@@ -68,14 +60,11 @@ export const MountWhereFieldListbox = Mount.defineStream("MountWhereFieldListbox
 	args: { fieldId: Schema.String, textareaId: Schema.String },
 	messages: [WhereFieldMessage.GotCaret],
 	execute: ({ element, fieldId, textareaId }) =>
-		Stream.map(listboxEvents(element, textareaId), (message) =>
-			WhereFieldMessage.GotCaret({ fieldId, message }),
-		),
+		Stream.map(listboxEvents(element, textareaId), (message) => WhereFieldMessage.GotCaret({ fieldId, message })),
 })
 
 export const PlaceWhereFieldCaret = Command.define("PlaceWhereFieldCaret", {
 	args: { id: Schema.String, value: Schema.String, cursor: Schema.Number },
 	messages: [WhereFieldMessage.CompletedPlaceCaret],
-	execute: ({ id, value, cursor }) =>
-		Effect.as(placeCaret(id, value, cursor), WhereFieldMessage.CompletedPlaceCaret()),
+	execute: ({ id, value, cursor }) => Effect.as(placeCaret(id, value, cursor), WhereFieldMessage.CompletedPlaceCaret()),
 })

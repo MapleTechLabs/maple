@@ -358,12 +358,7 @@ export const sessionChecks = (h: H, model: Model, report: SessionChecksReport): 
 			h.section(
 				[h.Class("flex flex-col gap-2")],
 				[
-					sectionHeading(h, {
-						variant: "eyebrow",
-						as: "h3",
-						title: "Needs attention",
-						className: "mb-0",
-					}),
+					sectionHeading(h, { variant: "eyebrow", as: "h3", title: "Needs attention", className: "mb-0" }),
 					isClean
 						? h.p(
 								[h.Class("flex items-center gap-2 py-2 text-ui")],

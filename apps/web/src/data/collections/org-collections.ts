@@ -180,10 +180,7 @@ export class OrgCollections extends Context.Service<
 	{
 		readonly forOrg: (orgId: string) => Effect.Effect<OrgCollectionSet>
 		/** A fresh scoped collection for one investigation; the caller releases it. */
-		readonly forInvestigation: (
-			orgId: string,
-			investigationId: string,
-		) => Effect.Effect<InvestigationCollection>
+		readonly forInvestigation: (orgId: string, investigationId: string) => Effect.Effect<InvestigationCollection>
 		/** Cleans the collection up once its last live query has let go (in the background). */
 		readonly releaseInvestigation: (collection: InvestigationCollection) => Effect.Effect<void>
 		/** `retryOrgCollections`: a fresh set for the open org; live streams move onto it. */

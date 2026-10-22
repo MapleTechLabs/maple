@@ -105,7 +105,9 @@ export const sourceHealth = (source: SourceHealthInput, now: number): SourceHeal
 	const resources =
 		source.pollResources !== null && source.pollResources.total >= 2 ? source.pollResources : undefined
 	const result = (status: SourceHealthStatus, problem: string | null): SourceHealthResult =>
-		resources === undefined ? { status, lastDataAt, problem } : { status, lastDataAt, problem, resources }
+		resources === undefined
+			? { status, lastDataAt, problem }
+			: { status, lastDataAt, problem, resources }
 
 	if (source.status === "expired") return result("disconnected", "The token expired; senders get 401")
 	if (source.disconnectedAt !== null) {

@@ -30,29 +30,20 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const filters = errorsFiltersOf(query)
 	const range = rangeOf(context)
 	const activeFilterCount = [filters.service, filters.env, filters.rootOnly].filter(Boolean).length
-	const stats = Option.getOrNull(
-		Option.flatMap(AsyncData.getData(model.summary.data), Option.fromNullishOr),
-	)
+	const stats = Option.getOrNull(Option.flatMap(AsyncData.getData(model.summary.data), Option.fromNullishOr))
 	const rows = Option.getOrElse(AsyncData.getData(model.byType.data), () => [])
 	const tracesPresence = inputs.presenceOf("traces")
 	const content = (): Html => {
 		if (isPending(model.byType)) return listSkeleton(h, { variant: "card", rows: 6 })
 		const failure = failureWithoutData(model.byType)
 		if (Option.isSome(failure))
-			return errorState(h, {
-				label: "errors",
-				failure: failure.value,
-				onRetry: Message.ClickedRefresh(),
-			})
+			return errorState(h, { label: "errors", failure: failure.value, onRetry: Message.ClickedRefresh() })
 		if (rows.length === 0)
-			return activeFilterCount === 0 &&
-				Option.exists(tracesPresence, (presence) => presence.status === "present")
+			return activeFilterCount === 0 && Option.exists(tracesPresence, (presence) => presence.status === "present")
 				? emptyState(h, {
 						icon: icon(h, "CircleWarningIcon"),
 						title: "No errors in this range",
-						hint: [
-							"Errors appear when spans arrive with an Error status. None did in the selected window.",
-						],
+						hint: ["Errors appear when spans arrive with an Error status. None did in the selected window."],
 					})
 				: signalEmptyState(h, {
 						signal: "traces",
@@ -63,24 +54,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						onWidenRange: Message.ClickedWidenRange(),
 						maybePresence: tracesPresence,
 						nowMs: inputs.presenceNowMs,
-						guide: {
-							id: "errors-empty",
-							endpoint: context.env.otlpEndpoint,
-							copies: model.copies,
-							toCopyMessage: toCopy,
-						},
+						guide: { id: "errors-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
 					})
 		return h.div(
 			[h.Class(cn("space-y-2 p-4", model.byType.isPlaceholder && "opacity-60 transition-opacity"))],
-			rows.map((row) =>
-				errorTypeCard(
-					h,
-					row,
-					cardOf(model, row.fingerprintHash),
-					query,
-					Math.max(model.nowMs, inputs.clockMs),
-				),
-			),
+			rows.map((row) => errorTypeCard(h, row, cardOf(model, row.fingerprintHash), query, Math.max(model.nowMs, inputs.clockMs))),
 		)
 	}
 	return pageShell(
@@ -92,22 +70,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				toolbarStats(
 					h,
 					[
-						toolbarStat(h, {
-							value: Math.round(stats?.totalErrors ?? 0),
-							label: "errors",
-							isDanger: true,
-						}),
-						toolbarStat(h, {
-							value: Math.round(stats?.affectedTracesCount ?? 0),
-							label: "affected traces",
-						}),
+						toolbarStat(h, { value: Math.round(stats?.totalErrors ?? 0), label: "errors", isDanger: true }),
+						toolbarStat(h, { value: Math.round(stats?.affectedTracesCount ?? 0), label: "affected traces" }),
 						h.span(
 							[h.Class("text-sm whitespace-nowrap text-muted-foreground")],
 							[
-								h.span(
-									[h.Class("font-medium tabular-nums text-foreground")],
-									[formatErrorRate(stats?.errorRate ?? 0)],
-								),
+								h.span([h.Class("font-medium tabular-nums text-foreground")], [formatErrorRate(stats?.errorRate ?? 0)]),
 								" ",
 								"error rate",
 							],

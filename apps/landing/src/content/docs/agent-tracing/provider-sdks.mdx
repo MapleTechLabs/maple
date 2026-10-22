@@ -109,11 +109,7 @@ export function agentSpan<T>(agentName: string, conversationId: string | undefin
 }
 
 export function runTool(callId: string, name: string, args: string, tool: (args: any) => unknown) {
-	const attributes = {
-		"gen_ai.operation.name": "execute_tool",
-		"gen_ai.tool.name": name,
-		"gen_ai.tool.call.id": callId,
-	}
+	const attributes = { "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": name, "gen_ai.tool.call.id": callId }
 	return withSpan(`execute_tool ${name}`, SpanKind.INTERNAL, attributes, async (span) => {
 		if (captureContent) span.setAttribute("gen_ai.tool.call.arguments", args)
 		let result: string
@@ -132,11 +128,7 @@ type ChatParams = Omit<OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, "stre
 
 /** One model call. Pass `onText` to stream; usage still arrives. */
 export function tracedChat(client: OpenAI, params: ChatParams, onText?: (delta: string) => void) {
-	const attributes = {
-		"gen_ai.operation.name": "chat",
-		"gen_ai.provider.name": "openai",
-		"gen_ai.request.model": params.model,
-	}
+	const attributes = { "gen_ai.operation.name": "chat", "gen_ai.provider.name": "openai", "gen_ai.request.model": params.model }
 	return withSpan(`chat ${params.model}`, SpanKind.CLIENT, attributes, async (span) => {
 		if (captureContent) {
 			span.setAttribute("gen_ai.input.messages", JSON.stringify(params.messages.map(toGenAiMessage)))
@@ -146,10 +138,7 @@ export function tracedChat(client: OpenAI, params: ChatParams, onText?: (delta: 
 			const started = performance.now()
 			let firstChunkAt: number | undefined
 			// Without include_usage, a streamed call reports no tokens at all.
-			const stream = client.chat.completions.stream({
-				...params,
-				stream_options: { include_usage: true },
-			})
+			const stream = client.chat.completions.stream({ ...params, stream_options: { include_usage: true } })
 			stream.on("content", (delta) => {
 				firstChunkAt ??= performance.now()
 				onText(delta)
@@ -170,20 +159,15 @@ export function tracedChat(client: OpenAI, params: ChatParams, onText?: (delta: 
 			span.setAttributes({
 				"gen_ai.usage.input_tokens": completion.usage.prompt_tokens,
 				"gen_ai.usage.output_tokens": completion.usage.completion_tokens,
-				"gen_ai.usage.cache_read.input_tokens":
-					completion.usage.prompt_tokens_details?.cached_tokens ?? 0,
-				"gen_ai.usage.reasoning.output_tokens":
-					completion.usage.completion_tokens_details?.reasoning_tokens ?? 0,
+				"gen_ai.usage.cache_read.input_tokens": completion.usage.prompt_tokens_details?.cached_tokens ?? 0,
+				"gen_ai.usage.reasoning.output_tokens": completion.usage.completion_tokens_details?.reasoning_tokens ?? 0,
 			})
 			// OpenRouter adds the call's price in USD to usage. Other providers don't send one.
 			const cost = (completion.usage as { cost?: number }).cost
 			if (cost !== undefined) span.setAttribute("gen_ai.usage.cost", cost)
 		}
 		if (captureContent) {
-			const output = completion.choices.map((c) => ({
-				...toGenAiMessage(c.message),
-				finish_reason: c.finish_reason,
-			}))
+			const output = completion.choices.map((c) => ({ ...toGenAiMessage(c.message), finish_reason: c.finish_reason }))
 			span.setAttribute("gen_ai.output.messages", JSON.stringify(output))
 		}
 		return completion
@@ -193,23 +177,14 @@ export function tracedChat(client: OpenAI, params: ChatParams, onText?: (delta: 
 // Converts OpenAI messages to Maple's transcript format. Text and tool calls only.
 function toGenAiMessage(message: OpenAI.Chat.ChatCompletionMessageParam | OpenAI.Chat.ChatCompletionMessage) {
 	if (message.role === "tool") {
-		return {
-			role: "tool",
-			parts: [{ type: "tool_call_response", id: message.tool_call_id, response: message.content }],
-		}
+		return { role: "tool", parts: [{ type: "tool_call_response", id: message.tool_call_id, response: message.content }] }
 	}
 	const parts: object[] = []
-	if (typeof message.content === "string" && message.content)
-		parts.push({ type: "text", content: message.content })
+	if (typeof message.content === "string" && message.content) parts.push({ type: "text", content: message.content })
 	if (message.role === "assistant") {
 		for (const call of message.tool_calls ?? []) {
 			if (call.type === "function") {
-				parts.push({
-					type: "tool_call",
-					id: call.id,
-					name: call.function.name,
-					arguments: call.function.arguments,
-				})
+				parts.push({ type: "tool_call", id: call.id, name: call.function.name, arguments: call.function.arguments })
 			}
 		}
 	}
@@ -350,22 +325,13 @@ export function chatTurn(
 	return agentSpan("support_agent", conversationId, async () => {
 		history.push({ role: "user", content: userText })
 		while (true) {
-			const completion = await tracedChat(
-				client,
-				{ model, messages: history, tools: toolSchemas },
-				onText,
-			)
+			const completion = await tracedChat(client, { model, messages: history, tools: toolSchemas }, onText)
 			const message = completion.choices[0].message
 			history.push(message)
 			if (!message.tool_calls?.length) return message.content ?? ""
 			for (const call of message.tool_calls) {
 				if (call.type !== "function") continue
-				const result = await runTool(
-					call.id,
-					call.function.name,
-					call.function.arguments,
-					tools[call.function.name],
-				)
+				const result = await runTool(call.id, call.function.name, call.function.arguments, tools[call.function.name])
 				history.push({ role: "tool", tool_call_id: call.id, content: result })
 			}
 		}

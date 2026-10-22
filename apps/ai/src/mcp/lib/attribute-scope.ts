@@ -39,9 +39,7 @@ interface KeyRow {
 }
 
 const traceKeys = (scope: AttributeScope, window: { startTime: string; endTime: string }) =>
-	withTenantExecutor(
-		exploreAttributeKeys({ source: "traces", scope, timeRange: window, limit: 1000 }),
-	).pipe(
+	withTenantExecutor(exploreAttributeKeys({ source: "traces", scope, timeRange: window, limit: 1000 })).pipe(
 		Effect.map((rows) => rows.map((r) => r.key)),
 		Effect.orElseSucceed((): ReadonlyArray<string> => []),
 	)
@@ -74,7 +72,11 @@ export const resolveAttributeScope = Effect.fn("McpTool.resolveAttributeScope")(
 					),
 					"unknown",
 				)
-			: pickAttributeScope(key, yield* traceKeys("span", window), yield* traceKeys("resource", window))
+			: pickAttributeScope(
+					key,
+					yield* traceKeys("span", window),
+					yield* traceKeys("resource", window),
+				)
 	return scope === "resource"
 		? ({
 				scope,

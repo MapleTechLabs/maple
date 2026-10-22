@@ -5,14 +5,7 @@ import { badge } from "../ui/display"
 import { eyebrow } from "../ui/eyebrow"
 import { icon } from "../ui/icon"
 import type { Message } from "./chart"
-import {
-	labelOf,
-	NODE_W,
-	type PathLink,
-	type PathNode,
-	type PathsLayout,
-	type PlacedNode,
-} from "./paths-layout"
+import { labelOf, NODE_W, type PathLink, type PathNode, type PathsLayout, type PlacedNode } from "./paths-layout"
 
 // The hover card of `PathsChart`: who reached the node, and the top three flows into it.
 
@@ -48,18 +41,12 @@ const cameFrom = (h: H, inputs: PathsTooltipInputs): ReadonlyArray<Html> => {
 						h.div(
 							[h.Class("flex items-center gap-2 tabular-nums")],
 							[
-								icon(h, "ArrowLeftIcon", {
-									size: 10,
-									className: "shrink-0 text-muted-foreground",
-								}),
+								icon(h, "ArrowLeftIcon", { size: 10, className: "shrink-0 text-muted-foreground" }),
 								h.span(
 									[h.Class("min-w-0 flex-1 truncate text-foreground/90")],
 									[from === undefined ? "" : labelOf(from)],
 								),
-								h.span(
-									[h.Class("text-muted-foreground")],
-									[link.count.toLocaleString("en-US")],
-								),
+								h.span([h.Class("text-muted-foreground")], [link.count.toLocaleString("en-US")]),
 							],
 						),
 						h.div(
@@ -81,9 +68,7 @@ export const pathsTooltip = (h: H, inputs: PathsTooltipInputs): Html => {
 	const { node, anchor, width, height, reverse } = inputs
 	return h.div(
 		[
-			h.Class(
-				"pointer-events-none absolute z-10 rounded-lg border bg-popover px-2.5 py-2 text-2xs shadow-md",
-			),
+			h.Class("pointer-events-none absolute z-10 rounded-lg border bg-popover px-2.5 py-2 text-2xs shadow-md"),
 			h.Style({
 				left: `${Math.min(Math.max(0, node.x + NODE_W + 10), Math.max(0, width - TIP_W))}px`,
 				top: `${Math.min(node.y + 4, Math.max(0, height - 96))}px`,
@@ -107,11 +92,7 @@ export const pathsTooltip = (h: H, inputs: PathsTooltipInputs): Html => {
 					]),
 					h.span([h.Class("truncate font-medium text-foreground")], [labelOf(node)]),
 					badge(h, { variant: "muted", size: "xs" }, [
-						node.column === 0
-							? "anchor"
-							: reverse
-								? `${node.column} before`
-								: `step ${node.column}`,
+						node.column === 0 ? "anchor" : reverse ? `${node.column} before` : `step ${node.column}`,
 					]),
 				],
 			),
@@ -128,20 +109,13 @@ export const pathsTooltip = (h: H, inputs: PathsTooltipInputs): Html => {
 				[h.Class("flex items-center justify-between gap-3 tabular-nums")],
 				[
 					h.span(
-						[
-							h.Class(
-								"flex shrink-0 items-center gap-1.5 whitespace-nowrap text-muted-foreground",
-							),
-						],
+						[h.Class("flex shrink-0 items-center gap-1.5 whitespace-nowrap text-muted-foreground")],
 						[icon(h, "UserIcon", { size: 12 }), node.column === 0 ? "started here" : "reached"],
 					),
 					h.span(
 						[h.Class("flex items-baseline gap-1.5 whitespace-nowrap")],
 						[
-							h.span(
-								[h.Class("font-semibold text-foreground")],
-								[node.count.toLocaleString("en-US")],
-							),
+							h.span([h.Class("font-semibold text-foreground")], [node.count.toLocaleString("en-US")]),
 							h.span(
 								[h.Class("text-3xs whitespace-nowrap text-muted-foreground")],
 								[`${formatPercent(node.count / anchor.count)} of anchor`],

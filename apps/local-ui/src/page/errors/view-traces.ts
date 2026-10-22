@@ -47,12 +47,7 @@ const traceItem = (h: H, trace: ErrorTrace, query: URLSearchParams, nowMs: numbe
 						[
 							trace.errorSpanName || trace.rootSpanName || trace.traceId,
 							...(trace.errorServiceName
-								? [
-										h.span(
-											[h.Class("ml-2 text-muted-foreground/70")],
-											[trace.errorServiceName],
-										),
-									]
+								? [h.span([h.Class("ml-2 text-muted-foreground/70")], [trace.errorServiceName])]
 								: []),
 						],
 					),
@@ -64,13 +59,7 @@ const traceItem = (h: H, trace: ErrorTrace, query: URLSearchParams, nowMs: numbe
 		],
 	)
 
-export const cardTraces = (
-	h: H,
-	row: ErrorTypeRow,
-	card: Card,
-	query: URLSearchParams,
-	nowMs: number,
-): Html => {
+export const cardTraces = (h: H, row: ErrorTypeRow, card: Card, query: URLSearchParams, nowMs: number): Html => {
 	if (isPending(card.traces))
 		return h.div([h.Class("flex h-16 items-center justify-center")], [spinner(h, "size-4")])
 	const failure = failureWithoutData(card.traces)
@@ -82,12 +71,6 @@ export const cardTraces = (
 		})
 	const traces = Option.getOrElse(AsyncData.getData(card.traces.data), () => [])
 	if (traces.length === 0)
-		return h.p(
-			[h.Class("py-2 text-xs text-muted-foreground")],
-			["No traces found for this error in the selected range."],
-		)
-	return h.ul(
-		[h.Class("divide-y")],
-		traces.map((trace) => traceItem(h, trace, query, nowMs)),
-	)
+		return h.p([h.Class("py-2 text-xs text-muted-foreground")], ["No traces found for this error in the selected range."])
+	return h.ul([h.Class("divide-y")], traces.map((trace) => traceItem(h, trace, query, nowMs)))
 }

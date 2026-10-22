@@ -68,8 +68,7 @@ export const isMounted = (model: Model): boolean => model.state !== null && !mod
 
 /** `useGuidedFramework`: the picked framework, else the role's default. */
 export const frameworkOf = (state: QuickStartState): string =>
-	state.selectedFramework ??
-	(state.qualifyAnswers.role === null ? "nodejs" : ROLE_DEFAULT_FRAMEWORK[state.qualifyAnswers.role])
+	state.selectedFramework ?? (state.qualifyAnswers.role === null ? "nodejs" : ROLE_DEFAULT_FRAMEWORK[state.qualifyAnswers.role])
 
 /** `useIngestConnection`: the org's own services; the seeded `demo-` ones do not count. */
 export const realServices = (model: Model): ReadonlyArray<ServiceRow> =>
@@ -110,9 +109,7 @@ const dismissed = (model: Model): Return =>
 /** `FirstTraceCelebration`'s explore: dismiss, then the traces of the first real service. */
 const explore = (model: Model): Return => {
 	const first = realServices(model)[0]
-	const url = hrefOf(
-		AppRoute.Traces({ search: first === undefined ? {} : { services: [first.serviceName] } }),
-	)
+	const url = hrefOf(AppRoute.Traces({ search: first === undefined ? {} : { services: [first.serviceName] } }))
 	return { ...dismissed(model), outMessage: PageOutMessage.RequestedNavigation({ url, isReplace: false }) }
 }
 
@@ -120,9 +117,7 @@ const copyStep = (model: Model, field: CopyField, message: CopyButton.Message): 
 	const next = CopyButton.update(model.copies[field], message)
 	return {
 		model: { ...model, copies: { ...model.copies, [field]: next.model } },
-		commands: Command.mapMessages(next.commands ?? [], (inner) =>
-			Message.GotCopyMessage({ field, message: inner }),
-		),
+		commands: Command.mapMessages(next.commands ?? [], (inner) => Message.GotCopyMessage({ field, message: inner })),
 	}
 }
 
@@ -147,9 +142,7 @@ const tabsStep = (
 }
 
 const isWindow = (model: Model, window: TimeWindow) =>
-	model.window !== null &&
-	model.window.startTime === window.startTime &&
-	model.window.endTime === window.endTime
+	model.window !== null && model.window.startTime === window.startTime && model.window.endTime === window.endTime
 
 export const update = (model: Model, message: Message, context: SetupContext): Return => {
 	const { pinnedNamespace } = context
@@ -205,10 +198,7 @@ export const update = (model: Model, message: Message, context: SetupContext): R
 		ClickedFramework: ({ framework }) =>
 			model.state === null
 				? { model }
-				: saveState(
-						{ ...model, snippetCopies: {} },
-						{ ...model.state, selectedFramework: framework },
-					),
+				: saveState({ ...model, snippetCopies: {} }, { ...model.state, selectedFramework: framework }),
 		ClickedSendTestEvent: () =>
 			model.keys._tag !== "Ready" || model.keys.publicKey === "" || model.isSendingTest
 				? { model }
@@ -225,22 +215,15 @@ export const update = (model: Model, message: Message, context: SetupContext): R
 					}
 				: {
 						model: { ...model, isSendingTest: false },
-						outMessage: toast(
-							"error",
-							"Couldn't reach the ingest endpoint. Double-check your API key.",
-						),
+						outMessage: toast("error", "Couldn't reach the ingest endpoint. Double-check your API key."),
 					},
 		CompletedSaveState: () => ({ model }),
-		ClickedRevealPrivateKey: () => ({
-			model: { ...model, isPrivateKeyVisible: !model.isPrivateKeyVisible },
-		}),
+		ClickedRevealPrivateKey: () => ({ model: { ...model, isPrivateKeyVisible: !model.isPrivateKeyVisible } }),
 		GotCopyMessage: ({ field, message: inner }) => copyStep(model, field, inner),
 		GotSetupTabsMessage: ({ message: inner }) =>
 			tabsStep(model, "setupTabs", inner, (child) => Message.GotSetupTabsMessage({ message: child })),
 		GotPackageTabsMessage: ({ message: inner }) =>
-			tabsStep(model, "packageTabs", inner, (child) =>
-				Message.GotPackageTabsMessage({ message: child }),
-			),
+			tabsStep(model, "packageTabs", inner, (child) => Message.GotPackageTabsMessage({ message: child })),
 		GotSnippetCopyMessage: ({ snippet, message: inner }) => snippetCopyStep(model, snippet, inner),
 	})
 }

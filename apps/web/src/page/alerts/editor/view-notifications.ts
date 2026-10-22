@@ -40,13 +40,7 @@ const BODY_PLACEHOLDER = [
 const tierHeading = (h: H, severity: "warning" | "critical", text: string): Html =>
 	h.p(
 		[h.Class("flex items-center gap-1.5 text-xs font-medium text-muted-foreground")],
-		[
-			statusDot(h, {
-				tone: "custom",
-				className: severity === "critical" ? "bg-severity-error" : "bg-severity-warn",
-			}),
-			text,
-		],
+		[statusDot(h, { tone: "custom", className: severity === "critical" ? "bg-severity-error" : "bg-severity-warn" }), text],
 	)
 
 /** `MessageTemplate`: collapsed until opened, or open when the rule has one. */
@@ -72,19 +66,10 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 				[
 					h.span(
 						[h.Class("flex items-center gap-1.5")],
-						[
-							icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", { size: 12 }),
-							"Message template",
-						],
+						[icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", { size: 12 }), "Message template"],
 					),
 					...(hasTemplate && !isOpen
-						? [
-								badge(
-									h,
-									{ pill: true, size: "xs", className: "bg-primary/10 text-primary" },
-									["Customized"],
-								),
-							]
+						? [badge(h, { pill: true, size: "xs", className: "bg-primary/10 text-primary" }, ["Customized"])]
 						: []),
 				],
 			),
@@ -109,9 +94,7 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 										attributes: [
 											h.Placeholder(TITLE_PLACEHOLDER),
 											h.Value(form.notificationTitle),
-											h.OnInput((value) =>
-												Message.ChangedField({ field: "notificationTitle", value }),
-											),
+											h.OnInput((value) => Message.ChangedField({ field: "notificationTitle", value })),
 										],
 									}),
 								]),
@@ -125,9 +108,7 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 											h.AriaLabelledBy(bodyIds.label),
 											h.Placeholder(BODY_PLACEHOLDER),
 											h.Rows(4),
-											h.OnInput((value) =>
-												Message.ChangedField({ field: "notificationBody", value }),
-											),
+											h.OnInput((value) => Message.ChangedField({ field: "notificationBody", value })),
 										],
 									}),
 								]),
@@ -180,30 +161,14 @@ const notifications = (h: H, model: NotificationsView, form: NotificationsForm):
 									[h.Class("space-y-1.5")],
 									[
 										tierHeading(h, "warning", "Warning"),
-										destinationList(
-											h,
-											model,
-											"warning",
-											form.destinationIds,
-											destinations,
-										),
+										destinationList(h, model, "warning", form.destinationIds, destinations),
 									],
 								),
 								h.div(
 									[h.Class("space-y-1.5")],
 									[
-										tierHeading(
-											h,
-											"critical",
-											"Critical, on top of the warning destinations",
-										),
-										destinationList(
-											h,
-											model,
-											"critical",
-											escalation.destinationIds,
-											destinations,
-										),
+										tierHeading(h, "critical", "Critical, on top of the warning destinations"),
+										destinationList(h, model, "critical", escalation.destinationIds, destinations),
 									],
 								),
 							],
@@ -229,8 +194,7 @@ const variables = (h: H): Html =>
 						{
 							variant: "outline",
 							size: "xs",
-							className:
-								"font-mono text-3xs text-muted-foreground hover:text-foreground sm:text-3xs",
+							className: "font-mono text-3xs text-muted-foreground hover:text-foreground sm:text-3xs",
 							attributes: [h.OnClick(Message.ClickedTemplateVariable({ key: variable.key }))],
 						},
 						[variable.key],
@@ -257,13 +221,7 @@ const viewOf = stableSlice((model: Model) =>
 	]),
 )
 const formOf = stableSlice((form: RuleForm) =>
-	Struct.pick(form, [
-		"comparator",
-		"escalation",
-		"destinationIds",
-		"notificationTitle",
-		"notificationBody",
-	]),
+	Struct.pick(form, ["comparator", "escalation", "destinationIds", "notificationTitle", "notificationBody"]),
 )
 
 /** "Who gets notified": one list per tier, Send test while anything is selected, and the template. */

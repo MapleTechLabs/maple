@@ -72,18 +72,14 @@ const HEADING = "font-mono text-lg leading-6.5 font-semibold tracking-[-0.01em] 
 /** `ErrorTextHeading`: the message whole, its path on a line of its own in the error colour. */
 export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<ErrorTextToken>): Html => {
 	const pathIndex = tokens.findIndex((token) => token.kind === "path")
-	if (pathIndex < 0)
-		return h.h2([h.Class(cn(HEADING, "line-clamp-3 break-words"))], headingTokens(h, tokens))
+	if (pathIndex < 0) return h.h2([h.Class(cn(HEADING, "line-clamp-3 break-words"))], headingTokens(h, tokens))
 	const path = tokens[pathIndex]
 	const atIndex = tokens[pathIndex - 1]?.kind === "at" ? pathIndex - 1 : pathIndex
 	const tail = tokens.slice(pathIndex + 1)
 	return h.h2(
 		[h.Class("flex min-w-0 flex-col gap-0.5")],
 		[
-			h.span(
-				[h.Class(cn(HEADING, "line-clamp-2 break-words"))],
-				headingTokens(h, tokens.slice(0, atIndex)),
-			),
+			h.span([h.Class(cn(HEADING, "line-clamp-2 break-words"))], headingTokens(h, tokens.slice(0, atIndex))),
 			h.span(
 				[h.Class("flex min-w-0 flex-wrap items-baseline gap-3 pl-6 font-mono text-lg leading-6.5")],
 				[
@@ -97,11 +93,7 @@ export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<Err
 			...(tail.length > 0
 				? [
 						h.span(
-							[
-								h.Class(
-									"line-clamp-2 break-words pl-6 font-mono text-ui leading-4.5 text-foreground/80",
-								),
-							],
+							[h.Class("line-clamp-2 break-words pl-6 font-mono text-ui leading-4.5 text-foreground/80")],
 							headingTokens(h, tail),
 						),
 					]

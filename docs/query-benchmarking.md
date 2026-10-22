@@ -160,7 +160,7 @@ trace files remain valid input; old unversioned **run reports** must be regenera
   compiled before runtime profile selection: apply the production settings in a
   custom suite when profile fidelity matters. Captured SQL already contains them.
 - `inspect` accepts either a suite or a run report. It saves `EXPLAIN indexes = 1,
-  projections = 1`, `EXPLAIN PIPELINE`, and database table definitions, ordering
+projections = 1`, `EXPLAIN PIPELINE`, and database table definitions, ordering
   keys, partition keys, and row/byte metadata. Prefer run reports for plans using
   the settings actually measured. Failed plans are saved and exit nonzero.
 

@@ -16,39 +16,12 @@ const REVIEW = Schema.decodeSync(PrReviewId)("00000c02-0000-4000-8000-0000000000
 const OTHER = Schema.decodeSync(PrReviewId)("00000c02-0000-4000-8000-000000000002")
 
 const review = {
-	id: REVIEW,
-	repositoryId: PAYMENTS,
-	repositoryFullName: "acme-shop/payments",
-	number: 7,
-	title: "Fix",
-	url: "https://github.com/acme-shop/payments/pull/7",
-	authorLogin: null,
-	headSha: "a".repeat(40),
-	status: "completed",
-	skipReason: null,
-	verdict: null,
-	score: null,
-	confidence: null,
-	findings: 0,
-	criticalFindings: 0,
-	commentUrl: null,
-	publishError: null,
-	error: null,
-	model: null,
-	createdAt: NOW,
-	finishedAt: null,
-	mergedAt: null,
+	id: REVIEW, repositoryId: PAYMENTS, repositoryFullName: "acme-shop/payments", number: 7, title: "Fix", url: "https://github.com/acme-shop/payments/pull/7",
+	authorLogin: null, headSha: "a".repeat(40), status: "completed", skipReason: null, verdict: null, score: null, confidence: null, findings: 0,
+	criticalFindings: 0, commentUrl: null, publishError: null, error: null, model: null, createdAt: NOW, finishedAt: null, mergedAt: null,
 }
 const detailOf = Schema.decodeUnknownSync(CodeReviewDetail)({
-	review,
-	report: null,
-	checkRunUrl: null,
-	reviewUrl: null,
-	inputTokens: null,
-	outputTokens: null,
-	startedAt: null,
-	history: [],
-	findings: [],
+	review, report: null, checkRunUrl: null, reviewUrl: null, inputTokens: null, outputTokens: null, startedAt: null, history: [], findings: [],
 })
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)

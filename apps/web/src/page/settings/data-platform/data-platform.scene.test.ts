@@ -1,16 +1,11 @@
-import {
-	OrgClickHouseApplySchemaStarted,
-	OrgClickHouseApplySchemaStatus,
-	OrgClickHouseSettingsResponse,
-} from "@maple/domain/http"
+import { OrgClickHouseApplySchemaStarted, OrgClickHouseApplySchemaStatus, OrgClickHouseSettingsResponse } from "@maple/domain/http"
 import { Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage } from "../../contract"
 import { Message, type Model } from "./model"
 import { init, isConnectionDirty, isRunActive, update } from "./update"
 
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
 
 const settings = Schema.decodeUnknownSync(OrgClickHouseSettingsResponse)({
 	configured: true,
@@ -36,33 +31,23 @@ const status = (value: "running" | "succeeded") =>
 		finishedAt: null,
 	})
 
-const loaded = () =>
-	update(init().model, Message.CompletedFetchSettings({ result: Result.succeed(settings) }))
+const loaded = () => update(init().model, Message.CompletedFetchSettings({ result: Result.succeed(settings) }))
 
 describe("data platform tab", () => {
 	test("a configured cluster also reads the apply status", () => {
 		expect(names(init().commands)).toEqual(
-			expect.arrayContaining([
-				"FetchOrgClickHouseSettings",
-				"FetchOrgClickHouseSchemaDiff",
-				"FetchDataPlatformUsage",
-			]),
+			expect.arrayContaining(["FetchOrgClickHouseSettings", "FetchOrgClickHouseSchemaDiff", "FetchDataPlatformUsage"]),
 		)
 		expect(names(init().commands)).not.toContain("FetchOrgClickHouseApplyStatus")
 		expect(names(loaded().commands)).toEqual(["FetchOrgClickHouseApplyStatus"])
 	})
 
 	test("an edit is dirty and Save sends the trimmed connection", () => {
-		const edited = update(
-			loaded().model,
-			Message.ChangedConnection({ field: "database", value: " maple_prod " }),
-		).model
+		const edited = update(loaded().model, Message.ChangedConnection({ field: "database", value: " maple_prod " })).model
 		expect(isConnectionDirty(edited)).toBe(true)
 		expect(update(edited, Message.ClickedSave()).commands?.[0]).toMatchObject({
 			name: "SaveOrgClickHouseConnection",
-			args: {
-				request: { url: "https://ch.acme.test:8443", user: "maple_writer", database: "maple_prod" },
-			},
+			args: { request: { url: "https://ch.acme.test:8443", user: "maple_writer", database: "maple_prod" } },
 		})
 	})
 
@@ -88,14 +73,10 @@ describe("data platform tab", () => {
 		// A second read (the run was started again) answers first with the finished run.
 		const started = update(
 			polled.model,
-			Message.CompletedApply({
-				result: Result.succeed(new OrgClickHouseApplySchemaStarted({ status: "already_running" })),
-			}),
+			Message.CompletedApply({ result: Result.succeed(new OrgClickHouseApplySchemaStarted({ status: "already_running" })) }),
 		).model
 		const done = answer(started, 3, "succeeded")
-		expect(done.outMessage).toEqual(
-			PageOutMessage.RequestedToast({ type: "success", title: "Schema applied", description: "" }),
-		)
+		expect(done.outMessage).toEqual(PageOutMessage.RequestedToast({ type: "success", title: "Schema applied", description: "" }))
 		const late = answer(done.model, 2, "running")
 		expect(late.outMessage).toBeUndefined()
 		expect(isRunActive(late.model)).toBe(false)

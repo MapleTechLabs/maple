@@ -89,9 +89,7 @@ export const inputAttributes = <M>(
 		h.OnInput((value) => toMessage(Message.ChangedInput({ value }))),
 		h.OnClick(
 			toMessage(
-				options.highlightsSelected === true
-					? Message.ClickedInputOf({ items: options.items, selected: model.selected[0] ?? null })
-					: Message.ClickedInput(),
+				options.highlightsSelected === true ? Message.ClickedInputOf({ items: options.items, selected: model.selected[0] ?? null }) : Message.ClickedInput(),
 			),
 		),
 		h.OnKeyDownPreventDefault((key) =>
@@ -220,12 +218,7 @@ export type PopupOptions = Readonly<{
 	renderItem?: (value: string) => ReadonlyArray<Html | string>
 	isUnfiltered?: boolean
 	/** `<ComboboxContent>` under a `<ComboboxTrigger>`: a dialog popup with its search input on top. */
-	trigger?: Readonly<{
-		returnFocusId: string
-		header: Html
-		footer?: ReadonlyArray<Html>
-		sideOffset?: number
-	}>
+	trigger?: Readonly<{ returnFocusId: string; header: Html; footer?: ReadonlyArray<Html>; sideOffset?: number }>
 	/** `<ComboboxItem className>`. */
 	itemClassName?: (value: string) => string | undefined
 	listClassName?: string
@@ -243,13 +236,9 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 	const state = stateAttributes(h, model.isOpen, model.animation)
 	const placement = [h.DataAttribute("align", model.align), ...state, h.DataAttribute("side", model.side)]
 	const filtered =
-		options.isUnfiltered === true || options.isPrefiltered === true
-			? options.items
-			: visibleItems(model, options.items)
+		options.isUnfiltered === true || options.isPrefiltered === true ? options.items : visibleItems(model, options.items)
 	const isEmpty =
-		options.isUnfiltered === true && options.isPrefiltered !== true
-			? queryOf(model).trim() !== ""
-			: filtered.length === 0
+		options.isUnfiltered === true && options.isPrefiltered !== true ? queryOf(model).trim() !== "" : filtered.length === 0
 	return h.div(
 		[
 			h.Key(portalId(model.id)),
@@ -316,13 +305,8 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 													...(model.mode === "multiple"
 														? [h.AriaMultiSelectable(true)]
 														: []),
-													...(options.trigger !== undefined &&
-													model.highlighted !== null
-														? [
-																h.AriaActiveDescendant(
-																	itemId(model.id, model.highlighted),
-																),
-															]
+													...(options.trigger !== undefined && model.highlighted !== null
+														? [h.AriaActiveDescendant(itemId(model.id, model.highlighted))]
 														: []),
 													h.Class(cn(styles.list, options.listClassName)),
 													h.DataAttribute("slot", `${options.slot}-list`),
@@ -413,9 +397,7 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 		[
 			h.Key("chips"),
 			...(isDisabled ? [h.AriaDisabled(true)] : []),
-			h.Class(
-				cn(C.comboboxChipsStyles, isDisabled && "pointer-events-none opacity-60", inputs.className),
-			),
+			h.Class(cn(C.comboboxChipsStyles, isDisabled && "pointer-events-none opacity-60", inputs.className)),
 			h.DataAttribute("slot", "combobox-chips"),
 			// Base UI's chips are a toolbar once there is a chip to move between.
 			...(model.selected.length === 0 ? [] : [h.Role("toolbar")]),
@@ -491,15 +473,7 @@ export type SingleViewInputs = Readonly<{
 
 export type InputFieldOptions = Pick<
 	SingleViewInputs,
-	| "items"
-	| "ariaLabel"
-	| "placeholder"
-	| "startAddon"
-	| "size"
-	| "showTrigger"
-	| "isUnfiltered"
-	| "className"
-	| "highlightsSelected"
+	"items" | "ariaLabel" | "placeholder" | "startAddon" | "size" | "showTrigger" | "isUnfiltered" | "className" | "highlightsSelected"
 > &
 	Readonly<{
 		/** Inside a trigger's popup the input carries no dismiss button of its own. */

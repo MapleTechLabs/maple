@@ -45,9 +45,7 @@ const toast = (type: "success" | "error", title: string, description = "") =>
 
 const liftRevoke = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, revokeDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) =>
-		Message.GotRevokeDialogMessage({ message }),
-	),
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRevokeDialogMessage({ message })),
 })
 
 const liftCreate = (model: Model, step: ReturnType<typeof CreateDialog.update>): Return => ({
@@ -97,8 +95,7 @@ const updateMenu = (
 	const step = Menu.update(current, message)
 	const next = write(model, step.model)
 	const commands = Command.mapMessages(step.commands ?? [], wrap)
-	const picked =
-		step.outMessage?._tag === "SelectedItem" ? Option.some(step.outMessage.value) : Option.none()
+	const picked = step.outMessage?._tag === "SelectedItem" ? Option.some(step.outMessage.value) : Option.none()
 	return Option.match(picked, {
 		onNone: () => ({ model: next, commands }),
 		onSome: (value) => {
@@ -122,18 +119,13 @@ export const update = (model: Model, message: Message): Return =>
 			const step = Select.update(model.statusSelect, child)
 			const lifted = {
 				model: { ...model, statusSelect: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (inner) =>
-					Message.GotStatusSelectMessage({ message: inner }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotStatusSelectMessage({ message: inner })),
 			}
 			return Option.match(
 				Option.flatMap(Option.fromNullishOr(step.outMessage), (out) =>
 					Array.findFirst(STATUS_VALUES, (status) => status === out.value),
 				),
-				{
-					onNone: () => lifted,
-					onSome: (status) => ({ ...lifted, model: { ...lifted.model, statusFilter: status } }),
-				},
+				{ onNone: () => lifted, onSome: (status) => ({ ...lifted, model: { ...lifted.model, statusFilter: status } }) },
 			)
 		},
 		ChangedSearch: ({ value }) => ({ model: { ...model, search: value } }),
@@ -162,10 +154,7 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedConfirmRevoke: () =>
 			model.isRevoking || model.revoking === null
 				? { model }
-				: {
-						model: { ...model, isRevoking: true },
-						commands: [RevokeApiKey({ id: model.revoking.id })],
-					},
+				: { model: { ...model, isRevoking: true }, commands: [RevokeApiKey({ id: model.revoking.id })] },
 		CompletedRevoke: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => ({
@@ -183,9 +172,7 @@ export const update = (model: Model, message: Message): Return =>
 			const step = CopyButton.update(model.baseUrlCopy, child)
 			return {
 				model: { ...model, baseUrlCopy: step.model },
-				commands: Command.mapMessages(step.commands, (inner) =>
-					Message.GotBaseUrlCopyMessage({ message: inner }),
-				),
+				commands: Command.mapMessages(step.commands, (inner) => Message.GotBaseUrlCopyMessage({ message: inner })),
 			}
 		},
 		ToggledScopes: () => ({ model: { ...model, isScopesOpen: !model.isScopesOpen } }),

@@ -33,36 +33,33 @@ const triageChip = <M>(
 
 export const replaysToolbar = <M>(h: HtmlBuilder<M>, options: ReplaysToolbarOptions<M>): Html => {
 	const isWaiting = options.isWaiting ?? false
-	return h.div(
-		[h.Class("flex flex-wrap items-center justify-between gap-3")],
-		[
-			searchInput(h, {
-				id: "replays-search",
-				value: options.query,
-				placeholder: "Search by URL…",
-				onInput: options.onInput,
-				onClear: options.onClear,
-				size: "default",
-				className: cn("max-w-sm", "w-full sm:max-w-sm"),
-			}),
-			h.div(
-				[
-					...(isWaiting ? [h.AriaBusy(true)] : []),
-					h.Class(cn("flex flex-wrap items-center gap-2", refreshingClass(isWaiting))),
-				],
-				[
-					triageChip(h, options.isErrorsOnly, options.onToggleErrorsOnly, "crit", [
-						h.span([h.Class("tabular-nums")], [formatNumber(options.errorSessions)]),
-						" with errors",
-					]),
-					triageChip(h, options.isEngagedOnly, options.onToggleEngagedOnly, "ok", [
-						...(options.engagedSessions === undefined
-							? []
-							: [h.span([h.Class("tabular-nums")], [formatNumber(options.engagedSessions)])]),
-						"engaged",
-					]),
-				],
-			),
-		],
-	)
+	return h.div([h.Class("flex flex-wrap items-center justify-between gap-3")], [
+		searchInput(h, {
+			id: "replays-search",
+			value: options.query,
+			placeholder: "Search by URL…",
+			onInput: options.onInput,
+			onClear: options.onClear,
+			size: "default",
+			className: cn("max-w-sm", "w-full sm:max-w-sm"),
+		}),
+		h.div(
+			[
+				...(isWaiting ? [h.AriaBusy(true)] : []),
+				h.Class(cn("flex flex-wrap items-center gap-2", refreshingClass(isWaiting))),
+			],
+			[
+				triageChip(h, options.isErrorsOnly, options.onToggleErrorsOnly, "crit", [
+					h.span([h.Class("tabular-nums")], [formatNumber(options.errorSessions)]),
+					" with errors",
+				]),
+				triageChip(h, options.isEngagedOnly, options.onToggleEngagedOnly, "ok", [
+					...(options.engagedSessions === undefined
+						? []
+						: [h.span([h.Class("tabular-nums")], [formatNumber(options.engagedSessions)])]),
+					"engaged",
+				]),
+			],
+		),
+	])
 }

@@ -24,8 +24,7 @@ import { Message, type Model, SHEET_ID } from "./model"
 
 export type SheetViewInputs = Readonly<{ timeZone: string }>
 
-const toConversation = (tabId: string) => (message: ConversationMessage) =>
-	Message.GotConversationMessage({ tabId, message })
+const toConversation = (tabId: string) => (message: ConversationMessage) => Message.GotConversationMessage({ tabId, message })
 
 const NEW_CHAT_TRIGGER = "chat-sheet-new-chat"
 const OPEN_FULL_PAGE_TRIGGER = "chat-sheet-open-full-page"
@@ -83,9 +82,7 @@ const headerActions = (h: HtmlBuilder<Message>, model: Model): Html =>
 								attributes: [
 									h.AriaLabel("Open full page"),
 									...withoutFocus(trigger(OPEN_FULL_PAGE_TRIGGER)),
-									h.OnMount(
-										MountFocusVisibleTrigger({ triggerId: OPEN_FULL_PAGE_TRIGGER }),
-									),
+									h.OnMount(MountFocusVisibleTrigger({ triggerId: OPEN_FULL_PAGE_TRIGGER })),
 									h.OnClick(Message.ClickedOpenFullPage()),
 								],
 							},
@@ -110,24 +107,13 @@ const header = (h: HtmlBuilder<Message>, model: Model): Html =>
 					h.Id(Dialog.titleId(SHEET_ID)),
 				],
 				[
-					icon(h, "MapleMark", {
-						size: 16,
-						className: "shrink-0 text-primary",
-						attributes: [h.AriaHidden(true)],
-					}),
+					icon(h, "MapleMark", { size: 16, className: "shrink-0 text-primary", attributes: [h.AriaHidden(true)] }),
 					h.span(
 						[h.Class("truncate")],
 						[
 							"Maple",
 							" ",
-							h.span(
-								[
-									h.Class(
-										"shimmer shimmer-color-primary shimmer-duration-3200 shimmer-spread-[2ch]",
-									),
-								],
-								["AI"],
-							),
+							h.span([h.Class("shimmer shimmer-color-primary shimmer-duration-3200 shimmer-spread-[2ch]")], ["AI"]),
 						],
 					),
 				],
@@ -163,10 +149,7 @@ const content = (h: HtmlBuilder<Message>, model: Model, inputs: SheetViewInputs)
 						emptyState: () =>
 							chatEmptyState(h, {
 								suggestions: suggestionsForContexts([...contexts]) ?? DEFAULT_SUGGESTIONS,
-								onSelect: (text) =>
-									toConversation(model.tabId)(
-										ConversationMessage.ClickedSuggestion({ text }),
-									),
+								onSelect: (text) => toConversation(model.tabId)(ConversationMessage.ClickedSuggestion({ text })),
 								tracePresence: presenceOf(model.presence, "traces"),
 							}),
 						chips: contextChips(h, contexts, (id) => Message.DismissedContext({ id })),

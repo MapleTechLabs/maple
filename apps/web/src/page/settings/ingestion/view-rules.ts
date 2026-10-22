@@ -46,24 +46,9 @@ const muted = (h: H, text: string) => h.span([h.Class("text-muted-foreground")],
 
 const sentence = (h: H, issue: V2Recommendation): ReadonlyArray<Html | string> => {
 	if (issue.kind === "double-emission")
-		return [
-			strong(h, "Standardize on"),
-			" ",
-			code(h, issue.canonical_key ?? ""),
-			muted(h, "; spans also emit "),
-			code(h, issue.source_key),
-		]
-	if (issue.kind === "naming")
-		return [strong(h, "Rename non-conforming key"), " ", code(h, issue.source_key)]
-	return [
-		strong(h, "Rename"),
-		" ",
-		code(h, issue.source_key),
-		" ",
-		muted(h, "→"),
-		" ",
-		code(h, issue.canonical_key ?? ""),
-	]
+		return [strong(h, "Standardize on"), " ", code(h, issue.canonical_key ?? ""), muted(h, "; spans also emit "), code(h, issue.source_key)]
+	if (issue.kind === "naming") return [strong(h, "Rename non-conforming key"), " ", code(h, issue.source_key)]
+	return [strong(h, "Rename"), " ", code(h, issue.source_key), " ", muted(h, "→"), " ", code(h, issue.canonical_key ?? "")]
 }
 
 const recommendationActions = (h: H, model: Model, issue: V2Recommendation): ReadonlyArray<Html> => {
@@ -75,12 +60,7 @@ const recommendationActions = (h: H, model: Model, issue: V2Recommendation): Rea
 			badge(h, { variant: status.variant }, [status.label]),
 			button(
 				h,
-				{
-					variant: "outline",
-					size: "sm",
-					isLoading: isPending,
-					attributes: [h.OnClick(Message.ClickedReopenRecommendation({ id: issue.id }))],
-				},
+				{ variant: "outline", size: "sm", isLoading: isPending, attributes: [h.OnClick(Message.ClickedReopenRecommendation({ id: issue.id }))] },
 				[icon(h, "ArrowRotateAnticlockwiseIcon"), "Reopen"],
 			),
 		]
@@ -91,22 +71,14 @@ const recommendationActions = (h: H, model: Model, issue: V2Recommendation): Rea
 				? [
 						button(
 							h,
-							{
-								size: "sm",
-								isLoading: isPending,
-								attributes: [h.OnClick(Message.ClickedApplyRecommendation({ id: issue.id }))],
-							},
+							{ size: "sm", isLoading: isPending, attributes: [h.OnClick(Message.ClickedApplyRecommendation({ id: issue.id }))] },
 							[icon(h, "CheckIcon"), "Apply fix"],
 						),
 					]
 				: []
 			: [
 					h.a(
-						[
-							h.Href(href),
-							h.Class(cn(buttonVariants({ variant: "outline", size: "sm" }))),
-							h.DataAttribute("slot", "button"),
-						],
+						[h.Href(href), h.Class(cn(buttonVariants({ variant: "outline", size: "sm" }))), h.DataAttribute("slot", "button")],
 						[icon(h, "CodeIcon"), "How to fix"],
 					),
 				]
@@ -131,18 +103,14 @@ const recommendationRow = (h: H, model: Model, issue: V2Recommendation): Html =>
 	return h.div(
 		[h.Key(issue.id), h.Class("hover:bg-muted/20 flex items-start gap-3 px-4 py-3 transition-colors")],
 		[
-			eyebrow(h, { variant: "mono", className: cn("w-20 shrink-0 pt-0.5", kind.className) }, [
-				kind.label,
-			]),
+			eyebrow(h, { variant: "mono", className: cn("w-20 shrink-0 pt-0.5", kind.className) }, [kind.label]),
 			h.div(
 				[h.Class("min-w-0 flex-1 space-y-1")],
 				[
 					h.a(
 						[
 							h.Href(`/recommendations/${encodeURIComponent(issue.id)}`),
-							h.Class(
-								"block text-sm break-words underline-offset-4 decoration-muted-foreground/40 hover:underline",
-							),
+							h.Class("block text-sm break-words underline-offset-4 decoration-muted-foreground/40 hover:underline"),
 						],
 						sentence(h, issue),
 					),
@@ -152,9 +120,7 @@ const recommendationRow = (h: H, model: Model, issue: V2Recommendation): Html =>
 							formatNumber(issue.usage_count),
 							" spans in 24h ·",
 							" ",
-							issue.kind === "rename"
-								? "fixed at ingest, no code change"
-								: "needs a code change",
+							issue.kind === "rename" ? "fixed at ingest, no code change" : "needs a code change",
 						],
 					),
 				],
@@ -165,8 +131,7 @@ const recommendationRow = (h: H, model: Model, issue: V2Recommendation): Html =>
 }
 
 export const recommendationsSection = (h: H, model: Model): ReadonlyArray<Html> => {
-	if (!AsyncData.isSuccess(model.recommendations) && !AsyncData.isRefreshing(model.recommendations))
-		return []
+	if (!AsyncData.isSuccess(model.recommendations) && !AsyncData.isRefreshing(model.recommendations)) return []
 	const issues = AsyncData.getOrElse(model.recommendations, () => [])
 	if (!issues.some((issue) => issue.status === "open" || issue.status === "dismissed")) return []
 	const open = issues.filter((issue) => issue.status === "open")
@@ -178,9 +143,7 @@ export const recommendationsSection = (h: H, model: Model): ReadonlyArray<Html> 
 			{
 				id: "ingestion-recommendations-heading",
 				title: "Recommendations",
-				description: [
-					"Deprecated or non-conforming attribute keys found on your spans in the last 24 hours.",
-				],
+				description: ["Deprecated or non-conforming attribute keys found on your spans in the last 24 hours."],
 				padded: false,
 				actions: segmentedSelect<RecommendationTab, Message>(h, {
 					size: "sm",
@@ -206,10 +169,7 @@ export const recommendationsSection = (h: H, model: Model): ReadonlyArray<Html> 
 							),
 							...(model.recommendationTab === "open" ? [docsLink(h, "otelConventions")] : []),
 						])
-					: h.div(
-							[h.Class("divide-y")],
-							rows.map((issue) => recommendationRow(h, model, issue)),
-						),
+					: h.div([h.Class("divide-y")], rows.map((issue) => recommendationRow(h, model, issue))),
 			],
 		),
 	]
@@ -232,36 +192,20 @@ const mappingRow = (h: H, model: Model, mapping: V2AttributeMapping): Html => {
 	return h.div(
 		[
 			h.Key(mapping.id),
-			h.Class(
-				cn(
-					"hover:bg-muted/20 flex items-center gap-3 border-t px-4 py-2.5 transition-colors",
-					!mapping.enabled && "text-muted-foreground",
-				),
-			),
+			h.Class(cn("hover:bg-muted/20 flex items-center gap-3 border-t px-4 py-2.5 transition-colors", !mapping.enabled && "text-muted-foreground")),
 		],
 		[
 			truncatedText(h, { text: mapping.name, className: "w-28 shrink-0 text-sm md:w-40" }),
 			h.div(
 				[h.Class("flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm")],
 				[
-					badge(h, { variant: OPERATION_BADGE[mapping.operation], size: "sm" }, [
-						OPERATION_LABELS[mapping.operation],
-					]),
-					inlineCode(
-						h,
-						{ variant: "plain", className: "text-muted-foreground min-w-0 break-all" },
-						[mapping.source_key],
-					),
+					badge(h, { variant: OPERATION_BADGE[mapping.operation], size: "sm" }, [OPERATION_LABELS[mapping.operation]]),
+					inlineCode(h, { variant: "plain", className: "text-muted-foreground min-w-0 break-all" }, [mapping.source_key]),
 					icon(h, "ArrowRightIcon", { size: 12, className: "text-muted-foreground shrink-0" }),
-					inlineCode(h, { variant: "plain", className: "text-foreground min-w-0 break-all" }, [
-						mapping.target_key,
-					]),
+					inlineCode(h, { variant: "plain", className: "text-foreground min-w-0 break-all" }, [mapping.target_key]),
 				],
 			),
-			h.span(
-				[h.Class("text-muted-foreground hidden w-36 shrink-0 text-xs md:block")],
-				[APPLIES_TO[mapping.source_context]],
-			),
+			h.span([h.Class("text-muted-foreground hidden w-36 shrink-0 text-xs md:block")], [APPLIES_TO[mapping.source_context]]),
 			h.div(
 				[h.Class("flex w-10 shrink-0 items-center")],
 				model.isAdmin
@@ -284,23 +228,11 @@ const mappingRow = (h: H, model: Model, mapping: V2AttributeMapping): Html => {
 									slotId: menuId,
 									model: model.rowMenus[menuId] ?? Menu.init(menuId),
 									entries: [
-										{
-											_tag: "Item",
-											value: "edit",
-											label: "Edit mapping",
-											icon: "PencilIcon",
-										},
-										{
-											_tag: "Item",
-											value: "delete",
-											label: "Delete mapping",
-											icon: "TrashIcon",
-											variant: "destructive",
-										},
+										{ _tag: "Item", value: "edit", label: "Edit mapping", icon: "PencilIcon" },
+										{ _tag: "Item", value: "delete", label: "Delete mapping", icon: "TrashIcon", variant: "destructive" },
 									],
 									label: `Actions for ${mapping.name}`,
-									toParentMessage: (message) =>
-										Message.GotRowMenuMessage({ menuId, message }),
+									toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
 								}),
 							],
 						),
@@ -319,9 +251,7 @@ const mappingsTable = (h: H, model: Model, mappings: ReadonlyArray<V2AttributeMa
 				[
 					eyebrow(h, { variant: "mono", className: "w-28 shrink-0 md:w-40", as: "div" }, ["Name"]),
 					eyebrow(h, { variant: "mono", className: "min-w-0 flex-1", as: "div" }, ["Rule"]),
-					eyebrow(h, { variant: "mono", className: "hidden w-36 shrink-0 md:block", as: "div" }, [
-						"Applies to",
-					]),
+					eyebrow(h, { variant: "mono", className: "hidden w-36 shrink-0 md:block", as: "div" }, ["Applies to"]),
 					eyebrow(h, { variant: "mono", className: "w-10 shrink-0", as: "div" }, ["On"]),
 					...(model.isAdmin ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
 				],
@@ -341,10 +271,7 @@ const mappingsEmpty = (h: H, model: Model): Html =>
 					"Mappings rename span attribute keys that do not follow OpenTelemetry names, so dashboards and alerts find them. Rules apply to new spans only.",
 				]),
 			]),
-			emptyActions(h, [
-				...(model.isAdmin ? [addMappingButton(h)] : []),
-				docsLink(h, "otelConventions"),
-			]),
+			emptyActions(h, [...(model.isAdmin ? [addMappingButton(h)] : []), docsLink(h, "otelConventions")]),
 		],
 		"py-10",
 	)
@@ -357,10 +284,7 @@ const mappingsSkeleton = (h: H): Html =>
 			h.div(
 				[h.Class("flex items-center gap-4 py-3")],
 				[
-					h.div(
-						[h.Class("flex-1 space-y-2")],
-						[skeleton(h, "h-4 w-40"), skeleton(h, "h-3.5 w-64")],
-					),
+					h.div([h.Class("flex-1 space-y-2")], [skeleton(h, "h-4 w-40"), skeleton(h, "h-3.5 w-64")]),
 					skeleton(h, "h-5 w-9 rounded-full"),
 				],
 			),
@@ -383,16 +307,8 @@ export const mappingsSection = (h: H, model: Model): Html =>
 					AsyncData.matchData(model.mappings, {
 						onEmpty: () => mappingsSkeleton(h),
 						onFailure: (error) =>
-							errorState(h, {
-								failure: error,
-								title: "Couldn't load mappings",
-								onRetry: Message.ClickedRetryMappings(),
-								className: "border-0",
-							}),
-						onData: (mappings) =>
-							mappings.length === 0
-								? mappingsEmpty(h, model)
-								: mappingsTable(h, model, mappings),
+							errorState(h, { failure: error, title: "Couldn't load mappings", onRetry: Message.ClickedRetryMappings(), className: "border-0" }),
+						onData: (mappings) => (mappings.length === 0 ? mappingsEmpty(h, model) : mappingsTable(h, model, mappings)),
 					}),
 				],
 			),

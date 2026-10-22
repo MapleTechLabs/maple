@@ -25,9 +25,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					settling
 						? pollTicks(INGEST_POLL).pipe(
 								Stream.mapEffect(() =>
-									Effect.map(Clock.currentTimeMillis, (nowMs) =>
-										Message.TickedIngestPoll({ nowMs }),
-									),
+									Effect.map(Clock.currentTimeMillis, (nowMs) => Message.TickedIngestPoll({ nowMs })),
 								),
 							)
 						: Stream.empty,

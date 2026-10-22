@@ -30,10 +30,6 @@ export const placeGraph = (model: Model, timeZone: string): Model => {
 	const width = model.canvas.pane.width
 	const zoom = fitScale(width, graph)
 	const drawn = graph.width * zoom
-	const viewport = {
-		x: drawn > width ? width * FIT_PADDING : (width - drawn) / 2,
-		y: HEADING_GUTTER * zoom,
-		zoom,
-	}
+	const viewport = { x: drawn > width ? width * FIT_PADDING : (width - drawn) / 2, y: HEADING_GUTTER * zoom, zoom }
 	return modifyFields(model, { canvas: (canvas) => ({ ...canvas, viewport }) })
 }

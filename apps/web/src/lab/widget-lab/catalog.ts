@@ -55,23 +55,12 @@ export const toTileState = (state: WidgetDataState): TileState => {
 		case "loading":
 			return { _tag: "Loading" }
 		case "error":
-			return {
-				_tag: "Error",
-				title: state.title ?? null,
-				message: state.message ?? null,
-				kind: state.kind ?? null,
-			}
+			return { _tag: "Error", title: state.title ?? null, message: state.message ?? null, kind: state.kind ?? null }
 		case "ready":
 			return {
 				_tag: "Ready",
 				data: Array.isArray(state.data)
-					? {
-							_tag: "Rows",
-							rows: state.data.filter(
-								(row): row is Record<string, unknown> =>
-									typeof row === "object" && row !== null,
-							),
-						}
+					? { _tag: "Rows", rows: state.data.filter((row): row is Record<string, unknown> => typeof row === "object" && row !== null) }
 					: { _tag: "Value", value: state.data },
 			}
 	}
@@ -134,8 +123,7 @@ export const SECTIONS: ReadonlyArray<Section> = [
 	{
 		id: "stat",
 		title: "Stat",
-		description:
-			"Single aggregated value. Polish: threshold colors, prefix/suffix, long titles, edge values.",
+		description: "Single aggregated value. Polish: threshold colors, prefix/suffix, long titles, edge values.",
 		minColWidth: 240,
 		cells: [...cellsOf("stat", "stat", statScenarios, 200), ...statSparklineCells],
 	},
@@ -157,7 +145,8 @@ export const LATER_SECTIONS: ReadonlyArray<Section> = [
 		description:
 			"Every entry from the chart registry rendered with its bundled sample data, plus threshold overlays, the stats legend, and loading/error/empty states.",
 		minColWidth: 320,
-		cells: cellsOf("chart", "chart", chartScenarios, 320, (s) => `${s.label} (${s.category})`),
+		cells: cellsOf("chart", "chart", chartScenarios, 320, (s) => `${s.label} (${s.category})`,
+		),
 	},
 	{
 		id: "stress",
@@ -165,7 +154,8 @@ export const LATER_SECTIONS: ReadonlyArray<Section> = [
 		description:
 			"High-cardinality (10–50 series/slices), long series names, and null/zero data. Confirms distinct colors past series 5, scrollable legends that don't crush the plot, and pie/bar 'Other' bucketing.",
 		minColWidth: 320,
-		cells: cellsOf("stress", "chart", stressScenarios, 320, (s) => `${s.label} (${s.category})`),
+		cells: cellsOf("stress", "chart", stressScenarios, 320, (s) => `${s.label} (${s.category})`,
+		),
 	},
 	{
 		id: "table",
@@ -223,8 +213,7 @@ export const LATER_SECTIONS: ReadonlyArray<Section> = [
 	{
 		id: "histogram",
 		title: "Histogram",
-		description:
-			"Bucketed value distribution. Polish: log Y scale, narrow buckets, bell vs long-tail shapes.",
+		description: "Bucketed value distribution. Polish: log Y scale, narrow buckets, bell vs long-tail shapes.",
 		minColWidth: 320,
 		cells: cellsOf("histogram", "histogram", histogramScenarios, 320),
 	},
@@ -244,6 +233,4 @@ export const LATER_SECTIONS: ReadonlyArray<Section> = [
 	},
 ]
 
-export const ALL_CELLS: ReadonlyArray<Cell> = [...SECTIONS, ...LATER_SECTIONS].flatMap(
-	(section) => section.cells,
-)
+export const ALL_CELLS: ReadonlyArray<Cell> = [...SECTIONS, ...LATER_SECTIONS].flatMap((section) => section.cells)

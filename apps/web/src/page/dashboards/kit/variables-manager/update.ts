@@ -34,9 +34,7 @@ const formFor = (model: Model, drafts: ReadonlyArray<Variable>, index: number | 
 		name: Field.init(draft?.name ?? ""),
 		label: Field.init(draft?.label ?? ""),
 		defaultValue: Field.init(draft?.defaultValue ?? ""),
-		options: Field.init(
-			draft?.type === "custom" ? draft.options.map((option) => option.value).join(", ") : "",
-		),
+		options: Field.init(draft?.type === "custom" ? draft.options.map((option) => option.value).join(", ") : ""),
 		attributeKey: Field.init(source === undefined || source.kind === "facet" ? "" : source.attributeKey),
 		metricNames: Field.init(source?.kind === "metric" ? source.metricNames.join(", ") : ""),
 		typeSelect: selectInit(idOf(base, "type"), VARIABLE_TYPES, draft?.type ?? "query"),
@@ -82,9 +80,7 @@ export const open = (model: Model, variables: ReadonlyArray<Variable>): Return =
 	const opened = Dialog.open(model.dialog)
 	const drafts = startedEmpty ? [newVariable()] : structuredClone(variables)
 	return {
-		model: {
-			...formFor({ ...model, dialog: opened.model, startedEmpty }, drafts, startedEmpty ? 0 : null),
-		},
+		model: { ...formFor({ ...model, dialog: opened.model, startedEmpty }, drafts, startedEmpty ? 0 : null) },
 		commands: Command.mapMessages(opened.commands ?? [], wrapDialog),
 	}
 }
@@ -129,10 +125,7 @@ const applyField = (draft: Variable, field: FormField, value: string): Variable 
 		case "metricNames":
 			return draft.type !== "query" || draft.source.kind !== "metric"
 				? draft
-				: {
-						...draft,
-						source: { ...draft.source, metricNames: value.split(",").map((name) => name.trim()) },
-					}
+				: { ...draft, source: { ...draft.source, metricNames: value.split(",").map((name) => name.trim()) } }
 	}
 }
 
@@ -140,12 +133,7 @@ const fieldStep = (model: Model, field: FormField, message: Field.Message): Retu
 	const next = Field.update(model[field], message)
 	const updated = { ...model, [field]: next.model }
 	return message._tag === "ChangedValue"
-		? {
-				model: {
-					...updated,
-					drafts: withDraft(updated, (draft) => applyField(draft, field, message.value)),
-				},
-			}
+		? { model: { ...updated, drafts: withDraft(updated, (draft) => applyField(draft, field, message.value)) } }
 		: { model: updated }
 }
 
@@ -165,13 +153,7 @@ const selectStep = (
 	const drafts = withDraft(updated, (draft) => apply(draft, value))
 	const refreshed = formFor(updated, drafts, updated.editingIndex)
 	return {
-		model: {
-			...refreshed,
-			name: updated.name,
-			label: updated.label,
-			defaultValue: updated.defaultValue,
-			[key]: next.model,
-		},
+		model: { ...refreshed, name: updated.name, label: updated.label, defaultValue: updated.defaultValue, [key]: next.model },
 		commands,
 	}
 }
@@ -186,10 +168,7 @@ const applySource = (draft: Variable, value: string): Variable =>
 
 const applyMetricType = (draft: Variable, value: string): Variable => {
 	const metricType = toQueryBuilderMetricType(value)
-	return draft.type === "query" &&
-		draft.source.kind === "metric" &&
-		metricType !== undefined &&
-		metricType !== null
+	return draft.type === "query" && draft.source.kind === "metric" && metricType !== undefined && metricType !== null
 		? { ...draft, source: { ...draft.source, metricType } }
 		: draft
 }
@@ -217,8 +196,7 @@ const remove = (model: Model, index: number): Return => {
 		model: {
 			...model,
 			drafts: model.drafts.filter((_, i) => i !== index),
-			editingIndex:
-				current === null ? null : current === index ? null : current > index ? current - 1 : current,
+			editingIndex: current === null ? null : current === index ? null : current > index ? current - 1 : current,
 		},
 	}
 }
@@ -230,28 +208,13 @@ export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotDialogMessage: ({ message: inner }) => {
 			const next = Dialog.update(model.dialog, inner)
-			return {
-				model: { ...model, dialog: next.model },
-				commands: Command.mapMessages(next.commands ?? [], wrapDialog),
-			}
+			return { model: { ...model, dialog: next.model }, commands: Command.mapMessages(next.commands ?? [], wrapDialog) }
 		},
 		GotFieldMessage: ({ field, message: inner }) => fieldStep(model, field, inner),
 		GotTypeSelectMessage: ({ message: inner }) =>
-			selectStep(
-				model,
-				"typeSelect",
-				inner,
-				(m) => Message.GotTypeSelectMessage({ message: m }),
-				applyType,
-			),
+			selectStep(model, "typeSelect", inner, (m) => Message.GotTypeSelectMessage({ message: m }), applyType),
 		GotSourceSelectMessage: ({ message: inner }) =>
-			selectStep(
-				model,
-				"sourceSelect",
-				inner,
-				(m) => Message.GotSourceSelectMessage({ message: m }),
-				applySource,
-			),
+			selectStep(model, "sourceSelect", inner, (m) => Message.GotSourceSelectMessage({ message: m }), applySource),
 		GotMetricTypeSelectMessage: ({ message: inner }) =>
 			selectStep(
 				model,
@@ -270,9 +233,7 @@ export const update = (model: Model, message: Message): Return =>
 			},
 		}),
 		ClickedMove: ({ index, delta }) => move(model, index, delta),
-		ClickedEdit: ({ index }) => ({
-			model: formFor(model, model.drafts, model.editingIndex === index ? null : index),
-		}),
+		ClickedEdit: ({ index }) => ({ model: formFor(model, model.drafts, model.editingIndex === index ? null : index) }),
 		ClickedDelete: ({ index }) => remove(model, index),
 		ClickedAdd: () => ({ model: formFor(model, [...model.drafts, newVariable()], model.drafts.length) }),
 		SubmittedForm: () => {

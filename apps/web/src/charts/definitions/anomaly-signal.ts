@@ -63,8 +63,7 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 	const color = (key: string) => spec.colors[key] ?? spec.colors.border ?? ""
 	const stroke = color("stroke")
 	const chrome = { border: color("border"), background: color("background") }
-	const valueFormatter = (value: number) =>
-		formatSignalValue(spec.signalType, Number.isFinite(value) ? value : 0)
+	const valueFormatter = (value: number) => formatSignalValue(spec.signalType, Number.isFinite(value) ? value : 0)
 	const data = sortedSignal(spec.points)
 	const axis = makeBucketAxis(
 		data.map((point) => point.bucket),
@@ -74,8 +73,7 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 	// Snap the incident window to actual bucket values so the shading lines up with the points.
 	const startMs = toEpochMs(spec.firstTriggeredAt)
 	const endMs = spec.resolvedAt !== null ? toEpochMs(spec.resolvedAt) : Infinity
-	const x1 =
-		data.find((point) => toEpochMs(point.bucket) >= startMs)?.bucket ?? data[data.length - 1]?.bucket
+	const x1 = data.find((point) => toEpochMs(point.bucket) >= startMs)?.bucket ?? data[data.length - 1]?.bucket
 	const x2Raw = data.findLast((point) => toEpochMs(point.bucket) <= endMs)?.bucket
 	const x2 = x2Raw === undefined || x1 === undefined || toEpochMs(x2Raw) < toEpochMs(x1) ? x1 : x2Raw
 	const window = x1 === undefined || x2 === undefined ? null : { x1: bucketDate(x1), x2: bucketDate(x2) }
@@ -145,14 +143,7 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 			Option.map(Option.fromNullishOr(points[0]), ({ datum }) =>
 				ChartTooltip.Bucket({
 					heading: axis.heading(datum.bucket),
-					rows: [
-						{
-							label: "Observed",
-							color: stroke,
-							dashed: false,
-							value: valueFormatter(datum.value),
-						},
-					],
+					rows: [{ label: "Observed", color: stroke, dashed: false, value: valueFormatter(datum.value) }],
 				}),
 			),
 	}

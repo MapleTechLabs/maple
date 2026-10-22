@@ -1,14 +1,7 @@
 import { resolveRange, WIDEST_RANGE } from "../../lib/time"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { button } from "@maple/web/ui/button"
-import {
-	empty,
-	emptyContent,
-	emptyDescription,
-	emptyHeader,
-	emptyMedia,
-	emptyTitle,
-} from "@maple/web/ui/empty"
+import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/web/ui/empty"
 import { icon, type IconName } from "@maple/web/ui/icon"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -29,14 +22,10 @@ const COPY: ReadonlyMap<TelemetrySignal, Readonly<{ noun: string; icon: IconName
 ] as const)
 
 const sourceOf = <M>(h: HtmlBuilder<M>, signal: TelemetrySignal): ReadonlyArray<Html | string> => {
-	if (signal === "traces")
-		return ["Traces come from an OpenTelemetry SDK in your app, exporting to this endpoint."]
+	if (signal === "traces") return ["Traces come from an OpenTelemetry SDK in your app, exporting to this endpoint."]
 	if (signal === "logs")
-		return [
-			"Logs come from an OTLP log bridge under your logger. Printing to stdout alone never reaches Maple.",
-		]
-	if (signal === "metrics")
-		return ["Metrics come from an OpenTelemetry metric reader exporting to this endpoint."]
+		return ["Logs come from an OTLP log bridge under your logger. Printing to stdout alone never reaches Maple."]
+	if (signal === "metrics") return ["Metrics come from an OpenTelemetry metric reader exporting to this endpoint."]
 	// The JSX's text nodes, `{" "}` separators included: they decide where the line breaks.
 	return [
 		"Sessions come from the browser SDK: install",
@@ -71,11 +60,7 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 	const widen = (variant: "outline" | "ghost") =>
 		options.onWidenRange === undefined || !canWiden
 			? []
-			: [
-					button(h, { variant, size: "sm", attributes: [h.OnClick(options.onWidenRange)] }, [
-						"Widen to 30 days",
-					]),
-				]
+			: [button(h, { variant, size: "sm", attributes: [h.OnClick(options.onWidenRange)] }, ["Widen to 30 days"])]
 
 	if (options.isFiltered === true)
 		return empty(
@@ -99,17 +84,7 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 						[
 							...(options.onClearFilters === undefined
 								? []
-								: [
-										button(
-											h,
-											{
-												variant: "outline",
-												size: "sm",
-												attributes: [h.OnClick(options.onClearFilters)],
-											},
-											["Clear filters"],
-										),
-									]),
+								: [button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(options.onClearFilters)] }, ["Clear filters"])]),
 							...widen("ghost"),
 						],
 					),
@@ -123,10 +98,7 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 		onNone: () =>
 			empty(
 				h,
-				[
-					emptyHeader(h, [emptyTitle(h, ["No ", subject, " found"])]),
-					...(detail.length > 0 ? [emptyContent(h, detail)] : []),
-				],
+				[emptyHeader(h, [emptyTitle(h, ["No ", subject, " found"])]), ...(detail.length > 0 ? [emptyContent(h, detail)] : [])],
 				"h-full",
 			),
 		onSome: (presence) =>
@@ -155,9 +127,7 @@ export const signalEmptyState = <M>(h: HtmlBuilder<M>, options: SignalEmptyState
 										: `Maple last received ${copy.noun} ${formatRelativeFrom(presence.lastSeenMs, options.nowMs)}.`,
 								]),
 							]),
-							...(detail.length > 0 || canWiden
-								? [emptyContent(h, [...detail, ...widen("outline")])]
-								: []),
+							...(detail.length > 0 || canWiden ? [emptyContent(h, [...detail, ...widen("outline")])] : []),
 						],
 						"h-full",
 					),

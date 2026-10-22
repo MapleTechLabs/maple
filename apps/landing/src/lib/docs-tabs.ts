@@ -56,8 +56,7 @@ const url = new URL(location.href)
 const requested = url.searchParams.get("lang")
 const linked = roots.some(
 	(root) =>
-		root.dataset.langTabs === LANGUAGE_KEY &&
-		triggersOf(root).some((t) => t.dataset.langTrigger === requested),
+		root.dataset.langTabs === LANGUAGE_KEY && triggersOf(root).some((t) => t.dataset.langTrigger === requested),
 )
 	? requested
 	: null

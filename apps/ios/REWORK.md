@@ -22,13 +22,13 @@ Designs: Wonder, file "Maple Design System", page "iOS Rework".
 Overview    Services    Triage    Explore    (search tab)
 ```
 
-| Web sidebar group                 | iOS                                                  |
-| --------------------------------- | ---------------------------------------------------- |
-| Overview                          | **Overview** tab (today's Home, renamed to match)    |
-| Monitor: Services, Infrastructure | **Services** tab, Infrastructure as a segment        |
-| Triage: Errors, Alerts            | **Triage** tab, segments Errors · Alerts · Anomalies |
-| Analyze: Explore, Dashboards      | **Explore** tab: Traces · Logs · Dashboards          |
-| Search (Cmd K)                    | iOS 26 search tab: services, issues, trace ids       |
+| Web sidebar group                     | iOS                                                  |
+| ------------------------------------- | ---------------------------------------------------- |
+| Overview                              | **Overview** tab (today's Home, renamed to match)    |
+| Monitor: Services, Infrastructure     | **Services** tab, Infrastructure as a segment        |
+| Triage: Errors, Alerts                | **Triage** tab, segments Errors · Alerts · Anomalies |
+| Analyze: Explore, Dashboards          | **Explore** tab: Traces · Logs · Dashboards          |
+| Search (Cmd K)                        | iOS 26 search tab: services, issues, trace ids       |
 
 The org switcher and environment picker stay in the nav bar of every tab
 root, the way the web keeps them in the sidebar header. Profile sheet is
@@ -93,14 +93,14 @@ code review, settings beyond the profile sheet. Those stay on the web, with an
 
 Add to `IOS_OPERATIONS` in `scripts/generate-ios-openapi.ts`:
 
-| Feature        | Operations                                                     |
-| -------------- | -------------------------------------------------------------- |
-| Triage actions | error issue transition, claim, release, set severity           |
-| Trace detail   | get trace (spans), span logs                                   |
-| Explore        | search traces, search logs, attribute keys / values for chips  |
-| Dashboards     | list dashboards, get dashboard, widget query evaluate          |
-| Service parity | service deployments, infra list filtered by service            |
-| Ask Maple      | chat create / stream (through `apps/api` forward to `apps/ai`) |
+| Feature        | Operations                                                         |
+| -------------- | ------------------------------------------------------------------ |
+| Triage actions | error issue transition, claim, release, set severity               |
+| Trace detail   | get trace (spans), span logs                                       |
+| Explore        | search traces, search logs, attribute keys / values for chips      |
+| Dashboards     | list dashboards, get dashboard, widget query evaluate              |
+| Service parity | service deployments, infra list filtered by service                |
+| Ask Maple      | chat create / stream (through `apps/api` forward to `apps/ai`)     |
 
 Gaps: rule mute (new endpoint), widget evaluation for mobile (confirm the
 existing evaluate endpoint is v2-exposed), error issue occurrence timeseries
@@ -119,17 +119,17 @@ existing evaluate endpoint is v2-exposed), error issue occurrence timeseries
 
 ## Screens designed
 
-| Screen          | Covers                                                  |
-| --------------- | ------------------------------------------------------- |
-| Overview        | Stat tiles, open alerts, needs attention as a TableCard |
-| Services        | Swatch + percentile triplet rows, window picker         |
-| Service detail  | Header stats, p50/p95/p99 chart, operations, segments   |
-| Triage: Errors  | Segments, issue rows, swipe actions                     |
-| Error detail    | Stats, stack, sample traces, resolve / assign bar       |
-| Incident detail | Rule chart with threshold, likely cause, Ask Maple      |
-| Explore: Logs   | Query chips, log rows                                   |
-| Trace detail    | Vertical waterfall                                      |
-| Dashboard       | Single-column widgets                                   |
+| Screen          | Covers                                                    |
+| --------------- | --------------------------------------------------------- |
+| Overview        | Stat tiles, open alerts, needs attention as a TableCard   |
+| Services        | Swatch + percentile triplet rows, window picker           |
+| Service detail  | Header stats, p50/p95/p99 chart, operations, segments     |
+| Triage: Errors  | Segments, issue rows, swipe actions                       |
+| Error detail    | Stats, stack, sample traces, resolve / assign bar         |
+| Incident detail | Rule chart with threshold, likely cause, Ask Maple        |
+| Explore: Logs   | Query chips, log rows                                     |
+| Trace detail    | Vertical waterfall                                        |
+| Dashboard       | Single-column widgets                                     |
 
 ## Status (2026-10-20, branch `feat/ios-rework`)
 

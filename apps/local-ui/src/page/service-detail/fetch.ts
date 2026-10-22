@@ -30,10 +30,7 @@ export const fetchOverview = (serviceName: string, bounds: TimeBounds, apiBase: 
 
 export const fetchOperations = (serviceName: string, bounds: TimeBounds, apiBase: string) =>
 	Effect.map(
-		queryRows(
-			CH.compile(CH.serviceOperationsSummaryQuery({ serviceName, limit: 25 }), localParams(bounds)),
-			apiBase,
-		),
+		queryRows(CH.compile(CH.serviceOperationsSummaryQuery({ serviceName, limit: 25 }), localParams(bounds)), apiBase),
 		// A null average renders as legacy's null does: the empty value (`formatLatency`, `formatErrorRate`).
 		(rows): ReadonlyArray<OperationRow> =>
 			rows.map((row) => ({
@@ -60,20 +57,11 @@ export const fetchOperationsTimeseries = (
 			apiBase,
 		),
 		(rows): ReadonlyArray<SeriesPoint> =>
-			rows.map((row) => ({
-				bucket: DateTime.formatIso(row.bucket),
-				series: row.spanName,
-				value: row.count,
-			})),
+			rows.map((row) => ({ bucket: DateTime.formatIso(row.bucket), series: row.spanName, value: row.count })),
 	)
 
 /** Latency, throughput, error rate and Apdex from the service's entry spans (`rootOnly`). */
-export const fetchGoldenSignals = (
-	serviceName: string,
-	bucketSeconds: number,
-	bounds: TimeBounds,
-	apiBase: string,
-) =>
+export const fetchGoldenSignals = (serviceName: string, bucketSeconds: number, bounds: TimeBounds, apiBase: string) =>
 	Effect.map(
 		queryRows(
 			CH.compile(

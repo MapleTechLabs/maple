@@ -16,50 +16,27 @@ type H = HtmlBuilder<Message>
 
 const intro = (h: H): Html =>
 	h.div(
-		[
-			h.Class(
-				"rounded-md border border-dashed border-border px-3 py-3 text-2xs leading-relaxed text-muted-foreground",
-			),
-		],
+		[h.Class("rounded-md border border-dashed border-border px-3 py-3 text-2xs leading-relaxed text-muted-foreground")],
 		[
 			h.p(
 				[],
-				[
-					"A variable adds a selector to the toolbar; widgets that reference it re-query when the selection changes.",
-				],
+				["A variable adds a selector to the toolbar; widgets that reference it re-query when the selection changes."],
 			),
 			h.ul(
 				[h.Class("mt-1.5 flex flex-col gap-0.5")],
 				[
-					h.li(
-						[],
-						[
-							h.span([h.Class("text-foreground")], ["Query"]),
-							" — values from your telemetry (services, environments, attribute values).",
-						],
-					),
-					h.li(
-						[],
-						[h.span([h.Class("text-foreground")], ["Custom"]), " — a fixed list you define."],
-					),
-					h.li(
-						[],
-						[
-							h.span([h.Class("text-foreground")], ["Textbox"]),
-							" — free text, e.g. a search needle.",
-						],
-					),
+					h.li([], [h.span([h.Class("text-foreground")], ["Query"]), " — values from your telemetry (services, environments, attribute values)."]),
+					h.li([], [h.span([h.Class("text-foreground")], ["Custom"]), " — a fixed list you define."]),
+					h.li([], [h.span([h.Class("text-foreground")], ["Textbox"]), " — free text, e.g. a search needle."]),
 				],
 			),
 		],
 	)
 
 const action = (h: H, label: string, iconName: IconName, onClick: Message, isDisabled = false): Html =>
-	iconButton(
-		h,
-		{ label, size: "icon-xs", isDisabled, attributes: isDisabled ? [] : [h.OnClick(onClick)] },
-		[icon(h, iconName)],
-	)
+	iconButton(h, { label, size: "icon-xs", isDisabled, attributes: isDisabled ? [] : [h.OnClick(onClick)] }, [
+		icon(h, iconName),
+	])
 
 const row = (h: H, model: Model, draft: Variable, index: number): Html => {
 	const error = draftError(draft, index, model.drafts)
@@ -74,50 +51,24 @@ const row = (h: H, model: Model, draft: Variable, index: number): Html => {
 						[
 							"$",
 							draft.name === "" ? "…" : draft.name,
-							h.span(
-								[h.Class("ml-2 font-sans font-normal text-muted-foreground")],
-								[TYPE_LABELS[draft.type]],
-							),
+							h.span([h.Class("ml-2 font-sans font-normal text-muted-foreground")], [TYPE_LABELS[draft.type]]),
 						],
 						"block truncate font-mono text-foreground",
 					),
 					itemDescription(
 						h,
-						[
-							error !== null && !isEditing
-								? h.span([h.Class(TONE_TEXT.crit)], [error])
-								: sourceSummary(draft),
-						],
+						[error !== null && !isEditing ? h.span([h.Class(TONE_TEXT.crit)], [error]) : sourceSummary(draft)],
 						"block truncate text-2xs",
 					),
 				]),
 				itemActions(h, [
-					action(
-						h,
-						"Move up",
-						"ArrowUpIcon",
-						Message.ClickedMove({ index, delta: -1 }),
-						index === 0,
-					),
-					action(
-						h,
-						"Move down",
-						"ArrowDownIcon",
-						Message.ClickedMove({ index, delta: 1 }),
-						index === model.drafts.length - 1,
-					),
+					action(h, "Move up", "ArrowUpIcon", Message.ClickedMove({ index, delta: -1 }), index === 0),
+					action(h, "Move down", "ArrowDownIcon", Message.ClickedMove({ index, delta: 1 }), index === model.drafts.length - 1),
 					action(h, "Edit variable", "PencilIcon", Message.ClickedEdit({ index })),
 					action(h, "Delete variable", "TrashIcon", Message.ClickedDelete({ index })),
 				]),
 			]),
-			...(isEditing
-				? [
-						h.div(
-							[h.Class("border-t border-border px-3 py-3")],
-							[variableForm(h, model, draft, error)],
-						),
-					]
-				: []),
+			...(isEditing ? [h.div([h.Class("border-t border-border px-3 py-3")], [variableForm(h, model, draft, error)])] : []),
 		],
 	)
 }
@@ -141,19 +92,10 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 		fields: [
 			...(model.startedEmpty ? [intro(h)] : []),
 			...model.drafts.map((draft, index) => row(h, model, draft, index)),
-			button(
-				h,
-				{
-					variant: "outline",
-					size: "sm",
-					className: "self-start",
-					attributes: [h.OnClick(Message.ClickedAdd())],
-				},
-				[
-					icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
-					"Add variable",
-				],
-			),
+			button(h, { variant: "outline", size: "sm", className: "self-start", attributes: [h.OnClick(Message.ClickedAdd())] }, [
+				icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+				"Add variable",
+			]),
 		],
 	}),
 )

@@ -14,13 +14,7 @@ import { copyToast } from "../../kit/clipboard"
 import { sourcesListKey, sourceUsageKey } from "../kit/data"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
-import {
-	effectiveTab,
-	fromPublicSourceId,
-	hasToken,
-	integrationPlatformOf,
-	scrapeTargetIdOf,
-} from "../kit/shared"
+import { effectiveTab, fromPublicSourceId, hasToken, integrationPlatformOf, scrapeTargetIdOf } from "../kit/shared"
 import { initEmbedded } from "../../integrations/embed"
 import * as Integrations from "../../integrations/update"
 import { Message as IntegrationMessage } from "../../integrations/message"
@@ -128,9 +122,7 @@ const ensureConnection = (model: Model, context: PageContext): Return => {
 	const source = Option.getOrNull(sourceOf(model))
 	const platform = source === null ? null : integrationPlatformOf(source)
 	if (source === null || platform === null) return { model }
-	return andThen(liftConnection(model, initEmbedded(platform, context)), (next) =>
-		syncTarget(next, context),
-	)
+	return andThen(liftConnection(model, initEmbedded(platform, context)), (next) => syncTarget(next, context))
 }
 
 /**
@@ -145,21 +137,10 @@ const syncTarget = (model: Model, context: PageContext): Return => {
 	if (model.tab !== "connection")
 		return selected === null
 			? { model }
-			: {
-					model: {
-						...model,
-						connection: {
-							...connection,
-							prometheusCard: { ...connection.prometheusCard, selectedId: null },
-						},
-					},
-				}
+			: { model: { ...model, connection: { ...connection, prometheusCard: { ...connection.prometheusCard, selectedId: null } } } }
 	return selected === target
 		? { model }
-		: liftConnection(
-				model,
-				Integrations.update(connection, IntegrationMessage.ClickedTarget({ id: target }), context),
-			)
+		: liftConnection(model, Integrations.update(connection, IntegrationMessage.ClickedTarget({ id: target }), context))
 }
 
 export const init = (route: SourceRoute, context: PageContext): Return => {
@@ -194,10 +175,7 @@ export const init = (route: SourceRoute, context: PageContext): Return => {
 /** A tab link keeps the instance: the overview reads its usage again when it shows. */
 export const routeChanged = (model: Model, route: SourceRoute, context: PageContext): Return =>
 	andThen(
-		loadUsage(
-			withTabState({ ...model, tab: route.search.tab ?? "overview", setup: null, settings: null }),
-			context,
-		),
+		loadUsage(withTabState({ ...model, tab: route.search.tab ?? "overview", setup: null, settings: null }), context),
 		(next) => syncTarget(next, context),
 	)
 
@@ -211,9 +189,7 @@ const SOURCES_HREF = hrefOf(AppRoute.Sources())
 const liftMenu = (model: Model, step: ReturnType<typeof Menu.update>): Return => {
 	const lifted: Return = {
 		model: { ...model, pauseMenu: step.model },
-		commands: Command.mapMessages(step.commands ?? [], (message) =>
-			Message.GotPauseMenuMessage({ message }),
-		),
+		commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotPauseMenuMessage({ message })),
 	}
 	const picked = step.outMessage?._tag === "SelectedItem" ? step.outMessage.value : null
 	const choice = PAUSE_CHOICES.find((entry) => entry.value === picked)
@@ -232,9 +208,7 @@ const liftDialog = (
 ): Return => ({
 	model: { ...model, [field]: step.model },
 	commands: Command.mapMessages(step.commands ?? [], (message) =>
-		field === "rollDialog"
-			? Message.GotRollDialogMessage({ message })
-			: Message.GotDeleteDialogMessage({ message }),
+		field === "rollDialog" ? Message.GotRollDialogMessage({ message }) : Message.GotDeleteDialogMessage({ message }),
 	),
 })
 
@@ -246,14 +220,8 @@ const settled = <A>(
 	copy: Readonly<{ success: string; error: string }>,
 ): Return =>
 	Result.match(result, {
-		onFailure: (failure) => ({
-			model: { ...model, busy: null },
-			outMessage: failureToast(copy.error, failure),
-		}),
-		onSuccess: () => ({
-			...loadList({ ...model, busy: null }, context, "Supersede"),
-			outMessage: toast("success", copy.success),
-		}),
+		onFailure: (failure) => ({ model: { ...model, busy: null }, outMessage: failureToast(copy.error, failure) }),
+		onSuccess: () => ({ ...loadList({ ...model, busy: null }, context, "Supersede"), outMessage: toast("success", copy.success) }),
 	})
 
 const withSource = (model: Model, run: (id: NonNullable<Model["sourceId"]>) => Return): Return =>
@@ -289,12 +257,7 @@ const save = (model: Model): Return => {
  * A write in the Connection tab changes this source too: deleting its own target leaves for the
  * list (the source goes with it); a toggle, edit or disconnect re-reads it so the header follows.
  */
-const afterConnectionWrite = (
-	model: Model,
-	child: IntegrationMessage,
-	step: Return,
-	context: PageContext,
-): Return => {
+const afterConnectionWrite = (model: Model, child: IntegrationMessage, step: Return, context: PageContext): Return => {
 	const isWrite =
 		child._tag === "CompletedTargetDelete" ||
 		child._tag === "CompletedToggle" ||
@@ -328,56 +291,34 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotConnectionMessage: ({ message: child }) =>
 			model.connection === null
 				? { model }
-				: afterConnectionWrite(
-						model,
-						child,
-						liftConnection(model, Integrations.update(model.connection, child, context)),
-						context,
-					),
+				: afterConnectionWrite(model, child, liftConnection(model, Integrations.update(model.connection, child, context)), context),
 		CompletedFetchUsage: ({ key, result }) => ({
 			model: { ...model, usage: Keyed.accept(model.usage, key, result) },
 		}),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		GotChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.chart, inner)
 			return {
 				model: { ...model, chart: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (m) =>
-					Message.GotChartMessage({ message: m }),
-				),
+				commands: Command.mapMessages(next.commands ?? [], (m) => Message.GotChartMessage({ message: m })),
 			}
 		},
 		GotPauseMenuMessage: ({ message: inner }) => liftMenu(model, Menu.update(model.pauseMenu, inner)),
 		ClickedResume: () =>
-			withSource(model, (id) => ({
-				model: { ...model, busy: "resume" },
-				commands: [ResumeSource({ id })],
-			})),
+			withSource(model, (id) => ({ model: { ...model, busy: "resume" }, commands: [ResumeSource({ id })] })),
 		ClickedRollToken: () => liftDialog(model, "rollDialog", Dialog.open(model.rollDialog)),
 		ClickedDelete: () => liftDialog(model, "deleteDialog", Dialog.open(model.deleteDialog)),
 		// A pending dialog ignores Escape and Cancel (`onOpenChange` while `pending`).
 		GotRollDialogMessage: ({ message: inner }) =>
-			model.busy === "roll"
-				? { model }
-				: liftDialog(model, "rollDialog", Dialog.update(model.rollDialog, inner)),
+			model.busy === "roll" ? { model } : liftDialog(model, "rollDialog", Dialog.update(model.rollDialog, inner)),
 		GotDeleteDialogMessage: ({ message: inner }) =>
-			model.busy === "delete"
-				? { model }
-				: liftDialog(model, "deleteDialog", Dialog.update(model.deleteDialog, inner)),
+			model.busy === "delete" ? { model } : liftDialog(model, "deleteDialog", Dialog.update(model.deleteDialog, inner)),
 		ConfirmedRoll: () =>
-			withSource(model, (id) => ({
-				model: { ...model, busy: "roll" },
-				commands: [RollSourceToken({ id })],
-			})),
+			withSource(model, (id) => ({ model: { ...model, busy: "roll" }, commands: [RollSourceToken({ id })] })),
 		ConfirmedDelete: () =>
-			withSource(model, (id) => ({
-				model: { ...model, busy: "delete" },
-				commands: [DeleteSource({ id })],
-			})),
+			withSource(model, (id) => ({ model: { ...model, busy: "delete" }, commands: [DeleteSource({ id })] })),
 		CompletedPause: ({ result }) =>
 			settled(model, context, result, {
 				success: "Source paused. Takes effect within a minute.",
@@ -391,17 +332,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedRoll: ({ result }) => {
 			const closed = liftDialog({ ...model, busy: null }, "rollDialog", Dialog.close(model.rollDialog))
 			return Result.match(result, {
-				onFailure: (failure) => ({
-					...closed,
-					outMessage: failureToast("Failed to roll token", failure),
-				}),
+				onFailure: (failure) => ({ ...closed, outMessage: failureToast("Failed to roll token", failure) }),
 				onSuccess: (rolled) =>
 					andThen(closed, (next) =>
 						loadList(
-							{
-								...next,
-								revealed: { sourceId: rolled.id, secret: rolled.secret, rolled: true },
-							},
+							{ ...next, revealed: { sourceId: rolled.id, secret: rolled.secret, rolled: true } },
 							context,
 							"Supersede",
 						),
@@ -415,11 +350,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					outMessage: failureToast("Failed to delete source", failure),
 				}),
 				onSuccess: () => {
-					const closed = liftDialog(
-						{ ...model, busy: null },
-						"deleteDialog",
-						Dialog.close(model.deleteDialog),
-					)
+					const closed = liftDialog({ ...model, busy: null }, "deleteDialog", Dialog.close(model.deleteDialog))
 					const refreshed = andThen(closed, (next) => loadList(next, context, "Supersede"))
 					return {
 						...refreshed,
@@ -436,9 +367,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const step = Setup.update(model.setup, inner)
 			return {
 				model: { ...model, setup: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (m) =>
-					Message.GotSetupMessage({ message: m }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (m) => Message.GotSetupMessage({ message: m })),
 			}
 		},
 		GotRulesMessage: ({ message: inner }) => {
@@ -446,28 +375,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const step = Rules.update(model.settings.rules, inner)
 			return {
 				model: withSettings(model, (form) => ({ ...form, rules: step.model })),
-				commands: Command.mapMessages(step.commands ?? [], (m) =>
-					Message.GotRulesMessage({ message: m }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (m) => Message.GotRulesMessage({ message: m })),
 			}
 		},
-		ChangedSettingsName: ({ value }) => ({
-			model: withSettings(model, (form) => ({ ...form, name: value })),
-		}),
+		ChangedSettingsName: ({ value }) => ({ model: withSettings(model, (form) => ({ ...form, name: value })) }),
 		ChangedSettingsDescription: ({ value }) => ({
 			model: withSettings(model, (form) => ({ ...form, description: value })),
 		}),
 		SubmittedSettings: () => save(model),
 		CompletedSave: ({ result }) =>
-			settled(
-				withSettings(model, (form) => ({ ...form, isSaving: false })),
-				context,
-				result,
-				{
-					success: "Source saved. Changes reach the gateway within a minute.",
-					error: "Failed to save source",
-				},
-			),
+			settled(withSettings(model, (form) => ({ ...form, isSaving: false })), context, result, {
+				success: "Source saved. Changes reach the gateway within a minute.",
+				error: "Failed to save source",
+			}),
 		GotTokenCopyMessage: ({ message: inner }) => {
 			const next = CopyButton.update(model.tokenCopy, inner)
 			// `CopyableField copyLabel="Source token"`: `useCopy`'s toast for the current copy.
@@ -475,12 +395,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const isDone = isCurrent && (inner._tag === "SucceededCopy" || inner._tag === "FailedCopy")
 			const step: Return = {
 				model: { ...model, tokenCopy: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (m) =>
-					Message.GotTokenCopyMessage({ message: m }),
-				),
+				commands: Command.mapMessages(next.commands ?? [], (m) => Message.GotTokenCopyMessage({ message: m })),
 			}
-			return isDone
-				? { ...step, outMessage: copyToast("Source token", inner._tag === "SucceededCopy") }
-				: step
+			return isDone ? { ...step, outMessage: copyToast("Source token", inner._tag === "SucceededCopy") } : step
 		},
 	})

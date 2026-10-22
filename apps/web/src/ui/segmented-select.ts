@@ -37,14 +37,7 @@ export const multiSegmentedSelect = <T extends string, M>(
 	return h.div(
 		[
 			...(config.ariaLabel === undefined ? [] : [h.AriaLabel(config.ariaLabel)]),
-			h.Class(
-				cn(
-					toggleGroupStyles,
-					toggleGroupHorizontalStyles,
-					toggleGroupStandaloneStyles,
-					config.className,
-				),
-			),
+			h.Class(cn(toggleGroupStyles, toggleGroupHorizontalStyles, toggleGroupStandaloneStyles, config.className)),
 			...(isDisabled ? [h.DataAttribute("disabled", "")] : []),
 			h.DataAttribute("multiple", ""),
 			h.DataAttribute("orientation", "horizontal"),
@@ -89,9 +82,7 @@ export const multiSegmentedSelect = <T extends string, M>(
 									[h.Class("flex size-3.5 shrink-0 items-center justify-center")],
 									[
 										isSelected
-											? icon(h, "CheckIcon", {
-													className: "size-3.5 text-primary opacity-100",
-												})
+											? icon(h, "CheckIcon", { className: "size-3.5 text-primary opacity-100" })
 											: (option.icon ?? h.empty),
 									],
 								),

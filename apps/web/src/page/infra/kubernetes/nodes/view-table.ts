@@ -1,21 +1,10 @@
-import {
-	capacityFraction,
-	formatBytesOfAllocatable,
-	formatCoresOfAllocatable,
-} from "../../../../components/infra/format"
+import { capacityFraction, formatBytesOfAllocatable, formatCoresOfAllocatable } from "../../../../components/infra/format"
 import { formatUptime } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { skeleton } from "../../../../ui/skeleton"
 import { truncatedText } from "../../../../ui/truncated-text"
-import {
-	columnHead,
-	dataTable,
-	dataTableEmpty,
-	headSort,
-	ROW_LINK_CLASS,
-	skeletonRows,
-} from "../../kit/data-table"
+import { columnHead, dataTable, dataTableEmpty, headSort, ROW_LINK_CLASS, skeletonRows } from "../../kit/data-table"
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine } from "../../kit/meta-line"
 import { relativeTime } from "../../../kit/relative-time"
@@ -32,25 +21,14 @@ const columns = (h: H, sort: SortState | null): ReadonlyArray<Html> => {
 	const head = (key: NodeSortKey) => headSort(sort, key, (k) => Message.ClickedSort({ key: k }))
 	return [
 		columnHead(h, { label: "Node", sort: head("nodeName"), width: "w-0 flex-1 min-w-[260px]" }),
-		columnHead(h, {
-			label: "CPU / allocatable",
-			sort: head("cpuUtilization"),
-			width: "w-[176px]",
-			hidden: "hidden md:flex",
-		}),
+		columnHead(h, { label: "CPU / allocatable", sort: head("cpuUtilization"), width: "w-[176px]", hidden: "hidden md:flex" }),
 		columnHead(h, {
 			label: "Memory / allocatable",
 			sort: head("memoryUtilization"),
 			width: "w-[176px]",
 			hidden: "hidden lg:flex",
 		}),
-		columnHead(h, {
-			label: "Uptime",
-			sort: head("uptime"),
-			align: "right",
-			width: "w-[100px]",
-			hidden: "hidden md:flex",
-		}),
+		columnHead(h, { label: "Uptime", sort: head("uptime"), align: "right", width: "w-[100px]", hidden: "hidden md:flex" }),
 		columnHead(h, { label: "Last seen", sort: head("lastSeen"), align: "right", width: "w-[100px]" }),
 	]
 }
@@ -61,10 +39,7 @@ export const nodeTableLoading = (h: H): Html =>
 		{ ariaLabel: "Nodes" },
 		columns(h, null),
 		skeletonRows(h, 4, () => [
-			h.div(
-				[h.Class("w-0 min-w-[260px] flex-1")],
-				[skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-32")],
-			),
+			h.div([h.Class("w-0 min-w-[260px] flex-1")], [skeleton(h, "h-4 w-48"), skeleton(h, "mt-1.5 h-3 w-32")]),
 			skeleton(h, "hidden h-3 w-[176px] md:block"),
 			skeleton(h, "hidden h-3 w-[176px] lg:block"),
 			skeleton(h, "hidden h-3 w-[100px] md:block"),
@@ -107,14 +82,9 @@ const nodeRow = (h: H, node: NodeRow, inputs: NodeTableInputs): Html =>
 							truncatedText(h, {
 								text: node.nodeName,
 								mono: true,
-								className:
-									"text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+								className: "text-xs font-medium text-foreground transition-colors group-hover:text-primary",
 							}),
-							hostStatusBadge(h, {
-								quiet: true,
-								lastSeen: node.lastSeen,
-								referenceMs: inputs.referenceTime,
-							}),
+							hostStatusBadge(h, { quiet: true, lastSeen: node.lastSeen, referenceMs: inputs.referenceTime }),
 						],
 					),
 					metaLine(h, [node.kubeletVersion && `kubelet ${node.kubeletVersion}`]),
@@ -141,11 +111,7 @@ const nodeRow = (h: H, node: NodeRow, inputs: NodeTableInputs): Html =>
 				],
 			),
 			h.div(
-				[
-					h.Class(
-						"hidden w-[100px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block",
-					),
-				],
+				[h.Class("hidden w-[100px] text-right font-mono text-xs tabular-nums text-foreground/80 md:block")],
 				[formatUptime(node.uptime)],
 			),
 			h.div(
@@ -168,7 +134,5 @@ export const nodeTable = (h: H, nodes: ReadonlyArray<NodeRow>, inputs: NodeTable
 		h,
 		{ ariaLabel: "Nodes", isWaiting: inputs.isWaiting },
 		columns(h, inputs.sort),
-		nodes.length === 0
-			? [dataTableEmpty(h, ["No nodes match your search."])]
-			: nodes.map((node) => nodeRow(h, node, inputs)),
+		nodes.length === 0 ? [dataTableEmpty(h, ["No nodes match your search."])] : nodes.map((node) => nodeRow(h, node, inputs)),
 	)

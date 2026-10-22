@@ -23,11 +23,7 @@ const scrollToRow = (viewport: Element | null, id: string): void => {
 }
 
 export const MountTurnMinimap = Mount.defineStream("MountChatTurnMinimap", {
-	messages: [
-		MinimapMessage.MeasuredMinimapRail,
-		MinimapMessage.ChangedVisibleRows,
-		MinimapMessage.PreviewedTurn,
-	],
+	messages: [MinimapMessage.MeasuredMinimapRail, MinimapMessage.ChangedVisibleRows, MinimapMessage.PreviewedTurn],
 	execute: ({ element }) =>
 		Stream.callback<MinimapMessage>((queue) =>
 			Effect.acquireRelease(
@@ -37,15 +33,9 @@ export const MountTurnMinimap = Mount.defineStream("MountChatTurnMinimap", {
 					const visible = new Set<string>()
 					const rail = () => element.querySelector("[data-turn-rail]")
 					const count = () => Number(rail()?.getAttribute("data-turn-rail") ?? "0")
-					const idAt = (index: number) =>
-						element.querySelectorAll("[data-turn-id]")[index]?.getAttribute("data-turn-id") ??
-						null
+					const idAt = (index: number) => element.querySelectorAll("[data-turn-id]")[index]?.getAttribute("data-turn-id") ?? null
 					const resize = new ResizeObserver(() =>
-						emit(
-							MinimapMessage.MeasuredMinimapRail({
-								width: element.getBoundingClientRect().width,
-							}),
-						),
+						emit(MinimapMessage.MeasuredMinimapRail({ width: element.getBoundingClientRect().width })),
 					)
 					resize.observe(element)
 					const intersection = new IntersectionObserver(
@@ -60,8 +50,7 @@ export const MountTurnMinimap = Mount.defineStream("MountChatTurnMinimap", {
 						},
 						{ root: viewport },
 					)
-					const observeRows = () =>
-						viewport?.querySelectorAll(ITEM).forEach((row) => intersection.observe(row))
+					const observeRows = () => viewport?.querySelectorAll(ITEM).forEach((row) => intersection.observe(row))
 					observeRows()
 					const mutation = new MutationObserver(observeRows)
 					if (viewport !== null) mutation.observe(viewport, { childList: true, subtree: true })
@@ -74,21 +63,15 @@ export const MountTurnMinimap = Mount.defineStream("MountChatTurnMinimap", {
 						target instanceof Element && target.closest("[data-turn-minimap-preview]") !== null
 					const onMove = (event: Event) => {
 						const target = rail()
-						if (!(event instanceof MouseEvent) || target === null || isPreview(event.target))
-							return
+						if (!(event instanceof MouseEvent) || target === null || isPreview(event.target)) return
 						const index = indexFromPointer(target, event.clientY, count())
 						if (index !== active) preview(index)
 					}
 					const onClick = (event: Event) => {
-						const stepTarget =
-							event.target instanceof Element
-								? event.target.closest("[data-turn-target]")
-								: null
-						if (stepTarget !== null)
-							return scrollToRow(viewport, stepTarget.getAttribute("data-turn-target") ?? "")
+						const stepTarget = event.target instanceof Element ? event.target.closest("[data-turn-target]") : null
+						if (stepTarget !== null) return scrollToRow(viewport, stepTarget.getAttribute("data-turn-target") ?? "")
 						const target = rail()
-						if (!(event instanceof MouseEvent) || target === null || isPreview(event.target))
-							return
+						if (!(event instanceof MouseEvent) || target === null || isPreview(event.target)) return
 						if (!target.contains(event.target instanceof Node ? event.target : null)) return
 						const index = indexFromPointer(target, event.clientY, count())
 						const id = index === null ? null : idAt(index)
@@ -116,8 +99,7 @@ export const MountTurnMinimap = Mount.defineStream("MountChatTurnMinimap", {
 					}
 					const onLeave = () => preview(null)
 					const onFocus = (event: Event) => {
-						if (event.target === rail() && active === null)
-							preview(Number(rail()?.getAttribute("data-turn-current") ?? "0"))
+						if (event.target === rail() && active === null) preview(Number(rail()?.getAttribute("data-turn-current") ?? "0"))
 					}
 					const onBlur = (event: Event) => {
 						if (event.target === rail()) preview(null)

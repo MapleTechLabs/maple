@@ -188,10 +188,7 @@ describe("metric detail", () => {
 			{ update: pageUpdate, view },
 			given(loaded([row("payment-svc"), row("checkout-api")])),
 			themeResolved(),
-			Mount.resolve(
-				MountWhereCaret,
-				Message.GotCaretMessage({ message: CaretMessage.BlurredEditor() }),
-			),
+			Mount.resolve(MountWhereCaret, Message.GotCaretMessage({ message: CaretMessage.BlurredEditor() })),
 			expectView(text(`avg(${NAME})`)).toExist(),
 			expectView(text("Top values · avg per value")).toExist(),
 			expectView(role("button", { name: /^Filter to service\.name = payment-svc/ })).toExist(),

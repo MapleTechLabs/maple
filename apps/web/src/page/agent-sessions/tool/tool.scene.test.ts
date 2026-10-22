@@ -65,10 +65,7 @@ describe("agent tool detail", () => {
 
 	test("after Reload, an error row's URL change re-reads nothing; a time change re-resolves", () => {
 		const reloaded = pageUpdate(windowed().model, Message.ClickedReload()).model
-		const resolved = pageUpdate(
-			reloaded,
-			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" }),
-		).model
+		const resolved = pageUpdate(reloaded, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" })).model
 		const clicked = routeChanged(resolved, { toolName: "Bash", search: { error: "42" } }, context)
 		expect(names(clicked.commands)).toEqual([])
 		expect(clicked.model.search.error).toBe("42")

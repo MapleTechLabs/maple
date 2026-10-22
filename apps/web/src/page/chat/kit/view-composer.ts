@@ -1,8 +1,4 @@
-import {
-	autoContextDisplay,
-	autoContextLabel,
-	type AutoContext,
-} from "../../../components/chat/auto-contexts"
+import { autoContextDisplay, autoContextLabel, type AutoContext } from "../../../components/chat/auto-contexts"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { alertDescriptionStyles } from "@maple/ui/styles/ui/alert"
@@ -112,9 +108,7 @@ export const composer = <M>(h: HtmlBuilder<M>, options: ComposerOptions<M>): Htm
 						),
 					],
 				}),
-				inputGroupAddon(h, { align: "block-end", className: "justify-end gap-1" }, [
-					submitButton(h, options),
-				]),
+				inputGroupAddon(h, { align: "block-end", className: "justify-end gap-1" }, [submitButton(h, options)]),
 			]),
 		],
 	)
@@ -191,12 +185,7 @@ export const contextChips = <M>(
 /** `ChatFailureNotice`: what failed, and one way to try again. */
 export const failureNotice = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{
-		text: ReadonlyArray<string>
-		actionLabel: string
-		onAction: M
-		truncateTitle?: string
-	}>,
+	options: Readonly<{ text: ReadonlyArray<string>; actionLabel: string; onAction: M; truncateTitle?: string }>,
 ): Html =>
 	alert(h, { variant: "crit", size: "sm", className: "mb-3 text-sm" }, [
 		h.div(
@@ -210,8 +199,6 @@ export const failureNotice = <M>(
 				: [h.span([h.Class("line-clamp-2 [overflow-wrap:anywhere]")], options.text)],
 		),
 		alertAction(h, [
-			button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(options.onAction)] }, [
-				options.actionLabel,
-			]),
+			button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(options.onAction)] }, [options.actionLabel]),
 		]),
 	])

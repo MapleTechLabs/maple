@@ -1,3 +1,4 @@
+
 // The investigation context type, `investigationNoun` and `investigationSuggestions`. The alert
 // half lives in components/chat/alert-context.ts.
 

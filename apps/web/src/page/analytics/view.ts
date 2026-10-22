@@ -45,19 +45,14 @@ const liveBadge = (h: H, model: Model): ReadonlyArray<Html> => {
 				h.Class(
 					cn(
 						"inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium tabular-nums",
-						count > 0
-							? cn(TONE_SOFT.ok, TONE_BORDER.ok)
-							: "border-border/70 text-muted-foreground",
+						count > 0 ? cn(TONE_SOFT.ok, TONE_BORDER.ok) : "border-border/70 text-muted-foreground",
 					),
 				),
 				h.Title(`${count} ${noun} active in the last ${minutes} ${pluralize(minutes, "minute")}`),
 			],
 			[
 				count > 0 ? statusDot(h, { tone: "ok" }) : statusDot(h),
-				h.span(
-					[h.AriaLive("polite")],
-					[formatNumber(count), " ", h.span([h.Class("hidden sm:inline")], ["online"])],
-				),
+				h.span([h.AriaLive("polite")], [formatNumber(count), " ", h.span([h.Class("hidden sm:inline")], ["online"])]),
 			],
 		),
 	]
@@ -72,11 +67,7 @@ const replaysLink = (h: H, model: Model): Html => {
 			size: "sm",
 			href: hrefOf(
 				AppRoute.Replays({
-					search: {
-						startTime: search.startTime,
-						endTime: search.endTime,
-						timePreset: search.timePreset,
-					},
+					search: { startTime: search.startTime, endTime: search.endTime, timePreset: search.timePreset },
 				}),
 			),
 			attributes: [h.AriaLabel("View session replays")],
@@ -101,11 +92,7 @@ const tabs = (h: H, model: Model): Html => {
 					h.Class(cn(underlineTabClass(isCurrent), isLinkActive && "active")),
 					...(isLinkActive ? [h.DataAttribute("status", "active")] : []),
 					h.Href(
-						hrefOf(
-							AppRoute.Analytics({
-								search: { ...model.search, tab: tab === "overview" ? undefined : tab },
-							}),
-						),
+						hrefOf(AppRoute.Analytics({ search: { ...model.search, tab: tab === "overview" ? undefined : tab } })),
 					),
 				],
 				[tab === "overview" ? "Overview" : "AI traffic"],
@@ -119,43 +106,39 @@ const chipsRow = (h: H, model: Model): ReadonlyArray<Html> => {
 	const chips = activeFilterChips(filtersOf(model.search))
 	if (chips.length === 0) return []
 	return [
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-1.5")],
-			[
-				...chips.map((chip) =>
-					h.button(
-						[
-							h.Key(`${chip.key}:${chip.value}`),
-							h.Type("button"),
-							h.Class(
-								cn(
-									badgeVariants({
-										variant: "meta",
-										size: "xs",
-										mono: true,
-										className:
-											"h-auto px-1.5 py-0.5 transition-colors hover:text-foreground",
-									}),
-								),
+		h.div([h.Class("flex flex-wrap items-center gap-1.5")], [
+			...chips.map((chip) =>
+				h.button(
+					[
+						h.Key(`${chip.key}:${chip.value}`),
+						h.Type("button"),
+						h.Class(
+							cn(
+								badgeVariants({
+									variant: "meta",
+									size: "xs",
+									mono: true,
+									className: "h-auto px-1.5 py-0.5 transition-colors hover:text-foreground",
+								}),
 							),
-							h.DataAttribute("slot", "badge"),
-							h.OnClick(Message.ChangedFilter({ key: chip.key, value: undefined })),
-						],
-						[chip.label, " ✕"],
-					),
+						),
+						h.DataAttribute("slot", "badge"),
+						h.OnClick(Message.ChangedFilter({ key: chip.key, value: undefined })),
+					],
+					[chip.label, " ✕"],
 				),
-				button(
-					h,
-					{
-						variant: "link",
-						size: "xs",
-						className: "h-auto px-1 text-3xs text-muted-foreground sm:text-3xs",
-						attributes: [h.OnClick(Message.ClickedClearFilters())],
-					},
-					["Clear all"],
-				),
-			],
-		),
+			),
+			button(
+				h,
+				{
+					variant: "link",
+					size: "xs",
+					className: "h-auto px-1 text-3xs text-muted-foreground sm:text-3xs",
+					attributes: [h.OnClick(Message.ClickedClearFilters())],
+				},
+				["Clear all"],
+			),
+		]),
 	]
 }
 
@@ -177,36 +160,30 @@ const body = (h: H, model: Model, timeZone: string, isNarrow: boolean): Html => 
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const timeZone = inputs.context.timeZone
-	return h.div(
-		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: TRAFFIC_TOKENS }))],
-		[
-			dashboardPage(
-				h,
-				{
-					scrollClassName: "gap-6",
-					filters: filtersRail(h, model),
-					actions: h.div(
-						[h.Class("flex flex-wrap items-center gap-2")],
-						[
-							...liveBadge(h, model),
-							replaysLink(h, model),
-							pageTime(h, {
-								search: model.search,
-								defaultPreset: DEFAULT_PRESET,
-								window: model.window,
-								picker: model.timePicker,
-								toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-								onReset: Message.ClickedResetTimeRange(),
-								onReload: Message.ClickedReload(),
-								isReloading: model.isReloading,
-							}),
-						],
-					),
-					tabs: tabs(h, model),
-				},
-				[...chipsRow(h, model), body(h, model, timeZone, inputs.isBelowSm === true)],
-			),
-			expandDialog(h, model, timeZone),
-		],
-	)
+	return h.div([h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: TRAFFIC_TOKENS }))], [
+		dashboardPage(
+			h,
+			{
+				scrollClassName: "gap-6",
+				filters: filtersRail(h, model),
+				actions: h.div([h.Class("flex flex-wrap items-center gap-2")], [
+					...liveBadge(h, model),
+					replaysLink(h, model),
+					pageTime(h, {
+						search: model.search,
+						defaultPreset: DEFAULT_PRESET,
+						window: model.window,
+						picker: model.timePicker,
+						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+						onReset: Message.ClickedResetTimeRange(),
+						onReload: Message.ClickedReload(),
+						isReloading: model.isReloading,
+					}),
+				]),
+				tabs: tabs(h, model),
+			},
+			[...chipsRow(h, model), body(h, model, timeZone, inputs.isBelowSm === true)],
+		),
+		expandDialog(h, model, timeZone),
+	])
 })

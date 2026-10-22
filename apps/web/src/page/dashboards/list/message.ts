@@ -27,10 +27,7 @@ export const Message = defineMessageUnion({
 	UpdatedDashboards: { orgId: Schema.String, dashboards: Schema.Array(ListDashboard) },
 	/** The live list sat loading past the timeout (`useCollectionLoadFailed`). */
 	TimedOutLiveDashboards: { orgId: Schema.String },
-	CompletedFetchFallback: {
-		orgId: Schema.String,
-		result: Schema.Result(Schema.Array(ListDashboard), Schema.String),
-	},
+	CompletedFetchFallback: { orgId: Schema.String, result: Schema.Result(Schema.Array(ListDashboard), Schema.String) },
 	ClickedRetrySync: {},
 	ChangedSearchDraft: { value: Schema.String },
 	ElapsedSearchDebounce: { generation: Schema.Number },

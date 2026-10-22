@@ -1,12 +1,5 @@
 import { button } from "@maple/web/ui/button"
-import {
-	empty,
-	emptyContent,
-	emptyDescription,
-	emptyHeader,
-	emptyMedia,
-	emptyTitle,
-} from "@maple/web/ui/empty"
+import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/web/ui/empty"
 import { icon } from "@maple/web/ui/icon"
 import { skeletonList } from "@maple/web/ui/skeleton"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -39,9 +32,7 @@ export const errorState = <M>(
 	empty(
 		h,
 		[
-			emptyMedia(h, { variant: "icon" }, [
-				icon(h, "CircleWarningIcon", { className: "text-destructive" }),
-			]),
+			emptyMedia(h, { variant: "icon" }, [icon(h, "CircleWarningIcon", { className: "text-destructive" })]),
 			emptyHeader(h, [
 				emptyTitle(h, ["Couldn’t load ", options.label]),
 				emptyDescription(h, [options.failure.message], "font-mono text-xs break-all"),
@@ -50,11 +41,9 @@ export const errorState = <M>(
 				? []
 				: [
 						emptyContent(h, [
-							button(
-								h,
-								{ variant: "outline", size: "sm", attributes: [h.OnClick(options.onRetry)] },
-								["Try again"],
-							),
+							button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(options.onRetry)] }, [
+								"Try again",
+							]),
 						]),
 					]),
 		],

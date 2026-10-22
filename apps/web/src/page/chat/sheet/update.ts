@@ -24,10 +24,7 @@ type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
 /** The page the sheet was opened over, as the first message's context block. */
 const sendContext = (model: Model): Conversation.SendContext => ({
-	preamble: pageContextPreamble(
-		model.referrerPath,
-		activeContextsOf(model.referrerPath, model.dismissedContexts),
-	),
+	preamble: pageContextPreamble(model.referrerPath, activeContextsOf(model.referrerPath, model.dismissedContexts)),
 })
 
 const withCommands = (result: Return, commands: Commands): Return => ({
@@ -51,9 +48,7 @@ const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Retur
 const liftConversation = (model: Model, step: Conversation.Return): Return => {
 	const next: Model = { ...model, conversation: step.model }
 	const tabId = step.model.tabId
-	const commands = Command.mapMessages(step.commands ?? [], (message) =>
-		Message.GotConversationMessage({ tabId, message }),
-	)
+	const commands = Command.mapMessages(step.commands ?? [], (message) => Message.GotConversationMessage({ tabId, message }))
 	const out = Option.fromNullishOr(step.outMessage)
 	const lifted: Return = Option.match(out, {
 		onNone: () => ({ model: next, commands }),
@@ -78,9 +73,7 @@ const liftConversation = (model: Model, step: Conversation.Return): Return => {
 	})
 	const hasMessages = (step.model.messages.length ?? 0) > 0
 	return hasMessages && !model.isKnownServicesRequested
-		? withCommands({ ...lifted, model: { ...lifted.model, isKnownServicesRequested: true } }, [
-				LoadKnownServices(),
-			])
+		? withCommands({ ...lifted, model: { ...lifted.model, isKnownServicesRequested: true } }, [LoadKnownServices()])
 		: lifted
 }
 
@@ -88,17 +81,12 @@ const updateTooltip = (model: Model, message: Tooltip.Message): Return => {
 	const step = Tooltip.update(model.tooltip, message)
 	return {
 		model: { ...model, tooltip: step.model },
-		commands: Command.mapMessages(step.commands ?? [], (child) =>
-			Message.GotTooltipMessage({ message: child }),
-		),
+		commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotTooltipMessage({ message: child })),
 	}
 }
 
 const startConversation = (model: Model, orgId: string, tabId: string, referrerPath: string | null): Return =>
-	liftConversation(
-		{ ...model, orgId, tabId, referrerPath, dismissedContexts: [] },
-		Conversation.init(tabId, makeChatSessionId(orgId, tabId)),
-	)
+	liftConversation({ ...model, orgId, tabId, referrerPath, dismissedContexts: [] }, Conversation.init(tabId, makeChatSessionId(orgId, tabId)))
 
 /** `orgId` is the session's org; the sheet does nothing without one (`if (!orgId) return null`). */
 export const update = (model: Model, message: Message, orgId: string | null): Return =>
@@ -125,10 +113,7 @@ export const update = (model: Model, message: Message, orgId: string | null): Re
 		GotDialogMessage: ({ message: child }) => liftDialog(model, Dialog.update(model.dialog, child)),
 		// Focus leaving a header button ends the pointer-opened initial focus.
 		GotTooltipMessage: ({ message: child }) =>
-			updateTooltip(
-				child._tag === "BlurredTrigger" ? { ...model, isInitialFocusPointer: false } : model,
-				child,
-			),
+			updateTooltip(child._tag === "BlurredTrigger" ? { ...model, isInitialFocusPointer: false } : model, child),
 		MovedOverTrigger: ({ triggerId }) =>
 			model.tooltip.isOpen && model.tooltip.triggerId === triggerId
 				? { model }
@@ -147,15 +132,11 @@ export const update = (model: Model, message: Message, orgId: string | null): Re
 				? { model }
 				: startConversation(model, forOrg, tabId, referrerPath),
 		DismissedContext: ({ id }) =>
-			model.dismissedContexts.includes(id)
-				? { model }
-				: { model: { ...model, dismissedContexts: [...model.dismissedContexts, id] } },
+			model.dismissedContexts.includes(id) ? { model } : { model: { ...model, dismissedContexts: [...model.dismissedContexts, id] } },
 		ClickedOpenFullPage: () =>
 			model.orgId === null
 				? { model }
-				: withCommands(liftDialog(model, Dialog.close(model.dialog)), [
-						EnsureStoredTab({ orgId: model.orgId, tabId: model.tabId }),
-					]),
+				: withCommands(liftDialog(model, Dialog.close(model.dialog)), [EnsureStoredTab({ orgId: model.orgId, tabId: model.tabId })]),
 		CompletedEnsureStoredTab: () => ({ model }),
 		CompletedRenameStoredTab: () => ({ model }),
 		GotConversationMessage: ({ tabId, message: child }) =>

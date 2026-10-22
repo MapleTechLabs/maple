@@ -17,8 +17,7 @@ export const filtersOf = (query: URLSearchParams): LogFilters => ({
 	search: query.get("q") || undefined,
 })
 
-export const modeOf = (query: URLSearchParams): LogsMode =>
-	query.get("mode") === "patterns" ? "patterns" : "list"
+export const modeOf = (query: URLSearchParams): LogsMode => (query.get("mode") === "patterns" ? "patterns" : "list")
 
 export const activeFilterCount = (filters: LogFilters): number =>
 	[filters.service, filters.severity].filter(Boolean).length

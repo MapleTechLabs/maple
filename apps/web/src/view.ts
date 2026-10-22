@@ -8,13 +8,7 @@ import { onboardingInputsOf, pageContextOf, planGateOf, shellClerkOf } from "./u
 import * as OnboardingView from "./page/onboarding/view"
 import { breadcrumbsOf, placeholderContent, rendersShell } from "./page/chrome"
 import type { PageContext, ShellInfraSurfaces } from "./page/contract"
-import {
-	isBarePageRoute,
-	type PageMessage,
-	pageBreadcrumbs,
-	viewPage,
-	viewPageTopbarActions,
-} from "./page/registry"
+import { isBarePageRoute, type PageMessage, pageBreadcrumbs, viewPage, viewPageTopbarActions } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { AppRoute, hrefOf, isPublicRoute } from "./route"
 import * as Shell from "./shell"
@@ -123,17 +117,7 @@ const pageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosition)
 const topbarActionsView = (model: Model, h: HtmlBuilder<Message>): Html => {
 	const maybeContext = pageContextOf(model)
 	return model.page !== null && Option.isSome(maybeContext)
-		? viewPageTopbarActions(
-				h,
-				model.page,
-				{
-					context: maybeContext.value,
-					isMobile: model.shell.isMobile,
-					isBelowSm: model.shell.isBelowSm,
-					isBelowLg: model.shell.isFilterCollapsed,
-				},
-				toPageMessage,
-			)
+		? viewPageTopbarActions(h, model.page, { context: maybeContext.value, isMobile: model.shell.isMobile, isBelowSm: model.shell.isBelowSm, isBelowLg: model.shell.isFilterCollapsed }, toPageMessage)
 		: h.empty
 }
 
@@ -243,10 +227,7 @@ const routeView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =
 		{
 			SignIn: () =>
 				isClerkAuthEnabled
-					? Option.match(onboardingView(model, h), {
-							onNone: () => [],
-							onSome: (screen) => [screen],
-						})
+					? Option.match(onboardingView(model, h), { onNone: () => [], onSome: (screen) => [screen] })
 					: [signInView(model, h)],
 			Chat: () => bareShellRoute(model, h),
 		},
@@ -273,10 +254,7 @@ const content = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 			Option.exists(planGateOf(model), (gate) => gate.isSplash)
 				? [bootSplash(h)]
 				: Option.exists(planGateOf(model), (gate) => gate.wrongRegion !== null)
-					? Option.match(onboardingView(model, h), {
-							onNone: () => [],
-							onSome: (screen) => [screen],
-						})
+					? Option.match(onboardingView(model, h), { onNone: () => [], onSome: (screen) => [screen] })
 					: routeView(model, h),
 	})
 

@@ -23,64 +23,19 @@ const run = (name: string, project: string, region: string): Resource => ({ name
 const global = (name: string, project: string): Resource => ({ name, project })
 
 const WORKLOADS = new Map<string, ReadonlyArray<Resource>>([
-	[
-		"cloud-run",
-		[
-			run("checkout", "acme-prod", "us-central1"),
-			run("storefront", "acme-prod", "europe-west1"),
-			run("checkout", "acme-staging", "us-central1"),
-		],
-	],
-	[
-		"cloud-functions",
-		[run("resize-image", "acme-prod", "us-central1"), run("send-receipt", "acme-prod", "europe-west1")],
-	],
-	[
-		"gke",
-		[
-			run("orders-api", "acme-prod", "us-central1"),
-			run("worker", "acme-prod", "us-central1"),
-			run("metrics-server", "acme-staging", "europe-west1"),
-		],
-	],
-	[
-		"compute-engine",
-		[run("bastion", "acme-prod", "us-central1"), run("ci-runner", "acme-staging", "europe-west1")],
-	],
+	["cloud-run", [run("checkout", "acme-prod", "us-central1"), run("storefront", "acme-prod", "europe-west1"), run("checkout", "acme-staging", "us-central1")]],
+	["cloud-functions", [run("resize-image", "acme-prod", "us-central1"), run("send-receipt", "acme-prod", "europe-west1")]],
+	["gke", [run("orders-api", "acme-prod", "us-central1"), run("worker", "acme-prod", "us-central1"), run("metrics-server", "acme-staging", "europe-west1")]],
+	["compute-engine", [run("bastion", "acme-prod", "us-central1"), run("ci-runner", "acme-staging", "europe-west1")]],
 ])
 
 const GROUPS = new Map<string, ReadonlyArray<Resource>>([
-	[
-		"resource.k8s.cluster.name",
-		[run("prod-us", "acme-prod", "us-central1"), run("staging-eu", "acme-staging", "europe-west1")],
-	],
-	[
-		"resource.gcp.resource.labels.database_id",
-		[
-			run("acme-prod:orders-db", "acme-prod", "us-central1"),
-			run("acme-prod:orders-db-replica", "acme-prod", "europe-west1"),
-		],
-	],
-	[
-		"resource.gcp.resource.labels.subscription_id",
-		[
-			global("orders-fulfilment", "acme-prod"),
-			global("receipts", "acme-prod"),
-			global("orders-fulfilment", "acme-staging"),
-		],
-	],
-	[
-		"resource.gcp.resource.labels.topic_id",
-		[global("orders", "acme-prod"), global("orders", "acme-staging")],
-	],
-	[
-		"resource.gcp.resource.labels.url_map_name",
-		[global("storefront-lb", "acme-prod"), global("api-lb", "acme-prod")],
-	],
-	[
-		"attr.gcp.metric.labels.response_code_class",
-		[global("2xx", "acme-prod"), global("4xx", "acme-prod"), global("5xx", "acme-prod")],
-	],
+	["resource.k8s.cluster.name", [run("prod-us", "acme-prod", "us-central1"), run("staging-eu", "acme-staging", "europe-west1")]],
+	["resource.gcp.resource.labels.database_id", [run("acme-prod:orders-db", "acme-prod", "us-central1"), run("acme-prod:orders-db-replica", "acme-prod", "europe-west1")]],
+	["resource.gcp.resource.labels.subscription_id", [global("orders-fulfilment", "acme-prod"), global("receipts", "acme-prod"), global("orders-fulfilment", "acme-staging")]],
+	["resource.gcp.resource.labels.topic_id", [global("orders", "acme-prod"), global("orders", "acme-staging")]],
+	["resource.gcp.resource.labels.url_map_name", [global("storefront-lb", "acme-prod"), global("api-lb", "acme-prod")]],
+	["attr.gcp.metric.labels.response_code_class", [global("2xx", "acme-prod"), global("4xx", "acme-prod"), global("5xx", "acme-prod")]],
 ])
 
 const ALL_RESOURCES = [...WORKLOADS.values(), ...GROUPS.values()].flat()
@@ -113,22 +68,16 @@ const hash = (text: string): number =>
 	4294967296
 
 /** `fixtureRows`: a resource passes a variable only when the widget's where clause filters on it. */
-export const fixtureRows = (
-	widget: Widget,
-	values: VariableValues,
-): ReadonlyArray<Record<string, string | number>> => {
+export const fixtureRows = (widget: Widget, values: VariableValues): ReadonlyArray<Record<string, string | number>> => {
 	if (widget.dataSource.kind !== "query") return []
 	const query = widget.dataSource.queries[0]
 	const groupBy = query?.groupBy?.[0] ?? ""
-	const resources =
-		(groupBy === "service.name" ? WORKLOADS.get(widget.tabId ?? "") : GROUPS.get(groupBy)) ?? []
+	const resources = (groupBy === "service.name" ? WORKLOADS.get(widget.tabId ?? "") : GROUPS.get(groupBy)) ?? []
 	const filters = [...ATTRIBUTE.keys()].filter((name) => query?.whereClause?.includes(`$${name}`))
 	const kept = resources.filter((resource) =>
 		filters.every((name) => {
 			const selected = values[name]
-			return (
-				selected === undefined || selected.isAll || ATTRIBUTE.get(name)?.(resource) === selected.value
-			)
+			return selected === undefined || selected.isAll || ATTRIBUTE.get(name)?.(resource) === selected.value
 		}),
 	)
 	const series = unique(kept.map((resource) => resource.name))

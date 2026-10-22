@@ -187,10 +187,7 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 	if (hrefOfSearch(model, model.search) === hrefOfSearch(model, route.search)) return { model }
 	const next = { ...model, search: route.search }
 	return routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({
-			model: next,
-			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
-		}),
+		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
 		requestAll: (mode) => sync(next, context, mode),
 	})
 }

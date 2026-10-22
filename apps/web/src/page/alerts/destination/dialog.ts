@@ -1,10 +1,9 @@
-import { type AlertDestinationDocument, AlertDestinationId, AlertDestinationType } from "@maple/domain/http"
 import {
-	V2AlertDestinationCreateParams,
-	V2AlertDestinationUpdateParams,
-	V2ChatConnector,
-	V2TelegramChat,
-} from "@maple/domain/http/v2"
+	type AlertDestinationDocument,
+	AlertDestinationId,
+	AlertDestinationType,
+} from "@maple/domain/http"
+import { V2AlertDestinationCreateParams, V2AlertDestinationUpdateParams, V2ChatConnector, V2TelegramChat } from "@maple/domain/http/v2"
 import {
 	buildDestinationCreateParamsV2,
 	buildDestinationUpdateParamsV2,
@@ -99,10 +98,7 @@ export const Message = defineMessageUnion({
 	CompletedSave: {
 		openCount: Schema.Number,
 		isCreate: Schema.Boolean,
-		result: Schema.Result(
-			AlertDestinationId,
-			Schema.Struct({ title: Schema.String, message: Schema.String }),
-		),
+		result: Schema.Result(AlertDestinationId, Schema.Struct({ title: Schema.String, message: Schema.String })),
 	},
 	FailedLoadProviderLogo: { type: Schema.String },
 	GotChatFieldsMessage: { message: ChatFields.Message },
@@ -115,11 +111,7 @@ export type Message = typeof Message.Type
 
 /** What the page does with the dialog's outcome: toast it, and select a created destination. */
 export const OutMessage = defineMessageUnion({
-	RequestedToast: {
-		type: Schema.Literals(["success", "error"]),
-		title: Schema.String,
-		description: Schema.String,
-	},
+	RequestedToast: { type: Schema.Literals(["success", "error"]), title: Schema.String, description: Schema.String },
 	CreatedDestination: { id: AlertDestinationId },
 })
 export type OutMessage = typeof OutMessage.Type
@@ -135,9 +127,7 @@ const FetchChatConnectors = Command.define("FetchChatConnectors", {
 		const response = yield* client.chatIntegration.connectors()
 		// Slack first, as `useChatConnectors`; every connector is on for a self-hosted org.
 		return Message.CompletedFetchConnectors({
-			connectors: [...response.data].sort(
-				(a, b) => Number(b.id === "slack") - Number(a.id === "slack"),
-			),
+			connectors: [...response.data].sort((a, b) => Number(b.id === "slack") - Number(a.id === "slack")),
 		})
 	}).pipe(Effect.orElseSucceed(() => Message.CompletedFetchConnectors({ connectors: [] }))),
 })
@@ -202,7 +192,7 @@ const updateRequest = (id: AlertDestinationId, payload: V2AlertDestinationUpdate
 	}
 }
 
-export const CreateDestination = Command.define("CreateAlertDestination", {
+export const CreateDestination =Command.define("CreateAlertDestination", {
 	args: { openCount: Schema.Number, payload: V2AlertDestinationCreateParams },
 	messages: [Message.CompletedSave],
 	execute: ({ openCount, payload }) =>
@@ -235,8 +225,7 @@ const UpdateDestination = Command.define("UpdateAlertDestinationFromDialog", {
 // FORM READINESS (`isFormReady`, `isValidPagerDutyKey`, `isValidTelegramToken`)
 
 export const isValidPagerDutyKey = (key: string): boolean => /^[A-Za-z0-9]{32}$/.test(key.trim())
-export const isValidTelegramToken = (token: string): boolean =>
-	/^\d{5,}:[A-Za-z0-9_-]{30,}$/.test(token.trim())
+export const isValidTelegramToken = (token: string): boolean => /^\d{5,}:[A-Za-z0-9_-]{30,}$/.test(token.trim())
 
 export const isFormReady = (form: DestinationForm, isEditing: boolean): boolean => {
 	if (isEditing && form.name.trim().length === 0) return false
@@ -246,14 +235,9 @@ export const isFormReady = (form: DestinationForm, isEditing: boolean): boolean 
 		case "discord":
 			return isEditing || form.webhookUrl.trim().length > 0
 		case "telegram":
-			return (
-				form.telegramChatId.trim().length > 0 &&
-				(isEditing || form.telegramBotToken.trim().length > 0)
-			)
+			return form.telegramChatId.trim().length > 0 && (isEditing || form.telegramBotToken.trim().length > 0)
 		case "pagerduty":
-			return isEditing && form.integrationKey.trim().length === 0
-				? true
-				: isValidPagerDutyKey(form.integrationKey)
+			return isEditing && form.integrationKey.trim().length === 0 ? true : isValidPagerDutyKey(form.integrationKey)
 		case "email":
 			return form.memberUserIds.length > 0 && form.memberUserIds.length <= MAX_EMAIL_MEMBER_RECIPIENTS
 		case "chat":
@@ -276,39 +260,25 @@ const withCommands = (step: Return, commands: Return["commands"]): Return => ({
 })
 
 const liftChat = (model: Model, step: ChatFields.Return): Return => ({
-	model: {
-		...model,
-		chat: step.model,
-		form: step.form === undefined ? model.form : { ...model.form, ...step.form },
-	},
+	model: { ...model, chat: step.model, form: step.form === undefined ? model.form : { ...model.form, ...step.form } },
 	commands: Command.mapMessages(step.commands, (message) => Message.GotChatFieldsMessage({ message })),
 })
 
 const liftEmail = (model: Model, step: EmailFields.Return): Return => ({
-	model: {
-		...model,
-		email: step.model,
-		form: step.form === undefined ? model.form : { ...model.form, ...step.form },
-	},
+	model: { ...model, email: step.model, form: step.form === undefined ? model.form : { ...model.form, ...step.form } },
 	commands: Command.mapMessages(step.commands, (message) => Message.GotEmailFieldsMessage({ message })),
 })
 
 const liftHazel = (model: Model, step: HazelFields.Return): Return => ({
-	model: {
-		...model,
-		hazel: step.model,
-		form: step.form === undefined ? model.form : { ...model.form, ...step.form },
-	},
+	model: { ...model, hazel: step.model, form: step.form === undefined ? model.form : { ...model.form, ...step.form } },
 	commands: Command.mapMessages(step.commands, (message) => Message.GotHazelFieldsMessage({ message })),
 })
 
 /** The provider's own fields mount with the form: a chat channel list, or the email members, load. */
 const mountFields = (step: Return): Return => {
 	const { form } = step.model
-	if (form.type === "chat")
-		return withCommands(liftChat(step.model, ChatFields.reset(step.model.chat, form)), step.commands)
-	if (form.type === "hazel-oauth")
-		return withCommands(liftHazel(step.model, HazelFields.reset(step.model.hazel, form)), step.commands)
+	if (form.type === "chat") return withCommands(liftChat(step.model, ChatFields.reset(step.model.chat, form)), step.commands)
+	if (form.type === "hazel-oauth") return withCommands(liftHazel(step.model, HazelFields.reset(step.model.hazel, form)), step.commands)
 	if (form.type === "email" && isClerkAuthEnabled)
 		return withCommands(liftEmail(step.model, EmailFields.reset(step.model.email, form)), step.commands)
 	return step
@@ -316,15 +286,7 @@ const mountFields = (step: Return): Return => {
 
 /** A save in flight stays in flight across a reopen: no second submit. */
 const open = (model: Model, patch: Partial<Model>): Return => {
-	const next = {
-		...model,
-		...patch,
-		openCount: model.openCount + 1,
-		telegramChats: null,
-		telegramError: null,
-		isDetectingChats: false,
-		chatConnect: ChatConnect.finish(model.chatConnect),
-	}
+	const next = { ...model, ...patch, openCount: model.openCount + 1, telegramChats: null, telegramError: null, isDetectingChats: false, chatConnect: ChatConnect.finish(model.chatConnect) }
 	const opened = liftDialog(next, Dialog.open(model.dialog))
 	// `ProviderPicker` reads the connectors; it renders only for a new, unlocked destination.
 	const needsConnectors = next.editingId === null && !next.isProviderLocked && next.connectors === null
@@ -351,9 +313,7 @@ const chatConnectStep = (model: Model, message: ChatConnect.Message): Return => 
 		commands: step.isRefetching ? [FetchChatConnectors()] : [],
 		...Option.match(step.toast, {
 			onNone: () => ({}),
-			onSome: ({ title, description }) => ({
-				outMessage: OutMessage.RequestedToast({ type: "error", title, description }),
-			}),
+			onSome: ({ title, description }) => ({ outMessage: OutMessage.RequestedToast({ type: "error", title, description }) }),
 		}),
 	}
 }
@@ -364,29 +324,17 @@ const connectorsAnswered = (model: Model, connectors: ReadonlyArray<V2ChatConnec
 	return Option.match(ChatConnect.linkedOf(model.chatConnect, connectors), {
 		onNone: () => ({ model: next }),
 		onSome: (linked) =>
-			pickChatWorkspace(
-				{ ...next, chatConnect: ChatConnect.finish(next.chatConnect) },
-				linked.connector,
-				linked.id,
-			),
+			pickChatWorkspace({ ...next, chatConnect: ChatConnect.finish(next.chatConnect) }, linked.connector, linked.id),
 	})
 }
 
 /** `openDialog()`: a new destination, optionally preset to a provider picked elsewhere. */
 export const openNew = (model: Model, preset?: DestinationForm): Return =>
-	open(model, {
-		form: preset ?? defaultDestinationForm(),
-		editingId: null,
-		isProviderLocked: preset !== undefined,
-	})
+	open(model, { form: preset ?? defaultDestinationForm(), editingId: null, isProviderLocked: preset !== undefined })
 
 /** `openDialog(destination)`: edit an existing one. */
 export const openEdit = (model: Model, destination: AlertDestinationDocument): Return =>
-	open(model, {
-		form: destinationToFormState(destination),
-		editingId: destination.id,
-		isProviderLocked: false,
-	})
+	open(model, { form: destinationToFormState(destination), editingId: destination.id, isProviderLocked: false })
 
 const close = (model: Model): Return => liftDialog(model, Dialog.close(model.dialog))
 
@@ -407,9 +355,7 @@ const save = (model: Model): Return => {
 	const named = form.name.trim().length > 0 ? form : { ...form, name: suggestedDestinationName(form) }
 	return {
 		model: { ...model, isSaving: true },
-		commands: [
-			CreateDestination({ openCount: model.openCount, payload: buildDestinationCreateParamsV2(named) }),
-		],
+		commands: [CreateDestination({ openCount: model.openCount, payload: buildDestinationCreateParamsV2(named) })],
 	}
 }
 
@@ -423,10 +369,7 @@ const detected = (model: Model, result: Result.Result<ReadonlyArray<V2TelegramCh
 					...model,
 					isDetectingChats: false,
 					telegramChats: chats,
-					form:
-						chats.length === 1 && only !== undefined
-							? { ...model.form, telegramChatId: only.id }
-							: model.form,
+					form: chats.length === 1 && only !== undefined ? { ...model.form, telegramChatId: only.id } : model.form,
 				},
 			}
 		},
@@ -440,23 +383,18 @@ export const chatConnectDependencies = (model: Model): ChatConnectStream.Depende
 	ChatConnectStream.dependenciesOf(model.chatConnect, model.dialog.isOpen)
 
 export const chatConnectStream = (dependencies: ChatConnectStream.Dependencies) =>
-	Stream.map(ChatConnectStream.streamOf(dependencies), (message) =>
-		Message.GotChatConnectMessage({ message }),
-	)
+	Stream.map(ChatConnectStream.streamOf(dependencies), (message) => Message.GotChatConnectMessage({ message }))
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotDialogMessage: ({ message: child }) => liftDialog(model, Dialog.update(model.dialog, child)),
 		CompletedFetchConnectors: ({ connectors }) => connectorsAnswered(model, connectors),
-		ClickedProvider: ({ type }) =>
-			mountFields({ model: { ...model, form: defaultDestinationForm(type) } }),
+		ClickedProvider: ({ type }) => mountFields({ model: { ...model, form: defaultDestinationForm(type) } }),
 		ClickedChatWorkspace: ({ connector, workspaceId }) =>
 			Option.match(
 				Option.flatMap(Option.fromNullishOr(model.connectors), (connectors) =>
 					Option.fromNullishOr(
-						connectors
-							.flatMap((entry) => entry.workspaces)
-							.find((workspace) => workspace.id === workspaceId),
+						connectors.flatMap((entry) => entry.workspaces).find((workspace) => workspace.id === workspaceId),
 					),
 				),
 				{
@@ -465,23 +403,14 @@ export const update = (model: Model, message: Message): Return =>
 				},
 			),
 		ClickedUnlockProvider: () => ({ model: { ...model, isProviderLocked: false } }),
-		ChangedField: ({ field, value }) => ({
-			model: { ...model, form: { ...model.form, [field]: value } },
-		}),
-		ToggledEnabled: () => ({
-			model: { ...model, form: { ...model.form, enabled: !model.form.enabled } },
-		}),
+		ChangedField: ({ field, value }) => ({ model: { ...model, form: { ...model.form, [field]: value } } }),
+		ToggledEnabled: () => ({ model: { ...model, form: { ...model.form, enabled: !model.form.enabled } } }),
 		ClickedDetectChats: () =>
 			model.isDetectingChats || !isValidTelegramToken(model.form.telegramBotToken)
 				? { model }
 				: {
 						model: { ...model, isDetectingChats: true, telegramChats: null, telegramError: null },
-						commands: [
-							DetectTelegramChats({
-								openCount: model.openCount,
-								botToken: model.form.telegramBotToken.trim(),
-							}),
-						],
+						commands: [DetectTelegramChats({ openCount: model.openCount, botToken: model.form.telegramBotToken.trim() })],
 					},
 		CompletedDetectChats: ({ openCount, botToken, result }) =>
 			openCount !== model.openCount
@@ -489,9 +418,7 @@ export const update = (model: Model, message: Message): Return =>
 				: botToken !== model.form.telegramBotToken.trim()
 					? { model: { ...model, isDetectingChats: false } }
 					: detected(model, result),
-		ClickedTelegramChat: ({ chatId }) => ({
-			model: { ...model, form: { ...model.form, telegramChatId: chatId } },
-		}),
+		ClickedTelegramChat: ({ chatId }) => ({ model: { ...model, form: { ...model.form, telegramChatId: chatId } } }),
 		ClickedCancel: () => close(model),
 		ClickedSave: () => save(model),
 		CompletedSave: ({ openCount, isCreate, result }) =>
@@ -504,11 +431,7 @@ export const update = (model: Model, message: Message): Return =>
 						...closed,
 						outMessage: isCreate
 							? OutMessage.CreatedDestination({ id })
-							: OutMessage.RequestedToast({
-									type: "success",
-									title: "Destination updated",
-									description: "",
-								}),
+							: OutMessage.RequestedToast({ type: "success", title: "Destination updated", description: "" }),
 					}
 				},
 				onFailure: (error) => ({
@@ -521,15 +444,10 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 			}),
 		FailedLoadProviderLogo: ({ type }) =>
-			model.brokenLogos.includes(type)
-				? { model }
-				: { model: { ...model, brokenLogos: [...model.brokenLogos, type] } },
-		GotChatFieldsMessage: ({ message: inner }) =>
-			liftChat(model, ChatFields.update(model.chat, inner, model.form)),
+			model.brokenLogos.includes(type) ? { model } : { model: { ...model, brokenLogos: [...model.brokenLogos, type] } },
+		GotChatFieldsMessage: ({ message: inner }) => liftChat(model, ChatFields.update(model.chat, inner, model.form)),
 		ClickedConnectChat: ({ connector }) => connectChat(model, connector),
 		GotChatConnectMessage: ({ message: inner }) => chatConnectStep(model, inner),
-		GotEmailFieldsMessage: ({ message: inner }) =>
-			liftEmail(model, EmailFields.update(model.email, inner)),
-		GotHazelFieldsMessage: ({ message: inner }) =>
-			liftHazel(model, HazelFields.update(model.hazel, inner, model.form)),
+		GotEmailFieldsMessage: ({ message: inner }) => liftEmail(model, EmailFields.update(model.email, inner)),
+		GotHazelFieldsMessage: ({ message: inner }) => liftHazel(model, HazelFields.update(model.hazel, inner, model.form)),
 	})

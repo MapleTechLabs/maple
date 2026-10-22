@@ -110,16 +110,7 @@ export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean)
 													option.title,
 													...(option.badge === null
 														? []
-														: [
-																h.span(
-																	[
-																		h.Class(
-																			"text-xs font-normal text-muted-foreground",
-																		),
-																	],
-																	[option.badge],
-																),
-															]),
+														: [h.span([h.Class("text-xs font-normal text-muted-foreground")], [option.badge])]),
 												],
 											),
 											h.span([h.Class(SMALL)], [option.description]),
@@ -127,9 +118,7 @@ export const methodChoice = (h: H, configure: ConfigureModel, changing: boolean)
 									),
 								],
 							),
-							...(option.value === "code" && row === "code"
-								? [flavourToggle(h, configure, flavour)]
-								: []),
+							...(option.value === "code" && row === "code" ? [flavourToggle(h, configure, flavour)] : []),
 						],
 					),
 				),

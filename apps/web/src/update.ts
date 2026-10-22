@@ -104,24 +104,15 @@ const shellFoldConfig = {
 		RequestedOrganizationSwitch:
 			({ orgId }) =>
 			(model) => {
-				const picked = model.clerkSnapshot?.memberships.find(
-					(organization) => organization.id === orgId,
-				)
+				const picked = model.clerkSnapshot?.memberships.find((organization) => organization.id === orgId)
 				return picked === undefined
 					? { model }
 					: {
 							model,
 							commands: [
 								Command.mapMessage((message: OrgSwitcher.Message) =>
-									Message.GotShellMessage({
-										message: Shell.Message.GotClerkOrgMenuMessage({ message }),
-									}),
-								)(
-									OrgSwitcher.SwitchOrganization({
-										orgId,
-										targetUrl: OrgSwitcher.switchTargetOf(picked),
-									}),
-								),
+									Message.GotShellMessage({ message: Shell.Message.GotClerkOrgMenuMessage({ message }) }),
+								)(OrgSwitcher.SwitchOrganization({ orgId, targetUrl: OrgSwitcher.switchTargetOf(picked) })),
 							],
 						}
 			},
@@ -136,10 +127,7 @@ const shellFoldConfig = {
 		RequestedErrorToast:
 			({ title }) =>
 			(model) =>
-				showPageToast(
-					model,
-					PageOutMessage.RequestedToast({ type: "error", title, description: "" }),
-				),
+				showPageToast(model, PageOutMessage.RequestedToast({ type: "error", title, description: "" })),
 	}),
 }
 
@@ -176,14 +164,11 @@ const PUBLIC_ORG = Schema.decodeUnknownOption(OrgIdSchema)("public")
 /** A public page's context: the viewer's org when signed in, else `PUBLIC_ORG`; no shell state. */
 const publicContextOf = (model: Model, maybeOrgId: Option.Option<OrgId>): Option.Option<PageContext> =>
 	isBarePageRoute(model.route)
-		? Option.map(
-				Option.orElse(maybeOrgId, () => PUBLIC_ORG),
-				(orgId) => ({
-					orgId,
-					pinnedNamespace: null,
-					timeZone: model.timeZone,
-				}),
-			)
+		? Option.map(Option.orElse(maybeOrgId, () => PUBLIC_ORG), (orgId) => ({
+				orgId,
+				pinnedNamespace: null,
+				timeZone: model.timeZone,
+			}))
 		: Option.none()
 
 /** What every page reads from the root: a signed-in org on a shell route, or a bare public page. */
@@ -226,9 +211,7 @@ const applyPage =
 		Option.match(Option.flatMap(transition.outMessage, shellRequestOf), {
 			onNone: () => writePage(transition)(model),
 			onSome: (shellMessage) =>
-				Update.combine([writePage(transition), (next: Model) => foldShell(next, shellMessage)])(
-					model,
-				),
+				Update.combine([writePage(transition), (next: Model) => foldShell(next, shellMessage)])(model),
 		})
 
 const isPageMessage = Schema.is(PageMessage)
@@ -242,9 +225,7 @@ const showPageToast = (model: Model, request: PageToast) => {
 		type: request.type,
 		title: request.title,
 		description: request.description,
-		...(request.timeoutMs === null || request.timeoutMs === undefined
-			? undefined
-			: { timeoutMs: request.timeoutMs }),
+		...(request.timeoutMs === null || request.timeoutMs === undefined ? undefined : { timeoutMs: request.timeoutMs }),
 		...(request.action === null || request.action === undefined
 			? request.rootAction === undefined
 				? undefined
@@ -283,8 +264,7 @@ const writePage =
 			Option.flatMap(transition.outMessage, (out): Option.Option<PageToast> =>
 				out._tag === "RequestedToast"
 					? Option.some(out)
-					: (out._tag === "RequestedNavigation" || out._tag === "RequestedCustomerRefresh") &&
-						  out.toast !== undefined
+					: (out._tag === "RequestedNavigation" || out._tag === "RequestedCustomerRefresh") && out.toast !== undefined
 						? Option.some(
 								PageOutMessage.RequestedToast({
 									...out.toast,
@@ -298,13 +278,7 @@ const writePage =
 		)
 		const followUp = Option.flatMap(transition.outMessage, (out) =>
 			out._tag === "RequestedNavigation" && out.followUpToast !== undefined
-				? Option.some(
-						PageOutMessage.RequestedToast({
-							...out.followUpToast,
-							timeoutMs: null,
-							action: null,
-						}),
-					)
+				? Option.some(PageOutMessage.RequestedToast({ ...out.followUpToast, timeoutMs: null, action: null }))
 				: Option.none(),
 		)
 		const followed = Option.match(followUp, {
@@ -349,9 +323,7 @@ const writePage =
 						RequestedToast: () => [],
 						RequestedReconnectOrgCollections: () => [ReconnectOrgCollections()],
 						RequestedCustomerRefresh: () =>
-							model.customer.orgId === null
-								? []
-								: [LoadCustomer({ orgId: model.customer.orgId, refresh: true })],
+							model.customer.orgId === null ? [] : [LoadCustomer({ orgId: model.customer.orgId, refresh: true })],
 					}),
 				}),
 				...followed.commands,
@@ -374,28 +346,18 @@ const followChatSheetOrg: Step = (model) => {
 		? { model }
 		: {
 				model: modifyFields(model, { chatSheet: () => step.model }),
-				commands: Command.mapMessages(step.commands ?? [], (child) =>
-					Message.GotChatSheetMessage({ message: child }),
-				),
+				commands: Command.mapMessages(step.commands ?? [], (child) => Message.GotChatSheetMessage({ message: child })),
 			}
 }
 
 const foldChatSheet = (model: Model, message: ChatSheet.Message) => {
 	const step = ChatSheet.update(model.chatSheet, message, chatSheetOrgOf(model))
 	const next = modifyFields(model, { chatSheet: () => step.model })
-	const commands = Command.mapMessages(step.commands ?? [], (child) =>
-		Message.GotChatSheetMessage({ message: child }),
-	)
+	const commands = Command.mapMessages(step.commands ?? [], (child) => Message.GotChatSheetMessage({ message: child }))
 	if (step.outMessage === undefined) return { model: next, commands }
 	const toasted = showPageToast(
 		next,
-		PageOutMessage.RequestedToast({
-			type: step.outMessage.type,
-			title: step.outMessage.title,
-			description: "",
-			timeoutMs: null,
-			action: null,
-		}),
+		PageOutMessage.RequestedToast({ type: step.outMessage.type, title: step.outMessage.title, description: "", timeoutMs: null, action: null }),
 	)
 	return { model: toasted.model, commands: [...commands, ...toasted.commands] }
 }
@@ -433,10 +395,7 @@ export const onboardingInputsOf = (model: Model): Option.Option<Onboarding.Input
 	const snapshot = Option.fromNullishOr(model.clerkSnapshot)
 	const clerk = {
 		maybeOrganization: Option.flatMap(snapshot, (clerkSnapshot) => clerkSnapshot.maybeOrganization),
-		memberships: Option.match(snapshot, {
-			onNone: () => [],
-			onSome: (clerkSnapshot) => clerkSnapshot.memberships,
-		}),
+		memberships: Option.match(snapshot, { onNone: () => [], onSome: (clerkSnapshot) => clerkSnapshot.memberships }),
 		maybeUser: Option.flatMap(snapshot, (clerkSnapshot) => clerkSnapshot.maybeUser),
 		customer: model.customer,
 	}
@@ -493,11 +452,7 @@ const onboardingOut =
 					? { model, commands: [] }
 					: showPageToast(
 							model,
-							PageOutMessage.RequestedToast({
-								type: "success",
-								title: "Plan updated successfully",
-								description: "",
-							}),
+							PageOutMessage.RequestedToast({ type: "success", title: "Plan updated successfully", description: "" }),
 						)
 				const orgId = model.customer.orgId
 				return orgId === null
@@ -507,11 +462,7 @@ const onboardingOut =
 			FailedChangePlan: ({ message }) =>
 				showPageToast(
 					model,
-					PageOutMessage.RequestedToast({
-						type: "error",
-						title: "Failed to update your plan",
-						description: message,
-					}),
+					PageOutMessage.RequestedToast({ type: "error", title: "Failed to update your plan", description: message }),
 				),
 			RequestedCustomerRefresh: () =>
 				model.customer.orgId === null
@@ -529,12 +480,9 @@ const withoutCheckoutMarker = (route: AppRoute): Option.Option<string> =>
 	AppRoute.matchOrElse<Option.Option<string>>(
 		route,
 		{
-			SelectPlan: ({ search }) =>
-				Option.some(hrefOf(AppRoute.SelectPlan({ search: Struct.omit(search, ["checkout"]) }))),
-			QuickStart: ({ search }) =>
-				Option.some(hrefOf(AppRoute.QuickStart({ search: Struct.omit(search, ["checkout"]) }))),
-			Settings: ({ search }) =>
-				Option.some(hrefOf(AppRoute.Settings({ search: Struct.omit(search, ["checkout"]) }))),
+			SelectPlan: ({ search }) => Option.some(hrefOf(AppRoute.SelectPlan({ search: Struct.omit(search, ["checkout"]) }))),
+			QuickStart: ({ search }) => Option.some(hrefOf(AppRoute.QuickStart({ search: Struct.omit(search, ["checkout"]) }))),
+			Settings: ({ search }) => Option.some(hrefOf(AppRoute.Settings({ search: Struct.omit(search, ["checkout"]) }))),
 		},
 		() => Option.none(),
 	)
@@ -546,13 +494,8 @@ const updateOnboarding = (model: Model, message: Onboarding.Message): UpdateRetu
 		onSome: (inputs) => {
 			if (onboarding === null) return { model }
 			const step = Onboarding.update(onboarding, message, inputs)
-			const next = {
-				model: modifyFields(model, { onboarding: () => step.model }),
-				commands: toOnboardingCommands(step),
-			}
-			return step.outMessage === undefined
-				? next
-				: Update.combine([() => next, onboardingOut(step.outMessage)])(model)
+			const next = { model: modifyFields(model, { onboarding: () => step.model }), commands: toOnboardingCommands(step) }
+			return step.outMessage === undefined ? next : Update.combine([() => next, onboardingOut(step.outMessage)])(model)
 		},
 	})
 }
@@ -611,9 +554,7 @@ const sessionRedirect = (model: Model): Option.Option<Redirect> =>
 					}),
 		SignedIn: ({ maybeOrgId }) => {
 			if (isPublicRoute(model.route)) {
-				return isClerkAuthEnabled
-					? clerkReverseRedirect(model.route, maybeOrgId)
-					: selfHostedRedirect(model.route)
+				return isClerkAuthEnabled ? clerkReverseRedirect(model.route, maybeOrgId) : selfHostedRedirect(model.route)
 			}
 			if (!isClerkAuthEnabled && model.route._tag === "SelectPlan") return Option.some(toHome)
 			return Option.isNone(maybeOrgId)
@@ -650,8 +591,7 @@ export const planGateOf = (model: Model): Option.Option<Gate> =>
 			),
 	})
 
-const isWrongRegion = (model: Model): boolean =>
-	Option.exists(planGateOf(model), (gate) => gate.wrongRegion !== null)
+const isWrongRegion = (model: Model): boolean => Option.exists(planGateOf(model), (gate) => gate.wrongRegion !== null)
 
 const followRedirects: Step = (model) => {
 	const maybeRedirect = Session.match(model.session, {
@@ -782,9 +722,7 @@ const sessionRangeUrl = (model: Model, url: Url): Option.Option<string> => {
  */
 const navigateTo = (model: Model, url: string, isReplace: boolean) => {
 	const target = Option.getOrElse(
-		Option.flatMap(urlFromString(new URL(url, "http://app.invalid").href), (parsed) =>
-			sessionRangeUrl(model, parsed),
-		),
+		Option.flatMap(urlFromString(new URL(url, "http://app.invalid").href), (parsed) => sessionRangeUrl(model, parsed)),
 		() => url,
 	)
 	return isReplace ? ReplaceUrl({ url: target }) : NavigateInternal({ url: target })
@@ -825,8 +763,7 @@ const appliedClerkSnapshot =
 		const model = modifyFields(previous, { clerkSnapshot: () => snapshot })
 		const identity = identityOf(snapshot)
 		const known = previous.clerkSnapshot === null ? undefined : identityOf(previous.clerkSnapshot)
-		const identify =
-			known !== undefined && isSameIdentity(known, identity) ? [] : [IdentifySession({ identity })]
+		const identify = known !== undefined && isSameIdentity(known, identity) ? [] : [IdentifySession({ identity })]
 		if (Option.isSome(snapshot.maybeUserId)) {
 			const step = signedIn(snapshot.maybeOrgId)(model)
 			return { ...step, commands: [...identify, ...(step.commands ?? [])] }
@@ -854,9 +791,7 @@ const preloadLink = (model: Model, href: string, nowMs: number): UpdateReturn =>
 		Option.flatMap(urlFromString(href), (hovered) => {
 			// The link's location goes through the session-range middleware, so the preload sees its window.
 			const url = Option.getOrElse(
-				Option.flatMap(sessionRangeUrl(model, hovered), (path) =>
-					urlFromString(new URL(path, href).href),
-				),
+				Option.flatMap(sessionRangeUrl(model, hovered), (path) => urlFromString(new URL(path, href).href)),
 				() => hovered,
 			)
 			const route = urlToAppRoute(url)
@@ -871,9 +806,7 @@ const preloadLink = (model: Model, href: string, nowMs: number): UpdateReturn =>
 				return {
 					model,
 					commands: [
-						...commands.map(
-							Command.mapMessage((message) => Message.GotPreloadMessage({ message })),
-						),
+						...commands.map(Command.mapMessage((message) => Message.GotPreloadMessage({ message }))),
 						...(keys.length === 0 ? [] : [HoldPreloads({ keys })]),
 					],
 				}
@@ -890,10 +823,7 @@ const changedUrlStep = (model: Model, changedUrl: Url): UpdateReturn => {
 		signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
 	})
 	const hasTopBar = rendersShell(nextRoute) && !isRedirectOnlyRoute(model.route)
-	return Update.combine([
-		foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag, hasTopBar)),
-		settle,
-	])(routed)
+	return Update.combine([foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag, hasTopBar)), settle])(routed)
 }
 
 /** The Command behind a root toast action. */
@@ -947,8 +877,7 @@ const foldMessage = (model: Model, message: Message) =>
 		CompletedWaitForAuthSettle: () => (model.session._tag === "Resolving" ? signedOut(model) : { model }),
 		SucceededLoadCustomer: ({ orgId, customer }) =>
 			settledCustomer(model, orgId, CustomerData.Success({ data: customer })),
-		FailedLoadCustomer: ({ orgId }) =>
-			settledCustomer(model, orgId, CustomerData.Failure({ error: "Failed" })),
+		FailedLoadCustomer: ({ orgId }) => settledCustomer(model, orgId, CustomerData.Failure({ error: "Failed" })),
 		CompletedSaveSelectedPlanKnown: () => ({ model }),
 		CompletedSignOutOfClerk: () => ({ model }),
 		CompletedIdentifySession: () => ({ model }),
@@ -957,8 +886,7 @@ const foldMessage = (model: Model, message: Message) =>
 		GotToastMessage: ({ message }) =>
 			message._tag === "ClickedToastAction" && model.toastActions[message.toastId] !== undefined
 				? toPage(model, model.toastActions[message.toastId])
-				: message._tag === "ClickedToastAction" &&
-					  model.toastRootActions[message.toastId] !== undefined
+				: message._tag === "ClickedToastAction" && model.toastRootActions[message.toastId] !== undefined
 					? { model, commands: [rootToastCommand(model.toastRootActions[message.toastId])] }
 					: message._tag === "EndedToastTransition"
 						? foldToasts(withoutToastActions(model, message.toastId), message)
@@ -974,11 +902,7 @@ const foldMessage = (model: Model, message: Message) =>
 				onSome: (next) => ({
 					model: withPreload(model, next.model),
 					commands: [
-						WaitPreloadDelay({
-							href,
-							version: next.version,
-							delayMs: isImmediate ? 0 : Preload.PRELOAD_DELAY_MS,
-						}),
+						WaitPreloadDelay({ href, version: next.version, delayMs: isImmediate ? 0 : Preload.PRELOAD_DELAY_MS }),
 					],
 				}),
 			}),
@@ -1001,9 +925,7 @@ const foldMessage = (model: Model, message: Message) =>
 		LoadedSessionTimeRange: ({ orgId, value, nowMs }) =>
 			model.sessionTimeRange?.orgId === orgId
 				? syncSessionTimeRange(
-						modifyFields(model, {
-							sessionTimeRange: () => ({ orgId, value, nowMs, isLoaded: true }),
-						}),
+						modifyFields(model, { sessionTimeRange: () => ({ orgId, value, nowMs, isLoaded: true }) }),
 					)
 				: { model },
 		// Every reader of `effectiveTimezone` re-renders: the open page re-resolves under the new zone.
@@ -1029,7 +951,5 @@ const foldMessage = (model: Model, message: Message) =>
 export const update = (model: Model, message: Message): UpdateReturn => {
 	const result = foldMessage(model, message)
 	const next = result.model
-	return next !== model && Struct.keys(model).every((key) => model[key] === next[key])
-		? { ...result, model }
-		: result
+	return next !== model && Struct.keys(model).every((key) => model[key] === next[key]) ? { ...result, model } : result
 }

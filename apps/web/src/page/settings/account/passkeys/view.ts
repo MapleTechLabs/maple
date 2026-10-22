@@ -39,46 +39,23 @@ const passkeyRow = (h: H, model: Model, passkey: AccountPasskey, inputs: Inputs)
 					h.div(
 						[h.Class("flex items-center gap-2.5")],
 						[
-							icon(h, "FingerprintIcon", {
-								size: 16,
-								className: "shrink-0 text-muted-foreground",
-							}),
-							truncatedText(h, {
-								text: passkey.name || "Unnamed passkey",
-								className: "text-xs font-medium",
-							}),
+							icon(h, "FingerprintIcon", { size: 16, className: "shrink-0 text-muted-foreground" }),
+							truncatedText(h, { text: passkey.name || "Unnamed passkey", className: "text-xs font-medium" }),
 						],
 					),
 				],
 				cn(truncatedCellStyles),
 			),
 			tableCell(h, [formatDate(passkey.createdAtMs)], "text-muted-foreground text-xs"),
-			tableCell(
-				h,
-				[passkey.lastUsedAtMs === null ? "Never" : formatDate(passkey.lastUsedAtMs)],
-				"text-muted-foreground text-xs",
-			),
+			tableCell(h, [passkey.lastUsedAtMs === null ? "Never" : formatDate(passkey.lastUsedAtMs)], "text-muted-foreground text-xs"),
 			tableCell(h, [
 				rowActionsMenu(h, {
 					slotId: menuId,
 					model: model.rowMenus[menuId] ?? Menu.init(menuId),
 					label: `Actions for ${passkey.name ?? "passkey"}`,
 					entries: [
-						{
-							_tag: "Item",
-							value: "rename",
-							label: "Rename",
-							icon: "PencilIcon",
-							isDisabled: model.isBusy,
-						},
-						{
-							_tag: "Item",
-							value: "remove",
-							label: "Remove",
-							icon: "TrashIcon",
-							variant: "destructive",
-							isDisabled: model.isBusy,
-						},
+						{ _tag: "Item", value: "rename", label: "Rename", icon: "PencilIcon", isDisabled: model.isBusy },
+						{ _tag: "Item", value: "remove", label: "Remove", icon: "TrashIcon", variant: "destructive", isDisabled: model.isBusy },
 					],
 					toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
 				}),
@@ -113,17 +90,9 @@ const body = (h: H, model: Model, user: AccountUser, inputs: Inputs): ReadonlyAr
 	return [
 		table(h, {}, [
 			tableHeader(h, [
-				tableRow(h, [
-					tableHead(h, ["Name"]),
-					tableHead(h, ["Added"]),
-					tableHead(h, ["Last used"]),
-					tableHead(h, [], "w-10"),
-				]),
+				tableRow(h, [tableHead(h, ["Name"]), tableHead(h, ["Added"]), tableHead(h, ["Last used"]), tableHead(h, [], "w-10")]),
 			]),
-			tableBody(
-				h,
-				user.passkeys.map((passkey) => passkeyRow(h, model, passkey, inputs)),
-			),
+			tableBody(h, user.passkeys.map((passkey) => passkeyRow(h, model, passkey, inputs))),
 		]),
 	]
 }
@@ -135,9 +104,7 @@ const loaded = (h: H, model: Model, user: AccountUser, inputs: Inputs): Html =>
 			{
 				id: "account-passkeys",
 				title: "Passkeys",
-				description: [
-					"Sign in with Touch ID, Windows Hello, a phone or a hardware key instead of a password.",
-				],
+				description: ["Sign in with Touch ID, Windows Hello, a phone or a hardware key instead of a password."],
 				padded: !model.isSupported || user.passkeys.length === 0,
 				actions: addButton(h, model.isBusy || !model.isSupported),
 			},

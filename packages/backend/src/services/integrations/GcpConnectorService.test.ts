@@ -117,12 +117,7 @@ describe("GcpConnectorService", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sources = () =>
 			Effect.promise(() =>
-				testDb.pglite.query<{
-					kind: string
-					platform: string
-					name: string
-					connector: string | null
-				}>(
+				testDb.pglite.query<{ kind: string; platform: string; name: string; connector: string | null }>(
 					`SELECT s.kind, s.platform, s.name, c.id AS connector
 					FROM sources s LEFT JOIN gcp_connectors c ON c.source_id = s.id`,
 				),
@@ -133,12 +128,7 @@ describe("GcpConnectorService", () => {
 			// A refused duplicate leaves no source behind.
 			yield* Effect.flip(gcp.create(orgId, userId, projectScope("acme-prod")))
 			assert.deepStrictEqual((yield* sources()).rows, [
-				{
-					kind: "integration",
-					platform: "gcp",
-					name: "Google Cloud acme-prod",
-					connector: connector.id,
-				},
+				{ kind: "integration", platform: "gcp", name: "Google Cloud acme-prod", connector: connector.id },
 			])
 
 			yield* gcp.delete(orgId, connector.id)
@@ -159,10 +149,7 @@ describe("GcpConnectorService", () => {
 			const gcp = yield* GcpConnectorService
 			const connector = yield* gcp.create(orgId, userId, organizationScope)
 			yield* Effect.promise(() =>
-				queryFirstRow(
-					testDb,
-					"UPDATE sources SET last_poll_error = 'Permission denied' RETURNING id",
-				),
+				queryFirstRow(testDb, "UPDATE sources SET last_poll_error = 'Permission denied' RETURNING id"),
 			)
 			yield* gcp.update(orgId, connector.id, { metricsEnabled: false })
 			assert.isNull(yield* sourceError())

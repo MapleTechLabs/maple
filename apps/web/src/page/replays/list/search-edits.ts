@@ -42,12 +42,7 @@ export const addedRowTag = (search: Search, tag: string): Search => {
 	return { ...search, tags: nextTagSelection(selected, [...selected, tag]) }
 }
 
-export const withRange = (
-	search: Search,
-	range: Range,
-	min: number | undefined,
-	max: number | undefined,
-): Search => {
+export const withRange = (search: Search, range: Range, min: number | undefined, max: number | undefined): Search => {
 	const [low, high] = min !== undefined && max !== undefined && min > max ? [max, min] : [min, max]
 	return range === "duration"
 		? { ...search, durationMin: low, durationMax: high }

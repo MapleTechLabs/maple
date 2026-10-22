@@ -151,7 +151,7 @@ profiles_stacks_hourly_mv → profiles_stacks_hourly (SummingMergeTree, 30d TTL)
 Queries this supports (all in `packages/query-engine/src/ch/queries/profiles.ts`):
 
 - **flameGraph**: `SELECT Frames, sum(Value) FROM … WHERE OrgId, ServiceName, SampleType,
-  window [AND SpanId = ?] GROUP BY Frames` → the client folds the (frames[], value) list into a
+window [AND SpanId = ?] GROUP BY Frames` → the client folds the (frames[], value) list into a
   tree. Wire size is bounded by distinct stacks, not samples; cap at N stacks by value and
   report the tail as an "other" node.
 - **topFunctions**: `arrayJoin(Frames)` for total; `Frames[1]` for self; both `sum(Value)`.
@@ -240,7 +240,7 @@ route; the SDK overview stops saying "traces, logs, and metrics" (nine files say
     - `routes/services/$serviceName.tsx`: `ServiceDetailTab` gains `"profiles"` (tab literal +
       trigger + body) → new `components/services/service-profiles-tab.tsx`.
     - `components/traces/span-detail-panel.tsx`: a `profile` tab next to `details / logs /
-      infrastructure`, hidden when the service has no profiles in range (one cheap `sampleTypes`
+infrastructure`, hidden when the service has no profiles in range (one cheap `sampleTypes`
       call).
     - New `packages/ui/src/components/profiles/flame-graph.tsx`: an **aggregate icicle**, not the
       trace waterfall. It folds `(frames[], value)` rows into a tree, lays out by share, and

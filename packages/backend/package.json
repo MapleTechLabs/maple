@@ -24,8 +24,8 @@
 		"@distilled.cloud/core": "1.0.0-rc.15",
 		"@distilled.cloud/planetscale": "1.0.0-rc.15",
 		"@distilled.cloud/railway": "1.0.0-rc.15",
-		"@maple-dev/effect-clickhouse-http": "workspace:*",
 		"@maple-dev/effect-orm": "0.5.0",
+		"@maple-dev/effect-clickhouse-http": "workspace:*",
 		"@maple/alerting-core": "workspace:*",
 		"@maple/auth": "workspace:*",
 		"@maple/cache": "workspace:*",
@@ -41,9 +41,9 @@
 		"@maple/query-model": "workspace:*",
 		"@maple/safe-fetch": "workspace:*",
 		"@maple/widgets": "workspace:*",
-		"@yielded/agent": "0.1.0-beta.166",
 		"alchemy": "catalog:alchemy",
-		"effect": "catalog:effect"
+		"effect": "catalog:effect",
+		"@yielded/agent": "0.1.0-beta.166"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",

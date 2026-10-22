@@ -443,11 +443,7 @@ const insertConnector = (
 	const orgId = options.orgId ?? "org_gcp"
 	// With its source, as GcpConnectorService.create writes it.
 	return Effect.promise(async () => {
-		const sourceId = await insertTestSource(testDb, {
-			orgId,
-			platform: "gcp",
-			name: `Google Cloud ${scopeId}`,
-		})
+		const sourceId = await insertTestSource(testDb, { orgId, platform: "gcp", name: `Google Cloud ${scopeId}` })
 		await executeSql(
 			testDb,
 			`INSERT INTO gcp_connectors
@@ -775,11 +771,9 @@ describe("GcpMetricsService", () => {
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, CONNECTOR_A)
 				yield* Effect.promise(() =>
-					executeSql(
-						testDb,
-						"UPDATE sources SET paused_at = now() WHERE id = (SELECT source_id FROM gcp_connectors WHERE id = $1)",
-						[CONNECTOR_A],
-					),
+					executeSql(testDb, "UPDATE sources SET paused_at = now() WHERE id = (SELECT source_id FROM gcp_connectors WHERE id = $1)", [
+						CONNECTOR_A,
+					]),
 				)
 				assert.deepInclude(yield* pollAll, { polled: 1, rowsIngested: 0 })
 				assert.deepStrictEqual(

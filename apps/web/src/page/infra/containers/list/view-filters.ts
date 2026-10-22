@@ -21,50 +21,19 @@ type H = HtmlBuilder<Message>
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
 const SECTIONS: ReadonlyArray<
-	Readonly<{
-		title: string
-		facet: Facet
-		options: keyof ContainerFacets
-		isSearchable: boolean
-		defaultOpen: boolean
-	}>
+	Readonly<{ title: string; facet: Facet; options: keyof ContainerFacets; isSearchable: boolean; defaultOpen: boolean }>
 > = [
-	{
-		title: "Container",
-		facet: "containerNames",
-		options: "containers",
-		isSearchable: true,
-		defaultOpen: true,
-	},
+	{ title: "Container", facet: "containerNames", options: "containers", isSearchable: true, defaultOpen: true },
 	{ title: "Image", facet: "images", options: "images", isSearchable: true, defaultOpen: false },
 	{ title: "Host", facet: "hostNames", options: "hosts", isSearchable: true, defaultOpen: false },
-	{
-		title: "Compose project",
-		facet: "composeProjects",
-		options: "composeProjects",
-		isSearchable: false,
-		defaultOpen: false,
-	},
-	{
-		title: "Compose service",
-		facet: "composeServices",
-		options: "composeServices",
-		isSearchable: false,
-		defaultOpen: false,
-	},
-	{
-		title: "Environment",
-		facet: "environments",
-		options: "environments",
-		isSearchable: false,
-		defaultOpen: false,
-	},
+	{ title: "Compose project", facet: "composeProjects", options: "composeProjects", isSearchable: false, defaultOpen: false },
+	{ title: "Compose service", facet: "composeServices", options: "composeServices", isSearchable: false, defaultOpen: false },
+	{ title: "Environment", facet: "environments", options: "environments", isSearchable: false, defaultOpen: false },
 ]
 
 const loadedRail = (h: H, model: Model, facets: ContainerFacets): Html => {
 	const hasFilters = Object.values(filtersOf(model.search)).some((values) => (values?.length ?? 0) > 0)
-	if (!hasFilters && Object.values(facets).every((options) => options.length === 0))
-		return filterSidebarEmpty(h)
+	if (!hasFilters && Object.values(facets).every((options) => options.length === 0)) return filterSidebarEmpty(h)
 	return filterSidebarFrame(h, { isWaiting: AsyncData.isRefreshing(model.facets.data) }, [
 		filterSidebarHeader(h, hasFilters ? { onClear: Message.ClickedClearFilters() } : {}),
 		...filterSidebarBody(

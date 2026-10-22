@@ -79,9 +79,7 @@ export class IntegrationStatuses extends Context.Service<
 			return {
 				cloudflare: inOrg(yield* sharedLoader(internal.integrations.cloudflareStatus())),
 				railway: inOrg(yield* sharedLoader(internal.integrations.railwayStatus())),
-				planetscale: inOrg(
-					yield* sharedLoader<PlanetscaleStatus>(v2.planetscaleIntegration.status()),
-				),
+				planetscale: inOrg(yield* sharedLoader<PlanetscaleStatus>(v2.planetscaleIntegration.status())),
 				gcp: inOrg(yield* sharedLoader<GcpStatus>(v2.gcpIntegration.status())),
 				supabase: inOrg(yield* sharedLoader(internal.integrations.supabaseStatus())),
 				scopeTo: (orgId: string) => Ref.set(openOrg, Option.some(orgId)),

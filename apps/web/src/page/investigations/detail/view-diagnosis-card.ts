@@ -28,9 +28,7 @@ const decodeTraceId = Schema.decodeUnknownOption(TraceId)
 /** A thread's `submit_diagnosis` report in the investigation's shape (trace ids branded, invalid ones dropped). */
 export const reportOfDiagnosis = (report: AiTriageResult): Report => ({
 	...(report.headline === undefined ? undefined : { headline: report.headline }),
-	...(report.severityAssessment === undefined
-		? undefined
-		: { severityAssessment: report.severityAssessment }),
+	...(report.severityAssessment === undefined ? undefined : { severityAssessment: report.severityAssessment }),
 	...(report.ruledOut === undefined ? undefined : { ruledOut: report.ruledOut }),
 	...(report.unchecked === undefined ? undefined : { unchecked: report.unchecked }),
 	summary: report.summary,
@@ -58,8 +56,7 @@ export const reportActions = (report: Report): ReadonlyArray<ActionNodeData> =>
 
 /** The card's own action sheet: the whole action and its evidence, from the card's local choice. */
 const reportSheet = (h: H, model: Model, report: Report, trigger: TipTrigger): Html => {
-	const action =
-		reportActions(report).find((candidate) => candidate.index === model.reportActionIndex) ?? null
+	const action = reportActions(report).find((candidate) => candidate.index === model.reportActionIndex) ?? null
 	const dialogId = model.reportSheet.id
 	return h.submodel({
 		slotId: `${dialogId}-slot`,
@@ -71,8 +68,7 @@ const reportSheet = (h: H, model: Model, report: Report, trigger: TipTrigger): H
 			hasTrigger: false,
 			hasDescription: action !== null,
 			toView: ({ portal }) => portal,
-			toContent: () =>
-				action === null ? [] : actionSheetContent(h, dialogId, action, report, trigger),
+			toContent: () => (action === null ? [] : actionSheetContent(h, dialogId, action, report, trigger)),
 		},
 		toParentMessage: (message) => Message.GotReportSheetMessage({ message }),
 	})
@@ -80,9 +76,7 @@ const reportSheet = (h: H, model: Model, report: Report, trigger: TipTrigger): H
 
 /** `DiagnosisReportCard`: cause, summary, scope, evidence and the recommended actions. */
 export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger: TipTrigger): Html => {
-	const evidence = report.evidence.filter(
-		(item) => item.note || item.traceIds.length > 0 || item.logPatterns.length > 0,
-	)
+	const evidence = report.evidence.filter((item) => item.note || item.traceIds.length > 0 || item.logPatterns.length > 0)
 	const actions = reportActions(report)
 	return card(
 		h,
@@ -97,21 +91,13 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 							eyebrow(h, { variant: "label" }, ["AI Diagnosis"]),
 							h.span([h.Class("text-muted-foreground/40")], ["·"]),
 							h.span(
-								[
-									h.Class(
-										`text-2xs font-medium capitalize ${CONFIDENCE_TONE[report.confidence] ?? ""}`,
-									),
-								],
+								[h.Class(`text-2xs font-medium capitalize ${CONFIDENCE_TONE[report.confidence] ?? ""}`)],
 								[report.confidence, " confidence"],
 							),
 						],
 					),
 					h.h3(
-						[
-							h.Class(
-								"font-display text-lg font-semibold leading-snug tracking-tight text-foreground",
-							),
-						],
+						[h.Class("font-display text-lg font-semibold leading-snug tracking-tight text-foreground")],
 						[report.suspectedCause],
 					),
 					h.p([h.Class("text-sm leading-relaxed text-muted-foreground")], [report.summary]),
@@ -121,11 +107,7 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 				? [
 						h.p(
 							[h.Class("text-xs text-muted-foreground")],
-							[
-								h.span([h.Class("font-medium text-foreground")], ["Scope:"]),
-								" ",
-								report.affectedScope,
-							],
+							[h.span([h.Class("font-medium text-foreground")], ["Scope:"]), " ", report.affectedScope],
 						),
 					]
 				: []),
@@ -138,25 +120,10 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 								eyebrow(h, { variant: "label", as: "h4" }, ["Evidence"]),
 								...evidence.map((item, index) => {
 									const chips = evidenceChips(h, item, "card", trigger)
-									return h.keyed("div")(
-										String(index),
-										[h.Class("space-y-1.5 rounded-md bg-muted/40 p-3")],
-										[
-											...(item.note
-												? [
-														h.p(
-															[
-																h.Class(
-																	"text-sm leading-relaxed text-foreground",
-																),
-															],
-															[item.note],
-														),
-													]
-												: []),
-											...(chips === null ? [] : [chips]),
-										],
-									)
+									return h.keyed("div")(String(index), [h.Class("space-y-1.5 rounded-md bg-muted/40 p-3")], [
+										...(item.note ? [h.p([h.Class("text-sm leading-relaxed text-foreground")], [item.note])] : []),
+										...(chips === null ? [] : [chips]),
+									])
 								}),
 							],
 						),
@@ -168,10 +135,7 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 							[h.Class("space-y-2")],
 							[
 								eyebrow(h, { variant: "label", as: "h4" }, ["Recommended actions"]),
-								h.ol(
-									[h.Class("space-y-1")],
-									actions.map((action) => actionRow(h, action)),
-								),
+								h.ol([h.Class("space-y-1")], actions.map((action) => actionRow(h, action))),
 							],
 						),
 					]),
@@ -209,14 +173,8 @@ const actionRow = (h: H, action: ActionNodeData): Html => {
 						className: "mt-1 shrink-0 text-muted-foreground",
 						attributes: [h.AriaLabel(glyph.label)],
 					}),
-					h.span(
-						[h.Class("min-w-0 flex-1 text-sm leading-relaxed text-foreground")],
-						[action.text],
-					),
-					icon(h, "ChevronRightIcon", {
-						size: 13,
-						className: "mt-1 shrink-0 text-muted-foreground/50",
-					}),
+					h.span([h.Class("min-w-0 flex-1 text-sm leading-relaxed text-foreground")], [action.text]),
+					icon(h, "ChevronRightIcon", { size: 13, className: "mt-1 shrink-0 text-muted-foreground/50" }),
 				],
 			),
 		],

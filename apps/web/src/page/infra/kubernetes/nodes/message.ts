@@ -9,13 +9,7 @@ import { NodeFacets, NodeRows } from "./model"
 export const NodeStatus = Schema.Literals(["active", "idle", "ended"])
 export const Facet = Schema.Literals(["nodeNames", "clusters", "environments"])
 export type Facet = typeof Facet.Type
-export const NodeSortKey = Schema.Literals([
-	"nodeName",
-	"cpuUtilization",
-	"memoryUtilization",
-	"uptime",
-	"lastSeen",
-])
+export const NodeSortKey = Schema.Literals(["nodeName", "cpuUtilization", "memoryUtilization", "uptime", "lastSeen"])
 export type NodeSortKey = typeof NodeSortKey.Type
 
 export const Message = defineMessageUnion({

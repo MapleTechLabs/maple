@@ -10,11 +10,7 @@ const card = (message: HoverCard.Message) => Message.GotCommitCardMessage({ mess
 
 describe("releases commit card", () => {
 	test("a hover arms the lookup, which fetches the commit once", () => {
-		const entered = update(
-			init("releases"),
-			card(HoverCard.Message.EnteredTrigger({ triggerId })),
-			"org_acme",
-		)
+		const entered = update(init("releases"), card(HoverCard.Message.EnteredTrigger({ triggerId })), "org_acme")
 		expect(entered.commands?.map((command) => command.name)).toContain("ArmReleasesCommitLookup")
 		const armed = update(
 			entered.model,
@@ -27,17 +23,9 @@ describe("releases commit card", () => {
 	})
 
 	test("leaving before the arm elapses drops it", () => {
-		const entered = update(
-			init("releases"),
-			card(HoverCard.Message.EnteredTrigger({ triggerId })),
-			"org_acme",
-		)
+		const entered = update(init("releases"), card(HoverCard.Message.EnteredTrigger({ triggerId })), "org_acme")
 		const left = update(entered.model, card(HoverCard.Message.LeftTrigger()), "org_acme")
-		const late = update(
-			left.model,
-			Message.ElapsedCommitArm({ sha: SHA, generation: entered.model.commitArm }),
-			"org_acme",
-		)
+		const late = update(left.model, Message.ElapsedCommitArm({ sha: SHA, generation: entered.model.commitArm }), "org_acme")
 		expect(late.commands ?? []).toEqual([])
 	})
 })

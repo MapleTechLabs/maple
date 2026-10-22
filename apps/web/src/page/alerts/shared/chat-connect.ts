@@ -86,11 +86,7 @@ export const update = (model: Model, message: Message): Step =>
 		FailedStart: ({ attempt, description }) =>
 			Option.isNone(current(model, attempt))
 				? settled(model)
-				: settled(
-						{ ...model, active: null },
-						false,
-						Option.some({ title: "Failed to start the install", description }),
-					),
+				: settled({ ...model, active: null }, false, Option.some({ title: "Failed to start the install", description })),
 		BlockedPopup: ({ attempt }) =>
 			Option.match(current(model, attempt), {
 				onNone: () => settled(model),
@@ -109,8 +105,7 @@ export const update = (model: Model, message: Message): Step =>
 		ClosedPopup: ({ attempt }) =>
 			Option.match(current(model, attempt), {
 				onNone: () => settled(model),
-				onSome: (active) =>
-					settled(patch(model, active, { phase: "grace", isStarting: false }), true),
+				onSome: (active) => settled(patch(model, active, { phase: "grace", isStarting: false }), true),
 			}),
 		EndedGrace: ({ attempt }) =>
 			Option.isNone(current(model, attempt)) ? settled(model) : settled({ ...model, active: null }),
@@ -119,10 +114,7 @@ export const update = (model: Model, message: Message): Step =>
 export type LinkedWorkspace = Readonly<{ connector: ChatConnectorId; id: ChatWorkspaceId; name: string }>
 
 /** The connectors answered: a workspace the attempt did not know about is the new link. */
-export const linkedOf = (
-	model: Model,
-	connectors: ReadonlyArray<V2ChatConnector>,
-): Option.Option<LinkedWorkspace> =>
+export const linkedOf = (model: Model, connectors: ReadonlyArray<V2ChatConnector>): Option.Option<LinkedWorkspace> =>
 	Option.flatMap(Option.fromNullishOr(model.active), (active) =>
 		Option.map(
 			Option.fromNullishOr(

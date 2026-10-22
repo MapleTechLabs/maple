@@ -11,14 +11,7 @@ import * as Frame from "../../kit/frame"
 import { liftFrame, resolveFrame, routeFrame } from "../../kit/frame-step"
 import * as InstallModal from "../../kit/install-modal"
 import { applySteps, keyed, type Step } from "../../kit/requests"
-import {
-	type ContainersInput,
-	DebounceSearch,
-	FetchContainers,
-	FetchFacets,
-	FetchSummary,
-	PAGE_SIZE,
-} from "./command"
+import { type ContainersInput, DebounceSearch, FetchContainers, FetchFacets, FetchSummary, PAGE_SIZE } from "./command"
 import { type ContainerSortKey, type Facet, Message } from "./message"
 import type { Model } from "./model"
 
@@ -74,8 +67,7 @@ const resetKeyOf = (model: Model) =>
 		...sortOf(model.search),
 	})
 
-export const pageIndexOf = (model: Model) =>
-	model.page.resetKey === resetKeyOf(model) ? model.page.index : 0
+export const pageIndexOf = (model: Model) => (model.page.resetKey === resetKeyOf(model) ? model.page.index : 0)
 
 export const containersInput = (model: Model, window: TimeWindow): ContainersInput => ({
 	startTime: window.startTime,
@@ -88,12 +80,7 @@ export const containersInput = (model: Model, window: TimeWindow): ContainersInp
 	offset: pageIndexOf(model) * PAGE_SIZE,
 })
 
-type RequestStep = (
-	model: Model,
-	context: PageContext,
-	window: TimeWindow,
-	mode: Frame.RequestMode,
-) => Step<Model, Message>
+type RequestStep = (model: Model, context: PageContext, window: TimeWindow, mode: Frame.RequestMode) => Step<Model, Message>
 
 const containersStep: RequestStep = (model, context, window, mode) => {
 	const input = containersInput(model, window)
@@ -192,26 +179,17 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	}
 }
 
-export const routeChanged = (
-	model: Model,
-	route: { readonly search: Search },
-	context: PageContext,
-): Return => {
+export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	const href = (search: Search) => hrefOf(AppRoute.InfraContainers({ search }))
 	if (href(model.search) === href(route.search)) return { model }
 	const next = { ...model, search: route.search }
 	const debounce =
-		(model.search.q ?? "") === (route.search.q ?? "")
-			? []
-			: [DebounceSearch({ query: route.search.q ?? "" })]
-	const requested = routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) =>
-		requestAll(moved, context, mode),
-	)
+		(model.search.q ?? "") === (route.search.q ?? "") ? [] : [DebounceSearch({ query: route.search.q ?? "" })]
+	const requested = routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
 	return { ...requested, commands: [...(requested.commands ?? []), ...debounce] }
 }
 
-export const contextChanged = (model: Model, context: PageContext): Return =>
-	requestAll(model, context, "Load")
+export const contextChanged = (model: Model, context: PageContext): Return => requestAll(model, context, "Load")
 
 const retry = (model: Model, context: PageContext, step: RequestStep): Return =>
 	model.frame.window === null
@@ -233,37 +211,25 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			query !== (model.search.q ?? "") || query === model.debouncedQuery
 				? { model }
 				: requestAll({ ...model, debouncedQuery: query }, context, "Load"),
-		ChangedQuery: ({ value }) =>
-			navigate(model, { ...model.search, q: value === "" ? undefined : value }),
+		ChangedQuery: ({ value }) => navigate(model, { ...model.search, q: value === "" ? undefined : value }),
 		ChangedScope: ({ scope }) => navigate(model, { ...model.search, scope }),
 		// A header cycles desc and asc on its key; a new key starts where the interesting rows are.
 		ClickedSort: ({ key }) => {
 			const { sortBy, sortDir } = sortOf(model.search)
 			return key === sortBy
 				? navigate(model, { ...model.search, sortDir: sortDir === "desc" ? "asc" : "desc" })
-				: navigate(model, {
-						...model.search,
-						sortBy: key,
-						sortDir: key === "containerName" ? "asc" : "desc",
-					})
+				: navigate(model, { ...model.search, sortBy: key, sortDir: key === "containerName" ? "asc" : "desc" })
 		},
 		ToggledFacetOption: ({ facet, name }) =>
 			navigate(model, withFacet(model.search, facet, toggledValue(listsOf(model.search, facet), name))),
-		ClickedOnlyFacetOption: ({ facet, name }) =>
-			navigate(model, withFacet(model.search, facet, onlyValue(name))),
+		ClickedOnlyFacetOption: ({ facet, name }) => navigate(model, withFacet(model.search, facet, onlyValue(name))),
 		ClickedExcludeFacetOption: ({ facet, name }) =>
-			navigate(
-				model,
-				withFacet(model.search, facet, excludedValue(listsOf(model.search, facet), name)),
-			),
+			navigate(model, withFacet(model.search, facet, excludedValue(listsOf(model.search, facet), name))),
 		ClickedClearFilters: () => navigate(model, windowOnly(model.search)),
 		RemovedFilterChip: ({ param }) => navigate(model, { ...model.search, [param]: undefined }),
 		ClickedPage: ({ direction }) =>
 			requestAll(
-				{
-					...model,
-					page: { resetKey: resetKeyOf(model), index: Math.max(0, pageIndexOf(model) + direction) },
-				},
+				{ ...model, page: { resetKey: resetKeyOf(model), index: Math.max(0, pageIndexOf(model) + direction) } },
 				context,
 				"Load",
 			),
@@ -272,9 +238,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = FilterSections.update(model.filterSections, inner)
 			return {
 				model: { ...model, filterSections: next.model },
-				commands: Command.mapMessages(next.commands, (m) =>
-					Message.GotFilterSectionsMessage({ message: m }),
-				),
+				commands: Command.mapMessages(next.commands, (m) => Message.GotFilterSectionsMessage({ message: m })),
 			}
 		},
 		GotFrameMessage: ({ message: inner }) =>
@@ -282,6 +246,5 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onResolved: (next, mode) => requestAll(next, context, mode),
 				onTimeSearch: (next, search) => navigate(next, { ...next.search, ...search }),
 			}),
-		GotInstallMessage: ({ message: inner }) =>
-			liftInstall(model, InstallModal.update(model.install, inner)),
+		GotInstallMessage: ({ message: inner }) => liftInstall(model, InstallModal.update(model.install, inner)),
 	})

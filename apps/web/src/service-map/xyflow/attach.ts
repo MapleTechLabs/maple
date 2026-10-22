@@ -153,11 +153,7 @@ export const DEFAULT_GESTURES: FlowGestures = {
 /** The zoom limits and gestures, live props on `<ReactFlow>`: the renderer carries them as JSON. */
 export const LIMITS_ATTRIBUTE = "data-flow-limits"
 
-export const FlowLimits = Schema.Struct({
-	minZoom: Schema.Number,
-	maxZoom: Schema.Number,
-	gestures: FlowGestures,
-})
+export const FlowLimits = Schema.Struct({ minZoom: Schema.Number, maxZoom: Schema.Number, gestures: FlowGestures })
 export type FlowLimits = typeof FlowLimits.Type
 
 const FlowLimitsJson = Schema.fromJsonString(FlowLimits)
@@ -165,11 +161,7 @@ const FlowLimitsJson = Schema.fromJsonString(FlowLimits)
 export const limitsAttribute = (limits: FlowLimits): string => Schema.encodeSync(FlowLimitsJson)(limits)
 
 /** Applies the renderer's limits when they differ from the last applied value; returns the applied value. */
-export const followLimits = (
-	raw: string | null,
-	applied: string,
-	apply: (limits: FlowLimits) => void,
-): string =>
+export const followLimits = (raw: string | null, applied: string, apply: (limits: FlowLimits) => void): string =>
 	raw === null || raw === applied
 		? applied
 		: Option.match(Schema.decodeUnknownOption(FlowLimitsJson)(raw), {
@@ -203,26 +195,25 @@ const attachPanZoom = (
 		onDraggingChange: () => {},
 		onPanZoomEnd: () => emit(Message.EndedViewportMove()),
 	})
-	const updateGestures = (gestures: FlowGestures) =>
-		panZoom.update({
-			noWheelClassName: "nowheel",
-			noPanClassName: "nopan",
-			preventScrolling: gestures.preventScrolling,
-			panOnScroll: gestures.panOnScroll,
-			panOnDrag: true,
-			panOnScrollMode: system.PanOnScrollMode.Free,
-			panOnScrollSpeed: 0.5,
-			userSelectionActive: false,
-			zoomOnPinch: true,
-			zoomOnScroll: gestures.zoomOnScroll,
-			zoomOnDoubleClick: gestures.zoomOnDoubleClick,
-			zoomActivationKeyPressed: false,
-			lib: "react",
-			connectionInProgress: false,
-			paneClickDistance: 1,
-			selectionOnDrag: false,
-			onTransformChange: ([x, y, zoom]) => emit(Message.ChangedViewport({ viewport: { x, y, zoom } })),
-		})
+	const updateGestures = (gestures: FlowGestures) => panZoom.update({
+		noWheelClassName: "nowheel",
+		noPanClassName: "nopan",
+		preventScrolling: gestures.preventScrolling,
+		panOnScroll: gestures.panOnScroll,
+		panOnDrag: true,
+		panOnScrollMode: system.PanOnScrollMode.Free,
+		panOnScrollSpeed: 0.5,
+		userSelectionActive: false,
+		zoomOnPinch: true,
+		zoomOnScroll: gestures.zoomOnScroll,
+		zoomOnDoubleClick: gestures.zoomOnDoubleClick,
+		zoomActivationKeyPressed: false,
+		lib: "react",
+		connectionInProgress: false,
+		paneClickDistance: 1,
+		selectionOnDrag: false,
+		onTransformChange: ([x, y, zoom]) => emit(Message.ChangedViewport({ viewport: { x, y, zoom } })),
+	})
 	updateGestures(limits.gestures)
 	// React Flow re-applies these props on every change; follow the renderer's attribute.
 	const applied = { value: limitsAttribute(limits) }

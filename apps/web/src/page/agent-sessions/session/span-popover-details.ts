@@ -1,13 +1,5 @@
 import type { AiSessionSpan } from "@maple/domain/http"
-import {
-	classifyAiSpan,
-	formatCost,
-	payload,
-	spanCost,
-	spanFailed,
-	type SpanToolCall,
-	spanTtftMs,
-} from "@maple/agent-sessions"
+import { classifyAiSpan, formatCost, payload, spanCost, spanFailed, type SpanToolCall, spanTtftMs } from "@maple/agent-sessions"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
@@ -55,13 +47,7 @@ const toolCallCard = (
 					h.span([h.Class("shrink-0 font-medium font-mono text-chart-4 text-xs")], ["tool"]),
 					...(call.name === undefined
 						? []
-						: [
-								truncatedText(h, {
-									text: call.name,
-									mono: true,
-									className: "text-foreground text-xs",
-								}),
-							]),
+						: [truncatedText(h, { text: call.name, mono: true, className: "text-foreground text-xs" })]),
 					...(call.id === undefined
 						? []
 						: [
@@ -75,16 +61,7 @@ const toolCallCard = (
 			),
 			...(call.description === undefined
 				? []
-				: [
-						h.p(
-							[
-								h.Class(
-									"border-border/60 border-t px-2.5 py-1.5 text-muted-foreground text-xs",
-								),
-							],
-							[call.description],
-						),
-					]),
+				: [h.p([h.Class("border-border/60 border-t px-2.5 py-1.5 text-muted-foreground text-xs")], [call.description])]),
 			...toolIo(h, model, {
 				args: payload(call.argumentsText),
 				result: payload(call.resultText),
@@ -101,14 +78,9 @@ const failureBanner = <M>(b: HtmlBuilder<M>, span: AiSessionSpan): Html => {
 	const errorType = span.genAi.errorType
 	const responseStatus = span.genAi.responseStatus
 	const hasErrorType = errorType !== undefined && errorType !== ""
-	const pill = (text: string) =>
-		badge(b, { pill: true, size: "xs", mono: true, className: TONE_SOFT.crit }, [text])
+	const pill = (text: string) => badge(b, { pill: true, size: "xs", mono: true, className: TONE_SOFT.crit }, [text])
 	return b.div(
-		[
-			b.Class(
-				"flex flex-col gap-1.5 rounded-md border border-severity-error/40 bg-severity-error/5 px-3 py-2.5",
-			),
-		],
+		[b.Class("flex flex-col gap-1.5 rounded-md border border-severity-error/40 bg-severity-error/5 px-3 py-2.5")],
 		[
 			b.div(
 				[b.Class("flex flex-wrap items-center gap-2")],
@@ -124,9 +96,7 @@ const failureBanner = <M>(b: HtmlBuilder<M>, span: AiSessionSpan): Html => {
 			),
 			b.p(
 				[b.Class("text-muted-foreground text-xs leading-relaxed")],
-				[
-					"The pills here are the attributes the failure was read from; the span carries no status message.",
-				],
+				["The pills here are the attributes the failure was read from; the span carries no status message."],
 			),
 		],
 	)
@@ -160,10 +130,7 @@ const identityRows = (p: P, state: PanelState, span: AiSessionSpan, timeZone: st
 		["Started", formatTimestampInTimezone(span.timestamp, { timeZone, withMilliseconds: true })],
 		["Duration", formatDuration(span.durationMs)],
 		["Time to first token", ttftMs === undefined ? undefined : formatDuration(ttftMs)],
-		[
-			"Status",
-			span.statusMessage === "" ? span.statusCode : `${span.statusCode} · ${span.statusMessage}`,
-		],
+		["Status", span.statusMessage === "" ? span.statusCode : `${span.statusCode} · ${span.statusMessage}`],
 		["Kind", span.spanKind],
 		["Service", span.serviceName],
 		["Span ID", span.spanId],
@@ -178,20 +145,17 @@ const identityRows = (p: P, state: PanelState, span: AiSessionSpan, timeZone: st
 				? []
 				: [
 						keyValue(p, { label, mono: true }, [
-							copyableValue(
-								p,
-								state,
-								{ id: `identity:${label}`, value, className: "min-w-0" },
-								[p.span([p.Class("block truncate")], [value])],
-							),
+							copyableValue(p, state, { id: `identity:${label}`, value, className: "min-w-0" }, [
+								p.span([p.Class("block truncate")], [value]),
+							]),
 						]),
 					],
 		),
 	)
 }
 
-const identityView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>(
-	(state, { span, timeZone }, p) => identityRows(p, state, span, timeZone),
+const identityView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>((state, { span, timeZone }, p) =>
+	identityRows(p, state, span, timeZone),
 )
 
 /** The span attributes once the lazy `spanDetail` read lands; its skeleton and failure meanwhile. */
@@ -200,31 +164,23 @@ const spanAttributesView = Submodel.defineView<PanelState, PanelMessage, PanelIn
 		onEmpty: () =>
 			p.div(
 				[p.Class("flex flex-col gap-2")],
-				[
-					skeleton(p, "h-4 w-32"),
-					skeleton(p, "h-24 w-full"),
-					skeleton(p, "h-4 w-32"),
-					skeleton(p, "h-24 w-full"),
-				],
+				[skeleton(p, "h-4 w-32"), skeleton(p, "h-24 w-full"), skeleton(p, "h-4 w-32"), skeleton(p, "h-24 w-full")],
 			),
 		onFailure: () => emptyMessage(p, {}, ["Failed to load this span's full attributes."]),
 		onData: (detail) =>
-			attributesSection(p, state, "span", detail.spanAttributes, "Span attributes", {
-				isFilterable: false,
-			}),
+			attributesSection(p, state, "span", detail.spanAttributes, "Span attributes", { isFilterable: false }),
 	}),
 )
 
-const resourceAttributesView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>(
-	(state, _inputs, p) =>
-		AsyncData.matchData(state.detail.data, {
-			onEmpty: () => p.empty,
-			onFailure: () => p.empty,
-			onData: (detail) =>
-				attributesSection(p, state, "resource", detail.resourceAttributes, "Resource attributes", {
-					isFilterable: false,
-				}),
-		}),
+const resourceAttributesView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>((state, _inputs, p) =>
+	AsyncData.matchData(state.detail.data, {
+		onEmpty: () => p.empty,
+		onFailure: () => p.empty,
+		onData: (detail) =>
+			attributesSection(p, state, "resource", detail.resourceAttributes, "Resource attributes", {
+				isFilterable: false,
+			}),
+	}),
 )
 
 /** `LogsSection`: the trace panel's span logs, read once the tab is open. */
@@ -233,66 +189,49 @@ const logsView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>((sta
 )
 
 /** The call's own settings and identity, shown only where the span reported them. */
-const metaStripView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>(
-	(state, { span, timeZone }, p) => {
-		const ttftMs = spanTtftMs(span)
-		const cost = spanCost(span)
-		const pairs: ReadonlyArray<readonly [string, Html | string | number | undefined]> = [
-			["provider", span.genAi.providerName],
-			["started", formatTimestampInTimezone(span.timestamp, { timeZone, withMilliseconds: true })],
-			["ttft", ttftMs === undefined ? undefined : formatDuration(ttftMs)],
-			[
-				"max_tokens",
-				span.genAi.requestMaxTokens === undefined
-					? undefined
-					: formatNumber(span.genAi.requestMaxTokens),
-			],
-			["temperature", span.genAi.requestTemperature],
-			["cost", cost === undefined ? undefined : p.span([p.Class("text-primary")], [formatCost(cost)])],
-		]
-		return p.div(
-			[p.Class("flex flex-wrap items-baseline gap-x-4 gap-y-1 py-2.5")],
-			[
-				...pairs.flatMap(([label, value]) =>
-					value === undefined
-						? []
-						: [
-								p.span(
-									[p.Class("flex items-baseline gap-1.5")],
-									[
-										p.span([p.Class("text-2xs text-muted-foreground")], [label]),
-										p.span(
-											[p.Class("font-mono text-foreground text-xs")],
-											[typeof value === "number" ? String(value) : value],
-										),
-									],
-								),
-							],
-				),
-				p.span(
-					[
-						p.Class(
-							"ml-auto flex items-baseline gap-1.5 font-mono text-2xs text-muted-foreground/70",
-						),
-					],
-					[
-						copyableValue(p, state, { id: "meta:span", value: span.spanId, label: "Span ID" }, [
-							"span ",
-							span.spanId,
-						]),
-						p.span([p.AriaHidden(true)], ["·"]),
-						copyableValue(
-							p,
-							state,
-							{ id: "meta:trace", value: span.traceId, label: "Trace ID" },
-							["trace ", shortId(span.traceId, "trace"), "…", span.traceId.slice(-4)],
-						),
-					],
-				),
-			],
-		)
-	},
-)
+const metaStripView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>((state, { span, timeZone }, p) => {
+	const ttftMs = spanTtftMs(span)
+	const cost = spanCost(span)
+	const pairs: ReadonlyArray<readonly [string, Html | string | number | undefined]> = [
+		["provider", span.genAi.providerName],
+		["started", formatTimestampInTimezone(span.timestamp, { timeZone, withMilliseconds: true })],
+		["ttft", ttftMs === undefined ? undefined : formatDuration(ttftMs)],
+		["max_tokens", span.genAi.requestMaxTokens === undefined ? undefined : formatNumber(span.genAi.requestMaxTokens)],
+		["temperature", span.genAi.requestTemperature],
+		["cost", cost === undefined ? undefined : p.span([p.Class("text-primary")], [formatCost(cost)])],
+	]
+	return p.div(
+		[p.Class("flex flex-wrap items-baseline gap-x-4 gap-y-1 py-2.5")],
+		[
+			...pairs.flatMap(([label, value]) =>
+				value === undefined
+					? []
+					: [
+							p.span(
+								[p.Class("flex items-baseline gap-1.5")],
+								[
+									p.span([p.Class("text-2xs text-muted-foreground")], [label]),
+									p.span([p.Class("font-mono text-foreground text-xs")], [typeof value === "number" ? String(value) : value]),
+								],
+							),
+						],
+			),
+			p.span(
+				[p.Class("ml-auto flex items-baseline gap-1.5 font-mono text-2xs text-muted-foreground/70")],
+				[
+					copyableValue(p, state, { id: "meta:span", value: span.spanId, label: "Span ID" }, ["span ", span.spanId]),
+					p.span([p.AriaHidden(true)], ["·"]),
+					copyableValue(p, state, { id: "meta:trace", value: span.traceId, label: "Trace ID" }, [
+						"trace ",
+						shortId(span.traceId, "trace"),
+						"…",
+						span.traceId.slice(-4),
+					]),
+				],
+			),
+		],
+	)
+})
 
 export const metaStrip = (h: H, model: Model, span: AiSessionSpan, timeZone: string): Html =>
 	panelPart(h, model, "meta", metaStripView, { span, timeZone })
@@ -326,9 +265,7 @@ export const detailsSection = (
 	const inputs = { span, timeZone: options.timeZone }
 	const isFailed = spanFailed(span)
 	const failedToolResult =
-		isFailed && classifyAiSpan(span) === "tool"
-			? toolCalls.find((call) => call.own)?.resultText
-			: undefined
+		isFailed && classifyAiSpan(span) === "tool" ? toolCalls.find((call) => call.own)?.resultText : undefined
 	return h.div(
 		[h.Class("flex flex-col gap-3 pb-1")],
 		[

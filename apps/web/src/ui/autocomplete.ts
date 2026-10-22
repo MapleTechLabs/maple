@@ -79,8 +79,7 @@ export const autocompleteField = <M>(
 						),
 					]
 				: []),
-			...((options.hasDismissButton ?? options.isInline !== true) &&
-			isMounted(model.isOpen, model.animation)
+			...((options.hasDismissButton ?? options.isInline !== true) && isMounted(model.isOpen, model.animation)
 				? [dismissButton(h)]
 				: []),
 			h.span(
@@ -124,9 +123,7 @@ export const autocompleteField = <M>(
 							[
 								h.Type("button"),
 								h.AriaLabel("Clear"),
-								h.Class(
-									cn(A.autocompleteInputClearStyles, A.autocompleteInputClearDefaultStyles),
-								),
+								h.Class(cn(A.autocompleteInputClearStyles, A.autocompleteInputClearDefaultStyles)),
 								h.DataAttribute("slot", "autocomplete-clear"),
 								h.OnClick(options.onClear),
 							],

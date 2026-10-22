@@ -19,8 +19,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 const run = (model: Model, messages: ReadonlyArray<Message>) =>
 	messages.reduce((current, message) => pageUpdate(current, message).model, model)
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
 
 const board: ListDashboard = {
 	id: "dash_platform",
@@ -43,13 +42,11 @@ const waiting = (): Model =>
 
 const timedOut = () => pageUpdate(waiting(), Message.TimedOutLiveDashboards({ orgId }))
 const degraded = () =>
-	pageUpdate(timedOut().model, Message.CompletedFetchFallback({ orgId, result: Result.succeed([board]) }))
-		.model
+	pageUpdate(timedOut().model, Message.CompletedFetchFallback({ orgId, result: Result.succeed([board]) })).model
 
 describe("dashboards list when live sync is down", () => {
 	test("a live list still loading arms the watchdog; a timeout reads the snapshot and reconnects", () => {
-		const watched = (model: Model) =>
-			subscriptions.loadWatchdog.modelToDependencies({ model, context }).orgId
+		const watched = (model: Model) => subscriptions.loadWatchdog.modelToDependencies({ model, context }).orgId
 		expect(watched(waiting())).toBe(orgId)
 		expect(names(timedOut().commands)).toEqual([FetchDashboardsFallback.name])
 		expect(timedOut().outMessage).toEqual(PageOutMessage.RequestedReconnectOrgCollections())
@@ -73,10 +70,7 @@ describe("dashboards list when live sync is down", () => {
 	})
 
 	test("neither live nor snapshot shows the load error with a retry", () => {
-		const failed = pageUpdate(
-			timedOut().model,
-			Message.CompletedFetchFallback({ orgId, result: Result.fail("down") }),
-		).model
+		const failed = pageUpdate(timedOut().model, Message.CompletedFetchFallback({ orgId, result: Result.fail("down") })).model
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),
@@ -89,11 +83,7 @@ describe("dashboards list when live sync is down", () => {
 	})
 
 	test("a read-only row menu disables its writes and says why", () => {
-		const open = {
-			...degraded(),
-			rowMenuId: board.id,
-			rowMenu: Menu.init(rowMenuIdOf(board.id), { isOpen: true }),
-		}
+		const open = { ...degraded(), rowMenuId: board.id, rowMenu: Menu.init(rowMenuIdOf(board.id), { isOpen: true }) }
 		scene(
 			{ update: pageUpdate, view },
 			given(open),
@@ -105,37 +95,26 @@ describe("dashboards list when live sync is down", () => {
 })
 
 describe("dashboards list write feedback", () => {
-	const listed = () =>
-		pageUpdate(waiting(), Message.UpdatedDashboards({ orgId, dashboards: [board] })).model
+	const listed = () => pageUpdate(waiting(), Message.UpdatedDashboards({ orgId, dashboards: [board] })).model
 
 	test("a failed create toasts as well as raising the banner", () => {
 		const creating = pageUpdate(listed(), Message.ClickedCreate())
 		expect(names(creating.commands)).toEqual([CreateDashboard.name])
-		const failed = pageUpdate(
-			creating.model,
-			Message.CompletedCreateDashboard({ result: Result.fail("Failed to create dashboard") }),
-		)
+		const failed = pageUpdate(creating.model, Message.CompletedCreateDashboard({ result: Result.fail("Failed to create dashboard") }))
 		expect(failed.model.persistenceError).toBe("Failed to create dashboard")
 		expect(failed.outMessage?._tag).toBe("RequestedToast")
 	})
 
 	test("a delete whose sync-back timed out says the tab is behind", () => {
-		const behind = pageUpdate(
-			listed(),
-			Message.CompletedDeleteDashboard({ result: Result.succeed("Behind") }),
-		)
-		expect(behind.outMessage?._tag === "RequestedToast" && behind.outMessage.title).toBe(
-			"Saved, but this tab is behind",
-		)
+		const behind = pageUpdate(listed(), Message.CompletedDeleteDashboard({ result: Result.succeed("Behind") }))
+		expect(behind.outMessage?._tag === "RequestedToast" && behind.outMessage.title).toBe("Saved, but this tab is behind")
 	})
 
 	test("a Perses import with warnings follows the success toast with the first three", () => {
 		const warnings = ["a", "b", "c", "d"]
 		const imported = pageUpdate(
 			listed(),
-			Message.CompletedImportDashboard({
-				result: Result.succeed({ id: "dash_new", name: "Perses", isPerses: true, warnings }),
-			}),
+			Message.CompletedImportDashboard({ result: Result.succeed({ id: "dash_new", name: "Perses", isPerses: true, warnings }) }),
 		)
 		const out = imported.outMessage
 		expect(out?._tag === "RequestedNavigation" && out.followUpToast).toEqual({

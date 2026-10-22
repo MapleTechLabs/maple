@@ -25,22 +25,12 @@ export type SettingsSectionOptions = Readonly<{
 	anchorId?: string
 }>
 
-export const settingsSection = <M>(
-	h: HtmlBuilder<M>,
-	options: SettingsSectionOptions,
-	children: Children,
-): Html =>
+export const settingsSection = <M>(h: HtmlBuilder<M>, options: SettingsSectionOptions, children: Children): Html =>
 	h.section(
 		[
 			...(options.anchorId === undefined ? [] : [h.Id(options.anchorId)]),
 			h.AriaLabelledBy(options.id),
-			h.Class(
-				cn(
-					"flex scroll-mt-6 flex-col gap-3",
-					widthClass(options.width ?? "standard"),
-					options.className,
-				),
-			),
+			h.Class(cn("flex scroll-mt-6 flex-col gap-3", widthClass(options.width ?? "standard"), options.className)),
 		],
 		[
 			h.div(
@@ -52,9 +42,7 @@ export const settingsSection = <M>(
 						: [h.p([h.Class("text-sm text-muted-foreground")], options.description)]),
 				],
 			),
-			...((options.framed ?? true)
-				? [panel(h, { padded: options.padded ?? true }, children)]
-				: children),
+			...((options.framed ?? true) ? [panel(h, { padded: options.padded ?? true }, children)] : children),
 			...(options.footer === undefined ? [] : [options.footer]),
 		],
 	)

@@ -63,25 +63,16 @@ function toPart({ text, reasoning, toolRequest, toolResponse }: Part) {
 	if (text !== undefined) return { type: "text", content: text }
 	if (reasoning !== undefined) return { type: "reasoning", content: reasoning }
 	if (toolRequest) {
-		return {
-			type: "tool_call",
-			id: toolRequest.ref,
-			name: toolRequest.name,
-			arguments: toolRequest.input,
-		}
+		return { type: "tool_call", id: toolRequest.ref, name: toolRequest.name, arguments: toolRequest.input }
 	}
-	if (toolResponse)
-		return { type: "tool_call_response", id: toolResponse.ref, response: toolResponse.output }
+	if (toolResponse) return { type: "tool_call_response", id: toolResponse.ref, response: toolResponse.output }
 	return undefined
 }
 
 const toParts = (content: Part[]) => content.map(toPart).filter((part) => part !== undefined)
 
 function toMessages(messages: Message[]) {
-	return messages.map((m) => ({
-		role: m.role === "model" ? "assistant" : m.role,
-		parts: toParts(m.content),
-	}))
+	return messages.map((m) => ({ role: m.role === "model" ? "assistant" : m.role, parts: toParts(m.content) }))
 }
 
 /** Adds the gen_ai.* attributes Maple reads to Genkit's flow, model and tool spans. */
@@ -104,8 +95,7 @@ export class GenkitForMaple implements SpanProcessor {
 					"gen_ai.agent.name": name,
 				})
 				// Set in your flow, or by Genkit for defineAgent() chats
-				const conversationId =
-					attrs["genkit:metadata:conversationId"] ?? attrs["genkit:metadata:agent:sessionId"]
+				const conversationId = attrs["genkit:metadata:conversationId"] ?? attrs["genkit:metadata:agent:sessionId"]
 				if (conversationId !== undefined) attrs["gen_ai.conversation.id"] = conversationId
 				break
 			}
@@ -119,24 +109,17 @@ export class GenkitForMaple implements SpanProcessor {
 					"gen_ai.operation.name": "chat",
 					"gen_ai.provider.name": provider,
 					"gen_ai.request.model": model.join("/") || name,
-					"gen_ai.input.messages": JSON.stringify(
-						toMessages(messages.filter((m) => m.role !== "system")),
-					),
+					"gen_ai.input.messages": JSON.stringify(toMessages(messages.filter((m) => m.role !== "system"))),
 				})
 				if (system.length > 0) attrs["gen_ai.system_instructions"] = JSON.stringify(system)
 				if (output?.message) {
 					attrs["gen_ai.output.messages"] = JSON.stringify(
-						toMessages([output.message]).map((m) => ({
-							...m,
-							finish_reason: output.finishReason,
-						})),
+						toMessages([output.message]).map((m) => ({ ...m, finish_reason: output.finishReason })),
 					)
 				}
 				if (output?.finishReason) attrs["gen_ai.response.finish_reasons"] = [output.finishReason]
-				if (output?.usage?.inputTokens !== undefined)
-					attrs["gen_ai.usage.input_tokens"] = output.usage.inputTokens
-				if (output?.usage?.outputTokens !== undefined)
-					attrs["gen_ai.usage.output_tokens"] = output.usage.outputTokens
+				if (output?.usage?.inputTokens !== undefined) attrs["gen_ai.usage.input_tokens"] = output.usage.inputTokens
+				if (output?.usage?.outputTokens !== undefined) attrs["gen_ai.usage.output_tokens"] = output.usage.outputTokens
 				break
 			}
 			case "tool": {
@@ -147,8 +130,7 @@ export class GenkitForMaple implements SpanProcessor {
 				})
 				const result = json("genkit:output")
 				if (result !== undefined) {
-					attrs["gen_ai.tool.call.result"] =
-						typeof result === "string" ? result : JSON.stringify(result)
+					attrs["gen_ai.tool.call.result"] = typeof result === "string" ? result : JSON.stringify(result)
 				}
 				break
 			}
@@ -209,19 +191,11 @@ const ai = genkit({ plugins: [/* your model plugin */], model: "googleai/gemini-
 const histories = new Map<string, MessageData[]>()
 
 export const supportChat = ai.defineFlow(
-	{
-		name: "supportChat",
-		inputSchema: z.object({ chatId: z.string(), text: z.string() }),
-		outputSchema: z.string(),
-	},
+	{ name: "supportChat", inputSchema: z.object({ chatId: z.string(), text: z.string() }), outputSchema: z.string() },
 	async ({ chatId, text }) => {
 		setCustomMetadataAttribute("conversationId", chatId)
 
-		const response = await ai.generate({
-			messages: histories.get(chatId) ?? [],
-			prompt: text,
-			tools: [getWeather],
-		})
+		const response = await ai.generate({ messages: histories.get(chatId) ?? [], prompt: text, tools: [getWeather] })
 		histories.set(chatId, response.messages)
 		return response.text
 	},

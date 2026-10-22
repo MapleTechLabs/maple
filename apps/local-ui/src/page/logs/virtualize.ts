@@ -14,10 +14,7 @@ export const virtualWindow = (count: number, viewport: Viewport): ReadonlyArray<
 	if (count === 0 || viewport.height <= 0) return []
 	const lastIndex = count - 1
 	const start = Math.min(lastIndex, Math.floor(viewport.scrollTop / ROW_HEIGHT))
-	const end = Math.min(
-		lastIndex,
-		Math.max(start, Math.ceil((viewport.scrollTop + viewport.height) / ROW_HEIGHT) - 1),
-	)
+	const end = Math.min(lastIndex, Math.max(start, Math.ceil((viewport.scrollTop + viewport.height) / ROW_HEIGHT) - 1))
 	const from = Math.max(start - OVERSCAN, 0)
 	const to = Math.min(end + OVERSCAN, lastIndex)
 	return Array.from({ length: to - from + 1 }, (_, offset) => from + offset)
@@ -30,10 +27,7 @@ export const reachesEnd = (count: number, viewport: Viewport): boolean => {
 	return last !== undefined && last >= count - 1
 }
 
-const viewportOf = (element: HTMLElement): Viewport => ({
-	scrollTop: element.scrollTop,
-	height: element.offsetHeight,
-})
+const viewportOf = (element: HTMLElement): Viewport => ({ scrollTop: element.scrollTop, height: element.offsetHeight })
 
 /** `observeElementRect` and `observeElementOffset` on the stream's scroller. */
 export const ObserveLogsViewport = Mount.defineStream("ObserveLogsViewport", {
@@ -43,8 +37,7 @@ export const ObserveLogsViewport = Mount.defineStream("ObserveLogsViewport", {
 			Effect.acquireRelease(
 				Effect.sync(() => {
 					if (!(element instanceof HTMLElement)) return () => undefined
-					const emit = () =>
-						Queue.offerUnsafe(queue, Message.ChangedViewport({ viewport: viewportOf(element) }))
+					const emit = () => Queue.offerUnsafe(queue, Message.ChangedViewport({ viewport: viewportOf(element) }))
 					const resize = new ResizeObserver(emit)
 					resize.observe(element)
 					element.addEventListener("scroll", emit, { passive: true })

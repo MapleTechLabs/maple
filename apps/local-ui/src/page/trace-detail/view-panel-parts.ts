@@ -33,28 +33,17 @@ const summary = (h: H, model: Model): Html => {
 				[h.Class("flex items-center gap-1.5")],
 				[
 					icon(h, "ClockIcon", { size: 12, className: "text-muted-foreground" }),
-					h.span(
-						[h.Class("font-mono")],
-						[copyableValue(h, model, { id: "duration", value: duration }, [duration])],
-					),
+					h.span([h.Class("font-mono")], [copyableValue(h, model, { id: "duration", value: duration }, [duration])]),
 				],
 			),
-			badge(
-				h,
-				{ variant: "outline", size: "xs", className: getSpanStatusBadgeClass(span.statusCode) },
-				[span.statusCode || "Unset"],
-			),
+			badge(h, { variant: "outline", size: "xs", className: getSpanStatusBadgeClass(span.statusCode) }, [
+				span.statusCode || "Unset",
+			]),
 			...(cacheInfo?.result
 				? [
-						badge(
-							h,
-							{
-								variant: "outline",
-								size: "xs",
-								className: cacheResultStyles[cacheInfo.result],
-							},
-							[cacheInfo.result === "hit" ? "HIT" : "MISS"],
-						),
+						badge(h, { variant: "outline", size: "xs", className: cacheResultStyles[cacheInfo.result] }, [
+							cacheInfo.result === "hit" ? "HIT" : "MISS",
+						]),
 					]
 				: []),
 		],
@@ -73,11 +62,7 @@ export const summaryView = Submodel.defineView<Model, Message, SummaryInputs>((m
 				? [
 						errorSection(h, model, {
 							message: model.span.statusMessage,
-							prompt: {
-								serviceName: model.span.serviceName,
-								operation: model.span.spanName,
-								attributes: inputs.attributes,
-							},
+							prompt: { serviceName: model.span.serviceName, operation: model.span.spanName, attributes: inputs.attributes },
 						}),
 					]
 				: []),
@@ -101,11 +86,7 @@ const positionBar = (h: H, model: Model, color: string): Html | null => {
 					h.div(
 						[
 							h.Class("absolute inset-y-0 rounded-full"),
-							h.Style({
-								left: `${offsetPct}%`,
-								width: `${widthPct}%`,
-								"background-color": color,
-							}),
+							h.Style({ left: `${offsetPct}%`, width: `${widthPct}%`, "background-color": color }),
 						],
 						[],
 					),
@@ -116,10 +97,7 @@ const positionBar = (h: H, model: Model, color: string): Html | null => {
 				[
 					offsetMs < 0
 						? h.span(
-								[
-									h.Class("text-severity-warn"),
-									h.Title("Starts before the trace root: the clocks disagree"),
-								],
+								[h.Class("text-severity-warn"), h.Title("Starts before the trace root: the clocks disagree")],
 								["−", formatDuration(Math.abs(offsetMs)), " (clock skew)"],
 							)
 						: h.span([], ["+", formatDuration(offsetMs)]),
@@ -130,17 +108,12 @@ const positionBar = (h: H, model: Model, color: string): Html | null => {
 	)
 }
 
-const heading = (h: H, text: string): Html =>
-	h.h4([h.Class("text-xs font-medium text-muted-foreground")], [text])
+const heading = (h: H, text: string): Html => h.h4([h.Class("text-xs font-medium text-muted-foreground")], [text])
 
 const idRow = (h: H, model: Model, label: string, id: string, value: string): Html =>
 	keyValue(h, { label, mono: true }, [copyableValue(h, model, { id, value }, [value])])
 
-export type DetailsInputs = Readonly<{
-	color: string
-	attributes: () => ReadonlyArray<Html>
-	timeFormat: TimeFormat
-}>
+export type DetailsInputs = Readonly<{ color: string; attributes: () => ReadonlyArray<Html>; timeFormat: TimeFormat }>
 
 /** The Details tab: timing, identifiers, then the attribute sections the page builds. */
 export const detailsView = Submodel.defineView<Model, Message, DetailsInputs>((model, inputs, h) => {
@@ -157,11 +130,7 @@ export const detailsView = Submodel.defineView<Model, Message, DetailsInputs>((m
 						keyValue(h, { label: "Start time", mono: true }, [
 							h.span(
 								[h.Title(formatUtcTitle(span.startTime))],
-								[
-									copyableValue(h, model, { id: "start-time", value: span.startTime }, [
-										formatDateTime(inputs.timeFormat, span.startTime),
-									]),
-								],
+								[copyableValue(h, model, { id: "start-time", value: span.startTime }, [formatDateTime(inputs.timeFormat, span.startTime)])],
 							),
 						]),
 					]),
@@ -174,9 +143,7 @@ export const detailsView = Submodel.defineView<Model, Message, DetailsInputs>((m
 					keyValueList(h, { className: "gap-1 rounded-md border p-2" }, [
 						idRow(h, model, "Span ID", "span-id", span.spanId),
 						idRow(h, model, "Trace ID", "trace-id", span.traceId),
-						...(span.parentSpanId
-							? [idRow(h, model, "Parent span ID", "parent-span-id", span.parentSpanId)]
-							: []),
+						...(span.parentSpanId ? [idRow(h, model, "Parent span ID", "parent-span-id", span.parentSpanId)] : []),
 					]),
 				],
 			),

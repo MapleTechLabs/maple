@@ -55,9 +55,7 @@ export const planOf = (model: Model): ReadonlyArray<ReplayRange> => {
 
 /** `subscribedRange`: the active range, else the last loaded, else the plan's first, else 0–0. */
 export const subscribedRange = (model: Model): ReplayRange =>
-	model.loader.queue[0] ??
-	model.loader.loaded.at(-1)?.range ??
-	planOf(model)[0] ?? { fromChunkSeq: 0, toChunkSeq: 0 }
+	model.loader.queue[0] ?? model.loader.loaded.at(-1)?.range ?? planOf(model)[0] ?? { fromChunkSeq: 0, toChunkSeq: 0 }
 
 export const loadedThroughSeq = (loader: Loader): number =>
 	loader.loaded.reduce((max, entry) => Math.max(max, entry.lastChunkSeq), -1)
@@ -66,9 +64,7 @@ export const seedEvents = (loader: Loader): ReadonlyArray<unknown> => loader.see
 
 /** How far into the recording the seed starts: 0 for the opening seed, more after a seek rebuild. */
 export const seedShiftMs = (loader: Loader): number =>
-	loader.originMs === null || loader.seed.length === 0
-		? 0
-		: Math.max(0, firstEventMs(loader.seed) - loader.originMs)
+	loader.originMs === null || loader.seed.length === 0 ? 0 : Math.max(0, firstEventMs(loader.seed) - loader.originMs)
 
 /** Range answers kept for re-seeks; the oldest go first past this many. */
 export const RANGE_CACHE_LIMIT = 12
@@ -91,9 +87,7 @@ const loadedUntilMs = (model: Model): number => {
 	const through = loadedThroughSeq(model.loader)
 	const chunks = chunksOf(model)
 	const last = chunks.find((chunk) => chunk.chunk_seq === through)
-	return through < 0 || last === undefined
-		? 0
-		: chunkStartMs(last) + last.duration_ms - manifestStartMs(chunks)
+	return through < 0 || last === undefined ? 0 : chunkStartMs(last) + last.duration_ms - manifestStartMs(chunks)
 }
 
 const hasMoreChunks = (model: Model): boolean => {
@@ -135,10 +129,7 @@ export const advance = (model: Model, rows: Option.Option<RangeRows>): Model => 
 	const through = loadedThroughSeq(loader)
 	const own = rows.value
 		.filter(
-			(row) =>
-				row.chunk_seq >= active.fromChunkSeq &&
-				row.chunk_seq <= active.toChunkSeq &&
-				row.chunk_seq > through,
+			(row) => row.chunk_seq >= active.fromChunkSeq && row.chunk_seq <= active.toChunkSeq && row.chunk_seq > through,
 		)
 		.toSorted((a, b) => a.chunk_seq - b.chunk_seq)
 	const events = normalizeEvents(own.flatMap((row) => row.events))
@@ -156,13 +147,7 @@ export const advance = (model: Model, rows: Option.Option<RangeRows>): Model => 
 			: [...loader.rangeMetas, deriveRangeMeta(active, events, originMs)]
 	return cutSeed({
 		...model,
-		loader: {
-			...loader,
-			loaded: [...loader.loaded, entry],
-			queue: loader.queue.slice(1),
-			originMs,
-			rangeMetas,
-		},
+		loader: { ...loader, loaded: [...loader.loaded, entry], queue: loader.queue.slice(1), originMs, rangeMetas },
 	})
 }
 
@@ -201,8 +186,7 @@ export const requestSeek = (model: Model, offsetMs: number): Option.Option<Model
 	const isLoaded =
 		target.chunk_seq <= loadedThroughSeq(loader) &&
 		loader.loaded.some(
-			(entry) =>
-				target.chunk_seq >= entry.range.fromChunkSeq && target.chunk_seq <= entry.range.toChunkSeq,
+			(entry) => target.chunk_seq >= entry.range.fromChunkSeq && target.chunk_seq <= entry.range.toChunkSeq,
 		)
 	if (isLoaded) return Option.none()
 	const anchor = checkpointAtOrBefore(chunks, target.chunk_seq)

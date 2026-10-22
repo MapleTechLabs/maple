@@ -31,7 +31,7 @@ type StateReturn<S> = Readonly<{
 	outMessage?: OutMessage
 }>
 
-export const TAB_VALUES = ["details", "logs", "infrastructure"] as const
+export const TAB_VALUES =["details", "logs", "infrastructure"] as const
 
 /** The panel as it mounts: the logs read always, the full attributes unless the span is missing. */
 export const init = (input: InitInput): Return => {
@@ -147,9 +147,7 @@ export const update = (model: Model, message: Message): Return => {
 		const next = InfraCorrelation.update(model.infra, message.message)
 		return {
 			model: { ...model, infra: next.model },
-			commands: Command.mapMessages(next.commands ?? [], (inner) =>
-				Message.GotInfraMessage({ message: inner }),
-			),
+			commands: Command.mapMessages(next.commands ?? [], (inner) => Message.GotInfraMessage({ message: inner })),
 		}
 	}
 	if (message._tag !== "GotTabsMessage") return updateState(model, message)

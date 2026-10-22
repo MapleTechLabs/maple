@@ -39,10 +39,7 @@ export const Message = defineMessageUnion({
 	ClickedSetUp: {},
 	/** `null`: Clerk returned no setup key. */
 	CompletedCreateTotp: {
-		result: Schema.Result(
-			Schema.NullOr(Schema.Struct({ uri: Schema.String, secret: Schema.String })),
-			Schema.String,
-		),
+		result: Schema.Result(Schema.NullOr(Schema.Struct({ uri: Schema.String, secret: Schema.String })), Schema.String),
 	},
 	GotEnrollDialogMessage: { message: Dialog.Message },
 	ClickedCancelEnroll: {},

@@ -16,6 +16,7 @@ const send = (model: ReturnType<typeof init>, index: number, message: Integratio
 	update(model, Message.GotScenarioMessage({ index, message })).model
 
 describe("gcp log filter lab", () => {
+
 	test("ruling OpenTelemetry out and ticking a runtime changes only that card", () => {
 		const ruledOut = send(init(), 0, IntegrationsMessage.ClickedGcpForwardOutput())
 		const ticked = send(ruledOut, 0, IntegrationsMessage.ToggledGcpRuntime({ runtime: "app_engine" }))

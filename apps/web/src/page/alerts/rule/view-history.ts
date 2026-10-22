@@ -45,9 +45,7 @@ export const historyTab = (
 	const stats = computeIncidentStats([...ruleIncidents])
 	const maxContributorCount = stats.topContributors[0]?.[1] ?? 1
 	const filtered =
-		model.stateFilter === "all"
-			? ruleIncidents
-			: ruleIncidents.filter((i) => i.status === model.stateFilter)
+		model.stateFilter === "all" ? ruleIncidents : ruleIncidents.filter((i) => i.status === model.stateFilter)
 	const visible = model.isShowingAllIncidents ? filtered : filtered.slice(0, INCIDENT_RENDER_LIMIT)
 	const filterOptions: ReadonlyArray<{ value: StateFilter; label: string }> = [
 		{ value: "all", label: "All" },
@@ -64,10 +62,7 @@ export const historyTab = (
 						[],
 						[
 							sectionHeading(h, { title: "History" }),
-							h.p(
-								[h.Class("text-muted-foreground text-sm")],
-								[String(stats.totalTriggered), " total triggers"],
-							),
+							h.p([h.Class("text-muted-foreground text-sm")], [String(stats.totalTriggered), " total triggers"]),
 						],
 					),
 					segmentedSelect(h, {
@@ -79,14 +74,14 @@ export const historyTab = (
 					}),
 				],
 			),
-			statRail(h, { columns: 2 }, [
-				statRailItem(h, {
-					size: "sm",
-					eyebrow: "Total triggered",
-					value: String(stats.totalTriggered),
-				}),
-				statRailItem(h, { size: "sm", eyebrow: "Avg resolution", value: stats.avgResolution }),
-			]),
+			statRail(
+				h,
+				{ columns: 2 },
+				[
+					statRailItem(h, { size: "sm", eyebrow: "Total triggered", value: String(stats.totalTriggered) }),
+					statRailItem(h, { size: "sm", eyebrow: "Avg resolution", value: stats.avgResolution }),
+				],
+			),
 			...(stats.topContributors.length > 0
 				? [
 						h.div(
@@ -104,8 +99,7 @@ export const historyTab = (
 														h,
 														{
 															variant: "outline",
-															className:
-																"min-w-0 max-w-[160px] shrink justify-start text-xs",
+															className: "min-w-0 max-w-[160px] shrink justify-start text-xs",
 															attributes: [h.Title(groupKey)],
 														},
 														[h.span([h.Class("truncate")], [groupKey])],
@@ -114,17 +108,10 @@ export const historyTab = (
 														value: count,
 														max: maxContributorCount,
 														className: "h-2 flex-1 bg-muted",
-														fillClassName:
-															count === maxContributorCount
-																? "bg-severity-error"
-																: "bg-severity-warn",
+														fillClassName: count === maxContributorCount ? "bg-severity-error" : "bg-severity-warn",
 													}),
 													h.span(
-														[
-															h.Class(
-																"text-xs text-muted-foreground tabular-nums shrink-0",
-															),
-														],
+														[h.Class("text-xs text-muted-foreground tabular-nums shrink-0")],
 														[String(count), "/", String(stats.totalTriggered)],
 													),
 												],
@@ -158,11 +145,7 @@ export const historyTab = (
 												{
 													variant: "outline",
 													size: "sm",
-													attributes: [
-														h.OnClick(
-															Message.ClickedStateFilter({ filter: "all" }),
-														),
-													],
+													attributes: [h.OnClick(Message.ClickedStateFilter({ filter: "all" }))],
 												},
 												["Show all incidents"],
 											),
@@ -185,10 +168,7 @@ export const historyTab = (
 								tableHead(h, [], "w-[50px]"),
 							]),
 						]),
-						tableBody(
-							h,
-							visible.map((incident) => incidentRow(h, model, rule, incident, timeZone, nowMs)),
-						),
+						tableBody(h, visible.map((incident) => incidentRow(h, model, rule, incident, timeZone, nowMs))),
 					]),
 			...(visible.length < filtered.length
 				? [
@@ -197,11 +177,7 @@ export const historyTab = (
 							[
 								button(
 									h,
-									{
-										variant: "outline",
-										size: "sm",
-										attributes: [h.OnClick(Message.ClickedShowAllIncidents())],
-									},
+									{ variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedShowAllIncidents())] },
 									[`Show all ${filtered.length.toLocaleString("en-US")}`],
 								),
 							],
@@ -223,15 +199,10 @@ const incidentRow = (
 	const isOpen = incident.status === "open"
 	const menuId = incidentMenuId(incident.id)
 	return tableRow(h, [
-		tableCell(h, [
-			alertStatusBadge(h, isOpen ? (incident.holdReason != null ? "held" : "firing") : "resolved"),
-		]),
+		tableCell(h, [alertStatusBadge(h, isOpen ? (incident.holdReason != null ? "held" : "firing") : "resolved")]),
 		tableCell(h, [
 			h.span(
-				[
-					h.Class("block max-w-[180px] truncate font-mono text-muted-foreground"),
-					h.Title(incident.groupKey ?? "all"),
-				],
+				[h.Class("block max-w-[180px] truncate font-mono text-muted-foreground"), h.Title(incident.groupKey ?? "all")],
 				[incident.groupKey ?? "all"],
 			),
 		]),
@@ -264,9 +235,7 @@ const incidentRow = (
 			incident.errorIssueId != null
 				? h.a(
 						[
-							h.Href(
-								hrefOf(AppRoute.ErrorIssue({ issueId: incident.errorIssueId, search: {} })),
-							),
+							h.Href(hrefOf(AppRoute.ErrorIssue({ issueId: incident.errorIssueId, search: {} }))),
 							h.Class("text-xs text-primary underline-offset-4 hover:underline"),
 						],
 						["View"],
@@ -281,12 +250,7 @@ const incidentRow = (
 						slotId: menuId,
 						model: model.menus[menuId] ?? Menu.init(menuId),
 						entries: [
-							{
-								_tag: "Item",
-								value: "investigate",
-								label: "Open investigation",
-								icon: "ChatBubbleSparkleIcon",
-							},
+							{ _tag: "Item", value: "investigate", label: "Open investigation", icon: "ChatBubbleSparkleIcon" },
 							{ _tag: "Item", value: "all", label: "View all incidents" },
 						],
 						label: "Incident actions",

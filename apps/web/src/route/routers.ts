@@ -40,11 +40,7 @@ const routers = {
 	ServiceMap: pipe(path("service-map"), search(Search.ServiceMapSearch), Route.mapTo(AppRoute.ServiceMap)),
 	Settings: pipe(path("settings"), search(Search.SettingsSearch), Route.mapTo(AppRoute.Settings)),
 	Sources: pipe(path("sources"), Route.mapTo(AppRoute.Sources)),
-	SourcesNew: pipe(
-		path("sources", "new"),
-		search(Search.SourcesNewSearch),
-		Route.mapTo(AppRoute.SourcesNew),
-	),
+	SourcesNew: pipe(path("sources", "new"), search(Search.SourcesNewSearch), Route.mapTo(AppRoute.SourcesNew)),
 	Source: pipe(
 		path("sources"),
 		slash(segment("sourceId")),

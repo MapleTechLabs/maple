@@ -13,19 +13,14 @@ const members = [
 	{ userId: "user_bob", label: "bob@acme.test", meta: null },
 ]
 const form = defaultDestinationForm("email")
-const loaded = () =>
-	update(reset(init(), form).model, Message.CompletedFetchMembers({ result: Result.succeed(members) }))
-		.model
+const loaded = () => update(reset(init(), form).model, Message.CompletedFetchMembers({ result: Result.succeed(members) })).model
 
 describe("email member picker", () => {
 	test("mounting reads the members once; a pick is the form's recipients", () => {
 		const mounted = reset(init(), form)
 		expect(mounted.commands.map(({ name }) => name)).toEqual(["FetchAlertEmailMembers"])
 		expect(reset(loaded(), form).commands).toEqual([])
-		const picked = update(
-			loaded(),
-			Message.GotComboboxMessage({ message: Combobox.Message.ClickedItem({ value: "user_ada" }) }),
-		)
+		const picked = update(loaded(), Message.GotComboboxMessage({ message: Combobox.Message.ClickedItem({ value: "user_ada" }) }))
 		expect(picked.form).toEqual({ memberUserIds: ["user_ada"] })
 		expect(isFormReady({ ...form, memberUserIds: ["user_ada"] }, false)).toBe(true)
 	})
@@ -36,31 +31,13 @@ describe("email member picker", () => {
 	})
 
 	test("a picked member's chip reads their name", () => {
-		const model = {
-			...loaded(),
-			combobox: Combobox.init("destination-email-members", "multiple", { selected: ["user_ada"] }),
-		}
-		const picker = Submodel.defineView<Model, Message, Readonly<{ isOpen: boolean }>>(
-			(current, _inputs, h) =>
-				h.main(
-					[],
-					[
-						emailFields(h, {
-							model: current,
-							form: { ...form, memberUserIds: ["user_ada"] },
-							toMessage: (message) => message,
-						}),
-					],
-				),
+		const model = { ...loaded(), combobox: Combobox.init("destination-email-members", "multiple", { selected: ["user_ada"] }) }
+		const picker = Submodel.defineView<Model, Message, Readonly<{ isOpen: boolean }>>((current, _inputs, h) =>
+			h.main([], [emailFields(h, { model: current, form: { ...form, memberUserIds: ["user_ada"] }, toMessage: (message) => message })]),
 		)
 		const view = withViewInputs(picker, { isOpen: false })()
 		scene(
-			{
-				update: (current: typeof model, message: Message) => ({
-					model: update(current, message).model,
-				}),
-				view,
-			},
+			{ update: (current: typeof model, message: Message) => ({ model: update(current, message).model }), view },
 			given(model),
 			expectView(text("Ada Lovelace")).toExist(),
 			expectView(role("button", { name: "Remove" })).toExist(),

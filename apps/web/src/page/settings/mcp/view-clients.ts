@@ -23,10 +23,7 @@ const connectionRow = (h: H, connection: V2McpConnection, inputs: Inputs): Html 
 				[h.Class("min-w-0 flex-1")],
 				[
 					h.p([h.Class("truncate text-sm font-medium")], [connection.client_name]),
-					h.p(
-						[h.Class("truncate text-xs text-muted-foreground")],
-						[connection.user_email ?? connection.user_id],
-					),
+					h.p([h.Class("truncate text-xs text-muted-foreground")], [connection.user_email ?? connection.user_id]),
 				],
 			),
 			h.p(
@@ -37,11 +34,7 @@ const connectionRow = (h: H, connection: V2McpConnection, inputs: Inputs): Html 
 				[h.Class("hidden shrink-0 text-xs text-muted-foreground md:block")],
 				[
 					"Last refreshed ",
-					relativeTime(h, {
-						value: connection.last_refreshed_at,
-						nowMs: inputs.nowMs,
-						timeZone: inputs.timeZone,
-					}),
+					relativeTime(h, { value: connection.last_refreshed_at, nowMs: inputs.nowMs, timeZone: inputs.timeZone }),
 				],
 			),
 			button(
@@ -64,10 +57,7 @@ const content = (h: H, model: Model, inputs: Inputs): Html =>
 		onData: (rows) =>
 			rows.length === 0
 				? sectionNote(h, "No clients connected yet. Connect one above.")
-				: h.ul(
-						[h.Class("divide-y")],
-						rows.map((row) => connectionRow(h, row, inputs)),
-					),
+				: h.ul([h.Class("divide-y")], rows.map((row) => connectionRow(h, row, inputs))),
 	})
 
 export const connectedClientsSection = (h: H, model: Model, inputs: Inputs): Html =>
@@ -94,10 +84,7 @@ export const connectedClientsSection = (h: H, model: Model, inputs: Inputs): Htm
 					model.revoking === null
 						? []
 						: [
-								h.span(
-									[h.Class("font-medium text-foreground")],
-									[model.revoking.client_name],
-								),
+								h.span([h.Class("font-medium text-foreground")], [model.revoking.client_name]),
 								" loses access right away and has to be approved again to reconnect.",
 							],
 				confirmLabel: "Revoke",

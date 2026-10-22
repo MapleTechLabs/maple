@@ -13,14 +13,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { filterShort } from "./view-gcp-configure-filter"
 import { methodChoice } from "./view-gcp-configure-method-choice"
-import {
-	configureFooter,
-	configureHeader,
-	configurePanel,
-	externalLink,
-	footerNote,
-	mono,
-} from "./view-gcp-configure-parts"
+import { configureFooter, configureHeader, configurePanel, externalLink, footerNote, mono } from "./view-gcp-configure-parts"
 import { runAs, runSummary } from "./view-gcp-configure-run"
 import { fileCard, loadFailure } from "./view-gcp-configure-script"
 import { runStatus } from "./view-gcp-configure-status"
@@ -49,11 +42,7 @@ export const methodStage = (
 			"flex flex-col gap-5",
 		),
 		configureFooter(h, [
-			footerNote(h, [
-				nothingSeen
-					? "Each method creates the same resources."
-					: "Each method makes the same change.",
-			]),
+			footerNote(h, [nothingSeen ? "Each method creates the same resources." : "Each method makes the same change."]),
 			button(h, { variant: "outline", attributes: [h.OnClick(Message.ClickedGcpRunEdit())] }, ["Back"]),
 			button(h, { attributes: [h.OnClick(Message.ClickedGcpMethodContinue())] }, ["Continue"]),
 		]),
@@ -61,18 +50,13 @@ export const methodStage = (
 }
 
 /** `useGcpScripts` for the setup: only a settled read counts, as a held-over one is for another filter. */
-const setupState = (
-	configure: ConfigureModel,
-): { setup: V2GcpSetupScripts | null; failure: ScriptFailure | null } => {
+const setupState = (configure: ConfigureModel): { setup: V2GcpSetupScripts | null; failure: ScriptFailure | null } => {
 	const data = configure.scripts.data
 	if (AsyncData.isSuccess(data)) return { setup: data.data, failure: null }
 	if (AsyncData.isFailure(data))
 		return {
 			setup: null,
-			failure: {
-				message: isUnexpectedError(data.error) ? "Couldn't load the script." : data.error.message,
-				isRetrying: false,
-			},
+			failure: { message: isUnexpectedError(data.error) ? "Couldn't load the script." : data.error.message, isRetrying: false },
 		}
 	return { setup: null, failure: null }
 }
@@ -125,10 +109,7 @@ const removalSection = (
 							h.div(
 								[h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-2")],
 								[
-									h.p(
-										[h.Class(SMALL)],
-										["Maple can't see a removal. Tell it once it is done."],
-									),
+									h.p([h.Class(SMALL)], ["Maple can't see a removal. Tell it once it is done."]),
 									button(
 										h,
 										{
@@ -199,11 +180,7 @@ const codeBody = (
 				[
 					h.h3(
 						[h.Class(GCP_TITLE)],
-						[
-							isTerraform
-								? "Add this to your Terraform configuration"
-								: "Add this to your Alchemy app",
-						],
+						[isTerraform ? "Add this to your Terraform configuration" : "Add this to your Alchemy app"],
 					),
 					h.p(
 						[h.Class(SMALL)],
@@ -234,9 +211,7 @@ const codeBody = (
 								"Deploy with the command in the file's header",
 								" ",
 								...runAs(h, connector),
-								...(connector.logs_enabled
-									? [" Fill in PROJECT_NUMBER at the top first."]
-									: []),
+								...(connector.logs_enabled ? [" Fill in PROJECT_NUMBER at the top first."] : []),
 							]),
 					" ",
 					externalLink(h, IAC_DOCS, "Details"),
@@ -283,9 +258,7 @@ export const methodApplyStage = (
 					? [
 							h.p(
 								[h.Class(SMALL)],
-								[
-									"Sets the recommended filter. If you customised the sink's filter, paste yours instead.",
-								],
+								["Sets the recommended filter. If you customised the sink's filter, paste yours instead."],
 							),
 						]
 					: []),
@@ -295,17 +268,10 @@ export const methodApplyStage = (
 			],
 			"flex flex-col gap-5",
 		),
-		runStatus(h, connector, {
-			opened: options.opened,
-			overdue: false,
-			nowMs: model.nowMs,
-			method: configure.method,
-		}),
+		runStatus(h, connector, { opened: options.opened, overdue: false, nowMs: model.nowMs, method: configure.method }),
 		configureFooter(h, [
 			footerNote(h, ["Saved. Close this any time and come back to it."]),
-			button(h, { variant: "outline", attributes: [h.OnClick(Message.ClosedGcpConfigure())] }, [
-				"Close",
-			]),
+			button(h, { variant: "outline", attributes: [h.OnClick(Message.ClosedGcpConfigure())] }, ["Close"]),
 		]),
 	]
 }

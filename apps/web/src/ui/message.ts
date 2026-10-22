@@ -47,5 +47,5 @@ export const messageContent = <M>(h: HtmlBuilder<M>, children: Children, classNa
 export const messageFooter = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	slotDiv(h, "message-footer", messageFooterStyles, children, className)
 
-export const messageHeader = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
+export const messageHeader =<M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	slotDiv(h, "message-header", messageHeaderStyles, children, className)

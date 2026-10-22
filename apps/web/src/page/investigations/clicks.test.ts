@@ -2,9 +2,7 @@ import { describe, expect, test } from "vitest"
 import { type ClickFacts, nodeLinkClick, rowClickId } from "./clicks"
 
 // A target whose ancestors are the given selectors, each with its attributes.
-const inside = (
-	ancestors: Readonly<Record<string, Readonly<Record<string, string>>>>,
-): ClickFacts["target"] => ({
+const inside = (ancestors: Readonly<Record<string, Readonly<Record<string, string>>>>): ClickFacts["target"] => ({
 	closest: (selector) => {
 		const attributes = ancestors[selector]
 		return attributes === undefined ? null : { getAttribute: (name) => attributes[name] ?? null }
@@ -31,9 +29,7 @@ describe("investigation row clicks", () => {
 
 	test("a click on the headline link is left to the link, so history gets one entry", () => {
 		expect(rowClickId(click(inside({ ...ROW, a: { href: "/investigations/inv-1" } })))).toBeNull()
-		expect(
-			rowClickId(click(inside({ ...ROW, a: { href: "/investigations/inv-1" } }), { metaKey: true })),
-		).toBeNull()
+		expect(rowClickId(click(inside({ ...ROW, a: { href: "/investigations/inv-1" } }), { metaKey: true }))).toBeNull()
 	})
 
 	test("a click something else already handled opens nothing", () => {

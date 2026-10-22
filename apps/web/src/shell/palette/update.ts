@@ -47,9 +47,7 @@ export const shownEntries = (model: Model, context: Context, isReleasesVisible: 
 	const query = model.list.inputValue.trim()
 	if (query === "") return { entries: browseEntries(entries), isSearch: false }
 	const byId = new Map(entries.map((entry) => [entry.id, entry]))
-	const ranked = rankedIds(all, query)
-		.flatMap((id) => byId.get(id) ?? [])
-		.slice(0, MAX_RESULTS)
+	const ranked = rankedIds(all, query).flatMap((id) => byId.get(id) ?? []).slice(0, MAX_RESULTS)
 	return { entries: ranked, isSearch: true }
 }
 
