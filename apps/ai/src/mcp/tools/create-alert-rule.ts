@@ -81,7 +81,7 @@ export const CreateAlertRuleParameters = Schema.Struct({
 	window_minutes: P.optionalNumber("Evaluation window in minutes (default: 5)"),
 	evaluation_interval_minutes: P.optionalNullableNumberOneOf(
 		ALERT_EVALUATION_INTERVALS,
-		"Minutes between checks, at most window_minutes. A raw_query rule checked less often gets a longer query time limit: 5s under 5 min, 15s at 5, 25s at 10 or more. Omit (or pass null) to derive it: a fifth of the window, 1 to 5.",
+		"Minutes between checks, at most window_minutes. A raw_query rule checked less often gets a longer query time limit: 5s under 5 min, 15s at 5, 25s at 10 or more. Omit (or pass \"auto\") to derive it: a fifth of the window, 1 to 5.",
 	),
 	services: P.optionalList("Service names to scope the alert to"),
 	environments: P.optionalList(
