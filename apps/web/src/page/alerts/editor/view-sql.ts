@@ -162,7 +162,9 @@ const meterNote = (form: RuleForm, timing: AlertQueryTiming, interval: number, l
 			: `Too close to the ${formatQuerySeconds(limitMs)} limit for ${interval}-minute checks, fits ${shortest}-minute checks.`
 	}
 	if (!timing.fitsIntervalMinutes.some((fits) => fits <= interval)) {
-		return "Too slow for any interval this window allows. Widen the window or narrow the query."
+		return elapsed > limitMs
+			? "Too slow for any interval this window allows. Widen the window or narrow the query."
+			: `Too close to the ${formatQuerySeconds(limitMs)} limit to run reliably. Widen the window for a longer interval, or narrow the query.`
 	}
 	if (intervalWindowIssue(form) !== null) return "The picked interval is longer than the window. Pick a shorter one."
 	return `Fits checks every ${interval === 1 ? "minute" : `${interval} min`}.`
@@ -186,7 +188,11 @@ const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html =>
 					h.span(
 						[h.Class(cn("tabular-nums", TONE_TEXT[tone]))],
 						elapsed === null
-							? [`Over ${formatQuerySeconds(timing.probeLimitMs)}`]
+							? [
+									timing.failure === "query_too_much_memory"
+										? "Out of memory"
+										: `Over ${formatQuerySeconds(timing.probeLimitMs)}`,
+								]
 							: [
 									formatQuerySeconds(elapsed),
 									h.span([h.Class("text-muted-foreground")], [` of ${formatQuerySeconds(limitMs)}`]),
