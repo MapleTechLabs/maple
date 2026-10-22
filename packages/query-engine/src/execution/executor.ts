@@ -18,6 +18,7 @@ import { parseStatement, withFormat, withSettings } from "@maple-dev/effect-orm/
 import type { WarehouseDriverError } from "./driver-error"
 import type { WarehouseExecutorApi } from "../observability"
 import {
+	mergeSettingsClauses,
 	settingsClause,
 	type QueryProfileName,
 	resolveSettings,
@@ -504,7 +505,7 @@ WHERE name = 'enable_full_text_index'`,
 		// re-derives from SQL text which terminal clauses it already carries.
 		const parsed = parseStatement(sql)
 		const statement = withFormat(
-			withSettings(parsed, parsed.settings ?? settingsClause(settings)),
+			withSettings(parsed, mergeSettingsClauses(parsed.settings, settingsClause(settings))),
 			dialect.wireFormat === "in-statement" ? (parsed.format ?? dialect.statementFormat) : undefined,
 		)
 		const finalSql = statement.text

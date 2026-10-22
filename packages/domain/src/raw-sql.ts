@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { maskLiteralsAndComments, splitTerminalClauses } from "@maple-dev/effect-orm/sql"
+import { maskLiteralsAndComments } from "@maple-dev/effect-orm/sql"
 
 // The static half of raw-SQL validation: everything that can be decided from the
 // query text alone, without an org, a time window, or a granularity.
@@ -85,7 +85,11 @@ const DISALLOWED_FUNCTION_PREFIXES = [
 	"iceberg",
 	"deltaLake",
 	"hudi",
+	"paimon",
 	"s3",
+	// `s3` under its object-store aliases.
+	"cosn",
+	"oss",
 	"gcs",
 	"azureBlobStorage",
 	"hdfs",
@@ -101,6 +105,8 @@ const DISALLOWED_FUNCTION_PREFIXES = [
 	"executable",
 	"arrowFlight",
 	"ytsaurus",
+	// Local, but reads any table by database and regex, system tables included.
+	"mergeTree",
 ] as const
 
 /**
@@ -117,6 +123,7 @@ const DISALLOWED_FUNCTION_NAMES = [
 	"input",
 	"dictionary",
 	"hive",
+	"merge",
 ] as const
 
 // Anchored on the opening paren so a *column* named `file`, or a scalar function
@@ -127,6 +134,56 @@ const DISALLOWED_FUNCTION_RE = new RegExp(
 	`\\b(${DISALLOWED_FUNCTION_PREFIXES.join("|")})[A-Za-z0-9_]*\\s*\\(|\\b(${DISALLOWED_FUNCTION_NAMES.join("|")})\\s*\\(`,
 	"i",
 )
+
+/**
+ * ClickHouse syntax the masker does not lex: `#` / `#!` line comments, `$$` and
+ * `$tag$` heredoc strings, and nested block comments (the masker ends a comment at
+ * the first close, leaving the outer one's `*\/` behind). Where these appear the
+ * masked text and the server disagree on what is code, so every check is moot.
+ */
+const UNMASKED_SYNTAX: ReadonlyArray<readonly [RegExp, string]> = [
+	[/#/, "'#' comments are not supported in raw SQL. Use -- or /* */ comments."],
+	[
+		/\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/,
+		"Heredoc strings ($$...$$ or $tag$...$tag$) are not supported in raw SQL. Use single-quoted strings.",
+	],
+	[
+		/\*\//,
+		"Nested /* */ comments are not supported in raw SQL. Close each comment before opening another.",
+	],
+]
+
+/**
+ * End offsets of every quoted identifier (`` `x` `` or `"x"`), lexed exactly as
+ * the masker lexes, which blanks them. A quoted name followed by `(` is a call
+ * the function check below would otherwise never see.
+ */
+const quotedIdentifierEnds = (sql: string): ReadonlyArray<number> => {
+	const ends: Array<number> = []
+	let i = 0
+	while (i < sql.length) {
+		const ch = sql.charAt(i)
+		const next = sql.charAt(i + 1)
+		if (ch === "-" && next === "-") {
+			const nl = sql.indexOf("\n", i)
+			i = nl === -1 ? sql.length : nl
+		} else if (ch === "/" && next === "*") {
+			const close = sql.indexOf("*/", i + 2)
+			i = close === -1 ? sql.length : close + 2
+		} else if (ch === "'" || ch === "`" || ch === '"') {
+			i++
+			while (i < sql.length) {
+				const c = sql.charAt(i)
+				i += c === "\\" ? 2 : 1
+				if (c === ch) break
+			}
+			if (ch !== "'") ends.push(Math.min(i, sql.length))
+		} else {
+			i++
+		}
+	}
+	return ends
+}
 
 /** Macros the engine expands. Anything else `$__`-shaped is a typo. */
 export const RAW_SQL_MACROS = [
@@ -335,6 +392,8 @@ export const rawSqlIssue = (
 	// input: `prepareRawSql` expands macros wherever they appear, literals
 	// included, so a macro hidden in a string still has to be a legal one.
 	const maskedSql = maskLiteralsAndComments(sql)
+	const unmasked = UNMASKED_SYNTAX.find(([pattern]) => pattern.test(maskedSql))
+	if (unmasked !== undefined) return issue("DisallowedStatement", unmasked[1])
 	if (!maskedSql.includes("$__orgFilter")) {
 		return issue(
 			"MissingOrgFilter",
@@ -417,15 +476,25 @@ export const rawSqlIssue = (
 	if (functionMatch) {
 		return issue(
 			"DisallowedFunction",
-			`Table function '${functionMatch[1]}' is not allowed in raw SQL — queries may only read Maple's own tables.`,
+			`Table function '${functionMatch[1] ?? functionMatch[2]}' is not allowed in raw SQL. Queries may only read Maple's own tables.`,
 		)
 	}
-	// The row cap nests the query, and `SETTINGS` is a statement terminator, so an
-	// author-supplied one would end up inside the subquery — where ClickHouse
-	// propagates it to the whole query context and it silently outranks the cost
-	// profile's time and memory budget. A trailing FORMAT is dropped rather than
-	// rejected (the driver owns the wire format); see `prepareRawSql`.
-	if (splitTerminalClauses(sql).settings !== undefined) {
+	const callAfterQuote = /\s*\(/y
+	const quotedCall = quotedIdentifierEnds(sql).some((end) => {
+		callAfterQuote.lastIndex = end
+		return callAfterQuote.test(maskedSql)
+	})
+	if (quotedCall) {
+		return issue(
+			"DisallowedFunction",
+			"Quoted function names are not allowed in raw SQL. Write the function name without quotes.",
+		)
+	}
+	// The row cap nests the query, and a `SETTINGS` clause at any depth (a
+	// subquery's included) applies to the whole query context, where it would
+	// outrank the cost profile's time and memory budget. A trailing FORMAT is
+	// dropped rather than rejected (the driver owns the wire format); see `prepareRawSql`.
+	if (/\bSETTINGS\b/i.test(masked)) {
 		return issue(
 			"DisallowedStatement",
 			"SETTINGS is managed by Maple — raw queries run under a fixed time and memory budget. Remove the SETTINGS clause.",
