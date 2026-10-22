@@ -294,6 +294,12 @@ describe("run_code", () => {
 			assert.include(dispatched, "pr_file_diff")
 			// The child's two model calls, counted apart from the parent's own usage.
 			assert.strictEqual(usage.delegated.modelCalls, 2)
+			// ...and billed with them: four calls of one input token each.
+			assert.strictEqual(usage.input, 4)
+			assert.strictEqual(
+				usage.charges.reduce((sum, charge) => sum + charge.inputTokens, 0),
+				4,
+			)
 		},
 	)
 
