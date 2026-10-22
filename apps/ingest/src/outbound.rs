@@ -183,13 +183,16 @@ pub async fn read_body_capped(mut response: reqwest::Response, max_bytes: usize)
 }
 
 /// A client builder for tenant-configured hosts: no redirects (a bounce could
-/// point anywhere), no proxy (the resolver must see the target name), and only
-/// public addresses dialled.
-pub fn tenant_client_builder(resolver: PublicOnlyResolver) -> reqwest::ClientBuilder {
-    reqwest::Client::builder()
+/// point anywhere), no proxy (the resolver must see the target name), and, given
+/// a `resolver`, only public addresses dialled. `None` is the private-network opt-in.
+pub fn tenant_client_builder(resolver: Option<PublicOnlyResolver>) -> reqwest::ClientBuilder {
+    let builder = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
-        .no_proxy()
-        .dns_resolver(resolver)
+        .no_proxy();
+    match resolver {
+        Some(resolver) => builder.dns_resolver(resolver),
+        None => builder,
+    }
 }
 
 #[cfg(test)]
@@ -291,6 +294,20 @@ mod tests {
         })
     }
 
+    #[tokio::test]
+    async fn opted_in_client_reaches_a_private_name() {
+        let (port, hits) = serve_raw(ok_reply).await;
+        let response = tenant_client_builder(None)
+            .build()
+            .unwrap()
+            .post(format!("http://localhost:{port}/"))
+            .send()
+            .await
+            .expect("the private-network opt-in dials loopback names");
+        assert_eq!(response.status(), 404);
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+    }
+
     /// Answers with a chunked body that never ends.
     fn endless_reply(mut stream: tokio::net::TcpStream) -> Serve {
         Box::pin(async move {
@@ -309,7 +326,7 @@ mod tests {
     #[tokio::test]
     async fn client_refuses_a_name_rebound_to_loopback_without_connecting() {
         let (port, hits) = serve_raw(ok_reply).await;
-        let client = tenant_client_builder(fake_dns(&[("rebind.test", &["127.0.0.1"])]))
+        let client = tenant_client_builder(Some(fake_dns(&[("rebind.test", &["127.0.0.1"])])))
             .build()
             .unwrap();
         let error = client

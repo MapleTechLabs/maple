@@ -855,14 +855,16 @@ impl TelemetryPipeline {
         // Refusing redirects outright is the fix; a ClickHouse endpoint has no
         // legitimate reason to bounce an INSERT somewhere else.
         // Its resolver also refuses names that resolve to non-public addresses,
-        // so a name validated at save time cannot later be rebound inward.
-        let clickhouse_http: HttpClient =
-            outbound::tenant_client_builder(outbound::PublicOnlyResolver::system())
-                .pool_max_idle_per_host(64)
-                .pool_idle_timeout(Duration::from_secs(30))
-                .build()
-                .map_err(|error| format!("ClickHouse export HTTP client init: {error}"))?
-                .into();
+        // so a name validated at save time cannot later be rebound inward,
+        // unless the deployment opted into private ClickHouse endpoints.
+        let resolver =
+            (!cfg.clickhouse_allow_private_endpoints).then(outbound::PublicOnlyResolver::system);
+        let clickhouse_http: HttpClient = outbound::tenant_client_builder(resolver)
+            .pool_max_idle_per_host(64)
+            .pool_idle_timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|error| format!("ClickHouse export HTTP client init: {error}"))?
+            .into();
         cfg.validate_for_pipeline(require_tinybird_credentials)?;
         std::fs::create_dir_all(&cfg.queue_dir)
             .map_err(|error| format!("create ingest WAL dir: {error}"))?;

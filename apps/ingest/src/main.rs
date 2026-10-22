@@ -420,7 +420,10 @@ impl AppConfig {
                     duration_millis(ClickHouseBreakerConfig::default().cooldown),
                 )?),
             },
-            clickhouse_allow_private_endpoints: false,
+            clickhouse_allow_private_endpoints: clickhouse_allow_private_endpoints(
+                std::env::var("INGEST_CLICKHOUSE_ALLOW_PRIVATE_ENDPOINTS").ok(),
+                std::env::var("MAPLE_SELF_HOSTED_MODE").ok(),
+            )?,
             datasources: DatasourceNames::from_env(),
             datasource_session_replays: std::env::var("INGEST_TINYBIRD_DATASOURCE_SESSION_REPLAYS")
                 .unwrap_or_else(|_| "session_replays".to_owned()),
@@ -8745,6 +8748,21 @@ fn invalid_ingest_key_message(region: Option<&str>) -> Result<&'static str, Stri
     }
 }
 
+/// Whether BYO ClickHouse exports may reach private addresses. Off for the
+/// managed deployment, whose tenants share its network; on by default for a
+/// self-hosted install, where ClickHouse usually sits on an internal name.
+fn clickhouse_allow_private_endpoints(
+    raw: Option<String>,
+    self_hosted_mode: Option<String>,
+) -> Result<bool, String> {
+    let self_hosted = self_hosted_mode.is_some_and(|mode| !mode.trim().is_empty());
+    parse_bool(
+        "INGEST_CLICKHOUSE_ALLOW_PRIVATE_ENDPOINTS",
+        raw,
+        self_hosted,
+    )
+}
+
 fn parse_bool(name: &str, raw: Option<String>, default: bool) -> Result<bool, String> {
     let Some(raw) = raw else {
         return Ok(default);
@@ -8865,6 +8883,18 @@ fn parse_fleet_size(raw: Option<String>) -> Result<u32, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn clickhouse_private_endpoints_are_opt_in_or_self_hosted() {
+        let allow = |raw: Option<&str>, mode: Option<&str>| {
+            clickhouse_allow_private_endpoints(raw.map(str::to_owned), mode.map(str::to_owned))
+        };
+        assert_eq!(allow(None, None), Ok(false));
+        assert_eq!(allow(Some("true"), None), Ok(true));
+        assert_eq!(allow(None, Some("single_tenant")), Ok(true));
+        assert_eq!(allow(Some("false"), Some("single_tenant")), Ok(false));
+        assert!(allow(Some("maybe"), None).is_err());
+    }
+
     use super::*;
     // `AtomicBool` is only used by the test fakes below; keeping it out of the
     // top-level import avoids an unused-import warning in non-test bin builds.
