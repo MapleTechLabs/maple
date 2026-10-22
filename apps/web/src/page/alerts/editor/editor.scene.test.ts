@@ -162,8 +162,6 @@ describe("alert rule editor", () => {
 		const hint = (every: string) => text(`Each check looks at this much data, checked every ${every}.`)
 		const pick = (value: string) =>
 			Message.GotRadioMessage({ group: "interval", message: RadioGroup.Message.SelectedRadio({ value }) })
-		const noAnswer = (model: Model) =>
-			Message.CompletedFetchPreview({ key: model.preview.key ?? "", isSaved: false, result: Result.fail({ message: null }) })
 		const draft = run(withLists(entered({ template: "slow_p95" })), [
 			Message.ChangedField({ field: "windowMinutes", value: "15" }),
 		])
@@ -174,14 +172,14 @@ describe("alert rule editor", () => {
 			given(draft),
 			themeResolved(),
 			expectView(role("radio", { name: /^Auto · 3 min/ })).toHaveAttr("aria-checked", "true"),
+			// The preview pins the interval, so picking one never re-queries.
 			click(role("radio", { name: /^10 min/ })),
-			Command.resolve(FetchEditorPreview, noAnswer(every10)),
 			expectView(hint("10 min")).toExist(),
 			expectView(role("radio", { name: /^10 min/ })).toHaveAttr("aria-checked", "true"),
 			click(role("radio", { name: /^30 min/ })),
-			Command.resolve(FetchEditorPreview, noAnswer(every30)),
 			expectView(text("Longer than the window, so data between checks would go unread.")).toExist(),
 		)
+		expect(every10.preview.key).toBe(draft.preview.key)
 		expect(every30.form?.evaluationIntervalMinutes).toBe("30")
 		expect(names(pageUpdate(every30, Message.ClickedSave()).commands)).toEqual([])
 	})
@@ -217,7 +215,6 @@ describe("alert rule editor", () => {
 			Message.ClickedSignalKind({ kind: "raw_query" }),
 		])
 		const slow = run(sql, [answer(sql, 7_800)])
-		const switched = run(slow, [Message.ClickedUseInterval({ minutes: "5" })])
 		expect(names(pageUpdate(slow, Message.ClickedSave()).commands)).toEqual([])
 		scene(
 			{ update: pageUpdate, view },
@@ -226,7 +223,6 @@ describe("alert rule editor", () => {
 			expectView(text("Too slow for 1-minute checks, fits 5-minute checks.")).toExist(),
 			expectView(text(/^Line 4: Filter traces on a service/)).toExist(),
 			click(role("button", { name: "Check every 5 min" })),
-			Command.resolve(FetchEditorPreview, answer(switched, 7_800)),
 			expectView(role("radio", { name: /^5 min/ })).toHaveAttr("aria-checked", "true"),
 			expectView(text("Fits checks every 5 min.")).toExist(),
 		)
@@ -237,6 +233,23 @@ describe("alert rule editor", () => {
 			expectView(text("Fits checks every minute.")).toExist(),
 			// A fast query keeps its cheaper-filter suggestions to itself.
 			expectView(text(/^Line 4:/)).not.toExist(),
+		)
+	})
+
+	test("editing a slowed-down rule says saving resets it, and keeps it in one click", () => {
+		const slowed = run(entered({ ruleId: ruleId(2) }), [
+			Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { slowed_interval_minutes: 5 })] }),
+		])
+		const notice = text("Checked every 5 min because its query kept timing out. Saving resets this unless you keep it.")
+		scene(
+			{ update: pageUpdate, view },
+			given(slowed),
+			themeResolved(),
+			expectView(notice).toExist(),
+			click(role("button", { name: "Keep 5 min" })),
+			expectView(notice).not.toExist(),
+			expectView(role("radio", { name: /^5 min/ })).toHaveAttr("aria-checked", "true"),
 		)
 	})
 

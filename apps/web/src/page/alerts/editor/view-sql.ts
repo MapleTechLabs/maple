@@ -2,6 +2,7 @@ import type { AlertQueryTiming } from "@maple/domain/http"
 import { rawAlertPerformanceHints, rawAlertSampleCountWarning, rawSqlIssue } from "@maple/domain/raw-sql"
 import { alertQueryLimits } from "@maple/query-engine/datetime"
 import { RAW_QUERY_REDUCER_LABELS } from "@maple/web-data/alerts/form-utils"
+import { formatQuerySeconds } from "@maple/web-data/alerts/query-time"
 import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
@@ -13,7 +14,7 @@ import { iconButton } from "../../../ui/icon-button"
 import { inlineCode } from "../../../ui/inline-code"
 import type * as Select from "../../../ui/select"
 import type { RuleForm } from "./form"
-import { fasterFittingInterval, formIntervalMinutes } from "./interval"
+import { formIntervalMinutes, shortestFittingInterval } from "./interval"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { formSelect } from "./view-select"
@@ -144,10 +145,27 @@ const macros = (h: H): Html =>
 		],
 	)
 
-const seconds = (ms: number): string => `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`
-
-// Where the 1, 5 and 10 minute limits sit on a meter as long as the longest one.
+// The 1, 5 and 10 minute limits, marked on a meter as long as the longest one.
 const METER_TICKS = [1, 5, 10].map((minutes) => alertQueryLimits(minutes).timeSeconds * 1000)
+
+const meterNote = (form: RuleForm, timing: AlertQueryTiming, interval: number, limitMs: number): string => {
+	const elapsed = timing.elapsedMs
+	if (elapsed === null) {
+		return timing.failure === "query_too_much_memory"
+			? "Ran out of memory before it finished. Narrow it with the suggestions below."
+			: `Did not finish within ${formatQuerySeconds(timing.probeLimitMs)}, too slow for any interval. Narrow it with the suggestions below.`
+	}
+	const shortest = shortestFittingInterval(form, timing)
+	if (shortest !== null) {
+		return elapsed > limitMs
+			? `Too slow for ${interval}-minute checks, fits ${shortest}-minute checks.`
+			: `Too close to the ${formatQuerySeconds(limitMs)} limit for ${interval}-minute checks, fits ${shortest}-minute checks.`
+	}
+	if (!timing.fitsIntervalMinutes.some((fits) => fits <= interval)) {
+		return "Too slow for any interval this window allows. Widen the window or narrow the query."
+	}
+	return `Fits checks every ${interval === 1 ? "minute" : `${interval} min`}.`
+}
 
 /** One check's query time against the limit at the picked interval, and the switch to one it fits. */
 const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html => {
@@ -156,17 +174,7 @@ const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html =>
 	const elapsed = timing.elapsedMs
 	const tone: Tone = elapsed === null || elapsed > limitMs ? "crit" : elapsed > limitMs * 0.8 ? "warn" : "ok"
 	const fill = elapsed === null ? 1 : Math.min(elapsed / timing.probeLimitMs, 1)
-	const faster = fasterFittingInterval(form, timing)
-	const note =
-		elapsed === null
-			? timing.failure === "query_too_much_memory"
-				? "Ran out of memory before it finished. Narrow it with the suggestions below."
-				: `Did not finish within ${seconds(timing.probeLimitMs)}, too slow for any interval. Narrow it with the suggestions below.`
-			: faster !== null
-				? `Too slow for ${interval}-minute checks, fits ${faster}-minute checks.`
-				: elapsed > limitMs * 0.8
-					? "Close to the limit: a busier window may time out."
-					: `Fits checks every ${interval === 1 ? "minute" : `${interval} min`}.`
+	const shortest = shortestFittingInterval(form, timing)
 	return h.div(
 		[h.Class("space-y-1.5 rounded-md border px-3 py-2.5"), h.DataAttribute("testid", "query-time-meter")],
 		[
@@ -176,33 +184,36 @@ const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html =>
 					h.span([h.Class("font-medium")], ["Query time"]),
 					h.span(
 						[h.Class(cn("tabular-nums", TONE_TEXT[tone]))],
-						[
-							elapsed === null ? `Over ${seconds(timing.probeLimitMs)}` : seconds(elapsed),
-							h.span([h.Class("text-muted-foreground")], [` of ${seconds(limitMs)}`]),
-						],
+						elapsed === null
+							? [`Over ${formatQuerySeconds(timing.probeLimitMs)}`]
+							: [
+									formatQuerySeconds(elapsed),
+									h.span([h.Class("text-muted-foreground")], [` of ${formatQuerySeconds(limitMs)}`]),
+								],
 					),
 				],
 			),
 			h.div(
 				[h.Class("relative h-1.5 overflow-hidden rounded-full bg-muted")],
-				[
-					h.div([h.Class(cn("h-full rounded-full", TONE_FILL[tone])), h.Style({ width: `${fill * 100}%` })], []),
-					...METER_TICKS.map((tickMs) =>
-						h.div(
-							[
-								h.Class("absolute top-0 h-full w-px bg-background"),
-								h.Style({ left: `${(tickMs / timing.probeLimitMs) * 100}%` }),
-							],
-							[],
-						),
+				[h.div([h.Class(cn("h-full rounded-full", TONE_FILL[tone])), h.Style({ width: `${fill * 100}%` })], [])],
+			),
+			h.div(
+				[h.Class("relative h-3 text-[10px] tabular-nums text-muted-foreground"), h.AriaHidden(true)],
+				METER_TICKS.map((tickMs) =>
+					h.span(
+						[
+							h.Class(cn("absolute -translate-x-full", tickMs === limitMs && "font-medium text-foreground")),
+							h.Style({ left: `${(tickMs / timing.probeLimitMs) * 100}%` }),
+						],
+						[formatQuerySeconds(tickMs)],
 					),
-				],
+				),
 			),
 			h.div(
 				[h.Class("flex flex-wrap items-center justify-between gap-2")],
 				[
-					h.p([h.Class("text-xs text-muted-foreground")], [note]),
-					...(faster === null
+					h.p([h.Class("text-xs text-muted-foreground")], [meterNote(form, timing, interval, limitMs)]),
+					...(shortest === null
 						? []
 						: [
 								button(
@@ -210,9 +221,9 @@ const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html =>
 									{
 										variant: "outline",
 										size: "xs",
-										attributes: [h.OnClick(Message.ClickedUseInterval({ minutes: String(faster) }))],
+										attributes: [h.OnClick(Message.ClickedUseInterval({ minutes: String(shortest) }))],
 									},
-									[`Check every ${faster} min`],
+									[`Check every ${shortest} min`],
 								),
 							]),
 				],

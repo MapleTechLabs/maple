@@ -9,7 +9,7 @@ import { stableSlice } from "../../kit/stable-slice"
 import { alertsHref } from "../shared/links"
 import type { AlertQueryTiming } from "@maple/domain/http"
 import { describeRuleCondition, saveIssues } from "./derive"
-import { draftPreviewOf } from "./derive-rows"
+import { draftTimingOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -160,4 +160,4 @@ const viewOf = stableSlice((model: Model) =>
 
 /** `RuleActionBar`. */
 export const actionBar = (h: H, model: Model, form: RuleForm): Html =>
-	slot(bar, [h, viewOf(model), form, draftPreviewOf(model, form).preview?.queryTiming ?? null])
+	slot(bar, [h, viewOf(model), form, draftTimingOf(model, form)])

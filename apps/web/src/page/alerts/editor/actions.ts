@@ -8,7 +8,7 @@ import { PageOutMessage } from "../../contract"
 import { alertsHref } from "../shared/links"
 import { RunRuleTest, SaveRule, TrackRuleCreated } from "./command"
 import { previewIdentityKey, saveIssues } from "./derive"
-import { draftPreviewOf } from "./derive-rows"
+import { draftTimingOf } from "./derive-rows"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import type { Return } from "./steps"
@@ -49,7 +49,7 @@ export const completeTest = (model: Model, message: Extract<Message, { _tag: "Co
 export const save = (model: Model): Return => {
 	const form = model.form
 	if (form === null || model.isSaving) return { model }
-	if (saveIssues(form, draftPreviewOf(model, form).preview?.queryTiming ?? null).length > 0) return { model }
+	if (saveIssues(form, draftTimingOf(model, form)).length > 0) return { model }
 	return {
 		model: { ...model, isSaving: true },
 		commands: [SaveRule({ ruleId: model.editingRuleId, payload: buildRuleCreateParamsV2(form) })],

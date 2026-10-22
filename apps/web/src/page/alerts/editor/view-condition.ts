@@ -12,9 +12,15 @@ import { statusDot } from "../../../ui/status-dot"
 import type * as Select from "../../../ui/select"
 import { stableSlice } from "../../kit/stable-slice"
 import { COMPARATOR_WORDS, comparatorWords, recoveryLabel } from "./derive"
-import { draftPreviewOf } from "./derive-rows"
+import { draftTimingOf } from "./derive-rows"
 import type { RuleForm } from "./form"
-import { AUTO_INTERVAL, formIntervalMinutes, intervalOptions, intervalRadioValue } from "./interval"
+import {
+	AUTO_INTERVAL,
+	autoIntervalMinutes,
+	formIntervalMinutes,
+	intervalOptions,
+	intervalRadioValue,
+} from "./interval"
 import { Message, type TextField } from "./message"
 import type { Model } from "./model"
 import { fieldStateOf, idsOf, numberField, wasNote } from "./view-fields"
@@ -27,7 +33,12 @@ type H = HtmlBuilder<Message>
 const COMPARATOR_SELECT_ID = "rule-comparator"
 
 /** What the card reads off the Model: the dirty and saved values, and the comparator select's state. */
-type ConditionView = Pick<Model, "mountedForm" | "savedForm"> & Readonly<{ comparatorSelect: Select.Model | undefined }>
+type ConditionView = Pick<Model, "mountedForm" | "savedForm"> &
+	Readonly<{
+		comparatorSelect: Select.Model | undefined
+		/** The edited rule's slowdown after query timeouts, which saving clears. */
+		slowedMinutes: number | null
+	}>
 
 /** `COMPARATOR_ITEMS`, in `comparatorLabels` order. */
 const COMPARATOR_ITEMS = [...COMPARATOR_WORDS].map(([value, label]) => ({ value, label }))
@@ -214,7 +225,7 @@ const windowDescription = (form: RuleForm): string => {
 }
 
 /** "Check every": the interval, and for raw SQL the query time each one allows. */
-const intervalPicker = (h: H, form: RuleForm, timing: AlertQueryTiming | null): Html => {
+const intervalPicker = (h: H, model: ConditionView, form: RuleForm, timing: AlertQueryTiming | null): Html => {
 	const isRaw = form.signalType === "raw_query"
 	const options = intervalOptions(form, isRaw ? timing : null)
 	const selected = intervalRadioValue(form.evaluationIntervalMinutes)
@@ -227,14 +238,14 @@ const intervalPicker = (h: H, form: RuleForm, timing: AlertQueryTiming | null): 
 			inputId: `rule-interval-${option.value}-input`,
 		})),
 	}
-	const ids = { control: "rule-interval-input", label: "rule-interval-label", error: "rule-interval-error" }
 	const current = options.find((option) => option.value === selected)
 	return field(h, { className: "items-stretch gap-1.5", state: filledState }, [
-		fieldLabel(h, { ids, state: filledState }, "Check every"),
+		h.span([h.Id("rule-interval-label"), h.Class("text-sm font-medium")], ["Check every"]),
+		...slowdownNotice(h, model, form),
 		h.div(
 			[
 				h.AriaLabelledBy("rule-interval-label"),
-				h.Class("grid grid-cols-4 gap-1 rounded-md bg-muted/30 p-0.5 sm:grid-cols-7"),
+				h.Class("grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-1 rounded-md bg-muted/30 p-0.5"),
 				h.DataAttribute("filled", ""),
 				h.Role("radiogroup"),
 			],
@@ -261,6 +272,11 @@ const intervalPicker = (h: H, form: RuleForm, timing: AlertQueryTiming | null): 
 								[h.Class(cn("whitespace-nowrap", option.isTooSlow && "line-through"))],
 								[option.label],
 							),
+							...(option.isLongerThanWindow
+								? [h.span([h.Class("sr-only")], [", longer than the window"])]
+								: option.isTooSlow
+									? [h.span([h.Class("sr-only")], [", too slow for this query"])]
+									: []),
 							...(isRaw
 								? [
 										h.span(
@@ -278,12 +294,49 @@ const intervalPicker = (h: H, form: RuleForm, timing: AlertQueryTiming | null): 
 	])
 }
 
+const slowdownOf = (model: Model): Pick<ConditionView, "slowedMinutes"> => {
+	const row = model.editingRuleId === null ? undefined : model.rules?.find((rule) => rule.id === model.editingRuleId)
+	return { slowedMinutes: row?.slowed_interval_minutes ?? null }
+}
+
+/** Saving resets a slowdown, so say so while the picked interval is shorter than it. */
+const slowdownNotice = (h: H, model: ConditionView, form: RuleForm): ReadonlyArray<Html> =>
+	model.slowedMinutes === null || formIntervalMinutes(form) >= model.slowedMinutes
+		? []
+		: [
+				h.div(
+					[h.Class("flex flex-wrap items-center justify-between gap-2 rounded-md border border-severity-warn/40 bg-severity-warn/10 px-3 py-2 text-xs")],
+					[
+						h.span(
+							[],
+							[
+								`Checked every ${model.slowedMinutes} min because its query kept timing out. Saving resets this unless you keep it.`,
+							],
+						),
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "xs",
+								attributes: [h.OnClick(Message.ClickedUseInterval({ minutes: String(model.slowedMinutes) }))],
+							},
+							[`Keep ${model.slowedMinutes} min`],
+						),
+					],
+				),
+			]
+
 const intervalNote = (form: RuleForm, option: ReturnType<typeof intervalOptions>[number] | undefined): string => {
 	if (option === undefined) return ""
 	if (option.isLongerThanWindow) return "Longer than the window, so data between checks would go unread."
 	if (option.isTooSlow) return `The query takes longer than the ${option.limitSeconds} s this interval allows.`
 	if (form.signalType !== "raw_query") {
-		return option.value === AUTO_INTERVAL ? "A fifth of the window, from every minute to every 5." : "Fewer checks, the same window."
+		const auto = autoIntervalMinutes(form)
+		return option.value === AUTO_INTERVAL || option.minutes === auto
+			? "A fifth of the window, from every minute to every 5."
+			: option.minutes > auto
+				? "Fewer checks than Auto over the same window."
+				: "More checks than Auto over the same window."
 	}
 	return `Each check may run ${option.limitSeconds} s. Checking less often allows a slower query.`
 }
@@ -345,7 +398,7 @@ const checksSection = (
 					}),
 				],
 			),
-			intervalPicker(h, form, timing),
+			intervalPicker(h, model, form, timing),
 		],
 	)
 }
@@ -442,9 +495,10 @@ const viewOf = stableSlice(
 		mountedForm: model.mountedForm,
 		savedForm: model.savedForm,
 		comparatorSelect: model.selects[COMPARATOR_SELECT_ID],
+		...slowdownOf(model),
 	}),
 )
 
 /** The condition card under the chart; `form` is the evaluated draft (`evaluatedFormOf`). */
 export const conditionFields = (h: H, model: Model, form: RuleForm): Html =>
-	slot(condition, [h, viewOf(model), form, draftPreviewOf(model, form).preview?.queryTiming ?? null])
+	slot(condition, [h, viewOf(model), form, draftTimingOf(model, form)])

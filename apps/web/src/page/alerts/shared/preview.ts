@@ -48,6 +48,8 @@ export const toPreviewForm = (form: RuleFormState): RuleFormState => ({
 			: { ...form.escalation, destinationIds: [] },
 	notificationTitle: "",
 	notificationBody: "",
+	// Raw SQL previews chart under the longest limit, so picking an interval never re-queries.
+	evaluationIntervalMinutes: "",
 })
 
 const toIso = (warehouseTime: string) =>

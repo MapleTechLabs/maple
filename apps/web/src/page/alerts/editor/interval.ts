@@ -37,6 +37,10 @@ export const formIntervalMinutes = (form: RuleForm): number =>
 
 const minutesLabel = (minutes: number): string => (minutes === 60 ? "1 hour" : `${minutes} min`)
 
+/** The automatic interval for the form's window. */
+export const autoIntervalMinutes = (form: RuleForm): number =>
+	alertRuleIntervalMinutes({ windowMinutes: windowOf(form) ?? 5, evaluationIntervalMinutes: null })
+
 /** "Auto" first, then every interval a rule can pick. */
 export const intervalOptions = (form: RuleForm, timing: AlertQueryTiming | null): ReadonlyArray<IntervalOption> => {
 	const window = windowOf(form)
@@ -62,8 +66,8 @@ export const intervalWindowIssue = (form: RuleForm): string | null => {
 	return picked !== null && window !== null && picked > window ? "Check interval longer than the window" : null
 }
 
-/** The shortest interval the timed query fits, when it does not fit the one picked. */
-export const fasterFittingInterval = (form: RuleForm, timing: AlertQueryTiming | null): number | null => {
+/** The shortest interval the timed query fits within the window, when it does not fit the one picked. */
+export const shortestFittingInterval = (form: RuleForm, timing: AlertQueryTiming | null): number | null => {
 	if (timing === null || timing.elapsedMs === null) return null
 	const current = formIntervalMinutes(form)
 	if (timing.fitsIntervalMinutes.some((fits) => fits <= current)) return null
@@ -73,6 +77,6 @@ export const fasterFittingInterval = (form: RuleForm, timing: AlertQueryTiming |
 
 /** Blocks saving when the query does not fit the picked interval but a slower one is a click away. */
 export const queryTimingIssue = (form: RuleForm, timing: AlertQueryTiming | null): string | null =>
-	form.signalType === "raw_query" && fasterFittingInterval(form, timing) !== null
+	form.signalType === "raw_query" && shortestFittingInterval(form, timing) !== null
 		? "Query too slow for this check interval"
 		: null

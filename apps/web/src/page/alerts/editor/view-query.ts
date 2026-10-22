@@ -16,7 +16,7 @@ import { spanAttributeKeysOf, traceFacetsOf } from "./derive-rows"
 import { baseValuesOf } from "./where-inputs"
 import type { RuleForm } from "./form"
 import type { AlertQueryTiming } from "@maple/domain/http"
-import { draftPreviewOf } from "./derive-rows"
+import { draftTimingOf } from "./derive-rows"
 import { Message, type SignalKind } from "./message"
 import type { Model } from "./model"
 import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "../../../ui/input-group"
@@ -321,4 +321,4 @@ const viewOf = stableSlice(
 
 /** Step 1, "What to watch"; `form` is the evaluated draft (`evaluatedFormOf`). */
 export const querySection = (h: H, model: Model, form: RuleForm): Html =>
-	slot(query, [h, viewOf(model), form, draftPreviewOf(model, form).preview?.queryTiming ?? null])
+	slot(query, [h, viewOf(model), form, draftTimingOf(model, form)])
