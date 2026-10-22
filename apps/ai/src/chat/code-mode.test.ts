@@ -220,7 +220,7 @@ describe("run_code", () => {
 		])
 		const { executor, dispatched } = recordingExecutor()
 
-		await Effect.runPromiseExit(
+		const exit = await Effect.runPromiseExit(
 			runChatTurn({
 				sessionId: INVESTIGATION,
 				messageId: "msg-1",
@@ -239,7 +239,9 @@ describe("run_code", () => {
 			}).pipe(Effect.provide(llmClients)),
 		)
 
-		// The program's own call is one of the three.
+		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
+		// The program's own call is one of the three, and it got to make the others.
+		assert.isAtLeast(dispatched.length, 1)
 		assert.isAtMost(dispatched.length, 2)
 	})
 
