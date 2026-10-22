@@ -12,6 +12,7 @@ use crate::metrics;
 use crate::otel::{
     encode_rows_internal_span, export_client_span, record_stage_error, wal_commit_internal_span,
 };
+use crate::outbound;
 use crate::wal_store::WalSegmentStore;
 use chrono::Utc;
 use crc32fast::Hasher as Crc32;
@@ -28,7 +29,11 @@ use opentelemetry_proto::tonic::metrics::v1::{
     metric, number_data_point, Exemplar, NumberDataPoint,
 };
 use opentelemetry_proto::tonic::trace::v1::{span, status, Span};
+#[cfg(test)]
 use reqwest::Client;
+
+/// How much of an export error body is kept for logs and spans; the rest is never read.
+const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
 
 /// The shared outbound HTTP client type: plain `reqwest::Client` in normal
 /// builds, hotpath's instrumented wrapper (same request API) under
@@ -532,6 +537,9 @@ pub struct TinybirdConfig {
     /// bounded channel up into accept-path backpressure.
     pub clickhouse_export_timeout: Duration,
     pub clickhouse_breaker: ClickHouseBreakerConfig,
+    /// Export to loopback/private endpoint addresses. Tests only: a BYO endpoint
+    /// is tenant-controlled, and this process runs inside a private network.
+    pub clickhouse_allow_private_endpoints: bool,
     pub datasources: DatasourceNames,
     pub datasource_session_replays: String,
     pub datasource_session_replay_events: String,
@@ -846,13 +854,15 @@ impl TelemetryPipeline {
         // batch — and the request — follow it into the internal network.
         // Refusing redirects outright is the fix; a ClickHouse endpoint has no
         // legitimate reason to bounce an INSERT somewhere else.
-        let clickhouse_http: HttpClient = Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .pool_max_idle_per_host(64)
-            .pool_idle_timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|error| format!("ClickHouse export HTTP client init: {error}"))?
-            .into();
+        // Its resolver also refuses names that resolve to non-public addresses,
+        // so a name validated at save time cannot later be rebound inward.
+        let clickhouse_http: HttpClient =
+            outbound::tenant_client_builder(outbound::PublicOnlyResolver::system())
+                .pool_max_idle_per_host(64)
+                .pool_idle_timeout(Duration::from_secs(30))
+                .build()
+                .map_err(|error| format!("ClickHouse export HTTP client init: {error}"))?
+                .into();
         cfg.validate_for_pipeline(require_tinybird_credentials)?;
         std::fs::create_dir_all(&cfg.queue_dir)
             .map_err(|error| format!("create ingest WAL dir: {error}"))?;
@@ -2923,7 +2933,7 @@ impl ExportWorker {
                 }
                 Ok(response) if response.status().is_client_error() => {
                     let status = response.status().as_u16();
-                    let body = response.text().await.unwrap_or_default();
+                    let body = outbound::read_body_capped(response, MAX_ERROR_BODY_BYTES).await;
                     span_handle.record("http.response.status_code", status);
                     span_handle.record("maple.ingest.outcome", "dropped");
                     // Terminal: these rows are gone. 4xx from Tinybird means we
@@ -3205,6 +3215,20 @@ impl ExportWorker {
                 );
                 return Ok(ClickHouseExportOutcome::Dropped);
             }
+            if !self.cfg.clickhouse_allow_private_endpoints {
+                if let Some(blocked) = outbound::blocked_literal_host(&request_url) {
+                    span.record("maple.ingest.outcome", "dropped");
+                    record_stage_error(&span, "blocked_address", &blocked.to_string(), true);
+                    metrics::clickhouse_export_dropped(datasource, "blocked_address", rows as u64);
+                    error!(
+                        org_id,
+                        datasource,
+                        rows,
+                        "Dropping ClickHouse batch because the endpoint is not a public address"
+                    );
+                    return Ok(ClickHouseExportOutcome::Dropped);
+                }
+            }
             {
                 let mut query = request_url.query_pairs_mut();
                 query
@@ -3253,7 +3277,7 @@ impl ExportWorker {
                         .and_then(|value| value.to_str().ok())
                         .unwrap_or("")
                         .to_owned();
-                    let body = response.text().await.unwrap_or_default();
+                    let body = outbound::read_body_capped(response, MAX_ERROR_BODY_BYTES).await;
                     span.record("http.response.status_code", status_code);
                     if status.is_redirection() {
                         // The client refuses to follow these, so a redirect is a
@@ -3263,7 +3287,11 @@ impl ExportWorker {
                         // "non_retryable 4xx" would bury that.
                         span.record("maple.ingest.outcome", "dropped");
                         record_stage_error(&span, "redirect_refused", &body, true);
-                        metrics::clickhouse_export_dropped(datasource, "redirect_refused", rows as u64);
+                        metrics::clickhouse_export_dropped(
+                            datasource,
+                            "redirect_refused",
+                            rows as u64,
+                        );
                         warn!(
                             org_id,
                             datasource,
@@ -3304,6 +3332,20 @@ impl ExportWorker {
                     );
                     self.clickhouse_breakers.on_failure(org_id, Instant::now());
                     last_status = bucket.to_owned();
+                }
+                Err(error) if outbound::is_blocked_address(&error) => {
+                    // A name that resolves inward is a config fault no retry clears.
+                    span.record("maple.ingest.outcome", "dropped");
+                    record_stage_error(&span, "blocked_address", &error.to_string(), true);
+                    metrics::clickhouse_export_dropped(datasource, "blocked_address", rows as u64);
+                    error!(
+                        org_id,
+                        datasource,
+                        rows,
+                        error = %error,
+                        "Dropping ClickHouse batch because the endpoint resolves to a non-public address"
+                    );
+                    return Ok(ClickHouseExportOutcome::Dropped);
                 }
                 Err(error) => {
                     span.record("maple.ingest.outcome", "retry");
@@ -4376,6 +4418,7 @@ mod tests {
             export_max_attempts: 20,
             clickhouse_export_timeout: Duration::from_secs(5),
             clickhouse_breaker: ClickHouseBreakerConfig::default(),
+            clickhouse_allow_private_endpoints: true,
             datasources: DatasourceNames::defaults(),
             datasource_session_replays: "session_replays".to_owned(),
             datasource_session_replay_events: "session_replay_events".to_owned(),
@@ -5343,6 +5386,56 @@ mod tests {
             redirected_rx.try_recv().is_err(),
             "export must not follow a redirect from a tenant-configured target"
         );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn clickhouse_export_drops_a_batch_for_a_private_endpoint_address() {
+        // Production refuses non-public endpoint addresses at export time, not
+        // only at save time; this target counts any request that slips through.
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let ch_addr = ch_listener.local_addr().unwrap();
+        let ch_app = Router::new()
+            .route("/", post(counting_failing_clickhouse_handler))
+            .with_state(Arc::clone(&count));
+        tokio::spawn(async move {
+            axum::serve(ch_listener, ch_app).await.unwrap();
+        });
+
+        let queue_dir = unique_test_dir("fake-clickhouse-private-address");
+        let mut cfg = test_cfg();
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        cfg.export_max_attempts = 3;
+        cfg.clickhouse_allow_private_endpoints = false;
+
+        let provider = Arc::new(StaticClickHouseTargetProvider {
+            target: ClickHouseTarget {
+                endpoint: format!("http://{ch_addr}"),
+                user: "ingest".to_owned(),
+                password: String::new(),
+                database: "maple".to_owned(),
+            },
+        });
+        let pipeline = TelemetryPipeline::new_with_clickhouse(cfg, Client::new(), Some(provider))
+            .await
+            .unwrap();
+        pipeline
+            .accept_logs_to(
+                "org_ready",
+                &populated_log_request(),
+                ExportDestination::ClickHouse,
+            )
+            .await
+            .unwrap();
+
+        wait_for_export_drain(queue_dir.clone(), 0, ExportDestination::ClickHouse).await;
+        assert_eq!(count.load(Ordering::SeqCst), 0);
 
         drop(std::fs::remove_dir_all(queue_dir));
     }

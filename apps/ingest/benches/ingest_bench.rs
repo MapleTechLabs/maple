@@ -127,6 +127,7 @@ impl BenchFixture {
                 export_max_attempts: 20,
                 clickhouse_export_timeout: Duration::from_secs(5),
                 clickhouse_breaker: ClickHouseBreakerConfig::default(),
+                clickhouse_allow_private_endpoints: false,
                 datasources: DatasourceNames::defaults(),
                 datasource_session_replays: "session_replays".to_owned(),
                 datasource_session_replay_events: "session_replay_events".to_owned(),

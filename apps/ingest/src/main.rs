@@ -420,6 +420,7 @@ impl AppConfig {
                     duration_millis(ClickHouseBreakerConfig::default().cooldown),
                 )?),
             },
+            clickhouse_allow_private_endpoints: false,
             datasources: DatasourceNames::from_env(),
             datasource_session_replays: std::env::var("INGEST_TINYBIRD_DATASOURCE_SESSION_REPLAYS")
                 .unwrap_or_else(|_| "session_replays".to_owned()),
@@ -10062,6 +10063,7 @@ mod tests {
             export_max_attempts: 1,
             clickhouse_export_timeout: Duration::from_secs(5),
             clickhouse_breaker: ClickHouseBreakerConfig::default(),
+            clickhouse_allow_private_endpoints: true,
             datasources: DatasourceNames::defaults(),
             datasource_session_replays: "session_replays".to_owned(),
             datasource_session_replay_events: "session_replay_events".to_owned(),
