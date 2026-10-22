@@ -1,5 +1,6 @@
 pub mod ai_session;
 pub mod aws;
+pub mod aws_metric_stream;
 pub mod clickhouse_insert_mappings;
 pub mod decompress;
 pub mod gcp_logging;

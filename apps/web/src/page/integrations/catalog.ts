@@ -14,6 +14,7 @@ export type IntegrationId =
 	| "prometheus"
 	| "planetscale"
 	| "gcp"
+	| "aws"
 	| "railway"
 	| "supabase"
 	| "warpstream"
@@ -26,6 +27,7 @@ export const HAZEL_ACCENT = "#F46F0F"
 export const CLOUDFLARE_ACCENT = "#F38020"
 export const RAILWAY_ACCENT = "#0B0D0E"
 export const GCP_ACCENT = "#4285F4"
+export const AWS_ACCENT = "#FF9900"
 
 /** A generated icon, or a chat connector's manifest mark (rendered from its path data). */
 export type EntryIcon =
@@ -117,6 +119,17 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: named("GoogleCloudIcon"),
 		accent: GCP_ACCENT,
 		docsUrl: docsUrl("gcp"),
+	},
+	{
+		id: "aws",
+		category: "infrastructure",
+		isNew: true,
+		name: "AWS",
+		description: "Connect an AWS account through a read-only role you deploy with CloudFormation.",
+		icon: named("AwsIcon"),
+		accent: AWS_ACCENT,
+		iconClassName: "text-foreground",
+		docsUrl: docsUrl("aws"),
 	},
 	{
 		id: "railway",

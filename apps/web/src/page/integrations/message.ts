@@ -11,6 +11,9 @@ import {
 	VcsRepositoryId,
 } from "@maple/domain/http"
 import {
+	V2AwsConnection,
+	V2AwsIntegration,
+	V2AwsSetup,
 	V2ChatConnectorList,
 	V2GcpConnector,
 	V2GcpIntegration,
@@ -22,7 +25,7 @@ import {
 	V2ScrapeTarget,
 	V2ScrapeTargetCheck,
 } from "@maple/domain/http/v2"
-import { ChatWorkspaceId, GcpConnectorId, GcpLogRuntime, SupabaseProjectRef } from "@maple/domain/primitives"
+import { AwsConnectionId, ChatWorkspaceId, GcpConnectorId, GcpLogRuntime, SupabaseProjectRef } from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/load-failure"
@@ -41,6 +44,7 @@ import { FleetRead } from "../infra-integrations/gcp/data"
 import { SupabaseProjectRow } from "../infra-integrations/supabase/model"
 import { Capability, GcpFlags, SetupMethod } from "./gcp-configure-schema"
 import { ConfigureTarget, LogVolume, RemovedConnector } from "./gcp-schema"
+import { AwsRemovedStack, AwsSetupMethod } from "./aws-schema"
 
 export const StatusName = Schema.Literals([
 	"cloudflare",
@@ -48,6 +52,7 @@ export const StatusName = Schema.Literals([
 	"planetscale",
 	"planetscaleDatabases",
 	"gcp",
+	"aws",
 	"supabase",
 	"hazel",
 	"github",
@@ -68,6 +73,7 @@ export const Message = defineMessageUnion({
 	CompletedLoadPlanetscale: result(V2PlanetScaleIntegration),
 	CompletedLoadPlanetscaleDatabases: result(V2PlanetScaleDatabaseList),
 	CompletedLoadGcp: result(V2GcpIntegration),
+	CompletedLoadAws: result(V2AwsIntegration),
 	CompletedLoadSupabase: result(SupabaseIntegrationStatus),
 	CompletedLoadHazel: result(HazelIntegrationStatus),
 	CompletedLoadGithub: result(GithubIntegrationStatus),
@@ -184,6 +190,37 @@ export const Message = defineMessageUnion({
 	ClickedRailwayRotateCancel: {},
 	/** Every 15 s while environments wait for their first sync. */
 	TickedRailwaySettle: {},
+	GotAwsAccountIdMessage: { message: Field.Message },
+	SubmittedAwsAccount: {},
+	SucceededAwsCreate: { connection: V2AwsConnection },
+	FailedAwsCreate: { error: Schema.String },
+	ClickedAwsAdd: {},
+	ClickedAwsAddCancel: {},
+	ClickedAwsSetup: { id: AwsConnectionId },
+	ClickedAwsSetupClose: {},
+	CompletedLoadAwsSetup: result(V2AwsSetup),
+	ClickedAwsSetupMethod: { method: AwsSetupMethod },
+	ClickedAwsCheck: { id: AwsConnectionId },
+	/** The background re-check of connections still waiting for their stack. */
+	TickedAwsPending: {},
+	CompletedAwsCheck: {
+		id: AwsConnectionId,
+		quiet: Schema.Boolean,
+		connection: Schema.NullOr(V2AwsConnection),
+		failure: Schema.NullOr(LoadFailure),
+	},
+	GotAwsCopyMessage: { id: Schema.String, message: CopyButton.Message },
+	ClickedAwsDisconnect: { id: AwsConnectionId },
+	GotAwsDisconnectDialogMessage: { message: Dialog.Message },
+	ConfirmedAwsDisconnect: {},
+	CompletedAwsDisconnect: {
+		id: AwsConnectionId,
+		removed: Schema.NullOr(AwsRemovedStack),
+		error: Schema.NullOr(Schema.String),
+	},
+	DismissedAwsRemoved: { connectionId: Schema.String },
+	CompletedReadAwsRemoved: { removed: Schema.Array(AwsRemovedStack) },
+	CompletedWriteAwsRemoved: {},
 	ClickedSupabaseSync: {},
 	/** Every minute while the connected Supabase card is shown, so its window and ages advance. */
 	TickedSupabaseClock: {},

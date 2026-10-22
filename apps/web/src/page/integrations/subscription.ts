@@ -158,6 +158,18 @@ const isRailwaySettling = (model: Model): boolean => {
 	return status !== null && status.connected && !status.authFailed && unsyncedEnvironments(status) > 0
 }
 
+/** A setup is open for a connection whose stack Maple has not assumed yet. */
+const isAwsPending = (model: Model): boolean => {
+	if (integrationOfSearch(model.search.integration) !== "aws") return false
+	const status = Option.getOrNull(AsyncData.getData(model.statuses.aws.data))
+	const setupId = model.awsCard.setupId
+	return (
+		status !== null &&
+		setupId !== null &&
+		status.connections.some((connection) => connection.id === setupId && connection.verified_at === null)
+	)
+}
+
 const isAwaitingFirstScrape = (model: Model): boolean => {
 	if (integrationOfSearch(model.search.integration) !== "planetscale") return false
 	const status = Option.getOrNull(AsyncData.getData(model.statuses.planetscale.data))
@@ -339,6 +351,14 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				modelToDependencies: ({ model }) => ({ isSettling: isRailwaySettling(model) }),
 				dependenciesToStream: ({ isSettling }) =>
 					isSettling ? every(15_000, () => Message.TickedRailwaySettle()) : Stream.empty,
+			},
+		),
+		awsPending: entry(
+			{ isPending: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ isPending: isAwsPending(model) }),
+				dependenciesToStream: ({ isPending }) =>
+					isPending ? every(10_000, () => Message.TickedAwsPending()) : Stream.empty,
 			},
 		),
 		/** The connected Supabase card's clock, so its metrics window and "Last data" ages advance. */
