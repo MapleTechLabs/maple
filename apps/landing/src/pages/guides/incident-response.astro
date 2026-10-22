@@ -115,14 +115,6 @@ How we found out, and how long after impact started.
 | Send checkout alerts to phones, not Slack    | Respond  | <name> | <date> |
 | Put the rollback command in the runbook      | Mitigate | <name> | <date> |`;
 
-const sources = [
-    { source: "Your services", lands: "Traces, logs, metrics and error issues sent over OpenTelemetry", tools: ["diagnose_service", "find_slow_traces", "inspect_trace", "error_detail", "search_logs"] },
-    { source: "Infrastructure", lands: "Logs and metrics from connected integrations", tools: ["list_integrations", "query_data"] },
-    { source: "GitHub", lands: "GitHub Actions runs as traces and logs, commit history, source code", tools: ["ci_runs", "compare_commits", "read_source_file"] },
-    { source: "Browsers", lands: "Session replays from the Browser SDK, linked to their backend traces", tools: ["search_sessions", "get_session_transcript", "get_session_traces"] },
-    { source: "Everything", lands: "One read-only ClickHouse SQL query over the same tables", tools: ["run_sql"] },
-];
-
 const faqs = [
     {
         question: "What are the incident response steps?",
@@ -299,7 +291,7 @@ const articleJsonLd = {
                             <span>01</span>
                             <div>
                                 <h3 id="prep-alerts" class="scroll-mt-24">Alert on symptoms users feel</h3>
-                                <p>For each journey your business depends on (signup, login, checkout, the public API), add one error-rate alert and one latency alert, plus one uptime check that calls the app from outside your infrastructure. Leave CPU and memory off the phone: they fire for problems users never see. Check each rule against the data from your last outage to confirm it would have fired.</p>
+                                <p>For each journey your business depends on (signup, login, checkout, the public API), add one error-rate alert and one latency alert on the traces your services already send. Real traffic shows failures a scripted ping from outside never reaches (see <a href="/guides/uptime-monitoring">uptime monitoring</a>). For latency, an <a href="/guides/what-is-apdex">Apdex score</a> gives one number per journey instead of a percentile per endpoint. Leave CPU and memory off the phone: they fire for problems users never see. Check each rule against the data from your last outage to confirm it would have fired.</p>
                                 <p class="guide-steps__out"><span>Output</span>Four to eight alert rules that reach a phone, each tested against a past outage.</p>
                             </div>
                         </li>
@@ -347,7 +339,7 @@ const articleJsonLd = {
                         ))}
                     </ol>
                     <p>
-                        On a security incident the same steps apply with different mitigations: isolate the compromised host, rotate the leaked credential, then remove the attacker's access before you restore service. Preserve logs and disk images before you change anything, because they are evidence.
+                        On a security incident the same steps apply with different mitigations: isolate the compromised host, rotate the leaked credential, then remove the attacker's access before you restore service.
                     </p>
                 </section>
 
@@ -483,20 +475,6 @@ const articleJsonLd = {
                 <section id="maple" class="scroll-mt-24">
                     <p class="guide-eyebrow"><span>06</span> · In practice</p>
                     <h2>Incident response in Maple</h2>
-                    <div class="guide-table">
-                        <table>
-                            <thead>
-                                <tr><th>Do this</th><th>You get</th></tr>
-                            </thead>
-                            <tbody>
-                                <tr><td>Send your services' traces, logs and metrics to Maple over OpenTelemetry (<a href="/docs/getting-started/quickstart">quickstart</a>)</td><td>Every request as a trace with its logs, and error spans grouped into issues</td></tr>
-                                <tr><td>Add the alert rules from <a href="#prep-alerts">the first preparation step</a> and attach PagerDuty or Slack</td><td>An incident in Maple and a page on the right phone when a rule breaches</td></tr>
-                                <tr><td>Connect your cloud, database and GitHub accounts under <strong>Sources</strong></td><td>Infrastructure metrics and logs, and CI runs, next to your own telemetry</td></tr>
-                                <tr><td>Connect your coding agent to the <a href="/docs/reference/mcp">MCP server</a></td><td>An agent that can query all of it to find a root cause</td></tr>
-                                <tr><td>Install the Maple GitHub App and open <a href="/features/github">Code Review</a> (beta)</td><td>Pull requests reviewed against the production traffic of the code they change</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
 
                     <h3 id="maple-detect" class="scroll-mt-24"><span class="phase-badge" style={`--phase: ${phases.detect.color}`}>Detect</span> Alert rules open incidents</h3>
                     <ol class="guide-steps">
@@ -533,22 +511,7 @@ const articleJsonLd = {
                         The <a href="/docs/reference/mcp">Maple MCP server</a> at <code>https://api.maple.dev/mcp</code> gives Claude Code, Cursor or any other MCP client the same data, scoped to your organization. The <strong>MCP</strong> page under <strong>Settings</strong> shows the endpoint and ready-made configuration for common clients.
                     </p>
                     <p>
-                        Data from <a href="/docs/integrations/gcp">Google Cloud</a> (Cloud Logging and Cloud Monitoring), <a href="/docs/integrations/cloudflare">Cloudflare</a> (zone and Workers analytics), <a href="/docs/integrations/planetscale">PlanetScale</a> (branch metrics), Railway (service metrics), <a href="/docs/integrations/prometheus">any Prometheus endpoint</a> and <a href="/docs/integrations/github">GitHub Actions</a> is stored in the same log, metric and trace tables as your own telemetry. One query layer covers all of it, so an agent can follow a root cause from a failing checkout to a saturated database or a red deploy without switching tools:
-                    </p>
-                    <div class="guide-table">
-                        <table>
-                            <thead>
-                                <tr><th>Source</th><th>What lands in Maple</th><th>MCP tools</th></tr>
-                            </thead>
-                            <tbody>
-                                {sources.map((r) => (
-                                    <tr><td><strong>{r.source}</strong></td><td>{r.lands}</td><td>{r.tools.map((t) => <code class="tool-chip">{t}</code>)}</td></tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                    <p>
-                        <code>run_sql</code> takes the same ClickHouse SQL that dashboard widgets and raw-SQL alert rules use (see the <a href="/docs/reference/sql">SQL reference</a>). <code>claim_error_issue</code> takes the lease on an error issue so two people or agents do not fix the same bug, and the server ships an <code>incident_triage</code> prompt that walks the assistant through the first calls.
+                        Data from <a href="/docs/integrations/gcp">Google Cloud</a> (Cloud Logging and Cloud Monitoring), <a href="/docs/integrations/cloudflare">Cloudflare</a> (zone and Workers analytics), <a href="/docs/integrations/planetscale">PlanetScale</a> (branch metrics), Railway (service metrics), <a href="/docs/integrations/prometheus">any Prometheus endpoint</a> and <a href="/docs/integrations/github">GitHub Actions</a> is stored in the same log, metric and trace tables as your own telemetry. One query layer covers all of it, so an agent can follow a root cause from a failing checkout to a saturated database or a red deploy without switching tools.
                     </p>
                     <figure class="guide-figure"><img src="/screenshots/flow-04-agent.webp" data-zoomable alt="Claude Code connected to the Maple MCP server, asked why api-gateway is erroring: list_services, search_traces, find_errors and read_source_file calls lead to a propose_fix call with a patch to a payment retry." width="1984" height="1200" loading="lazy" /></figure>
 
@@ -637,7 +600,6 @@ const articleJsonLd = {
     .ir-guide .guide-steps__head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
     .ir-guide .guide-steps h3 { margin: 0; font-size: 1.05rem; }
     .ir-guide .guide-steps--prep > li > span { border-color: color-mix(in oklab, var(--phase) 50%, transparent); background: color-mix(in oklab, var(--phase) 14%, transparent); color: color-mix(in oklab, var(--phase) 70%, var(--foreground)); }
-    .ir-guide .tool-chip { display: inline-block; margin: 0 0.3rem 0.3rem 0; }
     .ir-guide .guide-steps p.guide-steps__out { margin-top: 0.8rem; color: var(--foreground); }
     .ir-guide .guide-steps__out > span { display: inline-block; margin-right: 0.6rem; border: 1px solid color-mix(in oklab, var(--phase) 45%, transparent); border-radius: 999px; padding: 0 0.5rem; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; line-height: 1.6; color: color-mix(in oklab, var(--phase) 70%, var(--foreground)); vertical-align: 0.1em; }
     .ir-guide .guide-steps p { margin: 0.4rem 0 0; font-size: 14px; line-height: 1.7; color: var(--muted-foreground); }
