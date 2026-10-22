@@ -1,6 +1,8 @@
 name: Deploy PRD (Cloudflare via Alchemy)
 
 # Gated on CI passing (not `push: main`); `workflow_dispatch` skips the gate.
+# `branches: [main]` matches the CI run's head branch name, which a pull request
+# from another repository can share, so each job also requires a push from this repo.
 # One commit ships to every instance via `deploy-prd-instance.yml`; the ingest
 # binary is built once and shared.
 on:
@@ -21,13 +23,13 @@ permissions:
 jobs:
     # Separate job for the arm64 runner; same gate so a red CI builds nothing.
     ingest-binary:
-        if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository) }}
         uses: ./.github/workflows/build-ingest-binary.yml
 
     # On workflow_run, `github.sha` is the branch head, not the commit CI tested: pin head_sha.
     deploy-prd:
         needs: ingest-binary
-        if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+        if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository) }}
         uses: ./.github/workflows/deploy-prd-instance.yml
         secrets: inherit
         with:
@@ -38,7 +40,7 @@ jobs:
     # Sequenced after `us` so a breaking change stops at one instance.
     deploy-prd-eu:
         needs: [ingest-binary, deploy-prd]
-        if: ${{ vars.MAPLE_DEPLOY_EU == '1' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+        if: ${{ vars.MAPLE_DEPLOY_EU == '1' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository)) }}
         uses: ./.github/workflows/deploy-prd-instance.yml
         secrets: inherit
         with:
@@ -55,9 +57,16 @@ jobs:
             - name: Report whether the deploy ran
               env:
                   CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+                  CI_EVENT: ${{ github.event.workflow_run.event }}
+                  CI_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+                  REPO: ${{ github.repository }}
                   HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
               run: |
                   result="${{ needs.deploy-prd.result }}"
+                  if [ "$GITHUB_EVENT_NAME" = "workflow_run" ] && { [ "$CI_EVENT" != "push" ] || [ "$CI_REPO" != "$REPO" ]; }; then
+                      echo "::notice::Nothing to deploy: CI ran for a $CI_EVENT from $CI_REPO, not a push to main."
+                      exit 0
+                  fi
                   if [ "$result" = "skipped" ] && [ "$CI_CONCLUSION" = "cancelled" ]; then
                       echo "::notice::Nothing to deploy: CI for $HEAD_SHA was cancelled, superseded by a newer push to main."
                       exit 0
