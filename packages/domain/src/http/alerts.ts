@@ -772,7 +772,10 @@ export class AlertQueryTiming extends Schema.Class<AlertQueryTiming>("AlertQuery
 	/** The rule's check interval and that interval's time limit. */
 	intervalMinutes: Schema.Number,
 	limitMs: Schema.Number,
-	/** Intervals whose time limit the query fits with a fifth to spare. */
+	/**
+	 * Intervals up to the window whose time limit the query fits with a fifth to spare. Time only:
+	 * the probe runs with the top memory, and a check that runs out of memory slows the rule down.
+	 */
 	fitsIntervalMinutes: Schema.Array(AlertEvaluationIntervalMinutes),
 }) {}
 
