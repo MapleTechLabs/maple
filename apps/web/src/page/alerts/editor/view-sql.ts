@@ -14,7 +14,7 @@ import { iconButton } from "../../../ui/icon-button"
 import { inlineCode } from "../../../ui/inline-code"
 import type * as Select from "../../../ui/select"
 import type { RuleForm } from "./form"
-import { formIntervalMinutes, shortestFittingInterval } from "./interval"
+import { formIntervalMinutes, intervalWindowIssue, shortestFittingInterval } from "./interval"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { formSelect } from "./view-select"
@@ -164,6 +164,7 @@ const meterNote = (form: RuleForm, timing: AlertQueryTiming, interval: number, l
 	if (!timing.fitsIntervalMinutes.some((fits) => fits <= interval)) {
 		return "Too slow for any interval this window allows. Widen the window or narrow the query."
 	}
+	if (intervalWindowIssue(form) !== null) return "The picked interval is longer than the window. Pick a shorter one."
 	return `Fits checks every ${interval === 1 ? "minute" : `${interval} min`}.`
 }
 
@@ -202,7 +203,7 @@ const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html =>
 				METER_TICKS.map((tickMs) =>
 					h.span(
 						[
-							h.Class(cn("absolute -translate-x-full", tickMs === limitMs && "font-medium text-foreground")),
+							h.Class(cn("absolute -translate-x-full whitespace-nowrap", tickMs === limitMs && "font-medium text-foreground")),
 							h.Style({ left: `${(tickMs / timing.probeLimitMs) * 100}%` }),
 						],
 						[formatQuerySeconds(tickMs)],
