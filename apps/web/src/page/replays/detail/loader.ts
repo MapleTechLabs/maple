@@ -259,10 +259,17 @@ export const loadedFromMs = (model: Model): number => {
 	return first === undefined ? 0 : chunkStartMs(first) - manifestStartMs(chunks)
 }
 
+/** Whether the recording is larger than the player may hold, so it plays in windows. */
+const isWindowed = (model: Model): boolean =>
+	chunksOf(model).reduce((sum, chunk) => sum + chunk.byte_size, 0) > MAX_PLAYABLE_BYTES
+
 const rebuildAt = (model: Model, offsetMs: number, anchorSeq: number, resume: boolean): Model => ({
 	...model,
 	loader: {
 		...model.loader,
+		// A windowed recording's cached answers belong to the window being left; kept, they would sit
+		// outside the cap. A smaller one keeps them: they cannot exceed the cap, and make re-seeks instant.
+		rangeCache: isWindowed(model) ? {} : model.loader.rangeCache,
 		playheadMs: offsetMs,
 		loaded: [],
 		seedCount: 0,

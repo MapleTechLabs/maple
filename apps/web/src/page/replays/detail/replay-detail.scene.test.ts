@@ -319,6 +319,8 @@ describe("replay detail", () => {
 		const slid = pageUpdate(playing, Message.TickedEngine({ seedVersion: playing.loader.seedVersion, currentMs: 9_500 })).model
 		// Chunk 1 was fetched for its markers only and not kept, so the new window fetches it again.
 		expect(slid.loader.queue).toEqual([{ fromChunkSeq: 1, toChunkSeq: 1 }])
+		// The window being left is not cached past the cap either.
+		expect(Object.keys(slid.loader.rangeCache)).toEqual([])
 		const rebuilt = answerWith(answerWith(slid, chunkRows(1, 60)).model, chunkRows(2, 120)).model
 		expect(rebuilt.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([1, 2])
 		const resumed = pageUpdate(rebuilt, Message.ReadiedEngine({ seedVersion: rebuilt.loader.seedVersion, totalMs: 1 })).model
