@@ -492,7 +492,7 @@ one task per host in host networking, with the WAL on the local NVMe instance st
 the only ingest path. The OTel collector and Electric (`apps/electric`) run as ECS Fargate
 services. The Prometheus scraper (`apps/scraper`, US prd only) is a Fargate singleton in the
 same VPC with no inbound traffic; its image is the single-file bundle `alchemy:build-deps`
-writes to `apps/scraper/dist`, and ECS replaces the task when its `/health` goes stale.
+writes to `apps/scraper/dist`, and ECS replaces the task when its `/health` stops answering.
 
 - `AWS.providers()` is registered unconditionally: the `Alchemy.Stack` options are evaluated
   before `Alchemy.Stage` is readable, so it cannot be stage-derived.

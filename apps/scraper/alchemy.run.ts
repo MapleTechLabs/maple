@@ -89,14 +89,15 @@ export const createMapleScraper = ({
 			// No NAT in the ingest VPC, so the task needs a public IP to reach anything.
 			assignPublicIp: true,
 
-			// `/health` answers 503 once the target list has gone stale, so ECS replaces a hung
-			// process instead of leaving it up. The image has no curl; bun does the probe.
+			// Liveness only: any answer counts, so ECS replaces a process whose server no longer
+			// responds. `/health`'s 503 means the API is unreachable, not that this task is stuck.
+			// The image has no curl; bun does the probe.
 			healthCheck: {
 				command: [
 					"CMD",
 					"bun",
 					"-e",
-					`fetch("http://127.0.0.1:${SCRAPER_PORT}/health").then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))`,
+					`fetch("http://127.0.0.1:${SCRAPER_PORT}/health").then(() => process.exit(0), () => process.exit(1))`,
 				],
 				interval: "30 seconds",
 				timeout: "5 seconds",
