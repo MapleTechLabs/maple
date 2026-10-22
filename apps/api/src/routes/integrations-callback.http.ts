@@ -72,6 +72,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 						"maple.integration.provider": provider,
 					},
 				})(function* (req: HttpServerRequest.HttpServerRequest) {
+					yield* Effect.annotateCurrentSpan({ "http.response.status_code": 302 })
 					return forwardToDashboard(
 						dashboardCallbackUrl(env.MAPLE_APP_BASE_URL, provider, "oauth", callbackQueryOf(req)),
 					)

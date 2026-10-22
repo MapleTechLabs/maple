@@ -38,6 +38,8 @@ export const ChatCallbackRouter = HttpRouter.use((router) =>
 
 		const callback = (span: string, kind: DashboardCallbackKind, outcome: string) =>
 			Effect.fn(span)(function* (req: HttpServerRequest.HttpServerRequest) {
+				// Every branch is a 302: this span is the callback's only trace root (ApiObservabilityLive).
+				yield* Effect.annotateCurrentSpan({ "http.response.status_code": 302 })
 				const routeParams = yield* HttpRouter.params
 				const connector = decodeConnectorParam(routeParams.connector)
 				if (Option.isNone(connector)) {
