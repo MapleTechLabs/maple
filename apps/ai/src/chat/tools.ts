@@ -124,7 +124,10 @@ export interface RunUsage {
 	cacheRead: number
 	/** The same calls as AI credit charges, in Autumn's exclusive pools; see {@link recordCharge}. */
 	readonly charges: Array<Mutable<AiModelSpend>>
-	/** What the run's child agents (`review_files`) spent, as the engine reports each one ending. */
+	/**
+	 * The part of the totals above that the run's child agents (`review_files`) spent, as the engine
+	 * reports each one ending. Their calls are charged with the run's own.
+	 */
 	readonly delegated: { modelCalls: number; input: number; output: number; costMicrousd: number }
 }
 

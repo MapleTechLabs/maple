@@ -242,6 +242,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 			? buildReviewFanout(
 					Toolkit.merge(direct, ...(codeMode === undefined ? [] : [codeMode.toolkit])),
 					input.model,
+					input.usage,
 					startedAt + Duration.toMillis(Duration.fromInputUnsafe(agent.budget.maxDuration)),
 					codeMode === undefined ? undefined : CODE_MODE_GUIDANCE,
 					Object.keys(codeTools),

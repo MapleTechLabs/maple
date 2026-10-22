@@ -15,6 +15,7 @@ import { Clock, Duration, Effect, Layer, Predicate, Schema } from "effect"
 import { LanguageModel, Prompt, type Tool, Toolkit } from "effect/ai"
 import type { ResolvedModel } from "../platform/Llm"
 import { MODEL_RETRIES } from "./budgets"
+import { accumulateUsage, type RunUsage } from "./tools"
 
 export const REVIEW_FILES = "review_files"
 
@@ -153,6 +154,8 @@ export const answeringWhenWarned = <Provides, E, R>(
 export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 	toolkit: Toolkit.Toolkit<Tools>,
 	model: ResolvedModel,
+	/** The parent's usage: a child's model calls are billed with the run that started it. */
+	usage: RunUsage,
 	/** When the parent's run is stopped, epoch millis; no group starts that could not finish by then. */
 	deadlineMs: number,
 	/** Appended to the worker's instructions, as to the parent's: how to use a tool only some runs have. */
@@ -214,6 +217,7 @@ export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 		toolkit: Toolkit.make(delegation.tool),
 		layer: Subagent.layer(delegation, answeringWhenWarned(model.layer), {
 			mapChildFailure: childFailureMessage,
+			child: { budget: accumulateUsage(usage) },
 		}).pipe(Layer.provideMerge(SubagentReservationsMemoryLive)),
 	}
 }
