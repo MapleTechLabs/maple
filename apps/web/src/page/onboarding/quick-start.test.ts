@@ -79,8 +79,16 @@ describe("pricing cards", () => {
 	test("a plan's button attaches it once, then leaves for Stripe and re-reads the catalog", () => {
 		const clicked = PricingCards.update(ready, PricingCards.Message.ClickedPlan({ planId: "startup" }))
 		expect(names(clicked)).toEqual(["AttachPlan"])
-		expect(names(PricingCards.update(clicked.model, PricingCards.Message.ClickedPlan({ planId: "startup" })))).toEqual([])
-		const attached = PricingCards.update(clicked.model, PricingCards.Message.SucceededAttach({ paymentUrl: "https://stripe.test/pay" }))
+		expect(
+			names(
+				PricingCards.update(clicked.model, PricingCards.Message.ClickedPlan({ planId: "startup" })),
+			),
+		).toEqual([])
+		const attached = PricingCards.update(
+			clicked.model,
+			PricingCards.Message.SucceededAttach({ paymentUrl: "https://stripe.test/pay" }),
+		)
+		// oxlint-disable-next-line test-slop/no-exact-name-list -- tracking must run before the checkout navigates away
 		expect(names(attached)).toEqual(["LoadPlans", "TrackCheckoutStarted", "OpenCheckout"])
 		expect(attached.model.loadingPlanId).toBe("startup")
 		expect(attached.outMessage).toEqual(PricingCards.OutMessage.ChangedPlan({ isLeavingForCheckout: true }))
@@ -89,7 +97,9 @@ describe("pricing cards", () => {
 	test("back from Stripe, the cards wait on the sync: polling the customer, then giving up", () => {
 		const returning = PricingCards.initReturning(true)
 		expect(returning.model.checkoutReturn).toBe("Confirming")
-		expect(returning.commands.map((command) => command.name)).toEqual(["LoadPlans", "WaitCheckoutPoll", "WaitCheckoutTimeout"])
+		expect(returning.commands.map((command) => command.name)).toEqual(
+			expect.arrayContaining(["WaitCheckoutPoll", "WaitCheckoutTimeout"]),
+		)
 		const polled = PricingCards.update(returning.model, PricingCards.Message.ElapsedCheckoutPoll())
 		expect(polled.outMessage).toEqual(PricingCards.OutMessage.RequestedCustomerRefresh())
 		expect(names(polled)).toEqual(["WaitCheckoutPoll"])

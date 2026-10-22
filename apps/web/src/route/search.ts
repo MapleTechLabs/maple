@@ -1,5 +1,5 @@
 // The search schema of every route. Shapes match the URLs already in use, so existing links decode.
-import { Schema } from "effect"
+import { Schema, SchemaGetter } from "effect"
 import {
 	AiSessionSortDir,
 	AiSessionSortKey,
@@ -26,6 +26,14 @@ export const NumberFromStringParam = Schema.fromJsonString(Schema.Number)
 
 export const OptionalStringArrayParam = Schema.optional(
 	Schema.Union([StringArray, StringArrayFromJsonString]),
+)
+
+/** A string of digits a URL wrote unquoted, which the search format parses as a number. */
+const DigitsParam = Schema.Number.pipe(
+	Schema.decodeTo(Schema.String, {
+		decode: SchemaGetter.transform((value: number) => String(value)),
+		encode: SchemaGetter.transform((value: string) => Number(value)),
+	}),
 )
 
 const BooleanParam = Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam]))
@@ -670,6 +678,11 @@ export const InfraRailwayServiceSearch = Schema.Struct({
 	environmentId: Schema.String,
 })
 
+// sessionTimeRangeSearchMiddleware()
+export const InfraSupabaseProjectSearch = Schema.Struct({
+	...TimeRangeSearchFields,
+})
+
 // Nested list routes
 
 // sessionTimeRangeSearchMiddleware()
@@ -744,6 +757,11 @@ export const InfraRailwaySearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
+// sessionTimeRangeSearchMiddleware()
+export const InfraSupabaseSearch = Schema.Struct({
+	...TimeRangeSearchFields,
+})
+
 // Deeper routes
 
 export const DashboardWidgetSearch = Schema.StructWithRest(Schema.Struct(dashboardViewParamsSchema), [
@@ -765,6 +783,11 @@ export const InfraGcpResourceSearch = Schema.Struct({
 	location: Schema.optional(Schema.String),
 	zone: Schema.optional(Schema.String),
 	backend: Schema.optional(Schema.String),
+	/**
+	 * A Cloud SQL instance's statement open in the side panel, by its Query Insights hash. The hash
+	 * is digits, which a hand-written `peek=123` parses as a number.
+	 */
+	peek: Schema.optional(Schema.Union([Schema.String, DigitsParam])),
 	...TimeRangeSearchFields,
 })
 

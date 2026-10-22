@@ -15,6 +15,15 @@ describe("routes", () => {
 		})
 	})
 
+	test("a Cloud SQL statement peek decodes whether its digits are quoted or not", () => {
+		for (const peek of ["8113412291", "%228113412291%22"]) {
+			expect(parse(`/infra/gcp/cloudSql/acme%3Aorders-db?peek=${peek}`)).toMatchObject({
+				_tag: "InfraGcpResource",
+				search: { peek: "8113412291" },
+			})
+		}
+	})
+
 	test("path params are percent-decoded and printed back encoded", () => {
 		const route = parse("/services/checkout%20api")
 		expect(route).toMatchObject({ _tag: "Service", serviceName: "checkout api" })

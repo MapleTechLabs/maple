@@ -48,6 +48,9 @@ const read = (service: GcpInfraServiceId, points: ReadonlyArray<GcpMetricPoint>)
 	failed: false,
 })
 
+/** The fleet's window: a day. */
+const DAY = 86_400
+
 const RUN = "gcp.cloud_run"
 const run = (
 	name: string,
@@ -65,7 +68,7 @@ const run = (
 }
 
 const serviceRows = (points: ReadonlyArray<GcpMetricPoint>, functions: ReadonlyArray<GcpMetricPoint> = []) =>
-	gcpListRows([read("cloudRun", points), read("cloudFunctions", functions)], NO_GCP_SPARKS).services
+	gcpListRows([read("cloudRun", points), read("cloudFunctions", functions)], NO_GCP_SPARKS, DAY).services
 
 const names = (rows: ReadonlyArray<{ name: string }>) => rows.map((row) => row.name)
 
@@ -75,7 +78,10 @@ describe("services", () => {
 			...run("checkout-api", "acme-prod", { ok: 9_660, c5xx: 340, p95: 1.8 }),
 			...run("search", "acme-prod", { ok: 8_000, p95: 1.2 }),
 			...run("web-frontend", "acme-prod", { ok: 20_000, c4xx: 400, p95: 0.1 }),
+			// Half an instance billed all day without a request.
 			...run("legacy-export", "acme-prod", { billable: 43_200 }),
+			// A deploy's startup check: five billed minutes, no requests.
+			...run("deploy-blip", "acme-prod", { billable: 300 }),
 			// Too few requests to rate: half failing is two requests.
 			...run("canary", "acme-staging", { ok: 2, c5xx: 2 }),
 		],
@@ -115,6 +121,7 @@ describe("services", () => {
 		expect(health("legacy-export")).toBe("idle")
 		expect(health("web-frontend")).toBe("ok")
 		expect(health("canary")).toBe("ok")
+		expect(health("deploy-blip")).toBe("ok")
 	})
 
 	it("scopes slow by latency alone, also when the service serves 5xx", () => {
@@ -130,6 +137,7 @@ describe("services", () => {
 			"legacy-export",
 			"web-frontend",
 			"canary",
+			"deploy-blip",
 		])
 	})
 })
@@ -161,6 +169,7 @@ describe("Pub/Sub subscriptions", () => {
 			]),
 		],
 		sparks,
+		DAY,
 	).pubsub
 	const find = (name: string) => rows.find((row) => row.name === name) ?? rows[0]
 
@@ -237,7 +246,7 @@ describe("Cloud SQL instances", () => {
 		...settings,
 	})
 	const rowsOf = (points: ReadonlyArray<GcpMetricPoint>, instances?: ReadonlyArray<GcpCloudSqlInstance>) =>
-		gcpListRows([read("cloudSql", points)], NO_GCP_SPARKS, instances).cloudSql
+		gcpListRows([read("cloudSql", points)], NO_GCP_SPARKS, DAY, instances).cloudSql
 
 	it("names an instance without its project and reads its connections and query insights", () => {
 		const [row] = rowsOf(
@@ -353,6 +362,7 @@ describe("GKE, VMs and URL maps", () => {
 		const rows = gcpListRows(
 			[read("computeEngine", [vm("idle", 0.1), vm("hot", 0.7), vm("full", 0.95)])],
 			NO_GCP_SPARKS,
+			DAY,
 		).computeEngine
 		expect(rows.map((row) => rowHealth(GCP_WORKLOAD_RULES, row))).toEqual(["ok", "hot", "atLimit"])
 		expect(names(sortByAttention(GCP_WORKLOAD_RULES, rows))).toEqual(["full", "hot", "idle"])
@@ -397,6 +407,8 @@ describe("views", () => {
 	it("shows only the requested view while the fleet loads", () => {
 		expect(gcpViews(null, "pubsub", false)).toEqual({ views: ["pubsub"], view: "pubsub" })
 		expect(gcpViews(null, undefined, false)).toEqual({ views: [], view: "services" })
+		expect(gcpViews(null, undefined, true)).toEqual({ views: [], view: "services" })
+		expect(gcpViews(null, "resources", true)).toEqual({ views: ["resources"], view: "resources" })
 	})
 
 	it("tells a view whose query failed from an empty one", () => {
@@ -438,6 +450,7 @@ describe("projects", () => {
 			]),
 		],
 		NO_GCP_SPARKS,
+		DAY,
 	)
 
 	it("lists the projects with the most workloads first", () => {

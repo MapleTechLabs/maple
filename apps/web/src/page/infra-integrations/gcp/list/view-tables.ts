@@ -25,11 +25,7 @@ import {
 	type GcpWorkloadRow,
 	type GcpWorkloadScope,
 } from "../../../../components/infra/gcp/list-model"
-import {
-	formatGcpValue,
-	GCP_INFRA_COLUMNS,
-	type GcpColumn,
-} from "../../../../components/infra/gcp/tabs"
+import { formatGcpValue, GCP_INFRA_COLUMNS, type GcpColumn } from "../../../../components/infra/gcp/tabs"
 import { BAR_VALUE_TONE } from "../../../../components/infra/severity-tokens"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import {

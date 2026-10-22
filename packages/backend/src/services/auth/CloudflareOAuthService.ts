@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto"
+import { randomBytes } from "node:crypto"
 import {
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
@@ -16,7 +16,12 @@ import { listAccounts } from "@maple/backend/services/integrations/CloudflareApi
 import { integrationSourceName } from "@maple/backend/services/org/integration-sources"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
-import { makeOAuthConnectionHelpers, OAUTH_STATE_TTL_MS } from "./oauth/connection-helpers"
+import {
+	deriveCodeChallenge,
+	generateCodeVerifier,
+	makeOAuthConnectionHelpers,
+	OAUTH_STATE_TTL_MS,
+} from "./oauth/connection-helpers"
 
 const CLOUDFLARE_PROVIDER = "cloudflare"
 
@@ -55,15 +60,6 @@ const grantedAccountsOfRow = (row: {
 		onSome: (accounts) => (Arr.isReadonlyArrayNonEmpty(accounts) ? accounts : fallback),
 	})
 }
-
-/**
- * PKCE (RFC 7636). Cloudflare's OAuth requires PKCE (S256) for public clients — a multi-tenant SaaS
- * that any Cloudflare user can connect — and accepts it for confidential clients too, so we always
- * send it. The `code_verifier` is stashed on the auth-state row and replayed at token exchange.
- */
-const generateCodeVerifier = (): string => randomBytes(32).toString("base64url")
-const deriveCodeChallenge = (verifier: string): string =>
-	createHash("sha256").update(verifier).digest("base64url")
 
 interface ResolvedCloudflareOAuthConfig {
 	readonly clientId: string
@@ -233,6 +229,7 @@ export class CloudflareOAuthService extends Context.Service<
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const config = yield* resolveConfig(env)
 			const state = randomBytes(24).toString("base64url")
+			// Cloudflare requires PKCE (S256) for public clients and accepts it for confidential ones.
 			const codeVerifier = generateCodeVerifier()
 			const currentTime = yield* Clock.currentTimeMillis
 

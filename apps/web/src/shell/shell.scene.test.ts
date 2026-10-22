@@ -28,6 +28,7 @@ import {
 	LoadNamespaces,
 	LoadPlanetscaleStatus,
 	LoadRailwayStatus,
+	LoadSupabaseStatus,
 } from "./data"
 import { Menu, Message, OutMessage } from "./message"
 import { DashboardsData, init, type Model, NamespacesData } from "./model"
@@ -140,13 +141,21 @@ describe("sidebar collapse", () => {
 			given(signedIn({ isMobile: true })),
 			expect(sidebar).toBeAbsent(),
 			...open(),
-			Command.expectExact(LoadInfraPresence, LoadCloudflareStatus, LoadPlanetscaleStatus, LoadRailwayStatus, LoadGcpStatus),
+			Command.expectExact(
+				LoadInfraPresence,
+				LoadCloudflareStatus,
+				LoadPlanetscaleStatus,
+				LoadRailwayStatus,
+				LoadGcpStatus,
+				LoadSupabaseStatus,
+			),
 			Command.resolveAll(
 				[LoadInfraPresence, Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: [] })],
 				[LoadCloudflareStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "cloudflare", isConnected: false })],
 				[LoadPlanetscaleStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "planetscale", isConnected: false })],
 				[LoadRailwayStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "railway", isConnected: false })],
 				[LoadGcpStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "gcp", isConnected: false })],
+				[LoadSupabaseStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "supabase", isConnected: false })],
 			),
 			...close(),
 			...open(),
@@ -164,6 +173,7 @@ describe("sidebar collapse", () => {
 			"LoadPlanetscaleStatus",
 			"LoadRailwayStatus",
 			"LoadGcpStatus",
+			"LoadSupabaseStatus",
 		])
 		expectVitest(asked.model.hasRequestedSidebarData).toBe(false)
 		expectVitest(update(asked.model, Message.RequestedInfraSurfaces()).commands ?? []).toEqual([])
@@ -307,11 +317,11 @@ describe("in-place org change", () => {
 		const onA = {
 			...signedIn({ maybeOrgId: Option.some("org_a") }),
 			namespaces: NamespacesData.Success({ data: ["a-only"] }),
-			integrations: { cloudflare: true, railway: true, planetscale: false, gcp: false },
+			integrations: { cloudflare: true, railway: true, planetscale: false, gcp: false, supabase: false },
 		}
 		const onB = enter("org_b")(onA).model
 		expectVitest(onB.namespaces._tag).toBe("Idle")
-		expectVitest(onB.integrations).toEqual({ cloudflare: false, railway: false, planetscale: false, gcp: false })
+		expectVitest(onB.integrations).toEqual({ cloudflare: false, railway: false, planetscale: false, gcp: false, supabase: false })
 		const lateNamespaces = update(onB, Message.SucceededLoadNamespaces({ orgId: "org_a", namespaces: ["a-only"] }))
 		expectVitest(lateNamespaces.model.namespaces._tag).toBe("Idle")
 		const lateStatus = update(
@@ -360,7 +370,7 @@ describe("infrastructure section", () => {
 			given(
 				signedIn({
 					infraPresence: { _tag: "Success", data: ["hosts"] },
-					integrations: { cloudflare: true, railway: false, planetscale: false, gcp: false },
+					integrations: { cloudflare: true, railway: false, planetscale: false, gcp: false, supabase: false },
 				}),
 			),
 			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),

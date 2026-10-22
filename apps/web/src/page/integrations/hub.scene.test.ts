@@ -47,20 +47,25 @@ const withHazel = (connected: boolean, search: Model["search"] = {}): Model => {
 describe("integrations hub", () => {
 	test("entry reads the clock, every status and the customer once", () => {
 		const result = init({ search: {} }, context)
-		expect(names(result.commands)).toEqual([
-			"ReadIntegrationsClock",
-			"LoadIntegrationsCloudflareStatus",
-			"LoadIntegrationsRailwayStatus",
-			"LoadIntegrationsPlanetscaleStatus",
-			"LoadIntegrationsPlanetscaleDatabases",
-			"LoadIntegrationsGcpStatus",
-			"LoadIntegrationsAwsStatus",
-			"LoadIntegrationsHazelStatus",
-			"LoadIntegrationsGithubStatus",
-			"LoadIntegrationsChatConnectors",
-			"LoadIntegrationsScrapeTargets",
-			"LoadIntegrationsCustomer",
-		])
+		const sent = names(result.commands)
+		expect(sent).toEqual(
+			expect.arrayContaining([
+				"ReadIntegrationsClock",
+				"LoadIntegrationsCloudflareStatus",
+				"LoadIntegrationsRailwayStatus",
+				"LoadIntegrationsPlanetscaleStatus",
+				"LoadIntegrationsPlanetscaleDatabases",
+				"LoadIntegrationsGcpStatus",
+				"LoadIntegrationsAwsStatus",
+				"LoadIntegrationsSupabaseStatus",
+				"LoadIntegrationsHazelStatus",
+				"LoadIntegrationsGithubStatus",
+				"LoadIntegrationsChatConnectors",
+				"LoadIntegrationsScrapeTargets",
+				"LoadIntegrationsCustomer",
+			]),
+		)
+		expect(new Set(sent).size).toBe(sent.length)
 	})
 
 	test("a status answer under a superseded key is dropped", () => {

@@ -53,6 +53,16 @@ import * as productEventExploreQueries from "../ch/queries/product-events-explor
 import * as topOperationQueries from "../ch/queries/top-operations"
 import * as traceQueries from "../ch/queries/traces"
 
+// Builders that read across every tenant on purpose. Each must declare
+// `.crossTenant()` and run through `WarehouseQueryService.crossOrgQuery`, which
+// records a justification on the span. This list should stay tiny: it is the
+// complete inventory of cross-tenant reads in the product.
+const CROSS_ORG_BUILDERS: ReadonlySet<string> = new Set([
+	"activeOrgsByErrorEventsQuery",
+	"activeOrgsByTracesQuery",
+	"activeOrgsByLogsQuery",
+])
+
 // These run on every PR with no ClickHouse. They guarantee the catalog the
 // DESCRIBE sweep consumes is complete and actually compiles; the sweep itself
 // (apps/api, needs a server) is what validates the SQL against the analyzer.
@@ -141,16 +151,6 @@ describe("sql catalog", () => {
 		).toEqual([])
 	})
 
-	// Builders that read across every tenant on purpose. Each must declare
-	// `.crossTenant()` and run through `WarehouseQueryService.crossOrgQuery`, which
-	// records a justification on the span. This list should stay tiny — it is the
-	// complete inventory of cross-tenant reads in the product.
-	const CROSS_ORG_BUILDERS: ReadonlySet<string> = new Set([
-		"activeOrgsByErrorEventsQuery",
-		"activeOrgsByTracesQuery",
-		"activeOrgsByLogsQuery",
-	])
-
 	// The predecessor of this test asserted `entry.sql.toContain("OrgId")`, which
 	// `SELECT count() AS OrgId ...` and `WHERE OrgId = 'x' OR 1=1` both satisfy.
 	// Scope is now derived by the compiler from a top-level OrgId predicate, so
@@ -201,6 +201,7 @@ describe("sql catalog", () => {
 		expect(annual.length).toBeGreaterThan(0)
 		for (const entry of annual) {
 			// Always spliced, never a single-tier read.
+			// oxlint-disable-next-line test-slop/no-sql-text-pin -- the union is the raw/rollup splice
 			expect(entry.sql, entry.id).toContain("UNION ALL")
 			expect(entry.sql, entry.id).toContain("service_overview_spans")
 
@@ -294,11 +295,10 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 } satisfies Record<string, Record<string, unknown>>
 
 /**
- * Builders not (yet) in the fixture set. THREE reasons only, and each group
- * says which: `pipe` = reached through the pipe registry / QuerySpec lowering,
- * so those fixtures already sweep it; `helper` = composed into another
- * fixtured builder, never compiled standalone; `todo` = a follow-up batch —
- * SHRINK this list, never grow it.
+ * Builders not in the fixture set. TWO reasons only, and each group says which:
+ * `pipe` = reached through the pipe registry / QuerySpec lowering, so those
+ * fixtures already sweep it; `helper` = composed into another fixtured builder,
+ * never compiled standalone. A new builder gets a fixture, not an exemption.
  */
 const EXEMPT_BUILDERS: ReadonlySet<string> = new Set([
 	// pipe: swept via pipeFixtures / querySpecFixtures (pipe-dispatch.ts, runtime lowering)
@@ -343,50 +343,6 @@ const EXEMPT_BUILDERS: ReadonlySet<string> = new Set([
 	// helper: composed into sessionReplaysListQuery, never compiled standalone
 	"session-events/sessionEventMatchQuery",
 	"session-events/sessionActivityAggregateQuery",
-
-	// todo (dead export — removal tracked separately; zero consumers)
-	"errors/traceTimeProbeQuery",
-	"errors/recentTraceTimeProbeQuery",
-
-	// todo batch ② — alerting correctness (anomaly, alert-checks, setup-audit, activity, liveness, internal)
-	"alert-checks/listRuleChecksQuery",
-	"alert-checks/alertCheckGroupTotalsQuery",
-	"alert-checks/alertChecksSummaryQuery",
-	"anomaly/anomalyTraceSignalsQuery",
-	"anomaly/anomalyLogVolumeQuery",
-	"anomaly/anomalyErrorSpikeCurrentQuery",
-	"anomaly/anomalyErrorSpikeBaselineQuery",
-	"anomaly/anomalyTraceSignalTimeseriesQuery",
-	"anomaly/anomalyLogVolumeTimeseriesQuery",
-	"anomaly/anomalyErrorSpikeTimeseriesQuery",
-	"anomaly/anomalyErrorSpikeServiceTimeseriesQuery",
-	"liveness/serviceLivenessQuery",
-	"liveness/orgTelemetryPulseQuery",
-
-	// todo batch ③ — infra + integrations (infra, cloudflare-*, planetscale-*, service-map, rollups)
-	"infra/listHostsQuery",
-	"infra/hostDetailSummaryQuery",
-	"infra/hostNetworkTimeseriesQuery",
-	"infra/listPodsQuery",
-	"infra/listPodsSummaryQuery",
-	"infra/podDetailSummaryQuery",
-	"infra/listWorkloadsQuery",
-	"infra/workloadDetailSummaryQuery",
-	"service-infra/serviceWorkloadsSQL",
-	"service-map-rollup/serviceMapResolutionsRollupSQL",
-	"service-map/servicePlatformsSQL",
-
-	// todo batch ④ — remainder (billing, service detail, operations, stray trace/log lookups)
-	"logs/getLogByKeyQuery",
-	"service-endpoints/serviceEndpointsSummaryRawQuery",
-	"service-operations/serviceOperationsSummaryRawQuery",
-	"service-operations/serviceOperationsTimeseriesRawQuery",
-	"services/serviceHealthSnapshotQuery",
-	"services/serviceHealthBaselineQuery",
-	"services/serviceEnvironmentsQuery",
-	"services/serviceUsageWithPreviousQuery",
-	"traces/traceSummariesQuery",
-	"traces/traceListQuery",
 ])
 
 describe("builder coverage", () => {
@@ -395,8 +351,11 @@ describe("builder coverage", () => {
 	it("compiles every builder fixture into the catalog", () => {
 		const entries = collectBuilderCatalog()
 		expect(entries.length).toBe(builderFixtures.length)
+		// The compiler derives scope from the OrgId predicates on every tenanted
+		// source, so a fixture whose builder drops one fails here by name.
 		for (const entry of entries) {
-			expect(entry.sql, entry.id).toContain("OrgId")
+			const expected = CROSS_ORG_BUILDERS.has(entry.name) ? "cross-tenant" : "single-tenant"
+			expect(entry.compiled?.tenantScope, `${entry.id} tenant scope`).toBe(expected)
 		}
 	})
 

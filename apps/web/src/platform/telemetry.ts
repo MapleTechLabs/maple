@@ -37,7 +37,11 @@ const maple = MapleFoldkit.make({
 	],
 	routeName,
 	// The perf bench builds with VITE_MAPLE_REPLAY=off and VITE_MAPLE_CAPTURE=off.
-	replay: { enabled: import.meta.env.VITE_MAPLE_REPLAY !== "off" },
+	replay: {
+		enabled: import.meta.env.VITE_MAPLE_REPLAY !== "off",
+		// Dashboard charts draw to <canvas>, which replays leave blank without this.
+		canvasFps: 1,
+	},
 	privacy: {
 		...(import.meta.env.VITE_MAPLE_COOKIE_DOMAIN
 			? { cookieDomain: import.meta.env.VITE_MAPLE_COOKIE_DOMAIN }

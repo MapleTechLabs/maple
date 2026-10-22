@@ -198,6 +198,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				title: "Fix the checkout crash",
 				body: "Fixes the crash.",
 				user: { login: "octocat" },
+				author_association: "CONTRIBUTOR",
 				merged: true,
 				merge_commit_sha: SHA,
 				merged_at: "2026-01-02T03:04:05Z",
@@ -222,6 +223,7 @@ describe("GithubProvider.webhookToJobs", () => {
 			assert.strictEqual(job.merged, true)
 			assert.strictEqual(job.mergeCommitSha, SHA)
 			assert.strictEqual(job.authorLogin, "octocat")
+			assert.strictEqual(job.authorAssociation, "CONTRIBUTOR")
 			assert.strictEqual(job.mergedAtMs, Date.parse("2026-01-02T03:04:05Z"))
 		}).pipe(Effect.provide(providerLayer())),
 	)

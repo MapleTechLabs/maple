@@ -53,6 +53,18 @@ export const DISCONNECTS = new Map<string, DisconnectSpec>([
 		},
 	],
 	[
+		"supabase",
+		{
+			title: "Disconnect Supabase",
+			description:
+				"Maple revokes its access to your Supabase organization and stops collecting metrics from its projects. Data already collected stays. You can reconnect later.",
+			confirmLabel: "Disconnect",
+			success: "Supabase disconnected",
+			error: "Failed to disconnect Supabase",
+			refresh: ["supabase"],
+		},
+	],
+	[
 		"planetscale",
 		{
 			title: "Disconnect PlanetScale",
@@ -90,6 +102,8 @@ const mutation = (integration: string) =>
 				return yield* Effect.asVoid(v2.planetscaleIntegration.disconnect())
 			case "railway":
 				return yield* Effect.asVoid(internal.integrations.railwayDisconnect())
+			case "supabase":
+				return yield* Effect.asVoid(internal.integrations.supabaseDisconnect())
 			case "cloudflare":
 			case "cloudflare-multi":
 				return yield* Effect.asVoid(internal.integrations.cloudflareDisconnect())

@@ -198,6 +198,13 @@ export const planetScaleOAuthEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("MAPLE_PLANETSCALE_API_BASE_URL"),
 )
 
+/** Supabase integration (Management API OAuth app: confidential client with PKCE). */
+export const supabaseOAuthEnv: Config.Config<WorkerEnv> = merge(
+	optionalPlain("SUPABASE_OAUTH_CLIENT_ID"),
+	optionalSecret("SUPABASE_OAUTH_CLIENT_SECRET"),
+	optionalPlain("MAPLE_SUPABASE_API_BASE_URL"),
+)
+
 /**
  * The GitHub App as a repository reader, for api, maple-ai and alerting. The install flow's client
  * id/secret and the webhook secret stay api-only.

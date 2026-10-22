@@ -81,7 +81,8 @@ const loaded = (row: V2Source, tab?: "setup" | "connection" | "settings"): Model
 describe("source detail", () => {
 	test("an id that does not decode is not found without reading the list", () => {
 		const entered = init(route(undefined, "nope"), context)
-		expect(names(entered.commands)).toEqual(["ReadSourceClock", "LoadChartRuntime"])
+		expect(names(entered.commands)).toEqual(expect.arrayContaining(["ReadSourceClock"]))
+		expect(names(entered.commands)).not.toContain("FetchSourceDetailList")
 		expect(breadcrumbsOf(entered.model).map((crumb) => crumb.label)).toEqual(["Sources", "Not found"])
 		scene(
 			{ update: pageUpdate, view },

@@ -7,6 +7,7 @@ import {
 	HazelIntegrationStatus,
 	RailwayIntegrationStatus,
 	ScrapeTargetId,
+	SupabaseIntegrationStatus,
 	VcsRepositoryId,
 } from "@maple/domain/http"
 import {
@@ -24,7 +25,7 @@ import {
 	V2ScrapeTarget,
 	V2ScrapeTargetCheck,
 } from "@maple/domain/http/v2"
-import { AwsConnectionId, ChatWorkspaceId, GcpConnectorId, GcpLogRuntime } from "@maple/domain/primitives"
+import { AwsConnectionId, ChatWorkspaceId, GcpConnectorId, GcpLogRuntime, SupabaseProjectRef } from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/load-failure"
@@ -39,6 +40,7 @@ import * as ToggleGroup from "../../ui/toggle-group"
 import * as Chart from "../../charts/chart"
 import { ConnectProvider } from "./connect"
 import { FleetRead } from "../infra-integrations/gcp/data"
+import { SupabaseProjectRow } from "../infra-integrations/supabase/model"
 import { Capability, GcpFlags, SetupMethod } from "./gcp-configure-schema"
 import { ConfigureTarget, LogVolume, RemovedConnector } from "./gcp-schema"
 import { AwsRemovedStack, AwsSetupMethod } from "./aws-schema"
@@ -50,6 +52,7 @@ export const StatusName = Schema.Literals([
 	"planetscaleDatabases",
 	"gcp",
 	"aws",
+	"supabase",
 	"hazel",
 	"github",
 	"chat",
@@ -70,6 +73,7 @@ export const Message = defineMessageUnion({
 	CompletedLoadPlanetscaleDatabases: result(V2PlanetScaleDatabaseList),
 	CompletedLoadGcp: result(V2GcpIntegration),
 	CompletedLoadAws: result(V2AwsIntegration),
+	CompletedLoadSupabase: result(SupabaseIntegrationStatus),
 	CompletedLoadHazel: result(HazelIntegrationStatus),
 	CompletedLoadGithub: result(GithubIntegrationStatus),
 	CompletedLoadChat: result(V2ChatConnectorList),
@@ -216,6 +220,34 @@ export const Message = defineMessageUnion({
 	DismissedAwsRemoved: { connectionId: Schema.String },
 	CompletedReadAwsRemoved: { removed: Schema.Array(AwsRemovedStack) },
 	CompletedWriteAwsRemoved: {},
+	ClickedSupabaseSync: {},
+	/** Every minute while the connected Supabase card is shown, so its window and ages advance. */
+	TickedSupabaseClock: {},
+	/** The clock read after a settled switch; its rows re-read supersedes on the fresh window. */
+	CompletedReadSupabaseClock: { nowMs: Schema.Number },
+	CompletedLoadSupabaseMetrics: result(Schema.Array(SupabaseProjectRow)),
+	CompletedSupabaseSync: { failure: Schema.NullOr(LoadFailure) },
+	/** A project row's "Collect metrics" switch. */
+	ToggledSupabaseMetrics: { ref: SupabaseProjectRef, enabled: Schema.Boolean },
+	CompletedSupabaseMetrics: {
+		ref: SupabaseProjectRef,
+		enabled: Schema.Boolean,
+		failure: Schema.NullOr(LoadFailure),
+	},
+	/** A project row's "Collect logs" switch. */
+	ToggledSupabaseLogs: { ref: SupabaseProjectRef, enabled: Schema.Boolean },
+	CompletedSupabaseLogs: {
+		ref: SupabaseProjectRef,
+		enabled: Schema.Boolean,
+		failure: Schema.NullOr(LoadFailure),
+	},
+	/** A project row's "Log drain" switch: creates or deletes the drain at Supabase. */
+	ToggledSupabaseLogDrain: { ref: SupabaseProjectRef, enabled: Schema.Boolean },
+	CompletedSupabaseLogDrain: {
+		ref: SupabaseProjectRef,
+		enabled: Schema.Boolean,
+		failure: Schema.NullOr(LoadFailure),
+	},
 	CompletedFetchOrganizations: result(V2PlanetScaleOrganizationList),
 	CompletedFetchWebhookConfig: result(V2PlanetScaleWebhookConfig),
 	ClickedChangeOrganization: {},

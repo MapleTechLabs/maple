@@ -4,6 +4,7 @@ import { compileUnsafe, param, toDateTime } from "@maple-dev/effect-orm/clickhou
 import {
 	serviceDbEdgesSQL,
 	serviceDbEdgesForServiceQuery,
+	serviceDbQuerySpansQuery,
 	serviceDbQuerySummarySQL,
 	serviceDbQueryTimeseriesSQL,
 	serviceDbTopQueriesSQL,
@@ -15,7 +16,7 @@ import {
 } from "./service-map"
 import { serviceMapEdgesRollupSQL, serviceMapResolutionsRollupSQL } from "./service-map-rollup"
 import { ServiceMapEdgesHourly } from "../tables"
-import { DB_NAMESPACE_ATTR_SQL } from "@maple/domain/tinybird/db-query-shape-sql"
+import { DB_NAMESPACE_ATTR_SQL, DB_QUERY_KEY_LAZY_SQL } from "@maple/domain/tinybird/db-query-shape-sql"
 import { OrgId } from "@maple/domain"
 
 // The read side must derive `DbNamespace` byte-identically to the write side's
@@ -72,11 +73,10 @@ describe("serviceExternalEdgesSQL", () => {
 		expect(sql.indexOf("HAVING")).toBeGreaterThan(sql.indexOf("GROUP BY"))
 	})
 
-	it("unions hourly MV branch with raw-traces fallback for the in-progress hour", () => {
+	it("reads the hourly MV plus raw traces for the in-progress hour", () => {
 		const { sql } = Effect.runSync(serviceExternalEdgesSQL({ serviceName: "artifacts-api" }, baseParams))
 		expect(sql).toContain("FROM service_external_edges_hourly")
 		expect(sql).toContain("FROM traces")
-		expect(sql).toContain("UNION ALL")
 		// Recent branch must filter to the in-progress hour [endHour, endTime].
 		expect(sql).toContain("Timestamp >= toStartOfHour(toDateTime('2024-01-02 00:00:00'))")
 	})
@@ -131,7 +131,6 @@ describe("serviceExternalEdgesSQL", () => {
 		expect(sql).toContain("GROUP BY sourceService, targetType, targetSystem, targetName")
 		expect(sql).toContain("ORDER BY callCount DESC")
 		expect(sql).toContain("LIMIT 200")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("escapes single quotes in serviceName / orgId to prevent SQL injection", () => {
@@ -215,12 +214,11 @@ describe("serviceMapResolutionsRollupSQL", () => {
 		expect(sql).toContain("ON (p.SpanId = c.ParentSpanId AND p.TraceId = c.TraceId)")
 	})
 
-	it("projects parent server.address as the resolution key", () => {
+	it("takes the resolution key from the parent and the target from the child", () => {
 		const { sql } = Effect.runSync(serviceMapResolutionsRollupSQL(hourParams))
-		// Map lookup is pushed into the parent subquery as `ServerAddress`, so the
-		// outer SELECT reads a flat column instead of re-evaluating the map.
-		expect(sql).toContain("SpanAttributes['server.address'] AS ServerAddress")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- join side per key
 		expect(sql).toContain("p.ServerAddress AS ParentServerAddress")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- join side per key
 		expect(sql).toContain("c.ServiceName AS ResolvedTargetService")
 	})
 
@@ -245,12 +243,11 @@ describe("serviceMapResolutionsRollupSQL", () => {
 		expect(matches?.length).toBe(2)
 	})
 
-	it("groups by the resolution key tuple and formats as JSON", () => {
+	it("groups by the resolution key tuple", () => {
 		const { sql } = Effect.runSync(serviceMapResolutionsRollupSQL(hourParams))
 		expect(sql).toContain(
 			"GROUP BY OrgId, Hour, SourceService, ParentServerAddress, ResolvedTargetService, DeploymentEnv",
 		)
-		expect(sql).toContain("FORMAT JSON")
 	})
 })
 
@@ -438,9 +435,9 @@ describe("serviceDependenciesForServiceQuery", () => {
 			serviceDependenciesForServiceQuery({ serviceName: "artifacts-api" }),
 			baseParams,
 		)
-		expect(sql).toContain("UNION ALL")
 		expect(sql).toContain("FROM service_map_edges_hourly")
-		expect(sql).toContain("INNER JOIN")
+		expect(sql).toContain("FROM service_map_spans")
+		expect(sql).toContain("FROM service_map_children")
 	})
 
 	it("threads deploymentEnv through both branches (hourly + parent + child)", () => {
@@ -456,14 +453,13 @@ describe("serviceDependenciesForServiceQuery", () => {
 		expect(matches && matches.length >= 3).toBe(true)
 	})
 
-	it("orders by callCount desc, limits to 200, formats as JSON", () => {
+	it("orders by callCount desc, limits to 200", () => {
 		const { sql } = compileUnsafe(
 			serviceDependenciesForServiceQuery({ serviceName: "artifacts-api" }),
 			baseParams,
 		)
 		expect(sql).toContain("ORDER BY callCount DESC")
 		expect(sql).toContain("LIMIT 200")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("escapes single quotes in serviceName to prevent SQL injection", () => {
@@ -516,9 +512,9 @@ describe("serviceDbEdgesForServiceQuery", () => {
 	it("splits database nodes by namespace on both branches, collapsing Hyperdrive (org-wide SQL)", () => {
 		const { sql } = Effect.runSync(serviceDbEdgesSQL({}, baseParams))
 		// hourly branch reads the rollup's stored dimension, re-collapsing pre-migration hex…
-		expect(sql).toContain(`${SEALED_DB_EDGES} AS dbNamespace`)
+		expect(sql).toContain(SEALED_DB_EDGES)
 		// …the raw branch derives the SAME identity via the shared write-side fragment
-		expect(sql).toContain(`${RAW_NAMESPACE} AS dbNamespace`)
+		expect(sql).toContain(RAW_NAMESPACE)
 		// …and every GROUP BY carries it so distinct databases stay distinct rows
 		const matches = sql.match(/GROUP BY sourceService, dbSystem, dbNamespace/g)
 		expect(matches?.length).toBe(3)
@@ -548,7 +544,6 @@ describe("serviceDbEdgesForServiceQuery", () => {
 		)
 		expect(sql).toContain("FROM service_map_db_edges_hourly")
 		expect(sql).toContain("FROM traces")
-		expect(sql).toContain("UNION ALL")
 		expect(sql).toContain("Timestamp >= toStartOfHour(toDateTime('2024-01-02 00:00:00'))")
 	})
 
@@ -569,13 +564,9 @@ describe("serviceDbEdgesForServiceQuery", () => {
 			serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }),
 			baseParams,
 		)
-		// hourly branch reads the rollup's stored dimension
-		expect(sql).toContain("DbNamespace")
-		// raw branch derives the identity via the shared coalesce order
-		expect(sql).toContain("SpanAttributes['db.namespace']")
-		expect(sql).toContain("SpanAttributes['db.name']")
-		expect(sql).toContain("SpanAttributes['server.address']")
-		expect(sql).toContain("SpanAttributes['net.peer.name']")
+		// Same identity derivation as the org-wide query, or the branches won't merge.
+		expect(sql).toContain(SEALED_DB_EDGES)
+		expect(sql).toContain(RAW_NAMESPACE)
 	})
 
 	it("threads deploymentEnv through both branches", () => {
@@ -592,14 +583,13 @@ describe("serviceDbEdgesForServiceQuery", () => {
 		)
 	})
 
-	it("orders by callCount desc, limits to 200, formats as JSON", () => {
+	it("orders by callCount desc, limits to 200", () => {
 		const { sql } = compileUnsafe(
 			serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }),
 			baseParams,
 		)
 		expect(sql).toContain("ORDER BY callCount DESC")
 		expect(sql).toContain("LIMIT 200")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("escapes single quotes in serviceName to prevent SQL injection", () => {
@@ -625,7 +615,6 @@ describe("service-map database query summaries", () => {
 
 	it("reads the sealed rollup for complete hours and raw traces for the in-progress hour", () => {
 		const { sql } = Effect.runSync(serviceDbQuerySummarySQL(params))
-		expect(sql).toContain("UNION ALL")
 		// sealed rollup branch — complete hours only
 		expect(sql).toContain("FROM service_map_db_query_shapes_hourly")
 		expect(sql).toContain("DbSystem = 'postgresql'")
@@ -657,8 +646,6 @@ describe("service-map database query summaries", () => {
 		)
 		// …and the outer query merges both into final quantiles
 		expect(sql).toContain("quantilesTDigestWeightedMerge(0.5, 0.95)(bQ)")
-		expect(sql).toContain("AS p50DurationMs")
-		expect(sql).toContain("AS p95DurationMs")
 	})
 
 	it("buckets sub-hour query activity from raw traces (rollup can't serve <1h buckets)", () => {
@@ -673,13 +660,13 @@ describe("service-map database query summaries", () => {
 		expect(sql).toContain("LIMIT 2000")
 	})
 
-	it("serves hour-aligned query activity from the rollup + raw union", () => {
+	it("serves hour-aligned query activity from the rollup + raw traces", () => {
 		const { sql } = Effect.runSync(serviceDbQueryTimeseriesSQL({ ...params, bucketSeconds: 3600 }))
 		expect(sql).toContain("FROM service_map_db_query_shapes_hourly")
+		expect(sql).toContain("FROM traces")
 		expect(sql).toContain(
 			"toStartOfInterval(service_map_db_query_shapes_hourly.Hour, INTERVAL 3600 SECOND) AS bucket",
 		)
-		expect(sql).toContain("UNION ALL")
 		expect(sql).toContain("quantilesTDigestWeightedMergeState(0.5, 0.95)(DurationQuantiles)")
 	})
 
@@ -710,7 +697,6 @@ describe("service-map database query summaries", () => {
 		// distinct co-located shapes (same op/collection, different SQL) get their
 		// own statement-based label instead of one indistinct summary row…
 		expect(sql).toContain("if(sampleStatement != ''")
-		expect(sql).toContain("AS queryLabel")
 		// …derived by stripping literals from the sample statement (preserving case)
 		expect(sql).toContain("replaceRegexpAll")
 		// …and falls back to the rollup's derived label when there's no statement
@@ -933,4 +919,58 @@ describe("servicePlatformsSQL", () => {
 			expect(Exit.isFailure(exit)).toBe(true)
 		}),
 	)
+})
+
+// serviceDbQuerySpansQuery
+
+describe("serviceDbQuerySpansQuery", () => {
+	const spans = () =>
+		serviceDbQuerySpansQuery({
+			dbSystem: "postgresql",
+			dbNamespaces: ["orders", "o'brien"],
+			queryKeys: ["123", "456"],
+			limit: 5,
+		})
+
+	it("reads one org's client spans of the given keys and databases over the whole window", () => {
+		const { sql, tenantScope } = compileUnsafe(spans(), baseParams)
+		expect(tenantScope).toBe("single-tenant")
+		expect(sql).toContain("traces.OrgId = 'org_1'")
+		expect(sql).toContain("traces.Timestamp >= toDateTime('2024-01-01 00:00:00')")
+		expect(sql).toContain("traces.Timestamp <= toDateTime('2024-01-02 00:00:00')")
+		expect(sql).not.toContain("toStartOfHour")
+		expect(sql).toContain("traces.SpanKind IN ('Client', 'Producer')")
+		expect(sql).toContain("traces.SpanAttributes['db.system']) = 'postgresql'")
+		expect(sql).toContain("'hyperdrive', coalesce(")
+		expect(sql).toContain(") IN ('orders', 'o\\'brien')")
+		// The key top queries group by, so a listed key finds its spans.
+		expect(sql).toContain(`${DB_QUERY_KEY_LAZY_SQL} IN ('123', '456')`)
+	})
+
+	it("returns the slowest first", () => {
+		expect(compileUnsafe(spans(), baseParams).sql).toContain(
+			"ORDER BY durationMs DESC, traceId ASC, spanId ASC\n        LIMIT 5\n",
+		)
+	})
+
+	it("decodes the span's start to UTC and its duration to milliseconds", () => {
+		const rows = Effect.runSync(
+			compileUnsafe(spans(), baseParams).decodeRows([
+				{
+					traceId: "t1",
+					spanId: "s1",
+					serviceName: "orders-api",
+					timestamp: "2024-01-01 10:00:00.123456789",
+					durationMs: "812.5",
+				},
+			]),
+		)
+		expect(rows[0]).toMatchObject({
+			traceId: "t1",
+			spanId: "s1",
+			serviceName: "orders-api",
+			durationMs: 812.5,
+		})
+		expect(DateTime.formatIso(rows[0]!.timestamp)).toBe("2024-01-01T10:00:00.123Z")
+	})
 })

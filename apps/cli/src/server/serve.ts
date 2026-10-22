@@ -562,13 +562,40 @@ async function handleQuery(
 	)
 }
 
-function serveAsset(assets: AssetResolver, pathname: string): Response {
+// The UI is apps/local-ui's build, so this mirrors its worker's header set
+// (apps/local-ui/src/worker-entry.ts) minus HSTS, which plain-http loopback ignores.
+const UI_CONTENT_SECURITY_POLICY = [
+	"default-src 'self'",
+	"script-src 'self'",
+	"style-src 'self' 'unsafe-inline'",
+	"img-src 'self' data:",
+	"font-src 'self' data:",
+	"connect-src 'self' http://127.0.0.1:* http://localhost:*",
+	"object-src 'none'",
+	"base-uri 'none'",
+	"form-action 'none'",
+	"frame-ancestors 'none'",
+].join("; ")
+
+const UI_SECURITY_HEADERS = {
+	"content-security-policy": UI_CONTENT_SECURITY_POLICY,
+	"x-content-type-options": "nosniff",
+	"x-frame-options": "DENY",
+	"referrer-policy": "no-referrer",
+	"cross-origin-opener-policy": "same-origin",
+	"permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+} as const satisfies Readonly<Record<string, string>>
+
+const uiResponse = (body: Uint8Array | string, contentType: string): Response =>
+	new Response(body, { headers: { ...UI_SECURITY_HEADERS, "content-type": contentType } })
+
+export function serveAsset(assets: AssetResolver, pathname: string): Response {
 	const path = pathname === "/" ? "index.html" : pathname.replace(/^\//, "")
 	const hit = assets(path)
-	if (hit) return new Response(hit.body, { headers: { "content-type": hit.contentType } })
+	if (hit) return uiResponse(hit.body, hit.contentType)
 	// Unknown path → serve the SPA shell so the client router can take over.
 	const shell = assets("index.html")
-	if (shell) return new Response(shell.body, { headers: { "content-type": "text/html" } })
+	if (shell) return uiResponse(shell.body, "text/html")
 	return text("UI not built", 404)
 }
 

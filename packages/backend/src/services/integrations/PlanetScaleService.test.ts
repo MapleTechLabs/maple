@@ -1,4 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
+import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { ConfigProvider, Effect, Fiber, Layer, Predicate, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
@@ -50,7 +51,7 @@ const makeLayer = (testDb: TestDb) => {
 	)
 	const scrapeTargetsLive = Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
-		Layer.provide(Layer.mergeAll(discoveryLive, oauthLive)),
+		Layer.provide(Layer.mergeAll(discoveryLive, oauthLive, SupabaseOAuthService.layer)),
 	)
 	return Layer.mergeAll(
 		Layer.effect(PlanetScaleService, PlanetScaleService.make).pipe(

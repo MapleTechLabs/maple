@@ -71,6 +71,10 @@ describe("local sessions list", () => {
 			contextAt("browser=Chrome"),
 		)
 		expect(late.model.sessions).toEqual(second.sessions)
+		expect(late.model.sessionsUpdatedAtMs).toBe(second.sessionsUpdatedAtMs)
+		// The stale answer is empty, but only the current list may ask for the signal presence.
+		expect(late.outMessage).toBeUndefined()
+		expect(names(late.commands)).toEqual([])
 	})
 
 	test("an empty list asks for the signal presence and states the fact while it is unknown", () => {

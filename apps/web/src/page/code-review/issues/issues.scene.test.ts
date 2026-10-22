@@ -22,10 +22,9 @@ const noFindings = Schema.decodeUnknownSync(CodeReviewFindingsResponse)({ findin
 
 describe("code review issues", () => {
 	test("entry reads the findings and the author list", () => {
-		expect(names(windowed().commands)).toEqual([
-			"FetchCodeReviewFindings",
-			"FetchCodeReviewFindingAuthors",
-		])
+		expect(names(windowed().commands)).toEqual(
+			expect.arrayContaining(["FetchCodeReviewFindings", "FetchCodeReviewFindingAuthors"]),
+		)
 	})
 
 	test("picking a severity puts it in the URL", () => {

@@ -85,6 +85,7 @@ export {
 
 // Queries — Metrics
 export {
+	metricDeltaExpr,
 	metricsTimeseriesQuery,
 	metricsTimeseriesRateQuery,
 	metricsBreakdownQuery,
@@ -441,6 +442,7 @@ export {
 	serviceDbQuerySummarySQL,
 	serviceDbQueryTimeseriesSQL,
 	serviceDbTopQueriesSQL,
+	serviceDbQuerySpansQuery,
 	dbQueryVolumeQuery,
 	dbQueryVolumeRowSchema,
 	type DbQueryVolumeOpts,

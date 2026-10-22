@@ -608,6 +608,7 @@ const makeHarness = (
 			ensureAgentActor: die,
 			touchActor: die,
 			collectActorDocs: die,
+			findOwnedAgentActor: die,
 		}),
 		Layer.succeed(OrganizationService, {
 			retrieve: (orgId) =>

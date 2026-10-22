@@ -96,6 +96,7 @@ const VIA = {
 	planetscale: "OAuth",
 	github: "GitHub App",
 	aws: "IAM role",
+	supabase: "OAuth",
 } as const satisfies Record<PullSourcePlatform, string>
 
 /** How the source reaches Maple: its token prefix, the org keys, or the integration's credential. */

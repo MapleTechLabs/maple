@@ -23,6 +23,24 @@ const BLOCKED_HOSTNAMES = new Set([
 	"metadata.azure.com",
 ])
 
+// Names under these suffixes only resolve inside a private network: special-use
+// and split-horizon zones, mDNS, and in-cluster service discovery.
+const BLOCKED_HOSTNAME_SUFFIXES: ReadonlyArray<string> = [
+	"internal",
+	"local",
+	"localhost",
+	"localdomain",
+	"lan",
+	"home.arpa",
+	"intranet",
+	"corp",
+	"cluster.local",
+	"svc",
+]
+
+const hasBlockedSuffix = (name: string): boolean =>
+	BLOCKED_HOSTNAME_SUFFIXES.some((suffix) => name === suffix || name.endsWith(`.${suffix}`))
+
 const PRIVATE_IPV4_PATTERNS: ReadonlyArray<RegExp> = [
 	/^0(?:\.|$)/,
 	/^10\./,
@@ -44,43 +62,6 @@ const PRIVATE_IPV4_PATTERNS: ReadonlyArray<RegExp> = [
 	/^(?:24\d|25[0-5])\./,
 ]
 
-const PRIVATE_IPV6_PATTERNS: ReadonlyArray<RegExp> = [
-	/^::1$/,
-	/^::$/,
-	/^fc[0-9a-f]{2}:/i,
-	/^fd[0-9a-f]{2}:/i,
-	// Link-local is `fe80::/10` — `fe80:` alone is `/16`, which let `fe9f::1`,
-	// `fea0::1` and everything up to `febf:…` through.
-	/^fe[89ab][0-9a-f]:/i,
-	// Site-local: deprecated, still routed on plenty of internal networks.
-	/^fe[cdef][0-9a-f]:/i,
-]
-
-// Transition mechanisms that carry an IPv4 destination inside an IPv6 address:
-// the packet ends up at the embedded address, so it has to face the IPv4 rules.
-// `2002:7f00:0001::` is 6to4 for 127.0.0.1; `64:ff9b::7f00:1` is NAT64.
-const SIX_TO_FOUR_RE = /^2002:([0-9a-f]{1,4}):([0-9a-f]{1,4}):/i
-const NAT64_RE = /^64:ff9b(?::0)*::([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i
-const NAT64_DOTTED_RE = /^64:ff9b(?::0)*::(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i
-
-// IPv4-mapped IPv6 addresses (`::ffff:a.b.c.d`) are canonicalised by most URL
-// parsers to the hex form `::ffff:HHHH:HHHH`, with leading zeros stripped from
-// each group (e.g. `10.0.0.1` → `::ffff:a00:1`). Decode the hex back to
-// dotted-quad and apply the IPv4 private-range check.
-const IPV4_MAPPED_RE = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i
-const IPV4_MAPPED_DOTTED_RE = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i
-
-const decodeIPv4MappedIPv6 = (inner: string): string | null => {
-	const dotted = IPV4_MAPPED_DOTTED_RE.exec(inner)
-	if (dotted) return dotted[1]
-	const hex = IPV4_MAPPED_RE.exec(inner)
-	if (!hex) return null
-	const hi = Number.parseInt(hex[1], 16)
-	const lo = Number.parseInt(hex[2], 16)
-	if (!Number.isFinite(hi) || !Number.isFinite(lo) || hi > 0xffff || lo > 0xffff) return null
-	return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`
-}
-
 /**
  * The patterns above are prefix matches, which is only sound against something
  * already known to be an IPv4 literal: `/^10\./` says yes to the perfectly
@@ -94,32 +75,67 @@ const IPV4_LITERAL_RE = /^\d{1,3}(?:\.\d{1,3}){3}$/
 const isPrivateIPv4 = (host: string): boolean =>
 	IPV4_LITERAL_RE.test(host) && PRIVATE_IPV4_PATTERNS.some((re) => re.test(host))
 
-const hexPairToDotted = (hi: string, lo: string): string | null => {
-	const high = Number.parseInt(hi, 16)
-	const low = Number.parseInt(lo, 16)
-	if (!Number.isFinite(high) || !Number.isFinite(low) || high > 0xffff || low > 0xffff) return null
-	return `${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`
+/**
+ * The eight 16-bit groups of an IPv6 literal, or `null` when it is not one.
+ * The URL parser hands us the compressed hex form (`[::7f00:1]`), but a
+ * trailing dotted quad is accepted too so direct callers get the same answer.
+ */
+const ipv6Groups = (inner: string): ReadonlyArray<number> | null => {
+	const dotted = /^(.*:)(\d{1,3}(?:\.\d{1,3}){3})$/.exec(inner)
+	const quad = dotted ? dotted[2].split(".").map(Number) : null
+	if (quad && quad.some((octet) => octet > 255)) return null
+	const hexTail = quad
+		? `${((quad[0] << 8) | quad[1]).toString(16)}:${((quad[2] << 8) | quad[3]).toString(16)}`
+		: null
+	const head = dotted && hexTail ? `${dotted[1]}${hexTail}` : inner
+	const halves = head.split("::")
+	if (halves.length > 2) return null
+	const parse = (part: string) => (part === "" ? [] : part.split(":"))
+	const left = parse(halves[0])
+	const right = halves.length === 2 ? parse(halves[1]) : []
+	const missing = 8 - left.length - right.length
+	if (halves.length === 2 ? missing < 1 : missing !== 0) return null
+	const groups = [...left, ...Array.from({ length: missing }, () => "0"), ...right]
+	if (!groups.every((group) => /^[0-9a-f]{1,4}$/i.test(group))) return null
+	return groups.map((group) => Number.parseInt(group, 16))
 }
 
-/** The IPv4 address an IPv6 literal ultimately delivers to, if it embeds one. */
-const embeddedIPv4 = (inner: string): string | null => {
-	const mapped = decodeIPv4MappedIPv6(inner)
-	if (mapped) return mapped
-	const nat64Dotted = NAT64_DOTTED_RE.exec(inner)
-	if (nat64Dotted) return nat64Dotted[1]
-	const nat64 = NAT64_RE.exec(inner)
-	if (nat64) return hexPairToDotted(nat64[1], nat64[2])
-	const sixToFour = SIX_TO_FOUR_RE.exec(inner)
-	if (sixToFour) return hexPairToDotted(sixToFour[1], sixToFour[2])
-	return null
+const dottedFrom = (hi: number, lo: number): string =>
+	`${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`
+
+const zeroed = (groups: ReadonlyArray<number>, from: number, to: number): boolean =>
+	groups.slice(from, to).every((group) => group === 0)
+
+/**
+ * What an IPv6 literal delivers to, judged on its groups:
+ * - refused: loopback, unspecified, ULA (`fc00::/7`, AWS's `fd00:ec2::254`),
+ *   link-local, site-local, multicast, and the transition forms whose IPv4 is
+ *   not recoverable or never public: IPv4-compatible `::a.b.c.d`, SIIT
+ *   `::ffff:0:a.b.c.d`, NAT64 local-use `64:ff9b:1::/48` and Teredo `2001::/32`.
+ * - mapped `::ffff:a.b.c.d`, NAT64 `64:ff9b::/96` and 6to4 `2002::/16` carry an
+ *   IPv4 address in a fixed place, so that address faces the IPv4 rules.
+ */
+const isPrivateIPv6Groups = (groups: ReadonlyArray<number>): boolean => {
+	const [g0, g1, g2] = groups
+	if (zeroed(groups, 0, 6)) return true
+	if ((g0 & 0xfe00) === 0xfc00 || (g0 & 0xff00) === 0xff00) return true
+	if ((g0 & 0xffc0) === 0xfe80 || (g0 & 0xffc0) === 0xfec0) return true
+	if (zeroed(groups, 0, 4) && groups[4] === 0xffff && groups[5] === 0) return true
+	if (g0 === 0x64 && g1 === 0xff9b && g2 === 1) return true
+	if (g0 === 0x2001 && g1 === 0) return true
+	const tail = dottedFrom(groups[6], groups[7])
+	if (zeroed(groups, 0, 5) && groups[5] === 0xffff) return isPrivateIPv4(tail)
+	if (g0 === 0x64 && g1 === 0xff9b && zeroed(groups, 2, 6)) return isPrivateIPv4(tail)
+	if (g0 === 0x2002) return isPrivateIPv4(dottedFrom(g1, g2))
+	return false
 }
 
+/** A bracketed host that is not a well-formed IPv6 literal is refused, not guessed at. */
 const isPrivateIPv6 = (host: string): boolean => {
 	const inner = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host
-	if (PRIVATE_IPV6_PATTERNS.some((re) => re.test(inner))) return true
-	const embedded = embeddedIPv4(inner)
-	if (embedded && isPrivateIPv4(embedded)) return true
-	return false
+	const groups = ipv6Groups(inner)
+	if (groups === null) return host.startsWith("[") || inner.includes(":")
+	return isPrivateIPv6Groups(groups)
 }
 
 /**
@@ -134,7 +150,7 @@ const canonicalHostname = (hostname: string): string => {
 
 const isPrivateHost = (hostname: string): boolean => {
 	const lower = canonicalHostname(hostname)
-	if (BLOCKED_HOSTNAMES.has(lower)) return true
+	if (BLOCKED_HOSTNAMES.has(lower) || hasBlockedSuffix(lower)) return true
 	if (isPrivateIPv4(lower)) return true
 	if (isPrivateIPv6(lower)) return true
 	return false

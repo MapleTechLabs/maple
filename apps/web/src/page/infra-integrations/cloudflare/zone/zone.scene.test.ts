@@ -41,13 +41,15 @@ const navigation = (url: string, isReplace = false) => PageOutMessage.RequestedN
 
 describe("cloudflare zone", () => {
 	test("the window asks for the facets, signals, DNS, security and the zone rollup", () => {
-		expect(names(windowed().commands)).toEqual([
-			"FetchCloudflareZoneFacets",
-			"FetchCloudflareZoneDetail",
-			"FetchCloudflareZoneDns",
-			"FetchCloudflareZoneSecurity",
-			"FetchCloudflareZoneRollup",
-		])
+		expect(names(windowed().commands)).toEqual(
+			expect.arrayContaining([
+				"FetchCloudflareZoneFacets",
+				"FetchCloudflareZoneDetail",
+				"FetchCloudflareZoneDns",
+				"FetchCloudflareZoneSecurity",
+				"FetchCloudflareZoneRollup",
+			]),
+		)
 	})
 
 	test("the breakdown mounts once the detail has rows, and re-asks per dimension", () => {

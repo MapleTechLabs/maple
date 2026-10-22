@@ -74,9 +74,12 @@ const eventSpanMs = (event: unknown): number => {
 
 type MetaState = {
 	readonly meta: ReplayMeta
-	readonly prevMeaningfulTs: number
+	/** Undefined until the first meaningful event when scanning one range of a longer recording. */
+	readonly prevMeaningfulTs: number | undefined
+	readonly firstMeaningfulTs: number | undefined
 	readonly lastMsByKind: Partial<Record<ActionKind, number>>
 	readonly lastHref: string | undefined
+	readonly firstHref: { readonly href: string; readonly ms: number } | undefined
 }
 
 const pushMarker = (state: MetaState, kind: ActionKind, ms: number): MetaState => {
@@ -94,18 +97,20 @@ const step = (state: MetaState, raw: unknown, ev: RawEvent): MetaState => {
 	const isIncremental = ev.type === EVENT_INCREMENTAL
 	const source = isIncremental ? ev.data?.source : undefined
 	const timestamp = ev.timestamp
+	const prev = state.prevMeaningfulTs
 	const idled =
 		timestamp !== undefined && !(isIncremental && isMovementNoise(source))
 			? {
 					...state,
-					prevMeaningfulTs: Math.max(state.prevMeaningfulTs, timestamp + eventSpanMs(raw)),
+					prevMeaningfulTs: Math.max(prev ?? timestamp, timestamp + eventSpanMs(raw)),
+					firstMeaningfulTs: state.firstMeaningfulTs ?? timestamp,
 					meta:
-						timestamp - state.prevMeaningfulTs > IDLE_THRESHOLD_MS
+						prev !== undefined && timestamp - prev > IDLE_THRESHOLD_MS
 							? {
 									...state.meta,
 									inactiveIntervals: [
 										...state.meta.inactiveIntervals,
-										{ start: state.prevMeaningfulTs - startTime, end: timestamp - startTime },
+										{ start: prev - startTime, end: timestamp - startTime },
 									],
 								}
 							: state.meta,
@@ -124,7 +129,7 @@ const step = (state: MetaState, raw: unknown, ev: RawEvent): MetaState => {
 		if (href === undefined || timestamp === undefined) return sized
 		const navigated =
 			sized.lastHref !== undefined && href !== sized.lastHref ? pushMarker(sized, "nav", timestamp - startTime) : sized
-		return { ...navigated, lastHref: href }
+		return { ...navigated, lastHref: href, firstHref: navigated.firstHref ?? { href, ms: timestamp - startTime } }
 	}
 	if (!isIncremental || timestamp === undefined) return idled
 	const ms = timestamp - startTime
@@ -138,20 +143,98 @@ const step = (state: MetaState, raw: unknown, ev: RawEvent): MetaState => {
 	return idled
 }
 
+const timestampOf = (event: unknown): number | undefined => {
+	const decoded = event === undefined ? undefined : asRawEvent(event)
+	return decoded !== undefined && decoded._tag === "Some" ? decoded.value.timestamp : undefined
+}
+
+const scan = (events: ReadonlyArray<unknown>, startTime: number, prevMeaningfulTs: number | undefined): MetaState =>
+	events.reduce<MetaState>(
+		(state, raw) => {
+			const decoded = asRawEvent(raw)
+			return decoded._tag === "Some" ? step(state, raw, decoded.value) : state
+		},
+		{
+			meta: { recordedWidth: 1280, recordedHeight: 720, startTime, actionMarkers: [], inactiveIntervals: [] },
+			prevMeaningfulTs,
+			firstMeaningfulTs: undefined,
+			lastMsByKind: {},
+			lastHref: undefined,
+			firstHref: undefined,
+		},
+	)
+
+/** Epoch ms of the stream's first event, or 0 for an empty stream. */
+export const firstEventMs = (events: ReadonlyArray<unknown>): number => timestampOf(events[0]) ?? 0
+
 /** `deriveMeta`: recorded viewport, action markers and idle gaps from the rrweb stream. */
 export const deriveMeta = (events: ReadonlyArray<unknown>): ReplayMeta => {
-	const first = events[0] === undefined ? undefined : asRawEvent(events[0])
-	const startTime = first !== undefined && first._tag === "Some" ? (first.value.timestamp ?? 0) : 0
-	const initial: MetaState = {
-		meta: { recordedWidth: 1280, recordedHeight: 720, startTime, actionMarkers: [], inactiveIntervals: [] },
-		prevMeaningfulTs: startTime,
-		lastMsByKind: {},
-		lastHref: undefined,
+	const startTime = firstEventMs(events)
+	return scan(events, startTime, startTime).meta
+}
+
+/** One loaded range's markers and idle gaps, in ms from the recording's origin. */
+export const RangeMeta = Schema.Struct({
+	fromChunkSeq: Schema.Number,
+	toChunkSeq: Schema.Number,
+	/** First and last meaningful moments, so the gap to a neighbouring range can be measured. */
+	firstMs: Schema.NullOr(Schema.Number),
+	lastMs: Schema.NullOr(Schema.Number),
+	/** The page the range opens and closes on, so a navigation across the boundary still marks. */
+	firstHref: Schema.NullOr(Schema.Struct({ href: Schema.String, ms: Schema.Number })),
+	lastHref: Schema.NullOr(Schema.String),
+	actionMarkers: Schema.Array(ActionMarker),
+	inactiveIntervals: Schema.Array(InactiveInterval),
+})
+export type RangeMeta = typeof RangeMeta.Type
+
+export const deriveRangeMeta = (
+	range: { readonly fromChunkSeq: number; readonly toChunkSeq: number },
+	events: ReadonlyArray<unknown>,
+	originMs: number,
+): RangeMeta => {
+	const { meta, prevMeaningfulTs, firstMeaningfulTs, firstHref, lastHref } = scan(events, originMs, undefined)
+	return {
+		fromChunkSeq: range.fromChunkSeq,
+		toChunkSeq: range.toChunkSeq,
+		firstMs: firstMeaningfulTs === undefined ? null : firstMeaningfulTs - originMs,
+		lastMs: prevMeaningfulTs === undefined ? null : prevMeaningfulTs - originMs,
+		firstHref: firstHref ?? null,
+		lastHref: lastHref ?? null,
+		actionMarkers: meta.actionMarkers,
+		inactiveIntervals: meta.inactiveIntervals,
 	}
-	return events.reduce<MetaState>((state, raw) => {
-		const decoded = asRawEvent(raw)
-		return decoded._tag === "Some" ? step(state, raw, decoded.value) : state
-	}, initial).meta
+}
+
+/**
+ * The whole recording's meta from its loaded ranges. A gap between two ranges counts only when
+ * both are loaded and adjacent: an unloaded stretch between them is unknown, not idle.
+ */
+export const combineRangeMetas = (originMs: number, ranges: ReadonlyArray<RangeMeta>): ReplayMeta => {
+	const sorted = ranges.toSorted((a, b) => a.fromChunkSeq - b.fromChunkSeq)
+	const adjacent = sorted.flatMap((range, i) => {
+		const prev = sorted[i - 1]
+		return prev !== undefined && prev.toChunkSeq + 1 === range.fromChunkSeq ? [{ prev, range }] : []
+	})
+	const gaps = adjacent.flatMap(({ prev, range }) =>
+		prev.lastMs !== null && range.firstMs !== null && range.firstMs - prev.lastMs > IDLE_THRESHOLD_MS
+			? [{ start: prev.lastMs, end: range.firstMs }]
+			: [],
+	)
+	const navs = adjacent.flatMap(({ prev, range }) =>
+		prev.lastHref !== null && range.firstHref !== null && range.firstHref.href !== prev.lastHref
+			? [{ ms: range.firstHref.ms, kind: "nav" as const }]
+			: [],
+	)
+	return {
+		recordedWidth: 1280,
+		recordedHeight: 720,
+		startTime: originMs,
+		actionMarkers: [...sorted.flatMap((range) => range.actionMarkers), ...navs].toSorted((a, b) => a.ms - b.ms),
+		inactiveIntervals: [...sorted.flatMap((range) => range.inactiveIntervals), ...gaps].toSorted(
+			(a, b) => a.start - b.start,
+		),
+	}
 }
 
 /** `classifyUnplayable`: a recording still arriving (`empty`) or never made (`unrecorded`). */

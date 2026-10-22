@@ -46,11 +46,13 @@ const loaded = (rows: ReadonlyArray<V2Recommendation>, key = UUID): Model => {
 
 describe("recommendation detail", () => {
 	test("entry reads the clock, the recommendations and the attribute mappings", () => {
-		expect(names(init(route(), context).commands)).toEqual([
-			"ReadRecommendationClock",
-			"FetchRecommendations",
-			"FetchRecommendationAttributeMappings",
-		])
+		expect(names(init(route(), context).commands)).toEqual(
+			expect.arrayContaining([
+				"ReadRecommendationClock",
+				"FetchRecommendations",
+				"FetchRecommendationAttributeMappings",
+			]),
+		)
 	})
 
 	test("an unknown key says so and links back to the ingestion settings", () => {

@@ -43,15 +43,12 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
-import { PrReviewService } from "./PrReviewService"
+import { isTrustedAuthorAssociation, PrReviewService } from "./PrReviewService"
 
 const internalServiceUserId = Schema.decodeSync(UserId)("internal-service")
 
 /** Answers an organization may start per UTC day, across its pull requests. */
 export const PR_REPLY_DAILY_CEILING = 100
-
-/** GitHub associations whose mentions are answered; anyone else on a public repository is not. */
-const ANSWERED_ASSOCIATIONS: ReadonlySet<string> = new Set(["OWNER", "MEMBER", "COLLABORATOR"])
 
 /** Repository permissions that may have Maple commit to their pull request. */
 const WRITE_PERMISSIONS: ReadonlySet<string> = new Set(["admin", "maintain", "write"])
@@ -320,7 +317,7 @@ export class PrReviewConversationService extends Context.Service<
 				return skip("disabled")
 			}
 			const repo = repository.value
-			if (!ANSWERED_ASSOCIATIONS.has(job.authorAssociation.toUpperCase())) {
+			if (!isTrustedAuthorAssociation(job.authorAssociation)) {
 				yield* annotate("skipped", { "maple.pr_reply.skip_reason": "not_collaborator" })
 				return skip("not_collaborator")
 			}
@@ -752,12 +749,6 @@ export class PrReviewConversationService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				PrReviewService.layer,
-				VcsRepository.layer,
-				VcsProviderRegistry.layer,
-			),
-		),
+		Layer.provide(Layer.mergeAll(PrReviewService.layer, VcsRepository.layer, VcsProviderRegistry.layer)),
 	)
 }

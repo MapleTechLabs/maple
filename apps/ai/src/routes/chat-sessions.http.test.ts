@@ -9,6 +9,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { connectorSessionId } from "@maple/domain/chat-session"
 import { ChatConnectorId, ChatConversationKey } from "@maple/domain/primitives"
 import { ChatSessionsRouter } from "./chat-sessions.http"
@@ -77,6 +78,7 @@ const makeRouterLayer = (testDb: TestDb, turns: Array<BeginTurnInput>) => {
 			Layer.mergeAll(
 				ApiKeysService.layer.pipe(Layer.provide(base)),
 				AuthService.layer.pipe(Layer.provide(base)),
+				ErrorActorsService.layer.pipe(Layer.provide(base)),
 				base,
 				workerEnv,
 			),
@@ -136,7 +138,9 @@ describe("ChatSessionsRouter", () => {
 				Effect.fnUntraced(function* (handler) {
 					const response = yield* send(handler, { authorization: `Bearer ${key}` })
 					assert.strictEqual(response.status, 202)
-					const body = yield* Effect.promise(() => response.json())
+					const body = yield* Effect.promise(() => response.json()).pipe(
+						Effect.map(Schema.decodeUnknownSync(Schema.Struct({ messageId: Schema.String }))),
+					)
 					assert.strictEqual(turns.length, 1)
 					assert.strictEqual(turns[0]?.tenant.orgId, ORG)
 					assert.strictEqual(turns[0]?.text, "hello")

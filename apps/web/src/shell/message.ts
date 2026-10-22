@@ -22,7 +22,7 @@ export const Menu = defineTaggedUnion({
 })
 export type Menu = typeof Menu.Type
 
-export const Integration = Schema.Literals(["cloudflare", "railway", "planetscale", "gcp"])
+export const Integration = Schema.Literals(["cloudflare", "railway", "planetscale", "gcp", "supabase"])
 export type Integration = typeof Integration.Type
 
 export const Theme = Schema.Literals(["light", "dark"])

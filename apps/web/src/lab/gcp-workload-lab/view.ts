@@ -7,7 +7,7 @@ import type * as Workload from "../../page/infra-integrations/gcp/workload/model
 import { workloadPageView } from "../../page/infra-integrations/gcp/workload/view"
 import type * as Shell from "../../shell"
 import { segmentedSelect } from "../../ui/segmented-select"
-import { type LabPage, Message, type Model } from "./model"
+import { type LabPage, Message, type Model, SPAN_STATES } from "./model"
 import { workloadOf } from "./update"
 
 /** `WorkloadPage`'s props, read off the fixture. */
@@ -83,5 +83,16 @@ export const overlay = (model: Model, h: HtmlBuilder<Message>): Html =>
 				value: model.page,
 				onChange: (page) => Message.ClickedLabPage({ page }),
 			}),
+			...(model.page === "sql"
+				? [
+						segmentedSelect(h, {
+							size: "xs",
+							ariaLabel: "Statement spans",
+							options: SPAN_STATES.map((value) => ({ value, label: `spans: ${value}` })),
+							value: model.spanState,
+							onChange: (state) => Message.ClickedSpanState({ state }),
+						}),
+					]
+				: []),
 		],
 	)

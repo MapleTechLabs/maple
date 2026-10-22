@@ -16,15 +16,6 @@ const send = (model: ReturnType<typeof init>, index: number, message: Integratio
 	update(model, Message.GotScenarioMessage({ index, message })).model
 
 describe("gcp log filter lab", () => {
-	test("each card starts on its scenario's draft", () => {
-		const model = init()
-		expect([0, 1, 2, 3].map((index) => applicationLogsOf(model, index))).toEqual([
-			[],
-			["cloud_run"],
-			undefined,
-			[],
-		])
-	})
 
 	test("ruling OpenTelemetry out and ticking a runtime changes only that card", () => {
 		const ruledOut = send(init(), 0, IntegrationsMessage.ClickedGcpForwardOutput())

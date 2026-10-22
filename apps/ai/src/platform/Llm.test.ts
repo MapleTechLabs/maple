@@ -67,7 +67,12 @@ const captureRequest = (
 
 		const model = resolve(env, tags)
 
-		yield* LanguageModel.generateText({ prompt: "hi", system: "You are concise." }).pipe(
+		yield* LanguageModel.generateText({
+			prompt: [
+				{ role: "system", content: "You are concise." },
+				{ role: "user", content: "hi" },
+			],
+		}).pipe(
 			Effect.provide(model.layer),
 			Effect.ignore,
 			Effect.provide(layerLlm(env)),
@@ -431,18 +436,17 @@ const streamParts = (usage: Record<string, unknown>, options: StreamFixture = {}
 			})
 
 		const model = resolveTriageModel(openRouterEnv)
-		return yield* LanguageModel.streamText({
-			prompt: "hi",
-			...(options.declareTool === true
-				? {
+		const stream =
+			options.declareTool === true
+				? LanguageModel.streamText({
+						prompt: "hi",
 						toolkit: Toolkit.make(listServices),
 						// What the agent engine sends: the run owns tool execution, the model call only
 						// reports the calls it was asked for.
 						disableToolCallResolution: true,
-					}
-				: undefined),
-		}).pipe(
-			Stream.runCollect,
+					})
+				: LanguageModel.streamText({ prompt: "hi" })
+		return yield* Stream.runCollect(stream).pipe(
 			// One provide, not a chain: the model layer needs the clients the LLM stack builds, so
 			// they go in as a single merged layer rather than two lifecycles stacked on each other.
 			Effect.provide(Layer.provide(model.layer, layerLlm(openRouterEnv))),

@@ -21,6 +21,8 @@ import { initPlanetscaleCard } from "./planetscale"
 import { initGcpCard } from "./gcp"
 import { initAwsCard } from "./aws"
 import * as Aws from "./update-aws"
+import { initSupabaseCard } from "./supabase"
+import * as Supabase from "./update-supabase"
 import * as Gcp from "./update-gcp"
 import * as Configure from "./update-gcp-configure"
 import * as Planetscale from "./update-planetscale"
@@ -87,6 +89,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			planetscaleDatabases: Keyed.idle(),
 			gcp: Keyed.idle(),
 			aws: Keyed.idle(),
+			supabase: Keyed.idle(),
 			hazel: Keyed.idle(),
 			github: Keyed.idle(),
 			chat: Keyed.idle(),
@@ -104,6 +107,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		gcpCard: initGcpCard(),
 		awsCard: initAwsCard(),
 		railwayCard: initRailwayCard(),
+		supabaseCard: initSupabaseCard(),
 	}
 	const loaded = chain(model, [
 		...STATUS_NAMES.map((name) => (next: Model) => requestStatus(next, context, name, "Load")),
@@ -134,6 +138,7 @@ const enterIntegration = (model: Model, context: PageContext): Return => {
 	if (integration === "aws") return Aws.enterAws(model, context)
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
+	if (integration === "supabase") return Supabase.requestMetricsRows(model, context, "Load")
 	return { model }
 }
 
@@ -149,7 +154,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	const s = model.statuses
 	return Message.match<Return>(message, {
 		CompletedReadClock: ({ nowMs }) =>
-			gcpBand(
+			chain(
 				{
 					...model,
 					nowMs,
@@ -158,7 +163,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						watchStartedAt: model.planetscaleCard.watchStartedAt ?? nowMs,
 					},
 				},
-				context,
+				[
+					(next) => gcpBand(next, context),
+					(next) => Supabase.requestMetricsRows(next, context, "Load"),
+				],
 			),
 		CompletedLoadCloudflare: ({ key, result }) =>
 			accepted(model, { ...s, cloudflare: Keyed.accept(s.cloudflare, key, result) }),
@@ -189,6 +197,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				accepted(model, { ...s, aws: Keyed.accept(s.aws, key, result) }).model,
 				Aws.connectionsOf(model),
 			),
+		CompletedLoadSupabase: ({ key, result }) => {
+			const read = accepted(model, { ...s, supabase: Keyed.accept(s.supabase, key, result) }).model
+			// Any answer to the current read retires saved flips; a failed one shows the last known value.
+			return Supabase.requestMetricsRows(
+				s.supabase.key === key ? Supabase.settledStatus(read) : read,
+				context,
+				"Load",
+			)
+		},
+		CompletedLoadSupabaseMetrics: ({ key, result }) => Supabase.completedMetricsRows(model, key, result),
 		CompletedLoadHazel: ({ key, result }) =>
 			accepted(model, { ...s, hazel: Keyed.accept(s.hazel, key, result) }),
 		CompletedLoadGithub: ({ key, result }) =>
@@ -301,6 +319,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		DismissedAwsRemoved: ({ connectionId }) => Aws.dismissedRemoved(model, context, connectionId),
 		CompletedReadAwsRemoved: ({ removed }) => Aws.completedReadRemoved(model, removed),
 		CompletedWriteAwsRemoved: () => ({ model }),
+		// Advances the card's window and "Last data" ages; the fresh clock re-reads rows on a new key.
+		TickedSupabaseClock: () => ({ model, commands: [ReadClock()] }),
+		CompletedReadSupabaseClock: ({ nowMs }) => Supabase.completedReadClock(model, context, nowMs),
+		ClickedSupabaseSync: () => Supabase.clickedSync(model),
+		CompletedSupabaseSync: ({ failure }) => Supabase.completedSync(model, context, failure),
+		ToggledSupabaseMetrics: ({ ref, enabled }) => Supabase.toggledMetrics(model, ref, enabled),
+		CompletedSupabaseMetrics: ({ ref, enabled, failure }) =>
+			Supabase.completedMetrics(model, context, ref, enabled, failure),
+		ToggledSupabaseLogs: ({ ref, enabled }) => Supabase.toggledLogs(model, ref, enabled),
+		CompletedSupabaseLogs: ({ ref, enabled, failure }) =>
+			Supabase.completedLogs(model, context, ref, enabled, failure),
+		ToggledSupabaseLogDrain: ({ ref, enabled }) => Supabase.toggledLogDrain(model, ref, enabled),
+		CompletedSupabaseLogDrain: ({ ref, enabled, failure }) =>
+			Supabase.completedLogDrain(model, context, ref, enabled, failure),
 		CompletedFetchOrganizations: ({ key, result }) =>
 			Planetscale.updateCard(model, {
 				organizations: Keyed.accept(model.planetscaleCard.organizations, key, result),

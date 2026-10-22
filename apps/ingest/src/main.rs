@@ -165,6 +165,8 @@ struct AppConfig {
     write_mode: WriteMode,
     tinybird: TinybirdConfig,
     max_request_body_bytes: usize,
+    /// Ceiling on a gzip body after decompression; past it the request is a 413.
+    max_decoded_body_bytes: usize,
     org_max_in_flight: u64,
     /// Gateway instances sharing each source's requests/second limit.
     rate_limit_fleet_size: u32,
@@ -441,6 +443,17 @@ impl AppConfig {
             std::env::var("INGEST_MAX_REQUEST_BODY_BYTES").ok(),
             20 * 1024 * 1024,
         )?;
+        let max_decoded_body_bytes = parse_usize(
+            "INGEST_MAX_DECODED_BODY_BYTES",
+            std::env::var("INGEST_MAX_DECODED_BODY_BYTES").ok(),
+            max_request_body_bytes.saturating_mul(8),
+        )?;
+        if max_decoded_body_bytes < max_request_body_bytes {
+            return Err(
+                "INGEST_MAX_DECODED_BODY_BYTES must be at least INGEST_MAX_REQUEST_BODY_BYTES"
+                    .to_owned(),
+            );
+        }
         let org_max_in_flight = parse_u64(
             "INGEST_ORG_MAX_IN_FLIGHT",
             std::env::var("INGEST_ORG_MAX_IN_FLIGHT").ok(),
@@ -692,6 +705,7 @@ impl AppConfig {
             write_mode,
             tinybird,
             max_request_body_bytes,
+            max_decoded_body_bytes,
             org_max_in_flight,
             rate_limit_fleet_size,
             gcp_org_max_in_flight,
@@ -4421,6 +4435,18 @@ fn decompressed_len(body: &[u8]) -> Result<u64, std::io::Error> {
     std::io::copy(&mut decoder, &mut std::io::sink())
 }
 
+/// Bounded gunzip of a replay chunk into text. Invalid UTF-8 reads as the
+/// same error `read_to_string` raised, so the rejection fingerprint holds.
+fn gunzip_replay_text(body: &[u8], max_decoded: usize) -> Result<String, BoundedGunzipError> {
+    let bytes = gunzip_bounded(body, max_decoded)?;
+    String::from_utf8(bytes).map_err(|_| {
+        BoundedGunzipError::Invalid(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "stream did not contain valid UTF-8",
+        ))
+    })
+}
+
 async fn handle_replay_blob(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -4577,12 +4603,13 @@ async fn handle_replay_blob_inner(
             decompressed_len(&body).map_err(|e| replay_gunzip_rejection(headers, &body, &e))?,
         )
     } else {
-        use std::io::Read as _;
-        let mut decoder = GzDecoder::new(&body[..]);
-        let mut events_json = String::new();
-        decoder
-            .read_to_string(&mut events_json)
-            .map_err(|e| replay_gunzip_rejection(headers, &body, &e))?;
+        let events_json = gunzip_replay_text(&body, state.config.max_decoded_body_bytes)
+            .map_err(|e| match e {
+                BoundedGunzipError::Invalid(e) => replay_gunzip_rejection(headers, &body, &e),
+                BoundedGunzipError::TooLarge => {
+                    ApiError::payload_too_large("decompressed replay chunk too large")
+                }
+            })?;
         let byte_size = events_json.len() as u64;
         (Some(events_json), byte_size)
     };
@@ -5081,7 +5108,18 @@ async fn handle_signal_inner(
     let decoded_payload = {
         let decode_span = decode_internal_span(encoding_label, body.len());
         let _guard = decode_span.enter();
-        let decoded_payload = decode_payload(&body, content_encoding.as_deref()).map_err(|e| {
+        let decoded_payload = decode_payload(
+            &body,
+            content_encoding.as_deref(),
+            state.config.max_decoded_body_bytes,
+        )
+        .map_err(|e| {
+            // Over the decoded ceiling is the same refusal as an oversized body.
+            if e.status == StatusCode::PAYLOAD_TOO_LARGE {
+                warn!(body_bytes = body.len(), "Decoded payload too large");
+                record_stage_error(&decode_span, "payload_too_large", &e.message, false);
+                return (e, "payload_too_large");
+            }
             warn!(body_bytes = body.len(), "Failed to decode payload");
             record_stage_error(&decode_span, "decode", &e.message, false);
             metrics::org_data_loss(&resolved_key.org_id, signal.path(), "decode");
@@ -5304,14 +5342,23 @@ async fn handle_cloudflare_logpush_inner(
         }
     }
 
-    let decoded_payload = match decode_payload(&body, content_encoding.as_deref()) {
+    let decoded_payload = match decode_payload(
+        &body,
+        content_encoding.as_deref(),
+        state.config.max_decoded_body_bytes,
+    ) {
         Ok(decoded) => decoded,
         Err(error) => {
             state
                 .cloudflare_resolver
                 .record_failure(&resolved.connector_id, &error.message)
                 .await;
-            return Err((error, "decode"));
+            let reason = if error.status == StatusCode::PAYLOAD_TOO_LARGE {
+                "payload_too_large"
+            } else {
+                "decode"
+            };
+            return Err((error, reason));
         }
     };
 
@@ -6109,18 +6156,40 @@ fn detect_payload_format(content_type: &str) -> Result<PayloadFormat, ApiError> 
     ))
 }
 
+#[derive(Debug)]
+enum BoundedGunzipError {
+    Invalid(std::io::Error),
+    TooLarge,
+}
+
+/// Gunzips `body`, stopping once more than `max_decoded` bytes have come out.
+fn gunzip_bounded(body: &[u8], max_decoded: usize) -> Result<Vec<u8>, BoundedGunzipError> {
+    let read_limit = u64::try_from(max_decoded).unwrap_or(u64::MAX).saturating_add(1);
+    let mut decompressed = Vec::new();
+    GzDecoder::new(body)
+        .take(read_limit)
+        .read_to_end(&mut decompressed)
+        .map_err(BoundedGunzipError::Invalid)?;
+    if decompressed.len() > max_decoded {
+        return Err(BoundedGunzipError::TooLarge);
+    }
+    Ok(decompressed)
+}
+
 #[hotpath::measure]
-fn decode_payload(body: &Bytes, content_encoding: Option<&str>) -> Result<Vec<u8>, ApiError> {
+fn decode_payload(
+    body: &Bytes,
+    content_encoding: Option<&str>,
+    max_decoded: usize,
+) -> Result<Vec<u8>, ApiError> {
     match content_encoding {
         None => Ok(body.to_vec()),
-        Some("gzip") => {
-            let mut decoder = GzDecoder::new(body.as_ref());
-            let mut decompressed = Vec::new();
-            decoder
-                .read_to_end(&mut decompressed)
-                .map_err(|_| ApiError::bad_request("Invalid gzip body"))?;
-            Ok(decompressed)
-        }
+        Some("gzip") => gunzip_bounded(body.as_ref(), max_decoded).map_err(|e| match e {
+            BoundedGunzipError::Invalid(_) => ApiError::bad_request("Invalid gzip body"),
+            BoundedGunzipError::TooLarge => {
+                ApiError::payload_too_large("Decompressed request body too large")
+            }
+        }),
         Some(_) => Err(ApiError::unsupported_media_type(
             "Unsupported content-encoding",
         )),
@@ -10090,6 +10159,7 @@ mod tests {
                 write_mode: WriteMode::Forward,
                 tinybird,
                 max_request_body_bytes: 1024 * 1024,
+                max_decoded_body_bytes: 8 * 1024 * 1024,
                 org_max_in_flight: 100,
                 rate_limit_fleet_size: 1,
                 gcp_org_max_in_flight: 100,
@@ -10736,6 +10806,61 @@ mod tests {
         );
 
         drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[test]
+    fn decode_payload_gunzips_within_the_decoded_limit() {
+        let payload = r#"{"resourceSpans":[]}"#;
+        let decoded = decode_payload(&gzip_bytes(payload), Some("gzip"), payload.len())
+            .expect("a body at exactly the limit decodes");
+        assert_eq!(decoded, payload.as_bytes());
+
+        let plain = Bytes::from_static(b"raw");
+        assert_eq!(decode_payload(&plain, None, 1).unwrap(), b"raw");
+
+        let error = decode_payload(&Bytes::from_static(b"not gzip"), Some("gzip"), 1024)
+            .expect_err("malformed gzip is rejected");
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn decode_payload_rejects_gzip_that_inflates_past_the_limit() {
+        // 4 MiB of one byte compresses to a few KiB, far under the body limit.
+        let inflated = "a".repeat(4 * 1024 * 1024);
+        let body = gzip_bytes(&inflated);
+        assert!(body.len() < 64 * 1024, "fixture should compress well");
+
+        let error = decode_payload(&body, Some("gzip"), 1024 * 1024)
+            .expect_err("decoded size over the limit must be refused");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(error.error_kind(), "payload_too_large");
+
+        let decoded = decode_payload(&body, Some("gzip"), inflated.len())
+            .expect("the same body decodes once the limit allows it");
+        assert_eq!(decoded.len(), inflated.len());
+    }
+
+    #[test]
+    fn replay_text_gunzip_is_bounded_and_keeps_utf8_rejection() {
+        let events = r#"[{"type":2,"timestamp":1}]"#;
+        assert_eq!(
+            gunzip_replay_text(&gzip_bytes(events), events.len()).unwrap(),
+            events
+        );
+        assert!(matches!(
+            gunzip_replay_text(&gzip_bytes(events), events.len() - 1),
+            Err(BoundedGunzipError::TooLarge)
+        ));
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+        encoder.write_all(&[0xff, 0xfe]).unwrap();
+        let not_utf8 = encoder.finish().unwrap();
+        match gunzip_replay_text(&not_utf8, 1024) {
+            Err(BoundedGunzipError::Invalid(error)) => {
+                assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+            }
+            other => panic!("expected an invalid-data error, got {other:?}"),
+        }
     }
 
     #[test]

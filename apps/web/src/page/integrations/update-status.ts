@@ -15,6 +15,7 @@ import {
 	LoadPlanetscaleDatabases,
 	LoadRailway,
 	LoadScrapeTargets,
+	LoadSupabase,
 } from "./command"
 import type { Message } from "./message"
 import type { Model, Statuses } from "./model"
@@ -31,6 +32,7 @@ const OPERATIONS = {
 	planetscaleDatabases: "planetscaleIntegration.databases",
 	gcp: "gcpIntegration.status",
 	aws: "awsIntegration.status",
+	supabase: "integrations.supabaseStatus",
 	hazel: "integrations.hazelStatus",
 	github: "integrations.githubStatus",
 	chat: "chatIntegration.connectors",
@@ -108,6 +110,12 @@ export const requestStatus = (
 				(all, aws) => ({ ...all, aws }),
 				(slotKey) => LoadAws({ key: slotKey }),
 			)
+		case "supabase":
+			return go(
+				s.supabase,
+				(all, supabase) => ({ ...all, supabase }),
+				(slotKey) => LoadSupabase({ key: slotKey, refresh }),
+			)
 		case "hazel":
 			return go(
 				s.hazel,
@@ -156,6 +164,7 @@ export const STATUS_NAMES: ReadonlyArray<keyof Statuses> = [
 	"planetscaleDatabases",
 	"gcp",
 	"aws",
+	"supabase",
 	"hazel",
 	"github",
 	"chat",

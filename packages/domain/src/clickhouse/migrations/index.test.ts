@@ -89,6 +89,7 @@ describe("ClickHouse migrations", () => {
 
 		// The recreated bodies must actually populate the columns, or the ALTERs
 		// are cosmetic and errorIssuesScan keeps returning empty version arrays.
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- MV must write the ALTERed column
 		expect(sql).toContain("AS ServiceVersion")
 		expect(sql).toContain("groupUniqArray(ServiceVersion) AS ServiceVersions")
 

@@ -31,6 +31,8 @@ import {
 	MapleInternalApi,
 	RailwayDisconnectResponse,
 	RoleName,
+	SupabaseConnectResponse,
+	SupabaseDisconnectResponse,
 	UserId,
 	VCS_COMMIT_DETAILS_MAX_SHAS,
 	VCS_COMMIT_RANGES_MAX,
@@ -57,6 +59,13 @@ import {
 } from "@maple/backend/services/integrations/cloudflare-analytics/queries"
 import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
+import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
+import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
+import {
+	SUPABASE_CALLBACK_PATH,
+	SupabaseOAuthService,
+} from "@maple/backend/services/auth/SupabaseOAuthService"
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
@@ -120,6 +129,10 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const cloudflare = yield* CloudflareOAuthService
 		const cloudflareAnalytics = yield* CloudflareAnalyticsService
 		const railway = yield* RailwayMetricsService
+		const supabaseOAuth = yield* SupabaseOAuthService
+		const supabase = yield* SupabaseConnectionService
+		const supabaseLogs = yield* SupabaseLogsService
+		const supabaseInsights = yield* SupabaseInsightsService
 		const gcp = yield* GcpConnectorService
 		const edgeCache = yield* EdgeCacheService
 		const env = yield* Env
@@ -465,6 +478,62 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
 						return new RailwayDisconnectResponse(yield* railway.disconnect(tenant.orgId))
+					}),
+				)
+				// Any member may read the status; every change is an admin action, as for Railway.
+				.handle("supabaseStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* supabase.getStatus(tenant.orgId)
+					}),
+				)
+				.handle("supabaseConnect", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const req = yield* HttpServerRequest.HttpServerRequest
+						const result = yield* supabaseOAuth.startConnect(tenant.orgId, tenant.userId, {
+							callbackUrl: `${resolveRequestOrigin(req)}${SUPABASE_CALLBACK_PATH}`,
+							returnTo: payload.returnTo,
+						})
+						return new SupabaseConnectResponse(result)
+					}),
+				)
+				.handle("supabaseSync", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						// Spends the org's Supabase rate limit, so it is an admin action like connect.
+						yield* requireAdmin(tenant.roles)
+						return yield* supabase.sync(tenant.orgId)
+					}),
+				)
+				.handle("supabaseUpdateProject", ({ params, payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						// Drain first: switching a project from drain to polling turns the drain off before polling on.
+						const status = yield* supabase.updateProject(
+							tenant.orgId,
+							tenant.userId,
+							params.ref,
+							payload,
+						)
+						if (payload.logsEnabled === undefined) return status
+						yield* supabaseLogs.setLogsEnabled(tenant.orgId, params.ref, payload.logsEnabled)
+						return yield* supabase.getStatus(tenant.orgId)
+					}),
+				)
+				.handle("supabaseProjectInsights", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* supabaseInsights.getInsights(tenant.orgId, params.ref)
+					}),
+				)
+				.handle("supabaseDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						return new SupabaseDisconnectResponse(yield* supabase.disconnect(tenant.orgId))
 					}),
 				)
 				.handle("gcpResources", ({ query }) =>

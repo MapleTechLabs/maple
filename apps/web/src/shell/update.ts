@@ -22,6 +22,7 @@ import {
 	LoadNamespaces,
 	LoadPlanetscaleStatus,
 	LoadRailwayStatus,
+	LoadSupabaseStatus,
 	LoadTenant,
 } from "./data"
 import { DismissQuotaBanner, OpenCustomerPortal } from "./billing-banners"
@@ -114,6 +115,7 @@ const requestInfraSurfaces = (model: Model): UpdateReturn =>
 							LoadPlanetscaleStatus({ orgId }),
 							LoadRailwayStatus({ orgId }),
 							LoadGcpStatus({ orgId }),
+							LoadSupabaseStatus({ orgId }),
 						],
 					},
 	})

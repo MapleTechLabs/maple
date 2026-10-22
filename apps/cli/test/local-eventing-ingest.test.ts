@@ -10,7 +10,7 @@ import {
 	SourceOccurrenceCollision,
 } from "../src/server/eventing/runtime"
 import { __testables } from "../src/server/serve"
-import { run, serveCheckpointWith, serveWith } from "./eventing-test-support"
+import { run, serveCheckpointWith, serveWith, stubEventing } from "./eventing-test-support"
 
 describe("Local eventing ingest seam", () => {
 	it("requires maintenance authorization and exposes staged records only when requested", async () => {
@@ -286,9 +286,9 @@ describe("Local eventing ingest seam", () => {
 
 	it("rejects fractional consumer limits before calling the store", async () => {
 		const response = await serveWith(
-			{
+			stubEventing({
 				claimReady: () => Effect.die(new Error("invalid input reached the store")),
-			},
+			}),
 			__testables.handleConsumerClaim(
 				new __testables.RequestQuiescenceGate(),
 				"secret",

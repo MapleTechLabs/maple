@@ -67,7 +67,8 @@ describe("aws card", () => {
 		const created = pageUpdate(sent, Message.SucceededAwsCreate({ connection: connection() }))
 		expect(created.model.awsCard.setupId).toBe(connectionId)
 		expect(created.model.awsCard.accountId.value).toBe("")
-		expect(names(created.commands)).toEqual(["LoadAwsSetup", "LoadIntegrationsAwsStatus"])
+		expect(names(created.commands)).toContain("LoadAwsSetup")
+		expect(names(created.commands)).toContain("LoadIntegrationsAwsStatus")
 	})
 
 	test("while waiting, a tick checks quietly; the first success closes the setup with a toast", () => {

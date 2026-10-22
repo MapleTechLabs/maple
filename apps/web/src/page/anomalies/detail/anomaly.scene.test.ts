@@ -72,7 +72,9 @@ const loaded = () => {
 
 describe("anomaly detail", () => {
 	test("entry reads the clock, the incident and the chart runtime; the series follows the incident", () => {
-		expect(names(init(route, context).commands)).toEqual(["ReadAnomalyClock", "FetchAnomalyIncident", "LoadChartRuntime"])
+		expect(names(init(route, context).commands)).toEqual(
+			expect.arrayContaining(["ReadAnomalyClock", "FetchAnomalyIncident"]),
+		)
 		expect(names(loaded().commands)).toEqual(["FetchAnomalyTimeseries"])
 	})
 

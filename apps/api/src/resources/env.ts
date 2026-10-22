@@ -19,6 +19,7 @@ import {
 	plainWithDefault,
 	requireSecretEntry,
 	selfObservabilityEnv,
+	supabaseOAuthEnv,
 	tinybirdEnv,
 } from "@maple/infra/env"
 
@@ -62,6 +63,7 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalSecret("MAPLE_SUPPORT_SLACK_BOT_TOKEN"),
 		optionalPlain("MAPLE_SUPPORT_SLACK_TEAM_USER_IDS"),
 		optionalPlain("MAPLE_CANCELLATION_SLACK_CHANNEL_ID"),
+		optionalPlain("MAPLE_CLERK_DASHBOARD_URL"),
 		optionalSecret("SD_INTERNAL_TOKEN"),
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
 		optionalPlain("HAZEL_API_BASE_URL"),
@@ -81,6 +83,7 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
+		supabaseOAuthEnv,
 		optionalPlain("MAPLE_GCP_SERVICE_ACCOUNT_EMAIL"),
 		// Maple's AWS identity: assumes customer roles. Unset leaves AWS unavailable.
 		optionalPlain("MAPLE_AWS_PRINCIPAL_ARN"),

@@ -9,7 +9,7 @@ import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
 import { HttpAiSessionsInternalLive } from "@/routes/internal/ai-sessions.http"
 import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
 import { HttpOpenRouterKeyLive } from "@/routes/internal/openrouter-key.http"
-import { HttpAuthLive, HttpAuthPublicLive } from "@/routes/auth.http"
+import { HttpAuthLive, HttpAuthPublicLive, HttpAuthSessionLive } from "@/routes/auth.http"
 import { HttpBillingLive } from "@/routes/internal/billing.http"
 import { HttpBillingPublicLive } from "@/routes/billing-public.http"
 import { HttpEmailPublicLive } from "@/routes/email-public.http"
@@ -112,6 +112,7 @@ const DocsV2Route = apiReferenceRoute("/v2/docs")
 const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpAuthPublicLive),
 	Layer.provide(HttpAuthLive),
+	Layer.provide(HttpAuthSessionLive),
 	Layer.provide(HttpBillingPublicLive),
 	Layer.provide(HttpEmailPublicLive),
 	Layer.provide(ApiErrorBoundaryLive),

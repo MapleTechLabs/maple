@@ -39,6 +39,7 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { Env } from "@maple/backend/platform/Env"
 import { resolveHttpMcpTenant } from "../mcp/lib/query-warehouse"
 
@@ -264,7 +265,9 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				// turn, and a caller-supplied one named a message that never existed — so the
 				// `turn-end` it recorded matched nothing and no client ever cleared its streaming
 				// state.
-				const aborted = yield* sessionCall("abort", resolved.session.stub.abort("user")).pipe(Effect.option)
+				const aborted = yield* sessionCall("abort", resolved.session.stub.abort("user")).pipe(
+					Effect.option,
+				)
 				if (Option.isNone(aborted)) return problem("The chat session is unavailable", 503)
 				return HttpServerResponse.empty({ status: 204 })
 			}),
@@ -276,6 +279,8 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 	// these per request, so hand them over from the build — reading them inside a handler
 	// answered every chat request with a 500 ("Service not found") until 2026-09-08.
 	HttpRouter.provideRequest(
-		Layer.effectContext(Effect.context<ApiKeysService | AuthService | Env | ChatSessions>()),
+		Layer.effectContext(
+			Effect.context<ApiKeysService | AuthService | Env | ErrorActorsService | ChatSessions>(),
+		),
 	),
 )

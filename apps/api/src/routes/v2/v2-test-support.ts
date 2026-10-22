@@ -95,6 +95,7 @@ import { HttpV2WidgetCredentialsLive } from "./widget-credentials.http"
  */
 export const OrgMembersServiceStubLayer = Layer.succeed(OrgMembersService, {
 	listMembers: () => Effect.succeed([]),
+	listOrganizationsOf: () => Effect.succeed([]),
 	resolveMembers: () => Effect.succeed([]),
 })
 
@@ -133,7 +134,10 @@ const ChatWorkspaceServiceStubLayer = Layer.succeed(
  * those endpoints and a group left unimplemented would stop the whole API layer
  * from building.
  */
-const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatWorkspaceService>) =>
+const v2GroupLayersExceptOnboardingChecklist = (
+	chatWorkspace: Layer.Layer<ChatWorkspaceService>,
+	auditLog: Layer.Layer<AuditLogService> = AuditLogService.layerMemory,
+) =>
 	Layer.mergeAll(
 		HttpV2ApiKeysLive,
 		HttpV2ChatIntegrationsLive.pipe(Layer.provide(chatWorkspace)),
@@ -153,9 +157,7 @@ const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatW
 		// Real service, no stub: it needs only the Database every harness already
 		// provides. The member directory IS stubbed — the route asks it for display
 		// names, and every harness would otherwise reach for Clerk.
-		HttpV2AuditLogLive.pipe(
-			Layer.provide(Layer.merge(AuditLogService.layerMemory, OrgMembersServiceStubLayer)),
-		),
+		HttpV2AuditLogLive.pipe(Layer.provide(Layer.merge(auditLog, OrgMembersServiceStubLayer))),
 		HttpV2ScrapeTargetsLive,
 		HttpV2InstrumentationRecommendationsLive,
 		HttpV2InstrumentationAuditLive,
@@ -243,17 +245,24 @@ export const V2GroupLayersExceptOnboardingChecklist = v2GroupLayersExceptOnboard
 )
 
 /** Every v2 group, with the chat group served by the given service. */
-export const allV2GroupLayersWithChat = (chatWorkspace: Layer.Layer<ChatWorkspaceService>) =>
+export const allV2GroupLayersWithChat = (
+	chatWorkspace: Layer.Layer<ChatWorkspaceService>,
+	auditLog: Layer.Layer<AuditLogService> = AuditLogService.layerMemory,
+) =>
 	Layer.mergeAll(
-		v2GroupLayersExceptOnboardingChecklist(chatWorkspace),
+		v2GroupLayersExceptOnboardingChecklist(chatWorkspace, auditLog),
 		HttpV2OnboardingChecklistLive.pipe(Layer.provide(OnboardingChecklistServiceStubLayer)),
 	).pipe(
 		// Mutation handlers across the groups record audit entries; the real service
 		// needs only the Database every harness already provides.
-		Layer.provide(AuditLogService.layerMemory),
+		Layer.provide(auditLog),
 	)
 
 export const AllV2GroupLayersLive = allV2GroupLayersWithChat(ChatWorkspaceServiceStubLayer)
+
+/** Every v2 group, recording audit entries into the given log so a test can read them. */
+export const allV2GroupLayersWithAudit = (auditLog: Layer.Layer<AuditLogService>) =>
+	allV2GroupLayersWithChat(ChatWorkspaceServiceStubLayer, auditLog)
 
 export const ApiV2RateLimiterAllowAllLayer = Layer.succeed(ApiV2RateLimiter, {
 	check: () => Effect.succeed("allowed" as const),
@@ -334,6 +343,7 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		ensureAgentActor: die,
 		touchActor: die,
 		collectActorDocs: die,
+		findOwnedAgentActor: die,
 	}),
 	Layer.succeed(OrganizationService, {
 		create: die,

@@ -18,10 +18,13 @@ const EMPTY_RESOURCES_REFRESH = Duration.seconds(30)
 const LIVE_CLOCK = Duration.seconds(30)
 
 const liveClock = Stream.fromEffectRepeat(
-	Effect.andThen(Effect.sleep(LIVE_CLOCK), () => Effect.map(Clock.currentTimeMillis, (nowMs) => Message.TickedLiveClock({ nowMs }))),
+	Effect.andThen(Effect.sleep(LIVE_CLOCK), () =>
+		Effect.map(Clock.currentTimeMillis, (nowMs) => Message.TickedLiveClock({ nowMs })),
+	),
 )
 
-const every = (interval: Duration.Duration, message: Message) => Stream.map(pollTicks(interval), () => message)
+const every = (interval: Duration.Duration, message: Message) =>
+	Stream.map(pollTicks(interval), () => message)
 
 const statusCadence = (model: Model): "off" | "settling" | "steady" => {
 	const status = statusOf(model)

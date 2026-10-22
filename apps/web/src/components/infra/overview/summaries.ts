@@ -4,6 +4,7 @@
 
 import type { CloudflareZoneRow } from "@maple/web-data/warehouse/cloudflare-infra"
 import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
+import type { SupabaseProjectRow } from "@maple/web-data/warehouse/supabase-infra"
 import type { PlanetScaleDatabaseStat } from "@maple/web-data/warehouse/service-map"
 import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { countLabel, formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
@@ -31,6 +32,7 @@ export type SourceId =
 	| "kubernetes"
 	| "cloudflare"
 	| "railway"
+	| "supabase"
 	| "planetscale"
 	| "gcp"
 
@@ -44,6 +46,7 @@ export type FindingTarget =
 	| { kind: "pods"; scope: "saturated" | "elevated" | "unbounded" }
 	| { kind: "zone"; zoneName: string }
 	| { kind: "railway"; serviceId: string; environmentId: string }
+	| { kind: "supabase"; projectRef: string }
 	| { kind: "planetscale"; database: string }
 	| { kind: "gcp"; service: GcpInfraServiceId; keys: ReadonlyArray<string> }
 	| { kind: "gcpService"; service: GcpInfraServiceId }
@@ -290,6 +293,48 @@ export function summarizeRailway(services: ReadonlyArray<RailwayServiceRow>): So
 			saturated.length + elevated > 0
 				? `${countLabel(saturated.length + elevated, "service")} above 60% of limit`
 				: "all under 60% of limit",
+		headlineTone: worstTone(findings),
+		findings,
+	}
+}
+
+/**
+ * Supabase projects by their busiest share of CPU, memory or the data volume, like hosts: 90%
+ * and up is saturated, 60% and up elevated. `names` maps refs to discovery's project names.
+ */
+export function summarizeSupabase(
+	projects: ReadonlyArray<SupabaseProjectRow>,
+	names: ReadonlyMap<string, string>,
+): SourceSummary {
+	const peakOf = (row: SupabaseProjectRow) => Math.max(row.cpuMax, row.memoryMax, row.diskUsedMax)
+	const byPeak = [...projects].sort((a, b) => peakOf(b) - peakOf(a))
+	const saturated = byPeak.filter((row) => peakOf(row) >= 0.9)
+	const elevated = byPeak.filter((row) => peakOf(row) >= 0.6 && peakOf(row) < 0.9)
+	const findings: Finding[] = [...saturated, ...elevated].slice(0, MAX_FINDINGS_PER_SOURCE).map((row) => {
+		const values = [row.cpuMax, row.memoryMax, row.diskUsedMax]
+		const worst = values.indexOf(Math.max(...values))
+		const name = names.get(row.projectRef) || row.projectRef
+		return {
+			key: `supabase:${row.projectRef}`,
+			source: "supabase",
+			tone: peakOf(row) >= 0.9 ? "crit" : "warn",
+			subject: name,
+			title: `${name} at ${formatPercent(values[worst] ?? 0)} ${METRIC_NAMES[worst]}`,
+			detail: `CPU ${formatPercent(row.cpuMax)}, memory ${formatPercent(row.memoryMax)}, disk ${formatPercent(row.diskUsedMax)} at peak`,
+			target: { kind: "supabase", projectRef: row.projectRef },
+		}
+	})
+	return {
+		resources: countLabel(projects.length, "project"),
+		segments: [
+			{ key: "ok", count: okCount(projects.length, saturated.length, elevated.length) },
+			{ key: "elevated", count: elevated.length },
+			{ key: "saturated", count: saturated.length },
+		],
+		headline:
+			saturated.length + elevated.length > 0
+				? `${countLabel(saturated.length + elevated.length, "project")} above 60% at peak`
+				: "all under 60% at peak",
 		headlineTone: worstTone(findings),
 		findings,
 	}

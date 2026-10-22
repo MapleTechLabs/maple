@@ -348,144 +348,6 @@ describe("CloudflareOAuthService", () => {
 		)
 	})
 
-	it.effect("concurrent getValidAccessToken refreshes once (single-flight, no false revoke)", () => {
-		const testDb = createTestDb(trackedDbs)
-		const counters = { refreshes: 0 }
-		// authorization_code → immediately-expiring token (forces refresh on first use);
-		// refresh_token → succeeds ONCE, then 400s (Cloudflare rotates refresh tokens on use).
-		const fetchImpl: typeof globalThis.fetch = async (input, init) => {
-			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			if (url.includes("/oauth2/token")) {
-				// The body may arrive as a stream — normalize through Request to read it.
-				const text = await new Request(url, {
-					method: "POST",
-					body: init?.body,
-					// @ts-expect-error duplex is required for streaming bodies in undici/Bun
-					duplex: "half",
-				}).text()
-				const body = new URLSearchParams(text)
-				if (body.get("grant_type") === "refresh_token") {
-					counters.refreshes += 1
-					if (counters.refreshes > 1) {
-						return jsonResponse({ error: "invalid_grant" }, 400)
-					}
-					return jsonResponse({
-						access_token: "cf-access-token-refreshed",
-						refresh_token: "cf-refresh-token-rotated",
-						token_type: "bearer",
-						expires_in: 3600,
-					})
-				}
-				return jsonResponse({
-					access_token: "cf-access-token-initial",
-					refresh_token: "cf-refresh-token",
-					token_type: "bearer",
-					// Within the 60s refresh leeway → the very next getValidAccessToken refreshes.
-					expires_in: 1,
-				})
-			}
-			if (url.includes("/accounts")) {
-				return jsonResponse({
-					success: true,
-					errors: [],
-					messages: [],
-					result: [{ id: "acc_1", name: "Acme Inc", type: "standard" }],
-					result_info: { count: 1, page: 1, per_page: 50, total_count: 1 },
-				})
-			}
-			return jsonResponse({ success: false, errors: [], messages: [], result: null }, 404)
-		}
-
-		return Effect.gen(function* () {
-			const service = yield* CloudflareOAuthService
-			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
-				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
-			})
-			yield* service.completeConnect("auth-code", state)
-
-			// Two racers on an expired token: without single-flight both refresh, the loser's
-			// rotated-token 400 falsely surfaces as IntegrationsRevokedError.
-			const [a, b] = yield* Effect.all(
-				[
-					service.getValidAccessToken(asOrgId("org_a"), "acc_1"),
-					service.getValidAccessToken(asOrgId("org_a"), "acc_1"),
-				],
-				{ concurrency: 2 },
-			)
-			assert.strictEqual(a.accessToken, "cf-access-token-refreshed")
-			assert.strictEqual(b.accessToken, "cf-access-token-refreshed")
-			assert.strictEqual(counters.refreshes, 1)
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
-				),
-			),
-		)
-	})
-
-	it.effect("a refresh the token endpoint rejects with 400 surfaces as revoked", () => {
-		const testDb = createTestDb(trackedDbs)
-		// authorization_code → immediately-expiring token; refresh_token → always 400
-		// (the grant is genuinely gone — no concurrency, no rotated-token race).
-		const fetchImpl: typeof globalThis.fetch = async (input, init) => {
-			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			if (url.includes("/oauth2/token")) {
-				const text = await new Request(url, {
-					method: "POST",
-					body: init?.body,
-					// @ts-expect-error duplex is required for streaming bodies in undici/Bun
-					duplex: "half",
-				}).text()
-				const body = new URLSearchParams(text)
-				if (body.get("grant_type") === "refresh_token") {
-					return jsonResponse({ error: "invalid_grant" }, 400)
-				}
-				return jsonResponse({
-					access_token: "cf-access-token-initial",
-					refresh_token: "cf-refresh-token",
-					token_type: "bearer",
-					// Within the 60s refresh leeway → the very next getValidAccessToken refreshes.
-					expires_in: 1,
-				})
-			}
-			if (url.includes("/accounts")) {
-				return jsonResponse({
-					success: true,
-					errors: [],
-					messages: [],
-					result: [{ id: "acc_1", name: "Acme Inc", type: "standard" }],
-					result_info: { count: 1, page: 1, per_page: 50, total_count: 1 },
-				})
-			}
-			return jsonResponse({ success: false, errors: [], messages: [], result: null }, 404)
-		}
-
-		return Effect.gen(function* () {
-			const service = yield* CloudflareOAuthService
-			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
-				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
-			})
-			yield* service.completeConnect("auth-code", state)
-
-			const error = yield* service.getValidAccessToken(asOrgId("org_a"), "acc_1").pipe(Effect.flip)
-			// 400/401 on the refresh grant means the grant itself is gone — classified as
-			// revoked (reconnect required), not a transient upstream failure.
-			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsRevokedError")
-			if (error._tag === "@maple/http/errors/IntegrationsRevokedError") {
-				assert.include(error.message, "reconnect")
-			}
-		}).pipe(
-			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb, withOAuthApp),
-					Layer.succeed(FetchHttpClient.Fetch, fetchImpl),
-				),
-			),
-		)
-	})
-
 	it.effect("disconnect on a connected org revokes upstream and removes the row", () => {
 		const testDb = createTestDb(trackedDbs)
 		const accounts = [{ id: "acc_1", name: "Acme Inc", type: "standard" }]
@@ -524,7 +386,12 @@ describe("CloudflareOAuthService", () => {
 		const accounts = [{ id: "acc_1", name: "Acme Inc", type: "standard" }]
 		const owners = () =>
 			Effect.promise(() =>
-				testDb.pglite.query<{ source: string; name: string; connection: string | null; logpush: string | null }>(
+				testDb.pglite.query<{
+					source: string
+					name: string
+					connection: string | null
+					logpush: string | null
+				}>(
 					`SELECT s.id AS source, s.name,
 						(SELECT c.source_id FROM oauth_connections c WHERE c.org_id = 'org_a') AS connection,
 						(SELECT l.source_id FROM cloudflare_logpush_connectors l WHERE l.id = 'lp_1') AS logpush

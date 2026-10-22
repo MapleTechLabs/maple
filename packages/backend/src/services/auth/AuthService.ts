@@ -9,6 +9,7 @@ import {
 import {
 	makeGetCustomerData,
 	makeGetUserEmail,
+	makeGetVerifiedPrimaryEmail,
 	makeLoginSelfHosted,
 	makeRefreshSelfHostedSession,
 	makeResolveMcpTenant,
@@ -55,6 +56,8 @@ export interface AuthServiceApi {
 		token: string,
 	) => Effect.Effect<SelfHostedLoginResponse, SelfHostedAuthDisabledError | UnauthorizedError>
 	readonly getUserEmail: (userId: string) => Effect.Effect<string | null>
+	/** Null outside Clerk mode, on a failed lookup, or when the primary address is unverified. */
+	readonly getVerifiedPrimaryEmail: (userId: string) => Effect.Effect<string | null>
 	readonly getCustomerData: (
 		tenant: TenantContext,
 	) => Effect.Effect<{ email: string | null; orgName: string | null }>
@@ -79,6 +82,7 @@ export class AuthService extends Context.Service<AuthService, AuthServiceApi>()(
 			const loginSelfHosted = makeLoginSelfHosted(env)
 			const refreshSelfHostedSession = makeRefreshSelfHostedSession(env)
 			const getUserEmail = makeGetUserEmail(env)
+			const getVerifiedPrimaryEmail = makeGetVerifiedPrimaryEmail(env)
 			const getCustomerData = makeGetCustomerData(env)
 
 			return {
@@ -87,6 +91,7 @@ export class AuthService extends Context.Service<AuthService, AuthServiceApi>()(
 				loginSelfHosted,
 				refreshSelfHostedSession,
 				getUserEmail,
+				getVerifiedPrimaryEmail,
 				getCustomerData,
 			} satisfies AuthServiceApi
 		}),

@@ -18,6 +18,7 @@ import {
 	within,
 } from "foldkit/scene"
 import { Duration } from "effect"
+import { Lazy } from "foldkit/test"
 import { describe, test } from "vitest"
 import { PlaceChipCard } from "./chip-card"
 import { logTimeFormat, toLogRowView } from "./log-row-view"
@@ -251,5 +252,11 @@ describe("logs stream: expanded row", () => {
 				}),
 			),
 		)
+	})
+})
+
+describe("logs stream lazy rows", () => {
+	test("an unchanged window reuses every row", () => {
+		Lazy.expectAllReused({ view: sceneView, model: withWindow(0, 19) })
 	})
 })

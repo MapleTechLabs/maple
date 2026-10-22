@@ -81,7 +81,8 @@ const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 	const off = state.connectors.length === 0 && loadedFleet !== null && loadedFleet.length === 0
 	if (failed || off) return { model: withFleet, commands: fleetCommands }
 	const { view } = listScopeOf(withFleet, state.connectors.length > 0)
-	const services = gcpSparklineServices(view)
+	// The view is settled only once the fleet lands: no sparklines for a view it may leave.
+	const services = loadedFleet === null ? [] : gcpSparklineServices(view)
 	const sparksInput = { ...sparksWindow(window), services }
 	const sparksKey = requestKey(org, "getGcpInfraSparklines", { data: sparksInput })
 	const [sparks, sparkCommands] =
@@ -159,7 +160,10 @@ export const routeChanged = (
 		const synced = sync(next, context, "Load")
 		return {
 			model: synced.model,
-			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion)), ...(synced.commands ?? [])],
+			commands: [
+				resolveCommand(next, context, snapModeOf(model.refreshVersion)),
+				...(synced.commands ?? []),
+			],
 		}
 	}
 	return routeWindowStep(model.search, route.search, {
