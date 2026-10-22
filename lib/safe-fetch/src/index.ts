@@ -254,7 +254,9 @@ const pinTo =
 			if (IPV4_LITERAL_RE.test(hostname) || hostname.startsWith("["))
 				return { request, serverName: null }
 			const addresses = yield* resolve(hostname)
-			const [first] = addresses
+			// Every answer is checked, so any is safe; IPv4 first because not every
+			// network that resolves AAAA can route IPv6.
+			const first = addresses.find((address) => !address.includes(":")) ?? addresses[0]
 			if (first === undefined || addresses.some(isPrivateAddress)) {
 				return yield* new UrlValidationError({
 					message: `URL host '${url.hostname}' resolves to a loopback, private, or metadata address`,

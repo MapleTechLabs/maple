@@ -101,6 +101,16 @@ describe("guardPinned", () => {
 		}),
 	)
 
+	it.effect("prefers an IPv4 answer when the lookup lists IPv6 first", () =>
+		Effect.gen(function* () {
+			const { seen } = yield* run(
+				resolverOf({ "dual.example.com": ["2606:2800:220:1::1", "93.184.216.34"] }),
+				"https://dual.example.com/x",
+			)
+			assert.strictEqual(seen[0]?.url, "https://93.184.216.34/x")
+		}),
+	)
+
 	it.effect("brackets a pinned IPv6 address", () =>
 		Effect.gen(function* () {
 			const { seen } = yield* run(
