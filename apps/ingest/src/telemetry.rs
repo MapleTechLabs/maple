@@ -537,8 +537,9 @@ pub struct TinybirdConfig {
     /// bounded channel up into accept-path backpressure.
     pub clickhouse_export_timeout: Duration,
     pub clickhouse_breaker: ClickHouseBreakerConfig,
-    /// Export to loopback/private endpoint addresses. Tests only: a BYO endpoint
-    /// is tenant-controlled, and this process runs inside a private network.
+    /// Export to loopback/private endpoint addresses. Off for the managed deployment,
+    /// where a BYO endpoint is tenant-controlled and this process sits in a private
+    /// network; self-hosted installs opt in (`INGEST_CLICKHOUSE_ALLOW_PRIVATE_ENDPOINTS`).
     pub clickhouse_allow_private_endpoints: bool,
     pub datasources: DatasourceNames,
     pub datasource_session_replays: String,
