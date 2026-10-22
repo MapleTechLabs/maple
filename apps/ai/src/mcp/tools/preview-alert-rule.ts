@@ -258,7 +258,7 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 					...(preview.seriesFailure === undefined
 						? []
 						: [
-								"The query was too heavy to chart this whole range within 25 s, so no windows were evaluated. Preview a shorter range.",
+								`The query ${preview.seriesFailure === "query_too_much_memory" ? "ran out of memory" : "ran past 25 s"} charting this whole range, so no windows were evaluated. Preview a shorter range.`,
 							]),
 					...previewWarnings(
 						groups,
