@@ -22,7 +22,7 @@ const TABS: ReadonlyArray<{ tab: CodeReviewTab; path: string; label: string; ico
 		tab: "pull-requests",
 		path: "/code-review/pull-requests",
 		label: "Pull requests",
-		icon: "BranchForkIcon",
+		icon: "PullRequestIcon",
 	},
 	{ tab: "ci", path: "/code-review/ci", label: "CI", icon: "PlayRotateClockwiseIcon" },
 	{ tab: "issues", path: "/code-review/issues", label: "Issues", icon: "CircleWarningIcon" },
