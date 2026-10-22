@@ -279,7 +279,7 @@ describe("GithubConnectService", () => {
 					const { state } = yield* svc.startConnect(asOrgId("org_test"), asUserId("user_1"), {
 						callbackUrl: "https://tunnel.example/cb",
 					})
-					const exit = yield* svc.completeConnect("42", state, TEST_CODE).pipe(Effect.exit)
+					const exit = yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR).pipe(Effect.exit)
 					assert.deepStrictEqual(roleUrls, [
 						c.account === "Organization" ? "/user/memberships/orgs/octo" : "/user",
 					])
