@@ -62,8 +62,9 @@ const StsAnswer = Schema.Union([
 const decodeStsAnswer = Schema.decodeUnknownEffect(StsAnswer)
 
 /**
- * A rejected `AssumeRoleWithWebIdentity`. A missing OIDC provider, one whose thumbprint is stale, or one that does not list
- * Maple's audience, is the customer's setup not being done; a token STS cannot verify is Maple's.
+ * A rejected `AssumeRoleWithWebIdentity`. A missing OIDC provider, or one with a stale thumbprint
+ * or without Maple's audience, is the customer's setup not being done; a token STS cannot verify
+ * is Maple's.
  * The issuer is permanent: were `MAPLE_API_BASE_URL` to change, every account would answer "no
  * provider" and read as disconnected.
  */
