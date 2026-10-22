@@ -271,6 +271,22 @@ describe("alert rule editor", () => {
 			),
 			themeResolved(),
 			expectView(text("Too slow for any interval this window allows. Narrow the query.")).toExist(),
+			expectView(text("It needs longer than the longest limit any interval allows, so checking less often will not help.")).toExist(),
+		)
+		const timedOut = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+			...timed,
+			queryTiming: { ...timed.queryTiming, elapsedMs: null, failure: "query_too_slow", fitsIntervalMinutes: [] },
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				run(sql, [
+					Message.CompletedFetchPreview({ key: sql.preview.key ?? "", isSaved: false, result: Result.succeed(timedOut) }),
+				]),
+			),
+			themeResolved(),
+			expectView(text(/too slow for any interval/)).toExist(),
+			expectView(text("It needs longer than the longest limit any interval allows, so checking less often will not help.")).toExist(),
 		)
 		// 18 s fits 10-minute checks, which a 5-minute window cannot pick.
 		const widenable = Schema.decodeUnknownSync(AlertRulePreviewResponse)({

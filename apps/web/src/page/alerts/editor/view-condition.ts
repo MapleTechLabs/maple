@@ -1,4 +1,5 @@
 import type { AlertQueryTiming, AlertSeverity } from "@maple/domain/http"
+import { alertIntervalsFitting } from "@maple/query-engine/datetime"
 import { comparatorSupportsTiers, isRangeComparator, thresholdUnitLabel } from "@maple/web-data/alerts/form-utils"
 import { cn } from "@maple/ui/lib/utils"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
@@ -335,6 +336,13 @@ const intervalNote = (
 	if (option.isLongerThanWindow) return "Longer than the window, so data between checks would go unread."
 	if (form.signalType === "raw_query" && timing?.failure === "query_too_much_memory") {
 		return "It ran out of memory with the most any interval allows, so checking less often will not help."
+	}
+	// Timed out, or too slow even for the longest limit: no interval helps.
+	const fitsNoInterval =
+		timing?.failure === "query_too_slow" ||
+		(timing?.elapsedMs != null && alertIntervalsFitting(timing.elapsedMs).length === 0)
+	if (form.signalType === "raw_query" && fitsNoInterval) {
+		return "It needs longer than the longest limit any interval allows, so checking less often will not help."
 	}
 	if (option.isTooSlow) {
 		return `Over or too close to the ${option.limitSeconds} s this interval allows. Checking less often allows a slower query.`
