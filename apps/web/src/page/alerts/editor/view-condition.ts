@@ -310,7 +310,7 @@ const slowdownNotice = (h: H, model: ConditionView, form: RuleForm): ReadonlyArr
 						h.span(
 							[],
 							[
-								`Checked every ${model.slowedMinutes} min because its query kept timing out. Saving resets this unless you keep it.`,
+								`Checked every ${model.slowedMinutes} min because its query kept hitting its limit. Saving resets this unless you keep it.`,
 							],
 						),
 						button(

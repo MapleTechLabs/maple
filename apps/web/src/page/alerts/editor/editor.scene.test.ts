@@ -241,7 +241,7 @@ describe("alert rule editor", () => {
 			Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
 			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { slowed_interval_minutes: 5 })] }),
 		])
-		const notice = text("Checked every 5 min because its query kept timing out. Saving resets this unless you keep it.")
+		const notice = text("Checked every 5 min because its query kept hitting its limit. Saving resets this unless you keep it.")
 		scene(
 			{ update: pageUpdate, view },
 			given(slowed),
