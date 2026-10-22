@@ -49,21 +49,7 @@ export const Message = defineMessageUnion({
 	CompletedHighlightCode: { key: Schema.String, highlighted: Schema.NullOr(HighlightedCode) },
 	ClickedCopyCode: { code: Schema.String },
 	ClickedDownloadCode: { code: Schema.String, language: Schema.String },
-	/** The diagram toolbar's download menu (`menuId` tells the inline and fullscreen ones apart). */
-	ToggledDiagramMenu: { menuId: Schema.String },
-	PressedOutsideDiagramMenu: { menuId: Schema.String },
-	ClickedDiagramFormat: {
-		menuId: Schema.String,
-		code: Schema.String,
-		format: Schema.Literals(["svg", "png", "mmd"]),
-	},
-	CompletedDownloadDiagram: { menuId: Schema.String, isSaved: Schema.Boolean },
-	ClickedDiagramFullscreen: { code: Schema.String },
-	/** The exit button, a click on the backdrop, or Escape. */
-	ClosedDiagramFullscreen: {},
-	CompletedMountDiagramOverlay: {},
 	CompletedCodeAction: {},
-	CompletedMermaidDiagram: { isDrawn: Schema.Boolean },
 	CompletedMountJump: {},
 	CompletedMountClock: {},
 	GotTaskSheetMessage: { toolCallId: Schema.String, message: Dialog.Message },

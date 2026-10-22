@@ -15,7 +15,7 @@ export type CodeToken = typeof CodeToken.Type
 export const HighlightedCode = Schema.Struct({ lines: Schema.Array(Schema.Array(CodeToken)) })
 export type HighlightedCode = typeof HighlightedCode.Type
 
-/** The fences Shiki colours: every code block but a chart or a diagram, at any depth. */
+/** The fences Shiki colours: every code block but a chart, at any depth. */
 export const highlightedFences = (
 	blocks: ReadonlyArray<Markdown.Block>,
 ): ReadonlyArray<{ readonly language: string; readonly code: string }> =>
@@ -23,7 +23,7 @@ export const highlightedFences = (
 		switch (block._tag) {
 			case "CodeBlock": {
 				const language = Option.getOrElse(block.maybeLanguage, () => "")
-				return language === "chart" || language === "mermaid" ? [] : [{ language, code: block.value }]
+				return language === "chart" ? [] : [{ language, code: block.value }]
 			}
 			case "List":
 				return block.items.flatMap((item) => highlightedFences(item.blocks))

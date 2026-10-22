@@ -19,7 +19,6 @@ import {
 	CopyCode,
 	DecideApproval,
 	DownloadCode,
-	DownloadDiagram,
 	HighlightCode,
 	LoadHistory,
 	ParseMarkdown,
@@ -127,8 +126,6 @@ export const init = (tabId: string, sessionId: string, readOnly: ReadOnly = null
 		highlights: {},
 		minimap: initMinimap(),
 		taskSheets: {},
-		diagramMenu: null,
-		fullscreenDiagram: null,
 		markdown: {},
 		markdownPending: [],
 	},
@@ -337,25 +334,7 @@ const step = (model: Model, message: Message, context: SendContext): Return =>
 			model,
 			commands: [DownloadCode({ code, language })],
 		}),
-		ToggledDiagramMenu: ({ menuId }) => ({
-			model: { ...model, diagramMenu: model.diagramMenu === menuId ? null : menuId },
-		}),
-		PressedOutsideDiagramMenu: ({ menuId }) => ({
-			model: model.diagramMenu === menuId ? { ...model, diagramMenu: null } : model,
-		}),
-		// `ct` closes on an `.mmd` at once, and after the render for SVG and PNG.
-		ClickedDiagramFormat: ({ menuId, code, format }) => ({
-			model: format === "mmd" && model.diagramMenu === menuId ? { ...model, diagramMenu: null } : model,
-			commands: [DownloadDiagram({ menuId, code, format })],
-		}),
-		CompletedDownloadDiagram: ({ menuId, isSaved }) => ({
-			model: isSaved && model.diagramMenu === menuId ? { ...model, diagramMenu: null } : model,
-		}),
-		ClickedDiagramFullscreen: ({ code }) => ({ model: { ...model, fullscreenDiagram: code } }),
-		ClosedDiagramFullscreen: () => ({ model: { ...model, fullscreenDiagram: null } }),
-		CompletedMountDiagramOverlay: () => ({ model }),
 		CompletedCodeAction: () => ({ model }),
-		CompletedMermaidDiagram: () => ({ model }),
 		CompletedMountJump: () => ({ model }),
 		CompletedMountClock: () => ({ model }),
 		GotTaskSheetMessage: ({ toolCallId, message: child }) => {

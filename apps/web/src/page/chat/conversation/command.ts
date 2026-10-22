@@ -5,7 +5,6 @@ import { MapleAiClient } from "../../../platform/api-clients"
 import { writeClipboardFallback } from "@maple/ui/lib/clipboard"
 import { highlight } from "../kit/code-highlight"
 import { parseMarkdownTexts } from "../../kit/markdown"
-import { renderMermaid } from "../kit/mermaid"
 import { abortTurn, loadHistory, postMessage } from "../kit/chat-api"
 import { historyMessageToUIMessage } from "../kit/fold"
 import { trackProduct } from "../../../data/analytics"
@@ -99,11 +98,9 @@ const EXTENSIONS = new Map([
 	["markdown", "md"],
 ])
 
-const saveFile = (name: string, contents: string | Blob, type: string) =>
+const saveFile = (name: string, contents: string, type: string) =>
 	Effect.sync(() => {
-		const url = URL.createObjectURL(
-			typeof contents === "string" ? new Blob([contents], { type }) : contents,
-		)
+		const url = URL.createObjectURL(new Blob([contents], { type }))
 		const anchor = document.createElement("a")
 		anchor.href = url
 		anchor.download = name
@@ -131,54 +128,6 @@ export const DownloadCode = Command.define("DownloadChatCode", {
 		Effect.as(
 			saveFile(`file.${EXTENSIONS.get(language.toLowerCase()) ?? "txt"}`, code, "text/plain"),
 			Message.CompletedCodeAction(),
-		),
-})
-
-/** `nn`: the `<svg>` element of mermaid's markup, serialized as XML. */
-const svgDocument = (markup: string): string => {
-	const svg = new DOMParser().parseFromString(markup, "text/html").querySelector("svg")
-	return svg === null ? markup : new XMLSerializer().serializeToString(svg)
-}
-
-/** `rn`: the SVG drawn on a canvas at 5x and encoded as PNG. */
-const svgToPng = (svg: string) =>
-	Effect.callback<Blob, "unencodable">((resume) => {
-		const image = new Image()
-		image.crossOrigin = "anonymous"
-		image.onload = () => {
-			const canvas = document.createElement("canvas")
-			canvas.width = image.width * 5
-			canvas.height = image.height * 5
-			canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height)
-			canvas.toBlob(
-				(blob) => resume(blob === null ? Effect.fail("unencodable") : Effect.succeed(blob)),
-				"image/png",
-			)
-		}
-		image.onerror = () => resume(Effect.fail("unencodable"))
-		image.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
-	})
-
-/** The download menu's formats (`ct`): the source as `.mmd`, or the rendered diagram as SVG or PNG. */
-export const DownloadDiagram = Command.define("DownloadChatDiagram", {
-	args: { menuId: Schema.String, code: Schema.String, format: Schema.Literals(["svg", "png", "mmd"]) },
-	messages: [Message.CompletedDownloadDiagram],
-	execute: ({ menuId, code, format }) =>
-		(format === "mmd"
-			? saveFile("diagram.mmd", code, "text/plain")
-			: Effect.map(renderMermaid(code), svgDocument).pipe(
-					Effect.flatMap((svg) =>
-						format === "svg"
-							? saveFile("diagram.svg", svg, "image/svg+xml")
-							: Effect.flatMap(svgToPng(svg), (png) =>
-									saveFile("diagram.png", png, "image/png"),
-								),
-					),
-				)
-		).pipe(
-			Effect.as(true),
-			Effect.orElseSucceed(() => false),
-			Effect.map((isSaved) => Message.CompletedDownloadDiagram({ menuId, isSaved })),
 		),
 })
 

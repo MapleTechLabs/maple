@@ -15,7 +15,6 @@ import { taskCard, taskSheetId } from "../kit/view-task"
 import * as Dialog from "../../../ui/dialog"
 import { composer, failureNotice } from "../kit/view-composer"
 import { MountTurnMinimap } from "../kit/turn-minimap-mount"
-import { MountDiagramFullscreen, MountDiagramMenu, MountMermaid } from "../kit/mermaid"
 import { MountJumpToMessage } from "../kit/scroller"
 import { MountRunningClock } from "../kit/view-tool"
 import { findDiagnosisMessageId } from "../kit/transcript-rows"
@@ -119,36 +118,6 @@ const cardsOf = <M>(
 			onCopy: (code) => options.toMessage(Message.ClickedCopyCode({ code })),
 			onDownload: (code, language) =>
 				options.toMessage(Message.ClickedDownloadCode({ code, language })),
-			diagramMenu: model.diagramMenu,
-			fullscreenDiagram: model.fullscreenDiagram,
-			onToggleDiagramMenu: (menuId) => options.toMessage(Message.ToggledDiagramMenu({ menuId })),
-			onDiagramFormat: (menuId, code, format) =>
-				options.toMessage(Message.ClickedDiagramFormat({ menuId, code, format })),
-			onFullscreen: (code) => options.toMessage(Message.ClickedDiagramFullscreen({ code })),
-			onExitFullscreen: options.toMessage(Message.ClosedDiagramFullscreen()),
-			diagramMenuMount: (menuId) =>
-				Mount.mapMessage(MountDiagramMenu(), (message) =>
-					options.toMessage(
-						message._tag === "PressedOutsideDiagramMenu"
-							? Message.PressedOutsideDiagramMenu({ menuId })
-							: Message.CompletedMountDiagramOverlay(),
-					),
-				),
-			fullscreenMount: Mount.mapMessage(MountDiagramFullscreen(), (message) =>
-				options.toMessage(
-					message._tag === "CompletedMountDiagramOverlay"
-						? Message.CompletedMountDiagramOverlay()
-						: Message.ClosedDiagramFullscreen(),
-				),
-			),
-			mermaidMount: (code, isFullscreen) =>
-				Mount.mapMessage(MountMermaid({ code, isFullscreen }), (message) =>
-					options.toMessage(
-						Message.CompletedMermaidDiagram({
-							isDrawn: message._tag === "CompletedMountMermaid",
-						}),
-					),
-				),
 		},
 	),
 })

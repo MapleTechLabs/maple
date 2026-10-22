@@ -18,7 +18,7 @@ import { panel } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import type { ViewOverrides } from "../../kit/message-response"
 import * as HbarChart from "../../../charts/hbar-chart"
-import { type CodeHost, codeBlock, mermaidBlock } from "./view-code"
+import { type CodeHost, codeBlock } from "./view-code"
 
 // The chat's own markdown elements over Streamdown's: tables on Maple's `Table` with recognised
 // cells, and ```chart fences as the query builder's plots.
@@ -269,7 +269,6 @@ export const chatMarkdownOverrides =
 		CodeBlock: (block) => {
 			const language = Option.getOrElse(block.maybeLanguage, () => "")
 			if (language === "chart") return chartView(h, charts, block.value)
-			if (language === "mermaid") return mermaidBlock(h, code, block.value.replace(/\n+$/, ""))
 			return codeBlock(h, code, block.value, language)
 		},
 	})
