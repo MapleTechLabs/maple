@@ -4,6 +4,7 @@ import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { formatQuerySeconds as seconds } from "@maple/web-data/alerts/query-time"
 import { card } from "../../../ui/card"
 import { eyebrow } from "../../../ui/eyebrow"
 import type { Message } from "./message"
@@ -33,7 +34,6 @@ export const checkTimesOf = (checks: ReadonlyArray<AlertCheckDocument>): Readonl
 		),
 	)
 
-const seconds = (ms: number): string => `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`
 
 export const queryTimeCard = (h: H, rule: AlertRuleDocument, checks: ReadonlyArray<AlertCheckDocument>): Html | null => {
 	const times = checkTimesOf(checks).filter((time) => time.durationMs > 0)
@@ -87,7 +87,7 @@ export const queryTimeCard = (h: H, rule: AlertRuleDocument, checks: ReadonlyArr
 						h.p(
 							[h.Class("text-xs text-severity-warn")],
 							[
-								`Slowed to every ${rule.slowedIntervalMinutes} min after 3 timeouts in a row, which raised the limit to ${seconds(limitMs)}. Editing the rule resets this.`,
+								`Slowed to every ${rule.slowedIntervalMinutes} min after 3 checks in a row hit their limit. Editing the rule resets this.`,
 							],
 						),
 					]),

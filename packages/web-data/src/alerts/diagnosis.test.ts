@@ -115,8 +115,14 @@ describe("buildDiagnosis", () => {
 		expect(diagnosisVerdict(stages).status).toBe("fail")
 	})
 
-	it("says a timed-out query is too slow for its interval, and what a longer one allows", () => {
+	it("says a timed-out raw SQL query is too slow for its interval, and what a longer one allows", () => {
 		const stages = diagnose({
+			rule: makeRule({
+				signalType: "raw_query",
+				rawQuerySql:
+					"SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+				rawQueryReducer: "identity",
+			}),
 			states: [
 				makeState({
 					last_error: "Timeout exceeded: elapsed 5003 ms, maximum: 5000 ms",
@@ -128,6 +134,13 @@ describe("buildDiagnosis", () => {
 		expect(query.status).toBe("fail")
 		expect(query.summary).toBe("The query takes longer than the 5 s a check allows")
 		expect(query.evidence).toContain("Timeout exceeded: elapsed 5003 ms, maximum: 5000 ms")
+	})
+
+	it("keeps raw SQL limits out of a built-in rule's timeout", () => {
+		const stages = diagnose({
+			states: [makeState({ last_error: "Timeout exceeded", last_error_kind: "query_too_slow" })],
+		})
+		expect(stage(stages, "query").summary).toBe("The rule's query is timing out")
 	})
 
 	it("warns about a slowed-down rule whose query now succeeds, and how to undo it", () => {

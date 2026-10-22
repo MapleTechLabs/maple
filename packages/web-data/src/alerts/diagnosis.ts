@@ -25,10 +25,14 @@ const decodeErrorKind = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
 /** What a failing query's kind means for its author, in plain words. */
 const queryFailureCause = (
 	kind: AlertEvaluationErrorKind | null,
+	isRawSql: boolean,
 	intervalMinutes: number,
 	limitSeconds: number,
 ): { readonly summary: string; readonly evidence: ReadonlyArray<string> } => {
 	const every = intervalMinutes === 1 ? "every minute" : `every ${intervalMinutes} min`
+	if (kind === "query_too_slow" && !isRawSql) {
+		return { summary: "The rule's query is timing out", evidence: [] }
+	}
 	if (kind === "query_too_slow") {
 		return {
 			summary: `The query takes longer than the ${limitSeconds} s a check allows`,
@@ -183,8 +187,11 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	/* 3 — Query succeeded */
 	const errorState = states.find((s) => s.last_error != null)
 	const errorMessage = errorState?.last_error ?? rule.lastEvaluationError
+	// The kind of the same error as the message: the state's own, else the rule document's.
 	const errorKind =
-		Option.getOrNull(decodeErrorKind(errorState?.last_error_kind)) ?? rule.lastEvaluationErrorKind
+		errorState === undefined
+			? rule.lastEvaluationErrorKind
+			: Option.getOrNull(decodeErrorKind(errorState.last_error_kind))
 	const errorChecks = checks.filter((c) => c.status === "error")
 	const intervalMinutes = alertRuleIntervalMinutes(rule)
 	const limitSeconds = alertQueryLimits(intervalMinutes).timeSeconds
@@ -193,7 +200,12 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			? `Slowed to every ${rule.slowedIntervalMinutes} min on ${formatTimestampInTimezone(parseMs(rule.slowedAt) ?? now, { timeZone, withYear: true })} after 3 timeouts in a row. Editing the rule resets this.`
 			: null
 	if (errorMessage != null) {
-		const cause = queryFailureCause(errorKind, intervalMinutes, limitSeconds)
+		const cause = queryFailureCause(
+			errorKind,
+			rule.signalType === "raw_query",
+			intervalMinutes,
+			limitSeconds,
+		)
 		stages.push({
 			id: "query",
 			label: "Query succeeded",
@@ -203,6 +215,9 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 				...cause.evidence,
 				...(slowedLine !== null ? [slowedLine] : []),
 				errorMessage,
+				...(errorChecks[0]?.errorCategory != null
+					? [`Category: ${errorChecks[0].errorCategory}`]
+					: []),
 				...(evaluatedAt != null ? [`Last attempt ${relative(now, evaluatedAt)}`] : []),
 			],
 			action: { label: "Edit rule", kind: "edit" },
