@@ -236,13 +236,33 @@ fi
  * Deletes the metric stream stack from every enabled region not in `keep`. A stream turned off, or
  * a region dropped, leaves a stack only a later setup or the cleanup knows to remove.
  */
+/**
+ * Deletes one region's metric stream stack. CloudFormation cannot delete a bucket with objects in
+ * it, and failed batches land in it, so the bucket is emptied first; once more if Firehose wrote
+ * into it while the stack was being deleted.
+ */
+const deleteMetricsStackFunction = (stackName: string) => `delete_metrics_stack() {
+  for attempt in 1 2; do
+    bucket="$(aws cloudformation describe-stack-resource --region "$1" --stack-name ${stackName} --logical-resource-id FailedDeliveries --query 'StackResourceDetail.PhysicalResourceId' --output text 2>/dev/null || true)"
+    if [ -n "$bucket" ] && [ "$bucket" != "None" ]; then
+      aws s3 rm "s3://$bucket" --recursive --region "$1" >/dev/null 2>&1 || true
+    fi
+    aws cloudformation delete-stack --region "$1" --stack-name ${stackName}
+    if aws cloudformation wait stack-delete-complete --region "$1" --stack-name ${stackName}; then
+      return 0
+    fi
+    echo "Deleting the metric stream stack in $1 failed (attempt $attempt)." >&2
+  done
+  return 1
+}
+`
+
 const removeMetricsStacks = (stackName: string, keep: ReadonlyArray<string>) => `keep=" ${keep.join(" ")} "
 for region in $(aws ec2 describe-regions --region ${AWS_STACK_REGION} --query 'Regions[].RegionName' --output text); do
   case "$keep" in *" $region "*) continue ;; esac
   if aws cloudformation describe-stacks --region "$region" --stack-name ${stackName} >/dev/null 2>&1; then
     echo "Removing the metric stream from $region..."
-    aws cloudformation delete-stack --region "$region" --stack-name ${stackName}
-    aws cloudformation wait stack-delete-complete --region "$region" --stack-name ${stackName}
+    delete_metrics_stack "$region"
   fi
 done
 `
@@ -258,8 +278,7 @@ ${template}MAPLE_METRICS_TEMPLATE
 for region in ${stream.regions.join(" ")}; do
   status="$(aws cloudformation describe-stacks --region "$region" --stack-name ${stackName} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
   if [ "$status" = "ROLLBACK_COMPLETE" ]; then
-    aws cloudformation delete-stack --region "$region" --stack-name ${stackName}
-    aws cloudformation wait stack-delete-complete --region "$region" --stack-name ${stackName}
+    delete_metrics_stack "$region"
   fi
   echo "Deploying the metric stream to $region..."
   aws cloudformation deploy \\
@@ -305,7 +324,7 @@ aws cloudformation deploy \\
   --capabilities CAPABILITY_NAMED_IAM \\
   --no-fail-on-empty-changeset
 rm -f "$template"
-${metrics === null ? "" : deployMetricsStacks(target.metricsStackName, metrics.stream, metrics.template)}${removeMetricsStacks(target.metricsStackName, metrics?.stream.regions ?? [])}echo "Done. Go back to Maple and select Check connection. Details: ${DOCS_URL}"
+${deleteMetricsStackFunction(target.metricsStackName)}${metrics === null ? "" : deployMetricsStacks(target.metricsStackName, metrics.stream, metrics.template)}${removeMetricsStacks(target.metricsStackName, metrics?.stream.regions ?? [])}echo "Done. Go back to Maple and select Check connection. Details: ${DOCS_URL}"
 `,
 	)
 
@@ -314,7 +333,7 @@ export const renderAwsCleanupScript = (target: AwsScriptTarget) =>
 		"AWS",
 		"MAPLE_CLEANUP_SCRIPT",
 		`set -euo pipefail
-${accountGuard(target.accountId)}${removeMetricsStacks(target.metricsStackName, [])}echo "Deleting ${target.stackName} from account ${target.accountId}..."
+${accountGuard(target.accountId)}${deleteMetricsStackFunction(target.metricsStackName)}${removeMetricsStacks(target.metricsStackName, [])}echo "Deleting ${target.stackName} from account ${target.accountId}..."
 aws cloudformation delete-stack --region ${AWS_STACK_REGION} --stack-name ${target.stackName}
 aws cloudformation wait stack-delete-complete --region ${AWS_STACK_REGION} --stack-name ${target.stackName}
 echo "Done. The role Maple used is gone."
