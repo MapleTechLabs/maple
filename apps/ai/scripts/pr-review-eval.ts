@@ -95,11 +95,20 @@ const positiveInt = (raw: string | undefined, fallback: number, name: string): n
 const changedOldRanges = (sha: string): Array<Location> => {
 	const ranges: Array<Location> = []
 	let path: string | undefined
+	// `--- ` is a file header only between `diff --git` and the first hunk: inside a hunk it is a
+	// deleted line that began `-- ` (a SQL comment), which once became the path `ilder:errors:...`.
+	let inHeader = false
 	for (const line of git(["diff", "-U0", "--no-color", "--no-renames", `${sha}^`, sha]).split("\n")) {
-		if (line.startsWith("--- ")) {
+		if (line.startsWith("diff --git ")) {
+			inHeader = true
+			path = undefined
+			continue
+		}
+		if (inHeader && line.startsWith("--- ")) {
 			path = line === "--- /dev/null" ? undefined : line.slice("--- a/".length)
 			continue
 		}
+		if (line.startsWith("@@")) inHeader = false
 		const hunk = /^@@ -(\d+)(?:,(\d+))? \+/.exec(line)
 		if (hunk === null || path === undefined) continue
 		const start = Number(hunk[1])
@@ -119,15 +128,20 @@ const changedOldRanges = (sha: string): Array<Location> => {
 /** Which commit wrote each line of a range, with the line's number and path in that commit. */
 const blameRange = (sha: string, range: Location) => {
 	const out: Array<{ commit: string; path: string; line: number }> = []
-	const porcelain = git([
-		"blame",
-		"--porcelain",
-		"-L",
-		`${range.lines[0]},${range.lines[1]}`,
-		`${sha}^`,
-		"--",
-		range.path,
-	])
+	const blame = spawnSync(
+		"git",
+		["blame", "--porcelain", "-L", `${range.lines[0]},${range.lines[1]}`, `${sha}^`, "--", range.path],
+		{ cwd: REPO_ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+	)
+	// One unreadable range (a path the parser got wrong, a file git cannot follow) skips that range,
+	// not the whole mine.
+	if (blame.status !== 0) {
+		console.error(
+			`skipped ${range.path}:${range.lines.join("-")} in ${sha.slice(0, 10)}: ${blame.stderr.trim()}`,
+		)
+		return out
+	}
+	const porcelain = blame.stdout
 	const filenames = new Map<string, string>()
 	let current: { commit: string; line: number } | undefined
 	for (const line of porcelain.split("\n")) {
@@ -166,6 +180,8 @@ const mine = (argv: ReadonlyArray<string>) => {
 	const ref = opts.get("ref") ?? "origin/main"
 	const since = opts.get("since") ?? "2026-08-01"
 	const limit = positiveInt(opts.get("limit"), 40, "limit")
+	// Reviews of 13 or more files are the ones a reviewer splits across child reviewers.
+	const minFiles = positiveInt(opts.get("min-files"), 1, "min-files")
 	const subjects = new Map<string, string>()
 	const subjectOf = (sha: string) => {
 		const known = subjects.get(sha)
@@ -181,25 +197,39 @@ const mine = (argv: ReadonlyArray<string>) => {
 		const [sha = "", subject = ""] = entry.split("\t")
 		if (!FIX_SUBJECT.test(subject)) continue
 		const blamed = changedOldRanges(sha).flatMap((range) => blameRange(sha, range))
-		const byPr = new Map<number, Array<{ path: string; line: number }>>()
+		const byPr = new Map<
+			number,
+			{ readonly commit: string; readonly lines: Array<{ path: string; line: number }> }
+		>()
 		for (const { commit, path, line } of blamed) {
 			const pr = SQUASH_PR.exec(subjectOf(commit))
 			if (pr === null || commit === sha) continue
 			const number = Number(pr[1])
-			byPr.set(number, [...(byPr.get(number) ?? []), { path, line }])
+			const known = byPr.get(number)
+			byPr.set(number, {
+				commit: known?.commit ?? commit,
+				lines: [...(known?.lines ?? []), { path, line }],
+			})
 		}
 		// The pull request that wrote most of the fixed lines is the one that shipped the bug.
-		const top = [...byPr.entries()].sort((a, b) => b[1].length - a[1].length)[0]
+		const top = [...byPr.entries()].sort((a, b) => b[1].lines.length - a[1].lines.length)[0]
 		if (top === undefined) continue
-		const [number, lines] = top
+		const [number, { commit, lines }] = top
+		const files = git(["diff", "--name-only", `${commit}^`, commit])
+			.split("\n")
+			.filter((file) => file !== "").length
+		if (files < minFiles) continue
 		candidates.push({
 			id: `pr${number}-fix${sha.slice(0, 7)}`,
 			number,
 			bug: "",
 			fix: { sha, subject },
 			locations: mergeLines(lines),
+			// The squash that shipped the bug, replayed as the review saw it.
+			range: `${commit}^..${commit}`,
+			expected: "present",
 		})
-		console.error(`#${number} <- ${sha.slice(0, 10)} ${subject}`)
+		console.error(`#${number} (${files} files) <- ${sha.slice(0, 10)} ${subject}`)
 	}
 	console.log(JSON.stringify({ cases: candidates }, null, "\t"))
 }
@@ -239,6 +269,7 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 				?.split(",")
 				.map((p) => (p === "committed" ? undefined : p)) ?? [undefined])
 	const repeats = positiveInt(opts.get("repeats"), 1, "repeats")
+	const concurrency = positiveInt(opts.get("concurrency"), 1, "concurrency")
 	const codeModes = (opts.get("code-mode") ?? "off").split(",").map((mode) => {
 		if (mode !== "off" && mode !== "on" && mode !== "only") {
 			console.error(`--code-mode takes a list of off, on and only; got ${mode}`)
@@ -297,81 +328,106 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 	const variants = models.flatMap((model) =>
 		prompts.flatMap((_, prompt) => codeModes.map((codeMode) => ({ model, prompt, codeMode }))),
 	)
-	for (let repeat = 0; repeat < repeats; repeat++)
-		for (const range of groups) {
-			const labels = cases.filter((c) => c.range === range)
-			for (let v = 0; v < variants.length; v++) {
+	const jobs = Array.from({ length: repeats }, (_, repeat) =>
+		groups.flatMap((range) =>
+			variants.map((_, v) => {
 				const variant = variants[(v + repeat) % variants.length]!
-				const runId = `r${repeat}-g${groups.indexOf(range)}-v${variants.indexOf(variant)}`
-				const promptFile = join(out, `prompt-${variant.prompt}.txt`)
-				writeFileSync(promptFile, promptTexts[variant.prompt]!)
-				console.log(`\n${runId}: PR #${labels[0]!.number}`)
-				const dir = await reviewLocally([
-					REPOSITORY,
-					"--number",
-					String(labels[0]!.number),
-					"--range",
-					range!,
-					"--repo-dir",
-					REPO_ROOT,
-					"--historical",
-					"--out",
-					join(out, "runs"),
-					"--prompt-file",
-					promptFile,
-					...(variant.model === undefined ? [] : ["--model", variant.model]),
-					...(variant.codeMode === "on"
-						? ["--code-mode"]
-						: variant.codeMode === "only"
-							? ["--code-only"]
-							: []),
-				])
-				const report = JSON.parse(readFileSync(join(dir, "report.json"), "utf8"))
-				const findings: ReadonlyArray<Finding> = report?.report?.findings ?? []
-				results.push({
-					runId,
+				return {
 					repeat,
-					model: report?.model ?? variant.model ?? "default",
-					prompt: variant.prompt,
-					codeMode: variant.codeMode,
-					submitted: report?.report !== undefined,
-					cases: labels.map((c) => c.id),
-					run: dir,
-					findings,
-					calls: report?.tools?.length,
-					llmCalls: report?.usage?.charges?.length,
-					// The review_files children's own spend, which `usage` above does not include.
-					delegated: report?.usage?.delegated,
-					usage: report?.usage,
-					seconds: report ? report.durationMs / 1000 : null,
-					closedOut: report?.closedOut,
-					endReason: report?.endReason,
-					offDiff: report?.offDiff,
-					// Location overlap is navigation only, never a quality score.
-					nearby: Object.fromEntries(
-						labels.map((c) => [
-							c.id,
-							findings.flatMap((f, i) => (c.locations.some((l) => overlaps(f, l)) ? [i] : [])),
-						]),
-					),
+					range,
+					variant,
+					labels: cases.filter((c) => c.range === range),
+					runId: `r${repeat}-g${groups.indexOf(range)}-v${variants.indexOf(variant)}`,
+				}
+			}),
+		),
+	).flat()
+	const runJob = async (
+		{ repeat, range, variant, labels, runId }: (typeof jobs)[number],
+		order: number,
+	) => {
+		const promptFile = join(out, `prompt-${variant.prompt}.txt`)
+		writeFileSync(promptFile, promptTexts[variant.prompt]!)
+		console.log(`\n${runId}: PR #${labels[0]!.number}`)
+		const dir = await reviewLocally([
+			REPOSITORY,
+			"--number",
+			String(labels[0]!.number),
+			"--range",
+			range!,
+			"--repo-dir",
+			REPO_ROOT,
+			"--historical",
+			"--out",
+			// Per run: two runs of one pull request starting in the same millisecond named one folder.
+			join(out, "runs", runId),
+			"--prompt-file",
+			promptFile,
+			...(variant.model === undefined ? [] : ["--model", variant.model]),
+			...(variant.codeMode === "on"
+				? ["--code-mode"]
+				: variant.codeMode === "only"
+					? ["--code-only"]
+					: []),
+		])
+		const report = JSON.parse(readFileSync(join(dir, "report.json"), "utf8"))
+		const findings: ReadonlyArray<Finding> = report?.report?.findings ?? []
+		results.push({
+			order,
+			runId,
+			repeat,
+			model: report?.model ?? variant.model ?? "default",
+			prompt: variant.prompt,
+			codeMode: variant.codeMode,
+			submitted: report?.report !== undefined,
+			cases: labels.map((c) => c.id),
+			run: dir,
+			findings,
+			calls: report?.tools?.length,
+			llmCalls: report?.usage?.charges?.length,
+			// The review_files children's share of `usage`.
+			delegated: report?.usage?.delegated,
+			usage: report?.usage,
+			seconds: report ? report.durationMs / 1000 : null,
+			closedOut: report?.closedOut,
+			endReason: report?.endReason,
+			offDiff: report?.offDiff,
+			// Location overlap is navigation only, never a quality score.
+			nearby: Object.fromEntries(
+				labels.map((c) => [
+					c.id,
+					findings.flatMap((f, i) => (c.locations.some((l) => overlaps(f, l)) ? [i] : [])),
+				]),
+			),
+		})
+		if (report?.report)
+			for (const c of labels)
+				grades.push({
+					runId,
+					caseId: c.id,
+					status: "pending",
+					findings: findings.map((_, index) => ({
+						index,
+						verdict: "ungraded",
+						rationale: "",
+					})),
 				})
-				if (report?.report)
-					for (const c of labels)
-						grades.push({
-							runId,
-							caseId: c.id,
-							status: "pending",
-							findings: findings.map((_, index) => ({
-								index,
-								verdict: "ungraded",
-								rationale: "",
-							})),
-						})
-				// Checkpoint after every replay, including failures.
-				writeFileSync(join(out, "results.json"), JSON.stringify(results, null, "\t"))
-				writeFileSync(join(out, "grades.json"), JSON.stringify(grades, null, "\t"))
-			}
-		}
+		// Checkpoint after every replay, including failures, in job order whatever finished first.
+		results.sort((a, b) => Number(a.order) - Number(b.order))
+		writeFileSync(join(out, "results.json"), JSON.stringify(results, null, "\t"))
+		writeFileSync(join(out, "grades.json"), JSON.stringify(grades, null, "\t"))
+	}
+	// Each review runs a parent and up to four children against one provider; past about three at
+	// once, rate limits fail reviews outright. Their streamed output interleaves on stdout.
+	let next = 0
+	const worker = async (): Promise<void> => {
+		const order = next++
+		const job = jobs[order]
+		if (job === undefined) return
+		await runJob(job, order)
+		return worker()
+	}
+	await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker))
 	console.log(`\nArtifacts: ${out}\nGrade findings in grades.json, then run review:eval score --dir ${out}`)
 	if (results.some((r) => r.submitted !== true)) process.exitCode = 1
 }
@@ -458,7 +514,7 @@ if (import.meta.main) {
 	else if (command === "score") score(rest)
 	else {
 		console.error(
-			"usage: review:eval mine [--ref ref] [--since date] [--limit n] | run [--cases ids] [--models ids] [--prompts committed,path] [--code-mode off,on,only] [--repeats n] [--split development|holdout] [--dry-run] | score --dir path",
+			"usage: review:eval mine [--ref ref] [--since date] [--limit n] [--min-files n] | run [--cases ids] [--models ids] [--prompts committed,path] [--code-mode off,on,only] [--repeats n] [--concurrency n] [--split development|holdout] [--dry-run] | score --dir path",
 		)
 		process.exit(2)
 	}

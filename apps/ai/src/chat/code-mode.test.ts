@@ -20,7 +20,7 @@ import { AGENTS } from "./agents"
 import { mapleToolCatalog } from "../mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import type { ChatTurnEvent } from "./events"
-import { runChatTurn } from "./run"
+import { runChatTurn, type SettledChild } from "./run"
 import { makeRunUsage } from "./tools"
 
 const TENANT: TenantContext = {
@@ -315,6 +315,7 @@ describe("run_code", () => {
 			])
 			const { executor, dispatched } = recordingExecutor()
 			const usage = makeRunUsage()
+			const children: Array<SettledChild> = []
 
 			const exit = await Effect.runPromiseExit(
 				runChatTurn({
@@ -334,6 +335,7 @@ describe("run_code", () => {
 					usage,
 					holdsTurn: () => true,
 					append: () => {},
+					onChildSettled: (child) => children.push(child),
 				}).pipe(Effect.provide(llmClients)),
 			)
 
@@ -345,6 +347,9 @@ describe("run_code", () => {
 			assert.include(dispatched, "pr_file_diff")
 			// The child's two model calls, counted apart from the parent's own usage.
 			assert.strictEqual(usage.delegated.modelCalls, 2)
+			// The child's own conversation, read back for the eval: its run_code call is in it.
+			assert.lengthOf(children, 1)
+			assert.include(JSON.stringify(children[0]?.history), RUN_CODE)
 			// ...and billed with them: four calls of one input token each.
 			assert.strictEqual(usage.input, 4)
 			assert.strictEqual(

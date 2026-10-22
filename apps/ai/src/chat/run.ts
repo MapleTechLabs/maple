@@ -13,7 +13,7 @@ import type { RunBudgetHook } from "@yielded/agent/run-options"
 import type * as RunEvent from "@yielded/agent/run-event"
 import * as ThreadHistory from "@yielded/agent/thread-history"
 import { ThreadId } from "@yielded/agent/identifiers"
-import { Cause, Clock, Duration, Effect, Layer, Schema, Stream } from "effect"
+import { Cause, Clock, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import { Prompt, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
@@ -134,6 +134,14 @@ export interface ChatRunInput {
 	/** False once the turn slot has been released, which stops the run writing into a moved-on session. */
 	readonly holdsTurn: () => boolean
 	readonly append: (event: ChatTurnEvent) => void
+	/** Each `review_files` child as it ends, with the history it ran: the eval's record of it. */
+	readonly onChildSettled?: (child: SettledChild) => void
+}
+
+/** A child reviewer's ending and the conversation it ran, when the history could be read. */
+export interface SettledChild {
+	readonly event: RunEvent.SubagentCompleted | RunEvent.SubagentFailed | RunEvent.SubagentInterrupted
+	readonly history: Prompt.Prompt | undefined
 }
 
 export interface ReviewTurnState {
@@ -326,6 +334,20 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		},
 		sanitizer,
 	}
+	// The children's turns are saved to the run's own `ThreadHistory`, under their own thread ids.
+	const childSettled = (event: RunEvent.RunEvent) =>
+		input.onChildSettled === undefined ||
+		(event._tag !== "SubagentCompleted" &&
+			event._tag !== "SubagentFailed" &&
+			event._tag !== "SubagentInterrupted")
+			? Effect.void
+			: ThreadHistory.ThreadHistory.pipe(
+					Effect.flatMap((history) => history.load(event.childThreadId)),
+					Effect.option,
+					Effect.map((history) =>
+						input.onChildSettled?.({ event, history: Option.getOrUndefined(history) }),
+					),
+				)
 	// Once the submission lands, the run's own ending (the guard's interrupt) is not the turn's.
 	const settledTerminal = (event: RunEvent.RunEvent) =>
 		submitted() &&
@@ -343,22 +365,25 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		// in-flight model call drains.
 		Stream.takeWhile(() => input.holdsTurn()),
 		Stream.runForEach((event) =>
-			Effect.sync(() => {
-				if (event._tag === "CompactionPerformed") compactions += 1
-				if (
-					(event._tag === "SubagentCompleted" ||
-						event._tag === "SubagentFailed" ||
-						event._tag === "SubagentInterrupted") &&
-					event.usage !== undefined
-				) {
-					input.usage.delegated.modelCalls += event.usage.modelCalls
-					input.usage.delegated.input += event.usage.inputTokens
-					input.usage.delegated.output += event.usage.outputTokens
-					input.usage.delegated.costMicrousd += event.usage.costMicrousd
-				}
-				if (settledTerminal(event)) return
-				for (const chat of toChatEvents(event, context)) input.append(chat)
-			}),
+			Effect.andThen(
+				childSettled(event),
+				Effect.sync(() => {
+					if (event._tag === "CompactionPerformed") compactions += 1
+					if (
+						(event._tag === "SubagentCompleted" ||
+							event._tag === "SubagentFailed" ||
+							event._tag === "SubagentInterrupted") &&
+						event.usage !== undefined
+					) {
+						input.usage.delegated.modelCalls += event.usage.modelCalls
+						input.usage.delegated.input += event.usage.inputTokens
+						input.usage.delegated.output += event.usage.outputTokens
+						input.usage.delegated.costMicrousd += event.usage.costMicrousd
+					}
+					if (settledTerminal(event)) return
+					for (const chat of toChatEvents(event, context)) input.append(chat)
+				}),
+			),
 		),
 		// The gate's refusal is how a run stops on a proposal: the turn finished, it did not fail.
 		Effect.catchIf(
