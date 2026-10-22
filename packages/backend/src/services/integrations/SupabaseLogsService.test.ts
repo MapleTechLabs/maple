@@ -553,6 +553,35 @@ describe("SupabaseLogsService", () => {
 		)
 	})
 
+	it.effect("polling turns on once a hand-made Maple drain is deleted, despite the older snapshot", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeWorld()
+		world.supabase.state.drains.set(REF_B, [
+			{
+				id: "drain-manual",
+				attributes: {
+					name: "maple by hand",
+					backend_type: "otlp",
+					config: { endpoint: "https://ingest.example.com/v1/logs" },
+				},
+			},
+		])
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connectWithLogs(world)
+				world.supabase.state.drains.set(REF_B, [])
+				const connection = yield* SupabaseConnectionService
+				// The route's order: the project PATCH (live listing) first, then the polling switch.
+				yield* connection.updateProject(ORG, asUserId("user_a"), asRef(REF_B), { logsEnabled: true })
+				yield* (yield* SupabaseLogsService).setLogsEnabled(ORG, asRef(REF_B), true)
+				const project = (yield* connection.getStatus(ORG)).projects.find((item) => item.ref === REF_B)
+				assert.deepStrictEqual([project?.logsEnabled, project?.logDrains], [true, []])
+			}),
+		)
+	})
+
 	it.effect("polling cannot start while a log drain delivers the project's logs", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeWorld()

@@ -32,7 +32,7 @@ import {
 	type SupabaseConnectionRow,
 	type SupabaseProjectRow,
 } from "@maple/db/tables"
-import { Cause, Clock, Context, Duration, Effect, Layer, Redacted, Ref, Schema } from "effect"
+import { Cause, Clock, Context, Duration, Effect, Layer, Option, Redacted, Ref, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -1066,15 +1066,31 @@ export class SupabaseConnectionService extends Context.Service<
 			// Refused before any write, so a request never half-applies on these preconditions.
 			// Turning polling on lists the drains live, so one set up since discovery is seen; a refused
 			// listing (Free plan, paused project) falls back to the stored snapshot.
-			const drainsNow =
+			const listedNow =
 				request.logsEnabled === true
 					? yield* listDrains(orgId, ref).pipe(
 							Effect.map((listed) =>
 								listed.map((drain) => summarizeDrain(orgId, drain, project.logDrainId)),
 							),
-							Effect.orElseSucceed(() => project.logDrainsJson),
+							Effect.option,
 						)
-					: project.logDrainsJson
+					: Option.none()
+			// A good live listing replaces the snapshot, so the polling switch's own check agrees with it.
+			if (Option.isSome(listedNow)) {
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(SupabaseProjects)
+							.set({ logDrainsJson: listedNow.value, logDrainsCheckedAt: now })
+							.where(($) => [
+								$.id.eq(project.id),
+								project.logDrainId === null
+									? $.logDrainId.isNull()
+									: $.logDrainId.eq(project.logDrainId),
+							]),
+					),
+				)
+			}
+			const drainsNow = Option.getOrElse(listedNow, () => project.logDrainsJson)
 			const manual = drainsNow.find((drain) => drain.toMaple && !drain.managedByMaple)
 			if (request.logsEnabled === true && manual !== undefined) {
 				return yield* new IntegrationsValidationError({

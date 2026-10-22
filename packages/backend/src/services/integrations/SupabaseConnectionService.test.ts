@@ -755,16 +755,22 @@ describe("SupabaseConnectionService log drains", () => {
 		return Effect.gen(function* () {
 			const service = yield* SupabaseConnectionService
 			yield* connect(fake)
+			// A refused listing (Free plan) falls back to the snapshot, which knows no drain.
+			fake.state.drainListStatus = 403
+			yield* service.updateProject(ORG, USER, asRef(REF_A), { logsEnabled: true })
+
+			fake.state.drainListStatus = null
 			fake.state.drains.set(REF_A, [MANUAL_MAPLE_DRAIN])
 			const error = yield* service
 				.updateProject(ORG, USER, asRef(REF_A), { logsEnabled: true })
 				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
-
-			// A refused listing (Free plan) still lets a project without a known drain poll.
-			fake.state.drains.set(REF_A, [])
-			fake.state.drainListStatus = 403
-			yield* service.updateProject(ORG, USER, asRef(REF_A), { logsEnabled: true })
+			// The live listing also refreshed the snapshot the card reads.
+			const project = (yield* service.getStatus(ORG)).projects[0]
+			assert.deepStrictEqual(
+				project?.logDrains.map((drain) => drain.id),
+				[MANUAL_MAPLE_DRAIN.id],
+			)
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})
 
