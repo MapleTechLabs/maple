@@ -63,6 +63,10 @@ jobs:
                         || contains(github.event.pull_request.labels.*.name, 'preview:web')))) }}
         runs-on: ubuntu-latest
         timeout-minutes: 45
+        outputs:
+            web_url: ${{ steps.deploy.outputs.web_url }}
+            api_url: ${{ steps.deploy.outputs.api_url }}
+            smoke: ${{ steps.smoke.outcome }}
         # `pr-preview` holds its own Infisical identity, limited to the preview environment, so
         # PR code can never request `prod`. Required reviewers would also gate teardowns on close;
         # cleanup-preview-orphans.yml reaps any left waiting.
@@ -163,31 +167,6 @@ jobs:
                   API_URL: ${{ steps.deploy.outputs.api_url }}
                   WEB_URL: ${{ steps.deploy.outputs.web_url }}
               run: bun scripts/preview-seed-smoke.ts
-
-            # Browser e2e against the fresh preview (apps/web/e2e/README.md). Non-blocking while
-            # it beds in; `agent.*` tests register only once ANTHROPIC_API_KEY is in Infisical.
-            - name: End-to-end tests against the preview
-              id: e2e
-              if: ${{ env.TEARDOWN != 'true' && steps.smoke.outcome == 'success' }}
-              continue-on-error: true
-              working-directory: apps/web/e2e
-              env:
-                  MAPLE_E2E_APP_URL: ${{ steps.deploy.outputs.web_url }}
-                  MAPLE_E2E_API_URL: ${{ steps.deploy.outputs.api_url }}
-                  E2E_TELEMETRY_DISABLED: "1"
-              run: |
-                  bunx e2e-web install chromium --with-deps
-                  bunx e2e run --reporter list,junit
-
-            - name: Upload e2e results
-              if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
-              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-              with:
-                  name: e2e-results
-                  path: apps/web/e2e/.e2e/
-                  if-no-files-found: warn
-                  include-hidden-files: true
-                  retention-days: 7
 
             - name: Destroy PR preview stack with Alchemy
               id: destroy
@@ -304,3 +283,86 @@ jobs:
                   else
                     gh pr comment "$PR_NUMBER" --body-file "$COMMENT_OUTPUT"
                   fi
+
+    # Browser e2e against the fresh preview (apps/web/e2e/README.md). Its own job so a slow
+    # run does not hold the deploy, it reruns without redeploying, and it never sees the
+    # deploy's AWS role or the rest of the preview's secrets.
+    e2e:
+        name: End-to-end tests against the preview
+        needs: deploy-pr-preview
+        if: ${{ needs.deploy-pr-preview.outputs.smoke == 'success' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        # The Infisical identity is scoped to this environment.
+        environment: pr-preview
+        defaults:
+            run:
+                working-directory: apps/web/e2e
+        env:
+            MAPLE_E2E_APP_URL: ${{ needs.deploy-pr-preview.outputs.web_url }}
+            MAPLE_E2E_API_URL: ${{ needs.deploy-pr-preview.outputs.api_url }}
+            E2E_TELEMETRY_DISABLED: "1"
+            SECRETS_FILE: /.e2e-secrets.env
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+            - uses: ./.github/actions/setup
+              with:
+                  install-filters: "@maple/web"
+                  turbo-cache: "false"
+
+            # @e2e-dev/web pins the Playwright build, so its version keys the browser.
+            - name: Read the e2e engine version
+              id: engine
+              run: echo "version=$(bun -e 'console.log(require("@e2e-dev/web/package.json").version)')" >> "$GITHUB_OUTPUT"
+
+            - name: Cache Chromium
+              id: browser-cache
+              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ~/.cache/ms-playwright
+                  key: e2e-web-${{ runner.os }}-${{ steps.engine.outputs.version }}-chromium
+
+            # ubuntu-latest already carries Chromium's shared libraries (see ci.yml).
+            - name: Install Chromium
+              if: steps.browser-cache.outputs.cache-hit != 'true'
+              run: bunx e2e-web install chromium
+
+            # Exported to a file, not the env, so only the two keys the suite reads leave it.
+            - name: Load deployment secrets from Infisical
+              uses: Infisical/secrets-action@77ab1f4ccd183a543cb5b42435fbd181189f4995 # v1.0.16
+              with:
+                  method: "oidc"
+                  identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+                  project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+                  env-slug: ${{ vars.PREVIEW_INFISICAL_ENV_SLUG || 'dev' }}
+                  export-type: "file"
+                  file-output-path: ${{ env.SECRETS_FILE }}
+                  secret-path: "/"
+
+            # The action writes `KEY='value'` lines under the workspace; agent.* tests register
+            # only when ANTHROPIC_API_KEY is set.
+            - name: Keep only the e2e secrets
+              working-directory: ${{ github.workspace }}
+              run: |
+                  file="$GITHUB_WORKSPACE$SECRETS_FILE"
+                  for key in PREVIEW_SIGNIN_KEY ANTHROPIC_API_KEY; do
+                    value=$(sed -n "s/^$key='\(.*\)'\$/\1/p" "$file")
+                    [ -n "$value" ] || continue
+                    echo "::add-mask::$value"
+                    echo "$key=$value" >> "$GITHUB_ENV"
+                  done
+                  rm -f "$file"
+
+            - name: Run the e2e suite
+              run: bunx e2e run --reporter list,junit
+
+            - name: Upload e2e results
+              if: ${{ !cancelled() }}
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: e2e-results
+                  path: apps/web/e2e/.e2e/
+                  if-no-files-found: warn
+                  include-hidden-files: true
+                  retention-days: 7
