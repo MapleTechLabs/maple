@@ -567,7 +567,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						Cause.hasInterruptsOnly(cause)
 							? Effect.failCause(cause)
 							: Effect.sync(() => {
-									failure ??= reviewFailureReason(cause)
+									failure ??= reviewFailureReason(cause, { ownKey: Option.isSome(orgKey) })
 								}).pipe(
 									Effect.andThen(
 										Effect.logWarning("Autonomous pass failed; closing it out"),

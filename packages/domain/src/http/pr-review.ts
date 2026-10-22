@@ -62,6 +62,10 @@ export const PrReviewFailureReason = Schema.Literals([
 	"context_limit",
 	"stuck",
 	"model_error",
+	"provider_unavailable",
+	"service_misconfigured",
+	"org_key_rejected",
+	"org_key_no_credits",
 	"agent_error",
 	"no_report",
 	"ended_early",
@@ -78,11 +82,26 @@ export const PR_REVIEW_FAILURE_COPY = {
 	context_limit: "The change did not fit in the model's context.",
 	stuck: "Its tool calls kept failing, so it was stopped.",
 	model_error: "The model provider returned an error.",
+	provider_unavailable: "The model provider was unavailable or rate limited.",
+	service_misconfigured:
+		"Maple could not use its model provider because of a problem on Maple's side, not with this pull request.",
+	org_key_rejected:
+		"OpenRouter rejected this organization's OpenRouter key. An admin can replace it in Maple's organization settings.",
+	org_key_no_credits:
+		"This organization's OpenRouter key has run out of credits. An admin can add credits on OpenRouter.",
 	agent_error: "The review run failed with an error.",
 	no_report: "It ended without filing a report.",
 	ended_early: "It stopped before it finished, so its partial findings are not posted here.",
 	interrupted: "Maple was restarted while it ran, more than once. Ask again with @maple review.",
 } as const satisfies Record<PrReviewFailureReason, string>
+
+/** Reasons a retry cannot clear until someone fixes a key or Maple's config, so "try again" would mislead. */
+export const PR_REVIEW_FAILURE_NEEDS_FIX: ReadonlySet<PrReviewFailureReason> = new Set([
+	"agent_unavailable",
+	"service_misconfigured",
+	"org_key_rejected",
+	"org_key_no_credits",
+])
 
 const isFailureReason = Schema.is(PrReviewFailureReason)
 
