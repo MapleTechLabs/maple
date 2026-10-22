@@ -106,9 +106,11 @@ const US_PRD: MapleProfile = {
 	},
 	ingest: {
 		desiredCount: 2,
+		// Two hosts for AZ redundancy; scaling absorbs bursts. On c7gd.large the tasks
+		// peaked at 25% CPU and 6% memory (Oct 2026).
 		scaling: scaling(2, 6),
-		instanceType: "c7gd.large",
-		taskSize: { cpu: 2048, memory: 3072 },
+		instanceType: "c7gd.medium",
+		taskSize: { cpu: 1024, memory: 1536 },
 		collectorTaskSize: { cpu: 512, memory: 1024 },
 		selfTraceSampleRatio: "0.05",
 	},
@@ -140,8 +142,8 @@ const EU_PRD: MapleProfile = {
 const SMALL_INGEST: MapleProfile["ingest"] = {
 	desiredCount: 1,
 	scaling: undefined,
-	instanceType: "c7gd.large",
-	taskSize: { cpu: 2048, memory: 3072 },
+	instanceType: "c7gd.medium",
+	taskSize: { cpu: 1024, memory: 1536 },
 	collectorTaskSize: { cpu: 256, memory: 1024 },
 	selfTraceSampleRatio: undefined,
 }

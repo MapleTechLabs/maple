@@ -570,6 +570,11 @@ architecture.
   one c7gd.medium (autoscaling 1-3) and the collector at the non-prd size; Electric keeps
   the prd size. Managed scaling adds a host to roll a deploy. To scale it, raise the EU
   values there, or point `prd-eu` at `US_PRD`.
+- **Ingest stamps its own revision.** Every ingest rollout launches fresh hosts, so its
+  `COMMIT_SHA` is `INGEST_COMMIT_SHA` (the last commit touching `apps/ingest`, resolved in
+  `deploy-prd-instance.yml`), not the deployed commit. A merge that leaves `apps/ingest` alone
+  keeps the task definition and the fleet. That is also why ingest is not in
+  `PRD_LOCKSTEP_REVISION_SERVICES`.
 - **Graviton (ARM64).** The gateway, collector and Electric run `cpuArchitecture: "ARM64"`
   (`runtimePlatform`), cheaper than x86_64. `build-ingest-binary.yml` compiles natively on
   an arm64 runner.

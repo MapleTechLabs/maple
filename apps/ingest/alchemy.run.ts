@@ -275,8 +275,8 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			roleName: instanceRole.roleName,
 		})
 
-		// Newest ECS-optimized AL2023 arm64 image. Every deploy launches fresh hosts
-		// (the old task holds the port), so AMI patching rides the deploys.
+		// Newest ECS-optimized AL2023 arm64 image. Every ingest rollout launches fresh hosts
+		// (the old task holds the port), so AMI patching rides the ingest changes.
 		const imageId = AWS.EC2.getAmi({
 			owners: ["amazon"],
 			name: ["al2023-ami-ecs-hvm-*-kernel-6.1-arm64"],
@@ -331,6 +331,13 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			capacityProviders: [capacityProvider.name],
 			tags,
 		})
+
+		const revisions = {
+			...(yield* optionalPlain("INGEST_COMMIT_SHA")),
+			...(yield* optionalPlain("COMMIT_SHA")),
+			...(yield* optionalPlain("GITHUB_SHA")),
+		}
+		const ingestRevision = revisions.INGEST_COMMIT_SHA || revisions.COMMIT_SHA || revisions.GITHUB_SHA
 
 		const secret = ecsSecrets(name("ingest"), tags)
 
@@ -644,7 +651,9 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				// 30s instead of the binary's 1s cuts Autumn track calls ~30x.
 				...(yield* optionalPlain("AUTUMN_FLUSH_INTERVAL_SECS", "30")),
 				...(yield* optionalPlain("INGEST_SHUTDOWN_DRAIN_SECS")),
-				...(yield* optionalPlain("COMMIT_SHA", (yield* optionalPlain("GITHUB_SHA")).GITHUB_SHA)),
+				// `INGEST_COMMIT_SHA` (prd) is the image's own revision, so a deploy that leaves
+				// `apps/ingest` alone does not change the task definition and roll the hosts.
+				...(ingestRevision ? { COMMIT_SHA: ingestRevision } : undefined),
 			} satisfies Record<string, string | Output.Output<string>>,
 
 			tags,
