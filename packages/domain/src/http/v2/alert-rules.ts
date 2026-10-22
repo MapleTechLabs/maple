@@ -26,6 +26,7 @@ import {
 	AlertWindowMinutes,
 	AlertBreachWindow,
 	AlertEvaluationIntervalMinutes,
+	AlertEvaluationErrorKind,
 	type AlertThreshold,
 } from "../alerts"
 import { AlertDestinationPublicId } from "./alert-destinations"
@@ -146,6 +147,8 @@ const alertRuleExample = {
 	],
 	window_minutes: 5,
 	evaluation_interval_minutes: null,
+	slowed_interval_minutes: null,
+	slowed_at: null,
 	minimum_sample_count: 50,
 	consecutive_breaches_required: 2,
 	breaches_out_of: null,
@@ -159,6 +162,7 @@ const alertRuleExample = {
 	no_data_behavior: "skip",
 	alert_on_no_data: false,
 	last_evaluation_error: null,
+	last_evaluation_error_kind: null,
 	last_evaluated_at: "2026-07-15T09:10:00.000Z",
 	last_scheduled_at: "2026-07-15T09:10:00.000Z",
 	created_at: "2026-07-01T12:00:00.000Z",
@@ -244,6 +248,15 @@ export const V2AlertRule = Schema.Struct({
 		description: EVALUATION_INTERVAL_DESCRIPTION,
 		examples: [null],
 	}),
+	slowed_interval_minutes: Schema.NullOr(AlertEvaluationIntervalMinutes).annotate({
+		description:
+			"Set when Maple slowed the rule down after its query hit its time or memory limit 3 checks in a row: it is checked at least this many minutes apart, which allows a longer query. Any update clears it.",
+		examples: [null],
+	}),
+	slowed_at: Schema.NullOr(Timestamp).annotate({
+		description: "When the rule was last slowed down, or `null`.",
+		examples: [null],
+	}),
 	minimum_sample_count: NonNegativeInt.annotate({
 		description:
 			"Minimum samples required in the window before the rule can breach; below it the check is skipped.",
@@ -293,6 +306,10 @@ export const V2AlertRule = Schema.Struct({
 	last_evaluation_error: Schema.NullOr(Schema.String).annotate({
 		description:
 			"The most recent evaluation error for this rule, or `null` if the last evaluation succeeded.",
+	}),
+	last_evaluation_error_kind: Schema.NullOr(AlertEvaluationErrorKind).annotate({
+		description:
+			"Why the last evaluation failed: `query_too_slow` or `query_too_much_memory` (the query hit its limit; check less often or narrow it), `invalid_query`, or `other`. `null` with no error.",
 	}),
 	last_evaluated_at: Schema.NullOr(Timestamp).annotate({
 		description: "When the rule was last evaluated, or `null` if never.",

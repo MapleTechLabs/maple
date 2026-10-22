@@ -43,6 +43,9 @@ function makeRule(overrides: Record<string, unknown> = {}): AlertRuleDocument {
 		destinationIds: ["00000000-0000-4000-8000-00000000dddd"],
 		noDataBehavior: "skip",
 		lastEvaluationError: null,
+		lastEvaluationErrorKind: null,
+		slowedIntervalMinutes: null,
+		slowedAt: null,
 		lastEvaluatedAt: iso(60_000),
 		lastScheduledAt: iso(60_000),
 		createdAt: "2026-01-01T00:00:00.000Z",
@@ -132,7 +135,11 @@ describe("deriveRuleStatus", () => {
 	it("marks rules stale past 3x the state heartbeat", () => {
 		const rule = makeRule({
 			lastEvaluatedAt: iso(
-				staleThresholdMs({ windowMinutes: 5, evaluationIntervalMinutes: null }) + 60_000,
+				staleThresholdMs({
+					windowMinutes: 5,
+					evaluationIntervalMinutes: null,
+					slowedIntervalMinutes: null,
+				}) + 60_000,
 			),
 		})
 		const result = derive({
@@ -153,11 +160,27 @@ describe("deriveRuleStatus", () => {
 		expect(checkedAgo(3 * 60 + 1)).toBe("stale")
 	})
 
+	it("waits three of a slowed-down rule's intervals before calling it stale", () => {
+		const slowed = { windowMinutes: 30, evaluationIntervalMinutes: null, slowedIntervalMinutes: 30 }
+		const checkedAgo = (minutes: number) =>
+			derive({
+				rule: makeRule({ ...slowed, lastEvaluatedAt: iso(minutes * 60_000) }),
+				states: [makeState({ last_evaluated_at: iso(minutes * 60_000) })],
+			}).status
+		expect(checkedAgo(40)).toBe("healthy")
+		expect(checkedAgo(3 * 30 + 1)).toBe("stale")
+	})
+
 	it("applies the same missed-tick SLA regardless of the rule's window", () => {
 		// The scheduler checks a rule every 1-5 minutes whatever its window, so
 		// staleness does not scale with the window. Scaling
 		// staleness by it hid a dead scheduler for 72h on a 24h-window rule.
-		const gap = staleThresholdMs({ windowMinutes: 5, evaluationIntervalMinutes: null }) + 60_000
+		const gap =
+			staleThresholdMs({
+				windowMinutes: 5,
+				evaluationIntervalMinutes: null,
+				slowedIntervalMinutes: null,
+			}) + 60_000
 		for (const windowMinutes of [5, 60, 1440]) {
 			const rule = makeRule({ windowMinutes, lastEvaluatedAt: iso(gap) })
 			const result = derive({

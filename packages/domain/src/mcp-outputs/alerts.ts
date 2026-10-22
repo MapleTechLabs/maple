@@ -20,6 +20,8 @@ export const AlertRuleRow = Schema.Struct({
 	windowMinutes: Schema.Number,
 	/** Minutes between checks as picked; null checks every fifth of the window, 1 to 5. */
 	evaluationIntervalMinutes: Schema.NullOr(Schema.Number),
+	/** Set when the scheduler slowed the rule after repeated query timeouts; cleared by an edit. */
+	slowedIntervalMinutes: Schema.NullOr(Schema.Number),
 	destinationIds: Schema.Array(Schema.String),
 	createdAt: Schema.String,
 	updatedAt: Schema.String,

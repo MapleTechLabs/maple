@@ -6,6 +6,7 @@ import {
 	alertEvaluationIntervalMinutes,
 	alertQueryLimits,
 	alertRuleIntervalMinutes,
+	nextSlowerAlertInterval,
 	alertWindowBucketSeconds,
 	isAlertRuleDue,
 	computeBucketSeconds,
@@ -305,6 +306,45 @@ describe("alertRuleIntervalMinutes", () => {
 		expect(alertRuleIntervalMinutes({ windowMinutes: 60, evaluationIntervalMinutes: 1 })).toBe(1)
 		expect(alertRuleIntervalMinutes({ windowMinutes: 60, evaluationIntervalMinutes: 30 })).toBe(30)
 		expect(alertRuleIntervalMinutes({ windowMinutes: 15, evaluationIntervalMinutes: null })).toBe(3)
+	})
+
+	it("never checks a slowed rule more often than its slowdown", () => {
+		expect(
+			alertRuleIntervalMinutes({
+				windowMinutes: 5,
+				evaluationIntervalMinutes: null,
+				slowedIntervalMinutes: 5,
+			}),
+		).toBe(5)
+		expect(
+			alertRuleIntervalMinutes({
+				windowMinutes: 60,
+				evaluationIntervalMinutes: 30,
+				slowedIntervalMinutes: 5,
+			}),
+		).toBe(30)
+	})
+})
+
+describe("nextSlowerAlertInterval", () => {
+	it("steps a query that ran out of time to the next interval with more time", () => {
+		expect(nextSlowerAlertInterval(1, 60, "time")).toBe(5)
+		expect(nextSlowerAlertInterval(3, 60, "time")).toBe(5)
+		expect(nextSlowerAlertInterval(5, 60, "time")).toBe(10)
+		// 15 minutes adds memory, not time, so a slow query gains nothing there.
+		expect(nextSlowerAlertInterval(10, 60, "time")).toBeNull()
+	})
+
+	it("steps a query that ran out of memory to the next interval with more memory", () => {
+		expect(nextSlowerAlertInterval(1, 60, "memory")).toBe(5)
+		expect(nextSlowerAlertInterval(5, 60, "memory")).toBe(15)
+		expect(nextSlowerAlertInterval(10, 60, "memory")).toBe(15)
+	})
+
+	it("stops at the window, so slowing down never skips data", () => {
+		expect(nextSlowerAlertInterval(1, 5, "time")).toBe(5)
+		expect(nextSlowerAlertInterval(5, 5, "time")).toBeNull()
+		expect(nextSlowerAlertInterval(1, 4, "time")).toBeNull()
 	})
 })
 

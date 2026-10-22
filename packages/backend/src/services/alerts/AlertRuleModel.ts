@@ -13,6 +13,7 @@ import { prepareRawSql, type AlertBucketSource } from "@maple/query-engine/runti
 import {
 	AlertComparator as AlertComparatorSchema,
 	AlertDestinationDocument,
+	type AlertEvaluationErrorKind,
 	AlertEvaluationIntervalMinutes,
 	AlertGroupBy as AlertGroupBySchema,
 	AlertNotificationTemplate,
@@ -110,6 +111,8 @@ export interface NormalizedRule {
 	readonly windowMinutes: number
 	/** The author's check interval; null derives it from the window. */
 	readonly evaluationIntervalMinutes: AlertEvaluationIntervalMinutes | null
+	/** The scheduler's slowdown after repeated query timeouts; null until then, cleared by an edit. */
+	readonly slowedIntervalMinutes: AlertEvaluationIntervalMinutes | null
 	readonly minimumSampleCount: number
 	readonly consecutiveBreachesRequired: number
 	/** M in "N of the last M checks"; null is N in a row. */
@@ -129,6 +132,7 @@ export interface NormalizedRule {
 
 export interface RuleEvaluationState {
 	readonly error: string | null
+	readonly errorKind: AlertEvaluationErrorKind | null
 	readonly evaluatedAt: number | null
 }
 
@@ -173,6 +177,9 @@ export const normalizedRuleToDocument = (
 		destinationIds: [...rule.destinationIds],
 		noDataBehavior: rule.compiledPlan.noDataBehavior,
 		lastEvaluationError: null,
+		lastEvaluationErrorKind: null,
+		slowedIntervalMinutes: rule.slowedIntervalMinutes,
+		slowedAt: null,
 		lastEvaluatedAt: null,
 		lastScheduledAt: null,
 		createdAt: timestamp,
@@ -247,7 +254,10 @@ export const toStorageGroupKey = (
 export type AlertSchedulerLane = "standard" | "long_query"
 
 export const alertSchedulerLaneOf = (
-	row: Pick<StoredAlertRuleRow, "signalType" | "windowMinutes" | "evaluationIntervalMinutes">,
+	row: Pick<
+		StoredAlertRuleRow,
+		"signalType" | "windowMinutes" | "evaluationIntervalMinutes" | "slowedIntervalMinutes"
+	>,
 ): AlertSchedulerLane =>
 	row.signalType === "raw_query" &&
 	alertQueryLimits(alertRuleIntervalMinutes(row)).timeSeconds > alertQueryLimits(1).timeSeconds
@@ -256,7 +266,7 @@ export const alertSchedulerLaneOf = (
 
 export const planEvaluateSource = (
 	plan: Schema.Schema.Type<typeof CompiledAlertQueryPlan>,
-	rule: { readonly windowMinutes: number; readonly evaluationIntervalMinutes: number | null },
+	rule: Parameters<typeof alertRuleIntervalMinutes>[0],
 ): Effect.Effect<AlertBucketSource, AlertValidationError> => {
 	if (plan.kind === "raw_sql") {
 		if (plan.rawSql == null) {
@@ -681,6 +691,9 @@ export const rowToRuleDocument = (
 					destinationIds: legacy.destinationIds,
 					noDataBehavior: decodeNoDataBehaviorSync(row.noDataBehavior),
 					lastEvaluationError: evaluationState?.error ?? null,
+					lastEvaluationErrorKind: evaluationState?.errorKind ?? null,
+					slowedIntervalMinutes: decodeEvaluationIntervalSync(row.slowedIntervalMinutes),
+					slowedAt: toIso(row.slowedAt),
 					lastEvaluatedAt:
 						evaluationState?.evaluatedAt != null ? toIso(evaluationState.evaluatedAt) : null,
 					lastScheduledAt: toIso(row.lastScheduledAt),
@@ -724,6 +737,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 							? decodeQueryEngineAlertReducerSync(row.reducer)
 							: null,
 					evaluationIntervalMinutes: decodeEvaluationIntervalSync(row.evaluationIntervalMinutes),
+					slowedIntervalMinutes: decodeEvaluationIntervalSync(row.slowedIntervalMinutes),
 				}
 			},
 			catch: (cause) =>
@@ -758,6 +772,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			thresholdUpper: legacy.thresholdUpper,
 			windowMinutes: row.windowMinutes,
 			evaluationIntervalMinutes: decoded.evaluationIntervalMinutes,
+			slowedIntervalMinutes: decoded.slowedIntervalMinutes,
 			minimumSampleCount: row.minimumSampleCount,
 			consecutiveBreachesRequired: row.consecutiveBreachesRequired,
 			breachesOutOf: row.breachesOutOf,
@@ -925,6 +940,8 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			thresholdUpper: legacy.thresholdUpper,
 			windowMinutes: request.windowMinutes,
 			evaluationIntervalMinutes,
+			// An edit gives a slowed rule a fresh start at the interval it asks for.
+			slowedIntervalMinutes: null,
 			minimumSampleCount: request.minimumSampleCount ?? 0,
 			consecutiveBreachesRequired,
 			breachesOutOf,

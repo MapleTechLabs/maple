@@ -13,6 +13,7 @@ import {
 import {
 	alertQueryLimits,
 	alertRuleIntervalMinutes,
+	nextSlowerAlertInterval,
 	ENGINE_UNGROUPED_GROUP_KEY,
 	formatWarehouseDateTime,
 	isAlertRuleDue,
@@ -22,6 +23,7 @@ import {
 } from "@maple/query-engine"
 import {
 	AlertComparator as AlertComparatorSchema,
+	type AlertEvaluationErrorKind,
 	AlertDeliveryAuthError,
 	AlertDeliveryError,
 	type AlertDeliveryFailure,
@@ -125,6 +127,11 @@ import {
 	probeLiveness,
 } from "@maple/backend/services/alerts/telemetry-liveness"
 import { simulateFiringSpans } from "./alert-firing-spans"
+import {
+	evaluationErrorKind,
+	isQueryLimitFailure,
+	SLOWDOWN_AFTER_LIMIT_FAILURES,
+} from "./alert-evaluation-errors"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { formatComparator } from "./alert-formatting"
@@ -710,6 +717,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						last_evaluated_at:
 							row.lastEvaluatedAt === null ? null : msToSqlTimestamp(row.lastEvaluatedAt),
 						last_error: row.lastError,
+						last_error_kind: row.lastErrorKind,
 						updated_at: msToSqlTimestamp(row.updatedAt),
 					})),
 				)
@@ -730,17 +738,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						), written as (
 							insert into alert_rule_states (
 								org_id, rule_id, group_key, consecutive_breaches, consecutive_healthy, history_json,
-								last_status, last_value, last_sample_count, last_evaluated_at, last_error, updated_at
+								last_status, last_value, last_sample_count, last_evaluated_at, last_error,
+								last_error_kind, updated_at
 							)
 							select
 								r.org_id, r.rule_id, r.group_key, r.consecutive_breaches, r.consecutive_healthy,
 								nullif(r.history_json, 'null'::jsonb), r.last_status, r.last_value,
-								r.last_sample_count, r.last_evaluated_at, r.last_error, r.updated_at
+								r.last_sample_count, r.last_evaluated_at, r.last_error, r.last_error_kind, r.updated_at
 							from jsonb_to_recordset(${payload}::jsonb) as r(
 								org_id text, rule_id text, group_key text, consecutive_breaches int4,
 								consecutive_healthy int4, history_json jsonb, last_status text, last_value float8,
 								last_sample_count int4, last_evaluated_at timestamptz, last_error text,
-								updated_at timestamptz
+								last_error_kind text, updated_at timestamptz
 							)
 							where exists (select 1 from rule)
 							on conflict (org_id, rule_id, group_key) do update set
@@ -752,6 +761,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								last_sample_count = excluded.last_sample_count,
 								last_evaluated_at = excluded.last_evaluated_at,
 								last_error = excluded.last_error,
+								last_error_kind = excluded.last_error_kind,
 								updated_at = excluded.updated_at
 							returning 1
 						)
@@ -2716,6 +2726,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							...fields,
 							lastEvaluatedAt: timestamp,
 							lastError: null,
+							lastErrorKind: null,
 							updatedAt: timestamp,
 						}
 						if (deferred)
@@ -2733,6 +2744,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											...fields,
 											lastEvaluatedAt: timestamp,
 											lastError: null,
+											lastErrorKind: null,
 											updatedAt: timestamp,
 										},
 									}),
@@ -3759,23 +3771,27 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					}),
 				)
 
-			const loadLastClaimTimes = (rows: ReadonlyArray<StoredAlertRuleRow>) =>
-				Arr.isReadonlyArrayEmpty(rows)
-					? Effect.succeed(new Map<string, number>())
+			// Each rule's last claim time, and the query limit failures it has run up.
+			const loadClaims = (rows: ReadonlyArray<StoredAlertRuleRow>) =>
+				(Arr.isReadonlyArrayEmpty(rows)
+					? Effect.succeed([])
 					: dbExecute((db) =>
 							db.run(
 								PG.from(AlertRuleClaims)
-									.select("ruleId", "lastScheduledAt")
+									.select("ruleId", "lastScheduledAt", "consecutiveLimitFailures")
 									.where(($) => [$.ruleId.in_(...Arr.map(rows, (row) => row.id))]),
 							),
-						).pipe(
-							Effect.map(
-								(claims) =>
-									new Map(
-										claims.map((claim) => [claim.ruleId, claim.lastScheduledAt] as const),
-									),
-							),
 						)
+				).pipe(
+					Effect.map((claims) => ({
+						lastClaimedAt: new Map(
+							claims.map((claim) => [claim.ruleId, claim.lastScheduledAt] as const),
+						),
+						limitFailures: new Map(
+							claims.map((claim) => [claim.ruleId, claim.consecutiveLimitFailures] as const),
+						),
+					})),
+				)
 
 			// Expires each claim at the given timestamp (the predicate leaves a newer
 			// claim alone), so the next tick finds the rule due and orders it first.
@@ -3955,6 +3971,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					readonly ruleId: AlertRuleId
 				}>,
 				timestamp: number,
+				limitFailures: ReadonlyMap<string, number>,
 			) {
 				const bestEffort =
 					(label: string) => (effect: Effect.Effect<unknown, AlertPersistenceError>) =>
@@ -4007,7 +4024,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					yield* dbExecute((db) =>
 						db.run(
 							PG.update(AlertRuleStates)
-								.set({ lastError: null, updatedAt: timestamp })
+								.set({ lastError: null, lastErrorKind: null, updatedAt: timestamp })
 								.where(($) => [
 									$.orgId.in_(...Arr.dedupe(Arr.map(clearError, (t) => t.orgId))),
 									$.ruleId.in_(...Arr.map(clearError, (t) => t.ruleId)),
@@ -4015,6 +4032,26 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								]),
 						),
 					).pipe(bestEffort("Failed to clear stored evaluation errors"))
+					// A clean check ends a run of query limit failures; only rules that had one are written.
+					const [firstReset, ...restReset] = Arr.filter(
+						clearError,
+						(target) => (limitFailures.get(target.ruleId) ?? 0) > 0,
+					)
+					if (firstReset !== undefined) {
+						yield* dbExecute((db) =>
+							db.run(
+								PG.update(AlertRuleClaims)
+									.set({ consecutiveLimitFailures: 0 })
+									.where(($) => [
+										$.ruleId.in_(
+											firstReset.ruleId,
+											...Arr.map(restReset, (t) => t.ruleId),
+										),
+										$.consecutiveLimitFailures.gt(0),
+									]),
+							),
+						).pipe(bestEffort("Failed to reset alert rule query limit failures"))
+					}
 				}
 			})
 
@@ -4047,7 +4084,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const rows = Arr.filter(enabledRows, (row) => alertSchedulerLaneOf(row) === laneName)
 
 				// A rule is checked on its interval (a fifth of its window unless picked), not every tick.
-				const lastClaimedAt = yield* loadLastClaimTimes(rows)
+				const { lastClaimedAt, limitFailures } = yield* loadClaims(rows)
 				const dueRows = Arr.filter(rows, (row) =>
 					isAlertRuleDue({
 						ruleId: row.id,
@@ -4131,6 +4168,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					row: StoredAlertRuleRow,
 					error: { readonly message: string },
 					failureCategory: string,
+					failure: {
+						readonly kind: AlertEvaluationErrorKind
+						readonly durationMs: number
+						/** The claim the failed check ran under. */
+						readonly claimedAt: number
+					},
 					fields?: {
 						readonly upstreamStatus?: number
 						readonly quotaSetting?: string
@@ -4145,14 +4188,86 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							ruleId: row.id,
 							orgId: row.orgId,
 							failureCategory,
+							errorKind: failure.kind,
 							errorMessage: error.message,
 							upstreamStatus: fields?.upstreamStatus,
 							quotaSetting: fields?.quotaSetting,
 							pipe: fields?.pipe,
 						}),
 					)
-					yield* persistEvaluationError(row, error.message, failureCategory, true)
+					yield* persistEvaluationError(row, error.message, failureCategory, true, failure)
+					if (isQueryLimitFailure(failure.kind))
+						yield* recordQueryLimitFailure(row, failure.claimedAt, failure.kind)
 				})
+
+				// The rule's query hit its time or memory limit. Three times in a row slows the rule to
+				// the next interval with a larger limit, written without `updatedAt` so it is not an edit.
+				const recordQueryLimitFailure = (
+					row: StoredAlertRuleRow,
+					claimedAt: number,
+					kind: AlertEvaluationErrorKind,
+				) =>
+					Effect.gen(function* () {
+						const counted = yield* dbExecute((db) =>
+							db.run(
+								PG.update(AlertRuleClaims)
+									.set(($) => ({
+										consecutiveLimitFailures: $.consecutiveLimitFailures.add(1),
+									}))
+									// Under this check's claim: an edit since replaced it and starts a fresh count.
+									.where(($) => [$.ruleId.eq(row.id), $.lastScheduledAt.eq(claimedAt)])
+									.returning(($) => ({ failures: $.consecutiveLimitFailures })),
+							),
+						)
+						if ((counted[0]?.failures ?? 0) < SLOWDOWN_AFTER_LIMIT_FAILURES) return
+						const fromMinutes = alertRuleIntervalMinutes(row)
+						const toMinutes = nextSlowerAlertInterval(
+							fromMinutes,
+							row.windowMinutes,
+							kind === "query_too_much_memory" ? "memory" : "time",
+						)
+						if (toMinutes === null) return
+						const slowedAt = yield* now
+						yield* dbExecute((db) =>
+							db.transaction(
+								Effect.andThen(
+									db.run(
+										PG.update(AlertRules)
+											.set({ slowedIntervalMinutes: toMinutes, slowedAt })
+											// Fenced on the version that failed: an edit since has its own fresh start.
+											.where(($) => [
+												$.orgId.eq(row.orgId),
+												$.id.eq(row.id),
+												$.updatedAt.eq(row.updatedAt),
+											]),
+									),
+									db.run(
+										PG.update(AlertRuleClaims)
+											.set({ consecutiveLimitFailures: 0 })
+											.where(($) => [$.ruleId.eq(row.id)]),
+									),
+								),
+							),
+						)
+						yield* Metric.update(AlertingMetrics.rulesSlowedTotal, 1)
+						yield* Effect.logWarning(
+							"Alert rule slowed down after repeated query limit failures",
+						).pipe(
+							Effect.annotateLogs({
+								workerId,
+								ruleId: row.id,
+								orgId: row.orgId,
+								fromIntervalMinutes: fromMinutes,
+								toIntervalMinutes: toMinutes,
+							}),
+						)
+					}).pipe(
+						// Best-effort like the error it follows: the rule still retries on its interval.
+						Effect.ignore({
+							log: "Warn",
+							message: "Failed to record an alert rule query limit failure",
+						}),
+					)
 
 				// The warehouse itself is down (a 5xx or unreachable backend): the rule is
 				// fine, so this is a skip, not a failure. Logged once per org per tick.
@@ -4161,6 +4276,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					error: { readonly message: string },
 					failureCategory: string,
 					upstreamStatus: number | undefined,
+					durationMs: number,
 				) {
 					yield* Ref.update(warehouseUnavailableSkips, (skips) =>
 						HashMap.set(skips, row.orgId, {
@@ -4173,7 +4289,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						}),
 					)
 					yield* Metric.update(AlertingMetrics.rulesSkippedTotal, 1)
-					yield* persistEvaluationError(row, error.message, failureCategory, false)
+					yield* persistEvaluationError(row, error.message, failureCategory, false, {
+						kind: null,
+						durationMs,
+					})
 				})
 
 				const persistEvaluationError = Effect.fnUntraced(function* (
@@ -4181,6 +4300,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					rawMessage: string,
 					failureCategory: string,
 					ruleAtFault: boolean,
+					failure: { readonly kind: AlertEvaluationErrorKind | null; readonly durationMs: number },
 				) {
 					const failedAt = yield* now
 					const message = rawMessage.slice(0, 500)
@@ -4208,7 +4328,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							ConsecutiveHealthy: 0,
 							IncidentId: null,
 							IncidentTransition: "none",
-							EvaluationDurationMs: 0,
+							EvaluationDurationMs: failure.durationMs,
 							ErrorMessage: message,
 							ErrorCategory: failureCategory,
 							Level: "",
@@ -4258,12 +4378,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										lastSampleCount: null,
 										lastEvaluatedAt: failedAt,
 										lastError: message,
+										lastErrorKind: failure.kind,
 										updatedAt: failedAt,
 									})
 									.onConflictDoUpdate({
 										target: ["orgId", "ruleId", "groupKey"],
 										set: {
 											lastError: message,
+											lastErrorKind: failure.kind,
 											lastEvaluatedAt: failedAt,
 											updatedAt: failedAt,
 										},
@@ -4336,7 +4458,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 				// A rule whose claim this tick won. `timestamp` is its chunk's claim time,
 				// which processEvaluation stamps on state and incident rows.
-				const evaluateClaimedRule = (row: StoredAlertRuleRow, timestamp: number) =>
+				const evaluateClaimedRule = (row: StoredAlertRuleRow, timestamp: number, startedAt: number) =>
 					Effect.gen(function* () {
 						if (HashSet.has(yield* Ref.get(unavailableOrgs), row.orgId)) {
 							return yield* new WarehouseUpstreamError({
@@ -4479,9 +4601,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						Effect.tap(() =>
 							Ref.update(clearErrorTargets, Chunk.append({ orgId: row.orgId, ruleId: row.id })),
 						),
-						// A rule that did not finish cleanly retries next tick, not a full interval later.
-						Effect.tapCause(() =>
-							Ref.update(retryClaims, Chunk.append({ id: row.id, timestamp })),
+						// A rule that did not finish cleanly retries next tick, not a full interval later,
+						// unless its query hit its limit: it would only hit it again.
+						Effect.tapCause((cause) =>
+							Option.exists(Cause.findErrorOption(cause), (error) =>
+								isQueryLimitFailure(evaluationErrorKind(error)),
+							)
+								? Effect.void
+								: Ref.update(retryClaims, Chunk.append({ id: row.id, timestamp })),
 						),
 						// Not an evaluation failure: the tick that re-claimed the rule owns
 						// its state now, so record nothing and leave the rest to it.
@@ -4502,37 +4629,47 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								onSome: (outage) =>
 									markOrgUnavailable(row.orgId).pipe(
 										Effect.andThen(
-											recordWarehouseUnavailableSkip(
-												row,
-												outage,
-												outage.error.code,
-												outage.upstreamStatus,
+											Effect.flatMap(now, (failedAt) =>
+												recordWarehouseUnavailableSkip(
+													row,
+													outage,
+													outage.error.code,
+													outage.upstreamStatus,
+													failedAt - startedAt,
+												),
 											),
 										),
 									),
 								onNone: () =>
-									recordEvaluationFailure(
-										row,
-										error,
-										error.error.code,
-										"pipeName" in error
-											? {
-													pipe: error.pipeName,
-													...(error._tag ===
-													"@maple/http/errors/WarehouseQuotaExceededError"
-														? {
-																quotaSetting: error.setting,
-															}
-														: undefined),
-													...(error._tag ===
-														"@maple/http/errors/WarehouseUpstreamError" ||
-													error._tag === "@maple/http/errors/WarehouseAuthError"
-														? {
-																upstreamStatus: error.upstreamStatus,
-															}
-														: undefined),
-												}
-											: undefined,
+									Effect.flatMap(now, (failedAt) =>
+										recordEvaluationFailure(
+											row,
+											error,
+											error.error.code,
+											{
+												kind: evaluationErrorKind(error),
+												durationMs: failedAt - startedAt,
+												claimedAt: timestamp,
+											},
+											"pipeName" in error
+												? {
+														pipe: error.pipeName,
+														...(error._tag ===
+														"@maple/http/errors/WarehouseQuotaExceededError"
+															? {
+																	quotaSetting: error.setting,
+																}
+															: undefined),
+														...(error._tag ===
+															"@maple/http/errors/WarehouseUpstreamError" ||
+														error._tag === "@maple/http/errors/WarehouseAuthError"
+															? {
+																	upstreamStatus: error.upstreamStatus,
+																}
+															: undefined),
+													}
+												: undefined,
+										),
 									),
 							}),
 						),
@@ -4545,10 +4682,17 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									cause: summarizeCause(Cause.die(defect)),
 								}),
 								Effect.andThen(
-									recordEvaluationFailure(
-										row,
-										{ message: "Internal error while evaluating this rule" },
-										"defect",
+									Effect.flatMap(now, (failedAt) =>
+										recordEvaluationFailure(
+											row,
+											{ message: "Internal error while evaluating this rule" },
+											"defect",
+											{
+												kind: "other",
+												durationMs: failedAt - startedAt,
+												claimedAt: timestamp,
+											},
+										),
 									),
 								),
 							),
@@ -4625,7 +4769,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 												),
 											),
 										)
-									: evaluateClaimedRule(row, timestamp).pipe(
+									: evaluateClaimedRule(row, timestamp, startedAt).pipe(
 											Effect.andThen(Ref.update(evaluatedRules, (n) => n + 1)),
 										),
 							),
@@ -4677,6 +4821,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					Chunk.toReadonlyArray(yield* Ref.get(selfHealTargets)),
 					Chunk.toReadonlyArray(yield* Ref.get(clearErrorTargets)),
 					tickStart,
+					limitFailures,
 				).pipe(Effect.withSpan("AlertsService.flushRuleStateHousekeeping"))
 
 				// One card per rule for everything its share held back, in place of

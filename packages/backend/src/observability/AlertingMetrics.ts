@@ -25,6 +25,11 @@ export const evaluationFailuresTotal = Metric.counter("alerting.evaluation_failu
 	incremental: true,
 })
 
+export const rulesSlowedTotal = Metric.counter("alerting.rules_slowed_total", {
+	description: "Rules the scheduler slowed to a longer check interval after repeated query limit failures",
+	incremental: true,
+})
+
 export const incidentsOpenedTotal = Metric.counter("alerting.incidents_opened_total", {
 	description: "Total number of incidents opened",
 	incremental: true,

@@ -3,6 +3,7 @@ import {
 	AlertDestinationDocument,
 	AlertDestinationId,
 	AlertDestinationType,
+	AlertEvaluationErrorKind,
 	AlertEvaluationIntervalMinutes,
 	AlertEventType,
 	AlertGroupBy,
@@ -41,6 +42,7 @@ const asSeverity = Schema.decodeUnknownSync(AlertSeverity)
 const asSignalType = Schema.decodeUnknownSync(AlertSignalType)
 const asComparator = Schema.decodeUnknownSync(AlertComparator)
 const asEvaluationInterval = Schema.decodeUnknownSync(Schema.NullOr(AlertEvaluationIntervalMinutes))
+const decodeErrorKind = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
 const asIncidentStatus = Schema.decodeUnknownSync(AlertIncidentStatus)
 const asHoldReason = Schema.decodeUnknownSync(AlertIncidentHoldReason)
 const asEventType = Schema.decodeUnknownSync(AlertEventType)
@@ -107,6 +109,8 @@ export const AlertRuleRowSchema = Schema.Struct({
 	sample_count_strategy: Schema.NullOr(Schema.String),
 	no_data_behavior: Schema.String,
 	last_scheduled_at: Schema.NullOr(Schema.String),
+	slowed_interval_minutes: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	slowed_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	created_at: Schema.String,
 	updated_at: Schema.String,
 	created_by: Schema.String,
@@ -128,6 +132,7 @@ export const AlertRuleStateRowSchema = Schema.Struct({
 	last_sample_count: Schema.NullOr(Schema.Number),
 	last_evaluated_at: Schema.NullOr(Schema.String),
 	last_error: Schema.NullOr(Schema.String),
+	last_error_kind: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	updated_at: Schema.String,
 })
 export type AlertRuleStateRow = typeof AlertRuleStateRowSchema.Type
@@ -246,6 +251,9 @@ export const rowToAlertRuleDocument = (
 		destinationIds: legacy.destinationIds,
 		noDataBehavior: Option.getOrElse(decodeNoDataBehavior(row.no_data_behavior), () => "skip" as const),
 		lastEvaluationError: state?.last_error ?? null,
+		lastEvaluationErrorKind: Option.getOrNull(decodeErrorKind(state?.last_error_kind)),
+		slowedIntervalMinutes: asEvaluationInterval(row.slowed_interval_minutes ?? null),
+		slowedAt: row.slowed_at != null ? decodeIso(row.slowed_at) : null,
 		lastEvaluatedAt: state?.last_evaluated_at != null ? decodeIso(state.last_evaluated_at) : null,
 		lastScheduledAt: row.last_scheduled_at != null ? decodeIso(row.last_scheduled_at) : null,
 		createdAt: decodeIso(row.created_at),

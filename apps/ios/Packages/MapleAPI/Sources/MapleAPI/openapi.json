@@ -520,6 +520,7 @@
             "id": "alrt_gU26thvJECdQvu54Ad9jiz",
             "last_evaluated_at": "2026-07-15T09:10:00.000Z",
             "last_evaluation_error": null,
+            "last_evaluation_error_kind": null,
             "last_scheduled_at": "2026-07-15T09:10:00.000Z",
             "minimum_sample_count": 50,
             "name": "Checkout error rate",
@@ -536,6 +537,8 @@
             ],
             "severity": "critical",
             "signal_type": "error_rate",
+            "slowed_at": null,
+            "slowed_interval_minutes": null,
             "tags": [
               "payments"
             ],
@@ -675,6 +678,16 @@
             "description": "The most recent evaluation error for this rule, or `null` if the last evaluation succeeded.",
             "type": "string"
           },
+          "last_evaluation_error_kind": {
+            "description": "Why the last evaluation failed: `query_too_slow` or `query_too_much_memory` (the query hit its limit; check less often or narrow it), `invalid_query`, or `other`. `null` with no error.",
+            "enum": [
+              "query_too_slow",
+              "query_too_much_memory",
+              "invalid_query",
+              "other"
+            ],
+            "type": "string"
+          },
           "last_scheduled_at": {
             "description": "When the scheduler last picked the rule up, or `null` if never.",
             "type": "string"
@@ -753,6 +766,28 @@
           },
           "signal_type": {
             "$ref": "#/components/schemas/_maple_AlertSignalType"
+          },
+          "slowed_at": {
+            "description": "When the rule was last slowed down, or `null`.",
+            "examples": [
+              null
+            ],
+            "type": "string"
+          },
+          "slowed_interval_minutes": {
+            "description": "Set when Maple slowed the rule down after its query hit its time or memory limit 3 checks in a row: it is checked at least this many minutes apart, which allows a longer query. Any update clears it.",
+            "enum": [
+              1,
+              5,
+              10,
+              15,
+              30,
+              60
+            ],
+            "examples": [
+              null
+            ],
+            "type": "number"
           },
           "tags": {
             "description": "Free-form tags used to group and filter rules.",

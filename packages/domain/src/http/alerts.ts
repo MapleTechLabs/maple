@@ -190,6 +190,18 @@ export const ALERT_EVALUATION_INTERVALS = [1, 5, 10, 15, 30, 60] as const
 export const AlertEvaluationIntervalMinutes = Schema.Literals(ALERT_EVALUATION_INTERVALS)
 export type AlertEvaluationIntervalMinutes = typeof AlertEvaluationIntervalMinutes.Type
 
+/**
+ * Why a rule's last check failed: its query ran past its time or memory limit, the
+ * query itself is invalid, or something else went wrong.
+ */
+export const AlertEvaluationErrorKind = Schema.Literals([
+	"query_too_slow",
+	"query_too_much_memory",
+	"invalid_query",
+	"other",
+])
+export type AlertEvaluationErrorKind = typeof AlertEvaluationErrorKind.Type
+
 /** Longest "N of the last M checks" window a rule can count over. */
 export const MAX_ALERT_BREACH_WINDOW = 30
 export const AlertBreachWindow = PositiveInt.pipe(
@@ -619,6 +631,13 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	noDataBehavior: QueryEngineNoDataBehavior,
 	/** Most recent evaluation error for this rule, surfaced from `alertRuleStates.lastError`. */
 	lastEvaluationError: Schema.NullOr(Schema.String),
+	lastEvaluationErrorKind: Schema.NullOr(AlertEvaluationErrorKind),
+	/**
+	 * Set when the scheduler slowed the rule down after its query kept hitting its limit:
+	 * it is checked at least this far apart until it is edited.
+	 */
+	slowedIntervalMinutes: Schema.NullOr(AlertEvaluationIntervalMinutes),
+	slowedAt: Schema.NullOr(IsoDateTimeString),
 	lastEvaluatedAt: Schema.NullOr(IsoDateTimeString),
 	/** Last time the scheduler picked this rule up for evaluation. */
 	lastScheduledAt: Schema.NullOr(IsoDateTimeString),
