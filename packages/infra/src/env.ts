@@ -164,7 +164,8 @@ export const selfObservabilityEnv = (
 	)
 
 /**
- * prd services deployed together that must report the same revision. The "Prod revision skew"
+ * prd services deployed together that must report the same revision. Not ingest: it reports
+ * the last commit that touched `apps/ingest` (`INGEST_COMMIT_SHA`). The "Prod revision skew"
  * alert rule (id `2a6e9529-5f73-4478-9fa0-432904ff15c8`) lives in the Maple database, not this
  * repo: if you change this list, you MUST edit that rule's SQL to match.
  */
@@ -172,7 +173,6 @@ export const PRD_LOCKSTEP_REVISION_SERVICES = [
 	"alerting",
 	"maple-ai",
 	"electric-sync",
-	"ingest",
 	"maple-api",
 	"maple-web",
 ] as const

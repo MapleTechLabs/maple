@@ -488,7 +488,8 @@ list of yields. What it composes lives beside it:
 ## AWS: ingest, collector and Electric
 
 The Rust OTLP gateway (`apps/ingest`) runs on an ECS EC2 fleet of Graviton c7gd instances,
-one task per host in host networking, with the WAL on the local NVMe instance store. That is
+one task per host in host networking, with the WAL on the local NVMe instance store. PR
+previews run one t4g.small instead, with a 4 GiB WAL on the root volume (`WAL_STORAGE`). That is
 the only ingest path. The OTel collector and Electric (`apps/electric`) run as ECS Fargate
 services. The Prometheus scraper (`apps/scraper`, US prd only) is a Fargate singleton in the
 same VPC with no inbound traffic; its image is the single-file bundle `alchemy:build-deps`
@@ -570,6 +571,11 @@ architecture.
   one c7gd.medium (autoscaling 1-3) and the collector at the non-prd size; Electric keeps
   the prd size. Managed scaling adds a host to roll a deploy. To scale it, raise the EU
   values there, or point `prd-eu` at `US_PRD`.
+- **Ingest stamps its own revision.** Every ingest rollout launches fresh hosts, so its
+  `COMMIT_SHA` is `INGEST_COMMIT_SHA` (the last commit touching `apps/ingest`, resolved in
+  `deploy-prd-instance.yml`), not the deployed commit. A merge that leaves `apps/ingest` alone
+  keeps the task definition and the fleet. That is also why ingest is not in
+  `PRD_LOCKSTEP_REVISION_SERVICES`.
 - **Graviton (ARM64).** The gateway, collector and Electric run `cpuArchitecture: "ARM64"`
   (`runtimePlatform`), cheaper than x86_64. `build-ingest-binary.yml` compiles natively on
   an arm64 runner.

@@ -49,11 +49,21 @@ const COLLECTOR_DOCKERFILE = resolve(COLLECTOR_CONTEXT, "Dockerfile")
 /** Port the gateway binds (`apps/ingest/Dockerfile` EXPOSEs the same). */
 const INGEST_PORT = 3474
 
+const GIB = 1024 * 1024 * 1024
+
 /**
- * WAL cap, sized to fit the smallest host's NVMe instance store (c7gd.medium, 59 GB).
+ * Where each host type keeps the WAL, and its cap. c7gd hosts mount their NVMe instance
+ * store (59 GB on a medium); a t4g has none, so the WAL shares the 30 GB root volume.
  * The per-lane budget is `INGEST_QUEUE_MAX_BYTES / (WAL_SHARDS * lanes)`.
  */
-const WAL_MAX_BYTES = 48 * 1024 * 1024 * 1024
+const WAL_STORAGE = {
+	"c7gd.large": { disk: "instance-store", maxBytes: 48 * GIB },
+	"c7gd.medium": { disk: "instance-store", maxBytes: 48 * GIB },
+	"t4g.small": { disk: "root-volume", maxBytes: 4 * GIB },
+} as const satisfies Record<
+	MapleStackContext["profile"]["ingest"]["instanceType"],
+	{ disk: "instance-store" | "root-volume"; maxBytes: number }
+>
 
 /**
  * Pinned rather than derived: the gateway defaults to `num_cpus * 2`, which
@@ -64,22 +74,26 @@ const WAL_SHARDS = 4
 /** Where the gateway keeps its WAL inside the container (the binary's default `INGEST_QUEUE_DIR`). */
 const WAL_CONTAINER_DIR = "/var/lib/maple-ingest/wal"
 
-/** The host's instance-store NVMe, mounted by `ec2UserData`. */
+/** The host's instance-store NVMe (mounted by `ec2UserData`) or a root-volume directory. */
 const WAL_HOST_DIR = "/mnt/wal"
 
 /**
- * Boot script for a gateway host (ECS-optimized AL2023). Mounts the NVMe at
- * WAL_HOST_DIR and only THEN joins the cluster, so a host whose disk did not
- * come up never gets a task. The S3 tier covers the disk being wiped on replace.
+ * Boot script for a gateway host (ECS-optimized AL2023). An instance-store host mounts the
+ * NVMe at WAL_HOST_DIR and only THEN joins the cluster, so a host whose disk did not come
+ * up never gets a task. The S3 tier covers the disk being wiped on replace.
  */
-const ec2UserData = (clusterName: string) => `#!/bin/bash
+const ec2UserData = (clusterName: string, disk: "instance-store" | "root-volume") => `#!/bin/bash
 set -euxo pipefail
 
-disk=$(ls /dev/disk/by-id/nvme-Amazon_EC2_NVMe_Instance_Storage_* | grep -v -- -part | head -n1)
-mkfs.xfs -f "$disk"
 mkdir -p ${WAL_HOST_DIR}
+${
+	disk === "instance-store"
+		? `disk=$(ls /dev/disk/by-id/nvme-Amazon_EC2_NVMe_Instance_Storage_* | grep -v -- -part | head -n1)
+mkfs.xfs -f "$disk"
 echo "UUID=$(blkid -s UUID -o value "$disk") ${WAL_HOST_DIR} xfs noatime,nofail 0 2" >> /etc/fstab
-mount ${WAL_HOST_DIR}
+mount ${WAL_HOST_DIR}`
+		: ""
+}
 
 cat >> /etc/ecs/ecs.config <<'CONFIG'
 ECS_CLUSTER=${clusterName}
@@ -275,8 +289,8 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			roleName: instanceRole.roleName,
 		})
 
-		// Newest ECS-optimized AL2023 arm64 image. Every deploy launches fresh hosts
-		// (the old task holds the port), so AMI patching rides the deploys.
+		// Newest ECS-optimized AL2023 arm64 image. Every ingest rollout launches fresh hosts
+		// (the old task holds the port), so AMI patching rides the ingest changes.
 		const imageId = AWS.EC2.getAmi({
 			owners: ["amazon"],
 			name: ["al2023-ami-ecs-hvm-*-kernel-6.1-arm64"],
@@ -290,7 +304,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			securityGroupIds: [instanceSecurityGroup.groupId],
 			instanceProfileName: instanceProfile.instanceProfileName,
 			associatePublicIpAddress: true,
-			userData: ec2UserData(clusterName),
+			userData: ec2UserData(clusterName, WAL_STORAGE[instanceType].disk),
 			tags,
 		})
 
@@ -331,6 +345,13 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 			capacityProviders: [capacityProvider.name],
 			tags,
 		})
+
+		const revisions = {
+			...(yield* optionalPlain("INGEST_COMMIT_SHA")),
+			...(yield* optionalPlain("COMMIT_SHA")),
+			...(yield* optionalPlain("GITHUB_SHA")),
+		}
+		const ingestRevision = revisions.INGEST_COMMIT_SHA || revisions.COMMIT_SHA || revisions.GITHUB_SHA
 
 		const secret = ecsSecrets(name("ingest"), tags)
 
@@ -590,7 +611,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				// nothing but Cloudflare; a preview's open ALB would let any client set it.
 				...(domains.ingest && { MAPLE_INGEST_TRUST_PROXY_GEO: "true" }),
 
-				INGEST_QUEUE_MAX_BYTES: String(WAL_MAX_BYTES),
+				INGEST_QUEUE_MAX_BYTES: String(WAL_STORAGE[instanceType].maxBytes),
 				INGEST_WAL_SHARDS: String(WAL_SHARDS),
 				// The task role signs these requests; the S3 gateway endpoint keeps them private.
 				INGEST_WAL_S3_BUCKET: walBucketName,
@@ -644,7 +665,9 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				// 30s instead of the binary's 1s cuts Autumn track calls ~30x.
 				...(yield* optionalPlain("AUTUMN_FLUSH_INTERVAL_SECS", "30")),
 				...(yield* optionalPlain("INGEST_SHUTDOWN_DRAIN_SECS")),
-				...(yield* optionalPlain("COMMIT_SHA", (yield* optionalPlain("GITHUB_SHA")).GITHUB_SHA)),
+				// `INGEST_COMMIT_SHA` (prd) is the image's own revision, so a deploy that leaves
+				// `apps/ingest` alone does not change the task definition and roll the hosts.
+				...(ingestRevision ? { COMMIT_SHA: ingestRevision } : undefined),
 			} satisfies Record<string, string | Output.Output<string>>,
 
 			tags,
