@@ -10,7 +10,12 @@ import { TestClock } from "effect/testing"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { type AuditActorInfo, CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { AUDIT_LOG_DATASOURCE, AuditLogService, recordHttpAudit } from "./AuditLogService"
+import {
+	AUDIT_ACCESS_ACTION_SUFFIXES,
+	AUDIT_LOG_DATASOURCE,
+	AuditLogService,
+	recordHttpAudit,
+} from "./AuditLogService"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
@@ -234,6 +239,7 @@ describe("AuditLogService (warehouse-backed)", () => {
 				yield* audit.list(ORG, { limit: 10, offset: 0 })
 				yield* audit.list(ORG, {
 					actorType: "api_key",
+					excludeActionSuffixes: [".called"],
 					changedField: "scopes",
 					sinceMs: Date.UTC(2026, 7, 29, 9, 12, 0, 412),
 					limit: 5,
@@ -249,9 +255,11 @@ describe("AuditLogService (warehouse-backed)", () => {
 			expect(plain).toContain(`OrgId = '${ORG}'`)
 			expect(plain).not.toContain("ActorType =")
 			expect(plain).not.toContain("has(ChangedFields")
+			expect(plain).not.toContain("endsWith(")
 			expect(plain).toMatch(/ORDER BY occurredAt DESC, id DESC/)
 			expect(filtered).toContain("ActorType = 'api_key'")
 			expect(filtered).toContain("has(ChangedFields, 'scopes')")
+			expect(filtered).toContain("NOT (endsWith(audit_log.Action, '.called'))")
 			expect(filtered).toContain("OccurredAt >= '2026-08-29 09:12:00.412'")
 			expect(filtered).toMatch(/LIMIT 5\s+OFFSET 5/)
 			// Never routed to an org's BYO warehouse.
@@ -369,6 +377,32 @@ describe("AuditLogService.layerMemory", () => {
 	// The credential and the surface are the two facts a mutation handler cannot
 	// re-derive, and getting them wrong is what made API-key and MCP actions read
 	// back as dashboard sessions.
+	it.effect("leaves out access entries before the limit, so changes behind many reads still list", () =>
+		Effect.gen(function* () {
+			const audit = yield* AuditLogService
+			yield* seedThree
+			for (const action of [
+				"mcp_tool.called",
+				"telemetry.read",
+				"telemetry.sql_executed",
+				"api.request",
+			] as const) {
+				yield* TestClock.adjust("1 second")
+				yield* audit.record({ orgId: ORG, actor: { type: "agent" }, source: "mcp", action })
+			}
+
+			const changes = yield* audit.list(ORG, {
+				excludeActionSuffixes: AUDIT_ACCESS_ACTION_SUFFIXES,
+				limit: 2,
+				offset: 0,
+			})
+			expect(changes.map((row) => row.action)).toEqual([
+				"error_issue.state_change",
+				"alert_rule.updated",
+			])
+		}).pipe(Effect.provide(AuditLogService.layerMemory)),
+	)
+
 	describe("recordHttpAudit attribution", () => {
 		const tenant = new CurrentTenant.TenantSchema({
 			orgId: ORG,

@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain/http"
 import { Clock, Effect, Option, Schema } from "effect"
 import { HttpRouter, type HttpServerRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
-import { CancellationReviewService } from "@maple/backend/services/cancellation-review/CancellationReviewService"
+import { CancellationReviewQueue } from "@maple/backend/services/cancellation-review/CancellationReviewQueue"
 import {
 	AUTUMN_BILLING_UPDATED,
 	cancellationsFromBillingUpdated,
@@ -19,10 +19,11 @@ import { receiveSvixWebhook, webhookText } from "./svix-receiver"
  * is the Maple org id. Public route; authenticity is the Svix signature
  * (`AUTUMN_WEBHOOK_SECRET`). Other event types are acknowledged with 200.
  *
- * A cancelled plan is also reviewed (`CancellationReviewService`), after the
- * product events are recorded, so the funnel never waits on the review. A
- * review that could not finish answers 503 for Svix to redeliver; that
- * redelivery records the delivery's events again, under the same
+ * A cancelled plan is also queued for its review (`CancellationReviewQueue`),
+ * after the product events are recorded, so the funnel never waits on it. The
+ * review runs on the queue's consumer, off this request, and retries there. A
+ * cancellation that could not be queued answers 503 for Svix to redeliver;
+ * that redelivery records the delivery's events again, under the same
  * `webhook_message_id`.
  */
 const ROUTE = "/webhooks/autumn"
@@ -33,7 +34,7 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const env = yield* Env
 		const productEvents = yield* ProductEventsService
-		const cancellationReviews = yield* CancellationReviewService
+		const cancellationReviews = yield* CancellationReviewQueue
 
 		const handle = Effect.fn("AutumnWebhook.receive")(function* (
 			req: HttpServerRequest.HttpServerRequest,
@@ -85,39 +86,36 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 					yield* Effect.forEach(events, (event) => productEvents.track(event), { discard: true })
 
 					const receivedAt = yield* Clock.currentTimeMillis
-					const reviewed = yield* Effect.forEach(
-						cancellations,
-						({ orgId: rawOrgId, ...cancellation }) =>
-							Option.match(decodeOrgId(rawOrgId), {
-								// Not an id this instance could have issued; nothing to review.
-								onNone: () =>
-									Effect.logWarning("Autumn customer id is not an org id; cancellation not reviewed").pipe(
-										Effect.annotateLogs({ rawOrgId }),
-									),
-								onSome: (orgId) =>
-									cancellationReviews.review({ ...cancellation, orgId, receivedAt }),
-							}),
-						{ discard: true },
-					).pipe(
+					const enqueue =
+						cancellations.length === 0
+							? Effect.void
+							: Option.match(decodeOrgId(data.value.customer_id), {
+									// Not an id this instance could have issued; nothing to review.
+									onNone: () =>
+										Effect.logWarning(
+											"Autumn customer id is not an org id; cancellation not reviewed",
+										).pipe(Effect.annotateLogs({ rawOrgId: data.value.customer_id })),
+									onSome: (orgId) =>
+										cancellationReviews.enqueue(
+											cancellations.map((cancellation) => ({ ...cancellation, orgId, receivedAt })),
+										),
+								})
+					const queued = yield* enqueue.pipe(
 						Effect.as(true),
-						Effect.catchTag("@maple/backend/cancellation-review/CancellationReviewError", (error) =>
-							Effect.logWarning("Cancellation review did not finish; asking Svix to redeliver").pipe(
-								Effect.annotateLogs({
-									orgId: data.value.customer_id,
-									step: error.step,
-									error: error.message,
-								}),
+						Effect.catchTag("@maple/backend/cancellation-review/CancellationReviewQueueError", (error) =>
+							Effect.logError("Cancellation review could not be queued; asking Svix to redeliver").pipe(
+								Effect.annotateLogs({ orgId: data.value.customer_id, error: error.message }),
 								Effect.as(false),
 							),
 						),
 					)
-					if (!reviewed) {
+					if (!queued) {
 						yield* Effect.annotateCurrentSpan({
 							orgId: data.value.customer_id,
 							"http.response.status_code": 503,
-							"maple.webhook.outcome": "review_failed",
+							"maple.webhook.outcome": "enqueue_failed",
 						})
-						return webhookText("Could not review the cancellation", 503)
+						return webhookText("Could not queue the cancellation review", 503)
 					}
 				} else {
 					yield* Effect.annotateCurrentSpan({ "maple.webhook.outcome": "parse_rejected" })

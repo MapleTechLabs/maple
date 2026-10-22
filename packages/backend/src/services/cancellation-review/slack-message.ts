@@ -3,6 +3,7 @@
  * what a reader sees is asserted in a test rather than eyeballed in a channel.
  */
 import type {
+	CancellationCompanyGuess,
 	CancellationModelRead,
 	CancellationReason,
 	CancellationSnapshot,
@@ -440,6 +441,40 @@ const reasonText = (reason: CancellationReason, modelRead: CancellationModelRead
 		? `*Likely reason:* ${escape(clip(modelRead.reason))}  _(model's read; rules said: ${REASON_LABELS[reason]})_`
 		: `*Likely reason:* ${REASON_LABELS[reason]}`
 
+/** Who the model thinks the customer is: "Acme Robotics, Berlin, DE: what it does (medium: domain, homepage)". */
+const companyText = (company: CancellationCompanyGuess): string =>
+	[
+		`:office: *${escape(clip(company.name))}*`,
+		company.location === null ? "" : `, ${escape(clip(company.location))}`,
+		company.oneLiner === null ? "" : `: ${escape(clip(company.oneLiner))}`,
+		`  _(${company.confidence} confidence${company.basis === "" ? "" : `: ${escape(clip(company.basis))}`})_`,
+	].join("")
+
+/** The model's findings, stated as fact, then its opinion. */
+const modelBlocks = (modelRead: CancellationModelRead | null): ReadonlyArray<Record<string, unknown>> => {
+	if (modelRead === null) return []
+	return [
+		...(modelRead.findings.length === 0
+			? []
+			: [
+					{
+						type: "section",
+						text: {
+							type: "mrkdwn",
+							text: [
+								"*What stands out*",
+								...modelRead.findings.map((f) => `• ${escape(clip(f))}`),
+							].join("\n"),
+							verbatim: true,
+						},
+					},
+				]),
+		...(modelRead.conclusion === ""
+			? []
+			: [quoted(`:robot_face: *Model's read:* ${escape(clip(modelRead.conclusion))}`)]),
+	]
+}
+
 /** `text` is the notification and screen-reader fallback; `blocks` is what the channel shows. */
 export const buildCancellationMessage = (
 	report: CancellationReport,
@@ -453,15 +488,13 @@ export const buildCancellationMessage = (
 		{ type: "header", text: { type: "plain_text", text: title(report).slice(0, 150), emoji: true } },
 		context(planContext(report)),
 		linkButtons(subject.links, subject.sessionsUrl),
+		...(modelRead?.company == null ? [] : [quoted(companyText(modelRead.company))]),
 		// Verbatim: an override's reason is the model's words.
 		{ type: "section", text: { type: "mrkdwn", text: reasonText(reason, modelRead), verbatim: true } },
 	]
-	// `agree` adds nothing: the model only speaks when it has something the rules did not.
-	if (modelRead !== null && modelRead.verdict !== "agree" && modelRead.note !== null) {
-		blocks.push(quoted(`:robot_face: ${escape(clip(modelRead.note))}`))
-	}
 	const told = stripeFeedbackText(report.stripeFeedback)
 	if (told !== null) blocks.push(quoted(told))
+	blocks.push(...modelBlocks(modelRead))
 	if (flags.length > 0) {
 		blocks.push(
 			context(flags.map((signal) => `${TONE_MARK[signal.tone]}${escape(signal.text)}`).join(SEPARATOR)),

@@ -85,56 +85,106 @@ const otherOrg = (overrides: Partial<OtherOrg> = {}): OtherOrg => ({
 	...overrides,
 })
 
-const modelRead = (verdict: CancellationModelRead["verdict"], reason: string | null, note: string | null) =>
-	new CancellationModelRead({ verdict, category: null, reason, note, model: "test-model" })
-
-describe("buildCancellationMessage", () => {
-	it("adds nothing when the model agrees", () => {
-		const plain = buildCancellationMessage(report("pipeline-off"))
-		const agreed = buildCancellationMessage(
-			report("pipeline-off", { modelRead: modelRead("agree", null, null) }),
-		)
-		expect(agreed).toEqual(plain)
+const modelRead = (overrides: Partial<ConstructorParameters<typeof CancellationModelRead>[0]> = {}) =>
+	new CancellationModelRead({
+		company: null,
+		findings: [],
+		verdict: "agree",
+		category: null,
+		reason: null,
+		conclusion: "",
+		model: "test-model",
+		...overrides,
 	})
 
-	it("adds the model's note under the rules' reason when it has context", () => {
+describe("buildCancellationMessage", () => {
+	it("adds nothing when the model agrees and has nothing to say", () => {
+		const plain = buildCancellationMessage(report("pipeline-off"))
+		expect(buildCancellationMessage(report("pipeline-off", { modelRead: modelRead() }))).toEqual(plain)
+	})
+
+	it("names the likely company under the links, with what it rests on", () => {
 		const message = buildCancellationMessage(
 			report("pipeline-off", {
-				modelRead: modelRead("context", null, "Revoked both ingest keys on <Oct 6>."),
+				modelRead: modelRead({
+					company: {
+						name: "Acme <Robotics>",
+						oneLiner: "Warehouse robots",
+						location: "Berlin, DE",
+						confidence: "medium",
+						basis: "domain, homepage",
+					},
+				}),
 			}),
 		)
-		expect(text(message)).toContain("*Likely reason:* Stopped sending telemetry")
-		expect(text(message)).toContain(":robot_face: Revoked both ingest keys on &lt;Oct 6&gt;.")
+		expect(message.blocks[3]).toEqual({
+			type: "context",
+			elements: [
+				{
+					type: "mrkdwn",
+					text: ":office: *Acme &lt;Robotics&gt;*, Berlin, DE: Warehouse robots  _(medium confidence: domain, homepage)_",
+					verbatim: true,
+				},
+			],
+		})
+	})
+
+	it("lists the findings as facts and then the model's opinion, after the rules' reason", () => {
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				modelRead: modelRead({
+					findings: [
+						"Revoked both ingest keys on <Oct 6>.",
+						"Cloudflare failing since 12 days before.",
+					],
+					conclusion: "Moved off Maple after the integration broke.",
+				}),
+			}),
+		)
+		const all = text(message)
+		expect(all).toContain(
+			JSON.stringify(
+				"*What stands out*\n• Revoked both ingest keys on &lt;Oct 6&gt;.\n• Cloudflare failing since 12 days before.",
+			).slice(1, -1),
+		)
+		expect(all).toContain(":robot_face: *Model's read:* Moved off Maple after the integration broke.")
+		expect(all.indexOf("Likely reason")).toBeLessThan(all.indexOf("What stands out"))
 	})
 
 	it("leads with the model's reason when it overrides the rules, and keeps theirs beside it", () => {
 		const message = buildCancellationMessage(
 			report("pipeline-off", {
-				modelRead: modelRead("override", "Needed SSO", "Asked Stripe for SSO."),
+				modelRead: modelRead({
+					verdict: "override",
+					category: "missing_features",
+					reason: "Needed SSO",
+				}),
 			}),
 		)
 		expect(message.text).toBe("Acme &lt;Labs&gt; &amp; Co cancelled the startup plan (Needed SSO)")
 		expect(text(message)).toContain(
 			"*Likely reason:* Needed SSO  _(model's read; rules said: Stopped sending telemetry)_",
 		)
-		expect(text(message)).toContain(":robot_face: Asked Stripe for SSO.")
 	})
 
 	it("never turns a URL in the customer's or the model's words into a link", () => {
 		const message = buildCancellationMessage(
 			report("pipeline-off", {
 				stripeFeedback: { feedback: null, comment: "see https://evil.test" },
-				modelRead: modelRead("context", null, "Visit https://evil.test now."),
+				modelRead: modelRead({
+					findings: ["Homepage says https://evil.test"],
+					conclusion: "Visit https://evil.test now.",
+				}),
 			}),
 		)
-		const quotedTexts = message.blocks
-			.flatMap((block) => (Array.isArray(block.elements) ? block.elements : []))
+		const withUrl = message.blocks
+			.flatMap((block) => [block.text, ...(Array.isArray(block.elements) ? block.elements : [])])
 			.filter(
-				(element: { text?: unknown }) =>
-					typeof element.text === "string" && element.text.includes("evil.test"),
+				(part: { text?: unknown } | undefined) =>
+					typeof part?.text === "string" && part.text.includes("evil.test"),
 			)
-		expect(quotedTexts).toHaveLength(2)
-		for (const element of quotedTexts) expect(element).toMatchObject({ verbatim: true })
+		expect(withUrl).toHaveLength(3)
+		for (const part of withUrl) expect(part).toMatchObject({ verbatim: true })
 	})
 
 	it("names the evidence it could not read", () => {
@@ -160,7 +210,13 @@ describe("buildCancellationMessage", () => {
 		const message = buildCancellationMessage(
 			report("pipeline-off", {
 				stripeFeedback: { feedback: null, comment: long },
-				modelRead: modelRead("override", long, long),
+				modelRead: modelRead({
+					verdict: "override",
+					reason: long,
+					findings: [long],
+					conclusion: long,
+					company: { name: long, oneLiner: long, location: long, confidence: "low", basis: long },
+				}),
 			}),
 		)
 		const texts = message.blocks.flatMap((block) =>

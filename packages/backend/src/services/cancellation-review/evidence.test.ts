@@ -1,6 +1,6 @@
 import { DateTime, Effect, Exit } from "effect"
 import { describe, expect, it } from "vitest"
-import { auditEntryOf, digestSession, isAuditedChange, stripeFeedbackOf } from "./evidence"
+import { auditEntryOf, digestSession, stripeFeedbackOf } from "./evidence"
 
 const DAY_S = 86_400
 const CANCELLED_S = 1_760_000_000
@@ -101,9 +101,11 @@ describe("digestSession", () => {
 			"https://app.maple.dev/billing",
 			"https://app.maple.dev/traces",
 		].map((url) => event("navigation", { url }))
-		const digest = digestSession(row, pages, [])
+		const digest = digestSession(Date.parse("2026-10-08T09:00:00Z"), row, pages, [])
 		expect(digest.pages).toEqual(["/traces", "/billing", "/traces"])
 		expect(digest.startedAt).toBe("2026-10-06T10:00:00.000Z")
+		// Two days less an hour before: whole days, toward the cancellation.
+		expect(digest.daysBeforeCancel).toBe(1)
 	})
 
 	it("names each distinct problem once: errors by message, failed requests by path and status", () => {
@@ -111,7 +113,7 @@ describe("digestSession", () => {
 			event("error", { message: "Boom for ada@acme.test" }),
 			event("error", { message: "Boom for ada@acme.test" }),
 			// Redacted before it is cut, so an address at the cut never half-survives.
-			event("error", { message: `${"x".repeat(190)} ada@acme.test` }),
+			event("error", { message: `${"go ".repeat(63)}ada@acme.test` }),
 			event("network", { netUrl: "https://api.maple.dev/v1/keys?token=secret", netStatus: 403 }),
 			// Maple's own app, not the customer's: never shown as their problem.
 			event("console", {
@@ -119,9 +121,9 @@ describe("digestSession", () => {
 			}),
 			event("network", { netUrl: "https://api.maple.dev/api/sync/shape?table=x", netStatus: 409 }),
 		]
-		expect(digestSession(row, [], problems).problems).toEqual([
+		expect(digestSession(0, row, [], problems).problems).toEqual([
 			"Boom for [email]",
-			`${"x".repeat(190)} [email]`,
+			`${"go ".repeat(63)}[email]`,
 			"POST /v1/keys failed with 403",
 		])
 	})
@@ -135,25 +137,10 @@ describe("audit entries", () => {
 		occurredAt: new Date("2026-10-06T10:00:00Z"),
 	})
 
-	it("keeps changes and drops reads and tool calls", () => {
-		expect(
-			[
-				"telemetry.read",
-				"mcp_tool.called",
-				"telemetry.sql_executed",
-				"api.request",
-				"ingest_key.revoked",
-				"dashboard.deleted",
-			]
-				.map(entry)
-				.filter(isAuditedChange)
-				.map((row) => row.action),
-		).toEqual(["ingest_key.revoked", "dashboard.deleted"])
-	})
-
 	it("names the actor's kind, never the person", () => {
-		expect(auditEntryOf(entry("dashboard.deleted"))).toEqual({
+		expect(auditEntryOf(Date.parse("2026-10-09T10:00:00Z"), entry("dashboard.deleted"))).toEqual({
 			at: "2026-10-06T10:00:00.000Z",
+			daysBeforeCancel: 3,
 			action: "dashboard.deleted",
 			actor: "user",
 			outcome: "allowed",

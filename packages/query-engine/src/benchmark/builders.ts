@@ -594,6 +594,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 					requestId: true,
 					since: true,
 					until: true,
+					excludeActionSuffixes: [".read", ".called"],
 					limit: 50,
 					offset: 50,
 				}),
@@ -614,6 +615,97 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 					until: END_TIME,
 				},
 			),
+	},
+	// Cancellation evidence (CancellationTelemetryEvidence.read).
+	{
+		module: "cancellation-evidence",
+		name: "cancellationServiceUsageQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationServiceUsageQuery({ limit: 15 }), {
+				...window,
+				splitTime: START_TIME,
+			}),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationServiceCountsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationServiceCountsQuery(), { ...window, splitTime: START_TIME }),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationResourceAttributesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationResourceAttributesQuery({ limit: 500 }), {
+				...window,
+				splitTime: START_TIME,
+			}),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationResourceSpansQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.cancellationResourceSpansQuery(), window),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationErrorFingerprintsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationErrorFingerprintsQuery(), { ...window, splitTime: START_TIME }),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationAuditActionsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationAuditActionsQuery({ limit: 25 }), {
+				...window,
+				splitTime: START_TIME,
+			}),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationAuditActorsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationAuditActorsQuery(), { ...window, splitTime: START_TIME }),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationToolCallsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationToolCallsQuery({ limit: 15 }), {
+				...window,
+				splitTime: START_TIME,
+			}),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationAlertChecksQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.cancellationAlertChecksQuery(), window),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationErrorsByDayQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.cancellationErrorsByDayQuery(), window),
+	},
+	{
+		module: "cancellation-evidence",
+		name: "cancellationProductEventsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.cancellationProductEventsQuery({ limit: 50 }), {
+				...window,
+				splitTime: START_TIME,
+				groupId: "org_customer",
+			}),
 	},
 	// Session replay fixtures used by the replay routes.
 	{
