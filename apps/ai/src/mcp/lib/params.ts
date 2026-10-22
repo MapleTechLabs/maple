@@ -79,6 +79,20 @@ export const oneOf = <const L extends ReadonlyArray<string>>(values: L, descript
 export const optionalOneOf = <const L extends ReadonlyArray<string>>(values: L, description: string) =>
 	Schema.optional(Schema.Literals(values)).annotate({ description })
 
+/**
+ * A closed set of numbers in the schema's `enum` (a numeric string decodes too), or `null` to
+ * clear the value. The published schema drops the null branch, so the description must say it.
+ */
+export const optionalNullableNumberOneOf = <const L extends ReadonlyArray<number>>(
+	values: L,
+	description: string,
+) => {
+	const literals = Schema.Literals(values)
+	return Schema.optional(
+		Schema.NullOr(Schema.Union([literals, NumericString.pipe(Schema.decodeTo(literals))])),
+	).annotate({ description })
+}
+
 /** Several values from a closed set, each listed in the item schema's `enum`. */
 export const optionalOneOfList = <const L extends ReadonlyArray<string>>(values: L, description: string) =>
 	Schema.optional(Schema.Array(Schema.Literals(values))).annotate({ description })

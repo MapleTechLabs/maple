@@ -188,6 +188,7 @@ const isEmptyStructSchema = (base: Record<string, unknown>): boolean => {
  * Safe only while no MCP parameter is GENUINELY nullable — `Schema.NullOr` would
  * render identically and be wrongly narrowed here. `registry.test.ts` pins that
  * invariant by decoding `null` into every parameter of every tool.
+ * The one exception, `P.optionalNullableNumberOneOf`, is optional and names null in its description.
  */
 const collapseNullableUnions = (node: unknown): unknown => {
 	if (Array.isArray(node)) return node.map(collapseNullableUnions)

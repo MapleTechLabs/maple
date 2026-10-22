@@ -83,7 +83,7 @@ Scope applies to built-in signals.
 
 ## Evaluation timing
 
-Maple evaluates every enabled rule once a minute. Each check aggregates the last **Window (min)** minutes, so a 5-minute window is a rolling 5 minutes re-scored every 60 seconds.
+Maple checks every enabled rule on its check interval. Each check aggregates the last **Window (min)** minutes, so a 5-minute window checked every minute is a rolling 5 minutes re-scored every 60 seconds. See [Check interval and query limits](#check-interval-and-query-limits).
 
 **Evaluation timing** is collapsed to a summary line (for example `5min · 2× · renotify 30min`) until you open it:
 
@@ -102,6 +102,22 @@ A window with no data at all is skipped, with two exceptions: a rule with **Aler
 The **Min samples** check runs before the threshold comparison, and that zero still counts as zero samples. For **Throughput** the sample count is the signal, so a drop rule with the blank form's default of 50 skips every window below 50 requests, including a full outage, and cannot fire for those windows. Set **Min samples** to 0 for throughput drop rules, as the **Throughput drop** template does. Then traffic stopping entirely fires the rule.
 
 Short windows on low-traffic services are noisy, because a few slow or failed requests move the value a long way. Raise **Min samples** or widen the window for those services.
+
+## Check interval and query limits
+
+`evaluation_interval_minutes` sets how often a rule is checked: every 1, 5, 10, 15, 30 or 60 minutes. Leave it unset and Maple derives it from the window: a fifth of the window, between 1 and 5 minutes. The window must be at least as long as the interval, so no data falls between two checks.
+
+A **Raw SQL** rule's query gets more time when the rule is checked less often:
+
+| Check interval     | Query time limit |
+| ------------------ | ---------------- |
+| Under 5 minutes    | 5 seconds        |
+| 5 minutes          | 15 seconds       |
+| 10 minutes or more | 25 seconds       |
+
+Previewing a **Raw SQL** rule over the API (`query_timing` in `POST /v2/alerts/rules/preview`) or with the `preview_alert_rule` MCP tool times one check against the limit of its interval and lists the intervals the query fits. The MCP tool also suggests filters that make the query cheaper, such as a service filter.
+
+When a rule's query hits its time limit 3 checks in a row, Maple slows the rule down to the next interval with a longer limit, never past the window. The rule shows when it was slowed down and which interval it runs at. Editing the rule resets the slowdown, so make the query cheaper or pick a longer interval first.
 
 ## Notifications
 

@@ -75,6 +75,30 @@ export const toAlertRuleRow = (rule: AlertRuleDocument): typeof AlertRuleRow.Typ
 	updatedAt: rule.updatedAt,
 })
 
+interface RuleCadence {
+	readonly windowMinutes: number
+	readonly evaluationIntervalMinutes: number | null
+	readonly slowedIntervalMinutes: number | null
+}
+
+/** How often the rule is checked, and whether that was picked, derived or slowed down. */
+export const formatCheckInterval = (rule: RuleCadence): string => {
+	const base = alertRuleIntervalMinutes({ ...rule, slowedIntervalMinutes: null })
+	const effective = alertRuleIntervalMinutes(rule)
+	if (effective !== base) return `every ${effective}m (slowed down from ${base}m)`
+	return rule.evaluationIntervalMinutes === null
+		? `every ${effective}m (derived from the window)`
+		: `every ${effective}m`
+}
+
+/** Why a slowed rule runs less often than configured, and how to undo it. */
+export const slowedNotice = (rule: RuleCadence): ReadonlyArray<string> =>
+	rule.slowedIntervalMinutes === null
+		? []
+		: [
+				`The scheduler slowed this rule down to every ${alertRuleIntervalMinutes(rule)}m after its query hit its time limit 3 checks in a row. Editing the rule resets that; make the query cheaper first (preview_alert_rule times it).`,
+			]
+
 /** How a rule covers a service: named in its scope, unscoped (every service), or a raw query mentioning it. */
 export type RuleServiceMatch = "scoped" | "all_services" | "raw_query_mention"
 
@@ -214,31 +238,38 @@ export const renderRuleWrite = (
 	rule: typeof AlertRuleRow.Type,
 	warnings: ReadonlyArray<string> = [],
 	evaluation?: typeof AlertRuleFirstEvaluation.Type,
-): ToolDoc => ({
-	title,
-	...(warnings.length > 0 ? { notices: warnings } : undefined),
-	blocks: [
-		...evaluationBlocks(evaluation, alertRuleIntervalMinutes(rule)),
-		doc.fields([
-			["ID", rule.id],
-			["Name", rule.name],
-			["Service Names", rule.serviceNames.length > 0 ? rule.serviceNames.join(", ") : undefined],
-			["Severity", rule.severity],
-			["Signal", rule.signalType],
-			["Condition", formatCondition(rule)],
-			["Window", `${rule.windowMinutes}m`],
-			["Enabled", rule.enabled ? "Yes" : "No"],
-			["Destinations", rule.destinationIds.length],
-			["Environments", rule.environments.length > 0 ? rule.environments.join(", ") : undefined],
-		]),
-	],
-	next: [
-		doc.next("get_alert_rule", { rule_id: rule.id }, "full configuration"),
-		doc.next(
-			"preview_alert_rule",
-			{ rule_id: rule.id },
-			"replay it over the last day to see what it would have done",
-		),
-		doc.next("list_alert_checks", { rule_id: rule.id }, "its evaluations once the scheduler picks it up"),
-	],
-})
+): ToolDoc => {
+	const notices = [...warnings, ...slowedNotice(rule)]
+	return {
+		title,
+		...(notices.length > 0 ? { notices } : undefined),
+		blocks: [
+			...evaluationBlocks(evaluation, alertRuleIntervalMinutes(rule)),
+			doc.fields([
+				["ID", rule.id],
+				["Name", rule.name],
+				["Service Names", rule.serviceNames.length > 0 ? rule.serviceNames.join(", ") : undefined],
+				["Severity", rule.severity],
+				["Signal", rule.signalType],
+				["Condition", formatCondition(rule)],
+				["Window", `${rule.windowMinutes}m, checked ${formatCheckInterval(rule)}`],
+				["Enabled", rule.enabled ? "Yes" : "No"],
+				["Destinations", rule.destinationIds.length],
+				["Environments", rule.environments.length > 0 ? rule.environments.join(", ") : undefined],
+			]),
+		],
+		next: [
+			doc.next("get_alert_rule", { rule_id: rule.id }, "full configuration"),
+			doc.next(
+				"preview_alert_rule",
+				{ rule_id: rule.id },
+				"replay it over the last day to see what it would have done",
+			),
+			doc.next(
+				"list_alert_checks",
+				{ rule_id: rule.id },
+				"its evaluations once the scheduler picks it up",
+			),
+		],
+	}
+}

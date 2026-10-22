@@ -858,6 +858,14 @@ describe("v2 alerts over HTTP", () => {
 		expect(response.status).toBe(200)
 		expect(response.body.object).toBe("alert_rule.preview")
 		expect(response.body.series.length).toBeGreaterThan(0)
+		// A 5-minute window is checked every minute, whose limit is 5s.
+		expect(response.body.query_timing).toMatchObject({
+			failure: null,
+			interval_minutes: 1,
+			limit_ms: 5000,
+			probe_limit_ms: 25000,
+		})
+		expect(response.body.query_timing.fits_interval_minutes).toContain(1)
 		await harness.dispose()
 	})
 
