@@ -15,6 +15,7 @@ import { ChatAlertPoster } from "./ChatAlertPoster"
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
+	Fiber,
 	Array as Arr,
 	Cause,
 	Clock,
@@ -6453,6 +6454,44 @@ describe("AlertsService check intervals", () => {
 			assert.isAtLeast(settled.length, 2)
 			Arr.forEach(settled.slice(1), (tick, i) => assert.strictEqual(tick - settled[i]!, 10))
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
+	})
+
+	it.effect("defers a slow rule with no room left in the long-query lane to the very next tick", () => {
+		const testDb = createTestDb(trackedDbs)
+		// Each query takes 26 s two at a time, so the second pair would start with under 35 s of the 60 s budget left.
+		const stub = makeWarehouseStub({ rawQueryRows: [{ value: 1, samples: 1 }] })
+		const slowWarehouse = {
+			...stub,
+			rawSqlQuery: (...args: Parameters<WarehouseQueryServiceApi["rawSqlQuery"]>) =>
+				Effect.andThen(Effect.sleep(Duration.seconds(26)), stub.rawSqlQuery(...args)),
+		} satisfies WarehouseQueryServiceApi
+		// A tick under the test clock, which moves a second at a time while the tick sleeps.
+		const tickWithClock = (alerts: AlertsServiceApi) =>
+			Effect.gen(function* () {
+				const tick = yield* Effect.forkChild(alerts.runSchedulerTick("long_query"))
+				yield* Effect.forEach(Arr.range(1, 90), () => TestClock.adjust(Duration.seconds(1)), { discard: true })
+				return yield* Fiber.join(tick)
+			})
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* Effect.forEach(["a", "b", "c", "d"], (org) =>
+				createIntervalRule(alerts, asOrgId(`org_interval_room_${org}`), {
+					signalType: "raw_query",
+					windowMinutes: 10,
+					evaluationIntervalMinutes: 10,
+				}),
+			)
+
+			const first = yield* tickWithClock(alerts)
+			assert.deepStrictEqual(
+				{ evaluated: first.evaluatedCount, failed: first.evaluationFailureCount, deferred: first.deferredCount },
+				{ evaluated: 2, failed: 0, deferred: 2 },
+			)
+			// Their claims were released, so they run on the next tick rather than on their next 10-minute slot.
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS + 2 * 60_000)
+			assert.strictEqual((yield* tickWithClock(alerts)).evaluatedCount, 2)
+		}).pipe(Effect.provide(makeLayer(testDb, slowWarehouse, { fetch: okFetch })))
 	})
 
 	it.effect("rejects a check interval longer than the window", () => {
