@@ -431,6 +431,9 @@ const awsConnection = (id: AwsConnectionId): V2AwsConnection =>
 		verified_at: null,
 		last_checked_at: "2026-10-01T11:59:00.000Z",
 		last_check_error: "Maple cannot assume the role yet.",
+		metric_stream: null,
+		metrics_last_received_at: null,
+		metrics_last_error: null,
 		created_at: "2026-10-01T11:00:00.000Z",
 	})
 
@@ -483,11 +486,33 @@ describe("integration focus", () => {
 			}),
 		)
 		expect(names(polled.commands)).not.toContain("FetchSourceDetailList")
-		// A click while that poll was in flight made it the user's: its answer re-reads the header.
-		const clicked = pageUpdate(
+		// A click while a poll is in flight makes it the user's: its answer re-reads the header.
+		const withStatus = pageUpdate(
 			model,
-			Message.GotConnectionMessage({ message: IntegrationMessage.ClickedAwsCheck({ id: connection }) }),
+			Message.GotConnectionMessage({
+				message: IntegrationMessage.CompletedLoadAws({
+					key: model.connection?.statuses.aws.key ?? "",
+					result: Result.succeed({
+						object: "aws_integration",
+						available: true,
+						modules: [],
+						connections: [awsConnection(connection)],
+					}),
+				}),
+			}),
 		).model
+		const polling = pageUpdate(
+			withStatus,
+			Message.GotConnectionMessage({ message: IntegrationMessage.TickedAwsPending() }),
+		)
+		expect(names(polling.commands)).toContain("CheckAwsConnection")
+		const clicking = pageUpdate(
+			polling.model,
+			Message.GotConnectionMessage({ message: IntegrationMessage.ClickedAwsCheck({ id: connection }) }),
+		)
+		// The poll in flight answers for the click: no second call to AWS.
+		expect(names(clicking.commands)).not.toContain("CheckAwsConnection")
+		const clicked = clicking.model
 		const answered = pageUpdate(
 			clicked,
 			Message.GotConnectionMessage({

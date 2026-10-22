@@ -159,6 +159,9 @@ describe("v2 aws integration over HTTP", () => {
 			verified_at: null,
 			last_checked_at: null,
 			last_check_error: null,
+			metric_stream: null,
+			metrics_last_received_at: null,
+			metrics_last_error: null,
 			created_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/),
 		})
 		const id: string = created.body.id
@@ -217,6 +220,16 @@ describe("v2 aws integration over HTTP", () => {
 			modules: ["cost"],
 		})
 		expect(planned.status).toBe(400)
+		const elsewhere = await harness.request("POST", CONNECTIONS, admin.secret, {
+			account_id: "123456789012",
+			metric_stream: { regions: ["mars-north-1a"], namespaces: ["AWS/ECS"] },
+		})
+		expect(elsewhere.status).toBe(400)
+		const nothing = await harness.request("POST", CONNECTIONS, admin.secret, {
+			account_id: "123456789012",
+			metric_stream: { regions: ["us-east-1"], namespaces: [] },
+		})
+		expect(nothing.status).toBe(400)
 		await harness.dispose()
 	})
 

@@ -1,5 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
+import { AwsMetricStream } from "../../aws"
 import { AwsAccountId, AwsConnectionId, AwsModule } from "../../primitives"
 import {
 	AwsAccountAlreadyConnectedError,
@@ -14,10 +15,10 @@ import { V2InsufficientPermissions } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 
-// AWS integration. No OAuth and no stored secret: an org registers a connection for an account, an
-// administrator deploys the generated CloudFormation stack, and Maple assumes the role it creates
-// with an external id Maple minted. Each module is its own policy on the role. Public v2 from the
-// start so scripted setups can use a scoped API key.
+// AWS integration. No OAuth and no stored AWS secret: an org registers a connection for an account,
+// an administrator deploys the generated CloudFormation stack, and Maple assumes the role it creates
+// with an external id Maple minted. Each module is its own policy on the role; a metric stream is
+// its own stack per region. Public v2 from the start so scripted setups can use a scoped API key.
 
 /** `awsc_…` public ID ⇄ internal `AwsConnectionId` (raw UUID). */
 export const AwsConnectionPublicId = PublicId(PublicIdPrefixes.awsConnection, AwsConnectionId)
@@ -35,8 +36,16 @@ const connectionExample = {
 	verified_at: "2026-10-21T12:05:00.000Z",
 	last_checked_at: "2026-10-21T13:00:00.000Z",
 	last_check_error: null,
+	metric_stream: { regions: ["us-east-1"], namespaces: ["AWS/ECS", "AWS/ApplicationELB"] },
+	metrics_last_received_at: "2026-10-21T13:04:00.000Z",
+	metrics_last_error: null,
 	created_at: "2026-10-21T12:00:00.000Z",
 } as const
+
+const metricStreamField = AwsMetricStream.annotate({
+	description:
+		"Which regions stream which CloudWatch namespaces to Maple. Each region gets a metric stream and a Firehose, deployed by `setup`.",
+})
 
 export const V2AwsConnection = Schema.Struct({
 	id: AwsConnectionPublicId,
@@ -82,6 +91,14 @@ export const V2AwsConnection = Schema.Struct({
 	}),
 	last_check_error: Schema.NullOr(Schema.String).annotate({
 		description: "Why the latest check failed and what to do about it, or `null`.",
+		examples: [null],
+	}),
+	metric_stream: Schema.NullOr(metricStreamField),
+	metrics_last_received_at: Schema.NullOr(Timestamp).annotate({
+		description: "When Maple last accepted metrics from the stream, or `null` before the first delivery.",
+	}),
+	metrics_last_error: Schema.NullOr(Schema.String).annotate({
+		description: "Why the latest metric delivery was refused, or `null`.",
 		examples: [null],
 	}),
 	created_at: Timestamp.annotate({ description: "When the connection was created." }),
@@ -140,6 +157,7 @@ const modulesField = (description: string) =>
 export const V2AwsCreateConnectionRequest = Schema.Struct({
 	account_id: AwsAccountId.annotate({ description: "The 12-digit AWS account ID." }),
 	modules: modulesField("What Maple may read. Defaults to none: the role then only lets Maple confirm the setup."),
+	metric_stream: Schema.optionalKey(Schema.NullOr(metricStreamField)),
 }).annotate({
 	identifier: "AwsCreateConnectionRequest",
 	title: "AWS connection create request",
@@ -149,6 +167,11 @@ export type V2AwsCreateConnectionRequest = Schema.Schema.Type<typeof V2AwsCreate
 
 export const V2AwsUpdateConnectionRequest = Schema.Struct({
 	modules: modulesField("What Maple may read. Omitted: the connection's modules are unchanged; `[]` removes them all."),
+	metric_stream: Schema.optionalKey(
+		Schema.NullOr(metricStreamField).annotate({
+			description: "The metric stream. Omitted: unchanged; `null` turns it off.",
+		}),
+	),
 }).annotate({
 	identifier: "AwsUpdateConnectionRequest",
 	title: "AWS connection update request",
@@ -174,7 +197,7 @@ export const V2AwsSetup = Schema.Struct({
 	}),
 	setup_script: Schema.String.annotate({
 		description:
-			"Text to paste into AWS CloudShell, signed in to the connection's account as an administrator. It deploys `cloudformation_template` as `stack_name`; run it again after changing `modules`. It carries no secret.",
+			"Text to paste into AWS CloudShell, signed in to the connection's account as an administrator. It deploys `cloudformation_template` as `stack_name`, then the metric stream to each of its regions; run it again after changing `modules` or `metric_stream`. With a metric stream it carries the secret the stream's Firehose sends to Maple.",
 		examples: [SCRIPT_EXAMPLE],
 	}),
 	cleanup_script: Schema.String.annotate({
@@ -186,7 +209,16 @@ export const V2AwsSetup = Schema.Struct({
 			"For a setup in the console: the stack as a CloudFormation template (JSON), to upload under Create stack → With new resources.",
 	}),
 	terraform: Schema.String.annotate({
-		description: "The same setup as a self-contained Terraform file for the `aws` provider.",
+		description:
+			"The role as a self-contained Terraform file for the `aws` provider. It does not cover the metric stream: use `setup_script` for that.",
+	}),
+	metrics_stack_name: Schema.NullOr(Schema.String).annotate({
+		description: "The stack the metric stream lives in, the same in each of its regions, or `null` without a stream.",
+		examples: ["maple-metrics-018f2b3c4d5e4f708192a3b4"],
+	}),
+	metrics_cloudformation_template: Schema.NullOr(Schema.String).annotate({
+		description:
+			"One region's metric stream as a CloudFormation template (JSON), or `null` without a stream. Its `AccessKey` parameter is in `setup_script`.",
 	}),
 }).annotate({
 	identifier: "AwsSetup",

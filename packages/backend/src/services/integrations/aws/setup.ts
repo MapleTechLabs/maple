@@ -1,4 +1,4 @@
-import { AWS_TEMPLATE_VERSION, type AwsSetupPlan } from "@maple/domain/aws"
+import { AWS_TEMPLATE_VERSION, type AwsMetricStream, type AwsSetupPlan } from "@maple/domain/aws"
 import type { AwsAccountId, AwsConnectionId } from "@maple/domain/primitives"
 import { Effect } from "effect"
 import { forPaste } from "../paste-script"
@@ -56,9 +56,168 @@ export const renderAwsCloudFormation = (connectionId: AwsConnectionId, plan: Aws
 	return `${JSON.stringify(template, null, 2)}\n`
 }
 
+/** A connection's metric stream as its setup renders it. */
+export interface AwsStreamTarget extends AwsMetricStream {
+	/** The ingest URL the Firehose posts to, and the secret it sends as its access key. */
+	readonly endpoint: string
+	readonly accessKey: string
+}
+
+/**
+ * One region's metric stream: CloudWatch streams that region's metrics to a Firehose, which posts
+ * them to Maple. Failed batches land in a bucket that empties itself after 7 days.
+ */
+export const renderAwsMetricsCloudFormation = (
+	connectionId: AwsConnectionId,
+	streamName: string,
+	stream: Pick<AwsStreamTarget, "endpoint" | "namespaces">,
+) => {
+	const template = {
+		AWSTemplateFormatVersion: "2010-09-09",
+		Description: `Maple integration ${connectionId}: streams CloudWatch metrics of this region to Maple. ${DOCS_URL}`,
+		Parameters: {
+			AccessKey: {
+				Type: "String",
+				NoEcho: true,
+				MinLength: 1,
+				Description: "Sent with every delivery so Maple knows which connection it is for",
+			},
+		},
+		Resources: {
+			FailedDeliveries: {
+				Type: "AWS::S3::Bucket",
+				Properties: {
+					BucketEncryption: {
+						ServerSideEncryptionConfiguration: [
+							{ ServerSideEncryptionByDefault: { SSEAlgorithm: "AES256" } },
+						],
+					},
+					PublicAccessBlockConfiguration: {
+						BlockPublicAcls: true,
+						BlockPublicPolicy: true,
+						IgnorePublicAcls: true,
+						RestrictPublicBuckets: true,
+					},
+					OwnershipControls: { Rules: [{ ObjectOwnership: "BucketOwnerEnforced" }] },
+					LifecycleConfiguration: {
+						Rules: [{ Id: "expire-failed-deliveries", Status: "Enabled", ExpirationInDays: 7 }],
+					},
+				},
+			},
+			FirehoseRole: {
+				Type: "AWS::IAM::Role",
+				Properties: {
+					Description: "Lets the Maple Firehose keep batches Maple could not accept",
+					AssumeRolePolicyDocument: {
+						Version: "2012-10-17",
+						Statement: [
+							{
+								Effect: "Allow",
+								Principal: { Service: "firehose.amazonaws.com" },
+								Action: "sts:AssumeRole",
+								Condition: { StringEquals: { "aws:SourceAccount": { Ref: "AWS::AccountId" } } },
+							},
+						],
+					},
+					Policies: [
+						{
+							PolicyName: "failed-deliveries",
+							PolicyDocument: {
+								Version: "2012-10-17",
+								Statement: [
+									{
+										Effect: "Allow",
+										Action: [
+											"s3:AbortMultipartUpload",
+											"s3:GetBucketLocation",
+											"s3:GetObject",
+											"s3:ListBucket",
+											"s3:ListBucketMultipartUploads",
+											"s3:PutObject",
+										],
+										Resource: [
+											{ "Fn::GetAtt": ["FailedDeliveries", "Arn"] },
+											{ "Fn::Sub": "${FailedDeliveries.Arn}/*" },
+										],
+									},
+								],
+							},
+						},
+					],
+				},
+			},
+			DeliveryStream: {
+				Type: "AWS::KinesisFirehose::DeliveryStream",
+				Properties: {
+					DeliveryStreamName: streamName,
+					DeliveryStreamType: "DirectPut",
+					HttpEndpointDestinationConfiguration: {
+						EndpointConfiguration: { Name: "Maple", Url: stream.endpoint, AccessKey: { Ref: "AccessKey" } },
+						RequestConfiguration: { ContentEncoding: "GZIP" },
+						BufferingHints: { IntervalInSeconds: 60, SizeInMBs: 1 },
+						RetryOptions: { DurationInSeconds: 3600 },
+						RoleARN: { "Fn::GetAtt": ["FirehoseRole", "Arn"] },
+						S3BackupMode: "FailedDataOnly",
+						S3Configuration: {
+							BucketARN: { "Fn::GetAtt": ["FailedDeliveries", "Arn"] },
+							RoleARN: { "Fn::GetAtt": ["FirehoseRole", "Arn"] },
+							CompressionFormat: "GZIP",
+							Prefix: "failed/",
+						},
+					},
+				},
+			},
+			MetricStreamRole: {
+				Type: "AWS::IAM::Role",
+				Properties: {
+					Description: "Lets the Maple metric stream write to its Firehose",
+					AssumeRolePolicyDocument: {
+						Version: "2012-10-17",
+						Statement: [
+							{
+								Effect: "Allow",
+								Principal: { Service: "streams.metrics.cloudwatch.amazonaws.com" },
+								Action: "sts:AssumeRole",
+								Condition: { StringEquals: { "aws:SourceAccount": { Ref: "AWS::AccountId" } } },
+							},
+						],
+					},
+					Policies: [
+						{
+							PolicyName: "put-to-firehose",
+							PolicyDocument: {
+								Version: "2012-10-17",
+								Statement: [
+									{
+										Effect: "Allow",
+										Action: ["firehose:PutRecord", "firehose:PutRecordBatch"],
+										Resource: { "Fn::GetAtt": ["DeliveryStream", "Arn"] },
+									},
+								],
+							},
+						},
+					],
+				},
+			},
+			MetricStream: {
+				Type: "AWS::CloudWatch::MetricStream",
+				Properties: {
+					Name: streamName,
+					FirehoseArn: { "Fn::GetAtt": ["DeliveryStream", "Arn"] },
+					RoleArn: { "Fn::GetAtt": ["MetricStreamRole", "Arn"] },
+					OutputFormat: "opentelemetry1.0",
+					IncludeFilters: stream.namespaces.map((namespace) => ({ Namespace: namespace })),
+				},
+			},
+		},
+	}
+	return `${JSON.stringify(template, null, 2)}\n`
+}
+
 export interface AwsScriptTarget {
 	readonly accountId: AwsAccountId
 	readonly stackName: string
+	readonly metricsStackName: string
 }
 
 // Every value interpolated below is pattern-checked (account id) or derived from a UUID (stack
@@ -74,10 +233,56 @@ fi
 `
 
 /**
- * The script an administrator pastes into AWS CloudShell. It deploys the stack, which converges: a
- * re-run after a module change updates the role and its policies in place.
+ * Deletes the metric stream stack from every enabled region not in `keep`. A stream turned off, or
+ * a region dropped, leaves a stack only a later setup or the cleanup knows to remove.
  */
-export const renderAwsSetupScript = (target: AwsScriptTarget, template: string) =>
+const removeMetricsStacks = (stackName: string, keep: ReadonlyArray<string>) => `keep=" ${keep.join(" ")} "
+for region in $(aws ec2 describe-regions --region ${AWS_STACK_REGION} --query 'Regions[].RegionName' --output text); do
+  case "$keep" in *" $region "*) continue ;; esac
+  if aws cloudformation describe-stacks --region "$region" --stack-name ${stackName} >/dev/null 2>&1; then
+    echo "Removing the metric stream from $region..."
+    aws cloudformation delete-stack --region "$region" --stack-name ${stackName}
+    aws cloudformation wait stack-delete-complete --region "$region" --stack-name ${stackName}
+  fi
+done
+`
+
+/** Deploys the metric stream stack to each of the stream's regions. */
+const deployMetricsStacks = (
+	stackName: string,
+	stream: AwsStreamTarget,
+	template: string,
+) => `metrics_template="$(mktemp)"
+cat > "$metrics_template" <<'MAPLE_METRICS_TEMPLATE'
+${template}MAPLE_METRICS_TEMPLATE
+for region in ${stream.regions.join(" ")}; do
+  status="$(aws cloudformation describe-stacks --region "$region" --stack-name ${stackName} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+  if [ "$status" = "ROLLBACK_COMPLETE" ]; then
+    aws cloudformation delete-stack --region "$region" --stack-name ${stackName}
+    aws cloudformation wait stack-delete-complete --region "$region" --stack-name ${stackName}
+  fi
+  echo "Deploying the metric stream to $region..."
+  aws cloudformation deploy \\
+    --region "$region" \\
+    --stack-name ${stackName} \\
+    --template-file "$metrics_template" \\
+    --capabilities CAPABILITY_IAM \\
+    --parameter-overrides "AccessKey=${stream.accessKey}" \\
+    --no-fail-on-empty-changeset
+done
+rm -f "$metrics_template"
+`
+
+/**
+ * The script an administrator pastes into AWS CloudShell. It deploys the stack, which converges: a
+ * re-run after a module change updates the role and its policies in place. With a metric stream it
+ * then deploys the stream's stack to each of its regions.
+ */
+export const renderAwsSetupScript = (
+	target: AwsScriptTarget,
+	template: string,
+	metrics: { readonly stream: AwsStreamTarget; readonly template: string } | null,
+) =>
 	forPaste(
 		"AWS",
 		"MAPLE_SETUP_SCRIPT",
@@ -100,7 +305,7 @@ aws cloudformation deploy \\
   --capabilities CAPABILITY_NAMED_IAM \\
   --no-fail-on-empty-changeset
 rm -f "$template"
-echo "Done. Go back to Maple and select Check connection. Details: ${DOCS_URL}"
+${metrics === null ? "" : deployMetricsStacks(target.metricsStackName, metrics.stream, metrics.template)}${removeMetricsStacks(target.metricsStackName, metrics?.stream.regions ?? [])}echo "Done. Go back to Maple and select Check connection. Details: ${DOCS_URL}"
 `,
 	)
 
@@ -109,7 +314,7 @@ export const renderAwsCleanupScript = (target: AwsScriptTarget) =>
 		"AWS",
 		"MAPLE_CLEANUP_SCRIPT",
 		`set -euo pipefail
-${accountGuard(target.accountId)}echo "Deleting ${target.stackName} from account ${target.accountId}..."
+${accountGuard(target.accountId)}${removeMetricsStacks(target.metricsStackName, [])}echo "Deleting ${target.stackName} from account ${target.accountId}..."
 aws cloudformation delete-stack --region ${AWS_STACK_REGION} --stack-name ${target.stackName}
 aws cloudformation wait stack-delete-complete --region ${AWS_STACK_REGION} --stack-name ${target.stackName}
 echo "Done. The role Maple used is gone."
@@ -174,15 +379,22 @@ export const renderAwsSetup = Effect.fn("renderAwsSetup")(function* (
 	connectionId: AwsConnectionId,
 	accountId: AwsAccountId,
 	plan: AwsSetupPlan,
+	stream: AwsStreamTarget | null,
 ) {
-	const target = { accountId, stackName: plan.stackName }
+	const target = { accountId, stackName: plan.stackName, metricsStackName: plan.metricsStackName }
 	const template = renderAwsCloudFormation(connectionId, plan)
+	const metrics =
+		stream === null
+			? null
+			: { stream, template: renderAwsMetricsCloudFormation(connectionId, plan.metricStreamName, stream) }
 	return {
 		stackName: plan.stackName,
 		stackRegion: AWS_STACK_REGION,
-		setupScript: yield* renderAwsSetupScript(target, template),
+		setupScript: yield* renderAwsSetupScript(target, template, metrics),
 		cleanupScript: yield* renderAwsCleanupScript(target),
 		cloudformationTemplate: template,
 		terraform: renderAwsTerraform(connectionId, plan),
+		metricsStackName: metrics === null ? null : plan.metricsStackName,
+		metricsCloudformationTemplate: metrics?.template ?? null,
 	}
 })
