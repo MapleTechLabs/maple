@@ -1,5 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { ApiKeyId, ApiKeyNotFoundError, OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { ApiKeysService } from "./ApiKeysService"
@@ -40,6 +41,16 @@ const makeLayer = (testDb: TestDb) =>
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
+
+const countKeys = (testDb: TestDb, orgId: string) =>
+	Effect.promise(() =>
+		queryFirstRow<{ total: number; active: number }>(
+			testDb,
+			`select count(*)::int as total, count(*) filter (where revoked = false)::int as active
+			 from api_keys where org_id = $1`,
+			[orgId],
+		),
+	)
 
 describe("ApiKeysService.roll", () => {
 	it.effect("revokes the old key and issues a new active key inheriting name/kind", () => {
@@ -111,6 +122,93 @@ describe("ApiKeysService.roll", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("refuses to roll an expired key and leaves it untouched", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const svc = yield* ApiKeysService
+			const orgId = asOrgId("org_a")
+			const created = yield* svc.create(orgId, asUserId("user_a"), {
+				name: "expiring",
+				expiresInSeconds: 60,
+			})
+			yield* TestClock.adjust("2 minutes")
+
+			const exit = yield* Effect.exit(svc.roll(orgId, asUserId("user_a"), created.id, {}))
+
+			assert.instanceOf(Option.getOrUndefined(Exit.findErrorOption(exit)), ApiKeyNotFoundError)
+			const counts = yield* countKeys(testDb, orgId)
+			assert.deepStrictEqual({ total: counts?.total, active: counts?.active }, { total: 1, active: 1 })
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("carries the source key's expiry onto its successor", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const svc = yield* ApiKeysService
+			const orgId = asOrgId("org_a")
+			const created = yield* svc.create(orgId, asUserId("user_a"), {
+				name: "expiring",
+				expiresInSeconds: 3600,
+			})
+
+			const rolled = yield* svc.roll(orgId, asUserId("user_a"), created.id, {})
+
+			assert.strictEqual(rolled.expiresAt, created.expiresAt)
+			const stored = yield* svc.get(orgId, rolled.id)
+			assert.strictEqual(stored.expiresAt, created.expiresAt)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("refuses to roll an MCP OAuth access key or a device key", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const svc = yield* ApiKeysService
+			const orgId = asOrgId("org_a")
+			const oauth = yield* svc.create(orgId, asUserId("user_a"), {
+				name: "oauth access",
+				kind: "mcp",
+				metadataJson: { source: "maple_mcp_oauth", roles: [], clientId: "c", resource: "r" },
+			})
+			const device = yield* svc.replaceDeviceKey(orgId, asUserId("user_a"), {
+				deviceId: "device-1",
+				name: "widget",
+				scopes: [],
+				expiresInSeconds: 3600,
+				roles: [],
+			})
+
+			const oauthExit = yield* Effect.exit(svc.roll(orgId, asUserId("user_a"), oauth.id, {}))
+			const deviceExit = yield* Effect.exit(svc.roll(orgId, asUserId("user_a"), device.id, {}))
+
+			assert.instanceOf(Option.getOrUndefined(Exit.findErrorOption(oauthExit)), ApiKeyNotFoundError)
+			assert.instanceOf(Option.getOrUndefined(Exit.findErrorOption(deviceExit)), ApiKeyNotFoundError)
+			const counts = yield* countKeys(testDb, orgId)
+			assert.deepStrictEqual({ total: counts?.total, active: counts?.active }, { total: 2, active: 2 })
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("still revokes an expired key", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const svc = yield* ApiKeysService
+			const orgId = asOrgId("org_a")
+			const created = yield* svc.create(orgId, asUserId("user_a"), {
+				name: "expiring",
+				expiresInSeconds: 60,
+			})
+			yield* TestClock.adjust("2 minutes")
+
+			const revoked = yield* svc.revoke(orgId, created.id)
+
+			assert.strictEqual(revoked.revoked, true)
+			assert.isNumber(revoked.revokedAt)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	/**
 	 * Both concurrency barriers live in one place: the conditional
 	 * `UPDATE … WHERE revoked = false` that opens the roll transaction. Each caller
@@ -120,17 +218,6 @@ describe("ApiKeysService.roll", () => {
 	 * successor for a key a concurrent revoke had already retired.
 	 */
 	describe("concurrency barriers", () => {
-		const countKeys = (testDb: TestDb, orgId: string) =>
-			Effect.promise(async () => {
-				const row = await queryFirstRow<{ total: number; active: number }>(
-					testDb,
-					`select count(*)::int as total, count(*) filter (where revoked = false)::int as active
-					 from api_keys where org_id = $1`,
-					[orgId],
-				)
-				return row
-			})
-
 		it.effect("roll vs roll: only one successor is ever created", () => {
 			const testDb = createTestDb(trackedDbs)
 
