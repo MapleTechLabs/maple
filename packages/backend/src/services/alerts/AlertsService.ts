@@ -1647,6 +1647,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						})
 					: null
 				if (failure !== null && failure !== "query_too_slow" && failure !== "query_too_much_memory") {
+					yield* Effect.logWarning("Alert preview query timing failed").pipe(
+						Effect.annotateLogs({ orgId, ruleId: rule.id, errorKind: failure }),
+					)
 					return undefined
 				}
 				const intervalMinutes = alertRuleIntervalMinutes(rule)
@@ -1660,7 +1663,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					probeLimitMs,
 					intervalMinutes,
 					limitMs: alertQueryLimits(intervalMinutes).timeSeconds * 1000,
-					fitsIntervalMinutes: failure === null ? alertIntervalsFitting(elapsedMs) : [],
+					// Within the window, since validation refuses a longer interval.
+					fitsIntervalMinutes:
+						failure === null
+							? alertIntervalsFitting(elapsedMs).filter((minutes) => minutes <= rule.windowMinutes)
+							: [],
 				})
 			})
 
