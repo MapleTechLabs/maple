@@ -63,6 +63,10 @@ const status = (overrides: Record<string, unknown> = {}) =>
 				status: "ACTIVE_HEALTHY",
 				metricsEnabled: true,
 				logDrainEnabled: false,
+				logDrainError: null,
+				logDrainSourceId: null,
+				logDrains: [],
+				logDrainsCheckedAt: null,
 				logsEnabled: true,
 				logsLastPolledAt: NOW - 41_000,
 				logsError: "Supabase refused the logs query: Unknown field",
@@ -75,6 +79,10 @@ const status = (overrides: Record<string, unknown> = {}) =>
 				status: "INACTIVE",
 				metricsEnabled: false,
 				logDrainEnabled: false,
+				logDrainError: null,
+				logDrainSourceId: null,
+				logDrains: [],
+				logDrainsCheckedAt: null,
 				logsEnabled: false,
 				logsLastPolledAt: null,
 				logsError: null,
@@ -142,7 +150,7 @@ describe("supabase card", () => {
 			expectView(role("button", { name: "Sync now" })).toExist(),
 			expectView(
 				text(
-					"Logs are pulled every minute through your grant and count toward ingest. No Supabase add-on needed.",
+					"Logs are pulled every minute through your grant and count toward ingest. A log drain has Supabase push them instead: it needs a Pro plan and Supabase bills it per drain.",
 				),
 			).toExist(),
 			expectView(role("link", { name: "View in Infrastructure" })).toExist(),
@@ -277,6 +285,137 @@ describe("supabase card", () => {
 				title: "Failed to stop collecting logs",
 				description: toLoadFailure("boom").message,
 			}),
+		)
+	})
+
+	test("drains set up in Supabase are listed, and one to Maple blocks a managed drain", () => {
+		const withDrains = status({
+			projects: [
+				{
+					...status().projects[0],
+					logDrains: [
+						{
+							id: "drain-datadog",
+							name: "soc2-archive",
+							backendType: "datadog",
+							destination: "US1",
+							toMaple: false,
+							managedByMaple: false,
+						},
+						{
+							id: "drain-manual",
+							name: "maple by hand",
+							backendType: "otlp",
+							destination: "ingest.maple.dev",
+							toMaple: true,
+							managedByMaple: false,
+						},
+					],
+					logDrainsCheckedAt: NOW,
+				},
+			],
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus(withDrains)),
+			expectView(
+				text("Drains: soc2-archive (datadog, US1), maple by hand (already sends to Maple)"),
+			).toExist(),
+			expectView(
+				role("switch", {
+					name: "storefront already sends logs to Maple through the drain maple by hand",
+				}),
+			).toBeDisabled(),
+			// Polling that is already on can still be turned off.
+			expectView(role("switch", { name: "Collect logs for storefront" })).toBeEnabled(),
+		)
+	})
+
+	test("next to a hand-made Maple drain, polling cannot be turned on", () => {
+		const withManual = status({
+			projects: [
+				{
+					...status().projects[0],
+					logsEnabled: false,
+					logDrains: [
+						{
+							id: "drain-manual",
+							name: "maple by hand",
+							backendType: "otlp",
+							destination: "ingest.maple.dev",
+							toMaple: true,
+							managedByMaple: false,
+						},
+					],
+				},
+			],
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus(withManual)),
+			expectView(role("switch", { name: "Collect logs for storefront" })).toBeDisabled(),
+		)
+	})
+
+	test("an enabled drain locks the logs switch off and shows its error", () => {
+		const drained = status({
+			projects: [
+				{
+					...status().projects[0],
+					logsEnabled: false,
+					logDrainEnabled: true,
+					logDrainError: "The log drain was removed in Supabase.",
+				},
+			],
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus(drained)),
+			expectView(role("switch", { name: "Collect logs for storefront" })).toBeDisabled(),
+			expectView(
+				role("switch", { name: "Send storefront's logs through a Supabase log drain" }),
+			).toHaveAttr("aria-checked", "true"),
+			expectView(text("Drain: The log drain was removed in Supabase.")).toExist(),
+			expectView(text("drain broken", { exact: false })).toExist(),
+		)
+	})
+
+	test("a drain switch writes once, shows polling off while it saves, and toasts a plan refusal", () => {
+		const sent = pageUpdate(
+			withStatus(status()),
+			Message.ToggledSupabaseLogDrain({ ref: REF, enabled: true }),
+		)
+		expect(names(sent.commands)).toEqual(["SetSupabaseProjectLogDrain"])
+		scene(
+			{ update: pageUpdate, view },
+			given(sent.model),
+			expectView(role("switch", { name: "Collect logs for storefront" })).toHaveAttr(
+				"aria-checked",
+				"false",
+			),
+		)
+		const failed = pageUpdate(
+			sent.model,
+			Message.CompletedSupabaseLogDrain({
+				ref: REF,
+				enabled: true,
+				failure: toLoadFailure("Log drains need a Supabase Pro plan or higher."),
+			}),
+		)
+		expect(failed.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "error",
+				title: "Failed to create the log drain",
+				description: toLoadFailure("Log drains need a Supabase Pro plan or higher.").message,
+			}),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(failed.model),
+			expectView(role("switch", { name: "Collect logs for storefront" })).toHaveAttr(
+				"aria-checked",
+				"true",
+			),
 		)
 	})
 

@@ -511,10 +511,16 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						if (payload.logsEnabled !== undefined) {
-							yield* supabaseLogs.setLogsEnabled(tenant.orgId, params.ref, payload.logsEnabled)
-						}
-						return yield* supabase.updateProject(tenant.orgId, params.ref, payload)
+						// Drain first: switching a project from drain to polling turns the drain off before polling on.
+						const status = yield* supabase.updateProject(
+							tenant.orgId,
+							tenant.userId,
+							params.ref,
+							payload,
+						)
+						if (payload.logsEnabled === undefined) return status
+						yield* supabaseLogs.setLogsEnabled(tenant.orgId, params.ref, payload.logsEnabled)
+						return yield* supabase.getStatus(tenant.orgId)
 					}),
 				)
 				.handle("supabaseProjectInsights", ({ params }) =>

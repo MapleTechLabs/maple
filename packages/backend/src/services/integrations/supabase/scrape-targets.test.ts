@@ -49,6 +49,7 @@ const makeLayer = (testDb: TestDb, fake: Fake) =>
 	)
 
 const ORG = Schema.decodeUnknownSync(OrgId)("org_a")
+const USER = Schema.decodeUnknownSync(UserId)("user_a")
 const asRef = Schema.decodeUnknownSync(SupabaseProjectRef)
 const asTargetId = Schema.decodeUnknownSync(ScrapeTargetId)
 
@@ -183,11 +184,11 @@ describe("Supabase managed scrape targets", () => {
 			const service = yield* SupabaseConnectionService
 			yield* connect(fake)
 			const created = yield* targetOf(testDb, REF_A)
-			yield* service.updateProject(ORG, asRef(REF_A), { metricsEnabled: false })
+			yield* service.updateProject(ORG, USER, asRef(REF_A), { metricsEnabled: false })
 			const disabled = yield* targetOf(testDb, REF_A)
 			assert.strictEqual(disabled?.id, created?.id)
 			assert.isFalse(disabled?.enabled ?? true)
-			yield* service.updateProject(ORG, asRef(REF_A), { metricsEnabled: true })
+			yield* service.updateProject(ORG, USER, asRef(REF_A), { metricsEnabled: true })
 			assert.isTrue((yield* targetOf(testDb, REF_A))?.enabled ?? false)
 			assert.strictEqual(yield* targetCount(testDb), 1)
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
@@ -250,7 +251,7 @@ describe("Supabase managed scrape targets", () => {
 		return Effect.gen(function* () {
 			const service = yield* SupabaseConnectionService
 			yield* connect(fake)
-			yield* service.updateProject(ORG, asRef(REF_A), { metricsEnabled: false })
+			yield* service.updateProject(ORG, USER, asRef(REF_A), { metricsEnabled: false })
 			yield* TestClock.adjust("1 hour")
 			yield* service.discoverOrg(ORG)
 			assert.isFalse((yield* targetOf(testDb, REF_A))?.enabled ?? true)

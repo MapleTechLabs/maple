@@ -6,6 +6,7 @@ import {
 	GcpResourceNumber,
 	GcpScopeType,
 	ScrapeTargetId,
+	SourceId,
 	SupabaseProjectRef,
 	UserId,
 } from "../primitives"
@@ -974,6 +975,24 @@ export class RailwayDisconnectResponse extends Schema.Class<RailwayDisconnectRes
 	disconnected: Schema.Boolean,
 }) {}
 
+/**
+ * A log drain configured on a Supabase project, as discovery last listed it. Only the destination
+ * host is kept: drain configs carry API keys and auth headers.
+ */
+export const SupabaseLogDrainSummary = Schema.Struct({
+	id: Schema.String,
+	name: Schema.String,
+	/** Supabase's `backend_type`: `otlp`, `datadog`, `s3`, `webhook`, ... */
+	backendType: Schema.String,
+	/** Host, bucket or region the drain sends to; null when the config names none. */
+	destination: Schema.NullOr(Schema.String),
+	/** The drain sends to this Maple deployment's ingest gateway. */
+	toMaple: Schema.Boolean,
+	/** Maple's integration created it (the project's managed drain). */
+	managedByMaple: Schema.Boolean,
+})
+export type SupabaseLogDrainSummary = typeof SupabaseLogDrainSummary.Type
+
 /** One project discovered under the connected Supabase organization. */
 export class SupabaseProjectStatus extends Schema.Class<SupabaseProjectStatus>("SupabaseProjectStatus")({
 	ref: SupabaseProjectRef,
@@ -982,7 +1001,16 @@ export class SupabaseProjectStatus extends Schema.Class<SupabaseProjectStatus>("
 	/** Supabase's lifecycle status as reported, e.g. `ACTIVE_HEALTHY` or `INACTIVE`. */
 	status: Schema.String,
 	metricsEnabled: Schema.Boolean,
+	/** Logs arrive through a Supabase log drain Maple created (opt-in; excludes `logsEnabled`). */
 	logDrainEnabled: Schema.Boolean,
+	/** Why an enabled drain is not delivering (removed in Supabase, its source deleted). */
+	logDrainError: Schema.NullOr(Schema.String),
+	/** The token source the managed drain sends as. */
+	logDrainSourceId: Schema.NullOr(SourceId),
+	/** Every drain on the project at the last discovery, including ones set up outside Maple. */
+	logDrains: Schema.Array(SupabaseLogDrainSummary),
+	/** When `logDrains` was last listed; null when it never was (or the listing keeps failing). */
+	logDrainsCheckedAt: Schema.NullOr(Schema.Number),
 	/** Whether Maple polls this project's logs (opt-in). */
 	logsEnabled: Schema.Boolean,
 	logsLastPolledAt: Schema.NullOr(Schema.Number),
@@ -1028,12 +1056,13 @@ export class SupabaseConnectResponse extends Schema.Class<SupabaseConnectRespons
 	},
 ) {}
 
-/** Per-project switches. */
+/** Per-project switches. `logDrainEnabled` creates or deletes a log drain at Supabase. */
 export class SupabaseProjectUpdateRequest extends Schema.Class<SupabaseProjectUpdateRequest>(
 	"SupabaseProjectUpdateRequest",
 )({
 	metricsEnabled: Schema.optionalKey(Schema.Boolean),
 	logsEnabled: Schema.optionalKey(Schema.Boolean),
+	logDrainEnabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 export class SupabaseDisconnectResponse extends Schema.Class<SupabaseDisconnectResponse>(
@@ -1135,6 +1164,22 @@ export class IntegrationsValidationError extends HttpTaggedError<IntegrationsVal
 		status: 400,
 		code: "integration_request_invalid",
 		title: "Invalid integration request",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** The provider refused a feature the connected account's plan does not include. */
+export class IntegrationsPlanRequiredError extends HttpTaggedError<IntegrationsPlanRequiredError>()(
+	"@maple/http/errors/IntegrationsPlanRequiredError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 402,
+		code: "integration_plan_required",
+		title: "Provider plan required",
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "public_message",
@@ -1465,7 +1510,17 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			params: { ref: SupabaseProjectRef },
 			payload: SupabaseProjectUpdateRequest,
 			success: SupabaseIntegrationStatus,
-			error: [IntegrationsForbiddenError, IntegrationsNotFoundError, IntegrationsPersistenceError],
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsNotFoundError,
+				IntegrationsNotConnectedError,
+				IntegrationsRevokedError,
+				IntegrationsPlanRequiredError,
+				IntegrationsValidationError,
+				IntegrationsConfigurationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
 		}),
 	)
 	.add(

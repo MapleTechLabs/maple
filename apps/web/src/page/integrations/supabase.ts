@@ -12,7 +12,7 @@ import { Message } from "./message"
 
 // The Supabase card: state and writes.
 
-export const SupabaseSwitchKind = Schema.Literals(["metrics", "logs"])
+export const SupabaseSwitchKind = Schema.Literals(["metrics", "logs", "drain"])
 export type SupabaseSwitchKind = typeof SupabaseSwitchKind.Type
 
 /** A switch flip the server has not confirmed: shown in place of the status until the re-read lands. */
@@ -102,6 +102,25 @@ export const SetSupabaseLogs = Command.define("SetSupabaseProjectLogs", {
 				onFailure: (error) =>
 					Message.CompletedSupabaseLogs({ ref, enabled, failure: toLoadFailure(error) }),
 				onSuccess: () => Message.CompletedSupabaseLogs({ ref, enabled, failure: null }),
+			}),
+		),
+})
+
+export const SetSupabaseLogDrain = Command.define("SetSupabaseProjectLogDrain", {
+	args: { ref: SupabaseProjectRef, enabled: Schema.Boolean },
+	messages: [Message.CompletedSupabaseLogDrain],
+	execute: ({ ref, enabled }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			yield* client.integrations.supabaseUpdateProject({
+				params: { ref },
+				payload: new SupabaseProjectUpdateRequest({ logDrainEnabled: enabled }),
+			})
+		}).pipe(
+			Effect.match({
+				onFailure: (error) =>
+					Message.CompletedSupabaseLogDrain({ ref, enabled, failure: toLoadFailure(error) }),
+				onSuccess: () => Message.CompletedSupabaseLogDrain({ ref, enabled, failure: null }),
 			}),
 		),
 })

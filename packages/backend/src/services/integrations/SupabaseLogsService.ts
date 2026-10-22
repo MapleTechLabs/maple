@@ -7,7 +7,13 @@
  * rate limit is per project, and one slow project must not hold its siblings back). Watermarks
  * only advance past rows ingest accepted.
  */
-import { IntegrationsNotFoundError, IntegrationsPersistenceError, OrgId, UserId } from "@maple/domain/http"
+import {
+	IntegrationsNotFoundError,
+	IntegrationsPersistenceError,
+	IntegrationsValidationError,
+	OrgId,
+	UserId,
+} from "@maple/domain/http"
 import type { SupabaseProjectRef } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -111,7 +117,10 @@ export interface SupabaseLogsServiceApi {
 		orgId: OrgId,
 		ref: SupabaseProjectRef,
 		enabled: boolean,
-	) => Effect.Effect<void, IntegrationsNotFoundError | IntegrationsPersistenceError>
+	) => Effect.Effect<
+		void,
+		IntegrationsNotFoundError | IntegrationsValidationError | IntegrationsPersistenceError
+	>
 	readonly pollOrg: (
 		orgId: OrgId,
 	) => Effect.Effect<SupabaseLogsPollOrgSummary, IntegrationsPersistenceError>
@@ -165,7 +174,32 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.supabase.project_ref": ref, enabled })
 				const now = yield* Clock.currentTimeMillis
-				const changed = yield* dbExecute((db) =>
+				const [project] = yield* dbExecute((db) =>
+					db.run(
+						PG.from(SupabaseProjects)
+							.select("id", "logDrainEnabled", "logDrainsJson")
+							.where(($) => [$.orgId.eq(orgId), $.projectRef.eq(ref), $.removedAt.isNull()])
+							.limit(1),
+					),
+				)
+				if (project === undefined) {
+					return yield* new IntegrationsNotFoundError({
+						message: `No Supabase project ${ref} is connected to this organization`,
+					})
+				}
+				// A log drain already delivers this project's logs; polling too would store them twice.
+				const manual = project.logDrainsJson.find((drain) => drain.toMaple && !drain.managedByMaple)
+				if (enabled && manual !== undefined) {
+					return yield* new IntegrationsValidationError({
+						message: `Supabase project ${ref} already sends its logs to Maple through the drain "${manual.name}". Polling too would store them twice.`,
+					})
+				}
+				if (enabled && project.logDrainEnabled) {
+					return yield* new IntegrationsValidationError({
+						message: `Supabase project ${ref} delivers its logs through a log drain. Turn the drain off to poll instead.`,
+					})
+				}
+				yield* dbExecute((db) =>
 					db.run(
 						PG.update(SupabaseProjects)
 							.set(
@@ -181,30 +215,15 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 										}
 									: { logsEnabled: false, logsError: null, updatedAt: now },
 							)
-							// Re-enabling an enabled project keeps its watermark, so a repeated PATCH loses nothing.
+							// Re-enabling an enabled project keeps its watermark, so a repeated PATCH loses nothing;
+							// a drain turned on since the read still wins.
 							.where(($) => [
-								$.orgId.eq(orgId),
-								$.projectRef.eq(ref),
+								$.id.eq(project.id),
 								$.removedAt.isNull(),
-								...(enabled ? [$.logsEnabled.eq(false)] : []),
-							])
-							.returning("id"),
+								...(enabled ? [$.logsEnabled.eq(false), $.logDrainEnabled.eq(false)] : []),
+							]),
 					),
 				)
-				if (changed.length > 0) return
-				const existing = yield* dbExecute((db) =>
-					db.run(
-						PG.from(SupabaseProjects)
-							.select("id")
-							.where(($) => [$.orgId.eq(orgId), $.projectRef.eq(ref), $.removedAt.isNull()])
-							.limit(1),
-					),
-				)
-				if (existing.length === 0) {
-					return yield* new IntegrationsNotFoundError({
-						message: `No Supabase project ${ref} is connected to this organization`,
-					})
-				}
 			})
 
 			const claimLease = (project: SupabaseProjectRow, now: number) =>
@@ -355,7 +374,8 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 										label: "Supabase logs",
 									}),
 								)
-								if (accepted._tag === "Failure") return { delivered, failure: accepted.failure }
+								if (accepted._tag === "Failure")
+									return { delivered, failure: accepted.failure }
 								if (index < chunks.length - 1) {
 									const mark = acceptedWatermark(rows, Arr.lastNonEmpty(chunk))
 									yield* updateClaimed(claimed, {

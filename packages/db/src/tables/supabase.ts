@@ -9,7 +9,7 @@ import {
 	SupabaseProjectRef,
 	UserId,
 } from "@maple/domain/primitives"
-import { SupabaseAdvisorLint, SupabaseTopQuery } from "@maple/domain/http"
+import { SupabaseAdvisorLint, SupabaseLogDrainSummary, SupabaseTopQuery } from "@maple/domain/http"
 import { Sources } from "./sources"
 
 /**
@@ -75,6 +75,18 @@ export const SupabaseProjects = PG.table("supabase_projects", {
 		logDrainEnabled: PG.column(PG.bool, { name: "log_drain_enabled", default: false }),
 		/** Supabase's id for the log drain Maple created on this project. */
 		logDrainId: PG.column(PG.nullable(PG.text), { name: "log_drain_id" }),
+		/** The `maple_src_` token source the drain sends as; nulled if the source is deleted. */
+		logDrainSourceId: PG.column(PG.nullable(PG.brand(PG.text, SourceId)), {
+			name: "log_drain_source_id",
+		}),
+		/** Why an enabled drain is not delivering; discovery sets it, a re-enable clears it. */
+		logDrainError: PG.column(PG.nullable(PG.text), { name: "log_drain_error" }),
+		/** Every drain on the project at the last good listing, secrets stripped. */
+		logDrainsJson: PG.column(PG.jsonb(Schema.Array(SupabaseLogDrainSummary)), {
+			name: "log_drains_json",
+			default: [],
+		}),
+		logDrainsCheckedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "log_drains_checked_at" }),
 		/** Opt-in: polled logs count against the org's ingest. */
 		logsEnabled: PG.column(PG.bool, { name: "logs_enabled", default: false }),
 		/** Logs before this were sent; the next poll reads from here. */
@@ -96,6 +108,7 @@ export const SupabaseProjects = PG.table("supabase_projects", {
 	indexes: [
 		PG.uniqueIndex("supabase_projects_connection_ref_idx", ["connectionId", "projectRef"]),
 		PG.index("supabase_projects_org_idx", ["orgId"]),
+		PG.index("supabase_projects_log_drain_source_idx", ["logDrainSourceId"]),
 	],
 	foreignKeys: [
 		PG.foreignKey({
@@ -103,6 +116,12 @@ export const SupabaseProjects = PG.table("supabase_projects", {
 			references: SupabaseConnections,
 			foreignColumns: ["id"],
 			onDelete: "cascade",
+		}),
+		PG.foreignKey({
+			columns: ["logDrainSourceId"],
+			references: Sources,
+			foreignColumns: ["id"],
+			onDelete: "set null",
 		}),
 	],
 	tenantColumn: "orgId",

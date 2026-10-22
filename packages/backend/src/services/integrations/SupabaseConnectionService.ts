@@ -1,27 +1,49 @@
 // Supabase integration: binds the one Supabase organization a grant (SupabaseOAuthService) covers,
-// owns its source, discovers its projects and keeps one managed scrape target per project.
+// owns its source, discovers its projects and keeps one managed scrape target per project. Discovery
+// also lists each project's log drains; an opt-in drain sends OTLP logs to the ingest gateway as its
+// own logs-only `maple_src_` token source.
 import { randomUUID } from "node:crypto"
 import {
 	IntegrationsNotConnectedError,
 	IntegrationsNotFoundError,
 	IntegrationsPersistenceError,
+	IntegrationsPlanRequiredError,
 	IntegrationsUpstreamError,
+	IntegrationsValidationError,
 	type OrgId,
 	SupabaseIntegrationStatus,
+	type SupabaseLogDrainSummary,
 	SupabaseOrganizationSummary,
 	SupabaseProjectStatus,
 	type SupabaseProjectUpdateRequest,
 	type UserId,
 } from "@maple/domain/http"
-import { SupabaseConnectionId, SupabaseProjectId, type SupabaseProjectRef } from "@maple/domain/primitives"
+import {
+	type SourceId,
+	SupabaseConnectionId,
+	SupabaseProjectId,
+	type SupabaseProjectRef,
+} from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { SupabaseConnections, SupabaseProjects, type SupabaseConnectionRow } from "@maple/db/tables"
-import { Cause, Clock, Context, Duration, Effect, Layer, Ref, Schema } from "effect"
+import {
+	Sources,
+	SupabaseConnections,
+	SupabaseProjects,
+	type SupabaseConnectionRow,
+	type SupabaseProjectRow,
+} from "@maple/db/tables"
+import { Cause, Clock, Context, Duration, Effect, Layer, Option, Redacted, Ref, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
+import { Env } from "@maple/backend/platform/Env"
+import {
+	type SupabaseAccessTokenError,
+	SupabaseOAuthService,
+} from "@maple/backend/services/auth/SupabaseOAuthService"
+import { toUpstreamError } from "@maple/backend/services/auth/oauth/connection-helpers"
+import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import {
 	deleteSourcesOf,
 	integrationSourceName,
@@ -29,7 +51,18 @@ import {
 	reportPoll,
 	upsertWithSource,
 } from "@maple/backend/services/org/integration-sources"
-import { listProjects, type SupabaseOrganization, type SupabaseProject } from "./supabase/api"
+import {
+	createLogDrain,
+	DRAINS_PLAN_MESSAGE,
+	deleteLogDrain,
+	listLogDrains,
+	listProjects,
+	logDrainDestination,
+	type SupabaseApiError,
+	type SupabaseLogDrain,
+	type SupabaseOrganization,
+	type SupabaseProject,
+} from "./supabase/api"
 import { deleteSupabaseScrapeTargets, reconcileSupabaseScrapeTargets } from "./supabase/scrape-targets"
 
 /** A discovery holds its lease this long; a crashed run frees the org after it. */
@@ -55,6 +88,17 @@ export const UNHEALTHY_STATUSES: ReadonlySet<string> = new Set([
 
 const REVOKED_REASON = "Supabase no longer accepts this authorization. Reconnect Supabase."
 
+const DRAIN_MISSING = "The log drain was removed in Supabase. Turn it off and on again to recreate it."
+const DRAIN_SOURCE_DELETED =
+	"The Maple source this log drain sends as was deleted. Turn it off and on again to recreate it."
+const DRAIN_CONCURRENCY = 3
+/**
+ * Marks the drains one Maple org on one deployment creates, so a drain it lost track of is never
+ * taken for a hand-made one, and another org's or deployment's drain is never taken for its own.
+ */
+export const mapleDrainDescription = (orgId: string, ingestHost: string | null) =>
+	`OpenTelemetry logs to Maple, managed by the Maple Supabase integration (${orgId} via ${ingestHost ?? "unknown"}).`
+
 const decodeConnectionId = Schema.decodeUnknownSync(SupabaseConnectionId)
 const decodeProjectId = Schema.decodeUnknownSync(SupabaseProjectId)
 
@@ -67,6 +111,14 @@ export interface SupabaseDiscoverySummary {
 	readonly removed: number
 	readonly error: string | null
 }
+
+/** What toggling a project can fail with; drain toggles reach Supabase and mint a token source. */
+export type SupabaseProjectUpdateError =
+	| IntegrationsNotFoundError
+	| IntegrationsPersistenceError
+	| IntegrationsPlanRequiredError
+	| IntegrationsValidationError
+	| SupabaseAccessTokenError
 
 export interface SupabaseDiscoverAllSummary {
 	readonly orgs: number
@@ -104,12 +156,17 @@ export interface SupabaseConnectionServiceApi {
 		SupabaseIntegrationStatus,
 		IntegrationsNotConnectedError | IntegrationsPersistenceError
 	>
+	/**
+	 * Metrics and log drain switches; polled logs are SupabaseLogsService's. Turning a drain on
+	 * turns polling off, so a project's logs arrive once.
+	 */
 	readonly updateProject: (
 		orgId: OrgId,
+		userId: UserId,
 		ref: SupabaseProjectRef,
 		request: SupabaseProjectUpdateRequest,
-	) => Effect.Effect<SupabaseIntegrationStatus, IntegrationsNotFoundError | IntegrationsPersistenceError>
-	/** Revoke the grant, then drop the connection, its projects and its source. */
+	) => Effect.Effect<SupabaseIntegrationStatus, SupabaseProjectUpdateError>
+	/** Delete Maple's log drains (best effort), revoke the grant, then drop the connection, its projects and sources. */
 	readonly disconnect: (
 		orgId: OrgId,
 	) => Effect.Effect<{ readonly disconnected: boolean }, IntegrationsPersistenceError>
@@ -127,6 +184,11 @@ export class SupabaseConnectionService extends Context.Service<
 		const database = yield* Database
 		const oauth = yield* SupabaseOAuthService
 		const httpClient = yield* HttpClient.HttpClient
+		const sources = yield* SourcesService
+		const env = yield* Env
+		const ingestBaseUrl = env.MAPLE_INGEST_PUBLIC_URL.replace(/\/+$/, "")
+		const ingestLogsUrl = `${ingestBaseUrl}/v1/logs`
+		const ingestHost = URL.canParse(ingestBaseUrl) ? new URL(ingestBaseUrl).host : null
 		const dbExecute = makeDbExecute(database, "SupabaseConnectionService", toPersistenceError)
 
 		const loadConnection = (orgId: OrgId) =>
@@ -186,6 +248,400 @@ export class SupabaseConnectionService extends Context.Service<
 			return summary
 		})
 
+		const toUpstream = (error: SupabaseApiError) => toUpstreamError(error.message, error.status)
+
+		/** Run one Management API call with the org's token; Supabase failures become domain errors. */
+		const withSupabase = <A>(
+			orgId: OrgId,
+			use: (accessToken: string) => Effect.Effect<A, SupabaseApiError>,
+		) =>
+			oauth
+				.withAccessToken(orgId, use)
+				.pipe(
+					Effect.catchTag("@maple/supabase/SupabaseApiError", (error) =>
+						Effect.fail(toUpstream(error)),
+					),
+				)
+
+		const updateProjectRow = (
+			projectId: SupabaseProjectId,
+			set: PG.UpdateSetOf<typeof SupabaseProjects>,
+		) =>
+			dbExecute((db) =>
+				db.run(
+					PG.update(SupabaseProjects)
+						.set(set)
+						.where(($) => [$.id.eq(projectId)]),
+				),
+			)
+
+		/** Drain token sources are `token` kind, so the integration source sweep never reaches them. */
+		const deleteDrainSource = (orgId: OrgId, sourceId: SourceId) =>
+			dbExecute((db) =>
+				db.run(
+					PG.deleteFrom(Sources).where(($) => [
+						$.orgId.eq(orgId),
+						$.id.eq(sourceId),
+						$.kind.eq("token"),
+					]),
+				),
+			).pipe(Effect.asVoid)
+
+		/** Cleanup on a path that already failed or is best effort: log, never fail. */
+		const bestEffort = (what: string, orgId: OrgId, ref: string) =>
+			Effect.catchCause((cause: Cause.Cause<unknown>) =>
+				Cause.hasInterruptsOnly(cause)
+					? Effect.interrupt
+					: Effect.logWarning(`supabase ${what} failed`, {
+							orgId,
+							ref,
+							error: summarizeCause(cause),
+						}),
+			)
+
+		const deleteUpstreamDrain = (orgId: OrgId, ref: SupabaseProjectRef, drainId: string) =>
+			withSupabase(orgId, (accessToken) =>
+				deleteLogDrain(httpClient, oauth.apiBaseUrl, accessToken, ref, drainId),
+			)
+
+		const listDrains = (orgId: OrgId, ref: SupabaseProjectRef) =>
+			withSupabase(orgId, (accessToken) =>
+				listLogDrains(httpClient, oauth.apiBaseUrl, accessToken, ref),
+			)
+
+		/** A listed drain without its secrets; `toMaple` compares the destination host with our ingest. */
+		const isOurs = (orgId: OrgId, drain: SupabaseLogDrain) =>
+			drain.attributes.description === mapleDrainDescription(orgId, ingestHost)
+
+		const summarizeDrain = (
+			orgId: OrgId,
+			drain: SupabaseLogDrain,
+			managedDrainId: string | null,
+		): SupabaseLogDrainSummary => {
+			const destination = logDrainDestination(drain)
+			const backendType = drain.attributes.backend_type
+			const managedByMaple = drain.id === managedDrainId || isOurs(orgId, drain)
+			return {
+				id: drain.id,
+				name: drain.attributes.name,
+				backendType,
+				destination,
+				toMaple:
+					managedByMaple ||
+					((backendType === "otlp" || backendType === "webhook") &&
+						ingestHost !== null &&
+						destination === ingestHost),
+				managedByMaple,
+			}
+		}
+
+		/** Delete the drain at Supabase (a 404 is fine), then its source, then clear the row. */
+		const teardownDrain = Effect.fn("SupabaseConnectionService.teardownDrain")(function* (
+			orgId: OrgId,
+			project: SupabaseProjectRow,
+			now: number,
+			options: { readonly deleteUpstream: boolean } = { deleteUpstream: true },
+		) {
+			yield* Effect.annotateCurrentSpan({ orgId, "maple.supabase.project_ref": project.projectRef })
+			const drainId = project.logDrainId
+			if (drainId !== null && options.deleteUpstream) {
+				yield* deleteUpstreamDrain(orgId, project.projectRef, drainId)
+			}
+			if (project.logDrainSourceId !== null) yield* deleteDrainSource(orgId, project.logDrainSourceId)
+			// Only clears the drain it tore down: a concurrent enable's new drain stays recorded.
+			yield* dbExecute((db) =>
+				db.run(
+					PG.update(SupabaseProjects)
+						.set({
+							logDrainEnabled: false,
+							logDrainId: null,
+							logDrainSourceId: null,
+							logDrainError: null,
+							logDrainsJson: project.logDrainsJson.filter((drain) => drain.id !== drainId),
+							updatedAt: now,
+						})
+						.where(($) => [
+							$.id.eq(project.id),
+							drainId === null ? $.logDrainId.isNull() : $.logDrainId.eq(drainId),
+						]),
+				),
+			)
+		})
+
+		/**
+		 * Delete this org's marked drains that no row records (a timed-out create, a failed retire).
+		 * The recorded id is re-read first, so a concurrent enable's drain is never deleted. Best effort.
+		 */
+		const deleteOrphanDrains = (project: SupabaseProjectRow, candidates: ReadonlyArray<string>) =>
+			Effect.gen(function* () {
+				if (candidates.length === 0) return
+				const [current] = yield* dbExecute((db) =>
+					db.run(
+						PG.from(SupabaseProjects)
+							.select("logDrainId")
+							.where(($) => [$.id.eq(project.id)])
+							.limit(1),
+					),
+				)
+				const recorded = current?.logDrainId ?? null
+				yield* Effect.forEach(
+					candidates.filter((drainId) => drainId !== recorded),
+					(drainId) => deleteUpstreamDrain(project.orgId, project.projectRef, drainId),
+					{ discard: true },
+				)
+			}).pipe(bestEffort("orphan drain delete", project.orgId, project.projectRef))
+
+		/**
+		 * Mint the project's token source, then create the drain at Supabase. A failed drain deletes
+		 * the source again; the row records both only once the drain exists. A drain to Maple set up
+		 * by hand blocks this: two drains would store every log twice.
+		 */
+		const enableDrain = Effect.fn("SupabaseConnectionService.enableDrain")(function* (
+			orgId: OrgId,
+			userId: UserId,
+			project: SupabaseProjectRow,
+			now: number,
+		) {
+			const ref = project.projectRef
+			yield* Effect.annotateCurrentSpan({ orgId, "maple.supabase.project_ref": ref })
+			const healthy =
+				project.logDrainEnabled &&
+				project.logDrainError === null &&
+				project.logDrainId !== null &&
+				project.logDrainSourceId !== null
+			if (healthy) return
+			const listed = yield* listDrains(orgId, ref)
+			// Free refuses the listing before a create could answer 402, so the plan gate shows here.
+			if (Option.isNone(listed)) {
+				return yield* new IntegrationsPlanRequiredError({ message: DRAINS_PLAN_MESSAGE })
+			}
+			const existing = listed.value.map((drain) => summarizeDrain(orgId, drain, project.logDrainId))
+			const manual = existing.find((drain) => drain.toMaple && !drain.managedByMaple)
+			if (manual !== undefined) {
+				return yield* new IntegrationsValidationError({
+					message: `This project already sends logs to Maple through the drain "${manual.name}" set up in Supabase. Keep using it, or delete it in Supabase before letting Maple manage one.`,
+				})
+			}
+			// What is left of a drain flagged broken goes first, so a re-enable never leaves two.
+			yield* teardownDrain(orgId, project, now)
+			yield* deleteOrphanDrains(
+				project,
+				existing.filter((drain) => drain.managedByMaple).map((drain) => drain.id),
+			)
+			// Mark the drain pending: a disable that lands before the final write clears the mark,
+			// and the final write then fails its condition and undoes the drain.
+			const claimed = yield* dbExecute((db) =>
+				db.run(
+					PG.update(SupabaseProjects)
+						.set({ logDrainEnabled: true, logDrainError: null, updatedAt: now })
+						.where(($) => [$.id.eq(project.id), $.logDrainId.isNull()])
+						.returning("id"),
+				),
+			)
+			// Another enable stored its drain first.
+			if (claimed.length === 0) return
+			const releasePending = dbExecute((db) =>
+				db.run(
+					PG.update(SupabaseProjects)
+						.set({ logDrainEnabled: false, updatedAt: now })
+						.where(($) => [$.id.eq(project.id), $.logDrainId.isNull()]),
+				),
+			).pipe(bestEffort("pending drain release", orgId, ref))
+			const minted = yield* sources
+				.create(orgId, userId, {
+					name: `Supabase logs: ${project.name}`.slice(0, 100),
+					platform: "supabase",
+					description: `Log drain of Supabase project ${ref}, created by the Supabase integration.`,
+					allowedSignals: ["logs"],
+					resourceAttributes: [
+						{ key: "supabase.project.ref", value: ref, mode: "set" },
+						{ key: "supabase.project.name", value: project.name, mode: "set" },
+						{ key: "service.name", value: "supabase", mode: "default" },
+					],
+				})
+				.pipe(
+					Effect.catchTags({
+						"@maple/http/errors/SourceValidationError": (error) =>
+							Effect.fail(new IntegrationsValidationError({ message: error.message })),
+						"@maple/http/errors/SourcePersistenceError": (error) =>
+							Effect.fail(new IntegrationsPersistenceError({ message: error.message })),
+					}),
+					Effect.onError(() => releasePending),
+				)
+			const sourceId = minted.source.id
+			const token = Redacted.make(minted.secret)
+			yield* Effect.annotateCurrentSpan({ "maple.source.id": sourceId })
+			const removeSource = deleteDrainSource(orgId, sourceId).pipe(
+				bestEffort("drain source rollback", orgId, ref),
+			)
+			const drain = yield* oauth
+				.withAccessToken(orgId, (accessToken) =>
+					createLogDrain(httpClient, oauth.apiBaseUrl, accessToken, ref, {
+						name: "Maple",
+						description: mapleDrainDescription(orgId, ingestHost),
+						endpoint: ingestLogsUrl,
+						token,
+					}),
+				)
+				.pipe(
+					Effect.catchTags({
+						"@maple/supabase/SupabasePlanRequiredError": (error) =>
+							Effect.fail(new IntegrationsPlanRequiredError({ message: error.message })),
+						"@maple/supabase/SupabaseApiError": (error) => Effect.fail(toUpstream(error)),
+					}),
+					// A timeout or 5xx may still have stored the drain; sweep it so it is not billed unrecorded.
+					Effect.onError(() =>
+						Effect.andThen(releasePending, removeSource).pipe(
+							Effect.andThen(
+								listDrains(orgId, ref).pipe(
+									Effect.flatMap((listed) =>
+										deleteOrphanDrains(
+											project,
+											Option.getOrElse(listed, () => [])
+												.filter((drain) => isOurs(orgId, drain))
+												.map((drain) => drain.id),
+										),
+									),
+									bestEffort("orphan drain sweep", orgId, ref),
+								),
+							),
+						),
+					),
+				)
+			yield* Effect.annotateCurrentSpan({ "maple.supabase.log_drain_id": drain.id })
+			// Each half runs on its own: a failed upstream delete must not leave the token live.
+			const undo = Effect.andThen(
+				deleteUpstreamDrain(orgId, ref, drain.id).pipe(bestEffort("drain rollback", orgId, ref)),
+				deleteDrainSource(orgId, sourceId).pipe(bestEffort("drain source rollback", orgId, ref)),
+			)
+			// Conditional on no drain recorded, so a concurrent enable cannot leave a second one behind.
+			// Polling stops in the same write: the drain now delivers this project's logs.
+			const stored = yield* dbExecute((db) =>
+				db.run(
+					PG.update(SupabaseProjects)
+						.set({
+							logDrainEnabled: true,
+							logDrainId: drain.id,
+							logDrainSourceId: sourceId,
+							logDrainError: null,
+							logDrainsJson: [
+								// The teardown above deleted any earlier managed drain.
+								...existing.filter((item) => !item.managedByMaple && item.id !== drain.id),
+								summarizeDrain(orgId, drain, drain.id),
+							],
+							logDrainsCheckedAt: now,
+							logsEnabled: false,
+							logsError: null,
+							updatedAt: now,
+						})
+						.where(($) => [
+							$.id.eq(project.id),
+							$.logDrainId.isNull(),
+							$.logDrainEnabled.eq(true),
+						])
+						.returning("id"),
+				),
+			).pipe(Effect.onError(() => Effect.andThen(undo, releasePending)))
+			if (stored.length === 0) yield* undo
+		})
+
+		/**
+		 * List every live project's drains and store their summaries, and flag an enabled managed
+		 * drain that stopped delivering (gone upstream, or its source deleted). Never recreates; that
+		 * waits for the user. A failed listing keeps the previous snapshot.
+		 */
+		const inspectDrains = Effect.fn("SupabaseConnectionService.inspectDrains")(function* (
+			connection: SupabaseConnectionRow,
+			now: number,
+		) {
+			const orgId = connection.orgId
+			const live = (yield* loadProjects(connection.id)).filter((row) => row.removedAt === null)
+			const failures = yield* Ref.make(0)
+			yield* Effect.forEach(
+				live,
+				(row) =>
+					Effect.gen(function* () {
+						const listed = yield* listDrains(orgId, row.projectRef)
+						// A plan without drains keeps the (empty) snapshot; nothing to record.
+						if (Option.isNone(listed)) return
+						const drains = listed.value.map((drain) =>
+							summarizeDrain(orgId, drain, row.logDrainId),
+						)
+						const drainError = !row.logDrainEnabled
+							? null
+							: row.logDrainSourceId === null
+								? DRAIN_SOURCE_DELETED
+								: drains.some((drain) => drain.id === row.logDrainId)
+									? null
+									: DRAIN_MISSING
+						// Skipped if an enable or disable landed since the read: its write is newer.
+						yield* dbExecute((db) =>
+							db.run(
+								PG.update(SupabaseProjects)
+									.set({
+										logDrainsJson: drains,
+										logDrainsCheckedAt: now,
+										logDrainError: drainError,
+										updatedAt: now,
+									})
+									.where(($) => [
+										$.id.eq(row.id),
+										$.logDrainEnabled.eq(row.logDrainEnabled),
+										row.logDrainId === null
+											? $.logDrainId.isNull()
+											: $.logDrainId.eq(row.logDrainId),
+									]),
+							),
+						)
+					}).pipe(
+						// Free-plan or paused projects may refuse the listing; that is not a discovery failure.
+						Effect.catchCause((cause) =>
+							Cause.hasInterruptsOnly(cause)
+								? Effect.interrupt
+								: Ref.update(failures, (n) => n + 1).pipe(
+										Effect.andThen(
+											Effect.logDebug("supabase log drain listing failed", {
+												orgId,
+												ref: row.projectRef,
+												error: summarizeCause(cause),
+											}),
+										),
+									),
+						),
+					),
+				{ concurrency: DRAIN_CONCURRENCY, discard: true },
+			)
+			yield* Effect.annotateCurrentSpan({
+				"maple.supabase.log_drain_projects": live.length,
+				"maple.supabase.log_drain_failures": yield* Ref.get(failures),
+			})
+		})
+
+		/** Best effort: delete these projects' managed drains upstream and their sources, and clear the rows. */
+		const retireDrains = Effect.fn("SupabaseConnectionService.retireDrains")(function* (
+			orgId: OrgId,
+			projects: ReadonlyArray<SupabaseProjectRow>,
+			now: number,
+		) {
+			const drained = projects.filter((row) => row.logDrainId !== null || row.logDrainSourceId !== null)
+			yield* Effect.annotateCurrentSpan({ orgId, "maple.supabase.log_drains": drained.length })
+			yield* Effect.forEach(
+				drained,
+				(row) =>
+					Effect.gen(function* () {
+						const drainId = row.logDrainId
+						// A failed delete leaves a marked drain the next enable sweeps up.
+						if (drainId !== null) {
+							yield* deleteUpstreamDrain(orgId, row.projectRef, drainId).pipe(
+								bestEffort("log drain delete", orgId, row.projectRef),
+							)
+						}
+						yield* teardownDrain(orgId, row, now, { deleteUpstream: false })
+					}).pipe(bestEffort("log drain retire", orgId, row.projectRef)),
+				{ concurrency: DRAIN_CONCURRENCY, discard: true },
+			)
+		})
+
 		const getStatus = Effect.fn("SupabaseConnectionService.getStatus")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const connection = yield* loadConnection(orgId)
@@ -230,6 +686,10 @@ export class SupabaseConnectionService extends Context.Service<
 								status: row.status,
 								metricsEnabled: row.metricsEnabled,
 								logDrainEnabled: row.logDrainEnabled,
+								logDrainError: row.logDrainEnabled ? row.logDrainError : null,
+								logDrainSourceId: row.logDrainSourceId,
+								logDrains: row.logDrainsJson,
+								logDrainsCheckedAt: row.logDrainsCheckedAt,
 								logsEnabled: row.logsEnabled,
 								logsLastPolledAt: row.logsLastPolledAt,
 								logsError: row.logsError,
@@ -307,6 +767,8 @@ export class SupabaseConnectionService extends Context.Service<
 					),
 				{ discard: true },
 			)
+			// A deleted project's drain went with it; its source and any upstream remnant follow.
+			yield* retireDrains(connection.orgId, gone, now)
 			const unhealthy = projects.filter((project) => UNHEALTHY_STATUSES.has(project.status)).length
 			yield* Effect.annotateCurrentSpan({
 				"maple.supabase.projects": projects.length,
@@ -397,6 +859,7 @@ export class SupabaseConnectionService extends Context.Service<
 						now,
 					)
 					yield* reconcileTargets(claimed, now)
+					yield* inspectDrains(claimed, now)
 					yield* updateConnection(claimed.id, {
 						lastDiscoveryAt: now,
 						lastDiscoveryError: null,
@@ -490,11 +953,40 @@ export class SupabaseConnectionService extends Context.Service<
 							existing !== undefined && existing.supabaseOrganizationId !== organization.id
 						// The old organization's projects are no longer granted.
 						if (organizationChanged) {
+							// The new grant cannot reach the old organization's drains, so their token sources
+							// go instead: ingest then refuses whatever those drains still send.
+							const drained = yield* db.run(
+								PG.from(SupabaseProjects)
+									.select("logDrainSourceId")
+									.where(($) => [
+										$.connectionId.eq(existing.id),
+										$.logDrainSourceId.isNotNull(),
+									]),
+							)
 							yield* db.run(
 								PG.update(SupabaseProjects)
-									.set({ removedAt: now, updatedAt: now })
+									.set({
+										removedAt: now,
+										updatedAt: now,
+										logDrainEnabled: false,
+										logDrainId: null,
+										logDrainSourceId: null,
+										logDrainError: null,
+									})
 									.where(($) => [$.connectionId.eq(existing.id), $.removedAt.isNull()]),
 							)
+							const drainSourceIds = drained.flatMap((row) =>
+								row.logDrainSourceId === null ? [] : [row.logDrainSourceId],
+							)
+							if (drainSourceIds.length > 0) {
+								yield* db.run(
+									PG.deleteFrom(Sources).where(($) => [
+										$.orgId.eq(orgId),
+										PG.inList($.id, drainSourceIds),
+										$.kind.eq("token"),
+									]),
+								)
+							}
 						}
 						const rebind = { ...binding, lastDiscoveryError: null, updatedAt: now }
 						const connection = yield* upsertWithSource(
@@ -556,34 +1048,94 @@ export class SupabaseConnectionService extends Context.Service<
 
 		const updateProject = Effect.fn("SupabaseConnectionService.updateProject")(function* (
 			orgId: OrgId,
+			userId: UserId,
 			ref: SupabaseProjectRef,
 			request: SupabaseProjectUpdateRequest,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.supabase.project_ref": ref })
+			if (request.logDrainEnabled === true && request.logsEnabled === true) {
+				return yield* new IntegrationsValidationError({
+					message: "A project's logs come from either a log drain or polling, not both.",
+				})
+			}
 			const now = yield* Clock.currentTimeMillis
-			const changes: PG.UpdateSetOf<typeof SupabaseProjects> =
-				request.metricsEnabled === undefined ? {} : { metricsEnabled: request.metricsEnabled }
-			const updated = yield* dbExecute((db) =>
-				db.run(
-					PG.update(SupabaseProjects)
-						.set({ ...changes, updatedAt: now })
-						.where(($) => [$.orgId.eq(orgId), $.projectRef.eq(ref), $.removedAt.isNull()])
-						.returning("id"),
-				),
-			)
 			const connection = yield* loadConnection(orgId)
-			if (updated.length === 0 || connection === null) {
+			const project =
+				connection === null
+					? undefined
+					: (yield* loadProjects(connection.id)).find(
+							(row) => row.projectRef === ref && row.removedAt === null,
+						)
+			if (connection === null || project === undefined) {
 				return yield* new IntegrationsNotFoundError({
 					message: `No Supabase project ${ref} is connected to this organization`,
 				})
 			}
-			yield* reconcileTargets(connection, now)
+			// Refused before any write, so a request never half-applies on these preconditions.
+			// Turning polling on lists the drains live, so one set up since discovery is seen; a refused
+			// listing (Free plan, paused project) falls back to the stored snapshot.
+			const listedNow =
+				request.logsEnabled === true
+					? yield* listDrains(orgId, ref).pipe(
+							Effect.map(
+								Option.map((listed) =>
+									listed.map((drain) => summarizeDrain(orgId, drain, project.logDrainId)),
+								),
+							),
+							Effect.orElseSucceed(() => Option.none<ReadonlyArray<SupabaseLogDrainSummary>>()),
+						)
+					: Option.none()
+			// A good live listing replaces the snapshot, so the polling switch's own check agrees with it.
+			if (Option.isSome(listedNow)) {
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(SupabaseProjects)
+							.set({ logDrainsJson: listedNow.value, logDrainsCheckedAt: now })
+							.where(($) => [
+								$.id.eq(project.id),
+								project.logDrainId === null
+									? $.logDrainId.isNull()
+									: $.logDrainId.eq(project.logDrainId),
+							]),
+					),
+				)
+			}
+			const drainsNow = Option.getOrElse(listedNow, () => project.logDrainsJson)
+			const manual = drainsNow.find((drain) => drain.toMaple && !drain.managedByMaple)
+			if (request.logsEnabled === true && manual !== undefined) {
+				return yield* new IntegrationsValidationError({
+					message: `Supabase project ${ref} already sends its logs to Maple through the drain "${manual.name}". Polling too would store them twice.`,
+				})
+			}
+			if (
+				request.logsEnabled === true &&
+				request.logDrainEnabled !== false &&
+				project.logDrainEnabled
+			) {
+				return yield* new IntegrationsValidationError({
+					message: `Supabase project ${ref} delivers its logs through a log drain. Turn the drain off to poll instead.`,
+				})
+			}
+			// The drain goes first: it is the write that can fail upstream.
+			if (request.logDrainEnabled === true) yield* enableDrain(orgId, userId, project, now)
+			if (request.logDrainEnabled === false) yield* teardownDrain(orgId, project, now)
+			if (request.metricsEnabled !== undefined) {
+				yield* updateProjectRow(project.id, {
+					metricsEnabled: request.metricsEnabled,
+					updatedAt: now,
+				})
+				yield* reconcileTargets(connection, now)
+			}
 			return yield* getStatus(orgId)
 		})
 
 		const disconnect = Effect.fn("SupabaseConnectionService.disconnect")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			// Revoke first: it needs the stored refresh token.
+			const now = yield* Clock.currentTimeMillis
+			// Drains go before the revoke, which ends the access token their deletes need.
+			const existing = yield* loadConnection(orgId)
+			if (existing !== null) yield* retireDrains(orgId, yield* loadProjects(existing.id), now)
+			// Revoke next: it needs the stored refresh token.
 			const grant = yield* oauth.disconnect(orgId)
 			// The connection's source goes with it, and its projects through the cascade.
 			const deleted = yield* dbExecute((db) =>
@@ -601,7 +1153,24 @@ export class SupabaseConnectionService extends Context.Service<
 								discard: true,
 							},
 						)
-						yield* db.run(PG.deleteFrom(SupabaseProjects).where(($) => [$.orgId.eq(orgId)]))
+						// Drain sources a failed retire left behind go with their projects.
+						const drainSources = yield* db.run(
+							PG.deleteFrom(SupabaseProjects)
+								.where(($) => [$.orgId.eq(orgId)])
+								.returning("logDrainSourceId"),
+						)
+						const drainSourceIds = drainSources.flatMap((row) =>
+							row.logDrainSourceId === null ? [] : [row.logDrainSourceId],
+						)
+						if (drainSourceIds.length > 0) {
+							yield* db.run(
+								PG.deleteFrom(Sources).where(($) => [
+									$.orgId.eq(orgId),
+									PG.inList($.id, drainSourceIds),
+									$.kind.eq("token"),
+								]),
+							)
+						}
 						const rows = yield* db.run(
 							PG.deleteFrom(SupabaseConnections)
 								.where(($) => [$.orgId.eq(orgId)])
@@ -686,5 +1255,6 @@ export class SupabaseConnectionService extends Context.Service<
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(SupabaseOAuthService.layer),
+		Layer.provide(SourcesService.layer),
 	)
 }

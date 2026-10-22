@@ -13,6 +13,7 @@ import type { Model } from "./model"
 import {
 	LoadSupabaseMetrics,
 	ReadSupabaseClock,
+	SetSupabaseLogDrain,
 	SetSupabaseLogs,
 	SetSupabaseMetrics,
 	type SupabaseCardModel,
@@ -86,7 +87,7 @@ const toggled = (
 	ref: SupabaseProjectRef,
 	kind: SupabaseSwitchKind,
 	enabled: boolean,
-	command: ReturnType<typeof SetSupabaseMetrics | typeof SetSupabaseLogs>,
+	command: ReturnType<typeof SetSupabaseMetrics | typeof SetSupabaseLogs | typeof SetSupabaseLogDrain>,
 ): Return =>
 	model.supabaseCard.pending.some((entry) => entry.ref === ref)
 		? { model }
@@ -163,4 +164,22 @@ export const completedLogs = (
 		ref,
 		failure,
 		enabled ? "Failed to start collecting logs" : "Failed to stop collecting logs",
+	)
+
+export const toggledLogDrain = (model: Model, ref: SupabaseProjectRef, enabled: boolean): Return =>
+	toggled(model, ref, "drain", enabled, SetSupabaseLogDrain({ ref, enabled }))
+
+export const completedLogDrain = (
+	model: Model,
+	context: PageContext,
+	ref: SupabaseProjectRef,
+	enabled: boolean,
+	failure: LoadFailure | null,
+): Return =>
+	completed(
+		model,
+		context,
+		ref,
+		failure,
+		enabled ? "Failed to create the log drain" : "Failed to remove the log drain",
 	)

@@ -32,6 +32,10 @@ const project = (ref: string, name: string, metricsEnabled: boolean, lifecycle =
 	status: lifecycle,
 	metricsEnabled,
 	logDrainEnabled: false,
+	logDrainError: null,
+	logDrainSourceId: null,
+	logDrains: [],
+	logDrainsCheckedAt: null,
 	logsEnabled: metricsEnabled,
 	logsLastPolledAt: null,
 	logsError: null,
@@ -121,7 +125,9 @@ const withStatus = (connected: boolean): Model => {
 describe("supabase list", () => {
 	test("a connected organization without projects shows the empty state, not a fleet verdict", () => {
 		const entered = init({ search: {} }, context).model
-		const windowed = steps(entered, [Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })])
+		const windowed = steps(entered, [
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+		])
 		const empty = Schema.decodeUnknownSync(SupabaseIntegrationStatus)({
 			...status(true),
 			projects: [],

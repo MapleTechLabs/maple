@@ -204,6 +204,13 @@ export const Message = defineMessageUnion({
 		enabled: Schema.Boolean,
 		failure: Schema.NullOr(LoadFailure),
 	},
+	/** A project row's "Log drain" switch: creates or deletes the drain at Supabase. */
+	ToggledSupabaseLogDrain: { ref: SupabaseProjectRef, enabled: Schema.Boolean },
+	CompletedSupabaseLogDrain: {
+		ref: SupabaseProjectRef,
+		enabled: Schema.Boolean,
+		failure: Schema.NullOr(LoadFailure),
+	},
 	CompletedFetchOrganizations: result(V2PlanetScaleOrganizationList),
 	CompletedFetchWebhookConfig: result(V2PlanetScaleWebhookConfig),
 	ClickedChangeOrganization: {},
