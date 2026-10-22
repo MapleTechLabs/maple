@@ -488,7 +488,8 @@ list of yields. What it composes lives beside it:
 ## AWS: ingest, collector and Electric
 
 The Rust OTLP gateway (`apps/ingest`) runs on an ECS EC2 fleet of Graviton c7gd instances,
-one task per host in host networking, with the WAL on the local NVMe instance store. That is
+one task per host in host networking, with the WAL on the local NVMe instance store. PR
+previews run one t4g.small instead, with a 4 GiB WAL on the root volume (`WAL_STORAGE`). That is
 the only ingest path. The OTel collector and Electric (`apps/electric`) run as ECS Fargate
 services. The Prometheus scraper (`apps/scraper`, US prd only) is a Fargate singleton in the
 same VPC with no inbound traffic; its image is the single-file bundle `alchemy:build-deps`
