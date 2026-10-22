@@ -201,7 +201,7 @@ const engineMount = (h: H, model: Model, session: ReplayDetail, status: PlayerSt
 		h.DataAttribute(IDLE_ATTRIBUTE, JSON.stringify(player.isSkippingIdle ? model.meta.inactiveIntervals : [])),
 		h.DataAttribute(HOLD_ATTRIBUTE, String(player.isPlaying && isBuffering(model))),
 		h.DataAttribute(TOTAL_ATTRIBUTE, String(player.totalMs)),
-		h.DataAttribute(COMPLETE_ATTRIBUTE, String(!hasMoreChunks(model))),
+		h.DataAttribute(COMPLETE_ATTRIBUTE, hasMoreChunks(model) ? "" : String(trailingRanges(loader).length)),
 	]
 	return status === "ready"
 		? h.div(

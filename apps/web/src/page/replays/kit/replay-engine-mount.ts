@@ -13,9 +13,12 @@ export const SPEED_ATTRIBUTE = "replay-speed"
 export const IDLE_ATTRIBUTE = "replay-idle"
 export const HOLD_ATTRIBUTE = "replay-hold"
 export const TOTAL_ATTRIBUTE = "replay-total"
-/** "true" once every chunk is loaded; until then the engine running out of events is a stall, not the end. */
+/**
+ * Once every chunk is loaded, how many trailing ranges the engine is fed in all; empty until then.
+ * Until the engine has taken that many, running out of events is a stall, not the end.
+ */
 export const COMPLETE_ATTRIBUTE = "replay-complete"
-/** Dispatched on the surface by a feed Mount, `detail` the range's events. */
+/** Dispatched on the surface by a feed Mount, `detail` the range's events; the engine acknowledges with `preventDefault`. */
 export const REPLAY_EVENTS = "maple:replay-events"
 
 export type TransportAction = "play" | "pause" | "resume" | "replay"
@@ -96,6 +99,12 @@ const startEngine = <A>(
 		idle: readIdle(mount),
 		/** Ran out of loaded events while playing, with more of the recording still to come. */
 		isStarved: false,
+		/** Trailing ranges taken so far. */
+		fed: 0,
+	}
+	const isComplete = () => {
+		const expected = mount.getAttribute(`data-${COMPLETE_ATTRIBUTE}`)
+		return expected !== null && expected !== "" && state.fed >= Number(expected)
 	}
 	mount.innerHTML = ""
 	// rrweb can report a resize while it is still being constructed, before `engine` is bound.
@@ -109,7 +118,7 @@ const startEngine = <A>(
 			// rrweb finishes at its last loaded event. Mid-recording that is a buffer underrun: stay
 			// "playing" and pick up again when the next range is fed. The tick loop keeps running, since
 			// its ticks are what ask the loader for that range.
-			if (mount.getAttribute(`data-${COMPLETE_ATTRIBUTE}`) !== "true" && state.isPlaying) {
+			if (!isComplete() && state.isPlaying) {
 				state.isStarved = true
 				return
 			}
@@ -191,6 +200,8 @@ const startEngine = <A>(
 	})
 	const onEvents = (event: Event) => {
 		if (!(event instanceof CustomEvent) || !Array.isArray(event.detail)) return
+		event.preventDefault()
+		state.fed += 1
 		event.detail.forEach((item: unknown) => engine.addEvent(item))
 		if (!state.isStarved) return
 		// rrweb commits added events on a microtask; resume after they land.
