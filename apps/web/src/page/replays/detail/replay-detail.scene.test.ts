@@ -310,6 +310,11 @@ describe("replay detail", () => {
 		expect(done.meta.actionMarkers.map((marker) => marker.ms)).toEqual([5, 60_005, 120_005])
 
 		const playing = pageUpdate(pageUpdate(done, Message.ReadiedEngine({ seedVersion: done.loader.seedVersion, totalMs: 1 })).model, Message.ClickedPlay()).model
+		// Ticks well inside the window do not slide it; the engine running dry there does.
+		const early = pageUpdate(playing, Message.TickedEngine({ seedVersion: playing.loader.seedVersion, currentMs: 5_000 })).model
+		expect(early.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([0])
+		const dry = pageUpdate(playing, Message.StarvedEngine({ seedVersion: playing.loader.seedVersion, currentMs: 5_000 })).model
+		expect(dry.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([1, 2])
 		const slid = pageUpdate(playing, Message.TickedEngine({ seedVersion: playing.loader.seedVersion, currentMs: 9_500 })).model
 		// Chunk 1 was already fetched for its markers, so the new window is cut from the cache at once.
 		expect(slid.loader.seed.length).toBeGreaterThan(0)
@@ -328,6 +333,24 @@ describe("replay detail", () => {
 		const seeded = answerWith(openWith(manifest), chunkRows(0, 0)).model
 		const done = answerWith(answerWith(seeded, chunkRows(1, 60)).model, chunkRows(2, 120)).model
 		expect(done.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([0, 1, 2])
+	})
+
+	test("a seek ahead of the download still fills in the markers it jumped over", () => {
+		const manifest = spread([
+			{ seconds: 0, bytes: 4_000_000, isCheckpoint: true },
+			{ seconds: 60, bytes: 4_000_000, isCheckpoint: false },
+			{ seconds: 120, bytes: 4_000_000, isCheckpoint: true },
+			{ seconds: 180, bytes: 4_000_000, isCheckpoint: false },
+		])
+		const seeded = answerWith(openWith(manifest), chunkRows(0, 0)).model
+		const ready = pageUpdate(seeded, Message.ReadiedEngine({ seedVersion: seeded.loader.seedVersion, totalMs: 1 })).model
+		// Chunk 1 is in flight when the seek lands on chunk 2; its answer is superseded.
+		const seeking = pageUpdate(ready, Message.RequestedSeek({ displayMs: 125_000 })).model
+		const rebuilt = answerWith(seeking, chunkRows(2, 120)).model
+		const ahead = answerWith(rebuilt, chunkRows(3, 180)).model
+		expect(ahead.loader.queue).toEqual([{ fromChunkSeq: 1, toChunkSeq: 1 }])
+		const filled = answerWith(ahead, chunkRows(1, 60)).model
+		expect(filled.meta.actionMarkers.map((marker) => marker.ms)).toEqual([5, 60_005, 120_005, 180_005])
 	})
 
 	test("the seed is cut once per seed version, not re-flattened on every engine tick", () => {

@@ -156,6 +156,7 @@ type EngineMessage =
 	| typeof Message.ReadiedEngine.Type
 	| typeof Message.TickedEngine.Type
 	| typeof Message.FinishedEngine.Type
+	| typeof Message.StarvedEngine.Type
 
 /** The engine for one seed; the element is keyed by `seedVersion`, so a new seed is a new engine. */
 export const MountEngine = Mount.defineStream("MountReplayEngine", {
@@ -166,7 +167,7 @@ export const MountEngine = Mount.defineStream("MountReplayEngine", {
 		startAtMs: Schema.NullOr(Schema.Number),
 		shiftMs: Schema.Number,
 	},
-	messages: [Message.ReadiedEngine, Message.TickedEngine, Message.FinishedEngine],
+	messages: [Message.ReadiedEngine, Message.TickedEngine, Message.FinishedEngine, Message.StarvedEngine],
 	execute: ({ element, seedVersion, events, format, startAtMs, shiftMs }) =>
 		runReplayEngine<EngineMessage>(
 			element,
@@ -175,6 +176,7 @@ export const MountEngine = Mount.defineStream("MountReplayEngine", {
 				ready: (totalMs) => Message.ReadiedEngine({ seedVersion, totalMs }),
 				ticked: (currentMs) => Message.TickedEngine({ seedVersion, currentMs }),
 				finished: () => Message.FinishedEngine({ seedVersion }),
+				starved: (currentMs) => Message.StarvedEngine({ seedVersion, currentMs }),
 			},
 		),
 })

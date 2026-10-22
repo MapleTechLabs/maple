@@ -36,7 +36,7 @@ export const emptyLoader = (): Loader => ({
 	seedVersion: 0,
 	originMs: null,
 	rangeMetas: [],
-	metaThroughSeq: -1,
+	fetchedRanges: [],
 	resumeOnReady: false,
 })
 
@@ -146,7 +146,7 @@ export const planOnce = (model: Model): Model => {
 			queue: initialRanges(chunks, planOf(model)),
 			originMs: null,
 			rangeMetas: [],
-			metaThroughSeq: -1,
+			fetchedRanges: [],
 			resumeOnReady: false,
 		},
 	}
@@ -163,9 +163,7 @@ export const advance = (model: Model, rows: Option.Option<RangeRows>): Model => 
 	if (Option.isNone(rows)) return model
 	const through = loadedThroughSeq(loader)
 	const own = rows.value
-		.filter(
-			(row) => row.chunk_seq >= active.fromChunkSeq && row.chunk_seq <= active.toChunkSeq && row.chunk_seq > through,
-		)
+		.filter((row) => row.chunk_seq >= active.fromChunkSeq && row.chunk_seq <= active.toChunkSeq)
 		.toSorted((a, b) => a.chunk_seq - b.chunk_seq)
 	const events = normalizeEvents(own.flatMap((row) => row.events))
 	const originMs = loader.originMs ?? (events.length > 0 ? firstEventMs(events) : null)
@@ -174,7 +172,9 @@ export const advance = (model: Model, rows: Option.Option<RangeRows>): Model => 
 		originMs === null || isKnown || events.length === 0
 			? loader.rangeMetas
 			: [...loader.rangeMetas, deriveRangeMeta(active, events, originMs)]
-	const metaThroughSeq = Math.max(loader.metaThroughSeq, active.toChunkSeq)
+	const fetchedRanges = loader.fetchedRanges.includes(active.fromChunkSeq)
+		? loader.fetchedRanges
+		: [...loader.fetchedRanges, active.fromChunkSeq]
 	// The opening window always plays; after it, a range joins the player only while it continues the
 	// loaded span and fits the cap. Anything else was fetched for its markers alone.
 	const isPlayable =
@@ -190,7 +190,7 @@ export const advance = (model: Model, rows: Option.Option<RangeRows>): Model => 
 	return continueDownload(
 		cutSeed({
 			...model,
-			loader: { ...loader, loaded, queue: loader.queue.slice(1), originMs, rangeMetas, metaThroughSeq },
+			loader: { ...loader, loaded, queue: loader.queue.slice(1), originMs, rangeMetas, fetchedRanges },
 		}),
 	)
 }
@@ -208,7 +208,8 @@ const continueDownload = (model: Model): Model => {
 	const next =
 		playable !== undefined && fitsWindow(model, playable)
 			? playable
-			: rangeContaining(plan, Math.max(loader.metaThroughSeq, through) + 1)
+			: // The first range never fetched, wherever it is: a seek can jump the download past some.
+				plan.find((range) => !loader.fetchedRanges.includes(range.fromChunkSeq))
 	return next === undefined ? model : { ...model, loader: { ...loader, queue: [next] } }
 }
 
@@ -254,10 +255,12 @@ const rebuildAt = (model: Model, offsetMs: number, anchorSeq: number, resume: bo
  * `reportProgress`: track the playhead. Past the cap, the playhead reaching the end of the playable
  * window rebuilds the player from the latest checkpoint before it, and playback carries on.
  */
-export const reportProgress = (model: Model, offsetMs: number): Model => {
+export const reportProgress = (model: Model, offsetMs: number, isStarved = false): Model => {
 	const next = { ...model, loader: { ...model.loader, playheadMs: offsetMs } }
 	const { loader } = next
-	if (loader.seedCount === 0 || !hasMoreChunks(next) || offsetMs + 1_000 < loadedUntilMs(next)) return next
+	// The engine running dry is the window's end whatever the manifest's estimate of it says.
+	const isAtEnd = isStarved || offsetMs + 1_000 >= loadedUntilMs(next)
+	if (loader.seedCount === 0 || !hasMoreChunks(next) || !isAtEnd) return next
 	const playable = rangeContaining(planOf(next), loadedThroughSeq(loader) + 1)
 	if (playable === undefined || fitsWindow(next, playable)) return next
 	const anchor = slideAnchor(next)

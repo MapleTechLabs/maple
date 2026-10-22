@@ -44,6 +44,7 @@ export type EngineHandlers<A> = Readonly<{
 	ready: (totalMs: number) => A
 	ticked: (currentMs: number) => A
 	finished: () => A
+	starved: (currentMs: number) => A
 }>
 
 const readNumber = (element: Element, attribute: string, fallback: number): number => {
@@ -120,6 +121,7 @@ const startEngine = <A>(
 			// its ticks are what ask the loader for that range.
 			if (!isComplete() && state.isPlaying) {
 				state.isStarved = true
+				emit(handlers.starved(now()))
 				return
 			}
 			cancelAnimationFrame(state.raf)
