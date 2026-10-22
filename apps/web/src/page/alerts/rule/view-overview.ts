@@ -252,7 +252,7 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 				now: model.nowMs,
 				timeZone,
 			}),
-			...Arr.fromNullishOr(queryTimeCard(h, rule, checks)),
+			...Arr.fromNullishOr(queryTimeCard(h, rule, checks, timeZone)),
 			h.div(
 				[h.Class("space-y-3")],
 				[

@@ -2,7 +2,7 @@ import { AlertRuleDocument } from "@maple/domain/http"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import type { AlertRuleStateRow } from "../collections/alerts"
-import { buildDiagnosis, diagnosisVerdict, type DiagnosisInput } from "./diagnosis"
+import { buildDiagnosis, diagnosisVerdict, intervalBeforeSlowdown, type DiagnosisInput } from "./diagnosis"
 
 const decodeRuleDoc = Schema.decodeUnknownSync(AlertRuleDocument)
 
@@ -178,6 +178,20 @@ describe("buildDiagnosis", () => {
 			"query",
 		).summary
 		expect(twice).toBe("The query takes longer than the 15 s a check allows")
+	})
+
+	it("reads the step before a slowdown from the limit the failures hit", () => {
+		const rule = (slowedIntervalMinutes: number, kind: "query_too_slow" | "query_too_much_memory") =>
+			makeRule({
+				windowMinutes: 30,
+				evaluationIntervalMinutes: 5,
+				slowedIntervalMinutes,
+				lastEvaluationErrorKind: kind,
+			})
+		// Out of memory at 5 min steps straight to 15, the next interval with more memory.
+		expect(intervalBeforeSlowdown(rule(15, "query_too_much_memory"))).toBe(5)
+		// Timeouts at 5 min step to 10, the next interval with more time.
+		expect(intervalBeforeSlowdown(rule(10, "query_too_slow"))).toBe(5)
 	})
 
 	it("keeps raw SQL limits out of a built-in rule's timeout", () => {

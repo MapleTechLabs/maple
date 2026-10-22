@@ -29,20 +29,24 @@ const decodeErrorKind = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
 /**
  * The interval a slowed rule ran at just before its latest slowdown: the step the scheduler
  * took to reach the slowed interval, from the rule's own interval or an earlier slowdown.
+ * The limit the failures hit picks the step; when two steps could, the one slowdown is likelier.
  */
-export const intervalBeforeSlowdown = (rule: AlertRuleDocument): number => {
+export const intervalBeforeSlowdown = (
+	rule: AlertRuleDocument,
+	kind: AlertEvaluationErrorKind | null = rule.lastEvaluationErrorKind,
+): number => {
 	const base = alertRuleIntervalMinutes({ ...rule, slowedIntervalMinutes: null })
 	const slowed = rule.slowedIntervalMinutes
 	if (slowed === null) return base
+	const exceeded: ReadonlyArray<"time" | "memory"> =
+		kind === "query_too_slow" ? ["time"] : kind === "query_too_much_memory" ? ["memory"] : ["time", "memory"]
 	const steps = [
 		base,
 		...ALERT_EVALUATION_INTERVALS.filter((minutes) => minutes > base && minutes < slowed),
 	]
 	return (
-		steps.findLast(
-			(from) =>
-				nextSlowerAlertInterval(from, rule.windowMinutes, "time") === slowed ||
-				nextSlowerAlertInterval(from, rule.windowMinutes, "memory") === slowed,
+		steps.find((from) =>
+			exceeded.some((limit) => nextSlowerAlertInterval(from, rule.windowMinutes, limit) === slowed),
 		) ?? base
 	)
 }
@@ -223,7 +227,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	const slowedAt = parseMs(rule.slowedAt)
 	const isErrorBeforeSlowdown = slowedAt != null && errorAt != null && errorAt <= slowedAt
 	const intervalMinutes = isErrorBeforeSlowdown
-		? intervalBeforeSlowdown(rule)
+		? intervalBeforeSlowdown(rule, errorKind)
 		: alertRuleIntervalMinutes(rule)
 	const limitSeconds = alertQueryLimits(intervalMinutes).timeSeconds
 	const slowedLine =

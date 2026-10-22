@@ -250,6 +250,8 @@ describe("alert rule", () => {
 			themeResolved(),
 			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
 			expectView(text("Slowest 16 s · limit 25 s at every 10 min, 15 s before the slowdown")).toExist(),
+			// Each check reads as text too, not only on hover.
+			expectView(role("listitem", { name: /: 16 s$/ })).toExist(),
 		)
 	})
 

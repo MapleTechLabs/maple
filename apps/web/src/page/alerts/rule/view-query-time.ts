@@ -6,6 +6,7 @@ import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { intervalBeforeSlowdown } from "@maple/web-data/alerts/diagnosis"
 import { formatQuerySeconds as seconds } from "@maple/web-data/alerts/query-time"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { card } from "../../../ui/card"
 import { eyebrow } from "../../../ui/eyebrow"
 import type { Message } from "./message"
@@ -41,7 +42,12 @@ export const checkTimesOf = (checks: ReadonlyArray<AlertCheckDocument>): Readonl
 	)
 
 
-export const queryTimeCard = (h: H, rule: AlertRuleDocument, checks: ReadonlyArray<AlertCheckDocument>): Html | null => {
+export const queryTimeCard = (
+	h: H,
+	rule: AlertRuleDocument,
+	checks: ReadonlyArray<AlertCheckDocument>,
+	timeZone: string,
+): Html | null => {
 	// Checks keep the signal they ran with, so a rule switched to SQL charts only its SQL checks.
 	const times = checkTimesOf(checks.filter((check) => check.signalType === "raw_query"))
 	if (rule.signalType !== "raw_query" || times.length === 0) return null
@@ -73,7 +79,11 @@ export const queryTimeCard = (h: H, rule: AlertRuleDocument, checks: ReadonlyArr
 				],
 			),
 			h.div(
-				[h.Class("relative flex h-20 items-end gap-px"), h.DataAttribute("testid", "query-time-bars")],
+				[
+					h.Class("relative flex h-20 items-end gap-px"),
+					h.DataAttribute("testid", "query-time-bars"),
+					h.AriaHidden(true),
+				],
 				[
 					...times.map((time) =>
 						h.div(
@@ -104,6 +114,18 @@ export const queryTimeCard = (h: H, rule: AlertRuleDocument, checks: ReadonlyArr
 								),
 							]),
 				],
+			),
+			// The bars are hover-only, so screen readers get each check as text.
+			h.ul(
+				[h.Class("sr-only"), h.AriaLabel("Query time per check")],
+				times.map((time) =>
+					h.li(
+						[],
+						[
+							`${formatTimestampInTimezone(time.timestamp, { timeZone })}: ${seconds(time.durationMs)}${time.isFailure ? ", failed" : ""}`,
+						],
+					),
+				),
 			),
 			...(rule.slowedIntervalMinutes === null
 				? []

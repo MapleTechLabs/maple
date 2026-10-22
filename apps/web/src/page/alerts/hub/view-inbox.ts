@@ -52,7 +52,7 @@ export const inboxTab = <M>(h: HtmlBuilder<M>, data: AlertsOverviewReady): Html 
 
 	const summary = [
 		`${countLabel(enabledRuleIds.length, "rule")} watching`,
-		spots.length > 0 ? `${spots.length} need a look` : "all evaluating and routed",
+		spots.length > 0 ? `${spots.length} ${spots.length === 1 ? "needs" : "need"} a look` : "all evaluating and routed",
 		...(disabled > 0 ? [`${disabled} disabled`] : []),
 	].join(" · ")
 
