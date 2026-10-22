@@ -85,6 +85,20 @@ const bytesIn = (model: Model, range: ReplayRange): number =>
 const loadedBytes = (model: Model): number =>
 	model.loader.loaded.reduce((sum, entry) => sum + bytesIn(model, entry.range), 0)
 
+/** The checkpoint a full window slides to: the latest one before the first chunk it lacks, if past its start. */
+const slideAnchor = (model: Model) => {
+	const anchor = checkpointAtOrBefore(chunksOf(model), loadedThroughSeq(model.loader) + 1)
+	const windowStart = model.loader.loaded[0]?.range.fromChunkSeq ?? 0
+	return anchor !== undefined && anchor.chunk_seq > windowStart ? anchor : undefined
+}
+
+/**
+ * Whether `range` can join the playable window. Past the cap it can only when the window has nowhere
+ * to slide (no checkpoint after its start): holding more beats a replay that freezes mid-session.
+ */
+const fitsWindow = (model: Model, range: ReplayRange): boolean =>
+	loadedBytes(model) + bytesIn(model, range) <= MAX_PLAYABLE_BYTES || slideAnchor(model) === undefined
+
 /** Range answers kept for re-seeks; the oldest go first past this many. */
 export const RANGE_CACHE_LIMIT = 12
 
@@ -165,7 +179,7 @@ export const advance = (model: Model, rows: Option.Option<RangeRows>): Model => 
 	// loaded span and fits the cap. Anything else was fetched for its markers alone.
 	const isPlayable =
 		loader.seedCount === 0 ||
-		(active.fromChunkSeq === through + 1 && loadedBytes(model) + bytesIn(model, active) <= MAX_PLAYABLE_BYTES)
+		(active.fromChunkSeq === through + 1 && fitsWindow(model, active))
 	const loaded: ReadonlyArray<LoadedRange> = isPlayable
 		? [
 				...loader.loaded,
@@ -192,7 +206,7 @@ const continueDownload = (model: Model): Model => {
 	const through = loadedThroughSeq(loader)
 	const playable = rangeContaining(plan, through + 1)
 	const next =
-		playable !== undefined && loadedBytes(model) + bytesIn(model, playable) <= MAX_PLAYABLE_BYTES
+		playable !== undefined && fitsWindow(model, playable)
 			? playable
 			: rangeContaining(plan, Math.max(loader.metaThroughSeq, through) + 1)
 	return next === undefined ? model : { ...model, loader: { ...loader, queue: [next] } }
@@ -245,12 +259,9 @@ export const reportProgress = (model: Model, offsetMs: number): Model => {
 	const { loader } = next
 	if (loader.seedCount === 0 || !hasMoreChunks(next) || offsetMs + 1_000 < loadedUntilMs(next)) return next
 	const playable = rangeContaining(planOf(next), loadedThroughSeq(loader) + 1)
-	if (playable === undefined || loadedBytes(next) + bytesIn(next, playable) <= MAX_PLAYABLE_BYTES) return next
-	// The new window starts at the latest checkpoint before the first chunk the current one lacks.
-	// Rebuilding from the window's own checkpoint would load the same window again.
-	const anchor = checkpointAtOrBefore(chunksOf(next), loadedThroughSeq(loader) + 1)
-	const windowStart = loader.loaded[0]?.range.fromChunkSeq ?? 0
-	if (anchor === undefined || anchor.chunk_seq <= windowStart) return next
+	if (playable === undefined || fitsWindow(next, playable)) return next
+	const anchor = slideAnchor(next)
+	if (anchor === undefined) return next
 	return rebuildAt(next, offsetMs, anchor.chunk_seq, true)
 }
 

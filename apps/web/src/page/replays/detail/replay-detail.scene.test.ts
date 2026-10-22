@@ -319,6 +319,17 @@ describe("replay detail", () => {
 		expect(resumed.player.control).toContain("|play|9500")
 	})
 
+	test("past the cap with no later checkpoint to slide to, the window keeps growing instead of freezing", () => {
+		const manifest = spread([
+			{ seconds: 0, bytes: 30_000_000, isCheckpoint: true },
+			{ seconds: 60, bytes: 30_000_000, isCheckpoint: false },
+			{ seconds: 120, bytes: 1_000, isCheckpoint: false },
+		])
+		const seeded = answerWith(openWith(manifest), chunkRows(0, 0)).model
+		const done = answerWith(answerWith(seeded, chunkRows(1, 60)).model, chunkRows(2, 120)).model
+		expect(done.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([0, 1, 2])
+	})
+
 	test("the seed is cut once per seed version, not re-flattened on every engine tick", () => {
 		const ready = pageUpdate(seeded(), Message.ReadiedEngine({ seedVersion: 1, totalMs: 1000 })).model
 		const ticked = pageUpdate(ready, Message.TickedEngine({ seedVersion: 1, currentMs: 100 })).model
