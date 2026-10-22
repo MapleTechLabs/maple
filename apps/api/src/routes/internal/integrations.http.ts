@@ -119,7 +119,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const trustedCallbackUrl = (path: string) =>
 			Effect.gen(function* () {
 				const origin = resolveRequestOrigin(yield* HttpServerRequest.HttpServerRequest)
-				if (!isTrustedCallbackOrigin(origin, env.MAPLE_APP_BASE_URL)) {
+				if (!isTrustedCallbackOrigin(origin, env)) {
 					return yield* new IntegrationsForbiddenError({
 						message: "Integrations cannot be connected from this host",
 					})

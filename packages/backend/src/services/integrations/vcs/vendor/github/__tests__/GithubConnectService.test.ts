@@ -17,6 +17,7 @@ import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQu
 import {
 	asOrgId,
 	asUserId,
+	fakeGithubHttp,
 	findError,
 	GITHUB_APP_CONFIG,
 	jsonResponse,
@@ -60,12 +61,19 @@ const userInstallationsResponse =
 	() =>
 		jsonResponse({ total_count: ids.length, installations: ids.map((id) => ({ id })) })
 
-// The 3 calls a successful connect makes: OAuth token, user's installs (incl. 42),
-// then the installation detail. `rest` adds any responders the test needs after.
+// The user's membership in the installation's org ("octo").
+const orgMembershipResponse =
+	(role: string = "admin", state: string = "active") =>
+	() =>
+		jsonResponse({ state, role })
+
+// The 4 calls a successful connect makes: OAuth token, user's installs (incl. 42), the
+// installation detail, then the user's org role. `rest` adds any responders after.
 const connectResponders = (...rest: Array<() => Response>) => [
 	oauthTokenResponse,
 	userInstallationsResponse([42]),
 	installationResponse,
+	orgMembershipResponse(),
 	...rest,
 ]
 
@@ -205,10 +213,92 @@ describe("GithubConnectService", () => {
 		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 
+	const adminCases = [
+		{
+			name: "an org member who is not an admin",
+			account: "Organization",
+			membership: orgMembershipResponse("member"),
+			bound: false,
+		},
+		{
+			name: "a pending org admin invite",
+			account: "Organization",
+			membership: orgMembershipResponse("admin", "pending"),
+			bound: false,
+		},
+		{
+			name: "an org role the App cannot read",
+			account: "Organization",
+			membership: () =>
+				jsonResponse({ message: "Resource not accessible by integration" }, { status: 403 }),
+			bound: false,
+		},
+		{
+			name: "an active org admin",
+			account: "Organization",
+			membership: orgMembershipResponse(),
+			bound: true,
+		},
+		{
+			name: "another user's personal account",
+			account: "User",
+			membership: () => jsonResponse({ id: 7, login: "someone" }),
+			bound: false,
+		},
+		{
+			name: "the user's own personal account",
+			account: "User",
+			membership: () => jsonResponse({ id: 100, login: "octo" }),
+			bound: true,
+		},
+	] as const
+
+	for (const c of adminCases) {
+		it.effect(
+			`completeConnect with the installation listed for the user and ${c.name}: bound=${c.bound}`,
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const sent: Array<VcsSyncJob> = []
+				const roleUrls: Array<string> = []
+				const http = fakeGithubHttp((request) => {
+					const path = new URL(request.url).pathname
+					if (path.endsWith("/access_token")) return oauthTokenResponse()
+					if (path === "/user/installations") return userInstallationsResponse([42])()
+					if (path === "/app/installations/42")
+						return jsonResponse({
+							id: 42,
+							account: { login: "octo", id: 100, type: c.account },
+							repository_selection: "all",
+						})
+					roleUrls.push(path)
+					return c.membership()
+				})
+				return Effect.gen(function* () {
+					const svc = yield* GithubConnectService
+					const repo = yield* VcsRepository
+					const { state } = yield* svc.startConnect(asOrgId("org_test"), asUserId("user_1"), {
+						callbackUrl: "https://tunnel.example/cb",
+					})
+					const exit = yield* svc.completeConnect("42", state, TEST_CODE).pipe(Effect.exit)
+					assert.deepStrictEqual(roleUrls, [
+						c.account === "Organization" ? "/user/memberships/orgs/octo" : "/user",
+					])
+					assert.strictEqual(
+						Option.isSome(yield* repo.resolveInstallation("github", "42")),
+						c.bound,
+					)
+					assert.strictEqual(sent.length, c.bound ? 1 : 0)
+					if (!c.bound) assert.ok(findError(exit) instanceof IntegrationsValidationError)
+				}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
+			},
+		)
+	}
+
 	it.effect("completeConnect allows a same-org reconnect without an OAuth code", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
-		const http = scriptedHttp(connectResponders())
+		// The reconnect only re-reads the installation detail.
+		const http = scriptedHttp(connectResponders(installationResponse))
 		return Effect.gen(function* () {
 			const svc = yield* GithubConnectService
 			const repo = yield* VcsRepository
