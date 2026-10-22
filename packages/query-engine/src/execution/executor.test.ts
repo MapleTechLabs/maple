@@ -417,6 +417,25 @@ describe("makeWarehouseExecutor compiled-query defaults", () => {
 		}),
 	)
 
+	it.effect("applies the profile budget after a statement's own SETTINGS", () =>
+		Effect.gen(function* () {
+			const sqls: Array<string> = []
+			const executor = makeWarehouseExecutor(
+				makeRecordingDeps({ config: clickhouseConfig, clientCacheKey: "read:org_test" }, sqls),
+			)
+			const withOwnSettings = rawCompiledQuery<{ readonly c: number }>({
+				reason: "test-fixture",
+				justification: "Synthetic SQL asserting executor/compile behaviour, not a product query.",
+				sql: "SELECT count() AS c FROM traces WHERE OrgId = 'org_test'\nSETTINGS max_execution_time=900",
+				tenantScope: "single-tenant",
+			})
+			yield* executor.compiledQuery(tenant, withOwnSettings, { context: "test", profile: "list" })
+			const sql = sqls[0] ?? ""
+			// ClickHouse applies the last occurrence, so the profile's value must follow.
+			assert.match(sql, /SETTINGS max_execution_time=900, .*max_execution_time=15/)
+		}),
+	)
+
 	it.effect("reports the caller's context as pipeName when row decode fails", () =>
 		Effect.gen(function* () {
 			const badRowDeps: WarehouseExecutorDeps = {

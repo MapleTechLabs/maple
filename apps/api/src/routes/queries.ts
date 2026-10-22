@@ -19,6 +19,7 @@ import type {
 	GcpInfraMetricsRequest,
 	GcpInfraPresenceRequest,
 	GcpCloudSqlInstanceRequest,
+	GcpCloudSqlStatementSpansRequest,
 	GcpInfraSparklinesRequest,
 	GcpInfraTimeseriesRequest,
 	GetLogRequest,
@@ -29,6 +30,10 @@ import type {
 	RailwayInfraServiceTimeseriesRequest,
 	ServiceCloudflareStatsRequest,
 	SpanDetailRequest,
+	SupabaseInfraProjectsRequest,
+	SupabaseInfraProjectTimeseriesRequest,
+	SupabaseLogIssuesRequest,
+	SupabaseProjectWindowRequest,
 	TraceSpanEventsRequest,
 	WorkloadInfraTimeseriesRequest,
 } from "@maple/domain/http"
@@ -294,6 +299,139 @@ const railwayInfraServiceTimeseries = defineQuery({
 		}),
 })
 
+// /infra/supabase: gauges and counter rates are separate reads (metrics_gauge, metrics_sum),
+// merged per project or bucket by the handler.
+const supabaseInfraProjectGauges = defineQuery({
+	id: "supabaseInfraProjectGauges",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseProjectGaugesSQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const supabaseInfraProjectCpu = defineQuery({
+	id: "supabaseInfraProjectCpu",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseProjectCpuSQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const supabaseProjectSeriesParams = (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+	bucketSeconds: Math.max(60, Math.floor(payload.bucketSeconds)),
+	projectRef: payload.projectRef,
+})
+
+const supabaseInfraProjectGaugeSeries = defineQuery({
+	id: "supabaseInfraProjectGaugeSeries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseProjectGaugeSeriesSQL(), supabaseProjectSeriesParams(payload, orgId)),
+})
+
+const supabaseInfraProjectRateSeries = defineQuery({
+	id: "supabaseInfraProjectRateSeries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseProjectRateSeriesSQL(), supabaseProjectSeriesParams(payload, orgId)),
+})
+
+// /infra/supabase insights: the polled Supabase logs and the org's client spans to a project.
+const supabaseProjectParams = (payload: SupabaseProjectWindowRequest, orgId: OrgId) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+	projectRef: payload.projectRef,
+})
+
+const supabaseLogsProjectsSummary = defineQuery({
+	id: "supabaseLogsProjectsSummary",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseLogsProjectsSummarySQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const supabaseApiTrafficSeries = defineQuery({
+	id: "supabaseApiTrafficSeries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseApiTrafficSeriesSQL(), supabaseProjectSeriesParams(payload, orgId)),
+})
+
+const supabaseApiTrafficTotals = defineQuery({
+	id: "supabaseApiTrafficTotals",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseProjectWindowRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseApiTrafficTotalsSQL(), supabaseProjectParams(payload, orgId)),
+})
+
+const supabaseApiTopPaths = defineQuery({
+	id: "supabaseApiTopPaths",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseProjectWindowRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseApiTopPathsSQL(), supabaseProjectParams(payload, orgId)),
+})
+
+const supabaseProjectCallers = defineQuery({
+	id: "supabaseProjectCallers",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseProjectCallersSQL(), supabaseProjectParams(payload, orgId)),
+})
+
+const supabaseProjectCallerSeries = defineQuery({
+	id: "supabaseProjectCallerSeries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.supabaseProjectCallerSeriesSQL(),
+			supabaseProjectSeriesParams(payload, orgId),
+		),
+})
+
+// One project, or (no `projectRef`) every project of the org.
+const supabaseLogIssues = defineQuery({
+	id: "supabaseLogIssues",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseLogIssuesRequest, orgId: OrgId) =>
+		payload.projectRef === undefined
+			? CH.compile(Integrations.supabaseLogIssuesSQL({ byProject: false }), {
+					orgId,
+					startTime: payload.startTime,
+					endTime: payload.endTime,
+				})
+			: CH.compile(Integrations.supabaseLogIssuesSQL({ byProject: true }), {
+					orgId,
+					startTime: payload.startTime,
+					endTime: payload.endTime,
+					projectRef: payload.projectRef,
+				}),
+})
+
 // A small read of the hourly catalog that decides which tabs /infra/gcp shows.
 const gcpInfraPresence = defineQuery({
 	id: "gcpInfraPresence",
@@ -369,6 +507,22 @@ const gcpCloudSqlDatabases = defineQuery({
 			startTime: payload.startTime,
 			endTime: payload.endTime,
 		}),
+})
+
+const gcpCloudSqlStatementSpans = defineQuery({
+	id: "gcpCloudSqlStatementSpans",
+	profile: "list",
+	cache: 15,
+	compile: (payload: GcpCloudSqlStatementSpansRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.serviceDbQuerySpansQuery({
+				dbSystem: "postgresql",
+				dbNamespaces: payload.databases,
+				queryKeys: payload.queryKeys,
+				limit: 5,
+			}),
+			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+		),
 })
 
 const zoneDetailParams = (payload: CloudflareInfraZoneDetailRequest, orgId: OrgId) => ({
@@ -890,12 +1044,24 @@ export const Queries = {
 	planetscaleInfraTimeseries,
 	railwayInfraServices,
 	railwayInfraServiceTimeseries,
+	supabaseInfraProjectGauges,
+	supabaseInfraProjectCpu,
+	supabaseInfraProjectGaugeSeries,
+	supabaseInfraProjectRateSeries,
+	supabaseLogsProjectsSummary,
+	supabaseApiTrafficSeries,
+	supabaseApiTrafficTotals,
+	supabaseApiTopPaths,
+	supabaseProjectCallers,
+	supabaseProjectCallerSeries,
+	supabaseLogIssues,
 	gcpInfraPresence,
 	gcpInfraMetrics,
 	gcpInfraTimeseries,
 	gcpInfraSparklines,
 	gcpCloudSqlTopQueries,
 	gcpCloudSqlDatabases,
+	gcpCloudSqlStatementSpans,
 
 	// ZoneDetail / PlanetScaleStats sub-queries, declared above.
 	cloudflareInfraZoneDetailStatus,

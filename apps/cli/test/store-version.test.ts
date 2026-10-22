@@ -36,7 +36,9 @@ const withDataDir = (run: (dataDir: string) => void): void => {
 }
 
 /** Simulate a bootstrapped store (chDB creates `store/`). */
-const seedData = (dataDir: string): void => mkdirSync(join(dataDir, "store"), { recursive: true })
+const seedData = (dataDir: string): void => {
+	mkdirSync(join(dataDir, "store"), { recursive: true })
+}
 
 /** Write a legacy (pre-v2) store marker beside the data dir. */
 const writeMarker = (dataDir: string, schema: string): void =>

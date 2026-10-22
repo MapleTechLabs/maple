@@ -34,7 +34,7 @@
 		"lint:foldkit": "oxlint -c .oxlintrc.effect.json --quiet apps/web && oxlint -c .oxlintrc.effect.json --quiet apps/local-ui",
 		"lint:audit": "oxlint -c .oxlintrc.effect.json alchemy.run.ts scripts apps packages lib examples",
 		"lint:fix": "oxlint -c .oxlintrc.effect.json --fix alchemy.run.ts scripts apps packages lib examples",
-		"alchemy:build-deps": "turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy --filter=@maple-dev/browser",
+		"alchemy:build-deps": "turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy --filter=@maple-dev/browser && bun run --cwd apps/scraper bundle",
 		"alchemy:deploy:prd": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage ${MAPLE_STAGE:-prd}",
 		"alchemy:deploy:pr": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage pr-${PR_NUMBER}",
 		"alchemy:destroy:pr": "bun run alchemy:build-deps && alchemy destroy --yes --stage pr-${PR_NUMBER}",
@@ -83,7 +83,8 @@
 		"portless": "^0.15.7",
 		"tsrs": "0.15.0-ts7.1.0-dev.20260929",
 		"turbo": "^2.11.7",
-		"typescript": "catalog:tooling"
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
 	},
 	"overrides": {
 		"@effect/sql-d1": "4.0.4",

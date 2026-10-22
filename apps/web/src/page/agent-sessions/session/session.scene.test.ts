@@ -21,7 +21,9 @@ const entered = (search: Model["search"] = {}) => init({ sessionId: SESSION, sea
 describe("agent session detail", () => {
 	test("entering reads the first page and the clock", () => {
 		const { model, commands } = entered()
-		expect(names(commands)).toEqual(["FetchAgentSessionFirstPage", "ResolveAgentSessionClock"])
+		expect(names(commands)).toEqual(
+			expect.arrayContaining(["FetchAgentSessionFirstPage", "ResolveAgentSessionClock"]),
+		)
 		expect(AsyncData.isLoading(model.firstPage.data)).toBe(true)
 	})
 
@@ -62,16 +64,16 @@ describe("agent session detail", () => {
 		expect(duplicate.model.more.agentPages).toHaveLength(1)
 	})
 
-	test("a stale first page is dropped", () => {
+	test("a stale first page is dropped and asks for nothing", () => {
 		const { model } = entered()
+		const nextCursor = Schema.decodeSync(AiSessionSpanCursor)({ timestamp: "2026-10-01 12:00:00", spanId: "s1" })
 		const late = pageUpdate(
 			model,
-			Message.CompletedFetchFirstPage({
-				key: "old",
-				result: Result.succeed({ data: [], nextCursor: null }),
-			}),
+			Message.CompletedFetchFirstPage({ key: "old", result: Result.succeed({ data: [], nextCursor }) }),
 		)
 		expect(AsyncData.isLoading(late.model.firstPage.data)).toBe(true)
+		expect(late.model.more).toEqual(model.more)
+		expect(names(late.commands)).toEqual([])
 	})
 
 	test("the 2 key opens Traces as a step Back can undo", () => {

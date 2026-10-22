@@ -62,7 +62,7 @@ const exposition = (code: string) =>
 const yaml = (code: string) =>
     tokenize(code, [
         [/#.*/y, (m) => span("comment", m[0])],
-        [/(?<=^|\n)(\s*-?\s*)([\w.-]+)(:)/y, (m) => escape(m[1]) + span("name", m[2]) + escape(m[3])],
+        [/(?<=^|\n)(\s*-?\s*)([\w./-]+)(:)/y, (m) => escape(m[1]) + span("name", m[2]) + escape(m[3])],
         [/"[^"\n]*"/y, (m) => span("labels", m[0])],
         [/\b\d+[a-z]*\b/y, (m) => span("value", m[0])],
     ]);

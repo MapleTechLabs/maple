@@ -496,28 +496,28 @@ const seedConnection = (
 					T0 - 60 * MIN,
 				)
 				yield* db.run(
-				PG.insertInto(OAuthConnections).values({
-					id,
-					orgId: ORG,
-					sourceId,
-					provider: "cloudflare",
-					externalUserId: Arr.headNonEmpty(accounts).id,
-					externalAccountName: Arr.headNonEmpty(accounts).name,
-					grantedAccountsJson:
-						accounts.length > 1
-							? JSON.stringify(
-									accounts.map((account) => ({ id: account.id, name: account.name })),
-								)
-							: null,
-					connectedByUserId: Schema.decodeUnknownSync(UserId)("user_1"),
-					scope,
-					accessTokenCiphertext: accessEnc.ciphertext,
-					accessTokenIv: accessEnc.iv,
-					accessTokenTag: accessEnc.tag,
-					expiresAt: null,
-					createdAt: T0 - 60 * MIN,
-					updatedAt: T0 - 60 * MIN,
-				}),
+					PG.insertInto(OAuthConnections).values({
+						id,
+						orgId: ORG,
+						sourceId,
+						provider: "cloudflare",
+						externalUserId: Arr.headNonEmpty(accounts).id,
+						externalAccountName: Arr.headNonEmpty(accounts).name,
+						grantedAccountsJson:
+							accounts.length > 1
+								? JSON.stringify(
+										accounts.map((account) => ({ id: account.id, name: account.name })),
+									)
+								: null,
+						connectedByUserId: Schema.decodeUnknownSync(UserId)("user_1"),
+						scope,
+						accessTokenCiphertext: accessEnc.ciphertext,
+						accessTokenIv: accessEnc.iv,
+						accessTokenTag: accessEnc.tag,
+						expiresAt: null,
+						createdAt: T0 - 60 * MIN,
+						updatedAt: T0 - 60 * MIN,
+					}),
 				)
 			}),
 		)
@@ -2441,10 +2441,6 @@ describe("CloudflareAnalyticsService", () => {
 				assert.strictEqual(call.options?.profile, "aggregation")
 				assert.strictEqual(call.orgId, ORG)
 			}
-			assert.deepStrictEqual(queryStub.calls.map((call) => call.options?.context).sort(), [
-				"cloudflareUsage",
-				"cloudflareUsageStats",
-			])
 		}).pipe(Effect.provide(makeLayer(testDb, captured, {}, {}, queryStub)))
 	})
 

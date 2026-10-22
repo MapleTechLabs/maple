@@ -92,7 +92,7 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 			// Two pieces of object work: the turn and the heartbeat alarm that keeps the object alive.
 			assert.strictEqual(state.pending.length, 2)
 			assert.lengthOf(state.alarms, 1)
-			yield* rpc.abort()
+			yield* rpc.abort("user")
 			assert.strictEqual(yield* rpc.running(), false)
 		}),
 	)

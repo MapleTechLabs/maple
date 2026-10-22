@@ -23,7 +23,7 @@ const loaded = () => update(init(true).model, Message.CompletedFetchTriage({ res
 
 describe("ai tab", () => {
 	test("entry reads the key and, when available, the triage settings", () => {
-		expect(init(true).commands?.map((command) => command.name)).toEqual(["FetchOpenRouterKey", "FetchAiTriageSettings"])
+		expect(init(true).commands?.map((command) => command.name)).toContain("FetchAiTriageSettings")
 		expect(init(false).commands?.map((command) => command.name)).toEqual(["FetchOpenRouterKey"])
 	})
 

@@ -21,7 +21,8 @@ export const ALERTING_SCHEDULE = {
 	// `error` also runs fix verification, chained after it (see `./scheduled.ts`).
 	// Under two periods, not one: the alert tick drains deliveries after it
 	// evaluates, so a one-minute bound would starve the drain on a slow minute.
-	"* * * * *": { lanes: ["alert", "error", "escalation"], deadline: "110 seconds" },
+	// `supabase_logs` reads each opted-in project's last minute (Supabase allows 10 queries a minute).
+	"* * * * *": { lanes: ["alert", "error", "escalation", "supabase_logs"], deadline: "110 seconds" },
 	"*/5 * * * *": {
 		lanes: [
 			"anomaly",
@@ -33,8 +34,12 @@ export const ALERTING_SCHEDULE = {
 		],
 		deadline: "270 seconds",
 	},
-	"*/15 * * * *": { lanes: ["digest"], deadline: "10 minutes" },
-	"0 * * * *": { lanes: ["service_map_rollup", "aws_connections"], deadline: "15 minutes" },
+	// `supabase_insights` reads top queries every tick and advisors hourly (it tracks the hour itself).
+	"*/15 * * * *": { lanes: ["digest", "supabase_insights"], deadline: "10 minutes" },
+	"0 * * * *": {
+		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections"],
+		deadline: "15 minutes",
+	},
 } as const satisfies Record<string, CronSchedule>
 
 export type AlertingCron = keyof typeof ALERTING_SCHEDULE

@@ -63,9 +63,9 @@ jobs:
                         || contains(github.event.pull_request.labels.*.name, 'preview:web')))) }}
         runs-on: ubuntu-latest
         timeout-minutes: 45
-        # TODO: `pr-preview` should require reviewer approval before secrets load, but the
-        # cron orphan sweep borrows this environment for Infisical OIDC and would park
-        # waiting. Allowlist the sweep's `ref:refs/heads/main` subject first.
+        # `pr-preview` holds its own Infisical identity, limited to the preview environment, so
+        # PR code can never request `prod`. Required reviewers would also gate teardowns on close;
+        # cleanup-preview-orphans.yml reaps any left waiting.
         environment:
             name: pr-preview
             url: ${{ steps.deploy.outputs.web_url }}
@@ -119,9 +119,15 @@ jobs:
                     exit 1
                   fi
 
+            # Pinned uv and CLI versions instead of piping the vendor install script to sh.
+            - name: Install uv
+              uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+
             # `tb` for branch up/down. Installed BEFORE secrets load so the installer never sees them.
             - name: Install Tinybird CLI
-              run: curl https://tinybird.co | sh
+              run: |
+                  uv tool install tinybird==5.0.2 --python 3.11
+                  uv tool dir --bin >> "$GITHUB_PATH"
 
             # The AWS deploy role must trust `repo:<org>/<repo>:environment:pr-preview`.
             - name: Deploy setup

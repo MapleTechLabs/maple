@@ -46,6 +46,8 @@ export interface MapleProfile {
 		readonly collector: boolean
 		/** Self-hosted Electric. Needs a declared database to replicate from, so not on dev. */
 		readonly electric: boolean
+		/** The Prometheus scraper on Fargate, in ingest's VPC. One per instance that scrapes. */
+		readonly scraper: boolean
 		/** The agents' repository sandbox. Dev would pull the multi-gigabyte image. */
 		readonly sandbox: boolean
 		/** Session-replay payloads as R2 objects instead of inline. Flipping this is the rollback lever. */
@@ -68,6 +70,9 @@ export interface MapleProfile {
 		readonly collectorTaskSize: TaskSize
 		/** Head-sampling of the gateway's own traces, or `undefined` for the default 1.0. */
 		readonly selfTraceSampleRatio: string | undefined
+	}
+	readonly scraper: {
+		readonly taskSize: TaskSize
 	}
 	readonly electric: {
 		readonly taskSize: TaskSize
@@ -93,6 +98,7 @@ const US_PRD: MapleProfile = {
 		ingest: true,
 		collector: true,
 		electric: true,
+		scraper: true,
 		sandbox: true,
 		replayBlobs: true,
 		awsSecurityBaseline: "account",
@@ -107,6 +113,7 @@ const US_PRD: MapleProfile = {
 		selfTraceSampleRatio: "0.05",
 	},
 	electric: { taskSize: { cpu: 512, memory: 1024 }, dbPoolSize: undefined },
+	scraper: { taskSize: { cpu: 512, memory: 1024 } },
 }
 
 /**
@@ -116,7 +123,8 @@ const US_PRD: MapleProfile = {
 const EU_PRD: MapleProfile = {
 	...US_PRD,
 	database: "declared",
-	deploys: { ...US_PRD.deploys, sharedApps: false, awsSecurityBaseline: "regional" },
+	// No scraper until `prod-eu` carries its own SD_INTERNAL_TOKEN (docs/eu-region-plan.md).
+	deploys: { ...US_PRD.deploys, sharedApps: false, scraper: false, awsSecurityBaseline: "regional" },
 	ingest: {
 		desiredCount: 1,
 		scaling: scaling(1, 3),
@@ -147,6 +155,8 @@ const PR: MapleProfile = {
 		ingest: true,
 		collector: false,
 		electric: true,
+		// A preview's scrape targets are tested with a local scraper (`bun dev scraper`).
+		scraper: false,
 		sandbox: false,
 		replayBlobs: false,
 		awsSecurityBaseline: "none",
@@ -154,6 +164,7 @@ const PR: MapleProfile = {
 	},
 	ingest: SMALL_INGEST,
 	electric: { taskSize: { cpu: 256, memory: 512 }, dbPoolSize: undefined },
+	scraper: { taskSize: { cpu: 256, memory: 512 } },
 }
 
 /** `preview:web` PRs: the Workers on their own Neon and Tinybird branches; on AWS, only an IAM user. */

@@ -3,6 +3,7 @@ import { Effect, Option, Redacted, Schema } from "effect"
 import type { TenantContext as McpTenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { Env } from "@maple/backend/platform/Env"
 import { ActorId, OrgId, RoleName, UserId } from "@maple/domain/http"
 import {
@@ -45,6 +46,32 @@ const extractAgentActorIdFromMetadata = (metadataJson: string | null): string | 
 	})
 }
 
+/**
+ * The agent a request names in `x-maple-agent-id`, honoured only when it is one of the org's agent
+ * actors created by the key's user. Anything else is ignored and the request acts as its default.
+ */
+const resolveHeaderAgentActor = Effect.fn("McpTenant.resolveHeaderAgentActor")(function* (
+	orgId: OrgId,
+	userId: UserId,
+	raw: string,
+) {
+	const actorId = decodeActorIdOption(raw)
+	if (Option.isNone(actorId)) return Option.none<ActorId>()
+	const actors = yield* ErrorActorsService
+	const agent = yield* actors
+		.findOwnedAgentActor(orgId, actorId.value, userId)
+		.pipe(
+			Effect.mapError(
+				() =>
+					new McpAuthUnavailableError({
+						message: "Agent identity validation is temporarily unavailable",
+					}),
+			),
+		)
+	yield* Effect.annotateCurrentSpan("maple.mcp.agent_header_honoured", Option.isSome(agent))
+	return Option.map(agent, (document) => document.id)
+})
+
 const toHeaderRecord = (headers: Headers): Record<string, string> => {
 	const record: Record<string, string> = {}
 
@@ -79,18 +106,11 @@ export const describeMalformedBearer = (token: string | undefined): string | und
 	return `The bearer token is not a Maple API key. Maple API keys start with \`${MAPLE_API_KEY_PREFIX}\`; create one in Maple's settings, or connect with OAuth.`
 }
 
-const firstForwardedValue = (value: string | null) => value?.split(",")[0]?.trim()
-
-export const mcpResourceForRequest = (request: Request) => {
-	const requestUrl = new URL(request.url)
-	const protocol =
-		firstForwardedValue(request.headers.get("x-forwarded-proto")) ?? requestUrl.protocol.slice(0, -1)
-	const host =
-		firstForwardedValue(request.headers.get("x-forwarded-host")) ??
-		request.headers.get("host") ??
-		requestUrl.host
-	return `${protocol}://${host}/mcp`
-}
+/**
+ * The MCP resource identifier (RFC 8707) this deployment serves, from its configured API origin.
+ * The same value apps/api binds OAuth grants to, never a forwarded host header.
+ */
+export const mcpResourceUrl = (apiBaseUrl: string) => `${apiBaseUrl.replace(/\/+$/, "")}/mcp`
 
 export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantContext")(
 	function* (request: Request) {
@@ -176,7 +196,7 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 
 		if (Option.isSome(apiKeyResolved)) {
 			const resolved = apiKeyResolved.value
-			const expectedResource = mcpResourceForRequest(request)
+			const expectedResource = mcpResourceUrl((yield* Env).MAPLE_API_BASE_URL)
 			const isMcpOAuthToken = resolved.mcpOAuthResource !== null
 			if (
 				isMcpOAuthToken &&
@@ -216,19 +236,19 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 				),
 			)
 
-			// Actor resolution: prefer an explicit agent override header, else the
-			// key's pinned agentActorId metadata. Both must be a valid ActorId; we
-			// silently drop malformed values rather than failing the request.
-			const keyActorId = extractAgentActorIdFromMetadata(resolved.metadataJson)
+			// Actor resolution: prefer a verified agent header, else the key's pinned agentActorId
+			// metadata. Malformed or unverified values are dropped rather than failing the request.
 			const headerActorId = request.headers.get(AGENT_ACTOR_HEADER)
-			const actorIdCandidate = headerActorId ?? keyActorId
-			const actorIdOpt =
-				actorIdCandidate == null
-					? Option.none<
-							ReturnType<typeof decodeActorIdOption> extends Option.Option<infer A> ? A : never
-						>()
-					: decodeActorIdOption(actorIdCandidate)
-			const actorId = Option.getOrUndefined(actorIdOpt)
+			const headerActor =
+				headerActorId === null
+					? Option.none<ActorId>()
+					: yield* resolveHeaderAgentActor(validOrgId, validUserId, headerActorId)
+			const keyActorId = extractAgentActorIdFromMetadata(resolved.metadataJson)
+			const actorId = Option.getOrUndefined(
+				Option.orElse(headerActor, () =>
+					keyActorId === null ? Option.none<ActorId>() : decodeActorIdOption(keyActorId),
+				),
+			)
 
 			return {
 				orgId: validOrgId,

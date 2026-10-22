@@ -24,6 +24,8 @@ export const findingHref = (target: FindingTarget, time: TimeSearch): string => 
 					search: { ...time, environmentId: target.environmentId },
 				}),
 			)
+		case "supabase":
+			return hrefOf(AppRoute.InfraSupabaseProject({ projectRef: target.projectRef, search: time }))
 		case "planetscale":
 			return hrefOf(AppRoute.InfraPlanetscaleDatabase({ dbName: target.database, search: time }))
 		case "gcpService":
@@ -51,6 +53,8 @@ export const sourceHref = (id: SourceId, time: TimeSearch): string => {
 			return hrefOf(AppRoute.InfraCloudflare({ search: time }))
 		case "railway":
 			return hrefOf(AppRoute.InfraRailway({ search: time }))
+		case "supabase":
+			return hrefOf(AppRoute.InfraSupabase({ search: time }))
 		case "planetscale":
 			return hrefOf(AppRoute.InfraPlanetscale({ search: time }))
 		case "gcp":

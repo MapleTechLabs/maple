@@ -9,7 +9,7 @@ import { VCS_SYNC_BATCH_PATH } from "../worker/vcs-sync-dispatch"
 // covers headers, not query parameters — so tracing these requests would retain
 // a live bearer credential in telemetry. There is no per-attribute lever, so the
 // auto server span is suppressed for them; each callback handler carries its own
-// span with safe attributes instead (see `integrations.*OAuthCallback` and
+// span with safe attributes instead (see `IntegrationsCallbackRouter.*` and
 // `ChatOAuth.callback`). The second alternative must stay in sync with the chat
 // connector callback paths in `routes/chat-integration.http.ts`.
 // `/oauth/authorize` is deliberately NOT here: its query carries no bearer

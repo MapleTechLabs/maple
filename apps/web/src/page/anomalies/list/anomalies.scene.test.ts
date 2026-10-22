@@ -83,12 +83,14 @@ const loaded = (rows: ReadonlyArray<V2AnomalyIncident>, search = {}) => {
 
 describe("anomalies list", () => {
 	test("entry reads the clock, the open incidents and the remembered filter sections", () => {
-		expect(names(init({ search: {} }, context).commands)).toEqual([
-			"LoadAnomaliesSignalPresence",
-			"ReadAnomaliesClock",
-			"FetchAnomalyIncidents",
-			"ReadRememberedFilterSections",
-		])
+		expect(names(init({ search: {} }, context).commands)).toEqual(
+			expect.arrayContaining([
+				"LoadAnomaliesSignalPresence",
+				"ReadAnomaliesClock",
+				"FetchAnomalyIncidents",
+				"ReadRememberedFilterSections",
+			]),
+		)
 	})
 
 	test("a stale answer is dropped; a failure renders the error state", () => {

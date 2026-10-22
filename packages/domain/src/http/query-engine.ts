@@ -12,6 +12,7 @@ import {
 	SpanId,
 	SpanName,
 	StatusCode,
+	SupabaseProjectRef,
 	TraceId,
 } from "../primitives"
 import {
@@ -492,6 +493,150 @@ export class RailwayInfraRowsResponse extends Schema.Class<RailwayInfraRowsRespo
 	data: Schema.Array(WireRow),
 }) {}
 
+// Supabase infrastructure page (/infra/supabase): the metrics scraped from each project, keyed by
+// the `supabase_project_ref` attribute.
+export class SupabaseInfraProjectsRequest extends Schema.Class<SupabaseInfraProjectsRequest>(
+	"SupabaseInfraProjectsRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+}) {}
+
+export class SupabaseInfraProjectTimeseriesRequest extends Schema.Class<SupabaseInfraProjectTimeseriesRequest>(
+	"SupabaseInfraProjectTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	projectRef: SupabaseProjectRef,
+}) {}
+
+export class SupabaseInfraRowsResponse extends Schema.Class<SupabaseInfraRowsResponse>(
+	"SupabaseInfraRowsResponse",
+)({
+	data: Schema.Array(WireRow),
+}) {}
+
+// Supabase insights: the polled Supabase logs (edge, postgres, auth...) and the org's own client
+// spans that call a project. Times are ISO-8601 UTC strings; durations are milliseconds.
+
+/** One project over a window. */
+export class SupabaseProjectWindowRequest extends Schema.Class<SupabaseProjectWindowRequest>(
+	"SupabaseProjectWindowRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	projectRef: SupabaseProjectRef,
+}) {}
+
+export class SupabaseApiTrafficBucket extends Schema.Class<SupabaseApiTrafficBucket>(
+	"SupabaseApiTrafficBucket",
+)({
+	/** Bucket start, ISO-8601 UTC. */
+	bucket: Schema.String,
+	status2xx: Schema.Number,
+	status3xx: Schema.Number,
+	status4xx: Schema.Number,
+	status5xx: Schema.Number,
+}) {}
+
+/** Edge (API gateway) requests of one project, by status class per bucket, plus window totals. */
+export class SupabaseApiTrafficResponse extends Schema.Class<SupabaseApiTrafficResponse>(
+	"SupabaseApiTrafficResponse",
+)({
+	buckets: Schema.Array(SupabaseApiTrafficBucket),
+	/** Every edge request of the window, including those without a parseable status. */
+	requests: Schema.Number,
+	errors5xx: Schema.Number,
+	/** `errors5xx / requests`, 0..1; 0 with no requests. */
+	errorRate5xx: Schema.Number,
+	/** p95 of `response.origin_time`: the upstream (PostgREST, auth...) time in ms. */
+	p95OriginMs: Schema.Number,
+}) {}
+
+export class SupabaseApiPath extends Schema.Class<SupabaseApiPath>("SupabaseApiPath")({
+	method: Schema.String,
+	/** The request path without its query string. */
+	path: Schema.String,
+	requests: Schema.Number,
+	errors5xx: Schema.Number,
+	p95OriginMs: Schema.Number,
+}) {}
+
+/** The ten busiest (method, path) pairs of one project's edge requests. */
+export class SupabaseApiTopPathsResponse extends Schema.Class<SupabaseApiTopPathsResponse>(
+	"SupabaseApiTopPathsResponse",
+)({
+	paths: Schema.Array(SupabaseApiPath),
+}) {}
+
+export class SupabaseCallerBucket extends Schema.Class<SupabaseCallerBucket>("SupabaseCallerBucket")({
+	bucket: Schema.String,
+	calls: Schema.Number,
+}) {}
+
+/** Calls of one service to the project by product: path prefix for the API, `postgresql` spans for the database. */
+export class SupabaseCallerMix extends Schema.Class<SupabaseCallerMix>("SupabaseCallerMix")({
+	rest: Schema.Number,
+	auth: Schema.Number,
+	storage: Schema.Number,
+	realtime: Schema.Number,
+	functions: Schema.Number,
+	postgres: Schema.Number,
+	other: Schema.Number,
+}) {}
+
+/** One of the org's services calling the project (its Client spans). */
+export class SupabaseProjectCaller extends Schema.Class<SupabaseProjectCaller>("SupabaseProjectCaller")({
+	serviceName: Schema.String,
+	/** Stored spans, not sample-weighted. */
+	calls: Schema.Number,
+	callsPerMinute: Schema.Number,
+	errors: Schema.Number,
+	/** Spans with status `Error` over calls, 0..1. */
+	errorRate: Schema.Number,
+	p95DurationMs: Schema.Number,
+	mix: SupabaseCallerMix,
+	/** Calls per bucket, for a sparkline; buckets without calls are absent. */
+	series: Schema.Array(SupabaseCallerBucket),
+}) {}
+
+/** Up to 100 services, busiest first. */
+export class SupabaseProjectCallersResponse extends Schema.Class<SupabaseProjectCallersResponse>(
+	"SupabaseProjectCallersResponse",
+)({
+	callers: Schema.Array(SupabaseProjectCaller),
+}) {}
+
+export class SupabaseLogIssuesRequest extends Schema.Class<SupabaseLogIssuesRequest>(
+	"SupabaseLogIssuesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	/** Omitted: every project of the org. */
+	projectRef: Schema.optionalKey(SupabaseProjectRef),
+}) {}
+
+/** A recurring WARN-or-worse Supabase log message. */
+export class SupabaseLogIssue extends Schema.Class<SupabaseLogIssue>("SupabaseLogIssue")({
+	projectRef: Schema.String,
+	/** `supabase.log.source`: `edge_logs`, `postgres_logs`, `auth_logs`, ... */
+	source: Schema.String,
+	/** Edge: `METHOD path status`; auth: its `msg`; else the body. Digit runs read `0`, cut at 200 chars. */
+	message: Schema.String,
+	count: Schema.Number,
+	lastSeen: Schema.String,
+	/** Highest OTLP severity number seen: 13 WARN, 17 ERROR, 21 FATAL. */
+	maxSeverity: Schema.Number,
+}) {}
+
+/** Top 20 by count. */
+export class SupabaseLogIssuesResponse extends Schema.Class<SupabaseLogIssuesResponse>(
+	"SupabaseLogIssuesResponse",
+)({
+	issues: Schema.Array(SupabaseLogIssue),
+}) {}
+
 // Google Cloud infrastructure page (/infra/gcp): `gcp.*` metrics from the Google Cloud poller.
 const GcpInfraService = Schema.Literals(GCP_INFRA_SERVICE_IDS)
 
@@ -616,6 +761,40 @@ export class GcpCloudSqlDatabasesResponse extends Schema.Class<GcpCloudSqlDataba
 )({
 	/** In name order: see `gcpCloudSqlDatabasesSQL`. */
 	databases: Schema.Array(Schema.String),
+}) {}
+
+/** One Query Insights statement's traced counterparts: their slowest client spans. */
+export class GcpCloudSqlStatementSpansRequest extends Schema.Class<GcpCloudSqlStatementSpansRequest>(
+	"GcpCloudSqlStatementSpansRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	/** The instance's databases, matched against the spans' `db.namespace`. */
+	databases: Schema.Array(Schema.String.check(Schema.isMaxLength(256))).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(32),
+	),
+	/** Traced query keys (`DB_QUERY_KEY_SQL`) the statement matched. */
+	queryKeys: Schema.Array(Schema.String.check(Schema.isMaxLength(512))).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(16),
+	),
+}) {}
+
+export class GcpCloudSqlStatementSpansResponse extends Schema.Class<GcpCloudSqlStatementSpansResponse>(
+	"GcpCloudSqlStatementSpansResponse",
+)({
+	/** Slowest first: see `serviceDbQuerySpansQuery`. */
+	data: Schema.Array(
+		Schema.Struct({
+			traceId: Schema.String,
+			spanId: Schema.String,
+			serviceName: Schema.String,
+			/** ISO-8601 UTC. */
+			timestamp: Schema.String,
+			durationMs: Schema.Number,
+		}),
+	),
 }) {}
 
 // Cloudflare infrastructure page (/infra/cloudflare): per-zone HTTP edge
@@ -2878,6 +3057,48 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.post("supabaseInfraProjects", "/supabase-infra-projects", {
+			payload: SupabaseInfraProjectsRequest,
+			success: SupabaseInfraRowsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("supabaseInfraProjectTimeseries", "/supabase-infra-project-timeseries", {
+			payload: SupabaseInfraProjectTimeseriesRequest,
+			success: SupabaseInfraRowsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("supabaseApiTraffic", "/supabase-api-traffic", {
+			payload: SupabaseInfraProjectTimeseriesRequest,
+			success: SupabaseApiTrafficResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("supabaseApiTopPaths", "/supabase-api-top-paths", {
+			payload: SupabaseProjectWindowRequest,
+			success: SupabaseApiTopPathsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("supabaseProjectCallers", "/supabase-project-callers", {
+			payload: SupabaseInfraProjectTimeseriesRequest,
+			success: SupabaseProjectCallersResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("supabaseLogIssues", "/supabase-log-issues", {
+			payload: SupabaseLogIssuesRequest,
+			success: SupabaseLogIssuesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.post("gcpInfraPresence", "/gcp-infra-presence", {
 			payload: GcpInfraPresenceRequest,
 			success: GcpInfraPresenceResponse,
@@ -2916,6 +3137,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("gcpCloudSqlDatabases", "/gcp-cloudsql-databases", {
 			payload: GcpCloudSqlInstanceRequest,
 			success: GcpCloudSqlDatabasesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("gcpCloudSqlStatementSpans", "/gcp-cloudsql-statement-spans", {
+			payload: GcpCloudSqlStatementSpansRequest,
+			success: GcpCloudSqlStatementSpansResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

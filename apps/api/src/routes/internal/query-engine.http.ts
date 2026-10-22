@@ -1,5 +1,7 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { HttpApiBuilder } from "effect/http-api"
+import { mergeSupabaseSeries } from "./supabase-infra-series"
+import { apiTrafficResponse, mergeSupabaseCallers, mergeSupabaseProjects } from "./supabase-insights-merge"
 import {
 	CurrentTenant,
 	MapleInternalApi,
@@ -19,10 +21,17 @@ import {
 	ServiceApdexResponse,
 	PlanetScaleInfraTimeseriesResponse,
 	RailwayInfraRowsResponse,
+	SupabaseInfraRowsResponse,
+	SupabaseApiPath,
+	SupabaseApiTopPathsResponse,
+	SupabaseLogIssue,
+	SupabaseLogIssuesResponse,
+	SupabaseProjectCallersResponse,
 	GcpInfraMetricsResponse,
 	GcpInfraPresenceResponse,
 	GcpInfraSparklinesResponse,
 	GcpCloudSqlDatabasesResponse,
+	GcpCloudSqlStatementSpansResponse,
 	GcpCloudSqlTopQueriesResponse,
 	GcpInfraTimeseriesResponse,
 	ServiceCloudflareStatsResponse,
@@ -854,6 +863,94 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
+				// Gauges, CPU and the logs summary are three reads; a project with no CPU samples yet
+				// reads 0% CPU, one with logs but no metrics reads zero metrics.
+				.handle("supabaseInfraProjects", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [gauges, cpu, logs] = yield* Effect.all(
+							[
+								runQuery(Queries.supabaseInfraProjectGauges, tenant, payload),
+								runQuery(Queries.supabaseInfraProjectCpu, tenant, payload),
+								runQuery(Queries.supabaseLogsProjectsSummary, tenant, payload),
+							],
+							{ concurrency: 3 },
+						)
+						return new SupabaseInfraRowsResponse({
+							data: mergeSupabaseProjects(gauges, cpu, logs),
+						})
+					}),
+				)
+				// Buckets present in either read; a missing half reads as zeros.
+				.handle("supabaseInfraProjectTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [gauges, rates] = yield* Effect.all(
+							[
+								runQuery(Queries.supabaseInfraProjectGaugeSeries, tenant, payload),
+								runQuery(Queries.supabaseInfraProjectRateSeries, tenant, payload),
+							],
+							{ concurrency: 2 },
+						)
+						return new SupabaseInfraRowsResponse({ data: mergeSupabaseSeries(gauges, rates) })
+					}),
+				)
+				.handle("supabaseApiTraffic", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [series, totals] = yield* Effect.all(
+							[
+								runQuery(Queries.supabaseApiTrafficSeries, tenant, payload),
+								runQuery(Queries.supabaseApiTrafficTotals, tenant, payload),
+							],
+							{ concurrency: 2 },
+						)
+						return apiTrafficResponse(series, totals[0])
+					}),
+				)
+				.handle("supabaseApiTopPaths", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.supabaseApiTopPaths, tenant, payload)
+						return new SupabaseApiTopPathsResponse({
+							paths: rows.map((row) => new SupabaseApiPath(row)),
+						})
+					}),
+				)
+				.handle("supabaseProjectCallers", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [callers, series] = yield* Effect.all(
+							[
+								runQuery(Queries.supabaseProjectCallers, tenant, payload),
+								runQuery(Queries.supabaseProjectCallerSeries, tenant, payload),
+							],
+							{ concurrency: 2 },
+						)
+						return new SupabaseProjectCallersResponse({
+							callers: mergeSupabaseCallers(callers, series),
+						})
+					}),
+				)
+				.handle("supabaseLogIssues", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.supabaseLogIssues, tenant, payload)
+						return new SupabaseLogIssuesResponse({
+							issues: rows.map(
+								(row) =>
+									new SupabaseLogIssue({
+										...row,
+										lastSeen: DateTime.formatIso(row.lastSeen),
+									}),
+							),
+						})
+					}),
+				)
 				.handle("gcpInfraPresence", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -904,6 +1001,18 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const rows = yield* runQuery(Queries.gcpCloudSqlDatabases, tenant, payload)
 						return new GcpCloudSqlDatabasesResponse({
 							databases: rows.map((row) => row.database),
+						})
+					}),
+				)
+				.handle("gcpCloudSqlStatementSpans", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpCloudSqlStatementSpans, tenant, payload)
+						return new GcpCloudSqlStatementSpansResponse({
+							data: rows.map((row) => ({
+								...row,
+								timestamp: DateTime.formatIso(row.timestamp),
+							})),
 						})
 					}),
 				)

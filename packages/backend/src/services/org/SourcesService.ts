@@ -15,7 +15,12 @@ import {
 	type UpdateSourceRequest,
 	type UserId,
 } from "@maple/domain/http"
-import { SourceId, type SourceResourceAttribute, type SourceSignal } from "@maple/domain/primitives"
+import {
+	SourceId,
+	type SourcePlatform,
+	type SourceResourceAttribute,
+	type SourceSignal,
+} from "@maple/domain/primitives"
 import { hashIngestKey, parseIngestKeyLookupHmacKey } from "@maple/db"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -57,7 +62,6 @@ const toIso = (epochMs: number) => decodeIsoSync(new Date(epochMs).toISOString()
 const generateSecret = () => `${SOURCE_TOKEN_PREFIX}${randomBytes(24).toString("base64url")}`
 const displayPrefix = (secret: string) => secret.slice(0, SOURCE_TOKEN_PREFIX.length + 5)
 
-
 const isoOrNull = (epochMs: number | null) => (epochMs === null ? null : toIso(epochMs))
 
 const toSourceHealth = (health: SourceHealthResult) =>
@@ -76,11 +80,7 @@ interface SourceOwner {
 }
 const NO_OWNER: SourceOwner = { integrationId: null, overrides: undefined }
 
-const rowToSource = (
-	row: SourceRow,
-	now: number,
-	owner: SourceOwner = NO_OWNER,
-): Source => {
+const rowToSource = (row: SourceRow, now: number, owner: SourceOwner = NO_OWNER): Source => {
 	const status = statusOf(row, now)
 	return new Source({
 		id: row.id,
@@ -189,6 +189,9 @@ const normalizeExpiry = Effect.fnUntraced(function* (
 	if (expiresAtMs <= now) return yield* invalid("Expiry must be in the future")
 	return expiresAtMs
 })
+
+/** The HTTP request, or an integration minting a token source under its own platform. */
+export type CreateSourceInput = Omit<CreateSourceRequest, "platform"> & { readonly platform: SourcePlatform }
 
 // Rules are enforced by the gateway on a source's own token, so only token sources take them.
 const RULE_FIELDS = ["allowedSignals", "rateLimitRps", "resourceAttributes", "expiresAtMs"] as const
@@ -313,7 +316,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 		const create = Effect.fn("SourcesService.create")(function* (
 			orgId: OrgId,
 			userId: UserId,
-			request: CreateSourceRequest,
+			request: CreateSourceInput,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.source.platform": request.platform })
 			const now = yield* Clock.currentTimeMillis

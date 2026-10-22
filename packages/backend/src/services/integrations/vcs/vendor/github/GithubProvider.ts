@@ -114,6 +114,7 @@ const PullRequestPayload = Schema.Struct({
 		title: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		body: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		user: Schema.optionalKey(Schema.NullOr(Schema.Struct({ login: Schema.optionalKey(Schema.String) }))),
+		author_association: Schema.optionalKey(Schema.String),
 		merged: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
 		merge_commit_sha: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		merged_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -755,6 +756,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						title: pr.title ?? null,
 						body: pr.body ?? null,
 						authorLogin: pr.user?.login ?? null,
+						...(pr.author_association === undefined
+							? undefined
+							: { authorAssociation: pr.author_association }),
 						merged,
 						mergeCommitSha: pr.merge_commit_sha ?? null,
 						mergedAtMs,

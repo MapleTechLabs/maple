@@ -4,6 +4,7 @@ import {
 	GithubIntegrationStatus,
 	HazelIntegrationStatus,
 	RailwayIntegrationStatus,
+	SupabaseIntegrationStatus,
 } from "@maple/domain/http"
 import {
 	V2AwsIntegration,
@@ -26,6 +27,7 @@ import { RailwayCardModel } from "./railway"
 import { PlanetscaleCardModel } from "./planetscale"
 import { GcpCardModel } from "./gcp"
 import { AwsCardModel } from "./aws"
+import { SupabaseCardModel } from "./supabase"
 import { ConnectModel } from "./connect"
 
 // `/integrations`: the hub and every integration's page.
@@ -40,6 +42,7 @@ export const Statuses = Schema.Struct({
 	planetscaleDatabases: keyed(V2PlanetScaleDatabaseList),
 	gcp: keyed(V2GcpIntegration),
 	aws: keyed(V2AwsIntegration),
+	supabase: keyed(SupabaseIntegrationStatus),
 	hazel: keyed(HazelIntegrationStatus),
 	github: keyed(GithubIntegrationStatus),
 	chat: keyed(V2ChatConnectorList),
@@ -68,5 +71,6 @@ export const Model = Schema.Struct({
 	planetscaleCard: PlanetscaleCardModel,
 	gcpCard: GcpCardModel,
 	awsCard: AwsCardModel,
+	supabaseCard: SupabaseCardModel,
 })
 export type Model = typeof Model.Type

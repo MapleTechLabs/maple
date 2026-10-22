@@ -38,9 +38,8 @@ import {
 } from "@maple/db/tables"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import { EdgeCacheService, makeEdgeCacheService, makeMemoryBackend } from "@maple/cache"
-import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { isRetryablePostgresContention } from "@maple/backend/platform/postgres-errors"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import type {
@@ -98,40 +97,6 @@ describe("describeCause", () => {
 
 	it("returns the string itself for string causes", () => {
 		expect(describeCause("oops")).toBe("oops")
-	})
-})
-
-describe("isRetryablePostgresContention", () => {
-	const makeError = (message: string, cause: unknown = null) => new DatabaseError({ message, cause })
-
-	it("matches Postgres serialization_failure (SQLSTATE 40001) via the cause code", () => {
-		const cause = Object.assign(new Error("could not serialize access due to concurrent update"), {
-			code: "40001",
-		})
-		expect(isRetryablePostgresContention(makeError("query failed", cause))).toBe(true)
-	})
-
-	it("matches Postgres deadlock_detected (SQLSTATE 40P01) via the cause code", () => {
-		const cause = Object.assign(new Error("deadlock detected"), {
-			code: "40P01",
-		})
-		expect(isRetryablePostgresContention(makeError("query failed", cause))).toBe(true)
-	})
-
-	it("matches Postgres contention codes appearing in either message", () => {
-		expect(isRetryablePostgresContention(makeError("SQLSTATE 40001: could not serialize access"))).toBe(
-			true,
-		)
-		expect(isRetryablePostgresContention(makeError("wrapper", "SQLSTATE 40P01: deadlock"))).toBe(true)
-	})
-
-	it("rejects unrelated database errors", () => {
-		expect(isRetryablePostgresContention(makeError("UNIQUE constraint failed"))).toBe(false)
-		expect(isRetryablePostgresContention(makeError("no such table"))).toBe(false)
-		const uniqueViolation = Object.assign(new Error("duplicate key value"), {
-			code: "23505",
-		})
-		expect(isRetryablePostgresContention(makeError("query failed", uniqueViolation))).toBe(false)
 	})
 })
 

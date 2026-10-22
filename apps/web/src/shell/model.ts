@@ -33,12 +33,14 @@ export const Integrations = Schema.Struct({
 	railway: Schema.Boolean,
 	planetscale: Schema.Boolean,
 	gcp: Schema.Boolean,
+	supabase: Schema.Boolean,
 })
 export const NO_INTEGRATIONS: typeof Integrations.Type = {
 	cloudflare: false,
 	railway: false,
 	planetscale: false,
 	gcp: false,
+	supabase: false,
 }
 
 export const Model = Schema.Struct({

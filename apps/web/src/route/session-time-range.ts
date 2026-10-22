@@ -41,6 +41,8 @@ const CEILINGS: ReadonlyMap<RouteTag, number> = new Map<RouteTag, number>([
 			"InfraCloudflareWorker",
 			"InfraRailway",
 			"InfraRailwayService",
+			"InfraSupabase",
+			"InfraSupabaseProject",
 			"InfraGcp",
 			"InfraGcpResource",
 			"InfraPlanetscale",

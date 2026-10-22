@@ -10,7 +10,7 @@ import {
 	VIEW_LABEL,
 	VIEWS,
 } from "../gcp-infra-fixture"
-import { gcpRequestedView, gcpSparks } from "../../components/infra/gcp/list-model"
+import { gcpRequestedView, gcpSparks, gcpWindowSeconds } from "../../components/infra/gcp/list-model"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../charts/theme-colors"
@@ -31,6 +31,7 @@ const listView = Submodel.defineView<Model, GcpList.Message>((model, h) =>
 				gcpListPage(h, {
 					fleet: FLEET,
 					sparks: SPARKS,
+					windowSeconds: gcpWindowSeconds(START, END),
 					cloudSqlInstances: CLOUD_SQL_INSTANCES,
 					projectHealth: PROJECT_HEALTH,
 					collecting: false,

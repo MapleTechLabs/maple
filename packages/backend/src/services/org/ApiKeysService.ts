@@ -168,6 +168,34 @@ const claimLive = (keyId: ApiKeyId, orgId: OrgId, now: number) =>
 		.where(($) => [$.id.eq(keyId), $.orgId.eq(orgId), $.revoked.eq(false)])
 		.returning(($) => ({ ...$, txid: currentTxid }))
 
+/**
+ * `claimLive` for a roll: the source must also be unexpired and not owned by
+ * another lifecycle (device keys by their app, OAuth access keys by their
+ * refresh family), so a roll can never extend or detach a credential.
+ */
+const claimRollable = (keyId: ApiKeyId, orgId: OrgId, now: number) =>
+	PG.update(ApiKeys)
+		.set({ revoked: true, revokedAt: now })
+		.where(($) => {
+			const source = PG.jsonText($.metadataJson, "source")
+			return [
+				$.id.eq(keyId),
+				$.orgId.eq(orgId),
+				$.revoked.eq(false),
+				PG.or($.expiresAt.isNull(), $.expiresAt.gt(now)),
+				$.kind.neq("device"),
+				PG.or(source.isNull(), source.neq("maple_mcp_oauth")),
+			]
+		})
+		.returning(($) => ({ ...$, txid: currentTxid }))
+
+/** Why a roll that matched no row was refused, read from the stored row. */
+const rollRefusal = (row: ApiKeyRow, now: number): string => {
+	if (row.revoked) return "API key is already revoked"
+	if (row.expiresAt !== null && row.expiresAt <= now) return "API key has expired"
+	return "API key is managed by its client and cannot be rolled"
+}
+
 export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/api/services/ApiKeysService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
@@ -511,7 +539,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			const rolled = yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
-						const [source] = yield* db.run(claimLive(keyId, orgId, now))
+						const [source] = yield* db.run(claimRollable(keyId, orgId, now))
 						if (source === undefined) return undefined
 
 						yield* db.run(
@@ -528,7 +556,8 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 								// would resolve with the null (= `root`) default, silently
 								// escalating a CLI/MCP key beyond its creator's roles.
 								metadataJson: source.metadataJson,
-								expiresAt: null,
+								// A roll replaces the secret, never the lifetime.
+								expiresAt: source.expiresAt,
 								createdAt: now,
 								createdBy: userId,
 								createdByEmail,
@@ -541,11 +570,9 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 
 			if (rolled === undefined) {
 				// Lost the claim (or never had one): distinguish a key that does not
-				// exist from one that was revoked out from under this roll.
-				yield* requireById(orgId, keyId)
-				return yield* Effect.fail(
-					new ApiKeyNotFoundError({ keyId, message: "API key is already revoked" }),
-				)
+				// exist from one that is revoked, expired or not rollable.
+				const row = yield* requireById(orgId, keyId)
+				return yield* Effect.fail(new ApiKeyNotFoundError({ keyId, message: rollRefusal(row, now) }))
 			}
 
 			const txid = readTxid([rolled])
@@ -560,7 +587,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 				revoked: false,
 				revokedAt: null,
 				lastUsedAt: null,
-				expiresAt: null,
+				expiresAt: rolled.expiresAt,
 				createdAt: now,
 				createdBy: userId,
 				createdByEmail,

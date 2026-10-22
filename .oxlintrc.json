@@ -198,14 +198,17 @@
 			}
 		},
 		// Test cases that cannot catch a bug: assertion-free, existence-only, constant pins,
-		// Tailwind class pins, and source greps. Rationale per rule in scripts/oxlint-plugins/test-slop.mjs.
+		// Tailwind class pins, source greps, exact command lists and SQL projection pins.
+		// Rationale per rule in scripts/oxlint-plugins/test-slop.mjs.
 		{
 			"files": ["**/*.test.ts", "**/*.test.tsx"],
 			"plugins": ["vitest"],
 			"rules": {
 				"test-slop/no-classname-assertions": "error",
 				"test-slop/no-constant-pin": "error",
+				"test-slop/no-exact-name-list": "error",
 				"test-slop/no-source-text-assertions": "error",
+				"test-slop/no-sql-text-pin": "error",
 				"test-slop/no-weak-only-assertions": "error",
 				"vitest/expect-expect": [
 					"error",
@@ -232,7 +235,8 @@
 							"match",
 							"doesNotMatch",
 							"fail",
-							"expectTypeOf"
+							"expectTypeOf",
+							"Lazy.expectAllReused"
 						]
 					}
 				],
@@ -245,6 +249,13 @@
 				"vitest/require-to-throw-message": "off",
 				"vitest/valid-expect": "off",
 				"vitest/valid-title": "off"
+			}
+		},
+		// The raw-SQL preparer is a text rewriter: its output SQL text is the behavior under test.
+		{
+			"files": ["packages/query-engine/src/runtime/raw-sql*.test.ts"],
+			"rules": {
+				"test-slop/no-sql-text-pin": "off"
 			}
 		},
 		// "shape" is Electric's own protocol noun — `/v1/shape` is the endpoint this

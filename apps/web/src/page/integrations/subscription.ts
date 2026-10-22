@@ -5,6 +5,7 @@ import { gcpConnectionState } from "../../components/integrations/gcp-connector-
 import { ingestPhaseOf } from "../infra-integrations/cloudflare/ingest"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
+import { apiOrigins } from "../../lib/services/common/api-base-url"
 import { integrationOfSearch } from "./catalog"
 import { ConnectAttempt, ConnectProvider, currentReturnPath, PROVIDERS, startConnect } from "./connect"
 import { Message } from "./message"
@@ -129,7 +130,8 @@ const GITHUB_POLL_MS = 3_000
 const FORCE_POLL_WINDOW_MS = 10_000
 
 /** A status poll: paused while the tab is hidden or offline, one catch-up tick on return. */
-const every = (millis: number, message: () => Message) => Stream.map(pollTicks(Duration.millis(millis)), message)
+const every = (millis: number, message: () => Message) =>
+	Stream.map(pollTicks(Duration.millis(millis)), message)
 
 const after = (millis: number, message: () => Message) =>
 	Stream.callback<Message>((queue) =>
@@ -140,6 +142,15 @@ const after = (millis: number, message: () => Message) =>
 	)
 
 const CLOUDFLARE_INGEST_MS = 30_000
+
+const SUPABASE_CLOCK_MS = 60_000
+
+const isSupabaseShown = (model: Model): boolean =>
+	integrationOfSearch(model.search.integration) === "supabase" &&
+	Option.match(AsyncData.getData(model.statuses.supabase.data), {
+		onNone: () => false,
+		onSome: (status) => status.connected,
+	})
 
 const isRailwaySettling = (model: Model): boolean => {
 	if (integrationOfSearch(model.search.integration) !== "railway") return false
@@ -185,7 +196,8 @@ const isAwaitingRun = (model: Model): boolean => {
 	if (configure.method === "script") return !runConfirmed(connector, configure.opened, model.nowMs)
 	// `MethodApplyStage`: until each capability's first data, or its removal, is confirmed.
 	return CAPABILITY_IDS.some((capability) => {
-		const applied = capability === "logs" ? connector.applied_logs_enabled : connector.applied_metrics_enabled
+		const applied =
+			capability === "logs" ? connector.applied_logs_enabled : connector.applied_metrics_enabled
 		return connector[CAPABILITIES[capability].flag] ? applied !== true : applied === true
 	})
 }
@@ -229,8 +241,13 @@ const CallbackData = Schema.Struct({
 })
 const decodeCallback = Schema.decodeUnknownOption(CallbackData)
 
+/** The callback page is the API's: served from its origin, or this one through the proxy. */
+export const isCallbackOrigin = (origin: string, ownOrigin: string): boolean =>
+	origin === ownOrigin || apiOrigins.includes(origin)
+
 const callbackMessages = (provider: ConnectProvider) =>
 	Stream.fromEventListener<MessageEvent>(window, "message").pipe(
+		Stream.filter((event) => isCallbackOrigin(event.origin, window.location.origin)),
 		Stream.flatMap((event) =>
 			Option.match(decodeCallback(event.data), {
 				onNone: () => Stream.empty,
@@ -288,8 +305,12 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: ({ version }) =>
 					version === null
 						? Stream.empty
-						: Stream.flatMap(after(FORCE_POLL_WINDOW_MS, () => Message.EndedGithubForcePoll({ version })), (ended) =>
-								Stream.flatMap(whenPresent(), () => Stream.make(Message.TickedGithubPoll(), ended)),
+						: Stream.flatMap(
+								after(FORCE_POLL_WINDOW_MS, () => Message.EndedGithubForcePoll({ version })),
+								(ended) =>
+									Stream.flatMap(whenPresent(), () =>
+										Stream.make(Message.TickedGithubPoll(), ended),
+									),
 							),
 			},
 		),
@@ -338,6 +359,15 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				modelToDependencies: ({ model }) => ({ isPending: isAwsPending(model) }),
 				dependenciesToStream: ({ isPending }) =>
 					isPending ? every(10_000, () => Message.TickedAwsPending()) : Stream.empty,
+			},
+		),
+		/** The connected Supabase card's clock, so its metrics window and "Last data" ages advance. */
+		supabaseClock: entry(
+			{ isShown: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ isShown: isSupabaseShown(model) }),
+				dependenciesToStream: ({ isShown }) =>
+					isShown ? every(SUPABASE_CLOCK_MS, () => Message.TickedSupabaseClock()) : Stream.empty,
 			},
 		),
 		/** `useIntervalRefresh(refreshStatus, { intervalMs: 5_000, enabled: awaitingFirstScrape })`. */

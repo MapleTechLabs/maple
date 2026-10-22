@@ -68,6 +68,8 @@ const POLICIES = {
 	github: { freshness: "poll", staleAfterMs: 24 * 60 * MINUTE },
 	// The connection check runs hourly; three missed checks is no longer a blip.
 	aws: { freshness: "poll", staleAfterMs: 3 * 60 * MINUTE },
+	// Project discovery runs hourly; metrics (scrape) and logs (drains) arrive later phases.
+	supabase: { freshness: "poll", staleAfterMs: 3 * 60 * MINUTE },
 } satisfies Record<SourcePlatform, HealthPolicy>
 
 /**

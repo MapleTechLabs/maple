@@ -30,6 +30,9 @@ const SHARE_PATH_PREFIX = "/share/"
 const isShareDocument = (pathname: string): boolean =>
 	pathname === "/share" || pathname.startsWith(SHARE_PATH_PREFIX)
 
+/** Every document: no plugins, no `<base>` retargeting relative URLs. Keep in step with nginx.conf. */
+const BASE_CSP = "object-src 'none'; base-uri 'self'"
+
 /** HTML only. A script or stylesheet is not framed, and `frame-ancestors` on one means nothing. */
 const isHtmlResponse = (response: Response): boolean =>
 	(response.headers.get("content-type") ?? "").includes("text/html")
@@ -43,10 +46,13 @@ const applyDocumentSecurityHeaders = (response: Response, pathname: string): Res
 	// would silently become a 200 with no headers at all.
 	const headers = new Headers(response.headers)
 
+	headers.set("X-Content-Type-Options", "nosniff")
 	if (isShareDocument(pathname)) {
 		headers.set("Referrer-Policy", "no-referrer")
+		headers.set("Content-Security-Policy", BASE_CSP)
 	} else {
-		headers.set("Content-Security-Policy", "frame-ancestors 'none'")
+		headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
+		headers.set("Content-Security-Policy", `${BASE_CSP}; frame-ancestors 'none'`)
 		headers.set("X-Frame-Options", "DENY")
 	}
 

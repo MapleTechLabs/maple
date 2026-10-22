@@ -120,7 +120,7 @@ jobs:
                         - 'scripts/*.sh'
                         - 'apps/cli/test/*.sh'
 
-            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+            - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
               with:
                   install_args: bun
 
@@ -421,6 +421,21 @@ jobs:
             - name: Build native local bundle
               timeout-minutes: 5
               run: scripts/build-local-binary.sh
+
+            # The only job with a libchdb, so the chDB suites the bounded lane skips run here.
+            # MAPLE_REQUIRE_LIBCHDB turns a missing library into a failure, not a skip. One
+            # process per file: chDB is process-global.
+            - name: Run chDB-backed CLI tests
+              timeout-minutes: 4
+              working-directory: apps/cli
+              env:
+                  MAPLE_LIBCHDB: ${{ github.workspace }}/dist/libchdb.so
+                  MAPLE_REQUIRE_LIBCHDB: "1"
+                  MAPLE_TELEMETRY: off
+              run: |
+                  for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard; do
+                      bun test "test/$file.test.ts"
+                  done
 
             # Each probe owns its TMPDIR and port, so they run side by side. Probes
             # induce failures on purpose; MAPLE_TELEMETRY keeps them out of prod errors.

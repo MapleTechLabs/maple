@@ -5,6 +5,7 @@ import {
 	ApiKeys,
 	ChatIdentities,
 	CliDeviceAuthorizations,
+	DigestSubscriptions,
 	McpOAuthAuthorizations,
 	MobileDevices,
 } from "@maple/db/tables"
@@ -53,6 +54,7 @@ export interface MembershipRevocationSummary {
 	readonly emailDestinationsUpdated: number
 	readonly mobileDevicesDeleted: number
 	readonly chatIdentitiesDeleted: number
+	readonly digestSubscriptionsDisabled: number
 }
 
 export interface MembershipDemotionSummary {
@@ -279,6 +281,17 @@ const make = Effect.gen(function* () {
 							])
 							.returning("id"),
 					)
+					// Disabled the way the daily Clerk reconcile disables a departed member: opt-out
+					// stamps stay untouched, so a member who rejoins is re-enabled by that reconcile.
+					const digestsDisabled = yield* db.run(
+						PG.update(DigestSubscriptions)
+							.set({ enabled: false, webAnalyticsEnabled: false, updatedAt: now })
+							.where(($) => [
+								orgId === null ? undefined : $.orgId.eq(orgId),
+								$.userId.eq(userId),
+							])
+							.returning("id"),
+					)
 					return {
 						apiKeysRevoked: revokedKeys.length,
 						mcpFamiliesRevoked,
@@ -286,6 +299,7 @@ const make = Effect.gen(function* () {
 						mcpAuthorizationsDeleted: mcpAuthDeleted.length,
 						mobileDevicesDeleted: devicesDeleted.length,
 						chatIdentitiesDeleted: identitiesDeleted.length,
+						digestSubscriptionsDisabled: digestsDisabled.length,
 					}
 				}),
 			),
@@ -302,6 +316,7 @@ const make = Effect.gen(function* () {
 			"maple.membership.email_destinations_updated": summary.emailDestinationsUpdated,
 			"maple.membership.mobile_devices_deleted": summary.mobileDevicesDeleted,
 			"maple.membership.chat_identities_deleted": summary.chatIdentitiesDeleted,
+			"maple.membership.digest_subscriptions_disabled": summary.digestSubscriptionsDisabled,
 		})
 		return summary
 	})

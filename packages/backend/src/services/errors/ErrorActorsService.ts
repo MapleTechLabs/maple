@@ -81,6 +81,15 @@ export interface ErrorActorsServiceApi extends ErrorActorsPublicApi {
 			readonly capabilities?: ReadonlyArray<string>
 		},
 	) => Effect.Effect<ActorDocument, ErrorPersistenceError>
+	/**
+	 * The org's agent actor with this id, when `createdBy` created it and its name is not one of
+	 * Maple's reserved agents. What a caller-supplied agent id must match before it is acted as.
+	 */
+	readonly findOwnedAgentActor: (
+		orgId: OrgId,
+		actorId: ActorId,
+		createdBy: UserId,
+	) => Effect.Effect<Option.Option<ActorDocument>, ErrorPersistenceError>
 	/** Best-effort activity bookkeeping for issue mutations. */
 	readonly touchActor: (orgId: OrgId, actorId: ActorId, timestamp: number) => Effect.Effect<void>
 	/** Batch hydration used by issue and event response mapping. */
@@ -142,6 +151,19 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 			return actorRowToDocument(row)
 		},
 	)
+
+	const findOwnedAgentActor: ErrorActorsServiceApi["findOwnedAgentActor"] = (orgId, actorId, createdBy) =>
+		selectActorRow(orgId, actorId).pipe(
+			Effect.map((row) =>
+				row !== null &&
+				row.type === "agent" &&
+				row.createdBy === createdBy &&
+				row.agentName !== null &&
+				!isReservedAgentName(row.agentName)
+					? Option.some(actorRowToDocument(row))
+					: Option.none(),
+			),
+		)
 
 	const actorExists: ErrorActorsServiceApi["actorExists"] = (orgId, actorId) =>
 		selectActorRow(orgId, actorId).pipe(Effect.map((row) => row !== null))
@@ -323,6 +345,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 		listAgents,
 		lookupActor,
 		actorExists,
+		findOwnedAgentActor,
 		ensureUserActor,
 		ensureSystemActor,
 		ensureAgentActor,

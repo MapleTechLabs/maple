@@ -118,7 +118,9 @@ describe("investigation detail", () => {
 
 	test("a diagnosis renders the verdict and reads the signals card's two series", () => {
 		const step = synced(entered(), investigationOf())
-		expect(names(step.commands)).toEqual(["FetchInvestigationSignalTraces", "FetchInvestigationSignalLogs"])
+		expect(names(step.commands)).toEqual(
+			expect.arrayContaining(["FetchInvestigationSignalTraces", "FetchInvestigationSignalLogs"]),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(step.model),

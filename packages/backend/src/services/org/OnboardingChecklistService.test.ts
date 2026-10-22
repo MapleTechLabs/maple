@@ -165,6 +165,7 @@ const stubs = (world: World) =>
 								})),
 							),
 				),
+			listOrganizationsOf: die,
 			resolveMembers: die,
 		}),
 		Layer.succeed(AutumnClient, {

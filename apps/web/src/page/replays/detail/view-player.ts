@@ -15,7 +15,7 @@ import { docsLink } from "../../kit/signal-empty-state"
 import {
 	CONTROL_ATTRIBUTE,
 	HOLD_ATTRIBUTE,
-	SKIP_ATTRIBUTE,
+	IDLE_ATTRIBUTE,
 	SPEED_ATTRIBUTE,
 	TOTAL_ATTRIBUTE,
 } from "../kit/replay-engine-mount"
@@ -23,7 +23,7 @@ import { MARKER_STYLES } from "../kit/replay-meta"
 import { replayFormat } from "../kit/replay-window"
 import { FeedEvents, MountEngine } from "./command"
 import { type PlayerStatus, timelineOf } from "./derive"
-import { isBuffering, seedEvents, trailingRanges } from "./loader"
+import { isBuffering, seedEvents, seedShiftMs, trailingRanges } from "./loader"
 import { Message } from "./message"
 import type { Model, ReplayDetail } from "./model"
 import type { LoadFailure } from "../../../data/load-failure"
@@ -169,7 +169,7 @@ const engineMount = (h: H, model: Model, session: ReplayDetail, status: PlayerSt
 		h.Class("absolute inset-0"),
 		h.DataAttribute(CONTROL_ATTRIBUTE, player.control),
 		h.DataAttribute(SPEED_ATTRIBUTE, String(player.speed)),
-		h.DataAttribute(SKIP_ATTRIBUTE, String(player.isSkippingIdle)),
+		h.DataAttribute(IDLE_ATTRIBUTE, JSON.stringify(player.isSkippingIdle ? model.meta.inactiveIntervals : [])),
 		h.DataAttribute(HOLD_ATTRIBUTE, String(player.isPlaying && isBuffering(model))),
 		h.DataAttribute(TOTAL_ATTRIBUTE, String(player.totalMs)),
 	]
@@ -184,6 +184,7 @@ const engineMount = (h: H, model: Model, session: ReplayDetail, status: PlayerSt
 							events: seedEvents(loader),
 							format: replayFormat(session.resourceAttributes),
 							startAtMs: loader.seekTargetMs,
+							shiftMs: seedShiftMs(loader),
 						}),
 					),
 				],

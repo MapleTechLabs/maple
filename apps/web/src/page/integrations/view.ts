@@ -21,6 +21,7 @@ import { hazelCard } from "./view-hazel"
 import { planetscaleCard } from "./view-planetscale"
 import { railwayCard } from "./view-railway"
 import { awsCard } from "./view-aws"
+import { supabaseCard } from "./view-supabase"
 import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
 import { integrationCatalog, integrationsSummary } from "./view-hub"
@@ -65,6 +66,8 @@ export const cardView = (
 			return [cloudflareCard(h, model, timeZone)]
 		case "railway":
 			return [railwayCard(h, model, timeZone)]
+		case "supabase":
+			return [supabaseCard(h, model, timeZone)]
 		case "planetscale":
 			return [planetscaleCard(h, model, timeZone)]
 		case "gcp":

@@ -8,6 +8,7 @@
 
 import { finiteOrZero } from "./format"
 import {
+	DB_QUERY_KEY_LAZY_SQL,
 	DB_QUERY_KEY_SQL,
 	DB_QUERY_LABEL_SQL,
 	DB_STATEMENT_SQL,
@@ -830,7 +831,7 @@ const serviceDbRawFilters = (
 		SpanAttributes: CH.ColumnRef<"SpanAttributes", StringMap>
 		ResourceAttributes: CH.ColumnRef<"ResourceAttributes", StringMap>
 	},
-	params: ServiceDbQuerySummaryParams,
+	params: Pick<ServiceDbQuerySummaryParams, "dbSystem" | "dbNamespace" | "sourceService" | "deploymentEnv">,
 	scope: "edge" | "fullWindow",
 ) => [
 	$.OrgId.eq(orgIdParam),
@@ -1091,6 +1092,35 @@ export function serviceDbTopQueriesSQL(
 		.format("JSON")
 
 	return compile(query, params, { rowSchema: ServiceDbTopQueryOutputSchema })
+}
+
+/**
+ * The slowest client spans of some query keys (`ServiceDbTopQueryOutput.queryKey`) against some
+ * databases over the window, each a link to its trace. Raw `traces` over the whole window: the
+ * rollup keeps no span ids. The key is `serviceDbTopQueriesSQL`'s, derived lazily.
+ */
+export function serviceDbQuerySpansQuery(params: {
+	dbSystem: string
+	dbNamespaces: ReadonlyArray<string>
+	queryKeys: ReadonlyArray<string>
+	limit: number
+}) {
+	return from(Traces)
+		.select(($) => ({
+			traceId: $.TraceId,
+			spanId: $.SpanId,
+			serviceName: CH.toString_($.ServiceName),
+			timestamp: $.Timestamp,
+			durationMs: _toFloat64($.Duration).div(1000000),
+		}))
+		.where(($) => [
+			...serviceDbRawFilters($, { dbSystem: params.dbSystem }, "fullWindow"),
+			CH.inList(dbNamespaceExpr($), params.dbNamespaces),
+			CH.inList(CH.rawExpr(DB_QUERY_KEY_LAZY_SQL, T.string), params.queryKeys),
+		])
+		.orderBy(["durationMs", "desc"], ["traceId", "asc"], ["spanId", "asc"])
+		.limit(params.limit)
+		.format("JSON")
 }
 
 // Service ↔ external target edges (http / messaging / rpc)

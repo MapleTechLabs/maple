@@ -31,6 +31,8 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { decodeUpstream, ensureOk, subscriptionsOf } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
+import { stripeCustomerIdOf } from "@maple/backend/services/billing/billing-profile"
+import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
@@ -41,7 +43,7 @@ import type { PlanCancellation } from "@maple/backend/services/product-events/au
 import { SupportSlackClient } from "@maple/backend/services/support/SupportSlackClient"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { deriveSignals, ruleReason } from "./signals"
-import { buildCancellationMessage } from "./slack-message"
+import { buildCancellationMessage, OTHER_ORGS_SHOWN, type OrgLinks, type OtherOrg } from "./slack-message"
 import {
 	DAY_MS,
 	WINDOW_DAYS,
@@ -65,6 +67,9 @@ export interface CancellationToReview extends Omit<PlanCancellation, "orgId"> {
  * second delivery must wait rather than post beside it.
  */
 const CLAIM_LEASE_MS = 2 * 60 * 1000
+
+/** Members whose other orgs are looked up: one Clerk call each. */
+const OTHER_ORGS_MEMBER_LIMIT = 10
 
 /** A failure worth another delivery: Clerk, Autumn, Postgres or Slack did not answer. */
 export class CancellationReviewError extends Schema.TaggedError<CancellationReviewError>()(
@@ -152,6 +157,23 @@ export class CancellationReviewService extends Context.Service<
 		const ingestKeys = yield* OrgIngestKeysService
 		const autumn = yield* AutumnClient
 		const slack = yield* SupportSlackClient
+		const inventory = yield* IntegrationInventoryService
+
+		const clerkOrgUrl = (orgId: string) =>
+			Option.match(env.MAPLE_CLERK_DASHBOARD_URL, {
+				onSome: (base) => `${base.replace(/\/+$/, "")}/organizations/${orgId}`,
+				onNone: () => `https://dashboard.clerk.com/last-active?path=organizations/${orgId}`,
+			})
+
+		/** `customer` is Autumn's raw customer, null when it could not be read. */
+		const orgLinks = (orgId: string, customer: unknown): OrgLinks => ({
+			clerk: clerkOrgUrl(orgId),
+			autumn: `https://app.useautumn.com/customers/${encodeURIComponent(orgId)}`,
+			stripe: Option.match(stripeCustomerIdOf(customer), {
+				onNone: () => null,
+				onSome: (customerId) => `https://dashboard.stripe.com/customers/${customerId}`,
+			}),
+		})
 
 		/** A source that could not be read is `null` in the report, never the end of it. */
 		const optional = <A, E>(name: string, read: Effect.Effect<A, E>): Effect.Effect<A | null> =>
@@ -180,7 +202,7 @@ export class CancellationReviewService extends Context.Service<
 					info: organizations.retrieve(orgId),
 					// Clerk-less deployments have no member directory; the count is then unknown.
 					members: members.listMembers(orgId).pipe(
-						Effect.map((list): number | null => list.length),
+						Effect.map((list): ReadonlyArray<{ userId: string; email: string }> | null => list),
 						Effect.orElseSucceed(() => null),
 					),
 					state: onboarding.findState(orgId).pipe(Effect.map(Option.getOrNull)),
@@ -301,6 +323,65 @@ export class CancellationReviewService extends Context.Service<
 				atMs,
 			)
 		})
+
+		/** Orgs the members also belong to: a customer moving to another org is not leaving. */
+		const readOtherOrgs = (orgId: OrgId, people: ReadonlyArray<{ userId: string; email: string }>) =>
+			Effect.forEach(
+				people.slice(0, OTHER_ORGS_MEMBER_LIMIT),
+				(person) =>
+					members
+						.listOrganizationsOf(person.userId)
+						.pipe(Effect.map((orgs) => orgs.map((org) => ({ org, email: person.email })))),
+				{ concurrency: 4 },
+			).pipe(
+				Effect.map((perPerson) => {
+					const byOrg = new Map<string, Omit<OtherOrg, "links" | "billing">>()
+					for (const { org, email } of perPerson.flat()) {
+						if (org.orgId === orgId) continue
+						const seen = byOrg.get(org.orgId)
+						byOrg.set(org.orgId, {
+							orgId: org.orgId,
+							name: org.name,
+							createdAtMs: org.createdAtMs,
+							membersCount: org.membersCount,
+							sharedMembers: [...(seen?.sharedMembers ?? []), email],
+						})
+					}
+					return [...byOrg.values()].sort((a, b) => b.createdAtMs - a.createdAtMs)
+				}),
+				// Only the orgs the report shows. Every Maple org already has an Autumn
+				// customer from the app's own reads, and this never creates a Stripe one.
+				Effect.flatMap((orgs) =>
+					Effect.forEach(
+						orgs,
+						(org, index) =>
+							(index < OTHER_ORGS_SHOWN
+								? optional(
+										"otherOrgBilling",
+										autumn
+											.getOrCreateCustomer(org.orgId, { expand: [] })
+											.pipe(Effect.flatMap(ensureOk)),
+									)
+								: Effect.succeed(null)
+							).pipe(
+								Effect.map((customer): OtherOrg => ({
+									...org,
+									links: orgLinks(org.orgId, customer),
+									billing:
+										customer === null
+											? null
+											: {
+													plan:
+														subscriptionsOf(customer).find(
+															isActivePlanSubscription,
+														)?.planId ?? null,
+												},
+								})),
+							),
+						{ concurrency: 3 },
+					),
+				),
+			)
 
 		/**
 		 * The row that makes this subscription's review happen once. Autumn may
@@ -435,7 +516,7 @@ export class CancellationReviewService extends Context.Service<
 				// The moment the org decided, which for a scheduled cancellation is
 				// well before the plan ends.
 				const atMs = job.canceledAt ?? job.receivedAt
-				const [org, ingest, visits, adoption, billing] = yield* Effect.all(
+				const [org, ingest, visits, adoption, billing, integrations] = yield* Effect.all(
 					[
 						optional("org", readOrg(orgId)),
 						optional("ingest", readIngest(orgId, atMs)),
@@ -449,9 +530,17 @@ export class CancellationReviewService extends Context.Service<
 								),
 							),
 						),
+						optional(
+							"integrations",
+							inventory.list(orgId).pipe(Effect.map((listed) => listed.integrations)),
+						),
 					],
 					{ concurrency: 3 },
 				)
+				const otherOrgs =
+					org?.members == null
+						? null
+						: yield* optional("otherOrgs", readOtherOrgs(orgId, org.members))
 
 				const snapshot = new CancellationSnapshot({
 					plan: {
@@ -478,7 +567,7 @@ export class CancellationReviewService extends Context.Service<
 										org.info.createdAtMs === null
 											? null
 											: Math.max(0, Math.floor((atMs - org.info.createdAtMs) / DAY_MS)),
-									members: org.members,
+									members: org.members === null ? null : org.members.length,
 									everReceivedData:
 										org.state?.firstDataReceivedAt != null ||
 										(ingest !== null && ingest.daysSinceLastData !== null),
@@ -497,6 +586,9 @@ export class CancellationReviewService extends Context.Service<
 						orgName: org?.info.name ?? orgId,
 						contactEmail: org?.state?.email ?? null,
 						expiresAt: job.expiresAt,
+						links: orgLinks(orgId, response),
+						integrations,
+						otherOrgs,
 					},
 					snapshot,
 					reason,
@@ -583,6 +675,7 @@ export class CancellationReviewService extends Context.Service<
 				OrgIngestKeysService.layer,
 				AutumnClient.layer,
 				SupportSlackClient.layer,
+				IntegrationInventoryService.layer,
 			),
 		),
 	)

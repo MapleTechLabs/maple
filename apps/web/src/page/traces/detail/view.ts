@@ -3,6 +3,7 @@ import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { view as traceFlowView } from "../../../service-map/trace-flow/view"
+import type * as TraceFlow from "../../../service-map/trace-flow/trace-flow"
 import { errorState } from "../../../ui/error-state"
 import { icon, type IconName } from "../../../ui/icon"
 import type * as Dialog from "../../../ui/dialog"
@@ -21,6 +22,7 @@ import { type LoadedTrace, loadedTrace, selectedSpanOf } from "./select"
 import * as SpanPanel from "./span-panel"
 import { MeasureSplit } from "./split"
 import { spanSheetOf } from "./update"
+import type { TraceData } from "./trace-data"
 import * as Timeline from "./timeline"
 import { headerActions, titleContent } from "./view-header"
 import { errorCallout, productEvents, traceErrors } from "./view-findings"
@@ -49,6 +51,9 @@ const TAB_ICON = new Map<string, IconName>([
 	["flow", "NetworkNodesIcon"],
 ])
 
+/** Module-level so the flow view's lazy layers see the same function every render. */
+const toFlow = (message: TraceFlow.Message) => Message.GotFlowMessage({ message })
+
 export const tabPanel = (h: HtmlBuilder<Message>, model: Model, value: string) => {
 	if (value !== model.tabs.selected) return undefined
 	if (value === "timeline" && model.timeline !== null)
@@ -72,11 +77,7 @@ export const tabPanel = (h: HtmlBuilder<Message>, model: Model, value: string) =
 			}),
 		]
 	if (value === "flow" && model.flow !== null)
-		return [
-			traceFlowView(h, model.flow.graph, model.flow.model, (message) =>
-				Message.GotFlowMessage({ message }),
-			),
-		]
+		return [traceFlowView(h, model.flow.graph, model.flow.model, toFlow)]
 	return undefined
 }
 
@@ -117,6 +118,18 @@ export const callout = (
 	trace: LoadedTrace,
 	selectedSpanId: string | undefined,
 ): Html => errorCallout(h, traceErrors(trace.data.rootSpans), selectedSpanId)
+
+// The slots key on the model's `TraceData`: `selectTrace` wraps it in a new `LoadedTrace` every render.
+const lazyAnatomy = (
+	h: HtmlBuilder<Message>,
+	data: TraceData,
+	traceStartTime: string,
+	timeZone: string,
+	nowMs: number,
+): Html => anatomy(h, { data, traceStartTime, rootSpan: data.rootSpans[0] }, timeZone, nowMs)
+
+const lazyCallout = (h: HtmlBuilder<Message>, data: TraceData, selectedSpanId: string | undefined): Html =>
+	errorCallout(h, traceErrors(data.rootSpans), selectedSpanId)
 
 const spanPanelView = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs): Html | null => {
 	const selected = selectedSpanOf(model)
@@ -191,8 +204,14 @@ const body = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, tra
 	return h.div(
 		[h.Class("flex flex-1 flex-col gap-y-3 min-h-0"), h.OnMount(MeasureSplit())],
 		[
-			anatomySlot(anatomy, [h, trace, inputs.context.timeZone, model.nowMs]),
-			calloutSlot(callout, [h, trace, selected?.spanId]),
+			anatomySlot(lazyAnatomy, [
+				h,
+				trace.data,
+				trace.traceStartTime,
+				inputs.context.timeZone,
+				model.nowMs,
+			]),
+			calloutSlot(lazyCallout, [h, trace.data, selected?.spanId]),
 			productEvents(
 				h,
 				Option.getOrElse(AsyncData.getData(model.productEvents.data), () => []),

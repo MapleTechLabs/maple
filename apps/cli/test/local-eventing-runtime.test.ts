@@ -123,21 +123,21 @@ const stringField = (
 	namespace: "resource" | "attribute",
 	key: string,
 	required = false,
-): string | undefined => {
+): string | null => {
 	const value = signalField(signal, namespace, key)
 	if (value === undefined) {
 		if (required) throw new Error(`example event is missing ${key}`)
-		return undefined
+		return null
 	}
 	if (value.type !== "string") throw new Error(`example event ${key} must be a string`)
 	return value.value
 }
 
-const int64Field = (signal: NormalizedSignal, key: string, required = false): string | undefined => {
+const int64Field = (signal: NormalizedSignal, key: string, required = false): string | null => {
 	const value = signalField(signal, "attribute", key)
 	if (value === undefined) {
 		if (required) throw new Error(`example event is missing ${key}`)
-		return undefined
+		return null
 	}
 	if (value.type !== "int64") throw new Error(`example event ${key} must be an int64`)
 	return value.value
