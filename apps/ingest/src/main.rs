@@ -14,6 +14,7 @@ mod autumn;
 mod sources;
 mod task_protection;
 
+use std::collections::HashSet;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -217,6 +218,8 @@ struct AppConfig {
     /// The 401 body for a key this instance does not know. See
     /// `invalid_ingest_key_message`.
     invalid_key_message: &'static str,
+    /// `INGEST_BLOCKED_KEYS`: keys refused at origin whatever header spelling carries them.
+    blocked_ingest_keys: Arc<HashSet<String>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -732,6 +735,9 @@ impl AppConfig {
             shutdown_drain_secs,
             wal_store,
             invalid_key_message,
+            blocked_ingest_keys: Arc::new(parse_blocked_ingest_keys(
+                std::env::var("INGEST_BLOCKED_KEYS").ok().as_deref(),
+            )),
         })
     }
 }
@@ -815,6 +821,8 @@ struct IngestKeyResolver {
     /// (org id, claim as received) to whether it names one of the org's pull sources,
     /// for `maple_source_id` values sent with the default keys.
     source_claims: Cache<(String, String), SourceClaim>,
+    /// Emergency block list, checked before any cache or store lookup.
+    blocked_keys: Arc<HashSet<String>>,
 }
 
 /// How often one token source's `last_used_at` is rewritten per gateway instance.
@@ -2864,6 +2872,7 @@ async fn main() {
             source_claims: source_claims_cache(Duration::from_secs(
                 config.ingest_key_cache_ttl_secs,
             )),
+            blocked_keys: Arc::clone(&config.blocked_ingest_keys),
         },
         org_inflight_limiter: OrgInFlightLimiter::new(config.org_max_in_flight),
         key_rate_limiter: SourceRateLimiter::new(config.rate_limit_fleet_size),
@@ -7109,6 +7118,11 @@ impl IngestKeyResolver {
 
     #[hotpath::measure]
     async fn resolve_ingest_key(&self, raw_key: &str) -> Result<Option<ResolvedIngestKey>, String> {
+        // `raw_key` is already normalized by `extract_ingest_key`, so no header
+        // spelling the edge rule misses can carry a blocked key past this.
+        if self.blocked_keys.contains(raw_key) {
+            return Ok(None);
+        }
         // Recorded on `ingest.authenticate` when this runs under the HTTP path;
         // a no-op elsewhere (the field is only declared on that span).
         if let Some(identity) = self.cache.get(raw_key).await {
@@ -8513,6 +8527,16 @@ impl KeyStore for StaticKeyStore {
     ) -> Result<(), String> {
         Ok(())
     }
+}
+
+/// Same comma-separated `INGEST_BLOCKED_KEYS` the edge WAF rule is built from.
+fn parse_blocked_ingest_keys(raw: Option<&str>) -> HashSet<String> {
+    raw.unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 fn infer_ingest_key_type(raw_key: &str) -> Option<IngestKeyType> {
@@ -9967,6 +9991,7 @@ mod tests {
             recent_key_uses: recent_key_uses_cache(),
             recent_key_rejections: recent_key_rejections_cache(),
             source_claims: source_claims_cache(Duration::from_mins(1)),
+            blocked_keys: Arc::default(),
         }
     }
 
@@ -10190,6 +10215,7 @@ mod tests {
                 shutdown_drain_secs: 1,
                 wal_store: None,
                 invalid_key_message: "Invalid ingest key",
+                blocked_ingest_keys: Arc::default(),
             },
             #[expect(
                 clippy::useless_conversion,
@@ -10213,6 +10239,7 @@ mod tests {
                 recent_key_uses: recent_key_uses_cache(),
                 recent_key_rejections: recent_key_rejections_cache(),
                 source_claims: source_claims_cache(Duration::from_mins(1)),
+                blocked_keys: Arc::default(),
             },
             org_inflight_limiter: OrgInFlightLimiter::new(100),
             key_rate_limiter: SourceRateLimiter::new(1),
@@ -12178,6 +12205,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn blocked_key_is_refused_in_every_header_spelling() {
+        let (forward_url, _forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("blocked-key");
+        let store = Arc::new(FakeKeyStore::default());
+        let (blocked, allowed) = ("maple_sk_test_blocked", "maple_sk_test_allowed");
+        for raw_key in [blocked, allowed] {
+            store.insert_private(
+                raw_key,
+                KeyRow {
+                    org_id: "org_blocked_key".to_owned(),
+                    self_managed: false,
+                    clickhouse_ready: false,
+                },
+            );
+        }
+        let mut state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_millis(5),
+        )
+        .await;
+        state.resolver.blocked_keys = Arc::new(parse_blocked_ingest_keys(Some(blocked)));
+
+        let body = || Bytes::from(test_log_request("blocked").encode_to_vec());
+        for (name, value) in [
+            ("authorization", format!("Bearer {blocked}")),
+            ("authorization", format!("bearer {blocked}")),
+            ("authorization", format!("BEARER {blocked}")),
+            ("authorization", format!("Bearer  {blocked}\t")),
+            ("x-maple-ingest-key", format!(" {blocked} ")),
+        ] {
+            let mut headers = HeaderMap::new();
+            headers.insert(name, value.parse().unwrap());
+            headers.insert(CONTENT_TYPE, "application/x-protobuf".parse().unwrap());
+            let (error, _) = handle_signal_inner(&state, &headers, body(), Signal::Logs)
+                .await
+                .expect_err("a blocked key must be refused");
+            assert_eq!(error.status, StatusCode::UNAUTHORIZED, "{name}: {value:?}");
+            let grpc = resolve_grpc_ingest_key(&state, &headers).await;
+            assert!(
+                matches!(&grpc, Err(status) if status.code() == tonic::Code::Unauthenticated),
+                "gRPC must refuse a blocked key: {name}: {value:?}"
+            );
+        }
+
+        let (response, ..) =
+            handle_signal_inner(&state, &test_headers(allowed), body(), Signal::Logs)
+                .await
+                .expect("an unblocked key still ingests");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[test]
+    fn blocked_keys_parse_like_the_edge_rule() {
+        let keys = parse_blocked_ingest_keys(Some(" maple_sk_a, ,maple_pk_b,"));
+        assert_eq!(keys.len(), 2);
+        assert!(keys.contains("maple_sk_a") && keys.contains("maple_pk_b"));
+        assert!(parse_blocked_ingest_keys(None).is_empty());
+    }
+
+    #[tokio::test]
     async fn logpush_gate_precedes_decode_and_admits_an_allowed_org() {
         let (forward_url, mut forward_rx) = spawn_forward_collector().await;
         let queue_dir = unique_main_test_dir("logpush-gate");
@@ -13412,6 +13503,7 @@ mod tests {
             recent_key_uses: recent_key_uses_cache(),
             recent_key_rejections: recent_key_rejections_cache(),
             source_claims: source_claims_cache(Duration::from_mins(1)),
+            blocked_keys: Arc::default(),
         };
         let resolved = resolver
             .resolve_ingest_key("maple_src_static_backend_key_0000000000000")
