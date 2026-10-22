@@ -318,28 +318,35 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				// Reconnecting one this org already owns is allowed without a code.
 				const isSameOrgReconnect = Option.isSome(existingInstallation)
 				const hasCode = code !== undefined && code.length > 0
-				if (hasCode) {
-					const userToken = yield* githubApp.exchangeUserOAuthCode(code).pipe(
-						Effect.tapError(() =>
-							Effect.annotateCurrentSpan({
-								orgId: stateRow.orgId,
-								"vcs.connect.outcome": "oauth_exchange_failed",
-								"vcs.connect.reason": "could not exchange OAuth code for a user token",
-							}),
-						),
-						Effect.mapError(fromGithubError),
-					)
-					const adminInstallationIds = yield* githubApp.listUserInstallationIds(userToken).pipe(
-						Effect.tapError(() =>
-							Effect.annotateCurrentSpan({
-								orgId: stateRow.orgId,
-								"vcs.connect.outcome": "oauth_installations_failed",
-								"vcs.connect.reason": "could not list the user's installations",
-							}),
-						),
-						Effect.mapError(fromGithubError),
-					)
-					if (!adminInstallationIds.has(installationId)) {
+				const userToken = hasCode
+					? Option.some(
+							yield* githubApp.exchangeUserOAuthCode(code).pipe(
+								Effect.tapError(() =>
+									Effect.annotateCurrentSpan({
+										orgId: stateRow.orgId,
+										"vcs.connect.outcome": "oauth_exchange_failed",
+										"vcs.connect.reason":
+											"could not exchange OAuth code for a user token",
+									}),
+								),
+								Effect.mapError(fromGithubError),
+							),
+						)
+					: Option.none<string>()
+				if (Option.isSome(userToken)) {
+					const accessibleInstallationIds = yield* githubApp
+						.listUserInstallationIds(userToken.value)
+						.pipe(
+							Effect.tapError(() =>
+								Effect.annotateCurrentSpan({
+									orgId: stateRow.orgId,
+									"vcs.connect.outcome": "oauth_installations_failed",
+									"vcs.connect.reason": "could not list the user's installations",
+								}),
+							),
+							Effect.mapError(fromGithubError),
+						)
+					if (!accessibleInstallationIds.has(installationId)) {
 						yield* Effect.annotateCurrentSpan({
 							orgId: stateRow.orgId,
 							"vcs.connect.outcome": "installation_not_administrable",
@@ -393,6 +400,31 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					})
 				}
 				const account = detail.account
+				// Access to an installation is not ownership: a new binding needs an admin of its account.
+				if (Option.isSome(userToken) && !isSameOrgReconnect) {
+					const adminCheck = yield* githubApp.checkAccountAdmin(userToken.value, account).pipe(
+						Effect.tapError(() =>
+							Effect.annotateCurrentSpan({
+								orgId: stateRow.orgId,
+								"vcs.connect.outcome": "oauth_admin_check_failed",
+								"vcs.connect.reason":
+									"could not read the user's role on the installation account",
+							}),
+						),
+						Effect.mapError(fromGithubError),
+					)
+					if (adminCheck !== "admin") {
+						yield* Effect.annotateCurrentSpan({
+							orgId: stateRow.orgId,
+							"vcs.connect.outcome": "installation_not_administrable",
+							"vcs.connect.reason": `user is not an admin of the installation account (${adminCheck})`,
+						})
+						return yield* new IntegrationsValidationError({
+							message:
+								"Only an admin of this GitHub account can connect its installation. Ask an admin to connect it.",
+						})
+					}
+				}
 				const accountType: VcsAccountType = account.type === "Organization" ? "organization" : "user"
 				const repositorySelection: VcsRepoSelection =
 					detail.repository_selection === "selected" ? "selected" : "all"
