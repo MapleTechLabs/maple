@@ -115,6 +115,31 @@ describe("buildDiagnosis", () => {
 		expect(diagnosisVerdict(stages).status).toBe("fail")
 	})
 
+	it("says a timed-out query is too slow for its interval, and what a longer one allows", () => {
+		const stages = diagnose({
+			states: [
+				makeState({
+					last_error: "Timeout exceeded: elapsed 5003 ms, maximum: 5000 ms",
+					last_error_kind: "query_too_slow",
+				}),
+			],
+		})
+		const query = stage(stages, "query")
+		expect(query.status).toBe("fail")
+		expect(query.summary).toBe("The query takes longer than the 5 s a check allows")
+		expect(query.evidence).toContain("Timeout exceeded: elapsed 5003 ms, maximum: 5000 ms")
+	})
+
+	it("warns about a slowed-down rule whose query now succeeds, and how to undo it", () => {
+		const stages = diagnose({
+			rule: makeRule({ slowedIntervalMinutes: 5, slowedAt: iso(60 * 60_000) }),
+		})
+		const query = stage(stages, "query")
+		expect(query.status).toBe("warn")
+		expect(query.summary).toBe("Slowed to every 5 min because its query kept timing out")
+		expect(query.action?.kind).toBe("edit")
+	})
+
 	it("marks never-evaluated rules failing on the evaluated stage", () => {
 		const stages = diagnose({
 			rule: makeRule({ lastEvaluatedAt: null, lastScheduledAt: null }),

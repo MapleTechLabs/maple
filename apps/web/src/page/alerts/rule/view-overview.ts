@@ -4,7 +4,7 @@ import { tokenizeSql } from "../../../lib/sql-highlight"
 import { cn } from "@maple/ui/lib/utils"
 import { SIGNAL_SOURCE_LABEL } from "@maple/web-data/alerts/chart-series"
 import { comparatorLabels, formatSignalValue, ruleToFormState, signalLabels } from "@maple/web-data/alerts/form-utils"
-import { Option } from "effect"
+import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { LoadFailure } from "../../../data/load-failure"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -37,6 +37,7 @@ import { Message } from "./message"
 import type { Model, SignalSource } from "./model"
 import { checksPanel } from "./view-checks"
 import { diagnosisPanel } from "./view-diagnosis"
+import { queryTimeCard } from "./view-query-time"
 import { sectionHeading } from "../../kit/section-heading"
 
 // The rule detail's Overview tab.
@@ -251,6 +252,7 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 				now: model.nowMs,
 				timeZone,
 			}),
+			...Arr.fromNullishOr(queryTimeCard(h, rule, checks)),
 			h.div(
 				[h.Class("space-y-3")],
 				[

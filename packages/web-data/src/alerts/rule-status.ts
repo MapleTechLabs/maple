@@ -14,6 +14,8 @@ export interface RuleAttention {
 	readonly noDestinations: boolean
 	/** The most recent delivery attempt for this rule failed. */
 	readonly recentDeliveryFailure: boolean
+	/** The scheduler slowed the rule down after its query kept hitting its time limit. */
+	readonly slowedDown: boolean
 }
 
 export interface DerivedRuleStatus {
@@ -92,6 +94,7 @@ export function deriveRuleStatus(input: {
 	const attention: RuleAttention = {
 		noDestinations: rule.enabled && rule.destinationIds.length === 0,
 		recentDeliveryFailure: latestDelivery?.status === "failed",
+		slowedDown: rule.enabled && rule.slowedIntervalMinutes !== null,
 	}
 
 	if (!rule.enabled) {
@@ -137,6 +140,7 @@ export function needsAttention(derived: DerivedRuleStatus): boolean {
 		derived.status === "stale" ||
 		derived.status === "no-data" ||
 		derived.attention.noDestinations ||
-		derived.attention.recentDeliveryFailure
+		derived.attention.recentDeliveryFailure ||
+		derived.attention.slowedDown
 	)
 }

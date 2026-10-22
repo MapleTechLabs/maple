@@ -1,10 +1,12 @@
 import { OrgId } from "@maple/domain"
-import { AlertRuleId } from "@maple/domain/http"
+import { AlertCheckDocument, AlertRuleId } from "@maple/domain/http"
 import { Result, Schema } from "effect"
 import {
+	all,
 	click,
 	Command,
 	expect as expectView,
+	expectAll,
 	given,
 	Mount,
 	role,
@@ -13,6 +15,8 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import * as Chart from "../../../charts/chart"
+import { MountChart } from "../../../charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import { toLoadFailure } from "../../../data/load-failure"
 import * as Menu from "../../../ui/menu"
@@ -129,6 +133,62 @@ describe("alert rule", () => {
 	test("an unknown rule says so", () => {
 		const model = pageUpdate(init(route(), context).model, Message.UpdatedRules({ orgId: ORG, rows: [] })).model
 		scene({ update: pageUpdate, view }, given(model), themeResolved(), expectView(text("Rule not found")).toExist())
+	})
+
+	test("a raw SQL rule slowed down by its timeouts shows its query time per check and why", () => {
+		const check = (minutesAgo: number, durationMs: number, status: "healthy" | "error") =>
+			Schema.decodeUnknownSync(AlertCheckDocument)({
+				timestamp: new Date(NOW - minutesAgo * 60_000).toISOString(),
+				groupKey: "__total__",
+				status,
+				skipReason: null,
+				signalType: "raw_query",
+				comparator: "gt",
+				threshold: 10,
+				thresholdUpper: null,
+				observedValue: status === "error" ? null : 3,
+				sampleCount: status === "error" ? 0 : 3,
+				windowMinutes: 5,
+				windowStart: new Date(NOW - (minutesAgo + 5) * 60_000).toISOString(),
+				windowEnd: new Date(NOW - minutesAgo * 60_000).toISOString(),
+				consecutiveBreaches: 0,
+				consecutiveHealthy: 1,
+				incidentId: null,
+				incidentTransition: "none",
+				level: null,
+				evaluationDurationMs: durationMs,
+				errorMessage: status === "error" ? "Timeout exceeded: elapsed 5003 ms" : null,
+				errorCategory: status === "error" ? "warehouse_quota_exceeded" : null,
+			})
+		const rule = ruleRow(2, {
+			signal_type: "raw_query",
+			service_names_json: [],
+			environments_json: [],
+			raw_query_sql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+			slowed_interval_minutes: 5,
+			slowed_at: new Date(NOW - 30 * 60_000).toISOString(),
+		})
+		const model = loaded({}, rule)
+		const withSlowChecks = pageUpdate(
+			model,
+			Message.CompletedFetchChecks({
+				key: model.checks.key ?? "",
+				result: Result.succeed({
+					...firstPage("next"),
+					checks: [check(5, 7_800, "healthy"), check(35, 5_003, "error"), check(36, 5_004, "error")],
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(withSlowChecks),
+			themeResolved(),
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(text("Query time per check")).toExist(),
+			expectView(text("Slowest 7.8 s · limit 15 s at every 5 min")).toExist(),
+			expectAll(all.selector('[data-testid="query-time-bars"] [title]')).toHaveCount(3),
+			expectView(text("Slowed to every 5 min because its query kept timing out")).toExist(),
+		)
 	})
 
 	test("a disabled rule's diagnosis offers Enable, which PATCHes the rule once", () => {

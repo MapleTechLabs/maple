@@ -5,7 +5,9 @@ import type {
 	AlertIncidentDocument,
 	AlertRuleDocument,
 } from "@maple/domain/http"
-import { alertRuleIntervalMinutes } from "@maple/query-engine/datetime"
+import { alertQueryLimits, alertRuleIntervalMinutes } from "@maple/query-engine/datetime"
+import { AlertEvaluationErrorKind } from "@maple/domain/http"
+import { Option, Schema } from "effect"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { countLabel } from "@maple/ui/lib/format"
 import type { AlertRuleStateRow } from "../collections/alerts"
@@ -16,6 +18,39 @@ import { formatTimestampInTimezone } from "../lib/timezone-format"
 const evaluationCadence = (rule: AlertRuleDocument): string => {
 	const minutes = alertRuleIntervalMinutes(rule)
 	return minutes === 1 ? "every minute" : `every ${minutes} minutes`
+}
+
+const decodeErrorKind = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
+
+/** What a failing query's kind means for its author, in plain words. */
+const queryFailureCause = (
+	kind: AlertEvaluationErrorKind | null,
+	intervalMinutes: number,
+	limitSeconds: number,
+): { readonly summary: string; readonly evidence: ReadonlyArray<string> } => {
+	const every = intervalMinutes === 1 ? "every minute" : `every ${intervalMinutes} min`
+	if (kind === "query_too_slow") {
+		return {
+			summary: `The query takes longer than the ${limitSeconds} s a check allows`,
+			evidence: [
+				`Checked ${every}, which allows ${limitSeconds} s per check. Rules checked every 5 min get 15 s, every 10 min or more 25 s.`,
+				"Narrow the query (a service filter, a structured attribute instead of a Body match) or check less often.",
+			],
+		}
+	}
+	if (kind === "query_too_much_memory") {
+		return {
+			summary: "The query needs more memory than a check allows",
+			evidence: [
+				`Checked ${every}. Rules checked less often get more memory.`,
+				"Narrow the query or group by fewer values.",
+			],
+		}
+	}
+	if (kind === "invalid_query") {
+		return { summary: "The rule's query is invalid", evidence: [] }
+	}
+	return { summary: "The rule's query is failing", evidence: [] }
 }
 
 export type DiagnosisStageStatus = "pass" | "fail" | "warn" | "unknown"
@@ -146,21 +181,41 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	}
 
 	/* 3 — Query succeeded */
-	const stateError = states.find((s) => s.last_error != null)?.last_error ?? null
-	const errorMessage = stateError ?? rule.lastEvaluationError
+	const errorState = states.find((s) => s.last_error != null)
+	const errorMessage = errorState?.last_error ?? rule.lastEvaluationError
+	const errorKind =
+		Option.getOrNull(decodeErrorKind(errorState?.last_error_kind)) ?? rule.lastEvaluationErrorKind
 	const errorChecks = checks.filter((c) => c.status === "error")
+	const intervalMinutes = alertRuleIntervalMinutes(rule)
+	const limitSeconds = alertQueryLimits(intervalMinutes).timeSeconds
+	const slowedLine =
+		rule.slowedIntervalMinutes !== null && rule.slowedAt !== null
+			? `Slowed to every ${rule.slowedIntervalMinutes} min on ${formatTimestampInTimezone(parseMs(rule.slowedAt) ?? now, { timeZone, withYear: true })} after 3 timeouts in a row. Editing the rule resets this.`
+			: null
 	if (errorMessage != null) {
+		const cause = queryFailureCause(errorKind, intervalMinutes, limitSeconds)
 		stages.push({
 			id: "query",
 			label: "Query succeeded",
 			status: "fail",
-			summary: "The rule's query is failing",
+			summary: cause.summary,
 			evidence: [
+				...cause.evidence,
+				...(slowedLine !== null ? [slowedLine] : []),
 				errorMessage,
-				...(errorChecks[0]?.errorCategory != null
-					? [`Category: ${errorChecks[0].errorCategory}`]
-					: []),
 				...(evaluatedAt != null ? [`Last attempt ${relative(now, evaluatedAt)}`] : []),
+			],
+			action: { label: "Edit rule", kind: "edit" },
+		})
+	} else if (slowedLine !== null) {
+		stages.push({
+			id: "query",
+			label: "Query succeeded",
+			status: "warn",
+			summary: `Slowed to every ${rule.slowedIntervalMinutes} min because its query kept timing out`,
+			evidence: [
+				slowedLine,
+				"Make the query cheaper, or pick this interval yourself, before you edit the rule.",
 			],
 			action: { label: "Edit rule", kind: "edit" },
 		})

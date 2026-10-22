@@ -182,7 +182,7 @@ export function rulesFixture(mode: WorstCaseMode): RulesFixture {
 			r.id,
 			{
 				status: worst && i === 0 ? "error" : "healthy",
-				attention: { noDestinations: true, recentDeliveryFailure: false },
+				attention: { noDestinations: true, recentDeliveryFailure: false, slowedDown: false },
 				reason: worst && i === 0 ? r.lastEvaluationError : null,
 			},
 		]),

@@ -172,7 +172,7 @@ export function ruleRibbon(
 	})
 }
 
-export type BlindSpotKind = "error" | "stale" | "no-data" | "unrouted" | "delivery"
+export type BlindSpotKind = "error" | "stale" | "no-data" | "slowed" | "unrouted" | "delivery"
 
 export interface BlindSpot {
 	readonly rule: AlertRuleDocument
@@ -184,8 +184,9 @@ const BLIND_SPOT_ORDER: Record<BlindSpotKind, number> = {
 	error: 0,
 	stale: 1,
 	"no-data": 2,
-	unrouted: 3,
-	delivery: 4,
+	slowed: 3,
+	unrouted: 4,
+	delivery: 5,
 } satisfies Record<BlindSpotKind, number>
 
 /** Enabled rules that cannot fire, or can fire but reach nobody. One entry per rule, worst first. */
@@ -201,6 +202,12 @@ export function blindSpots(
 		if (derived.status === "error") spots.push({ rule, kind: "error", detail: reason })
 		else if (derived.status === "stale") spots.push({ rule, kind: "stale", detail: reason })
 		else if (derived.status === "no-data") spots.push({ rule, kind: "no-data", detail: reason })
+		else if (derived.attention.slowedDown && rule.slowedIntervalMinutes !== null)
+			spots.push({
+				rule,
+				kind: "slowed",
+				detail: `Checked every ${rule.slowedIntervalMinutes} min because its query kept timing out`,
+			})
 		else if (derived.attention.noDestinations)
 			spots.push({ rule, kind: "unrouted", detail: "No destinations, so nobody is notified" })
 		else if (derived.attention.recentDeliveryFailure)

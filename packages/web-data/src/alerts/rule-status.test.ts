@@ -96,6 +96,13 @@ describe("deriveRuleStatus", () => {
 		expect(derive().status).toBe("healthy")
 	})
 
+	it("flags a rule the scheduler slowed down, without calling it unhealthy", () => {
+		const result = derive({ rule: makeRule({ slowedIntervalMinutes: 5, slowedAt: iso(60_000) }) })
+		expect(result.status).toBe("healthy")
+		expect(result.attention.slowedDown).toBe(true)
+		expect(needsAttention(result)).toBe(true)
+	})
+
 	it("disabled outranks everything", () => {
 		const result = derive({
 			rule: makeRule({ enabled: false, lastEvaluationError: "boom" }),

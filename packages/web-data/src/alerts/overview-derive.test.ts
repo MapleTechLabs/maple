@@ -99,7 +99,7 @@ function makeIncident(overrides: Record<string, unknown> = {}): AlertIncidentDoc
 
 const derived = (overrides: Partial<DerivedRuleStatus> = {}): DerivedRuleStatus => ({
 	status: "healthy",
-	attention: { noDestinations: false, recentDeliveryFailure: false },
+	attention: { noDestinations: false, recentDeliveryFailure: false, slowedDown: false },
 	reason: null,
 	...overrides,
 })
@@ -107,13 +107,17 @@ const derived = (overrides: Partial<DerivedRuleStatus> = {}): DerivedRuleStatus 
 describe("ruleBucket", () => {
 	it("puts an unrouted healthy rule in blind and a firing one in firing", () => {
 		expect(
-			ruleBucket(derived({ attention: { noDestinations: true, recentDeliveryFailure: false } })),
+			ruleBucket(
+				derived({
+					attention: { noDestinations: true, recentDeliveryFailure: false, slowedDown: false },
+				}),
+			),
 		).toBe("blind")
 		expect(
 			ruleBucket(
 				derived({
 					status: "firing",
-					attention: { noDestinations: true, recentDeliveryFailure: false },
+					attention: { noDestinations: true, recentDeliveryFailure: false, slowedDown: false },
 				}),
 			),
 		).toBe("firing")
@@ -178,13 +182,47 @@ describe("blindSpots", () => {
 			[unrouted, erroring, disabled],
 			new Map([
 				[erroring.id, derived({ status: "error", reason: "boom" })],
-				[unrouted.id, derived({ attention: { noDestinations: true, recentDeliveryFailure: false } })],
+				[
+					unrouted.id,
+					derived({
+						attention: { noDestinations: true, recentDeliveryFailure: false, slowedDown: false },
+					}),
+				],
 				[disabled.id, derived({ status: "disabled" })],
 			]),
 		)
 		expect(spots.map((s) => [s.rule.id, s.kind])).toEqual([
 			[erroring.id, "error"],
 			[unrouted.id, "unrouted"],
+		])
+	})
+	it("lists a rule slowed down by its timeouts, ahead of unrouted ones", () => {
+		const slowed = makeRule({
+			id: "00000000-0000-4000-8000-000000000004",
+			slowedIntervalMinutes: 5,
+			slowedAt: iso(HOUR),
+		})
+		const unrouted = makeRule({ id: "00000000-0000-4000-8000-000000000002" })
+		const spots = blindSpots(
+			[unrouted, slowed],
+			new Map([
+				[
+					slowed.id,
+					derived({
+						attention: { noDestinations: false, recentDeliveryFailure: false, slowedDown: true },
+					}),
+				],
+				[
+					unrouted.id,
+					derived({
+						attention: { noDestinations: true, recentDeliveryFailure: false, slowedDown: false },
+					}),
+				],
+			]),
+		)
+		expect(spots.map((s) => [s.rule.id, s.kind, s.detail])).toEqual([
+			[slowed.id, "slowed", "Checked every 5 min because its query kept timing out"],
+			[unrouted.id, "unrouted", "No destinations, so nobody is notified"],
 		])
 	})
 })
