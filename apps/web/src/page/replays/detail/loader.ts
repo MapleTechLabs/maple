@@ -331,10 +331,10 @@ export const skipFailed = (model: Model, failure: LoadFailure): Model => {
 /** The background failure the playhead has reached: the next playable range failed and the window is used up. */
 export const neededFailure = (model: Model): LoadFailure | null => {
 	const { loader } = model
+	// Checked first: this runs on every render, and the plan below is rebuilt from every chunk.
+	if (loader.backgroundFailure === null || loader.seedCount === 0) return null
 	const next = nextPlanned(model)
-	return loader.backgroundFailure !== null &&
-		loader.seedCount > 0 &&
-		next !== undefined &&
+	return next !== undefined &&
 		loader.failedRanges.includes(next.fromChunkSeq) &&
 		(loader.isStarved || loader.playheadMs + 1_000 >= loadedUntilMs(model))
 		? loader.backgroundFailure
