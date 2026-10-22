@@ -43,6 +43,12 @@ export const queryTimeCard = (h: H, rule: AlertRuleDocument, checks: ReadonlyArr
 	if (rule.signalType !== "raw_query" || times.length === 0) return null
 	const interval = alertRuleIntervalMinutes(rule)
 	const limitMs = alertQueryLimits(interval).timeSeconds * 1000
+	// The limit before a slowdown, which the failures that caused it ran under.
+	const unslowedLimitMs =
+		rule.slowedIntervalMinutes === null
+			? null
+			: alertQueryLimits(alertRuleIntervalMinutes({ ...rule, slowedIntervalMinutes: null })).timeSeconds * 1000
+	const earlierLimitMs = unslowedLimitMs !== null && unslowedLimitMs < limitMs ? unslowedLimitMs : null
 	const scaleMs = Math.max(limitMs * 1.25, ...times.map((time) => time.durationMs))
 	const slowest = Math.max(...times.map((time) => time.durationMs))
 	const toneOf = (time: CheckTime): Tone =>
@@ -57,7 +63,7 @@ export const queryTimeCard = (h: H, rule: AlertRuleDocument, checks: ReadonlyArr
 					h.span(
 						[h.Class("text-xs text-muted-foreground tabular-nums")],
 						[
-							`Slowest ${seconds(slowest)} · limit ${seconds(limitMs)} at every ${interval === 1 ? "minute" : `${interval} min`}`,
+							`Slowest ${seconds(slowest)} · limit ${seconds(limitMs)} at every ${interval === 1 ? "minute" : `${interval} min`}${earlierLimitMs === null ? "" : `, ${seconds(earlierLimitMs)} before the slowdown`}`,
 						],
 					),
 				],
@@ -82,6 +88,17 @@ export const queryTimeCard = (h: H, rule: AlertRuleDocument, checks: ReadonlyArr
 						],
 						[],
 					),
+					...(earlierLimitMs === null
+						? []
+						: [
+								h.div(
+									[
+										h.Class("pointer-events-none absolute inset-x-0 border-t border-dotted border-muted-foreground/50"),
+										h.Style({ bottom: `${(earlierLimitMs / scaleMs) * 100}%` }),
+									],
+									[],
+								),
+							]),
 				],
 			),
 			...(rule.slowedIntervalMinutes === null
