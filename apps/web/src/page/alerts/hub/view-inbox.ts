@@ -52,7 +52,7 @@ export const inboxTab = <M>(h: HtmlBuilder<M>, data: AlertsOverviewReady): Html 
 
 	const summary = [
 		`${countLabel(enabledRuleIds.length, "rule")} watching`,
-		spots.length > 0 ? `${spots.length} can't fire or notify` : "all evaluating and routed",
+		spots.length > 0 ? `${spots.length} ${spots.length === 1 ? "needs" : "need"} a look` : "all evaluating and routed",
 		...(disabled > 0 ? [`${disabled} disabled`] : []),
 	].join(" · ")
 
@@ -311,6 +311,7 @@ const BLIND_SPOT_META = new Map<BlindSpotKind, { label: string; action: string; 
 	["error", { label: "Error", action: "Fix", className: "text-severity-error" }],
 	["stale", { label: "Stale", action: "Check", className: "text-severity-warn" }],
 	["no-data", { label: "No data", action: "Tune", className: "text-muted-foreground" }],
+	["slowed", { label: "Slowed down", action: "Fix query", className: "text-severity-warn" }],
 	["unrouted", { label: "Unrouted", action: "Route", className: "text-muted-foreground" }],
 	["delivery", { label: "Delivery", action: "Check", className: "text-severity-warn" }],
 ])
@@ -323,7 +324,7 @@ const blindSpotsList = <M>(h: HtmlBuilder<M>, spots: ReadonlyArray<BlindSpot>): 
 				[h.Class("flex items-baseline justify-between gap-4")],
 				[
 					eyebrow(h, { as: "h3" }, ["Blind spots"]),
-					h.span([h.Class("font-mono text-xs text-muted-foreground")], ["rules that can't fire or notify"]),
+					h.span([h.Class("font-mono text-xs text-muted-foreground")], ["rules that can't fire, notify or keep up"]),
 				],
 			),
 			spots.length === 0
