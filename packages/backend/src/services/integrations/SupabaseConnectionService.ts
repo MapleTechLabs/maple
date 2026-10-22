@@ -1064,7 +1064,18 @@ export class SupabaseConnectionService extends Context.Service<
 				})
 			}
 			// Refused before any write, so a request never half-applies on these preconditions.
-			const manual = project.logDrainsJson.find((drain) => drain.toMaple && !drain.managedByMaple)
+			// Turning polling on lists the drains live, so one set up since discovery is seen; a refused
+			// listing (Free plan, paused project) falls back to the stored snapshot.
+			const drainsNow =
+				request.logsEnabled === true
+					? yield* listDrains(orgId, ref).pipe(
+							Effect.map((listed) =>
+								listed.map((drain) => summarizeDrain(orgId, drain, project.logDrainId)),
+							),
+							Effect.orElseSucceed(() => project.logDrainsJson),
+						)
+					: project.logDrainsJson
+			const manual = drainsNow.find((drain) => drain.toMaple && !drain.managedByMaple)
 			if (request.logsEnabled === true && manual !== undefined) {
 				return yield* new IntegrationsValidationError({
 					message: `Supabase project ${ref} already sends its logs to Maple through the drain "${manual.name}". Polling too would store them twice.`,

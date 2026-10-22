@@ -696,12 +696,33 @@ describe("SupabaseConnectionService log drains", () => {
 			yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
 			assert.strictEqual(yield* tokenSourceCount(testDb), 1)
 
+			// A token source the customer made themselves, which the switch must leave alone.
+			const drainSource = (yield* drainRow(testDb, REF_A))?.log_drain_source_id ?? ""
+			const customerSource = "0b6f3d8e-7c51-4f0a-9d2e-5a1c3b4e6f70"
+			yield* Effect.promise(async () => {
+				await executeSql(testDb, "CREATE TEMP TABLE copied AS SELECT * FROM sources WHERE id = $1", [
+					drainSource,
+				])
+				await executeSql(
+					testDb,
+					"UPDATE copied SET id = $1, key_hash = 'customer-hash', name = 'customer'",
+					[customerSource],
+				)
+				await executeSql(testDb, "INSERT INTO sources SELECT * FROM copied")
+			})
+
 			const other = { id: "otherorgidotherorgid", slug: "otherorg", name: "Other" }
 			fake.state.organizations = [other]
 			fake.state.projects = []
 			yield* TestClock.adjust("1 minute")
 			yield* finalize(fake)
-			assert.strictEqual(yield* tokenSourceCount(testDb), 0)
+			const remaining = yield* Effect.promise(() =>
+				queryFirstRow<{ ids: Array<string> }>(
+					testDb,
+					"SELECT array_agg(id) AS ids FROM sources WHERE kind = 'token'",
+				),
+			)
+			assert.deepStrictEqual(remaining?.ids, [customerSource])
 			const row = yield* drainRow(testDb, REF_A)
 			assert.deepStrictEqual(
 				[row?.log_drain_enabled, row?.log_drain_id, row?.log_drain_source_id],
@@ -727,6 +748,25 @@ describe("SupabaseConnectionService log drains", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, fake)))
 		},
 	)
+
+	it.effect("turning polling on sees a drain to Maple set up since the last discovery", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)] })
+		return Effect.gen(function* () {
+			const service = yield* SupabaseConnectionService
+			yield* connect(fake)
+			fake.state.drains.set(REF_A, [MANUAL_MAPLE_DRAIN])
+			const error = yield* service
+				.updateProject(ORG, USER, asRef(REF_A), { logsEnabled: true })
+				.pipe(Effect.flip)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+
+			// A refused listing (Free plan) still lets a project without a known drain poll.
+			fake.state.drains.set(REF_A, [])
+			fake.state.drainListStatus = 403
+			yield* service.updateProject(ORG, USER, asRef(REF_A), { logsEnabled: true })
+		}).pipe(Effect.provide(makeLayer(testDb, fake)))
+	})
 
 	it.effect("asking for a drain and polling at once is refused", () => {
 		const testDb = createTestDb(trackedDbs)
