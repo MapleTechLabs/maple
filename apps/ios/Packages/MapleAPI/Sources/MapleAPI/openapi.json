@@ -633,7 +633,7 @@
             "type": "array"
           },
           "evaluation_interval_minutes": {
-            "description": "Minutes between checks: 1, 5, 10, 15, 30 or 60, at most `window_minutes`. Raw SQL rules checked less often may run longer queries (5s at 1 minute, 15s at 5, 30s at 10 or more). `null` checks every fifth of the window, 1 to 5 minutes.",
+            "description": "Minutes between checks: 1, 5, 10, 15, 30 or 60, at most `window_minutes`. Raw SQL rules checked less often may run longer queries (5s at 1 minute, 15s at 5, 25s at 10 or more). `null` checks every fifth of the window, 1 to 5 minutes.",
             "enum": [
               1,
               5,
