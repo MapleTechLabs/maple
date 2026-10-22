@@ -41,7 +41,7 @@ import type { DashboardId } from "@maple/domain/primitives"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
 import { hashShareToken, shareOgId, verifyAlertChartId, verifyChatChartId, verifyShareOgId } from "@maple/db"
 import { ChatSessions } from "@maple/backend/platform/bindings"
-import { redactForShare } from "@maple/widgets/dashboard"
+import { redactForShare, variablesForWidget } from "@maple/widgets/dashboard"
 import { Effect, Option, Redacted, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -288,7 +288,16 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					const { share, orgId, document } = yield* openShare(payload.token)
 					// A widget-scoped link answers for its own widget and nothing else.
 					// Without that, a chart share would be a board share with extra steps.
-					const { results, variables } = yield* widgetData.resolveBatch(orgId, document, {
+					// That includes the board's variables: only the widget's own resolve.
+					const sharedWidget =
+						share.widgetId === undefined
+							? undefined
+							: document.widgets.find((widget) => widget.id === share.widgetId)
+					const scoped =
+						sharedWidget === undefined || document.variables === undefined
+							? document
+							: { ...document, variables: variablesForWidget(document.variables, sharedWidget) }
+					const { results, variables } = yield* widgetData.resolveBatch(orgId, scoped, {
 						requests: payload.requests.map((request) => ({
 							widgetId: request.widgetId,
 							source: request.source ?? "primary",

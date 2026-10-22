@@ -211,8 +211,15 @@ const v2GroupLayersExceptOnboardingChecklist = (
 				Layer.succeed(DashboardWidgetDataService, {
 					variableOptions: () => Effect.succeed({}),
 					resolve: () => Effect.die("share widget data is not exercised by v2 route harnesses"),
-					resolveBatch: () =>
-						Effect.die("share widget data is not exercised by v2 route harnesses"),
+					// Echoes the variables it was handed, so a test can see which ones a
+					// share let through; the values themselves are not evaluated here.
+					resolveBatch: (_orgId, document) =>
+						Effect.succeed({
+							results: [],
+							variables: Object.fromEntries(
+								(document.variables ?? []).map((variable) => [variable.name, ""]),
+							),
+						}),
 				}),
 			),
 			Layer.provide(

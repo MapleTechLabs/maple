@@ -916,6 +916,50 @@ describe("v2 dashboard shares", () => {
 		await harness.dispose()
 	})
 
+	it("resolves only the shared widget's own variables on a chart link", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
+		const created = await harness.request("POST", "/v2/dashboards", key.secret, {
+			name: "Board with variables",
+			time_range: { type: "relative", value: "1h" },
+			widgets: [
+				{
+					id: "w-1",
+					visualization: "stat",
+					data_source: { kind: "static" },
+					display: { title: "Errors in $region" },
+					layout: { x: 0, y: 0, w: 3, h: 4 },
+				},
+			],
+			variables: [
+				{ name: "region", type: "textbox", default_value: "eu" },
+				{ name: "tier", type: "custom", options: [{ value: "gold" }], default_value: "gold" },
+			],
+		})
+		const id: string = created.body.id
+		const board = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
+			mode: "public",
+		})
+		const chart = await harness.request("PUT", `/v2/dashboards/${id}/widgets/w-1/share`, key.secret, {
+			mode: "public",
+		})
+
+		const at = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ")
+		const variablesFor = async (token: string) => {
+			const response = await harness.request("POST", "/v2/share/widget-data", undefined, {
+				token,
+				requests: [{ widgetId: "w-1" }],
+				timeRange: { startTime: at(Date.now() - 3_600_000), endTime: at(Date.now() - 60_000) },
+			})
+			expect(response.status).toBe(200)
+			return Object.keys(response.body.variables).sort()
+		}
+
+		expect(await variablesFor(board.body.token)).toEqual(["region", "tier"])
+		expect(await variablesFor(chart.body.token)).toEqual(["region"])
+		await harness.dispose()
+	})
+
 	it("refuses to mint a link for a widget that is not on the board", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(SHARE_SCOPES)
