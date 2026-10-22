@@ -43,6 +43,7 @@ function makeRule(overrides: Record<string, unknown> = {}): AlertRuleDocument {
 		minimumSampleCount: 0,
 		consecutiveBreachesRequired: 1,
 		breachesOutOf: null,
+		evaluationIntervalMinutes: null,
 		thresholds: [
 			{ severity: "critical", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] },
 		],

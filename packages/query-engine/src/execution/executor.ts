@@ -981,7 +981,7 @@ WHERE name = 'enable_full_text_index'`,
 	const rawSqlQuery = Effect.fn("WarehouseQueryService.rawSqlQuery")(function* (
 		tenant: ExecutionTenant,
 		sql: string,
-		options?: Pick<SqlQueryOptions, "profile" | "context">,
+		options?: Pick<SqlQueryOptions, "profile" | "context" | "settings">,
 	) {
 		// No OrgId assertion here on purpose. This path runs user-authored SQL,
 		// whose isolation is enforced upstream at the credential layer — a

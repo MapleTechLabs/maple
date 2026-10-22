@@ -185,6 +185,11 @@ export const AlertWindowMinutes = PositiveInt.pipe(
 	Schema.check(Schema.isLessThanOrEqualTo(MAX_ALERT_WINDOW_MINUTES)),
 )
 
+/** Check intervals a rule can pick. A longer interval gets a longer query time limit. */
+export const ALERT_EVALUATION_INTERVALS = [1, 5, 10, 15, 30, 60] as const
+export const AlertEvaluationIntervalMinutes = Schema.Literals(ALERT_EVALUATION_INTERVALS)
+export type AlertEvaluationIntervalMinutes = typeof AlertEvaluationIntervalMinutes.Type
+
 /** Longest "N of the last M checks" window a rule can count over. */
 export const MAX_ALERT_BREACH_WINDOW = 30
 export const AlertBreachWindow = PositiveInt.pipe(
@@ -595,6 +600,8 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	threshold: Schema.Number,
 	thresholdUpper: Schema.NullOr(Schema.Number),
 	windowMinutes: AlertWindowMinutes,
+	/** Minutes between checks. Null derives it from the window (1 to 5). */
+	evaluationIntervalMinutes: Schema.NullOr(AlertEvaluationIntervalMinutes),
 	minimumSampleCount: NonNegativeInt,
 	/** N: breaching checks needed to open (or escalate). */
 	consecutiveBreachesRequired: PositiveInt,
@@ -646,6 +653,7 @@ export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>
 	threshold: Schema.optionalKey(Schema.Number),
 	thresholdUpper: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	windowMinutes: AlertWindowMinutes,
+	evaluationIntervalMinutes: Schema.optionalKey(Schema.NullOr(AlertEvaluationIntervalMinutes)),
 	minimumSampleCount: Schema.optionalKey(NonNegativeInt),
 	consecutiveBreachesRequired: Schema.optionalKey(PositiveInt),
 	breachesOutOf: Schema.optionalKey(Schema.NullOr(AlertBreachWindow)),

@@ -6,7 +6,8 @@ import {
 	RawSqlValidationError,
 } from "@maple/domain/http"
 import { ORG_FILTER_MACRO_RE, rawSqlIssue, type RawSqlWorkload } from "@maple/domain/raw-sql"
-import type { QueryProfileName } from "../profiles"
+import type { QueryProfileName, WarehouseQuerySettings } from "../profiles"
+import { alertQueryLimits } from "../datetime"
 import { escapeClickHouseString, splitTerminalClauses } from "@maple-dev/effect-orm/sql"
 import type { OrgId } from "@maple/domain"
 
@@ -41,6 +42,8 @@ export interface PreparedRawSql {
 
 export interface ExecuteRawSqlInput extends PrepareRawSqlInput {
 	readonly context: string
+	/** An alert rule's check interval, which sets its time and memory limits. Alert workload only. */
+	readonly alertIntervalMinutes?: number
 }
 
 export interface ExecuteRawSqlResult {
@@ -55,7 +58,11 @@ export interface RawSqlWarehouse<TTenant, E> {
 	readonly rawSqlQuery: (
 		tenant: TTenant,
 		sql: string,
-		options: { readonly profile: QueryProfileName; readonly context: string },
+		options: {
+			readonly profile: QueryProfileName
+			readonly context: string
+			readonly settings?: WarehouseQuerySettings
+		},
 	) => Effect.Effect<ReadonlyArray<Record<string, unknown>>, E>
 }
 
@@ -176,6 +183,11 @@ const rawSqlResultLimitError = (rows: ReadonlyArray<Record<string, unknown>>): s
 	return null
 }
 
+const alertQuerySettings = (intervalMinutes: number): WarehouseQuerySettings => {
+	const limits = alertQueryLimits(intervalMinutes)
+	return { maxExecutionTime: limits.timeSeconds, maxMemoryUsage: limits.memoryBytes }
+}
+
 /**
  * Build the single prepare/execute workflow shared by HTTP, MCP, and alerts.
  *
@@ -197,6 +209,9 @@ export const makeExecuteRawSql = <TTenant, E>(warehouse: RawSqlWarehouse<TTenant
 		const rows = yield* warehouse.rawSqlQuery(tenant, prepared.sql, {
 			profile: input.workload === "alert" ? "rawAlert" : "rawInteractive",
 			context: input.context,
+			...(input.workload === "alert" && input.alertIntervalMinutes !== undefined
+				? { settings: alertQuerySettings(input.alertIntervalMinutes) }
+				: undefined),
 		})
 
 		const limitError = rawSqlResultLimitError(rows)

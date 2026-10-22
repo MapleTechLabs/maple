@@ -5,7 +5,7 @@
  * graph this file drags in is imported on the first fire, not at startup and
  * not in the deploy process, where the Worker's init also runs.
  */
-import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertsService, type AlertSchedulerLane } from "@maple/backend/services/alerts/AlertsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
@@ -133,18 +133,22 @@ const makeTick = <A, E, R>(
 		catchTickFailure(spanKey),
 	)
 
-const alertTick = makeTick(
-	AlertsService.use((alerts) => alerts.runSchedulerTick()),
-	"scheduler",
-	(result) => ({
-		evaluatedCount: result.evaluatedCount,
-		processedCount: result.processedCount,
-		evaluationFailureCount: result.evaluationFailureCount,
-		warehouseUnavailableSkipCount: result.warehouseUnavailableSkipCount,
-		deferredCount: result.deferredCount,
-		deliveryFailureCount: result.deliveryFailureCount,
-	}),
-)
+const schedulerTick = (lane: AlertSchedulerLane, spanKey: string) =>
+	makeTick(
+		AlertsService.use((alerts) => alerts.runSchedulerTick(lane)),
+		spanKey,
+		(result) => ({
+			evaluatedCount: result.evaluatedCount,
+			processedCount: result.processedCount,
+			evaluationFailureCount: result.evaluationFailureCount,
+			warehouseUnavailableSkipCount: result.warehouseUnavailableSkipCount,
+			deferredCount: result.deferredCount,
+			deliveryFailureCount: result.deliveryFailureCount,
+		}),
+	)
+
+const alertTick = schedulerTick("standard", "scheduler")
+const alertLongQueryTick = schedulerTick("long_query", "scheduler_long_query")
 
 const errorTick = makeTick(
 	ErrorsService.use((errors) => errors.runTick()),
@@ -365,6 +369,7 @@ const prReviewPostMergeTick = makeTick(
 
 export interface ScheduledTickPrograms<R = never> {
 	readonly alert: Effect.Effect<void, never, R>
+	readonly alertLongQuery: Effect.Effect<void, never, R>
 	readonly anomaly: Effect.Effect<void, never, R>
 	readonly cloudflareAnalytics: Effect.Effect<void, never, R>
 	readonly digest: Effect.Effect<void, never, R>
@@ -385,6 +390,7 @@ export interface ScheduledTickPrograms<R = never> {
 const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect.Effect<void, never, R> =>
 	Match.value(lane).pipe(
 		Match.when("alert", () => ticks.alert),
+		Match.when("alert_long_query", () => ticks.alertLongQuery),
 		// `fixVerification` is chained onto `error` rather than given its own lane:
 		// a window this minute's error tick just refuted must already be settled
 		// when the verification tick looks at it.
@@ -456,6 +462,7 @@ type ScheduledServices =
 
 export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	alert: alertTick,
+	alertLongQuery: alertLongQueryTick,
 	anomaly: anomalyTick,
 	cloudflareAnalytics: cloudflareAnalyticsTick,
 	digest: digestTick,

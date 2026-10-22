@@ -3,6 +3,7 @@ import {
 	AlertDestinationDocument,
 	AlertDestinationId,
 	AlertDestinationType,
+	AlertEvaluationIntervalMinutes,
 	AlertEventType,
 	AlertGroupBy,
 	AlertIncidentDocument,
@@ -39,6 +40,7 @@ const asDestinationType = Schema.decodeUnknownSync(AlertDestinationType)
 const asSeverity = Schema.decodeUnknownSync(AlertSeverity)
 const asSignalType = Schema.decodeUnknownSync(AlertSignalType)
 const asComparator = Schema.decodeUnknownSync(AlertComparator)
+const asEvaluationInterval = Schema.decodeUnknownSync(Schema.NullOr(AlertEvaluationIntervalMinutes))
 const asIncidentStatus = Schema.decodeUnknownSync(AlertIncidentStatus)
 const asHoldReason = Schema.decodeUnknownSync(AlertIncidentHoldReason)
 const asEventType = Schema.decodeUnknownSync(AlertEventType)
@@ -89,6 +91,7 @@ export const AlertRuleRowSchema = Schema.Struct({
 	// Optional: rows synced before the column existed omit it.
 	thresholds_json: Schema.optionalKey(Schema.NullOr(Schema.Unknown)),
 	window_minutes: Schema.Number,
+	evaluation_interval_minutes: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	minimum_sample_count: Schema.Number,
 	consecutive_breaches_required: Schema.Number,
 	breaches_out_of: Schema.optionalKey(Schema.NullOr(Schema.Number)),
@@ -227,6 +230,7 @@ export const rowToAlertRuleDocument = (
 		threshold: legacy.threshold,
 		thresholdUpper: legacy.thresholdUpper,
 		windowMinutes: row.window_minutes,
+		evaluationIntervalMinutes: asEvaluationInterval(row.evaluation_interval_minutes ?? null),
 		minimumSampleCount: row.minimum_sample_count,
 		consecutiveBreachesRequired: row.consecutive_breaches_required,
 		breachesOutOf: row.breaches_out_of ?? null,

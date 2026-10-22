@@ -25,9 +25,13 @@ import {
 	AlertValidationError,
 	AlertWindowMinutes,
 	AlertBreachWindow,
+	AlertEvaluationIntervalMinutes,
 	type AlertThreshold,
 } from "../alerts"
 import { AlertDestinationPublicId } from "./alert-destinations"
+
+const EVALUATION_INTERVAL_DESCRIPTION =
+	"Minutes between checks: 1, 5, 10, 15, 30 or 60, at most `window_minutes`. Raw SQL rules checked less often may run longer queries (5s at 1 minute, 15s at 5, 25s at 10 or more). `null` checks every fifth of the window, 1 to 5 minutes."
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
@@ -141,6 +145,7 @@ const alertRuleExample = {
 		},
 	],
 	window_minutes: 5,
+	evaluation_interval_minutes: null,
 	minimum_sample_count: 50,
 	consecutive_breaches_required: 2,
 	breaches_out_of: null,
@@ -234,6 +239,10 @@ export const V2AlertRule = Schema.Struct({
 	window_minutes: AlertWindowMinutes.annotate({
 		description: "Length of the evaluation window in minutes.",
 		examples: [5],
+	}),
+	evaluation_interval_minutes: Schema.NullOr(AlertEvaluationIntervalMinutes).annotate({
+		description: EVALUATION_INTERVAL_DESCRIPTION,
+		examples: [null],
 	}),
 	minimum_sample_count: NonNegativeInt.annotate({
 		description:
@@ -399,6 +408,12 @@ const createParamsFields = {
 		description: "Length of the evaluation window in minutes.",
 		examples: [5],
 	}),
+	evaluation_interval_minutes: Schema.optionalKey(
+		Schema.NullOr(AlertEvaluationIntervalMinutes).annotate({
+			description: EVALUATION_INTERVAL_DESCRIPTION,
+			examples: [10],
+		}),
+	),
 	minimum_sample_count: Schema.optionalKey(NonNegativeInt),
 	consecutive_breaches_required: Schema.optionalKey(PositiveInt),
 	breaches_out_of: Schema.optionalKey(Schema.NullOr(AlertBreachWindow)),
@@ -450,6 +465,7 @@ export const V2AlertRuleUpdateParams = Schema.Struct({
 	comparator: Schema.optionalKey(createParamsFields.comparator),
 	threshold: createParamsFields.threshold,
 	window_minutes: Schema.optionalKey(createParamsFields.window_minutes),
+	evaluation_interval_minutes: createParamsFields.evaluation_interval_minutes,
 	destination_ids: createParamsFields.destination_ids,
 	breaches_out_of: createParamsFields.breaches_out_of,
 	notes: createParamsFields.notes,

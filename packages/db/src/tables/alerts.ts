@@ -83,6 +83,8 @@ export const AlertRules = PG.table("alert_rules", {
 		 */
 		thresholdsJson: PG.column(PG.nullable(PG.jsonb()), { name: "thresholds_json" }),
 		windowMinutes: PG.column(PG.int4, { name: "window_minutes" }),
+		/** Minutes between checks, as picked by the author. Null derives it from the window. */
+		evaluationIntervalMinutes: PG.column(PG.nullable(PG.int4), { name: "evaluation_interval_minutes" }),
 		minimumSampleCount: PG.column(PG.int4, { name: "minimum_sample_count", default: 0 }),
 		consecutiveBreachesRequired: PG.column(PG.int4, {
 			name: "consecutive_breaches_required",
