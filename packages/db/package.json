@@ -8,6 +8,7 @@
 		"./config": "./src/config.ts",
 		"./migrate": "./src/migrate.ts",
 		"./pglite": "./src/pglite.ts",
+		"./roles": "./src/roles.ts",
 		"./tables": "./src/tables/index.ts"
 	},
 	"scripts": {

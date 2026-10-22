@@ -37,6 +37,7 @@ import {
 	resolvePlanetscaleDatabase,
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
+import { DB_ACCESS_ROLES } from "@maple/db/roles"
 import * as Acm from "@maple/infra/acm"
 import { createAwsSecurityBaseline } from "@maple/infra/security-baseline"
 import { optionalPlain, plainWithDefault, requiredPlain } from "@maple/infra/env"
@@ -152,13 +153,15 @@ const declarePrdDb = ({ stage, region }: MapleDeployment, profile: MapleProfile)
 			name: "main",
 			migrations: "packages/db/drizzle",
 		}).pipe(RemovalPolicy.retain())
-		// The ingest gateway's role. Changing it is a create-first replace (its id is in the task env).
+		// Runtime logins read and write rows but own nothing; migrations run as the branch owner.
+		// Changing roles is a create-first replace (the ingest role's id is in the task env).
 		const ingestRole = yield* Planetscale.PostgresRole("ingest-gateway", {
 			database,
 			branch: schema,
-			inheritedRoles: ["postgres"],
+			inheritedRoles: [...DB_ACCESS_ROLES.readWrite],
 		})
 		// Id must not be `"electric"` (the ECS service's id): alchemy keys state by id alone.
+		// Stays on `postgres`: PlanetScale grants REPLICATION only alongside it.
 		const electricRole = profile.deploys.electric
 			? yield* Planetscale.PostgresRole("electric-db-role", {
 					database,
@@ -180,7 +183,7 @@ const declarePrdDb = ({ stage, region }: MapleDeployment, profile: MapleProfile)
 				const role = yield* Planetscale.PostgresRole(`db-${consumer}-role`, {
 					database,
 					branch: schema,
-					inheritedRoles: ["postgres"],
+					inheritedRoles: [...DB_ACCESS_ROLES.readWrite],
 				})
 				return yield* Cloudflare.Hyperdrive.Connection(`db-${consumer}`, {
 					name: resolveWorkerName(`db-${consumer}`, stage, region),
