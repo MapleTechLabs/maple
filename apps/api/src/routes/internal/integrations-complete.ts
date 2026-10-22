@@ -72,7 +72,6 @@ export const makeIntegrationCompleter = Effect.gen(function* () {
 	const supabaseOAuth = yield* SupabaseOAuthService
 	const supabaseConnection = yield* SupabaseConnectionService
 	const chat = yield* ChatWorkspaceService
-	// RFC 9207 mix-up defense: Supabase names itself in `iss`; a different issuer is refused.
 	const supabaseIssuer = supabaseOAuth.apiBaseUrl
 
 	const complete = (
@@ -133,17 +132,6 @@ export const makeIntegrationCompleter = Effect.gen(function* () {
 					}),
 				)
 			case "supabase": {
-				const issuer = params.get("iss")
-				if (issuer !== null && issuer.replace(/\/$/, "") !== supabaseIssuer) {
-					return Effect.succeed(
-						new OAuthCompleteResponse({
-							status: "error",
-							message:
-								"The authorization came from an unexpected issuer. Restart the connect flow.",
-							returnTo: null,
-						}),
-					)
-				}
 				// One grant is one Supabase organization: bind it and return.
 				return supabaseOAuth.completeConnect(initiator, code, state).pipe(
 					Effect.flatMap((result) =>
@@ -183,48 +171,69 @@ export const makeIntegrationCompleter = Effect.gen(function* () {
 		const params = new URLSearchParams(query)
 		const failed = (message: string) =>
 			new OAuthCompleteResponse({ status: "error", message, returnTo: null })
+		/** A callback refused before any exchange: logged with a fixed reason, never the query. */
+		const refuse = (reason: string, message: string) =>
+			Effect.logWarning(`${label} OAuth callback refused`, { provider, reason }).pipe(
+				Effect.andThen(Effect.annotateCurrentSpan({ "maple.integration.outcome": reason })),
+				Effect.as(failed(message)),
+			)
 
-		const oauthError = params.get("error")
-		if (oauthError !== null) {
-			return failed(params.get("error_description") || `${label} returned an error`)
+		if (params.get("error") !== null) {
+			return yield* refuse(
+				"provider_error",
+				params.get("error_description") || `${label} returned an error`,
+			)
 		}
 		const state = params.get("state")
 		if (provider === "github") {
 			// `setup_action=request`: the org requires admin approval, so there is no installation yet.
 			if (params.get("installation_id") === null) {
-				return failed(
-					params.get("setup_action") === "request"
-						? "Installation requested — an org admin must approve it on GitHub, then reconnect."
-						: "Missing installation_id in callback",
-				)
+				return yield* params.get("setup_action") === "request"
+					? refuse(
+							"install_requested",
+							"Installation requested — an org admin must approve it on GitHub, then reconnect.",
+						)
+					: refuse("missing_installation_id", "Missing installation_id in callback")
 			}
 			if (state === null) {
-				return failed(
+				return yield* refuse(
+					"missing_state",
 					"Missing state in callback — GitHub did not return it. Restart the connection from the Maple dashboard.",
 				)
 			}
 		}
 		const code = params.get("code") ?? ""
 		if (state === null || (provider !== "github" && code === "")) {
-			return failed("Missing code or state in callback")
+			return yield* refuse("missing_code_or_state", "Missing code or state in callback")
+		}
+		// RFC 9207 mix-up defense: Supabase names itself in `iss`; a different issuer is refused.
+		const issuer = params.get("iss")
+		if (provider === "supabase" && issuer !== null && issuer.replace(/\/$/, "") !== supabaseIssuer) {
+			return yield* refuse(
+				"issuer_mismatch",
+				"The authorization came from an unexpected issuer. Restart the connect flow.",
+			)
 		}
 
 		return yield* complete(initiator, provider, code, state, params).pipe(
-			Effect.map((result) =>
-				result instanceof OAuthCompleteResponse
-					? result
-					: new OAuthCompleteResponse({
-							status: "success",
-							message: result.message,
-							returnTo: Option.getOrNull(decodeReturnPath(result.returnTo)),
-						}),
+			Effect.tap(() => Effect.annotateCurrentSpan({ "maple.integration.outcome": "completed" })),
+			Effect.map(
+				(result) =>
+					new OAuthCompleteResponse({
+						status: "success",
+						message: result.message,
+						returnTo: Option.getOrNull(decodeReturnPath(result.returnTo)),
+					}),
 			),
 			// The response reduces failures to short copy; the real cause still goes to the log.
 			Effect.catch((error) =>
 				Effect.logError(`${label} OAuth completeConnect failed`, {
 					tag: error._tag,
 					message: error.message,
-				}).pipe(Effect.as(failed(failureMessage(label, error)))),
+				}).pipe(
+					Effect.andThen(Effect.annotateCurrentSpan({ "maple.integration.outcome": "failed" })),
+					Effect.as(failed(failureMessage(label, error))),
+				),
 			),
 		)
 	})

@@ -13,6 +13,7 @@ import {
 	OAuthTokenResponseSchema,
 	type OAuthTokenEndpointConfig,
 } from "./connection-helpers"
+import type { OAuthStateInitiator } from "./state-initiator"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -443,29 +444,37 @@ describe("requireStateRow initiator binding", () => {
 			),
 		)
 
-	it.live.each([
+	const finishers: ReadonlyArray<readonly [string, OAuthStateInitiator]> = [
 		["another user in the same org", { orgId: ORG, userId: asUserId("user_somebody_else") }],
 		["the same user in another org", { orgId: asOrgId("org_somebody_else"), userId: USER }],
-	])("refuses a forwarded authorization finished by %s, and burns the state", ([, finisher]) => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			const helpers = yield* makeHelpers()
-			yield* insertState(helpers, "forwarded-state")
-			const error = yield* helpers.requireStateRow("forwarded-state", finisher).pipe(Effect.flip)
-			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
-			assert.include(error.message, "different Maple user or organization")
-			// The initiator cannot redeem it afterwards either: the forwarded state is spent.
-			const replay = yield* helpers.requireStateRow("forwarded-state", INITIATOR).pipe(Effect.flip)
-			assert.include(replay.message, "not recognized")
-		}).pipe(
-			Effect.provide(
-				provideBase(
-					testDb,
-					fetchLayer(() => freshTokens()),
+	]
+	// `@effect/vitest`'s `each` is `it.for`: the whole row is the first argument.
+	it.live.each(finishers)(
+		"refuses a forwarded authorization finished by %s, and burns the state",
+		([, finisher]) => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				// A real initiator that differs in exactly one field, so the refusal is the comparison's.
+				assert.isTrue(finisher.orgId === ORG || finisher.userId === USER)
+				assert.isFalse(finisher.orgId === ORG && finisher.userId === USER)
+				const helpers = yield* makeHelpers()
+				yield* insertState(helpers, "forwarded-state")
+				const error = yield* helpers.requireStateRow("forwarded-state", finisher).pipe(Effect.flip)
+				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+				assert.include(error.message, "different Maple user or organization")
+				// The initiator cannot redeem it afterwards either: the forwarded state is spent.
+				const replay = yield* helpers.requireStateRow("forwarded-state", INITIATOR).pipe(Effect.flip)
+				assert.include(replay.message, "not recognized")
+			}).pipe(
+				Effect.provide(
+					provideBase(
+						testDb,
+						fetchLayer(() => freshTokens()),
+					),
 				),
-			),
-		)
-	})
+			)
+		},
+	)
 
 	it.live("returns the row to the user and org that started the flow", () => {
 		const testDb = createTestDb(trackedDbs)
