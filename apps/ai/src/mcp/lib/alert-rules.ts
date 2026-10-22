@@ -96,7 +96,7 @@ export const slowedNotice = (rule: RuleCadence): ReadonlyArray<string> =>
 	rule.slowedIntervalMinutes === null
 		? []
 		: [
-				`The scheduler slowed this rule down to every ${alertRuleIntervalMinutes(rule)}m after its query hit its time limit 3 checks in a row. Editing the rule resets that; make the query cheaper first (preview_alert_rule times it).`,
+				`The scheduler slowed this rule down to every ${alertRuleIntervalMinutes(rule)}m after its query hit its time or memory limit 3 checks in a row. Editing the rule resets that; make the query cheaper first (preview_alert_rule times it).`,
 			]
 
 /** How a rule covers a service: named in its scope, unscoped (every service), or a raw query mentioning it. */
