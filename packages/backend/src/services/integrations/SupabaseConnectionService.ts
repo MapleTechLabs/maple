@@ -1063,7 +1063,13 @@ export class SupabaseConnectionService extends Context.Service<
 					message: `No Supabase project ${ref} is connected to this organization`,
 				})
 			}
-			// Refused before any write, so a request never half-applies on this precondition.
+			// Refused before any write, so a request never half-applies on these preconditions.
+			const manual = project.logDrainsJson.find((drain) => drain.toMaple && !drain.managedByMaple)
+			if (request.logsEnabled === true && manual !== undefined) {
+				return yield* new IntegrationsValidationError({
+					message: `Supabase project ${ref} already sends its logs to Maple through the drain "${manual.name}". Polling too would store them twice.`,
+				})
+			}
 			if (
 				request.logsEnabled === true &&
 				request.logDrainEnabled !== false &&

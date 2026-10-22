@@ -710,6 +710,24 @@ describe("SupabaseConnectionService log drains", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})
 
+	it.effect(
+		"polling next to a hand-made Maple drain is refused before the metrics switch is written",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)] })
+			fake.state.drains.set(REF_A, [MANUAL_MAPLE_DRAIN])
+			return Effect.gen(function* () {
+				const service = yield* SupabaseConnectionService
+				yield* connect(fake)
+				const error = yield* service
+					.updateProject(ORG, USER, asRef(REF_A), { metricsEnabled: false, logsEnabled: true })
+					.pipe(Effect.flip)
+				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+				assert.isTrue((yield* projectRow(testDb, REF_A))?.metrics_enabled ?? false)
+			}).pipe(Effect.provide(makeLayer(testDb, fake)))
+		},
+	)
+
 	it.effect("asking for a drain and polling at once is refused", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)] })
