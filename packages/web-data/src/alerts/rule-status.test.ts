@@ -27,6 +27,7 @@ function makeRule(overrides: Record<string, unknown> = {}): AlertRuleDocument {
 		threshold: 0.05,
 		thresholdUpper: null,
 		windowMinutes: 5,
+		evaluationIntervalMinutes: null,
 		minimumSampleCount: 0,
 		consecutiveBreachesRequired: 2,
 		breachesOutOf: null,
@@ -129,7 +130,11 @@ describe("deriveRuleStatus", () => {
 	})
 
 	it("marks rules stale past 3x the state heartbeat", () => {
-		const rule = makeRule({ lastEvaluatedAt: iso(staleThresholdMs() + 60_000) })
+		const rule = makeRule({
+			lastEvaluatedAt: iso(
+				staleThresholdMs({ windowMinutes: 5, evaluationIntervalMinutes: null }) + 60_000,
+			),
+		})
 		const result = derive({
 			rule,
 			states: [makeState({ last_evaluated_at: rule.lastEvaluatedAt })],
@@ -137,11 +142,22 @@ describe("deriveRuleStatus", () => {
 		expect(result.status).toBe("stale")
 	})
 
+	it("waits three of a rule's own check intervals before calling it stale", () => {
+		const hourly = { windowMinutes: 60, evaluationIntervalMinutes: 60 }
+		const checkedAgo = (minutes: number) =>
+			derive({
+				rule: makeRule({ ...hourly, lastEvaluatedAt: iso(minutes * 60_000) }),
+				states: [makeState({ last_evaluated_at: iso(minutes * 60_000) })],
+			}).status
+		expect(checkedAgo(50)).toBe("healthy")
+		expect(checkedAgo(3 * 60 + 1)).toBe("stale")
+	})
+
 	it("applies the same missed-tick SLA regardless of the rule's window", () => {
 		// The scheduler checks a rule every 1-5 minutes whatever its window, so
 		// staleness does not scale with the window. Scaling
 		// staleness by it hid a dead scheduler for 72h on a 24h-window rule.
-		const gap = staleThresholdMs() + 60_000
+		const gap = staleThresholdMs({ windowMinutes: 5, evaluationIntervalMinutes: null }) + 60_000
 		for (const windowMinutes of [5, 60, 1440]) {
 			const rule = makeRule({ windowMinutes, lastEvaluatedAt: iso(gap) })
 			const result = derive({

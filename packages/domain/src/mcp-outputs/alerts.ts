@@ -18,6 +18,8 @@ export const AlertRuleRow = Schema.Struct({
 	comparator: Schema.String,
 	threshold: Schema.Number,
 	windowMinutes: Schema.Number,
+	/** Minutes between checks as picked; null checks every fifth of the window, 1 to 5. */
+	evaluationIntervalMinutes: Schema.NullOr(Schema.Number),
 	destinationIds: Schema.Array(Schema.String),
 	createdAt: Schema.String,
 	updatedAt: Schema.String,

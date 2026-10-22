@@ -173,6 +173,7 @@ export const makeAlertRulePersistence = (options: {
 			thresholdUpper: normalized.thresholdUpper,
 			thresholdsJson: normalized.thresholds,
 			windowMinutes: normalized.windowMinutes,
+			evaluationIntervalMinutes: normalized.evaluationIntervalMinutes,
 			minimumSampleCount: normalized.minimumSampleCount,
 			consecutiveBreachesRequired: normalized.consecutiveBreachesRequired,
 			breachesOutOf: normalized.breachesOutOf,

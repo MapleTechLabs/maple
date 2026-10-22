@@ -4,6 +4,8 @@ import {
 	BUCKET_POLICIES,
 	cacheSnapSecondsForRange,
 	alertEvaluationIntervalMinutes,
+	alertQueryLimits,
+	alertRuleIntervalMinutes,
 	alertWindowBucketSeconds,
 	isAlertRuleDue,
 	computeBucketSeconds,
@@ -298,11 +300,43 @@ describe("alertEvaluationIntervalMinutes", () => {
 	})
 })
 
+describe("alertRuleIntervalMinutes", () => {
+	it("uses the picked interval over the window's fifth", () => {
+		expect(alertRuleIntervalMinutes({ windowMinutes: 60, evaluationIntervalMinutes: 1 })).toBe(1)
+		expect(alertRuleIntervalMinutes({ windowMinutes: 60, evaluationIntervalMinutes: 30 })).toBe(30)
+		expect(alertRuleIntervalMinutes({ windowMinutes: 15, evaluationIntervalMinutes: null })).toBe(3)
+	})
+})
+
+describe("alertQueryLimits", () => {
+	it("gives a rule checked every 5 or 10 minutes more time than one checked every minute", () => {
+		const time = (interval: number) => alertQueryLimits(interval).timeSeconds
+		expect(time(1)).toBeLessThan(time(5))
+		expect(time(5)).toBeLessThan(time(10))
+		// Derived intervals under 5 minutes keep the 1-minute limit.
+		expect(time(3)).toBe(time(1))
+	})
+
+	it("stays under the query engine's 30s ceiling at every interval", () => {
+		expect(Math.max(...[1, 5, 10, 15, 30, 60].map((n) => alertQueryLimits(n).timeSeconds))).toBeLessThan(
+			30,
+		)
+	})
+
+	it("never lowers a limit as the interval grows", () => {
+		const limits = [1, 5, 10, 15, 30, 60].map(alertQueryLimits)
+		for (const [a, b] of limits.slice(1).map((limit, i) => [limits[i]!, limit] as const)) {
+			expect(b.timeSeconds).toBeGreaterThanOrEqual(a.timeSeconds)
+			expect(b.memoryBytes).toBeGreaterThanOrEqual(a.memoryBytes)
+		}
+	})
+})
+
 describe("isAlertRuleDue", () => {
 	const minute = (n: number) => n * 60_000
-	const base = { ruleId: "rule-a", windowMinutes: 15, updatedAt: 0 }
+	const base = { ruleId: "rule-a", intervalMinutes: 3, updatedAt: 0 }
 	// Ticks over 30 minutes, the rule claimed whenever it is due.
-	const dueMinutes = (input: { ruleId: string; windowMinutes: number }) => {
+	const dueMinutes = (input: { ruleId: string; intervalMinutes: number }) => {
 		const due: number[] = []
 		let lastClaimedAt = minute(1000) + 17_000
 		for (let n = 1001; n <= 1030; n++) {
@@ -314,21 +348,27 @@ describe("isAlertRuleDue", () => {
 		return due
 	}
 
-	it("runs a 15-minute rule every third minute once it has been claimed", () => {
+	it("runs a 3-minute rule every third minute once it has been claimed", () => {
 		const due = dueMinutes(base)
 		expect(due).toHaveLength(10)
 		expect(new Set(due.map((n) => n % 3)).size).toBe(1)
 	})
 
-	it("runs a 5-minute rule every minute", () => {
-		expect(dueMinutes({ ruleId: "rule-a", windowMinutes: 5 })).toHaveLength(30)
+	it("runs a 1-minute rule every minute", () => {
+		expect(dueMinutes({ ruleId: "rule-a", intervalMinutes: 1 })).toHaveLength(30)
+	})
+
+	it("runs a 10-minute rule three times in 30 minutes", () => {
+		const due = dueMinutes({ ruleId: "rule-a", intervalMinutes: 10 })
+		expect(due).toHaveLength(3)
+		expect(new Set(due.map((n) => n % 10)).size).toBe(1)
 	})
 
 	it("spreads rules sharing an interval across its minutes", () => {
 		const phases = new Set(
 			Array.from(
 				{ length: 50 },
-				(_, i) => dueMinutes({ ruleId: `rule-${i}`, windowMinutes: 30 })[0]! % 5,
+				(_, i) => dueMinutes({ ruleId: `rule-${i}`, intervalMinutes: 5 })[0]! % 5,
 			),
 		)
 		expect(phases.size).toBe(5)

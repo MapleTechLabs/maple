@@ -34,6 +34,7 @@ function rule(id: string, overrides: Record<string, unknown> = {}): AlertRuleDoc
 		noDataBehavior: "skip",
 		consecutiveBreachesRequired: 2,
 		breachesOutOf: null,
+		evaluationIntervalMinutes: null,
 		thresholds: [
 			{ severity: "warning", value: 0.05, upper: null, recoveryValue: null, destinationIds: [] },
 		],

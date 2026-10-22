@@ -90,6 +90,7 @@ const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	threshold: doc.threshold,
 	threshold_upper: doc.thresholdUpper,
 	window_minutes: doc.windowMinutes,
+	evaluation_interval_minutes: doc.evaluationIntervalMinutes,
 	minimum_sample_count: doc.minimumSampleCount,
 	consecutive_breaches_required: doc.consecutiveBreachesRequired,
 	breaches_out_of: doc.breachesOutOf,
@@ -130,6 +131,7 @@ const ruleAuditDiff = auditDiff<keyof V2AlertRuleUpdateParams & keyof V2AlertRul
 		"threshold",
 		"threshold_upper",
 		"window_minutes",
+		"evaluation_interval_minutes",
 		"minimum_sample_count",
 		"consecutive_breaches_required",
 		"breaches_out_of",
@@ -213,6 +215,9 @@ const toUpsertRequest = (
 				? { destinationIds: params.destination_ids }
 				: undefined),
 			...(params.breaches_out_of !== undefined ? { breachesOutOf: params.breaches_out_of } : undefined),
+			...(params.evaluation_interval_minutes !== undefined
+				? { evaluationIntervalMinutes: params.evaluation_interval_minutes }
+				: undefined),
 			...(params.notes !== undefined ? { notes: params.notes } : undefined),
 			...(params.notification_template !== undefined
 				? {
@@ -370,6 +375,10 @@ const mergeUpsertRequest = (
 			signalType,
 			comparator,
 			windowMinutes: patch.window_minutes ?? doc.windowMinutes,
+			evaluationIntervalMinutes:
+				patch.evaluation_interval_minutes !== undefined
+					? patch.evaluation_interval_minutes
+					: doc.evaluationIntervalMinutes,
 			minimumSampleCount: patch.minimum_sample_count ?? doc.minimumSampleCount,
 			consecutiveBreachesRequired:
 				patch.consecutive_breaches_required ?? doc.consecutiveBreachesRequired,

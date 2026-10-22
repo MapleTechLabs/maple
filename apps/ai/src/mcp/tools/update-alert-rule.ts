@@ -138,6 +138,12 @@ export const buildUpdatedRequest = Effect.fnUntraced(function* (
 		thresholds,
 		breachesOutOf: current.breachesOutOf,
 		windowMinutes: params.window_minutes ?? current.windowMinutes,
+		// A window shrunk below the picked interval falls back to the window's own interval.
+		evaluationIntervalMinutes:
+			current.evaluationIntervalMinutes !== null &&
+			current.evaluationIntervalMinutes > (params.window_minutes ?? current.windowMinutes)
+				? null
+				: current.evaluationIntervalMinutes,
 		minimumSampleCount: params.minimum_sample_count ?? current.minimumSampleCount,
 		consecutiveBreachesRequired: params.consecutive_breaches ?? current.consecutiveBreachesRequired,
 		consecutiveHealthyRequired: params.consecutive_healthy ?? current.consecutiveHealthyRequired,

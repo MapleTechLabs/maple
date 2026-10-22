@@ -1,4 +1,10 @@
-import { AlertDeliveryError, AlertDeliveryRejectedError, AlertValidationError } from "@maple/domain/http"
+import {
+	AlertDeliveryError,
+	AlertDeliveryRejectedError,
+	type AlertEvaluationIntervalMinutes,
+	AlertValidationError,
+} from "@maple/domain/http"
+import type { WarehouseQuerySettings } from "@maple/query-engine/profiles"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
@@ -8,6 +14,7 @@ import { ChatAlertPoster } from "./ChatAlertPoster"
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
+	Fiber,
 	Array as Arr,
 	Cause,
 	Clock,
@@ -6308,7 +6315,7 @@ describe("AlertsService evaluation cadence", () => {
 				(n) =>
 					!isAlertRuleDue({
 						ruleId: rule.id,
-						windowMinutes: 30,
+						intervalMinutes: 5,
 						updatedAt: claimedAt,
 						lastClaimedAt: claimedAt,
 						windowEndMs: snapAlertWindowEndMs(claimedAt + n * 60_000),
@@ -6334,6 +6341,173 @@ describe("AlertsService evaluation cadence", () => {
 			)
 			const afterEdit = yield* alerts.runSchedulerTick()
 			assert.strictEqual(afterEdit.evaluatedCount, 1)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
+	})
+})
+
+describe("AlertsService check intervals", () => {
+	const RAW_SQL = "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"
+
+	// Records the settings each raw SQL query ran with.
+	const recordingWarehouse = (settings: Array<WarehouseQuerySettings | undefined>) => {
+		const stub = makeWarehouseStub({ rawQueryRows: [{ value: 1, samples: 1 }] })
+		return {
+			...stub,
+			rawSqlQuery: (...args: Parameters<WarehouseQueryServiceApi["rawSqlQuery"]>) => {
+				settings.push(args[2]?.settings)
+				return stub.rawSqlQuery(...args)
+			},
+		} satisfies WarehouseQueryServiceApi
+	}
+
+	const createIntervalRule = (
+		alerts: AlertsServiceApi,
+		orgId: OrgId,
+		rule: {
+			readonly signalType: "raw_query" | "error_rate"
+			readonly windowMinutes: number
+			readonly evaluationIntervalMinutes: AlertEvaluationIntervalMinutes | null
+		},
+	) =>
+		createWebhookDestination(alerts, orgId, asUserId("user_interval")).pipe(
+			Effect.flatMap((destination) =>
+				alerts.createRule(
+					orgId,
+					asUserId("user_interval"),
+					adminRoles,
+					new AlertRuleUpsertRequest({
+						name: `Interval ${rule.signalType} ${rule.evaluationIntervalMinutes}`,
+						severity: "warning",
+						enabled: true,
+						signalType: rule.signalType,
+						...(rule.signalType === "raw_query" ? { rawQuerySql: RAW_SQL } : undefined),
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: rule.windowMinutes,
+						evaluationIntervalMinutes: rule.evaluationIntervalMinutes,
+						destinationIds: [destination.id],
+					}),
+				),
+			),
+		)
+
+	it.effect("runs a raw SQL rule checked every 10 minutes in the long-query lane with a 25s limit", () => {
+		const testDb = createTestDb(trackedDbs)
+		const settings: Array<WarehouseQuerySettings | undefined> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* createIntervalRule(alerts, asOrgId("org_interval_long"), {
+				signalType: "raw_query",
+				windowMinutes: 10,
+				evaluationIntervalMinutes: 10,
+			})
+
+			assert.strictEqual((yield* alerts.runSchedulerTick("standard")).evaluatedCount, 0)
+			assert.strictEqual((yield* alerts.runSchedulerTick("long_query")).evaluatedCount, 1)
+			assert.deepStrictEqual(settings, [{ maxExecutionTime: 25, maxMemoryUsage: 512_000_000 }])
+		}).pipe(Effect.provide(makeLayer(testDb, recordingWarehouse(settings), { fetch: okFetch })))
+	})
+
+	it.effect("keeps a raw SQL rule checked every minute in the standard lane with a 5s limit", () => {
+		const testDb = createTestDb(trackedDbs)
+		const settings: Array<WarehouseQuerySettings | undefined> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* createIntervalRule(alerts, asOrgId("org_interval_short"), {
+				signalType: "raw_query",
+				windowMinutes: 5,
+				evaluationIntervalMinutes: null,
+			})
+
+			assert.strictEqual((yield* alerts.runSchedulerTick("long_query")).evaluatedCount, 0)
+			assert.strictEqual((yield* alerts.runSchedulerTick("standard")).evaluatedCount, 1)
+			assert.deepStrictEqual(settings, [{ maxExecutionTime: 5, maxMemoryUsage: 256_000_000 }])
+		}).pipe(Effect.provide(makeLayer(testDb, recordingWarehouse(settings), { fetch: okFetch })))
+	})
+
+	it.effect("checks a rule on the interval its author picked", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			// A 15-minute window alone would be checked every third minute.
+			yield* createIntervalRule(alerts, asOrgId("org_interval_builder"), {
+				signalType: "error_rate",
+				windowMinutes: 15,
+				evaluationIntervalMinutes: 10,
+			})
+
+			const counts = yield* Effect.forEach(Arr.range(1, 25), () =>
+				alerts.runSchedulerTick().pipe(
+					Effect.map((tick) => tick.evaluatedCount),
+					Effect.tap(() => TestClock.adjust(Duration.minutes(1))),
+				),
+			)
+			const ran = Arr.filter(Arr.range(0, counts.length - 1), (index) => counts[index] === 1)
+			// Right away (never claimed), then on its phase minute every ten.
+			assert.strictEqual(ran[0], 0)
+			const settled = ran.slice(1)
+			assert.isAtMost(settled[0]!, 10)
+			assert.isAtLeast(settled.length, 2)
+			Arr.forEach(settled.slice(1), (tick, i) => assert.strictEqual(tick - settled[i]!, 10))
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
+	})
+
+	it.effect("defers a slow rule with no room left in the long-query lane to the very next tick", () => {
+		const testDb = createTestDb(trackedDbs)
+		// Each query takes 26 s two at a time, so the second pair would start with under 35 s of the 60 s budget left.
+		const stub = makeWarehouseStub({ rawQueryRows: [{ value: 1, samples: 1 }] })
+		const slowWarehouse = {
+			...stub,
+			rawSqlQuery: (...args: Parameters<WarehouseQueryServiceApi["rawSqlQuery"]>) =>
+				Effect.andThen(Effect.sleep(Duration.seconds(26)), stub.rawSqlQuery(...args)),
+		} satisfies WarehouseQueryServiceApi
+		// A tick under the test clock, which moves a second at a time while the tick sleeps.
+		const tickWithClock = (alerts: AlertsServiceApi) =>
+			Effect.gen(function* () {
+				const tick = yield* Effect.forkChild(alerts.runSchedulerTick("long_query"))
+				yield* Effect.forEach(Arr.range(1, 90), () => TestClock.adjust(Duration.seconds(1)), { discard: true })
+				return yield* Fiber.join(tick)
+			})
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* Effect.forEach(["a", "b", "c", "d"], (org) =>
+				createIntervalRule(alerts, asOrgId(`org_interval_room_${org}`), {
+					signalType: "raw_query",
+					windowMinutes: 10,
+					evaluationIntervalMinutes: 10,
+				}),
+			)
+
+			const first = yield* tickWithClock(alerts)
+			assert.deepStrictEqual(
+				{ evaluated: first.evaluatedCount, failed: first.evaluationFailureCount, deferred: first.deferredCount },
+				{ evaluated: 2, failed: 0, deferred: 2 },
+			)
+			// Their claims were released, so they run on the next tick rather than on their next 10-minute slot.
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS + 2 * 60_000)
+			assert.strictEqual((yield* tickWithClock(alerts)).evaluatedCount, 2)
+		}).pipe(Effect.provide(makeLayer(testDb, slowWarehouse, { fetch: okFetch })))
+	})
+
+	it.effect("rejects a check interval longer than the window", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const exit = yield* createIntervalRule(alerts, asOrgId("org_interval_gap"), {
+				signalType: "error_rate",
+				windowMinutes: 5,
+				evaluationIntervalMinutes: 15,
+			}).pipe(Effect.exit)
+			const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+			assert.instanceOf(error, AlertValidationError)
+			assert.include(
+				error instanceof AlertValidationError ? error.details.join("\n") : "",
+				"must be at least evaluationIntervalMinutes",
+			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
 	})
 })

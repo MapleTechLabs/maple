@@ -5,7 +5,7 @@ import type {
 	AlertIncidentDocument,
 	AlertRuleDocument,
 } from "@maple/domain/http"
-import { alertEvaluationIntervalMinutes } from "@maple/query-engine/datetime"
+import { alertRuleIntervalMinutes } from "@maple/query-engine/datetime"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import { countLabel } from "@maple/ui/lib/format"
 import type { AlertRuleStateRow } from "../collections/alerts"
@@ -13,8 +13,8 @@ import { comparatorLabels, formatSignalValue } from "./form-utils"
 import { staleThresholdMs } from "./rule-status"
 import { formatTimestampInTimezone } from "../lib/timezone-format"
 
-const evaluationCadence = (windowMinutes: number): string => {
-	const minutes = alertEvaluationIntervalMinutes(windowMinutes)
+const evaluationCadence = (rule: AlertRuleDocument): string => {
+	const minutes = alertRuleIntervalMinutes(rule)
 	return minutes === 1 ? "every minute" : `every ${minutes} minutes`
 }
 
@@ -128,13 +128,13 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			],
 		})
 	} else if (evaluatedAt != null) {
-		const stale = now - evaluatedAt > staleThresholdMs()
+		const stale = now - evaluatedAt > staleThresholdMs(rule)
 		stages.push({
 			id: "evaluated",
 			label: "Evaluated recently",
 			status: stale ? "warn" : "pass",
 			summary: stale
-				? `Last evaluated ${relative(now, evaluatedAt)}, expected ${evaluationCadence(rule.windowMinutes)}`
+				? `Last evaluated ${relative(now, evaluatedAt)}, expected ${evaluationCadence(rule)}`
 				: `Last evaluated ${relative(now, evaluatedAt)}`,
 			evidence: [
 				`Last evaluation: ${formatTimestampInTimezone(evaluatedAt, { timeZone, withYear: true })}`,

@@ -137,6 +137,7 @@ export function rulesFixture(mode: WorstCaseMode): RulesFixture {
 			minimumSampleCount: 0,
 			consecutiveBreachesRequired: 1,
 			breachesOutOf: null,
+			evaluationIntervalMinutes: null,
 			thresholds: [
 				{
 					severity: "critical",

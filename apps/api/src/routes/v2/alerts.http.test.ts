@@ -552,6 +552,48 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("keeps a rule's check interval through PATCH until it is set or cleared", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const destination = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
+			type: "webhook",
+			name: "Ops hook",
+			url: "https://example.com/hooks/maple",
+		})
+		const created = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Hourly error rate",
+			signal_type: "error_rate",
+			severity: "warning",
+			comparator: "gt",
+			threshold: 0.05,
+			window_minutes: 60,
+			evaluation_interval_minutes: 30,
+			destination_ids: [destination.body.id],
+		})
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+		expect(created.body.evaluation_interval_minutes).toBe(30)
+
+		const renamed = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			name: "Renamed",
+		})
+		expect(renamed.body.evaluation_interval_minutes).toBe(30)
+
+		const tooShort = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			window_minutes: 15,
+		})
+		expect(tooShort.status).toBe(400)
+		expect(JSON.stringify(tooShort.body)).toContain("evaluationIntervalMinutes")
+
+		const cleared = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			window_minutes: 15,
+			evaluation_interval_minutes: null,
+		})
+		expect(cleared.status, JSON.stringify(cleared.body)).toBe(200)
+		expect(cleared.body.evaluation_interval_minutes).toBeNull()
+
+		await harness.dispose()
+	})
+
 	it("keeps a rule's severity tiers through PATCH and rejects single-threshold edits on them", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["alerts:write"])

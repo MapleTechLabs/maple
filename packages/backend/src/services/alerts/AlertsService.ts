@@ -11,6 +11,8 @@ import {
 	type AlertLifecycleInput,
 } from "@maple/alerting-core"
 import {
+	alertQueryLimits,
+	alertRuleIntervalMinutes,
 	ENGINE_UNGROUPED_GROUP_KEY,
 	formatWarehouseDateTime,
 	isAlertRuleDue,
@@ -156,6 +158,8 @@ import {
 	makeAlertValidationError as makeValidationError,
 	perServiceRules,
 	planEvaluateSource,
+	alertSchedulerLaneOf,
+	type AlertSchedulerLane,
 	selectStoredAlertRules,
 	type NormalizedRule,
 	type StoredAlertRuleRow,
@@ -164,6 +168,7 @@ import { mapSignalUnit, resolveSignalDisplay } from "./alert-signal-display"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 export { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
+export type { AlertSchedulerLane } from "./AlertRuleModel"
 
 type EvaluatedRule = import("@maple/alerting-core").AlertEvaluation
 
@@ -552,7 +557,7 @@ export interface AlertsServiceApi
 		| QueryEngineTimeoutError
 		| WarehouseQueryPathError
 	>
-	readonly runSchedulerTick: () => Effect.Effect<
+	readonly runSchedulerTick: (lane?: AlertSchedulerLane) => Effect.Effect<
 		{
 			readonly evaluatedCount: number
 			readonly processedCount: number
@@ -1018,7 +1023,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const endMs = windowEndMs === undefined ? snapAlertWindowEndMs(yield* now) : windowEndMs
 				const startMs = endMs - rule.windowMinutes * 60_000
 				const plan = rule.compiledPlan
-				const source = yield* planEvaluateSource(plan, rule.windowMinutes)
+				const source = yield* planEvaluateSource(plan, rule)
 				const observations: ReadonlyArray<GroupedAlertObservation> = yield* queryEngine.evaluate(
 					systemTenant(orgId),
 					{
@@ -1597,7 +1602,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			 * shows once the rule is live.
 			 *
 			 * Fidelity caveat: the live scheduler slides its window every check
-			 * (`alertEvaluationIntervalMinutes`) while the preview uses tumbling
+			 * (`alertRuleIntervalMinutes`) while the preview uses tumbling
 			 * windows, so `wouldFire` spans are approximate between bucket boundaries.
 			 */
 			const previewRule = Effect.fn("AlertsService.previewRule")(function* (
@@ -1703,7 +1708,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								const observations = yield* queryEngine.evaluateSeries(systemTenant(orgId), {
 									startTime: formatWarehouseDateTime(startMs),
 									endTime: formatWarehouseDateTime(queryEndMs),
-									source: yield* planEvaluateSource(rule.compiledPlan, rule.windowMinutes),
+									source: yield* planEvaluateSource(rule.compiledPlan, rule),
 									reducer: rule.compiledPlan.reducer,
 									sampleCountStrategy: rule.compiledPlan.sampleCountStrategy,
 								})
@@ -1718,7 +1723,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						{ concurrency: 5 },
 					)
 				} else {
-					const source = yield* planEvaluateSource(plan, normalized.windowMinutes)
+					const source = yield* planEvaluateSource(plan, normalized)
 					const observations = yield* queryEngine.evaluateSeries(systemTenant(orgId), {
 						startTime: formatWarehouseDateTime(startMs),
 						endTime: formatWarehouseDateTime(queryEndMs),
@@ -3628,9 +3633,36 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			// spread: the last rule starts at least this long before the deadline.
 			const SCHEDULER_SPREAD_TAIL_MS = 10_000
 
+			const longQueryEvalMs = (row: StoredAlertRuleRow) =>
+				alertQueryLimits(alertRuleIntervalMinutes(row)).timeSeconds * 1000 + 10_000
+
+			// Raw SQL rules allowed more than the 1-minute query time limit run in their own
+			// lane, so a 25s query holds neither the standard lane's slots nor its 30s claim.
+			// Evaluations end by 60s, leaving the writes and tail inside the cron's 110s.
+			const SCHEDULER_LANES = {
+				standard: {
+					concurrency: 5,
+					lockTtlMs: SCHEDULER_LOCK_TTL_MS,
+					claimChunkSize: RULE_CLAIM_CHUNK_SIZE,
+					tickBudgetMs: () => runtime.schedulerTickBudgetMs(),
+					evalTimeoutMs: (_row: StoredAlertRuleRow) => runtime.schedulerEvalTimeoutMs(),
+					// Starts until the deadline; the deadline cuts a late evaluation short.
+					startRoomMs: (_row: StoredAlertRuleRow) => 0,
+				},
+				long_query: {
+					concurrency: 2,
+					lockTtlMs: 100_000,
+					claimChunkSize: 2,
+					tickBudgetMs: () => 60_000,
+					evalTimeoutMs: longQueryEvalMs,
+					// Starts a rule only with room for its whole time limit, so a slow query is never cut short.
+					startRoomMs: longQueryEvalMs,
+				},
+			} satisfies Record<AlertSchedulerLane, unknown>
+
 			// Unchanged-state ticks skip the alert_rule_states upsert so the Electric
 			// shape stays quiet; lastEvaluatedAt is refreshed at most this often. Under
-			// the 5-minute longest check interval, so claim jitter cannot skip a refresh.
+			// 5 minutes, so claim jitter cannot skip a refresh on a 5-minute rule.
 			const STATE_HEARTBEAT_MS = 4.5 * 60_000
 
 			// `alert_rules.last_scheduled_at` is still exposed on the API and read by the
@@ -3675,7 +3707,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			 * evaluation: the claims are already committed by then, and the heartbeat
 			 * is cosmetic.
 			 */
-			const claimRuleChunk = (chunk: ReadonlyArray<StoredAlertRuleRow>, timestamp: number) =>
+			const claimRuleChunk = (
+				chunk: ReadonlyArray<StoredAlertRuleRow>,
+				timestamp: number,
+				lockTtlMs: number,
+			) =>
 				dbExecute((db) =>
 					Effect.gen(function* () {
 						const claimed = yield* db.run(
@@ -3690,7 +3726,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								.onConflictDoUpdate({
 									target: ["ruleId"],
 									set: { lastScheduledAt: timestamp },
-									where: ($) => $.lastScheduledAt.lt(timestamp - SCHEDULER_LOCK_TTL_MS),
+									where: ($) => $.lastScheduledAt.lt(timestamp - lockTtlMs),
 								})
 								.returning(($) => ({ id: $.ruleId })),
 						)
@@ -3990,32 +4026,39 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					Match.exhaustive,
 				)
 
-			const evaluateScheduledRules = Effect.fn("AlertsService.evaluateScheduledRules")(function* () {
+			const evaluateScheduledRules = Effect.fn("AlertsService.evaluateScheduledRules")(function* (
+				laneName: AlertSchedulerLane,
+			) {
+				const lane = SCHEDULER_LANES[laneName]
 				const tickStart = yield* now
 				// One window for the whole tick: a rule that starts after the spread crossed a
 				// minute must not skip ahead of the rules that started before it.
 				const tickWindowEndMs = snapAlertWindowEndMs(tickStart)
-				const rows = yield* dbExecute((db) =>
+				const enabledRows = yield* dbExecute((db) =>
 					db.run(
 						selectStoredAlertRules()
 							.where(($) => [$.enabled.eq(true)])
 							.orderBy(["updatedAt", "asc"]),
 					),
 				)
-				yield* Metric.update(AlertingMetrics.activeRulesGauge, rows.length)
+				if (laneName === "standard") {
+					yield* Metric.update(AlertingMetrics.activeRulesGauge, enabledRows.length)
+				}
+				const rows = Arr.filter(enabledRows, (row) => alertSchedulerLaneOf(row) === laneName)
 
-				// A rule is checked every fifth of its window (1-5 min), not every tick.
+				// A rule is checked on its interval (a fifth of its window unless picked), not every tick.
 				const lastClaimedAt = yield* loadLastClaimTimes(rows)
 				const dueRows = Arr.filter(rows, (row) =>
 					isAlertRuleDue({
 						ruleId: row.id,
-						windowMinutes: row.windowMinutes,
+						intervalMinutes: alertRuleIntervalMinutes(row),
 						updatedAt: row.updatedAt,
 						lastClaimedAt: lastClaimedAt.get(row.id),
 						windowEndMs: tickWindowEndMs,
 					}),
 				)
 				yield* Effect.annotateCurrentSpan({
+					"maple.alerting.lane": laneName,
 					"maple.alerting.rules_enabled": rows.length,
 					"maple.alerting.rules_due": dueRows.length,
 				})
@@ -4245,11 +4288,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// (dated at or after tickStart) expires and the next tick re-claims it.
 				// Rules not started are left unclaimed or expire, and run next tick.
 				const deadline =
-					tickStart +
-					Math.min(
-						runtime.schedulerTickBudgetMs(),
-						SCHEDULER_LOCK_TTL_MS - SCHEDULER_LOCK_MARGIN_MS,
-					)
+					tickStart + Math.min(lane.tickBudgetMs(), lane.lockTtlMs - SCHEDULER_LOCK_MARGIN_MS)
 				const deferredRules = yield* Ref.make(0)
 				const deferRules = (count: number) => Ref.update(deferredRules, (n) => n + count)
 				// Claims released after the pool drains, so these rules are due next tick: won but
@@ -4263,7 +4302,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								Arr.filterMap(chunk, (row) => {
 									// A live claim belongs to another tick still evaluating the rule.
 									const claimedAt = lastClaimedAt.get(row.id) ?? 0
-									return claimedAt > 0 && claimedAt < tickStart - SCHEDULER_LOCK_TTL_MS
+									return claimedAt > 0 && claimedAt < tickStart - lane.lockTtlMs
 										? Result.succeed({ id: row.id, timestamp: claimedAt })
 										: Result.failVoid
 								}),
@@ -4278,15 +4317,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const unavailableOrgs = yield* Ref.make(HashSet.empty<OrgId>())
 				const markOrgUnavailable = (orgId: OrgId) => Ref.update(unavailableOrgs, HashSet.add(orgId))
 
-				const evaluateBeforeDeadline = (orgId: OrgId, rule: NormalizedRule) =>
+				const evaluateBeforeDeadline = (row: StoredAlertRuleRow, rule: NormalizedRule) =>
 					Effect.flatMap(now, (startedAt) =>
-						evaluateRule(orgId, rule, tickWindowEndMs).pipe(
+						evaluateRule(row.orgId, rule, tickWindowEndMs).pipe(
 							Effect.timeoutOrElse({
 								duration: Duration.millis(
-									Math.max(
-										0,
-										Math.min(runtime.schedulerEvalTimeoutMs(), deadline - startedAt),
-									),
+									Math.max(0, Math.min(lane.evalTimeoutMs(row), deadline - startedAt)),
 								),
 								orElse: () =>
 									Effect.fail(
@@ -4320,7 +4356,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						if (normalized.serviceNames.length > 1) {
 							yield* Effect.forEach(yield* perServiceRules(normalized), ({ groupKey, rule }) =>
 								Effect.gen(function* () {
-									const observations = yield* evaluateBeforeDeadline(row.orgId, rule)
+									const observations = yield* evaluateBeforeDeadline(row, rule)
 									// A service with no rows at all used to be dropped here,
 									// which left its open incident frozen for as long as it
 									// stayed quiet. An empty window is an observation too,
@@ -4373,7 +4409,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// compiled plan is ungrouped. So both shapes flow through the
 						// same loop with no key translation here.
 						const grouped = isGroupedPlan(normalized.compiledPlan)
-						const results = yield* evaluateBeforeDeadline(row.orgId, normalized)
+						const results = yield* evaluateBeforeDeadline(row, normalized)
 						const excludeSet = HashSet.fromIterable(normalized.excludeServiceNames)
 						const eligible = grouped
 							? Arr.filter(results, (r) => !HashSet.has(excludeSet, r.groupKey))
@@ -4542,7 +4578,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				yield* Stream.fromIterable(
 					Arr.chunksOf(
 						interleaveAlertRulesByOrg(orderAlertRulesByLastClaim(dueRows, lastClaimedAt)),
-						RULE_CLAIM_CHUNK_SIZE,
+						lane.claimChunkSize,
 					),
 				).pipe(
 					Stream.mapEffect((chunk) =>
@@ -4564,7 +4600,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									Effect.andThen(retryUnclaimed(chunk)),
 									Effect.as([]),
 								)
-							const claimed = yield* claimRuleChunk(chunk, timestamp).pipe(
+							const claimed = yield* claimRuleChunk(chunk, timestamp, lane.lockTtlMs).pipe(
 								Effect.catch((error) => skipChunk(Cause.fail(error))),
 								Effect.catchDefect((defect) => skipChunk(Cause.die(defect))),
 							)
@@ -4580,7 +4616,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					Stream.mapEffect(
 						({ row, timestamp }) =>
 							Effect.flatMap(now, (startedAt) =>
-								startedAt >= deadline
+								startedAt + lane.startRoomMs(row) >= deadline
 									? deferRules(1).pipe(
 											Effect.andThen(
 												Ref.update(
@@ -4593,7 +4629,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											Effect.andThen(Ref.update(evaluatedRules, (n) => n + 1)),
 										),
 							),
-						{ concurrency: 5, unordered: true },
+						{ concurrency: lane.concurrency, unordered: true },
 					),
 					Stream.runDrain,
 				)
@@ -4719,8 +4755,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// Every rule's writes are done, and these steps do not read each other's writes:
 				// disabled rules are never in the housekeeping lists, and the sweep only resolves,
 				// which adds nothing to the digests. Run together; a failure still fails the tick.
+				// One lane sweeps, so two lanes never resolve the same disabled rule's incidents.
 				const tail = yield* Effect.all(
-					Arr.map([housekeeping, digests, sweepDisabledRules, ingestChecks], Effect.exit),
+					Arr.map(
+						laneName === "standard"
+							? [housekeeping, digests, sweepDisabledRules, ingestChecks]
+							: [housekeeping, digests, ingestChecks],
+						Effect.exit,
+					),
 					{ concurrency: "unbounded" },
 				)
 				yield* Effect.forEach(tail, (exit) => exit, { discard: true })
@@ -4740,10 +4782,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			// Deliveries drain even when evaluation fails, so a broken rule pass
 			// never holds back notifications already queued. The failure is raised
 			// after the drain.
-			const runSchedulerTick = Effect.fn("AlertsService.runSchedulerTick")(function* () {
+			const runSchedulerTick = Effect.fn("AlertsService.runSchedulerTick")(function* (
+				lane: AlertSchedulerLane = "standard",
+			) {
 				const tickStart = yield* now
-				const evaluation = yield* Effect.exit(evaluateScheduledRules())
-				const deliveryResult = yield* processQueuedDeliveries()
+				const evaluation = yield* Effect.exit(evaluateScheduledRules(lane))
+				// One lane drains: the standard lane runs every minute, and its drain has its own 20s budget.
+				const deliveryResult =
+					lane === "standard"
+						? yield* processQueuedDeliveries()
+						: { processedCount: 0, failureCount: 0 }
 				const evaluated = yield* evaluation
 				yield* Effect.annotateCurrentSpan("maple.alerting.rules_deferred", evaluated.deferredCount)
 				yield* Metric.update(AlertingMetrics.tickDurationMs, (yield* now) - tickStart)

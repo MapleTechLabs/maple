@@ -514,6 +514,7 @@
             "environments": [
               "production"
             ],
+            "evaluation_interval_minutes": null,
             "exclude_service_names": [],
             "group_by": null,
             "id": "alrt_gU26thvJECdQvu54Ad9jiz",
@@ -630,6 +631,21 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "evaluation_interval_minutes": {
+            "description": "Minutes between checks: 1, 5, 10, 15, 30 or 60, at most `window_minutes`. Raw SQL rules checked less often may run longer queries (5s at 1 minute, 15s at 5, 25s at 10 or more). `null` checks every fifth of the window, 1 to 5 minutes.",
+            "enum": [
+              1,
+              5,
+              10,
+              15,
+              30,
+              60
+            ],
+            "examples": [
+              null
+            ],
+            "type": "number"
           },
           "exclude_service_names": {
             "description": "Services excluded from evaluation.",

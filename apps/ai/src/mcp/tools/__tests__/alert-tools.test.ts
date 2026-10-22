@@ -62,6 +62,7 @@ const rule = Schema.decodeUnknownSync(AlertRuleDocument)({
 	minimumSampleCount: 0,
 	consecutiveBreachesRequired: 1,
 	breachesOutOf: null,
+	evaluationIntervalMinutes: null,
 	thresholds: [
 		{ severity: "critical", value: 0.05, upper: null, recoveryValue: null, destinationIds: [DEST_ID] },
 	],
@@ -654,6 +655,19 @@ describe("alert tools", () => {
 		expect(recoveryAfter({ threshold: 120 })).toBe(80)
 		expect(recoveryAfter({ threshold: 70 })).toBeNull()
 		expect(recoveryAfter({ comparator: "lt" })).toBeNull()
+	})
+
+	it("update_alert_rule keeps a picked interval until the window gets shorter than it", () => {
+		const hourly = Schema.decodeUnknownSync(AlertRuleDocument)({
+			...rule,
+			windowMinutes: 60,
+			evaluationIntervalMinutes: 30,
+		})
+		const intervalAfter = (params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Effect.runSync(buildUpdatedRequest(hourly, params)).evaluationIntervalMinutes
+		expect(intervalAfter({ threshold: 2 })).toBe(30)
+		expect(intervalAfter({ window_minutes: 30 })).toBe(30)
+		expect(intervalAfter({ window_minutes: 15 })).toBeNull()
 	})
 
 	it("update_alert_rule keeps a two-tier rule's tiers and refuses to merge them", () => {
