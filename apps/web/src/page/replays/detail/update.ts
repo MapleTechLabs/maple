@@ -173,7 +173,7 @@ const seekDisplay = (model: Model, context: PageContext, displayMs: number): Ret
 		...model,
 		player: { ...player, currentMs: clamped, isFinished: clamped < player.totalMs ? false : player.isFinished },
 	}
-	return Option.match(requestSeek(placed, clamped), {
+	return Option.match(requestSeek(placed, clamped, player.isPlaying), {
 		onSome: (rebuilt) => syncRange(rebuilt, context),
 		onNone: () => ({
 			model:
@@ -254,22 +254,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchSpans: ({ traceId, result }) => ({
 			model: { ...model, spans: { ...model.spans, [traceId]: AsyncData.settle(AsyncData.Loading(), result) } },
 		}),
-		ReadiedEngine: ({ seedVersion, totalMs }) =>
-			seedVersion !== model.loader.seedVersion
-				? { model }
-				: {
-						model: {
-							...model,
-							player: {
-								...model.player,
-								// rrweb only knows the loaded seed; the manifest knows the whole recording.
-								totalMs: manifestTotalMs(model) || totalMs,
-								currentMs: model.loader.seekTargetMs ?? 0,
-								isFinished: false,
-								isPlaying: false,
-							},
-						},
-					},
+		ReadiedEngine: ({ seedVersion, totalMs }) => {
+			if (seedVersion !== model.loader.seedVersion) return { model }
+			const startMs = model.loader.seekTargetMs ?? 0
+			const ready: Model = {
+				...model,
+				loader: { ...model.loader, resumeOnReady: false },
+				player: {
+					...model.player,
+					// rrweb only knows the loaded seed; the manifest knows the whole recording.
+					totalMs: manifestTotalMs(model) || totalMs,
+					currentMs: startMs,
+					isFinished: false,
+					isPlaying: false,
+				},
+			}
+			// A seek or window slide that interrupted playback carries on in the new engine.
+			return { model: model.loader.resumeOnReady ? instruct(ready, "play", startMs, { isPlaying: true }) : ready }
+		},
 		TickedEngine: ({ seedVersion, currentMs }) =>
 			seedVersion !== model.loader.seedVersion
 				? { model }

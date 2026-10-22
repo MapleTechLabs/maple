@@ -36,6 +36,8 @@ export const emptyLoader = (): Loader => ({
 	seedVersion: 0,
 	originMs: null,
 	rangeMetas: [],
+	metaThroughSeq: -1,
+	resumeOnReady: false,
 })
 
 export const manifestOf = (model: Model): Manifest | undefined =>
@@ -66,6 +68,23 @@ export const seedEvents = (loader: Loader): ReadonlyArray<unknown> => loader.see
 export const seedShiftMs = (loader: Loader): number =>
 	loader.originMs === null || loader.seed.length === 0 ? 0 : Math.max(0, firstEventMs(loader.seed) - loader.originMs)
 
+/**
+ * Event bytes the player holds at once. The rest of the recording downloads in the background for its
+ * markers and idle gaps only. Covers ~99.7% of sessions whole; longer ones play in windows of this
+ * size, rebuilt from a checkpoint as the playhead reaches each window's end.
+ */
+export const MAX_PLAYABLE_BYTES = 50_000_000
+
+const bytesIn = (model: Model, range: ReplayRange): number =>
+	chunksOf(model).reduce(
+		(sum, chunk) =>
+			chunk.chunk_seq >= range.fromChunkSeq && chunk.chunk_seq <= range.toChunkSeq ? sum + chunk.byte_size : sum,
+		0,
+	)
+
+const loadedBytes = (model: Model): number =>
+	model.loader.loaded.reduce((sum, entry) => sum + bytesIn(model, entry.range), 0)
+
 /** Range answers kept for re-seeks; the oldest go first past this many. */
 export const RANGE_CACHE_LIMIT = 12
 
@@ -83,10 +102,10 @@ export const cacheRange = (
 export const trailingRanges = (loader: Loader): ReadonlyArray<LoadedRange> =>
 	loader.seedCount === 0 ? [] : loader.loaded.slice(loader.seedCount)
 
-const loadedUntilMs = (model: Model): number => {
+export const loadedUntilMs = (model: Model): number => {
 	const through = loadedThroughSeq(model.loader)
 	const chunks = chunksOf(model)
-	const last = chunks.find((chunk) => chunk.chunk_seq === through)
+	const last = chunks.findLast((chunk) => chunk.chunk_seq <= through)
 	return through < 0 || last === undefined ? 0 : chunkStartMs(last) + last.duration_ms - manifestStartMs(chunks)
 }
 
@@ -113,6 +132,8 @@ export const planOnce = (model: Model): Model => {
 			queue: initialRanges(chunks, planOf(model)),
 			originMs: null,
 			rangeMetas: [],
+			metaThroughSeq: -1,
+			resumeOnReady: false,
 		},
 	}
 }
@@ -133,22 +154,48 @@ export const advance = (model: Model, rows: Option.Option<RangeRows>): Model => 
 		)
 		.toSorted((a, b) => a.chunk_seq - b.chunk_seq)
 	const events = normalizeEvents(own.flatMap((row) => row.events))
-	const entry: LoadedRange = {
-		key,
-		range: active,
-		events,
-		lastChunkSeq: own.reduce((max, row) => Math.max(max, row.chunk_seq), through),
-	}
 	const originMs = loader.originMs ?? (events.length > 0 ? firstEventMs(events) : null)
 	const isKnown = loader.rangeMetas.some((meta) => meta.fromChunkSeq === active.fromChunkSeq)
 	const rangeMetas =
 		originMs === null || isKnown || events.length === 0
 			? loader.rangeMetas
 			: [...loader.rangeMetas, deriveRangeMeta(active, events, originMs)]
-	return cutSeed({
-		...model,
-		loader: { ...loader, loaded: [...loader.loaded, entry], queue: loader.queue.slice(1), originMs, rangeMetas },
-	})
+	const metaThroughSeq = Math.max(loader.metaThroughSeq, active.toChunkSeq)
+	// The opening window always plays; after it, a range joins the player only while it continues the
+	// loaded span and fits the cap. Anything else was fetched for its markers alone.
+	const isPlayable =
+		loader.seedCount === 0 ||
+		(active.fromChunkSeq === through + 1 && loadedBytes(model) + bytesIn(model, active) <= MAX_PLAYABLE_BYTES)
+	const loaded: ReadonlyArray<LoadedRange> = isPlayable
+		? [
+				...loader.loaded,
+				// Through the range's planned end, so a chunk missing from it never stalls the next range.
+				{ key, range: active, events, lastChunkSeq: Math.max(active.toChunkSeq, through) },
+			]
+		: loader.loaded
+	return continueDownload(
+		cutSeed({
+			...model,
+			loader: { ...loader, loaded, queue: loader.queue.slice(1), originMs, rangeMetas, metaThroughSeq },
+		}),
+	)
+}
+
+/**
+ * Keep downloading until the whole recording is fetched: the next playable range while it fits the
+ * cap, then the rest for its markers and gaps.
+ */
+const continueDownload = (model: Model): Model => {
+	const { loader } = model
+	if (loader.seedCount === 0 || loader.queue.length > 0) return model
+	const plan = planOf(model)
+	const through = loadedThroughSeq(loader)
+	const playable = rangeContaining(plan, through + 1)
+	const next =
+		playable !== undefined && loadedBytes(model) + bytesIn(model, playable) <= MAX_PLAYABLE_BYTES
+			? playable
+			: rangeContaining(plan, Math.max(loader.metaThroughSeq, through) + 1)
+	return next === undefined ? model : { ...model, loader: { ...loader, queue: [next] } }
 }
 
 const cutSeed = (model: Model): Model => {
@@ -166,32 +213,49 @@ const cutSeed = (model: Model): Model => {
 	}
 }
 
-/** Where the last loaded range starts, in ms from the recording's start. */
-const lastLoadedFromMs = (model: Model): number => {
-	const from = model.loader.loaded.at(-1)?.range.fromChunkSeq
+/** Where the loaded span starts, in ms from the recording's start. */
+export const loadedFromMs = (model: Model): number => {
+	const from = model.loader.loaded[0]?.range.fromChunkSeq
 	const chunks = chunksOf(model)
 	const first = chunks.find((chunk) => chunk.chunk_seq === from)
 	return first === undefined ? 0 : chunkStartMs(first) - manifestStartMs(chunks)
 }
 
+const rebuildAt = (model: Model, offsetMs: number, anchorSeq: number, resume: boolean): Model => ({
+	...model,
+	loader: {
+		...model.loader,
+		playheadMs: offsetMs,
+		loaded: [],
+		seedCount: 0,
+		seed: [],
+		isSeeking: true,
+		seekTargetMs: offsetMs,
+		resumeOnReady: resume,
+		queue: rangesCovering(chunksOf(model), planOf(model), anchorSeq, INITIAL_WINDOW_BYTES),
+	},
+})
+
 /**
- * `reportProgress`: keep one range ahead of the playhead. The next range is asked for as soon as
- * playback enters the last loaded one, not when it nears its end: at 8× with idle skipped a range
- * can play out in seconds, faster than the next one arrives.
+ * `reportProgress`: track the playhead. Past the cap, the playhead reaching the end of the playable
+ * window rebuilds the player from the latest checkpoint before it, and playback carries on.
  */
 export const reportProgress = (model: Model, offsetMs: number): Model => {
-	const loader = { ...model.loader, playheadMs: offsetMs }
-	const next = { ...model, loader }
-	if (loader.seedCount === 0 || !hasMoreChunks(next)) return next
-	if (offsetMs < lastLoadedFromMs(next) && offsetMs + 20_000 < loadedUntilMs(next)) return next
-	if (loader.queue.length > 0) return next
-	const range = rangeContaining(planOf(next), loadedThroughSeq(loader) + 1)
-	if (range === undefined || loader.loaded.some((entry) => entry.key === rangeKey(range))) return next
-	return { ...next, loader: { ...loader, queue: [range] } }
+	const next = { ...model, loader: { ...model.loader, playheadMs: offsetMs } }
+	const { loader } = next
+	if (loader.seedCount === 0 || !hasMoreChunks(next) || offsetMs + 1_000 < loadedUntilMs(next)) return next
+	const playable = rangeContaining(planOf(next), loadedThroughSeq(loader) + 1)
+	if (playable === undefined || loadedBytes(next) + bytesIn(next, playable) <= MAX_PLAYABLE_BYTES) return next
+	// The new window starts at the latest checkpoint before the first chunk the current one lacks.
+	// Rebuilding from the window's own checkpoint would load the same window again.
+	const anchor = checkpointAtOrBefore(chunksOf(next), loadedThroughSeq(loader) + 1)
+	const windowStart = loader.loaded[0]?.range.fromChunkSeq ?? 0
+	if (anchor === undefined || anchor.chunk_seq <= windowStart) return next
+	return rebuildAt(next, offsetMs, anchor.chunk_seq, true)
 }
 
-/** `requestSeek`: true (and a reset loader) when the target is outside the loaded span. */
-export const requestSeek = (model: Model, offsetMs: number): Option.Option<Model> => {
+/** `requestSeek`: a rebuilt loader when the target is outside the loaded span. */
+export const requestSeek = (model: Model, offsetMs: number, resume: boolean): Option.Option<Model> => {
 	const chunks = chunksOf(model)
 	const loader = { ...model.loader, playheadMs: offsetMs }
 	const target = chunkAtOffset(chunks, offsetMs)
@@ -204,18 +268,7 @@ export const requestSeek = (model: Model, offsetMs: number): Option.Option<Model
 	if (isLoaded) return Option.none()
 	const anchor = checkpointAtOrBefore(chunks, target.chunk_seq)
 	if (anchor === undefined) return Option.none()
-	return Option.some({
-		...model,
-		loader: {
-			...loader,
-			loaded: [],
-			seedCount: 0,
-			seed: [],
-			isSeeking: true,
-			seekTargetMs: offsetMs,
-			queue: rangesCovering(chunks, planOf(model), anchor.chunk_seq, INITIAL_WINDOW_BYTES),
-		},
-	})
+	return Option.some(rebuildAt({ ...model, loader }, offsetMs, anchor.chunk_seq, resume))
 }
 
 /** `bufferState === "buffering"`: the playhead reached the loaded end while more is coming. */

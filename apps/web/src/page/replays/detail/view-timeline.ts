@@ -19,7 +19,7 @@ import { MARKER_LABELS, MARKER_STYLES } from "../kit/replay-meta"
 import { timelineOf } from "./derive"
 import { Message } from "./message"
 import type { Model, SpanRow, TraceSummary } from "./model"
-import { displayState, idleBandsLayer, markersLayer } from "./view-player"
+import { bufferedLayer, displayState, idleBandsLayer, markersLayer } from "./view-player"
 
 // The replay editor timeline.
 // TODO(tooltip): the trace and span bars' hover tooltips.
@@ -89,6 +89,7 @@ const activityTrack = (h: H, model: Model): Html => {
 		),
 		h.div([h.Class("relative h-9 flex-1")], [
 			h.div([h.Class("absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted")], [
+				...bufferedLayer(h, display),
 				...idleBandsLayer(h, display),
 				h.div(
 					[h.Class("relative h-full rounded-full bg-primary"), h.Style({ width: `${pct(display.currentMs, display.totalMs)}%` })],

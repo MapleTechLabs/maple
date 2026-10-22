@@ -146,6 +146,10 @@ export const Loader = Schema.Struct({
 	originMs: Schema.NullOr(Schema.Number),
 	/** Markers and idle gaps of every range loaded so far, kept across seeks. */
 	rangeMetas: Schema.Array(RangeMeta),
+	/** The highest chunk whose markers and gaps are known, including ranges fetched past the playable cap. */
+	metaThroughSeq: Schema.Number,
+	/** Play as soon as the next seed's engine is ready: a seek or slide that interrupted playback. */
+	resumeOnReady: Schema.Boolean,
 })
 export type Loader = typeof Loader.Type
 

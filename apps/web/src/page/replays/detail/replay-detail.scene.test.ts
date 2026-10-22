@@ -255,26 +255,68 @@ describe("replay detail", () => {
 		expect(rebuilt.meta.actionMarkers.map((marker) => marker.ms)).toEqual([1_000, 305_000])
 	})
 
-	test("the next range is asked for as soon as playback starts, not near the loaded end", () => {
-		const at = (seconds: number) => new Date(Date.UTC(2026, 9, 1, 11, 18, 0) + seconds * 1000).toISOString()
-		const two: Manifest = {
-			chunks: [
-				{ chunk_seq: 0, timestamp: at(0), duration_ms: 60_000, event_count: 2, byte_size: 4_000_000, is_checkpoint: true },
-				{ chunk_seq: 1, timestamp: at(60), duration_ms: 60_000, event_count: 2, byte_size: 4_000_000, is_checkpoint: false },
-			],
-			maxBytesPerRequest: 6_000_000,
-			maxChunksPerRequest: 16,
-		}
+	const spread = (sizes: ReadonlyArray<{ seconds: number; bytes: number; isCheckpoint: boolean }>): Manifest => ({
+		chunks: sizes.map((chunk, seq) => ({
+			chunk_seq: seq,
+			timestamp: new Date(Date.UTC(2026, 9, 1, 11, 18, 0) + chunk.seconds * 1000).toISOString(),
+			duration_ms: 10_000,
+			event_count: 2,
+			byte_size: chunk.bytes,
+			is_checkpoint: chunk.isCheckpoint,
+		})),
+		maxBytesPerRequest: 6_000_000,
+		maxChunksPerRequest: 16,
+	})
+	const epochAt = (seconds: number) => Date.UTC(2026, 9, 1, 11, 18, 0) + seconds * 1000
+	const chunkRows = (seq: number, seconds: number) => [
+		{ chunk_seq: seq, events: [{ type: 4, timestamp: epochAt(seconds), data: {} }, { type: 3, timestamp: epochAt(seconds) + 5, data: { source: 2, type: 2 } }] },
+	]
+	const openWith = (manifest: Manifest): Model => {
 		const start = entered().model
-		const opened = [
+		return [
 			Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.succeed(session) }),
-			Message.CompletedFetchManifest({ key: start.manifest.key ?? "", result: Result.succeed(two) }),
+			Message.CompletedFetchManifest({ key: start.manifest.key ?? "", result: Result.succeed(manifest) }),
 		].reduce((model, message) => pageUpdate(model, message).model, start)
-		const rows = [{ chunk_seq: 0, events: [{ type: 4, timestamp: 1, data: {} }, { type: 2, timestamp: 2, data: {} }] }]
-		const seeded = pageUpdate(opened, Message.CompletedFetchRange({ key: opened.loader.range.key ?? "", result: Result.succeed(rows) })).model
-		const ticked = pageUpdate(seeded, Message.TickedEngine({ seedVersion: seeded.loader.seedVersion, currentMs: 100 }))
-		expect(ticked.model.loader.queue).toEqual([{ fromChunkSeq: 1, toChunkSeq: 1 }])
-		expect(names(ticked.commands)).toEqual([FetchRange.name])
+	}
+	const answerWith = (model: Model, rows: ReturnType<typeof chunkRows>) =>
+		pageUpdate(model, Message.CompletedFetchRange({ key: model.loader.range.key ?? "", result: Result.succeed(rows) }))
+
+	test("the whole recording downloads after the opening window, without waiting for playback", () => {
+		const manifest = spread([
+			{ seconds: 0, bytes: 4_000_000, isCheckpoint: true },
+			{ seconds: 60, bytes: 4_000_000, isCheckpoint: false },
+			{ seconds: 120, bytes: 4_000_000, isCheckpoint: false },
+		])
+		const seeded = answerWith(openWith(manifest), chunkRows(0, 0))
+		expect(names(seeded.commands)).toEqual([FetchRange.name])
+		const second = answerWith(seeded.model, chunkRows(1, 60))
+		expect(names(second.commands)).toEqual([FetchRange.name])
+		const done = answerWith(second.model, chunkRows(2, 120)).model
+		expect(done.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([0, 1, 2])
+		expect(done.loader.queue).toEqual([])
+		expect(done.meta.actionMarkers.map((marker) => marker.ms)).toEqual([5, 60_005, 120_005])
+	})
+
+	test("past the memory cap the rest downloads for its markers, and the window slides at its end", () => {
+		const manifest = spread([
+			{ seconds: 0, bytes: 30_000_000, isCheckpoint: true },
+			{ seconds: 60, bytes: 30_000_000, isCheckpoint: true },
+			{ seconds: 120, bytes: 1_000, isCheckpoint: false },
+		])
+		const seeded = answerWith(openWith(manifest), chunkRows(0, 0)).model
+		const metaOnly = answerWith(seeded, chunkRows(1, 60)).model
+		const done = answerWith(metaOnly, chunkRows(2, 120)).model
+		expect(done.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([0])
+		expect(done.meta.actionMarkers.map((marker) => marker.ms)).toEqual([5, 60_005, 120_005])
+
+		const playing = pageUpdate(pageUpdate(done, Message.ReadiedEngine({ seedVersion: done.loader.seedVersion, totalMs: 1 })).model, Message.ClickedPlay()).model
+		const slid = pageUpdate(playing, Message.TickedEngine({ seedVersion: playing.loader.seedVersion, currentMs: 9_500 })).model
+		// Chunk 1 was already fetched for its markers, so the new window is cut from the cache at once.
+		expect(slid.loader.seed.length).toBeGreaterThan(0)
+		expect(slid.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([1, 2])
+		const resumed = pageUpdate(slid, Message.ReadiedEngine({ seedVersion: slid.loader.seedVersion, totalMs: 1 })).model
+		expect(resumed.player.isPlaying).toBe(true)
+		expect(resumed.player.control).toContain("|play|9500")
 	})
 
 	test("the seed is cut once per seed version, not re-flattened on every engine tick", () => {
