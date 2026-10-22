@@ -97,9 +97,16 @@ impl Delivery {
             }
             let mut buffer = bytes.as_slice();
             while !buffer.is_empty() {
-                let request = ExportMetricsServiceRequest::decode_length_delimited(&mut buffer)
+                let mut request = ExportMetricsServiceRequest::decode_length_delimited(&mut buffer)
                     .map_err(|_| RecordError::Unreadable)?;
-                requests.push(request);
+                // Empty messages decode from a byte or two each but cost far more in memory:
+                // keep only what carries metrics, so a run of zero bytes allocates nothing.
+                request
+                    .resource_metrics
+                    .retain(|resource| !resource.scope_metrics.is_empty());
+                if !request.resource_metrics.is_empty() {
+                    requests.push(request);
+                }
             }
         }
         Ok(requests)
@@ -1046,5 +1053,21 @@ mod tests {
             RecordError::TooLarge
         );
         assert_eq!(delivery.metric_requests(big.len() * 2).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn keeps_nothing_for_empty_requests_or_resources() {
+        let one = stream_request(vec![(
+            "amazonaws.com/AWS/ECS/A",
+            "None",
+            vec![point(&[], 1, 1.0, 1.0, 1.0)],
+        )]);
+        let mut padded = one.clone();
+        padded.resource_metrics.push(Default::default());
+        // Zero bytes are empty requests, one per byte.
+        let mut record = vec![0_u8; 4096];
+        record.extend(length_delimited(&[padded]));
+        let delivery = parse_delivery(&delivery_json(&[record])).unwrap();
+        assert_eq!(delivery.metric_requests(1024 * 1024).unwrap(), [one]);
     }
 }
