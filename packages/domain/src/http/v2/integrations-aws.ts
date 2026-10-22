@@ -134,14 +134,12 @@ export const V2AwsIntegration = Schema.Struct({
 })
 export type V2AwsIntegration = Schema.Schema.Type<typeof V2AwsIntegration>
 
-const modulesField = Schema.optionalKey(Schema.Array(AwsModule)).annotate({
-	description: "What Maple may read. Defaults to none: the role then only lets Maple confirm the setup.",
-	examples: [[]],
-})
+const modulesField = (description: string) =>
+	Schema.optionalKey(Schema.Array(AwsModule)).annotate({ description, examples: [[]] })
 
 export const V2AwsCreateConnectionRequest = Schema.Struct({
 	account_id: AwsAccountId.annotate({ description: "The 12-digit AWS account ID." }),
-	modules: modulesField,
+	modules: modulesField("What Maple may read. Defaults to none: the role then only lets Maple confirm the setup."),
 }).annotate({
 	identifier: "AwsCreateConnectionRequest",
 	title: "AWS connection create request",
@@ -150,7 +148,7 @@ export const V2AwsCreateConnectionRequest = Schema.Struct({
 export type V2AwsCreateConnectionRequest = Schema.Schema.Type<typeof V2AwsCreateConnectionRequest>
 
 export const V2AwsUpdateConnectionRequest = Schema.Struct({
-	modules: modulesField,
+	modules: modulesField("What Maple may read. Omitted: the connection's modules are unchanged; `[]` removes them all."),
 }).annotate({
 	identifier: "AwsUpdateConnectionRequest",
 	title: "AWS connection update request",

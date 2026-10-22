@@ -226,25 +226,29 @@ export const confirmedDisconnect = (model: Model): Return => {
 	}
 }
 
-/** The stack stays in AWS until an administrator deletes it: its cleanup script takes its place. */
+/**
+ * The stack stays in AWS until an administrator deletes it: its cleanup script takes its place.
+ * Only this connection's own dialog and setup close: another may have opened meanwhile.
+ */
 export const completedDisconnect = (
 	model: Model,
 	context: PageContext,
+	id: AwsConnectionId,
 	removed: AwsRemovedStack | null,
 	error: string | null,
 ): Return => {
 	const settled = withCard(model, { isDisconnecting: false })
 	if (removed === null) return toast(settled, "error", "Failed to disconnect AWS", error ?? "")
-	const wasOpen = settled.awsCard.setupId === settled.awsCard.disconnectId
-	const stacks = [
-		removed,
-		...settled.awsCard.removed.filter((stack) => stack.connectionId !== removed.connectionId),
-	]
+	const card = settled.awsCard
+	const stacks = [removed, ...card.removed.filter((stack) => stack.connectionId !== removed.connectionId)]
 	return chain(
 		// `disconnectId` stays: the closing dialog still names the account.
-		withCard(settled, { removed: stacks, setupId: wasOpen ? null : settled.awsCard.setupId }),
+		withCard(settled, { removed: stacks, setupId: card.setupId === id ? null : card.setupId }),
 		[
-			(next) => dialogStep(next, Dialog.close(next.awsCard.disconnectDialog)),
+			(next) =>
+				next.awsCard.disconnectId === id
+					? dialogStep(next, Dialog.close(next.awsCard.disconnectDialog))
+					: { model: next },
 			(next) => ({
 				model: next,
 				commands: [WriteAwsRemoved({ orgId: context.orgId, removed: stacks })],

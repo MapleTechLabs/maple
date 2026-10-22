@@ -235,6 +235,30 @@ describe("aws card", () => {
 		expect(names(dismissed.commands)).toEqual(["WriteAwsRemovedStacks"])
 	})
 
+	test("a disconnect that lands after another was opened leaves that one alone", () => {
+		const other = Schema.decodeSync(AwsConnectionId)("028f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+		const confirming = pageUpdate(
+			withStatus(entered(), [connection(), connection({ id: other })]),
+			Message.ClickedAwsDisconnect({ id: connectionId }),
+		).model
+		const sent = pageUpdate(confirming, Message.ConfirmedAwsDisconnect()).model
+		const reopened = pageUpdate(
+			pageUpdate(sent, Message.ClickedAwsSetup({ id: other })).model,
+			Message.ClickedAwsDisconnect({ id: other }),
+		).model
+		const done = pageUpdate(
+			reopened,
+			Message.CompletedAwsDisconnect({
+				id: connectionId,
+				removed: { connectionId, accountId: "123456789012", cleanupScript: "aws cloudformation delete-stack" },
+				error: null,
+			}),
+		).model
+		expect(done.awsCard.disconnectId).toBe(other)
+		expect(done.awsCard.disconnectDialog.isOpen).toBe(true)
+		expect(done.awsCard.setupId).toBe(other)
+	})
+
 	test("entering the card reads the stacks this browser kept for the org", () => {
 		expect(names(init({ search: { integration: "aws" } }, context).commands)).toContain(
 			"ReadAwsRemovedStacks",

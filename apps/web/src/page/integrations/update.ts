@@ -314,8 +314,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAwsDisconnect: ({ id }) => Aws.clickedDisconnect(model, id),
 		GotAwsDisconnectDialogMessage: ({ message: child }) => Aws.gotDisconnectDialog(model, child),
 		ConfirmedAwsDisconnect: () => Aws.confirmedDisconnect(model),
-		CompletedAwsDisconnect: ({ removed, error }) =>
-			Aws.completedDisconnect(model, context, removed, error),
+		CompletedAwsDisconnect: ({ id, removed, error }) =>
+			Aws.completedDisconnect(model, context, id, removed, error),
 		DismissedAwsRemoved: ({ connectionId }) => Aws.dismissedRemoved(model, context, connectionId),
 		CompletedReadAwsRemoved: ({ removed }) => Aws.completedReadRemoved(model, removed),
 		CompletedWriteAwsRemoved: () => ({ model }),

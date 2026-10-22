@@ -220,6 +220,26 @@ describe("v2 aws integration over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("lets admins change a connection's modules, and only for their own org's connections", async () => {
+		const harness = makeHarness()
+		const admin = await harness.adminKey()
+		const member = await harness.memberKey()
+		const created = await harness.request("POST", CONNECTIONS, admin.secret, {
+			account_id: "123456789012",
+		})
+		const path = `${CONNECTIONS}/${created.body.id}`
+
+		expect((await harness.request("PATCH", path, member.secret, { modules: [] })).status).toBe(403)
+		const unchanged = await harness.request("PATCH", path, admin.secret, {})
+		expect(unchanged.status).toBe(200)
+		expect(unchanged.body.modules).toEqual([])
+		expect((await harness.request("PATCH", path, admin.secret, { modules: ["cost"] })).status).toBe(400)
+		await harness.request("DELETE", path, admin.secret)
+		const missing = await harness.request("PATCH", path, admin.secret, { modules: [] })
+		expect(missing.status).toBe(404)
+		await harness.dispose()
+	})
+
 	it("reports AWS unavailable on a deployment without Maple's AWS identity", async () => {
 		const harness = makeHarness({ awsAvailable: false })
 		const admin = await harness.adminKey()
