@@ -939,6 +939,7 @@
     "alchemy@2.0.0-beta.83": "patches/alchemy@2.0.0-beta.83.patch",
   },
   "overrides": {
+    "@effect/platform-browser": "4.0.4",
     "@effect/sql-d1": "4.0.4",
     "@effect/sql-sqlite-do": "4.0.4",
     "workerd": "1.20261002.1",
@@ -4200,10 +4201,6 @@
 
     "@vue/devtools-kit/hookable": ["hookable@5.5.3", "", {}, "sha512-Yc+BQe8SvoXH1643Qez1zqLRmbA5rCL+sSmk6TVos0LWVfNIB7PGncdlId77WzLGSIB5KaWgTaNTs2lNVEI6VQ=="],
 
-    "@yielded/agent-platform-cloudflare/@effect/platform-browser": ["@effect/platform-browser@4.0.5", "", { "peerDependencies": { "effect": "^4.0.5" } }, "sha512-o3H75xA91nkgIWOcp0XouIxxWxJEOFkTf7gG4qkQtZfy0tq46hJBI0U8jrUqsPruo2vCCNfM0yCoj5AG7F5BMQ=="],
-
-    "@yielded/agent-storage-cloudflare/@effect/platform-browser": ["@effect/platform-browser@4.0.5", "", { "peerDependencies": { "effect": "^4.0.5" } }, "sha512-o3H75xA91nkgIWOcp0XouIxxWxJEOFkTf7gG4qkQtZfy0tq46hJBI0U8jrUqsPruo2vCCNfM0yCoj5AG7F5BMQ=="],
-
     "anymatch/picomatch": ["picomatch@2.3.2", "", {}, "sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA=="],
 
     "astro/esbuild": ["esbuild@0.28.2", "", { "optionalDependencies": { "@esbuild/aix-ppc64": "0.28.2", "@esbuild/android-arm": "0.28.2", "@esbuild/android-arm64": "0.28.2", "@esbuild/android-x64": "0.28.2", "@esbuild/darwin-arm64": "0.28.2", "@esbuild/darwin-x64": "0.28.2", "@esbuild/freebsd-arm64": "0.28.2", "@esbuild/freebsd-x64": "0.28.2", "@esbuild/linux-arm": "0.28.2", "@esbuild/linux-arm64": "0.28.2", "@esbuild/linux-ia32": "0.28.2", "@esbuild/linux-loong64": "0.28.2", "@esbuild/linux-mips64el": "0.28.2", "@esbuild/linux-ppc64": "0.28.2", "@esbuild/linux-riscv64": "0.28.2", "@esbuild/linux-s390x": "0.28.2", "@esbuild/linux-x64": "0.28.2", "@esbuild/netbsd-arm64": "0.28.2", "@esbuild/netbsd-x64": "0.28.2", "@esbuild/openbsd-arm64": "0.28.2", "@esbuild/openbsd-x64": "0.28.2", "@esbuild/openharmony-arm64": "0.28.2", "@esbuild/sunos-x64": "0.28.2", "@esbuild/win32-arm64": "0.28.2", "@esbuild/win32-ia32": "0.28.2", "@esbuild/win32-x64": "0.28.2" }, "bin": { "esbuild": "bin/esbuild" } }, "sha512-HKVLS8dvII+xoKW9kmqxbRKrnWEXfJJr/FZhhJmiqIB0e053QNYFqOBouTMO/k5sID4MvCiUCvv8b9M4h32wIA=="],
@@ -4269,8 +4266,6 @@
     "extract-zip/get-stream": ["get-stream@5.2.0", "", { "dependencies": { "pump": "^3.0.0" } }, "sha512-nBF+F1rAZVCu/p7rjzgA+Yb4lfYXrpl7a6VmJrU8wF9I1CKvP/QwPNZHnOlwbTkY6dvtFIzFMSyQXbLoTQPRpA=="],
 
     "extract-zip/yauzl": ["yauzl@2.10.0", "", { "dependencies": { "buffer-crc32": "~0.2.3", "fd-slicer": "~1.1.0" } }, "sha512-p4a9I6X6nu6IhoGmBqAcbJy1mlC4j27vEPZX9F4L4/vZT3Lyq1VkFHw/V/PUcB9Buo+DG3iHkT0x3Qya58zc3g=="],
-
-    "foldkit/@effect/platform-browser": ["@effect/platform-browser@4.0.5", "", { "peerDependencies": { "effect": "^4.0.5" } }, "sha512-o3H75xA91nkgIWOcp0XouIxxWxJEOFkTf7gG4qkQtZfy0tq46hJBI0U8jrUqsPruo2vCCNfM0yCoj5AG7F5BMQ=="],
 
     "foreground-child/signal-exit": ["signal-exit@4.1.0", "", {}, "sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw=="],
 
