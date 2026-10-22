@@ -1,6 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import {
+	AwsAccountId,
 	ExternalUserId,
 	GcpProjectId,
 	GcpResourceNumber,
@@ -1319,6 +1320,40 @@ export class GcpMetricsUnavailableError extends HttpTaggedError<GcpMetricsUnavai
 		code: "gcp_metrics_unavailable",
 		title: "Metrics collection is not available",
 		param: "metrics_enabled",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
+/** The organization already has a connection for this AWS account. */
+export class AwsAccountAlreadyConnectedError extends HttpTaggedError<AwsAccountAlreadyConnectedError>()(
+	"@maple/http/errors/AwsAccountAlreadyConnectedError",
+	{
+		accountId: AwsAccountId,
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "aws_account_already_connected",
+		title: "Already connected",
+		param: "account_id",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** This Maple deployment has no AWS identity to assume customer roles with. */
+export class AwsIntegrationUnavailableError extends HttpTaggedError<AwsIntegrationUnavailableError>()(
+	"@maple/http/errors/AwsIntegrationUnavailableError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "aws_integration_unavailable",
+		title: "AWS is not available",
 		retry: "never",
 		recovery: "none",
 		exposure: "public_message",

@@ -172,7 +172,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M21 12H6"],
+					["d", "M3 12L3 12.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -182,7 +182,67 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 6L6 12L12 18"],
+					["d", "M5 14L5 14.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 16L7 16.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 18L9 18.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M5 10L5 10.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 8L7 8.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 6L9 6.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M5 12L21 12"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -206,7 +266,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M3 12H18"],
+					["d", "M21 12L21 12.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -216,7 +276,67 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 6L18 12L12 18"],
+					["d", "M19 14L19 14.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17 16L17 16.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M15 18L15 18.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19 10L19 10.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17 8L17 8.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M15 6L15 6.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19 12L3 12"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -374,10 +494,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					[
-						"d",
-						"M21.5 12C21.5 17.2467 17.2467 21.5 12 21.5C6.75329 21.5 2.5 17.2467 2.5 12C2.5 6.75329 6.7533 2.5 12 2.5C15.6186 2.5 18.7646 4.52314 20.3687 7.5",
-					],
+					["d", "M4 6L4 6.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -387,7 +504,107 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M20.5 2.5V7.5H15.5"],
+					["d", "M6 4L6 4.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20.01 6L20 6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18.01 4L18 4"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20.01 18L20 18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18.01 20L18 20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6.01001 20L6.00001 20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4.01001 18L4.00001 18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M2 8L2 16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 2L16 2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 22L16 22"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M22 8V4"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -411,7 +628,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M7 4V20"],
+					["d", "M7 3L7 3.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -421,7 +638,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M3 8L7 4L11 8"],
+					["d", "M5 5L5 5.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -431,7 +648,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M17 20V4"],
+					["d", "M9 5L9 5.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -441,7 +658,87 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M13 16L17 20L21 16"],
+					["d", "M3 7L3 7.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M11 7L11 7.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 5V21"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17 21L17 21.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M15 19L15 19.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19 19L19 19.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M13 17L13 17.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M21 17L21 17.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17 3V19"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -973,10 +1270,61 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M3 19V6H9L11 8H21V19H3Z"],
+					["d", "M20 8H14"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 20H20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 4H10"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M2 18L2 6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M22 18L22 10"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "11"],
+					["y", "5"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
 				],
 				[],
 			],
@@ -1124,7 +1472,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M7 4V2"],
+					["d", "M7 5H17"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1134,7 +1482,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M7 22V20"],
+					["d", "M7 19H17"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1144,7 +1492,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M17 4V2"],
+					["d", "M5 7V17"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1154,7 +1502,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M17 22V20"],
+					["d", "M19 7V17"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1164,7 +1512,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 4V2"],
+					["d", "M9 2L9 2.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1174,7 +1522,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 22V20"],
+					["d", "M12 2L12 2.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1184,7 +1532,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M20 7L22 7"],
+					["d", "M15 2L15 2.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1194,7 +1542,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M2 7L4 7"],
+					["d", "M9 22L9 22.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1204,7 +1552,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M20 17L22 17"],
+					["d", "M12 22L12 22.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1214,7 +1562,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M2 17L4 17"],
+					["d", "M15 22L15 22.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1224,7 +1572,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M20 12L22 12"],
+					["d", "M2 9L2 9.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1234,7 +1582,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M2 12L4 12"],
+					["d", "M2 12L2 12.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1244,10 +1592,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					[
-						"d",
-						"M18 4H6C4.89543 4 4 4.89543 4 6V18C4 19.1046 4.89543 20 6 20H18C19.1046 20 20 19.1046 20 18V6C20 4.89543 19.1046 4 18 4Z",
-					],
+					["d", "M2 15L2 15.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1257,10 +1602,37 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					[
-						"d",
-						"M14 16C15.1046 16 16 15.1046 16 14C16 12.8954 15.1046 12 14 12C12.8954 12 12 12.8954 12 14C12 15.1046 12.8954 16 14 16Z",
-					],
+					["d", "M22 9L22 9.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M22 12L22 12.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M22 15L22 15.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 10H14V14H10Z"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1308,7 +1680,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 21V6"],
+					["d", "M12 3H12.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1318,7 +1690,67 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M6 12L12 6L18 12"],
+					["d", "M14 5H14.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 7H16.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 9H18.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 5H10.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 7H8.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 9H6.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 5L12 21"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1729,7 +2161,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M7 21V13c0-2.2 1.8-4 4-4h6"],
+					["d", "M7 12H15"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1739,7 +2171,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M7 11V3"],
+					["d", "M17 10V7"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1747,35 +2179,305 @@ export const ICON_TREES = {
 				[],
 			],
 			[
-				"circle",
+				"path",
 				[
-					["cx", "7"],
-					["cy", "21"],
-					["r", "2"],
+					["d", "M7 7V17"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 				],
 				[],
 			],
 			[
-				"circle",
+				"path",
 				[
-					["cx", "19"],
-					["cy", "9"],
-					["r", "2"],
+					["d", "M6.5 2H7.5"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
 			[
-				"circle",
+				"path",
 				[
-					["cx", "7"],
-					["cy", "3"],
-					["r", "2"],
+					["d", "M6.5 7H7.5"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9.5 4L9.5 5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4.5 4L4.5 5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16.5 2H17.5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16.5 7H17.5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19.5 4L19.5 5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14.5 4L14.5 5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6.5 17H7.5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6.5 22H7.5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9.5 19L9.5 20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4.5 19L4.5 20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
+	PullRequestIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M6.5 2H7.5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6.5 7H7.5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9.5 4V5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4.5 4V5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 7V17"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6.5 17H7.5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6.5 22H7.5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9.5 19V20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4.5 19V20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16.5 17H17.5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16.5 22H17.5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19.5 19V20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14.5 19V20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 5L12 5.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14 3V7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M15 5H17V16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
@@ -1820,17 +2522,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M3 3V21H21"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M8 6H12"],
+					["d", "M8 16H17"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -1850,7 +2542,27 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M8 16H17"],
+					["d", "M8 6H12"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M3 3V19"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M21 21L5 21"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4066,7 +4778,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M20 6L20 6.01"],
+					["d", "M8 2L16 2"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4076,7 +4788,47 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M18 4L18 4.01"],
+					["d", "M6 4L6 4.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18.01 4L18 4"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 6L4 6.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20.01 6L20 6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M2 8L2 16"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4096,7 +4848,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M16 2L12 2"],
+					["d", "M4.01001 18L4.00001 18"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4106,7 +4858,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 22H16"],
+					["d", "M20.01 18L20 18"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4116,7 +4868,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M18 20L18 20.01"],
+					["d", "M6.01001 20L6.00001 20"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4126,7 +4878,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M20 18L20 18.01"],
+					["d", "M18.01 20L18 20"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4136,7 +4888,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 12V8"],
+					["d", "M8 22L16 22"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4146,7 +4898,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M16 16L16 16.01"],
+					["d", "M12.0001 12L12.0001 8"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4156,7 +4908,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M14 14L14 14.01"],
+					["d", "M16.01 16L16 16"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4166,27 +4918,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M2 12L2 12.01"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M5 5L5 5.01"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M5 19L5 19.01"],
+					["d", "M14.01 14L14 14"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4860,10 +5592,91 @@ export const ICON_TREES = {
 			["width", "7777"],
 			["height", "7777"],
 			["class", "__icon_class__"],
-			["fill", "currentColor"],
+			["fill", "none"],
 			["aria-hidden", "true"],
 		],
-		[["path", [["d", "M6 4L6 20L20 12L6 4Z"]], []]],
+		[
+			[
+				"path",
+				[
+					["d", "M20.01 12L20 12"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 10L17 10"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M15 8L14 8"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 6L11 6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 18L11 18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M15 16L14 16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 14L17 14"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 20L6 20L6 4L9 4"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
 	],
 	ArrowPathIcon: [
 		"svg",
@@ -4880,7 +5693,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M9 3L4 8"],
+					["d", "M20 6L20 6.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4890,7 +5703,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M4 8V16"],
+					["d", "M18 4L18 4.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4900,7 +5713,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M4 16L9 21"],
+					["d", "M3.98999 6L3.99999 6"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4910,7 +5723,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M9 21H15"],
+					["d", "M5.98999 4L5.99999 4"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4920,7 +5733,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M15 21L20 16"],
+					["d", "M3.98999 18L3.99999 18"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4930,7 +5743,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M20 16V8"],
+					["d", "M5.98999 20L5.99999 20"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4940,7 +5753,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M20 8L16 4"],
+					["d", "M17.99 20L18 20"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4950,7 +5763,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M16 4H11"],
+					["d", "M19.99 18L20 18"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4960,7 +5773,37 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M15 1L11 4L15 7"],
+					["d", "M22 8L22 16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 2L8 2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 22L8 22"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M2 8V4"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -4984,13 +5827,386 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					[
-						"d",
-						"M4.49997 4.50003L16.5 7.50003L13.4981 10.6698L20 17.1715L17.1716 19.9999L10.6697 13.4982L7.49994 16.5001L4.49997 4.50003Z",
-					],
+					["d", "M19 8H16"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-miterlimit", "10"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19 8H16"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19 8H16"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19 8H16"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 19L8 16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 19L8 16"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 19L8 16"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 19L8 16"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 14L6 11"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 14L6 11"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 14L6 11"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 14L6 11"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 9L4 4L9 4"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 9L4 4L9 4"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 9L4 4L9 4"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 9L4 4L9 4"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14 6H11"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14 6H11"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14 6H11"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14 6H11"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M21 10V11"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M21 10V11"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M21 10V11"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M21 10V11"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M13 15V19"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M13 15V19"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M13 15V19"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M13 15V19"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M11 21L10 21"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M11 21L10 21"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M11 21L10 21"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M11 21L10 21"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19 13L15 13"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19 13L15 13"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19 13L15 13"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19 13L15 13"],
+					["stroke-opacity", "0.2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
 					["stroke-linecap", "square"],
 				],
 				[],
@@ -5009,6 +6225,16 @@ export const ICON_TREES = {
 			["aria-hidden", "true"],
 		],
 		[
+			[
+				"path",
+				[
+					["d", "M19 10V14"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
 			[
 				"path",
 				[
@@ -5032,7 +6258,37 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M15 6L21 12L15 18"],
+					["d", "M17 16.01L17 16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M15 18.01L15 18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17 8.01001L17 8.00001"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M15 6.01001L15 6.00001"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -5056,21 +6312,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					[
-						"d",
-						"M7 13V2.99988C7 1.89531 7.89543 0.999878 9 0.999878V0.999878C10.1046 0.999878 11 1.89531 11 2.99988V7.99988L18.2185 9.75154C19.6891 10.1045 20.667 11.4969 20.5 13L19.5 23H8V21L4.96516 17.3909C4.34991 16.823 4 16.0238 4 15.1865V12C4 10.8954 4.89543 9.99999 6 9.99999H6.5",
-					],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-miterlimit", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M11.5 15V17"],
+					["d", "M10 2L10 2.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -5080,7 +6322,107 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M15.5 15V17"],
+					["d", "M8 4V12"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 4V9"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14 9H18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 11V17"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 12L6 12.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 14V16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 18L6 18.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 20L8 20.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 21H16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 19L18 19.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 9V11"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -5104,7 +6446,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M22.1124 12.6445C22.1726 13.7505 22.171 15.0645 22.0489 16.5"],
+					["d", "M4 13V18"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -5114,10 +6456,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					[
-						"d",
-						"M5.25996 4.61032C6.53486 3.44537 8.12846 2.59561 9.94078 2.21431C14.6657 1.2202 19.3131 3.73934 21.1669 7.99999",
-					],
+					["d", "M20 6V12"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -5127,10 +6466,104 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					[
-						"d",
-						"M17.3609 13.2941C17.2305 12.2995 17.0383 11.4201 16.8296 10.7059C16.1149 8.03859 13.3733 6.45568 10.7059 7.17039C8.03859 7.8851 6.45568 10.6268 7.17039 13.2941C7.91881 15.7352 8.39898 18.0087 7.7516 21",
-					],
+					["d", "M8 8V16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "5"],
+					["y", "3"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "5"],
+					["y", "19"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "7"],
+					["y", "21"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17 22H14"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "17"],
+					["y", "3"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "17"],
+					["y", "13"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "13"],
+					["y", "15"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "11"],
+					["y", "19"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 2H14"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -5140,7 +6573,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 12C12.8527 14.8425 13.4109 17.9853 12.5514 22"],
+					["d", "M10 6H14"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -5150,7 +6583,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M17.754 17.3285C17.7722 18.2469 17.754 19.5447 17.3469 21.0039"],
+					["d", "M16 8V10"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -5160,10 +6593,27 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					[
-						"d",
-						"M2.83362 8C2.0282 9.84132 1.76851 11.9423 2.21384 14.0589C2.51549 15.4927 2.79591 16.7127 2.8852 18",
-					],
+					["d", "M12 11V14"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 6V9"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 18H19"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -6982,7 +8432,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M19 21L9 21"],
+					["d", "M19 21H9"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -6992,7 +8442,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M5 15H5.0001"],
+					["d", "M21 11V19"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -7002,7 +8452,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M21 11L21 19"],
+					["d", "M7 11V19"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -7012,7 +8462,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M7 11L7 19"],
+					["d", "M19 9H9"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -7022,7 +8472,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M19 9L9 9"],
+					["d", "M17 5V7"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -7032,7 +8482,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M17 5L17 7"],
+					["d", "M3 5V13"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -7042,7 +8492,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M3 5L3 13"],
+					["d", "M15 3H5"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -7050,12 +8500,12 @@ export const ICON_TREES = {
 				[],
 			],
 			[
-				"path",
+				"rect",
 				[
-					["d", "M15 3L5 3"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
+					["width", "2"],
+					["height", "2"],
+					["transform", "matrix(-1 0 0 1 6 14)"],
+					["fill", "currentColor"],
 				],
 				[],
 			],
@@ -7200,7 +8650,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M8 3H16"],
+					["d", "M8 22H16"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -7210,7 +8660,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M5 4L5 4.01"],
+					["d", "M8 16H16"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -7220,7 +8670,97 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M19 4L19 4.01"],
+					["d", "M8 10H16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 2H16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 14H21"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 20H19"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M3 14H6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 8H21"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 4H19"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M5 20H6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M3 8H6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M5 4H6"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -7250,7 +8790,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M3 12H21"],
+					["d", "M3 6H3.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -7260,27 +8800,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M8 21H16"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M5 20L5 20.01"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M19 20L19 20.01"],
+					["d", "M21 6H21.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -7396,7 +8916,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 5L12 5.01"],
+					["d", "M12 19H12.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "3"],
 					["stroke-linecap", "square"],
@@ -7406,7 +8926,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 12L12 12.01"],
+					["d", "M12 12H12.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "3"],
 					["stroke-linecap", "square"],
@@ -7416,7 +8936,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 19L12 19.01"],
+					["d", "M12 5H12.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "3"],
 					["stroke-linecap", "square"],
@@ -7440,7 +8960,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 3V14"],
+					["d", "M10 15H14"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -7450,7 +8970,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M7 10L12 15L17 10"],
+					["d", "M21 21H3"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -7460,7 +8980,47 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M4 18V21H20V18"],
+					["d", "M12.01 3L12.01 17"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 13L8.01 13"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 11L6.01 11"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 13L16.01 13"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 11L18.01 11"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -7926,89 +9486,112 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M10 16V20"],
+					["d", "M12 15V20"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					["d", "M14 16V20"],
+					["d", "M18 20V17"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					["d", "M5.90909 20L5.90909 16H18.0909L18.0909 20"],
+					["d", "M6 20V17"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					["d", "M22 10L23 10L23 14L22 14"],
+					["d", "M8 15H16"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					[
-						"d",
-						"M22 18L22 6C22 4.89543 21.1046 4 20 4L4 4C2.89543 4 2 4.89543 2 6L2 18C2 19.1046 2.89543 20 4 20L20 20C21.1046 20 22 19.1046 22 18Z",
-					],
+					["d", "M12 4V1"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "7"],
+					["y", "8"],
+					["width", "3"],
+					["height", "3"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "14"],
+					["y", "8"],
+					["width", "3"],
+					["height", "3"],
+					["fill", "currentColor"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					[
-						"d",
-						"M8 12C9.10457 12 10 11.1046 10 10C10 8.89543 9.10457 8 8 8C6.89543 8 6 8.89543 6 10C6 11.1046 6.89543 12 8 12Z",
-					],
+					["d", "M2 6V18"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					[
-						"d",
-						"M16 12C17.1046 12 18 11.1046 18 10C18 8.89543 17.1046 8 16 8C14.8954 8 14 8.89543 14 10C14 11.1046 14.8954 12 16 12Z",
-					],
+					["d", "M22 6V18"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					["d", "M2 10L1 10L1 14L2 14"],
+					["d", "M4 4H20"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 20H20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
@@ -8247,7 +9830,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 22L7 20L5 15L7 10L9 12L9 7L12 2L14 7L16 6L18 11L19 16L16 21L12 22Z"],
+					["d", "M13 2L13 2.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -8257,7 +9840,127 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 19L10 16L12 12L14 16L12 19Z"],
+					["d", "M15 4L15 4.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17 6L17 6.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19 8V16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17 18L17 18.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 20H15"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 18L7 18.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M5 10V16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 8L7 8.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 10L9 10.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M11 4V8"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 12L12 12.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 14V16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14 14V16"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -8281,7 +9984,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M4 4H17L20 7V20H4Z"],
+					["d", "M7 21V15"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -8291,7 +9994,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M8 4V9H15V4"],
+					["d", "M17 21V15"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -8301,10 +10004,93 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M8 13H16V20H8Z"],
+					["d", "M9 13H15"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M11 7H7V3"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M3 5V19"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M21 9L21 19"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M5 3H15"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M5 21H19"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "16"],
+					["y", "4"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "12"],
+					["y", "4"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "18"],
+					["y", "6"],
+					["width", "2"],
+					["height", "2"],
+					["fill", "currentColor"],
 				],
 				[],
 			],
@@ -10185,7 +11971,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M3 4H21V20H3Z"],
+					["d", "M10 20L20 20"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -10195,7 +11981,57 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M9 4V20"],
+					["d", "M4 20L6 20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M22 6L22 18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 6L8 18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M2 6L2 18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 4H20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 4L6 4"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -10447,7 +12283,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M3 4H21V20H3Z"],
+					["d", "M20 20L18 20"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -10457,7 +12293,57 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M15 4V20"],
+					["d", "M14 20L4 20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M22 6L22 18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 6L16 18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M2 6L2 18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 4L18 4"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14 4H4"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -10481,10 +12367,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					[
-						"d",
-						"m19.014 11.943 1.021 1.021c1.953 1.953 1.953 5.118 0 7.071-1.953 1.953-5.118 1.953-7.071 0l-3.121-3.121c-1.953-1.953-1.953-5.118 0-7.071.366-.366.775-.664 1.21-.892",
-					],
+					["d", "M10 17H10.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -10494,10 +12377,127 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					[
-						"d",
-						"m12.934 15.056c.44-.23.853-.529 1.223-.899 1.953-1.953 1.953-5.118 0-7.071l-3.121-3.121c-1.953-1.953-5.118-1.953-7.071 0-1.953 1.953-1.953 5.118 0 7.071l1.021 1.021",
-					],
+					["d", "M14 7L13.99 7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 19H12.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 5L11.99 5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M19 19H19.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M5 5L4.99 5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 10H10.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14 14L13.99 14"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14 21H17"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 3L7 3"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M21 14L21 17"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M3 10L3 7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 12L8 15"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 12L16 9"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -10667,17 +12667,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M16 10V6C16 3.79086 14.2091 2 12 2C9.79086 2 8 3.79086 8 6V10"],
-					["stroke", "currentColor"],
-					["stroke-width", "2"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M3 10H21V21H3V10Z"],
+					["d", "M16 4V10"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -10688,6 +12678,66 @@ export const ICON_TREES = {
 				"path",
 				[
 					["d", "M12 15V16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M5 21H19"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M3 12V19"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M21 12V19"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 10V4"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M5 10H19"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 2H14"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -10855,55 +12905,79 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M3 5h18"],
+					["d", "M3 3H21"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linecap", "round"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					["d", "M3 19h18"],
+					["d", "M3 21H21"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linecap", "round"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					["d", "M9 9l3-3 3 3"],
+					["d", "M8 14H16"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linecap", "round"],
-					["stroke-linejoin", "round"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					["d", "M9 15l3 3 3-3"],
+					["d", "M12 7H12.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linecap", "round"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					["d", "M12 6v12"],
+					["d", "M14 10V9"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linecap", "round"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 10V9"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 17V12"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 17V12"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
@@ -11059,17 +13133,99 @@ export const ICON_TREES = {
 			["height", "7777"],
 			["class", "__icon_class__"],
 			["fill", "none"],
-			["stroke", "currentColor"],
-			["stroke-width", "2"],
-			["stroke-linecap", "round"],
-			["stroke-linejoin", "round"],
 			["aria-hidden", "true"],
 		],
 		[
-			["path", [["d", "M9 4H4V9"]], []],
-			["path", [["d", "M20 9V4H15"]], []],
-			["path", [["d", "M15 20H20V15"]], []],
-			["path", [["d", "M4 15V20H9"]], []],
+			[
+				"path",
+				[
+					["d", "M20 11L20 4L13 4"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 13L4 20L11 20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 18H5.99"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 16H7.99"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 14H9.99"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 12H11.99"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14 10H13.99"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 8H15.99"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 6H17.99"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
 		],
 	],
 	MediaPauseIcon: [
@@ -11080,12 +13236,90 @@ export const ICON_TREES = {
 			["width", "7777"],
 			["height", "7777"],
 			["class", "__icon_class__"],
-			["fill", "currentColor"],
+			["fill", "none"],
 			["aria-hidden", "true"],
 		],
 		[
-			["path", [["d", "M5 4H9V20H5V4Z"]], []],
-			["path", [["d", "M15 4H19V20H15V4Z"]], []],
+			[
+				"path",
+				[
+					["d", "M15 18L15 6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 18L20 6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 18L4 6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 18L9 6"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 4H7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17 4H18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M17 20H18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 20H7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
 		],
 	],
 	MenuIcon: [
@@ -11103,7 +13337,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M4 6H20"],
+					["d", "M3 19L21 19"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -11113,7 +13347,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M4 12H20"],
+					["d", "M3 12L12 12L21 12"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -11123,7 +13357,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M4 18H20"],
+					["d", "M3 5L21 5"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -11305,17 +13539,89 @@ export const ICON_TREES = {
 			["height", "7777"],
 			["class", "__icon_class__"],
 			["fill", "none"],
-			["stroke", "currentColor"],
-			["stroke-width", "2"],
-			["stroke-linecap", "round"],
-			["stroke-linejoin", "round"],
 			["aria-hidden", "true"],
 		],
 		[
-			["path", [["d", "M4 9H9V4"]], []],
-			["path", [["d", "M15 4V9H20"]], []],
-			["path", [["d", "M20 15H15V20"]], []],
-			["path", [["d", "M9 20V15H4"]], []],
+			[
+				"path",
+				[
+					["d", "M14 5L14.0001 9.99987L19 10"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10.0002 18.9999L10.0001 14L5.00024 13.9999"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 16L8 16.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 18L6 18.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M4 20L4 20.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 8L16 8.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 6L18 6.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 4L20 4.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
 		],
 	],
 	MinusIcon: [
@@ -11327,19 +13633,16 @@ export const ICON_TREES = {
 			["height", "7777"],
 			["class", "__icon_class__"],
 			["fill", "none"],
+			["aria-hidden", "true"],
 		],
 		[
 			[
-				"line",
+				"path",
 				[
-					["x1", "21"],
-					["y1", "12"],
-					["x2", "3"],
-					["y2", "12"],
+					["d", "M3 12L21 12"],
 					["stroke", "currentColor"],
-					["stroke-linecap", "square"],
-					["stroke-miterlimit", "10"],
 					["stroke-width", "2"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
@@ -14519,44 +16822,60 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M3 6h18"],
+					["d", "M3 5H21"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linecap", "round"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					["d", "M3 12h13a3 3 0 1 1 0 6h-4"],
+					["d", "M3 12H17"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linecap", "round"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					["d", "M3 18h6"],
+					["d", "M19 14V16"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linecap", "round"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					["d", "M11 16l-2 2 2 2"],
+					["d", "M7 18L7 18.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linecap", "round"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 16V20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 18H17"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
@@ -14577,33 +16896,90 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M7 4h10"],
+					["d", "M12 22L12 17L12 17.2774"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linecap", "round"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					["d", "M9 4l-1 7-2 2v2h12v-2l-2-2-1-7"],
+					["d", "M4.01001 15L4.00001 15"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linecap", "round"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
 			[
 				"path",
 				[
-					["d", "M12 15v5"],
+					["d", "M6.01001 13L6.00001 13"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
-					["stroke-linecap", "round"],
-					["stroke-linejoin", "round"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20.01 15L20 15"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18.01 13L18 13"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 3H14"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 17L18 17"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 5V11"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 5V11"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
 				],
 				[],
 			],
@@ -14624,7 +17000,17 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M3 3H11L21 13L13 21L3 11V3Z"],
+					["d", "M7.5 7.5L7.5 7.49"],
+					["stroke", "currentColor"],
+					["stroke-width", "3"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 20.01V20"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -14634,7 +17020,127 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M7 7H7.01"],
+					["d", "M11 20.01V20"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 18.01V18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 16.01V16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M5 14.01V14"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 18.01V18"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 16.01V16"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 11.01V11"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 9.01V9"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 7.01V7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14 5.01V5"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M22 14V13"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M14 22H13"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M3 12V3H12"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -15366,7 +17872,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 17V6"],
+					["d", "M10 5H14"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -15376,7 +17882,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M7 11L12 6L17 11"],
+					["d", "M21 21L3 21"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -15386,7 +17892,47 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M4 18V21H20V18"],
+					["d", "M12 17L12 3"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16.01 7L16 7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18.01 9L18 9"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8.01001 7L8.00001 7"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6.01001 9L6.00001 9"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -15688,7 +18234,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 3V18"],
+					["d", "M12 21H12.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -15698,7 +18244,67 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M6 12L12 18L18 12"],
+					["d", "M14 19H14.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 17H16.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 15H18.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M10 19H10.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 17H8.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M6 15H6.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 19L12 3"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -16312,7 +18918,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M7 4Q3 12 7 20"],
+					["d", "M8 3L8 3.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -16322,7 +18928,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M17 4Q21 12 17 20"],
+					["d", "M6 5L6 5.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -16332,7 +18938,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M9 12H9.01"],
+					["d", "M4 7V17"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -16342,7 +18948,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 12H12.01"],
+					["d", "M6 19L6 19.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -16352,7 +18958,87 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M15 12H15.01"],
+					["d", "M8 21L8 21.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 3L16 3.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 5L18 5.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M20 7V17"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M18 19L18 19.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 21L16 21.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M8 12L8 12.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M12 12L12 12.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M16 12L16 12.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -17593,7 +20279,7 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M18 5V13H8"],
+					["d", "M5 14L5 14.01"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -17603,7 +20289,47 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M12 9L8 13L12 17"],
+					["d", "M7 12L7 12.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 16L7 16.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 10L9 10.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M9 18L9 18.01"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 14H19V4"],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],
@@ -18271,7 +20997,7 @@ export const ICON_TREES = {
 		"svg",
 		[
 			["xmlns", "http://www.w3.org/2000/svg"],
-			["viewBox", "0 0 30 30"],
+			["viewBox", "0 0 24 24"],
 			["width", "7777"],
 			["height", "7777"],
 			["class", "__icon_class__"],
@@ -18282,9 +21008,9 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M7 7H7.01"],
+					["d", "M7 17V17.01"],
 					["stroke", "currentColor"],
-					["stroke-width", "4"],
+					["stroke-width", "2"],
 					["stroke-linecap", "square"],
 				],
 				[],
@@ -18292,9 +21018,9 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M11 7H11.01"],
+					["d", "M18 3H21V6"],
 					["stroke", "currentColor"],
-					["stroke-width", "4"],
+					["stroke-width", "2"],
 					["stroke-linecap", "square"],
 				],
 				[],
@@ -18302,9 +21028,9 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M3 11H3.01"],
+					["d", "M19 8H17V10"],
 					["stroke", "currentColor"],
-					["stroke-width", "4"],
+					["stroke-width", "2"],
 					["stroke-linecap", "square"],
 				],
 				[],
@@ -18312,9 +21038,9 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M15 11H15.01"],
+					["d", "M15 12.01V12"],
 					["stroke", "currentColor"],
-					["stroke-width", "4"],
+					["stroke-width", "2"],
 					["stroke-linecap", "square"],
 				],
 				[],
@@ -18322,9 +21048,9 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M3 15H3.01"],
+					["d", "M16 5.00998V4.99998"],
 					["stroke", "currentColor"],
-					["stroke-width", "4"],
+					["stroke-width", "2"],
 					["stroke-linecap", "square"],
 				],
 				[],
@@ -18332,9 +21058,9 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M7 15H7.01"],
+					["d", "M14 7.00998V6.99998"],
 					["stroke", "currentColor"],
-					["stroke-width", "4"],
+					["stroke-width", "2"],
 					["stroke-linecap", "square"],
 				],
 				[],
@@ -18342,9 +21068,9 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M15 15H15.01"],
+					["d", "M12 9.00998V8.99998"],
 					["stroke", "currentColor"],
-					["stroke-width", "4"],
+					["stroke-width", "2"],
 					["stroke-linecap", "square"],
 				],
 				[],
@@ -18352,9 +21078,9 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M19 15H19.01"],
+					["d", "M10 11L5 11"],
 					["stroke", "currentColor"],
-					["stroke-width", "4"],
+					["stroke-width", "2"],
 					["stroke-linecap", "square"],
 				],
 				[],
@@ -18362,9 +21088,9 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M23 15H23.01"],
+					["d", "M13 14L13 19"],
 					["stroke", "currentColor"],
-					["stroke-width", "4"],
+					["stroke-width", "2"],
 					["stroke-linecap", "square"],
 				],
 				[],
@@ -18372,9 +21098,9 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M27 15H27.01"],
+					["d", "M3 13V19"],
 					["stroke", "currentColor"],
-					["stroke-width", "4"],
+					["stroke-width", "2"],
 					["stroke-linecap", "square"],
 				],
 				[],
@@ -18382,79 +21108,9 @@ export const ICON_TREES = {
 			[
 				"path",
 				[
-					["d", "M3 19H3.01"],
+					["d", "M11 21L5 21"],
 					["stroke", "currentColor"],
-					["stroke-width", "4"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M7 19H7.01"],
-					["stroke", "currentColor"],
-					["stroke-width", "4"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M11 19H11.01"],
-					["stroke", "currentColor"],
-					["stroke-width", "4"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M15 19H15.01"],
-					["stroke", "currentColor"],
-					["stroke-width", "4"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M23 19H23.01"],
-					["stroke", "currentColor"],
-					["stroke-width", "4"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M27 19H27.01"],
-					["stroke", "currentColor"],
-					["stroke-width", "4"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M7 23H7.01"],
-					["stroke", "currentColor"],
-					["stroke-width", "4"],
-					["stroke-linecap", "square"],
-				],
-				[],
-			],
-			[
-				"path",
-				[
-					["d", "M11 23H11.01"],
-					["stroke", "currentColor"],
-					["stroke-width", "4"],
+					["stroke-width", "2"],
 					["stroke-linecap", "square"],
 				],
 				[],

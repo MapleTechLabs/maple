@@ -61,6 +61,8 @@ export const taskBudgetExhausted = (output: unknown): boolean =>
 	Option.exists(decodeAnswer(output), (fields) => fields.budgetExhausted === true)
 
 const leafToolPart = (call: ChatSubToolCall | ChatToolCall): LeafPart => {
+	if (call.stopped === true)
+		return ToolPart.make({ toolCallId: call.id, toolName: call.name, state: "output-stopped", input: call.input })
 	if (call.output === undefined)
 		return ToolPart.make({
 			toolCallId: call.id,
@@ -86,7 +88,8 @@ const leafToolPart = (call: ChatSubToolCall | ChatToolCall): LeafPart => {
 }
 
 const taskStatusOf = (call: ChatToolCall): TaskPart["status"] =>
-	call.task?.status ?? (call.isError === true ? "error" : call.output === undefined ? "running" : "completed")
+	call.task?.status ??
+	(call.isError === true ? "error" : call.stopped === true ? "aborted" : call.output === undefined ? "running" : "completed")
 
 /** `answer` on a settled run, `errorText` on a failed one; neither key otherwise. */
 const withAnswer = (call: ChatToolCall): Pick<TaskPart, "answer" | "errorText"> => {
@@ -187,6 +190,25 @@ export const finalizeStreamingText = (message: UIMessage): UIMessage => {
 		: { ...message, parts: [...message.parts.slice(0, -1), { ...last, state: "done" }] }
 }
 
+/** A call still unsettled when its turn ends never settles: stopped, and a running sub-agent aborted. */
+const stopLeaf = (part: LeafPart): LeafPart =>
+	part._tag === "dynamic-tool" && part.state === "input-available" ? { ...part, state: "output-stopped" } : part
+
+const stopUnfinished = (message: UIMessage): UIMessage => ({
+	...message,
+	parts: message.parts.map((part): UIMessagePart =>
+		part._tag !== "task"
+			? stopLeaf(part)
+			: part.status !== "running"
+				? part
+				: {
+						...part,
+						status: "aborted",
+						messages: part.messages.map((child) => ({ ...child, parts: child.parts.map(stopLeaf) })),
+					},
+	),
+})
+
 /** Retracts text a failed, retried attempt produced; an emptied part is dropped. */
 const retractText = (message: UIMessage, chars: number): UIMessage => {
 	const last = lastPart(message)
@@ -266,13 +288,23 @@ const taskStatusAfter = (event: ChatEvent, status: TaskPart["status"]): TaskPart
 				? "error"
 				: "aborted"
 
+type SubAgentEvent = Exclude<ChatEvent, { readonly type: "user-message" }>
+
+/** A sub-agent's event as its own transcript sees it. */
+const ownEvent = (event: SubAgentEvent): ChatEvent => {
+	const { task: _task, ...own } = event
+	return own
+}
+
 /** A sub-agent's event folds into its `task` part through the same reducer; a missing parent drops it. */
-const applyTaskEvent = (messages: Messages, event: ChatEvent, task: ChatTaskRef, nowMs: number): Messages =>
+const applyTaskEvent = (messages: Messages, event: SubAgentEvent, task: ChatTaskRef, nowMs: number): Messages =>
 	updateMessage(messages, task.parentMessageId, (message) => ({
 		...message,
 		parts: message.parts.map((part): UIMessagePart => {
 			if (part._tag !== "task" || part.toolCallId !== task.id) return part
-			const nested = applyChatEvent(part.messages, event, nowMs)
+			// Untagged: still tagged, the inner fold routed it back to the parent and dropped it, so a
+			// card stayed empty until a reload.
+			const nested = applyChatEvent(part.messages, ownEvent(event), nowMs)
 			return {
 				...part,
 				status: taskStatusAfter(event, part.status),
@@ -308,6 +340,6 @@ export const applyChatEvent = (messages: Messages, event: ChatEvent, nowMs: numb
 		case "turn-retry":
 			return updateMessage(messages, event.messageId, (message) => retractText(message, event.retractChars))
 		case "turn-end":
-			return updateMessage(messages, event.messageId, finalizeStreamingText)
+			return updateMessage(messages, event.messageId, (message) => finalizeStreamingText(stopUnfinished(message)))
 	}
 }

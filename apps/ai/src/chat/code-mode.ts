@@ -81,7 +81,7 @@ const description = (methods: ReadonlyArray<string>) =>
 		"`code` is one async arrow function, `async () => { ... }`, never a bare function body.",
 		"`maple.<tool>(input)` takes the same input as the tool of that name and resolves to its text result; a failed call rejects. When a call may fail, use `Promise.allSettled` so one failure does not discard the other results.",
 		"Return only what you need (matching lines, a summary, counts): the whole result is added to the conversation.",
-		'Example: async () => { const files = ["src/a.ts", "src/b.ts"]; const results = await Promise.allSettled(files.map((path) => maple.pr_file_diff({ repository: "owner/name", number: 1, path }))); return results.map((r, i) => r.status === "fulfilled" ? { file: files[i], lines: r.value.split("\\n").filter((line) => line.includes("catch")) } : { file: files[i], error: String(r.reason) }) }',
+		'Example: async () => { const [diff, uses] = await Promise.allSettled([maple.pr_file_diff({ repository: "owner/name", number: 1, paths: ["src/a.ts", "src/b.ts"] }), maple.sandbox_grep({ repository: "owner/name", pattern: "retryBudget" })]); return { catches: diff.status === "fulfilled" ? diff.value.split("\\n").filter((line) => line.includes("catch")) : String(diff.reason), uses: uses.status === "fulfilled" ? uses.value.split("\\n").slice(0, 20) : String(uses.reason) } }',
 		`Up to ${LIMITS.maxHostCalls} calls, ${Duration.toSeconds(LIMITS.maxWallTime)} s and ${MAX_EGRESS_BYTES / 1024} KiB of result per program; past that the program fails and returns nothing.`,
 		`Methods: ${methods.map((method) => `maple.${method}`).join(", ")}.`,
 	].join("\n")

@@ -732,6 +732,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 								inputTokens,
 								outputTokens,
 								nowMs,
+								...(request.turnId === undefined ? undefined : { turnId: request.turnId }),
 							})
 				yield* write.pipe(
 					Effect.mapError(makePersistenceError),

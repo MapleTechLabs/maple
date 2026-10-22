@@ -19,7 +19,8 @@ import { makeReviewLedger } from "./review-ledger"
 import { AGENTS } from "./agents"
 import { mapleToolCatalog } from "../mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
-import { runChatTurn } from "./run"
+import type { ChatTurnEvent } from "./events"
+import { runChatTurn, type SettledChild } from "./run"
 import { makeRunUsage } from "./tools"
 
 const TENANT: TenantContext = {
@@ -94,6 +95,7 @@ const run = (input: {
 	readonly model: ResolvedModel
 	readonly executor: McpToolExecutorApi
 	readonly withCode?: boolean
+	readonly append?: (event: ChatTurnEvent) => void
 }) =>
 	Effect.runPromiseExit(
 		runChatTurn({
@@ -109,7 +111,7 @@ const run = (input: {
 			history: [],
 			usage: makeRunUsage(),
 			holdsTurn: () => true,
-			append: () => {},
+			append: input.append ?? (() => {}),
 		}).pipe(Effect.provide(llmClients)),
 	)
 
@@ -135,6 +137,55 @@ describe("run_code", () => {
 		)
 		assert.include(JSON.stringify(result), "list_services ran")
 		assert.include(JSON.stringify(result), "find_errors ran")
+	})
+
+	it("shows the reader each read a program made, with its UI payload, before the program's result", async () => {
+		const { model } = scriptedModel([
+			callTool(RUN_CODE, { code: "async () => (await maple.list_services({})).length" }),
+			answer("Done."),
+		])
+		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
+			execute: () =>
+				Effect.succeed({
+					content: [{ type: "text" as const, text: "## Services" }],
+					structuredContent: { services: [] },
+				}),
+		}
+		const events: Array<ChatTurnEvent> = []
+
+		await run({
+			sessionId: INVESTIGATION,
+			origin: { kind: "app" },
+			model,
+			executor,
+			append: (event) => events.push(event),
+		})
+
+		const calls = events.flatMap((event) =>
+			event.type === "tool-call" || event.type === "tool-result"
+				? [`${event.type} ${event.callId}`]
+				: [],
+		)
+		assert.deepStrictEqual(calls, [
+			`tool-call call-${RUN_CODE}`,
+			`tool-call call-${RUN_CODE}#0`,
+			`tool-result call-${RUN_CODE}#0`,
+			`tool-result call-${RUN_CODE}`,
+		])
+		const read = events.find(
+			(event) => event.type === "tool-call" && event.callId === `call-${RUN_CODE}#0`,
+		)
+		assert.deepInclude(read, { name: "list_services", input: {} })
+		const result = events.find(
+			(event) => event.type === "tool-result" && event.callId === `call-${RUN_CODE}#0`,
+		)
+		assert.deepInclude(result, {
+			output: {
+				text: "## Services",
+				ui: { __maple_ui: true, tool: "list_services", data: { services: [] } },
+			},
+		})
 	})
 
 	it("cannot reach a mutating or submit tool, even where the turn may propose one", async () => {
@@ -245,51 +296,68 @@ describe("run_code", () => {
 		assert.isAtMost(dispatched.length, 2)
 	})
 
-	it("gives a review's child reviewers run_code and its guidance", async () => {
-		const { model, prompts, offered } = scriptedModel([
-			callTool("review_files", {
-				repository: "o/r",
-				number: 1,
-				headSha: "abc123",
-				paths: ["src/a.ts"],
-			}),
-			callTool(RUN_CODE, {
-				code: 'async () => (await maple.pr_file_diff({ repository: "o/r", number: 1, paths: ["src/a.ts"] })).length',
-			}),
-			answer("NO FINDINGS"),
-			callTool("submit_review", { verdict: "clean", summary: "Adds a retry." }),
-		])
-		const { executor, dispatched } = recordingExecutor()
-		const usage = makeRunUsage()
+	// Code-only children reach their reads through run_code alone, so the grant must name them too.
+	it.each([false, true])(
+		"gives a review's child reviewers run_code and its guidance (code-only: %s)",
+		async (codeOnly) => {
+			const { model, prompts, offered } = scriptedModel([
+				callTool("review_files", {
+					repository: "o/r",
+					number: 1,
+					headSha: "abc123",
+					paths: ["src/a.ts"],
+				}),
+				callTool(RUN_CODE, {
+					code: 'async () => (await maple.pr_file_diff({ repository: "o/r", number: 1, paths: ["src/a.ts"] })).length',
+				}),
+				answer("NO FINDINGS"),
+				callTool("submit_review", { verdict: "clean", summary: "Adds a retry." }),
+			])
+			const { executor, dispatched } = recordingExecutor()
+			const usage = makeRunUsage()
+			const children: Array<SettledChild> = []
 
-		const exit = await Effect.runPromiseExit(
-			runChatTurn({
-				sessionId: prReviewSessionId(TENANT.orgId, "7f1d3c2e-9a4b-4c8d-8e2f-1a2b3c4d5e6f"),
-				messageId: "msg-1",
-				tenant: TENANT,
-				origin: { kind: "autonomous" },
-				toolExecutor: executor,
-				model,
-				submitDiagnosis: () => Effect.die("no investigation in a review session"),
-				submitReview: () => Effect.void,
-				review: { coverage: { observe: () => {}, unread: () => [] }, ledger: makeReviewLedger() },
-				codeExecutor: inProcessCodeExecutorLayer,
-				text: "Review pull request #1.",
-				history: [],
-				usage,
-				holdsTurn: () => true,
-				append: () => {},
-			}).pipe(Effect.provide(llmClients)),
-		)
+			const exit = await Effect.runPromiseExit(
+				runChatTurn({
+					sessionId: prReviewSessionId(TENANT.orgId, "7f1d3c2e-9a4b-4c8d-8e2f-1a2b3c4d5e6f"),
+					messageId: "msg-1",
+					tenant: TENANT,
+					origin: { kind: "autonomous" },
+					toolExecutor: executor,
+					model,
+					submitDiagnosis: () => Effect.die("no investigation in a review session"),
+					submitReview: () => Effect.void,
+					review: { coverage: { observe: () => {}, unread: () => [] }, ledger: makeReviewLedger() },
+					codeExecutor: inProcessCodeExecutorLayer,
+					codeOnly,
+					text: "Review pull request #1.",
+					history: [],
+					usage,
+					holdsTurn: () => true,
+					append: () => {},
+					onChildSettled: (child) => children.push(child),
+				}).pipe(Effect.provide(llmClients)),
+			)
 
-		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted, `run failed: ${String(exit)}`)
-		// Model call 2 is the child's first.
-		assert.include(offered[1], RUN_CODE)
-		assert.include(JSON.stringify(prompts[1]!.content[0]), "Reading with run_code")
-		assert.include(dispatched, "pr_file_diff")
-		// The child's two model calls, counted apart from the parent's own usage.
-		assert.strictEqual(usage.delegated.modelCalls, 2)
-	})
+			assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted, `run failed: ${String(exit)}`)
+			// Model call 2 is the child's first.
+			assert.include(offered[1], RUN_CODE)
+			assert.strictEqual(offered[1]!.includes("pr_file_diff"), !codeOnly)
+			assert.include(JSON.stringify(prompts[1]!.content[0]), "Reading with run_code")
+			assert.include(dispatched, "pr_file_diff")
+			// The child's two model calls, counted apart from the parent's own usage.
+			assert.strictEqual(usage.delegated.modelCalls, 2)
+			// The child's own conversation, read back for the eval: its run_code call is in it.
+			assert.lengthOf(children, 1)
+			assert.include(JSON.stringify(children[0]?.history), RUN_CODE)
+			// ...and billed with them: four calls of one input token each.
+			assert.strictEqual(usage.input, 4)
+			assert.strictEqual(
+				usage.charges.reduce((sum, charge) => sum + charge.inputTokens, 0),
+				4,
+			)
+		},
+	)
 
 	it("withholds the direct read tools in code-only runs, keeping their schemas in run_code", async () => {
 		const { model, offered } = scriptedModel([answer("Hi.")])

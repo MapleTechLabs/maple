@@ -10,6 +10,8 @@ export type CodeBlockOptions<M> = Readonly<{
 	code: string
 	language?: string
 	className?: string
+	/** The scrolling body's classes: a height cap for a long file keeps the copy button in view. */
+	bodyClassName?: string
 	copy: CopyButton.Model
 	toCopyMessage: (message: CopyButton.Message) => M
 	/** Pre-highlighted HTML for a caller that refines the tokens. */
@@ -34,7 +36,7 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): H
 				],
 			),
 			h.div(
-				[h.Class("overflow-x-auto bg-background/50 p-3")],
+				[h.Class(cn("overflow-x-auto bg-background/50 p-3", options.bodyClassName))],
 				[
 					h.pre(
 						[h.Class("text-xs leading-relaxed")],

@@ -146,6 +146,17 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId): CardStatus 
 						: { label: countLabel(status.connectors.length, "connection"), variant: "ok" },
 				unavailableStatus,
 			)
+		case "aws":
+			return fold(
+				statuses.aws,
+				(status): CardStatus =>
+					status.connections.length === 0
+						? NOT_CONNECTED
+						: status.connections.some((connection) => connection.verified_at === null)
+							? { label: "Finish setup", variant: "warn" }
+							: { label: countLabel(status.connections.length, "account"), variant: "ok" },
+				unavailableStatus,
+			)
 		case "railway":
 			return fold(
 				statuses.railway,
@@ -247,6 +258,48 @@ const gcpOverview = (statuses: Statuses, nowMs: number) =>
 						: worst === "setup-pending" || worst === "changes-pending"
 							? "Finish setup"
 							: null,
+			}
+		},
+		unavailableOverview,
+	)
+
+const awsOverview = (statuses: Statuses, nowMs: number) =>
+	fold(
+		statuses.aws,
+		(status): IntegrationOverview => {
+			if (status.connections.length === 0) return CONNECT
+			const failing = status.connections.filter(
+				(connection) => connection.verified_at !== null && connection.last_check_error !== null,
+			).length
+			const pending = status.connections.some((connection) => connection.verified_at === null)
+			// A verified stack older than the connection's modules needs redeploying, as its row says.
+			const outdated = status.connections.some(
+				(connection) => connection.verified_at !== null && connection.setup_outdated,
+			)
+			const issue =
+				failing > 0
+					? `${countLabel(failing, "account")} failing`
+					: pending
+						? "Finish setup"
+						: outdated
+							? "Update the stack"
+							: null
+			// A stack not deployed yet is setup in progress, not a failure.
+			const health: Pick<IntegrationOverview & { kind: "connected" }, "health" | "stateLabel"> =
+				failing === 0 && pending
+					? { health: "pending", stateLabel: "Finish setup" }
+					: attentionOr(issue)
+			return {
+				kind: "connected",
+				...health,
+				context: status.connections.length === 1 ? (status.connections[0]?.account_id ?? null) : null,
+				stat: countLabel(status.connections.length, "account"),
+				lastSyncLabel: syncedLabel(
+					maxMs(status.connections.map((connection) => isoMs(connection.last_checked_at))),
+					nowMs,
+					"checked",
+				),
+				issue,
 			}
 		},
 		unavailableOverview,
@@ -489,6 +542,8 @@ export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId)
 	switch (id) {
 		case "gcp":
 			return gcpOverview(statuses, nowMs)
+		case "aws":
+			return awsOverview(statuses, nowMs)
 		case "railway":
 			return railwayOverview(statuses, nowMs)
 		case "supabase":
@@ -531,6 +586,9 @@ export const settingsNavVisibility = (
 	isClerk: boolean,
 ): Visibility => {
 	if (!isClerk) return { isClerk, isAdmin: true, canAccessDataPlatform: true }
-	const hasByoc = AsyncData.getOrElse(AsyncData.map(model.customer.data, hasBringYourOwnCloudAddOn), () => false)
+	const hasByoc = AsyncData.getOrElse(
+		AsyncData.map(model.customer.data, hasBringYourOwnCloudAddOn),
+		() => false,
+	)
 	return { isClerk, isAdmin: model.isAdmin, canAccessDataPlatform: model.isAdmin && hasByoc }
 }
