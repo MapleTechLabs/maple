@@ -16,6 +16,7 @@ import { layerLlm, type ResolvedModel } from "../platform/Llm"
 import { prReviewSessionId, type ChatTurnOrigin } from "@maple/domain/chat-session"
 import { CODE_MODE_TOOLS, RUN_CODE } from "./code-mode"
 import { makeReviewLedger } from "./review-ledger"
+import { AGENTS } from "./agents"
 import { mapleToolCatalog } from "../mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import { runChatTurn } from "./run"
@@ -191,6 +192,55 @@ describe("run_code", () => {
 		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted, `run failed: ${String(exit)}`)
 		assert.include(observed, "pr_file_diff")
 		assert.lengthOf(filed, 1)
+	})
+
+	it("refuses a call to a tool outside the namespace without dispatching it", async () => {
+		const { model, prompts } = scriptedModel([
+			callTool(RUN_CODE, { code: 'async () => maple.create_dashboard({ title: "x" })' }),
+			answer("Done."),
+		])
+		const { executor, dispatched } = recordingExecutor()
+
+		const exit = await run({ sessionId: INVESTIGATION, origin: { kind: "app" }, model, executor })
+
+		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
+		assert.deepEqual(dispatched, [])
+		const result = toolResults(prompts[1]!).find(
+			(part) => part.type === "tool-result" && part.name === RUN_CODE,
+		)
+		assert.isTrue(result?.type === "tool-result" && result.isFailure)
+	})
+
+	it("spends the run's tool budget on a program's calls", async () => {
+		const { model } = scriptedModel([
+			callTool(RUN_CODE, {
+				code: "async () => { const out = []; for (const _ of [1, 2, 3, 4, 5, 6]) out.push(await maple.list_services({})); return out }",
+			}),
+			answer("Done."),
+		])
+		const { executor, dispatched } = recordingExecutor()
+
+		await Effect.runPromiseExit(
+			runChatTurn({
+				sessionId: INVESTIGATION,
+				messageId: "msg-1",
+				tenant: TENANT,
+				origin: { kind: "app" },
+				toolExecutor: executor,
+				model,
+				submitDiagnosis: () => Effect.void,
+				agent: { ...AGENTS.investigate, budget: { ...AGENTS.investigate.budget, maxToolCalls: 3 } },
+				codeExecutor: inProcessCodeExecutorLayer,
+				text: "Investigate.",
+				history: [],
+				usage: makeRunUsage(),
+				holdsTurn: () => true,
+				append: () => {},
+			}).pipe(Effect.provide(llmClients)),
+		)
+
+		// The program's own call is one of the three.
+		assert.isAtMost(dispatched.length, 2)
 	})
 
 	it("lists only registered, read-only tools", () => {

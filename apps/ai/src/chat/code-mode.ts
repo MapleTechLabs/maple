@@ -9,8 +9,9 @@
  */
 import { CodeExecutionLimits, type CodeExecutor } from "@yielded/agent/code-executor"
 import * as CodeMode from "@yielded/agent/code-mode"
-import { Duration, Effect, Layer } from "effect"
+import { Duration, Layer } from "effect"
 import { type Tool, Toolkit } from "effect/ai"
+import { TOOL_CONCURRENCY } from "./budgets"
 import { PR_REVIEW_TOOLS } from "./permissions"
 
 export const RUN_CODE = "run_code"
@@ -51,13 +52,20 @@ export const CODE_MODE_TOOLS: ReadonlySet<string> = new Set([
 	"search_sessions",
 ])
 
+/** What a program may hand back to the conversation; a tool's own answer is capped at 50 KiB. */
+const MAX_EGRESS_BYTES = 128 * 1024
+
 const LIMITS = CodeExecutionLimits.make({
 	maxSourceBytes: 64 * 1024,
-	// `sandbox_read_file` takes 1.5 s at p50: a program that batches stays well inside this.
-	maxWallTime: Duration.seconds(90),
+	// 32 calls, 4 at a time (a direct batch's fan-out), finish inside this even at the 5-10 s a
+	// warehouse query can take.
+	maxWallTime: Duration.seconds(120),
+	maxHostCalls: 32,
+	maxHostCallConcurrency: TOOL_CONCURRENCY,
+	// No `cpuMillis`: the Dynamic Worker's platform CPU limit stops a runaway loop, and the test
+	// executor refuses a limit it cannot enforce.
 	maxLogBytes: 64 * 1024,
-	maxResultBytes: 256 * 1024,
-	maxHostCalls: 64,
+	maxResultBytes: MAX_EGRESS_BYTES,
 	maxHostCallArgumentBytes: 64 * 1024,
 	maxHostCallResultBytes: 1024 * 1024,
 })
@@ -67,8 +75,8 @@ const description = (methods: ReadonlyArray<string>) =>
 		"Run a JavaScript program that calls Maple tools, for several independent reads at once or for reading a lot and keeping a little.",
 		"`maple.<tool>(input)` takes the same input as the tool of that name and resolves to its text result; a failed call rejects.",
 		"Return only what you need (matching lines, a summary, counts): the whole result is added to the conversation.",
-		'Example: async () => { const [a, b] = await Promise.all([maple.pr_file_diff({ repository, number, paths }), maple.sandbox_grep({ repository, pattern })]); return { a, b: b.split("\\n").slice(0, 40) } }',
-		`Up to ${LIMITS.maxHostCalls} calls and ${Duration.toSeconds(LIMITS.maxWallTime)} s per program.`,
+		'Example: async () => { const diffs = await Promise.all(paths.map((path) => maple.pr_file_diff({ repository, number, path }))); return diffs.map((diff) => diff.split("\\n").filter((line) => line.includes("catch"))) }',
+		`Up to ${LIMITS.maxHostCalls} calls, ${Duration.toSeconds(LIMITS.maxWallTime)} s and ${MAX_EGRESS_BYTES / 1024} KiB of result per program; past that the program fails and returns nothing.`,
 		`Methods: ${methods.map((method) => `maple.${method}`).join(", ")}.`,
 	].join("\n")
 
@@ -89,11 +97,7 @@ export const buildCodeMode = <T extends Tool.Any, H, E, R>(
 		includeDeclarations: false,
 		tools: { maple: tools },
 		limits: LIMITS,
-		onPassExit: (report) =>
-			Effect.annotateCurrentSpan({
-				"maple.code_mode.status": report.status,
-				"maple.code_mode.calls": report.calls.length,
-			}),
+		maxEgressBytes: MAX_EGRESS_BYTES,
 	})
 	return {
 		tool: RUN_CODE,
