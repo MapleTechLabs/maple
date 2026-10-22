@@ -486,8 +486,17 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				const changes = {
 					...(modules !== undefined && { modules }),
 					...(patch.metricStream !== undefined && { metricStream: patch.metricStream }),
+					// A stream turned off stops authenticating at once, though its Firehose may still be
+					// deployed; turning it back on mints a new secret for the next setup.
+					...(patch.metricStream === null && {
+						streamSecretCiphertext: null,
+						streamSecretIv: null,
+						streamSecretTag: null,
+						streamSecretHash: null,
+					}),
 				}
-				if (Object.keys(changes).length === 0) return toConnection(yield* selectRow(orgId, connectionId))
+				if (Object.keys(changes).length === 0)
+					return toConnection(yield* selectRow(orgId, connectionId))
 				const updatedAt = yield* Clock.currentTimeMillis
 				const [row] = yield* dbExecute((db) =>
 					db.run(
@@ -522,7 +531,11 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				Effect.gen(function* () {
 					const held = row.streamSecretHash === null ? yield* withStreamSecret(row) : row
 					const { streamSecretCiphertext, streamSecretIv, streamSecretTag } = held
-					if (streamSecretCiphertext === null || streamSecretIv === null || streamSecretTag === null) {
+					if (
+						streamSecretCiphertext === null ||
+						streamSecretIv === null ||
+						streamSecretTag === null
+					) {
 						return yield* persistence("The AWS connection has no stream secret")
 					}
 					return yield* decryptAes256Gcm(

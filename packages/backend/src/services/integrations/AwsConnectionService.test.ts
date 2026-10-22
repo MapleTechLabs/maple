@@ -215,7 +215,9 @@ describe("AwsConnectionService", () => {
 	it.effect("streams metrics with a secret only this connection's row can verify", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
-		const regions = ["us-east-1", "eu-central-1"].map((region) => Schema.decodeUnknownSync(AwsRegion)(region))
+		const regions = ["us-east-1", "eu-central-1"].map((region) =>
+			Schema.decodeUnknownSync(AwsRegion)(region),
+		)
 		const streamSecretHash = (id: string) =>
 			Effect.promise(() =>
 				queryFirstRow<{ stream_secret_hash: string | null }>(
@@ -235,7 +237,10 @@ describe("AwsConnectionService", () => {
 			const setup = yield* service.setup(orgId, created.id)
 			const accessKey = accessKeyOf(setup.setupScript)
 			assert.isDefined(accessKey)
-			assert.strictEqual(yield* streamSecretHash(created.id), hashIngestKey(accessKey!, "maple-test-lookup-secret"))
+			assert.strictEqual(
+				yield* streamSecretHash(created.id),
+				hashIngestKey(accessKey!, "maple-test-lookup-secret"),
+			)
 			assert.include(setup.setupScript, "for region in us-east-1 eu-central-1; do")
 
 			const template = JSON.parse(setup.metricsCloudformationTemplate ?? "{}")
@@ -244,8 +249,9 @@ describe("AwsConnectionService", () => {
 				{ Namespace: "AWS/ApplicationELB" },
 			])
 			assert.strictEqual(template.Resources.MetricStream.Properties.OutputFormat, "opentelemetry1.0")
-			const endpoint = template.Resources.DeliveryStream.Properties.HttpEndpointDestinationConfiguration
-				.EndpointConfiguration
+			const endpoint =
+				template.Resources.DeliveryStream.Properties.HttpEndpointDestinationConfiguration
+					.EndpointConfiguration
 			assert.strictEqual(endpoint.Url, `https://ingest.test/v1/firehose/aws/${created.id}`)
 			// The secret is a parameter the script passes, never part of the template.
 			assert.deepStrictEqual(endpoint.AccessKey, { Ref: "AccessKey" })
@@ -259,6 +265,18 @@ describe("AwsConnectionService", () => {
 			assert.isNull(removed.metricsStackName)
 			assert.isUndefined(accessKeyOf(removed.setupScript))
 			assert.include(removed.setupScript, "describe-regions")
+			// The old secret stops matching; turning the stream back on deploys a new one.
+			assert.isNull(yield* streamSecretHash(created.id))
+			yield* service.update(orgId, created.id, {
+				metricStream: { regions, namespaces: ["AWS/ECS"] },
+			})
+			const again = accessKeyOf((yield* service.setup(orgId, created.id)).setupScript)
+			assert.isDefined(again)
+			assert.notStrictEqual(again, accessKey)
+			assert.strictEqual(
+				yield* streamSecretHash(created.id),
+				hashIngestKey(again!, "maple-test-lookup-secret"),
+			)
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
