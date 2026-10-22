@@ -58,16 +58,14 @@ const resolveHeaderAgentActor = Effect.fn("McpTenant.resolveHeaderAgentActor")(f
 	const actorId = decodeActorIdOption(raw)
 	if (Option.isNone(actorId)) return Option.none<ActorId>()
 	const actors = yield* ErrorActorsService
-	const agent = yield* actors
-		.findOwnedAgentActor(orgId, actorId.value, userId)
-		.pipe(
-			Effect.mapError(
-				() =>
-					new McpAuthUnavailableError({
-						message: "Agent identity validation is temporarily unavailable",
-					}),
-			),
-		)
+	const agent = yield* actors.findOwnedAgentActor(orgId, actorId.value, userId).pipe(
+		Effect.mapError(
+			() =>
+				new McpAuthUnavailableError({
+					message: "Agent identity validation is temporarily unavailable",
+				}),
+		),
+	)
 	yield* Effect.annotateCurrentSpan("maple.mcp.agent_header_honoured", Option.isSome(agent))
 	return Option.map(agent, (document) => document.id)
 })
@@ -112,68 +110,116 @@ export const describeMalformedBearer = (token: string | undefined): string | und
  */
 export const mcpResourceUrl = (apiBaseUrl: string) => `${apiBaseUrl.replace(/\/+$/, "")}/mcp`
 
+/** Maple's own service token: the org comes from `x-org-id`, the user is `internal-service`. */
+const resolveInternalServiceTenant = Effect.fn("McpTenant.resolveInternalServiceTenant")(function* (
+	request: Request,
+	token: string,
+) {
+	const provided = token.slice(INTERNAL_SERVICE_PREFIX.length)
+	const env = yield* Env
+	const expected = Option.match(env.INTERNAL_SERVICE_TOKEN, {
+		onNone: () => undefined,
+		onSome: (value) => Redacted.value(value),
+	})
+
+	if (!expected) {
+		return yield* new McpAuthMissingError({
+			message: "INTERNAL_SERVICE_TOKEN is not configured on the server",
+		})
+	}
+
+	if (
+		provided.length === expected.length &&
+		timingSafeEqual(Buffer.from(provided), Buffer.from(expected))
+	) {
+		const orgId = Option.match(env.MAPLE_ORG_ID_OVERRIDE, {
+			onNone: () => request.headers.get("x-org-id"),
+			onSome: (value) => value,
+		})
+		if (!orgId) {
+			return yield* new McpAuthMissingError({
+				message: "x-org-id header is required for internal service auth",
+			})
+		}
+
+		const validOrgId = yield* decodeOrgId(orgId).pipe(
+			Effect.mapError(
+				(e) =>
+					new McpInvalidTenantError({
+						message: e.message,
+						field: "orgId",
+					}),
+			),
+		)
+		const validUserId = yield* decodeUserId("internal-service").pipe(
+			Effect.mapError(
+				(e) =>
+					new McpInvalidTenantError({
+						message: e.message,
+						field: "userId",
+					}),
+			),
+		)
+		return {
+			orgId: validOrgId,
+			userId: validUserId,
+			roles: [],
+			authMode: "self_hosted",
+		} as McpAuthenticatedTenant
+	}
+
+	return yield* new McpAuthInvalidError({
+		message: "Internal service token mismatch",
+	})
+})
+
+/**
+ * A signed-in person's session, never an API key or MCP OAuth token: `resolveTenant` accepts
+ * session tokens only, unlike `resolveMcpTenant`.
+ */
+const resolveSessionTenant = Effect.fn("McpTenant.resolveSessionTenant")(function* (request: Request) {
+	const auth = yield* AuthService
+	const tenant = yield* auth.resolveTenant(toHeaderRecord(request.headers)).pipe(
+		Effect.mapError(
+			(error) =>
+				new McpAuthInvalidError({
+					message: error.message || "Authentication failed (no details available)",
+					reason: "session_auth_fallback",
+				}),
+		),
+	)
+	return {
+		orgId: tenant.orgId,
+		userId: tenant.userId,
+		roles: [...tenant.roles],
+		authMode: tenant.authMode,
+		rateLimitCredentialId: `user:${tenant.userId}`,
+	} satisfies McpAuthenticatedTenant
+})
+
+/**
+ * The tenant for the in-product chat routes: a signed-in session, or Maple's own service token.
+ * Needs no `ApiKeysService`, so a router built on it cannot accept a key by accident.
+ */
+export const resolveChatSessionTenantContext = Effect.fn("McpTenant.resolveChatSessionTenantContext")(
+	function* (request: Request) {
+		const token = getBearerToken(request.headers)
+		if (token !== undefined && token.startsWith(INTERNAL_SERVICE_PREFIX)) {
+			return yield* resolveInternalServiceTenant(request, token)
+		}
+		return yield* resolveSessionTenant(request)
+	},
+	(effect) =>
+		Effect.tapError(effect, (error) => recordExpectedMcpFailure(error, "Chat authentication failed")),
+)
+
 export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantContext")(
 	function* (request: Request) {
 		const token = getBearerToken(request.headers)
 
 		// Internal service auth (e.g. chat agent)
 		if (token && token.startsWith(INTERNAL_SERVICE_PREFIX)) {
-			const provided = token.slice(INTERNAL_SERVICE_PREFIX.length)
-			const env = yield* Env
-			const expected = Option.match(env.INTERNAL_SERVICE_TOKEN, {
-				onNone: () => undefined,
-				onSome: (value) => Redacted.value(value),
-			})
-
-			if (!expected) {
-				return yield* new McpAuthMissingError({
-					message: "INTERNAL_SERVICE_TOKEN is not configured on the server",
-				})
-			}
-
-			if (
-				provided.length === expected.length &&
-				timingSafeEqual(Buffer.from(provided), Buffer.from(expected))
-			) {
-				const orgId = Option.match(env.MAPLE_ORG_ID_OVERRIDE, {
-					onNone: () => request.headers.get("x-org-id"),
-					onSome: (value) => value,
-				})
-				if (!orgId) {
-					return yield* new McpAuthMissingError({
-						message: "x-org-id header is required for internal service auth",
-					})
-				}
-
-				const validOrgId = yield* decodeOrgId(orgId).pipe(
-					Effect.mapError(
-						(e) =>
-							new McpInvalidTenantError({
-								message: e.message,
-								field: "orgId",
-							}),
-					),
-				)
-				const validUserId = yield* decodeUserId("internal-service").pipe(
-					Effect.mapError(
-						(e) =>
-							new McpInvalidTenantError({
-								message: e.message,
-								field: "userId",
-							}),
-					),
-				)
-				return {
-					orgId: validOrgId,
-					userId: validUserId,
-					roles: [],
-					authMode: "self_hosted",
-				} as McpAuthenticatedTenant
-			}
-
-			return yield* new McpAuthInvalidError({
-				message: "Internal service token mismatch",
-			})
+			return yield* resolveInternalServiceTenant(request, token)
 		}
 
 		const malformed = describeMalformedBearer(token)

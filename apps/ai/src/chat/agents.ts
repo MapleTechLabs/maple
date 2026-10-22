@@ -67,6 +67,8 @@ export interface AgentDefinition {
 	 * (`resolveReviewModel`), `triage` the deployment's chat and investigation model.
 	 */
 	readonly model: AgentModel
+	/** Offer `run_code` over the turn's read-only tools, where the runtime has a code executor. */
+	readonly codeMode?: boolean
 }
 
 export type AgentModel = "triage" | "review"
@@ -109,6 +111,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		permission: DEFAULT_RULESET,
 		budget: INVESTIGATION_BUDGET,
 		model: "triage",
+		codeMode: true,
 	},
 	"pr-review": {
 		name: "pr-review",
@@ -120,6 +123,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		autonomousPermission: PR_REVIEW_RULESET,
 		budget: PR_REVIEW_BUDGET,
 		model: "review",
+		codeMode: true,
 	},
 	"pr-reply": {
 		name: "pr-reply",
