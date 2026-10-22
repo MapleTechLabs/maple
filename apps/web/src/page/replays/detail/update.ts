@@ -301,7 +301,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		StarvedEngine: ({ seedVersion, currentMs }) =>
 			seedVersion !== model.loader.seedVersion
 				? { model }
-				: syncRange(reportProgress(model, currentMs, true), context),
+				: syncRange(reportProgress({ ...model, player: { ...model.player, currentMs } }, currentMs, true), context),
 		FinishedEngine: ({ seedVersion }) =>
 			seedVersion !== model.loader.seedVersion
 				? { model }
