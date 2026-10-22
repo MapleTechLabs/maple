@@ -3,7 +3,7 @@ import { Effect, Schema, Struct } from "effect"
 import { IsoDateTimeString } from "@maple/domain"
 import { AlertRulePreviewRequest, type AlertRulePreviewResponse } from "@maple/domain/http"
 import { PreviewAlertRuleOutput } from "@maple/domain/mcp-outputs"
-import { rawAlertSampleCountWarning } from "@maple/domain/raw-sql"
+import { rawAlertPerformanceHints, rawAlertSampleCountWarning } from "@maple/domain/raw-sql"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { toMcpHttpError } from "../lib/map-http-error"
@@ -111,6 +111,32 @@ const previewWarnings = (
 
 const formatValue = (value: number | null): string => (value === null ? "-" : String(value))
 
+const seconds = (ms: number): string => `${Number((ms / 1000).toFixed(1))}s`
+
+/** One check's duration against the interval's limit, and the intervals it fits. */
+const timingLine = (timing: NonNullable<Output["queryTiming"]>): string => {
+	const took =
+		timing.elapsedMs !== null
+			? `One check took ${seconds(timing.elapsedMs)}`
+			: timing.failure === "query_too_much_memory"
+				? "One check ran out of memory before finishing"
+				: `One check did not finish within ${seconds(timing.probeLimitMs)}`
+	const fits =
+		timing.fitsIntervalMinutes.length > 0
+			? `Fits checks every ${timing.fitsIntervalMinutes.join(", ")} min.`
+			: "It fits no check interval; make the query cheaper."
+	return `${took}; the limit at this interval (every ${timing.intervalMinutes}m) is ${seconds(timing.limitMs)}. ${fits}`
+}
+
+/** The slower interval a saved rule could switch to when its query is too slow for its own. */
+const slowerFittingInterval = (output: Output): number | undefined => {
+	const timing = output.queryTiming
+	if (timing === undefined || timing.fitsIntervalMinutes.includes(timing.intervalMinutes)) return undefined
+	return timing.fitsIntervalMinutes.find(
+		(interval) => interval > timing.intervalMinutes && interval <= output.windowMinutes,
+	)
+}
+
 export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 	server.define({
 		name: "preview_alert_rule",
@@ -217,7 +243,24 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 					start: span.start,
 					end: span.end,
 				})),
+				...(preview.seriesFailure === undefined ? undefined : { seriesFailure: preview.seriesFailure }),
+				...(preview.queryTiming === undefined
+					? undefined
+					: {
+							queryTiming: {
+								...preview.queryTiming,
+								fitsIntervalMinutes: [...preview.queryTiming.fitsIntervalMinutes],
+							},
+						}),
+				...(ruleRequest.signalType === "raw_query" && ruleRequest.rawQuerySql != null
+					? { performanceHints: [...rawAlertPerformanceHints(ruleRequest.rawQuerySql)] }
+					: undefined),
 				warnings: [
+					...(preview.seriesFailure === undefined
+						? []
+						: [
+								`The query ${preview.seriesFailure === "query_too_much_memory" ? "ran out of memory" : "ran past 25 s"} charting this whole range, so no windows were evaluated. Preview a shorter range.`,
+							]),
 					...previewWarnings(
 						groups,
 						preview.series.flatMap((series) => series.points),
@@ -233,6 +276,16 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 		}),
 		render: (output) => {
 			const shownGroups = output.groups.slice(0, SHOWN_GROUPS)
+			const hints = output.performanceHints ?? []
+			const timingBlocks: Array<DocBlock> = [
+				...(output.queryTiming === undefined ? [] : [doc.text(timingLine(output.queryTiming))]),
+				...(hints.length === 0
+					? []
+					: [
+							doc.heading("Make the query cheaper"),
+							doc.list(hints.map((hint) => `Line ${hint.line}: ${hint.message}`)),
+						]),
+			]
 			const blocks: Array<DocBlock> = [
 				doc.fields([
 					["Condition", formatCondition(output)],
@@ -243,6 +296,7 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 						output.wouldFire.length > 0 ? `${output.wouldFire.length} time(s)` : "never",
 					],
 				]),
+				...timingBlocks,
 				doc.table(
 					[
 						"Group",
@@ -303,6 +357,22 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 				)
 			}
 
+			const slower = slowerFittingInterval(output)
+			const switchInterval: Array<NextCall> =
+				output.ruleId === undefined || slower === undefined
+					? []
+					: [
+							doc.next(
+								"update_alert_rule",
+								// The window it was previewed with, which an override may have changed.
+								{
+									rule_id: output.ruleId,
+									window_minutes: output.windowMinutes,
+									evaluation_interval_minutes: slower,
+								},
+								"check it less often so its query fits the time limit",
+							),
+						]
 			const next: Array<NextCall> =
 				output.ruleId === undefined
 					? [
@@ -329,9 +399,16 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 				],
 				...(output.warnings.length > 0 ? { notices: output.warnings } : undefined),
 				...(output.groups.length === 0
-					? { empty: { message: "The preview returned no series for this range." } }
+					? {
+							empty: {
+								message:
+									output.seriesFailure === undefined
+										? "The preview returned no series for this range."
+										: "The range was too heavy to chart; see the notice above.",
+							},
+						}
 					: undefined),
-				blocks: output.groups.length === 0 ? [] : blocks,
+				blocks: output.groups.length === 0 ? timingBlocks : blocks,
 				...(output.groups.length > shownGroups.length
 					? {
 							truncation: {
@@ -341,7 +418,7 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 							},
 						}
 					: undefined),
-				next,
+				next: [...switchInterval, ...next],
 			}
 		},
 	})

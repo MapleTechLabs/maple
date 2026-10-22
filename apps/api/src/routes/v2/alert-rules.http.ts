@@ -424,6 +424,19 @@ const toV2PreviewResult = (preview: AlertRulePreviewResponse): V2AlertRulePrevie
 		end: span.end,
 		severity: span.severity,
 	})),
+	...(preview.seriesFailure === undefined ? undefined : { series_failure: preview.seriesFailure }),
+	...(preview.queryTiming === undefined
+		? undefined
+		: {
+				query_timing: {
+					elapsed_ms: preview.queryTiming.elapsedMs,
+					failure: preview.queryTiming.failure,
+					probe_limit_ms: preview.queryTiming.probeLimitMs,
+					interval_minutes: preview.queryTiming.intervalMinutes,
+					limit_ms: preview.queryTiming.limitMs,
+					fits_interval_minutes: preview.queryTiming.fitsIntervalMinutes,
+				},
+			}),
 })
 
 export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules", (handlers) =>

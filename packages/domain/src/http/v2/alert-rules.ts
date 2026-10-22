@@ -626,6 +626,32 @@ const V2AlertRulePreviewFiringSpan = Schema.Struct({
 	description: "A span during which the rule's state machine would have held an open incident.",
 })
 
+export const V2AlertQueryTiming = Schema.Struct({
+	elapsed_ms: Schema.NullOr(Schema.Number).annotate({
+		description:
+			"Milliseconds one check of the latest window took, or null when it did not finish within `probe_limit_ms`.",
+	}),
+	failure: Schema.NullOr(Schema.Literals(["query_too_slow", "query_too_much_memory"])).annotate({
+		description: "Why the check did not finish, when it did not.",
+	}),
+	probe_limit_ms: Schema.Number.annotate({
+		description:
+			"The longest any check may run (the limit at the slowest intervals), where timing stops.",
+	}),
+	interval_minutes: Schema.Number.annotate({ description: "The rule's check interval, in minutes." }),
+	limit_ms: Schema.Number.annotate({
+		description:
+			"The query time limit at that interval: 5s under 5 minutes, 15s at 5, 25s at 10 or more.",
+	}),
+	fits_interval_minutes: Schema.Array(AlertEvaluationIntervalMinutes).annotate({
+		description: "Check intervals whose time limit the query fits with a fifth to spare.",
+	}),
+}).annotate({
+	identifier: "AlertQueryTiming",
+	title: "Alert query timing",
+	description: "How long one check of a raw SQL rule takes, timed once on the latest window.",
+})
+
 export const V2AlertRulePreviewResult = Schema.Struct({
 	object: Schema.Literal("alert_rule.preview").annotate({
 		description: 'The object type — always `"alert_rule.preview"`.',
@@ -643,6 +669,15 @@ export const V2AlertRulePreviewResult = Schema.Struct({
 	would_fire: Schema.Array(V2AlertRulePreviewFiringSpan).annotate({
 		description: "Spans during which the rule would have held an open incident.",
 	}),
+	query_timing: Schema.optionalKey(V2AlertQueryTiming).annotate({
+		description: "Raw SQL rules only: one check timed against the time limit of the rule's interval.",
+	}),
+	series_failure: Schema.optionalKey(Schema.Literals(["query_too_slow", "query_too_much_memory"])).annotate(
+		{
+			description:
+				"Raw SQL rules only: the range was too heavy to chart within the longest limit, so `series` is empty. `query_timing` still says whether one check fits. Preview a shorter range to chart it.",
+		},
+	),
 }).annotate({
 	identifier: "AlertRulePreviewResult",
 	title: "Alert rule preview result",

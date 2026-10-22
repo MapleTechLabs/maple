@@ -12,6 +12,7 @@ import {
 	IntegrationsRevokedError,
 	OrgId,
 	UserId,
+	WarehouseQuotaExceededError,
 } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { BucketCacheService } from "@maple/query-engine/caching"
@@ -858,6 +859,51 @@ describe("v2 alerts over HTTP", () => {
 		expect(response.status).toBe(200)
 		expect(response.body.object).toBe("alert_rule.preview")
 		expect(response.body.series.length).toBeGreaterThan(0)
+		// A 5-minute window is checked every minute, whose limit is 5s.
+		expect(response.body.query_timing).toMatchObject({
+			failure: null,
+			interval_minutes: 1,
+			limit_ms: 5000,
+			probe_limit_ms: 25000,
+		})
+		expect(response.body.query_timing.fits_interval_minutes).toContain(1)
+		await harness.dispose()
+	})
+
+	it("previews a raw SQL alert too heavy to chart with its one-check timing and series_failure", async () => {
+		// The chart reads the requested 2026 range; the timing probe reads the latest window.
+		const harness = makeHarness({
+			...warehouseStub,
+			rawSqlQuery: (_tenant, sql) =>
+				sql.includes("2026-01-01")
+					? Effect.fail(
+							new WarehouseQuotaExceededError({
+								message: "Memory limit exceeded",
+								pipeName: "rawSqlQuery",
+								setting: "max_memory_usage",
+							}),
+						)
+					: Effect.succeed([{ value: 1, samples: 1 }]),
+		})
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const response = await harness.request("POST", "/v2/alerts/rules/preview", key.secret, {
+			rule: {
+				name: "Heavy raw preview",
+				severity: "warning",
+				signal_type: "raw_query",
+				raw_query_sql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+				comparator: "gt",
+				threshold: 10,
+				window_minutes: 5,
+				destination_ids: [],
+			},
+			start_time: "2026-01-01T00:00:00.000Z",
+			end_time: "2026-01-01T00:30:00.000Z",
+		})
+		expect(response.status, JSON.stringify(response.body)).toBe(200)
+		expect(response.body.series_failure).toBe("query_too_much_memory")
+		expect(response.body.series).toEqual([])
+		expect(response.body.query_timing).toMatchObject({ failure: null })
 		await harness.dispose()
 	})
 
