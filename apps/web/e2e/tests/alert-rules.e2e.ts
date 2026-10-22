@@ -109,7 +109,7 @@ test.describe("alert rules", () => {
 		await screen.getByRole("combobox", "Alert when the value").tap()
 		await screen.getByRole("option", "is between").tap()
 
-		await expect(screen.getByText(/^Missing:/)).toContainText("Upper threshold")
+		await expect(screen.getByText(/^Fix before saving:/)).toContainText("Upper threshold")
 	})
 
 	test("previews a SQL rule", { session: "reviewer" }, async ({ app, screen }) => {
