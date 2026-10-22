@@ -53,7 +53,6 @@ const authStub = (verifiedEmail: string | null) =>
 	Layer.succeed(AuthService, {
 		resolveTenant: () => unused,
 		resolveMcpTenant: () => unused,
-		loginSelfHosted: () => unused,
 		refreshSelfHostedSession: () => unused,
 		getUserEmail: () => Effect.succeed("unverified@example.com"),
 		getVerifiedPrimaryEmail: () => Effect.succeed(verifiedEmail),

@@ -15,6 +15,7 @@ import { CancellationReviews } from "./cancellation-reviews"
 import { ChatIdentities } from "./chat-identities"
 import { ChatWorkspaces } from "./chat-workspaces"
 import { CliDeviceAuthorizations } from "./cli-device-authorizations"
+import { SelfHostedLoginAttempts } from "./self-hosted-login-attempts"
 import { CloudflareAnalyticsState } from "./cloudflare-analytics-state"
 import { CloudflareHyperdriveConfigs } from "./cloudflare-hyperdrive-configs"
 import { CloudflareLogpushConnectors } from "./cloudflare-logpush-connectors"
@@ -112,6 +113,7 @@ export * from "./planetscale-inventory"
 export * from "./openrouter-keys"
 export * from "./railway"
 export * from "./scrape-targets"
+export * from "./self-hosted-login-attempts"
 export * from "./sources"
 export * from "./supabase"
 export * from "./support-channels"
@@ -183,6 +185,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	RailwayEnvironments,
 	ScrapeTargets,
 	ScrapeTargetChecks,
+	SelfHostedLoginAttempts,
 	SupabaseConnections,
 	SupabaseProjects,
 	SupabaseProjectInsights,

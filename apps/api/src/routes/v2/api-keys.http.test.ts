@@ -9,6 +9,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { SelfHostedLoginService } from "@maple/backend/services/auth/SelfHostedLoginService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
@@ -57,6 +58,7 @@ const makeHarness = (checkRateLimit: RateLimiterApi["check"] = () => Effect.succ
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
 		AuthService.layer,
+		SelfHostedLoginService.layer,
 		DashboardPersistenceService.layer,
 		SharedDashboardService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
@@ -158,8 +160,8 @@ const makeHarness = (checkRateLimit: RateLimiterApi["check"] = () => Effect.succ
 	const bootstrapSession = () =>
 		runtime.runPromise(
 			Effect.gen(function* () {
-				const service = yield* AuthService
-				return (yield* service.loginSelfHosted("test-root-password")).token
+				const service = yield* SelfHostedLoginService
+				return (yield* service.login("test-root-password", "127.0.0.1")).token
 			}),
 		)
 

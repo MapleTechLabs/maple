@@ -12,6 +12,7 @@ import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyD
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
+import { SelfHostedLoginService } from "@maple/backend/services/auth/SelfHostedLoginService"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
 import { McpConnectionsService } from "@maple/backend/services/auth/McpConnectionsService"
@@ -96,6 +97,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	AuthService.layer,
 	ApiKeysService.layer,
 	CliDeviceAuthService.layer,
+	SelfHostedLoginService.layer,
 	McpOAuthService.layer,
 	McpConnectionsService.layer,
 	PreviewSignInService.layer,

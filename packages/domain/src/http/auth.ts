@@ -178,6 +178,19 @@ export class SelfHostedInvalidPasswordError extends Schema.TaggedError<SelfHoste
 	{ httpApiStatus: 401 },
 ) {}
 
+/** Too many failed root-password logins from this client or overall; retry after the lockout. */
+export class SelfHostedLoginThrottledError extends Schema.TaggedError<SelfHostedLoginThrottledError>()(
+	"@maple/http/errors/SelfHostedLoginThrottledError",
+	{ message: Schema.String, retryAfterSeconds: Schema.Number },
+	{ httpApiStatus: 429 },
+) {}
+
+export class SelfHostedLoginUnavailableError extends Schema.TaggedError<SelfHostedLoginUnavailableError>()(
+	"@maple/http/errors/SelfHostedLoginUnavailableError",
+	{ message: Schema.String, cause: Schema.optionalKey(Schema.String) },
+	{ httpApiStatus: 503 },
+) {}
+
 export class PreviewSignInStatusResponse extends Schema.Class<PreviewSignInStatusResponse>(
 	"PreviewSignInStatusResponse",
 )({
@@ -216,7 +229,12 @@ export class AuthPublicApiGroup extends HttpApiGroup.make("authPublic")
 		HttpApiEndpoint.post("login", "/login", {
 			payload: SelfHostedLoginRequest,
 			success: SelfHostedLoginResponse,
-			error: [SelfHostedAuthDisabledError, SelfHostedInvalidPasswordError],
+			error: [
+				SelfHostedAuthDisabledError,
+				SelfHostedInvalidPasswordError,
+				SelfHostedLoginThrottledError,
+				SelfHostedLoginUnavailableError,
+			],
 		}),
 	)
 	.add(

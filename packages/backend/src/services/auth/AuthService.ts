@@ -2,7 +2,6 @@ import {
 	AuthorizationUnavailableError,
 	OrganizationAccessDeniedError,
 	SelfHostedAuthDisabledError,
-	SelfHostedInvalidPasswordError,
 	SelfHostedLoginResponse,
 	UnauthorizedError,
 } from "@maple/domain/http"
@@ -10,7 +9,6 @@ import {
 	makeGetCustomerData,
 	makeGetUserEmail,
 	makeGetVerifiedPrimaryEmail,
-	makeLoginSelfHosted,
 	makeRefreshSelfHostedSession,
 	makeResolveMcpTenant,
 	makeResolveTenant,
@@ -49,9 +47,6 @@ export interface AuthServiceApi {
 		TenantContext,
 		UnauthorizedError | OrganizationAccessDeniedError | AuthorizationUnavailableError
 	>
-	readonly loginSelfHosted: (
-		password: string,
-	) => Effect.Effect<SelfHostedLoginResponse, SelfHostedAuthDisabledError | SelfHostedInvalidPasswordError>
 	readonly refreshSelfHostedSession: (
 		token: string,
 	) => Effect.Effect<SelfHostedLoginResponse, SelfHostedAuthDisabledError | UnauthorizedError>
@@ -79,7 +74,6 @@ export class AuthService extends Context.Service<AuthService, AuthServiceApi>()(
 			})
 			const resolveTenant = makeResolveTenant(env, undefined, undefined, verifyOrgMembership)
 			const resolveMcpTenant = makeResolveMcpTenant(env)
-			const loginSelfHosted = makeLoginSelfHosted(env)
 			const refreshSelfHostedSession = makeRefreshSelfHostedSession(env)
 			const getUserEmail = makeGetUserEmail(env)
 			const getVerifiedPrimaryEmail = makeGetVerifiedPrimaryEmail(env)
@@ -88,7 +82,6 @@ export class AuthService extends Context.Service<AuthService, AuthServiceApi>()(
 			return {
 				resolveTenant,
 				resolveMcpTenant,
-				loginSelfHosted,
 				refreshSelfHostedSession,
 				getUserEmail,
 				getVerifiedPrimaryEmail,

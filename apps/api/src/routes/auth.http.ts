@@ -14,6 +14,10 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
 import { PreviewSignInService } from "@maple/backend/services/auth/PreviewSignInService"
+import {
+	resolveLoginClient,
+	SelfHostedLoginService,
+} from "@maple/backend/services/auth/SelfHostedLoginService"
 
 const bearerToken = (header: string | undefined) => {
 	if (!header) return undefined
@@ -23,11 +27,17 @@ const bearerToken = (header: string | undefined) => {
 
 export const HttpAuthPublicLive = HttpApiBuilder.group(MapleApi, "authPublic", (handlers) =>
 	Effect.gen(function* () {
-		const authService = yield* AuthService
+		const selfHostedLogin = yield* SelfHostedLoginService
 		const cliAuth = yield* CliDeviceAuthService
 		const previewSignIn = yield* PreviewSignInService
 		return handlers
-			.handle("login", ({ payload }) => authService.loginSelfHosted(payload.password))
+			.handle("login", ({ payload }) =>
+				Effect.gen(function* () {
+					const request = yield* HttpServerRequest.HttpServerRequest
+					const client = resolveLoginClient(request.remoteAddress, request.headers)
+					return yield* selfHostedLogin.login(payload.password, client)
+				}),
+			)
 			.handle("cliDeviceStart", ({ payload }) =>
 				Effect.gen(function* () {
 					const request = yield* HttpServerRequest.HttpServerRequest
