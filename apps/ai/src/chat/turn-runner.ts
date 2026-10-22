@@ -431,16 +431,23 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			const latest = spoken.at(-1)
 			// Unbound (a stage without Dynamic Workers), the agents run without `run_code`. Imported only
 			// when bound: the adapter needs `cloudflare:workers`, which nothing outside workerd resolves.
+			// A failed import is logged and the turn runs without the tool, never fails over it.
 			const codeLoader = yield* CodeLoader
-			const codeExecutor = Option.isNone(codeLoader)
-				? undefined
-				: yield* Effect.promise(
-						() => import("@yielded/agent-platform-cloudflare/cloudflare-code-mode"),
-					).pipe(
-						Effect.map(({ dynamicWorkerCodeExecutorLayer }) =>
-							dynamicWorkerCodeExecutorLayer({ loader: codeLoader.value }),
-						),
-					)
+			const codeExecutor =
+				agent.codeMode !== true || Option.isNone(codeLoader)
+					? undefined
+					: yield* Effect.tryPromise(
+							() => import("@yielded/agent-platform-cloudflare/cloudflare-code-mode"),
+						).pipe(
+							Effect.map(({ dynamicWorkerCodeExecutorLayer }) =>
+								dynamicWorkerCodeExecutorLayer({ loader: codeLoader.value }),
+							),
+							Effect.catch((error) =>
+								Effect.logWarning(
+									"run_code unavailable: the code executor failed to load",
+								).pipe(Effect.annotateLogs({ cause: String(error) }), Effect.as(undefined)),
+							),
+						)
 			// A restarted turn reads from its kickoff: what came after it is the attempt that died.
 			const kickoff =
 				input.resume === undefined

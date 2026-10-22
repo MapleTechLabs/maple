@@ -239,7 +239,13 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 				?.split(",")
 				.map((p) => (p === "committed" ? undefined : p)) ?? [undefined])
 	const repeats = positiveInt(opts.get("repeats"), 1, "repeats")
-	const codeModes = (opts.get("code-mode") ?? "off").split(",").map((mode) => mode === "on")
+	const codeModes = (opts.get("code-mode") ?? "off").split(",").map((mode) => {
+		if (mode !== "on" && mode !== "off") {
+			console.error(`--code-mode takes off, on or off,on; got ${mode}`)
+			process.exit(2)
+		}
+		return mode === "on"
+	})
 	// Resolve every ref before spending tokens. No live PR comments/checks enter a replay.
 	for (const c of cases) {
 		if (!c.range || !/^[a-f0-9]{40}\.\.[a-f0-9]{40}$/.test(c.range)) {
