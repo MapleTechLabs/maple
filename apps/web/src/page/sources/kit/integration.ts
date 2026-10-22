@@ -8,7 +8,7 @@ const DISCONNECTS = {
 	prometheus: "Maple stops scraping its targets and removes them",
 	cloudflare: "Maple revokes its read-only Cloudflare token",
 	gcp: "Maple stops accepting its logs and metrics",
-	aws: "Maple stops assuming its role in the account",
+	aws: "Maple stops assuming its role and accepting its CloudWatch metrics",
 	railway: "Maple deletes its Railway API token",
 	planetscale: "Maple drops its PlanetScale access and the metrics scrape",
 	github: "Maple deletes this installation's repositories, branches and commits",
