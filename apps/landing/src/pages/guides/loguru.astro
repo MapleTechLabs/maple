@@ -20,8 +20,6 @@ const authorUrl = `https://github.com/${author.github}`;
 
 const toc = [
     { depth: 2, slug: "get-started", text: "Get started" },
-    { depth: 3, slug: "install", text: "pip install loguru" },
-    { depth: 3, slug: "first-line", text: "from loguru import logger" },
     { depth: 2, slug: "configure", text: "Levels, files and formats" },
     { depth: 3, slug: "set-level", text: "Set the log level" },
     { depth: 3, slug: "levels", text: "Loguru levels" },
@@ -35,9 +33,9 @@ const toc = [
     { depth: 3, slug: "intercept", text: "Library logs" },
     { depth: 3, slug: "comparison", text: "Loguru vs logging" },
     { depth: 2, slug: "opentelemetry", text: "Send logs to OpenTelemetry" },
-    { depth: 3, slug: "bridge", text: "The bridge sink" },
-    { depth: 3, slug: "in-a-request", text: "Log inside a request" },
-    { depth: 3, slug: "maple", text: "Loguru logs in Maple" },
+    { depth: 3, slug: "otel-setup", text: "Install and configure" },
+    { depth: 3, slug: "otel-run", text: "Run it" },
+    { depth: 3, slug: "maple", text: "See the logs in Maple" },
 ];
 const sectionNav = toc.filter((h) => h.depth === 2);
 
@@ -220,16 +218,46 @@ const otelInstall = String.raw`pip install loguru \
     opentelemetry-exporter-otlp-proto-http \
     opentelemetry-instrumentation-logging`;
 
-const bridgeCode = String.raw`# telemetry.py, after the logger_provider setup
+const telemetryCode = String.raw`# telemetry.py
+import logging
+
 from loguru import logger
+from opentelemetry import trace
+from opentelemetry._logs import set_logger_provider
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.logging.handler import LoggingHandler
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+ENDPOINT = "https://ingest.maple.dev"
+HEADERS = {"authorization": "Bearer YOUR_INGEST_KEY"}
+resource = Resource.create({"service.name": "checkout"})
+
+# Traces: give each request a trace ID that its log lines can carry.
+tracer_provider = TracerProvider(resource=resource)
+tracer_provider.add_span_processor(
+    BatchSpanProcessor(OTLPSpanExporter(endpoint=f"{ENDPOINT}/v1/traces", headers=HEADERS))
+)
+trace.set_tracer_provider(tracer_provider)
+
+# Logs: OpenTelemetry's LoggingHandler sends logging records to the backend.
+logger_provider = LoggerProvider(resource=resource)
+logger_provider.add_log_record_processor(
+    BatchLogRecordProcessor(OTLPLogExporter(endpoint=f"{ENDPOINT}/v1/logs", headers=HEADERS))
+)
+set_logger_provider(logger_provider)
 
 otel_logger = logging.getLogger("loguru.otel")
 otel_logger.setLevel(logging.DEBUG)
-otel_logger.propagate = False  # keep these records away from the root logger
+otel_logger.propagate = False  # send these records to the backend only
 otel_logger.addHandler(LoggingHandler(logger_provider=logger_provider, log_code_attributes=True))
 
 
+# The bridge: a Loguru sink that turns each line into a logging record.
 def otel_sink(message):
     record = message.record
     log_record = otel_logger.makeRecord(
@@ -250,12 +278,11 @@ def otel_sink(message):
 logger.add(
     otel_sink,
     level="INFO",
-    # Skip the SDK's own logs: a failed export would otherwise log itself again.
+    # Don't send the SDK's own log lines back through the exporter.
     filter=lambda record: not record["name"].startswith("opentelemetry"),
 )`;
 
-const requestCode = String.raw`# checkout.py
-import intercept  # noqa: F401
+const otelAppCode = String.raw`# app.py
 import telemetry  # noqa: F401
 from loguru import logger
 from opentelemetry import trace
@@ -263,7 +290,16 @@ from opentelemetry import trace
 tracer = trace.get_tracer("checkout")
 
 with tracer.start_as_current_span("POST /checkout"):
-    logger.bind(order_id="ord_123").info("Charging card")`;
+    logger.info("Checkout started")
+    logger.bind(order_id="ord_123").info("Charging card")
+    logger.warning("Retrying webhook")
+    logger.success("Payment captured")`;
+
+const otelRun = String.raw`$ python app.py
+2026-10-22 21:29:31.448 | INFO     | __main__:<module>:9 - Checkout started
+2026-10-22 21:29:31.448 | INFO     | __main__:<module>:10 - Charging card
+2026-10-22 21:29:31.448 | WARNING  | __main__:<module>:11 - Retrying webhook
+2026-10-22 21:29:31.448 | SUCCESS  | __main__:<module>:12 - Payment captured`;
 
 const comparison = [
     ["First log line", "<code>from loguru import logger</code>", "<code>basicConfig()</code>, then <code>getLogger(__name__)</code>"],
@@ -357,7 +393,7 @@ const articleJsonLd = {
                     Loguru for Python
                 </h1>
                 <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
-                    Start logging with Loguru in two lines, then send its logs to OpenTelemetry so each line links to the request that wrote it.
+                    Install Loguru, log your first line, set it up for a real app, then send its logs to an observability tool with OpenTelemetry.
                 </p>
                 <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
                     <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
@@ -388,19 +424,15 @@ const articleJsonLd = {
                     <h2>Get started with Loguru</h2>
 
                     <div class="guide-answer">
-                        <p><strong>Loguru</strong> is a Python logging library that works the moment you import it. There is one ready-made <code>logger</code>, nothing to configure, and the output is easy to read from the first line.</p>
+                        <p><strong>Loguru</strong> is a popular logging library for Python that takes almost no setup. You import one ready-made <code>logger</code> and call it.</p>
                     </div>
 
                     <p>
-                        With the standard <code>logging</code> module, you set up a handler and a format before your logs look useful. Loguru skips that step. When you want more, such as a log file that rotates or JSON output, you add it with one call to <code>logger.add()</code>. Loguru is free and open source under the MIT license.
+                        This guide starts with your first log line and then adds what most apps need: a log level, log files, JSON output and extra context on each line. The last section sends your Loguru logs to an observability tool, where you can search them and see which request wrote each line.
                     </p>
 
-                    <h3 id="install" class="scroll-mt-24">pip install loguru</h3>
+                    <p>Install Loguru with pip, then import <code>logger</code> and start logging. Loguru prints colored lines to your terminal out of the box:</p>
                     <pre><code>{installCommand}</code></pre>
-                    <p>In a uv project, run <code>uv add loguru</code> instead.</p>
-
-                    <h3 id="first-line" class="scroll-mt-24">from loguru import logger</h3>
-                    <p>Import <code>logger</code> and start logging. Loguru prints colored lines to your terminal out of the box:</p>
                     <pre><code set:html={highlight(quickstartCode, "python-logging")} /></pre>
                     <pre class="pre-output"><code set:html={highlight(quickstartOutput, "loguru-output")} /></pre>
 
@@ -418,7 +450,7 @@ const articleJsonLd = {
                         </div>
                     </div>
                     <p>
-                        Placeholders work like <code>str.format()</code>: <code>{"{}"}</code> takes the next argument and <code>{"{percent}"}</code> takes the keyword argument of that name.
+                        A <code>{"{}"}</code> in the message is filled with the next argument, and <code>{"{percent}"}</code> with the argument named <code>percent</code>.
                     </p>
                 </section>
 
@@ -439,7 +471,7 @@ const articleJsonLd = {
 
                     <h3 id="levels" class="scroll-mt-24">Loguru levels</h3>
                     <p>
-                        Loguru uses the standard library's level numbers and adds <code>TRACE</code> and <code>SUCCESS</code>. A sink set to a level shows that level and everything above it.
+                        Each level has a number. A sink shows its own level and every level with a higher number. The numbers match Python's standard <code>logging</code> module, plus <code>TRACE</code> and <code>SUCCESS</code>.
                     </p>
                     <div class="guide-table">
                         <table>
@@ -457,7 +489,7 @@ const articleJsonLd = {
                             </tbody>
                         </table>
                     </div>
-                    <p>To add your own level, give it a name and a number. The number decides where it sorts:</p>
+                    <p>To add your own level, give it a name and a number. 35 puts it between <code>WARNING</code> and <code>ERROR</code>:</p>
                     <pre><code set:html={highlight(customLevelCode, "python-logging")} /></pre>
                     <pre class="pre-output"><code set:html={highlight(customLevelOutput, "loguru-output")} /></pre>
 
@@ -481,11 +513,11 @@ const articleJsonLd = {
                     <h2>JSON logs and context</h2>
 
                     <h3 id="json" class="scroll-mt-24">JSON output with serialize=True</h3>
-                    <p>Add a sink with <code>serialize=True</code> and each line comes out as a JSON object holding everything Loguru knows about the call (trimmed here):</p>
+                    <p>Log search tools can filter JSON field by field, which plain text does not allow. Add a sink with <code>serialize=True</code> and each line comes out as a JSON object with everything Loguru knows about the call (trimmed here):</p>
                     <pre><code set:html={highlight(serializeCode, "python-logging")} /></pre>
                     <pre class="pre-output"><code set:html={highlight(serializeOutput, "json")} /></pre>
                     <p>
-                        To ship logs to a backend as structured data, the <a href="#opentelemetry">OpenTelemetry setup</a> below sends each line with its fields and the trace ID of its request.
+                        If you send your logs to an observability tool, the <a href="#opentelemetry">OpenTelemetry setup</a> below sends these fields for you.
                     </p>
 
                     <h3 id="context" class="scroll-mt-24">Add context with bind() and contextualize()</h3>
@@ -493,13 +525,13 @@ const articleJsonLd = {
                         Context is extra data that travels with a log line, such as a user name or a request ID. Loguru keeps it in a dict called <code>extra</code> and gives you two ways to fill it:
                     </p>
                     <ul class="guide-list">
-                        <li><code>logger.bind()</code> returns a copy of the logger with fixed values. Lines logged through the copy carry them, and the global <code>logger</code> stays as it was.</li>
+                        <li><code>logger.bind()</code> returns a copy of the logger with fixed values. Lines logged through the copy carry them, and the plain <code>logger</code> stays as it was.</li>
                         <li><code>logger.contextualize()</code> adds values to every line logged inside a <code>with</code> block, including lines from the functions it calls.</li>
                     </ul>
                     <pre><code set:html={highlight(contextCode, "python-logging")} /></pre>
                     <pre class="pre-output"><code set:html={highlight(contextOutput, "loguru-output")} /></pre>
                     <p>
-                        Each thread and each asyncio task sees its own <code>contextualize()</code> values, so a web app can set the request ID once per request in middleware.
+                        <code>contextualize()</code> values stay with the thread or asyncio task that set them, so in a web app, requests handled at the same time keep their own request IDs.
                     </p>
                 </section>
 
@@ -531,7 +563,7 @@ const articleJsonLd = {
                         Libraries like requests, SQLAlchemy and uvicorn log with the standard <code>logging</code> module, so their lines skip your Loguru sinks. The Loguru docs include a small handler that forwards them. Save it as <code>intercept.py</code>:
                     </p>
                     <pre><code set:html={highlight(interceptCode, "python-logging")} /></pre>
-                    <p>Import it once, first thing at startup, and lines from both come out of the same sinks:</p>
+                    <p>Import it once, first thing at startup, and lines from Loguru and from libraries come out of the same sinks:</p>
                     <pre><code set:html={highlight(interceptUsageCode, "python-logging")} /></pre>
                     <pre class="pre-output"><code set:html={highlight(interceptUsageOutput, "loguru-output")} /></pre>
 
@@ -553,7 +585,7 @@ const articleJsonLd = {
                         </table>
                     </div>
                     <p>
-                        Loguru suits applications. If you write a library, log with <code>logging</code> so the application that uses it decides where the lines go.
+                        Writing a package that other people install? Log with the standard <code>logging</code> module there, so the apps that use it decide where its logs go. Use Loguru in your own apps.
                     </p>
                 </section>
 
@@ -561,14 +593,14 @@ const articleJsonLd = {
                     <p class="guide-eyebrow"><span>06</span> · OpenTelemetry</p>
                     <h2>Send Loguru logs to OpenTelemetry</h2>
                     <p>
-                        OpenTelemetry is the open standard for collecting traces, metrics and logs. A <strong>trace</strong> records one request as it moves through your code. A log line sent through OpenTelemetry during a request carries that request's trace ID, so a backend such as Maple can show the line next to the request that wrote it.
+                        OpenTelemetry is an open standard for sending logs, traces and metrics to an observability tool. With the setup below, your Loguru lines go to any backend that accepts OTLP, the OpenTelemetry protocol, and each line carries the ID of the request that wrote it. The example sends to Maple.
                     </p>
                     <p>
-                        The OpenTelemetry Python SDK collects logs from the standard <code>logging</code> module only. Loguru needs one extra sink, a bridge that hands each line over:
+                        OpenTelemetry's Python SDK reads logs from the standard <code>logging</code> module, not from Loguru. The setup adds one Loguru sink, a bridge, that passes each line on:
                     </p>
 
-                    <figure class="flow" aria-label="The path of a log line. Your code calls the Loguru logger. Library logs go to the root logger, where the InterceptHandler passes them to Loguru. Loguru writes to the terminal and files, and to otel_sink, the bridge. otel_sink hands the line to the loguru.otel logger, whose LoggingHandler adds the trace and span IDs and passes it to the LoggerProvider, which exports it to Maple.">
-                        <svg viewBox="0 0 760 372" aria-hidden="true">
+                    <figure class="flow" aria-label="The path of a log line. Your code calls the Loguru logger, which writes to the terminal and files and to otel_sink, the bridge. otel_sink hands the line to loguru.otel, a logging logger, whose LoggingHandler adds the trace ID and passes it to the LoggerProvider, which exports it to Maple or any OTLP backend.">
+                        <svg viewBox="0 0 760 216" aria-hidden="true">
                             <defs>
                                 {["loguru", "stdlib", "otel", "primary"].map((k) => (
                                     <marker id={`flow-head-${k}`} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -580,107 +612,88 @@ const articleJsonLd = {
                             <rect x="0" y="24" width="150" height="64" rx="8" class="flow__box flow__box--loguru" />
                             <text x="75" y="51" text-anchor="middle" class="flow__title">Your code</text>
                             <text x="75" y="71" text-anchor="middle" class="flow__mono flow__mono--loguru">logger.info()</text>
-
-                            <rect x="0" y="150" width="150" height="64" rx="8" class="flow__box flow__box--stdlib" />
-                            <text x="75" y="177" text-anchor="middle" class="flow__title">Libraries</text>
-                            <text x="75" y="197" text-anchor="middle" class="flow__mono flow__mono--stdlib">logging</text>
-
-                            <rect x="205" y="150" width="160" height="64" rx="8" class="flow__box flow__box--stdlib" />
-                            <text x="285" y="177" text-anchor="middle" class="flow__title">Root logger</text>
-                            <text x="285" y="197" text-anchor="middle" class="flow__mono flow__mono--stdlib">InterceptHandler</text>
-
-                            <rect x="420" y="24" width="150" height="64" rx="8" class="flow__box flow__box--loguru flow__box--strong" />
-                            <text x="495" y="51" text-anchor="middle" class="flow__title">Loguru logger</text>
-                            <text x="495" y="71" text-anchor="middle" class="flow__mono flow__mono--loguru">every sink</text>
-
-                            <rect x="610" y="24" width="150" height="64" rx="8" class="flow__box flow__box--loguru" />
-                            <text x="685" y="51" text-anchor="middle" class="flow__title">Terminal, files</text>
-                            <text x="685" y="71" text-anchor="middle" class="flow__mono">your other sinks</text>
-
-                            <rect x="610" y="150" width="150" height="64" rx="8" class="flow__box flow__box--loguru" />
-                            <text x="685" y="177" text-anchor="middle" class="flow__title">otel_sink</text>
-                            <text x="685" y="197" text-anchor="middle" class="flow__mono flow__mono--loguru">the bridge</text>
-
-                            <rect x="610" y="290" width="150" height="64" rx="8" class="flow__box flow__box--stdlib" />
-                            <text x="685" y="317" text-anchor="middle" class="flow__title">loguru.otel</text>
-                            <text x="685" y="337" text-anchor="middle" class="flow__mono flow__mono--stdlib">a logging logger</text>
-
-                            <rect x="420" y="290" width="150" height="64" rx="8" class="flow__box flow__box--otel" />
-                            <text x="495" y="317" text-anchor="middle" class="flow__title">LoggingHandler</text>
-                            <text x="495" y="337" text-anchor="middle" class="flow__mono flow__mono--otel">+ trace ID</text>
-
-                            <rect x="205" y="290" width="160" height="64" rx="8" class="flow__box flow__box--otel" />
-                            <text x="285" y="317" text-anchor="middle" class="flow__title">LoggerProvider</text>
-                            <text x="285" y="337" text-anchor="middle" class="flow__mono flow__mono--otel">exports in batches</text>
-
-                            <rect x="0" y="290" width="150" height="64" rx="8" class="flow__box flow__box--primary" />
-                            <text x="75" y="317" text-anchor="middle" class="flow__title">Maple</text>
-                            <text x="75" y="337" text-anchor="middle" class="flow__mono">Logs page</text>
-
-                            <line x1="150" y1="56" x2="414" y2="56" marker-end="url(#flow-head-loguru)" class="flow__line flow__line--loguru" />
-                            <line x1="150" y1="182" x2="199" y2="182" marker-end="url(#flow-head-stdlib)" class="flow__line flow__line--stdlib" />
-                            <line x1="365" y1="160" x2="452" y2="94" marker-end="url(#flow-head-loguru)" class="flow__line flow__line--loguru" />
-                            <text x="420" y="140" class="flow__mono flow__mono--loguru">forwarded</text>
-                            <line x1="570" y1="56" x2="604" y2="56" marker-end="url(#flow-head-loguru)" class="flow__line flow__line--loguru" />
-                            <line x1="545" y1="88" x2="632" y2="145" marker-end="url(#flow-head-loguru)" class="flow__line flow__line--loguru" />
-                            <line x1="685" y1="214" x2="685" y2="284" marker-end="url(#flow-head-stdlib)" class="flow__line flow__line--stdlib" />
-                            <line x1="610" y1="322" x2="576" y2="322" marker-end="url(#flow-head-otel)" class="flow__line flow__line--otel" />
-                            <line x1="420" y1="322" x2="371" y2="322" marker-end="url(#flow-head-otel)" class="flow__line flow__line--otel" />
-                            <line x1="205" y1="322" x2="156" y2="322" marker-end="url(#flow-head-primary)" class="flow__line flow__line--primary" />
+                            <rect x="203" y="24" width="150" height="64" rx="8" class="flow__box flow__box--loguru flow__box--strong" />
+                            <text x="278" y="51" text-anchor="middle" class="flow__title">Loguru logger</text>
+                            <text x="278" y="71" text-anchor="middle" class="flow__mono flow__mono--loguru">every sink</text>
+                            <rect x="406" y="24" width="150" height="64" rx="8" class="flow__box flow__box--loguru" />
+                            <text x="481" y="51" text-anchor="middle" class="flow__title">otel_sink</text>
+                            <text x="481" y="71" text-anchor="middle" class="flow__mono flow__mono--loguru">the bridge</text>
+                            <rect x="610" y="24" width="150" height="64" rx="8" class="flow__box flow__box--stdlib" />
+                            <text x="685" y="51" text-anchor="middle" class="flow__title">loguru.otel</text>
+                            <text x="685" y="71" text-anchor="middle" class="flow__mono flow__mono--stdlib">a logging logger</text>
+                            <rect x="0" y="150" width="150" height="64" rx="8" class="flow__box flow__box--loguru" />
+                            <text x="75" y="177" text-anchor="middle" class="flow__title">Terminal, files</text>
+                            <text x="75" y="197" text-anchor="middle" class="flow__mono flow__mono--loguru">your other sinks</text>
+                            <rect x="203" y="150" width="150" height="64" rx="8" class="flow__box flow__box--primary" />
+                            <text x="278" y="177" text-anchor="middle" class="flow__title">Maple</text>
+                            <text x="278" y="197" text-anchor="middle" class="flow__mono">or any OTLP backend</text>
+                            <rect x="406" y="150" width="150" height="64" rx="8" class="flow__box flow__box--otel" />
+                            <text x="481" y="177" text-anchor="middle" class="flow__title">LoggerProvider</text>
+                            <text x="481" y="197" text-anchor="middle" class="flow__mono flow__mono--otel">exports in batches</text>
+                            <rect x="610" y="150" width="150" height="64" rx="8" class="flow__box flow__box--otel" />
+                            <text x="685" y="177" text-anchor="middle" class="flow__title">LoggingHandler</text>
+                            <text x="685" y="197" text-anchor="middle" class="flow__mono flow__mono--otel">+ trace ID</text>
+                            <line x1="150" y1="56" x2="197" y2="56" marker-end="url(#flow-head-loguru)" class="flow__line flow__line--loguru" />
+                            <line x1="353" y1="56" x2="400" y2="56" marker-end="url(#flow-head-loguru)" class="flow__line flow__line--loguru" />
+                            <line x1="556" y1="56" x2="604" y2="56" marker-end="url(#flow-head-stdlib)" class="flow__line flow__line--stdlib" />
+                            <line x1="685" y1="88" x2="685" y2="144" marker-end="url(#flow-head-stdlib)" class="flow__line flow__line--stdlib" />
+                            <line x1="610" y1="182" x2="562" y2="182" marker-end="url(#flow-head-otel)" class="flow__line flow__line--otel" />
+                            <line x1="406" y1="182" x2="359" y2="182" marker-end="url(#flow-head-primary)" class="flow__line flow__line--primary" />
+                            <line x1="240" y1="88" x2="120" y2="144" marker-end="url(#flow-head-loguru)" class="flow__line flow__line--loguru" />
                         </svg>
                     </figure>
 
-                    <h3 id="bridge" class="scroll-mt-24"><span class="sys-dot" style={`--sys: ${systems.otel.color}`}></span>The bridge sink</h3>
+                    <h3 id="otel-setup" class="scroll-mt-24"><span class="sys-dot" style={`--sys: ${systems.otel.color}`}></span>Install and configure</h3>
                     <pre><code>{otelInstall}</code></pre>
                     <p>
-                        Maple's <a href="/docs/guides/instrumentation-python">Python instrumentation guide</a> sets up OpenTelemetry in a <code>telemetry.py</code> file, including a <code>logger_provider</code> that sends logs to Maple. Add the bridge to the end of that file:
+                        Create <code>telemetry.py</code>. It names your service, points OpenTelemetry at your backend, and adds the bridge. The traces part is there for the request IDs: a <strong>trace</strong> records one request, and every line logged during it carries the trace's ID.
                     </p>
-                    <pre><code set:html={highlight(bridgeCode, "python-logging")} /></pre>
+                    <pre><code set:html={highlight(telemetryCode, "python-logging")} /></pre>
                     <p>
-                        The guide's <code>telemetry.py</code> ends with a line that attaches a <code>LoggingHandler</code> to the root logger. If you use <code>intercept.py</code>, delete that line, or every library log is sent twice.
+                        For Maple, replace <code>YOUR_INGEST_KEY</code> with the private ingest key from the <strong>Ingestion</strong> page in Maple's settings; organizations in the EU region use <code>https://ingest.eu.maple.dev</code>. For another backend, change <code>ENDPOINT</code> and <code>HEADERS</code>: a local OpenTelemetry Collector, for example, listens on <code>http://localhost:4318</code> and needs no header.
                     </p>
 
-                    <h3 id="in-a-request" class="scroll-mt-24">Log inside a request</h3>
+                    <h3 id="otel-run" class="scroll-mt-24">Run it</h3>
                     <p>
-                        A <strong>span</strong> is one timed step of a trace. Web framework instrumentation starts a span for each request, and every line logged while it runs carries its trace ID. Here the span is started by hand:
+                        Import <code>telemetry</code> once, before the first log call. A trace is made of <strong>spans</strong>, one per step of the request. Web framework instrumentation starts a span for each request; this example starts one by hand:
                     </p>
-                    <pre><code set:html={highlight(requestCode, "python-logging")} /></pre>
+                    <pre><code set:html={highlight(otelAppCode, "python-logging")} /></pre>
+                    <pre class="pre-output"><code set:html={highlight(otelRun, "loguru-output")} /></pre>
                     <p>
-                        <code>order_id</code> arrives as a log attribute next to the file, function and line, and the record carries the trace ID of the <code>POST /checkout</code> span.
+                        The terminal shows the four lines. The backend receives them too, all with the trace ID of <code>POST /checkout</code>, and <code>order_id</code> from <code>bind()</code> arrives as a field on its line. The SDK sends lines in batches about once a second and sends the rest when the program exits.
+                    </p>
+                    <p>
+                        Using <code>intercept.py</code>? Import it before <code>telemetry</code>, and library logs reach the backend through the same bridge. The exporter's HTTP client then logs each upload to your terminal at <code>DEBUG</code>; <code>logging.getLogger("urllib3").setLevel(logging.WARNING)</code> hides those lines.
                     </p>
                     <div class="guide-callout">
-                        <p class="guide-kicker">Two ways to break the bridge</p>
+                        <p class="guide-kicker">Two ways to lose the request ID</p>
                         <ul>
-                            <li>Adding <code>otel_sink</code> with <code>enqueue=True</code>. The queue hands the line to another thread with no active span, so the trace ID arrives as all zeros.</li>
-                            <li>A <code>bind()</code> key that <code>logging</code> already uses, such as <code>name</code>, <code>module</code> or <code>message</code>. <code>logging</code> rejects it and the line never reaches OpenTelemetry. Use names like <code>user_name</code>.</li>
+                            <li>Adding <code>otel_sink</code> with <code>enqueue=True</code>, Loguru's option to write from a background thread. That thread is outside the request, so the trace ID arrives as all zeros.</li>
+                            <li>A <code>bind()</code> key that <code>logging</code> already uses, such as <code>name</code>, <code>module</code> or <code>message</code>. <code>logging</code> rejects it and the line never reaches the backend. Use names like <code>user_name</code>.</li>
                         </ul>
                     </div>
 
-                    <h3 id="maple" class="scroll-mt-24">Loguru logs in Maple</h3>
+                    <h3 id="maple" class="scroll-mt-24">See the logs in Maple</h3>
                     <ol class="guide-steps">
                         <li>
                             <span>01</span>
-                            <div><h4>Point telemetry.py at Maple</h4><p>Set <code>MAPLE_ENDPOINT</code> and your ingest key as the <a href="/docs/guides/instrumentation-python">Python guide</a> describes. Lines from the bridge arrive like any other OpenTelemetry log.</p></div>
-                        </li>
-                        <li>
-                            <span>02</span>
-                            <div><h4>Find the lines</h4><p>Open <strong>Logs</strong> and filter by <strong>Service</strong> or <strong>Severity</strong> in the sidebar. Paste a trace ID into <strong>Search</strong> to list every line from one request.</p>
+                            <div><h4>Find the lines</h4><p>Open <strong>Logs</strong> and pick your service under <strong>Service</strong> in the sidebar. Paste a trace ID into <strong>Search</strong> to list every line from one request.</p>
                                 <figure class="guide-figure"><img src="/screenshots/guides/loguru-01-logs.webp" data-zoomable alt="The Logs page filtered to the checkout service and one trace ID, listing the four lines one POST /checkout request wrote through Loguru: two INFO, one WARN and one SUCCESS." width="2362" height="1105" loading="lazy" /></figure></div>
                         </li>
                         <li>
-                            <span>03</span>
-                            <div><h4>Open a line</h4><p>Click a row, then <strong>Open detail</strong>. Bound values such as <code>order_id</code> are under <strong>Log Attributes</strong>, and the <code>trace:</code> link opens the request the line belongs to.</p>
+                            <span>02</span>
+                            <div><h4>Open a line</h4><p>Click a row, then <strong>Open detail</strong>. Bound values such as <code>order_id</code> and the file, function and line that logged it are under <strong>Log Attributes</strong>. The <code>trace:</code> link opens the request the line belongs to.</p>
                                 <figure class="guide-figure"><img src="/screenshots/guides/loguru-02-log-detail.webp" data-zoomable alt="The log detail sheet for Charging card: the trace link and span ID in the meta strip, and Log Attributes code.file.path, code.function.name, code.line.number and order_id." width="1342" height="866" loading="lazy" /></figure></div>
                         </li>
                     </ol>
 
                     <div class="guide-maple">
-                        <p class="guide-kicker">Set it up in Maple</p>
+                        <p class="guide-kicker">Loguru logs in Maple</p>
                         <h3>Send your first Loguru line</h3>
-                        <p>The Python guide has the full <code>telemetry.py</code>, the environment-variable setup and troubleshooting.</p>
+                        <p>For traces and metrics from the same app, see the Python guide.</p>
                         <div class="mt-6 flex flex-wrap gap-3">
-                            <a href="/docs/guides/instrumentation-python" class="guide-button guide-button--primary">Python instrumentation docs</a>
-                            <a href="/docs/explore/logs" class="guide-button">Logs in Maple</a>
+                            <a href="/docs/guides/instrumentation-python" class="guide-button guide-button--primary">Set up Python with Maple</a>
+                            <a href="/docs/explore/logs" class="guide-button">Logs docs</a>
                         </div>
                     </div>
                 </section>
