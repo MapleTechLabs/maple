@@ -33,6 +33,7 @@ afterEach(() => cleanupTestDbs(createdDbs))
 
 const ORG = Schema.decodeUnknownSync(OrgId)("org_aws_e2e")
 const USER = Schema.decodeUnknownSync(UserId)("user_aws_e2e")
+const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_aws_e2e_other")
 const BASE = "/v2/integrations/aws"
 
 const testConfig = (awsAvailable: boolean) =>
@@ -85,11 +86,11 @@ const makeHarness = (options: { readonly awsAvailable: boolean } = { awsAvailabl
 	const runtime = ManagedRuntime.make(servicesLive)
 
 	/** Root-role key (API keys resolve as `root` unless their metadata pins roles). */
-	const adminKey = (scopes?: ReadonlyArray<string>) =>
+	const adminKey = (scopes?: ReadonlyArray<string>, org: OrgId = ORG) =>
 		runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
-				return yield* service.create(ORG, USER, { name: "aws-admin", scopes })
+				return yield* service.create(org, USER, { name: "aws-admin", scopes })
 			}),
 		)
 
@@ -220,7 +221,7 @@ describe("v2 aws integration over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("lets admins change a connection's modules, and only for their own org's connections", async () => {
+	it("lets admins change a connection's modules, and 404s once it is gone", async () => {
 		const harness = makeHarness()
 		const admin = await harness.adminKey()
 		const member = await harness.memberKey()
@@ -237,6 +238,30 @@ describe("v2 aws integration over HTTP", () => {
 		await harness.request("DELETE", path, admin.secret)
 		const missing = await harness.request("PATCH", path, admin.secret, { modules: [] })
 		expect(missing.status).toBe(404)
+		await harness.dispose()
+	})
+
+	it("hides a connection from another org's admin, and keeps members from checking it", async () => {
+		const harness = makeHarness()
+		const admin = await harness.adminKey()
+		const member = await harness.memberKey()
+		const outsider = await harness.adminKey(undefined, OTHER_ORG)
+		const created = await harness.request("POST", CONNECTIONS, admin.secret, {
+			account_id: "123456789012",
+		})
+		const path = `${CONNECTIONS}/${created.body.id}`
+
+		expect((await harness.request("POST", `${path}/check`, member.secret)).status).toBe(403)
+		expect((await harness.request("GET", BASE, outsider.secret)).body.connections).toEqual([])
+		expect((await harness.request("GET", `${path}/setup`, outsider.secret)).status).toBe(404)
+		expect((await harness.request("POST", `${path}/check`, outsider.secret)).status).toBe(404)
+		expect((await harness.request("PATCH", path, outsider.secret, { modules: [] })).status).toBe(404)
+		expect((await harness.request("DELETE", path, outsider.secret)).status).toBe(404)
+		// The connection is still there, unchanged, for its own org.
+		const status = await harness.request("GET", BASE, admin.secret)
+		expect(status.body.connections.map((connection: { id: string }) => connection.id)).toEqual([
+			created.body.id,
+		])
 		await harness.dispose()
 	})
 
