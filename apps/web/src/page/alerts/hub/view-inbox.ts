@@ -52,7 +52,7 @@ export const inboxTab = <M>(h: HtmlBuilder<M>, data: AlertsOverviewReady): Html 
 
 	const summary = [
 		`${countLabel(enabledRuleIds.length, "rule")} watching`,
-		spots.length > 0 ? `${spots.length} can't fire or notify` : "all evaluating and routed",
+		spots.length > 0 ? `${spots.length} need a look` : "all evaluating and routed",
 		...(disabled > 0 ? [`${disabled} disabled`] : []),
 	].join(" · ")
 
@@ -324,7 +324,7 @@ const blindSpotsList = <M>(h: HtmlBuilder<M>, spots: ReadonlyArray<BlindSpot>): 
 				[h.Class("flex items-baseline justify-between gap-4")],
 				[
 					eyebrow(h, { as: "h3" }, ["Blind spots"]),
-					h.span([h.Class("font-mono text-xs text-muted-foreground")], ["rules that can't fire or notify"]),
+					h.span([h.Class("font-mono text-xs text-muted-foreground")], ["rules that can't fire, notify or keep up"]),
 				],
 			),
 			spots.length === 0

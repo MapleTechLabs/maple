@@ -189,7 +189,7 @@ const BLIND_SPOT_ORDER: Record<BlindSpotKind, number> = {
 	slowed: 5,
 } satisfies Record<BlindSpotKind, number>
 
-/** Enabled rules that cannot fire, or can fire but reach nobody. One entry per rule, worst first. */
+/** Enabled rules that cannot fire, reach nobody, or were slowed to keep up. One entry per rule, worst first. */
 export function blindSpots(
 	rules: ReadonlyArray<AlertRuleDocument>,
 	derivedByRuleId: ReadonlyMap<string, DerivedRuleStatus>,
