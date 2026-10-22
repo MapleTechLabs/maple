@@ -4936,6 +4936,154 @@ describe("AlertsService.previewRule", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 
+	describe("query timing", () => {
+		const rawPreview = (windowMinutes: number) =>
+			decodePreviewRequest({
+				rule: {
+					name: "Raw timing",
+					severity: "warning",
+					signalType: "raw_query",
+					rawQuerySql:
+						"SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+					comparator: "gt",
+					threshold: 10,
+					windowMinutes,
+					destinationIds: [],
+				},
+				startTime: "2026-01-01T00:00:00.000Z",
+				endTime: "2026-01-01T00:30:00.000Z",
+			})
+
+		// The timing probe reads the latest window (TestClock starts at the epoch), the chart the
+		// requested 2026 range; `chart` answers the chart's query, `probe` runs before the probe's.
+		const probeWarehouse = (
+			probe: Effect.Effect<void, WarehouseQuotaExceededError>,
+			chart: Effect.Effect<void, WarehouseQuotaExceededError> = Effect.void,
+		) => {
+			const stub = makeWarehouseStub({ rawQueryRows: [{ value: 1, samples: 1 }] })
+			return {
+				...stub,
+				rawSqlQuery: (...args: Parameters<WarehouseQueryServiceApi["rawSqlQuery"]>) =>
+					Effect.andThen(args[1].includes("1970-01-01") ? probe : chart, stub.rawSqlQuery(...args)),
+			} satisfies WarehouseQueryServiceApi
+		}
+
+		it.effect("times one check and says which intervals the query fits", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const preview = yield* alerts.previewRule(
+					asOrgId("org_timing_fits"),
+					adminRoles,
+					rawPreview(5),
+				)
+				assert.deepStrictEqual(preview.queryTiming && { ...preview.queryTiming }, {
+					elapsedMs: 7_800,
+					failure: null,
+					probeLimitMs: 25_000,
+					intervalMinutes: 1,
+					limitMs: 5_000,
+					// 7.8 s fits 5 minutes and up; a 5-minute window allows no longer interval.
+					fitsIntervalMinutes: [5],
+				})
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, probeWarehouse(TestClock.adjust(Duration.millis(7_800))), {
+						fetch: okFetch,
+					}),
+				),
+			)
+		})
+
+		it.effect("reports a query that ran past every limit as too slow for all of them", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const preview = yield* alerts.previewRule(
+					asOrgId("org_timing_slow"),
+					adminRoles,
+					rawPreview(5),
+				)
+				assert.strictEqual(preview.queryTiming?.elapsedMs, null)
+				assert.strictEqual(preview.queryTiming?.failure, "query_too_slow")
+				assert.deepStrictEqual(preview.queryTiming?.fitsIntervalMinutes, [])
+			}).pipe(
+				Effect.provide(
+					makeLayer(
+						testDb,
+						probeWarehouse(
+							Effect.fail(
+								new WarehouseQuotaExceededError({
+									message: "Timeout exceeded",
+									pipeName: "rawSqlQuery",
+									setting: "max_execution_time",
+								}),
+							),
+						),
+						{ fetch: okFetch },
+					),
+				),
+			)
+		})
+
+		it.effect("keeps the timing when the range is too heavy to chart, instead of failing", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const preview = yield* alerts.previewRule(
+					asOrgId("org_timing_heavy"),
+					adminRoles,
+					rawPreview(5),
+				)
+				assert.strictEqual(preview.seriesFailure, "query_too_slow")
+				assert.lengthOf(preview.series, 0)
+				assert.strictEqual(preview.queryTiming?.elapsedMs, 7_800)
+			}).pipe(
+				Effect.provide(
+					makeLayer(
+						testDb,
+						probeWarehouse(
+							TestClock.adjust(Duration.millis(7_800)),
+							Effect.fail(
+								new WarehouseQuotaExceededError({
+									message: "Timeout exceeded",
+									pipeName: "rawSqlQuery",
+									setting: "max_execution_time",
+								}),
+							),
+						),
+						{ fetch: okFetch },
+					),
+				),
+			)
+		})
+
+		it.effect("leaves timing off a builder rule, whose queries read rollups", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const preview = yield* alerts.previewRule(
+					asOrgId("org_timing_builder"),
+					adminRoles,
+					decodePreviewRequest({
+						rule: {
+							name: "Error rate",
+							severity: "warning",
+							signalType: "error_rate",
+							comparator: "gt",
+							threshold: 5,
+							windowMinutes: 5,
+							destinationIds: [],
+						},
+						startTime: "2026-01-01T00:00:00.000Z",
+						endTime: "2026-01-01T00:30:00.000Z",
+					}),
+				)
+				assert.isUndefined(preview.queryTiming)
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
+		})
+	})
+
 	it.effect("charts a no-data series for a raw-SQL rule whose query matches nothing", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = { rawQueryRows: [] }

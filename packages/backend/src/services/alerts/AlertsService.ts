@@ -11,6 +11,7 @@ import {
 	type AlertLifecycleInput,
 } from "@maple/alerting-core"
 import {
+	alertIntervalsFitting,
 	alertQueryLimits,
 	alertRuleIntervalMinutes,
 	nextSlowerAlertInterval,
@@ -49,6 +50,7 @@ import {
 	AlertRulePreviewPoint,
 	AlertRulePreviewResponse,
 	AlertRulePreviewSeries,
+	AlertQueryTiming,
 	type AlertRulePreviewRequest,
 	AlertSeverity as AlertSeveritySchema,
 	type AlertSeverity,
@@ -1604,6 +1606,72 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			})
 
 			/**
+			 * Times one check of a raw SQL rule on the latest window under the top interval's
+			 * limit, so the editor can say which intervals the query fits. Evaluation is not
+			 * cached, so the time is the query's own. Null when it fails for another reason:
+			 * the preview's series query reports that.
+			 */
+			// Previews of raw SQL run under the longest interval's limit: they read many windows at
+			// once, and say whether one check fits the rule's own limit through `queryTiming`.
+			const PREVIEW_RAW_INTERVAL_MINUTES = 60
+
+			const probeQueryTiming = Effect.fn("AlertsService.probeQueryTiming")(function* (
+				orgId: OrgId,
+				rule: NormalizedRule,
+			) {
+				const probeLimitMs = alertQueryLimits(PREVIEW_RAW_INTERVAL_MINUTES).timeSeconds * 1000
+				const endMs = snapAlertWindowEndMs(yield* now)
+				const source = yield* planEvaluateSource(rule.compiledPlan, {
+					windowMinutes: rule.windowMinutes,
+					evaluationIntervalMinutes: PREVIEW_RAW_INTERVAL_MINUTES,
+				})
+				const startedAt = yield* now
+				const exit = yield* Effect.exit(
+					queryEngine.evaluate(systemTenant(orgId), {
+						startTime: formatWarehouseDateTime(endMs - rule.windowMinutes * 60_000),
+						endTime: formatWarehouseDateTime(endMs),
+						source,
+						reducer: rule.compiledPlan.reducer,
+						sampleCountStrategy: rule.compiledPlan.sampleCountStrategy,
+					}),
+				)
+				const elapsedMs = (yield* now) - startedAt
+				const failure = Exit.isFailure(exit)
+					? Option.match(Cause.findErrorOption(exit.cause), {
+							onNone: () => "other" as const,
+							// The engine's own 30s ceiling is a query that did not finish either.
+							onSome: (error) =>
+								error._tag === "@maple/http/errors/QueryEngineTimeoutError"
+									? ("query_too_slow" as const)
+									: evaluationErrorKind(error),
+						})
+					: null
+				if (failure !== null && failure !== "query_too_slow" && failure !== "query_too_much_memory") {
+					yield* Effect.logWarning("Alert preview query timing failed").pipe(
+						Effect.annotateLogs({ orgId, ruleId: rule.id, errorKind: failure }),
+					)
+					return undefined
+				}
+				const intervalMinutes = alertRuleIntervalMinutes(rule)
+				yield* Effect.annotateCurrentSpan({
+					"maple.alert.query_timing.elapsed_ms": elapsedMs,
+					"maple.alert.query_timing.failure": failure ?? "none",
+				})
+				return new AlertQueryTiming({
+					elapsedMs: failure === null ? elapsedMs : null,
+					failure,
+					probeLimitMs,
+					intervalMinutes,
+					limitMs: alertQueryLimits(intervalMinutes).timeSeconds * 1000,
+					// Within the window, since validation refuses a longer interval.
+					fitsIntervalMinutes:
+						failure === null
+							? alertIntervalsFitting(elapsedMs).filter((minutes) => minutes <= rule.windowMinutes)
+							: [],
+				})
+			})
+
+			/**
 			 * Evaluator-faithful preview of a rule over a time range. Runs the exact
 			 * compiled plan the scheduler runs, at the evaluator's tumbling
 			 * `windowMinutes` buckets, and simulates the consecutive-breach state
@@ -1640,6 +1708,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				if (plan.kind === "raw_sql") {
 					yield* requireAdmin(roles)
 				}
+				// Alongside the series query, which spans many windows and so says nothing about one check.
+				const queryTiming = yield* Effect.forkChild(
+					plan.kind === "raw_sql" ? probeQueryTiming(orgId, normalized) : Effect.succeed(undefined),
+				)
 
 				const windowMs = normalized.windowMinutes * 60_000
 				const requestedStartMs = parseWarehouseDateTime(request.startTime)
@@ -1733,14 +1805,54 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						{ concurrency: 5 },
 					)
 				} else {
-					const source = yield* planEvaluateSource(plan, normalized)
-					const observations = yield* queryEngine.evaluateSeries(systemTenant(orgId), {
-						startTime: formatWarehouseDateTime(startMs),
-						endTime: formatWarehouseDateTime(queryEndMs),
-						source,
-						reducer: plan.reducer,
-						sampleCountStrategy: plan.sampleCountStrategy,
-					})
+					const source = yield* planEvaluateSource(
+						plan,
+						plan.kind === "raw_sql"
+							? { ...normalized, evaluationIntervalMinutes: PREVIEW_RAW_INTERVAL_MINUTES }
+							: normalized,
+					)
+					const charted = yield* queryEngine
+						.evaluateSeries(systemTenant(orgId), {
+							startTime: formatWarehouseDateTime(startMs),
+							endTime: formatWarehouseDateTime(queryEndMs),
+							source,
+							reducer: plan.reducer,
+							sampleCountStrategy: plan.sampleCountStrategy,
+						})
+						.pipe(
+							Effect.map((observations) => ({ observations, failure: null })),
+							// A raw query too heavy to chart the whole range still gets its one-check timing back.
+							Effect.catchIf(
+								(error) =>
+									plan.kind === "raw_sql" &&
+									isQueryLimitFailure(evaluationErrorKind(error)),
+								(error) =>
+									Effect.succeed({
+										observations: [],
+										failure:
+											evaluationErrorKind(error) === "query_too_much_memory"
+												? ("query_too_much_memory" as const)
+												: ("query_too_slow" as const),
+									}),
+							),
+						)
+					if (charted.failure !== null) {
+						const timing = yield* Fiber.join(queryTiming)
+						return new AlertRulePreviewResponse({
+							bucketSeconds: windowMs / 1000,
+							windowMinutes: normalized.windowMinutes,
+							threshold: normalized.threshold,
+							thresholdUpper: normalized.thresholdUpper,
+							thresholds: normalized.thresholds,
+							comparator: normalized.comparator,
+							truncatedToStart,
+							series: [],
+							wouldFire: [],
+							seriesFailure: charted.failure,
+							...(timing === undefined ? undefined : { queryTiming: timing }),
+						})
+					}
+					const observations = charted.observations
 					const excludeSet = HashSet.fromIterable(normalized.excludeServiceNames)
 					// Preview must key its series exactly as the scheduler stores them,
 					// or the preview chart and the tracking chart disagree on the
@@ -1866,6 +1978,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					"result.wouldFireCount": wouldFire.length,
 				})
 
+				const timing = yield* Fiber.join(queryTiming)
 				return new AlertRulePreviewResponse({
 					bucketSeconds: windowMs / 1000,
 					windowMinutes: normalized.windowMinutes,
@@ -1876,6 +1989,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					truncatedToStart,
 					series,
 					wouldFire,
+					...(timing === undefined ? undefined : { queryTiming: timing }),
 				})
 			})
 
