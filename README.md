@@ -186,7 +186,9 @@ Secrets source model (CI):
       **variable**, not a secret: GitHub masks secret values everywhere, and a
       slug like `maple` would then blank out the PR-preview deployment URL
       `app-pr-<n>.maple.dev`)
-    - GitHub repo **secret** `INFISICAL_MACHINE_IDENTITY_ID` (the machine identity ID)
+    - GitHub **environment secret** `INFISICAL_MACHINE_IDENTITY_ID` in each of `production`,
+      `production-eu`, `pr-preview` and `maintenance`, each a different identity (see below).
+      No repo-level copy: a job outside those environments gets no identity at all.
 - Infisical environments (`prod`, `dev` — mapped from the old Doppler
   `prd`/`pr` configs) must define:
     - `CLOUDFLARE_API_TOKEN`
@@ -202,7 +204,13 @@ Secrets source model (CI):
     - `CLERK_PUBLISHABLE_KEY`
     - `CLERK_JWT_KEY`
 
-Setup note: the machine identity must have a **GitHub OIDC** auth method configured in Infisical (scoped to this repo, ideally to the `production`/`pr-preview` GitHub environments) and read access to the project. The workflows select secrets via `project-slug` (`INFISICAL_PROJECT_SLUG`) and per-stage `env-slug` (`prod`/`dev`).
+Setup note: one Infisical machine identity per GitHub environment, each with GitHub OIDC auth
+bound to the exact subject `repo:MapleTechLabs/maple:environment:<name>` (no globs: Infisical's
+`*` also matches `:` and `/`) and a custom project role that reads only its Infisical
+environment: `production` → `prod`, `production-eu` → `prod-eu`, `pr-preview` and
+`maintenance` → `dev` (or a dedicated preview environment via `PREVIEW_INFISICAL_ENV_SLUG`).
+`production`, `production-eu` and `maintenance` only deploy from `main`. The workflows select
+secrets via `project-slug` (`INFISICAL_PROJECT_SLUG`) and per-stage `env-slug`.
 
 Runtime API URL behavior:
 
