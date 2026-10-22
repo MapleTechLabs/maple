@@ -33,6 +33,7 @@ export const RuleForm = Schema.Struct({
 	recoveryValue: Schema.String,
 	escalation: Schema.NullOr(EscalationTier),
 	windowMinutes: Schema.String,
+	evaluationIntervalMinutes: Schema.String,
 	minimumSampleCount: Schema.String,
 	alertOnNoData: Schema.Boolean,
 	consecutiveBreachesRequired: Schema.String,

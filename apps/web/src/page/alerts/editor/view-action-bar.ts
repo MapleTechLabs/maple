@@ -7,7 +7,9 @@ import { icon } from "../../../ui/icon"
 import * as Tooltip from "../../../ui/tooltip"
 import { stableSlice } from "../../kit/stable-slice"
 import { alertsHref } from "../shared/links"
-import { describeRuleCondition, validationIssues } from "./derive"
+import type { AlertQueryTiming } from "@maple/domain/http"
+import { describeRuleCondition, saveIssues } from "./derive"
+import { draftPreviewOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -74,10 +76,10 @@ const validationSummary = (h: H, model: BarView, issues: ReadonlyArray<string>):
 	)
 }
 
-const bar = (h: H, model: BarView, form: RuleForm): Html => {
+const bar = (h: H, model: BarView, form: RuleForm, timing: AlertQueryTiming | null): Html => {
 	// Unsaved field changes while editing, `null` on a new rule.
 	const changeCount = model.savedForm === null ? null : diffRuleForms(model.savedForm, form).length
-	const issues = validationIssues(form)
+	const issues = saveIssues(form, timing)
 	const isEditing = model.editingRuleId !== null
 	const summary = describeRuleCondition(form)
 	return h.div(
@@ -157,4 +159,5 @@ const viewOf = stableSlice((model: Model) =>
 )
 
 /** `RuleActionBar`. */
-export const actionBar = (h: H, model: Model, form: RuleForm): Html => slot(bar, [h, viewOf(model), form])
+export const actionBar = (h: H, model: Model, form: RuleForm): Html =>
+	slot(bar, [h, viewOf(model), form, draftPreviewOf(model, form).preview?.queryTiming ?? null])

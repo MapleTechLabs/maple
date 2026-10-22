@@ -115,6 +115,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAddCriticalTier: () => editForm(model, context, F.addCriticalTier),
 		ClickedRemoveCriticalTier: () => editForm(model, context, (form) => ({ ...form, escalation: null })),
 		ToggledAlertOnNoData: () => editForm(model, context, (form) => ({ ...form, alertOnNoData: !form.alertOnNoData })),
+		ClickedUseInterval: ({ minutes }) =>
+			editForm(model, context, (form) => ({ ...form, evaluationIntervalMinutes: minutes })),
 		ClickedDryRun: () => runTest(model, false),
 		ClickedSendTest: () => runTest(model, true),
 		CompletedTest: (completed) => completeTest(model, completed),

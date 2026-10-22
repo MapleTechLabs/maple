@@ -1,5 +1,4 @@
-import type { AlertSeverity } from "@maple/domain/http"
-import { alertEvaluationIntervalMinutes } from "@maple/query-engine/datetime"
+import type { AlertQueryTiming, AlertSeverity } from "@maple/domain/http"
 import { comparatorSupportsTiers, isRangeComparator, thresholdUnitLabel } from "@maple/web-data/alerts/form-utils"
 import { cn } from "@maple/ui/lib/utils"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
@@ -13,7 +12,9 @@ import { statusDot } from "../../../ui/status-dot"
 import type * as Select from "../../../ui/select"
 import { stableSlice } from "../../kit/stable-slice"
 import { COMPARATOR_WORDS, comparatorWords, recoveryLabel } from "./derive"
+import { draftPreviewOf } from "./derive-rows"
 import type { RuleForm } from "./form"
+import { AUTO_INTERVAL, formIntervalMinutes, intervalOptions, intervalRadioValue } from "./interval"
 import { Message, type TextField } from "./message"
 import type { Model } from "./model"
 import { fieldStateOf, idsOf, numberField, wasNote } from "./view-fields"
@@ -205,14 +206,95 @@ const criticalRow = (
 	)
 
 /** `windowDescription`: what a check reads and how often the scheduler runs one. */
-const windowDescription = (windowMinutes: string): string => {
-	const minutes = Number(windowMinutes.trim())
+const windowDescription = (form: RuleForm): string => {
+	const minutes = Number(form.windowMinutes.trim())
 	if (!Number.isFinite(minutes) || minutes <= 0) return "Each check looks at this much data."
-	const every = alertEvaluationIntervalMinutes(minutes)
+	const every = formIntervalMinutes(form)
 	return `Each check looks at this much data, checked every ${every === 1 ? "minute" : `${every} min`}.`
 }
 
-const checksSection = (h: H, model: ConditionView, form: RuleForm, saved: RuleForm | null): Html => {
+/** "Check every": the interval, and for raw SQL the query time each one allows. */
+const intervalPicker = (h: H, form: RuleForm, timing: AlertQueryTiming | null): Html => {
+	const isRaw = form.signalType === "raw_query"
+	const options = intervalOptions(form, isRaw ? timing : null)
+	const selected = intervalRadioValue(form.evaluationIntervalMinutes)
+	const config: RadioGroup.RadioGroupViewConfig<Message> = {
+		model: RadioGroup.init(selected),
+		toParentMessage: (message) => Message.GotRadioMessage({ group: "interval", message }),
+		items: options.map((option) => ({
+			value: option.value,
+			id: `rule-interval-${option.value}`,
+			inputId: `rule-interval-${option.value}-input`,
+		})),
+	}
+	const ids = { control: "rule-interval-input", label: "rule-interval-label", error: "rule-interval-error" }
+	const current = options.find((option) => option.value === selected)
+	return field(h, { className: "items-stretch gap-1.5", state: filledState }, [
+		fieldLabel(h, { ids, state: filledState }, "Check every"),
+		h.div(
+			[
+				h.AriaLabelledBy("rule-interval-label"),
+				h.Class("grid grid-cols-4 gap-1 rounded-md bg-muted/30 p-0.5 sm:grid-cols-7"),
+				h.DataAttribute("filled", ""),
+				h.Role("radiogroup"),
+			],
+			options.flatMap((option) => {
+				const isSelected = option.value === selected
+				const isBlocked = option.isLongerThanWindow || option.isTooSlow
+				return RadioGroup.radio(
+					h,
+					config,
+					option.value,
+					cn(
+						"flex min-h-8 cursor-pointer select-none flex-col items-center justify-center gap-0.5 rounded-sm border border-transparent px-2 py-1 text-xs font-medium",
+						"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+						isSelected
+							? isBlocked
+								? "border-severity-warn/60 bg-severity-warn/10 text-severity-warn"
+								: "border-primary/50 bg-primary/10 text-foreground"
+							: "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+						!isSelected && isBlocked && "text-muted-foreground/60",
+					),
+					{
+						children: [
+							h.span(
+								[h.Class(cn("whitespace-nowrap", option.isTooSlow && "line-through"))],
+								[option.label],
+							),
+							...(isRaw
+								? [
+										h.span(
+											[h.Class("text-[11px] font-normal tabular-nums opacity-80")],
+											[`${option.limitSeconds} s limit`],
+										),
+									]
+								: []),
+						],
+					},
+				)
+			}),
+		),
+		h.p([h.Class("text-xs text-muted-foreground")], [intervalNote(form, current)]),
+	])
+}
+
+const intervalNote = (form: RuleForm, option: ReturnType<typeof intervalOptions>[number] | undefined): string => {
+	if (option === undefined) return ""
+	if (option.isLongerThanWindow) return "Longer than the window, so data between checks would go unread."
+	if (option.isTooSlow) return `The query takes longer than the ${option.limitSeconds} s this interval allows.`
+	if (form.signalType !== "raw_query") {
+		return option.value === AUTO_INTERVAL ? "A fifth of the window, from every minute to every 5." : "Fewer checks, the same window."
+	}
+	return `Each check may run ${option.limitSeconds} s. Checking less often allows a slower query.`
+}
+
+const checksSection = (
+	h: H,
+	model: ConditionView,
+	form: RuleForm,
+	saved: RuleForm | null,
+	timing: AlertQueryTiming | null,
+): Html => {
 	const values = valuesOf(model, form, saved)
 	return h.div(
 		[h.Class("space-y-3 border-t p-4")],
@@ -224,7 +306,7 @@ const checksSection = (h: H, model: ConditionView, form: RuleForm, saved: RuleFo
 					numberField(h, {
 						id: "rule-window-minutes",
 						label: "Window",
-						description: windowDescription(form.windowMinutes),
+						description: windowDescription(form),
 						unit: "min",
 						onInput: changed("windowMinutes"),
 						...values((f) => f.windowMinutes),
@@ -263,17 +345,18 @@ const checksSection = (h: H, model: ConditionView, form: RuleForm, saved: RuleFo
 					}),
 				],
 			),
+			intervalPicker(h, form, timing),
 		],
 	)
 }
 
-const condition = (h: H, model: ConditionView, form: RuleForm): Html =>
+const condition = (h: H, model: ConditionView, form: RuleForm, timing: AlertQueryTiming | null): Html =>
 	card(
 		h,
 		[
 			comparatorRow(h, model, form, model.savedForm),
 			thresholdsSection(h, model, form, model.savedForm),
-			checksSection(h, model, form, model.savedForm),
+			checksSection(h, model, form, model.savedForm, timing),
 		],
 		"gap-0 p-0",
 	)
@@ -363,4 +446,5 @@ const viewOf = stableSlice(
 )
 
 /** The condition card under the chart; `form` is the evaluated draft (`evaluatedFormOf`). */
-export const conditionFields = (h: H, model: Model, form: RuleForm): Html => slot(condition, [h, viewOf(model), form])
+export const conditionFields = (h: H, model: Model, form: RuleForm): Html =>
+	slot(condition, [h, viewOf(model), form, draftPreviewOf(model, form).preview?.queryTiming ?? null])

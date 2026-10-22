@@ -47,6 +47,20 @@ describe("rule notes", () => {
 	})
 })
 
+describe("check interval", () => {
+	it("sends the picked interval, and null for the window's own", () => {
+		const form = { ...defaultRuleForm(), name: "A", windowMinutes: "30" }
+		expect(
+			buildRuleCreateParamsV2({ ...form, evaluationIntervalMinutes: "10" }).evaluation_interval_minutes,
+		).toBe(10)
+		expect(buildRuleCreateParamsV2(form).evaluation_interval_minutes).toBeNull()
+		// Not one of the intervals a rule can pick.
+		expect(
+			buildRuleCreateParamsV2({ ...form, evaluationIntervalMinutes: "7" }).evaluation_interval_minutes,
+		).toBeNull()
+	})
+})
+
 describe("threshold unit conversion", () => {
 	it("converts error_rate thresholds between percent (form) and ratio (domain)", () => {
 		// User enters 5 (%), domain stores 0.05 (ratio) — the unit the query
@@ -334,6 +348,40 @@ describe("v2 response mappers", () => {
 			start: "2026-07-15T09:10:00.000Z",
 			end: "2026-07-15T09:40:00.000Z",
 			severity: "warning",
+		})
+		expect(response.queryTiming).toBeUndefined()
+	})
+
+	it("carries a raw SQL preview's query timing", () => {
+		const response = v2PreviewToResponse({
+			object: "alert_rule.preview",
+			bucket_seconds: 300,
+			window_minutes: 5,
+			threshold: 10,
+			threshold_upper: null,
+			thresholds: [
+				{ severity: "warning", value: 10, upper: null, recovery_value: null, destination_ids: [] },
+			],
+			comparator: "gt",
+			truncated_to_start: null,
+			series: [],
+			would_fire: [],
+			query_timing: {
+				elapsed_ms: 7_800,
+				failure: null,
+				probe_limit_ms: 25_000,
+				interval_minutes: 1,
+				limit_ms: 5_000,
+				fits_interval_minutes: [5, 10, 15, 30, 60],
+			},
+		})
+		expect(response.queryTiming && { ...response.queryTiming }).toEqual({
+			elapsedMs: 7_800,
+			failure: null,
+			probeLimitMs: 25_000,
+			intervalMinutes: 1,
+			limitMs: 5_000,
+			fitsIntervalMinutes: [5, 10, 15, 30, 60],
 		})
 	})
 

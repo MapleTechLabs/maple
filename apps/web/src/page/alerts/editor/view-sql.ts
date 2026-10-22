@@ -1,6 +1,8 @@
-import { rawAlertSampleCountWarning, rawSqlIssue } from "@maple/domain/raw-sql"
+import type { AlertQueryTiming } from "@maple/domain/http"
+import { rawAlertPerformanceHints, rawAlertSampleCountWarning, rawSqlIssue } from "@maple/domain/raw-sql"
+import { alertQueryLimits } from "@maple/query-engine/datetime"
 import { RAW_QUERY_REDUCER_LABELS } from "@maple/web-data/alerts/form-utils"
-import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { tokenizeSql } from "../../../lib/sql-highlight"
@@ -11,6 +13,7 @@ import { iconButton } from "../../../ui/icon-button"
 import { inlineCode } from "../../../ui/inline-code"
 import type * as Select from "../../../ui/select"
 import type { RuleForm } from "./form"
+import { fasterFittingInterval, formIntervalMinutes } from "./interval"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { formSelect } from "./view-select"
@@ -141,8 +144,105 @@ const macros = (h: H): Html =>
 		],
 	)
 
-/** `RawQueryEditor`: the SQL panel, the reducer, and the sample-count warning. */
-export const rawQueryEditor = (h: H, model: SqlView, form: RuleForm): Html => {
+const seconds = (ms: number): string => `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`
+
+// Where the 1, 5 and 10 minute limits sit on a meter as long as the longest one.
+const METER_TICKS = [1, 5, 10].map((minutes) => alertQueryLimits(minutes).timeSeconds * 1000)
+
+/** One check's query time against the limit at the picked interval, and the switch to one it fits. */
+const queryTimeMeter = (h: H, form: RuleForm, timing: AlertQueryTiming): Html => {
+	const interval = formIntervalMinutes(form)
+	const limitMs = alertQueryLimits(interval).timeSeconds * 1000
+	const elapsed = timing.elapsedMs
+	const tone: Tone = elapsed === null || elapsed > limitMs ? "crit" : elapsed > limitMs * 0.8 ? "warn" : "ok"
+	const fill = elapsed === null ? 1 : Math.min(elapsed / timing.probeLimitMs, 1)
+	const faster = fasterFittingInterval(form, timing)
+	const note =
+		elapsed === null
+			? timing.failure === "query_too_much_memory"
+				? "Ran out of memory before it finished. Narrow it with the suggestions below."
+				: `Did not finish within ${seconds(timing.probeLimitMs)}, too slow for any interval. Narrow it with the suggestions below.`
+			: faster !== null
+				? `Too slow for ${interval}-minute checks, fits ${faster}-minute checks.`
+				: elapsed > limitMs * 0.8
+					? "Close to the limit: a busier window may time out."
+					: `Fits checks every ${interval === 1 ? "minute" : `${interval} min`}.`
+	return h.div(
+		[h.Class("space-y-1.5 rounded-md border px-3 py-2.5"), h.DataAttribute("testid", "query-time-meter")],
+		[
+			h.div(
+				[h.Class("flex items-baseline justify-between gap-3 text-xs")],
+				[
+					h.span([h.Class("font-medium")], ["Query time"]),
+					h.span(
+						[h.Class(cn("tabular-nums", TONE_TEXT[tone]))],
+						[
+							elapsed === null ? `Over ${seconds(timing.probeLimitMs)}` : seconds(elapsed),
+							h.span([h.Class("text-muted-foreground")], [` of ${seconds(limitMs)}`]),
+						],
+					),
+				],
+			),
+			h.div(
+				[h.Class("relative h-1.5 overflow-hidden rounded-full bg-muted")],
+				[
+					h.div([h.Class(cn("h-full rounded-full", TONE_FILL[tone])), h.Style({ width: `${fill * 100}%` })], []),
+					...METER_TICKS.map((tickMs) =>
+						h.div(
+							[
+								h.Class("absolute top-0 h-full w-px bg-background"),
+								h.Style({ left: `${(tickMs / timing.probeLimitMs) * 100}%` }),
+							],
+							[],
+						),
+					),
+				],
+			),
+			h.div(
+				[h.Class("flex flex-wrap items-center justify-between gap-2")],
+				[
+					h.p([h.Class("text-xs text-muted-foreground")], [note]),
+					...(faster === null
+						? []
+						: [
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "xs",
+										attributes: [h.OnClick(Message.ClickedUseInterval({ minutes: String(faster) }))],
+									},
+									[`Check every ${faster} min`],
+								),
+							]),
+				],
+			),
+		],
+	)
+}
+
+/** Cheaper filters for a query that is slow or close to its limit, each pointing at its line. */
+const performanceHints = (h: H, sql: string): ReadonlyArray<Html> =>
+	rawAlertPerformanceHints(sql).map((hint) =>
+		h.p(
+			[h.Class("flex items-start gap-2 text-xs text-muted-foreground")],
+			[
+				icon(h, "BoltIcon", { size: 14, className: "mt-px shrink-0 text-severity-warn" }),
+				h.span(
+					[],
+					[h.span([h.Class("font-medium text-foreground")], [`Line ${hint.line}: `]), hint.message],
+				),
+			],
+		),
+	)
+
+/** Whether the timed query is slow enough that its cheaper filters are worth showing. */
+const isNearLimit = (form: RuleForm, timing: AlertQueryTiming): boolean =>
+	timing.elapsedMs === null ||
+	timing.elapsedMs > alertQueryLimits(formIntervalMinutes(form)).timeSeconds * 1000 * 0.5
+
+/** `RawQueryEditor`: the SQL panel, the query time, the reducer, and the sample-count warning. */
+export const rawQueryEditor = (h: H, model: SqlView, form: RuleForm, timing: AlertQueryTiming | null): Html => {
 	const sampleWarning = rawAlertSampleCountWarning(form.rawQuerySql, Number(form.minimumSampleCount) || 0)
 	return h.div(
 		[h.Class("space-y-2")],
@@ -198,6 +298,8 @@ export const rawQueryEditor = (h: H, model: SqlView, form: RuleForm): Html => {
 					),
 			}),
 			...(sampleWarning === null ? [] : [h.p([h.Class("text-xs text-severity-warn")], [sampleWarning])]),
+			...(timing === null ? [] : [queryTimeMeter(h, form, timing)]),
+			...(timing !== null && isNearLimit(form, timing) ? performanceHints(h, form.rawQuerySql) : []),
 		],
 	)
 }

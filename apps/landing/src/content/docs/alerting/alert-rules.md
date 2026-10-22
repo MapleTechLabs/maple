@@ -105,7 +105,7 @@ Short windows on low-traffic services are noisy, because a few slow or failed re
 
 ## Check interval and query limits
 
-`evaluation_interval_minutes` sets how often a rule is checked: every 1, 5, 10, 15, 30 or 60 minutes. Leave it unset and Maple derives it from the window: a fifth of the window, between 1 and 5 minutes. The window must be at least as long as the interval, so no data falls between two checks.
+**Check every** in the rule editor (`evaluation_interval_minutes` in the API) sets how often a rule is checked: every 1, 5, 10, 15, 30 or 60 minutes. Leave it on **Auto** and Maple derives it from the window: a fifth of the window, between 1 and 5 minutes. The window must be at least as long as the interval, so no data falls between two checks.
 
 A **Raw SQL** rule's query gets more time when the rule is checked less often:
 
@@ -115,7 +115,7 @@ A **Raw SQL** rule's query gets more time when the rule is checked less often:
 | 5 minutes          | 15 seconds       |
 | 10 minutes or more | 25 seconds       |
 
-Previewing a **Raw SQL** rule over the API (`query_timing` in `POST /v2/alerts/rules/preview`) or with the `preview_alert_rule` MCP tool times one check against the limit of its interval and lists the intervals the query fits. The MCP tool also suggests filters that make the query cheaper, such as a service filter.
+The editor times one check of a **Raw SQL** rule as you write it and shows **Query time** against the limit of the picked interval. When the query is too slow for that interval, it offers the shortest interval it fits and blocks saving until you pick one or make the query cheaper; when the query is close to its limit it suggests cheaper filters, such as a service filter. The same timing comes back as `query_timing` from `POST /v2/alerts/rules/preview` and in the `preview_alert_rule` MCP tool.
 
 When a rule's query hits its time or memory limit 3 checks in a row, Maple slows the rule down to the next interval that raises that limit, never past the window. The rule shows when it was slowed down and which interval it runs at. Editing the rule resets the slowdown, so make the query cheaper or pick a longer interval first.
 

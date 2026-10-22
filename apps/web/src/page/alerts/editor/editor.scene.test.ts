@@ -27,6 +27,7 @@ import * as Chart from "../../../charts/chart"
 import { MountChart } from "../../../charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import * as Menu from "../../../ui/menu"
+import * as RadioGroup from "../../../ui/radio-group"
 import * as Tooltip from "../../../ui/tooltip"
 import type { PageContext } from "../../contract"
 import { destinationRow, NOW, ORG, ruleId, ruleRow } from "../shared/test-rows"
@@ -154,6 +155,88 @@ describe("alert rule editor", () => {
 			themeResolved(),
 			expectView(text(`${saved} min`)).toExist(),
 			expectView(hint("5 min")).toExist(),
+		)
+	})
+
+	test("the check interval picker sets how often the rule runs, and refuses one longer than the window", () => {
+		const hint = (every: string) => text(`Each check looks at this much data, checked every ${every}.`)
+		const pick = (value: string) =>
+			Message.GotRadioMessage({ group: "interval", message: RadioGroup.Message.SelectedRadio({ value }) })
+		const noAnswer = (model: Model) =>
+			Message.CompletedFetchPreview({ key: model.preview.key ?? "", isSaved: false, result: Result.fail({ message: null }) })
+		const draft = run(withLists(entered({ template: "slow_p95" })), [
+			Message.ChangedField({ field: "windowMinutes", value: "15" }),
+		])
+		const every10 = run(draft, [pick("10")])
+		const every30 = run(every10, [pick("30")])
+		scene(
+			{ update: pageUpdate, view },
+			given(draft),
+			themeResolved(),
+			expectView(role("radio", { name: /^Auto · 3 min/ })).toHaveAttr("aria-checked", "true"),
+			click(role("radio", { name: /^10 min/ })),
+			Command.resolve(FetchEditorPreview, noAnswer(every10)),
+			expectView(hint("10 min")).toExist(),
+			expectView(role("radio", { name: /^10 min/ })).toHaveAttr("aria-checked", "true"),
+			click(role("radio", { name: /^30 min/ })),
+			Command.resolve(FetchEditorPreview, noAnswer(every30)),
+			expectView(text("Longer than the window, so data between checks would go unread.")).toExist(),
+		)
+		expect(every30.form?.evaluationIntervalMinutes).toBe("30")
+		expect(names(pageUpdate(every30, Message.ClickedSave()).commands)).toEqual([])
+	})
+
+	test("a raw SQL query too slow for its interval says so, blocks save, and switches in one click", () => {
+		const timing = (elapsedMs: number) =>
+			Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+				bucketSeconds: 300,
+				windowMinutes: 5,
+				threshold: 5,
+				thresholdUpper: null,
+				thresholds: [{ severity: "warning", value: 5, upper: null, recoveryValue: null, destinationIds: [] }],
+				comparator: "gt",
+				truncatedToStart: null,
+				series: [],
+				wouldFire: [],
+				queryTiming: {
+					elapsedMs,
+					failure: null,
+					probeLimitMs: 25_000,
+					intervalMinutes: 1,
+					limitMs: 5_000,
+					fitsIntervalMinutes: elapsedMs <= 4_000 ? [1, 5, 10, 15, 30, 60] : [5, 10, 15, 30, 60],
+				},
+			})
+		const answer = (model: Model, elapsedMs: number) =>
+			Message.CompletedFetchPreview({
+				key: model.preview.key ?? "",
+				isSaved: false,
+				result: Result.succeed(timing(elapsedMs)),
+			})
+		const sql = run(withLists(entered({ template: "slow_p95" })), [
+			Message.ClickedSignalKind({ kind: "raw_query" }),
+		])
+		const slow = run(sql, [answer(sql, 7_800)])
+		const switched = run(slow, [Message.ClickedUseInterval({ minutes: "5" })])
+		expect(names(pageUpdate(slow, Message.ClickedSave()).commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(slow),
+			themeResolved(),
+			expectView(text("Too slow for 1-minute checks, fits 5-minute checks.")).toExist(),
+			expectView(text(/^Line 4: Filter traces on a service/)).toExist(),
+			click(role("button", { name: "Check every 5 min" })),
+			Command.resolve(FetchEditorPreview, answer(switched, 7_800)),
+			expectView(role("radio", { name: /^5 min/ })).toHaveAttr("aria-checked", "true"),
+			expectView(text("Fits checks every 5 min.")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(run(sql, [answer(sql, 900)])),
+			themeResolved(),
+			expectView(text("Fits checks every minute.")).toExist(),
+			// A fast query keeps its cheaper-filter suggestions to itself.
+			expectView(text(/^Line 4:/)).not.toExist(),
 		)
 	})
 
