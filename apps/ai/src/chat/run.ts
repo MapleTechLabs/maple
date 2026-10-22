@@ -8,7 +8,7 @@
 import { evaluatePermission } from "@maple/domain/permission"
 import type { ChatMessage, ChatTurnOrigin } from "@maple/domain/chat-session"
 import * as AgentRuntime from "@yielded/agent/agent-runtime"
-import type * as RunEvent from "@yielded/agent/run-event"
+import type { RunBudgetHook } from "@yielded/agent/run-options"
 import * as ThreadHistory from "@yielded/agent/thread-history"
 import { ThreadId } from "@yielded/agent/identifiers"
 import { Clock, Duration, Effect, Layer, Schema, Stream } from "effect"
@@ -234,9 +234,12 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		autonomous: input.origin.kind === "autonomous",
 	})
 	const usage = accumulateUsage(input.usage)
-	// The turn after a landed submission: every call batched with it has reported by then.
-	const settles = (event: RunEvent.RunEvent): boolean =>
-		event._tag === "TurnStarted" && completion?.submitted() === true
+	const submitted = () => completion?.submitted() === true
+	const budget: RunBudgetHook<ChatRunSettled> = {
+		...usage,
+		// A landed submission settles the run: the next model pull after its batch never starts.
+		guard: (effect) => (submitted() ? Effect.fail(new ChatRunSettled()) : usage.guard(effect)),
+	}
 
 	// A gated tool is announced exactly like any other and refuses when dispatched, so only the
 	// ruleset knows the call is a proposal.
@@ -252,16 +255,11 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		// Not a budget: the ceilings live in the agent's policy. This is the only place the engine
 		// reports token usage as it accrues — the event stream carries none — and `submit_diagnosis`
 		// reads the running total mid-run, so a hook that merely observes is what fills it.
-		budget: {
-			...usage,
-			// A landed submission settles the run: the next turn's model call never starts.
-			guard: (effect) => (completion?.submitted() === true ? Effect.interrupt : usage.guard(effect)),
-		},
+		budget,
 	}).pipe(
 		// An abort clears the claim; the run notices at the next event rather than only after the
 		// in-flight model call drains.
 		Stream.takeWhile(() => input.holdsTurn()),
-		Stream.takeUntil(settles),
 		Stream.runForEach((event) =>
 			Effect.sync(() => {
 				if (event._tag === "CompactionPerformed") compactions += 1
@@ -276,13 +274,15 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 					},
 					sanitizer,
 				}
-				const chats = settles(event) ? settledTurnEnd(context) : toChatEvents(event, context)
+				const settled = event._tag === "RunFailed" && submitted()
+				const chats = settled ? settledTurnEnd(context) : toChatEvents(event, context)
 				for (const chat of chats) input.append(chat)
 			}),
 		),
-		// The gate's refusal is how a run stops on a proposal: the turn finished, it did not fail.
+		// The gate's refusal is how a run stops on a proposal, and a landed submission makes any later
+		// failure moot (`ChatRunSettled` included): the turn finished, it did not fail.
 		Effect.catchIf(
-			(error) => error instanceof ApprovalRequired,
+			(error) => error instanceof ApprovalRequired || submitted(),
 			() => Effect.void,
 		),
 		// Once per turn, the tag alone: a model that wrote a tool call as prose answered with
@@ -319,3 +319,6 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 }
 
 const decodeThreadId = Schema.decodeSync(ThreadId)
+
+/** How the budget guard ends a run whose submission landed; never a failure of the turn. */
+class ChatRunSettled extends Schema.TaggedError<ChatRunSettled>()("@maple/ai/chat/ChatRunSettled", {}) {}
