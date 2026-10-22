@@ -118,6 +118,12 @@ describe("SelfHostedLoginService", () => {
 
 			const refused = yield* Effect.flip(service.login(PASSWORD, "192.0.2.10"))
 			expect(refused._tag).toBe("@maple/http/errors/SelfHostedLoginThrottledError")
+
+			// Once it lapses, a single failure from a fresh address does not lock the operator out again.
+			yield* TestClock.adjust(BASE_LOCKOUT_MS + 1000)
+			yield* failTimes(1, () => "198.51.100.200")
+			const afterLapse = yield* service.login(PASSWORD, "192.0.2.10")
+			expect(afterLapse.orgId).toBe("default")
 		}).pipe(Effect.provide(makeLayer(createTestDb(createdDbs)))),
 	)
 })

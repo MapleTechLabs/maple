@@ -287,9 +287,9 @@ Maple supports exactly two auth modes via `MAPLE_AUTH_MODE`:
       `POST /api/auth/session/refresh`, up to an absolute cap of 7 days from sign-in. Past the cap
       the root password is required again. Rotating `MAPLE_ROOT_PASSWORD` still invalidates every
       token immediately — it is the HMAC key, and the only way to revoke a session early.
-    - Failed root-password logins are throttled: 5 failures from one client, or 50 overall, lock
-      sign-in for 5 minutes, doubling per further failure up to an hour (HTTP 429). Two quiet hours
-      reset the count.
+    - Failed root-password logins are throttled (HTTP 429): 5 failures from one client lock that
+      client out for 5 minutes, doubling per further failure up to an hour; 50 failures overall lock
+      sign-in for 5 minutes. Two quiet hours reset the count.
 
 Start apps:
 

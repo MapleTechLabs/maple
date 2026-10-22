@@ -18,7 +18,7 @@ import { Env } from "@maple/backend/platform/Env"
 /** Failures per client before it is locked out, and across all clients before the root account is. */
 export const CLIENT_MAX_FAILURES = 5
 export const GLOBAL_MAX_FAILURES = 50
-/** First lockout; each further failure past the limit doubles it, up to the cap. */
+/** First lockout; for a client, each further failure past the limit doubles it, up to the cap. */
 export const BASE_LOCKOUT_MS = 5 * 60 * 1000
 export const MAX_LOCKOUT_MS = 60 * 60 * 1000
 /** A key with no failure for this long starts over from zero. */
@@ -40,8 +40,12 @@ const throttled = (remainingMs: number) => {
 	})
 }
 
-const lockoutFor = (failures: number, max: number): number | null =>
-	failures < max ? null : Math.min(BASE_LOCKOUT_MS * 2 ** (failures - max), MAX_LOCKOUT_MS)
+const lockoutFor = (failures: number, max: number, escalates: boolean): number | null =>
+	failures < max
+		? null
+		: escalates
+			? Math.min(BASE_LOCKOUT_MS * 2 ** (failures - max), MAX_LOCKOUT_MS)
+			: BASE_LOCKOUT_MS
 
 export class SelfHostedLoginService extends Context.Service<
 	SelfHostedLoginService,
@@ -65,7 +69,7 @@ export class SelfHostedLoginService extends Context.Service<
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "SelfHostedLoginService", unavailable)
 
-		type Entry = { readonly key: string; readonly max: number }
+		type Entry = { readonly key: string; readonly max: number; readonly escalates: boolean }
 
 		// Counts the attempt as a failure before the password is checked, so a parallel burst
 		// cannot slip past the limit. Refused only when a lockout was already in force.
@@ -91,9 +95,12 @@ export class SelfHostedLoginService extends Context.Service<
 				if (row !== undefined && row.lockedUntil !== null && row.lockedUntil > now) {
 					return yield* throttled(row.lockedUntil - now)
 				}
-				const stale = row === undefined || now - row.updatedAt > FAILURE_RESET_MS
+				// The root key never escalates and starts over once a lock lapses, so nobody can keep
+				// the operator locked out for longer than one base lockout at a time.
+				const lapsed = row !== undefined && row.lockedUntil !== null && !entry.escalates
+				const stale = row === undefined || lapsed || now - row.updatedAt > FAILURE_RESET_MS
 				const failures = stale ? 1 : row.failures + 1
-				const lockout = lockoutFor(failures, entry.max)
+				const lockout = lockoutFor(failures, entry.max, entry.escalates)
 				yield* db.run(
 					PG.update(SelfHostedLoginAttempts)
 						.set({
@@ -142,7 +149,9 @@ export class SelfHostedLoginService extends Context.Service<
 								.set({
 									failures,
 									lockedUntil:
-										lockoutFor(failures, global.max) === null ? null : row.lockedUntil,
+										lockoutFor(failures, global.max, false) === null
+											? null
+											: row.lockedUntil,
 								})
 								.where(($) => [$.key.eq(global.key)]),
 						)
@@ -154,8 +163,8 @@ export class SelfHostedLoginService extends Context.Service<
 		const login = Effect.fn("SelfHostedLoginService.login")(function* (password: string, client: string) {
 			// Clerk mode never reaches the throttle table; the primitive refuses it outright.
 			if (env.MAPLE_AUTH_MODE.toLowerCase() === "clerk") return yield* loginSelfHosted(password)
-			const perClient = { key: clientKey(client), max: CLIENT_MAX_FAILURES }
-			const global = { key: GLOBAL_KEY, max: GLOBAL_MAX_FAILURES }
+			const perClient = { key: clientKey(client), max: CLIENT_MAX_FAILURES, escalates: true }
+			const global = { key: GLOBAL_KEY, max: GLOBAL_MAX_FAILURES, escalates: false }
 			yield* reserveAttempt([perClient, global], yield* Clock.currentTimeMillis)
 			const response = yield* loginSelfHosted(password)
 			yield* release(perClient, global)
