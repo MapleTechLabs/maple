@@ -1,31 +1,25 @@
 /**
- * AWS access through `@distilled.cloud/aws`: Maple's own key assumes a customer role, and the role
- * reads itself back. Every SDK failure is folded into one {@link AwsApiError} whose `kind` says what
- * the connection check reports.
+ * AWS access: Maple's OIDC token assumes a customer role through STS, unsigned, and the role reads
+ * itself back through `@distilled.cloud/aws`. Every failure is folded into one {@link AwsApiError}
+ * whose `kind` says what the connection check reports.
  */
 import * as Credentials from "@distilled.cloud/aws/Credentials"
 import { UnknownAwsError } from "@distilled.cloud/aws/Errors"
 import * as IAM from "@distilled.cloud/aws/iam"
-import * as STS from "@distilled.cloud/aws/sts"
-import { Duration, Effect, Redacted, Stream } from "effect"
-import { HttpClient } from "effect/http"
+import { Duration, Effect, Redacted, Schema, Stream } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { AwsApiError } from "./errors"
 
 const REQUEST_TIMEOUT = Duration.seconds(20)
 // STS and IAM answer in us-east-1 for every commercial account.
 const REGION = "us-east-1"
+const STS_URL = "https://sts.amazonaws.com/"
 // The shortest session AWS allows: a check needs seconds, and nothing keeps the credentials.
 const SESSION_SECONDS = 900
-
-export interface AwsKey {
-	readonly accessKeyId: string
-	readonly secretAccessKey: Redacted.Redacted<string>
-}
 
 export interface AwsRoleTarget {
 	readonly roleArn: string
 	readonly roleName: string
-	readonly externalId: string
 	readonly sessionName: string
 }
 
@@ -36,14 +30,50 @@ export interface AwsRoleReport {
 	readonly attachedPolicyNames: ReadonlyArray<string>
 }
 
-// Codes AWS answers a rejected caller key with, as opposed to a role that refuses it.
-const MAPLE_KEY_CODES = new Set([
+// STS answers these when it cannot verify Maple's token: on Maple's side, not the customer's.
+const MAPLE_TOKEN_CODES = new Set(["InvalidIdentityToken", "IDPCommunicationError", "ExpiredTokenException"])
+// IAM answers these to a session it does not accept.
+const SESSION_CODES = new Set([
 	"InvalidClientTokenId",
 	"SignatureDoesNotMatch",
 	"UnrecognizedClientException",
-	"IncompleteSignature",
 ])
 const THROTTLE_CODES = new Set(["Throttling", "ThrottlingException", "RequestLimitExceeded"])
+
+/** What STS answers `AssumeRoleWithWebIdentity` with, when asked for JSON. */
+const StsAnswer = Schema.Union([
+	Schema.Struct({
+		AssumeRoleWithWebIdentityResponse: Schema.Struct({
+			AssumeRoleWithWebIdentityResult: Schema.Struct({
+				Credentials: Schema.Struct({
+					AccessKeyId: Schema.String,
+					SecretAccessKey: Schema.String,
+					SessionToken: Schema.String,
+				}),
+				AssumedRoleUser: Schema.Struct({ Arn: Schema.String }),
+			}),
+		}),
+	}),
+	Schema.Struct({
+		Error: Schema.Struct({ Code: Schema.String, Message: Schema.optionalKey(Schema.String) }),
+	}),
+])
+const decodeStsAnswer = Schema.decodeUnknownEffect(StsAnswer)
+
+/**
+ * A rejected `AssumeRoleWithWebIdentity`. A missing OIDC provider or a refused claim is the
+ * customer's setup not being done; a token STS cannot verify is Maple's.
+ */
+const stsError = (code: string, detail: string | undefined): AwsApiError => {
+	const message = `AssumeRoleWithWebIdentity: ${detail === undefined || detail === "" ? code : detail.slice(0, 300)}`
+	if (THROTTLE_CODES.has(code)) return new AwsApiError({ message, kind: "throttled", code })
+	const noProvider = code === "InvalidIdentityToken" && /no openid ?connect provider/iu.test(detail ?? "")
+	if (code === "AccessDenied" || code === "IDPRejectedClaim" || noProvider) {
+		return new AwsApiError({ message, kind: "assume_denied", code })
+	}
+	if (MAPLE_TOKEN_CODES.has(code)) return new AwsApiError({ message, kind: "maple_identity", code })
+	return new AwsApiError({ message, kind: "upstream", code })
+}
 
 const codeOf = (error: { readonly _tag: string }) =>
 	error instanceof UnknownAwsError ? error.errorTag : error._tag
@@ -53,16 +83,16 @@ const messageOf = (error: unknown) =>
 		? error.message
 		: undefined
 
-const toApiError =
-	(denied: "assume_denied" | "read_denied", what: string) =>
+const toReadError =
+	(what: string) =>
 	(error: { readonly _tag: string }): AwsApiError => {
 		const code = codeOf(error)
 		const detail = messageOf(error)?.slice(0, 300)
 		const message = detail === undefined || detail === "" ? `${what}: ${code}` : `${what}: ${detail}`
-		if (MAPLE_KEY_CODES.has(code)) return new AwsApiError({ message, kind: "maple_credentials", code })
 		if (THROTTLE_CODES.has(code)) return new AwsApiError({ message, kind: "throttled", code })
+		if (SESSION_CODES.has(code)) return new AwsApiError({ message, kind: "upstream", code })
 		if (code === "AccessDenied" || code === "AccessDeniedException" || code === "NoSuchEntityException") {
-			return new AwsApiError({ message, kind: denied, code })
+			return new AwsApiError({ message, kind: "read_denied", code })
 		}
 		return new AwsApiError({ message, kind: "upstream", code })
 	}
@@ -83,45 +113,59 @@ const signWith = (credentials: {
 const timedOut = (what: string) =>
 	new AwsApiError({ message: `${what}: AWS did not answer in time`, kind: "upstream" })
 
+const assumeWithToken = (
+	httpClient: HttpClient.HttpClient,
+	token: Redacted.Redacted<string>,
+	target: AwsRoleTarget,
+) =>
+	HttpClientRequest.post(STS_URL).pipe(
+		HttpClientRequest.acceptJson,
+		HttpClientRequest.bodyUrlParams({
+			Action: "AssumeRoleWithWebIdentity",
+			Version: "2011-06-15",
+			RoleArn: target.roleArn,
+			RoleSessionName: target.sessionName,
+			WebIdentityToken: Redacted.value(token),
+			DurationSeconds: String(SESSION_SECONDS),
+		}),
+		httpClient.execute,
+		Effect.flatMap((response) => response.json),
+		Effect.flatMap(decodeStsAnswer),
+		Effect.timeoutOrElse({
+			duration: REQUEST_TIMEOUT,
+			orElse: () => Effect.fail(timedOut("AssumeRoleWithWebIdentity")),
+		}),
+		Effect.mapError((error) =>
+			error instanceof AwsApiError
+				? error
+				: new AwsApiError({
+						message: `AssumeRoleWithWebIdentity: ${error.message}`,
+						kind: "upstream",
+					}),
+		),
+		Effect.flatMap((answer) =>
+			"Error" in answer
+				? Effect.fail(stsError(answer.Error.Code, answer.Error.Message))
+				: Effect.succeed(answer.AssumeRoleWithWebIdentityResponse.AssumeRoleWithWebIdentityResult),
+		),
+	)
+
 /**
- * Assumes `target` with Maple's key, then reads the role's tags and attached policies with the
+ * Assumes `target` with Maple's token, then reads the role's tags and attached policies with the
  * session. Each read needs only the setup's self-read policy.
  */
 export const checkRole = Effect.fn("AwsApi.checkRole")(function* (
 	httpClient: HttpClient.HttpClient,
-	key: AwsKey,
+	token: Redacted.Redacted<string>,
 	target: AwsRoleTarget,
 ) {
 	yield* Effect.annotateCurrentSpan({ "maple.aws.role_arn": target.roleArn })
-	const assumed = yield* STS.assumeRole({
-		RoleArn: target.roleArn,
-		RoleSessionName: target.sessionName,
-		ExternalId: target.externalId,
-		DurationSeconds: SESSION_SECONDS,
-	}).pipe(
-		Effect.provideService(
-			Credentials.Credentials,
-			signWith({ accessKeyId: Redacted.make(key.accessKeyId), secretAccessKey: key.secretAccessKey }),
-		),
-		Effect.provideService(HttpClient.HttpClient, httpClient),
-		Effect.timeoutOrElse({
-			duration: REQUEST_TIMEOUT,
-			orElse: () => Effect.fail(timedOut("AssumeRole")),
-		}),
-		Effect.mapError((error) =>
-			error instanceof AwsApiError ? error : toApiError("assume_denied", "AssumeRole")(error),
-		),
-	)
+	const assumed = yield* assumeWithToken(httpClient, token, target)
 	const credentials = assumed.Credentials
-	const sessionArn = assumed.AssumedRoleUser?.Arn
-	if (credentials === undefined || sessionArn === undefined) {
-		return yield* new AwsApiError({ message: "AssumeRole returned no credentials", kind: "upstream" })
-	}
+	const sessionArn = assumed.AssumedRoleUser.Arn
 	const session = signWith({
 		accessKeyId: Redacted.make(credentials.AccessKeyId),
-		secretAccessKey: Redacted.isRedacted(credentials.SecretAccessKey)
-			? credentials.SecretAccessKey
-			: Redacted.make(credentials.SecretAccessKey),
+		secretAccessKey: Redacted.make(credentials.SecretAccessKey),
 		sessionToken: Redacted.make(credentials.SessionToken),
 	})
 	const asRole = <A, E extends { readonly _tag: string }>(
@@ -130,9 +174,7 @@ export const checkRole = Effect.fn("AwsApi.checkRole")(function* (
 	) =>
 		effect.pipe(
 			Effect.timeoutOrElse({ duration: REQUEST_TIMEOUT, orElse: () => Effect.fail(timedOut(what)) }),
-			Effect.mapError((error) =>
-				error instanceof AwsApiError ? error : toApiError("read_denied", what)(error),
-			),
+			Effect.mapError((error) => (error instanceof AwsApiError ? error : toReadError(what)(error))),
 		)
 	const [role, attached] = yield* Effect.all(
 		[

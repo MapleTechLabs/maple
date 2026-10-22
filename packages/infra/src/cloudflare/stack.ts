@@ -6,7 +6,7 @@ import * as Effect from "effect/Effect"
 import type { WorkerDev } from "@maple/alchemy-portless"
 import { type DevApp, isDevApp } from "../dev-urls.ts"
 import { Stage } from "alchemy/Stage"
-import type { MapleAwsPrincipalEnv } from "../aws/integration-principal.ts"
+import type { MapleAwsOidcEnv } from "../aws/oidc-signing-key.ts"
 import type { MapleProfile } from "../profile.ts"
 import type { MapleRegion } from "../region.ts"
 import {
@@ -60,8 +60,8 @@ export interface MapleStackContext {
 	readonly devEnv: Record<string, string> | undefined
 	/** The declared database (prd and previews); undefined on dev. */
 	readonly db: MapleDbResources | undefined
-	/** Maple's AWS integration identity, as api's and alerting's env; undefined on dev. */
-	readonly awsPrincipal: MapleAwsPrincipalEnv | undefined
+	/** The AWS integration's OIDC signing key, as api's and alerting's env. */
+	readonly awsOidc: MapleAwsOidcEnv
 }
 
 /** The deploy context Worker props read. Plan-time only: read behind `__ALCHEMY_RUNTIME__`. */

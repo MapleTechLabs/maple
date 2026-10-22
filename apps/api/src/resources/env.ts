@@ -85,8 +85,4 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		planetScaleOAuthEnv,
 		supabaseOAuthEnv,
 		optionalPlain("MAPLE_GCP_SERVICE_ACCOUNT_EMAIL"),
-		// Maple's AWS identity on dev (`.env.local`); deploys bind their own (`awsPrincipal`).
-		optionalPlain("MAPLE_AWS_PRINCIPAL_ARN"),
-		optionalPlain("MAPLE_AWS_ACCESS_KEY_ID"),
-		optionalSecret("MAPLE_AWS_SECRET_ACCESS_KEY"),
 	)

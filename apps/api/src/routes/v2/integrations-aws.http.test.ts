@@ -11,6 +11,7 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { MAPLE_TEST_OIDC_KEY } from "@maple/backend/services/integrations/aws/fake-aws"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
@@ -49,14 +50,9 @@ const testConfig = (awsAvailable: boolean) =>
 			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
 			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
 			MAPLE_INGEST_PUBLIC_URL: "https://ingest.test",
+			MAPLE_API_BASE_URL: "https://api.maple.test",
 			INTERNAL_SERVICE_TOKEN: "test-internal-token",
-			...(awsAvailable
-				? {
-						MAPLE_AWS_PRINCIPAL_ARN: "arn:aws:iam::999999999999:user/maple-integrations",
-						MAPLE_AWS_ACCESS_KEY_ID: "AKIAMAPLETEST0000001",
-						MAPLE_AWS_SECRET_ACCESS_KEY: "maple-test-secret",
-					}
-				: undefined),
+			...(awsAvailable ? { MAPLE_AWS_OIDC_SIGNING_KEY: MAPLE_TEST_OIDC_KEY.privateKey } : undefined),
 		}),
 	)
 
@@ -152,7 +148,8 @@ describe("v2 aws integration over HTTP", () => {
 			role_arn: expect.stringMatching(
 				/^arn:aws:iam::123456789012:role\/MapleIntegration-[0-9a-f]{24}$/,
 			),
-			external_id: expect.stringMatching(/^[0-9a-f]{32}$/),
+			oidc_issuer: "https://api.maple.test/oidc/aws",
+			oidc_subject: expect.stringMatching(/^aws-connection:[0-9a-f-]{36}$/),
 			modules: [],
 			granted_modules: null,
 			template_version: null,
@@ -177,13 +174,14 @@ describe("v2 aws integration over HTTP", () => {
 		expect(setup.body.object).toBe("aws_connection.setup")
 		expect(setup.body.setup_script).toContain(`--stack-name ${setup.body.stack_name}`)
 		expect(setup.body.setup_script).toContain('if [ "$account" != "123456789012" ]')
-		// The template names the role the connection reports and requires its external id.
+		// The template names the role the connection reports, and trusts only its subject's tokens.
 		const template = JSON.parse(setup.body.cloudformation_template)
 		const role = template.Resources.MapleRole.Properties
 		expect(created.body.role_arn.endsWith(`/${role.RoleName}`)).toBe(true)
-		expect(role.AssumeRolePolicyDocument.Statement[0].Condition.StringEquals["sts:ExternalId"]).toBe(
-			created.body.external_id,
-		)
+		expect(role.AssumeRolePolicyDocument.Statement[0].Condition.StringEquals).toEqual({
+			"api.maple.test/oidc/aws:aud": "sts.amazonaws.com",
+			"api.maple.test/oidc/aws:sub": created.body.oidc_subject,
+		})
 		expect(setup.body.terraform).toContain(`name                 = "${role.RoleName}"`)
 
 		// Members read the status; only admins render setups or change anything.

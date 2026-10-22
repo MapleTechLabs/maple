@@ -15,7 +15,7 @@ import { SourceError } from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
-import { AwsRegionMismatchError, createMapleAwsPrincipal, resolveAwsRegion } from "@maple/infra/aws"
+import { AwsRegionMismatchError, createMapleAwsOidcKey, resolveAwsRegion } from "@maple/infra/aws"
 import {
 	ApiWorker,
 	AiWorker,
@@ -239,9 +239,7 @@ const MapleStackLive = Layer.effect(
 			workerDev,
 			devEnv,
 			db: yield* declareMapleDb(deployment, profile),
-			awsPrincipal: profile.deploys.awsIntegrationPrincipal
-				? yield* createMapleAwsPrincipal(deployment)
-				: undefined,
+			awsOidc: yield* createMapleAwsOidcKey(),
 		}
 		return context
 	}),

@@ -13,7 +13,7 @@ const isAwsModule = Schema.is(AwsModule)
  * Bumped whenever the setup's IAM shape changes. The role carries it as a tag, so a connection
  * whose stack predates a change says "update the stack" instead of failing a read.
  */
-export const AWS_TEMPLATE_VERSION = 1
+export const AWS_TEMPLATE_VERSION = 2
 
 /** Tag keys the stack puts on the role; the connection check reads them back. */
 export const AWS_ROLE_TAGS = {
@@ -90,7 +90,7 @@ export const AWS_MODULE_SPECS = {
 
 export const isAwsModuleAvailable = (module: AwsModule) => AWS_MODULE_SPECS[module].available
 
-/** Every connection's role starts with it; Maple's own identity may assume only these roles. */
+/** Every connection's role starts with it. The cleanup keeps the OIDC provider while one is left. */
 export const AWS_ROLE_NAME_PREFIX = "MapleIntegration-"
 
 /**
@@ -126,17 +126,20 @@ export type AwsMetricStream = Schema.Schema.Type<typeof AwsMetricStream>
 export const awsRoleArn = (accountId: AwsAccountId, roleName: string) =>
 	`arn:aws:iam::${accountId}:role/${roleName}`
 
-/** The IAM identity Maple assumes customer roles as: an ARN in Maple's own account. */
-export interface AwsMaplePrincipal {
-	readonly arn: string
-	readonly accountId: string
-}
+/** The audience of Maple's tokens: what the customer's OIDC provider lists as its client id. */
+export const AWS_OIDC_AUDIENCE = "sts.amazonaws.com"
 
-/** `arn:aws:iam::123456789012:user/maple` as a principal, or undefined for anything else. */
-export const parseAwsMaplePrincipal = (arn: string): AwsMaplePrincipal | undefined => {
-	const accountId = /^arn:aws:iam::([0-9]{12}):(user|role)\/[\w+=,.@/-]+$/u.exec(arn)?.[1]
-	return accountId === undefined ? undefined : { arn, accountId }
-}
+/** The issuer customer accounts trust: `{api}/oidc/aws`. It is permanent once an account trusts it. */
+export const awsOidcIssuer = (apiBaseUrl: string) => `${apiBaseUrl.replace(/\/+$/u, "")}/oidc/aws`
+
+/** The `sub` of a connection's tokens, the one value its role's trust policy accepts. */
+export const awsOidcSubject = (connectionId: AwsConnectionId) => `aws-connection:${connectionId}`
+
+/** The issuer as IAM names it: without its scheme, in provider ARNs and condition keys. */
+const issuerHostPath = (issuer: string) => issuer.replace(/^https:\/\//u, "")
+
+export const awsOidcProviderArn = (accountId: AwsAccountId, issuer: string) =>
+	`arn:aws:iam::${accountId}:oidc-provider/${issuerHostPath(issuer)}`
 
 /** Which module a customer managed policy name stands for, given the connection's role name. */
 export const awsModuleOfPolicyName = (roleName: string, policyName: string): AwsModule | undefined => {
@@ -149,8 +152,8 @@ export const awsModuleOfPolicyName = (roleName: string, policyName: string): Aws
 export interface AwsSetupPlanInput {
 	readonly connectionId: AwsConnectionId
 	readonly accountId: AwsAccountId
-	readonly externalId: string
-	readonly maplePrincipal: AwsMaplePrincipal
+	/** Maple's OIDC issuer, from {@link awsOidcIssuer}. */
+	readonly issuer: string
 	readonly modules: ReadonlyArray<AwsModule>
 }
 
@@ -158,7 +161,7 @@ interface IamStatement {
 	readonly Effect: "Allow"
 	readonly Action: string | ReadonlyArray<string>
 	readonly Resource?: string | ReadonlyArray<string>
-	readonly Principal?: { readonly AWS: string }
+	readonly Principal?: { readonly Federated: string }
 	readonly Condition?: Record<string, Record<string, string>>
 }
 
@@ -173,6 +176,8 @@ export interface AwsSetupPlan {
 	readonly metricsStackName: string
 	readonly metricStreamName: string
 	readonly roleArn: string
+	/** The account's IAM OIDC provider for Maple's issuer, shared by every connection to it. */
+	readonly oidcProvider: { readonly arn: string; readonly url: string; readonly audience: string }
 	readonly trustPolicy: IamDocument
 	/** Lets the role read its own tags and attached policies: how Maple checks the setup. */
 	readonly selfReadPolicy: IamDocument
@@ -189,24 +194,29 @@ export interface AwsSetupPlan {
 export const awsSetupPlan = (input: AwsSetupPlanInput): AwsSetupPlan => {
 	const names = awsConnectionResourceNames(input.connectionId)
 	const roleArn = awsRoleArn(input.accountId, names.roleName)
+	const providerArn = awsOidcProviderArn(input.accountId, input.issuer)
+	const issuer = issuerHostPath(input.issuer)
 	return {
 		roleName: names.roleName,
 		stackName: names.stackName,
 		metricsStackName: names.metricsStackName,
 		metricStreamName: names.metricStreamName,
 		roleArn,
-		// Maple's account is the principal and the condition names the exact identity: an IAM user
-		// recreated under the same name still matches, which a principal ARN alone would not.
+		oidcProvider: { arn: providerArn, url: input.issuer, audience: AWS_OIDC_AUDIENCE },
+		// Only a token Maple signed for this connection: the audience every Maple token carries,
+		// and the subject no other connection's token has.
 		trustPolicy: {
 			Version: "2012-10-17",
 			Statement: [
 				{
 					Effect: "Allow",
-					Principal: { AWS: `arn:aws:iam::${input.maplePrincipal.accountId}:root` },
-					Action: "sts:AssumeRole",
+					Principal: { Federated: providerArn },
+					Action: "sts:AssumeRoleWithWebIdentity",
 					Condition: {
-						StringEquals: { "sts:ExternalId": input.externalId },
-						ArnEquals: { "aws:PrincipalArn": input.maplePrincipal.arn },
+						StringEquals: {
+							[`${issuer}:aud`]: AWS_OIDC_AUDIENCE,
+							[`${issuer}:sub`]: awsOidcSubject(input.connectionId),
+						},
 					},
 				},
 			],

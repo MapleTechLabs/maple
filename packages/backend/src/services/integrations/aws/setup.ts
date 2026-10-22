@@ -1,4 +1,9 @@
-import { AWS_TEMPLATE_VERSION, type AwsMetricStream, type AwsSetupPlan } from "@maple/domain/aws"
+import {
+	AWS_ROLE_NAME_PREFIX,
+	AWS_TEMPLATE_VERSION,
+	type AwsMetricStream,
+	type AwsSetupPlan,
+} from "@maple/domain/aws"
 import type { AwsAccountId, AwsConnectionId } from "@maple/domain/primitives"
 import { Effect } from "effect"
 import { forPaste } from "../paste-script"
@@ -13,7 +18,20 @@ export const AWS_STACK_REGION = "us-east-1"
 /** CloudFormation logical id of a module's policy: `ObservabilityPolicy`. */
 const policyLogicalId = (module: string) => `${module[0]?.toUpperCase() ?? ""}${module.slice(1)}Policy`
 
-/** The stack as a CloudFormation template (JSON, which CloudFormation reads as it reads YAML). */
+/** The trust policy with its federated principal swapped for `principal`. */
+const trustingPrincipal = (plan: AwsSetupPlan, principal: unknown) => ({
+	...plan.trustPolicy,
+	Statement: plan.trustPolicy.Statement.map((statement) => ({
+		...statement,
+		Principal: { Federated: principal },
+	})),
+})
+
+/**
+ * The stack as a CloudFormation template (JSON, which CloudFormation reads as it reads YAML). An
+ * account has one OIDC provider per issuer, shared by every connection to it: the stack creates it
+ * only when told to (the console default), and keeps it when deleted, since another role may trust it.
+ */
 export const renderAwsCloudFormation = (connectionId: AwsConnectionId, plan: AwsSetupPlan) => {
 	const policies = Object.fromEntries(
 		plan.modules.map((module) => [
@@ -31,14 +49,33 @@ export const renderAwsCloudFormation = (connectionId: AwsConnectionId, plan: Aws
 	const template = {
 		AWSTemplateFormatVersion: "2010-09-09",
 		Description: `Maple integration ${connectionId} (setup v${AWS_TEMPLATE_VERSION}): a read-only role Maple assumes. ${DOCS_URL}`,
+		Parameters: {
+			CreateOidcProvider: {
+				Type: "String",
+				AllowedValues: ["true", "false"],
+				Default: "true",
+				Description: `Whether to register Maple's identity provider (${plan.oidcProvider.url}). Choose false if this account already has it.`,
+			},
+		},
+		Conditions: { CreateOidcProvider: { "Fn::Equals": [{ Ref: "CreateOidcProvider" }, "true"] } },
 		Resources: {
+			MapleOidcProvider: {
+				Type: "AWS::IAM::OIDCProvider",
+				Condition: "CreateOidcProvider",
+				DeletionPolicy: "Retain",
+				UpdateReplacePolicy: "Retain",
+				Properties: { Url: plan.oidcProvider.url, ClientIdList: [plan.oidcProvider.audience] },
+			},
 			...policies,
 			MapleRole: {
 				Type: "AWS::IAM::Role",
 				Properties: {
 					RoleName: plan.roleName,
 					Description: "Assumed by Maple to read this account",
-					AssumeRolePolicyDocument: plan.trustPolicy,
+					// Through the provider the stack creates, when it does, so the role waits for it.
+					AssumeRolePolicyDocument: trustingPrincipal(plan, {
+						"Fn::If": ["CreateOidcProvider", { Ref: "MapleOidcProvider" }, plan.oidcProvider.arn],
+					}),
 					MaxSessionDuration: 3600,
 					ManagedPolicyArns: [
 						...new Set(plan.modules.flatMap((module) => module.managedPolicies)),
@@ -115,7 +152,9 @@ export const renderAwsMetricsCloudFormation = (
 								Effect: "Allow",
 								Principal: { Service: "firehose.amazonaws.com" },
 								Action: "sts:AssumeRole",
-								Condition: { StringEquals: { "aws:SourceAccount": { Ref: "AWS::AccountId" } } },
+								Condition: {
+									StringEquals: { "aws:SourceAccount": { Ref: "AWS::AccountId" } },
+								},
 							},
 						],
 					},
@@ -152,7 +191,11 @@ export const renderAwsMetricsCloudFormation = (
 					DeliveryStreamName: streamName,
 					DeliveryStreamType: "DirectPut",
 					HttpEndpointDestinationConfiguration: {
-						EndpointConfiguration: { Name: "Maple", Url: stream.endpoint, AccessKey: { Ref: "AccessKey" } },
+						EndpointConfiguration: {
+							Name: "Maple",
+							Url: stream.endpoint,
+							AccessKey: { Ref: "AccessKey" },
+						},
 						RequestConfiguration: { ContentEncoding: "GZIP" },
 						BufferingHints: { IntervalInSeconds: 60, SizeInMBs: 1 },
 						RetryOptions: { DurationInSeconds: 3600 },
@@ -178,7 +221,9 @@ export const renderAwsMetricsCloudFormation = (
 								Effect: "Allow",
 								Principal: { Service: "streams.metrics.cloudwatch.amazonaws.com" },
 								Action: "sts:AssumeRole",
-								Condition: { StringEquals: { "aws:SourceAccount": { Ref: "AWS::AccountId" } } },
+								Condition: {
+									StringEquals: { "aws:SourceAccount": { Ref: "AWS::AccountId" } },
+								},
 							},
 						],
 					},
@@ -218,7 +263,27 @@ export interface AwsScriptTarget {
 	readonly accountId: AwsAccountId
 	readonly stackName: string
 	readonly metricsStackName: string
+	readonly oidcProvider: AwsSetupPlan["oidcProvider"]
 }
+
+/** Registers Maple's identity provider unless the account has it: other connections may share it. */
+const ensureOidcProvider = (
+	provider: AwsScriptTarget["oidcProvider"],
+) => `if ! aws iam get-open-id-connect-provider --open-id-connect-provider-arn ${provider.arn} >/dev/null 2>&1; then
+  echo "Registering Maple's identity provider, ${provider.url}..."
+  aws iam create-open-id-connect-provider --url ${provider.url} --client-id-list ${provider.audience} >/dev/null
+fi
+`
+
+/** Deletes Maple's identity provider once no Maple role is left to trust it. */
+const removeOidcProviderIfUnused = (
+	provider: AwsScriptTarget["oidcProvider"],
+) => `remaining="$(aws iam list-roles --query "Roles[?starts_with(RoleName, '${AWS_ROLE_NAME_PREFIX}')].RoleName" --output text)"
+if [ -z "$remaining" ] || [ "$remaining" = "None" ]; then
+  echo "Removing Maple's identity provider: no Maple role is left in the account..."
+  aws iam delete-open-id-connect-provider --open-id-connect-provider-arn ${provider.arn} 2>/dev/null || true
+fi
+`
 
 // Every value interpolated below is pattern-checked (account id) or derived from a UUID (stack
 // name), and the template is JSON, so nothing needs shell quoting inside the quoted here-document.
@@ -309,7 +374,7 @@ export const renderAwsSetupScript = (
 ${accountGuard(target.accountId)}template="$(mktemp)"
 cat > "$template" <<'MAPLE_TEMPLATE'
 ${template}MAPLE_TEMPLATE
-# A first deploy that failed leaves a stack that can only be deleted, not updated.
+${ensureOidcProvider(target.oidcProvider)}# A first deploy that failed leaves a stack that can only be deleted, not updated.
 status="$(aws cloudformation describe-stacks --region ${AWS_STACK_REGION} --stack-name ${target.stackName} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
 if [ "$status" = "ROLLBACK_COMPLETE" ]; then
   echo "Removing the stack a failed deploy left behind..."
@@ -322,6 +387,7 @@ aws cloudformation deploy \\
   --stack-name ${target.stackName} \\
   --template-file "$template" \\
   --capabilities CAPABILITY_NAMED_IAM \\
+  --parameter-overrides CreateOidcProvider=false \\
   --no-fail-on-empty-changeset
 rm -f "$template"
 ${deleteMetricsStackFunction(target.metricsStackName)}${metrics === null ? "" : deployMetricsStacks(target.metricsStackName, metrics.stream, metrics.template)}${removeMetricsStacks(target.metricsStackName, metrics?.stream.regions ?? [])}echo "Done. Go back to Maple and select Check connection. Details: ${DOCS_URL}"
@@ -336,7 +402,7 @@ export const renderAwsCleanupScript = (target: AwsScriptTarget) =>
 ${accountGuard(target.accountId)}${deleteMetricsStackFunction(target.metricsStackName)}${removeMetricsStacks(target.metricsStackName, [])}echo "Deleting ${target.stackName} from account ${target.accountId}..."
 aws cloudformation delete-stack --region ${AWS_STACK_REGION} --stack-name ${target.stackName}
 aws cloudformation wait stack-delete-complete --region ${AWS_STACK_REGION} --stack-name ${target.stackName}
-echo "Done. The role Maple used is gone."
+${removeOidcProviderIfUnused(target.oidcProvider)}echo "Done. The role Maple used is gone."
 `,
 	)
 
@@ -369,15 +435,26 @@ resource "aws_iam_role_policy_attachment" "maple_managed_${index}" {
 `,
 		)
 		.join("")
+	const trust = hcl(trustingPrincipal(plan, "__PROVIDER__")).replace(
+		'"__PROVIDER__"',
+		"aws_iam_openid_connect_provider.maple.arn",
+	)
 	return `# Maple integration ${connectionId} (setup v${AWS_TEMPLATE_VERSION}): a read-only role Maple assumes.
 # Apply it with credentials for the account in the role ARN below.
 # Details: ${DOCS_URL}
+
+# Maple's identity provider. An account has one per issuer: if another Maple connection already
+# registered it, import it first: terraform import aws_iam_openid_connect_provider.maple ${plan.oidcProvider.arn}
+resource "aws_iam_openid_connect_provider" "maple" {
+  url            = ${hcl(plan.oidcProvider.url)}
+  client_id_list = [${hcl(plan.oidcProvider.audience)}]
+}
 
 resource "aws_iam_role" "maple" {
   name                 = ${hcl(plan.roleName)}
   description          = "Assumed by Maple to read this account"
   max_session_duration = 3600
-  assume_role_policy   = jsonencode(${hcl(plan.trustPolicy)})
+  assume_role_policy   = jsonencode(${trust})
   tags                 = ${hcl(Object.fromEntries(plan.tags.map((tag) => [tag.Key, tag.Value])))}
 }
 
@@ -400,12 +477,20 @@ export const renderAwsSetup = Effect.fn("renderAwsSetup")(function* (
 	plan: AwsSetupPlan,
 	stream: AwsStreamTarget | null,
 ) {
-	const target = { accountId, stackName: plan.stackName, metricsStackName: plan.metricsStackName }
+	const target = {
+		accountId,
+		stackName: plan.stackName,
+		metricsStackName: plan.metricsStackName,
+		oidcProvider: plan.oidcProvider,
+	}
 	const template = renderAwsCloudFormation(connectionId, plan)
 	const metrics =
 		stream === null
 			? null
-			: { stream, template: renderAwsMetricsCloudFormation(connectionId, plan.metricStreamName, stream) }
+			: {
+					stream,
+					template: renderAwsMetricsCloudFormation(connectionId, plan.metricStreamName, stream),
+				}
 	return {
 		stackName: plan.stackName,
 		stackRegion: AWS_STACK_REGION,

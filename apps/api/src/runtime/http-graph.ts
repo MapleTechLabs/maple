@@ -16,6 +16,7 @@ import { HttpEmailPublicLive } from "@/routes/email-public.http"
 import { HttpV2SharePublicLive } from "@/routes/v2/share.http"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpDemoLive } from "@/routes/internal/demo.http"
+import { AwsOidcRouter } from "@/routes/aws-oidc.http"
 import { DiscoveryRouter, instanceApiV2, NotFoundRouter } from "@/routes/discovery.http"
 import { HttpDigestLive } from "@/routes/internal/digest.http"
 import { HttpCodeReviewLive } from "@/routes/internal/code-review.http"
@@ -241,6 +242,7 @@ const RawRoutes = rawRoutes(
 		DocsRoute,
 		DocsV2Route,
 		DiscoveryRouter,
+		AwsOidcRouter,
 		// Last by convention only — find-my-way ranks the wildcard below every other
 		// route regardless of registration order.
 		NotFoundRouter,
