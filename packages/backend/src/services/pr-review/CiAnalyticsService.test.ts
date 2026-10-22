@@ -127,6 +127,19 @@ describe("CiAnalyticsService.analytics", () => {
 		),
 	)
 
+	it.effect("reads two months in daily buckets", () =>
+		withService({}, (service) =>
+			Effect.gen(function* () {
+				const analytics = yield* service.analytics(tenant, {
+					startTime: END - 60 * 24 * HOUR,
+					endTime: END,
+				})
+				assert.strictEqual(analytics.bucketSeconds, 24 * 3600)
+				assert.strictEqual(analytics.series.length, 60)
+			}),
+		),
+	)
+
 	it.effect("compares with the previous period only while the tables still hold it", () =>
 		withService({}, (service, reads) =>
 			Effect.gen(function* () {
