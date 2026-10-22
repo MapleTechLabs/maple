@@ -1,17 +1,18 @@
 import {
-	decodeOAuthReturnHash,
 	OAuthChatOutcome,
 	OAuthCompleteStatus,
 	type OAuthCompleteRequest,
 	type OAuthReturnFlow,
 	type OAuthCompleteResponse,
 } from "@maple/domain/http"
-import { Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema } from "effect"
 import { MapleInternalApiClient } from "../../platform/api-clients"
+import { browserStorage, type ReturnStorage, takeOAuthReturn } from "../../platform/oauth-return-stash"
 import { ConnectProvider } from "./connect"
 
-// A provider return the API handed over in the URL fragment (`#maple_oauth=…`). The API callback
-// holds no Maple session, so this signed-in page finishes it: only the user who started it can.
+// A provider return the API handed over in the URL fragment (`#maple_oauth=…`), stashed at boot.
+// The API callback holds no Maple session, so this signed-in page finishes it: only the user who
+// started it can. Integrations and the Sources steps both run it, wherever the redirects land.
 
 /** The provider a popup reports to (`ReceivedConnectMessage`); the chat flows report via search. */
 const PROVIDER_OF = {
@@ -34,19 +35,6 @@ export const OAuthReturnOutcome = Schema.Struct({
 	isHandedOff: Schema.Boolean,
 })
 export type OAuthReturnOutcome = typeof OAuthReturnOutcome.Type
-
-/** Read the fragment and drop it, so a reload or a shared URL never redeems the return twice. */
-const takeReturn = Effect.sync(() => {
-	const request = decodeOAuthReturnHash(window.location.hash)
-	if (Option.isSome(request)) {
-		window.history.replaceState(
-			window.history.state,
-			"",
-			`${window.location.pathname}${window.location.search}`,
-		)
-	}
-	return request
-})
 
 /** What the callback page used to post: the integrations page listens for exactly this. */
 interface CallbackMessage {
@@ -73,21 +61,32 @@ const handOff = (provider: ConnectProvider, status: string, message: string) =>
 		return true
 	})
 
-const UNREACHABLE: Pick<OAuthCompleteResponse, "status" | "message" | "chat"> = {
+type CompletionResult = Pick<OAuthCompleteResponse, "status" | "message" | "chat">
+
+const UNREACHABLE: CompletionResult = {
 	status: "error",
 	message: "Maple could not finish the connection. Try connecting again.",
 	chat: null,
 }
 
-const finish = (request: OAuthCompleteRequest) =>
+/** What finishing a return touches: the tab's stash, the API, and the opening tab. */
+export interface OAuthReturnDeps<R> {
+	readonly storage: ReturnStorage
+	readonly now: number
+	readonly complete: (request: OAuthCompleteRequest) => Effect.Effect<CompletionResult, never, R>
+	readonly handOff: (provider: ConnectProvider, status: string, message: string) => Effect.Effect<boolean>
+}
+
+/** The return stashed at boot (`oauth-return-boot.ts`), finished once; `null` when there is none. */
+export const completeOAuthReturnWith = <R>(deps: OAuthReturnDeps<R>) =>
 	Effect.gen(function* () {
-		const client = yield* MapleInternalApiClient
-		const response = yield* client.integrations
-			.oauthComplete({ payload: request })
-			.pipe(Effect.catch(() => Effect.succeed(UNREACHABLE)))
+		const stashed = yield* takeOAuthReturn(deps.storage, deps.now)
+		if (Option.isNone(stashed)) return null
+		const request = stashed.value
+		const response = yield* deps.complete(request)
 		const provider = PROVIDER_OF[request.flow]
 		const isHandedOff =
-			provider === null ? false : yield* handOff(provider, response.status, response.message)
+			provider === null ? false : yield* deps.handOff(provider, response.status, response.message)
 		return {
 			provider,
 			connector: request.connector ?? null,
@@ -98,9 +97,17 @@ const finish = (request: OAuthCompleteRequest) =>
 		} satisfies OAuthReturnOutcome
 	})
 
-/** The return this page was opened with, finished; `null` when the URL carried none. */
 export const completeOAuthReturn: Effect.Effect<OAuthReturnOutcome | null, never, MapleInternalApiClient> =
 	Effect.gen(function* () {
-		const request = yield* takeReturn
-		return Option.isNone(request) ? null : yield* finish(request.value)
+		const client = yield* MapleInternalApiClient
+		const now = yield* Clock.currentTimeMillis
+		return yield* completeOAuthReturnWith({
+			storage: browserStorage,
+			now,
+			handOff,
+			complete: (request) =>
+				client.integrations
+					.oauthComplete({ payload: request })
+					.pipe(Effect.catch(() => Effect.succeed(UNREACHABLE))),
+		})
 	})

@@ -44,7 +44,6 @@ export const OAuthChatOutcome = Schema.Struct({
 export class OAuthCompleteResponse extends Schema.Class<OAuthCompleteResponse>("OAuthCompleteResponse")({
 	status: OAuthCompleteStatus,
 	message: Schema.String,
-	returnTo: Schema.NullOr(Schema.String),
 	chat: Schema.NullOr(OAuthChatOutcome),
 }) {}
 

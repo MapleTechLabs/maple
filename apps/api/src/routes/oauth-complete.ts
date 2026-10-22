@@ -62,11 +62,9 @@ const chatReason = (tag: string) => {
 	}
 }
 
-const success = (message: string, returnTo: string | null) =>
-	new OAuthCompleteResponse({ status: "success", message, returnTo, chat: null })
+const success = (message: string) => new OAuthCompleteResponse({ status: "success", message, chat: null })
 
-const failure = (message: string) =>
-	new OAuthCompleteResponse({ status: "error", message, returnTo: null, chat: null })
+const failure = (message: string) => new OAuthCompleteResponse({ status: "error", message, chat: null })
 
 /**
  * Finish a provider return for the signed-in caller. Every service redeems the state only for
@@ -109,7 +107,7 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 					),
 				),
 			),
-			Effect.map((result) => success(CLOSE_HINT, result.returnTo)),
+			Effect.as(success(CLOSE_HINT)),
 		)
 
 	// Single-org grants finish here; multi-org grants leave the org picker to the dashboard.
@@ -120,15 +118,10 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 				return only !== undefined && rest.length === 0
 					? planetscaleConnection
 							.finalizeOrgSelection(result.orgId, { organization: only.name })
-							.pipe(
-								Effect.as(
-									success(`Connected to ${only.name}. ${CLOSE_HINT}`, result.returnTo),
-								),
-							)
+							.pipe(Effect.as(success(`Connected to ${only.name}. ${CLOSE_HINT}`)))
 					: Effect.succeed(
 							success(
 								"Authorization complete. Choose which PlanetScale organization to connect back in Maple.",
-								result.returnTo,
 							),
 						)
 			}),
@@ -150,12 +143,7 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 						supabaseConnection
 							.finalizeConnect(result.orgId, result.connectedByUserId, result.organization)
 							.pipe(
-								Effect.as(
-									success(
-										`Connected to ${result.organization.name}. ${CLOSE_HINT}`,
-										result.returnTo,
-									),
-								),
+								Effect.as(success(`Connected to ${result.organization.name}. ${CLOSE_HINT}`)),
 							),
 					),
 				),
@@ -185,7 +173,7 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 		}
 		return github
 			.completeConnect(installationId, state, code, initiator)
-			.pipe(Effect.map((result) => success(CLOSE_HINT, result.returnTo)))
+			.pipe(Effect.as(success(CLOSE_HINT)))
 	}
 
 	const completeChat = (
@@ -198,7 +186,6 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 			new OAuthCompleteResponse({
 				status: reason === null ? "success" : "error",
 				message: reason === null ? "Linked" : "Link failed",
-				returnTo: null,
 				chat: { kind, name, reason },
 			})
 		if (connector === undefined) return Effect.succeed(outcome(null, "unknown"))
@@ -242,9 +229,7 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 					return withCode(params, (code, state) => completeCloudflare(code, state, initiator))
 				case "hazel":
 					return withCode(params, (code, state) =>
-						hazel
-							.completeConnect(code, state, initiator)
-							.pipe(Effect.map((result) => success(CLOSE_HINT, result.returnTo))),
+						hazel.completeConnect(code, state, initiator).pipe(Effect.as(success(CLOSE_HINT))),
 					)
 				case "planetscale":
 					return withCode(params, (code, state) => completePlanetScale(code, state, initiator))
