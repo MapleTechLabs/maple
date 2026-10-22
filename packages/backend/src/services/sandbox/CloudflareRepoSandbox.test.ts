@@ -20,7 +20,7 @@ import {
 	SandboxRequest,
 	SandboxRuntime,
 	SandboxSecretHandle,
-} from "@yielded/agent/sandbox"
+} from "@maple/backend/sandbox/contract"
 import { Duration, Effect, Exit, Fiber, Option, Schema, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import type { RepositoryCheckout } from "@maple/backend/services/integrations/vcs/VcsSourceService"
@@ -243,7 +243,7 @@ describe("the Cloudflare repository sandbox", () => {
 					makeSandbox(() => new SandboxRunTimedOut({ wallTimeMs: 5000 })).execute(request()),
 				),
 			)
-			assert.strictEqual(failureTag(timedOut), "SandboxTimeoutError")
+			assert.strictEqual(failureTag(timedOut), "@maple/backend/sandbox/SandboxTimeoutError")
 
 			// A checkout that never becomes ready is waited on up to the budget, and
 			// then reported as a spawn failure: no process ran, so it must not borrow
@@ -258,7 +258,7 @@ describe("the Cloudflare repository sandbox", () => {
 				),
 			)
 			const pending = yield* settleWithClock(waiting)
-			assert.strictEqual(failureTag(pending), "SandboxSpawnError")
+			assert.strictEqual(failureTag(pending), "@maple/backend/sandbox/SandboxSpawnError")
 			assert.match(
 				failureMessage(pending) ?? "",
 				/still being cloned .* come back to this repository later/,
@@ -271,7 +271,7 @@ describe("the Cloudflare repository sandbox", () => {
 					),
 				),
 			)
-			assert.strictEqual(failureTag(brokenCheckout), "SandboxSpawnError")
+			assert.strictEqual(failureTag(brokenCheckout), "@maple/backend/sandbox/SandboxSpawnError")
 
 			const gone = yield* Effect.exit(
 				Stream.runCollect(
@@ -280,7 +280,7 @@ describe("the Cloudflare repository sandbox", () => {
 					),
 				),
 			)
-			assert.strictEqual(failureTag(gone), "SandboxSpawnError")
+			assert.strictEqual(failureTag(gone), "@maple/backend/sandbox/SandboxSpawnError")
 		}),
 	)
 
@@ -316,7 +316,8 @@ describe("the Cloudflare repository sandbox", () => {
 					? exit.cause.reasons[0].error
 					: undefined
 			assert.isTrue(
-				error?._tag === "SandboxSpawnError" && Schema.is(SandboxRunUnavailable)(error.cause),
+				error?._tag === "@maple/backend/sandbox/SandboxSpawnError" &&
+					Schema.is(SandboxRunUnavailable)(error.cause),
 			)
 		}),
 	)
@@ -330,7 +331,7 @@ describe("the Cloudflare repository sandbox", () => {
 					),
 				),
 			)
-			assert.strictEqual(failureTag(exit), "SandboxUnsupportedRequestError")
+			assert.strictEqual(failureTag(exit), "@maple/backend/sandbox/SandboxUnsupportedRequestError")
 		}),
 	)
 
@@ -343,7 +344,7 @@ describe("the Cloudflare repository sandbox", () => {
 					),
 				),
 			)
-			assert.strictEqual(failureTag(exit), "SandboxUnsupportedRequestError")
+			assert.strictEqual(failureTag(exit), "@maple/backend/sandbox/SandboxUnsupportedRequestError")
 		}),
 	)
 })

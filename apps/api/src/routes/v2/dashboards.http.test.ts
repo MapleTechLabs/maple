@@ -572,6 +572,9 @@ describe("v2 dashboard widget data", () => {
 	})
 })
 
+// Minting a share link also needs read access to the telemetry it serves.
+const SHARE_SCOPES = ["dashboards:write", "traces:read", "logs:read", "metrics:read"]
+
 describe("v2 dashboard shares", () => {
 	const createDashboard = async (harness: Harness, key: string) => {
 		const created = await harness.request("POST", "/v2/dashboards", key, {
@@ -622,7 +625,7 @@ describe("v2 dashboard shares", () => {
 
 	it("mints a token once, and never hands it back", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 
 		const unshared = await harness.request("GET", `/v2/dashboards/${id}/share`, key.secret)
@@ -654,9 +657,24 @@ describe("v2 dashboard shares", () => {
 		await harness.dispose()
 	})
 
-	it("keeps the same link when only the mode changes", async () => {
+	it("refuses a share link to a key that cannot read the telemetry it serves", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["dashboards:write"])
+		const id = await createDashboard(harness, key.secret)
+
+		const shared = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
+			mode: "public",
+		})
+		const rotated = await harness.request("POST", `/v2/dashboards/${id}/share/rotate`, key.secret)
+		expect([shared.status, rotated.status]).toEqual([403, 403])
+		expect(shared.body.error.code).toBe("insufficient_permissions")
+
+		await harness.dispose()
+	})
+
+	it("keeps the same link when only the mode changes", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 
 		const first = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
@@ -680,7 +698,7 @@ describe("v2 dashboard shares", () => {
 
 	it("rotates: the old link stops resolving the moment the new one starts", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 
 		const first = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
@@ -715,7 +733,7 @@ describe("v2 dashboard shares", () => {
 
 	it("rotating an unshared dashboard reports no such share", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 
 		const rotated = await harness.request("POST", `/v2/dashboards/${id}/share/rotate`, key.secret)
@@ -726,7 +744,7 @@ describe("v2 dashboard shares", () => {
 
 	it("revokes idempotently, and the link stops resolving", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 
 		const shared = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
@@ -751,7 +769,7 @@ describe("v2 dashboard shares", () => {
 
 	it("stops resolving when the dashboard itself is deleted", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 
 		const shared = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
@@ -783,7 +801,7 @@ describe("v2 dashboard shares", () => {
 
 	it("answers a live link whose dashboard is gone exactly like an unknown token", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const { token, ogId } = await openPublicShare(harness, key.secret)
 
 		const unknown = await harness.request("POST", "/v2/share/resolve", undefined, {
@@ -808,7 +826,7 @@ describe("v2 dashboard shares", () => {
 
 	it("reports a failed dashboard read as a 503, never as a missing link", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const { token, ogId } = await openPublicShare(harness, key.secret)
 
 		harness.failDashboardGet("unavailable")
@@ -828,7 +846,7 @@ describe("v2 dashboard shares", () => {
 	it("enforces dashboard scopes on share management", async () => {
 		const harness = makeHarness()
 		const readOnly = await harness.bootstrapKey(["dashboards:read"])
-		const writer = await harness.bootstrapKey(["dashboards:write"])
+		const writer = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, writer.secret)
 
 		// Reading a share is a read; every mutation is a write. The scope is derived
@@ -850,7 +868,7 @@ describe("v2 dashboard shares", () => {
 
 	it("cannot reach a dashboard belonging to another org", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 		await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, { mode: "public" })
 
@@ -877,7 +895,7 @@ describe("v2 dashboard shares", () => {
 
 	it("shares a single widget on its own link", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 
 		const unshared = await harness.request("GET", `/v2/dashboards/${id}/widgets/w-1/share`, key.secret)
@@ -898,9 +916,68 @@ describe("v2 dashboard shares", () => {
 		await harness.dispose()
 	})
 
+	it("resolves only the shared widget's own variables on a chart link", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
+		const created = await harness.request("POST", "/v2/dashboards", key.secret, {
+			name: "Board with variables",
+			time_range: { type: "relative", value: "1h" },
+			widgets: [
+				{
+					id: "w-1",
+					visualization: "stat",
+					data_source: { kind: "static" },
+					display: { title: "Errors in $region" },
+					layout: { x: 0, y: 0, w: 3, h: 4 },
+				},
+			],
+			variables: [
+				{ name: "region", type: "textbox", default_value: "eu" },
+				{ name: "tier", type: "custom", options: [{ value: "gold" }], default_value: "gold" },
+			],
+		})
+		const id: string = created.body.id
+		const board = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
+			mode: "public",
+		})
+		const chart = await harness.request("PUT", `/v2/dashboards/${id}/widgets/w-1/share`, key.secret, {
+			mode: "public",
+		})
+
+		const at = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ")
+		const variablesFor = async (token: string) => {
+			const response = await harness.request("POST", "/v2/share/widget-data", undefined, {
+				token,
+				requests: [{ widgetId: "w-1" }],
+				timeRange: { startTime: at(Date.now() - 3_600_000), endTime: at(Date.now() - 60_000) },
+			})
+			expect(response.status).toBe(200)
+			return Object.keys(response.body.variables).sort()
+		}
+
+		expect(await variablesFor(board.body.token)).toEqual(["region", "tier"])
+		expect(await variablesFor(chart.body.token)).toEqual(["region"])
+
+		// Once its widget is edited away, a chart link must not fall back to the board's variables.
+		const edited = await harness.request("PATCH", `/v2/dashboards/${id}`, key.secret, {
+			widgets: [
+				{
+					id: "w-2",
+					visualization: "stat",
+					data_source: { kind: "static" },
+					display: { title: "Tier $tier" },
+					layout: { x: 0, y: 0, w: 3, h: 4 },
+				},
+			],
+		})
+		expect(edited.status).toBe(200)
+		expect(await variablesFor(chart.body.token)).toEqual([])
+		await harness.dispose()
+	})
+
 	it("refuses to mint a link for a widget that is not on the board", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 
 		// Otherwise the caller walks away with a token that resolves to a
@@ -918,7 +995,7 @@ describe("v2 dashboard shares", () => {
 
 	it("gates a widget share on the dashboard's own", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 
 		const board = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
@@ -969,7 +1046,7 @@ describe("v2 dashboard shares", () => {
 
 	it("never grants a chart link more than its board's mode", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 		const share = (mode: "public" | "org") =>
 			harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, { mode })
@@ -1004,7 +1081,7 @@ describe("v2 dashboard shares", () => {
 
 	it("scopes each widget's link to its own widget", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 
 		await harness.request("PUT", `/v2/dashboards/${id}/widgets/w-1/share`, key.secret, {
@@ -1063,7 +1140,7 @@ describe("v2 share previews", () => {
 
 	it("describes a public link and draws its board", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 		const token = await share(harness, key.secret, id, "public")
 
@@ -1097,7 +1174,7 @@ describe("v2 share previews", () => {
 
 	it("hides a chart's preview while its board is not public", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 		await share(harness, key.secret, id, "public")
 		const chart = await harness.request("PUT", `/v2/dashboards/${id}/widgets/w-1/share`, key.secret, {
@@ -1125,7 +1202,7 @@ describe("v2 share previews", () => {
 
 	it("refuses an org-only link, without saying that is why", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 		const token = await share(harness, key.secret, id, "org")
 
@@ -1144,7 +1221,7 @@ describe("v2 share previews", () => {
 
 	it("stops drawing the moment the link is revoked", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 		const token = await share(harness, key.secret, id, "public")
 
@@ -1161,7 +1238,7 @@ describe("v2 share previews", () => {
 
 	it("rejects a tampered image id", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["dashboards:write"])
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
 		const id = await createDashboard(harness, key.secret)
 		const token = await share(harness, key.secret, id, "public")
 

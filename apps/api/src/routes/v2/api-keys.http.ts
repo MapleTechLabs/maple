@@ -7,6 +7,7 @@ import {
 	isoTimestampOrNull,
 	paginateArray,
 	V2InsufficientPermissions,
+	scopeAllows,
 } from "@maple/domain/http/v2"
 import type { V2ApiKey, V2ApiKeyMutationResponse, V2ApiKeyWithSecret } from "@maple/domain/http/v2"
 import { Effect } from "effect"
@@ -17,6 +18,30 @@ import { requireAdmin } from "@maple/backend/services/auth/auth"
 
 const adminOnly = (action: string) => () =>
 	V2InsufficientPermissions.make(`Only org admins can ${action} API keys`)
+
+const beyondCallerScopes = () =>
+	V2InsufficientPermissions.make("A scoped API key cannot manage a key with broader access than its own")
+
+/**
+ * Whether a caller holding `caller` scopes may hand out or take over a key with
+ * `granted` scopes. Unscoped callers may; a scoped caller only within its own.
+ */
+const withinCallerScopes = (
+	caller: ReadonlyArray<string> | undefined,
+	granted: ReadonlyArray<string> | null | undefined,
+): boolean => {
+	if (caller === undefined) return true
+	if (granted == null || granted.length === 0) return false
+	return granted.every((scope) => {
+		if (scope === "*") return caller.includes("*")
+		const [family, access] = scope.split(":")
+		return (
+			family !== undefined &&
+			(access === "read" || access === "write") &&
+			scopeAllows(caller, { family, access })
+		)
+	})
+}
 
 type ApiKeyFields = Pick<
 	ApiKeyResponse,
@@ -95,6 +120,13 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 					if (!isMcpKey) {
 						yield* requireAdmin(tenant.roles, adminOnly("create"))
 					}
+					// MCP keys carry no scopes, so a scoped caller can never mint one.
+					if (
+						tenant.scopes !== undefined &&
+						(isMcpKey || !withinCallerScopes(tenant.scopes, payload.scopes))
+					) {
+						return yield* beyondCallerScopes()
+					}
 					const createdByEmail = yield* auth.getUserEmail(tenant.userId)
 					const created = yield* apiKeysService.create(tenant.orgId, tenant.userId, {
 						name: payload.name,
@@ -118,6 +150,10 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* requireAdmin(tenant.roles, adminOnly("roll"))
+					const existing = yield* apiKeysService.get(tenant.orgId, params.id)
+					if (!withinCallerScopes(tenant.scopes, existing.scopes)) {
+						return yield* beyondCallerScopes()
+					}
 					const createdByEmail = yield* auth.getUserEmail(tenant.userId)
 					const rolled = yield* apiKeysService.roll(tenant.orgId, tenant.userId, params.id, {
 						createdByEmail,
@@ -139,6 +175,9 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 					const isOwnMcpKey = existing.kind === "mcp" && existing.createdBy === tenant.userId
 					if (!isOwnMcpKey) {
 						yield* requireAdmin(tenant.roles, adminOnly("revoke"))
+					}
+					if (!withinCallerScopes(tenant.scopes, existing.scopes)) {
+						return yield* beyondCallerScopes()
 					}
 					const revoked = yield* apiKeysService.revoke(tenant.orgId, params.id)
 					yield* recordHttpAudit("api_key.revoked", {

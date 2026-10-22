@@ -14,7 +14,7 @@ import {
 	SandboxUnsupportedRequestError,
 	type SandboxError,
 	type SandboxEvent,
-} from "@yielded/agent/sandbox"
+} from "@maple/backend/sandbox/contract"
 import { Context, Duration, Effect, Layer, Stream } from "effect"
 import {
 	NETWORK_DISABLED,

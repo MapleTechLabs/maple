@@ -317,8 +317,12 @@ export class PrReviewConversationService extends Context.Service<
 				return skip("disabled")
 			}
 			const repo = repository.value
-			if (!isTrustedAuthorAssociation(job.authorAssociation)) {
-				yield* annotate("skipped", { "maple.pr_reply.skip_reason": "not_collaborator" })
+			// Webhooks report private org members as CONTRIBUTOR, so the association only gates public repositories.
+			if (!repo.isPrivate && !isTrustedAuthorAssociation(job.authorAssociation)) {
+				yield* annotate("skipped", {
+					"maple.pr_reply.skip_reason": "not_collaborator",
+					"vcs.pull_request.author_association": job.authorAssociation,
+				})
 				return skip("not_collaborator")
 			}
 			const nowMs = yield* Clock.currentTimeMillis

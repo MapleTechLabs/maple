@@ -6,6 +6,7 @@ import { IntegrationStatuses } from "../../data/integration-statuses"
 import { toLoadFailure } from "../../data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
 import { Message } from "./message"
+import { completeOAuthReturn } from "./oauth-return"
 import { BillingCustomerCache } from "../../data/billing-customer"
 import { readIsOrgAdmin } from "../../data/session-tenant"
 import { trackProduct } from "../../data/analytics"
@@ -15,6 +16,12 @@ const settle = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 
 const Args = { key: Schema.String }
 const RefreshArgs = { key: Schema.String, refresh: Schema.Boolean }
+
+/** Finishes a provider return the URL fragment carries (`oauth-return.ts`); a no-op otherwise. */
+export const CompleteOAuthReturn = Command.define("CompleteIntegrationsOAuthReturn", {
+	messages: [Message.CompletedOAuthReturn],
+	execute: Effect.map(completeOAuthReturn, (outcome) => Message.CompletedOAuthReturn({ outcome })),
+})
 
 /** Sequences the URL cleanup after the toast: one OutMessage per update. */
 export const StripChatParams = Command.define("StripIntegrationsChatParams", {
@@ -194,7 +201,9 @@ export const TrackConnected = Command.define("TrackIntegrationConnected", {
 	args: { provider: Schema.String },
 	messages: [Message.CompletedTrackConnected],
 	execute: ({ provider }) =>
-		trackProduct("integration_connected", { provider }).pipe(Effect.as(Message.CompletedTrackConnected())),
+		trackProduct("integration_connected", { provider }).pipe(
+			Effect.as(Message.CompletedTrackConnected()),
+		),
 })
 
 /** `useIsOrgAdmin()`: the session the shell already read (`SessionTenant`), for the settings rail. */
