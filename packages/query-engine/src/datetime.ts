@@ -1089,10 +1089,14 @@ export const alertQueryLimits = (intervalMinutes: number): AlertQueryLimits =>
 const ALERT_SLOWDOWN_INTERVALS = [1, 5, 10, 15, 30, 60] as const
 
 /**
- * The next interval up whose query limits are larger, at most `windowMinutes` so
- * slowing down never leaves data between checks unread. Null when none is left.
+ * The next interval up that raises the limit the query ran out of, at most `windowMinutes`
+ * so slowing down never leaves data between checks unread. Null when none is left.
  */
-export const nextSlowerAlertInterval = (intervalMinutes: number, windowMinutes: number): number | null => {
+export const nextSlowerAlertInterval = (
+	intervalMinutes: number,
+	windowMinutes: number,
+	exceeded: "time" | "memory",
+): number | null => {
 	const current = alertQueryLimits(intervalMinutes)
 	return (
 		ALERT_SLOWDOWN_INTERVALS.find((candidate) => {
@@ -1100,7 +1104,9 @@ export const nextSlowerAlertInterval = (intervalMinutes: number, windowMinutes: 
 			return (
 				candidate > intervalMinutes &&
 				candidate <= windowMinutes &&
-				(limits.timeSeconds > current.timeSeconds || limits.memoryBytes > current.memoryBytes)
+				(exceeded === "time"
+					? limits.timeSeconds > current.timeSeconds
+					: limits.memoryBytes > current.memoryBytes)
 			)
 		}) ?? null
 	)

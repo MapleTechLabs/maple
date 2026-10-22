@@ -4197,12 +4197,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					)
 					yield* persistEvaluationError(row, error.message, failureCategory, true, failure)
 					if (isQueryLimitFailure(failure.kind))
-						yield* recordQueryLimitFailure(row, failure.claimedAt)
+						yield* recordQueryLimitFailure(row, failure.claimedAt, failure.kind)
 				})
 
 				// The rule's query hit its time or memory limit. Three times in a row slows the rule to
 				// the next interval with a larger limit, written without `updatedAt` so it is not an edit.
-				const recordQueryLimitFailure = (row: StoredAlertRuleRow, claimedAt: number) =>
+				const recordQueryLimitFailure = (
+					row: StoredAlertRuleRow,
+					claimedAt: number,
+					kind: AlertEvaluationErrorKind,
+				) =>
 					Effect.gen(function* () {
 						const counted = yield* dbExecute((db) =>
 							db.run(
@@ -4217,7 +4221,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						)
 						if ((counted[0]?.failures ?? 0) < SLOWDOWN_AFTER_LIMIT_FAILURES) return
 						const fromMinutes = alertRuleIntervalMinutes(row)
-						const toMinutes = nextSlowerAlertInterval(fromMinutes, row.windowMinutes)
+						const toMinutes = nextSlowerAlertInterval(
+							fromMinutes,
+							row.windowMinutes,
+							kind === "query_too_much_memory" ? "memory" : "time",
+						)
 						if (toMinutes === null) return
 						const slowedAt = yield* now
 						yield* dbExecute((db) =>

@@ -327,21 +327,24 @@ describe("alertRuleIntervalMinutes", () => {
 })
 
 describe("nextSlowerAlertInterval", () => {
-	it("steps to the next interval with a larger query limit", () => {
-		expect(nextSlowerAlertInterval(1, 60)).toBe(5)
-		expect(nextSlowerAlertInterval(3, 60)).toBe(5)
-		expect(nextSlowerAlertInterval(5, 60)).toBe(10)
-		expect(nextSlowerAlertInterval(10, 60)).toBe(15)
+	it("steps a query that ran out of time to the next interval with more time", () => {
+		expect(nextSlowerAlertInterval(1, 60, "time")).toBe(5)
+		expect(nextSlowerAlertInterval(3, 60, "time")).toBe(5)
+		expect(nextSlowerAlertInterval(5, 60, "time")).toBe(10)
+		// 15 minutes adds memory, not time, so a slow query gains nothing there.
+		expect(nextSlowerAlertInterval(10, 60, "time")).toBeNull()
+	})
+
+	it("steps a query that ran out of memory to the next interval with more memory", () => {
+		expect(nextSlowerAlertInterval(1, 60, "memory")).toBe(5)
+		expect(nextSlowerAlertInterval(5, 60, "memory")).toBe(15)
+		expect(nextSlowerAlertInterval(10, 60, "memory")).toBe(15)
 	})
 
 	it("stops at the window, so slowing down never skips data", () => {
-		expect(nextSlowerAlertInterval(1, 5)).toBe(5)
-		expect(nextSlowerAlertInterval(5, 5)).toBeNull()
-		expect(nextSlowerAlertInterval(1, 4)).toBeNull()
-	})
-
-	it("stops once no slower interval buys a larger limit", () => {
-		expect(nextSlowerAlertInterval(15, 1440)).toBeNull()
+		expect(nextSlowerAlertInterval(1, 5, "time")).toBe(5)
+		expect(nextSlowerAlertInterval(5, 5, "time")).toBeNull()
+		expect(nextSlowerAlertInterval(1, 4, "time")).toBeNull()
 	})
 })
 
