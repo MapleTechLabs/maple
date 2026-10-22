@@ -1611,16 +1611,19 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			 * cached, so the time is the query's own. Null when it fails for another reason:
 			 * the preview's series query reports that.
 			 */
+			// Previews of raw SQL run under the longest interval's limit: they read many windows at
+			// once, and say whether one check fits the rule's own limit through `queryTiming`.
+			const PREVIEW_RAW_INTERVAL_MINUTES = 60
+
 			const probeQueryTiming = Effect.fn("AlertsService.probeQueryTiming")(function* (
 				orgId: OrgId,
 				rule: NormalizedRule,
 			) {
-				const probeIntervalMinutes = 60
-				const probeLimitMs = alertQueryLimits(probeIntervalMinutes).timeSeconds * 1000
+				const probeLimitMs = alertQueryLimits(PREVIEW_RAW_INTERVAL_MINUTES).timeSeconds * 1000
 				const endMs = snapAlertWindowEndMs(yield* now)
 				const source = yield* planEvaluateSource(rule.compiledPlan, {
 					windowMinutes: rule.windowMinutes,
-					evaluationIntervalMinutes: probeIntervalMinutes,
+					evaluationIntervalMinutes: PREVIEW_RAW_INTERVAL_MINUTES,
 				})
 				const startedAt = yield* now
 				const exit = yield* Effect.exit(
@@ -1795,14 +1798,54 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						{ concurrency: 5 },
 					)
 				} else {
-					const source = yield* planEvaluateSource(plan, normalized)
-					const observations = yield* queryEngine.evaluateSeries(systemTenant(orgId), {
-						startTime: formatWarehouseDateTime(startMs),
-						endTime: formatWarehouseDateTime(queryEndMs),
-						source,
-						reducer: plan.reducer,
-						sampleCountStrategy: plan.sampleCountStrategy,
-					})
+					const source = yield* planEvaluateSource(
+						plan,
+						plan.kind === "raw_sql"
+							? { ...normalized, evaluationIntervalMinutes: PREVIEW_RAW_INTERVAL_MINUTES }
+							: normalized,
+					)
+					const charted = yield* queryEngine
+						.evaluateSeries(systemTenant(orgId), {
+							startTime: formatWarehouseDateTime(startMs),
+							endTime: formatWarehouseDateTime(queryEndMs),
+							source,
+							reducer: plan.reducer,
+							sampleCountStrategy: plan.sampleCountStrategy,
+						})
+						.pipe(
+							Effect.map((observations) => ({ observations, failure: null })),
+							// A raw query too heavy to chart the whole range still gets its one-check timing back.
+							Effect.catchIf(
+								(error) =>
+									plan.kind === "raw_sql" &&
+									isQueryLimitFailure(evaluationErrorKind(error)),
+								(error) =>
+									Effect.succeed({
+										observations: [],
+										failure:
+											evaluationErrorKind(error) === "query_too_much_memory"
+												? ("query_too_much_memory" as const)
+												: ("query_too_slow" as const),
+									}),
+							),
+						)
+					if (charted.failure !== null) {
+						const timing = yield* Fiber.join(queryTiming)
+						return new AlertRulePreviewResponse({
+							bucketSeconds: windowMs / 1000,
+							windowMinutes: normalized.windowMinutes,
+							threshold: normalized.threshold,
+							thresholdUpper: normalized.thresholdUpper,
+							thresholds: normalized.thresholds,
+							comparator: normalized.comparator,
+							truncatedToStart,
+							series: [],
+							wouldFire: [],
+							seriesFailure: charted.failure,
+							...(timing === undefined ? undefined : { queryTiming: timing }),
+						})
+					}
+					const observations = charted.observations
 					const excludeSet = HashSet.fromIterable(normalized.excludeServiceNames)
 					// Preview must key its series exactly as the scheduler stores them,
 					// or the preview chart and the tracking chart disagree on the

@@ -4953,15 +4953,17 @@ describe("AlertsService.previewRule", () => {
 				endTime: "2026-01-01T00:30:00.000Z",
 			})
 
-		// Only the timing probe runs under the top limit; the series query keeps the rule's own.
-		const probeWarehouse = (probe: Effect.Effect<void, WarehouseQuotaExceededError>) => {
+		// The timing probe reads the latest window (TestClock starts at the epoch), the chart the
+		// requested 2026 range; `chart` answers the chart's query, `probe` runs before the probe's.
+		const probeWarehouse = (
+			probe: Effect.Effect<void, WarehouseQuotaExceededError>,
+			chart: Effect.Effect<void, WarehouseQuotaExceededError> = Effect.void,
+		) => {
 			const stub = makeWarehouseStub({ rawQueryRows: [{ value: 1, samples: 1 }] })
 			return {
 				...stub,
 				rawSqlQuery: (...args: Parameters<WarehouseQueryServiceApi["rawSqlQuery"]>) =>
-					args[2]?.settings?.maxExecutionTime === 25
-						? Effect.andThen(probe, stub.rawSqlQuery(...args))
-						: stub.rawSqlQuery(...args),
+					Effect.andThen(args[1].includes("1970-01-01") ? probe : chart, stub.rawSqlQuery(...args)),
 			} satisfies WarehouseQueryServiceApi
 		}
 
@@ -5008,6 +5010,38 @@ describe("AlertsService.previewRule", () => {
 					makeLayer(
 						testDb,
 						probeWarehouse(
+							Effect.fail(
+								new WarehouseQuotaExceededError({
+									message: "Timeout exceeded",
+									pipeName: "rawSqlQuery",
+									setting: "max_execution_time",
+								}),
+							),
+						),
+						{ fetch: okFetch },
+					),
+				),
+			)
+		})
+
+		it.effect("keeps the timing when the range is too heavy to chart, instead of failing", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const preview = yield* alerts.previewRule(
+					asOrgId("org_timing_heavy"),
+					adminRoles,
+					rawPreview(5),
+				)
+				assert.strictEqual(preview.seriesFailure, "query_too_slow")
+				assert.lengthOf(preview.series, 0)
+				assert.strictEqual(preview.queryTiming?.elapsedMs, 7_800)
+			}).pipe(
+				Effect.provide(
+					makeLayer(
+						testDb,
+						probeWarehouse(
+							TestClock.adjust(Duration.millis(7_800)),
 							Effect.fail(
 								new WarehouseQuotaExceededError({
 									message: "Timeout exceeded",

@@ -797,6 +797,8 @@ export class AlertRulePreviewResponse extends Schema.Class<AlertRulePreviewRespo
 	wouldFire: Schema.Array(AlertRulePreviewFiringSpan),
 	/** Raw SQL rules only: how long one check takes against each interval's limit. */
 	queryTiming: Schema.optionalKey(AlertQueryTiming),
+	/** Raw SQL rules only: the range was too heavy to chart, so `series` is empty. */
+	seriesFailure: Schema.optionalKey(Schema.Literals(["query_too_slow", "query_too_much_memory"])),
 }) {}
 
 export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("AlertIncidentDocument")({
