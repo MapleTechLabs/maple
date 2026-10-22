@@ -194,6 +194,23 @@ describe("AwsConnectionService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
+	it.effect("updates a connection's modules only within its own org", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const created = yield* service.create(orgId, userId, { accountId: account, modules: [] })
+			const unchanged = yield* service.update(orgId, created.id, {})
+			assert.deepStrictEqual(unchanged.modules, [])
+			const refused = yield* Effect.flip(service.update(orgId, created.id, { modules: ["cost"] }))
+			assert.strictEqual(refused._tag, "@maple/http/errors/IntegrationsValidationError")
+			const foreign = yield* Effect.flip(service.update(otherOrgId, created.id, { modules: [] }))
+			assert.strictEqual(foreign._tag, "@maple/http/errors/IntegrationsNotFoundError")
+			const unpatched = yield* Effect.flip(service.update(otherOrgId, created.id, {}))
+			assert.strictEqual(unpatched._tag, "@maple/http/errors/IntegrationsNotFoundError")
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
+
 	it.effect("is unavailable without Maple's AWS identity", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
