@@ -289,6 +289,15 @@ const ROUTES: ReadonlyArray<CallbackRoute> = [
 ]
 
 /**
+ * The redirect that hands a callback query to the dashboard. The location carries the provider's
+ * code, so no cache may keep it and the landing request sends no `Referer`.
+ */
+export const forwardToDashboard = (location: string) =>
+	HttpServerResponse.redirect(location, {
+		headers: { "cache-control": "no-store", "referrer-policy": "no-referrer" },
+	})
+
+/**
  * The provider callbacks. They redeem nothing: this request carries no Maple session, so it
  * cannot tell whose browser came back. The query goes to the dashboard in a URL fragment, and
  * the signed-in dashboard finishes it (`oauthComplete`), which only the starting user can do.
@@ -343,7 +352,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 						flow: route.flow,
 						query: url.search.replace(/^\?/, ""),
 					})
-					return HttpServerResponse.redirect(`${appBaseUrl}${route.page}?${search}${hash}`)
+					return forwardToDashboard(`${appBaseUrl}${route.page}?${search}${hash}`)
 				},
 				// Every branch returns a response, so the status is the only signal of a rejection.
 				Effect.tap((response) =>

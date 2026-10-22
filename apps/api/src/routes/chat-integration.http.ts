@@ -1,7 +1,8 @@
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { HttpRouter, HttpServerRequest } from "effect/http"
 import { ChatConnectorId, encodeOAuthReturnHash, type OAuthReturnFlow } from "@maple/domain/http"
 import { Effect, Option, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
+import { forwardToDashboard } from "./integrations-callback.http"
 
 /**
  * The two public callbacks every chat connector redirects to:
@@ -30,12 +31,16 @@ export const ChatCallbackRouter = HttpRouter.use((router) =>
 
 		/** Where the browser lands: the integrations page, with the outcome or the return to finish. */
 		const toDashboard = (search: Record<string, string>, hash = "") =>
-			HttpServerResponse.redirect(
-				`${appBaseUrl}/integrations?${new URLSearchParams(search).toString()}${hash}`,
-			)
+			forwardToDashboard(`${appBaseUrl}/integrations?${new URLSearchParams(search).toString()}${hash}`)
 
-		const callback = (span: string, flow: OAuthReturnFlow, outcome: string) =>
-			Effect.fn(span)(function* (req: HttpServerRequest.HttpServerRequest) {
+		// Server-kind like `IntegrationsCallbackRouter`: the auto server span is suppressed for these
+		// paths (ApiObservabilityLive), so this span is the callback's only trace root.
+		const callback = (span: string, path: string, flow: OAuthReturnFlow, outcome: string) =>
+			Effect.fn(span, {
+				kind: "server",
+				attributes: { "http.route": path, "http.request.method": "GET" },
+			})(function* (req: HttpServerRequest.HttpServerRequest) {
+				yield* Effect.annotateCurrentSpan({ "http.response.status_code": 302 })
 				const routeParams = yield* HttpRouter.params
 				const connector = decodeConnectorParam(routeParams.connector)
 				const url = Option.liftThrowable(() => new URL(req.url, "http://localhost"))()
@@ -59,11 +64,20 @@ export const ChatCallbackRouter = HttpRouter.use((router) =>
 				)
 			})
 
-		yield* router.add("GET", CHAT_CALLBACK_PATH, callback("ChatOAuth.callback", "chat_install", "chat"))
+		yield* router.add(
+			"GET",
+			CHAT_CALLBACK_PATH,
+			callback("ChatOAuth.callback", CHAT_CALLBACK_PATH, "chat_install", "chat"),
+		)
 		yield* router.add(
 			"GET",
 			CHAT_IDENTITY_CALLBACK_PATH,
-			callback("ChatOAuth.identityCallback", "chat_identity", "chat_identity"),
+			callback(
+				"ChatOAuth.identityCallback",
+				CHAT_IDENTITY_CALLBACK_PATH,
+				"chat_identity",
+				"chat_identity",
+			),
 		)
 	}),
 )
