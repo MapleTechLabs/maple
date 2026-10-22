@@ -11,7 +11,7 @@ import * as AgentRuntime from "@yielded/agent/agent-runtime"
 import type { RunBudgetHook } from "@yielded/agent/run-options"
 import * as ThreadHistory from "@yielded/agent/thread-history"
 import { ThreadId } from "@yielded/agent/identifiers"
-import { Clock, Duration, Effect, Layer, Schema, Stream } from "effect"
+import { Cause, Clock, Duration, Effect, Layer, Schema, Stream } from "effect"
 import { Prompt, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
@@ -19,6 +19,7 @@ import { mapleToolPhrase } from "../mcp/tools/registry"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import { withRunSessionAttributes } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
 import { makeTextSanitizer, settledTurnEnd, toChatEvents, type ChatTurnEvent } from "./events"
@@ -279,11 +280,22 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 				for (const chat of chats) input.append(chat)
 			}),
 		),
-		// The gate's refusal is how a run stops on a proposal, and a landed submission makes any later
-		// failure moot (`ChatRunSettled` included): the turn finished, it did not fail.
+		// The gate's refusal is how a run stops on a proposal: the turn finished, it did not fail.
 		Effect.catchIf(
-			(error) => error instanceof ApprovalRequired || submitted(),
+			(error) => error instanceof ApprovalRequired,
 			() => Effect.void,
+		),
+		// A landed submission makes any later failure moot, defects included; only an abort stays one.
+		Effect.catchCause((cause) =>
+			!submitted() || Cause.hasInterruptsOnly(cause)
+				? Effect.failCause(cause)
+				: cause.reasons.every(
+							(reason) => Cause.isFailReason(reason) && reason.error instanceof ChatRunSettled,
+					  )
+					? Effect.void
+					: Effect.logWarning("Run failed after its submission landed").pipe(
+							Effect.annotateLogs({ cause: summarizeCause(cause) }),
+						),
 		),
 		// Once per turn, the tag alone: a model that wrote a tool call as prose answered with
 		// nothing, and how often that happens is a question about the run's ending, not this turn.
