@@ -21,15 +21,20 @@ interface CheckTime {
 	readonly isFailure: boolean
 }
 
-/** One bar per check: a grouped rule records every group under the same check time. */
+/**
+ * One bar per timed check, newest 60: a grouped rule records every group under the same
+ * check time, and checks from before query times were recorded carry 0.
+ */
 export const checkTimesOf = (checks: ReadonlyArray<AlertCheckDocument>): ReadonlyArray<CheckTime> =>
 	Arr.reverse(
 		Arr.take(
-			Object.values(Arr.groupBy(checks, (check) => check.timestamp)).map((group) => ({
-				timestamp: group[0].timestamp,
-				durationMs: Math.max(...group.map((check) => check.evaluationDurationMs)),
-				isFailure: group.some((check) => check.status === "error"),
-			})),
+			Object.values(Arr.groupBy(checks, (check) => check.timestamp))
+				.map((group) => ({
+					timestamp: group[0].timestamp,
+					durationMs: Math.max(...group.map((check) => check.evaluationDurationMs)),
+					isFailure: group.some((check) => check.status === "error"),
+				}))
+				.filter((time) => time.durationMs > 0),
 			BAR_CAP,
 		),
 	)
@@ -37,9 +42,7 @@ export const checkTimesOf = (checks: ReadonlyArray<AlertCheckDocument>): Readonl
 
 export const queryTimeCard = (h: H, rule: AlertRuleDocument, checks: ReadonlyArray<AlertCheckDocument>): Html | null => {
 	// Checks keep the signal they ran with, so a rule switched to SQL charts only its SQL checks.
-	const times = checkTimesOf(checks.filter((check) => check.signalType === "raw_query")).filter(
-		(time) => time.durationMs > 0,
-	)
+	const times = checkTimesOf(checks.filter((check) => check.signalType === "raw_query"))
 	if (rule.signalType !== "raw_query" || times.length === 0) return null
 	const interval = alertRuleIntervalMinutes(rule)
 	const limitMs = alertQueryLimits(interval).timeSeconds * 1000
