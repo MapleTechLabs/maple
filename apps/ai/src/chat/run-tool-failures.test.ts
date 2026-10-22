@@ -234,6 +234,37 @@ describe("runChatTurn diagnosis rejections", () => {
 		assert.deepEqual(events.at(-1), { type: "turn-end", messageId: "msg-1", reason: "stop" })
 	})
 
+	it("keeps a landed submission when the turn dies after it", async () => {
+		const filed: Array<unknown> = []
+		const { model, prompts } = scriptedModel([
+			callTool("submit_diagnosis", { summary: "s", evidence: "p99 tripled" }),
+			answer("I have filed the diagnosis."),
+		])
+		const effect = runChatTurn({
+			sessionId: `${TENANT.orgId}:inv-0199a4d1-9f3c-7c8e-b2a1-3f5e7d9c1b40`,
+			messageId: "msg-1",
+			tenant: TENANT,
+			origin: { kind: "autonomous" },
+			toolExecutor: rejectingExecutor,
+			model,
+			submitDiagnosis: (_org, _id, request) => Effect.sync(() => filed.push(request.report)),
+			text: "Investigate.",
+			history: [],
+			usage: makeRunUsage(),
+			holdsTurn: () => true,
+			// The sink dies on the submission's own result, after the report has landed.
+			append: (event) => {
+				if (event.type === "tool-result") throw new Error("sink crashed")
+			},
+		})
+
+		const exit = await Effect.runPromiseExit(effect.pipe(Effect.provide(llmClients)))
+
+		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted, `run failed: ${String(exit)}`)
+		assert.lengthOf(prompts, 1)
+		assert.lengthOf(filed, 1)
+	})
+
 	it("lets the calls batched with a landed submission finish before the turn ends", async () => {
 		const { model, prompts } = scriptedModel([
 			[

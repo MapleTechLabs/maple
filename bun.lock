@@ -589,7 +589,6 @@
         "@maple/query-model": "workspace:*",
         "@maple/safe-fetch": "workspace:*",
         "@maple/widgets": "workspace:*",
-        "@yielded/agent": "0.1.0-beta.189",
         "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
       },

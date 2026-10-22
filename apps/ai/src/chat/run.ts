@@ -333,4 +333,8 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 const decodeThreadId = Schema.decodeSync(ThreadId)
 
 /** How the budget guard ends a run whose submission landed; never a failure of the turn. */
-class ChatRunSettled extends Schema.TaggedError<ChatRunSettled>()("@maple/ai/chat/ChatRunSettled", {}) {}
+class ChatRunSettled extends Schema.TaggedError<ChatRunSettled>()("@maple/ai/chat/ChatRunSettled", {}) {
+	override get message(): string {
+		return "The run's submission landed, so it was settled"
+	}
+}

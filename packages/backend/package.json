@@ -42,8 +42,7 @@
 		"@maple/safe-fetch": "workspace:*",
 		"@maple/widgets": "workspace:*",
 		"alchemy": "catalog:alchemy",
-		"effect": "catalog:effect",
-		"@yielded/agent": "0.1.0-beta.189"
+		"effect": "catalog:effect"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",
