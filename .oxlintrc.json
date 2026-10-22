@@ -235,7 +235,8 @@
 							"match",
 							"doesNotMatch",
 							"fail",
-							"expectTypeOf"
+							"expectTypeOf",
+							"Lazy.expectAllReused"
 						]
 					}
 				],
