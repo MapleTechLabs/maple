@@ -1,17 +1,20 @@
 /**
- * The two things an approved proposal is refused for before anything is built.
+ * What an approved proposal is refused for before anything is built.
  *
- * The tool check is the one that matters: `connectorApprovalTenant` hands the executor
- * `org:admin`, so `MUTATING_TOOL_NAMES` is the last thing standing between an entry in a session's
- * own log and an org-admin tool execution. Reaching it at all means the ruleset that proposes and
- * the allowlist that applies have drifted apart.
+ * A connector approval with no linked Maple user is refused outright, and `MUTATING_TOOL_NAMES`
+ * keeps anything but an approval-gated tool from running. Reaching the latter at all means the
+ * ruleset that proposes and the allowlist that applies have drifted apart.
  *
  * Both answers are returned before the MCP service graph or a database connection is reached, so
  * this runs without either. Everything past that point needs a real deployment.
  */
 import { assert, describe, it } from "vitest"
 import type { ChatConnectorOrigin } from "@maple/domain/chat-session"
-import { applyChatProposal } from "./apply-proposal"
+import { UserId } from "@maple/domain/primitives"
+import { Schema } from "effect"
+import { applyChatProposal, LINK_REQUIRED } from "./apply-proposal"
+
+const ADA_USER = Schema.decodeSync(UserId)("user_ada")
 
 const ADA: ChatConnectorOrigin = {
 	kind: "connector",
@@ -28,10 +31,28 @@ const apply = (overrides: { sessionId?: string; tool?: string }) =>
 		approver: ADA,
 		tool: "create_alert_rule",
 		input: {},
+		actingUserId: ADA_USER,
 		...overrides,
 	})
 
 describe("refusing an approved proposal before it runs", () => {
+	it("refuses a connector approver with no linked Maple user", async () => {
+		// A caller on an older contract can still omit the link; it must not run as anyone.
+		const unlinked = {
+			env: {},
+			sessionId: "org_1:bot-testchat-c1",
+			approver: ADA,
+			tool: "create_alert_rule",
+			input: {},
+			actingUserId: ADA_USER,
+		}
+		Reflect.deleteProperty(unlinked, "actingUserId")
+		const result = await applyChatProposal(unlinked)
+
+		assert.isTrue(result.isError)
+		assert.strictEqual(result.output, LINK_REQUIRED)
+	})
+
 	it("refuses a tool that is not approval-gated", async () => {
 		// A read-only tool is a real registered tool, so this is the allowlist refusing it rather
 		// than the catalog not holding it.

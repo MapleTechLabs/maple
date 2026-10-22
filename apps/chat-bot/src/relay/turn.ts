@@ -146,6 +146,10 @@ const UNAVAILABLE_NOTICE = "Maple's agent can't be reached from here right now."
 /** The control outlived what it pointed at: a wiped conversation, or a build that changed the log. */
 const PROPOSAL_GONE_NOTICE = "That change isn't waiting for a decision any more."
 
+/** A click on a connector that cannot say who clicked: nobody can be linked, so the change is made in Maple. */
+const UNVERIFIABLE_APPROVER_NOTICE =
+	"Changes can't be approved from here yet: Maple can't confirm which Maple user pressed the button. Make this change in Maple."
+
 /**
  * Why a question or a click was refused, and the one step that fixes it. Bold on its first line, so
  * it reads as the answer rather than as another line of the thread. The link is Maple's own page,
@@ -494,19 +498,19 @@ const settleAction = Effect.fn("ChatBotRelay.settleApproval")(function* <R>(
 	const conversation = yield* transport.conversation(action)
 	const sessionId = connectorSessionId(orgId, action.connector, conversation.conversationKey)
 
-	// See `ChatConnector.identity` for the policy: a connector that can name the clicker requires a
-	// link, and one that cannot lets anyone in the conversation decide.
-	if (ports.supportsIdentity && linkedUserId === undefined) {
+	// See `ChatConnector.identity`: a decision always needs a linked Maple user, because the change
+	// runs as them. A connector that cannot name the clicker has nobody to link, so it points to Maple.
+	if (linkedUserId === undefined) {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "unlinked" })
 		return yield* tellClicker(
 			transport,
 			action,
-			linkNotice(action.connector, ports.appBaseUrl, "approve"),
+			ports.supportsIdentity
+				? linkNotice(action.connector, ports.appBaseUrl, "approve")
+				: notice(UNVERIFIABLE_APPROVER_NOTICE),
 		)
 	}
-	yield* Effect.annotateCurrentSpan({
-		"maple.chat.approval.as": linkedUserId === undefined ? "connector" : "user",
-	})
+	yield* Effect.annotateCurrentSpan({ "maple.chat.approval.as": "user" })
 
 	const session = ports.chatSession(sessionId)
 	if (session === undefined) {
@@ -529,7 +533,7 @@ const settleAction = Effect.fn("ChatBotRelay.settleApproval")(function* <R>(
 			},
 			// Only ever the user the HOST resolved from its own database, never anything the
 			// click carried: this is what the change runs as.
-			...(linkedUserId === undefined ? undefined : { actingUserId: linkedUserId }),
+			actingUserId: linkedUserId,
 		})
 		.pipe(
 			Effect.mapError(sessionUnreachable(sessionId, "The chat session did not accept a decision")),

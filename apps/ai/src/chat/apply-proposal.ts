@@ -11,13 +11,8 @@
  * connector half of the approval policy; a connector approver's chat account rides along as
  * forensic context on the audit entry.
  */
-import {
-	connectorApprovalTenant,
-	decidedBy,
-	orgIdFromChatSessionId,
-	type ChatProposalApproval,
-} from "@maple/domain/chat-session"
-import { OrgId } from "@maple/domain/primitives"
+import { decidedBy, orgIdFromChatSessionId, type ChatProposalApproval } from "@maple/domain/chat-session"
+import { OrgId, UserId } from "@maple/domain/primitives"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
@@ -26,7 +21,7 @@ import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
-import { linkedUserTenant, toTenantContext, withConnectorActor } from "./turn-actor"
+import { linkedUserTenant, toTenantContext } from "./turn-actor"
 
 /** Its own instance, at module scope, so an approval exports its spans from the isolate it ran in. */
 const telemetry = runtimeTelemetry({
@@ -62,10 +57,15 @@ const failure = (output: string): AppliedProposal => ({ output, isError: true })
 const UNCERTAIN = "Maple couldn't confirm the change went through — check it in Maple."
 
 const decodeOrgId = Schema.decodeUnknownOption(OrgId)
+const isUserId = Schema.is(UserId)
+
+/** A connector approval with no linked Maple user behind it; there is no identity to run it as. */
+export const LINK_REQUIRED =
+	"Link your chat account to your Maple user to approve changes from here, or make this change in Maple."
 
 /**
- * Who the change runs as — which the caller decided before the session was ever reached. A person
- * in the app acts as themselves; see `ChatConnector.identity` for the connector cases.
+ * Who the change runs as, which the caller decided before the session was ever reached. A person
+ * in the app acts as themselves; a connector approver acts as the Maple user their account links to.
  */
 export const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: ApplyChatProposalInput) {
 	// The route authenticated them and resolved their roles; the audit entry names them.
@@ -73,16 +73,6 @@ export const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: A
 		yield* Effect.annotateCurrentSpan("maple.chat.apply.as", "app")
 		return toTenantContext(input.tenant, input.approver)
 	}
-	if (input.actingUserId === undefined) {
-		// What attributes the audit entry: the actor is the connector's agent, and the approver's
-		// platform identity is the forensic context an auditor asks for.
-		const tenant = toTenantContext(connectorApprovalTenant(orgId), input.approver)
-		yield* Effect.annotateCurrentSpan("maple.chat.apply.as", "connector")
-		// The same pinned agent actor a connector TURN runs as, so the change and the conversation
-		// that proposed it are attributed to one identity.
-		return yield* withConnectorActor(tenant, input.approver)
-	}
-
 	const tenant = yield* linkedUserTenant(orgId, input.actingUserId, input.approver)
 	yield* Effect.annotateCurrentSpan("maple.chat.apply.as", "user")
 	return tenant
@@ -108,11 +98,12 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 		return failure("This conversation belongs to another organization.")
 	}
 
+	// The decision arrives undecoded over RPC, so an older caller without a linked user is refused
+	// here rather than reaching a tenant lookup.
+	if (!("tenant" in input) && !isUserId(input.actingUserId)) return failure(LINK_REQUIRED)
+
 	// Defense in depth: only an approval-gated mutation is applicable here, whatever the log happens
-	// to hold. `connectorApprovalTenant` below grants `org:admin`, so this is the last thing between
-	// an entry in a session's own log and an org-admin execution — which is why it answers here,
-	// ahead of a runtime whose layers can die on a misconfigured environment, rather than from
-	// inside one.
+	// to hold, and it answers ahead of a runtime whose layers can die on a misconfigured environment.
 	if (!MUTATING_TOOL_NAMES.has(input.tool)) {
 		return failure(`"${input.tool}" is not a change Maple applies from an approval.`)
 	}

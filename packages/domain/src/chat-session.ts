@@ -530,32 +530,14 @@ export const CONNECTOR_TENANT_USER_ID = Schema.decodeSync(UserId)("chat-connecto
  *
  * No roles: a connector turn proposes mutations rather than performing them, so the only reader of
  * roles — the authorization check inside a mutating tool — is reached by the apply path, under
- * whoever approved the proposal, not by the turn that wrote it. A turn whose origin names an
- * `actingUserId` is widened to that user's tenant on the other side of the hop.
+ * the linked Maple user who approved the proposal, not by the turn that wrote it. A turn whose
+ * origin names an `actingUserId` is widened to that user's tenant on the other side of the hop.
  */
 export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 	encodeChatTurnTenant({
 		orgId,
 		userId: CONNECTOR_TENANT_USER_ID,
 		roles: [],
-		authMode: "self_hosted",
-	})
-
-const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
-
-/**
- * The identity an approved proposal runs under **on a connector that cannot say who clicked**.
- * See `ChatConnector.identity` for the three-case approval policy this is half of.
- *
- * The role is granted at apply time only — the turn that WROTE the proposal carried none, which is
- * what makes the approval gate mean anything. Deliberately beside {@link connectorTurnTenant}:
- * the two are one rule read together.
- */
-export const connectorApprovalTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
-	encodeChatTurnTenant({
-		orgId,
-		userId: CONNECTOR_TENANT_USER_ID,
-		roles: [ORG_ADMIN_ROLE],
 		authMode: "self_hosted",
 	})
 
@@ -587,13 +569,11 @@ export type ChatProposalApproval =
 			readonly approver: ChatConnectorOrigin
 			/**
 			 * The Maple user the approver's chat account is linked to, resolved by the host from its own
-			 * database — never from anything the click carried.
-			 *
-			 * Present means the change runs as that user, under the roles they hold in the org at that
-			 * moment. Absent means the connector cannot prove who clicked, and the org-level connector
-			 * identity acts instead ({@link connectorApprovalTenant}).
+			 * database, never from anything the click carried. The change runs as that user, under the
+			 * roles they hold in the org at that moment. Required: there is no org-level identity a
+			 * connector decision can fall back to.
 			 */
-			readonly actingUserId?: UserId
+			readonly actingUserId: UserId
 	  }
 
 /** How a recorded decision names who made it. */

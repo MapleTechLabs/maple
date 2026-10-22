@@ -49,11 +49,9 @@ export interface ChatConnector<R = never> {
 	 * and the three cases are:
 	 *
 	 *   - **no `identity`**: the connector cannot tell Maple who is asking or who clicked. Anyone in
-	 *     the conversation may ask, and the turn reads as the connector with no roles. Anyone who
-	 *     can see a proposal may approve it, and the change runs as the org-level connector identity
-	 *     (`connectorApprovalTenant`), which carries `org:admin` because there is no person whose
-	 *     roles could be read. The weaker rule, and deliberate: the alternative is a bot that can
-	 *     propose changes and never apply them.
+	 *     the conversation may ask, and the turn reads as the connector with no roles. Nobody can
+	 *     approve or decline a proposal from the platform: a decision runs as a Maple user, and there
+	 *     is no person to resolve one from. The change is made in Maple instead.
 	 *   - **`identity`, linked**: a question and an approval both run as the Maple user that person
 	 *     linked to, under the roles they hold in the org at that moment. Nothing is granted: a tool
 	 *     that needs an admin refuses a member exactly as it would in the app.

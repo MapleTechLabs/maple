@@ -12,6 +12,8 @@
  */
 import { assert, beforeEach, describe, it } from "vitest"
 import type { ChatConnectorOrigin } from "@maple/domain/chat-session"
+import { UserId } from "@maple/domain/primitives"
+import { Schema } from "effect"
 import { ChatSession, type ProposalApplier } from "./ChatSession"
 import { makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
 
@@ -26,6 +28,8 @@ const applier: ProposalApplier = (input) => {
 }
 
 const SESSION_ID = "org_1:bot-testchat-c1"
+
+const ADA_USER = Schema.decodeSync(UserId)("user_ada")
 
 const ADA: ChatConnectorOrigin = {
 	kind: "connector",
@@ -60,7 +64,13 @@ const settledCall = (session: ChatSession, callId = "call_9") =>
 		.find((call) => call.id === callId)
 
 const settle = (session: ChatSession, decision: "approve" | "deny", callId = "call_9") =>
-	session.settleProposal({ sessionId: SESSION_ID, toolCallId: callId, decision, approver: ADA })
+	session.settleProposal({
+		sessionId: SESSION_ID,
+		toolCallId: callId,
+		decision,
+		approver: ADA,
+		actingUserId: ADA_USER,
+	})
 
 beforeEach(() => {
 	applied.length = 0
@@ -82,6 +92,7 @@ describe("settling a proposal", () => {
 			toolCallId: "call_9",
 			decision: "approve",
 			approver: ADA,
+			actingUserId: ADA_USER,
 		})
 		const call = settledCall(session)
 		assert.equal(call?.output, "Created alert rule ar_1.")

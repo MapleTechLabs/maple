@@ -83,8 +83,7 @@ export const withConnectorActor = Effect.fn("ChatTurnActor.withConnectorActor")(
 /**
  * The linked Maple user may not act in this org, or nobody can find out whether they may.
  *
- * Fail closed on purpose: a Clerk blip must not silently fall back to the connector identity,
- * which on an approval carries `org:admin`.
+ * Fail closed on purpose: a Clerk blip must not silently fall back to the connector identity.
  */
 export class LinkedUserNotPermitted extends Schema.TaggedError<LinkedUserNotPermitted>()(
 	"@maple/ai/LinkedUserNotPermitted",

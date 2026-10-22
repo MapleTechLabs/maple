@@ -519,7 +519,7 @@ export class ChatSession {
 	 *
 	 * The caller is also who authorized the click and decided whose authority the change runs
 	 * under — the signed-in user's own tenant from the web route, or, from a connector, the linked
-	 * `actingUserId` or the org-level connector identity. Reaching this object at all requires the
+	 * `actingUserId`. Reaching this object at all requires the
 	 * Durable Object binding, which only Maple's own Workers hold, and that is the same trust
 	 * `beginTurn` already runs on.
 	 */

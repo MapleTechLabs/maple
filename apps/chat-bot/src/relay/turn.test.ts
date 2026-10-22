@@ -945,6 +945,9 @@ const refusalReason = (effect: Effect.Effect<void>) =>
 			.find((value) => value !== undefined)
 	})
 
+/** A clicker the host resolved to a Maple user, which every decision needs. */
+const LINKED = { supportsIdentity: true, linkedUserId: ADA }
+
 describe("settling an approval somebody clicked", () => {
 	it.effect("applies the proposal and puts the outcome on the message that carried the buttons", () =>
 		Effect.gen(function* () {
@@ -1011,7 +1014,7 @@ describe("settling an approval somebody clicked", () => {
 			const agent = session([], {
 				transcript: decidedTranscript("Declined by Ada. The tool did not run.", true),
 			})
-			const deployment = host(platform.outbound, agent.stub)
+			const deployment = host(platform.outbound, agent.stub, LINKED)
 
 			yield* relayInboundEvent(
 				click({
@@ -1060,17 +1063,18 @@ describe("settling an approval somebody clicked", () => {
 		}),
 	)
 
-	it.effect("lets anyone in the conversation decide when the connector cannot identify them", () =>
+	it.effect("refuses every decision when the connector cannot identify who clicked", () =>
 		Effect.gen(function* () {
 			const platform = chat()
-			const agent = session([], { transcript: decidedTranscript("Approved by Ada.\nDone.") })
+			const agent = session([])
 			const deployment = host(platform.outbound, agent.stub, { supportsIdentity: false })
 
 			yield* relayInboundEvent(click(), deployment.ports)
 
-			// Settled, and with no acting user — the apply runs as the org-level connector identity.
-			expect(agent.settlements).toHaveLength(1)
-			expect(agent.settlements[0]).not.toHaveProperty("actingUserId")
+			// Nobody to run the change as, so nothing reaches the session and it is made in Maple.
+			expect(agent.settlements).toEqual([])
+			expect(platform.calls.map((call) => call.verb)).toEqual(["whisper"])
+			expect(JSON.stringify(blocksOf(platform.calls))).toContain("Make this change in Maple.")
 		}),
 	)
 
@@ -1078,7 +1082,7 @@ describe("settling an approval somebody clicked", () => {
 		Effect.gen(function* () {
 			const platform = chat()
 			const agent = session([])
-			const deployment = host(platform.outbound, agent.stub)
+			const deployment = host(platform.outbound, agent.stub, LINKED)
 
 			// Some platforms deliver every component click in a channel, not only Maple's.
 			yield* relayInboundEvent(click({ actionToken: "some-other-app:thing" }), deployment.ports)
@@ -1092,7 +1096,7 @@ describe("settling an approval somebody clicked", () => {
 		Effect.gen(function* () {
 			const platform = chat()
 			const agent = session([])
-			const deployment = host(platform.outbound, agent.stub)
+			const deployment = host(platform.outbound, agent.stub, LINKED)
 
 			// A control is forgeable by design and names only a call, so the session is rebuilt from
 			// the workspace's org and the clicked conversation. A proposal raised elsewhere is not in
@@ -1109,7 +1113,7 @@ describe("settling an approval somebody clicked", () => {
 		Effect.gen(function* () {
 			const platform = chat()
 			const agent = session([])
-			const deployment = host(platform.outbound, agent.stub)
+			const deployment = host(platform.outbound, agent.stub, LINKED)
 
 			// The external id is the only forensic link between the change and the human, so an actor
 			// that does not decode is nobody to attribute an approval to.
@@ -1208,7 +1212,7 @@ describe("settling an approval somebody clicked", () => {
 				settles: "settled",
 				transcript: decidedTranscript("Approved by Ada.\nDone."),
 			})
-			const deployment = host(platform.outbound, agent.stub)
+			const deployment = host(platform.outbound, agent.stub, LINKED)
 
 			yield* relayInboundEvent(click(), deployment.ports)
 
@@ -1228,7 +1232,7 @@ describe("settling an approval somebody clicked", () => {
 		Effect.gen(function* () {
 			const platform = chat()
 			const agent = session([], { settles: "unknown" })
-			const deployment = host(platform.outbound, agent.stub)
+			const deployment = host(platform.outbound, agent.stub, LINKED)
 
 			yield* relayInboundEvent(click(), deployment.ports)
 
@@ -1242,10 +1246,14 @@ describe("settling an approval somebody clicked", () => {
 		Effect.gen(function* () {
 			const platform = chat()
 			const agent = session([])
-			const deployment = host(platform.outbound, {
-				...agent.stub,
-				settleProposal: () => Promise.reject(new Error("no such object")),
-			})
+			const deployment = host(
+				platform.outbound,
+				{
+					...agent.stub,
+					settleProposal: () => Promise.reject(new Error("no such object")),
+				},
+				LINKED,
+			)
 
 			yield* relayInboundEvent(click(), deployment.ports)
 
@@ -1366,7 +1374,11 @@ describe("reading the workspace row", () => {
 	const relay = (
 		event: InboundEvent,
 		stub: ChatSessionStub,
-		options?: { readonly opened?: ReadonlyArray<string>; readonly linked?: boolean },
+		options?: {
+			readonly opened?: ReadonlyArray<string>
+			readonly linked?: boolean
+			readonly linkedUserId?: UserId
+		},
 	) =>
 		Effect.gen(function* () {
 			const platform = chat()
@@ -1396,7 +1408,15 @@ describe("reading the workspace row", () => {
 					reads.count += 1
 					return options?.linked === false
 						? Option.none()
-						: Option.some({ relay: { orgId: ORG }, credentials: "sealed" })
+						: Option.some({
+								relay: {
+									orgId: ORG,
+									...(options?.linkedUserId === undefined
+										? undefined
+										: { linkedUserId: options.linkedUserId }),
+								},
+								credentials: "sealed",
+							})
 				}),
 				(resolveWorkspace) => ({
 					...host(platform.outbound, stub, { opened: options?.opened ?? [] }).ports,
@@ -1443,7 +1463,7 @@ describe("reading the workspace row", () => {
 	it.effect("reads it once for a click, and edits with the credential it carried", () =>
 		Effect.gen(function* () {
 			const agent = session([], { transcript: decidedTranscript("Approved by Ada.\nDone.") })
-			const result = yield* relay(click(), agent.stub)
+			const result = yield* relay(click(), agent.stub, { linkedUserId: ADA })
 			expect(agent.settlements).toHaveLength(1)
 			expect(result).toEqual({ reads: 1, postedWith: ["sealed"] })
 		}),

@@ -7,7 +7,6 @@ import {
 	ChatTurnTenant,
 	chatModeFromSessionId,
 	connectorSessionId,
-	connectorApprovalTenant,
 	connectorTurnTenant,
 	CONNECTOR_TENANT_USER_ID,
 	isConnectorSessionId,
@@ -282,13 +281,6 @@ describe("ChatTurnTenant", () => {
 		// workerd raises `DataCloneError`, so the throw check above is the one that catches this
 		// and a green `structuredClone` here would prove nothing.
 		expect(Object.getPrototypeOf(encoded)).toBe(Object.prototype)
-	})
-
-	it("carries exactly one role more than the turn that proposed the change", () => {
-		// The difference between the two IS the approval gate. What that role then permits is
-		// `apply-tenant.test.ts`'s to pin, where the tenant is actually built.
-		expect(connectorTurnTenant(orgId("org_1")).roles).toStrictEqual([])
-		expect(connectorApprovalTenant(orgId("org_1")).roles).toStrictEqual(["org:admin"])
 	})
 })
 

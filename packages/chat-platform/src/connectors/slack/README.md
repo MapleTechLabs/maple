@@ -105,7 +105,7 @@ The scopes deliberately **do not** include `users:read` — see "Who may approve
    Connect, which runs the install flow and writes the `chat_workspaces` row (Slack's own consent
    screen adds the bot at the same time).
 4. **Invite the bot to a channel** (`/invite @Maple`) and **mention it**: `@Maple why is checkout
-slow?`. It answers in a thread on that message and edits one message there as the answer streams.
+   slow?`. It answers in a thread on that message and edits one message there as the answer streams.
    A reply in that thread continues the same conversation; a mention in another channel starts a
    different one.
 
@@ -216,9 +216,10 @@ does not have.
 
 ### Who may approve
 
-**This connector declares no `identity`**, which is a policy rather than a gap: anyone who can see
-the conversation may approve, and the change runs as the org-level connector identity. See
-`ChatConnector.identity` for the three cases.
+**This connector declares no `identity`**, so nobody can approve or decline a proposal from Slack:
+a decision runs as the Maple user who made it, and Slack cannot yet tell Maple which user that is.
+The click is answered with a pointer to make the change in Maple. See `ChatConnector.identity` for
+the three cases.
 
 Slack _can_ answer who clicked — "Sign in with Slack", its OpenID Connect flow — and implementing
 it is mechanically small: the same OAuth application, the same client credentials, the same
@@ -229,8 +230,7 @@ It is not implemented because one fact it rests on **cannot be confirmed from Sl
 documentation**: that the `sub` / `https://slack.com/user_id` claim returned by `userInfo` is the
 same `U…` id that arrives as `user.id` on a `block_actions` payload. Everything about this is
 plausible — Slack user ids are one namespace — but the link is keyed on that id, and the failure if
-it is wrong is silent and total: `identity` present with nothing linked means every approval is
-**refused**, which is worse than the weaker rule this connector ships with. Two other things are
+it is wrong is silent and total: a link keyed on the wrong id resolves nobody, or the wrong person. Two other things are
 also undocumented: whether the `openid` scopes must be declared in the app manifest, and whether
 adding them forces workspaces that already installed the bot to re-authorize.
 

@@ -4,12 +4,9 @@
  * This is the whole security model of approving a write, so each case is pinned separately:
  *
  *   - a person in the app acts as themselves, with the tenant and roles the route authenticated;
- *   - a connector that cannot name the clicker acts as the org-level connector identity, which
- *     carries `org:admin` because there is no person whose roles could be read;
- *   - a connector that CAN name them acts as that Maple user, with the roles they hold in the org
- *     right now — read live, never frozen at link time, and never widened here;
- *   - anything that cannot be found out refuses, because the alternative is silently downgrading
- *     an approval to the identity that does carry `org:admin`.
+ *   - a connector approver acts as the Maple user their chat account is linked to, with the roles
+ *     they hold in the org right now: read live, never frozen at link time, and never widened here;
+ *   - anything that cannot be found out refuses; an unlinked approver never reaches this point.
  */
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, Schema } from "effect"
@@ -28,6 +25,7 @@ import { ActorId, OrgId, UserId } from "@maple/domain/primitives"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { auditAttribution } from "@maple/backend/services/audit/audit-access"
+import { requireAdmin } from "@maple/backend/services/auth/auth"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { resolveTenant } from "./apply-proposal"
 import { toTenantContext, turnTenant } from "./turn-actor"
@@ -87,13 +85,13 @@ const actorsThat = (actor: ActorId | undefined): Layer.Layer<ErrorActorsService>
 const memberships = (verify: OrgMembershipService["Service"]["verify"]): Layer.Layer<OrgMembershipService> =>
 	Layer.succeed(OrgMembershipService, { verify })
 
-const proposal = (actingUserId?: UserId) => ({
+const proposal = (actingUserId: UserId) => ({
 	env: {},
 	sessionId: `${ORG}:bot-testchat-c1`,
 	approver: APPROVER,
 	tool: "create_alert_rule",
 	input: {},
-	...(actingUserId === undefined ? undefined : { actingUserId }),
+	actingUserId,
 })
 
 describe("whose authority an approval runs under", () => {
@@ -186,30 +184,41 @@ describe("whose authority an approval runs under", () => {
 		}),
 	)
 
-	it.effect("acts as the org, with `org:admin`, when the connector cannot name who clicked", () =>
-		Effect.gen(function* () {
-			const tenant: TenantContext = yield* resolveTenant(ORG, proposal()).pipe(
-				// The membership check is never consulted: there is no user to check. The actor lookup
-				// failing must not cost an answer either; `withConnectorActor` absorbs it.
-				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(undefined))),
-			)
+	it.effect(
+		"refuses a linked member for an admin-only tool, and runs it for a linked admin as themselves",
+		() =>
+			Effect.gen(function* () {
+				const adminOnly = (tenant: TenantContext) =>
+					requireAdmin(tenant.roles, () => "refused").pipe(
+						Effect.match({ onFailure: () => "refused", onSuccess: () => "ran" }),
+					)
+				const asMember: TenantContext = yield* resolveTenant(ORG, proposal(ADA)).pipe(
+					Effect.provide(
+						Layer.mergeAll(
+							memberships(() => Effect.succeed(Option.some({ orgId: ORG, role: MEMBER }))),
+							noActors,
+						),
+					),
+				)
+				const asAdmin: TenantContext = yield* resolveTenant(ORG, proposal(ADA)).pipe(
+					Effect.provide(
+						Layer.mergeAll(
+							memberships(() => Effect.succeed(Option.some({ orgId: ORG, role: ADMIN }))),
+							noActors,
+						),
+					),
+				)
 
-			// The placeholder user, because nobody can be named — and the one role the mutating
-			// tools check, granted here and only here.
-			assert.strictEqual(tenant.userId, CONNECTOR_TENANT_USER_ID)
-			assert.deepStrictEqual(tenant.roles, [ADMIN])
-			assert.deepStrictEqual(tenant.turnOrigin, APPROVER)
-		}),
-	)
-
-	it.effect("pins the connector's agent actor on that path, so the audit log names it", () =>
-		Effect.gen(function* () {
-			const tenant: TenantContext = yield* resolveTenant(ORG, proposal()).pipe(
-				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(CONNECTOR_ACTOR))),
-			)
-
-			assert.strictEqual(tenant.actorId, CONNECTOR_ACTOR)
-		}),
+				assert.strictEqual(yield* adminOnly(asMember), "refused")
+				assert.strictEqual(yield* adminOnly(asAdmin), "ran")
+				// The admin acts as their own user, not a connector placeholder or a pinned agent.
+				assert.strictEqual(asAdmin.userId, ADA)
+				assert.isUndefined(asAdmin.actorId)
+				assert.deepStrictEqual(auditAttribution(asAdmin, undefined).actor, {
+					type: "user",
+					userId: ADA,
+				})
+			}),
 	)
 })
 
