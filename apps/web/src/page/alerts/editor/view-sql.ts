@@ -1,6 +1,6 @@
 import type { AlertQueryTiming } from "@maple/domain/http"
 import { rawAlertPerformanceHints, rawAlertSampleCountWarning, rawSqlIssue } from "@maple/domain/raw-sql"
-import { alertQueryLimits } from "@maple/query-engine/datetime"
+import { alertIntervalsFitting, alertQueryLimits } from "@maple/query-engine/datetime"
 import { RAW_QUERY_REDUCER_LABELS } from "@maple/web-data/alerts/form-utils"
 import { formatQuerySeconds } from "@maple/web-data/alerts/query-time"
 import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
@@ -162,9 +162,11 @@ const meterNote = (form: RuleForm, timing: AlertQueryTiming, interval: number, l
 			: `Too close to the ${formatQuerySeconds(limitMs)} limit for ${interval}-minute checks, fits ${shortest}-minute checks.`
 	}
 	if (!timing.fitsIntervalMinutes.some((fits) => fits <= interval)) {
+		// A wider window helps only when a longer interval than it allows would fit.
+		const canWiden = alertIntervalsFitting(elapsed).length > 0
 		return elapsed > limitMs
-			? "Too slow for any interval this window allows. Widen the window or narrow the query."
-			: `Too close to the ${formatQuerySeconds(limitMs)} limit to run reliably. Widen the window for a longer interval, or narrow the query.`
+			? `Too slow for any interval this window allows. ${canWiden ? "Widen the window or narrow the query." : "Narrow the query."}`
+			: `Too close to the ${formatQuerySeconds(limitMs)} limit to run reliably. ${canWiden ? "Widen the window for a longer interval, or narrow the query." : "Narrow the query."}`
 	}
 	if (intervalWindowIssue(form) !== null) return "The picked interval is longer than the window. Pick a shorter one."
 	return `Fits checks every ${interval === 1 ? "minute" : `${interval} min`}.`

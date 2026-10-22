@@ -222,6 +222,7 @@ describe("alert rule editor", () => {
 			themeResolved(),
 			expectView(text("Too slow for 1-minute checks, fits 5-minute checks.")).toExist(),
 			expectView(text(/^Line 4: Filter traces on a service/)).toExist(),
+			expectView(text("Over or too close to the 5 s this interval allows. Checking less often allows a slower query.")).toExist(),
 			click(role("button", { name: "Check every 5 min" })),
 			expectView(role("radio", { name: /^5 min/ })).toHaveAttr("aria-checked", "true"),
 			expectView(text("Fits checks every 5 min.")).toExist(),
@@ -256,6 +257,36 @@ describe("alert rule editor", () => {
 			...timed,
 			queryTiming: { ...timed.queryTiming, elapsedMs: null, failure: "query_too_much_memory", fitsIntervalMinutes: [] },
 		})
+		// 22 s fits no interval at all, so a wider window would not help.
+		const tooSlowForAny = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+			...timed,
+			queryTiming: { ...timed.queryTiming, elapsedMs: 22_000, fitsIntervalMinutes: [] },
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				run(sql, [
+					Message.CompletedFetchPreview({ key: sql.preview.key ?? "", isSaved: false, result: Result.succeed(tooSlowForAny) }),
+				]),
+			),
+			themeResolved(),
+			expectView(text("Too slow for any interval this window allows. Narrow the query.")).toExist(),
+		)
+		// 18 s fits 10-minute checks, which a 5-minute window cannot pick.
+		const widenable = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+			...timed,
+			queryTiming: { ...timed.queryTiming, elapsedMs: 18_000, fitsIntervalMinutes: [] },
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				run(sql, [
+					Message.CompletedFetchPreview({ key: sql.preview.key ?? "", isSaved: false, result: Result.succeed(widenable) }),
+				]),
+			),
+			themeResolved(),
+			expectView(text("Too slow for any interval this window allows. Widen the window or narrow the query.")).toExist(),
+		)
 		scene(
 			{ update: pageUpdate, view },
 			given(
