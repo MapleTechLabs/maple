@@ -22,7 +22,13 @@ export const AwsOidcRouter = HttpRouter.use((router) =>
 		// No key, or one that does not load: the issuer is absent, as AWS sees it.
 		const signer = yield* Option.match(env.MAPLE_AWS_OIDC_SIGNING_KEY, {
 			onNone: () => Effect.succeed(Option.none()),
-			onSome: (key) => makeAwsOidcSigner(issuer, key).pipe(Effect.option),
+			onSome: (key) =>
+				makeAwsOidcSigner(issuer, key).pipe(
+					Effect.tapError((error) =>
+						Effect.logWarning(`AWS OIDC issuer disabled: ${error.message}`),
+					),
+					Effect.option,
+				),
 		})
 		const notFound = HttpServerResponse.jsonUnsafe(
 			{ error: "This Maple deployment has no AWS issuer." },

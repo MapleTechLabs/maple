@@ -71,10 +71,14 @@ const RoleProperties = Schema.Struct({
 const PolicyProperties = Schema.Struct({ ManagedPolicyName: Schema.String })
 const ProviderProperties = Schema.Struct({ Url: Schema.String, ClientIdList: Schema.Array(Schema.String) })
 
+const providerArnOf = (accountId: string, issuer: string) =>
+	`arn:aws:iam::${accountId}:oidc-provider/${issuer.replace(/^https:\/\//u, "")}`
+
 /** The role a template creates, and the OIDC provider it registers, as a deploy would in `accountId`. */
 export const deployTemplate = (
 	accountId: string,
 	templateJson: string,
+	createsProvider = true,
 ): { readonly role: FakeRole; readonly provider: FakeProvider | undefined } => {
 	const template = Schema.decodeUnknownSync(Template)(JSON.parse(templateJson))
 	const resources = template.Resources
@@ -102,7 +106,13 @@ export const deployTemplate = (
 		role: {
 			accountId,
 			roleName: properties.RoleName,
-			trustedProviderArn: typeof federated === "string" ? federated : federated["Fn::If"][2],
+			// The `Fn::If` resolves to the `Ref` of the provider the stack creates, else the literal ARN.
+			trustedProviderArn:
+				typeof federated === "string"
+					? federated
+					: createsProvider && provider !== undefined
+						? providerArnOf(accountId, provider.Url)
+						: federated["Fn::If"][2],
 			conditions: statement.Condition.StringEquals,
 			tags: properties.Tags,
 			attachedPolicyNames,
@@ -150,9 +160,6 @@ const verifiedClaims = async (key: CryptoKey, token: string) => {
 		: undefined
 }
 
-const providerArnOf = (accountId: string, issuer: string) =>
-	`arn:aws:iam::${accountId}:oidc-provider/${issuer.replace(/^https:\/\//u, "")}`
-
 /** The signing key id of a SigV4 request: `Credential=<key>/<date>/...`. */
 const signingKey = (authorization: string | undefined) =>
 	/Credential=([^/]+)\//u.exec(authorization ?? "")?.[1]
@@ -167,7 +174,7 @@ export interface FakeAws {
 	readonly deploy: (
 		accountId: string,
 		templateJson: string,
-		options?: { readonly createsProvider?: boolean },
+		options?: { readonly createsProvider?: boolean; readonly providerAudience?: string },
 	) => void
 	/** Deletes every role of an account, as deleting its stack would. Providers are retained. */
 	readonly deleteStacks: (accountId: string) => void
@@ -253,10 +260,13 @@ export const makeFakeAws = (issuerPublicKeyPem: string = MAPLE_TEST_OIDC_KEY.pub
 		beforeEachCall: Effect.void,
 		failWith: undefined,
 		deploy: (accountId, templateJson, options) => {
-			const { role, provider } = deployTemplate(accountId, templateJson)
+			const createsProvider = options?.createsProvider !== false
+			const { role, provider } = deployTemplate(accountId, templateJson, createsProvider)
 			roles.set(`arn:aws:iam::${accountId}:role/${role.roleName}`, role)
-			if (provider !== undefined && options?.createsProvider !== false) {
-				providers.set(providerArnOf(accountId, provider.url), provider)
+			if (provider !== undefined && createsProvider) {
+				const clientIds =
+					options?.providerAudience === undefined ? provider.clientIds : [options.providerAudience]
+				providers.set(providerArnOf(accountId, provider.url), { url: provider.url, clientIds })
 			}
 		},
 		deleteStacks: (accountId) => {

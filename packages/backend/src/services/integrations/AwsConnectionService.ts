@@ -576,7 +576,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 							(error) => new AwsApiError({ message: error.message, kind: "maple_identity" }),
 						),
 						Effect.flatMap((token) =>
-							checkRole(httpClient, Redacted.make(token), {
+							checkRole(httpClient, token, {
 								roleArn: awsRoleArn(row.accountId, names.roleName),
 								roleName: names.roleName,
 								sessionName: names.sessionName,

@@ -31,7 +31,7 @@ Choose **Console** in the setup and save the template. Then in CloudFormation, i
 
 ### With Terraform
 
-Choose **Terraform** in the setup and copy the file into your repository. It needs only the `aws` provider, configured for the account you connect. It declares Maple's identity provider too: if the account already has it, import it first with the `terraform import` command at the top of the file. Apply it, then select **Check connection**.
+Choose **Terraform** in the setup and copy the file into your repository. It needs only the `aws` provider, configured for the account you connect. It looks up Maple's identity provider rather than owning it, since every Maple connection in the account shares it: if the account doesn't have it yet, register it once with the `aws iam create-open-id-connect-provider` command at the top of the file. Apply it, then select **Check connection**.
 
 ## What the stack creates
 

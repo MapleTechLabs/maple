@@ -23,7 +23,10 @@ export interface AwsOidcSigner {
 	readonly issuer: string
 	readonly jwk: AwsOidcJwk
 	/** A token for `subject`, valid from `nowMs` for five minutes. */
-	readonly mint: (subject: string, nowMs: number) => Effect.Effect<string, AwsOidcKeyError>
+	readonly mint: (
+		subject: string,
+		nowMs: number,
+	) => Effect.Effect<Redacted.Redacted<string>, AwsOidcKeyError>
 }
 
 const base64url = (bytes: ArrayBuffer | Uint8Array) =>
@@ -80,7 +83,8 @@ export const makeAwsOidcSigner = Effect.fn("makeAwsOidcSigner")(function* (
 				sub: subject,
 				aud: AWS_OIDC_AUDIENCE,
 				iat,
-				nbf: iat,
+				// A minute of allowance for STS's clock running behind.
+				nbf: iat - 60,
 				exp: iat + TOKEN_SECONDS,
 			})
 			const input = `${header}.${body}`
@@ -88,7 +92,7 @@ export const makeAwsOidcSigner = Effect.fn("makeAwsOidcSigner")(function* (
 				try: () => crypto.subtle.sign(ALGORITHM, key, new TextEncoder().encode(input)),
 				catch: failed("Signing the AWS OIDC token failed"),
 			})
-			return `${input}.${base64url(signature)}`
+			return Redacted.make(`${input}.${base64url(signature)}`)
 		})
 
 	return { issuer, jwk, mint } satisfies AwsOidcSigner

@@ -189,6 +189,10 @@ describe("AWS setup scripts", () => {
 		const again = run(setup, { stacksIn: [], providerExists: true })
 		expect(again.status).toBe(0)
 		expect(again.calls.some((call) => call.startsWith("iam create-open-id-connect-provider"))).toBe(false)
+		// One that exists gets Maple's audience, in case it was made by hand without it.
+		expect(again.calls).toContain(
+			`iam add-client-id-to-open-id-connect-provider --open-id-connect-provider-arn ${PROVIDER_ARN} --client-id sts.amazonaws.com`,
+		)
 	})
 
 	it("deletes Maple's identity provider with the last Maple role, and keeps it for another", () => {

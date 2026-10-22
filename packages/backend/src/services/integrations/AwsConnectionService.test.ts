@@ -175,6 +175,20 @@ describe("AwsConnectionService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
+	it.effect("keeps a role pending while the account's provider lacks Maple's audience", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const created = yield* service.create(orgId, userId, { accountId: account, modules: [] })
+			const template = (yield* service.setup(orgId, created.id)).cloudformationTemplate
+			aws.deploy(account, template, { providerAudience: "some-other-client" })
+			const pending = yield* later(service.check(orgId, created.id))
+			assert.isNull(pending.verifiedAt)
+			assert.include(pending.lastCheckError ?? "", "Run the setup script")
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
+
 	it.effect("blames Maple, not the customer, when AWS cannot verify Maple's token", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws(OTHER_TEST_OIDC_KEY.publicKey)

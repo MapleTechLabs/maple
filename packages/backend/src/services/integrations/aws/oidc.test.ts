@@ -10,7 +10,7 @@ describe("makeAwsOidcSigner", () => {
 	it.effect("signs tokens that verify with the published JWK alone", () =>
 		Effect.gen(function* () {
 			const signer = yield* makeAwsOidcSigner(ISSUER, Redacted.make(MAPLE_TEST_OIDC_KEY.privateKey))
-			const token = yield* signer.mint("aws-connection:abc", 1_800_000_000_000)
+			const token = Redacted.value(yield* signer.mint("aws-connection:abc", 1_800_000_000_000))
 			const [header, body, signature] = token.split(".")
 			expect(decode(header ?? "")).toEqual({ alg: "RS256", typ: "JWT", kid: signer.jwk.kid })
 			expect(decode(body ?? "")).toEqual({
@@ -18,7 +18,7 @@ describe("makeAwsOidcSigner", () => {
 				sub: "aws-connection:abc",
 				aud: "sts.amazonaws.com",
 				iat: 1_800_000_000,
-				nbf: 1_800_000_000,
+				nbf: 1_799_999_940,
 				exp: 1_800_000_300,
 			})
 			// What AWS does: rebuild the key from the JWKS entry and check the signature.

@@ -31,7 +31,8 @@ export interface AwsRoleReport {
 }
 
 // STS answers these when it cannot verify Maple's token: on Maple's side, not the customer's.
-const MAPLE_TOKEN_CODES = new Set(["InvalidIdentityToken", "IDPCommunicationError", "ExpiredTokenException"])
+// `IDPCommunicationError` (STS could not fetch the JWKS) is left out: usually brief, it is `upstream`.
+const MAPLE_TOKEN_CODES = new Set(["InvalidIdentityToken", "ExpiredTokenException"])
 // IAM answers these to a session it does not accept.
 const SESSION_CODES = new Set([
 	"InvalidClientTokenId",
@@ -61,14 +62,17 @@ const StsAnswer = Schema.Union([
 const decodeStsAnswer = Schema.decodeUnknownEffect(StsAnswer)
 
 /**
- * A rejected `AssumeRoleWithWebIdentity`. A missing OIDC provider or a refused claim is the
- * customer's setup not being done; a token STS cannot verify is Maple's.
+ * A rejected `AssumeRoleWithWebIdentity`. A missing OIDC provider, or one that does not list
+ * Maple's audience, is the customer's setup not being done; a token STS cannot verify is Maple's.
+ * The issuer is permanent: were `MAPLE_API_BASE_URL` to change, every account would answer "no
+ * provider" and read as disconnected.
  */
 const stsError = (code: string, detail: string | undefined): AwsApiError => {
 	const message = `AssumeRoleWithWebIdentity: ${detail === undefined || detail === "" ? code : detail.slice(0, 300)}`
 	if (THROTTLE_CODES.has(code)) return new AwsApiError({ message, kind: "throttled", code })
-	const noProvider = code === "InvalidIdentityToken" && /no openid ?connect provider/iu.test(detail ?? "")
-	if (code === "AccessDenied" || code === "IDPRejectedClaim" || noProvider) {
+	const setupMissing =
+		code === "InvalidIdentityToken" && /no openid ?connect provider|audience/iu.test(detail ?? "")
+	if (code === "AccessDenied" || code === "IDPRejectedClaim" || setupMissing) {
 		return new AwsApiError({ message, kind: "assume_denied", code })
 	}
 	if (MAPLE_TOKEN_CODES.has(code)) return new AwsApiError({ message, kind: "maple_identity", code })

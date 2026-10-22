@@ -266,10 +266,15 @@ export interface AwsScriptTarget {
 	readonly oidcProvider: AwsSetupPlan["oidcProvider"]
 }
 
-/** Registers Maple's identity provider unless the account has it: other connections may share it. */
+/**
+ * Registers Maple's identity provider unless the account has it: other connections may share it.
+ * One made by hand may lack Maple's audience, and adding a client id it already lists is a no-op.
+ */
 const ensureOidcProvider = (
 	provider: AwsScriptTarget["oidcProvider"],
-) => `if ! aws iam get-open-id-connect-provider --open-id-connect-provider-arn ${provider.arn} >/dev/null 2>&1; then
+) => `if aws iam get-open-id-connect-provider --open-id-connect-provider-arn ${provider.arn} >/dev/null 2>&1; then
+  aws iam add-client-id-to-open-id-connect-provider --open-id-connect-provider-arn ${provider.arn} --client-id ${provider.audience}
+else
   echo "Registering Maple's identity provider, ${provider.url}..."
   aws iam create-open-id-connect-provider --url ${provider.url} --client-id-list ${provider.audience} >/dev/null
 fi
@@ -437,17 +442,17 @@ resource "aws_iam_role_policy_attachment" "maple_managed_${index}" {
 		.join("")
 	const trust = hcl(trustingPrincipal(plan, "__PROVIDER__")).replace(
 		'"__PROVIDER__"',
-		"aws_iam_openid_connect_provider.maple.arn",
+		"data.aws_iam_openid_connect_provider.maple.arn",
 	)
 	return `# Maple integration ${connectionId} (setup v${AWS_TEMPLATE_VERSION}): a read-only role Maple assumes.
 # Apply it with credentials for the account in the role ARN below.
 # Details: ${DOCS_URL}
 
-# Maple's identity provider. An account has one per issuer: if another Maple connection already
-# registered it, import it first: terraform import aws_iam_openid_connect_provider.maple ${plan.oidcProvider.arn}
-resource "aws_iam_openid_connect_provider" "maple" {
-  url            = ${hcl(plan.oidcProvider.url)}
-  client_id_list = [${hcl(plan.oidcProvider.audience)}]
+# Maple's identity provider. An account has one per issuer, shared by every Maple connection, so
+# this file only looks it up: a destroy here must not take it from the others. Register it once:
+#   aws iam create-open-id-connect-provider --url ${plan.oidcProvider.url} --client-id-list ${plan.oidcProvider.audience}
+data "aws_iam_openid_connect_provider" "maple" {
+  url = ${hcl(plan.oidcProvider.url)}
 }
 
 resource "aws_iam_role" "maple" {
