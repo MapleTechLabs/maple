@@ -64,6 +64,10 @@ const chatReason = (tag: string) => {
 
 const success = (message: string) => new OAuthCompleteResponse({ status: "success", message, chat: null })
 
+/** Failed connects still answer 200 with display copy, so they are counted from these attributes. */
+const annotateFailure = (tag: string) =>
+	Effect.annotateCurrentSpan({ "maple.oauth.status": "error", "maple.oauth.error_tag": tag })
+
 const failure = (message: string) => new OAuthCompleteResponse({ status: "error", message, chat: null })
 
 /**
@@ -200,11 +204,15 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 				)
 		return completed.pipe(
 			Effect.tapError((error) =>
-				Effect.logError("Chat OAuth completion failed", {
-					connector,
-					tag: error._tag,
-					message: error.message,
-				}),
+				annotateFailure(error._tag).pipe(
+					Effect.andThen(
+						Effect.logError("Chat OAuth completion failed", {
+							connector,
+							tag: error._tag,
+							message: error.message,
+						}),
+					),
+				),
 			),
 			Effect.map((name) => outcome(name, null)),
 			Effect.catch((error) => Effect.succeed(outcome(null, chatReason(error._tag)))),
@@ -221,6 +229,7 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 		// A chat connector reads the whole query, its platform's error included.
 		const oauthError = request.flow.startsWith("chat_") ? null : params.get("error")
 		if (oauthError !== null) {
+			yield* annotateFailure("provider_error")
 			return failure(params.get("error_description") || oauthError || `${label} returned an error`)
 		}
 		const run = (() => {
@@ -246,10 +255,14 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 		return yield* run.pipe(
 			// The response reduces failures to short copy; the real cause stays in the log.
 			Effect.tapError((error) =>
-				Effect.logError(`${label} OAuth completeConnect failed`, {
-					tag: error._tag,
-					message: error.message,
-				}),
+				annotateFailure(error._tag).pipe(
+					Effect.andThen(
+						Effect.logError(`${label} OAuth completeConnect failed`, {
+							tag: error._tag,
+							message: error.message,
+						}),
+					),
+				),
 			),
 			Effect.catch((error) => Effect.succeed(failure(failureMessage(label, error)))),
 		)
