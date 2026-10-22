@@ -6693,6 +6693,7 @@ describe("AlertsService check intervals", () => {
 			assert.isNotNull(rule?.slowedAt)
 			assert.strictEqual(rule?.lastEvaluationErrorKind, "query_too_slow")
 			// A failed check records how long its query ran, not 0.
+			assert.isNotEmpty(state.checkDurations)
 			assert.isTrue(state.checkDurations.every((ms) => ms === 6000))
 		}).pipe(Effect.provide(makeLayer(testDb, timingOutWarehouse(state), { fetch: okFetch })))
 	})

@@ -167,6 +167,17 @@ describe("deriveRuleStatus", () => {
 		expect(checkedAgo(3 * 60 + 1)).toBe("stale")
 	})
 
+	it("waits three of a slowed-down rule's intervals before calling it stale", () => {
+		const slowed = { windowMinutes: 30, evaluationIntervalMinutes: null, slowedIntervalMinutes: 30 }
+		const checkedAgo = (minutes: number) =>
+			derive({
+				rule: makeRule({ ...slowed, lastEvaluatedAt: iso(minutes * 60_000) }),
+				states: [makeState({ last_evaluated_at: iso(minutes * 60_000) })],
+			}).status
+		expect(checkedAgo(40)).toBe("healthy")
+		expect(checkedAgo(3 * 30 + 1)).toBe("stale")
+	})
+
 	it("applies the same missed-tick SLA regardless of the rule's window", () => {
 		// The scheduler checks a rule every 1-5 minutes whatever its window, so
 		// staleness does not scale with the window. Scaling
