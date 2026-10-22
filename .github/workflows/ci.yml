@@ -126,6 +126,8 @@ jobs:
                         - '.github/workflows/ci.yml'
                         - 'mise.toml'
                         - 'apps/ingest/**'
+                        # Embedded by telemetry.rs's cross-language contract test.
+                        - 'apps/scraper/src/__fixtures__/otlp-export.json'
                         - 'packages/db/drizzle/**'
                         - 'packages/db/src/tables/**'
                       collector:
@@ -588,6 +590,8 @@ jobs:
                 working-directory: apps/ingest
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  persist-credentials: false
 
             - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
               with:
@@ -615,6 +619,8 @@ jobs:
                 working-directory: packages/otel-collector-maple-exporter
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  persist-credentials: false
 
             - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
               with:
