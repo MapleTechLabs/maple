@@ -6,7 +6,11 @@ import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { ChatCallbackRouter } from "./chat-integration.http"
-import { CLOUDFLARE_CALLBACK_PATH, IntegrationsCallbackRouter } from "./integrations-callback.http"
+import {
+	CLOUDFLARE_CALLBACK_PATH,
+	GITHUB_CALLBACK_PATH,
+	IntegrationsCallbackRouter,
+} from "./integrations-callback.http"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -81,6 +85,20 @@ describe("provider callbacks", () => {
 		const response = await handler(get(`${CLOUDFLARE_CALLBACK_PATH}?error=access_denied`))
 		expect(response.status).toBe(400)
 		expect(await response.text()).toContain("access_denied")
+		await runtime.dispose()
+		await dispose()
+	})
+
+	it.each([
+		["an install awaiting org approval", "?code=c&setup_action=request", "Installation requested"],
+		["a return without an installation", "?code=c&state=s", "Missing installation_id"],
+		["an install started on GitHub without a state", "?code=c&installation_id=1", "Missing state"],
+	])("refuses %s on the API page and hands nothing on", async (_name, query, message) => {
+		const { handler, dispose, runtime } = makeHarness()
+		const response = await handler(get(`${GITHUB_CALLBACK_PATH}${query}`))
+		expect(response.status).toBe(400)
+		expect(response.headers.get("location")).toBeNull()
+		expect(await response.text()).toContain(message)
 		await runtime.dispose()
 		await dispose()
 	})
