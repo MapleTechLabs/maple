@@ -561,6 +561,8 @@ const withSavedFindings = (
  */
 export const buildDiagnosisCompletion = (
 	sessionId: string,
+	/** The turn's message id: a later turn's diagnosis supersedes this one's. */
+	messageId: string,
 	tenant: TenantContext,
 	origin: ChatTurnOrigin,
 	submitDiagnosis: SubmitDiagnosis,
@@ -598,6 +600,7 @@ export const buildDiagnosisCompletion = (
 								inputTokens: usage.input,
 								outputTokens: usage.output,
 								...(partial ? { partial: true } : undefined),
+								turnId: messageId,
 							}),
 						).pipe(
 							Effect.tap(() =>

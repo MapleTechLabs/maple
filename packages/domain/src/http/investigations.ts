@@ -274,6 +274,11 @@ export class SubmitDiagnosisRequest extends Schema.Class<SubmitDiagnosisRequest>
 	 * without one. It lands as `inconclusive`, never as a diagnosis.
 	 */
 	partial: Schema.optionalKey(Schema.Boolean),
+	/**
+	 * The chat turn that filed it. A later turn's diagnosis supersedes this one and gets its own
+	 * timeline events; a retry within the same turn collapses into the first.
+	 */
+	turnId: Schema.optionalKey(Schema.String),
 }) {}
 
 // Errors
