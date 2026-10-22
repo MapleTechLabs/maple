@@ -4,6 +4,7 @@ import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { intervalBeforeSlowdown } from "@maple/web-data/alerts/diagnosis"
 import { formatQuerySeconds as seconds } from "@maple/web-data/alerts/query-time"
 import { card } from "../../../ui/card"
 import { eyebrow } from "../../../ui/eyebrow"
@@ -50,7 +51,7 @@ export const queryTimeCard = (h: H, rule: AlertRuleDocument, checks: ReadonlyArr
 	const unslowedLimitMs =
 		rule.slowedIntervalMinutes === null
 			? null
-			: alertQueryLimits(alertRuleIntervalMinutes({ ...rule, slowedIntervalMinutes: null })).timeSeconds * 1000
+			: alertQueryLimits(intervalBeforeSlowdown(rule)).timeSeconds * 1000
 	const earlierLimitMs = unslowedLimitMs !== null && unslowedLimitMs < limitMs ? unslowedLimitMs : null
 	const scaleMs = Math.max(limitMs * 1.25, ...times.map((time) => time.durationMs))
 	const slowest = Math.max(...times.map((time) => time.durationMs))

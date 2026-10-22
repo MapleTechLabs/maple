@@ -30,7 +30,7 @@ const decodeErrorKind = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
  * The interval a slowed rule ran at just before its latest slowdown: the step the scheduler
  * took to reach the slowed interval, from the rule's own interval or an earlier slowdown.
  */
-const intervalBeforeSlowdown = (rule: AlertRuleDocument): number => {
+export const intervalBeforeSlowdown = (rule: AlertRuleDocument): number => {
 	const base = alertRuleIntervalMinutes({ ...rule, slowedIntervalMinutes: null })
 	const slowed = rule.slowedIntervalMinutes
 	if (slowed === null) return base

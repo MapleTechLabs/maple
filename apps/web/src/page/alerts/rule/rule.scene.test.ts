@@ -202,6 +202,57 @@ describe("alert rule", () => {
 		)
 	})
 
+	test("a rule slowed twice quotes the limit of the step before its latest slowdown", () => {
+		const rule = ruleRow(2, {
+			signal_type: "raw_query",
+			service_names_json: [],
+			environments_json: [],
+			raw_query_sql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+			window_minutes: 15,
+			evaluation_interval_minutes: 1,
+			slowed_interval_minutes: 10,
+			slowed_at: new Date(NOW - 30 * 60_000).toISOString(),
+		})
+		const model = loaded({}, rule)
+		const timed = Schema.decodeUnknownSync(AlertCheckDocument)({
+			timestamp: new Date(NOW - 10 * 60_000).toISOString(),
+			groupKey: "__total__",
+			status: "healthy",
+			skipReason: null,
+			signalType: "raw_query",
+			comparator: "gt",
+			threshold: 10,
+			thresholdUpper: null,
+			observedValue: 3,
+			sampleCount: 3,
+			windowMinutes: 15,
+			windowStart: new Date(NOW - 25 * 60_000).toISOString(),
+			windowEnd: new Date(NOW - 10 * 60_000).toISOString(),
+			consecutiveBreaches: 0,
+			consecutiveHealthy: 1,
+			incidentId: null,
+			incidentTransition: "none",
+			level: null,
+			evaluationDurationMs: 16_000,
+			errorMessage: null,
+			errorCategory: null,
+		})
+		const withChecks = pageUpdate(
+			model,
+			Message.CompletedFetchChecks({
+				key: model.checks.key ?? "",
+				result: Result.succeed({ ...firstPage("next"), checks: [timed] }),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(withChecks),
+			themeResolved(),
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(text("Slowest 16 s · limit 25 s at every 10 min, 15 s before the slowdown")).toExist(),
+		)
+	})
+
 	test("a disabled rule's diagnosis offers Enable, which PATCHes the rule once", () => {
 		const model = loaded({}, ruleRow(2, { enabled: false }))
 		scene(
