@@ -12,7 +12,7 @@
 	},
 	"dependencies": {
 		"@clerk/themes": "^2.4.57",
-		"@effect/platform-browser": "4.0.4",
+		"@effect/platform-browser": "4.0.5",
 		"@floating-ui/dom": "1.8.0",
 		"@foldkit/markdown": "0.14.4",
 		"@foldkit/ui": "0.169.0",
