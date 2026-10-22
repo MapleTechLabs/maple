@@ -196,20 +196,31 @@ describe("blindSpots", () => {
 			[unrouted.id, "unrouted"],
 		])
 	})
-	it("lists a rule slowed down by its timeouts, ahead of unrouted ones", () => {
+	it("lists a slowed-down rule after the ones that reach nobody, and as unrouted when it reaches nobody", () => {
 		const slowed = makeRule({
 			id: "00000000-0000-4000-8000-000000000004",
 			slowedIntervalMinutes: 5,
 			slowedAt: iso(HOUR),
 		})
+		const slowedUnrouted = makeRule({
+			id: "00000000-0000-4000-8000-000000000005",
+			slowedIntervalMinutes: 5,
+			slowedAt: iso(HOUR),
+		})
 		const unrouted = makeRule({ id: "00000000-0000-4000-8000-000000000002" })
 		const spots = blindSpots(
-			[unrouted, slowed],
+			[slowed, slowedUnrouted, unrouted],
 			new Map([
 				[
 					slowed.id,
 					derived({
 						attention: { noDestinations: false, recentDeliveryFailure: false, slowedDown: true },
+					}),
+				],
+				[
+					slowedUnrouted.id,
+					derived({
+						attention: { noDestinations: true, recentDeliveryFailure: false, slowedDown: true },
 					}),
 				],
 				[
@@ -220,10 +231,12 @@ describe("blindSpots", () => {
 				],
 			]),
 		)
-		expect(spots.map((s) => [s.rule.id, s.kind, s.detail])).toEqual([
-			[slowed.id, "slowed", "Checked every 5 min because its query kept hitting its limit"],
-			[unrouted.id, "unrouted", "No destinations, so nobody is notified"],
+		expect(spots.map((s) => [s.rule.id, s.kind])).toEqual([
+			[slowedUnrouted.id, "unrouted"],
+			[unrouted.id, "unrouted"],
+			[slowed.id, "slowed"],
 		])
+		expect(spots[2]?.detail).toBe("Checked every 5 min because its query kept hitting its limit")
 	})
 })
 
