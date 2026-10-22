@@ -152,6 +152,8 @@ export const Loader = Schema.Struct({
 	failedRanges: Schema.Array(Schema.Number),
 	/** The last background failure, shown once the playhead needs a failed range. */
 	backgroundFailure: Schema.NullOr(LoadFailure),
+	/** The engine ran out of loaded events, until the window grows or is rebuilt. */
+	isStarved: Schema.Boolean,
 	/** Play as soon as the next seed's engine is ready: a seek or slide that interrupted playback. */
 	resumeOnReady: Schema.Boolean,
 })

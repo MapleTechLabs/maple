@@ -386,6 +386,11 @@ describe("replay detail", () => {
 		expect(playerStatus(rest, session).status).toBe("ready")
 
 		const ready = pageUpdate(rest, Message.ReadiedEngine({ seedVersion: rest.loader.seedVersion, totalMs: 1 })).model
+		const inside = pageUpdate(ready, Message.TickedEngine({ seedVersion: ready.loader.seedVersion, currentMs: 5_000 })).model
+		expect(playerStatus(inside, session).status).toBe("ready")
+		// The engine running dry before the manifest's estimate of the window end counts as reaching it.
+		const dry = pageUpdate(inside, Message.StarvedEngine({ seedVersion: ready.loader.seedVersion, currentMs: 5_000 })).model
+		expect(playerStatus(dry, session).status).toBe("error")
 		const atEdge = pageUpdate(ready, Message.TickedEngine({ seedVersion: ready.loader.seedVersion, currentMs: 9_500 })).model
 		expect(playerStatus(atEdge, session).status).toBe("error")
 		const retried = pageUpdate(atEdge, Message.ClickedRetryPlayer())

@@ -39,6 +39,7 @@ export const emptyLoader = (): Loader => ({
 	fetchedRanges: [],
 	failedRanges: [],
 	backgroundFailure: null,
+	isStarved: false,
 	resumeOnReady: false,
 })
 
@@ -160,6 +161,7 @@ export const planOnce = (model: Model): Model => {
 			fetchedRanges: [],
 			failedRanges: [],
 			backgroundFailure: null,
+			isStarved: false,
 			resumeOnReady: false,
 		},
 	}
@@ -203,7 +205,15 @@ export const advance = (model: Model, rows: Option.Option<RangeRows>): Model => 
 	return continueDownload(
 		cutSeed({
 			...model,
-			loader: { ...loader, loaded, queue: loader.queue.slice(1), originMs, rangeMetas, fetchedRanges },
+			loader: {
+				...loader,
+				loaded,
+				queue: loader.queue.slice(1),
+				originMs,
+				rangeMetas,
+				fetchedRanges,
+				isStarved: isPlayable ? false : loader.isStarved,
+			},
 		}),
 	)
 }
@@ -260,6 +270,7 @@ const rebuildAt = (model: Model, offsetMs: number, anchorSeq: number, resume: bo
 		isSeeking: true,
 		seekTargetMs: offsetMs,
 		resumeOnReady: resume,
+		isStarved: false,
 		queue: rangesCovering(chunksOf(model), planOf(model), anchorSeq, INITIAL_WINDOW_BYTES),
 	},
 })
@@ -269,7 +280,10 @@ const rebuildAt = (model: Model, offsetMs: number, anchorSeq: number, resume: bo
  * window rebuilds the player from the latest checkpoint before it, and playback carries on.
  */
 export const reportProgress = (model: Model, offsetMs: number, isStarved = false): Model => {
-	const next = { ...model, loader: { ...model.loader, playheadMs: offsetMs } }
+	const next = {
+		...model,
+		loader: { ...model.loader, playheadMs: offsetMs, isStarved: model.loader.isStarved || isStarved },
+	}
 	const { loader } = next
 	// The engine running dry is the window's end whatever the manifest's estimate of it says.
 	const isAtEnd = isStarved || offsetMs + 1_000 >= loadedUntilMs(next)
@@ -322,7 +336,7 @@ export const neededFailure = (model: Model): LoadFailure | null => {
 		loader.seedCount > 0 &&
 		next !== undefined &&
 		loader.failedRanges.includes(next.fromChunkSeq) &&
-		loader.playheadMs + 1_000 >= loadedUntilMs(model)
+		(loader.isStarved || loader.playheadMs + 1_000 >= loadedUntilMs(model))
 		? loader.backgroundFailure
 		: null
 }
