@@ -264,7 +264,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				return stored.loader.seedCount === 0
 					? { model: stored }
 					: syncRange(skipFailed(stored, result.failure), context)
-			return syncRange(withMeta(model, advance(stored, Option.some(result.success))), context)
+			const advanced = advance(stored, Option.some(result.success))
+			// A range fetched only for its markers is not kept: past the cap, holding its events is the
+			// memory the cap exists to bound.
+			const isHeld = advanced.loader.loaded.some((entry) => rangeRequestKey(advanced, context, entry.range) === key)
+			const kept = isHeld
+				? advanced
+				: { ...advanced, loader: { ...advanced.loader, rangeCache: model.loader.rangeCache } }
+			return syncRange(withMeta(model, kept), context)
 		},
 		CompletedFetchSpans: ({ traceId, result }) => ({
 			model: { ...model, spans: { ...model.spans, [traceId]: AsyncData.settle(AsyncData.Loading(), result) } },

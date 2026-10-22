@@ -315,12 +315,13 @@ describe("replay detail", () => {
 		const early = pageUpdate(playing, Message.TickedEngine({ seedVersion: playing.loader.seedVersion, currentMs: 5_000 })).model
 		expect(early.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([0])
 		const dry = pageUpdate(playing, Message.StarvedEngine({ seedVersion: playing.loader.seedVersion, currentMs: 5_000 })).model
-		expect(dry.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([1, 2])
+		expect(dry.loader.queue).toEqual([{ fromChunkSeq: 1, toChunkSeq: 1 }])
 		const slid = pageUpdate(playing, Message.TickedEngine({ seedVersion: playing.loader.seedVersion, currentMs: 9_500 })).model
-		// Chunk 1 was already fetched for its markers, so the new window is cut from the cache at once.
-		expect(slid.loader.seed.length).toBeGreaterThan(0)
-		expect(slid.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([1, 2])
-		const resumed = pageUpdate(slid, Message.ReadiedEngine({ seedVersion: slid.loader.seedVersion, totalMs: 1 })).model
+		// Chunk 1 was fetched for its markers only and not kept, so the new window fetches it again.
+		expect(slid.loader.queue).toEqual([{ fromChunkSeq: 1, toChunkSeq: 1 }])
+		const rebuilt = answerWith(answerWith(slid, chunkRows(1, 60)).model, chunkRows(2, 120)).model
+		expect(rebuilt.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([1, 2])
+		const resumed = pageUpdate(rebuilt, Message.ReadiedEngine({ seedVersion: rebuilt.loader.seedVersion, totalMs: 1 })).model
 		expect(resumed.player.isPlaying).toBe(true)
 		expect(resumed.player.control).toContain("|play|9500")
 	})
