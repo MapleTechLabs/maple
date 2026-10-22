@@ -14,7 +14,7 @@ mod autumn;
 mod sources;
 mod task_protection;
 
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -40,13 +40,13 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use chrono::DateTime;
 use dashmap::DashMap;
-use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use hmac::{Hmac, Mac};
 use maple_ingest::ai_session;
 use maple_ingest::aws::CredentialsProvider as AwsCredentialsProvider;
 use maple_ingest::clickhouse_insert_mappings::SCHEMA_VERSION as CLICKHOUSE_SCHEMA_VERSION;
+use maple_ingest::decompress::{gunzip_bounded, gunzip_len_bounded, GunzipError};
 use maple_ingest::gcp_logging;
 use maple_ingest::gcp_push_auth::{GooglePushAuth, PushAuthError};
 use maple_ingest::metrics;
@@ -4428,23 +4428,12 @@ async fn handle_product_events_inner(
     Ok(count)
 }
 
-/// Decompressed length of a gzip payload, without materializing it.
-///
-/// Same number `read_to_string(...).len()` would produce, and the same
-/// rejection of malformed gzip — it just doesn't keep the bytes. Used on the
-/// blob-store path, where the decompressed text is never needed but `ByteSize`
-/// and the per-session budget are still denominated in decompressed bytes.
-fn decompressed_len(body: &[u8]) -> Result<u64, std::io::Error> {
-    let mut decoder = GzDecoder::new(body);
-    std::io::copy(&mut decoder, &mut std::io::sink())
-}
-
 /// Bounded gunzip of a replay chunk into text. Invalid UTF-8 reads as the
 /// same error `read_to_string` raised, so the rejection fingerprint holds.
-fn gunzip_replay_text(body: &[u8], max_decoded: usize) -> Result<String, BoundedGunzipError> {
+fn gunzip_replay_text(body: &[u8], max_decoded: usize) -> Result<String, GunzipError> {
     let bytes = gunzip_bounded(body, max_decoded)?;
     String::from_utf8(bytes).map_err(|_| {
-        BoundedGunzipError::Invalid(std::io::Error::new(
+        GunzipError::Invalid(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "stream did not contain valid UTF-8",
         ))
@@ -4601,19 +4590,17 @@ async fn handle_replay_blob_inner(
     // is denominated in *decompressed* bytes. So decode and discard, counting.
     // What that avoids is the part that actually cost: materializing a
     // multi-megabyte String, JSON-escaping it, and pushing it through the WAL.
+    // Both branches stop at the same decoded ceiling as the OTLP routes.
+    let max_decoded = state.config.max_decoded_body_bytes;
+    let gunzip_rejection = |e: GunzipError| match e {
+        GunzipError::Invalid(e) => replay_gunzip_rejection(headers, &body, &e),
+        GunzipError::TooLarge => ApiError::payload_too_large("decompressed replay chunk too large"),
+    };
     let (events_json, byte_size) = if state.replay_blob_store.is_some() {
-        (
-            None,
-            decompressed_len(&body).map_err(|e| replay_gunzip_rejection(headers, &body, &e))?,
-        )
+        let byte_size = gunzip_len_bounded(&body, max_decoded).map_err(gunzip_rejection)?;
+        (None, byte_size)
     } else {
-        let events_json = gunzip_replay_text(&body, state.config.max_decoded_body_bytes)
-            .map_err(|e| match e {
-                BoundedGunzipError::Invalid(e) => replay_gunzip_rejection(headers, &body, &e),
-                BoundedGunzipError::TooLarge => {
-                    ApiError::payload_too_large("decompressed replay chunk too large")
-                }
-            })?;
+        let events_json = gunzip_replay_text(&body, max_decoded).map_err(gunzip_rejection)?;
         let byte_size = events_json.len() as u64;
         (Some(events_json), byte_size)
     };
@@ -6160,26 +6147,6 @@ fn detect_payload_format(content_type: &str) -> Result<PayloadFormat, ApiError> 
     ))
 }
 
-#[derive(Debug)]
-enum BoundedGunzipError {
-    Invalid(std::io::Error),
-    TooLarge,
-}
-
-/// Gunzips `body`, stopping once more than `max_decoded` bytes have come out.
-fn gunzip_bounded(body: &[u8], max_decoded: usize) -> Result<Vec<u8>, BoundedGunzipError> {
-    let read_limit = u64::try_from(max_decoded).unwrap_or(u64::MAX).saturating_add(1);
-    let mut decompressed = Vec::new();
-    GzDecoder::new(body)
-        .take(read_limit)
-        .read_to_end(&mut decompressed)
-        .map_err(BoundedGunzipError::Invalid)?;
-    if decompressed.len() > max_decoded {
-        return Err(BoundedGunzipError::TooLarge);
-    }
-    Ok(decompressed)
-}
-
 #[hotpath::measure]
 fn decode_payload(
     body: &Bytes,
@@ -6189,8 +6156,8 @@ fn decode_payload(
     match content_encoding {
         None => Ok(body.to_vec()),
         Some("gzip") => gunzip_bounded(body.as_ref(), max_decoded).map_err(|e| match e {
-            BoundedGunzipError::Invalid(_) => ApiError::bad_request("Invalid gzip body"),
-            BoundedGunzipError::TooLarge => {
+            GunzipError::Invalid(_) => ApiError::bad_request("Invalid gzip body"),
+            GunzipError::TooLarge => {
                 ApiError::payload_too_large("Decompressed request body too large")
             }
         }),
@@ -8901,6 +8868,14 @@ mod tests {
     use opentelemetry_proto::tonic::metrics::v1::metric;
     use std::sync::atomic::AtomicBool;
 
+    /// The blob path's length count, unbounded and with its `io::Error`, for the rejection tests.
+    fn decompressed_len(body: &[u8]) -> Result<u64, std::io::Error> {
+        gunzip_len_bounded(body, usize::MAX).map_err(|e| match e {
+            GunzipError::Invalid(e) => e,
+            GunzipError::TooLarge => std::io::Error::other("unreachable under usize::MAX"),
+        })
+    }
+
     #[test]
     fn self_trace_sample_ratio_must_be_in_the_unit_interval() {
         let parse = |raw: &str| parse_sample_ratio("RATIO", Some(raw.to_owned()), 1.0);
@@ -10017,10 +9992,10 @@ mod tests {
         headers: HeaderMap,
         body: Bytes,
     ) -> StatusCode {
-        let mut decoded = String::new();
-        GzDecoder::new(&body[..])
-            .read_to_string(&mut decoded)
-            .expect("fake ClickHouse should receive gzip NDJSON");
+        let decoded = String::from_utf8(
+            gunzip_bounded(&body, usize::MAX).expect("fake ClickHouse should receive gzip NDJSON"),
+        )
+        .expect("fake ClickHouse should receive UTF-8 NDJSON");
 
         drop(
             tx.send(FakeClickHouseImport {
@@ -10840,6 +10815,83 @@ mod tests {
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
+    #[tokio::test]
+    async fn replay_blob_gzip_bomb_is_refused_before_upload_and_budget() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/{*path}", axum::routing::put(fake_r2_put))
+            .with_state(tx);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let (raw_key, org_id) = ("maple_sk_test_replay_bomb", "org_replay_bomb");
+        let queue_dir = unique_main_test_dir("replay-blob-bomb");
+        let state = replay_blob_test_state(raw_key, org_id, queue_dir.clone()).await;
+        let mut state = with_replay_blob_store(state, format!("http://{addr}"));
+        state.config.max_decoded_body_bytes = 1024 * 1024;
+
+        let bomb = gzip_bytes(&"a".repeat(4 * 1024 * 1024));
+        assert!(bomb.len() < 64 * 1024, "fixture should compress well");
+        let error =
+            handle_replay_blob_inner(&state, &replay_blob_headers(raw_key, "sess_bomb", 0), bomb)
+                .await
+                .expect_err("a chunk inflating past the decoded limit must be refused");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(rx.try_recv().is_err(), "a refused chunk must not be stored");
+        assert_eq!(
+            state
+                .replay_session_budget
+                .add(org_id, "sess_bomb", 0)
+                .await,
+            0,
+            "a refused chunk must not be charged to the session"
+        );
+
+        handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(raw_key, "sess_bomb", 1),
+            gzip_bytes(r#"[{"type":2,"timestamp":1}]"#),
+        )
+        .await
+        .expect("a normal chunk is still accepted");
+        assert!(rx.recv().await.is_some(), "the normal chunk is stored");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn inline_replay_and_otlp_refuse_gzip_bombs() {
+        let queue_dir = unique_main_test_dir("inline-bomb");
+        let (raw_key, org_id) = ("maple_sk_test_inline_bomb", "org_inline_bomb");
+        let mut state = replay_blob_test_state(raw_key, org_id, queue_dir.clone()).await;
+        state.config.max_decoded_body_bytes = 1024 * 1024;
+        let bomb = || gzip_bytes(&"a".repeat(4 * 1024 * 1024));
+
+        let error = handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(raw_key, "sess_inline_bomb", 0),
+            bomb(),
+        )
+        .await
+        .expect_err("inline replay must refuse a gzip bomb");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+
+        let mut headers = test_headers(raw_key);
+        headers.insert(CONTENT_ENCODING, "gzip".parse().unwrap());
+        let (error, error_kind) = handle_signal_inner(&state, &headers, bomb(), Signal::Logs)
+            .await
+            .expect_err("OTLP must refuse a gzip bomb");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(error_kind, "payload_too_large");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
     #[test]
     fn decode_payload_gunzips_within_the_decoded_limit() {
         let payload = r#"{"resourceSpans":[]}"#;
@@ -10881,14 +10933,14 @@ mod tests {
         );
         assert!(matches!(
             gunzip_replay_text(&gzip_bytes(events), events.len() - 1),
-            Err(BoundedGunzipError::TooLarge)
+            Err(GunzipError::TooLarge)
         ));
 
         let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
         encoder.write_all(&[0xff, 0xfe]).unwrap();
         let not_utf8 = encoder.finish().unwrap();
         match gunzip_replay_text(&not_utf8, 1024) {
-            Err(BoundedGunzipError::Invalid(error)) => {
+            Err(GunzipError::Invalid(error)) => {
                 assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
             }
             other => panic!("expected an invalid-data error, got {other:?}"),

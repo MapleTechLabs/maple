@@ -4299,7 +4299,12 @@ mod tests {
     use axum::http::{HeaderMap, StatusCode};
     use axum::routing::post;
     use axum::Router;
-    use flate2::read::GzDecoder;
+
+    /// Fake sinks expect gzip NDJSON; anything else fails the test.
+    fn gunzip_text(body: &[u8]) -> String {
+        let bytes = crate::decompress::gunzip_bounded(body, usize::MAX).expect("gzip NDJSON");
+        String::from_utf8(bytes).expect("UTF-8 NDJSON")
+    }
     use opentelemetry_proto::tonic::common::v1::{ArrayValue, InstrumentationScope, KeyValueList};
     use opentelemetry_proto::tonic::metrics::v1::{
         exponential_histogram_data_point, metric, AggregationTemporality, ExponentialHistogram,
@@ -4479,10 +4484,7 @@ mod tests {
         headers: HeaderMap,
         body: Bytes,
     ) -> StatusCode {
-        let mut decoded = String::new();
-        GzDecoder::new(&body[..])
-            .read_to_string(&mut decoded)
-            .expect("fake Tinybird should receive gzip NDJSON");
+        let decoded = gunzip_text(&body);
 
         drop(
             tx.send(FakeTinybirdImport {
@@ -4510,10 +4512,7 @@ mod tests {
         headers: HeaderMap,
         body: Bytes,
     ) -> StatusCode {
-        let mut decoded = String::new();
-        GzDecoder::new(&body[..])
-            .read_to_string(&mut decoded)
-            .expect("fake ClickHouse should receive gzip NDJSON");
+        let decoded = gunzip_text(&body);
 
         drop(
             tx.send(FakeClickHouseImport {
@@ -7849,7 +7848,8 @@ mod tests {
         assert_eq!(new_wal.replay(0).await.expect("replay").len(), 1);
         let keys = bucket.keys();
         assert!(
-            keys.iter().any(|key| key.ends_with(&format!("/retired/{retired}"))),
+            keys.iter()
+                .any(|key| key.ends_with(&format!("/retired/{retired}"))),
             "the retired marker survives while a segment is left: {keys:?}"
         );
 
