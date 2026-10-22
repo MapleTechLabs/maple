@@ -290,7 +290,8 @@ jobs:
     e2e:
         name: End-to-end tests against the preview
         needs: deploy-pr-preview
-        if: ${{ needs.deploy-pr-preview.outputs.smoke == 'success' }}
+        # `!cancelled()`: the implicit success() fails on the skipped ingest-binary upstream.
+        if: ${{ !cancelled() && needs.deploy-pr-preview.result == 'success' && needs.deploy-pr-preview.outputs.smoke == 'success' }}
         runs-on: ubuntu-latest
         timeout-minutes: 20
         # Checkout and the Infisical OIDC exchange; none of the workflow's write scopes.
