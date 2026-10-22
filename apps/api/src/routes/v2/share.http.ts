@@ -293,10 +293,17 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 						share.widgetId === undefined
 							? undefined
 							: document.widgets.find((widget) => widget.id === share.widgetId)
+					// A chart link whose widget is gone gets no variables, not the board's.
 					const scoped =
-						sharedWidget === undefined || document.variables === undefined
+						share.widgetId === undefined || document.variables === undefined
 							? document
-							: { ...document, variables: variablesForWidget(document.variables, sharedWidget) }
+							: {
+									...document,
+									variables:
+										sharedWidget === undefined
+											? []
+											: variablesForWidget(document.variables, sharedWidget),
+								}
 					const { results, variables } = yield* widgetData.resolveBatch(orgId, scoped, {
 						requests: payload.requests.map((request) => ({
 							widgetId: request.widgetId,

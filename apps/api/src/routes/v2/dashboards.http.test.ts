@@ -957,6 +957,21 @@ describe("v2 dashboard shares", () => {
 
 		expect(await variablesFor(board.body.token)).toEqual(["region", "tier"])
 		expect(await variablesFor(chart.body.token)).toEqual(["region"])
+
+		// Once its widget is edited away, a chart link must not fall back to the board's variables.
+		const edited = await harness.request("PATCH", `/v2/dashboards/${id}`, key.secret, {
+			widgets: [
+				{
+					id: "w-2",
+					visualization: "stat",
+					data_source: { kind: "static" },
+					display: { title: "Tier $tier" },
+					layout: { x: 0, y: 0, w: 3, h: 4 },
+				},
+			],
+		})
+		expect(edited.status).toBe(200)
+		expect(await variablesFor(chart.body.token)).toEqual([])
 		await harness.dispose()
 	})
 
