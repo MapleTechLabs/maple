@@ -153,6 +153,19 @@ export const settingsClause = (settings: WarehouseQuerySettings | undefined): st
 }
 
 /**
+ * One `SETTINGS` clause from a statement's own and the profile's. The profile's
+ * entries go last, so ClickHouse applies them over a statement's same-named ones.
+ */
+export const mergeSettingsClauses = (
+	statementSettings: string | undefined,
+	profileSettings: string | undefined,
+): string | undefined => {
+	if (statementSettings === undefined) return profileSettings
+	if (profileSettings === undefined) return statementSettings
+	return `${statementSettings}, ${profileSettings.replace(/^SETTINGS\s+/i, "")}`
+}
+
+/**
  * Add a ClickHouse `SETTINGS` clause to SQL text, before a trailing `FORMAT`
  * clause when there is one (Tinybird's ClickHouse rejects the inverse order).
  * Returns the input unchanged when there is nothing to set.

@@ -138,8 +138,64 @@ describe("rawSqlIssue", () => {
 		expect(rawSqlIssue("SELECT 1 WHERE $__orgFilter FORMAT JSONEachRow")).toBeNull()
 	})
 
-	it("does not mistake a column named settings or format for a clause", () => {
-		expect(rawSqlIssue("SELECT settings, format FROM t WHERE $__orgFilter")).toBeNull()
+	it("does not mistake a column named format, or a quoted settings, for a clause", () => {
+		expect(rawSqlIssue("SELECT `settings`, format FROM t WHERE $__orgFilter")).toBeNull()
+	})
+
+	// A SETTINGS in a subquery applies to the whole query context, so it is refused at any depth.
+	it.each([
+		"SELECT 1 FROM traces WHERE $__orgFilter AND SpanId IN (SELECT SpanId FROM traces SETTINGS max_execution_time=3000)",
+		"SELECT * FROM (SELECT 1 FROM traces SETTINGS max_memory_usage=0) WHERE $__orgFilter",
+	])("rejects a nested SETTINGS clause: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.message).toContain("SETTINGS is managed by Maple")
+	})
+
+	it.each([
+		"SELECT * FROM cosn('https://x/y.parquet') WHERE $__orgFilter",
+		"SELECT * FROM oss('https://x/y.parquet') WHERE $__orgFilter",
+		"SELECT * FROM paimonS3('https://x/y') WHERE $__orgFilter",
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN (SELECT query FROM merge('db', '^q'))",
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN (SELECT * FROM mergeTreeIndex('db', 't'))",
+	])("rejects further table functions: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
+	})
+
+	it("names an exact-match table function in its message", () => {
+		expect(rawSqlIssue("SELECT * FROM url('http://x/') WHERE $__orgFilter")?.message).toContain(
+			"Table function 'url'",
+		)
+	})
+
+	// The masker blanks quoted identifiers, so a quoted name was invisible to the function check.
+	it.each([
+		"SELECT * FROM `url`('http://x/', JSONEachRow) WHERE $__orgFilter",
+		"SELECT * FROM \"file\"('/etc/hosts', LineAsString) WHERE $__orgFilter",
+		"SELECT * FROM default.`s3` /* c */ ('https://x/y') WHERE $__orgFilter",
+	])("rejects a quoted function name: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.message).toContain("Quoted function names")
+	})
+
+	// Syntax the masker does not lex, so it and the server would disagree on what is code.
+	it.each([
+		["SELECT 1 FROM traces WHERE $__orgFilter # trailing", "'#' comments"],
+		["#!/x\nSELECT 1 FROM traces WHERE $__orgFilter", "'#' comments"],
+		["SELECT $$it's$$ FROM traces WHERE $__orgFilter", "Heredoc strings"],
+		["SELECT $q$x$q$ FROM traces WHERE $__orgFilter", "Heredoc strings"],
+		["SELECT 1 FROM traces /* a /* b */ c */ WHERE $__orgFilter", "Nested /* */ comments"],
+	])("rejects syntax the validator cannot see through: %s", (sql, message) => {
+		const issue = rawSqlIssue(sql)
+		expect(issue?.code).toBe("DisallowedStatement")
+		expect(issue?.message).toContain(message)
+	})
+
+	it.each([
+		"SELECT '#1' AS tag FROM traces WHERE $__orgFilter",
+		"SELECT '$$' AS s, '$x$' AS t, '*/' AS u FROM traces WHERE $__orgFilter",
+		'SELECT `file`, "url" FROM traces WHERE $__orgFilter -- # not code',
+		"SELECT `Url` AS u, count(`Url`) AS c FROM traces WHERE $__orgFilter /* $$ */",
+		"SELECT urlHash(Url) AS h FROM traces WHERE $__orgFilter AND Url IN ('a', \"b\")",
+	])("still accepts these characters in literals, comments and plain identifiers: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
 	})
 })
 
