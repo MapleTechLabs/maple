@@ -234,6 +234,23 @@ describe("alert rule editor", () => {
 			// A fast query keeps its cheaper-filter suggestions to itself.
 			expectView(text(/^Line 4:/)).not.toExist(),
 		)
+		const heavy = Schema.decodeUnknownSync(AlertRulePreviewResponse)({
+			...Schema.encodeSync(AlertRulePreviewResponse)(timing(7_800)),
+			seriesFailure: "query_too_slow",
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				run(sql, [
+					Message.CompletedLoadChartRuntime(),
+					Message.CompletedFetchPreview({ key: sql.preview.key ?? "", isSaved: false, result: Result.succeed(heavy) }),
+				]),
+			),
+			themeResolved(),
+			// Too heavy to chart, yet the one-check timing still says which interval fits.
+			expectView(text(/ran past 25 s charting this range/)).toExist(),
+			expectView(text("Too slow for 1-minute checks, fits 5-minute checks.")).toExist(),
+		)
 	})
 
 	test("editing a slowed-down rule says saving resets it, and keeps it in one click", () => {

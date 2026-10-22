@@ -366,6 +366,7 @@ describe("v2 response mappers", () => {
 			truncated_to_start: null,
 			series: [],
 			would_fire: [],
+			series_failure: "query_too_slow",
 			query_timing: {
 				elapsed_ms: 7_800,
 				failure: null,
@@ -375,6 +376,7 @@ describe("v2 response mappers", () => {
 				fits_interval_minutes: [5, 10, 15, 30, 60],
 			},
 		})
+		expect(response.seriesFailure).toBe("query_too_slow")
 		expect(response.queryTiming && { ...response.queryTiming }).toEqual({
 			elapsedMs: 7_800,
 			failure: null,

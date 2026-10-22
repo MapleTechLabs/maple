@@ -944,6 +944,7 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 					severity: span.severity,
 				}),
 		),
+		...(result.series_failure === undefined ? undefined : { seriesFailure: result.series_failure }),
 		...(result.query_timing === undefined
 			? undefined
 			: {
