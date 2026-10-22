@@ -19,6 +19,8 @@ import { initPrometheusCard } from "./prometheus"
 import { initRailwayCard } from "./railway"
 import { initPlanetscaleCard } from "./planetscale"
 import { initGcpCard } from "./gcp"
+import { initAwsCard } from "./aws"
+import * as Aws from "./update-aws"
 import { initSupabaseCard } from "./supabase"
 import * as Supabase from "./update-supabase"
 import * as Gcp from "./update-gcp"
@@ -116,6 +118,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			planetscale: Keyed.idle(),
 			planetscaleDatabases: Keyed.idle(),
 			gcp: Keyed.idle(),
+			aws: Keyed.idle(),
 			supabase: Keyed.idle(),
 			hazel: Keyed.idle(),
 			github: Keyed.idle(),
@@ -132,6 +135,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		prometheusCard: initPrometheusCard(),
 		planetscaleCard: initPlanetscaleCard(),
 		gcpCard: initGcpCard(),
+		awsCard: initAwsCard(),
 		railwayCard: initRailwayCard(),
 		supabaseCard: initSupabaseCard(),
 	}
@@ -164,6 +168,7 @@ export const routeChanged = (
 const enterIntegration = (model: Model, context: PageContext): Return => {
 	const integration = integrationOfSearch(model.search.integration)
 	if (integration === "cloudflare") return CloudflareCard.enterCloudflare(model, context)
+	if (integration === "aws") return Aws.enterAws(model, context)
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
 	if (integration === "supabase") return Supabase.requestMetricsRows(model, context, "Load")
@@ -220,6 +225,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				s.gcp.key === key && Result.isSuccess(result) ? Configure.statusArrived(read).model : read
 			return gcpBand(arrived, context)
 		},
+		CompletedLoadAws: ({ key, result }) =>
+			Aws.statusArrived(
+				accepted(model, { ...s, aws: Keyed.accept(s.aws, key, result) }).model,
+				Aws.connectionsOf(model),
+			),
 		CompletedLoadSupabase: ({ key, result }) => {
 			const read = accepted(model, { ...s, supabase: Keyed.accept(s.supabase, key, result) }).model
 			// Any answer to the current read retires saved flips; a failed one shows the last known value.
@@ -319,6 +329,29 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRailwayRotate: () => Railway.setRotating(model, true),
 		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
 		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
+		GotAwsAccountIdMessage: ({ message: child }) => Aws.gotAccountId(model, child),
+		SubmittedAwsAccount: () => Aws.submittedAccount(model),
+		SucceededAwsCreate: ({ connection }) => Aws.succeededCreate(model, context, connection),
+		FailedAwsCreate: ({ error }) => Aws.failedCreate(model, error),
+		ClickedAwsAdd: () => Aws.setAdding(model, true),
+		ClickedAwsAddCancel: () => Aws.setAdding(model, false),
+		ClickedAwsSetup: ({ id }) => Aws.openSetup(model, context, id),
+		ClickedAwsSetupClose: () => Aws.closeSetup(model),
+		CompletedLoadAwsSetup: ({ key, result }) => Aws.completedLoadSetup(model, key, result),
+		ClickedAwsSetupMethod: ({ method }) => Aws.setMethod(model, method),
+		ClickedAwsCheck: ({ id }) => Aws.clickedCheck(model, id),
+		TickedAwsPending: () => Aws.tickedPending(model),
+		CompletedAwsCheck: ({ id, quiet, connection, failure }) =>
+			Aws.completedCheck(model, context, id, quiet, connection, failure),
+		GotAwsCopyMessage: ({ id, message: child }) => Aws.gotCopy(model, id, child),
+		ClickedAwsDisconnect: ({ id }) => Aws.clickedDisconnect(model, id),
+		GotAwsDisconnectDialogMessage: ({ message: child }) => Aws.gotDisconnectDialog(model, child),
+		ConfirmedAwsDisconnect: () => Aws.confirmedDisconnect(model),
+		CompletedAwsDisconnect: ({ id, removed, error }) =>
+			Aws.completedDisconnect(model, context, id, removed, error),
+		DismissedAwsRemoved: ({ connectionId }) => Aws.dismissedRemoved(model, context, connectionId),
+		CompletedReadAwsRemoved: ({ removed }) => Aws.completedReadRemoved(model, removed),
+		CompletedWriteAwsRemoved: () => ({ model }),
 		// Advances the card's window and "Last data" ages; the fresh clock re-reads rows on a new key.
 		TickedSupabaseClock: () => ({ model, commands: [ReadClock()] }),
 		CompletedReadSupabaseClock: ({ nowMs }) => Supabase.completedReadClock(model, context, nowMs),

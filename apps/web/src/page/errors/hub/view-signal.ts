@@ -132,7 +132,7 @@ export const signalActivity = (h: H, signal: ErrorSignal): Html | null => {
 										: countLabel(prCount, "open pull request"),
 								),
 							],
-							[icon(h, "BranchForkIcon", { size: 11 }), String(prCount)],
+							[icon(h, "PullRequestIcon", { size: 11 }), String(prCount)],
 						),
 					]
 				: []),

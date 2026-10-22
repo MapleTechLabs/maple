@@ -5,6 +5,7 @@ import { requestKey } from "../../data/request-key"
 import type { Resources } from "../../platform/resources"
 import type { PageContext, PageReturn } from "../contract"
 import {
+	LoadAws,
 	LoadChat,
 	LoadCloudflare,
 	LoadGcp,
@@ -30,6 +31,7 @@ const OPERATIONS = {
 	planetscale: "planetscaleIntegration.status",
 	planetscaleDatabases: "planetscaleIntegration.databases",
 	gcp: "gcpIntegration.status",
+	aws: "awsIntegration.status",
 	supabase: "integrations.supabaseStatus",
 	hazel: "integrations.hazelStatus",
 	github: "integrations.githubStatus",
@@ -102,6 +104,12 @@ export const requestStatus = (
 				(all, gcp) => ({ ...all, gcp }),
 				(slotKey) => LoadGcp({ key: slotKey, refresh }),
 			)
+		case "aws":
+			return go(
+				s.aws,
+				(all, aws) => ({ ...all, aws }),
+				(slotKey) => LoadAws({ key: slotKey }),
+			)
 		case "supabase":
 			return go(
 				s.supabase,
@@ -155,6 +163,7 @@ export const STATUS_NAMES: ReadonlyArray<keyof Statuses> = [
 	"planetscale",
 	"planetscaleDatabases",
 	"gcp",
+	"aws",
 	"supabase",
 	"hazel",
 	"github",

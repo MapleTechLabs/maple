@@ -50,6 +50,7 @@ import {
 	MapleToolFailure,
 	summarizeToolFailure,
 	type ToolUiPayload,
+	type UiSource,
 } from "../mcp/tools/llm-tools"
 import { toolHandlersWithContent } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -124,7 +125,10 @@ export interface RunUsage {
 	cacheRead: number
 	/** The same calls as AI credit charges, in Autumn's exclusive pools; see {@link recordCharge}. */
 	readonly charges: Array<Mutable<AiModelSpend>>
-	/** What the run's child agents (`review_files`) spent, as the engine reports each one ending. */
+	/**
+	 * The part of the totals above that the run's child agents (`review_files`) spent, as the engine
+	 * reports each one ending. Their calls are charged with the run's own.
+	 */
 	readonly delegated: { modelCalls: number; input: number; output: number; costMicrousd: number }
 }
 
@@ -558,6 +562,8 @@ const withSavedFindings = (
  */
 export const buildDiagnosisCompletion = (
 	sessionId: string,
+	/** The turn's message id: a later turn's diagnosis supersedes this one's. */
+	messageId: string,
 	tenant: TenantContext,
 	origin: ChatTurnOrigin,
 	submitDiagnosis: SubmitDiagnosis,
@@ -595,6 +601,7 @@ export const buildDiagnosisCompletion = (
 								inputTokens: usage.input,
 								outputTokens: usage.output,
 								...(partial ? { partial: true } : undefined),
+								turnId: messageId,
 							}),
 						).pipe(
 							Effect.tap(() =>
@@ -641,7 +648,7 @@ export const buildChatToolkit = (
 	surface: McpToolSurface,
 	sessionAttributes?: Readonly<Record<string, string>>,
 	onAnswer?: (tool: string, answer: string) => void,
-	onUi?: (toolCallId: string, ui: ToolUiPayload) => void,
+	onUi?: (toolCallId: string, ui: ToolUiPayload, call: UiSource) => void,
 ) =>
 	buildMapleToolkit(executor, tenant, {
 		surface,

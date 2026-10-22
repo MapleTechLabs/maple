@@ -72,6 +72,10 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		supabaseOAuthEnv,
 		// Sign-in for the Google Cloud metrics poller; unset leaves its tick a no-op.
 		optionalSecret("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
+		// Maple's AWS identity on dev (`.env.local`); deploys bind their own. Unset: the tick is a no-op.
+		optionalPlain("MAPLE_AWS_PRINCIPAL_ARN"),
+		optionalPlain("MAPLE_AWS_ACCESS_KEY_ID"),
+		optionalSecret("MAPLE_AWS_SECRET_ACCESS_KEY"),
 		// Ticks post pull-request replies through the GitHub App; without it each one fails.
 		githubAppSourceEnv,
 		// Outbound config for `chat` destinations' connectors.
@@ -84,7 +88,7 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const stack = yield* MapleStack
-	const { stage, region, domains, devEnv, db } = stack
+	const { stage, region, domains, devEnv, db, awsPrincipal } = stack
 	// For `IncidentClassifier`. Yielded, not `Worker.ref`: a ref cannot see a sibling this deploy creates.
 	const ai = yield* AiWorker
 	const env = yield* configuredEnv(stage, region, domains)
@@ -103,6 +107,8 @@ const props = Effect.gen(function* () {
 			// Cron fires hop through it so their ticks run where placement applies.
 			[SELF_BINDING]: Cloudflare.Workers.Self,
 			...env,
+			// After the config entries: a deploy's own identity wins over a stray MAPLE_AWS_* var.
+			...awsPrincipal,
 			...devEnv,
 		},
 	}

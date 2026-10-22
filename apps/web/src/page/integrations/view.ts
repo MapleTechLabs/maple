@@ -20,6 +20,7 @@ import { githubCard } from "./view-github"
 import { hazelCard } from "./view-hazel"
 import { planetscaleCard } from "./view-planetscale"
 import { railwayCard } from "./view-railway"
+import { awsCard } from "./view-aws"
 import { supabaseCard } from "./view-supabase"
 import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
@@ -71,6 +72,8 @@ export const cardView = (
 			return [planetscaleCard(h, model, timeZone)]
 		case "gcp":
 			return [gcpCard(h, model, timeZone, focusId)]
+		case "aws":
+			return [awsCard(h, model, timeZone, focusId)]
 		case "prometheus":
 		case "warpstream":
 			return focusId === null

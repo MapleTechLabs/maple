@@ -67,7 +67,7 @@ export const makeChatTranscript = (): ChatTranscript => {
 				foldTaskEvent(top, nested, event, event.task, createdAt)
 				return
 			}
-			foldInto(top, event, createdAt)
+			foldInto(top, event, createdAt, nested)
 		},
 	}
 }
@@ -111,7 +111,13 @@ const openAssistant = (drafts: Drafts, id: string, createdAt: number, startSeq: 
  * *literally the same code* — two implementations of "concatenate deltas, settle tool calls in
  * place" would drift, and the nested one is the harder to notice when it does.
  */
-const foldInto = (drafts: Drafts, event: ChatEvent, createdAt: number): void => {
+const foldInto = (
+	drafts: Drafts,
+	event: ChatEvent,
+	createdAt: number,
+	/** The top level's sub-agent transcripts, which a stopped parent turn settles too. */
+	nested?: Map<string, Drafts>,
+): void => {
 	const open = (messageId: string) => openAssistant(drafts, messageId, createdAt, event.seq)
 	switch (event.type) {
 		case "user-message": {
@@ -185,8 +191,26 @@ const foldInto = (drafts: Drafts, event: ChatEvent, createdAt: number): void => 
 			break
 		}
 		case "turn-end":
+			settleUnfinished(drafts, event.messageId, nested)
 			break
 	}
+}
+
+/**
+ * Mark the calls a turn ended before they settled as stopped, and a sub-agent still running under
+ * one as aborted, with its own unsettled calls. A proposal is left alone: it waits on the user.
+ */
+const settleUnfinished = (drafts: Drafts, messageId: string, nested?: Map<string, Drafts>): void => {
+	const message = drafts.byId.get(messageId)
+	if (message === undefined) return
+	message.toolCalls = message.toolCalls.map((call) => {
+		if (call.output !== undefined || call.proposed === true || call.stopped === true) return call
+		const child = nested?.get(call.id)
+		child?.messages.forEach((draft) => settleUnfinished(child, draft.id))
+		const task =
+			call.task?.status === "running" ? { ...call.task, status: "aborted" as const } : call.task
+		return { ...call, stopped: true, ...(task === undefined ? undefined : { task }) } as ChatToolCall
+	})
 }
 
 /**
