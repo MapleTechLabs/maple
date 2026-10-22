@@ -50,6 +50,7 @@ import {
 	MapleToolFailure,
 	summarizeToolFailure,
 	type ToolUiPayload,
+	type UiSource,
 } from "../mcp/tools/llm-tools"
 import { toolHandlersWithContent } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -644,7 +645,7 @@ export const buildChatToolkit = (
 	surface: McpToolSurface,
 	sessionAttributes?: Readonly<Record<string, string>>,
 	onAnswer?: (tool: string, answer: string) => void,
-	onUi?: (toolCallId: string, ui: ToolUiPayload) => void,
+	onUi?: (toolCallId: string, ui: ToolUiPayload, call: UiSource) => void,
 ) =>
 	buildMapleToolkit(executor, tenant, {
 		surface,

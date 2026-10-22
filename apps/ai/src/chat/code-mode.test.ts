@@ -19,6 +19,7 @@ import { makeReviewLedger } from "./review-ledger"
 import { AGENTS } from "./agents"
 import { mapleToolCatalog } from "../mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
+import type { ChatTurnEvent } from "./events"
 import { runChatTurn } from "./run"
 import { makeRunUsage } from "./tools"
 
@@ -94,6 +95,7 @@ const run = (input: {
 	readonly model: ResolvedModel
 	readonly executor: McpToolExecutorApi
 	readonly withCode?: boolean
+	readonly append?: (event: ChatTurnEvent) => void
 }) =>
 	Effect.runPromiseExit(
 		runChatTurn({
@@ -109,7 +111,7 @@ const run = (input: {
 			history: [],
 			usage: makeRunUsage(),
 			holdsTurn: () => true,
-			append: () => {},
+			append: input.append ?? (() => {}),
 		}).pipe(Effect.provide(llmClients)),
 	)
 
@@ -135,6 +137,55 @@ describe("run_code", () => {
 		)
 		assert.include(JSON.stringify(result), "list_services ran")
 		assert.include(JSON.stringify(result), "find_errors ran")
+	})
+
+	it("shows the reader each read a program made, with its UI payload, before the program's result", async () => {
+		const { model } = scriptedModel([
+			callTool(RUN_CODE, { code: "async () => (await maple.list_services({})).length" }),
+			answer("Done."),
+		])
+		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
+			execute: () =>
+				Effect.succeed({
+					content: [{ type: "text" as const, text: "## Services" }],
+					structuredContent: { services: [] },
+				}),
+		}
+		const events: Array<ChatTurnEvent> = []
+
+		await run({
+			sessionId: INVESTIGATION,
+			origin: { kind: "app" },
+			model,
+			executor,
+			append: (event) => events.push(event),
+		})
+
+		const calls = events.flatMap((event) =>
+			event.type === "tool-call" || event.type === "tool-result"
+				? [`${event.type} ${event.callId}`]
+				: [],
+		)
+		assert.deepStrictEqual(calls, [
+			`tool-call call-${RUN_CODE}`,
+			`tool-call call-${RUN_CODE}#0`,
+			`tool-result call-${RUN_CODE}#0`,
+			`tool-result call-${RUN_CODE}`,
+		])
+		const read = events.find(
+			(event) => event.type === "tool-call" && event.callId === `call-${RUN_CODE}#0`,
+		)
+		assert.deepInclude(read, { name: "list_services", input: {} })
+		const result = events.find(
+			(event) => event.type === "tool-result" && event.callId === `call-${RUN_CODE}#0`,
+		)
+		assert.deepInclude(result, {
+			output: {
+				text: "## Services",
+				ui: { __maple_ui: true, tool: "list_services", data: { services: [] } },
+			},
+		})
 	})
 
 	it("cannot reach a mutating or submit tool, even where the turn may propose one", async () => {
