@@ -1051,6 +1051,75 @@ export const ALERT_MAX_EVALUATION_INTERVAL_MINUTES = 5
 export const alertEvaluationIntervalMinutes = (windowMinutes: number): number =>
 	Math.min(ALERT_MAX_EVALUATION_INTERVAL_MINUTES, Math.max(1, Math.floor(windowMinutes / 5)))
 
+/**
+ * A rule's check interval: the one its author picked, else a fifth of its window,
+ * stretched to the scheduler's slowdown when its queries kept hitting their limit.
+ */
+export const alertRuleIntervalMinutes = (rule: {
+	readonly windowMinutes: number
+	readonly evaluationIntervalMinutes: number | null
+	readonly slowedIntervalMinutes?: number | null
+}): number =>
+	Math.max(
+		rule.evaluationIntervalMinutes ?? alertEvaluationIntervalMinutes(rule.windowMinutes),
+		rule.slowedIntervalMinutes ?? 0,
+	)
+
+/** What one check of a raw SQL rule may spend in the warehouse. */
+export interface AlertQueryLimits {
+	readonly timeSeconds: number
+	readonly memoryBytes: number
+}
+
+/**
+ * Rules checked less often may run longer queries: a check's cost is spread over its interval.
+ * The top limit stays under the query engine's 30s ceiling, so the warehouse's own typed
+ * timeout fires first and the scheduler can tell a slow query from a stuck one.
+ */
+export const alertQueryLimits = (intervalMinutes: number): AlertQueryLimits =>
+	intervalMinutes >= 15
+		? { timeSeconds: 25, memoryBytes: 1_000_000_000 }
+		: intervalMinutes >= 10
+			? { timeSeconds: 25, memoryBytes: 512_000_000 }
+			: intervalMinutes >= 5
+				? { timeSeconds: 15, memoryBytes: 512_000_000 }
+				: { timeSeconds: 5, memoryBytes: 256_000_000 }
+
+// The intervals a rule can pick (`ALERT_EVALUATION_INTERVALS` in `@maple/domain/http`, kept out of this module).
+const ALERT_PICKABLE_INTERVALS = [1, 5, 10, 15, 30, 60] as const
+
+/** Check intervals a query taking `elapsedMs` fits, keeping a fifth of each limit spare. */
+export const alertIntervalsFitting = (
+	elapsedMs: number,
+): ReadonlyArray<(typeof ALERT_PICKABLE_INTERVALS)[number]> =>
+	ALERT_PICKABLE_INTERVALS.filter(
+		(interval) => elapsedMs <= alertQueryLimits(interval).timeSeconds * 1000 * 0.8,
+	)
+
+/**
+ * The next interval up that raises the limit the query ran out of, at most `windowMinutes`
+ * so slowing down never leaves data between checks unread. Null when none is left.
+ */
+export const nextSlowerAlertInterval = (
+	intervalMinutes: number,
+	windowMinutes: number,
+	exceeded: "time" | "memory",
+): number | null => {
+	const current = alertQueryLimits(intervalMinutes)
+	return (
+		ALERT_PICKABLE_INTERVALS.find((candidate) => {
+			const limits = alertQueryLimits(candidate)
+			return (
+				candidate > intervalMinutes &&
+				candidate <= windowMinutes &&
+				(exceeded === "time"
+					? limits.timeSeconds > current.timeSeconds
+					: limits.memoryBytes > current.memoryBytes)
+			)
+		}) ?? null
+	)
+}
+
 // FNV-1a: a stable phase per rule, so rules sharing an interval split across its minutes.
 const alertRulePhase = (ruleId: string, intervalMinutes: number): number => {
 	let hash = 0x811c9dc5
@@ -1062,7 +1131,8 @@ const alertRulePhase = (ruleId: string, intervalMinutes: number): number => {
 
 export interface AlertRuleDueInput {
 	readonly ruleId: string
-	readonly windowMinutes: number
+	/** `alertRuleIntervalMinutes` for the rule. */
+	readonly intervalMinutes: number
 	/** The rule's last edit, epoch ms. */
 	readonly updatedAt: number
 	/** When a tick last claimed the rule, epoch ms; 0 or undefined when never or released. */
@@ -1077,7 +1147,7 @@ export interface AlertRuleDueInput {
  */
 export const isAlertRuleDue = (input: AlertRuleDueInput): boolean => {
 	const tickMs = ALERT_TICK_SECONDS * 1000
-	const intervalMinutes = alertEvaluationIntervalMinutes(input.windowMinutes)
+	const { intervalMinutes } = input
 	const lastClaimedAt = input.lastClaimedAt ?? 0
 	if (lastClaimedAt <= 0 || input.updatedAt > lastClaimedAt) return true
 	// Claims land seconds into their minute, so compare on the minute.

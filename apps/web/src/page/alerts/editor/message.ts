@@ -87,7 +87,7 @@ export const Message = defineMessageUnion({
 	GotChartMessage: { message: Chart.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	ClickedSignalKind: { kind: SignalKind },
-	GotRadioMessage: { group: Schema.Literals(["signal", "severity"]), message: RadioGroup.Message },
+	GotRadioMessage: { group: Schema.Literals(["signal", "severity", "interval"]), message: RadioGroup.Message },
 	ClickedOpenInBuilder: {},
 	GotQueryPanelMessage: { message: QueryPanel.Message },
 	GotSelectMessage: { id: Schema.String, message: Select.Message },
@@ -97,6 +97,8 @@ export const Message = defineMessageUnion({
 	ClickedAddCriticalTier: {},
 	ClickedRemoveCriticalTier: {},
 	ToggledAlertOnNoData: {},
+	/** The query time meter's switch to the shortest interval the query fits. */
+	ClickedUseInterval: { minutes: Schema.String },
 	ClickedDryRun: {},
 	ClickedSendTest: {},
 	CompletedTest: {

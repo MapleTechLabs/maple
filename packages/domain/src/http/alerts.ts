@@ -185,6 +185,23 @@ export const AlertWindowMinutes = PositiveInt.pipe(
 	Schema.check(Schema.isLessThanOrEqualTo(MAX_ALERT_WINDOW_MINUTES)),
 )
 
+/** Check intervals a rule can pick. A longer interval gets a longer query time limit. */
+export const ALERT_EVALUATION_INTERVALS = [1, 5, 10, 15, 30, 60] as const
+export const AlertEvaluationIntervalMinutes = Schema.Literals(ALERT_EVALUATION_INTERVALS)
+export type AlertEvaluationIntervalMinutes = typeof AlertEvaluationIntervalMinutes.Type
+
+/**
+ * Why a rule's last check failed: its query ran past its time or memory limit, the
+ * query itself is invalid, or something else went wrong.
+ */
+export const AlertEvaluationErrorKind = Schema.Literals([
+	"query_too_slow",
+	"query_too_much_memory",
+	"invalid_query",
+	"other",
+])
+export type AlertEvaluationErrorKind = typeof AlertEvaluationErrorKind.Type
+
 /** Longest "N of the last M checks" window a rule can count over. */
 export const MAX_ALERT_BREACH_WINDOW = 30
 export const AlertBreachWindow = PositiveInt.pipe(
@@ -595,6 +612,8 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	threshold: Schema.Number,
 	thresholdUpper: Schema.NullOr(Schema.Number),
 	windowMinutes: AlertWindowMinutes,
+	/** Minutes between checks. Null derives it from the window (1 to 5). */
+	evaluationIntervalMinutes: Schema.NullOr(AlertEvaluationIntervalMinutes),
 	minimumSampleCount: NonNegativeInt,
 	/** N: breaching checks needed to open (or escalate). */
 	consecutiveBreachesRequired: PositiveInt,
@@ -612,6 +631,13 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	noDataBehavior: QueryEngineNoDataBehavior,
 	/** Most recent evaluation error for this rule, surfaced from `alertRuleStates.lastError`. */
 	lastEvaluationError: Schema.NullOr(Schema.String),
+	lastEvaluationErrorKind: Schema.NullOr(AlertEvaluationErrorKind),
+	/**
+	 * Set when the scheduler slowed the rule down after its query kept hitting its limit:
+	 * it is checked at least this far apart until it is edited.
+	 */
+	slowedIntervalMinutes: Schema.NullOr(AlertEvaluationIntervalMinutes),
+	slowedAt: Schema.NullOr(IsoDateTimeString),
 	lastEvaluatedAt: Schema.NullOr(IsoDateTimeString),
 	/** Last time the scheduler picked this rule up for evaluation. */
 	lastScheduledAt: Schema.NullOr(IsoDateTimeString),
@@ -646,6 +672,7 @@ export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>
 	threshold: Schema.optionalKey(Schema.Number),
 	thresholdUpper: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	windowMinutes: AlertWindowMinutes,
+	evaluationIntervalMinutes: Schema.optionalKey(Schema.NullOr(AlertEvaluationIntervalMinutes)),
 	minimumSampleCount: Schema.optionalKey(NonNegativeInt),
 	consecutiveBreachesRequired: Schema.optionalKey(PositiveInt),
 	breachesOutOf: Schema.optionalKey(Schema.NullOr(AlertBreachWindow)),
@@ -734,6 +761,24 @@ export class AlertRulePreviewFiringSpan extends Schema.Class<AlertRulePreviewFir
 	severity: AlertSeverity,
 }) {}
 
+/** How long one check of a raw SQL rule takes, timed once on the latest window. */
+export class AlertQueryTiming extends Schema.Class<AlertQueryTiming>("AlertQueryTiming")({
+	/** Milliseconds one check took, or null when it did not finish within `probeLimitMs`. */
+	elapsedMs: Schema.NullOr(Schema.Number),
+	/** Why it did not finish, when it did not. */
+	failure: Schema.NullOr(Schema.Literals(["query_too_slow", "query_too_much_memory"])),
+	/** The longest any check may run, so the timing stops there. */
+	probeLimitMs: Schema.Number,
+	/** The rule's check interval and that interval's time limit. */
+	intervalMinutes: Schema.Number,
+	limitMs: Schema.Number,
+	/**
+	 * Intervals up to the window whose time limit the query fits with a fifth to spare. Time only:
+	 * the probe runs with the top memory, and a check that runs out of memory slows the rule down.
+	 */
+	fitsIntervalMinutes: Schema.Array(AlertEvaluationIntervalMinutes),
+}) {}
+
 /**
  * Evaluator-faithful preview of an alert rule over a time range: the exact
  * per-window observations the scheduler computes (tumbling `windowMinutes`
@@ -753,6 +798,10 @@ export class AlertRulePreviewResponse extends Schema.Class<AlertRulePreviewRespo
 	truncatedToStart: Schema.NullOr(IsoDateTimeString),
 	series: Schema.Array(AlertRulePreviewSeries),
 	wouldFire: Schema.Array(AlertRulePreviewFiringSpan),
+	/** Raw SQL rules only: how long one check takes against each interval's limit. */
+	queryTiming: Schema.optionalKey(AlertQueryTiming),
+	/** Raw SQL rules only: the range was too heavy to chart, so `series` is empty. */
+	seriesFailure: Schema.optionalKey(Schema.Literals(["query_too_slow", "query_too_much_memory"])),
 }) {}
 
 export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("AlertIncidentDocument")({

@@ -13,6 +13,7 @@ import {
 	type PullRequestReviewThread,
 	type VcsSyncJob,
 	PR_REVIEW_FAILURE_COPY,
+	type PrReviewFailureReason,
 	PrReviewFinding,
 	PrReviewId,
 	PrReviewMergeStep,
@@ -56,6 +57,7 @@ import {
 	renderCheckSummary,
 	renderSummaryComment,
 	prReviewCommentMarker,
+	reviewCheckFor,
 	withReviewStatus,
 } from "./PrReviewService"
 import { FindingEmbedder, type FindingEmbedderApi, PrReviewEmbeddingError } from "./FindingEmbedder"
@@ -1336,6 +1338,33 @@ describe("withReviewStatus", () => {
 		)
 		assert.include(failed, "could not finish")
 		assert.notInclude(failed, "is reviewing")
+	})
+
+	it("asks for a fix, not a retry, when a retry cannot help", () => {
+		const reviewing =
+			withReviewStatus(undefined, MARKER, { kind: "reviewing", headSha: HEAD }, "@maple-review-bot") ??
+			""
+		const failedFor = (reason: PrReviewFailureReason) =>
+			withReviewStatus(
+				reviewing,
+				MARKER,
+				{ kind: "failed", headSha: HEAD, reason },
+				"@maple-review-bot",
+			) ?? ""
+		const misconfigured = failedFor("service_misconfigured")
+		assert.include(misconfigured, "on Maple's side")
+		assert.include(
+			misconfigured,
+			"Once that is fixed, comment `@maple-review-bot review` to run it again.",
+		)
+		assert.notInclude(misconfigured, "try again")
+		assert.include(failedFor("provider_unavailable"), "Comment `@maple-review-bot review` to try again.")
+		const check = reviewCheckFor(
+			{ kind: "failed", headSha: HEAD, reason: "org_key_rejected" },
+			"@maple-review-bot",
+		)
+		assert.include(check.summary, "replace it in Maple's organization settings")
+		assert.notInclude(check.summary, "try again")
 	})
 
 	it("deletes its own notice when a newer push replaces the review", () => {

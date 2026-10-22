@@ -173,3 +173,30 @@ export const scopeAllows = (
 	if (scopes.includes(`${required.family}:write`)) return true
 	return required.access === "read" && scopes.includes(`${required.family}:read`)
 }
+
+/** The telemetry a share link or a raw-SQL widget serves; a scoped key must read all of it. */
+export const TELEMETRY_READ_FAMILIES = ["traces", "logs", "metrics"] as const
+
+/**
+ * What an investigation's agent reads with its read-only toolset: telemetry, services, errors,
+ * replays, alerts, dashboards, ingest sources, setup audits, and source code via integrations.
+ */
+export const INVESTIGATION_READ_FAMILIES = [
+	...TELEMETRY_READ_FAMILIES,
+	"services",
+	"service_map",
+	"error_issues",
+	"session_replays",
+	"alerts",
+	"anomalies",
+	"dashboards",
+	"sources",
+	"instrumentation",
+	"integrations",
+] as const
+
+/** The families in `families` that `scopes` cannot read; empty when unscoped. */
+export const missingReadScopes = (
+	scopes: ReadonlyArray<string> | null | undefined,
+	families: ReadonlyArray<string>,
+): ReadonlyArray<string> => families.filter((family) => !scopeAllows(scopes, { family, access: "read" }))

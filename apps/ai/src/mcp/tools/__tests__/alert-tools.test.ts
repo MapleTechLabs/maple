@@ -62,6 +62,7 @@ const rule = Schema.decodeUnknownSync(AlertRuleDocument)({
 	minimumSampleCount: 0,
 	consecutiveBreachesRequired: 1,
 	breachesOutOf: null,
+	evaluationIntervalMinutes: null,
 	thresholds: [
 		{ severity: "critical", value: 0.05, upper: null, recoveryValue: null, destinationIds: [DEST_ID] },
 	],
@@ -74,6 +75,9 @@ const rule = Schema.decodeUnknownSync(AlertRuleDocument)({
 	destinationIds: [DEST_ID],
 	noDataBehavior: "skip",
 	lastEvaluationError: "column Foo not found",
+	lastEvaluationErrorKind: null,
+	slowedIntervalMinutes: null,
+	slowedAt: null,
 	lastEvaluatedAt: NOW,
 	lastScheduledAt: NOW,
 	createdAt: NOW,
@@ -140,6 +144,12 @@ interface Seen {
 	checkOptions?: unknown
 	extraIncidents?: ReadonlyArray<Record<string, unknown>>
 	updatedIds?: Array<string>
+	/** Replaces the saved rules `listRules` returns. */
+	rules?: ReadonlyArray<AlertRuleDocument>
+	/** The timing a raw-SQL preview reports. */
+	queryTiming?: Record<string, unknown>
+	/** A raw-SQL preview whose range was too heavy to chart: no series. */
+	seriesFailure?: "query_too_slow" | "query_too_much_memory"
 }
 
 const layer = (seen: Seen) =>
@@ -151,7 +161,8 @@ const layer = (seen: Seen) =>
 			authMode: "self_hosted",
 		} as never),
 		Layer.succeed(AlertRulesService, {
-			listRules: () => Effect.succeed(new AlertRulesListResponse({ rules: [rule, ...extraRules] })),
+			listRules: () =>
+				Effect.succeed(new AlertRulesListResponse({ rules: seen.rules ?? [rule, ...extraRules] })),
 			createRule: (_org: unknown, _user: unknown, _roles: unknown, request: AlertRuleUpsertRequest) => {
 				seen.created = request
 				// Echo the fields the write warnings read, so a raw-SQL create reads back as one.
@@ -199,16 +210,21 @@ const layer = (seen: Seen) =>
 						],
 						comparator: "gt",
 						truncatedToStart: null,
-						series: [
-							{
-								groupKey: "__total__",
-								points: [
-									point("2026-09-24T09:50:00.000Z"),
-									point("2026-09-24T09:55:00.000Z"),
-								],
-							},
-						],
+						series:
+							seen.seriesFailure === undefined
+								? [
+										{
+											groupKey: "__total__",
+											points: [
+												point("2026-09-24T09:50:00.000Z"),
+												point("2026-09-24T09:55:00.000Z"),
+											],
+										},
+									]
+								: [],
 						wouldFire: [],
+						...(seen.seriesFailure === undefined ? undefined : { seriesFailure: seen.seriesFailure }),
+						...(seen.queryTiming === undefined ? undefined : { queryTiming: seen.queryTiming }),
 					}),
 				)
 			},
@@ -656,6 +672,19 @@ describe("alert tools", () => {
 		expect(recoveryAfter({ comparator: "lt" })).toBeNull()
 	})
 
+	it("update_alert_rule keeps a picked interval until the window gets shorter than it", () => {
+		const hourly = Schema.decodeUnknownSync(AlertRuleDocument)({
+			...rule,
+			windowMinutes: 60,
+			evaluationIntervalMinutes: 30,
+		})
+		const intervalAfter = (params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Effect.runSync(buildUpdatedRequest(hourly, params)).evaluationIntervalMinutes
+		expect(intervalAfter({ threshold: 2 })).toBe(30)
+		expect(intervalAfter({ window_minutes: 30 })).toBe(30)
+		expect(intervalAfter({ window_minutes: 15 })).toBeNull()
+	})
+
 	it("update_alert_rule keeps a two-tier rule's tiers and refuses to merge them", () => {
 		const tiered = Schema.decodeUnknownSync(AlertRuleDocument)({
 			...rule,
@@ -808,5 +837,111 @@ describe("alert tools", () => {
 		expect(named._tag === "Failure" && invalidParameter(named.failure)).toBe("name")
 		const none = await run("update_alert_rule", { threshold: 1 })
 		expect(none._tag === "Failure" && invalidParameter(none.failure)).toBe("rule_id")
+	})
+	/** A raw-SQL rule the scheduler slowed from every 5m to every 10m after repeated timeouts. */
+	const slowedRule = Schema.decodeUnknownSync(AlertRuleDocument)({
+		...rule,
+		signalType: "raw_query",
+		rawQuerySql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+		windowMinutes: 30,
+		evaluationIntervalMinutes: 5,
+		slowedIntervalMinutes: 10,
+		slowedAt: NOW,
+		lastEvaluationError: "Timeout exceeded: elapsed 15.2 seconds",
+		lastEvaluationErrorKind: "query_too_slow",
+	})
+
+	it("create_alert_rule passes a picked check interval, numeric string or not", async () => {
+		const seen: Seen = {}
+		const base = { name: "Errors", template: "high_error_rate", destination_ids: [], window_minutes: 30 }
+		await ok("create_alert_rule", { ...base, evaluation_interval_minutes: "10" }, seen)
+		expect(seen.created?.evaluationIntervalMinutes).toBe(10)
+
+		await ok("create_alert_rule", { ...base, evaluation_interval_minutes: null }, seen)
+		expect(seen.created?.evaluationIntervalMinutes).toBeUndefined()
+
+		const unpickable = await run("create_alert_rule", { ...base, evaluation_interval_minutes: 7 })
+		expect(unpickable._tag).toBe("Failure")
+	})
+
+	it("update_alert_rule keeps the check interval when omitted and derives it again on null", async () => {
+		const seen: Seen = { rules: [slowedRule] }
+		await ok("update_alert_rule", { rule_id: RULE_ID, threshold: 2 }, seen)
+		expect(seen.updated?.evaluationIntervalMinutes).toBe(5)
+
+		await ok("update_alert_rule", { rule_id: RULE_ID, evaluation_interval_minutes: null }, seen)
+		expect(seen.updated?.evaluationIntervalMinutes).toBeNull()
+
+		await ok("update_alert_rule", { rule_id: RULE_ID, evaluation_interval_minutes: 15 }, seen)
+		await ok("update_alert_rule", { rule_id: RULE_ID, evaluation_interval_minutes: "auto" }, seen)
+		expect(seen.updated?.evaluationIntervalMinutes).toBeNull()
+
+		await ok("update_alert_rule", { rule_id: RULE_ID, evaluation_interval_minutes: 15 }, seen)
+		expect(seen.updated?.evaluationIntervalMinutes).toBe(15)
+	})
+
+	it("get_alert_rule explains a rule the scheduler slowed down and why its checks failed", async () => {
+		const result = await ok("get_alert_rule", { rule_id: RULE_ID }, { rules: [slowedRule] })
+		const output = Schema.decodeUnknownSync(GetAlertRuleOutput)(result.structuredContent)
+		expect(output.rule.slowedIntervalMinutes).toBe(10)
+		expect(output.rule.lastEvaluationErrorKind).toBe("query_too_slow")
+		expect(text(result)).toContain("Window: 30m, checked every 10m (slowed down from 5m)")
+		expect(text(result)).toContain("hit its time or memory limit 3 checks in a row")
+		expect(text(result)).toContain("Editing the rule resets that")
+		expect(text(result)).toContain("Last error kind: query_too_slow")
+
+		const plain = await ok("get_alert_rule", { rule_id: RULE_ID })
+		expect(text(plain)).toContain("checked every 1m (derived from the window)")
+		expect(text(plain)).not.toContain("3 checks in a row")
+	})
+
+	it("preview_alert_rule times one raw-SQL check against the interval's limit", async () => {
+		const sql = "SELECT count() AS value\nFROM traces\nWHERE $__orgFilter AND $__timeFilter(Timestamp)"
+		const seen: Seen = {
+			rules: [{ ...slowedRule, rawQuerySql: sql }],
+			queryTiming: {
+				elapsedMs: 7800,
+				failure: null,
+				probeLimitMs: 25000,
+				intervalMinutes: 1,
+				limitMs: 5000,
+				fitsIntervalMinutes: [5, 10, 15, 30, 60],
+			},
+		}
+		const result = await ok("preview_alert_rule", { rule_id: RULE_ID }, seen)
+		const output = Schema.decodeUnknownSync(PreviewAlertRuleOutput)(result.structuredContent)
+		expect(output.queryTiming?.elapsedMs).toBe(7800)
+		expect(output.performanceHints?.[0]).toMatchObject({ code: "no_service_filter", line: 2 })
+		expect(text(result)).toContain(
+			"One check took 7.8s; the limit at this interval (every 1m) is 5s. Fits checks every 5, 10, 15, 30, 60 min.",
+		)
+		expect(text(result)).toContain("Line 2: Filter traces on a service")
+		expect(text(result)).toContain("evaluation_interval_minutes=5")
+		// The suggested update carries the window the preview answered with, overridden or not.
+		expect(text(result)).toContain("window_minutes=5 evaluation_interval_minutes=5")
+
+		const unfinished = await ok(
+			"preview_alert_rule",
+			{ rule_id: RULE_ID },
+			{
+				...seen,
+				queryTiming: {
+					...seen.queryTiming,
+					elapsedMs: null,
+					failure: "query_too_slow",
+					fitsIntervalMinutes: [],
+				},
+			},
+		)
+		expect(text(unfinished)).toContain("One check did not finish within 25s")
+		expect(text(unfinished)).toContain("It fits no check interval")
+		expect(text(unfinished)).not.toContain("evaluation_interval_minutes=")
+
+		const heavy = await ok("preview_alert_rule", { rule_id: RULE_ID }, { ...seen, seriesFailure: "query_too_much_memory" })
+		expect(text(heavy)).toContain("ran out of memory charting this whole range")
+		expect(text(heavy)).toContain("The range was too heavy to chart")
+		expect(text(heavy)).not.toContain("returned no series")
+		// The one-check timing still says which interval fits.
+		expect(text(heavy)).toContain("One check took 7.8s")
 	})
 })

@@ -117,7 +117,11 @@ export interface QueryEngineWarehouse<T extends QueryTenant = QueryTenant> {
 	readonly rawSqlQuery: (
 		tenant: T,
 		sql: string,
-		options: { readonly profile: QueryProfileName; readonly context: string },
+		options: {
+			readonly profile: QueryProfileName
+			readonly context: string
+			readonly settings?: WarehouseQuerySettings
+		},
 	) => Effect.Effect<
 		ReadonlyArray<Record<string, unknown>>,
 		WarehouseQueryPathError | RawSqlValidationError
@@ -2441,7 +2445,13 @@ const RawSqlAlertRowSchema = Schema.Struct({
  */
 export type AlertBucketSource =
 	| { readonly kind: "spec"; readonly query: QuerySpec }
-	| { readonly kind: "raw_sql"; readonly sql: string; readonly windowMinutes: number }
+	| {
+			readonly kind: "raw_sql"
+			readonly sql: string
+			readonly windowMinutes: number
+			/** The rule's check interval, which sets the query's time and memory limits. */
+			readonly intervalMinutes: number
+	  }
 
 /** Structural request slice that {@link computeAlertBuckets} needs for one range. */
 export interface AlertBucketRequest {
@@ -2711,6 +2721,7 @@ const computeRawSqlBuckets = Effect.fnUntraced(function* <T extends QueryTenant>
 		granularitySeconds,
 		workload: "alert",
 		context: "alertRawQuery",
+		alertIntervalMinutes: source.intervalMinutes,
 		wholeRange: range.wholeRange,
 	}).pipe(
 		Effect.catchTag("@maple/http/errors/RawSqlValidationError", (error) =>

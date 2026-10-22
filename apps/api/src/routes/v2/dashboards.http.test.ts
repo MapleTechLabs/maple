@@ -125,6 +125,15 @@ const makeHarness = () => {
 			}),
 		)
 
+	// A self-hosted root session: a dashboard user, which carries no scopes.
+	const bootstrapSession = () =>
+		runtime.runPromise(
+			Effect.gen(function* () {
+				const auth = yield* AuthService
+				return (yield* auth.loginSelfHosted("test-root-password")).token
+			}),
+		)
+
 	// `token` is optional so the same helper can call the share group, which is
 	// the one v2 surface a caller reaches with no credential at all.
 	const request = async (method: string, path: string, token?: string, body?: unknown) => {
@@ -145,6 +154,7 @@ const makeHarness = () => {
 
 	return {
 		bootstrapKey,
+		bootstrapSession,
 		request,
 		testDb,
 		runtime,
@@ -1251,6 +1261,121 @@ describe("v2 share previews", () => {
 		})
 		expect(forged.status).toBe(404)
 
+		await harness.dispose()
+	})
+})
+
+describe("v2 raw SQL widgets", () => {
+	const TELEMETRY = ["traces:read", "logs:read", "metrics:read"]
+	const SQL = "SELECT count() FROM logs WHERE $__orgFilter"
+	const rawSqlWidget = (sql: string) => ({
+		id: "sql",
+		visualization: "table",
+		data_source: { kind: "raw_sql", sql },
+		display: {},
+		layout: { x: 0, y: 0, w: 6, h: 4 },
+	})
+	const board = (widgets: ReadonlyArray<unknown>) => ({
+		name: "SQL board",
+		time_range: { type: "relative", value: "12h" },
+		widgets,
+		variables: [],
+	})
+	const widgetData = (harness: Harness, id: string, token: string) =>
+		harness.request("POST", `/v2/dashboards/${id}/widget_data`, token, {
+			requests: [{ widget_id: "sql" }],
+			time_range: { type: "relative", value: "1h" },
+		})
+
+	it("refuses to save new raw SQL with a key that cannot read the telemetry", async () => {
+		const harness = makeHarness()
+		const writer = await harness.bootstrapKey(["dashboards:write"])
+		const created = await harness.request(
+			"POST",
+			"/v2/dashboards",
+			writer.secret,
+			board([rawSqlWidget(SQL)]),
+		)
+		expect(created.status).toBe(403)
+		expect(created.body.error.code).toBe("insufficient_scope")
+
+		const plain = await harness.request("POST", "/v2/dashboards", writer.secret, board([]))
+		expect(plain.status).toBe(200)
+		const added = await harness.request("PATCH", `/v2/dashboards/${plain.body.id}`, writer.secret, {
+			widgets: [rawSqlWidget(SQL)],
+		})
+		expect(added.status).toBe(403)
+		await harness.dispose()
+	})
+
+	it("lets a narrow key edit around SQL it did not write, but not change or restore it", async () => {
+		const harness = makeHarness()
+		const author = await harness.bootstrapKey(["dashboards:write", ...TELEMETRY])
+		const created = await harness.request(
+			"POST",
+			"/v2/dashboards",
+			author.secret,
+			board([rawSqlWidget(SQL)]),
+		)
+		expect(created.status).toBe(200)
+		const id = created.body.id as string
+
+		const writer = await harness.bootstrapKey(["dashboards:write"])
+		const patch = (token: string, body: unknown) =>
+			harness.request("PATCH", `/v2/dashboards/${id}`, token, body)
+		expect((await patch(writer.secret, { name: "Renamed" })).status).toBe(200)
+		const changed = await patch(writer.secret, {
+			widgets: [rawSqlWidget("SELECT * FROM traces WHERE $__orgFilter")],
+		})
+		expect(changed.status).toBe(403)
+
+		// Restoring a version can bring back SQL the board no longer has: same bar.
+		expect((await patch(author.secret, { widgets: [] })).status).toBe(200)
+		const versions = await harness.request(
+			"GET",
+			`/v2/dashboards/${id}/versions?limit=100`,
+			author.secret,
+		)
+		const restorePath = `/v2/dashboards/${id}/versions/${versions.body.data.at(-1).id}/restore`
+		expect((await harness.request("POST", restorePath, writer.secret)).status).toBe(403)
+		expect((await harness.request("POST", restorePath, author.secret)).status).toBe(200)
+		await harness.dispose()
+	})
+
+	it("runs stored SQL only for callers that can read the telemetry", async () => {
+		const harness = makeHarness()
+		const unscoped = await harness.bootstrapKey()
+		const created = await harness.request(
+			"POST",
+			"/v2/dashboards",
+			unscoped.secret,
+			board([rawSqlWidget(SQL)]),
+		)
+		expect(created.status).toBe(200)
+		const id = created.body.id as string
+
+		const reader = await harness.bootstrapKey(["dashboards:read"])
+		const refused = await widgetData(harness, id, reader.secret)
+		expect(refused.status).toBe(200)
+		expect(refused.body.results[0]).toMatchObject({ widget_id: "sql", ok: false, reason: "unsupported" })
+		expect(refused.body.results[0].message).toContain("traces:read")
+
+		// The harness warehouse runs nothing, so an admitted run fails retryably instead.
+		const telemetryReader = await harness.bootstrapKey(["dashboards:read", ...TELEMETRY])
+		const admitted = await Promise.all(
+			[unscoped.secret, telemetryReader.secret].map((token) => widgetData(harness, id, token)),
+		)
+		expect(admitted.map((response) => response.body.results[0].reason)).toEqual(["failed", "failed"])
+		await harness.dispose()
+	})
+
+	it("keeps raw SQL working for a dashboard session", async () => {
+		const harness = makeHarness()
+		const session = await harness.bootstrapSession()
+		const created = await harness.request("POST", "/v2/dashboards", session, board([rawSqlWidget(SQL)]))
+		expect(created.status).toBe(200)
+		const admitted = await widgetData(harness, created.body.id, session)
+		expect(admitted.body.results[0]).toMatchObject({ widget_id: "sql", ok: false, reason: "failed" })
 		await harness.dispose()
 	})
 })

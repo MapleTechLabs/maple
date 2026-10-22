@@ -7,6 +7,7 @@ import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { recoveryValueFits } from "@maple/backend/services/alerts/alert-thresholds"
 import {
+	ALERT_EVALUATION_INTERVALS,
 	AlertRuleUpsertRequest,
 	isRangeComparator,
 	QueryBuilderQueryDraftSchema,
@@ -41,6 +42,10 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 	severity: P.optionalOneOf(ALERT_SEVERITIES, "Alert severity"),
 	threshold: P.optionalNumber("Threshold value. E.g. 0.05 for 5% error rate, 1000 for 1s latency"),
 	window_minutes: P.optionalNumber("Evaluation window in minutes"),
+	evaluation_interval_minutes: P.optionalNullableNumberOneOf(
+		ALERT_EVALUATION_INTERVALS,
+		"Minutes between checks, at most window_minutes. A raw_query rule checked less often gets a longer query time limit: 5s under 5 min, 15s at 5, 25s at 10 or more. Omit to keep the current one; pass \"auto\" to derive it from the window (a fifth, 1 to 5). Any edit also clears a slowdown the scheduler applied.",
+	),
 	services: P.optionalList("Service scope (replaces the current one; an empty list means all services)"),
 	environments: P.optionalList(
 		"Deployment environments to scope the alert to (replaces the current scope; pass an empty list for all environments). Ignored for builder_query / raw_query.",
@@ -138,6 +143,14 @@ export const buildUpdatedRequest = Effect.fnUntraced(function* (
 		thresholds,
 		breachesOutOf: current.breachesOutOf,
 		windowMinutes: params.window_minutes ?? current.windowMinutes,
+		// Omitted keeps the picked interval, unless the window shrinks below it: then the window's own.
+		evaluationIntervalMinutes:
+			params.evaluation_interval_minutes !== undefined
+				? params.evaluation_interval_minutes
+				: current.evaluationIntervalMinutes !== null &&
+					  current.evaluationIntervalMinutes > (params.window_minutes ?? current.windowMinutes)
+					? null
+					: current.evaluationIntervalMinutes,
 		minimumSampleCount: params.minimum_sample_count ?? current.minimumSampleCount,
 		consecutiveBreachesRequired: params.consecutive_breaches ?? current.consecutiveBreachesRequired,
 		consecutiveHealthyRequired: params.consecutive_healthy ?? current.consecutiveHealthyRequired,
