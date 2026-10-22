@@ -343,6 +343,12 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 			? Effect.void
 			: ThreadHistory.ThreadHistory.pipe(
 					Effect.flatMap((history) => history.load(event.childThreadId)),
+					// A read that failed is not a child that saved nothing: say so, then go on without it.
+					Effect.tapError((error) =>
+						Effect.logWarning("Could not read a child reviewer's history").pipe(
+							Effect.annotateLogs({ childThreadId: event.childThreadId, cause: String(error) }),
+						),
+					),
 					Effect.option,
 					Effect.map((history) =>
 						input.onChildSettled?.({ event, history: Option.getOrUndefined(history) }),
