@@ -36,7 +36,10 @@ export const checkTimesOf = (checks: ReadonlyArray<AlertCheckDocument>): Readonl
 
 
 export const queryTimeCard = (h: H, rule: AlertRuleDocument, checks: ReadonlyArray<AlertCheckDocument>): Html | null => {
-	const times = checkTimesOf(checks).filter((time) => time.durationMs > 0)
+	// Checks keep the signal they ran with, so a rule switched to SQL charts only its SQL checks.
+	const times = checkTimesOf(checks.filter((check) => check.signalType === "raw_query")).filter(
+		(time) => time.durationMs > 0,
+	)
 	if (rule.signalType !== "raw_query" || times.length === 0) return null
 	const interval = alertRuleIntervalMinutes(rule)
 	const limitMs = alertQueryLimits(interval).timeSeconds * 1000

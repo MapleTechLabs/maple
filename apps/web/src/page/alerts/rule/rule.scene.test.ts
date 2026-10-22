@@ -136,13 +136,18 @@ describe("alert rule", () => {
 	})
 
 	test("a raw SQL rule slowed down by its timeouts shows its query time per check and why", () => {
-		const check = (minutesAgo: number, durationMs: number, status: "healthy" | "error") =>
+		const check = (
+			minutesAgo: number,
+			durationMs: number,
+			status: "healthy" | "error",
+			signalType = "raw_query",
+		) =>
 			Schema.decodeUnknownSync(AlertCheckDocument)({
 				timestamp: new Date(NOW - minutesAgo * 60_000).toISOString(),
 				groupKey: "__total__",
 				status,
 				skipReason: null,
-				signalType: "raw_query",
+				signalType,
 				comparator: "gt",
 				threshold: 10,
 				thresholdUpper: null,
@@ -175,7 +180,13 @@ describe("alert rule", () => {
 				key: model.checks.key ?? "",
 				result: Result.succeed({
 					...firstPage("next"),
-					checks: [check(5, 7_800, "healthy"), check(35, 5_003, "error"), check(36, 5_004, "error")],
+					checks: [
+						check(5, 7_800, "healthy"),
+						check(35, 5_003, "error"),
+						check(36, 5_004, "error"),
+						// From before the rule became SQL: not a query time.
+						check(90, 40_000, "healthy", "p95_latency"),
+					],
 				}),
 			}),
 		).model
