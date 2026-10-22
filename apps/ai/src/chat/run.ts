@@ -9,6 +9,7 @@ import { evaluatePermission } from "@maple/domain/permission"
 import type { ChatMessage, ChatTurnOrigin } from "@maple/domain/chat-session"
 import * as AgentRuntime from "@yielded/agent/agent-runtime"
 import type { RunBudgetHook } from "@yielded/agent/run-options"
+import type * as RunEvent from "@yielded/agent/run-event"
 import * as ThreadHistory from "@yielded/agent/thread-history"
 import { ThreadId } from "@yielded/agent/identifiers"
 import { Cause, Clock, Duration, Effect, Layer, Schema, Stream } from "effect"
@@ -236,10 +237,11 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 	})
 	const usage = accumulateUsage(input.usage)
 	const submitted = () => completion?.submitted() === true
-	const budget: RunBudgetHook<ChatRunSettled> = {
+	const budget: RunBudgetHook = {
 		...usage,
-		// A landed submission settles the run: the next model pull after its batch never starts.
-		guard: (effect) => (submitted() ? Effect.fail(new ChatRunSettled()) : usage.guard(effect)),
+		// A landed submission settles the run: the next model pull after its batch never starts. An
+		// interrupt rather than a failure, so a settled run records no error.
+		guard: (effect) => (submitted() ? Effect.interrupt : usage.guard(effect)),
 	}
 
 	// A gated tool is announced exactly like any other and refuses when dispatched, so only the
@@ -249,6 +251,21 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 	let compactions = 0
 	// One per turn: a hidden block straddles deltas, so the state that finds it has to as well.
 	const sanitizer = makeTextSanitizer()
+	const context = {
+		messageId: input.messageId,
+		isProposed,
+		labelOf: mapleToolPhrase,
+		uiOf: (toolCallId: string) => {
+			const ui = uiByCall.get(toolCallId)
+			uiByCall.delete(toolCallId)
+			return ui
+		},
+		sanitizer,
+	}
+	// Once the submission lands, the run's own ending (the guard's interrupt) is not the turn's.
+	const settledTerminal = (event: RunEvent.RunEvent) =>
+		submitted() &&
+		(event._tag === "RunCompleted" || event._tag === "RunFailed" || event._tag === "RunInterrupted")
 
 	return AgentRuntime.stream(run, input.text, {
 		threadId: decodeThreadId(input.sessionId),
@@ -264,20 +281,8 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		Stream.runForEach((event) =>
 			Effect.sync(() => {
 				if (event._tag === "CompactionPerformed") compactions += 1
-				const context = {
-					messageId: input.messageId,
-					isProposed,
-					labelOf: mapleToolPhrase,
-					uiOf: (toolCallId: string) => {
-						const ui = uiByCall.get(toolCallId)
-						uiByCall.delete(toolCallId)
-						return ui
-					},
-					sanitizer,
-				}
-				const settled = event._tag === "RunFailed" && submitted()
-				const chats = settled ? settledTurnEnd(context) : toChatEvents(event, context)
-				for (const chat of chats) input.append(chat)
+				if (settledTerminal(event)) return
+				for (const chat of toChatEvents(event, context)) input.append(chat)
 			}),
 		),
 		// The gate's refusal is how a run stops on a proposal: the turn finished, it did not fail.
@@ -287,15 +292,19 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		),
 		// A landed submission makes any later failure moot, defects included; only an abort stays one.
 		Effect.catchCause((cause) =>
-			!submitted() || Cause.hasInterruptsOnly(cause)
+			!submitted() || !input.holdsTurn()
 				? Effect.failCause(cause)
-				: cause.reasons.every(
-							(reason) => Cause.isFailReason(reason) && reason.error instanceof ChatRunSettled,
-					  )
+				: Cause.hasInterruptsOnly(cause)
 					? Effect.void
 					: Effect.logWarning("Run failed after its submission landed").pipe(
 							Effect.annotateLogs({ cause: summarizeCause(cause) }),
 						),
+		),
+		Effect.tap(() =>
+			Effect.sync(() => {
+				if (submitted() && input.holdsTurn())
+					for (const chat of settledTurnEnd(context)) input.append(chat)
+			}),
 		),
 		// Once per turn, the tag alone: a model that wrote a tool call as prose answered with
 		// nothing, and how often that happens is a question about the run's ending, not this turn.
@@ -331,10 +340,3 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 }
 
 const decodeThreadId = Schema.decodeSync(ThreadId)
-
-/** How the budget guard ends a run whose submission landed; never a failure of the turn. */
-class ChatRunSettled extends Schema.TaggedError<ChatRunSettled>()("@maple/ai/chat/ChatRunSettled", {}) {
-	override get message(): string {
-		return "The run's submission landed, so it was settled"
-	}
-}

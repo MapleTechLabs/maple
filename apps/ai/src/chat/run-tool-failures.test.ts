@@ -7,12 +7,13 @@
  */
 import { OrgId, UserId } from "@maple/domain"
 import { prReplySessionId, prReviewSessionId } from "@maple/domain/chat-session"
-import { Effect, Exit, Layer, Schema, Stream } from "effect"
+import { Cause, Effect, Exit, Layer, Schema, Stream } from "effect"
 import { LanguageModel } from "effect/ai"
 import type { Prompt, Response } from "effect/ai"
 import * as AiModel from "effect/ai/Model"
 import { assert, describe, it } from "vitest"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 import { layerLlm, type ResolvedModel } from "../platform/Llm"
@@ -205,7 +206,7 @@ describe("runChatTurn diagnosis rejections", () => {
 		assert.lengthOf(prompts, 2, "the landed submission ends the run")
 	})
 
-	it("ends the turn on a landed submit_diagnosis, without another model call", async () => {
+	it("ends the turn on a landed submit_diagnosis, without another model call or an error span", async () => {
 		const { model, prompts } = scriptedModel([
 			callTool("submit_diagnosis", { summary: "s", evidence: "p99 tripled" }),
 			answer("I have filed the diagnosis."),
@@ -225,12 +226,26 @@ describe("runChatTurn diagnosis rejections", () => {
 			holdsTurn: () => true,
 			append: (event) => events.push(event),
 		})
+		const { spans, tracer } = makeRecordingTracer()
 
-		const exit = await Effect.runPromiseExit(effect.pipe(Effect.provide(llmClients)))
+		const exit = await Effect.runPromiseExit(
+			effect.pipe(Effect.provide(llmClients), Effect.withTracer(tracer)),
+		)
 
 		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted, `run failed: ${String(exit)}`)
 		assert.lengthOf(prompts, 1)
 		assert.isFalse(events.some((event) => event.type === "text-delta"))
+		// Settling is not a failure: Maple's own error tracking would file every investigation.
+		const failed = spans.filter(
+			(span) =>
+				span.status._tag === "Ended" &&
+				Exit.isFailure(span.status.exit) &&
+				span.status.exit.cause.reasons.some(Cause.isFailReason),
+		)
+		assert.deepEqual(
+			failed.map((span) => span.name),
+			[],
+		)
 		assert.deepEqual(events.at(-1), { type: "turn-end", messageId: "msg-1", reason: "stop" })
 	})
 
