@@ -117,7 +117,7 @@ A **Raw SQL** rule's query gets more time when the rule is checked less often:
 
 Previewing a **Raw SQL** rule over the API (`query_timing` in `POST /v2/alerts/rules/preview`) or with the `preview_alert_rule` MCP tool times one check against the limit of its interval and lists the intervals the query fits. The MCP tool also suggests filters that make the query cheaper, such as a service filter.
 
-When a rule's query hits its time limit 3 checks in a row, Maple slows the rule down to the next interval with a longer limit, never past the window. The rule shows when it was slowed down and which interval it runs at. Editing the rule resets the slowdown, so make the query cheaper or pick a longer interval first.
+When a rule's query hits its time or memory limit 3 checks in a row, Maple slows the rule down to the next interval that raises that limit, never past the window. The rule shows when it was slowed down and which interval it runs at. Editing the rule resets the slowdown, so make the query cheaper or pick a longer interval first.
 
 ## Notifications
 

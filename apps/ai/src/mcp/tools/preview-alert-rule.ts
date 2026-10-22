@@ -255,6 +255,11 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 					? { performanceHints: [...rawAlertPerformanceHints(ruleRequest.rawQuerySql)] }
 					: undefined),
 				warnings: [
+					...(preview.seriesFailure === undefined
+						? []
+						: [
+								"The query was too heavy to chart this whole range within 25 s, so no windows were evaluated. Preview a shorter range.",
+							]),
 					...previewWarnings(
 						groups,
 						preview.series.flatMap((series) => series.points),

@@ -672,6 +672,12 @@ export const V2AlertRulePreviewResult = Schema.Struct({
 	query_timing: Schema.optionalKey(V2AlertQueryTiming).annotate({
 		description: "Raw SQL rules only: one check timed against the time limit of the rule's interval.",
 	}),
+	series_failure: Schema.optionalKey(Schema.Literals(["query_too_slow", "query_too_much_memory"])).annotate(
+		{
+			description:
+				"Raw SQL rules only: the range was too heavy to chart within the longest limit, so `series` is empty. `query_timing` still says whether one check fits. Preview a shorter range to chart it.",
+		},
+	),
 }).annotate({
 	identifier: "AlertRulePreviewResult",
 	title: "Alert rule preview result",

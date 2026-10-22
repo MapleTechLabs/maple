@@ -424,6 +424,7 @@ const toV2PreviewResult = (preview: AlertRulePreviewResponse): V2AlertRulePrevie
 		end: span.end,
 		severity: span.severity,
 	})),
+	...(preview.seriesFailure === undefined ? undefined : { series_failure: preview.seriesFailure }),
 	...(preview.queryTiming === undefined
 		? undefined
 		: {
