@@ -4,6 +4,7 @@ import { Effect, Exit, Option, Redacted, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { AuthorizationUnavailableError, OrgId, RoleName, UserId } from "@maple/domain/http"
 import {
+	extractVerifiedPrimaryEmail,
 	makeGetCustomerData,
 	makeLoginSelfHosted,
 	makeRefreshSelfHostedSession,
@@ -267,7 +268,8 @@ describe("makeResolveMcpTenant", () => {
 		}),
 	)
 
-	it.effect("resolves tenant from a user API key with MAPLE_ORG_ID_OVERRIDE", () =>
+	// The pin is a development-only setting; elsewhere an unprovable membership is refused.
+	it.effect("resolves tenant from a user API key with MAPLE_ORG_ID_OVERRIDE in development", () =>
 		Effect.gen(function* () {
 			const resolveMcpTenant = makeResolveMcpTenant(
 				{
@@ -276,6 +278,7 @@ describe("makeResolveMcpTenant", () => {
 					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
 					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
 					MAPLE_ORG_ID_OVERRIDE: Option.some("org_override"),
+					MAPLE_ENVIRONMENT: "development",
 				},
 				async () => ({
 					isAuthenticated: true,
@@ -414,6 +417,25 @@ describe("makeGetCustomerData", () => {
 			assert.deepStrictEqual(result, { email: null, orgName: null })
 		}),
 	)
+})
+
+describe("extractVerifiedPrimaryEmail", () => {
+	const address = (id: string, emailAddress: string, status: "verified" | "unverified") => ({
+		id,
+		emailAddress,
+		verification: { status },
+	})
+
+	it("returns the primary address only once it is verified, never another address", () => {
+		const verified = address("e_1", "ada@acme.test", "verified")
+		const unverified = address("e_2", "someone@else.test", "unverified")
+		const pick = (primaryEmailAddressId: string | null, emailAddresses: ReadonlyArray<typeof verified>) =>
+			extractVerifiedPrimaryEmail({ primaryEmailAddressId, emailAddresses })
+
+		assert.strictEqual(pick("e_1", [unverified, verified]), "ada@acme.test")
+		assert.strictEqual(pick("e_2", [verified, unverified]), null)
+		assert.strictEqual(pick(null, [verified]), null)
+	})
 })
 
 describe("makeLoginSelfHosted", () => {
@@ -1227,22 +1249,32 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 		}),
 	)
 
-	// No membership directory wired (MCP, electric-sync): the pin can prove nothing, so no role.
-	it.effect("MAPLE_ORG_ID_OVERRIDE confers no role without a verifier", () =>
+	// No membership directory wired (MCP, electric-sync): the pin can prove nothing.
+	it.effect("MAPLE_ORG_ID_OVERRIDE refuses a non-member without a verifier outside development", () =>
 		Effect.gen(function* () {
 			const resolveTenant = makeResolveTenant(
 				{ ...clerkEnv, MAPLE_ORG_ID_OVERRIDE: Option.some("org_pinned") },
 				clerkAuth(),
 			)
 
+			assertDenied(yield* Effect.exit(resolveTenant({ authorization: "Bearer test-token" })))
+		}),
+	)
+
+	it.effect("MAPLE_ORG_ID_OVERRIDE without a verifier still admits a development session", () =>
+		Effect.gen(function* () {
+			const resolveTenant = makeResolveTenant(
+				{
+					...clerkEnv,
+					MAPLE_ORG_ID_OVERRIDE: Option.some("org_pinned"),
+					MAPLE_ENVIRONMENT: "development",
+				},
+				clerkAuth(),
+			)
+
 			const tenant = yield* resolveTenant({ authorization: "Bearer test-token" })
 
-			assert.deepStrictEqual(tenant, {
-				orgId: asOrgId("org_pinned"),
-				roles: [],
-				userId: asUserId("user_123"),
-				authMode: "clerk",
-			})
+			assert.strictEqual(tenant.orgId, asOrgId("org_pinned"))
 		}),
 	)
 

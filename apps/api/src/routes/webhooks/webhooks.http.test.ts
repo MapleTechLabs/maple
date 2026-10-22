@@ -64,6 +64,8 @@ const EMPTY_SUMMARY: MembershipRevocationSummary = {
 	mcpAuthorizationsDeleted: 0,
 	emailDestinationsUpdated: 0,
 	mobileDevicesDeleted: 0,
+	chatIdentitiesDeleted: 0,
+	digestSubscriptionsDisabled: 0,
 }
 
 /** Records the sweeps the route asks for, and can be made to fail on demand. */
