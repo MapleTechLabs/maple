@@ -149,7 +149,7 @@ describe("buildDiagnosis", () => {
 		})
 		const query = stage(stages, "query")
 		expect(query.status).toBe("warn")
-		expect(query.summary).toBe("Slowed to every 5 min because its query kept timing out")
+		expect(query.summary).toBe("Slowed to every 5 min because its query kept hitting its limit")
 		expect(query.action?.kind).toBe("edit")
 	})
 

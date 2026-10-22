@@ -187,7 +187,7 @@ describe("alert rule", () => {
 			expectView(text("Query time per check")).toExist(),
 			expectView(text("Slowest 7.8 s · limit 15 s at every 5 min")).toExist(),
 			expectAll(all.selector('[data-testid="query-time-bars"] [title]')).toHaveCount(3),
-			expectView(text("Slowed to every 5 min because its query kept timing out")).toExist(),
+			expectView(text("Slowed to every 5 min because its query kept hitting its limit")).toExist(),
 		)
 	})
 

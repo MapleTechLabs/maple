@@ -206,7 +206,7 @@ export function blindSpots(
 			spots.push({
 				rule,
 				kind: "slowed",
-				detail: `Checked every ${rule.slowedIntervalMinutes} min because its query kept timing out`,
+				detail: `Checked every ${rule.slowedIntervalMinutes} min because its query kept hitting its limit`,
 			})
 		else if (derived.attention.noDestinations)
 			spots.push({ rule, kind: "unrouted", detail: "No destinations, so nobody is notified" })

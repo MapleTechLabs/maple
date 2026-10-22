@@ -221,7 +221,7 @@ describe("blindSpots", () => {
 			]),
 		)
 		expect(spots.map((s) => [s.rule.id, s.kind, s.detail])).toEqual([
-			[slowed.id, "slowed", "Checked every 5 min because its query kept timing out"],
+			[slowed.id, "slowed", "Checked every 5 min because its query kept hitting its limit"],
 			[unrouted.id, "unrouted", "No destinations, so nobody is notified"],
 		])
 	})

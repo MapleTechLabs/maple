@@ -197,7 +197,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 	const limitSeconds = alertQueryLimits(intervalMinutes).timeSeconds
 	const slowedLine =
 		rule.slowedIntervalMinutes !== null && rule.slowedAt !== null
-			? `Slowed to every ${rule.slowedIntervalMinutes} min on ${formatTimestampInTimezone(parseMs(rule.slowedAt) ?? now, { timeZone, withYear: true })} after 3 timeouts in a row. Editing the rule resets this.`
+			? `Slowed to every ${rule.slowedIntervalMinutes} min on ${formatTimestampInTimezone(parseMs(rule.slowedAt) ?? now, { timeZone, withYear: true })} after 3 checks in a row hit their limit. Editing the rule resets this.`
 			: null
 	if (errorMessage != null) {
 		const cause = queryFailureCause(
@@ -227,7 +227,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			id: "query",
 			label: "Query succeeded",
 			status: "warn",
-			summary: `Slowed to every ${rule.slowedIntervalMinutes} min because its query kept timing out`,
+			summary: `Slowed to every ${rule.slowedIntervalMinutes} min because its query kept hitting its limit`,
 			evidence: [
 				slowedLine,
 				"Make the query cheaper, or pick this interval yourself, before you edit the rule.",
