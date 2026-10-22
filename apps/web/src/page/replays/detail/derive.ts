@@ -5,7 +5,7 @@ import { AsyncData } from "foldkit"
 import { classifyUnplayable } from "../kit/replay-meta"
 import { manifestDurationMs } from "../kit/replay-range"
 import { recordedMarker, type ReplayPartitionWindow, replayPartitionWindow } from "../kit/replay-window"
-import { chunksOf, seedEvents } from "./loader"
+import { chunksOf, neededFailure, seedEvents } from "./loader"
 import type { LoadFailure } from "../../../data/load-failure"
 import type { Model, ReplayDetail } from "./model"
 
@@ -37,6 +37,8 @@ export const playerStatus = (model: Model, session: ReplayDetail): { status: Pla
 	const rangeFailure = AsyncData.isFailure(model.loader.range.data) && model.loader.queue.length > 0
 	if (rangeFailure && model.loader.range.data._tag === "Failure")
 		return { status: "error", failure: model.loader.range.data.error }
+	const needed = neededFailure(model)
+	if (needed !== null) return { status: "error", failure: needed }
 	return AsyncData.matchData(model.manifest.data, {
 		onEmpty: () => ({ status: "loading", failure: null }),
 		onFailure: (failure) => ({ status: "error", failure }),

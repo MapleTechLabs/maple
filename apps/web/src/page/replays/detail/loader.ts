@@ -12,11 +12,11 @@ import {
 	MAX_BYTES_PER_RANGE,
 	MAX_CHUNKS_PER_RANGE,
 	planRanges,
-	rangeContaining,
 	rangeKey,
 	rangesCovering,
 	type ReplayRange,
 } from "../kit/replay-range"
+import type { LoadFailure } from "../../../data/load-failure"
 import type { Loader, LoadedRange, Manifest, Model, RangeRows } from "./model"
 
 // `useReplayChunkLoader` as pure functions of the Model: plan once per session, load ranges one at a
@@ -37,6 +37,8 @@ export const emptyLoader = (): Loader => ({
 	originMs: null,
 	rangeMetas: [],
 	fetchedRanges: [],
+	failedRanges: [],
+	backgroundFailure: null,
 	resumeOnReady: false,
 })
 
@@ -84,6 +86,15 @@ const bytesIn = (model: Model, range: ReplayRange): number =>
 
 const loadedBytes = (model: Model): number =>
 	model.loader.loaded.reduce((sum, entry) => sum + bytesIn(model, entry.range), 0)
+
+/**
+ * The planned range after the loaded span: by plan order, not `through + 1`, since the manifest can
+ * skip a chunk right at a range boundary.
+ */
+const nextPlanned = (model: Model): ReplayRange | undefined => {
+	const through = loadedThroughSeq(model.loader)
+	return planOf(model).find((range) => range.fromChunkSeq > through)
+}
 
 /** The checkpoint a full window slides to: the latest one before the first chunk it lacks, if past its start. */
 const slideAnchor = (model: Model) => {
@@ -147,6 +158,8 @@ export const planOnce = (model: Model): Model => {
 			originMs: null,
 			rangeMetas: [],
 			fetchedRanges: [],
+			failedRanges: [],
+			backgroundFailure: null,
 			resumeOnReady: false,
 		},
 	}
@@ -179,7 +192,7 @@ export const advance = (model: Model, rows: Option.Option<RangeRows>): Model => 
 	// loaded span and fits the cap. Anything else was fetched for its markers alone.
 	const isPlayable =
 		loader.seedCount === 0 ||
-		(active.fromChunkSeq === through + 1 && fitsWindow(model, active))
+		(active.fromChunkSeq === nextPlanned(model)?.fromChunkSeq && fitsWindow(model, active))
 	const loaded: ReadonlyArray<LoadedRange> = isPlayable
 		? [
 				...loader.loaded,
@@ -202,14 +215,14 @@ export const advance = (model: Model, rows: Option.Option<RangeRows>): Model => 
 const continueDownload = (model: Model): Model => {
 	const { loader } = model
 	if (loader.seedCount === 0 || loader.queue.length > 0) return model
-	const plan = planOf(model)
-	const through = loadedThroughSeq(loader)
-	const playable = rangeContaining(plan, through + 1)
+	const playable = nextPlanned(model)
+	const isSkipped = (range: ReplayRange) =>
+		loader.fetchedRanges.includes(range.fromChunkSeq) || loader.failedRanges.includes(range.fromChunkSeq)
 	const next =
-		playable !== undefined && fitsWindow(model, playable)
+		playable !== undefined && !loader.failedRanges.includes(playable.fromChunkSeq) && fitsWindow(model, playable)
 			? playable
 			: // The first range never fetched, wherever it is: a seek can jump the download past some.
-				plan.find((range) => !loader.fetchedRanges.includes(range.fromChunkSeq))
+				planOf(model).find((range) => !isSkipped(range))
 	return next === undefined ? model : { ...model, loader: { ...loader, queue: [next] } }
 }
 
@@ -261,7 +274,7 @@ export const reportProgress = (model: Model, offsetMs: number, isStarved = false
 	// The engine running dry is the window's end whatever the manifest's estimate of it says.
 	const isAtEnd = isStarved || offsetMs + 1_000 >= loadedUntilMs(next)
 	if (loader.seedCount === 0 || !hasMoreChunks(next) || !isAtEnd) return next
-	const playable = rangeContaining(planOf(next), loadedThroughSeq(loader) + 1)
+	const playable = nextPlanned(next)
 	if (playable === undefined || fitsWindow(next, playable)) return next
 	const anchor = slideAnchor(next)
 	if (anchor === undefined) return next
@@ -283,6 +296,44 @@ export const requestSeek = (model: Model, offsetMs: number, resume: boolean): Op
 	const anchor = checkpointAtOrBefore(chunks, target.chunk_seq)
 	if (anchor === undefined) return Option.none()
 	return Option.some(rebuildAt({ ...model, loader }, offsetMs, anchor.chunk_seq, resume))
+}
+
+/** A background range failed: skip it and carry on with the rest of the download. */
+export const skipFailed = (model: Model, failure: LoadFailure): Model => {
+	const active = model.loader.queue[0]
+	if (active === undefined) return model
+	const { loader } = model
+	return continueDownload({
+		...model,
+		loader: {
+			...loader,
+			queue: loader.queue.slice(1),
+			failedRanges: [...loader.failedRanges, active.fromChunkSeq],
+			backgroundFailure: failure,
+		},
+	})
+}
+
+/** The background failure the playhead has reached: the next playable range failed and the window is used up. */
+export const neededFailure = (model: Model): LoadFailure | null => {
+	const { loader } = model
+	const next = nextPlanned(model)
+	return loader.backgroundFailure !== null &&
+		loader.seedCount > 0 &&
+		next !== undefined &&
+		loader.failedRanges.includes(next.fromChunkSeq) &&
+		loader.playheadMs + 1_000 >= loadedUntilMs(model)
+		? loader.backgroundFailure
+		: null
+}
+
+/** Retry after a background failure: forget the failures and rebuild from a checkpoint at the playhead. */
+export const retryAt = (model: Model, offsetMs: number): Model => {
+	const chunks = chunksOf(model)
+	const target = chunkAtOffset(chunks, offsetMs)
+	const anchor = target === undefined ? undefined : checkpointAtOrBefore(chunks, target.chunk_seq)
+	const cleared: Model = { ...model, loader: { ...model.loader, failedRanges: [], backgroundFailure: null } }
+	return anchor === undefined ? cleared : rebuildAt(cleared, offsetMs, anchor.chunk_seq, false)
 }
 
 /** `bufferState === "buffering"`: the playhead reached the loaded end while more is coming. */

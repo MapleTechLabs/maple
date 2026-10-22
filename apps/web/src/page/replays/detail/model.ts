@@ -148,6 +148,10 @@ export const Loader = Schema.Struct({
 	rangeMetas: Schema.Array(RangeMeta),
 	/** Planned ranges fetched so far (by first chunk), for their markers and gaps even when not playable. */
 	fetchedRanges: Schema.Array(Schema.Number),
+	/** Background ranges whose fetch failed (by first chunk), skipped until a retry. */
+	failedRanges: Schema.Array(Schema.Number),
+	/** The last background failure, shown once the playhead needs a failed range. */
+	backgroundFailure: Schema.NullOr(LoadFailure),
 	/** Play as soon as the next seed's engine is ready: a seek or slide that interrupted playback. */
 	resumeOnReady: Schema.Boolean,
 })

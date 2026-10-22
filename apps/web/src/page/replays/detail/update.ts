@@ -18,7 +18,17 @@ import {
 	ToggleFullscreen,
 } from "./command"
 import { detailOf, manifestTotalMs, playerStatus, realOffsetOf, timelineOf, windowOf } from "./derive"
-import { advance, cacheRange, emptyLoader, planOnce, reportProgress, requestSeek, subscribedRange } from "./loader"
+import {
+	advance,
+	cacheRange,
+	emptyLoader,
+	planOnce,
+	reportProgress,
+	requestSeek,
+	retryAt,
+	skipFailed,
+	subscribedRange,
+} from "./loader"
 import { Message } from "./message"
 import type { Model, Player } from "./model"
 import { controlValue, type TransportAction } from "../kit/replay-engine-mount"
@@ -248,7 +258,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onFailure: () => model.loader.rangeCache,
 			})
 			const stored: Model = { ...model, loader: { ...model.loader, range, rangeCache: cached } }
-			if (Result.isFailure(result)) return { model: stored }
+			if (Result.isFailure(result))
+				// The opening window (or a seek's) failing is the player's error; a background range failing
+				// is skipped, and only surfaces if the playhead gets to it.
+				return stored.loader.seedCount === 0
+					? { model: stored }
+					: syncRange(skipFailed(stored, result.failure), context)
 			return syncRange(withMeta(model, advance(stored, Option.some(result.success))), context)
 		},
 		CompletedFetchSpans: ({ traceId, result }) => ({
@@ -303,6 +318,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFullscreenToggle: () => ({ model }),
 		FedTrailingEvents: () => ({ model }),
 		ClickedRetryPlayer: () => {
+			if (model.loader.backgroundFailure !== null)
+				return syncRange(retryAt(model, model.player.currentMs), context, "Refresh")
 			const entry = requestEntry(model, context, "Refresh")
 			const ranged = syncRange(entry.model, context, "Refresh")
 			return { model: ranged.model, commands: [...(entry.commands ?? []), ...(ranged.commands ?? [])] }

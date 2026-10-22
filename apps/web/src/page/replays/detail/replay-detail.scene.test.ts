@@ -18,6 +18,7 @@ import { cacheRange, RANGE_CACHE_LIMIT, seedEvents, seedShiftMs } from "./loader
 import { Message } from "./message"
 import type { EventRow, Manifest, Model, ReplayDetail } from "./model"
 import { init, update } from "./update"
+import { playerStatus } from "./derive"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -351,6 +352,44 @@ describe("replay detail", () => {
 		expect(ahead.loader.queue).toEqual([{ fromChunkSeq: 1, toChunkSeq: 1 }])
 		const filled = answerWith(ahead, chunkRows(1, 60)).model
 		expect(filled.meta.actionMarkers.map((marker) => marker.ms)).toEqual([5, 60_005, 120_005, 180_005])
+	})
+
+	test("a chunk missing right at a range boundary does not stop the next range from playing", () => {
+		const base = spread([
+			{ seconds: 0, bytes: 4_000_000, isCheckpoint: true },
+			{ seconds: 60, bytes: 4_000_000, isCheckpoint: false },
+			{ seconds: 180, bytes: 4_000_000, isCheckpoint: false },
+		])
+		// Chunk 2 never arrived: ranges are 0, 1 and 3.
+		const manifest: Manifest = { ...base, chunks: base.chunks.map((chunk) => (chunk.chunk_seq === 2 ? { ...chunk, chunk_seq: 3 } : chunk)) }
+		const seeded = answerWith(openWith(manifest), chunkRows(0, 0)).model
+		const second = answerWith(seeded, chunkRows(1, 60)).model
+		const done = answerWith(second, chunkRows(3, 180)).model
+		expect(done.loader.loaded.map((entry) => entry.range.fromChunkSeq)).toEqual([0, 1, 3])
+	})
+
+	test("a failed background range is skipped, and only errors once the playhead reaches it", () => {
+		const manifest = spread([
+			{ seconds: 0, bytes: 4_000_000, isCheckpoint: true },
+			{ seconds: 60, bytes: 4_000_000, isCheckpoint: false },
+			{ seconds: 120, bytes: 4_000_000, isCheckpoint: false },
+		])
+		const seeded = answerWith(openWith(manifest), chunkRows(0, 0)).model
+		const failed = pageUpdate(
+			seeded,
+			Message.CompletedFetchRange({ key: seeded.loader.range.key ?? "", result: Result.fail(toLoadFailure(new Error("down"))) }),
+		)
+		expect(failed.model.loader.queue).toEqual([{ fromChunkSeq: 2, toChunkSeq: 2 }])
+		expect(names(failed.commands)).toEqual([FetchRange.name])
+		const rest = answerWith(failed.model, chunkRows(2, 120)).model
+		expect(playerStatus(rest, session).status).toBe("ready")
+
+		const ready = pageUpdate(rest, Message.ReadiedEngine({ seedVersion: rest.loader.seedVersion, totalMs: 1 })).model
+		const atEdge = pageUpdate(ready, Message.TickedEngine({ seedVersion: ready.loader.seedVersion, currentMs: 9_500 })).model
+		expect(playerStatus(atEdge, session).status).toBe("error")
+		const retried = pageUpdate(atEdge, Message.ClickedRetryPlayer())
+		expect(names(retried.commands)).toContain(FetchRange.name)
+		expect(playerStatus(retried.model, session).status).not.toBe("error")
 	})
 
 	test("the seed is cut once per seed version, not re-flattened on every engine tick", () => {
