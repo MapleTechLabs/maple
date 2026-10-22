@@ -43,9 +43,9 @@ export const SANDBOX_RUN_AS_USER = "maple-agent"
 export const SANDBOX_COMMAND_ENV = {
 	PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 	LANG: "C.UTF-8",
-	// No global or system git config, so one command cannot change what git shows the next.
+	// No global git config, so one command cannot change what git shows the next. The
+	// system config stays: it is root-owned and holds the checkout's `safe.directory`.
 	GIT_CONFIG_GLOBAL: "/dev/null",
-	GIT_CONFIG_NOSYSTEM: "1",
 } as const satisfies Readonly<Record<string, string>>
 
 /** Set by the wrapper per command: a fresh, empty directory removed once the command returns. */

@@ -161,7 +161,7 @@ describe("wrapCommand's environment", () => {
 		assert.notStrictEqual(firstHome, second.get("HOME"))
 		assert.isFalse(existsSync(firstHome!))
 		assert.strictEqual(first.get("GIT_CONFIG_GLOBAL"), "/dev/null")
-		assert.strictEqual(first.get("GIT_CONFIG_NOSYSTEM"), "1")
+		assert.strictEqual(first.get("GIT_CONFIG_NOSYSTEM"), undefined)
 		assert.deepStrictEqual([...first.keys()].sort(), SANDBOX_COMMAND_ENV_NAMES)
 	})
 
