@@ -221,23 +221,22 @@ const viewsFor = <M>(
 		InlineCode: ({ value }) =>
 			h.code(streamdown("inline-code", "rounded bg-muted px-1.5 py-0.5 font-mono text-sm")(h), [value]),
 		Strong: (_strong, content) => h.span(streamdown("strong", "font-semibold")(h), content),
-		// A linked image is the outer link's label: no anchor inside an anchor.
-		Link: (link, content) =>
+		// Link text is re-rendered with images as plain labels, at any nesting depth
+		// (`[**![a](u)**](d)`), so a linked image never puts an anchor inside an anchor.
+		Link: (link) =>
 			markdownLink(
 				h,
 				link.url,
-				link.content.some((inline) => inline._tag === "Image")
-					? Markdown.viewBlocks(
-							{ blocks: [{ _tag: "Paragraph", content: link.content }] },
-							{
-								views: {
-									...viewsFor(h, actions, overrides),
-									Paragraph: (_paragraph, inline) => h.span([], inline),
-									Image: ({ url, alt }) => h.span([], [imageLabel(url, alt)]),
-								},
-							},
-						)
-					: content,
+				Markdown.viewBlocks(
+					{ blocks: [{ _tag: "Paragraph", content: link.content }] },
+					{
+						views: {
+							...viewsFor(h, actions, overrides),
+							Paragraph: (_paragraph, inline) => h.span([], inline),
+							Image: ({ url, alt }) => h.span([], [imageLabel(url, alt)]),
+						},
+					},
+				),
 			),
 		Image: ({ url, alt }) => markdownImage(h, url, alt),
 		Heading: ({ level }, content) => {
