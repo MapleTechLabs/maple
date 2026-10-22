@@ -106,13 +106,14 @@ const startEngine = <A>(
 		events: args.events,
 		fallbackViewport: { width: meta.recordedWidth || 1280, height: meta.recordedHeight || 720 },
 		onFinish: () => {
-			cancelAnimationFrame(state.raf)
 			// rrweb finishes at its last loaded event. Mid-recording that is a buffer underrun: stay
-			// "playing" and pick up again when the next range is fed.
+			// "playing" and pick up again when the next range is fed. The tick loop keeps running, since
+			// its ticks are what ask the loader for that range.
 			if (mount.getAttribute(`data-${COMPLETE_ATTRIBUTE}`) !== "true" && state.isPlaying) {
 				state.isStarved = true
 				return
 			}
+			cancelAnimationFrame(state.raf)
 			state.isPlaying = false
 			emit(handlers.finished())
 		},
