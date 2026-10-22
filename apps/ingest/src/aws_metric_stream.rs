@@ -255,7 +255,7 @@ impl CloudWatchMetric {
         let mut attributes: Vec<KeyValue> = self
             .dimensions
             .iter()
-            .map(|(name, value)| attribute(&format!("aws.dimension.{name}"), value))
+            .map(|(name, value)| attribute(&format!("aws.dimension.{}", snake_case(name)), value))
             .collect();
         attributes.push(attribute("aws.namespace", &self.namespace));
         attributes.push(attribute("aws.metric_name", &self.metric_name));
@@ -807,11 +807,11 @@ mod tests {
         };
         let point_attrs = &gauge.data_points[0].attributes;
         assert_eq!(
-            string_attr(point_attrs, "aws.dimension.ClusterName"),
+            string_attr(point_attrs, "aws.dimension.cluster_name"),
             Some("prod")
         );
         assert_eq!(
-            string_attr(point_attrs, "aws.dimension.ServiceName"),
+            string_attr(point_attrs, "aws.dimension.service_name"),
             Some("checkout")
         );
         assert_eq!(string_attr(point_attrs, "aws.namespace"), Some("AWS/ECS"));
