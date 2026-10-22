@@ -364,7 +364,12 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 					: [
 							doc.next(
 								"update_alert_rule",
-								{ rule_id: output.ruleId, evaluation_interval_minutes: slower },
+								// The window it was previewed with, which an override may have changed.
+								{
+									rule_id: output.ruleId,
+									window_minutes: output.windowMinutes,
+									evaluation_interval_minutes: slower,
+								},
 								"check it less often so its query fits the time limit",
 							),
 						]
