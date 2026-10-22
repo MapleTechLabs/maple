@@ -181,6 +181,12 @@ const ACTIVE_STATUSES: ReadonlyArray<PrReviewStatus> = ["queued", "running"]
 /** Automation authors whose pull requests are dependency bumps, not features. */
 const BOT_AUTHOR = /\[bot\]$|^(dependabot|renovate|github-actions)/i
 
+/** GitHub associations trusted with what the reviewer reads and posts; on a public repository anyone else is not. */
+const TRUSTED_ASSOCIATIONS: ReadonlySet<string> = new Set(["OWNER", "MEMBER", "COLLABORATOR"])
+
+export const isTrustedAuthorAssociation = (association: string | undefined): boolean =>
+	association !== undefined && TRUSTED_ASSOCIATIONS.has(association.toUpperCase())
+
 export interface PrReviewTriggerOutcome {
 	readonly reviewId: PrReviewId | null
 	readonly outcome: "started" | "deferred" | "skipped" | "failed"
@@ -1976,6 +1982,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "bot_author" })
 					return skip("bot_author")
 				}
+				// The automatic review reads org telemetry and posts to the pull request, so it runs only for
+				// a trusted author; a member can still ask for one explicitly.
+				if (!requested && !isTrustedAuthorAssociation(job.authorAssociation)) {
+					yield* annotate("skipped", { "maple.pr_review.skip_reason": "external_author" })
+					return skip("external_author")
+				}
 				const nowMs = yield* Clock.currentTimeMillis
 				// The delayed copy of a push: start the row it queued, unless a later push replaced it.
 				if (job.deferredReview === true) {
@@ -2966,11 +2978,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
-			Layer.mergeAll(
-				VcsRepository.layer,
-				VcsProviderRegistry.layer,
-				PrReviewTelemetryService.layer,
-			),
+			Layer.mergeAll(VcsRepository.layer, VcsProviderRegistry.layer, PrReviewTelemetryService.layer),
 		),
 	)
 }

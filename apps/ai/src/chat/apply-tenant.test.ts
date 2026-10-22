@@ -59,6 +59,7 @@ const unusedActors: ErrorActorsService["Service"] = {
 	ensureAgentActor: die,
 	touchActor: die,
 	collectActorDocs: die,
+	findOwnedAgentActor: die,
 }
 
 const noActors = Layer.succeed(ErrorActorsService, unusedActors)

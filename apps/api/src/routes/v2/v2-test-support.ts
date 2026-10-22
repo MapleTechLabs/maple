@@ -155,9 +155,7 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		// Real service, no stub: it needs only the Database every harness already
 		// provides. The member directory IS stubbed — the route asks it for display
 		// names, and every harness would otherwise reach for Clerk.
-		HttpV2AuditLogLive.pipe(
-			Layer.provide(Layer.merge(auditLog, OrgMembersServiceStubLayer)),
-		),
+		HttpV2AuditLogLive.pipe(Layer.provide(Layer.merge(auditLog, OrgMembersServiceStubLayer))),
 		HttpV2ScrapeTargetsLive,
 		HttpV2InstrumentationRecommendationsLive,
 		HttpV2InstrumentationAuditLive,
@@ -342,6 +340,7 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		ensureAgentActor: die,
 		touchActor: die,
 		collectActorDocs: die,
+		findOwnedAgentActor: die,
 	}),
 	Layer.succeed(OrganizationService, {
 		create: die,

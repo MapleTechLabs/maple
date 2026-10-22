@@ -547,6 +547,8 @@ export const PullRequestEventJob = Schema.Struct({
 	title: Schema.NullOr(Schema.String),
 	body: Schema.NullOr(Schema.String),
 	authorLogin: Schema.NullOr(Schema.String),
+	/** GitHub's `author_association` for the pull request's author; absent means untrusted. */
+	authorAssociation: Schema.optionalKey(Schema.String),
 	merged: Schema.Boolean,
 	mergeCommitSha: Schema.NullOr(Schema.String),
 	mergedAtMs: Schema.NullOr(Schema.Number),

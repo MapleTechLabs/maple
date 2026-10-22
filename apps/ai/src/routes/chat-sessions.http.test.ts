@@ -9,6 +9,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { connectorSessionId } from "@maple/domain/chat-session"
 import { ChatConnectorId, ChatConversationKey } from "@maple/domain/primitives"
 import { ChatSessionsRouter } from "./chat-sessions.http"
@@ -77,6 +78,7 @@ const makeRouterLayer = (testDb: TestDb, turns: Array<BeginTurnInput>) => {
 			Layer.mergeAll(
 				ApiKeysService.layer.pipe(Layer.provide(base)),
 				AuthService.layer.pipe(Layer.provide(base)),
+				ErrorActorsService.layer.pipe(Layer.provide(base)),
 				base,
 				workerEnv,
 			),

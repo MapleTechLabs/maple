@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
 import {
+	SANDBOX_COMMAND_ENV_NAMES,
 	SandboxRunCheckoutFailed,
 	SandboxRunCheckoutPending,
 	SandboxRunExited,
@@ -35,7 +36,7 @@ const request = (overrides: Partial<ConstructorParameters<typeof SandboxRequest>
 		command: "git",
 		args: ["grep", "-e", "boom"],
 		cwd: "/workspace/src",
-		environment: new SandboxEnvironment({ allow: ["PATH", "HOME", "LANG"] }),
+		environment: new SandboxEnvironment({ allow: SANDBOX_COMMAND_ENV_NAMES }),
 		mounts: [repoMount({ orgId: ORG, repository: "octo/shop", ref: "main" })],
 		network: NETWORK_DISABLED,
 		limits: new SandboxLimits({ maxOutputBytes: 1024, maxWallTime: Duration.seconds(5) }),
@@ -128,7 +129,11 @@ describe("admit", () => {
 				["runtime", { environment: new SandboxEnvironment({ allow: ["PATH"] }) }],
 				[
 					"runtime",
-					{ environment: new SandboxEnvironment({ allow: ["PATH", "HOME", "LANG", "TERM"] }) },
+					{
+						environment: new SandboxEnvironment({
+							allow: [...SANDBOX_COMMAND_ENV_NAMES, "TERM"],
+						}),
+					},
 				],
 				// It can switch egress off entirely, but it cannot police destinations.
 				["network", { network: new NetworkAllowlist({ domains: ["github.com"], ports: [443] }) }],
