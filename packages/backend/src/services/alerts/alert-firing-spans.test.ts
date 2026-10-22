@@ -16,6 +16,7 @@ const thresholds = (breaches: number, healthy: number): AlertReplayPolicy => ({
 	consecutiveBreachesRequired: breaches,
 	breachesOutOf: null,
 	evaluationIntervalMinutes: null,
+	slowedIntervalMinutes: null,
 	consecutiveHealthyRequired: healthy,
 	thresholds: [{ severity: "warning" }],
 })

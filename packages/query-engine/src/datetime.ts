@@ -1051,11 +1051,19 @@ export const ALERT_MAX_EVALUATION_INTERVAL_MINUTES = 5
 export const alertEvaluationIntervalMinutes = (windowMinutes: number): number =>
 	Math.min(ALERT_MAX_EVALUATION_INTERVAL_MINUTES, Math.max(1, Math.floor(windowMinutes / 5)))
 
-/** A rule's check interval: the one its author picked, else a fifth of its window. */
+/**
+ * A rule's check interval: the one its author picked, else a fifth of its window,
+ * stretched to the scheduler's slowdown when its queries kept hitting their limit.
+ */
 export const alertRuleIntervalMinutes = (rule: {
 	readonly windowMinutes: number
 	readonly evaluationIntervalMinutes: number | null
-}): number => rule.evaluationIntervalMinutes ?? alertEvaluationIntervalMinutes(rule.windowMinutes)
+	readonly slowedIntervalMinutes?: number | null
+}): number =>
+	Math.max(
+		rule.evaluationIntervalMinutes ?? alertEvaluationIntervalMinutes(rule.windowMinutes),
+		rule.slowedIntervalMinutes ?? 0,
+	)
 
 /** What one check of a raw SQL rule may spend in the warehouse. */
 export interface AlertQueryLimits {
@@ -1076,6 +1084,27 @@ export const alertQueryLimits = (intervalMinutes: number): AlertQueryLimits =>
 			: intervalMinutes >= 5
 				? { timeSeconds: 15, memoryBytes: 512_000_000 }
 				: { timeSeconds: 5, memoryBytes: 256_000_000 }
+
+// The intervals a rule can pick (`ALERT_EVALUATION_INTERVALS` in `@maple/domain/http`, kept out of this module).
+const ALERT_SLOWDOWN_INTERVALS = [1, 5, 10, 15, 30, 60] as const
+
+/**
+ * The next interval up whose query limits are larger, at most `windowMinutes` so
+ * slowing down never leaves data between checks unread. Null when none is left.
+ */
+export const nextSlowerAlertInterval = (intervalMinutes: number, windowMinutes: number): number | null => {
+	const current = alertQueryLimits(intervalMinutes)
+	return (
+		ALERT_SLOWDOWN_INTERVALS.find((candidate) => {
+			const limits = alertQueryLimits(candidate)
+			return (
+				candidate > intervalMinutes &&
+				candidate <= windowMinutes &&
+				(limits.timeSeconds > current.timeSeconds || limits.memoryBytes > current.memoryBytes)
+			)
+		}) ?? null
+	)
+}
 
 // FNV-1a: a stable phase per rule, so rules sharing an interval split across its minutes.
 const alertRulePhase = (ruleId: string, intervalMinutes: number): number => {

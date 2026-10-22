@@ -3,6 +3,7 @@ import {
 	AlertDeliveryRejectedError,
 	type AlertEvaluationIntervalMinutes,
 	AlertValidationError,
+	WarehouseQuotaExceededError,
 } from "@maple/domain/http"
 import type { WarehouseQuerySettings } from "@maple/query-engine/profiles"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
@@ -6470,6 +6471,156 @@ describe("AlertsService check intervals", () => {
 				"must be at least evaluationIntervalMinutes",
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
+	})
+
+	// A raw SQL warehouse whose queries run 6s and time out while `failing` holds.
+	const timingOutWarehouse = (state: {
+		failing: boolean
+		readonly limits: Array<number | undefined>
+		readonly checkDurations: Array<unknown>
+	}) => {
+		const stub = makeWarehouseStub({ rawQueryRows: [{ value: 1, samples: 1 }] })
+		return {
+			...stub,
+			rawSqlQuery: (...args: Parameters<WarehouseQueryServiceApi["rawSqlQuery"]>) =>
+				Effect.gen(function* () {
+					state.limits.push(args[2]?.settings?.maxExecutionTime)
+					yield* TestClock.adjust(Duration.seconds(6))
+					if (!state.failing) return yield* stub.rawSqlQuery(...args)
+					return yield* new WarehouseQuotaExceededError({
+						message: "Timeout exceeded: elapsed 6000 ms",
+						pipeName: "rawSqlQuery",
+						setting: "max_execution_time",
+					})
+				}),
+			ingest: (_tenant, datasource, rows) =>
+				Effect.sync(() => {
+					if (datasource === "alert_checks") {
+						state.checkDurations.push(...rows.map((row) => row.EvaluationDurationMs))
+					}
+				}),
+		} satisfies WarehouseQueryServiceApi
+	}
+
+	// Both lanes, once a minute.
+	const tickBothLanes = (alerts: AlertsServiceApi, minutes: number) =>
+		Effect.forEach(
+			Arr.range(1, minutes),
+			() =>
+				alerts
+					.runSchedulerTick("standard")
+					.pipe(
+						Effect.andThen(alerts.runSchedulerTick("long_query")),
+						Effect.andThen(TestClock.adjust(Duration.minutes(1))),
+					),
+			{ discard: true },
+		)
+
+	it.effect("slows a rule whose query keeps timing out, a step at a time, up to its window", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			limits: [] as Array<number | undefined>,
+			checkDurations: [] as Array<unknown>,
+		}
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_slowdown")
+			// Checked every 2 minutes by its window, under the 5s limit.
+			yield* createIntervalRule(alerts, orgId, {
+				signalType: "raw_query",
+				windowMinutes: 10,
+				evaluationIntervalMinutes: null,
+			})
+
+			yield* tickBothLanes(alerts, 60)
+
+			// Three timeouts at each limit, then 5-minute checks at 15s, then 10-minute checks at 25s.
+			assert.deepStrictEqual(state.limits.slice(0, 9), [5, 5, 5, 15, 15, 15, 25, 25, 25])
+			// The window caps it: 15 minutes would leave data unread between checks.
+			assert.isTrue(state.limits.slice(6).every((limit) => limit === 25))
+			assert.isAtMost(state.limits.length, 3 + 3 + 6)
+			const [rule] = (yield* alerts.listRules(orgId)).rules
+			assert.strictEqual(rule?.slowedIntervalMinutes, 10)
+			assert.isNotNull(rule?.slowedAt)
+			assert.strictEqual(rule?.lastEvaluationErrorKind, "query_too_slow")
+			// A failed check records how long its query ran, not 0.
+			assert.isTrue(state.checkDurations.every((ms) => ms === 6000))
+		}).pipe(Effect.provide(makeLayer(testDb, timingOutWarehouse(state), { fetch: okFetch })))
+	})
+
+	it.effect("does not slow a rule whose timeouts a clean check interrupts", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			limits: [] as Array<number | undefined>,
+			checkDurations: [] as Array<unknown>,
+		}
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_slowdown_reset")
+			yield* createIntervalRule(alerts, orgId, {
+				signalType: "raw_query",
+				windowMinutes: 5,
+				evaluationIntervalMinutes: null,
+			})
+
+			yield* tickBothLanes(alerts, 2)
+			state.failing = false
+			yield* tickBothLanes(alerts, 1)
+			state.failing = true
+			yield* tickBothLanes(alerts, 2)
+
+			assert.deepStrictEqual(state.limits, [5, 5, 5, 5, 5])
+			const [rule] = (yield* alerts.listRules(orgId)).rules
+			assert.isNull(rule?.slowedIntervalMinutes)
+		}).pipe(Effect.provide(makeLayer(testDb, timingOutWarehouse(state), { fetch: okFetch })))
+	})
+
+	it.effect("gives a slowed rule its own interval back when it is edited", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			limits: [] as Array<number | undefined>,
+			checkDurations: [] as Array<unknown>,
+		}
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_slowdown_edit")
+			const created = yield* createIntervalRule(alerts, orgId, {
+				signalType: "raw_query",
+				windowMinutes: 5,
+				evaluationIntervalMinutes: null,
+			})
+			yield* tickBothLanes(alerts, 3)
+			assert.strictEqual((yield* alerts.listRules(orgId)).rules[0]?.slowedIntervalMinutes, 5)
+
+			yield* alerts.updateRule(
+				orgId,
+				asUserId("user_interval"),
+				adminRoles,
+				created.id,
+				new AlertRuleUpsertRequest({
+					name: "Faster query",
+					severity: "warning",
+					signalType: "raw_query",
+					rawQuerySql: RAW_SQL,
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					destinationIds: [...created.destinationIds],
+				}),
+			)
+			state.failing = false
+			state.limits.length = 0
+			yield* tickBothLanes(alerts, 3)
+
+			assert.deepStrictEqual(state.limits, [5, 5, 5])
+			assert.isNull((yield* alerts.listRules(orgId)).rules[0]?.slowedIntervalMinutes)
+		}).pipe(Effect.provide(makeLayer(testDb, timingOutWarehouse(state), { fetch: okFetch })))
 	})
 })
 

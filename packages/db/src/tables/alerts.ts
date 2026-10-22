@@ -85,6 +85,12 @@ export const AlertRules = PG.table("alert_rules", {
 		windowMinutes: PG.column(PG.int4, { name: "window_minutes" }),
 		/** Minutes between checks, as picked by the author. Null derives it from the window. */
 		evaluationIntervalMinutes: PG.column(PG.nullable(PG.int4), { name: "evaluation_interval_minutes" }),
+		/**
+		 * Set by the scheduler after repeated query timeouts: the rule is checked at least this
+		 * far apart, which buys it a longer query limit. Cleared by any edit to the rule.
+		 */
+		slowedIntervalMinutes: PG.column(PG.nullable(PG.int4), { name: "slowed_interval_minutes" }),
+		slowedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "slowed_at" }),
 		minimumSampleCount: PG.column(PG.int4, { name: "minimum_sample_count", default: 0 }),
 		consecutiveBreachesRequired: PG.column(PG.int4, {
 			name: "consecutive_breaches_required",
@@ -139,6 +145,8 @@ export const AlertRuleClaims = PG.table("alert_rule_claims", {
 		ruleId: PG.column(PG.brand(PG.text, AlertRuleId), { name: "rule_id" }),
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		lastScheduledAt: PG.column(PG.timestamptzMillis, { name: "last_scheduled_at" }),
+		/** Checks in a row that hit the query time or memory limit; reset by a clean check or an edit. */
+		consecutiveLimitFailures: PG.column(PG.int4, { name: "consecutive_limit_failures", default: 0 }),
 	},
 	primaryKey: ["ruleId"],
 	indexes: [PG.index("alert_rule_claims_org_idx", ["orgId"])],
@@ -162,6 +170,8 @@ export const AlertRuleStates = PG.table("alert_rule_states", {
 		lastSampleCount: PG.column(PG.nullable(PG.int4), { name: "last_sample_count" }),
 		lastEvaluatedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_evaluated_at" }),
 		lastError: PG.column(PG.nullable(PG.text), { name: "last_error" }),
+		/** `AlertEvaluationErrorKind` of `lastError`. */
+		lastErrorKind: PG.column(PG.nullable(PG.text), { name: "last_error_kind" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
 	primaryKey: {

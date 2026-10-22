@@ -1,4 +1,5 @@
 import {
+	AlertEvaluationErrorKind,
 	AlertForbiddenError,
 	AlertRuleDestinationNotFoundError,
 	AlertRuleNotFoundError,
@@ -44,6 +45,7 @@ import { makePersistenceError } from "./alert-persistence"
 import { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
+const decodeErrorKindOption = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
 const adminRoles = [decodeRoleNameSync("root"), decodeRoleNameSync("org:admin")]
 const MAX_ACTIVE_ALERT_RULES_PER_ORG = 100
 
@@ -174,6 +176,8 @@ export const makeAlertRulePersistence = (options: {
 			thresholdsJson: normalized.thresholds,
 			windowMinutes: normalized.windowMinutes,
 			evaluationIntervalMinutes: normalized.evaluationIntervalMinutes,
+			slowedIntervalMinutes: null,
+			slowedAt: null,
 			minimumSampleCount: normalized.minimumSampleCount,
 			consecutiveBreachesRequired: normalized.consecutiveBreachesRequired,
 			breachesOutOf: normalized.breachesOutOf,
@@ -339,7 +343,7 @@ export const makeAlertRulePersistence = (options: {
 		const stateRows = yield* dbExecute((db) =>
 			db.run(
 				PG.from(AlertRuleStates)
-					.select("ruleId", "lastError", "lastEvaluatedAt")
+					.select("ruleId", "lastError", "lastErrorKind", "lastEvaluatedAt")
 					.where(($) => [$.orgId.eq(orgId)]),
 			),
 		)
@@ -350,6 +354,7 @@ export const makeAlertRulePersistence = (options: {
 			if (existing == null || (state.lastEvaluatedAt ?? 0) > (existing.evaluatedAt ?? 0)) {
 				errorByRule.set(state.ruleId, {
 					error: state.lastError,
+					errorKind: Option.getOrNull(decodeErrorKindOption(state.lastErrorKind)),
 					evaluatedAt: state.lastEvaluatedAt,
 				})
 			}

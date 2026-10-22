@@ -69,6 +69,7 @@ export const toAlertRuleRow = (rule: AlertRuleDocument): typeof AlertRuleRow.Typ
 	threshold: rule.threshold,
 	windowMinutes: rule.windowMinutes,
 	evaluationIntervalMinutes: rule.evaluationIntervalMinutes,
+	slowedIntervalMinutes: rule.slowedIntervalMinutes,
 	destinationIds: [...rule.destinationIds],
 	createdAt: rule.createdAt,
 	updatedAt: rule.updatedAt,

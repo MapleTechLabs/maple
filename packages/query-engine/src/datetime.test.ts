@@ -6,6 +6,7 @@ import {
 	alertEvaluationIntervalMinutes,
 	alertQueryLimits,
 	alertRuleIntervalMinutes,
+	nextSlowerAlertInterval,
 	alertWindowBucketSeconds,
 	isAlertRuleDue,
 	computeBucketSeconds,
@@ -305,6 +306,42 @@ describe("alertRuleIntervalMinutes", () => {
 		expect(alertRuleIntervalMinutes({ windowMinutes: 60, evaluationIntervalMinutes: 1 })).toBe(1)
 		expect(alertRuleIntervalMinutes({ windowMinutes: 60, evaluationIntervalMinutes: 30 })).toBe(30)
 		expect(alertRuleIntervalMinutes({ windowMinutes: 15, evaluationIntervalMinutes: null })).toBe(3)
+	})
+
+	it("never checks a slowed rule more often than its slowdown", () => {
+		expect(
+			alertRuleIntervalMinutes({
+				windowMinutes: 5,
+				evaluationIntervalMinutes: null,
+				slowedIntervalMinutes: 5,
+			}),
+		).toBe(5)
+		expect(
+			alertRuleIntervalMinutes({
+				windowMinutes: 60,
+				evaluationIntervalMinutes: 30,
+				slowedIntervalMinutes: 5,
+			}),
+		).toBe(30)
+	})
+})
+
+describe("nextSlowerAlertInterval", () => {
+	it("steps to the next interval with a larger query limit", () => {
+		expect(nextSlowerAlertInterval(1, 60)).toBe(5)
+		expect(nextSlowerAlertInterval(3, 60)).toBe(5)
+		expect(nextSlowerAlertInterval(5, 60)).toBe(10)
+		expect(nextSlowerAlertInterval(10, 60)).toBe(15)
+	})
+
+	it("stops at the window, so slowing down never skips data", () => {
+		expect(nextSlowerAlertInterval(1, 5)).toBe(5)
+		expect(nextSlowerAlertInterval(5, 5)).toBeNull()
+		expect(nextSlowerAlertInterval(1, 4)).toBeNull()
+	})
+
+	it("stops once no slower interval buys a larger limit", () => {
+		expect(nextSlowerAlertInterval(15, 1440)).toBeNull()
 	})
 })
 
