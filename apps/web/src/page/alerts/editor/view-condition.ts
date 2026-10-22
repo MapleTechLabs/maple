@@ -336,7 +336,9 @@ const intervalNote = (
 	if (form.signalType === "raw_query" && timing?.failure === "query_too_much_memory") {
 		return "It ran out of memory with the most any interval allows, so checking less often will not help."
 	}
-	if (option.isTooSlow) return `The query needs more than the ${option.limitSeconds} s this interval allows, with room to spare.`
+	if (option.isTooSlow) {
+		return `Over or too close to the ${option.limitSeconds} s this interval allows. Checking less often allows a slower query.`
+	}
 	if (form.signalType !== "raw_query") {
 		const auto = autoIntervalMinutes(form)
 		return option.value === AUTO_INTERVAL || option.minutes === auto
