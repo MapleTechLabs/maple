@@ -244,6 +244,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 					input.model,
 					startedAt + Duration.toMillis(Duration.fromInputUnsafe(agent.budget.maxDuration)),
 					codeMode === undefined ? undefined : CODE_MODE_GUIDANCE,
+					Object.keys(codeTools),
 				)
 			: undefined
 
