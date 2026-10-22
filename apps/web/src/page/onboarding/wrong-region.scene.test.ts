@@ -33,7 +33,10 @@ describe("wrong-region screen", () => {
 		const step = Option.getOrThrow(init(route, "WrongRegion:/traces", inputs))
 		expect(step.model.screen).toEqual({ _tag: "WrongRegion", region: "eu", href: "/traces" })
 		scene(
-			{ update: (model, message) => update(model, message, inputs), view: withViewInputs(view, inputs)() },
+			{
+				update: (model, message) => update(model, message, inputs),
+				view: withViewInputs(view, inputs)(),
+			},
 			given(step.model),
 			expectView(role("heading", { name: "Acme EU is in the EU region" })).toExist(),
 			expectView(role("button", { name: "Switch organization" })).toExist(),

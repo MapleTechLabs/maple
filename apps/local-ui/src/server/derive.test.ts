@@ -18,9 +18,17 @@ describe("server status", () => {
 	})
 
 	test("a 4xx is this page being refused, a 5xx keeps the views", () => {
-		const rejected = nextServerState(Option.none(), ProbeOutcome.Rejected({ status: 403, detail: "no" }), NOW)
+		const rejected = nextServerState(
+			Option.none(),
+			ProbeOutcome.Rejected({ status: 403, detail: "no" }),
+			NOW,
+		)
 		expect(connectionOf(Option.some(rejected)).status).toBe("rejected")
-		const failing = nextServerState(Option.none(), ProbeOutcome.Rejected({ status: 500, detail: "x" }), NOW)
+		const failing = nextServerState(
+			Option.none(),
+			ProbeOutcome.Rejected({ status: 500, detail: "x" }),
+			NOW,
+		)
 		expect(connectionOf(Option.some(failing)).status).toBe("connected")
 		expect(describeStatus(Option.some(failing), "4318").label).toBe("Server error")
 	})
@@ -28,7 +36,11 @@ describe("server status", () => {
 	test("recent ingest reads as receiving, older as the last data age", () => {
 		const live = nextServerState(Option.none(), ProbeOutcome.Ok({ lastIngestAtMs: NOW - 20_000 }), NOW)
 		expect(describeStatus(Option.some(live), "4318").label).toBe("Receiving")
-		const idle = nextServerState(Option.none(), ProbeOutcome.Ok({ lastIngestAtMs: NOW - 3 * 60_000 }), NOW)
+		const idle = nextServerState(
+			Option.none(),
+			ProbeOutcome.Ok({ lastIngestAtMs: NOW - 3 * 60_000 }),
+			NOW,
+		)
 		expect(describeStatus(Option.some(idle), "4318").label).toBe("Last data 3m ago")
 	})
 })

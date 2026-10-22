@@ -18,7 +18,8 @@ export const viewOf = (search: Search): HubView => search.view ?? "active"
 const ACTIVE: ReadonlyArray<V2Investigation["status"]> = ["investigating", "diagnosed"]
 export const isActive = (investigation: V2Investigation) => ACTIVE.includes(investigation.status)
 
-const pageOf = (slot: Model["firstPage"]): InvestigationPage | null => AsyncData.getOrElse(slot.data, () => null)
+const pageOf = (slot: Model["firstPage"]): InvestigationPage | null =>
+	AsyncData.getOrElse(slot.data, () => null)
 
 /** The first page and every "Load more" page, deduped by id. */
 export const allOf = (model: Model): ReadonlyArray<V2Investigation> => {
@@ -47,7 +48,9 @@ export const visibleOf = (model: Model, all: ReadonlyArray<V2Investigation>) => 
 	const { search } = model
 	const view = viewOf(search)
 	const query = search.q ?? ""
-	const inView = all.filter((investigation) => (view === "active" ? isActive(investigation) : !isActive(investigation)))
+	const inView = all.filter((investigation) =>
+		view === "active" ? isActive(investigation) : !isActive(investigation),
+	)
 	const filtered = inView.filter(
 		(investigation) =>
 			(search.kind === undefined || investigationKindKey(investigation.subject) === search.kind) &&
@@ -63,8 +66,12 @@ export const triageStatsOf = (all: ReadonlyArray<V2Investigation>, nowMs: number
 	const running = all.filter((entry) => entry.status === "investigating")
 	const review = all.filter((entry) => entry.status === "diagnosed")
 	const cutoff = nowMs - DAY_MS
-	const resolved = all.filter((entry) => entry.status === "resolved" && toEpochMs(entry.updated_at) >= cutoff)
-	const critical = review.filter((entry) => (entry.severity ?? entry.snapshot.severity) === "critical").length
+	const resolved = all.filter(
+		(entry) => entry.status === "resolved" && toEpochMs(entry.updated_at) >= cutoff,
+	)
+	const critical = review.filter(
+		(entry) => (entry.severity ?? entry.snapshot.severity) === "critical",
+	).length
 	return { running: running.length, review: review.length, resolved: resolved.length, critical }
 }
 

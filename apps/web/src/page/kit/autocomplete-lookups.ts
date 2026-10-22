@@ -35,7 +35,9 @@ const names = (rows: ReadonlyArray<{ readonly name: string }> | undefined): Read
 	(rows ?? [])
 		.map((row) => row.name.trim())
 		.filter((name, index, all) => name !== "" && all.indexOf(name) === index)
-const keysOf = (response: { readonly data: ReadonlyArray<{ readonly attributeKey: string }> }): LookupNames => ({
+const keysOf = (response: {
+	readonly data: ReadonlyArray<{ readonly attributeKey: string }>
+}): LookupNames => ({
 	keys: response.data.map((row) => row.attributeKey),
 })
 

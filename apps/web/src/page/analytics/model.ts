@@ -34,7 +34,11 @@ export const Breakdowns = Schema.Struct({
 })
 export type Breakdowns = typeof Breakdowns.Type
 
-export const AnalyticsEvent = Schema.Struct({ name: Schema.String, events: Schema.Number, sessions: Schema.Number })
+export const AnalyticsEvent = Schema.Struct({
+	name: Schema.String,
+	events: Schema.Number,
+	sessions: Schema.Number,
+})
 
 export const Summary = Schema.Struct({
 	visitors: Schema.Number,
@@ -50,7 +54,11 @@ export const Summary = Schema.Struct({
 })
 export type Summary = typeof Summary.Type
 
-export const Live = Schema.Struct({ visitors: Schema.Number, sessions: Schema.Number, windowSeconds: Schema.Number })
+export const Live = Schema.Struct({
+	visitors: Schema.Number,
+	sessions: Schema.Number,
+	windowSeconds: Schema.Number,
+})
 
 export const TimeseriesPoint = Schema.Struct({
 	bucket: Schema.String,
@@ -62,7 +70,11 @@ export const TimeseriesPoint = Schema.Struct({
 	avgDurationMs: Schema.Number,
 })
 
-export const PageviewsPoint = Schema.Struct({ bucket: Schema.String, pageViews: Schema.Number, sessions: Schema.Number })
+export const PageviewsPoint = Schema.Struct({
+	bucket: Schema.String,
+	pageViews: Schema.Number,
+	sessions: Schema.Number,
+})
 
 export const AnalyticsPage = Schema.Struct({
 	host: Schema.String,
@@ -71,7 +83,11 @@ export const AnalyticsPage = Schema.Struct({
 	sessions: Schema.Number,
 })
 
-export const AiReferralPoint = Schema.Struct({ bucket: Schema.String, product: Schema.String, sessions: Schema.Number })
+export const AiReferralPoint = Schema.Struct({
+	bucket: Schema.String,
+	product: Schema.String,
+	sessions: Schema.Number,
+})
 
 export const AiCrawlers = Schema.Struct({
 	crawlers: Schema.Array(
@@ -122,7 +138,6 @@ export const PanelState = Schema.Struct({
 })
 export type PanelState = typeof PanelState.Type
 
-
 export const Model = Schema.Struct({
 	search: AnalyticsSearch,
 	window: Schema.NullOr(TimeWindow),
@@ -147,7 +162,9 @@ export const Model = Schema.Struct({
 	pickedMetric: Schema.NullOr(Schema.String),
 	panels: Schema.Record(Schema.String, PanelState),
 	/** An events answer that came in ahead of the breakdowns (`delivered` in update.ts). */
-	heldEvents: Schema.NullOr(Schema.Struct({ key: Schema.String, result: Schema.Result(Schema.Unknown, LoadFailure) })),
+	heldEvents: Schema.NullOr(
+		Schema.Struct({ key: Schema.String, result: Schema.Result(Schema.Unknown, LoadFailure) }),
+	),
 	/** The breakdown card whose table is open in the dialog. */
 	expandedPanel: Schema.NullOr(Schema.String),
 	expandDialog: Dialog.Model,

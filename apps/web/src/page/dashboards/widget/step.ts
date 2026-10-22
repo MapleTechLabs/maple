@@ -21,7 +21,12 @@ import { askMetricOptions, optionsOf, pickedMetric } from "./metric-options"
 import { removeQuery, setAggregation, setDataSource, updateQuery, withInferredUnit } from "./edits"
 import type { EditorState } from "./editor-state"
 import { applyProductEdit } from "./product-apply"
-import { BREAKDOWN_ATTRIBUTE, BREAKDOWN_SELECT_ID, breakdownPicked, productSelectEdit } from "./product-selects"
+import {
+	BREAKDOWN_ATTRIBUTE,
+	BREAKDOWN_SELECT_ID,
+	breakdownPicked,
+	productSelectEdit,
+} from "./product-selects"
 import { type GeneratedIdPurpose, Message } from "./message"
 import { panelInputsOf } from "./where-inputs"
 import type { Model } from "./model"
@@ -37,7 +42,11 @@ const applySelectValue = (state: EditorState, id: string, value: string): Editor
 		case "comparison":
 			return { ...state, comparisonMode: value === "previous_period" ? "previous_period" : "none" }
 		case "stat-aggregate":
-			return { ...state, statAggregate: STAT_AGGREGATES.find((aggregate) => aggregate === value) ?? state.statAggregate }
+			return {
+				...state,
+				statAggregate:
+					STAT_AGGREGATES.find((aggregate) => aggregate === value) ?? state.statAggregate,
+			}
 		case "stat-value-field":
 			return { ...state, statValueField: value }
 		// The step editor's source: any other brings the query set back, retargeted to it.
@@ -45,10 +54,18 @@ const applySelectValue = (state: EditorState, id: string, value: string): Editor
 			const first = state.queries[0]
 			const source = QUERY_BUILDER_DATA_SOURCES.find((candidate) => candidate === value)
 			if (first === undefined || source === undefined || source === "product_events") return state
-			return setDataSource({ ...state, funnel: { ...state.funnel, source: "query_set" } }, first.id, source)
+			return setDataSource(
+				{ ...state, funnel: { ...state.funnel, source: "query_set" } },
+				first.id,
+				source,
+			)
 		}
 		case "heatmap-colors":
-			return { ...state, heatmapColorScale: HEATMAP_COLOR_SCALES.find((scale) => scale === value) ?? state.heatmapColorScale }
+			return {
+				...state,
+				heatmapColorScale:
+					HEATMAP_COLOR_SCALES.find((scale) => scale === value) ?? state.heatmapColorScale,
+			}
 		default:
 			return Option.match(productSelectEdit(id, value), {
 				onNone: () => state,
@@ -76,22 +93,29 @@ export const selectStep = (
 		id === BREAKDOWN_SELECT_ID
 			? {
 					...lifted,
-					breakdownAttribute: { ...lifted.breakdownAttribute, isActive: value === BREAKDOWN_ATTRIBUTE },
+					breakdownAttribute: {
+						...lifted.breakdownAttribute,
+						isActive: value === BREAKDOWN_ATTRIBUTE,
+					},
 				}
 			: lifted
 	const edited = editState(picked, context, (state) =>
-		id === BREAKDOWN_SELECT_ID ? breakdownPicked(state, value, picked.breakdownAttribute.key) : applySelectValue(state, id, value),
+		id === BREAKDOWN_SELECT_ID
+			? breakdownPicked(state, value, picked.breakdownAttribute.key)
+			: applySelectValue(state, id, value),
 	)
 	return { ...edited, commands: [...commands, ...(edited.commands ?? [])] }
 }
 
 /** A query panel edit; source and aggregation also move the inferred unit. */
 const applyPanelEdit = (state: EditorState, queryId: string, change: QueryPanel.OutMessage): EditorState => {
-	if (change._tag !== "ChangedQuery") return change._tag === "ClickedRemove" ? removeQuery(state, queryId) : state
+	if (change._tag !== "ChangedQuery")
+		return change._tag === "ClickedRemove" ? removeQuery(state, queryId) : state
 	const inner = change.change
 	if (inner._tag === "SetSource") return setDataSource(state, queryId, inner.source)
 	if (inner._tag === "SetAggregation") return setAggregation(state, queryId, inner.aggregation)
-	if (inner._tag === "SetMetric") return withInferredUnit(updateQuery(state, queryId, (query) => applyQueryChange(query, inner)))
+	if (inner._tag === "SetMetric")
+		return withInferredUnit(updateQuery(state, queryId, (query) => applyQueryChange(query, inner)))
 	return updateQuery(state, queryId, (query) => applyQueryChange(query, inner))
 }
 
@@ -111,11 +135,16 @@ export const queryPanelStep = (model: Model, context: PageContext, message: Quer
 		const change = pickedMetric(out.value, optionsOf(lifted))
 		if (change === null) return { model: lifted, commands }
 		const picked = editState(lifted, context, (state) =>
-			applyPanelEdit(state, out.queryId, QueryPanel.OutMessage.ChangedQuery({ queryId: out.queryId, change })),
+			applyPanelEdit(
+				state,
+				out.queryId,
+				QueryPanel.OutMessage.ChangedQuery({ queryId: out.queryId, change }),
+			),
 		)
 		return { ...picked, commands: [...commands, ...(picked.commands ?? [])] }
 	}
-	if (out._tag === "ClickedClone") return { model: lifted, commands: [...commands, ...(generate("cloneQuery", out.queryId) ?? [])] }
+	if (out._tag === "ClickedClone")
+		return { model: lifted, commands: [...commands, ...(generate("cloneQuery", out.queryId) ?? [])] }
 	const edited = editState(lifted, context, (state) => applyPanelEdit(state, out.queryId, out))
 	return { ...edited, commands: [...commands, ...(edited.commands ?? [])] }
 }
@@ -180,7 +209,6 @@ export const acceptFetch = (
 		: { ...model, requests: { ...model.requests, [key]: Keyed.accept(slot, key, result.result) } }
 }
 
-export const generate = (
-	purpose: GeneratedIdPurpose,
-	source: string,
-): Return["commands"] => [GenerateId({ purpose, source })]
+export const generate = (purpose: GeneratedIdPurpose, source: string): Return["commands"] => [
+	GenerateId({ purpose, source }),
+]

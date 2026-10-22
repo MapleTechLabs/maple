@@ -27,7 +27,10 @@ export type CacheHit = Readonly<{ data: CacheValue; updatedAtMs: number; isStand
 export const readSavedEntries: Effect.Effect<CacheEntries> = Effect.gen(function* () {
 	const nowMs = yield* Clock.currentTimeMillis
 	const key = storageKeyFor(localServerPortForLocation(window.location))
-	return Option.match(readLocalStorage(key), { onNone: () => new Map(), onSome: (text) => parseSaved(text, nowMs) })
+	return Option.match(readLocalStorage(key), {
+		onNone: () => new Map(),
+		onSome: (text) => parseSaved(text, nowMs),
+	})
 })
 
 export class LocalQueryCache extends Context.Service<
@@ -47,7 +50,9 @@ export class LocalQueryCache extends Context.Service<
 			const entries = yield* Ref.make<CacheEntries>(restored)
 			// `gcTime`'s clock per entry: a restored result starts unobserved at load.
 			const startedAtMs = yield* Clock.currentTimeMillis
-			const lastUsed = yield* Ref.make<ReadonlyMap<string, number>>(new Map([...restored.keys()].map((hash) => [hash, startedAtMs])))
+			const lastUsed = yield* Ref.make<ReadonlyMap<string, number>>(
+				new Map([...restored.keys()].map((hash) => [hash, startedAtMs])),
+			)
 			const isSaveScheduled = yield* Ref.make(false)
 			const scope = yield* Effect.scope
 			/** Drops what nothing used for an hour; returns what is left. */
@@ -56,7 +61,9 @@ export class LocalQueryCache extends Context.Service<
 				const used = yield* Ref.get(lastUsed)
 				return yield* Ref.updateAndGet(entries, (current) => dropUnused(current, used, nowMs))
 			})
-			const save = Effect.flatMap(collect, (current) => Effect.sync(() => writeLocalStorage(storageKey, serialize(current))))
+			const save = Effect.flatMap(collect, (current) =>
+				Effect.sync(() => writeLocalStorage(storageKey, serialize(current))),
+			)
 			// `visibilitychange` to hidden saves at once: the tab may not come back.
 			const services = yield* Effect.context()
 			yield* Effect.acquireRelease(
@@ -71,19 +78,21 @@ export class LocalQueryCache extends Context.Service<
 			)
 			// The browser runtime closes this scope on `beforeunload`, before a reload's hidden event.
 			yield* Effect.addFinalizer(() => save)
-			const scheduleSave = Effect.flatMap(
-				Ref.getAndSet(isSaveScheduled, true),
-				(wasScheduled) =>
-					wasScheduled
-						? Effect.void
-						: Effect.asVoid(
-								Effect.forkIn(
-									Effect.andThen(Effect.sleep(Duration.millis(SAVE_DELAY_MS)), Effect.andThen(Ref.set(isSaveScheduled, false), save)),
-									scope,
+			const scheduleSave = Effect.flatMap(Ref.getAndSet(isSaveScheduled, true), (wasScheduled) =>
+				wasScheduled
+					? Effect.void
+					: Effect.asVoid(
+							Effect.forkIn(
+								Effect.andThen(
+									Effect.sleep(Duration.millis(SAVE_DELAY_MS)),
+									Effect.andThen(Ref.set(isSaveScheduled, false), save),
 								),
+								scope,
 							),
+						),
 			)
-			const touch = (hash: string, nowMs: number) => Ref.update(lastUsed, (used) => new Map(used).set(hash, nowMs))
+			const touch = (hash: string, nowMs: number) =>
+				Ref.update(lastUsed, (used) => new Map(used).set(hash, nowMs))
 			return {
 				lookup: (key) =>
 					Effect.gen(function* () {
@@ -108,7 +117,14 @@ export class LocalQueryCache extends Context.Service<
 						onSome: (value) =>
 							Effect.gen(function* () {
 								yield* touch(hashKey(key), yield* Clock.currentTimeMillis)
-								yield* Ref.update(entries, (current) => new Map([...current, [hashKey(key), { key, data: value, updatedAtMs }]]))
+								yield* Ref.update(
+									entries,
+									(current) =>
+										new Map([
+											...current,
+											[hashKey(key), { key, data: value, updatedAtMs }],
+										]),
+								)
 								yield* collect
 								yield* scheduleSave
 							}),

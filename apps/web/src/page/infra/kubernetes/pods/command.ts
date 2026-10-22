@@ -11,7 +11,8 @@ export const PAGE_SIZE = 50
 export const FetchPods = Command.define("FetchInfraPods", {
 	args: { key: Schema.String, input: PodsInput },
 	messages: [Message.CompletedFetchPods],
-	execute: ({ key, input }) => Effect.map(fetchPods(input), (result) => Message.CompletedFetchPods({ key, result })),
+	execute: ({ key, input }) =>
+		Effect.map(fetchPods(input), (result) => Message.CompletedFetchPods({ key, result })),
 })
 
 export const FetchRestarts = Command.define("FetchInfraPodRestarts", {
@@ -64,5 +65,6 @@ export const FetchFacets = Command.define("FetchInfraPodFacets", {
 export const DebounceSearch = Command.define("DebounceInfraPodsSearch", {
 	args: { query: Schema.String },
 	messages: [Message.ElapsedSearchDebounce],
-	execute: ({ query }) => Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ query })),
+	execute: ({ query }) =>
+		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ query })),
 })

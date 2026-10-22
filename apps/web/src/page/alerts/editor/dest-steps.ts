@@ -30,9 +30,14 @@ export const liftDialog = (model: Model, step: ReturnType<typeof DestinationDial
 	if (step.outMessage === undefined) return { model: next, commands }
 	return DestinationDialog.OutMessage.match(step.outMessage, {
 		CreatedDestination: ({ id }) => ({
-			model: next.form === null ? next : { ...next, form: updateTierIds(next.form, "warning", addId(id)) },
+			model:
+				next.form === null ? next : { ...next, form: updateTierIds(next.form, "warning", addId(id)) },
 			commands,
-			outMessage: PageOutMessage.RequestedToast({ type: "success", title: "Destination created", description: "" }),
+			outMessage: PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Destination created",
+				description: "",
+			}),
 		}),
 		RequestedToast: ({ type, title, description }) => ({
 			model: next,
@@ -50,13 +55,20 @@ const picked = (model: Model, menuId: string, value: string): Return => {
 		return Option.match(decodeId(rest.join(":")), {
 			onNone: () => ({ model }),
 			onSome: (id) => ({
-				model: model.form === null ? model : { ...model, form: updateTierIds(model.form, tier, addId(id)) },
+				model:
+					model.form === null
+						? model
+						: { ...model, form: updateTierIds(model.form, tier, addId(id)) },
 			}),
 		})
 	if (kind === "type")
 		return Option.match(decodeType(rest.join(":")), {
 			onNone: () => ({ model }),
-			onSome: (type) => liftDialog(model, DestinationDialog.openNew(model.destinationDialog, defaultDestinationForm(type))),
+			onSome: (type) =>
+				liftDialog(
+					model,
+					DestinationDialog.openNew(model.destinationDialog, defaultDestinationForm(type)),
+				),
 		})
 	if (kind === "chat") {
 		const [connector = "", workspaceId = ""] = rest
@@ -65,14 +77,26 @@ const picked = (model: Model, menuId: string, value: string): Return => {
 			.find((candidate) => candidate.id === workspaceId)
 		return workspace === undefined
 			? { model }
-			: liftDialog(model, DestinationDialog.openNew(model.destinationDialog, chatDestinationForm(connector, workspace.id)))
+			: liftDialog(
+					model,
+					DestinationDialog.openNew(
+						model.destinationDialog,
+						chatDestinationForm(connector, workspace.id),
+					),
+				)
 	}
 	// `chatConnect.connect(connector)`: link a workspace in a popup first.
 	if (kind === "connect") {
 		const connector = (model.connectors ?? []).find((entry) => entry.id === rest.join(":"))
 		return connector === undefined || ChatConnect.waitingFor(model.chatConnect) !== null
 			? { model }
-			: { model: { ...model, chatConnect: ChatConnect.start(model.chatConnect, connector), chatConnectMenuId: menuId } }
+			: {
+					model: {
+						...model,
+						chatConnect: ChatConnect.start(model.chatConnect, connector),
+						chatConnectMenuId: menuId,
+					},
+				}
 	}
 	return { model }
 }
@@ -99,7 +123,10 @@ export const connectorsAnswered = (model: Model, connectors: ReadonlyArray<V2Cha
 		onSome: (linked) =>
 			liftDialog(
 				{ ...next, chatConnect: ChatConnect.finish(next.chatConnect), chatConnectMenuId: null },
-				DestinationDialog.openNew(next.destinationDialog, chatDestinationForm(linked.connector, linked.id)),
+				DestinationDialog.openNew(
+					next.destinationDialog,
+					chatDestinationForm(linked.connector, linked.id),
+				),
 			),
 	})
 }
@@ -107,7 +134,9 @@ export const connectorsAnswered = (model: Model, connectors: ReadonlyArray<V2Cha
 export const menuStep = (model: Model, menuId: string, message: Menu.Message): Return => {
 	const result = Menu.update(model.menus[menuId] ?? Menu.init(menuId), message)
 	const next: Model = { ...model, menus: { ...model.menus, [menuId]: result.model } }
-	const commands = Command.mapMessages(result.commands ?? [], (child) => Message.GotMenuMessage({ id: menuId, message: child }))
+	const commands = Command.mapMessages(result.commands ?? [], (child) =>
+		Message.GotMenuMessage({ id: menuId, message: child }),
+	)
 	const out = result.outMessage
 	if (out === undefined || out._tag !== "SelectedItem") return { model: next, commands }
 	const after = picked(next, menuId, out.value)
@@ -115,4 +144,6 @@ export const menuStep = (model: Model, menuId: string, message: Menu.Message): R
 }
 
 export const removeDestination = (model: Model, tier: Tier, id: AlertDestinationId): Return =>
-	model.form === null ? { model } : { model: { ...model, form: updateTierIds(model.form, tier, removeId(id)) } }
+	model.form === null
+		? { model }
+		: { model: { ...model, form: updateTierIds(model.form, tier, removeId(id)) } }

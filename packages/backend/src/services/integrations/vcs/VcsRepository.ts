@@ -334,39 +334,39 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 							db
 								.run(
 									PG.insertInto(VcsInstallations)
-								// `status`/`suspended_at` are omitted: a new row takes the schema
-								// default ("active"), and on conflict they are left untouched so a
-								// reconcile can't un-suspend. Status is owned by markInstallationStatus.
-								.values({
-									id,
-									orgId: input.orgId,
-									sourceId,
-									provider: input.provider,
-									externalInstallationId: input.externalInstallationId,
-									accountLogin: input.accountLogin,
-									accountType: input.accountType,
-									externalAccountId: input.externalAccountId,
-									accountAvatarUrl: input.accountAvatarUrl,
-									repositorySelection: input.repositorySelection,
-									installedByUserId: input.installedByUserId,
-									createdAt: now,
-									updatedAt: now,
-								})
-								.onConflictDoUpdate({
-									target: ["provider", "externalInstallationId"],
-									// Ownership columns (org_id, installed_by_user_id, created_at) and
-									// status/suspended_at are immutable on conflict; only mutable
-									// provider metadata is refreshed.
-									set: (_, excluded) => ({
-										accountLogin: excluded.accountLogin,
-										accountType: excluded.accountType,
-										externalAccountId: excluded.externalAccountId,
-										accountAvatarUrl: excluded.accountAvatarUrl,
-										repositorySelection: excluded.repositorySelection,
-										updatedAt: excluded.updatedAt,
-									}),
-								})
-								.returning(),
+										// `status`/`suspended_at` are omitted: a new row takes the schema
+										// default ("active"), and on conflict they are left untouched so a
+										// reconcile can't un-suspend. Status is owned by markInstallationStatus.
+										.values({
+											id,
+											orgId: input.orgId,
+											sourceId,
+											provider: input.provider,
+											externalInstallationId: input.externalInstallationId,
+											accountLogin: input.accountLogin,
+											accountType: input.accountType,
+											externalAccountId: input.externalAccountId,
+											accountAvatarUrl: input.accountAvatarUrl,
+											repositorySelection: input.repositorySelection,
+											installedByUserId: input.installedByUserId,
+											createdAt: now,
+											updatedAt: now,
+										})
+										.onConflictDoUpdate({
+											target: ["provider", "externalInstallationId"],
+											// Ownership columns (org_id, installed_by_user_id, created_at) and
+											// status/suspended_at are immutable on conflict; only mutable
+											// provider metadata is refreshed.
+											set: (_, excluded) => ({
+												accountLogin: excluded.accountLogin,
+												accountType: excluded.accountType,
+												externalAccountId: excluded.externalAccountId,
+												accountAvatarUrl: excluded.accountAvatarUrl,
+												repositorySelection: excluded.repositorySelection,
+												updatedAt: excluded.updatedAt,
+											}),
+										})
+										.returning(),
 								)
 								.pipe(Effect.map(([row]) => row)),
 					).pipe(Effect.map((row) => [row])),
@@ -416,7 +416,10 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 								const outcome: PollOutcome =
 									status === "active"
 										? yield* installationOutcome(db, installationId)
-										: { _tag: "Disconnected", reason: `The GitHub installation is ${status}` }
+										: {
+												_tag: "Disconnected",
+												reason: `The GitHub installation is ${status}`,
+											}
 								yield* reportPoll(db, row.sourceId, outcome, now)
 							}),
 						),

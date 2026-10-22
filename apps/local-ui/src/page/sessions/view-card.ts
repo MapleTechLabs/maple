@@ -23,7 +23,11 @@ const stat = <M>(h: HtmlBuilder<M>, name: IconName, value: number, title: string
 
 const playGlyph = <M>(h: HtmlBuilder<M>): Html =>
 	h.svg(
-		[h.Attribute("viewBox", "0 0 24 24"), h.Attribute("class", "size-3.5 translate-x-px fill-current"), h.Attribute("aria-hidden", "true")],
+		[
+			h.Attribute("viewBox", "0 0 24 24"),
+			h.Attribute("class", "size-3.5 translate-x-px fill-current"),
+			h.Attribute("aria-hidden", "true"),
+		],
 		[h.path([h.Attribute("d", "M8 5v14l11-7z")])],
 	)
 
@@ -35,10 +39,18 @@ const identity = <M>(h: HtmlBuilder<M>, session: SessionRow, label: string, isAc
 				[h.Class("flex items-center gap-2")],
 				[
 					h.span([h.Class("max-w-[16rem] truncate text-sm font-medium")], [label]),
-					statusDot(h, { tone: isActive ? "ok" : "neutral", attributes: [h.Title(isActive ? "active" : "ended")] }),
+					statusDot(h, {
+						tone: isActive ? "ok" : "neutral",
+						attributes: [h.Title(isActive ? "active" : "ended")],
+					}),
 					h.span(
 						[h.Class("font-mono text-xs text-muted-foreground")],
-						[shortId(session.sessionId, "session", { length: 8 }), " ·", " ", formatSessionDuration(localSessionDurationMs(session))],
+						[
+							shortId(session.sessionId, "session", { length: 8 }),
+							" ·",
+							" ",
+							formatSessionDuration(localSessionDurationMs(session)),
+						],
 					),
 				],
 			),
@@ -55,10 +67,15 @@ const identity = <M>(h: HtmlBuilder<M>, session: SessionRow, label: string, isAc
 					h.span(
 						[h.Class("hidden items-center gap-1.5 sm:flex")],
 						[
-							icon(h, isMobileDevice(session.deviceType) ? "MobileIcon" : "ComputerIcon", { className: "size-3.5 shrink-0 opacity-60" }),
+							icon(h, isMobileDevice(session.deviceType) ? "MobileIcon" : "ComputerIcon", {
+								className: "size-3.5 shrink-0 opacity-60",
+							}),
 							h.span(
 								[h.Class("truncate")],
-								[session.browserName || "Unknown", ...(session.osName ? [` · ${session.osName}`] : [])],
+								[
+									session.browserName || "Unknown",
+									...(session.osName ? [` · ${session.osName}`] : []),
+								],
 							),
 						],
 					),
@@ -84,16 +101,29 @@ const counts = <M>(h: HtmlBuilder<M>, session: SessionRow): Html =>
 				: []),
 			...(session.errorCount > 0
 				? [
-						badge(h, { pill: true, className: "bg-severity-error/10 tabular-nums text-severity-error" }, [
-							icon(h, "CircleWarningIcon", { className: "size-3" }),
-							String(session.errorCount),
-						]),
+						badge(
+							h,
+							{
+								pill: true,
+								className: "bg-severity-error/10 tabular-nums text-severity-error",
+							},
+							[
+								icon(h, "CircleWarningIcon", { className: "size-3" }),
+								String(session.errorCount),
+							],
+						),
 					]
 				: []),
 		],
 	)
 
-export const sessionCard = <M>(h: HtmlBuilder<M>, session: SessionRow, href: string, nowMs: number, timeFormat: TimeFormat): Html => {
+export const sessionCard = <M>(
+	h: HtmlBuilder<M>,
+	session: SessionRow,
+	href: string,
+	nowMs: number,
+	timeFormat: TimeFormat,
+): Html => {
 	const label = session.userName || session.userEmail || session.userId || "Anonymous"
 	const isActive = isLocalSessionLive(session, nowMs)
 	return h.a(
@@ -119,13 +149,24 @@ export const sessionCard = <M>(h: HtmlBuilder<M>, session: SessionRow, href: str
 				[
 					h.span(
 						[
-							h.Class("inline-flex items-center gap-1.5 whitespace-nowrap text-sm text-muted-foreground"),
-							h.Title(`${formatDateTime(timeFormat, session.startTime)} (${formatUtcTitle(session.startTime)})`),
+							h.Class(
+								"inline-flex items-center gap-1.5 whitespace-nowrap text-sm text-muted-foreground",
+							),
+							h.Title(
+								`${formatDateTime(timeFormat, session.startTime)} (${formatUtcTitle(session.startTime)})`,
+							),
 						],
-						[icon(h, "ClockIcon", { className: "size-3.5 opacity-60" }), formatRelativeFrom(DateTime.toEpochMillis(session.startTime), nowMs)],
+						[
+							icon(h, "ClockIcon", { className: "size-3.5 opacity-60" }),
+							formatRelativeFrom(DateTime.toEpochMillis(session.startTime), nowMs),
+						],
 					),
 					h.span(
-						[h.Class("grid size-7 place-items-center rounded-full bg-primary/10 text-primary opacity-0 transition-opacity group-hover:opacity-100")],
+						[
+							h.Class(
+								"grid size-7 place-items-center rounded-full bg-primary/10 text-primary opacity-0 transition-opacity group-hover:opacity-100",
+							),
+						],
 						[playGlyph(h)],
 					),
 				],

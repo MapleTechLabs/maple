@@ -1,7 +1,4 @@
-import {
-	transformRows as transformRowsWith,
-	type TransformedPoint,
-} from "../components/infra/chart-units"
+import { transformRows as transformRowsWith, type TransformedPoint } from "../components/infra/chart-units"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 
 // What `InfraMetricChart`'s callers read besides `chart-units`: the long-form pivot, colours and

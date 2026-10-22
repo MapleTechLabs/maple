@@ -44,7 +44,14 @@ const mounted = () => [
 const resolved = (model: Model, at = window) =>
 	pageUpdate(
 		model,
-		Message.GotFrameMessage({ message: Frame.Message.CompletedResolveWindow({ window: at, nowMs: NOW, locale: "en-US", mode: "Load" }) }),
+		Message.GotFrameMessage({
+			message: Frame.Message.CompletedResolveWindow({
+				window: at,
+				nowMs: NOW,
+				locale: "en-US",
+				mode: "Load",
+			}),
+		}),
 	)
 
 describe("host detail", () => {
@@ -73,7 +80,10 @@ describe("host detail", () => {
 		const windowed = resolved(init(route, context).model).model
 		const loaded = pageUpdate(
 			windowed,
-			Message.CompletedFetchSummary({ key: windowed.summary.key ?? "", result: Result.succeed(summary) }),
+			Message.CompletedFetchSummary({
+				key: windowed.summary.key ?? "",
+				result: Result.succeed(summary),
+			}),
 		).model
 		scene(
 			{ update: pageUpdate, view },
@@ -90,7 +100,12 @@ describe("host detail", () => {
 			windowed,
 			Message.CompletedFetchSummary({ key: windowed.summary.key ?? "", result: Result.succeed(null) }),
 		).model
-		scene({ update: pageUpdate, view }, given(empty), ...mounted(), expectView(text("Show last 7 days")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(empty),
+			...mounted(),
+			expectView(text("Show last 7 days")).toExist(),
+		)
 		expect(pageUpdate(empty, Message.ClickedWidenRange()).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
 				url: "/infra/hosts/ip-10-0-12-84?timePreset=7d",

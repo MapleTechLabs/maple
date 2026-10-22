@@ -24,7 +24,11 @@ const document = Schema.decodeUnknownSync(DashboardDocument)({
 		{
 			id: "errors",
 			visualization: "stat",
-			dataSource: { kind: "route", endpoint: "errors_summary", transform: { reduceToValue: { field: "totalErrors", aggregate: "first" } } },
+			dataSource: {
+				kind: "route",
+				endpoint: "errors_summary",
+				transform: { reduceToValue: { field: "totalErrors", aggregate: "first" } },
+			},
 			display: { title: "Errors", unit: "number" },
 			layout: { x: 0, y: 0, w: 3, h: 2 },
 		},
@@ -45,11 +49,15 @@ describe("a widget's own time range", () => {
 	test("Custom seeds the board's window, then a picked preset makes it a moving window", () => {
 		expect(custom().state?.timeRange?.type).toBe("absolute")
 		const picked = run(custom(), [
-			Message.GotRangePickerMessage({ message: TimeRangePicker.Message.ClickedPreset({ value: "1d" }) }),
+			Message.GotRangePickerMessage({
+				message: TimeRangePicker.Message.ClickedPreset({ value: "1d" }),
+			}),
 		])
 		expect(picked.state?.timeRange).toEqual({ type: "relative", value: "1d" })
 		const widget = widgetOf(picked)
-		expect(widget !== null && picked.state !== null && editedWidget(widget, picked.state, null).timeRange).toEqual({
+		expect(
+			widget !== null && picked.state !== null && editedWidget(widget, picked.state, null).timeRange,
+		).toEqual({
 			type: "relative",
 			value: "1d",
 		})

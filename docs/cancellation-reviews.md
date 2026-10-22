@@ -36,14 +36,14 @@ not retried; a scheduled cancellation is tried once more when the plan expires.
 Two 30-day windows ending at the cancellation, `recent` and `prior`. "Last telemetry" looks back
 a year, so an org that switched off months ago is not read as one that never started:
 
-| Section  | Source                                                                    |
-| -------- | ------------------------------------------------------------------------- |
-| plan     | the webhook payload                                                       |
-| org      | Clerk (name, age, members), signup contact, support channel               |
-| ingest   | billable volume per day (`DailySpendService`)                             |
-| visits   | the org's page views in the app (`product_events` under Maple's own org)  |
-| adoption | counts of dashboards, alert rules, integrations                           |
-| billing  | Autumn: the two latest invoices, features past their included allowance   |
+| Section  | Source                                                                   |
+| -------- | ------------------------------------------------------------------------ |
+| plan     | the webhook payload                                                      |
+| org      | Clerk (name, age, members), signup contact, support channel              |
+| ingest   | billable volume per day (`DailySpendService`)                            |
+| visits   | the org's page views in the app (`product_events` under Maple's own org) |
+| adoption | counts of dashboards, alert rules, integrations                          |
+| billing  | Autumn: the two latest invoices, features past their included allowance  |
 
 A section that cannot be read is `null` and named in the report. Only the region lookup and the
 Autumn customer read are required.

@@ -41,7 +41,8 @@ export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<N
 	navGroups({
 		releases:
 			!isClerkAuthEnabled ||
-			(clerk !== null && Option.exists(clerk.maybeOrganization, (organization) => organization.flags.releases)),
+			(clerk !== null &&
+				Option.exists(clerk.maybeOrganization, (organization) => organization.flags.releases)),
 	})
 
 /** The last-hour probe's answer; `null` while it is in flight or after it failed. */

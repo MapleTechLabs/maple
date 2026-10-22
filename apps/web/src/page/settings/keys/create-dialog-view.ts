@@ -25,10 +25,20 @@ import { secretReveal } from "./secret-reveal"
 
 type H = HtmlBuilder<Message>
 
-const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
+const IDLE: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
 
 const ids = (name: string, hasDescription = false): FieldIds => {
-	const base = { control: `api-key-${name}`, label: `api-key-${name}-label`, error: `api-key-${name}-error` }
+	const base = {
+		control: `api-key-${name}`,
+		label: `api-key-${name}-label`,
+		error: `api-key-${name}-error`,
+	}
 	return hasDescription ? { ...base, description: `api-key-${name}-description` } : base
 }
 
@@ -78,18 +88,27 @@ const expirationField = (h: H, model: Model): Html => {
 			className: "w-full",
 			// The accessible name matches the field label.
 			ariaLabel: "Expiration",
-			renderValue: (value) => [EXPIRATION_OPTIONS.find((option) => option.value === value)?.label ?? value],
-			toView: (parts) => field(h, { state }, [fieldLabel(h, { ids: fieldIds, state }, "Expiration"), ...parts]),
+			renderValue: (value) => [
+				EXPIRATION_OPTIONS.find((option) => option.value === value)?.label ?? value,
+			],
+			toView: (parts) =>
+				field(h, { state }, [fieldLabel(h, { ids: fieldIds, state }, "Expiration"), ...parts]),
 		},
 	})
 }
 
 const scopeRows = (h: H, model: Model): ReadonlyArray<Html> => {
 	const needle = model.scopeFilter.trim().toLowerCase()
-	const visible = SCOPE_FAMILIES.filter((family) => needle.length === 0 || family.label.toLowerCase().includes(needle))
+	const visible = SCOPE_FAMILIES.filter(
+		(family) => needle.length === 0 || family.label.toLowerCase().includes(needle),
+	)
 	return [
 		...(visible.length === 0
-			? [emptyMessage(h, { className: "py-2 text-left" }, [`No resource family matches "${model.scopeFilter.trim()}".`])]
+			? [
+					emptyMessage(h, { className: "py-2 text-left" }, [
+						`No resource family matches "${model.scopeFilter.trim()}".`,
+					]),
+				]
 			: []),
 		...visible.map((family) =>
 			h.div(
@@ -132,14 +151,38 @@ const accessField = (h: H, model: Model): Html => {
 						h.div(
 							[h.Class("flex flex-wrap items-center gap-2")],
 							[
-								button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedAllScopes({ level: "read" }))] }, ["All read"]),
-								button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedAllScopes({ level: "write" }))] }, ["All write"]),
 								button(
 									h,
-									{ variant: "ghost", size: "sm", isDisabled: count === 0, attributes: [h.OnClick(Message.ClickedClearScopes())] },
+									{
+										variant: "outline",
+										size: "sm",
+										attributes: [h.OnClick(Message.ClickedAllScopes({ level: "read" }))],
+									},
+									["All read"],
+								),
+								button(
+									h,
+									{
+										variant: "outline",
+										size: "sm",
+										attributes: [h.OnClick(Message.ClickedAllScopes({ level: "write" }))],
+									},
+									["All write"],
+								),
+								button(
+									h,
+									{
+										variant: "ghost",
+										size: "sm",
+										isDisabled: count === 0,
+										attributes: [h.OnClick(Message.ClickedClearScopes())],
+									},
 									["Clear"],
 								),
-								h.span([h.Class("text-muted-foreground text-xs")], [String(count), " of ", String(SCOPE_FAMILIES.length), " selected"]),
+								h.span(
+									[h.Class("text-muted-foreground text-xs")],
+									[String(count), " of ", String(SCOPE_FAMILIES.length), " selected"],
+								),
 							],
 						),
 						searchInput(h, {
@@ -150,7 +193,11 @@ const accessField = (h: H, model: Model): Html => {
 							placeholder: "Filter resource families",
 						}),
 						...scopeRows(h, model),
-						fieldDescription(h, { ids: fieldIds, state: IDLE }, "Write includes read. Scopes are fixed at creation; roll the key to change access."),
+						fieldDescription(
+							h,
+							{ ids: fieldIds, state: IDLE },
+							"Write includes read. Scopes are fixed at creation; roll the key to change access.",
+						),
 					],
 				)
 			: fieldDescription(h, { ids: fieldIds, state: IDLE }, "Full access to the organization's API."),
@@ -187,7 +234,11 @@ const formContent = (h: H, model: Model): ReadonlyArray<Html> => {
 				}),
 				textField(h, {
 					name: "description",
-					label: ["Description", " ", h.span([h.Class("text-muted-foreground font-normal")], ["(optional)"])],
+					label: [
+						"Description",
+						" ",
+						h.span([h.Class("text-muted-foreground font-normal")], ["(optional)"]),
+					],
 					placeholder: "What is this key used for?",
 					model: model.description,
 					toMessage: (message) => Message.GotDescriptionMessage({ message }),
@@ -198,7 +249,9 @@ const formContent = (h: H, model: Model): ReadonlyArray<Html> => {
 			"space-y-4",
 		),
 		DialogView.dialogFooter(h, "dialog", [
-			...(reason === null ? [] : [h.span([h.Class("text-muted-foreground mr-auto text-xs")], [reason])]),
+			...(reason === null
+				? []
+				: [h.span([h.Class("text-muted-foreground mr-auto text-xs")], [reason])]),
 			button(h, { variant: "outline", attributes: [h.OnClick(Message.ClickedCancel())] }, ["Cancel"]),
 			button(
 				h,
@@ -218,8 +271,18 @@ const createdContent = (h: H, model: Model): ReadonlyArray<Html> => {
 	if (created === null) return []
 	return [
 		DialogView.dialogHeader(h, "dialog", [
-			DialogView.dialogTitle(h, "dialog", model.dialog.id, model.kind === "mcp" ? "MCP key created" : "API key created"),
-			DialogView.dialogDescription(h, "dialog", model.dialog.id, "Copy your API key now. You won't be able to see it again."),
+			DialogView.dialogTitle(
+				h,
+				"dialog",
+				model.dialog.id,
+				model.kind === "mcp" ? "MCP key created" : "API key created",
+			),
+			DialogView.dialogDescription(
+				h,
+				"dialog",
+				model.dialog.id,
+				"Copy your API key now. You won't be able to see it again.",
+			),
 		]),
 		DialogView.dialogPanel(
 			h,
@@ -230,8 +293,13 @@ const createdContent = (h: H, model: Model): ReadonlyArray<Html> => {
 					[h.Class("flex flex-wrap items-center gap-1.5")],
 					[
 						h.span([h.Class("text-foreground text-sm font-medium")], [created.name]),
-						inlineCode(h, { variant: "plain", className: "text-2xs tracking-tight" }, [created.key_prefix, "…"]),
-						...(created.scopes ?? []).map((scope) => badge(h, { variant: "outline", size: "sm", mono: true }, [scope])),
+						inlineCode(h, { variant: "plain", className: "text-2xs tracking-tight" }, [
+							created.key_prefix,
+							"…",
+						]),
+						...(created.scopes ?? []).map((scope) =>
+							badge(h, { variant: "outline", size: "sm", mono: true }, [scope]),
+						),
 					],
 				),
 				secretReveal(h, {

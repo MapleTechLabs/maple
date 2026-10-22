@@ -39,7 +39,14 @@ const title = (h: H, trace: TraceData | undefined): ReadonlyArray<Html> => {
 	const root = trace === undefined ? undefined : rootSpanOf(trace)
 	if (root === undefined) return []
 	return httpInfoOf(root) !== null && httpInfoOf(root) !== undefined
-		? [httpSpanLabel(h, { spanName: root.spanName, spanAttributes: root.spanAttributes, spanKind: root.spanKind, className: "min-w-0 gap-3" })]
+		? [
+				httpSpanLabel(h, {
+					spanName: root.spanName,
+					spanAttributes: root.spanAttributes,
+					spanKind: root.spanKind,
+					className: "min-w-0 gap-3",
+				}),
+			]
 		: [h.span([h.Class("block truncate"), h.Title(root.spanName)], [root.spanName])]
 }
 
@@ -66,7 +73,11 @@ const tabPanel = (h: H, model: Model, value: string): ReadonlyArray<Html> | unde
 			}),
 		]
 	if (value === "flow" && model.flow !== null)
-		return [traceFlowView(h, model.flow.graph, model.flow.model, (message) => Message.GotFlowMessage({ message }))]
+		return [
+			traceFlowView(h, model.flow.graph, model.flow.model, (message) =>
+				Message.GotFlowMessage({ message }),
+			),
+		]
 	return undefined
 }
 
@@ -83,7 +94,12 @@ const traceViewTabs = (h: H, model: Model): Html =>
 			listClassName: "shrink-0",
 			panelClassName: "flex-1 min-h-0",
 			tabContent: (value: string, label: string) => [
-				icon(h, TAB_ICONS.get(value === "waterfall" || value === "flow" ? value : "timeline") ?? "FireIcon", { size: 14 }),
+				icon(
+					h,
+					TAB_ICONS.get(value === "waterfall" || value === "flow" ? value : "timeline") ??
+						"FireIcon",
+					{ size: 14 },
+				),
 				label,
 			],
 			panel: (value: string) => tabPanel(h, model, value),
@@ -135,7 +151,8 @@ const hoverTooltip = (h: H, model: Model, trace: TraceData | undefined): Readonl
 const body = (h: H, model: Model, timeFormat: TimeFormat): Html => {
 	if (isPending(model.trace)) return traceDetailLoading(h)
 	const failure = failureWithoutData(model.trace)
-	if (Option.isSome(failure)) return errorState(h, { label: "trace", failure: failure.value, onRetry: Message.ClickedRefresh() })
+	if (Option.isSome(failure))
+		return errorState(h, { label: "trace", failure: failure.value, onRetry: Message.ClickedRefresh() })
 	return Option.match(loadedTrace(model), {
 		onNone: () => traceNotFound(h, model.traceId),
 		onSome: (trace) => loadedBody(h, model, trace, timeFormat),
@@ -148,16 +165,26 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		[
 			h.Class("flex h-full flex-col"),
 			h.OnMount(TrackPointer()),
-			h.OnKeyDownPreventDefault((key) => (key === "Escape" && model.panel !== null ? Option.some(Message.PressedEscape()) : Option.none())),
+			h.OnKeyDownPreventDefault((key) =>
+				key === "Escape" && model.panel !== null
+					? Option.some(Message.PressedEscape())
+					: Option.none(),
+			),
 		],
 		[
 			h.div(
 				[h.Class("flex shrink-0 items-center gap-3 border-b px-4 py-2")],
 				[
-					button(h, { variant: "ghost", size: "sm", className: "shrink-0 gap-1.5", attributes: [h.OnClick(Message.ClickedBack())] }, [
-						icon(h, "ArrowLeftIcon"),
-						inputs.context.canGoBack ? "Back" : "Traces",
-					]),
+					button(
+						h,
+						{
+							variant: "ghost",
+							size: "sm",
+							className: "shrink-0 gap-1.5",
+							attributes: [h.OnClick(Message.ClickedBack())],
+						},
+						[icon(h, "ArrowLeftIcon"), inputs.context.canGoBack ? "Back" : "Traces"],
+					),
 					h.div([h.Class("min-w-0 flex-1 text-sm font-semibold")], title(h, trace)),
 					refreshButton(h, {
 						isSpinning: model.isRefreshing,
@@ -172,4 +199,3 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		],
 	)
 })
-

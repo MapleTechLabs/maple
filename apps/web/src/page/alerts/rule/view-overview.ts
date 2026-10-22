@@ -3,7 +3,12 @@ import { formatSql } from "../../../lib/sql-format"
 import { tokenizeSql } from "../../../lib/sql-highlight"
 import { cn } from "@maple/ui/lib/utils"
 import { SIGNAL_SOURCE_LABEL } from "@maple/web-data/alerts/chart-series"
-import { comparatorLabels, formatSignalValue, ruleToFormState, signalLabels } from "@maple/web-data/alerts/form-utils"
+import {
+	comparatorLabels,
+	formatSignalValue,
+	ruleToFormState,
+	signalLabels,
+} from "@maple/web-data/alerts/form-utils"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { LoadFailure } from "../../../data/load-failure"
@@ -75,133 +80,199 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 				cardPanel(
 					h,
 					[
-						keyValueList(h, { className: "grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2" }, [
-							...(rule.notes
-								? [
-										h.div(
-											[h.Class("flex flex-col gap-1 sm:col-span-2")],
-											[
-												h.dt([h.Class("text-muted-foreground")], ["Notes"]),
-												h.dd([h.Class("whitespace-pre-wrap text-foreground")], [rule.notes]),
-											],
-										),
-									]
-								: []),
-							configRow(h, "Signal", [h.span([h.Class("font-medium")], [signalLabels[rule.signalType]])]),
-							configRow(h, "Scope", [
-								rule.serviceNames?.length > 0
-									? badgeList(h, rule.serviceNames, "text-xs")
-									: h.div(
-											[h.Class("flex flex-wrap gap-1 justify-end")],
-											[
-												h.span(
-													[h.Class("font-mono font-medium")],
-													[
-														rule.groupBy && rule.groupBy.length > 0
-															? `all (per ${rule.groupBy.join(" · ")})`
-															: "all",
-													],
+						keyValueList(
+							h,
+							{ className: "grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2" },
+							[
+								...(rule.notes
+									? [
+											h.div(
+												[h.Class("flex flex-col gap-1 sm:col-span-2")],
+												[
+													h.dt([h.Class("text-muted-foreground")], ["Notes"]),
+													h.dd(
+														[h.Class("whitespace-pre-wrap text-foreground")],
+														[rule.notes],
+													),
+												],
+											),
+										]
+									: []),
+								configRow(h, "Signal", [
+									h.span([h.Class("font-medium")], [signalLabels[rule.signalType]]),
+								]),
+								configRow(h, "Scope", [
+									rule.serviceNames?.length > 0
+										? badgeList(h, rule.serviceNames, "text-xs")
+										: h.div(
+												[h.Class("flex flex-wrap gap-1 justify-end")],
+												[
+													h.span(
+														[h.Class("font-mono font-medium")],
+														[
+															rule.groupBy && rule.groupBy.length > 0
+																? `all (per ${rule.groupBy.join(" · ")})`
+																: "all",
+														],
+													),
+												],
+											),
+								]),
+								configRow(h, "Environments", [
+									rule.environments?.length > 0
+										? badgeList(h, rule.environments, "text-xs")
+										: h.div(
+												[h.Class("flex flex-wrap gap-1 justify-end")],
+												[h.span([h.Class("font-mono font-medium")], ["all"])],
+											),
+								]),
+								...(rule.excludeServiceNames?.length > 0
+									? [
+											configRow(h, "Excluded", [
+												badgeList(
+													h,
+													rule.excludeServiceNames,
+													"text-xs line-through",
 												),
+											]),
+										]
+									: []),
+								...rule.thresholds.map((tier) =>
+									configRow(h, tier.severity === "critical" ? "Critical" : "Warning", [
+										h.span(
+											[h.Class("font-mono font-medium")],
+											[
+												tierCondition(rule, tier),
+												" / ",
+												String(rule.windowMinutes),
+												"min",
 											],
 										),
-							]),
-							configRow(h, "Environments", [
-								rule.environments?.length > 0
-									? badgeList(h, rule.environments, "text-xs")
-									: h.div(
-											[h.Class("flex flex-wrap gap-1 justify-end")],
-											[h.span([h.Class("font-mono font-medium")], ["all"])],
-										),
-							]),
-							...(rule.excludeServiceNames?.length > 0
-								? [configRow(h, "Excluded", [badgeList(h, rule.excludeServiceNames, "text-xs line-through")])]
-								: []),
-							...rule.thresholds.map((tier) =>
-								configRow(h, tier.severity === "critical" ? "Critical" : "Warning", [
+									]),
+								),
+								configRow(h, "Breaches to fire", [
 									h.span(
-										[h.Class("font-mono font-medium")],
-										[tierCondition(rule, tier), " / ", String(rule.windowMinutes), "min"],
+										[h.Class("font-medium tabular-nums")],
+										[
+											rule.breachesOutOf === null
+												? `${rule.consecutiveBreachesRequired} in a row`
+												: `${rule.consecutiveBreachesRequired} of last ${rule.breachesOutOf}`,
+										],
 									),
 								]),
-							),
-							configRow(h, "Breaches to fire", [
-								h.span(
-									[h.Class("font-medium tabular-nums")],
-									[
-										rule.breachesOutOf === null
-											? `${rule.consecutiveBreachesRequired} in a row`
-											: `${rule.consecutiveBreachesRequired} of last ${rule.breachesOutOf}`,
-									],
-								),
-							]),
-							configRow(h, "Healthy to resolve", [
-								h.span([h.Class("font-medium tabular-nums")], [String(rule.consecutiveHealthyRequired)]),
-							]),
-							configRow(h, "Min samples", [
-								h.span([h.Class("font-medium tabular-nums")], [String(rule.minimumSampleCount)]),
-							]),
-							configRow(h, "Renotify interval", [
-								h.span([h.Class("font-medium")], [String(rule.renotifyIntervalMinutes), "min"]),
-							]),
-							...(rule.signalType === "builder_query" && rule.queryBuilderDraft
-								? [
-										configRow(h, "Data source", [
-											h.span([h.Class("font-mono font-medium capitalize")], [rule.queryBuilderDraft.dataSource ?? ""]),
-										]),
-										configRow(h, "Aggregation", [
-											h.span([h.Class("font-mono font-medium")], [rule.queryBuilderDraft.aggregation ?? ""]),
-										]),
-										...(rule.queryBuilderDraft.whereClause
-											? [
-													configRow(
-														h,
-														"Where",
-														[h.span([h.Class("font-mono font-medium text-right")], [rule.queryBuilderDraft.whereClause])],
-														true,
-													),
-												]
-											: []),
-									]
-								: []),
-							...(rule.signalType === "raw_query" && rule.rawQuerySql
-								? [
-										h.div(
-											[h.Class("flex flex-col gap-1.5 sm:col-span-2")],
-											[
-												h.dt([h.Class("text-muted-foreground")], ["Raw SQL"]),
-												h.dd(
-													[],
-													[
-														h.pre(
-															[
-																h.Class(
-																	"overflow-x-auto whitespace-pre rounded-md border bg-muted/30 px-3 py-2.5 font-mono text-xs leading-relaxed",
-																),
-															],
-															[
-																h.code(
-																	[],
-																	tokenizeSql(formatSql(rule.rawQuerySql)).map((token) =>
-																		h.span([h.Key(String(token.start)), ...(token.className === undefined ? [] : [h.Class(token.className)])], [token.text]),
-																	),
-																),
-															],
-														),
-													],
+								configRow(h, "Healthy to resolve", [
+									h.span(
+										[h.Class("font-medium tabular-nums")],
+										[String(rule.consecutiveHealthyRequired)],
+									),
+								]),
+								configRow(h, "Min samples", [
+									h.span(
+										[h.Class("font-medium tabular-nums")],
+										[String(rule.minimumSampleCount)],
+									),
+								]),
+								configRow(h, "Renotify interval", [
+									h.span(
+										[h.Class("font-medium")],
+										[String(rule.renotifyIntervalMinutes), "min"],
+									),
+								]),
+								...(rule.signalType === "builder_query" && rule.queryBuilderDraft
+									? [
+											configRow(h, "Data source", [
+												h.span(
+													[h.Class("font-mono font-medium capitalize")],
+													[rule.queryBuilderDraft.dataSource ?? ""],
 												),
-											],
-										),
-									]
-								: []),
-							configRow(h, "Destinations", [
-								h.span([h.Class("font-medium")], [String(rule.destinationIds.length), " configured"]),
-							]),
-							configRow(h, "Status", [
-								alertStatusBadge(h, rule.enabled ? "ok" : "disabled", {
-									label: rule.enabled ? "Enabled" : "Disabled",
-								}),
-							]),
-						]),
+											]),
+											configRow(h, "Aggregation", [
+												h.span(
+													[h.Class("font-mono font-medium")],
+													[rule.queryBuilderDraft.aggregation ?? ""],
+												),
+											]),
+											...(rule.queryBuilderDraft.whereClause
+												? [
+														configRow(
+															h,
+															"Where",
+															[
+																h.span(
+																	[
+																		h.Class(
+																			"font-mono font-medium text-right",
+																		),
+																	],
+																	[rule.queryBuilderDraft.whereClause],
+																),
+															],
+															true,
+														),
+													]
+												: []),
+										]
+									: []),
+								...(rule.signalType === "raw_query" && rule.rawQuerySql
+									? [
+											h.div(
+												[h.Class("flex flex-col gap-1.5 sm:col-span-2")],
+												[
+													h.dt([h.Class("text-muted-foreground")], ["Raw SQL"]),
+													h.dd(
+														[],
+														[
+															h.pre(
+																[
+																	h.Class(
+																		"overflow-x-auto whitespace-pre rounded-md border bg-muted/30 px-3 py-2.5 font-mono text-xs leading-relaxed",
+																	),
+																],
+																[
+																	h.code(
+																		[],
+																		tokenizeSql(
+																			formatSql(rule.rawQuerySql),
+																		).map((token) =>
+																			h.span(
+																				[
+																					h.Key(
+																						String(token.start),
+																					),
+																					...(token.className ===
+																					undefined
+																						? []
+																						: [
+																								h.Class(
+																									token.className,
+																								),
+																							]),
+																				],
+																				[token.text],
+																			),
+																		),
+																	),
+																],
+															),
+														],
+													),
+												],
+											),
+										]
+									: []),
+								configRow(h, "Destinations", [
+									h.span(
+										[h.Class("font-medium")],
+										[String(rule.destinationIds.length), " configured"],
+									),
+								]),
+								configRow(h, "Status", [
+									alertStatusBadge(h, rule.enabled ? "ok" : "disabled", {
+										label: rule.enabled ? "Enabled" : "Disabled",
+									}),
+								]),
+							],
+						),
 					],
 					"p-5",
 				),
@@ -227,8 +298,14 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 	const checks = page?.checks ?? []
 	const chartChecks = chartChecksOf(rule, page)
 	const payload = payloadOf(model, rule)
-	const preview = previewStateOf(model.preview, payload._tag === "Some", previewIssue(ruleToFormState(rule)))
-	const isPreviewAvailable = (preview.preview?.series ?? []).some((s) => s.points.some((p) => p.value != null))
+	const preview = previewStateOf(
+		model.preview,
+		payload._tag === "Some",
+		previewIssue(ruleToFormState(rule)),
+	)
+	const isPreviewAvailable = (preview.preview?.series ?? []).some((s) =>
+		s.points.some((p) => p.value != null),
+	)
 	const isChecksAvailable = chartChecks.some((c) => c.observedValue != null)
 	const rangeLabel = rangeLabelOf(model)
 	const railCoverage = `60 buckets · covers all of ${rangeLabel.toLowerCase()}${
@@ -271,8 +348,16 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 							),
 							segmentedSelect(h, {
 								options: [
-									{ value: "preview" as const, label: SIGNAL_SOURCE_LABEL.preview, isDisabled: !isPreviewAvailable },
-									{ value: "checks" as const, label: SIGNAL_SOURCE_LABEL.checks, isDisabled: !isChecksAvailable },
+									{
+										value: "preview" as const,
+										label: SIGNAL_SOURCE_LABEL.preview,
+										isDisabled: !isPreviewAvailable,
+									},
+									{
+										value: "checks" as const,
+										label: SIGNAL_SOURCE_LABEL.checks,
+										isDisabled: !isChecksAvailable,
+									},
 								],
 								value: model.signalSource,
 								onChange: (source) => Message.ClickedSignalSource({ source }),
@@ -301,7 +386,9 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 						selectedBucket: model.selectedBucket?.index ?? null,
 						onSelectBucket: (index) => Message.ClickedRailBucket({ index }),
 						isLoading:
-							preview.isLoading || !isChartReady || (rule.signalType === "raw_query" && isChecksLoading),
+							preview.isLoading ||
+							!isChartReady ||
+							(rule.signalType === "raw_query" && isChecksLoading),
 						error: preview.error,
 					}),
 				],
@@ -325,7 +412,13 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 								h,
 								{
 									size: "sm",
-									attributes: [h.OnClick(Message.ClickedOpenInvestigation({ incidentId: overviewIncident.id }))],
+									attributes: [
+										h.OnClick(
+											Message.ClickedOpenInvestigation({
+												incidentId: overviewIncident.id,
+											}),
+										),
+									],
 								},
 								[icon(h, "ChatBubbleSparkleIcon"), "Open investigation"],
 							),
@@ -337,7 +430,11 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 						[h.Class("space-y-4")],
 						[
 							sectionHeading(h, { title: "Checks" }),
-							errorState(h, { failure, title: "Failed to load checks", onRetry: Message.ClickedReload() }),
+							errorState(h, {
+								failure,
+								title: "Failed to load checks",
+								onRetry: Message.ClickedReload(),
+							}),
 						],
 					),
 				onNone: () => checksPanel(h, model, { rule, page, isLoading: isChecksLoading, timeZone }),

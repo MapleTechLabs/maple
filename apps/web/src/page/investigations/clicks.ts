@@ -32,12 +32,17 @@ export const nodeLinkClick = (click: ClickFacts): Readonly<{ href: string; isPla
 }
 
 /** A click listener for a Mount's element, released with it; `capture` runs before the target's handlers. */
-export const clickStream = <M>(element: Element, capture: boolean, onClick: (event: MouseEvent, emit: (message: M) => void) => void) =>
+export const clickStream = <M>(
+	element: Element,
+	capture: boolean,
+	onClick: (event: MouseEvent, emit: (message: M) => void) => void,
+) =>
 	Stream.callback<M>((queue) =>
 		Effect.acquireRelease(
 			Effect.sync(() => {
 				const listener = (event: Event) => {
-					if (event instanceof MouseEvent) onClick(event, (message) => Queue.offerUnsafe(queue, message))
+					if (event instanceof MouseEvent)
+						onClick(event, (message) => Queue.offerUnsafe(queue, message))
 				}
 				element.addEventListener("click", listener, { capture })
 				return listener

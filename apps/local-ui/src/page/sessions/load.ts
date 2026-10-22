@@ -16,7 +16,10 @@ export const boundsOf = (model: Model, context: PageContext): Option.Option<Time
 
 /** The cache key: `["local", name, filters, boundsKey(bounds)]`. */
 const keyFor = (name: string, context: PageContext, bounds: TimeBounds): string =>
-	keyOf(name, { filters: filtersOf(queryOf(context.location)), bounds: `${bounds.startTime}/${bounds.endTime}` })
+	keyOf(name, {
+		filters: filtersOf(queryOf(context.location)),
+		bounds: `${bounds.startTime}/${bounds.endTime}`,
+	})
 
 /** Requests what the current filters and window need; `force` refetches held keys (`invalidateQueries`). */
 export const load = (
@@ -31,7 +34,8 @@ export const load = (
 			const sessionsKey = keyFor("sessions", context, bounds)
 			const pageCount = Option.match(AsyncData.getData(model.sessions.data), {
 				onNone: () => 1,
-				onSome: (data) => (force && model.sessions.key === sessionsKey ? Math.max(1, data.pages.length) : 1),
+				onSome: (data) =>
+					force && model.sessions.key === sessionsKey ? Math.max(1, data.pages.length) : 1,
 			})
 			const sessions = request(model.sessions, sessionsKey, force)
 			const facetsKey = keyFor("session-facets", context, bounds)
@@ -45,8 +49,17 @@ export const load = (
 					pageGeneration: Option.isSome(sessions) ? model.pageGeneration + 1 : model.pageGeneration,
 				},
 				commands: Array.getSomes([
-					Option.map(sessions, () => FetchSessions({ key: sessionsKey, ...args, pageCount, readsCache: model.sessions.key !== sessionsKey })),
-					Option.map(facets, () => FetchFacets({ key: facetsKey, ...args, readsCache: model.facets.key !== facetsKey })),
+					Option.map(sessions, () =>
+						FetchSessions({
+							key: sessionsKey,
+							...args,
+							pageCount,
+							readsCache: model.sessions.key !== sessionsKey,
+						}),
+					),
+					Option.map(facets, () =>
+						FetchFacets({ key: facetsKey, ...args, readsCache: model.facets.key !== facetsKey }),
+					),
 				]),
 			}
 		},
@@ -64,7 +77,15 @@ export const fetchAfterCache = (
 		: Option.match(boundsOf(model, context), {
 				onNone: () => [],
 				onSome: (bounds) => {
-					const args = { key: model[which].key ?? "", search: context.location.search, ...bounds, apiBase: context.env.apiBase, readsCache: false }
-					return [which === "sessions" ? FetchSessions({ ...args, pageCount: 1 }) : FetchFacets(args)]
+					const args = {
+						key: model[which].key ?? "",
+						search: context.location.search,
+						...bounds,
+						apiBase: context.env.apiBase,
+						readsCache: false,
+					}
+					return [
+						which === "sessions" ? FetchSessions({ ...args, pageCount: 1 }) : FetchFacets(args),
+					]
 				},
 			})

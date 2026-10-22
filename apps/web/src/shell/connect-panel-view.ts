@@ -23,7 +23,8 @@ type H = HtmlBuilder<Message>
 
 const MCP_ENDPOINT = `${mcpUrl}/mcp`
 
-const toCopy = (field: CopyField) => (message: CopyButton.Message) => Message.GotCopyMessage({ field, message })
+const toCopy = (field: CopyField) => (message: CopyButton.Message) =>
+	Message.GotCopyMessage({ field, message })
 
 /** `ConnectionStatusPill`: amber pulse while waiting, green dot once telemetry is observed. */
 const statusPill = (h: H, model: Model): Html => {
@@ -92,7 +93,10 @@ const credentials = (h: H, model: Model): Html =>
 								value: model.keys.publicKey,
 								copy: model.copies.publicKey,
 								toCopyMessage: toCopy("publicKey"),
-								masked: { isVisible: model.isPublicKeyVisible, onToggle: Message.ClickedRevealPublicKey() },
+								masked: {
+									isVisible: model.isPublicKeyVisible,
+									onToggle: Message.ClickedRevealPublicKey(),
+								},
 							}),
 							copyableField(h, {
 								id: "connect-private-key",
@@ -100,7 +104,10 @@ const credentials = (h: H, model: Model): Html =>
 								value: model.keys.privateKey,
 								copy: model.copies.privateKey,
 								toCopyMessage: toCopy("privateKey"),
-								masked: { isVisible: model.isPrivateKeyVisible, onToggle: Message.ClickedRevealPrivateKey() },
+								masked: {
+									isVisible: model.isPrivateKeyVisible,
+									onToggle: Message.ClickedRevealPrivateKey(),
+								},
 							}),
 						]
 					: [fieldSkeleton(h, "Public key"), fieldSkeleton(h, "Private key")]),
@@ -115,17 +122,26 @@ const mcpCard = (h: H, model: Model): Html =>
 		h.a(
 			[
 				h.Href(settingsHref("mcp")),
-				h.Class("flex items-center gap-3 p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"),
+				h.Class(
+					"flex items-center gap-3 p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring",
+				),
 			],
 			[
 				h.span(
-					[h.Class("flex size-8 shrink-0 items-center justify-center rounded-md border bg-background text-foreground")],
+					[
+						h.Class(
+							"flex size-8 shrink-0 items-center justify-center rounded-md border bg-background text-foreground",
+						),
+					],
 					[icon(h, "ChatBubbleSparkleIcon", { size: 15 })],
 				),
 				h.span(
 					[h.Class("min-w-0 flex-1 space-y-0.5")],
 					[
-						h.span([h.Class("flex items-center text-xs font-medium text-foreground")], ["Connect your own Agent"]),
+						h.span(
+							[h.Class("flex items-center text-xs font-medium text-foreground")],
+							["Connect your own Agent"],
+						),
 						h.span(
 							[h.Class("block text-xs text-muted-foreground")],
 							["Claude Code, Cursor, or any MCP client can query your telemetry."],
@@ -143,7 +159,10 @@ const mcpCard = (h: H, model: Model): Html =>
 			[h.Class("flex items-center gap-2 border-t bg-background/60 py-1.5 pl-3 pr-1.5")],
 			[
 				eyebrow(h, {}, ["MCP"]),
-				h.code([h.Class("min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground")], [MCP_ENDPOINT]),
+				h.code(
+					[h.Class("min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground")],
+					[MCP_ENDPOINT],
+				),
 				CopyButton.view(h, {
 					model: model.copies.mcp,
 					toParentMessage: toCopy("mcp"),
@@ -166,7 +185,10 @@ const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 				[
 					h.div(
 						[h.Class("flex items-start justify-between gap-2")],
-						[PopoverView.popoverTitle(h, POPOVER_ID, "Connect your app", "text-base"), statusPill(h, model)],
+						[
+							PopoverView.popoverTitle(h, POPOVER_ID, "Connect your app", "text-base"),
+							statusPill(h, model),
+						],
 					),
 					PopoverView.popoverDescription(
 						h,
@@ -206,7 +228,9 @@ const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 					h.a(
 						[
 							h.Href(settingsHref("ingestion")),
-							h.Class("inline-flex items-center gap-1 font-medium text-foreground hover:underline"),
+							h.Class(
+								"inline-flex items-center gap-1 font-medium text-foreground hover:underline",
+							),
 						],
 						["Open setup guide", icon(h, "ArrowRightIcon", { size: 12 })],
 					),
@@ -240,7 +264,13 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 					withTrigger(
 						button(
 							h,
-							{ size: "sm", variant: "default", className: "gap-2", slot: "popover-trigger", attributes: trigger },
+							{
+								size: "sm",
+								variant: "default",
+								className: "gap-2",
+								slot: "popover-trigger",
+								attributes: trigger,
+							},
 							[icon(h, "ConnectionIcon"), "Connect"],
 						),
 					),

@@ -58,7 +58,9 @@ const calls = (h: H, selected: Node3D, direction: "Inbound" | "Outbound"): Html 
 							),
 							h.span(
 								[h.Class("pl-3.5 text-muted-foreground")],
-								[`${formatRate(edge.callsPerSecond)} · ${formatLatency(edge.p95LatencyMs)} p95`],
+								[
+									`${formatRate(edge.callsPerSecond)} · ${formatLatency(edge.p95LatencyMs)} p95`,
+								],
 							),
 						],
 					),
@@ -94,7 +96,10 @@ export const inspector = (h: H, selected: Node3D): Html => {
 					),
 					h.div(
 						[h.Class("mb-1 flex items-center gap-2")],
-						[healthDot(h, selected), h.h2([h.Class("min-w-0 break-all text-sm font-semibold")], [selected.label])],
+						[
+							healthDot(h, selected),
+							h.h2([h.Class("min-w-0 break-all text-sm font-semibold")], [selected.label]),
+						],
 					),
 					h.p(
 						[h.Class("text-xs text-muted-foreground")],
@@ -105,15 +110,33 @@ export const inspector = (h: H, selected: Node3D): Html => {
 							h.Class("mt-4 inline-flex items-center gap-1.5 text-xs capitalize"),
 							h.Style({ color: `var(--color-severity-${SEVERITY[status]})` }),
 						],
-						[status, h.span([h.Class("text-muted-foreground")], [`· ${formatErrorRate(selected.errorRate)} errors`])],
+						[
+							status,
+							h.span(
+								[h.Class("text-muted-foreground")],
+								[`· ${formatErrorRate(selected.errorRate)} errors`],
+							),
+						],
 					),
 				],
 			),
 			h.dl(
 				[h.Class("grid grid-cols-2 gap-4 border-b p-4 text-xs")],
 				[
-					h.div([], [h.dt([h.Class("mb-1.5 text-muted-foreground")], ["Throughput"]), h.dd([h.Class("text-base tabular-nums")], [formatRate(selected.throughput)])]),
-					h.div([], [h.dt([h.Class("mb-1.5 text-muted-foreground")], ["p95 latency"]), h.dd([h.Class("text-base tabular-nums")], [formatLatency(selected.p95LatencyMs)])]),
+					h.div(
+						[],
+						[
+							h.dt([h.Class("mb-1.5 text-muted-foreground")], ["Throughput"]),
+							h.dd([h.Class("text-base tabular-nums")], [formatRate(selected.throughput)]),
+						],
+					),
+					h.div(
+						[],
+						[
+							h.dt([h.Class("mb-1.5 text-muted-foreground")], ["p95 latency"]),
+							h.dd([h.Class("text-base tabular-nums")], [formatLatency(selected.p95LatencyMs)]),
+						],
+					),
 				],
 			),
 			calls(h, selected, "Inbound"),

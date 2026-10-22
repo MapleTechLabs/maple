@@ -18,7 +18,11 @@ export type RuleStepOptions = Readonly<{
 }>
 
 /** One numbered step of the rule editor; says "Required" until it is filled in. */
-export const ruleStep = <M>(h: HtmlBuilder<M>, options: RuleStepOptions, children: ReadonlyArray<Html>): Html => {
+export const ruleStep = <M>(
+	h: HtmlBuilder<M>,
+	options: RuleStepOptions,
+	children: ReadonlyArray<Html>,
+): Html => {
 	const headingId = `rule-step-${options.number}`
 	return h.section(
 		[
@@ -38,11 +42,17 @@ export const ruleStep = <M>(h: HtmlBuilder<M>, options: RuleStepOptions, childre
 									h.h2(
 										[
 											h.Id(headingId),
-											h.Class("font-display text-lg font-medium tracking-tight text-foreground"),
+											h.Class(
+												"font-display text-lg font-medium tracking-tight text-foreground",
+											),
 										],
 										[
 											h.span(
-												[h.Class("mr-2.5 font-mono text-sm font-normal text-muted-foreground")],
+												[
+													h.Class(
+														"mr-2.5 font-mono text-sm font-normal text-muted-foreground",
+													),
+												],
 												[String(options.number)],
 											),
 											options.title,

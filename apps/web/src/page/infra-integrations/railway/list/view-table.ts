@@ -82,7 +82,10 @@ const syncNote = (h: H, sync: RailwaySync, clock: Clock): Html => {
 				[
 					"paused",
 					...(sync.lastSyncedAt !== null
-						? [" · last data ", relativeTime(h, { tooltip: "title", value: sync.lastSyncedAt, ...clock })]
+						? [
+								" · last data ",
+								relativeTime(h, { tooltip: "title", value: sync.lastSyncedAt, ...clock }),
+							]
 						: []),
 				],
 			)

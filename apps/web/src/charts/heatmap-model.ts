@@ -40,7 +40,11 @@ export const deriveHeatmapPoints = (rows: ReadonlyArray<Row>): ReadonlyArray<Hea
 	const labelKey = "name" in first ? "name" : "bucket" in first ? "bucket" : null
 	if (labelKey === null || numericKeys.length === 0) return []
 	return rows.flatMap((row) =>
-		numericKeys.map((xKey) => ({ x: xKey, y: String(row[labelKey] ?? ""), value: asFiniteNumber(row[xKey]) })),
+		numericKeys.map((xKey) => ({
+			x: xKey,
+			y: String(row[labelKey] ?? ""),
+			value: asFiniteNumber(row[xKey]),
+		})),
 	)
 }
 

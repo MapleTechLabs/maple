@@ -35,7 +35,12 @@ const resolved = (model: Model, at = window) =>
 	pageUpdate(
 		model,
 		Message.GotFrameMessage({
-			message: Frame.Message.CompletedResolveWindow({ window: at, nowMs: NOW, locale: "en-US", mode: "Load" }),
+			message: Frame.Message.CompletedResolveWindow({
+				window: at,
+				nowMs: NOW,
+				locale: "en-US",
+				mode: "Load",
+			}),
 		}),
 	)
 

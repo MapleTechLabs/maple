@@ -25,7 +25,13 @@ const SPANS = toWire(
 			model: "claude-opus-5",
 			genAi: { inputMessages: userMessages("fix the flaky retry test") },
 		}),
-		toolSpan({ spanId: "tool", parentSpanId: "agent", traceId: "trace-1", startMs: 3_000, durationMs: 500 }),
+		toolSpan({
+			spanId: "tool",
+			parentSpanId: "agent",
+			traceId: "trace-1",
+			startMs: 3_000,
+			durationMs: 500,
+		}),
 	],
 	SESSION,
 )
@@ -53,7 +59,10 @@ describe("agent session span cursor, landing and popover", () => {
 		expect(model.focusedSpanId).toBe("chat")
 		expect(model.scroll).toMatchObject({ align: "center", reveal: true })
 		expect(model.spanDialog.isOpen).toBe(true)
-		const again = pageUpdate(model, Message.ChangedWaterfallWindow({ window: { items: [], totalSize: 0, scrollMargin: 0 } }))
+		const again = pageUpdate(
+			model,
+			Message.ChangedWaterfallWindow({ window: { items: [], totalSize: 0, scrollMargin: 0 } }),
+		)
 		expect(again.model.scroll).toEqual(model.scroll)
 	})
 
@@ -70,9 +79,14 @@ describe("agent session span cursor, landing and popover", () => {
 		expect(first.focusedSpanId).toBe("agent")
 		const second = pageUpdate(first, Message.PressedSpanKey({ key: "Next" })).model
 		expect(second.focusedSpanId).toBe("chat")
-		expect(pageUpdate(second, Message.PressedSpanKey({ key: "Previous" })).model.focusedSpanId).toBe("agent")
+		expect(pageUpdate(second, Message.PressedSpanKey({ key: "Previous" })).model.focusedSpanId).toBe(
+			"agent",
+		)
 		expect(pageUpdate(second, Message.PressedSpanKey({ key: "Open" })).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: `/agent-sessions/${SESSION}?view=trace&span=chat`, isReplace: false }),
+			PageOutMessage.RequestedNavigation({
+				url: `/agent-sessions/${SESSION}?view=trace&span=chat`,
+				isReplace: false,
+			}),
 		)
 	})
 
@@ -80,17 +94,28 @@ describe("agent session span cursor, landing and popover", () => {
 		const { model } = loaded({ view: "trace", span: "chat" })
 		const closed = pageUpdate(model, Message.PressedSpanKey({ key: "Escape" }))
 		expect(closed.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: `/agent-sessions/${SESSION}?view=trace`, isReplace: true }),
+			PageOutMessage.RequestedNavigation({
+				url: `/agent-sessions/${SESSION}?view=trace`,
+				isReplace: true,
+			}),
 		)
 		expect(closed.model.spanDialog.isOpen).toBe(false)
-		expect(pageUpdate(closed.model, Message.PressedSpanKey({ key: "Escape" })).model.focusedSpanId).toBeNull()
+		expect(
+			pageUpdate(closed.model, Message.PressedSpanKey({ key: "Escape" })).model.focusedSpanId,
+		).toBeNull()
 	})
 
 	test("the dialog's own Escape drops ?span= from the URL", () => {
 		const { model } = loaded({ view: "trace", span: "chat" })
-		const step = pageUpdate(model, Message.GotSpanDialogMessage({ message: Dialog.Message.PressedEscape() }))
+		const step = pageUpdate(
+			model,
+			Message.GotSpanDialogMessage({ message: Dialog.Message.PressedEscape() }),
+		)
 		expect(step.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: `/agent-sessions/${SESSION}?view=trace`, isReplace: true }),
+			PageOutMessage.RequestedNavigation({
+				url: `/agent-sessions/${SESSION}?view=trace`,
+				isReplace: true,
+			}),
 		)
 	})
 
@@ -98,9 +123,9 @@ describe("agent session span cursor, landing and popover", () => {
 		const { model } = loaded({ view: "trace", span: "chat" })
 		const details = pageUpdate(model, Message.PickedSpanTab({ tab: "details" }))
 		expect(names(details.commands)).toContain("FetchSpanDetail")
-		expect(names(pageUpdate(details.model, Message.PickedSpanTab({ tab: "details" })).commands)).not.toContain(
-			"FetchSpanDetail",
-		)
+		expect(
+			names(pageUpdate(details.model, Message.PickedSpanTab({ tab: "details" })).commands),
+		).not.toContain("FetchSpanDetail")
 		expect(names(pageUpdate(details.model, Message.PickedSpanTab({ tab: "logs" })).commands)).toContain(
 			"FetchSpanLogs",
 		)
@@ -110,9 +135,16 @@ describe("agent session span cursor, landing and popover", () => {
 		const { model } = loaded({ span: "tool" })
 		const crossed = pageUpdate(model, Message.ClickedOpenInTraceView())
 		expect(crossed.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: `/agent-sessions/${SESSION}?view=trace`, isReplace: false }),
+			PageOutMessage.RequestedNavigation({
+				url: `/agent-sessions/${SESSION}?view=trace`,
+				isReplace: false,
+			}),
 		)
-		const arrived = routeChanged(crossed.model, { sessionId: SESSION, search: { view: "trace" } }, context).model
+		const arrived = routeChanged(
+			crossed.model,
+			{ sessionId: SESSION, search: { view: "trace" } },
+			context,
+		).model
 		expect(arrived.focusedSpanId).toBe("tool")
 		expect(arrived.spanDialog.isOpen).toBe(false)
 	})

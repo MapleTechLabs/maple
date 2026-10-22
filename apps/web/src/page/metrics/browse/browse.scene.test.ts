@@ -120,7 +120,9 @@ describe("metrics explorer", () => {
 		expect(names(typed.commands)).toEqual(["FetchMetricsCatalog"])
 		expect(typed.model.window).toEqual(window)
 		const moved = routeChanged(typed.model, { search: { type: "sum", timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveMetricsWindow", "Refresh"]])
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveMetricsWindow", "Refresh"],
+		])
 	})
 
 	test("a card shows its type and service, and opens the metric with its type", () => {

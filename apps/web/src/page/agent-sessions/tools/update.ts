@@ -245,7 +245,12 @@ export const routeChanged = (
 	// `useEffectiveTimeRange` re-resolves only on a time change; every other change reads its new keys.
 	return isSameTime(model.search, route.search)
 		? requestAll(next, context, "Load")
-		: { model: next, commands: [resolveCommand(route.search, context, model.refreshVersion === 0 ? "Load" : "Refresh")] }
+		: {
+				model: next,
+				commands: [
+					resolveCommand(route.search, context, model.refreshVersion === 0 ? "Load" : "Refresh"),
+				],
+			}
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return => ({

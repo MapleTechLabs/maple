@@ -21,6 +21,9 @@ describe("time zone preference changes", () => {
 			window.dispatchEvent(new Event(TIME_ZONE_PREFERENCE_EVENT))
 		}, 10)
 		const messages = await Effect.runPromise(Fiber.join(fiber)).finally(() => clearInterval(timer))
-		expect(messages.map((message) => message._tag)).toEqual(["ChangedTimeZonePreference", "ChangedTimeZonePreference"])
+		expect(messages.map((message) => message._tag)).toEqual([
+			"ChangedTimeZonePreference",
+			"ChangedTimeZonePreference",
+		])
 	})
 })

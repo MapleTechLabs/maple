@@ -29,7 +29,10 @@ type Cmd = Command.Command<Message, never, Resources>
 const MAX_SUGGESTIONS = 20
 
 const lookupNames = (model: Model, name: AutocompleteLookup): Array<string> => [
-	...lookupField(Option.getOrUndefined(AsyncData.getData(model.advanced.lookups[name]?.data ?? AsyncData.Idle())), "keys"),
+	...lookupField(
+		Option.getOrUndefined(AsyncData.getData(model.advanced.lookups[name]?.data ?? AsyncData.Idle())),
+		"keys",
+	),
 ]
 
 /** The `traces` values the provider hands the editor. */
@@ -88,8 +91,7 @@ const activate = (
 	return ADVANCED_LOOKUPS.reduce<{ model: Model; commands: ReadonlyArray<Cmd> }>(
 		(acc, lookup) => {
 			const key = requestKey(context.orgId, `autocomplete:${lookup}`, window)
-			const slot =
-				acc.model.advanced.lookups[lookup] ?? Keyed.idle<LookupNames, LoadFailure>()
+			const slot = acc.model.advanced.lookups[lookup] ?? Keyed.idle<LookupNames, LoadFailure>()
 			return Option.match(Keyed.request(slot, key, "Load"), {
 				onNone: () => acc,
 				onSome: (next) => ({

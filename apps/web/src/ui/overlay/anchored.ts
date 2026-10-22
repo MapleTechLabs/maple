@@ -92,7 +92,9 @@ export const anchoredPopup = (root: Element, options: AnchoredOptions): Stream.S
 	)
 
 const isInsidePortal = (target: EventTarget | null): boolean =>
-	typeof Element !== "undefined" && target instanceof Element && target.closest("[data-base-ui-portal]") !== null
+	typeof Element !== "undefined" &&
+	target instanceof Element &&
+	target.closest("[data-base-ui-portal]") !== null
 
 /**
  * Escape pressed while focus sits outside every portal (on `<body>` after the focused control
@@ -105,7 +107,9 @@ export const strayEscapes = (root: EventTarget): Stream.Stream<void> =>
 				const onKeyDown = (event: KeyboardEvent) => {
 					if (event.key !== "Escape" || event.defaultPrevented) return
 					if (isInsidePortal(event.target)) return
-					const portals = document.querySelectorAll("[data-base-ui-portal]:not([data-slot^=\"toast\"])")
+					const portals = document.querySelectorAll(
+						'[data-base-ui-portal]:not([data-slot^="toast"])',
+					)
 					if (portals[portals.length - 1] !== root) return
 					event.preventDefault()
 					Queue.offerUnsafe(queue, undefined)

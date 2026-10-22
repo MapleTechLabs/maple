@@ -114,7 +114,8 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 					? yield* emptyResultHints(
 							{
 								service: params.service,
-								environments: params.environment === undefined ? undefined : [params.environment],
+								environments:
+									params.environment === undefined ? undefined : [params.environment],
 								attributeKey: params.attribute_key,
 							},
 							window,
@@ -273,23 +274,21 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 								"full span tree",
 							),
 						),
-					...output.traces
-						.slice(0, output.spanLevel ? 1 : 0)
-						.flatMap((t) =>
-							t.spanId === undefined
-								? []
-								: [
-										doc.next(
-											"inspect_span",
-											{
-												trace_id: t.traceId,
-												span_id: t.spanId,
-												timestamp: hintOf(t.startTime),
-											},
-											"every attribute of the matching span",
-										),
-									],
-						),
+					...output.traces.slice(0, output.spanLevel ? 1 : 0).flatMap((t) =>
+						t.spanId === undefined
+							? []
+							: [
+									doc.next(
+										"inspect_span",
+										{
+											trace_id: t.traceId,
+											span_id: t.spanId,
+											timestamp: hintOf(t.startTime),
+										},
+										"every attribute of the matching span",
+									),
+								],
+					),
 				],
 			}
 		},

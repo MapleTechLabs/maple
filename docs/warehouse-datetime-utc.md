@@ -16,9 +16,9 @@ Status 2026-10-07: every warehouse timestamp column decodes to `DateTime.Utc`. T
 - **Pipes stay a wire contract.** The pipe executor re-encodes decoded rows (`compiled.encodeRows`),
   so `@maple/domain/tinybird` endpoint types remain strings.
 - **UTC on the server.**
-  - BYO ClickHouse and chDB get `session_timezone=UTC` per query (`BackendDialect.pinSessionTimezoneUtc`).
-  - Tinybird rejects that setting as restricted. Its servers report UTC (checked 2026-10-07).
-  - CI test lanes run with `TZ=Asia/Kathmandu`.
+    - BYO ClickHouse and chDB get `session_timezone=UTC` per query (`BackendDialect.pinSessionTimezoneUtc`).
+    - Tinybird rejects that setting as restricted. Its servers report UTC (checked 2026-10-07).
+    - CI test lanes run with `TZ=Asia/Kathmandu`.
 
 ## Mechanism
 
@@ -27,10 +27,10 @@ Status 2026-10-07: every warehouse timestamp column decodes to `DateTime.Utc`. T
   datafile type and ingested row are unchanged, so the Tinybird manifest does not move. Date
   functions (`toStartOfInterval`, `toStartOfHour`, `min`, `max`) keep the flavour.
 - **Bounds.**
-  - `param.dateTime(name)` on DateTime64 columns.
-  - `utcSecondsParam(name)` on second-precision DateTime columns. `param.dateTimeSeconds` in
-    effect-orm 0.3.0 rejects a `DateTime.Utc` at runtime despite its type.
-  - Both may share a name.
+    - `param.dateTime(name)` on DateTime64 columns.
+    - `utcSecondsParam(name)` on second-precision DateTime columns. `param.dateTimeSeconds` in
+      effect-orm 0.3.0 rejects a `DateTime.Utc` at runtime despite its type.
+    - Both may share a name.
 - **String input.** `parseUtc` (`packages/query-engine/src/datetime.ts`) turns string input
   (tz-less read as UTC, or ISO with zone) into `Option<DateTime.Utc>`.
 - **Decoding rows.** `compiledQuery` decodes rows with the query's row schema. A query with an
@@ -48,9 +48,9 @@ Status 2026-10-07: every warehouse timestamp column decodes to `DateTime.Utc`. T
    builds them with `DateTime`. This is where most of the remaining `formatWarehouseDateTime` and
    `parseWarehouseDateTime` callers are; they go once their surface moves.
 2. **effect-orm.**
-   - Fix `CHDateTimeSecondsLiteral` to accept `DateTime.Utc` / `Date` as its doc says.
-   - Add `t.dateTimeUtc()` / `t.dateTime64Utc(p)` builders (a patch is ready).
-   - Then replace `utcSecondsParam` and the `.brand(...)` helpers.
+    - Fix `CHDateTimeSecondsLiteral` to accept `DateTime.Utc` / `Date` as its doc says.
+    - Add `t.dateTimeUtc()` / `t.dateTime64Utc(p)` builders (a patch is ready).
+    - Then replace `utcSecondsParam` and the `.brand(...)` helpers.
 3. **Explicit `'UTC'` in date functions** (effect-orm). This only matters if a managed server ever
    stops running in UTC.
 4. **Column DDL `DateTime('UTC')`.** Only if a Tinybird branch shows the change is metadata-only.

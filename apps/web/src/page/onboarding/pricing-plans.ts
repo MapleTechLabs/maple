@@ -61,7 +61,8 @@ const formatIncludedUsage = (item: CatalogPlanItem): string => {
 	if (item.unlimited) return "Unlimited"
 	if (item.featureId === "ai_credits" && item.included != null)
 		return `${formatCurrency(item.included, "usd")} included`
-	if (item.included != null) return `${formatCount(item.included)} ${COUNT_UNITS.get(item.featureId) ?? "GB"}`
+	if (item.included != null)
+		return `${formatCount(item.included)} ${COUNT_UNITS.get(item.featureId) ?? "GB"}`
 	return ""
 }
 

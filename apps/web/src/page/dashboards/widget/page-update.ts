@@ -11,13 +11,7 @@ import type { WhereFieldMessage } from "../../kit/where-field"
 import { updateWhereFields } from "../../kit/where-field-update"
 import { toPanelType } from "../kit/chart-registry"
 import { SaveTimeRange, SaveWidget } from "./command"
-import {
-	addFormula,
-	addQuery,
-	cloneQuery,
-	removeFormula,
-	setPanelType,
-} from "./edits"
+import { addFormula, addQuery, cloneQuery, removeFormula, setPanelType } from "./edits"
 import type { EditorState } from "./editor-state"
 import { validationErrorOf } from "./lowering"
 import { ProductEdit } from "./product-edit"
@@ -54,7 +48,8 @@ import {
 } from "./update"
 
 /** `emitAttribute`: only a non-empty key becomes a breakdown. */
-const breakdownValueOf = (key: string): string | null => (key.trim() === "" ? null : `attribute:${key.trim()}`)
+const breakdownValueOf = (key: string): string | null =>
+	key.trim() === "" ? null : `attribute:${key.trim()}`
 
 /** The SQL draft taken as the opened one, so a discarded or saved draft no longer reads as dirty. */
 const savedSql = (model: Model): Model["rawSql"] =>
@@ -72,7 +67,11 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 	const updated = { ...model, timePicker: next.model }
 	const timeRange = TimeRangePicker.dashboardTimeRangeOf(next.outMessage)
 	if (timeRange === undefined) return { model: updated, commands }
-	if (model.timeRange?.type === "relative" && timeRange.type === "relative" && model.timeRange.value === timeRange.value)
+	if (
+		model.timeRange?.type === "relative" &&
+		timeRange.type === "relative" &&
+		model.timeRange.value === timeRange.value
+	)
 		return { model: updated, commands }
 	const previewed = planPreview({ ...updated, timeRange }, context)
 	const looked = requestAutocomplete(previewed.model, context)
@@ -87,7 +86,9 @@ const timePickerStep = (model: Model, context: PageContext, message: TimeRangePi
 /** The Custom picker: a picked preset or range is the widget's own window. */
 const rangePickerStep = (model: Model, context: PageContext, message: TimeRangePicker.Message): Return => {
 	const next = TimeRangePicker.update(model.rangePicker, message)
-	const commands = Command.mapMessages(next.commands ?? [], (inner) => Message.GotRangePickerMessage({ message: inner }))
+	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+		Message.GotRangePickerMessage({ message: inner }),
+	)
 	const updated = { ...model, rangePicker: next.model }
 	const timeRange = TimeRangePicker.dashboardTimeRangeOf(next.outMessage)
 	if (timeRange === undefined) return { model: updated, commands }
@@ -99,13 +100,19 @@ const rangePickerStep = (model: Model, context: PageContext, message: TimeRangeP
 const tabsStep = (model: Model, context: PageContext, message: Tabs.Message): Return => {
 	const next = Tabs.update(model.sourceTabs, message)
 	const planned = planPreview(
-		{ ...model, sourceTabs: next.model, sourceMode: next.model.selected === "rawSql" ? "rawSql" : "builder" },
+		{
+			...model,
+			sourceTabs: next.model,
+			sourceMode: next.model.selected === "rawSql" ? "rawSql" : "builder",
+		},
 		context,
 	)
 	return {
 		...planned,
 		commands: [
-			...Command.mapMessages(next.commands ?? [], (inner) => Message.GotSourceTabsMessage({ message: inner })),
+			...Command.mapMessages(next.commands ?? [], (inner) =>
+				Message.GotSourceTabsMessage({ message: inner }),
+			),
 			...(planned.commands ?? []),
 		],
 	}
@@ -131,7 +138,9 @@ const isEngineList = (model: Model, state: EditorState): boolean =>
 
 /** The list's lowered query under `id`; the preview keeps the draft's own. */
 const withListQueryId = (state: EditorState, id: string | null): EditorState =>
-	id === null ? state : { ...state, queries: state.queries.map((query, index) => (index === 0 ? { ...query, id } : query)) }
+	id === null
+		? state
+		: { ...state, queries: state.queries.map((query, index) => (index === 0 ? { ...query, id } : query)) }
 
 /**
  * `applyChanges`: an invalid query set, or a save in flight, leaves Apply a no-op. An engine list
@@ -141,8 +150,10 @@ const apply = (model: Model, context: PageContext, listQueryId: string | null): 
 	const widget = widgetOf(model)
 	if (model.isSaving || widget === null || model.state === null) return { model }
 	const rawSql = isSqlSource(model) ? (model.rawSql?.draft ?? null) : null
-	if (rawSql === null ? validationErrorOf(model.state) !== null : rawSqlErrorOf(rawSql) !== null) return { model }
-	if (listQueryId === null && isEngineList(model, model.state)) return { model, commands: generate("applyList", "") }
+	if (rawSql === null ? validationErrorOf(model.state) !== null : rawSqlErrorOf(rawSql) !== null)
+		return { model }
+	if (listQueryId === null && isEngineList(model, model.state))
+		return { model, commands: generate("applyList", "") }
 	return {
 		model: { ...model, isSaving: true },
 		commands: [
@@ -164,7 +175,9 @@ const productEdit = (model: Model, context: PageContext, change: ProductEdit): R
 /** A where field's step; an applied suggestion edits its text like typing. */
 const whereFieldStep = (model: Model, context: PageContext, message: WhereFieldMessage): Return => {
 	const next = updateWhereFields(model.whereFields, message, whereFieldsInputsOf(model, context))
-	const commands = Command.mapMessages(next.commands ?? [], (inner) => Message.GotWhereFieldMessage({ message: inner }))
+	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+		Message.GotWhereFieldMessage({ message: inner }),
+	)
 	const updated = { ...model, whereFields: next.fields }
 	const field = next.change === undefined ? undefined : whereFieldsOf(model, null).get(next.change.fieldId)
 	if (next.change === undefined || field === undefined) return { model: updated, commands }
@@ -172,14 +185,20 @@ const whereFieldStep = (model: Model, context: PageContext, message: WhereFieldM
 	return { ...edited, commands: [...commands, ...(edited.commands ?? [])] }
 }
 
-const acceptSuggestions = (model: Model, message: Message & { _tag: "CompletedFetchSuggestions" }): Return => {
+const acceptSuggestions = (
+	model: Model,
+	message: Message & { _tag: "CompletedFetchSuggestions" },
+): Return => {
 	const slot = model.suggestions[message.lookup]
 	return slot === undefined
 		? { model }
 		: {
 				model: {
 					...model,
-					suggestions: { ...model.suggestions, [message.lookup]: Keyed.accept(slot, message.key, message.result) },
+					suggestions: {
+						...model.suggestions,
+						[message.lookup]: Keyed.accept(slot, message.key, message.result),
+					},
 				},
 			}
 }
@@ -199,13 +218,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const slot = model.variableOptions[name]
 			return slot === undefined
 				? { model }
-				: planPreview({ ...model, variableOptions: { ...model.variableOptions, [name]: Keyed.accept(slot, key, result) } }, context)
+				: planPreview(
+						{
+							...model,
+							variableOptions: {
+								...model.variableOptions,
+								[name]: Keyed.accept(slot, key, result),
+							},
+						},
+						context,
+					)
 		},
 		GotSparklineChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.sparklineChart, inner)
 			return {
 				model: { ...model, sparklineChart: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotSparklineChartMessage({ message })),
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotSparklineChartMessage({ message }),
+				),
 			}
 		},
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
@@ -218,7 +248,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotTimePickerMessage: ({ message: inner }) => timePickerStep(model, context, inner),
 		GotRangePickerMessage: ({ message: inner }) => rangePickerStep(model, context, inner),
 		// The editor has no persistence banner, so the failure toasts.
-		CompletedSaveTimeRange: ({ error }) => (error === null ? { model } : { model, outMessage: errorToast(error) }),
+		CompletedSaveTimeRange: ({ error }) =>
+			error === null ? { model } : { model, outMessage: errorToast(error) },
 		GotSourceTabsMessage: ({ message: inner }) => tabsStep(model, context, inner),
 		GotSelectMessage: ({ id, message: inner }) => selectStep(model, context, id, inner),
 		GotQueryPanelMessage: ({ message: inner }) => queryPanelStep(model, context, inner),
@@ -250,7 +281,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})),
 		ClickedRemoveFormula: ({ formulaId }) =>
 			edit(model, context, (state) => removeFormula(state, formulaId)),
-		ClickedRunPreview: () => (isSqlSource(model) ? runSqlPreview(model, context) : runPreview(model, context)),
+		ClickedRunPreview: () =>
+			isSqlSource(model) ? runSqlPreview(model, context) : runPreview(model, context),
 		ChangedSql: (m) => sqlStep(model, m),
 		ChangedSqlBucket: (m) => sqlStep(model, m),
 		ClickedSqlToken: (m) => sqlStep(model, m),
@@ -261,7 +293,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = Tooltip.update(model.sqlChipTooltip, inner)
 			return {
 				model: { ...model, sqlChipTooltip: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (tip) => Message.GotSqlChipTooltipMessage({ message: tip })),
+				commands: Command.mapMessages(next.commands ?? [], (tip) =>
+					Message.GotSqlChipTooltipMessage({ message: tip }),
+				),
 			}
 		},
 		ChangedTitle: ({ value }) => edit(model, context, (state) => ({ ...state, title: value })),
@@ -275,7 +309,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? edit(
 						model.state === null || model.rawSql === null
 							? model
-							: { ...model, rawSql: reseedForType(model.rawSql, model.state, setPanelType(model.state, panel)) },
+							: {
+									...model,
+									rawSql: reseedForType(
+										model.rawSql,
+										model.state,
+										setPanelType(model.state, panel),
+									),
+								},
 						context,
 						(state) => setPanelType(state, panel),
 					)
@@ -323,7 +364,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ToggledSparkline: () =>
 			edit(model, context, (state) => ({ ...state, sparklineEnabled: !state.sparklineEnabled })),
 		ChangedGaugeBound: ({ bound, value }) =>
-			edit(model, context, (state) => (bound === "min" ? { ...state, gaugeMin: value } : { ...state, gaugeMax: value })),
+			edit(model, context, (state) =>
+				bound === "min" ? { ...state, gaugeMin: value } : { ...state, gaugeMax: value },
+			),
 		ChangedTableLimit: ({ value }) => edit(model, context, (state) => ({ ...state, tableLimit: value })),
 		ChangedHeatmapScaleType: ({ scaleType }) =>
 			edit(model, context, (state) => ({ ...state, heatmapScaleType: scaleType })),
@@ -337,7 +380,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedSave: ({ error }) =>
 			error === null
 				? navigate(
-						{ ...model, isSaving: false, initial: model.state, initialSourceMode: model.sourceMode, rawSql: savedSql(model) },
+						{
+							...model,
+							isSaving: false,
+							initial: model.state,
+							initialSourceMode: model.sourceMode,
+							rawSql: savedSql(model),
+						},
 						backHref(model),
 					)
 				: {
@@ -350,7 +399,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const closed = Dialog.close(model.leaveDialog)
 			return {
 				...navigate(
-					{ ...model, leaveDialog: closed.model, initial: model.state, sourceMode: model.initialSourceMode, rawSql: savedSql(model) },
+					{
+						...model,
+						leaveDialog: closed.model,
+						initial: model.state,
+						sourceMode: model.initialSourceMode,
+						rawSql: savedSql(model),
+					},
 					model.pendingLeaveUrl ?? backHref(model),
 				),
 				commands: Command.mapMessages(closed.commands ?? [], (inner) =>
@@ -359,11 +414,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 		},
 		ChangedProduct: ({ edit: change }) => productEdit(model, context, change),
-		GotStepComboMessage: ({ id, message: inner }) => stepComboStep(model, context, id, inner, productEdit),
+		GotStepComboMessage: ({ id, message: inner }) =>
+			stepComboStep(model, context, id, inner, productEdit),
 		FocusedListField: ({ index }) => ({ model: { ...model, listFieldFocus: index } }),
 		BlurredListField: () => ({ model: { ...model, listFieldFocus: null } }),
 		GotWhereFieldMessage: ({ message: inner }) => whereFieldStep(model, context, inner),
-		ToggledProductPanel: () => ({ model: { ...model, isProductPanelCollapsed: !model.isProductPanelCollapsed } }),
+		ToggledProductPanel: () => ({
+			model: { ...model, isProductPanelCollapsed: !model.isProductPanelCollapsed },
+		}),
 		ChangedBreakdownAttribute: ({ value }) =>
 			productEdit(
 				{ ...model, breakdownAttribute: { isActive: true, key: value } },
@@ -379,13 +437,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchMetricKeys: ({ metric, result }) =>
 			Result.isSuccess(result)
 				? { model: { ...model, metricKeys: { ...model.metricKeys, [metric]: result.success } } }
-				: { model: { ...model, metricKeysRequested: model.metricKeysRequested.filter((key) => key !== metric) } },
+				: {
+						model: {
+							...model,
+							metricKeysRequested: model.metricKeysRequested.filter((key) => key !== metric),
+						},
+					},
 		CompletedFetchMetricOptions: ({ search, result }) => {
 			if (search !== model.metricSearch) return { model }
 			if (!Result.isSuccess(result)) return { model: { ...model, metricRequested: null } }
 			const listed = { ...model, metricOptions: { search, ...result.success } }
 			// A metrics query without a metric yet takes the first one listed.
-			return listed.state !== null && listed.state.queries.some((query) => query.dataSource === "metrics" && query.metricName === "")
+			return listed.state !== null &&
+				listed.state.queries.some(
+					(query) => query.dataSource === "metrics" && query.metricName === "",
+				)
 				? edit(listed, context, (state) => withDefaultMetric(state, result.success.options))
 				: { model: listed }
 		},

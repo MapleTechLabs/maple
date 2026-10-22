@@ -46,14 +46,20 @@ const base = (route: AppRoute): Model => ({
 })
 
 const urlOf = (path: string) => Option.getOrThrow(urlFromString(`http://localhost${path}`))
-const commandsOf = (result: { readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> }) =>
-	(result.commands ?? []).map(({ name, args }) => ({ name, args }))
+const commandsOf = (result: {
+	readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }>
+}) => (result.commands ?? []).map(({ name, args }) => ({ name, args }))
 
 describe("root navigation", () => {
 	test("a link navigation lands with the remembered window; Back/Forward is left as it is", () => {
 		const model = base(AppRoute.Logs({ search: {} }))
-		const clicked = update(model, Message.ClickedLink({ request: UrlRequest.Internal({ url: urlOf("/services") }) }))
-		expect(commandsOf(clicked)).toEqual([{ name: "NavigateInternal", args: { url: "/services?timePreset=7d" } }])
+		const clicked = update(
+			model,
+			Message.ClickedLink({ request: UrlRequest.Internal({ url: urlOf("/services") }) }),
+		)
+		expect(commandsOf(clicked)).toEqual([
+			{ name: "NavigateInternal", args: { url: "/services?timePreset=7d" } },
+		])
 		const popped = update(model, Message.ChangedUrl({ url: urlOf("/services") }))
 		expect(commandsOf(popped).filter(({ name }) => name === "ReplaceUrl")).toEqual([])
 		expect(popped.model.route).toEqual(AppRoute.Services({ search: {} }))
@@ -65,12 +71,20 @@ describe("root navigation", () => {
 		expect(zoned.model.timeZone).toBe("Asia/Tokyo")
 		const resolve = commandsOf(zoned).filter(({ args }) => JSON.stringify(args).includes("Asia/Tokyo"))
 		expect(resolve).toHaveLength(1)
-		expect(update(zoned.model, Message.ChangedTimeZonePreference({ timeZone: "Asia/Tokyo" })).commands ?? []).toEqual([])
+		expect(
+			update(zoned.model, Message.ChangedTimeZonePreference({ timeZone: "Asia/Tokyo" })).commands ?? [],
+		).toEqual([])
 	})
 
 	test("a closed toast's action entries are dropped", () => {
-		const model = { ...base(AppRoute.Logs({ search: {} })), toastRootActions: { t1: { _tag: "ReconnectOrgCollections" as const } } }
-		const ended = update(model, Message.GotToastMessage({ message: Toast.Message.EndedToastTransition({ toastId: "t1" }) }))
+		const model = {
+			...base(AppRoute.Logs({ search: {} })),
+			toastRootActions: { t1: { _tag: "ReconnectOrgCollections" as const } },
+		}
+		const ended = update(
+			model,
+			Message.GotToastMessage({ message: Toast.Message.EndedToastTransition({ toastId: "t1" }) }),
+		)
 		expect(ended.model.toastRootActions).toEqual({})
 	})
 
@@ -81,7 +95,10 @@ describe("root navigation", () => {
 			preload: { ...Preload.init(), holder: "ServicesList:Services:org_acme:1", heldKeys: ["k1"] },
 		}
 		const result = settle(model)
-		expect(commandsOf(result)).toContainEqual({ name: "ReleaseReads", args: { orgId: null, keys: ["k1"] } })
+		expect(commandsOf(result)).toContainEqual({
+			name: "ReleaseReads",
+			args: { orgId: null, keys: ["k1"] },
+		})
 		expect(result.model.preload.heldKeys).toEqual([])
 	})
 
@@ -106,10 +123,20 @@ describe("telemetry identity", () => {
 			maybeOrganization: Option.none(),
 			memberships: [],
 		}
-		const loaded = update(base(AppRoute.Services({ search: {} })), Message.CompletedLoadClerk({ snapshot }))
+		const loaded = update(
+			base(AppRoute.Services({ search: {} })),
+			Message.CompletedLoadClerk({ snapshot }),
+		)
 		expect(commandsOf(loaded)).toContainEqual({
 			name: "IdentifySession",
-			args: { identity: { id: "user_ada", username: "Ada Lovelace", email: "ada@acme.test", groupId: "org_acme" } },
+			args: {
+				identity: {
+					id: "user_ada",
+					username: "Ada Lovelace",
+					email: "ada@acme.test",
+					groupId: "org_acme",
+				},
+			},
 		})
 		const again = update(loaded.model, Message.ChangedClerkSession({ snapshot }))
 		expect(commandsOf(again).map(({ name }) => name)).not.toContain("IdentifySession")
@@ -133,7 +160,10 @@ describe("re-render on change only", () => {
 		memberships: [],
 	})
 	const loadedHome = () =>
-		update(base(AppRoute.Home({ search: {} })), Message.CompletedLoadClerk({ snapshot: snapshotOf("Acme") })).model
+		update(
+			base(AppRoute.Home({ search: {} })),
+			Message.CompletedLoadClerk({ snapshot: snapshotOf("Acme") }),
+		).model
 
 	test("a Clerk emit that changed nothing (a token refresh) keeps the model and runs nothing", () => {
 		const model = loadedHome()
@@ -143,7 +173,10 @@ describe("re-render on change only", () => {
 	})
 
 	test("a Clerk emit with a renamed org stores the new snapshot", () => {
-		const renamed = update(loadedHome(), Message.ChangedClerkSession({ snapshot: snapshotOf("Acme Labs") }))
+		const renamed = update(
+			loadedHome(),
+			Message.ChangedClerkSession({ snapshot: snapshotOf("Acme Labs") }),
+		)
 		expect(renamed.model.clerkSnapshot?.maybeOrganization).toEqual(
 			Option.some(expect.objectContaining({ name: "Acme Labs" })),
 		)
@@ -167,11 +200,21 @@ describe("re-render on change only", () => {
 
 describe("pinned dashboards load", () => {
 	test("the sidebar waiting on dashboards watches for a sync failure, which settles it as failed", () => {
-		const shell = { ...base(AppRoute.Logs({ search: {} })).shell, maybeOrgId: Option.some(orgId), hasRequestedSidebarData: true }
-		const waiting: Model = { ...base(AppRoute.Logs({ search: {} })), shell: { ...shell, dashboards: DashboardsData.Loading() } }
+		const shell = {
+			...base(AppRoute.Logs({ search: {} })).shell,
+			maybeOrgId: Option.some(orgId),
+			hasRequestedSidebarData: true,
+		}
+		const waiting: Model = {
+			...base(AppRoute.Logs({ search: {} })),
+			shell: { ...shell, dashboards: DashboardsData.Loading() },
+		}
 		const watched = (model: Model) => subscriptions.shellDashboardsLoad.modelToDependencies(model).orgId
 		expect(watched(waiting)).toBe(orgId)
-		const failed = update(waiting, Message.GotShellMessage({ message: Shell.Message.FailedLoadDashboards({ orgId }) })).model
+		const failed = update(
+			waiting,
+			Message.GotShellMessage({ message: Shell.Message.FailedLoadDashboards({ orgId }) }),
+		).model
 		expect(failed.shell.dashboards._tag).toBe("Failure")
 		expect(watched(failed)).toBeNull()
 	})

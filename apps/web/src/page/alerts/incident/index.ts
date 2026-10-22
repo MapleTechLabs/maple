@@ -13,7 +13,8 @@ const byOrg = { orgId: Schema.String }
 const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()((entry) => ({
 	incidents: entry(byOrg, {
 		modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
-		dependenciesToStream: ({ orgId }) => incidentRows(orgId, (rows) => Message.UpdatedIncidents({ orgId, rows })),
+		dependenciesToStream: ({ orgId }) =>
+			incidentRows(orgId, (rows) => Message.UpdatedIncidents({ orgId, rows })),
 	}),
 	rules: entry(byOrg, {
 		modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
@@ -21,7 +22,8 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 	}),
 	states: entry(byOrg, {
 		modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
-		dependenciesToStream: ({ orgId }) => ruleStateRows(orgId, (rows) => Message.UpdatedRuleStates({ orgId, rows })),
+		dependenciesToStream: ({ orgId }) =>
+			ruleStateRows(orgId, (rows) => Message.UpdatedRuleStates({ orgId, rows })),
 	}),
 }))
 

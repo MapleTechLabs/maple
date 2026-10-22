@@ -34,25 +34,33 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			const next = Tabs.update(model.tabs, child)
 			return {
 				model: { ...model, tabs: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (tabs) => Message.GotTabsMessage({ message: tabs })),
+				commands: Command.mapMessages(next.commands ?? [], (tabs) =>
+					Message.GotTabsMessage({ message: tabs }),
+				),
 			}
 		},
 		GotAttributesMessage: ({ message: child }) => {
 			const next = AttributesPanel.update(model.attributes, child)
 			return {
 				model: { ...model, attributes: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (panel) => Message.GotAttributesMessage({ message: panel })),
+				commands: Command.mapMessages(next.commands ?? [], (panel) =>
+					Message.GotAttributesMessage({ message: panel }),
+				),
 			}
 		},
 		GotCopyMessage: ({ id, message: child }) => {
-			const next = updateCopy(model.copies, id, child, (copyId, copyMessage) => Message.GotCopyMessage({ id: copyId, message: copyMessage }))
+			const next = updateCopy(model.copies, id, child, (copyId, copyMessage) =>
+				Message.GotCopyMessage({ id: copyId, message: copyMessage }),
+			)
 			return { model: { ...model, copies: next.copies }, commands: next.commands }
 		},
 		GotTooltipMessage: ({ message: child }) => {
 			const next = Tooltip.update(model.tooltip, child)
 			return {
 				model: { ...model, tooltip: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (tooltip) => Message.GotTooltipMessage({ message: tooltip })),
+				commands: Command.mapMessages(next.commands ?? [], (tooltip) =>
+					Message.GotTooltipMessage({ message: tooltip }),
+				),
 			}
 		},
 	})

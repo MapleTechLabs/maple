@@ -6,7 +6,9 @@ import { encode } from "uqr"
 
 export const qrCode = <M>(h: HtmlBuilder<M>, value: string, className?: string): Html => {
 	const result = encode(value, { border: 1 })
-	const path = result.data.flatMap((row, y) => row.map((isDark, x) => (isDark ? `M${x} ${y}h1v1h-1z` : ""))).join("")
+	const path = result.data
+		.flatMap((row, y) => row.map((isDark, x) => (isDark ? `M${x} ${y}h1v1h-1z` : "")))
+		.join("")
 	return h.svg(
 		[
 			h.Attribute("xmlns", "http://www.w3.org/2000/svg"),

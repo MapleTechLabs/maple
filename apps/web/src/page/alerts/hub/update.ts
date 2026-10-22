@@ -1,8 +1,5 @@
 import type { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
-import {
-	buildDestinationUpdateParamsV2,
-	destinationToFormState,
-} from "@maple/web-data/alerts/form-utils"
+import { buildDestinationUpdateParamsV2, destinationToFormState } from "@maple/web-data/alerts/form-utils"
 import { rowToAlertDestinationDocument, rowToAlertRuleDocument } from "@maple/web-data/collections/alerts"
 import { Array, Option, Result } from "effect"
 import type { Command } from "foldkit"
@@ -45,7 +42,9 @@ const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>
 		deleteDialog: step.model,
 		confirmDeleteId: step.outMessage?._tag === "Closed" ? null : model.confirmDeleteId,
 	},
-	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) => Message.GotDeleteDialogMessage({ message })),
+	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
+		Message.GotDeleteDialogMessage({ message }),
+	),
 })
 
 const deliveriesKey = (context: PageContext) =>
@@ -130,7 +129,8 @@ const navigate = (search: Model["search"]): PageOutMessage =>
 const toast = (type: "success" | "error", title: string, description = ""): PageOutMessage =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
-const errorToast = (title: string, failure: LoadFailure): PageOutMessage => toast("error", title, failure.message)
+const errorToast = (title: string, failure: LoadFailure): PageOutMessage =>
+	toast("error", title, failure.message)
 
 const withoutId = <A extends string>(ids: ReadonlyArray<A>, id: A): ReadonlyArray<A> =>
 	ids.filter((existing) => existing !== id)
@@ -240,7 +240,10 @@ const pickedFromMenu = (model: Model, menuId: string, value: string): Return => 
 			onNone: () => ({ model }),
 			onSome: (row) =>
 				value === "delete"
-					? updateDeleteDialog({ ...model, confirmDeleteId: row.id }, Dialog.open(model.deleteDialog))
+					? updateDeleteDialog(
+							{ ...model, confirmDeleteId: row.id },
+							Dialog.open(model.deleteDialog),
+						)
 					: liftDestinationDialog(model, DestinationDialog.openEdit(model.destinationDialog, row)),
 		},
 	)
@@ -315,11 +318,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedUpdateDestination: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => ({ model }),
-				onFailure: (failure) => ({ model, outMessage: errorToast("Failed to update destination", failure) }),
+				onFailure: (failure) => ({
+					model,
+					outMessage: errorToast("Failed to update destination", failure),
+				}),
 			}),
 		ClickedTestDestination: ({ destinationId }) => testDestination(model, destinationId),
 		CompletedTestDestination: ({ destinationId, result }) => {
-			const settled = { ...model, testingDestinationIds: withoutId(model.testingDestinationIds, destinationId) }
+			const settled = {
+				...model,
+				testingDestinationIds: withoutId(model.testingDestinationIds, destinationId),
+			}
 			// The test lands in the delivery log: `reactivityKeys: ["alertDeliveryEvents"]`.
 			const refreshed = refreshDeliveries(settled, context)
 			return {
@@ -338,7 +347,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model }
 				: updateDeleteDialog(model, Dialog.update(model.deleteDialog, child)),
 		FailedLoadProviderLogo: ({ type }) =>
-			model.brokenLogos.includes(type) ? { model } : { model: { ...model, brokenLogos: [...model.brokenLogos, type] } },
+			model.brokenLogos.includes(type)
+				? { model }
+				: { model: { ...model, brokenLogos: [...model.brokenLogos, type] } },
 		CompletedDeleteDestination: ({ destinationId, result }) => {
 			const settled = {
 				...model,
@@ -355,7 +366,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 			})
 		},
-		ClickedNewDestination: () => liftDestinationDialog(model, DestinationDialog.openNew(model.destinationDialog)),
+		ClickedNewDestination: () =>
+			liftDestinationDialog(model, DestinationDialog.openNew(model.destinationDialog)),
 		GotDestinationDialogMessage: ({ message: child }) =>
 			liftDestinationDialog(model, DestinationDialog.update(model.destinationDialog, child)),
 		GotRowMenuMessage: ({ menuId, message: child }) => updateMenu(model, menuId, child),

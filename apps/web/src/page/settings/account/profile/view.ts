@@ -46,7 +46,11 @@ const profileSection = (h: H, model: Model, user: AccountUser): Html => {
 				[h.Class("space-y-4 max-w-md")],
 				[
 					field(h, { state: pictureState }, [
-						fieldLabel(h, { ids: fieldIds("account-picture"), state: pictureState }, "Profile picture"),
+						fieldLabel(
+							h,
+							{ ids: fieldIds("account-picture"), state: pictureState },
+							"Profile picture",
+						),
 						imageDropzone(h, {
 							inputId: AVATAR_INPUT_ID,
 							preview: userAvatar(h, displayName),
@@ -108,19 +112,44 @@ const profileSection = (h: H, model: Model, user: AccountUser): Html => {
 const dangerZone = (h: H, user: AccountUser): ReadonlyArray<Html> =>
 	user.deleteSelfEnabled
 		? [
-				settingsSection(h, { id: "account-danger", title: "Danger zone", description: [DANGER_DESCRIPTION], framed: false }, [
-					panel(h, { padded: true, className: "flex-row items-center justify-between gap-4 border-destructive/40" }, [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							["Delete ", user.primaryEmail ?? "your account", " and sign out everywhere."],
-						),
-						button(
+				settingsSection(
+					h,
+					{
+						id: "account-danger",
+						title: "Danger zone",
+						description: [DANGER_DESCRIPTION],
+						framed: false,
+					},
+					[
+						panel(
 							h,
-							{ variant: "destructive", size: "sm", attributes: [h.OnClick(Message.ClickedDelete())] },
-							["Delete account"],
+							{
+								padded: true,
+								className:
+									"flex-row items-center justify-between gap-4 border-destructive/40",
+							},
+							[
+								h.p(
+									[h.Class("text-xs text-muted-foreground")],
+									[
+										"Delete ",
+										user.primaryEmail ?? "your account",
+										" and sign out everywhere.",
+									],
+								),
+								button(
+									h,
+									{
+										variant: "destructive",
+										size: "sm",
+										attributes: [h.OnClick(Message.ClickedDelete())],
+									},
+									["Delete account"],
+								),
+							],
 						),
-					]),
-				]),
+					],
+				),
 			]
 		: []
 
@@ -146,12 +175,14 @@ const deleteDialog = (h: H, model: Model, user: AccountUser): Html =>
 		],
 	})
 
-export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>((model, _inputs, h) => {
-	const user = model.user
-	if (!model.isLoaded || user === null) return accountSectionSkeleton(h)
-	return settingsSections(h, "standard", [
-		profileSection(h, model, user),
-		...dangerZone(h, user),
-		deleteDialog(h, model, user),
-	])
-})
+export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>(
+	(model, _inputs, h) => {
+		const user = model.user
+		if (!model.isLoaded || user === null) return accountSectionSkeleton(h)
+		return settingsSections(h, "standard", [
+			profileSection(h, model, user),
+			...dangerZone(h, user),
+			deleteDialog(h, model, user),
+		])
+	},
+)

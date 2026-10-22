@@ -38,15 +38,29 @@ export const saveBar = <M>(h: HtmlBuilder<M>, options: SaveBarOptions<M>): Reado
 				h.div(
 					[h.Class("flex min-w-0 items-center gap-2 text-sm")],
 					[
-						h.span([h.AriaHidden(true), h.Class("size-1.5 shrink-0 rounded-full bg-primary")], []),
+						h.span(
+							[h.AriaHidden(true), h.Class("size-1.5 shrink-0 rounded-full bg-primary")],
+							[],
+						),
 						h.span([h.Class("shrink-0 text-foreground")], ["Unsaved changes"]),
-						...(options.context === undefined ? [] : [h.span([h.Class("truncate text-muted-foreground")], [options.context])]),
+						...(options.context === undefined
+							? []
+							: [h.span([h.Class("truncate text-muted-foreground")], [options.context])]),
 					],
 				),
 				h.div(
 					[h.Class("flex shrink-0 items-center gap-1.5")],
 					[
-						button(h, { variant: "ghost", size: "sm", isDisabled: isPending, attributes: [h.OnClick(options.onDiscard)] }, ["Discard"]),
+						button(
+							h,
+							{
+								variant: "ghost",
+								size: "sm",
+								isDisabled: isPending,
+								attributes: [h.OnClick(options.onDiscard)],
+							},
+							["Discard"],
+						),
 						button(
 							h,
 							{

@@ -57,7 +57,11 @@ const chartSection = (h: H, model: Model, entry: MetricEntry, bounds: TimeBounds
 				],
 			),
 			Option.isSome(failure)
-				? errorState(h, { label: "timeseries", failure: failure.value, onRetry: Message.ClickedRefresh() })
+				? errorState(h, {
+						label: "timeseries",
+						failure: failure.value,
+						onRetry: Message.ClickedRefresh(),
+					})
 				: seriesChart(h, {
 						chartId: "local-metric-detail",
 						points: Option.getOrUndefined(AsyncData.getData(model.timeseries.data)),
@@ -82,13 +86,18 @@ const breakdownRow = (h: H, row: BreakdownRow, chartUnit: string | undefined, sh
 			h,
 			[
 				row.name
-					? h.span([h.Class("flex items-center gap-1.5")], [serviceDot(h, { serviceName: row.name, size: "sm" }), row.name])
+					? h.span(
+							[h.Class("flex items-center gap-1.5")],
+							[serviceDot(h, { serviceName: row.name, size: "sm" }), row.name],
+						)
 					: EMPTY_VALUE,
 			],
 			"font-mono text-xs",
 		),
 		tableCell(h, [formatValueByUnit(row.avgValue, chartUnit)], "text-right tabular-nums"),
-		...(showSum ? [tableCell(h, [formatValueByUnit(row.sumValue, chartUnit)], "text-right tabular-nums")] : []),
+		...(showSum
+			? [tableCell(h, [formatValueByUnit(row.sumValue, chartUnit)], "text-right tabular-nums")]
+			: []),
 		tableCell(h, [row.count.toLocaleString()], "text-right tabular-nums"),
 	])
 
@@ -102,7 +111,11 @@ const breakdownSection = (h: H, model: Model, entry: MetricEntry): Html => {
 		if (isPending(model.breakdown))
 			return h.div([h.Class("flex h-24 items-center justify-center rounded-md border")], [spinner(h)])
 		if (Option.isSome(failure))
-			return errorState(h, { label: "breakdown", failure: failure.value, onRetry: Message.ClickedRefresh() })
+			return errorState(h, {
+				label: "breakdown",
+				failure: failure.value,
+				onRetry: Message.ClickedRefresh(),
+			})
 		const rows = Option.getOrElse(AsyncData.getData(model.breakdown.data), () => [])
 		return h.div(
 			[h.Class("rounded-md border")],
@@ -116,16 +129,28 @@ const breakdownSection = (h: H, model: Model, entry: MetricEntry): Html => {
 							tableHead(h, ["Datapoints"], "text-right"),
 						]),
 					]),
-					tableBody(h, rows.map((row) => breakdownRow(h, row, chartUnit, showSum))),
+					tableBody(
+						h,
+						rows.map((row) => breakdownRow(h, row, chartUnit, showSum)),
+					),
 				]),
 			],
 		)
 	}
-	return h.section([h.Class("space-y-2")], [h.h3([h.Class("text-sm font-medium")], ["Breakdown by service"]), body()])
+	return h.section(
+		[h.Class("space-y-2")],
+		[h.h3([h.Class("text-sm font-medium")], ["Breakdown by service"]), body()],
+	)
 }
 
 /** The loaded metric: description, chart and breakdown. */
-export const detailBody = (h: H, model: Model, entry: MetricEntry, bounds: TimeBounds, clockMs: number): Html =>
+export const detailBody = (
+	h: H,
+	model: Model,
+	entry: MetricEntry,
+	bounds: TimeBounds,
+	clockMs: number,
+): Html =>
 	h.div(
 		[h.Class("space-y-6 p-4")],
 		[

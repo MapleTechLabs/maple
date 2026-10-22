@@ -38,11 +38,23 @@ const noData = (h: H, inputs: HeaderInputs): Html =>
 			"This host sent no metrics in the selected time window. It may have stopped reporting earlier: try a wider range, or go back to the hosts list.",
 		actions: [
 			...(inputs.canWiden
-				? [button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedWidenRange())] }, ["Show last 7 days"])]
+				? [
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								attributes: [h.OnClick(Message.ClickedWidenRange())],
+							},
+							["Show last 7 days"],
+						),
+					]
 				: []),
-			linkButton(h, { variant: "outline", size: "sm", href: hrefOf(AppRoute.InfraHosts({ search: {} })) }, [
-				"Back to hosts",
-			]),
+			linkButton(
+				h,
+				{ variant: "outline", size: "sm", href: hrefOf(AppRoute.InfraHosts({ search: {} })) },
+				["Back to hosts"],
+			),
 		],
 	})
 

@@ -18,7 +18,10 @@ describe("installVariants", () => {
 			pnpm: "pnpm add -D typescript",
 			bun: "bun add --dev typescript",
 		})
-		expect(variants("npm install -D vitest")).toMatchObject({ pnpm: "pnpm add -D vitest", bun: "bun add --dev vitest" })
+		expect(variants("npm install -D vitest")).toMatchObject({
+			pnpm: "pnpm add -D vitest",
+			bun: "bun add --dev vitest",
+		})
 		expect(variants("npm install -g @maple-dev/cli")).toMatchObject({
 			pnpm: "pnpm add -g @maple-dev/cli",
 			bun: "bun add -g @maple-dev/cli",
@@ -36,12 +39,14 @@ describe("installVariants", () => {
 	})
 
 	it("converts pip installs, keeping quoting, extras and specifiers", () => {
-		const source = 'pip install "pydantic-ai-slim[openai]>=2.51" \\\n  \'strands-agents[otel]\' -U'
+		const source = "pip install \"pydantic-ai-slim[openai]>=2.51\" \\\n  'strands-agents[otel]' -U"
 		expect(variants(source)).toEqual({
 			pip: source,
-			uv: 'uv add "pydantic-ai-slim[openai]>=2.51" \\\n  \'strands-agents[otel]\' -U',
+			uv: "uv add \"pydantic-ai-slim[openai]>=2.51\" \\\n  'strands-agents[otel]' -U",
 		})
-		expect(installVariants("pip install x")?.storageKey).not.toBe(installVariants("npm install x")?.storageKey)
+		expect(installVariants("pip install x")?.storageKey).not.toBe(
+			installVariants("npm install x")?.storageKey,
+		)
 	})
 
 	it("leaves mixed blocks alone", () => {

@@ -18,9 +18,14 @@ const ReadTwoFactorUser = Command.define("ReadTwoFactorUser", {
 	execute: Effect.map(readAccountUser, (user) => Message.CompletedReadUser({ user })),
 })
 
-const toMessageResult = <A, B>(toMessage: (result: Result.Result<A, string>) => B) =>
+const toMessageResult =
+	<A, B>(toMessage: (result: Result.Result<A, string>) => B) =>
 	<E extends { readonly message: string }>(effect: Effect.Effect<A, E>) =>
-		effect.pipe(Effect.mapError((error) => error.message), Effect.result, Effect.map(toMessage))
+		effect.pipe(
+			Effect.mapError((error) => error.message),
+			Effect.result,
+			Effect.map(toMessage),
+		)
 
 const CreateTotp = Command.define("CreateClerkTotp", {
 	messages: [Message.CompletedCreateTotp],
@@ -55,9 +60,9 @@ const CreateBackupCodes = Command.define("CreateClerkBackupCodes", {
 
 const DisableTotp = Command.define("DisableClerkTotp", {
 	messages: [Message.CompletedDisable],
-	execute: withUserReverified("Failed to disable two-factor authentication", (user) => user.disableTOTP()).pipe(
-		settled((result) => Message.CompletedDisable({ result })),
-	),
+	execute: withUserReverified("Failed to disable two-factor authentication", (user) =>
+		user.disableTOTP(),
+	).pipe(settled((result) => Message.CompletedDisable({ result }))),
 })
 
 export const init = (): Return => ({
@@ -75,16 +80,21 @@ export const init = (): Return => ({
 	commands: [ReadTwoFactorUser()],
 })
 
-const toast = (type: "success" | "error", title: string) => PageOutMessage.RequestedToast({ type, title, description: "" })
+const toast = (type: "success" | "error", title: string) =>
+	PageOutMessage.RequestedToast({ type, title, description: "" })
 
 const liftEnroll = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, enrollDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotEnrollDialogMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotEnrollDialogMessage({ message }),
+	),
 })
 
 const liftDisable = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, disableDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDisableDialogMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotDisableDialogMessage({ message }),
+	),
 })
 
 const verify = (model: Model, code: string): Return =>
@@ -93,7 +103,12 @@ const verify = (model: Model, code: string): Return =>
 		: { model: { ...model, isBusy: true }, commands: [VerifyTotp({ code })] }
 
 const showCodes = (model: Model, codes: ReadonlyArray<string>): Return => {
-	const next = { ...model, isBusy: false, enroll: { _tag: "Codes", codes }, codesCopy: CopyButton.init() } as const
+	const next = {
+		...model,
+		isBusy: false,
+		enroll: { _tag: "Codes", codes },
+		codesCopy: CopyButton.init(),
+	} as const
 	return model.enrollDialog.isOpen ? { model: next } : liftEnroll(next, Dialog.open(model.enrollDialog))
 }
 
@@ -110,23 +125,43 @@ const liftCopy = (
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		CompletedReadUser: ({ user }) => ({ model: { ...model, isLoaded: true, user } }),
-		ClickedSetUp: () => (model.isBusy ? { model } : { model: { ...model, isBusy: true }, commands: [CreateTotp()] }),
+		ClickedSetUp: () =>
+			model.isBusy ? { model } : { model: { ...model, isBusy: true }, commands: [CreateTotp()] },
 		CompletedCreateTotp: ({ result }) =>
 			Result.match(result, {
 				onSuccess: (totp) =>
 					totp === null
-						? { model: { ...model, isBusy: false }, outMessage: toast("error", "Clerk did not return a setup key") }
+						? {
+								model: { ...model, isBusy: false },
+								outMessage: toast("error", "Clerk did not return a setup key"),
+							}
 						: liftEnroll(
-								{ ...model, isBusy: false, enroll: { _tag: "Scan", ...totp }, code: initCode(CODE_ID), secretCopy: CopyButton.init() },
+								{
+									...model,
+									isBusy: false,
+									enroll: { _tag: "Scan", ...totp },
+									code: initCode(CODE_ID),
+									secretCopy: CopyButton.init(),
+								},
 								Dialog.open(model.enrollDialog),
 							),
-				onFailure: (error) => ({ model: { ...model, isBusy: false }, outMessage: toast("error", error) }),
+				onFailure: (error) => ({
+					model: { ...model, isBusy: false },
+					outMessage: toast("error", error),
+				}),
 			}),
-		GotEnrollDialogMessage: ({ message: child }) => liftEnroll(model, Dialog.update(model.enrollDialog, child)),
+		GotEnrollDialogMessage: ({ message: child }) =>
+			liftEnroll(model, Dialog.update(model.enrollDialog, child)),
 		ClickedCancelEnroll: () => liftEnroll(model, Dialog.close(model.enrollDialog)),
 		ClickedContinue: () =>
 			model.enroll?._tag === "Scan"
-				? { model: { ...model, enroll: { ...model.enroll, _tag: "Verify" }, code: initCode(CODE_ID) } }
+				? {
+						model: {
+							...model,
+							enroll: { ...model.enroll, _tag: "Verify" },
+							code: initCode(CODE_ID),
+						},
+					}
 				: { model },
 		ClickedBack: () =>
 			model.enroll?._tag === "Verify" && !model.isBusy
@@ -135,7 +170,9 @@ export const update = (model: Model, message: Message): Return =>
 		GotCodeMessage: ({ message: child }) => {
 			const step = OtpField.update(model.code, child)
 			const next = { ...model, code: step.model }
-			const commands = Command.mapMessages(step.commands ?? [], (inner) => Message.GotCodeMessage({ message: inner }))
+			const commands = Command.mapMessages(step.commands ?? [], (inner) =>
+				Message.GotCodeMessage({ message: inner }),
+			)
 			if (!isComplete(model.code) && isComplete(step.model)) {
 				const verified = verify(next, OtpField.valueOf(step.model))
 				return { ...verified, commands: [...commands, ...(verified.commands ?? [])] }
@@ -157,7 +194,10 @@ export const update = (model: Model, message: Message): Return =>
 						outMessage: toast("success", "Two-factor authentication enabled"),
 					}
 				},
-				onFailure: (error) => ({ model: { ...model, isBusy: false }, outMessage: toast("error", error) }),
+				onFailure: (error) => ({
+					model: { ...model, isBusy: false },
+					outMessage: toast("error", error),
+				}),
 			}),
 		ClickedSavedCodes: () => liftEnroll(model, Dialog.close(model.enrollDialog)),
 		GotSecretCopyMessage: ({ message: child }) =>
@@ -176,7 +216,10 @@ export const update = (model: Model, message: Message): Return =>
 						outMessage: toast("success", "New backup codes generated"),
 					}
 				},
-				onFailure: (error) => ({ model: { ...model, isBusy: false }, outMessage: toast("error", error) }),
+				onFailure: (error) => ({
+					model: { ...model, isBusy: false },
+					outMessage: toast("error", error),
+				}),
 			}),
 		ClickedRemove: () => liftDisable(model, Dialog.open(model.disableDialog)),
 		GotDisableDialogMessage: ({ message: child }) =>
@@ -193,6 +236,9 @@ export const update = (model: Model, message: Message): Return =>
 						outMessage: toast("success", "Two-factor authentication disabled"),
 					}
 				},
-				onFailure: (error) => ({ model: { ...model, isBusy: false }, outMessage: toast("error", error) }),
+				onFailure: (error) => ({
+					model: { ...model, isBusy: false },
+					outMessage: toast("error", error),
+				}),
 			}),
 	})

@@ -32,22 +32,37 @@ export const metricsFilters = (context: PageContext) => {
  * loads), the chart bucket and the window; nothing to ask for an empty list.
  */
 export const loadSparklines = (model: Model, context: PageContext, force = false): Step =>
-	Option.match(Option.zipWith(boundsOf(model, context), AsyncData.getData(model.list.data), (bounds, data) => ({ bounds, data })), {
-		onNone: () => ({ model }),
-		onSome: ({ bounds, data }) => {
-			const groups = sparklineGroups(data.entries)
-			if (groups.length === 0) return { model }
-			const { bucketSeconds } = sparklineWindow(data.entries, bounds, model.nowMs)
-			const key = keyOf("metrics-sparklines", { groups, bucketSeconds, bounds: boundsKey(bounds) })
-			return Option.match(request(model.sparklines, key, force), {
-				onNone: () => ({ model }),
-				onSome: (sparklines) => ({
-					model: { ...model, sparklines },
-					commands: [FetchSparklines({ key, groups, bucketSeconds, ...bounds, apiBase: context.env.apiBase, readsCache: model.sparklines.key !== key })],
-				}),
-			})
+	Option.match(
+		Option.zipWith(boundsOf(model, context), AsyncData.getData(model.list.data), (bounds, data) => ({
+			bounds,
+			data,
+		})),
+		{
+			onNone: () => ({ model }),
+			onSome: ({ bounds, data }) => {
+				const groups = sparklineGroups(data.entries)
+				if (groups.length === 0) return { model }
+				const { bucketSeconds } = sparklineWindow(data.entries, bounds, model.nowMs)
+				const key = keyOf("metrics-sparklines", { groups, bucketSeconds, bounds: boundsKey(bounds) })
+				return Option.match(request(model.sparklines, key, force), {
+					onNone: () => ({ model }),
+					onSome: (sparklines) => ({
+						model: { ...model, sparklines },
+						commands: [
+							FetchSparklines({
+								key,
+								groups,
+								bucketSeconds,
+								...bounds,
+								apiBase: context.env.apiBase,
+								readsCache: model.sparklines.key !== key,
+							}),
+						],
+					}),
+				})
+			},
 		},
-	})
+	)
 
 /** The list and the summary for the current filters and window, then the sparklines. */
 export const load = (model: Model, context: PageContext, force = false): Step =>
@@ -56,8 +71,15 @@ export const load = (model: Model, context: PageContext, force = false): Step =>
 		onSome: (bounds) => {
 			const { service, type, search } = metricsFilters(context)
 			const apiBase = context.env.apiBase
-			const listKey = keyOf("metrics-list", { type: type ?? null, search: search ?? null, bounds: boundsKey(bounds) })
-			const summaryKey = keyOf("metrics-summary", { service: service ?? null, bounds: boundsKey(bounds) })
+			const listKey = keyOf("metrics-list", {
+				type: type ?? null,
+				search: search ?? null,
+				bounds: boundsKey(bounds),
+			})
+			const summaryKey = keyOf("metrics-summary", {
+				service: service ?? null,
+				bounds: boundsKey(bounds),
+			})
 			const list = request(model.list, listKey, force)
 			const summary = request(model.summary, summaryKey, force)
 			const next = {
@@ -70,8 +92,25 @@ export const load = (model: Model, context: PageContext, force = false): Step =>
 				model: sparklines.model,
 				commands: [
 					...Array.getSomes([
-						Option.map(list, () => FetchList({ key: listKey, type, search, ...bounds, apiBase, readsCache: model.list.key !== listKey })),
-						Option.map(summary, () => FetchSummary({ key: summaryKey, service, ...bounds, apiBase, readsCache: model.summary.key !== summaryKey })),
+						Option.map(list, () =>
+							FetchList({
+								key: listKey,
+								type,
+								search,
+								...bounds,
+								apiBase,
+								readsCache: model.list.key !== listKey,
+							}),
+						),
+						Option.map(summary, () =>
+							FetchSummary({
+								key: summaryKey,
+								service,
+								...bounds,
+								apiBase,
+								readsCache: model.summary.key !== summaryKey,
+							}),
+						),
 					]),
 					...(sparklines.commands ?? []),
 				],

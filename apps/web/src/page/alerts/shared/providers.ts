@@ -158,13 +158,23 @@ const CHAT_PROVIDERS: ReadonlyMap<string, DestinationProvider> = new Map(
 )
 
 /** `destinationProvider`: a `chat` destination's connector, else the type's provider. */
-export const destinationProvider = (type: AlertDestinationType, chatConnector?: string): DestinationProvider =>
+export const destinationProvider = (
+	type: AlertDestinationType,
+	chatConnector?: string,
+): DestinationProvider =>
 	(type === "chat" && chatConnector !== undefined ? CHAT_PROVIDERS.get(chatConnector) : undefined) ??
 	providerOf(type)
 
 export const providerOf = (type: AlertDestinationType): DestinationProvider =>
 	PROVIDERS.get(type) ??
-	WEBHOOK ?? { type, label: type, description: "", accent: "currentColor", accentBg: "transparent", accentOn: "" }
+	WEBHOOK ?? {
+		type,
+		label: type,
+		description: "",
+		accent: "currentColor",
+		accentBg: "transparent",
+		accentOn: "",
+	}
 
 /** `DESTINATION_TYPES` / `destinationTypesFor`: the provider tiles, in the order people reach for them. */
 export const DESTINATION_TYPES: ReadonlyArray<AlertDestinationType> = [
@@ -253,7 +263,8 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 			]
 		return []
 	})()
-	if (options.isBare === true) return h.span(options.className === undefined ? [] : [h.Class(options.className)], content)
+	if (options.isBare === true)
+		return h.span(options.className === undefined ? [] : [h.Class(options.className)], content)
 	return h.span(
 		[
 			h.Class(
@@ -268,7 +279,9 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 			h.span([
 				h.AriaHidden(true),
 				h.Class("absolute inset-0 rounded-lg opacity-70"),
-				h.Style({ background: `radial-gradient(circle at 30% 20%, ${provider.accentBg}, transparent 70%)` }),
+				h.Style({
+					background: `radial-gradient(circle at 30% 20%, ${provider.accentBg}, transparent 70%)`,
+				}),
 			]),
 			h.span([h.Class("relative")], content),
 		],

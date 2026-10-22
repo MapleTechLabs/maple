@@ -54,7 +54,12 @@ const samplesInputOf = (context: ModalContext, selection: Selection, fingerprint
 type Cursor = NonNullable<SamplesPage["nextCursor"]>
 
 /** The page fetched after `before`; the first page has none. */
-const fetchPage = (context: ModalContext, selection: Selection, fingerprint: string, before: Cursor | undefined) => {
+const fetchPage = (
+	context: ModalContext,
+	selection: Selection,
+	fingerprint: string,
+	before: Cursor | undefined,
+) => {
 	const input = samplesInputOf(context, selection, fingerprint)
 	const key = requestKey(context.orgId, "getAiToolErrorSamples", { data: { ...input, before } })
 	return {
@@ -92,9 +97,12 @@ export const follow = (model: Model, context: ModalContext): Return => {
 		const shut = model.dialog.isOpen ? liftDialog(model, Dialog.close(model.dialog)) : { model }
 		return { ...shut, model: { ...shut.model, fingerprint: null } }
 	}
-	const base: Model = model.fingerprint === fingerprint ? model : { ...init(), dialog: model.dialog, fingerprint }
+	const base: Model =
+		model.fingerprint === fingerprint ? model : { ...init(), dialog: model.dialog, fingerprint }
 	const opened = base.dialog.isOpen ? { model: base } : liftDialog(base, Dialog.open(base.dialog))
-	const detailKey = requestKey(context.orgId, "getAiToolErrorDetail", { data: { ...selection, fingerprint } })
+	const detailKey = requestKey(context.orgId, "getAiToolErrorDetail", {
+		data: { ...selection, fingerprint },
+	})
 	const detail: Return = Option.match(Keyed.request(opened.model.detail, detailKey, context.detailMode), {
 		onNone: () => ({ model: opened.model }),
 		onSome: (slot) => ({
@@ -114,7 +122,10 @@ export const follow = (model: Model, context: ModalContext): Return => {
 /** Every loaded sample, page after page. */
 export const occurrencesOf = (model: Model) =>
 	model.pages.flatMap((page) =>
-		Option.match(AsyncData.getData(page.data), { onNone: () => [], onSome: (value) => value.occurrences }),
+		Option.match(AsyncData.getData(page.data), {
+			onNone: () => [],
+			onSome: (value) => value.occurrences,
+		}),
 	)
 
 export type Paging = "more" | "loading" | "failed" | "end"
@@ -139,11 +150,16 @@ const loadMore = (model: Model, context: ModalContext): Return => {
 	if (paging === "failed") {
 		const before = Option.getOrUndefined(
 			Option.flatMap(Option.fromUndefinedOr(previous), (page) =>
-				Option.flatMap(AsyncData.getData(page.data), (value) => Option.fromUndefinedOr(value.nextCursor)),
+				Option.flatMap(AsyncData.getData(page.data), (value) =>
+					Option.fromUndefinedOr(value.nextCursor),
+				),
 			),
 		)
 		const retry = fetchPage(context, context.selection, model.fingerprint, before)
-		return { model: { ...model, pages: [...model.pages.slice(0, -1), retry.slot] }, commands: [retry.command] }
+		return {
+			model: { ...model, pages: [...model.pages.slice(0, -1), retry.slot] },
+			commands: [retry.command],
+		}
 	}
 	if (paging !== "more") return { model }
 	const cursor = Option.getOrUndefined(
@@ -157,7 +173,8 @@ const loadMore = (model: Model, context: ModalContext): Return => {
 /** `select`: past the end loads the next page; a new sample opens and is scrolled to. */
 const select = (model: Model, context: ModalContext, index: number): Return => {
 	if (index < 0) return { model }
-	if (index >= occurrencesOf(model).length) return pagingOf(model) === "more" ? loadMore(model, context) : { model }
+	if (index >= occurrencesOf(model).length)
+		return pagingOf(model) === "more" ? loadMore(model, context) : { model }
 	return {
 		model: {
 			...model,
@@ -171,17 +188,29 @@ const select = (model: Model, context: ModalContext, index: number): Return => {
 }
 
 /** The sample `SamplesPane` has open: the selection clamped to what is loaded. */
-export const currentOf = (model: Model): number => Math.min(model.selected, Math.max(occurrencesOf(model).length - 1, 0))
+export const currentOf = (model: Model): number =>
+	Math.min(model.selected, Math.max(occurrencesOf(model).length - 1, 0))
 
 const step = (model: Model, context: ModalContext, offset: -1 | 1): Return => {
 	const index = context.fingerprints.indexOf(model.fingerprint ?? "")
 	const next = context.fingerprints[index + offset]
 	return next === undefined || index === -1
 		? { model }
-		: { model, outMessage: OutMessage.RequestedSearch({ error: next, session: undefined, variant: undefined }) }
+		: {
+				model,
+				outMessage: OutMessage.RequestedSearch({
+					error: next,
+					session: undefined,
+					variant: undefined,
+				}),
+			}
 }
 
-const search = (model: Model, context: ModalContext, patch: Partial<Omit<ModalContext, "orgId">>): Return => ({
+const search = (
+	model: Model,
+	context: ModalContext,
+	patch: Partial<Omit<ModalContext, "orgId">>,
+): Return => ({
 	model,
 	outMessage: OutMessage.RequestedSearch({
 		error: "error" in patch ? patch.error : context.error,
@@ -200,7 +229,9 @@ export const update = (model: Model, message: Message, context: ModalContext): R
 			const lifted = liftDialog(model, step)
 			return step.outMessage?._tag === "Closed" ? { ...lifted, outMessage: closed } : lifted
 		},
-		CompletedFetchDetail: ({ key, result }) => ({ model: { ...model, detail: Keyed.accept(model.detail, key, result) } }),
+		CompletedFetchDetail: ({ key, result }) => ({
+			model: { ...model, detail: Keyed.accept(model.detail, key, result) },
+		}),
 		CompletedFetchSamples: ({ key, result }) => ({
 			model: { ...model, pages: model.pages.map((page) => Keyed.accept(page, key, result)) },
 		}),
@@ -226,7 +257,9 @@ export const update = (model: Model, message: Message, context: ModalContext): R
 		ClickedSession: ({ session }) => search(model, context, { session }),
 		ClickedClose: () => ({ model, outMessage: closed }),
 		ClickedCopyLink: () => ({ model, commands: [CopyErrorLink()] }),
-		CompletedCopyLink: ({ isCopied }) => ({ model: { ...model, linkCopy: isCopied ? "copied" : "failed" } }),
+		CompletedCopyLink: ({ isCopied }) => ({
+			model: { ...model, linkCopy: isCopied ? "copied" : "failed" },
+		}),
 		ClickedCopyArguments: ({ text }) => ({ model, commands: [CopyErrorArguments({ text })] }),
 		CompletedCopyArguments: ({ isCopied }) => ({
 			model: { ...model, argumentsCopy: isCopied ? "copied" : "failed" },

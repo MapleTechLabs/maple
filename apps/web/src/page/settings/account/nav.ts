@@ -46,7 +46,12 @@ export const accountNavSections: ReadonlyArray<NavShellSection<AccountTab>> = [
 		id: "notifications",
 		title: "Notifications",
 		items: [
-			{ kind: "tab", id: "email-preferences", label: accountTabLabels["email-preferences"], icon: "BellIcon" },
+			{
+				kind: "tab",
+				id: "email-preferences",
+				label: accountTabLabels["email-preferences"],
+				icon: "BellIcon",
+			},
 		],
 	},
 ]

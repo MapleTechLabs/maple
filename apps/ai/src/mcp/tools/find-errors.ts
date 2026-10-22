@@ -98,7 +98,8 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 					? yield* emptyResultHints(
 							{
 								service: params.service,
-								environments: params.environment === undefined ? undefined : [params.environment],
+								environments:
+									params.environment === undefined ? undefined : [params.environment],
 							},
 							{ startTime: st, endTime: et },
 						)

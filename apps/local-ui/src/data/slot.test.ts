@@ -6,8 +6,10 @@ import * as Slot from "./slot"
 const morning = Slot.keyOf("sessions", { startTime: "06:00" })
 const evening = Slot.keyOf("sessions", { startTime: "12:00" })
 
-const requested = (slot: Slot.Slot<number>, key: string, force = false) => Option.getOrThrow(Slot.request(slot, key, force))
-const loaded = (key: string, data: number, atMs: number) => Slot.accept(requested(Slot.idle(), key), key, Result.succeed(data), atMs)
+const requested = (slot: Slot.Slot<number>, key: string, force = false) =>
+	Option.getOrThrow(Slot.request(slot, key, force))
+const loaded = (key: string, data: number, atMs: number) =>
+	Slot.accept(requested(Slot.idle(), key), key, Result.succeed(data), atMs)
 
 describe("local query slots", () => {
 	test("a superseded answer is dropped, the current one lands with its time", () => {

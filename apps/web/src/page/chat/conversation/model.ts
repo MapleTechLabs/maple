@@ -65,10 +65,14 @@ export const Model = Schema.Struct({
 	/** The diagram shown fullscreen, by source. */
 	fullscreenDiagram: Schema.NullOr(Schema.String),
 	/** Markdown parses of the bodies on screen, by text; `isStale` holds an earlier version's parse until its own lands. */
-	markdown: Schema.Record(Schema.String, Schema.Struct({ document: Schema.NullOr(MarkdownDocument), isStale: Schema.Boolean })),
+	markdown: Schema.Record(
+		Schema.String,
+		Schema.Struct({ document: Schema.NullOr(MarkdownDocument), isStale: Schema.Boolean }),
+	),
 	/** Texts with a parse in flight; a streaming body extending one waits for it (one parse at a time). */
 	markdownPending: Schema.Array(Schema.String),
 })
 export type Model = typeof Model.Type
 
-export const isLoading = (model: Model): boolean => model.status === "submitted" || model.status === "streaming"
+export const isLoading = (model: Model): boolean =>
+	model.status === "submitted" || model.status === "streaming"

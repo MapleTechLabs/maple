@@ -74,7 +74,9 @@ export const signalWindowOf = (investigation: V2Investigation): SignalWindow | n
 /** `resolveService`: the one service the signals card can speak for. */
 /** The overview is per service and environment; the busiest row for the service is the incident's. */
 export const busiestRowOf = (rows: ReadonlyArray<OverviewRow>, service: string): OverviewRow | null =>
-	rows.filter((row) => row.serviceName === service).toSorted((left, right) => right.spanCount - left.spanCount)[0] ?? null
+	rows
+		.filter((row) => row.serviceName === service)
+		.toSorted((left, right) => right.spanCount - left.spanCount)[0] ?? null
 
 export const signalServiceOf = (investigation: V2Investigation): string | null => {
 	const named = investigation.snapshot.serviceName?.trim()
@@ -92,7 +94,9 @@ export const traceTips = (investigation: V2Investigation): ReadonlyMap<string, s
 	new Map(
 		(investigation.report?.evidence ?? []).flatMap((evidence) =>
 			evidence.traceIds.flatMap((traceId) =>
-				(["sheet", "evidence", "card"] as const).map((place) => [traceTipId(place, traceId), traceId] as const),
+				(["sheet", "evidence", "card"] as const).map(
+					(place) => [traceTipId(place, traceId), traceId] as const,
+				),
 			),
 		),
 	)

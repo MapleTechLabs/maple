@@ -83,6 +83,4 @@ export const sourceRowHealth = (
 	row: Pick<SourceRow, (typeof SOURCE_HEALTH_COLUMNS)[number]>,
 	now: number,
 	overrides: SourceHealthOverrides = {},
-) =>
-	sourceHealth({ ...row, status: statusOf(row, now), ...overrides }, now)
-
+) => sourceHealth({ ...row, status: statusOf(row, now), ...overrides }, now)

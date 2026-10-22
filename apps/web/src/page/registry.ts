@@ -313,7 +313,9 @@ export const blockNavigation = (
 		(page) => page.id === current._tag && Option.contains(page.keyOf(route), current.key),
 	)
 	if (isSameInstance) return Option.none()
-	return Option.flatMap(pageById(current._tag), (page) => toHeld(page.blockedNavigation(current, url, context)))
+	return Option.flatMap(pageById(current._tag), (page) =>
+		toHeld(page.blockedNavigation(current, url, context)),
+	)
 }
 
 export const changeContext = (current: PageSlot | null, context: PageContext): PageTransition =>

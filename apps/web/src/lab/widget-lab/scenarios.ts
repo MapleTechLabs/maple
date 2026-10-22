@@ -9,7 +9,12 @@ type WidgetDisplayConfig = typeof WidgetDisplayConfigSchema.Type
 
 export type WidgetDataState =
 	| { status: "loading" }
-	| { status: "error"; title?: string; message?: string; kind?: "decode" | "runtime" | "range" | "config" | "empty" }
+	| {
+			status: "error"
+			title?: string
+			message?: string
+			kind?: "decode" | "runtime" | "range" | "config" | "empty"
+	  }
 	| { status: "ready"; data: unknown }
 
 export interface WidgetScenario {

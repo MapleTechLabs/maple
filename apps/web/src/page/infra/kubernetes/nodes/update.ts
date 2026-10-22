@@ -34,7 +34,12 @@ export const filtersOf = (search: Search) => ({
 	environments: search.environments,
 })
 
-type RequestStep = (model: Model, context: PageContext, window: TimeWindow, mode: Frame.RequestMode) => Step<Model, Message>
+type RequestStep = (
+	model: Model,
+	context: PageContext,
+	window: TimeWindow,
+	mode: Frame.RequestMode,
+) => Step<Model, Message>
 
 const nodesStep: RequestStep = (model, context, window, mode) => {
 	const input: NodesInput = { ...window, ...filtersOf(model.search), limit: NODE_LIST_LIMIT }
@@ -92,25 +97,37 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 }
 
 /** `q` and `status` filter the loaded list; the facets and the window re-request. */
-export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => {
 	const href = (search: Search) => hrefOf(AppRoute.InfraKubernetesNodes({ search }))
 	if (href(model.search) === href(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
+	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) =>
+		requestAll(moved, context, mode),
+	)
 }
 
-export const contextChanged = (model: Model, context: PageContext): Return => requestAll(model, context, "Load")
+export const contextChanged = (model: Model, context: PageContext): Return =>
+	requestAll(model, context, "Load")
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		CompletedFetchNodes: ({ key, result }) => ({ model: { ...model, nodes: Keyed.accept(model.nodes, key, result) } }),
+		CompletedFetchNodes: ({ key, result }) => ({
+			model: { ...model, nodes: Keyed.accept(model.nodes, key, result) },
+		}),
 		CompletedFetchFacets: ({ key, result }) => ({
 			model: { ...model, facets: Keyed.accept(model.facets, key, result) },
 		}),
-		ChangedQuery: ({ value }) => navigate(model, { ...model.search, q: value === "" ? undefined : value }),
+		ChangedQuery: ({ value }) =>
+			navigate(model, { ...model.search, q: value === "" ? undefined : value }),
 		ChangedStatus: ({ status }) => navigate(model, { ...model.search, status }),
 		ClickedClearSearch: () => navigate(model, { ...model.search, q: undefined, status: undefined }),
-		ClickedSort: ({ key }) => ({ model: { ...model, sort: nextSort(model.sort, key, { stringKeys: ["nodeName"] }) } }),
+		ClickedSort: ({ key }) => ({
+			model: { ...model, sort: nextSort(model.sort, key, { stringKeys: ["nodeName"] }) },
+		}),
 		ToggledFacetOption: ({ facet, name }) =>
 			navigate(model, {
 				...model.search,
@@ -120,12 +137,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetryNodes: () =>
 			model.frame.window === null
 				? { model }
-				: applySteps<Model, Message>(model, [nodesStep(model, context, model.frame.window, "Refresh")]),
+				: applySteps<Model, Message>(model, [
+						nodesStep(model, context, model.frame.window, "Refresh"),
+					]),
 		GotFilterSectionsMessage: ({ message: inner }) => {
 			const next = FilterSections.update(model.filterSections, inner)
 			return {
 				model: { ...model, filterSections: next.model },
-				commands: Command.mapMessages(next.commands, (m) => Message.GotFilterSectionsMessage({ message: m })),
+				commands: Command.mapMessages(next.commands, (m) =>
+					Message.GotFilterSectionsMessage({ message: m }),
+				),
 			}
 		},
 		GotFrameMessage: ({ message: inner }) =>
@@ -137,7 +158,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = InstallModal.update(model.install, inner)
 			return {
 				model: { ...model, install: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (m) => Message.GotInstallMessage({ message: m })),
+				commands: Command.mapMessages(next.commands ?? [], (m) =>
+					Message.GotInstallMessage({ message: m }),
+				),
 			}
 		},
 	})

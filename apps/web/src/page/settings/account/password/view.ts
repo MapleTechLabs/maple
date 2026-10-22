@@ -37,7 +37,13 @@ const passwordField = (
 		attributes: options.invalid !== undefined && !isInvalid ? [h.AriaInvalid(false)] : [],
 		after:
 			options.invalid !== undefined && isInvalid
-				? [fieldError(h, { ids: fieldIds(options.id), state: stateFor(value, true) }, options.invalid.error)]
+				? [
+						fieldError(
+							h,
+							{ ids: fieldIds(options.id), state: stateFor(value, true) },
+							options.invalid.error,
+						),
+					]
 				: [],
 	})
 }
@@ -75,7 +81,10 @@ const loaded = (h: H, model: Model): Html => {
 							id: "account-new-password",
 							label: "New password",
 							autoComplete: "new-password",
-							invalid: { isInvalid: isTooShort(model), error: ["Use at least ", String(MIN_PASSWORD_LENGTH), " characters."] },
+							invalid: {
+								isInvalid: isTooShort(model),
+								error: ["Use at least ", String(MIN_PASSWORD_LENGTH), " characters."],
+							},
 						}),
 						passwordField(h, model, {
 							field: "confirm",
@@ -115,6 +124,7 @@ const loaded = (h: H, model: Model): Html => {
 	])
 }
 
-export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>((model, _inputs, h) =>
-	!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model),
+export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>(
+	(model, _inputs, h) =>
+		!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model),
 )

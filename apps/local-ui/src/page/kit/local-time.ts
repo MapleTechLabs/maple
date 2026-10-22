@@ -24,7 +24,8 @@ const clockOf = (format: TimeFormat, ms: number): Clock => {
 		second: "numeric",
 		hourCycle: "h23",
 	}).formatToParts(ms)
-	const field = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value ?? 0)
+	const field = (type: Intl.DateTimeFormatPartTypes) =>
+		Number(parts.find((part) => part.type === type)?.value ?? 0)
 	return {
 		dayKey: `${field("year")}-${field("month")}-${field("day")}`,
 		hours: field("hour"),

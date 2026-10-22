@@ -5,7 +5,12 @@ import { OrgId, ScrapeTargetId, SourceId } from "@maple/domain/primitives"
 import { Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, insertTestSource, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	insertTestSource,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 import { IntegrationInventoryService } from "./IntegrationInventoryService"
 
 const createdDbs: TestDb[] = []
@@ -99,8 +104,6 @@ describe("IntegrationInventoryService", () => {
 			assert.strictEqual(railway?.account, "org_a-workspace")
 			assert.strictEqual(railway?.status, "healthy")
 			assert.strictEqual(railway?.resources[0]?.note, "2 services")
-		}).pipe(
-			Effect.provide(IntegrationInventoryService.layer.pipe(Layer.provideMerge(testDb.layer))),
-		)
+		}).pipe(Effect.provide(IntegrationInventoryService.layer.pipe(Layer.provideMerge(testDb.layer))))
 	})
 })

@@ -116,7 +116,14 @@ export const routeChanged = (
 					search: route.search,
 					resultSelect: { ...model.resultSelect, value: route.search.result ?? ALL },
 				},
-				frameRouteChanged(model.frame, model.search, route.search, route.search.pipeline, DEFAULT_PRESET, context),
+				frameRouteChanged(
+					model.frame,
+					model.search,
+					route.search,
+					route.search.pipeline,
+					DEFAULT_PRESET,
+					context,
+				),
 				context,
 			)
 

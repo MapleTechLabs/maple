@@ -1,5 +1,9 @@
 import { AlertRuleId } from "@maple/domain/http"
-import { V2AlertRuleCreateParams, V2AlertRulePreviewParams, V2AlertRuleTestParams } from "@maple/domain/http/v2"
+import {
+	V2AlertRuleCreateParams,
+	V2AlertRulePreviewParams,
+	V2AlertRuleTestParams,
+} from "@maple/domain/http/v2"
 import { getTracesFacets } from "@maple/web-data/warehouse/traces"
 import { displayError } from "@maple/web-data/lib/error-messages"
 import { Clock, Effect, Exit, Schema } from "effect"
@@ -36,7 +40,9 @@ export const FetchEditorConnectors = Command.define("FetchAlertEditorConnectors"
 		const client = yield* MapleApiV2Client
 		const response = yield* client.chatIntegration.connectors()
 		return Message.CompletedFetchConnectors({
-			connectors: [...response.data].sort((a, b) => Number(b.id === "slack") - Number(a.id === "slack")),
+			connectors: [...response.data].sort(
+				(a, b) => Number(b.id === "slack") - Number(a.id === "slack"),
+			),
 		})
 	}).pipe(Effect.orElseSucceed(() => Message.CompletedFetchConnectors({ connectors: [] }))),
 })
@@ -152,7 +158,8 @@ export const ReloadPage = Command.define("ReloadAlertEditorPage", {
 export const TrackRuleCreated = Command.define("TrackAlertRuleCreated", {
 	args: { signal: Schema.String },
 	messages: [Message.TrackedRuleCreated],
-	execute: ({ signal }) => Effect.as(trackProduct("alert_rule_created", { signal }), Message.TrackedRuleCreated()),
+	execute: ({ signal }) =>
+		Effect.as(trackProduct("alert_rule_created", { signal }), Message.TrackedRuleCreated()),
 })
 
 /** `handleSave`: create, or update the rule being edited. */

@@ -38,4 +38,5 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-export const seriesId = (model: Pick<Model, "metric" | "groupByPod">): string => `${model.metric}:${model.groupByPod}`
+export const seriesId = (model: Pick<Model, "metric" | "groupByPod">): string =>
+	`${model.metric}:${model.groupByPod}`

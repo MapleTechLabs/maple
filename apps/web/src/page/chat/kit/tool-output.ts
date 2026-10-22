@@ -81,7 +81,9 @@ export type StructuredPayload = typeof StructuredPayload.Type
 const decodePayload = Schema.decodeUnknownOption(StructuredPayload)
 
 const asStructured = (value: unknown): Option.Option<StructuredPayload> =>
-	Option.exists(decodeRecord(value), (record) => STRUCTURED_MARKER in record) ? decodePayload(value) : Option.none()
+	Option.exists(decodeRecord(value), (record) => STRUCTURED_MARKER in record)
+		? decodePayload(value)
+		: Option.none()
 
 const parseStructuredFromText = (text: string): Option.Option<StructuredPayload> => {
 	const start = markerStart(text)
@@ -92,7 +94,11 @@ const TextItem = Schema.Struct({ type: Schema.Literal("text"), text: Schema.Stri
 const decodeTextItem = Schema.decodeUnknownOption(TextItem)
 const contentTexts = (record: Readonly<Record<string, unknown>>): Option.Option<ReadonlyArray<string>> =>
 	globalThis.Array.isArray(record.content)
-		? Option.some(record.content.flatMap((item) => Option.toArray(Option.map(decodeTextItem(item), (it) => it.text))))
+		? Option.some(
+				record.content.flatMap((item) =>
+					Option.toArray(Option.map(decodeTextItem(item), (it) => it.text)),
+				),
+			)
 		: Option.none()
 
 /** The rich payload a Maple tool renders as a table, chart or tree (`{ text, ui }` or the legacy shapes). */
@@ -120,7 +126,8 @@ export const extractOutputText = (output: unknown): string | null => {
 			if (Predicate.isString(record.text)) return record.text
 			return Option.match(contentTexts(record), {
 				onNone: () => JSON.stringify(output, null, 2),
-				onSome: (texts) => texts.filter((text) => Option.isNone(parseStructuredFromText(text))).join("\n"),
+				onSome: (texts) =>
+					texts.filter((text) => Option.isNone(parseStructuredFromText(text))).join("\n"),
 			})
 		},
 	})

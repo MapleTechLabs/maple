@@ -195,6 +195,8 @@ describe("dashboards list", () => {
 		expect(decodeURIComponent(url)).toContain("tags")
 		expect(decodeURIComponent(url)).toContain("slo")
 		const cleared = pageUpdate(picked.model, tag(Combobox.Message.ClearedSelection()))
-		expect(cleared.outMessage).toEqual(PageOutMessage.RequestedNavigation({ url: "/dashboards", isReplace: true }))
+		expect(cleared.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/dashboards", isReplace: true }),
+		)
 	})
 })

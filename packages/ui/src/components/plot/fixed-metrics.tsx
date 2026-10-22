@@ -245,10 +245,7 @@ export function FixedMetricLegend({ series }: { series: readonly FixedMetricSeri
 			{series.map((entry) => (
 				<span key={entry.key} className="flex items-center gap-1.5 px-1 py-0.5">
 					<span
-						className={cn(
-							"size-2 shrink-0 rounded-xs",
-							entry.dashed && "border border-dashed",
-						)}
+						className={cn("size-2 shrink-0 rounded-xs", entry.dashed && "border border-dashed")}
 						style={entry.dashed ? { borderColor: entry.color } : { backgroundColor: entry.color }}
 					/>
 					<span className="truncate">{entry.label}</span>

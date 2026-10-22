@@ -18,7 +18,10 @@ export const LOG_OUT = "log-out"
 const userAvatar = <M>(h: HtmlBuilder<M>, initials: string): Html =>
 	avatarFallback(
 		h,
-		{ className: `bg-muted ${AVATAR_CLASS}`, fallbackClassName: "rounded-[inherit] font-medium text-muted-foreground" },
+		{
+			className: `bg-muted ${AVATAR_CLASS}`,
+			fallbackClassName: "rounded-[inherit] font-medium text-muted-foreground",
+		},
 		initials,
 	)
 
@@ -32,17 +35,29 @@ export const orgTriggerChildren = (h: HtmlBuilder<Message>, orgName: string): Re
 	icon(h, "ChevronExpandYIcon", { className: "ml-0.5 text-muted-foreground" }),
 ]
 
-export const userTriggerChildren = (h: HtmlBuilder<Message>, user: Option.Option<ClerkUser>): ReadonlyArray<Html> => [
+export const userTriggerChildren = (
+	h: HtmlBuilder<Message>,
+	user: Option.Option<ClerkUser>,
+): ReadonlyArray<Html> => [
 	userAvatar(h, isClerkAuthEnabled ? initialsFrom(nameOf(user)) : "U"),
 	h.span([h.Class("sr-only")], ["Account menu"]),
 ]
 
 /** `ClerkUserMenu`'s label and Log out; self-hosted has Log out only. */
-export const userMenuEntries = (h: HtmlBuilder<Message>, user: Option.Option<ClerkUser>): ReadonlyArray<MenuEntry> => {
-	const logOut: MenuEntry = { _tag: "Group", entries: [{ _tag: "Item", value: LOG_OUT, label: "Log out", icon: "LogoutIcon" }] }
+export const userMenuEntries = (
+	h: HtmlBuilder<Message>,
+	user: Option.Option<ClerkUser>,
+): ReadonlyArray<MenuEntry> => {
+	const logOut: MenuEntry = {
+		_tag: "Group",
+		entries: [{ _tag: "Item", value: LOG_OUT, label: "Log out", icon: "LogoutIcon" }],
+	}
 	if (!isClerkAuthEnabled) return [logOut]
 	const name = nameOf(user)
-	const email = Option.getOrElse(Option.flatMapNullishOr(user, (found) => found.email), () => "")
+	const email = Option.getOrElse(
+		Option.flatMapNullishOr(user, (found) => found.email),
+		() => "",
+	)
 	return [
 		{
 			_tag: "Group",
@@ -57,7 +72,15 @@ export const userMenuEntries = (h: HtmlBuilder<Message>, user: Option.Option<Cle
 								h.span([h.Class("truncate font-medium"), h.Title(name)], [name]),
 								...(email === ""
 									? []
-									: [h.span([h.Class("truncate text-xs text-muted-foreground"), h.Title(email)], [email])]),
+									: [
+											h.span(
+												[
+													h.Class("truncate text-xs text-muted-foreground"),
+													h.Title(email),
+												],
+												[email],
+											),
+										]),
 							],
 						),
 					],
@@ -69,4 +92,3 @@ export const userMenuEntries = (h: HtmlBuilder<Message>, user: Option.Option<Cle
 		logOut,
 	]
 }
-

@@ -16,8 +16,11 @@ export const FetchTrace = Command.define("FetchLocalTraceDetail", {
 	execute: ({ key, traceId, apiBase, readsCache }) =>
 		Effect.gen(function* () {
 			const cacheKey = traceCacheKey(traceId)
-			const maybeCached = readsCache ? yield* readCached(cacheKey, traceFromCached(traceId)) : Option.none()
-			if (Option.isSome(maybeCached)) return Message.FoundCachedTrace({ key, cached: maybeCached.value })
+			const maybeCached = readsCache
+				? yield* readCached(cacheKey, traceFromCached(traceId))
+				: Option.none()
+			if (Option.isSome(maybeCached))
+				return Message.FoundCachedTrace({ key, cached: maybeCached.value })
 			const trace = yield* fetchTrace(traceId, apiBase)
 			const fetchedAtMs = yield* Clock.currentTimeMillis
 			yield* recordCached(cacheKey, traceToCached(trace), fetchedAtMs)
@@ -27,7 +30,11 @@ export const FetchTrace = Command.define("FetchLocalTraceDetail", {
 
 export const FetchSpanDetail = Command.define("FetchLocalSpanDetail", {
 	args: { ...SpanDetailRequest.fields, readsCache: Schema.Boolean },
-	messages: [Message.SucceededFetchSpanDetail, Message.FailedFetchSpanDetail, Message.FoundCachedSpanDetail],
+	messages: [
+		Message.SucceededFetchSpanDetail,
+		Message.FailedFetchSpanDetail,
+		Message.FoundCachedSpanDetail,
+	],
 	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ readsCache, ...request }) =>
 		withCache({
@@ -37,13 +44,20 @@ export const FetchSpanDetail = Command.define("FetchLocalSpanDetail", {
 			toCached: (detail: SpanAttrs) => detail,
 			fetch: fetchSpanDetail(request.traceId, request.spanId, request.apiBase),
 			found: (cached) => Message.FoundCachedSpanDetail({ request, cached }),
-			succeeded: (detail, fetchedAtMs) => Message.SucceededFetchSpanDetail({ key: request.key, detail, fetchedAtMs }),
-		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchSpanDetail({ key: request.key, failure })))),
+			succeeded: (detail, fetchedAtMs) =>
+				Message.SucceededFetchSpanDetail({ key: request.key, detail, fetchedAtMs }),
+		}).pipe(
+			Effect.catch((failure) =>
+				Effect.succeed(Message.FailedFetchSpanDetail({ key: request.key, failure })),
+			),
+		),
 })
 
 /** Legacy caches the rows as `LocalLog`s; the panel keeps each with its `logKey`. */
 const spanLogsFromCached = (value: CacheValue): Option.Option<ReadonlyArray<SpanLog>> =>
-	Option.map(cachedAs(Schema.Array(LocalLog))(value), (logs) => logs.map((log) => ({ ...log, key: logKey(log) })))
+	Option.map(cachedAs(Schema.Array(LocalLog))(value), (logs) =>
+		logs.map((log) => ({ ...log, key: logKey(log) })),
+	)
 
 export const FetchSpanLogs = Command.define("FetchLocalSpanLogs", {
 	args: { ...SpanLogsRequest.fields, readsCache: Schema.Boolean },
@@ -51,17 +65,35 @@ export const FetchSpanLogs = Command.define("FetchLocalSpanLogs", {
 	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ readsCache, ...request }) =>
 		withCache({
-			key: ["local", "span-logs", request.traceId, request.spanId, request.spanStartTime, request.spanDurationMs],
+			key: [
+				"local",
+				"span-logs",
+				request.traceId,
+				request.spanId,
+				request.spanStartTime,
+				request.spanDurationMs,
+			],
 			readsCache,
 			fromCached: spanLogsFromCached,
 			toCached: (logs: ReadonlyArray<SpanLog>) => logs.map(({ key: _key, ...log }) => log),
 			fetch: Effect.map(
-				fetchSpanLogs(request.traceId, request.spanId, request.spanStartTime, request.spanDurationMs, request.apiBase),
+				fetchSpanLogs(
+					request.traceId,
+					request.spanId,
+					request.spanStartTime,
+					request.spanDurationMs,
+					request.apiBase,
+				),
 				(logs): ReadonlyArray<SpanLog> => logs,
 			),
 			found: (cached) => Message.FoundCachedSpanLogs({ request, cached }),
-			succeeded: (logs, fetchedAtMs) => Message.SucceededFetchSpanLogs({ key: request.key, logs, fetchedAtMs }),
-		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchSpanLogs({ key: request.key, failure })))),
+			succeeded: (logs, fetchedAtMs) =>
+				Message.SucceededFetchSpanLogs({ key: request.key, logs, fetchedAtMs }),
+		}).pipe(
+			Effect.catch((failure) =>
+				Effect.succeed(Message.FailedFetchSpanLogs({ key: request.key, failure })),
+			),
+		),
 })
 
 /** `useCopy`: the clipboard write behind every copy control of the span panel. */
@@ -84,7 +116,10 @@ export const FocusSpanPanel = Mount.define("FocusLocalSpanPanel", {
 	messages: [Message.CompletedFocusSpanPanel],
 	execute: ({ element }) =>
 		Effect.sync(() => {
-			if (element instanceof HTMLElement && (document.activeElement === null || document.activeElement === document.body))
+			if (
+				element instanceof HTMLElement &&
+				(document.activeElement === null || document.activeElement === document.body)
+			)
 				element.focus({ preventScroll: true })
 			return Message.CompletedFocusSpanPanel()
 		}),
@@ -126,5 +161,6 @@ const COPY_TIMEOUT = Duration.millis(2000)
 export const WaitCopyStatus = Command.define("WaitLocalSpanCopyStatus", {
 	args: { id: Schema.String, generation: Schema.Number },
 	messages: [Message.ElapsedCopyStatus],
-	execute: ({ id, generation }) => Effect.as(Effect.sleep(COPY_TIMEOUT), Message.ElapsedCopyStatus({ id, generation })),
+	execute: ({ id, generation }) =>
+		Effect.as(Effect.sleep(COPY_TIMEOUT), Message.ElapsedCopyStatus({ id, generation })),
 })

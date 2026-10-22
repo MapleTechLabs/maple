@@ -115,7 +115,9 @@ export const frameRouteChanged = (
 	return routeWindowStep(previous, search, {
 		resolve,
 		requestAll: (mode) =>
-			frame.window === null ? resolve() : { frame: next, commands: [], out: { _tag: "ResolvedWindow", window: frame.window, mode } },
+			frame.window === null
+				? resolve()
+				: { frame: next, commands: [], out: { _tag: "ResolvedWindow", window: frame.window, mode } },
 	})
 }
 
@@ -187,8 +189,14 @@ export const updateFrame = (
 					next.outMessage === undefined
 						? null
 						: next.outMessage._tag === "RejectedRange"
-							? { _tag: "RefusedWindow", toast: TimeRangePicker.rejectedToast(next.outMessage.maxRangeSeconds) }
-							: { _tag: "PickedWindow", window: TimeRangePicker.searchPatchOf(next.outMessage) },
+							? {
+									_tag: "RefusedWindow",
+									toast: TimeRangePicker.rejectedToast(next.outMessage.maxRangeSeconds),
+								}
+							: {
+									_tag: "PickedWindow",
+									window: TimeRangePicker.searchPatchOf(next.outMessage),
+								},
 			}
 		},
 		ClickedResetTimeRange: () => ({

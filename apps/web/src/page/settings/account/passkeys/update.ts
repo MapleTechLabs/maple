@@ -75,16 +75,25 @@ export const init = (): Return => ({
 	commands: [ReadPasskeysUser()],
 })
 
-const toast = (type: "success" | "error", title: string) => PageOutMessage.RequestedToast({ type, title, description: "" })
+const toast = (type: "success" | "error", title: string) =>
+	PageOutMessage.RequestedToast({ type, title, description: "" })
 
 const liftRename = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
-	model: { ...model, renameDialog: step.model, ...(step.outMessage?._tag === "Closed" && { renaming: null }) },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRenameDialogMessage({ message })),
+	model: {
+		...model,
+		renameDialog: step.model,
+		...(step.outMessage?._tag === "Closed" && { renaming: null }),
+	},
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotRenameDialogMessage({ message }),
+	),
 })
 
 const liftRemove = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, removeDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRemoveDialogMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotRemoveDialogMessage({ message }),
+	),
 })
 
 const refreshed = (step: Return, title: string): Return => ({
@@ -104,25 +113,37 @@ const pickedRowAction = (model: Model, menuId: string, value: string): Return =>
 				model.isBusy
 					? { model }
 					: value === "rename"
-						? liftRename({ ...model, renaming: { id: passkey.id, name: passkey.name ?? "" } }, Dialog.open(model.renameDialog))
+						? liftRename(
+								{ ...model, renaming: { id: passkey.id, name: passkey.name ?? "" } },
+								Dialog.open(model.renameDialog),
+							)
 						: liftRemove({ ...model, removing: passkey }, Dialog.open(model.removeDialog)),
 		},
 	)
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
-		CompletedReadUser: ({ user, isSupported }) => ({ model: { ...model, isLoaded: true, user, isSupported } }),
+		CompletedReadUser: ({ user, isSupported }) => ({
+			model: { ...model, isLoaded: true, user, isSupported },
+		}),
 		ClickedAdd: () =>
-			model.isBusy || !model.isSupported ? { model } : { model: { ...model, isBusy: true }, commands: [CreatePasskey()] },
+			model.isBusy || !model.isSupported
+				? { model }
+				: { model: { ...model, isBusy: true }, commands: [CreatePasskey()] },
 		CompletedCreate: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => refreshed({ model: { ...model, isBusy: false } }, "Passkey added"),
-				onFailure: (error) => ({ model: { ...model, isBusy: false }, outMessage: toast("error", error) }),
+				onFailure: (error) => ({
+					model: { ...model, isBusy: false },
+					outMessage: toast("error", error),
+				}),
 			}),
 		GotRowMenuMessage: ({ menuId, message: child }) => {
 			const step = Menu.update(model.rowMenus[menuId] ?? Menu.init(menuId), child)
 			const next = { ...model, rowMenus: { ...model.rowMenus, [menuId]: step.model } }
-			const commands = Command.mapMessages(step.commands ?? [], (inner) => Message.GotRowMenuMessage({ menuId, message: inner }))
+			const commands = Command.mapMessages(step.commands ?? [], (inner) =>
+				Message.GotRowMenuMessage({ menuId, message: inner }),
+			)
 			if (step.outMessage?._tag !== "SelectedItem") return { model: next, commands }
 			const after = pickedRowAction(next, menuId, step.outMessage.value)
 			return { ...after, commands: [...commands, ...(after.commands ?? [])] }
@@ -130,7 +151,9 @@ export const update = (model: Model, message: Message): Return =>
 		GotRenameDialogMessage: ({ message: child }) =>
 			model.isBusy ? { model } : liftRename(model, Dialog.update(model.renameDialog, child)),
 		ChangedName: ({ value }) =>
-			model.renaming === null ? { model } : { model: { ...model, renaming: { ...model.renaming, name: value } } },
+			model.renaming === null
+				? { model }
+				: { model: { ...model, renaming: { ...model.renaming, name: value } } },
 		SubmittedRename: () => {
 			const renaming = model.renaming
 			const name = renaming?.name.trim() ?? ""
@@ -139,8 +162,15 @@ export const update = (model: Model, message: Message): Return =>
 		},
 		CompletedRename: ({ result }) =>
 			Result.match(result, {
-				onSuccess: () => refreshed(liftRename({ ...model, isBusy: false }, Dialog.close(model.renameDialog)), "Passkey renamed"),
-				onFailure: (error) => ({ model: { ...model, isBusy: false }, outMessage: toast("error", error) }),
+				onSuccess: () =>
+					refreshed(
+						liftRename({ ...model, isBusy: false }, Dialog.close(model.renameDialog)),
+						"Passkey renamed",
+					),
+				onFailure: (error) => ({
+					model: { ...model, isBusy: false },
+					outMessage: toast("error", error),
+				}),
 			}),
 		GotRemoveDialogMessage: ({ message: child }) =>
 			model.isBusy ? { model } : liftRemove(model, Dialog.update(model.removeDialog, child)),
@@ -151,7 +181,16 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedRemove: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () =>
-					refreshed(liftRemove({ ...model, isBusy: false, removing: null }, Dialog.close(model.removeDialog)), "Passkey removed"),
-				onFailure: (error) => ({ model: { ...model, isBusy: false }, outMessage: toast("error", error) }),
+					refreshed(
+						liftRemove(
+							{ ...model, isBusy: false, removing: null },
+							Dialog.close(model.removeDialog),
+						),
+						"Passkey removed",
+					),
+				onFailure: (error) => ({
+					model: { ...model, isBusy: false },
+					outMessage: toast("error", error),
+				}),
 			}),
 	})

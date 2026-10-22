@@ -68,7 +68,10 @@ const issue = (overrides: Partial<Record<string, unknown>> = {}) =>
 /** Entered and windowed: every query in flight. */
 const windowed = (search = {}): Model => {
 	const entered = init({ search }, context).model
-	const resolved = pageUpdate(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
+	const resolved = pageUpdate(
+		entered,
+		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+	).model
 	return pageUpdate(resolved, Message.MountedFilterRail()).model
 }
 
@@ -171,7 +174,10 @@ describe("errors hub", () => {
 		expect(names(retried.commands)).toEqual(["FetchErrorsRanking"])
 		const ranked = pageUpdate(
 			retried.model,
-			Message.CompletedFetchRanking({ key: retried.model.ranking.key ?? "", result: Result.succeed(["1"]) }),
+			Message.CompletedFetchRanking({
+				key: retried.model.ranking.key ?? "",
+				result: Result.succeed(["1"]),
+			}),
 		)
 		expect(names(ranked.commands)).toEqual([FetchPage.name])
 	})
@@ -180,14 +186,20 @@ describe("errors hub", () => {
 		const model = windowed({ sort: "volume" })
 		const ranked = pageUpdate(
 			model,
-			Message.CompletedFetchRanking({ key: model.ranking.key ?? "", result: Result.succeed(["1", "2"]) }),
+			Message.CompletedFetchRanking({
+				key: model.ranking.key ?? "",
+				result: Result.succeed(["1", "2"]),
+			}),
 		).model
 		const filtered = routeChanged(ranked, { search: { sort: "volume", service: "payment-svc" } }, context)
 		expect(names(filtered.commands)).toContain("FetchErrorsRanking")
 		expect(names(filtered.commands)).not.toContain(FetchPage.name)
 		const reranked = pageUpdate(
 			filtered.model,
-			Message.CompletedFetchRanking({ key: filtered.model.ranking.key ?? "", result: Result.succeed(["3"]) }),
+			Message.CompletedFetchRanking({
+				key: filtered.model.ranking.key ?? "",
+				result: Result.succeed(["3"]),
+			}),
 		)
 		expect(names(reranked.commands)).toEqual([FetchPage.name])
 		expect(reranked.model.listKey).toContain('"fingerprint_hash":"3"')
@@ -197,12 +209,18 @@ describe("errors hub", () => {
 		const model = windowed({ sort: "volume" })
 		const ranked = pageUpdate(
 			model,
-			Message.CompletedFetchRanking({ key: model.ranking.key ?? "", result: Result.succeed(["1", "2"]) }),
+			Message.CompletedFetchRanking({
+				key: model.ranking.key ?? "",
+				result: Result.succeed(["1", "2"]),
+			}),
 		).model
 		const listed = withPage(ranked, [issue()])
 		expect(listed.pages).toHaveLength(1)
 		const later = { startTime: "2026-09-30 12:05:00", endTime: "2026-10-01 12:05:00" }
-		const reloaded = pageUpdate(listed, Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Refresh" }))
+		const reloaded = pageUpdate(
+			listed,
+			Message.CompletedResolveWindow({ window: later, nowMs: NOW, mode: "Refresh" }),
+		)
 		expect(names(reloaded.commands)).toContain("FetchErrorsRanking")
 		expect(reloaded.model.listKey).toBe(listed.listKey)
 		expect(reloaded.model.pages).toEqual(listed.pages)

@@ -578,9 +578,7 @@ export const withSourceHealth = (
 		const own = sources.filter((source) => source.platform === entry.provider)
 		if (own.length === 0) return entry
 		const status = worstStatus([entry.status, ...own.map((source) => source.health.status)])
-		const problem =
-			own.find((source) => source.health.status === status)?.health.problem ?? entry.problem
+		const problem = own.find((source) => source.health.status === status)?.health.problem ?? entry.problem
 		return { ...entry, status, problem: status === "healthy" ? null : problem }
 	}),
 })
-

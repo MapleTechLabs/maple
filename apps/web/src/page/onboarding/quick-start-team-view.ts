@@ -42,7 +42,8 @@ const nameForm = (h: H, team: Team, isBusy: boolean): Html =>
 							type: "submit",
 							variant: "outline",
 							isLoading: team.pending === "rename",
-							isDisabled: !team.canManage || isBusy || team.name.trim() === "" || !isNameDirty(team),
+							isDisabled:
+								!team.canManage || isBusy || team.name.trim() === "" || !isNameDirty(team),
 						},
 						["Save name"],
 					),
@@ -73,7 +74,10 @@ const invitedList = (h: H, invited: ReadonlyArray<string>): ReadonlyArray<Html> 
 /** `StepTeamConnected`: the loading line while Clerk reads the org, then `StepTeam`. */
 export const teamStep = (h: H, team: Team): Html => {
 	if (!team.isLoaded)
-		return h.output([h.Class("p-12 text-center text-sm text-muted-foreground")], ["Loading your workspace…"])
+		return h.output(
+			[h.Class("p-12 text-center text-sm text-muted-foreground")],
+			["Loading your workspace…"],
+		)
 	const isBusy = team.pending !== null
 	return h.div(
 		[h.Class("flex flex-1 flex-col items-center justify-center px-6 py-12")],
@@ -105,7 +109,13 @@ export const teamStep = (h: H, team: Team): Html => {
 						[h.AriaLive("polite"), h.AriaAtomic(true), h.Class("min-h-5 text-xs")],
 						[
 							h.p(
-								[h.Class(team.feedback?.isError === true ? TONE_TEXT.crit : "text-muted-foreground")],
+								[
+									h.Class(
+										team.feedback?.isError === true
+											? TONE_TEXT.crit
+											: "text-muted-foreground",
+									),
+								],
 								team.feedback === null ? [] : [team.feedback.message],
 							),
 						],
@@ -115,13 +125,25 @@ export const teamStep = (h: H, team: Team): Html => {
 						[
 							button(
 								h,
-								{ variant: "ghost", isDisabled: isBusy, attributes: [h.OnClick(Message.ClickedBack({ to: "intent" }))] },
+								{
+									variant: "ghost",
+									isDisabled: isBusy,
+									attributes: [h.OnClick(Message.ClickedBack({ to: "intent" }))],
+								},
 								[icon(h, "ArrowLeftIcon"), "Back"],
 							),
 							button(
 								h,
-								{ size: "lg", isDisabled: isBusy, attributes: [h.OnClick(Message.ClickedContinue({ step: "team" }))] },
-								[isNameDirty(team) || team.email.trim() !== "" ? "Skip for now" : "Continue to plans"],
+								{
+									size: "lg",
+									isDisabled: isBusy,
+									attributes: [h.OnClick(Message.ClickedContinue({ step: "team" }))],
+								},
+								[
+									isNameDirty(team) || team.email.trim() !== ""
+										? "Skip for now"
+										: "Continue to plans",
+								],
 							),
 						],
 					),
@@ -169,7 +191,10 @@ export const planStep = (h: H, isCustomerLoading: boolean, pricing: Html): Html 
 						[h.Class("text-center mb-10")],
 						[
 							eyebrow(h, { variant: "label", className: "text-primary" }, ["Pick a plan"]),
-							h.h2([h.Class("text-3xl font-semibold tracking-tight mt-2")], ["Pick a plan to keep going"]),
+							h.h2(
+								[h.Class("text-3xl font-semibold tracking-tight mt-2")],
+								["Pick a plan to keep going"],
+							),
 							h.p(
 								[h.Class("text-muted-foreground text-sm mt-3 max-w-lg mx-auto")],
 								[
@@ -188,7 +213,11 @@ export const planStep = (h: H, isCustomerLoading: boolean, pricing: Html): Html 
 						[
 							button(
 								h,
-								{ variant: "ghost", className: "gap-2", attributes: [h.OnClick(Message.ClickedBack({ to: "team" }))] },
+								{
+									variant: "ghost",
+									className: "gap-2",
+									attributes: [h.OnClick(Message.ClickedBack({ to: "team" }))],
+								},
 								[icon(h, "ArrowLeftIcon"), "Back"],
 							),
 						],
@@ -230,7 +259,11 @@ const inviteForm = (h: H, team: Team, isBusy: boolean): Html =>
 							type: "submit",
 							variant: "outline",
 							isLoading: team.pending === "invite",
-							isDisabled: !team.canManage || isBusy || team.email.trim() === "" || isAlreadyInvited(team),
+							isDisabled:
+								!team.canManage ||
+								isBusy ||
+								team.email.trim() === "" ||
+								isAlreadyInvited(team),
 						},
 						["Send invitation"],
 					),

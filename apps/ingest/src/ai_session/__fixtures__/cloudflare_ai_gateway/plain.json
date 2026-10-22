@@ -1,1 +1,63 @@
-{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"ai-gateway"}}]},"scopeSpans":[{"scope":{"name":"ai"},"spans":[{"traceId":"ff1db7ed1895c5cd99a42152f78b3811","spanId":"f3f814297dec58f9","parentSpanId":"c6278384a4d33cca","name":"cf.aig.request","kind":1,"startTimeUnixNano":"1791844794580000000","endTimeUnixNano":"1791844796041000000","attributes":[{"key":"gen_ai.operation.name","value":{"stringValue":"chat"}},{"key":"gen_ai.request.model","value":{"stringValue":"@cf/meta/llama-3.3-70b-instruct-fp8-fast"}},{"key":"gen_ai.provider.name","value":{"stringValue":"internal-workers-ai"}},{"key":"gen_ai.usage.input_tokens","value":{"intValue":41}},{"key":"gen_ai.usage.output_tokens","value":{"intValue":4}},{"key":"gen_ai.input.messages","value":{"stringValue":"{\"messages\":[{\"role\":\"user\",\"content\":\"Say hi in three words.\"}],\"max_tokens\":32}"}},{"key":"gen_ai.output.messages","value":{"stringValue":"{\"id\":\"chatcmpl-c0407e2e-ae4b-44a8-b9a2-173d8b7678b4\",\"object\":\"chat.completion\",\"created\":1791844794,\"model\":\"@cf/meta/llama-3.3-70b-instruct-sd\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Hello to you\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null,\"routed_experts\":null}],\"service_tier\":null,\"usage\":{\"prompt_tokens\":41,\"completion_tokens\":4,\"total_tokens\":45,\"prompt_tokens_details\":{\"cached_tokens\":0},\"neurons\":1.9125957489013672},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"prompt_text\":null,\"kv_transfer_params\":null,\"ec_transfer_params\":null,\"metrics\":null,\"response\":\"Hello to you\",\"tool_calls\":[]}"}},{"key":"gen_ai.usage.cost","value":{"doubleValue":0.000021038553237915038}},{"key":"session_id","value":{"stringValue":"aig-capture-mv5u4jzp"}},{"key":"capture_case","value":{"stringValue":"plain"}},{"key":"capture_run","value":{"stringValue":"mv5u4jzp"}}],"events":[],"status":{"code":0},"droppedAttributesCount":0,"droppedEventsCount":0,"links":[],"droppedLinksCount":0}]}]}]}
+{
+	"resourceSpans": [
+		{
+			"resource": {
+				"attributes": [{ "key": "service.name", "value": { "stringValue": "ai-gateway" } }]
+			},
+			"scopeSpans": [
+				{
+					"scope": { "name": "ai" },
+					"spans": [
+						{
+							"traceId": "ff1db7ed1895c5cd99a42152f78b3811",
+							"spanId": "f3f814297dec58f9",
+							"parentSpanId": "c6278384a4d33cca",
+							"name": "cf.aig.request",
+							"kind": 1,
+							"startTimeUnixNano": "1791844794580000000",
+							"endTimeUnixNano": "1791844796041000000",
+							"attributes": [
+								{ "key": "gen_ai.operation.name", "value": { "stringValue": "chat" } },
+								{
+									"key": "gen_ai.request.model",
+									"value": { "stringValue": "@cf/meta/llama-3.3-70b-instruct-fp8-fast" }
+								},
+								{
+									"key": "gen_ai.provider.name",
+									"value": { "stringValue": "internal-workers-ai" }
+								},
+								{ "key": "gen_ai.usage.input_tokens", "value": { "intValue": 41 } },
+								{ "key": "gen_ai.usage.output_tokens", "value": { "intValue": 4 } },
+								{
+									"key": "gen_ai.input.messages",
+									"value": {
+										"stringValue": "{\"messages\":[{\"role\":\"user\",\"content\":\"Say hi in three words.\"}],\"max_tokens\":32}"
+									}
+								},
+								{
+									"key": "gen_ai.output.messages",
+									"value": {
+										"stringValue": "{\"id\":\"chatcmpl-c0407e2e-ae4b-44a8-b9a2-173d8b7678b4\",\"object\":\"chat.completion\",\"created\":1791844794,\"model\":\"@cf/meta/llama-3.3-70b-instruct-sd\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Hello to you\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null,\"routed_experts\":null}],\"service_tier\":null,\"usage\":{\"prompt_tokens\":41,\"completion_tokens\":4,\"total_tokens\":45,\"prompt_tokens_details\":{\"cached_tokens\":0},\"neurons\":1.9125957489013672},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"prompt_text\":null,\"kv_transfer_params\":null,\"ec_transfer_params\":null,\"metrics\":null,\"response\":\"Hello to you\",\"tool_calls\":[]}"
+									}
+								},
+								{
+									"key": "gen_ai.usage.cost",
+									"value": { "doubleValue": 0.000021038553237915038 }
+								},
+								{ "key": "session_id", "value": { "stringValue": "aig-capture-mv5u4jzp" } },
+								{ "key": "capture_case", "value": { "stringValue": "plain" } },
+								{ "key": "capture_run", "value": { "stringValue": "mv5u4jzp" } }
+							],
+							"events": [],
+							"status": { "code": 0 },
+							"droppedAttributesCount": 0,
+							"droppedEventsCount": 0,
+							"links": [],
+							"droppedLinksCount": 0
+						}
+					]
+				}
+			]
+		}
+	]
+}

@@ -5,7 +5,10 @@ import { ChooseRegion, FollowChosenRegion, init, Message, type Model, update } f
 import { DEFAULT_QUICK_START_STATE } from "./quick-start-state"
 import * as QuickStartView from "./quick-start-view"
 
-const loaded = (): Model => ({ ...init("maple-onboarding-v6-org_1", false, true).model, state: DEFAULT_QUICK_START_STATE })
+const loaded = (): Model => ({
+	...init("maple-onboarding-v6-org_1", false, true).model,
+	state: DEFAULT_QUICK_START_STATE,
+})
 
 const viewWith =
 	(needsRegion: boolean) =>

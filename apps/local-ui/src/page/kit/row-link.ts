@@ -5,7 +5,11 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 // A row that navigates is a real link, its first cell's
 // anchor stretched over the row (keyboard focus, cmd-click and "copy link" for free).
 
-export const linkRow = <M>(h: HtmlBuilder<M>, className: string | undefined, children: ReadonlyArray<Html>): Html =>
+export const linkRow = <M>(
+	h: HtmlBuilder<M>,
+	className: string | undefined,
+	children: ReadonlyArray<Html>,
+): Html =>
 	tableRow(
 		h,
 		children,

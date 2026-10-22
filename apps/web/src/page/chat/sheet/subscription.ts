@@ -18,7 +18,10 @@ const FOCUS_VISIBLE_OPEN = "focus-visible"
 /** `openGlobalChat()`. */
 export const openGlobalChat = (options: Readonly<{ isFocusVisible?: boolean }> = {}): void => {
 	document.dispatchEvent(
-		new CustomEvent(OPEN_CHAT_EVENT, options.isFocusVisible === true ? { detail: FOCUS_VISIBLE_OPEN } : {}),
+		new CustomEvent(
+			OPEN_CHAT_EVENT,
+			options.isFocusVisible === true ? { detail: FOCUS_VISIBLE_OPEN } : {},
+		),
 	)
 }
 
@@ -28,7 +31,9 @@ const openEvents: Stream.Stream<Message> = Dom.streamFromEvent({
 	target: openTarget,
 	type: OPEN_CHAT_EVENT,
 	mapEvent: (event) =>
-		Message.RequestedOpen({ viaKeyboard: event instanceof CustomEvent && event.detail === FOCUS_VISIBLE_OPEN }),
+		Message.RequestedOpen({
+			viaKeyboard: event instanceof CustomEvent && event.detail === FOCUS_VISIBLE_OPEN,
+		}),
 })
 
 const shortcut: Stream.Stream<Message> = Dom.streamFromEventFilterMapPreventDefault({
@@ -43,7 +48,12 @@ const shortcut: Stream.Stream<Message> = Dom.streamFromEventFilterMapPreventDefa
 })
 
 /** `isTypeAnywhere`: `/chat`'s composer takes printable keys first (`useTypeAnywhereFocus`, capture phase). */
-export type SheetHost = Readonly<{ sheet: Model; isSignedIn: boolean; isTypeAnywhere: boolean; pathname: string }>
+export type SheetHost = Readonly<{
+	sheet: Model
+	isSignedIn: boolean
+	isTypeAnywhere: boolean
+	pathname: string
+}>
 
 export const subscriptions = Subscription.make<SheetHost, Message, Resources>()((entry) => ({
 	open: entry(
@@ -59,15 +69,22 @@ export const subscriptions = Subscription.make<SheetHost, Message, Resources>()(
 		{ pathname: Schema.String },
 		{
 			modelToDependencies: ({ pathname }) => ({ pathname }),
-			dependenciesToStream: ({ pathname }) => Stream.fromEffectDrain(Effect.sync(() => captureChatReferrer(pathname))),
+			dependenciesToStream: ({ pathname }) =>
+				Stream.fromEffectDrain(Effect.sync(() => captureChatReferrer(pathname))),
 		},
 	),
 	tail: entry(
 		{ tails: Schema.Array(Tail) },
 		{
-			modelToDependencies: ({ sheet }) => ({ tails: sheet.conversation === null ? [] : tailOf(sheet.conversation) }),
+			modelToDependencies: ({ sheet }) => ({
+				tails: sheet.conversation === null ? [] : tailOf(sheet.conversation),
+			}),
 			dependenciesToStream: ({ tails }) =>
-				tails.length === 0 ? Stream.empty : tailsMessages(tails, (tabId, message) => Message.GotConversationMessage({ tabId, message })),
+				tails.length === 0
+					? Stream.empty
+					: tailsMessages(tails, (tabId, message) =>
+							Message.GotConversationMessage({ tabId, message }),
+						),
 		},
 	),
 }))

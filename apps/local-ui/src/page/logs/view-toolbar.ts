@@ -2,7 +2,14 @@ import * as ToggleGroup from "@maple/web/ui/toggle-group"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { refreshButton, timeRangeSelect, toolbar, toolbarSearch, toolbarStat, toolbarStats } from "../kit/toolbar"
+import {
+	refreshButton,
+	timeRangeSelect,
+	toolbar,
+	toolbarSearch,
+	toolbarStat,
+	toolbarStats,
+} from "../kit/toolbar"
 import type { LogsMode } from "./filters"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -57,7 +64,11 @@ export const logsToolbar = (
 			h,
 			[
 				...stats(h, model, mode),
-				refreshButton(h, { isSpinning: model.isRefreshing, hasNewData: options.hasNewData, onRefresh: Message.ClickedRefresh() }),
+				refreshButton(h, {
+					isSpinning: model.isRefreshing,
+					hasNewData: options.hasNewData,
+					onRefresh: Message.ClickedRefresh(),
+				}),
 				timeRangeSelect(h, options.range, (range) => Message.ChangedRange({ range })),
 			],
 			"shrink-0",

@@ -35,12 +35,15 @@ export type ShownData = Readonly<{
 	refreshFailed: boolean
 }>
 
-const minOf = (values: ReadonlyArray<number>): number | null => (values.length === 0 ? null : Math.min(...values))
+const minOf = (values: ReadonlyArray<number>): number | null =>
+	values.length === 0 ? null : Math.min(...values)
 
 export const shownDataOf = (model: unknown, nowMs: number): ShownData => {
 	const slots = slotsOf(model)
 	const shown = Array.getSomes(slots.map(shownOf))
-	const stale = shown.filter((item) => item.isStandIn || item.isFailed || (item.isRefreshing && nowMs - item.atMs >= STALE_MS))
+	const stale = shown.filter(
+		(item) => item.isStandIn || item.isFailed || (item.isRefreshing && nowMs - item.atMs >= STALE_MS),
+	)
 	return {
 		hasData: slots.some((slot) => Option.isSome(AsyncData.getData(slot.data))),
 		shownAsOfMs: minOf(shown.map((item) => item.atMs)),

@@ -7,7 +7,11 @@ import { AccountUser } from "../user"
 // The Profile tab.
 
 /** Name edits tagged with the user they were typed against, so a user switch drops them. */
-export const NameDraft = Schema.Struct({ userId: Schema.String, firstName: Schema.String, lastName: Schema.String })
+export const NameDraft = Schema.Struct({
+	userId: Schema.String,
+	firstName: Schema.String,
+	lastName: Schema.String,
+})
 
 export const Model = Schema.Struct({
 	isLoaded: Schema.Boolean,

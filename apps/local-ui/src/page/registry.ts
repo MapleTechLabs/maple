@@ -115,62 +115,128 @@ export const updatePage = (page: PageModel, message: PageMessage, context: PageC
 		GotTracesMessage: ({ message: m }) =>
 			page._tag === "TracesPage" ? lift(Traces.update(page, m, context), toTraces) : unchanged,
 		GotTraceDetailMessage: ({ message: m }) =>
-			page._tag === "TraceDetailPage" ? lift(TraceDetail.update(page, m, context), toTraceDetail) : unchanged,
-		GotLogsMessage: ({ message: m }) => (page._tag === "LogsPage" ? lift(Logs.update(page, m, context), toLogs) : unchanged),
+			page._tag === "TraceDetailPage"
+				? lift(TraceDetail.update(page, m, context), toTraceDetail)
+				: unchanged,
+		GotLogsMessage: ({ message: m }) =>
+			page._tag === "LogsPage" ? lift(Logs.update(page, m, context), toLogs) : unchanged,
 		GotMetricsMessage: ({ message: m }) =>
 			page._tag === "MetricsPage" ? lift(Metrics.update(page, m, context), toMetrics) : unchanged,
 		GotMetricDetailMessage: ({ message: m }) =>
-			page._tag === "MetricDetailPage" ? lift(MetricDetail.update(page, m, context), toMetricDetail) : unchanged,
+			page._tag === "MetricDetailPage"
+				? lift(MetricDetail.update(page, m, context), toMetricDetail)
+				: unchanged,
 		GotServicesMessage: ({ message: m }) =>
 			page._tag === "ServicesPage" ? lift(Services.update(page, m, context), toServices) : unchanged,
 		GotServiceDetailMessage: ({ message: m }) =>
-			page._tag === "ServiceDetailPage" ? lift(ServiceDetail.update(page, m, context), toServiceDetail) : unchanged,
+			page._tag === "ServiceDetailPage"
+				? lift(ServiceDetail.update(page, m, context), toServiceDetail)
+				: unchanged,
 		GotServiceMapMessage: ({ message: m }) =>
-			page._tag === "ServiceMapPage" ? lift(ServiceMap.update(page, m, context), toServiceMap) : unchanged,
+			page._tag === "ServiceMapPage"
+				? lift(ServiceMap.update(page, m, context), toServiceMap)
+				: unchanged,
 		GotErrorsMessage: ({ message: m }) =>
 			page._tag === "ErrorsPage" ? lift(Errors.update(page, m, context), toErrors) : unchanged,
 		GotSessionsMessage: ({ message: m }) =>
 			page._tag === "SessionsPage" ? lift(Sessions.update(page, m, context), toSessions) : unchanged,
 		GotSessionDetailMessage: ({ message: m }) =>
-			page._tag === "SessionDetailPage" ? lift(SessionDetail.update(page, m, context), toSessionDetail) : unchanged,
-		GotQueryMessage: ({ message: m }) => (page._tag === "QueryPage" ? lift(Query.update(page, m, context), toQuery) : unchanged),
+			page._tag === "SessionDetailPage"
+				? lift(SessionDetail.update(page, m, context), toSessionDetail)
+				: unchanged,
+		GotQueryMessage: ({ message: m }) =>
+			page._tag === "QueryPage" ? lift(Query.update(page, m, context), toQuery) : unchanged,
 	})
 }
 
 /** The notice's Try again: the open page's own refresh, where it has one. */
 export const refreshPage = (page: PageModel, context: PageContext): PageReturn => {
-	if (page._tag === "TracesPage") return updatePage(page, PageMessage.GotTracesMessage({ message: Traces.Message.ClickedRefresh() }), context)
+	if (page._tag === "TracesPage")
+		return updatePage(
+			page,
+			PageMessage.GotTracesMessage({ message: Traces.Message.ClickedRefresh() }),
+			context,
+		)
 	if (page._tag === "TraceDetailPage")
-		return updatePage(page, PageMessage.GotTraceDetailMessage({ message: TraceDetail.Message.ClickedRefresh() }), context)
-	if (page._tag === "LogsPage") return updatePage(page, PageMessage.GotLogsMessage({ message: Logs.Message.ClickedRefresh() }), context)
-	if (page._tag === "MetricsPage") return updatePage(page, PageMessage.GotMetricsMessage({ message: Metrics.Message.ClickedRefresh() }), context)
+		return updatePage(
+			page,
+			PageMessage.GotTraceDetailMessage({ message: TraceDetail.Message.ClickedRefresh() }),
+			context,
+		)
+	if (page._tag === "LogsPage")
+		return updatePage(
+			page,
+			PageMessage.GotLogsMessage({ message: Logs.Message.ClickedRefresh() }),
+			context,
+		)
+	if (page._tag === "MetricsPage")
+		return updatePage(
+			page,
+			PageMessage.GotMetricsMessage({ message: Metrics.Message.ClickedRefresh() }),
+			context,
+		)
 	if (page._tag === "MetricDetailPage")
-		return updatePage(page, PageMessage.GotMetricDetailMessage({ message: MetricDetail.Message.ClickedRefresh() }), context)
-	if (page._tag === "ServicesPage") return updatePage(page, PageMessage.GotServicesMessage({ message: Services.Message.ClickedRefresh() }), context)
+		return updatePage(
+			page,
+			PageMessage.GotMetricDetailMessage({ message: MetricDetail.Message.ClickedRefresh() }),
+			context,
+		)
+	if (page._tag === "ServicesPage")
+		return updatePage(
+			page,
+			PageMessage.GotServicesMessage({ message: Services.Message.ClickedRefresh() }),
+			context,
+		)
 	if (page._tag === "ServiceDetailPage")
-		return updatePage(page, PageMessage.GotServiceDetailMessage({ message: ServiceDetail.Message.ClickedRefresh() }), context)
+		return updatePage(
+			page,
+			PageMessage.GotServiceDetailMessage({ message: ServiceDetail.Message.ClickedRefresh() }),
+			context,
+		)
 	if (page._tag === "ServiceMapPage")
-		return updatePage(page, PageMessage.GotServiceMapMessage({ message: ServiceMap.Message.ClickedRefresh() }), context)
-	if (page._tag === "ErrorsPage") return updatePage(page, PageMessage.GotErrorsMessage({ message: Errors.Message.ClickedRefresh() }), context)
-	if (page._tag === "SessionsPage") return updatePage(page, PageMessage.GotSessionsMessage({ message: Sessions.Message.ClickedRefresh() }), context)
+		return updatePage(
+			page,
+			PageMessage.GotServiceMapMessage({ message: ServiceMap.Message.ClickedRefresh() }),
+			context,
+		)
+	if (page._tag === "ErrorsPage")
+		return updatePage(
+			page,
+			PageMessage.GotErrorsMessage({ message: Errors.Message.ClickedRefresh() }),
+			context,
+		)
+	if (page._tag === "SessionsPage")
+		return updatePage(
+			page,
+			PageMessage.GotSessionsMessage({ message: Sessions.Message.ClickedRefresh() }),
+			context,
+		)
 	if (page._tag === "SessionDetailPage")
-		return updatePage(page, PageMessage.GotSessionDetailMessage({ message: SessionDetail.Message.ClickedRefresh() }), context)
+		return updatePage(
+			page,
+			PageMessage.GotSessionDetailMessage({ message: SessionDetail.Message.ClickedRefresh() }),
+			context,
+		)
 	return { model: page }
 }
 
 /** The open page sees a new fragment (filters, range, selection) without being rebuilt. */
 export const locationChanged = (page: PageModel, context: PageContext): PageReturn => {
 	if (page._tag === "TracesPage") return lift(Traces.locationChanged(page, context), toTraces)
-	if (page._tag === "TraceDetailPage") return lift(TraceDetail.locationChanged(page, context), toTraceDetail)
+	if (page._tag === "TraceDetailPage")
+		return lift(TraceDetail.locationChanged(page, context), toTraceDetail)
 	if (page._tag === "LogsPage") return lift(Logs.locationChanged(page, context), toLogs)
 	if (page._tag === "MetricsPage") return lift(Metrics.locationChanged(page, context), toMetrics)
-	if (page._tag === "MetricDetailPage") return lift(MetricDetail.locationChanged(page, context), toMetricDetail)
+	if (page._tag === "MetricDetailPage")
+		return lift(MetricDetail.locationChanged(page, context), toMetricDetail)
 	if (page._tag === "ServicesPage") return lift(Services.locationChanged(page, context), toServices)
-	if (page._tag === "ServiceDetailPage") return lift(ServiceDetail.locationChanged(page, context), toServiceDetail)
+	if (page._tag === "ServiceDetailPage")
+		return lift(ServiceDetail.locationChanged(page, context), toServiceDetail)
 	if (page._tag === "ServiceMapPage") return lift(ServiceMap.locationChanged(page, context), toServiceMap)
 	if (page._tag === "ErrorsPage") return lift(Errors.locationChanged(page, context), toErrors)
 	if (page._tag === "SessionsPage") return lift(Sessions.locationChanged(page, context), toSessions)
-	if (page._tag === "SessionDetailPage") return lift(SessionDetail.locationChanged(page, context), toSessionDetail)
+	if (page._tag === "SessionDetailPage")
+		return lift(SessionDetail.locationChanged(page, context), toSessionDetail)
 	if (page._tag === "QueryPage") return lift(Query.locationChanged(page, context), toQuery)
 	return { model: page }
 }
@@ -204,22 +270,45 @@ export const viewPage = <P>(
 		viewInputs,
 		toParentMessage: (message: M) => toParent(toPage(message)),
 	})
-	if (page._tag === "TracesPage") return h.submodel({ ...slot("page:traces", toTraces), model: page, view: Traces.view })
+	if (page._tag === "TracesPage")
+		return h.submodel({ ...slot("page:traces", toTraces), model: page, view: Traces.view })
 	if (page._tag === "TraceDetailPage")
-		return h.submodel({ ...slot("page:trace-detail", toTraceDetail), model: page, view: TraceDetail.view })
-	if (page._tag === "LogsPage") return h.submodel({ ...slot("page:logs", toLogs), model: page, view: Logs.view })
-	if (page._tag === "MetricsPage") return h.submodel({ ...slot("page:metrics", toMetrics), model: page, view: Metrics.view })
+		return h.submodel({
+			...slot("page:trace-detail", toTraceDetail),
+			model: page,
+			view: TraceDetail.view,
+		})
+	if (page._tag === "LogsPage")
+		return h.submodel({ ...slot("page:logs", toLogs), model: page, view: Logs.view })
+	if (page._tag === "MetricsPage")
+		return h.submodel({ ...slot("page:metrics", toMetrics), model: page, view: Metrics.view })
 	if (page._tag === "MetricDetailPage")
-		return h.submodel({ ...slot("page:metric-detail", toMetricDetail), model: page, view: MetricDetail.view })
-	if (page._tag === "ServicesPage") return h.submodel({ ...slot("page:services", toServices), model: page, view: Services.view })
+		return h.submodel({
+			...slot("page:metric-detail", toMetricDetail),
+			model: page,
+			view: MetricDetail.view,
+		})
+	if (page._tag === "ServicesPage")
+		return h.submodel({ ...slot("page:services", toServices), model: page, view: Services.view })
 	if (page._tag === "ServiceDetailPage")
-		return h.submodel({ ...slot("page:service-detail", toServiceDetail), model: page, view: ServiceDetail.view })
+		return h.submodel({
+			...slot("page:service-detail", toServiceDetail),
+			model: page,
+			view: ServiceDetail.view,
+		})
 	if (page._tag === "ServiceMapPage")
 		return h.submodel({ ...slot("page:service-map", toServiceMap), model: page, view: ServiceMap.view })
-	if (page._tag === "ErrorsPage") return h.submodel({ ...slot("page:errors", toErrors), model: page, view: Errors.view })
-	if (page._tag === "SessionsPage") return h.submodel({ ...slot("page:sessions", toSessions), model: page, view: Sessions.view })
+	if (page._tag === "ErrorsPage")
+		return h.submodel({ ...slot("page:errors", toErrors), model: page, view: Errors.view })
+	if (page._tag === "SessionsPage")
+		return h.submodel({ ...slot("page:sessions", toSessions), model: page, view: Sessions.view })
 	if (page._tag === "SessionDetailPage")
-		return h.submodel({ ...slot("page:session-detail", toSessionDetail), model: page, view: SessionDetail.view })
-	if (page._tag === "QueryPage") return h.submodel({ ...slot("page:query", toQuery), model: page, view: Query.view })
+		return h.submodel({
+			...slot("page:session-detail", toSessionDetail),
+			model: page,
+			view: SessionDetail.view,
+		})
+	if (page._tag === "QueryPage")
+		return h.submodel({ ...slot("page:query", toQuery), model: page, view: Query.view })
 	return h.div([], [])
 }

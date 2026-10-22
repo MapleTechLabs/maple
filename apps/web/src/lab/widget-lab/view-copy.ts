@@ -25,8 +25,22 @@ type CopyRow = Readonly<{
 const ROWS: ReadonlyArray<CopyRow> = [
 	{ id: "default", label: "icon-xs / ghost (default)", value: "trace-abc123", copyLabel: "Trace ID" },
 	{ id: "tooltip", label: "tooltip", value: "9f2c1a", copyLabel: "Commit SHA", tooltip: true },
-	{ id: "link", label: "link glyph", value: "https://maple.dev", copyLabel: "Link", idleIcon: "LinkIcon", tooltip: true },
-	{ id: "label", label: "with label / outline", value: "npm i @maple/cli", copyLabel: "Command", idleLabel: "Copy", variant: "outline" },
+	{
+		id: "link",
+		label: "link glyph",
+		value: "https://maple.dev",
+		copyLabel: "Link",
+		idleIcon: "LinkIcon",
+		tooltip: true,
+	},
+	{
+		id: "label",
+		label: "with label / outline",
+		value: "npm i @maple/cli",
+		copyLabel: "Command",
+		idleLabel: "Copy",
+		variant: "outline",
+	},
 	{
 		id: "long",
 		label: "with label / long copied text",
@@ -36,11 +50,32 @@ const ROWS: ReadonlyArray<CopyRow> = [
 		copiedLabel: "Copied link",
 		variant: "outline",
 	},
-	{ id: "icon-sm", label: "icon-sm / outline", value: "key_live_x", copyLabel: "API key", size: "icon-sm", variant: "outline" },
+	{
+		id: "icon-sm",
+		label: "icon-sm / outline",
+		value: "key_live_x",
+		copyLabel: "API key",
+		size: "icon-sm",
+		variant: "outline",
+	},
 	// The throwing resolver: an empty copy is the error branch.
 	{ id: "error", label: "error branch (10s hold)", value: "", copyLabel: "Broken value", tooltip: true },
-	{ id: "hold", label: "10s hold (inspect the copied state)", value: "hold-me", copyLabel: "Held value", idleLabel: "Copy", variant: "outline" },
-	{ id: "no-toast", label: "toast={false} (opt-out)", value: "issue_123", copyLabel: "Issue ID", idleLabel: "Copy", variant: "outline" },
+	{
+		id: "hold",
+		label: "10s hold (inspect the copied state)",
+		value: "hold-me",
+		copyLabel: "Held value",
+		idleLabel: "Copy",
+		variant: "outline",
+	},
+	{
+		id: "no-toast",
+		label: "toast={false} (opt-out)",
+		value: "issue_123",
+		copyLabel: "Issue ID",
+		idleLabel: "Copy",
+		variant: "outline",
+	},
 	{ id: "disabled", label: "disabled", value: "x", copyLabel: "Nothing", isDisabled: true },
 ]
 

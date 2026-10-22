@@ -82,14 +82,27 @@ const withDefaults = (settings: PrReviewOrgSettings, defaults: PrReviewRepositor
 	})
 
 /** Records `settings` as this tab's and writes it now, or after the save in flight. */
-const enqueueSave = (model: Model, purpose: SavePurpose, label: string, settings: PrReviewOrgSettings): Return => {
+const enqueueSave = (
+	model: Model,
+	purpose: SavePurpose,
+	label: string,
+	settings: PrReviewOrgSettings,
+): Return => {
 	const next: Model = { ...model, localSettings: settings }
 	return model.savingSettings === null
 		? {
 				model: { ...next, savingSettings: purpose, sentSettings: settings },
 				commands: [SaveSettings({ purpose, label, settings })],
 			}
-		: { model: { ...next, queuedSaves: [...model.queuedSaves.filter((queued) => queued.purpose !== purpose), { purpose, label }] } }
+		: {
+				model: {
+					...next,
+					queuedSaves: [
+						...model.queuedSaves.filter((queued) => queued.purpose !== purpose),
+						{ purpose, label },
+					],
+				},
+			}
 }
 
 /**
@@ -108,7 +121,13 @@ const settleSave = (model: Model, context: PageContext, purpose: SavePurpose, is
 	const [head, ...rest] = model.queuedSaves
 	return head === undefined
 		? readSettings(
-				{ ...model, localSettings: kept, savingSettings: null, sentSettings: null, confirmedSettings: confirmed },
+				{
+					...model,
+					localSettings: kept,
+					savingSettings: null,
+					sentSettings: null,
+					confirmedSettings: confirmed,
+				},
 				context,
 				"Supersede",
 			)
@@ -317,8 +336,12 @@ const pickModel = (model: Model, value: string): Return =>
 		onNone: () => ({ model }),
 		onSome: (settings) => {
 			// Controlled by the saved value: the trigger shows it until the refetch says otherwise.
-			const reverted = { ...model, modelSelect: { ...model.modelSelect, value: currentModel(settings) } }
-			if (value === currentModel(baseSettings(model)) || model.isSavingModel || !model.isAdmin) return { model: reverted }
+			const reverted = {
+				...model,
+				modelSelect: { ...model.modelSelect, value: currentModel(settings) },
+			}
+			if (value === currentModel(baseSettings(model)) || model.isSavingModel || !model.isAdmin)
+				return { model: reverted }
 			const picked = isModel(value) ? value : undefined
 			return enqueueSave(
 				{ ...reverted, isSavingModel: true },
@@ -334,7 +357,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchSettings: ({ key, result }) => {
 			const settings = Keyed.accept(model.settings, key, result)
 			// The server has caught up with this tab's writes once none is in flight.
-			const isSettled = settings !== model.settings && model.savingSettings === null && AsyncData.isSuccess(settings.data)
+			const isSettled =
+				settings !== model.settings &&
+				model.savingSettings === null &&
+				AsyncData.isSuccess(settings.data)
 			const next = settingsArrived({
 				...model,
 				settings,
@@ -385,7 +411,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedSaveSettings: ({ purpose, label, result }) => {
 			const failure = result._tag === "Failure" ? Option.some(result.failure) : Option.none()
-			const refetch = (next: Model): Return => settleSave(next, context, purpose, Option.isSome(failure))
+			const refetch = (next: Model): Return =>
+				settleSave(next, context, purpose, Option.isSome(failure))
 			if (purpose === "model") {
 				const saved = refetch({ ...model, isSavingModel: false })
 				return {

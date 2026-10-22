@@ -68,25 +68,31 @@ const jsonCopy = (h: H, model: Model, value: string, block: ReadonlyArray<Html>)
 		viewInputs: {
 			toContent: () => [copyTooltipText(status, "JSON")],
 			toView: ({ trigger, portal }) =>
-				h.div([h.Class("group/json relative mt-1 overflow-hidden rounded-md border bg-muted/30")], [
-					...block,
-					copyButton(h, {
-						label: "JSON",
-						status,
-						iconSize: 10,
-						slot: "tooltip-trigger",
-						className:
-							"absolute top-1 right-1 border-border/60 bg-background/80 opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/json:opacity-100 pointer-coarse:opacity-100",
-						attributes: [
-							...trigger(),
-							h.OnClick(
-								Message.GotCopyMessage({ id: CHIP_JSON_COPY_ID, message: CopyButton.Message.ClickedCopy({ text: value }) }),
-								{ propagation: "Stop" },
-							),
-						],
-					}),
-					...(portal === null ? [] : [portal]),
-				]),
+				h.div(
+					[h.Class("group/json relative mt-1 overflow-hidden rounded-md border bg-muted/30")],
+					[
+						...block,
+						copyButton(h, {
+							label: "JSON",
+							status,
+							iconSize: 10,
+							slot: "tooltip-trigger",
+							className:
+								"absolute top-1 right-1 border-border/60 bg-background/80 opacity-0 backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover/json:opacity-100 pointer-coarse:opacity-100",
+							attributes: [
+								...trigger(),
+								h.OnClick(
+									Message.GotCopyMessage({
+										id: CHIP_JSON_COPY_ID,
+										message: CopyButton.Message.ClickedCopy({ text: value }),
+									}),
+									{ propagation: "Stop" },
+								),
+							],
+						}),
+						...(portal === null ? [] : [portal]),
+					],
+				),
 		},
 	})
 }
@@ -95,42 +101,66 @@ const jsonCopy = (h: H, model: Model, value: string, block: ReadonlyArray<Html>)
 const jsonValue = (h: H, model: Model, value: string, parsed: unknown): Html => {
 	const isExpanded = model.chipCard.isJsonExpanded
 	const preview = value.length > 80 ? value.slice(0, 80) + "…" : value
-	return h.div([h.Class("min-w-0")], [
-		h.button(
-			[
-				h.Type("button"),
-				h.Class(
-					"flex items-start gap-1 w-full text-left font-mono text-xs break-all cursor-pointer hover:bg-muted/50 rounded px-0.5 -mx-0.5 transition-colors",
-				),
-				h.OnClick(Message.ClickedChipJson()),
-				h.Title(isExpanded ? "Collapse" : "Expand JSON"),
-			],
-			[
-				icon(h, "ChevronRightIcon", { size: 12, className: `shrink-0 mt-0.5 transition-transform ${isExpanded ? "rotate-90" : ""}` }),
-				isExpanded ? h.span([h.Class("text-muted-foreground")], ["JSON"]) : h.span([], [preview]),
-			],
-		),
-		...(isExpanded
-			? [
-					jsonCopy(h, model, value, [
-						h.div([h.Class("max-h-64 overflow-auto p-2")], [
-							h.pre([h.Class("text-xs leading-relaxed")], [
-								h.code([h.InnerHTML(highlightJson(JSON.stringify(parsed, null, 2)))], []),
-							]),
+	return h.div(
+		[h.Class("min-w-0")],
+		[
+			h.button(
+				[
+					h.Type("button"),
+					h.Class(
+						"flex items-start gap-1 w-full text-left font-mono text-xs break-all cursor-pointer hover:bg-muted/50 rounded px-0.5 -mx-0.5 transition-colors",
+					),
+					h.OnClick(Message.ClickedChipJson()),
+					h.Title(isExpanded ? "Collapse" : "Expand JSON"),
+				],
+				[
+					icon(h, "ChevronRightIcon", {
+						size: 12,
+						className: `shrink-0 mt-0.5 transition-transform ${isExpanded ? "rotate-90" : ""}`,
+					}),
+					isExpanded ? h.span([h.Class("text-muted-foreground")], ["JSON"]) : h.span([], [preview]),
+				],
+			),
+			...(isExpanded
+				? [
+						jsonCopy(h, model, value, [
+							h.div(
+								[h.Class("max-h-64 overflow-auto p-2")],
+								[
+									h.pre(
+										[h.Class("text-xs leading-relaxed")],
+										[
+											h.code(
+												[h.InnerHTML(highlightJson(JSON.stringify(parsed, null, 2)))],
+												[],
+											),
+										],
+									),
+								],
+							),
 						]),
-					]),
-				]
-			: []),
-	])
+					]
+				: []),
+		],
+	)
 }
 
 const cardView = (h: H, model: Model, ref: ChipRef, log: LocalLog, chip: RowChip): Html =>
 	h.keyed("div")(
 		`chip-card-${ref.index}-${chip.key}`,
-		[h.DataAttribute("base-ui-portal", ""), h.DataAttribute("slot", "hover-card-portal"), h.OnMount(PlaceLocalChipCard({ anchorId: chipId(ref) }))],
+		[
+			h.DataAttribute("base-ui-portal", ""),
+			h.DataAttribute("slot", "hover-card-portal"),
+			h.OnMount(PlaceLocalChipCard({ anchorId: chipId(ref) })),
+		],
 		[
 			h.div(
-				[h.DataAttribute("open", ""), h.Role("presentation"), h.Class("isolate z-55"), h.Style({ position: "absolute", top: "0px", left: "0px" })],
+				[
+					h.DataAttribute("open", ""),
+					h.Role("presentation"),
+					h.Class("isolate z-55"),
+					h.Style({ position: "absolute", top: "0px", left: "0px" }),
+				],
 				[
 					h.div(
 						[
@@ -145,30 +175,46 @@ const cardView = (h: H, model: Model, ref: ChipRef, log: LocalLog, chip: RowChip
 							h.OnClick(Message.ClickedLog({ log })),
 						],
 						[
-							h.div([h.Class("px-3 py-2 border-b")], [
-								cardEyebrow(h, "Attribute"),
-								h.div([h.Class("font-mono text-xs break-all")], [
-									h.button(
+							h.div(
+								[h.Class("px-3 py-2 border-b")],
+								[
+									cardEyebrow(h, "Attribute"),
+									h.div(
+										[h.Class("font-mono text-xs break-all")],
 										[
-											h.Type("button"),
-											h.AriaLabel("Copy value"),
-											h.Class("-mx-0.5 cursor-pointer rounded px-0.5 text-left transition-colors hover:bg-muted/50"),
-											h.Title("Click to copy"),
-											h.OnClick(Message.ClickedChip({ text: chip.key }), { propagation: "Stop" }),
+											h.button(
+												[
+													h.Type("button"),
+													h.AriaLabel("Copy value"),
+													h.Class(
+														"-mx-0.5 cursor-pointer rounded px-0.5 text-left transition-colors hover:bg-muted/50",
+													),
+													h.Title("Click to copy"),
+													h.OnClick(Message.ClickedChip({ text: chip.key }), {
+														propagation: "Stop",
+													}),
+												],
+												[chip.key],
+											),
 										],
-										[chip.key],
 									),
-								]),
-							]),
-							h.div([h.Class("px-3 py-2")], [
-								cardEyebrow(h, "Value"),
-								h.div([h.Class("font-mono text-xs break-all")], [
-									Option.match(tryParseJson(chip.value), {
-										onSome: (parsed) => jsonValue(h, model, chip.value, parsed),
-										onNone: () => selectableValue(h, chip),
-									}),
-								]),
-							]),
+								],
+							),
+							h.div(
+								[h.Class("px-3 py-2")],
+								[
+									cardEyebrow(h, "Value"),
+									h.div(
+										[h.Class("font-mono text-xs break-all")],
+										[
+											Option.match(tryParseJson(chip.value), {
+												onSome: (parsed) => jsonValue(h, model, chip.value, parsed),
+												onNone: () => selectableValue(h, chip),
+											}),
+										],
+									),
+								],
+							),
 						],
 					),
 				],
@@ -178,24 +224,32 @@ const cardView = (h: H, model: Model, ref: ChipRef, log: LocalLog, chip: RowChip
 
 /** `SelectableValue`: the text plus a copy button for the whole value. */
 const selectableValue = (h: H, chip: RowChip): Html =>
-	h.span([h.Class("group/sel")], [
-		h.span([h.Class("select-text")], [chip.value]),
-		copyButton(h, {
-			label: chip.key,
-			status: "idle",
-			iconSize: 10,
-			className:
-				"-my-1 ml-1 size-5 shrink-0 align-middle opacity-0 transition-opacity group-hover/sel:opacity-100 group-hover/attr:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 sm:size-5",
-			attributes: [h.OnClick(Message.ClickedChip({ text: chip.value }), { propagation: "Stop" })],
-		}),
-	])
+	h.span(
+		[h.Class("group/sel")],
+		[
+			h.span([h.Class("select-text")], [chip.value]),
+			copyButton(h, {
+				label: chip.key,
+				status: "idle",
+				iconSize: 10,
+				className:
+					"-my-1 ml-1 size-5 shrink-0 align-middle opacity-0 transition-opacity group-hover/sel:opacity-100 group-hover/attr:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 sm:size-5",
+				attributes: [h.OnClick(Message.ClickedChip({ text: chip.value }), { propagation: "Stop" })],
+			}),
+		],
+	)
 
 /** The shown card, if its row and chip are still on screen. */
 export const chipCard = (h: H, model: Model): ReadonlyArray<Html> =>
 	Option.match(
 		Option.flatMap(model.chipCard.visible, (ref) =>
-			Option.flatMap(Option.filter(Array.get(rowsOf(model), ref.index), (log) => logKey(log) === ref.logKey), (log) =>
-				Option.map(Array.findFirst(rowChips(log), (chip) => chip.key === ref.key), (chip) => ({ ref, log, chip })),
+			Option.flatMap(
+				Option.filter(Array.get(rowsOf(model), ref.index), (log) => logKey(log) === ref.logKey),
+				(log) =>
+					Option.map(
+						Array.findFirst(rowChips(log), (chip) => chip.key === ref.key),
+						(chip) => ({ ref, log, chip }),
+					),
 			),
 		),
 		{ onNone: () => [], onSome: ({ ref, log, chip }) => [cardView(h, model, ref, log, chip)] },

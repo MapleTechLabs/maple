@@ -36,7 +36,8 @@ export const toLogBuckets = (
 	if (total === 0) return buckets
 	const covering = buckets.findIndex(
 		(_, index) =>
-			buckets.slice(0, index + 1).reduce((sum, bucket) => sum + bucket.count, 0) >= total * AXIS_COVERAGE,
+			buckets.slice(0, index + 1).reduce((sum, bucket) => sum + bucket.count, 0) >=
+			total * AXIS_COVERAGE,
 	)
 	if (covering === -1) return buckets
 	const tail = buckets.slice(covering + 1)

@@ -38,7 +38,11 @@ describe("source rules draft", () => {
 	test("a new draft allows every signal, so the payload clears the allow list", () => {
 		const outcome = rulesOutcome(init(null))
 		expect(outcome.valid).toBe(true)
-		expect(outcome.payload).toEqual({ allowed_signals: null, rate_limit_rps: null, resource_attributes: [] })
+		expect(outcome.payload).toEqual({
+			allowed_signals: null,
+			rate_limit_rps: null,
+			resource_attributes: [],
+		})
 		expect(expiryChoicesOf(init(null)).map((choice) => choice.value)).toEqual(["never", "7", "30", "90"])
 	})
 
@@ -59,18 +63,31 @@ describe("source rules draft", () => {
 		const noSignals = run(SIGNALS.map((signal) => Message.ToggledSignal({ signal: signal.value })))
 		expect(rulesOutcome(noSignals).valid).toBe(false)
 		expect(rulesOutcome(run([Message.ChangedRateLimit({ value: "1.5" })])).rateLimitValid).toBe(false)
-		const reserved = run([Message.ClickedAddAttribute(), Message.ChangedAttribute({ rowId: "added-0", field: "key", value: "Maple_env" })])
+		const reserved = run([
+			Message.ClickedAddAttribute(),
+			Message.ChangedAttribute({ rowId: "added-0", field: "key", value: "Maple_env" }),
+		])
 		expect(rulesOutcome(reserved).attributeProblem).toBe('"Maple_env" is reserved by Maple.')
-		const missing = run([Message.ClickedAddAttribute(), Message.ChangedAttribute({ rowId: "added-0", field: "key", value: "team" })])
+		const missing = run([
+			Message.ClickedAddAttribute(),
+			Message.ChangedAttribute({ rowId: "added-0", field: "key", value: "team" }),
+		])
 		expect(rulesOutcome(missing).attributeProblem).toBe('Give "team" a value, or remove it.')
 	})
 
 	test("clicking a pressed expiry or mode keeps it; another one replaces it", () => {
-		const clicked = (value: string, index: number) => Message.GotExpiryMessage({ message: ToggleGroup.Message.ClickedItem({ value, index }) })
+		const clicked = (value: string, index: number) =>
+			Message.GotExpiryMessage({ message: ToggleGroup.Message.ClickedItem({ value, index }) })
 		expect(run([clicked("never", 0)]).expiry).toBe("never")
 		expect(run([clicked("30", 2)]).expiry).toBe("30")
 		const row = run([Message.ClickedAddAttribute()])
-		const mode = update(row, Message.GotModeMessage({ rowId: "added-0", message: ToggleGroup.Message.ClickedItem({ value: "default", index: 1 }) }))
+		const mode = update(
+			row,
+			Message.GotModeMessage({
+				rowId: "added-0",
+				message: ToggleGroup.Message.ClickedItem({ value: "default", index: 1 }),
+			}),
+		)
 		expect(mode.model.attributes[0]?.mode).toBe("default")
 		expect(run([Message.ClickedRemoveAttribute({ rowId: "added-0" })], row).attributes).toEqual([])
 	})

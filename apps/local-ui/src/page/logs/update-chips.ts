@@ -18,7 +18,8 @@ export const WaitChipDelay = Command.define("WaitLocalLogChipDelay", {
 })
 
 const sameChip = (a: ChipRef, b: ChipRef) => a.index === b.index && a.logKey === b.logKey && a.key === b.key
-const isChip = (maybe: Option.Option<ChipRef>, chip: ChipRef) => Option.exists(maybe, (other) => sameChip(other, chip))
+const isChip = (maybe: Option.Option<ChipRef>, chip: ChipRef) =>
+	Option.exists(maybe, (other) => sameChip(other, chip))
 
 const isSameVisible = (a: Option.Option<ChipRef>, b: Option.Option<ChipRef>) =>
 	Option.isNone(a) ? Option.isNone(b) : Option.isSome(b) && sameChip(a.value, b.value)
@@ -42,7 +43,9 @@ export const updateChipJsonTooltip = (model: Model, message: Tooltip.Message): U
 	const next = Tooltip.update(model.chipJsonTooltip, message)
 	return {
 		model: { ...model, chipJsonTooltip: next.model },
-		commands: Command.mapMessages(next.commands ?? [], (tip) => Message.GotChipJsonTooltipMessage({ message: tip })),
+		commands: Command.mapMessages(next.commands ?? [], (tip) =>
+			Message.GotChipJsonTooltipMessage({ message: tip }),
+		),
 	}
 }
 

@@ -17,7 +17,10 @@ const tailWith = (bodies: ReadonlyArray<string>) =>
 		const client = HttpClient.make((request) =>
 			Ref.getAndUpdate(requests, (count) => count + 1).pipe(
 				Effect.map((index) =>
-					HttpClientResponse.fromWeb(request, new Response(bodies[Math.min(index, bodies.length - 1)], { status: 200 })),
+					HttpClientResponse.fromWeb(
+						request,
+						new Response(bodies[Math.min(index, bodies.length - 1)], { status: 200 }),
+					),
 				),
 			),
 		)
@@ -44,10 +47,11 @@ describe("tailEvents", () => {
 				frame({ type: "turn-end", seq: 2, messageId: "r", reason: "stop" }),
 			])
 			expect(requests).toBe(3)
-			expect(outputs.map((output) => (output._tag === "Events" ? output.events.map((event) => event.type) : output._tag))).toEqual([
-				["text-delta"],
-				["turn-end"],
-			])
+			expect(
+				outputs.map((output) =>
+					output._tag === "Events" ? output.events.map((event) => event.type) : output._tag,
+				),
+			).toEqual([["text-delta"], ["turn-end"]])
 		}),
 	)
 
@@ -56,11 +60,17 @@ describe("tailEvents", () => {
 			const requests = yield* Ref.make(0)
 			const turnEnd = frame({ type: "turn-end", seq: 1, messageId: "r", reason: "stop" })
 			// Five idle streams, each open past the quick-close window before closing empty, then the turn ends.
-			const idleBody = Stream.toReadableStreamEffect(Stream.drain(Stream.fromEffect(Effect.sleep("6 seconds"))))
+			const idleBody = Stream.toReadableStreamEffect(
+				Stream.drain(Stream.fromEffect(Effect.sleep("6 seconds"))),
+			)
 			const client = HttpClient.make((request) =>
 				Ref.getAndUpdate(requests, (count) => count + 1).pipe(
-					Effect.flatMap((index): Effect.Effect<BodyInit> => (index < 5 ? idleBody : Effect.succeed(turnEnd))),
-					Effect.map((body) => HttpClientResponse.fromWeb(request, new Response(body, { status: 200 }))),
+					Effect.flatMap((index): Effect.Effect<BodyInit> =>
+						index < 5 ? idleBody : Effect.succeed(turnEnd),
+					),
+					Effect.map((body) =>
+						HttpClientResponse.fromWeb(request, new Response(body, { status: 200 })),
+					),
 				),
 			)
 			const fiber = yield* Stream.runCollect(tailEvents("org_acme:default", 0)).pipe(

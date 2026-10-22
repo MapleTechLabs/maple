@@ -94,12 +94,12 @@ Notes on the config:
 
 ## What the receiver reports
 
-| Metric                         | Value                                                                                                                                            |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Metric                         | Value                                                                                                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `httpcheck.status`             | One data point per status class (`1xx` to `5xx`): 1 for the class the response matched, 0 for the rest. A failed connection reports 0 for every class. |
-| `httpcheck.error`              | 1 when the request failed before a response arrived, with the reason in `error.message`.                                                         |
-| `httpcheck.duration`           | Total request time in milliseconds.                                                                                                              |
-| `httpcheck.tls.cert_remaining` | Seconds until the certificate expires. Off unless enabled, as in the config above.                                                               |
+| `httpcheck.error`              | 1 when the request failed before a response arrived, with the reason in `error.message`.                                                               |
+| `httpcheck.duration`           | Total request time in milliseconds.                                                                                                                    |
+| `httpcheck.tls.cert_remaining` | Seconds until the certificate expires. Off unless enabled, as in the config above.                                                                     |
 
 Every data point carries the checked address in `http.url`.
 

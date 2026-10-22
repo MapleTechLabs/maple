@@ -30,14 +30,26 @@ const checklist = (status: V2OnboardingChecklist["status"]): V2OnboardingCheckli
 
 describe("onboarding reward pill", () => {
 	const loaded = Checklist.update(
-		Checklist.update(Checklist.init(), Checklist.Message.SucceededLoadChecklist({ checklist: checklist("claimable"), nowMs: 0 })).model,
-		Checklist.Message.LoadedViewer({ isAdmin: true, seenKey: "maple-onboarding-reward-seen-v3-org:user", isSeen: false }),
+		Checklist.update(
+			Checklist.init(),
+			Checklist.Message.SucceededLoadChecklist({ checklist: checklist("claimable"), nowMs: 0 }),
+		).model,
+		Checklist.Message.LoadedViewer({
+			isAdmin: true,
+			seenKey: "maple-onboarding-reward-seen-v3-org:user",
+			isSeen: false,
+		}),
 	).model
 
 	test("opening the checklist re-reads it and retires the pointer for good", () => {
-		const opened = Checklist.update(loaded, Checklist.Message.GotPopoverMessage({ message: Popover.Message.ClickedTrigger() }))
+		const opened = Checklist.update(
+			loaded,
+			Checklist.Message.GotPopoverMessage({ message: Popover.Message.ClickedTrigger() }),
+		)
 		expect(opened.model.isSeen).toBe(true)
-		expect(names(opened)).toEqual(expect.arrayContaining(["LoadOnboardingChecklist", "SaveOnboardingRewardSeen"]))
+		expect(names(opened)).toEqual(
+			expect.arrayContaining(["LoadOnboardingChecklist", "SaveOnboardingRewardSeen"]),
+		)
 	})
 
 	test("an admin's claim runs once, then the popover keeps its claimed beat until it closes", () => {
@@ -54,7 +66,9 @@ describe("onboarding reward pill", () => {
 	test("a navigation re-reads the checklist only onto a page with the top bar (not /chat)", () => {
 		const base = init({ isMobile: false, theme: "light", pinnedNamespaces: {}, dashboardFavorites: [] })
 		const shell = { ...base, checklist: loaded }
-		expect(names({ commands: checklistRefreshOnNavigation(shell, true, true) })).toEqual(["LoadOnboardingChecklist"])
+		expect(names({ commands: checklistRefreshOnNavigation(shell, true, true) })).toEqual([
+			"LoadOnboardingChecklist",
+		])
 		expect(checklistRefreshOnNavigation(shell, false, true)).toEqual([])
 		expect(checklistRefreshOnNavigation({ ...base, checklist: Checklist.init() }, true, true)).toEqual([])
 	})
@@ -67,7 +81,10 @@ describe("onboarding reward pill", () => {
 	})
 
 	test("a refused claim shows why", () => {
-		const failed = Checklist.update(loaded, Checklist.Message.FailedClaim({ message: "Window closed" })).model
+		const failed = Checklist.update(
+			loaded,
+			Checklist.Message.FailedClaim({ message: "Window closed" }),
+		).model
 		expect(failed.claimError).toBe("Window closed")
 	})
 })
@@ -78,7 +95,9 @@ describe("shared Slack channel dialog", () => {
 		expect(names(opened)).toContain("LoadSupportChannel")
 		const inviting = SupportChannel.update(opened.model, SupportChannel.Message.ClickedInvite())
 		expect(names(inviting)).toEqual(["InviteToSupportChannel"])
-		expect(names(SupportChannel.update(inviting.model, SupportChannel.Message.ClickedInvite()))).toEqual([])
+		expect(names(SupportChannel.update(inviting.model, SupportChannel.Message.ClickedInvite()))).toEqual(
+			[],
+		)
 		const channel = {
 			object: "support_channel" as const,
 			status: "active" as const,
@@ -87,7 +106,10 @@ describe("shared Slack channel dialog", () => {
 			created_at: null,
 			invited_email: "ada@acme.test",
 		}
-		const invited = SupportChannel.update(inviting.model, SupportChannel.Message.SucceededInvite({ channel }))
+		const invited = SupportChannel.update(
+			inviting.model,
+			SupportChannel.Message.SucceededInvite({ channel }),
+		)
 		expect(invited.model.invited).toEqual(channel)
 		expect(names(invited)).toEqual(["LoadSupportChannel"])
 	})
@@ -95,11 +117,15 @@ describe("shared Slack channel dialog", () => {
 
 const lapsed = new BillingCustomer({
 	id: "org_1",
-	subscriptions: [new BillingSubscription({ planId: "startup", status: "expired", plan: { name: "Startup" } })],
+	subscriptions: [
+		new BillingSubscription({ planId: "startup", status: "expired", plan: { name: "Startup" } }),
+	],
 })
 
-const bannerView = (customer: BillingCustomer) => (_: null, h: HtmlBuilder<Message>): Html =>
-	h.div([], billingBanners(h, Option.some(customer), false))
+const bannerView =
+	(customer: BillingCustomer) =>
+	(_: null, h: HtmlBuilder<Message>): Html =>
+		h.div([], billingBanners(h, Option.some(customer), false))
 
 describe("billing banners", () => {
 	test("a lapsed plan asks to choose a plan again", () => {
@@ -110,7 +136,9 @@ describe("billing banners", () => {
 			expectView(role("link", { name: "Choose a plan" })).toHaveAttr("href", "/select-plan"),
 		)
 		const shell = init({ isMobile: false, theme: "light", pinnedNamespaces: {}, dashboardFavorites: [] })
-		expect(names(update(shell, ShellMessage.ClickedUpdatePaymentMethod()))).toEqual(["OpenCustomerPortal"])
+		expect(names(update(shell, ShellMessage.ClickedUpdatePaymentMethod()))).toEqual([
+			"OpenCustomerPortal",
+		])
 		const dismissed = update(shell, ShellMessage.ClickedDismissQuotaBanner())
 		expect(dismissed.model.isQuotaApproachingDismissed).toBe(true)
 		expect(names(dismissed)).toEqual(["DismissQuotaBanner"])

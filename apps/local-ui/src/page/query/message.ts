@@ -9,7 +9,11 @@ export type DownloadFormat = typeof DownloadFormat.Type
 
 export const Message = defineMessageUnion({
 	CompletedReadPlatform: { isMac: Schema.Boolean },
-	SucceededFetchTables: { key: Schema.String, tables: Schema.Array(LocalTable), fetchedAtMs: Schema.Number },
+	SucceededFetchTables: {
+		key: Schema.String,
+		tables: Schema.Array(LocalTable),
+		fetchedAtMs: Schema.Number,
+	},
 	/** The result cache held the tables list before the fetch ran. */
 	FoundCachedTables: { key: Schema.String, cached: CachedOf(Schema.Array(LocalTable)) },
 	FailedFetchTables: { key: Schema.String, failure: LoadFailure },

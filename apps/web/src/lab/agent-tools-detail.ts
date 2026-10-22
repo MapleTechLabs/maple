@@ -14,13 +14,21 @@ import { Selection } from "../page/agent-sessions/tools-kit/reads"
 import type { Resources } from "../platform/resources"
 import { urlToAppRoute } from "../route"
 import { BUCKET_MS, BUCKETS, buildToolCells, toolFixtureFacets } from "./agent-tools-fixture"
-import { buildToolDetailFixture, buildToolErrorDetailFixture, buildToolErrorsFixture } from "./agent-tools-detail-fixture"
+import {
+	buildToolDetailFixture,
+	buildToolErrorDetailFixture,
+	buildToolErrorsFixture,
+} from "./agent-tools-detail-fixture"
 
 // The tools lab's "detail" view: the tool detail page and its error modal over the fixture week,
 // its reads answered in place and its URL the lab's state.
 
 type PageCommand = Command.Command<ToolMessage, never, Resources>
-export type DetailStep = Readonly<{ model: ToolModel; commands?: ReadonlyArray<PageCommand>; outMessage?: PageOutMessage }>
+export type DetailStep = Readonly<{
+	model: ToolModel
+	commands?: ReadonlyArray<PageCommand>
+	outMessage?: PageOutMessage
+}>
 export type Settled = Readonly<{ model: ToolModel; commands: ReadonlyArray<PageCommand> }>
 
 export const contextOf = (timeZone: string): PageContext => ({
@@ -67,7 +75,8 @@ const samplesPage = (model: ToolModel, args: typeof SamplesArgs.Type) => {
 		variant: args.variant,
 		pages: Number.POSITIVE_INFINITY,
 	}).occurrences
-	const start = args.before === undefined ? 0 : all.findIndex((sample) => sample.spanId === args.before?.spanId) + 1
+	const start =
+		args.before === undefined ? 0 : all.findIndex((sample) => sample.spanId === args.before?.spanId) + 1
 	const occurrences = all.slice(start, start + SAMPLES_PAGE)
 	const last = occurrences.at(-1)
 	return {
@@ -85,7 +94,10 @@ const answer = (command: PageCommand, model: ToolModel): Option.Option<ToolMessa
 	switch (command.name) {
 		case "FetchAgentToolSeries":
 			return Option.map(decodeKey(command.args), ({ key }) =>
-				ToolMessage.CompletedFetchSeries({ key, result: Result.succeed({ data: data().series, seriesKind: "none" }) }),
+				ToolMessage.CompletedFetchSeries({
+					key,
+					result: Result.succeed({ data: data().series, seriesKind: "none" }),
+				}),
 			)
 		case "FetchAgentToolTotals":
 			return Option.map(decodeSelection(command.args), ({ key }) => {
@@ -110,14 +122,21 @@ const answer = (command: PageCommand, model: ToolModel): Option.Option<ToolMessa
 			return Option.map(decodeKey(command.args), ({ key }) =>
 				ToolMessage.CompletedFetchSessions({
 					key,
-					result: Result.succeed({ data: Option.getOrElse(decodeSessions(data().sessions), () => []) }),
+					result: Result.succeed({
+						data: Option.getOrElse(decodeSessions(data().sessions), () => []),
+					}),
 				}),
 			)
 		case "FetchAgentToolFacets":
 			return Option.map(decodeKey(command.args), ({ key }) =>
 				ToolMessage.CompletedFetchFacets({
 					key,
-					result: Result.succeed({ vendors: [], agents: [], tools: [], ...toolFixtureFacets(buildToolCells(model.nowMs)) }),
+					result: Result.succeed({
+						vendors: [],
+						agents: [],
+						tools: [],
+						...toolFixtureFacets(buildToolCells(model.nowMs)),
+					}),
 				}),
 			)
 		default:
@@ -130,20 +149,29 @@ const answerModal = (command: PageCommand, model: ToolModel): Option.Option<Tool
 	switch (command.name) {
 		case "FetchAgentToolErrorDetail":
 			return Option.flatMap(
-				Schema.decodeUnknownOption(Schema.Struct({ key: Schema.String, fingerprint: Schema.String }))(command.args),
+				Schema.decodeUnknownOption(Schema.Struct({ key: Schema.String, fingerprint: Schema.String }))(
+					command.args,
+				),
 				({ key, fingerprint }) =>
 					Option.map(Option.fromUndefinedOr(errorRowOf(model, fingerprint)), (row) =>
 						modalAnswer(
 							ErrorModal.Message.CompletedFetchDetail({
 								key,
-								result: Result.succeed(buildToolErrorDetailFixture(model.toolName, row, { pages: 1 }).detail),
+								result: Result.succeed(
+									buildToolErrorDetailFixture(model.toolName, row, { pages: 1 }).detail,
+								),
 							}),
 						),
 					),
 			)
 		case "FetchAgentToolErrorSamples":
 			return Option.map(decodeSamples(command.args), (args) =>
-				modalAnswer(ErrorModal.Message.CompletedFetchSamples({ key: args.key, result: Result.succeed(samplesPage(model, args)) })),
+				modalAnswer(
+					ErrorModal.Message.CompletedFetchSamples({
+						key: args.key,
+						result: Result.succeed(samplesPage(model, args)),
+					}),
+				),
 			)
 		default:
 			return Option.none()
@@ -171,7 +199,13 @@ const followNavigation = (model: ToolModel, outMessage: PageOutMessage | undefin
 	if (outMessage?._tag !== "RequestedNavigation") return Option.none()
 	return Option.flatMap(Option.map(fromString(`http://lab${outMessage.url}`), urlToAppRoute), (route) =>
 		route._tag === "AgentSessionTool"
-			? Option.some(routeChanged(model, { toolName: route.toolName, search: route.search }, contextOf(timeZone)))
+			? Option.some(
+					routeChanged(
+						model,
+						{ toolName: route.toolName, search: route.search },
+						contextOf(timeZone),
+					),
+				)
 			: Option.none(),
 	)
 }
@@ -179,7 +213,9 @@ const followNavigation = (model: ToolModel, outMessage: PageOutMessage | undefin
 /** Runs a page step to rest: reads are answered in place, navigations re-enter, the rest is returned. */
 export const settle = (step: DetailStep, timeZone: string): Settled => {
 	const resolved = (step.commands ?? []).map((command) => [command, answer(command, step.model)] as const)
-	const rest = resolved.flatMap(([command, maybe]) => (Option.isNone(maybe) ? [fixtureWindow(command)] : []))
+	const rest = resolved.flatMap(([command, maybe]) =>
+		Option.isNone(maybe) ? [fixtureWindow(command)] : [],
+	)
 	const navigated = Option.match(followNavigation(step.model, step.outMessage, timeZone), {
 		onNone: (): Settled => ({ model: step.model, commands: [] }),
 		onSome: (next) => settle(next, timeZone),

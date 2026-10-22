@@ -25,7 +25,10 @@ export const SessionRow = Schema.Struct({
 })
 export type SessionRow = typeof SessionRow.Type
 
-export const SessionPages = Schema.Struct({ pages: Schema.Array(Schema.Array(SessionRow)), hasNextPage: Schema.Boolean })
+export const SessionPages = Schema.Struct({
+	pages: Schema.Array(Schema.Array(SessionRow)),
+	hasNextPage: Schema.Boolean,
+})
 export type SessionPages = typeof SessionPages.Type
 
 export const FacetOption = Schema.Struct({ name: Schema.String, count: Schema.Number })

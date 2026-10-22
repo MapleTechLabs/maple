@@ -32,9 +32,12 @@ export const radioStep = (
 	group: "signal" | "severity",
 	message: RadioGroup.Message,
 ): Return => {
-	const current = model.form === null ? null : group === "signal" ? model.form.signalType : model.form.severity
+	const current =
+		model.form === null ? null : group === "signal" ? model.form.signalType : model.form.severity
 	const next = RadioGroup.update(RadioGroup.init(current ?? undefined), message)
-	const commands = Command.mapMessages(next.commands ?? [], (inner) => Message.GotRadioMessage({ group, message: inner }))
+	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+		Message.GotRadioMessage({ group, message: inner }),
+	)
 	const value = next.model.maybeValue
 	if (value._tag === "None" || value.value === current) return { model, commands }
 	const edited = editForm(model, context, (form) => {
@@ -53,11 +56,18 @@ const withCommands = (step: Return, commands: Return["commands"]): Return => ({
 	commands: [...(commands ?? []), ...(step.commands ?? [])],
 })
 
-export const selectStep = (model: Model, context: PageContext, id: string, message: Select.Message): Return => {
+export const selectStep = (
+	model: Model,
+	context: PageContext,
+	id: string,
+	message: Select.Message,
+): Return => {
 	const current = model.selects[id] ?? Select.init(id, { value: "", selectedIndex: null })
 	const next = Select.update(current, message)
 	const lifted: Model = { ...model, selects: { ...model.selects, [id]: next.model } }
-	const commands = Command.mapMessages(next.commands ?? [], (inner) => Message.GotSelectMessage({ id, message: inner }))
+	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+		Message.GotSelectMessage({ id, message: inner }),
+	)
 	if (next.outMessage === undefined) return { model: lifted, commands }
 	const value = next.outMessage.value
 	const edited = editForm(lifted, context, (form) => {
@@ -71,14 +81,25 @@ export const selectStep = (model: Model, context: PageContext, id: string, messa
 	return withCommands(edited, commands)
 }
 
-export const comboStep = (model: Model, context: PageContext, id: string, message: Combobox.Message): Return => {
+export const comboStep = (
+	model: Model,
+	context: PageContext,
+	id: string,
+	message: Combobox.Message,
+): Return => {
 	const current = model.combos[id] ?? Combobox.init(id, "multiple")
 	const next = Combobox.update(current, message)
 	const lifted: Model = { ...model, combos: { ...model.combos, [id]: next.model } }
-	const commands = Command.mapMessages(next.commands ?? [], (inner) => Message.GotComboMessage({ id, message: inner }))
-	if (next.outMessage === undefined || next.outMessage._tag !== "ChangedSelection") return { model: lifted, commands }
+	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+		Message.GotComboMessage({ id, message: inner }),
+	)
+	if (next.outMessage === undefined || next.outMessage._tag !== "ChangedSelection")
+		return { model: lifted, commands }
 	const selected = next.outMessage.selected
-	return withCommands(editForm(lifted, context, (form) => setChips(form, id, selected)), commands)
+	return withCommands(
+		editForm(lifted, context, (form) => setChips(form, id, selected)),
+		commands,
+	)
 }
 
 /** The rule's one query panel; its edits land on `queryBuilderDraft`. */
@@ -101,14 +122,18 @@ export const chartStep = (model: Model, message: Chart.Message): Return => {
 	const next = Chart.update(model.chart, message)
 	return {
 		model: { ...model, chart: next.model },
-		commands: Command.mapMessages(next.commands ?? [], (inner) => Message.GotChartMessage({ message: inner })),
+		commands: Command.mapMessages(next.commands ?? [], (inner) =>
+			Message.GotChartMessage({ message: inner }),
+		),
 	}
 }
 
 /** The preview-only lookback: it re-runs the preview, never the rule being saved. */
 export const timePickerStep = (model: Model, message: TimeRangePicker.Message): Return => {
 	const next = TimeRangePicker.update(model.timePicker, message)
-	const commands = Command.mapMessages(next.commands ?? [], (inner) => Message.GotTimePickerMessage({ message: inner }))
+	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+		Message.GotTimePickerMessage({ message: inner }),
+	)
 	const lifted = { ...model, timePicker: next.model }
 	// TODO(alert-preview): keep a custom preview window too; only presets are stored here.
 	if (next.outMessage?._tag !== "SelectedPreset") return { model: lifted, commands }

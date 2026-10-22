@@ -5,11 +5,15 @@ import { MATH_MARK, prepareMath } from "./math"
 
 describe("prepareMath", () => {
 	it("turns text math into a marked code span and leaves single dollars alone", () => {
-		expect(prepareMath("p95 is $$p_{95} \\le 800$$ at $5 a run")).toBe(`p95 is \`${MATH_MARK}p_{95} \\le 800\` at $5 a run`)
+		expect(prepareMath("p95 is $$p_{95} \\le 800$$ at $5 a run")).toBe(
+			`p95 is \`${MATH_MARK}p_{95} \\le 800\` at $5 a run`,
+		)
 	})
 
 	it("turns a $$ fence into a math fence, closing at the end when it never closes", () => {
-		expect(prepareMath("Rate:\n$$\nx = \\frac{a}{b}\n$$\nDone.")).toBe("Rate:\n```math\nx = \\frac{a}{b}\n```\nDone.")
+		expect(prepareMath("Rate:\n$$\nx = \\frac{a}{b}\n$$\nDone.")).toBe(
+			"Rate:\n```math\nx = \\frac{a}{b}\n```\nDone.",
+		)
 		expect(prepareMath("$$\ny = 1")).toBe("```math\ny = 1\n```")
 	})
 

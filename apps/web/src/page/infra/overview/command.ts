@@ -37,13 +37,9 @@ const read = (source: SourceId, window: TimeWindow) => {
 				reading(summarizeHosts(response.data, window.endTime)),
 			)
 		case "containers":
-			return Effect.map(containersSummary({ data }), (counts) =>
-				reading(summarizeContainers(counts)),
-			)
+			return Effect.map(containersSummary({ data }), (counts) => reading(summarizeContainers(counts)))
 		case "kubernetes":
-			return Effect.map(podsSummary({ data }), (counts) =>
-				reading(summarizePods(counts)),
-			)
+			return Effect.map(podsSummary({ data }), (counts) => reading(summarizePods(counts)))
 		case "cloudflare":
 			return Effect.map(getCloudflareZones({ data }), ({ zones }) =>
 				reading(summarizeCloudflare(zones)),
@@ -61,7 +57,10 @@ const read = (source: SourceId, window: TimeWindow) => {
 					Option.match(status, {
 						onNone: () => [],
 						onSome: ({ projects: discovered }) =>
-							discovered.map((project): readonly [string, string] => [project.ref, project.name]),
+							discovered.map((project): readonly [string, string] => [
+								project.ref,
+								project.name,
+							]),
 					}),
 				)
 				return reading(summarizeSupabase(projects, names))

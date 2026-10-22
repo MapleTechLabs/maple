@@ -226,7 +226,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 													spanDurationMs: span.durationMs,
 													timeZone: inputs.timeZone,
 												},
-												toParentMessage: (message) => Message.GotInfraMessage({ message }),
+												toParentMessage: (message) =>
+													Message.GotInfraMessage({ message }),
 											}),
 										],
 									),

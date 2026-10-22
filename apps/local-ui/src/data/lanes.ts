@@ -19,7 +19,11 @@ export type Lane = Readonly<{
 }>
 
 /** A slot's lane: `stop` interrupts the slot's own Command under the slot's current key. */
-export const slotLane = <A>(scope: string, slot: Slot<A>, stop: (key: string) => Command.Command<Outcome>): ReadonlyArray<Lane> => {
+export const slotLane = <A>(
+	scope: string,
+	slot: Slot<A>,
+	stop: (key: string) => Command.Command<Outcome>,
+): ReadonlyArray<Lane> => {
 	const { key } = slot
 	return key === null ? [] : [{ scope, key, isInFlight: isInFlight(slot), stop: () => stop(key) }]
 }

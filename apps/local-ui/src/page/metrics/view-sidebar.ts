@@ -2,7 +2,11 @@ import { getServiceColor } from "@maple/ui/lib/colors"
 import { METRIC_TYPE_COLORS } from "@maple/web/page/metrics/shared"
 import { filterSection } from "@maple/web/ui/filters/filter-section"
 import type * as FilterSections from "@maple/web/ui/filters/filter-sections"
-import { filterSidebarBody, filterSidebarFrame, filterSidebarHeader } from "@maple/web/ui/filters/filter-sidebar"
+import {
+	filterSidebarBody,
+	filterSidebarFrame,
+	filterSidebarHeader,
+} from "@maple/web/ui/filters/filter-sidebar"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -61,7 +65,10 @@ export const sidebar = (
 		}),
 	]
 	return filterSidebarFrame(h, { className: "w-56 shrink-0 px-4", isWaiting: isFetching }, [
-		filterSidebarHeader(h, activeFilterCount > 0 ? { onClear: Message.ClickedClearSidebarFilters() } : {}),
+		filterSidebarHeader(
+			h,
+			activeFilterCount > 0 ? { onClear: Message.ClickedClearSidebarFilters() } : {},
+		),
 		...filterSidebarBody(
 			h,
 			"metrics-filters",

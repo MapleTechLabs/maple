@@ -383,7 +383,10 @@ export const routeChanged = (
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = setStreamRows({ ...model, search: route.search }, context)
 	// A moved window re-resolves, unsnapped after a Reload; any other change reads under the kept one.
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	return routeWindowStep(model.search, route.search, {
 		resolve,
 		requestAll: (mode) =>
@@ -510,7 +513,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		MountedFilterRail: () => {
 			if (model.isFilterRailMounted) return { model }
 			const mounted = { ...model, isFilterRailMounted: true }
-			return mounted.window === null ? { model: mounted } : requestAll(mounted, context, mounted.window, "Load")
+			return mounted.window === null
+				? { model: mounted }
+				: requestAll(mounted, context, mounted.window, "Load")
 		},
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
@@ -687,7 +692,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		PressedVolumeChart: () =>
 			Option.match(model.volumeChart.activeKey, {
 				onNone: () => ({ model }),
-				onSome: (bucket) => ({ model: { ...model, volumeBrush: { left: bucket, right: null, isSelecting: true } } }),
+				onSome: (bucket) => ({
+					model: { ...model, volumeBrush: { left: bucket, right: null, isSelecting: true } },
+				}),
 			}),
 		ReleasedVolumeChart: () => {
 			const { left, right, isSelecting } = model.volumeBrush

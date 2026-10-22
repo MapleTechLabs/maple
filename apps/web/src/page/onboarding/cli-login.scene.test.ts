@@ -7,7 +7,11 @@ import { view as cliLoginView } from "./cli-login-view"
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html => cliLoginView(h, model, h.empty)
 
-const info = { userCode: "WDJB-MJHT", deviceName: "Maple CLI on ada-macbook-pro", expiresAtLabel: "12:10:00 PM" }
+const info = {
+	userCode: "WDJB-MJHT",
+	deviceName: "Maple CLI on ada-macbook-pro",
+	expiresAtLabel: "12:10:00 PM",
+}
 
 const codeField = label("One-time code")
 
@@ -35,7 +39,10 @@ describe("CLI login", () => {
 	test("an unknown code shows the API's message and marks the field invalid", () => {
 		const failed = update(
 			{ ...init(undefined).model, state: State.Loading(), pendingCode: "ZZZZ-ZZZZ" },
-			Message.FailedInspectCliDevice({ userCode: "ZZZZ-ZZZZ", message: "This CLI login code is invalid or expired." }),
+			Message.FailedInspectCliDevice({
+				userCode: "ZZZZ-ZZZZ",
+				message: "This CLI login code is invalid or expired.",
+			}),
 		).model
 		scene(
 			{ update, view },
@@ -64,7 +71,10 @@ describe("CLI login", () => {
 
 	test("an answer for another code is dropped", () => {
 		const loading = init("WDJB-MJHT").model
-		const stale = update(loading, Message.SucceededInspectCliDevice({ userCode: "AAAA-BBBB", info, status: "pending" }))
+		const stale = update(
+			loading,
+			Message.SucceededInspectCliDevice({ userCode: "AAAA-BBBB", info, status: "pending" }),
+		)
 		expect(stale.model).toEqual(loading)
 	})
 
@@ -77,7 +87,10 @@ describe("CLI login", () => {
 
 	test("a code that was already approved shows the approved outcome", () => {
 		const loading = init("WDJB-MJHT").model
-		const next = update(loading, Message.SucceededInspectCliDevice({ userCode: "WDJB-MJHT", info, status: "complete" }))
+		const next = update(
+			loading,
+			Message.SucceededInspectCliDevice({ userCode: "WDJB-MJHT", info, status: "complete" }),
+		)
 		expect(next.model.state).toEqual(State.Approved())
 	})
 })

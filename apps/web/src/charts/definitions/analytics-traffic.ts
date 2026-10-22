@@ -24,12 +24,14 @@ interface TrafficPoint {
 }
 
 /** The descriptor a spec names by key; an unknown key reads as the strip's first metric. */
-const metricOf = (key: string) => ANALYTICS_METRICS.find((metric) => metric.key === key) ?? findMetric("visitors")
+const metricOf = (key: string) =>
+	ANALYTICS_METRICS.find((metric) => metric.key === key) ?? findMetric("visitors")
 
-export const buildAnalyticsTraffic = (
-	spec: TrafficSpec,
-): BuiltChart<TrafficPoint, ChartValue, number> => {
-	const data: ReadonlyArray<TrafficPoint> = spec.points.map((point) => ({ ...point, date: bucketDate(point.bucket) }))
+export const buildAnalyticsTraffic = (spec: TrafficSpec): BuiltChart<TrafficPoint, ChartValue, number> => {
+	const data: ReadonlyArray<TrafficPoint> = spec.points.map((point) => ({
+		...point,
+		date: bucketDate(point.bucket),
+	}))
 	const axis = makeBucketAxis(
 		data.map((point) => point.bucket),
 		spec.timeZone,
@@ -106,10 +108,19 @@ export const buildAnalyticsTraffic = (
 					const metric = metricOf(entry.metric)
 					return value === null
 						? []
-						: [{ label: metric.label, color: colorOf(entry.key), dashed: false, value: metric.format(value) }]
+						: [
+								{
+									label: metric.label,
+									color: colorOf(entry.key),
+									dashed: false,
+									value: metric.format(value),
+								},
+							]
 				}),
 			}
-			return highlighted === undefined ? ChartTooltip.Bucket(base) : ChartTooltip.Bucket({ ...base, highlighted })
+			return highlighted === undefined
+				? ChartTooltip.Bucket(base)
+				: ChartTooltip.Bucket({ ...base, highlighted })
 		})
 	return { definition, focusKeyOf: (point) => point.datum.bucket, tooltipOf }
 }

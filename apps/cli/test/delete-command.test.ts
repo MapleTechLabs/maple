@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
-import { buildDeleteRequest, parseBefore, resolveDeleteBaseUrl, verifyStoreServer } from "../src/commands/delete"
+import {
+	buildDeleteRequest,
+	parseBefore,
+	resolveDeleteBaseUrl,
+	verifyStoreServer,
+} from "../src/commands/delete"
 import { Mode } from "../src/core/mode"
 import { CliUsageError } from "../src/lib/errors"
 
@@ -25,7 +30,12 @@ describe("maple delete is local-only", () => {
 	})
 
 	test("refuses when the active mode resolves to remote", async () => {
-		const error = await withMode({ _tag: "remote", apiUrl: "https://api.maple.dev", token: "t", orgId: undefined })
+		const error = await withMode({
+			_tag: "remote",
+			apiUrl: "https://api.maple.dev",
+			token: "t",
+			orgId: undefined,
+		})
 		expect(error).toBeInstanceOf(CliUsageError)
 		expect(error.message).toContain("the active mode is remote")
 	})
@@ -35,7 +45,10 @@ describe("maple delete is local-only", () => {
 			resolveDeleteBaseUrl.pipe(
 				Effect.provide(
 					Layer.succeed(Mode, {
-						resolve: Effect.succeed({ _tag: "local" as const, baseUrl: "http://127.0.0.1:4318/" }),
+						resolve: Effect.succeed({
+							_tag: "local" as const,
+							baseUrl: "http://127.0.0.1:4318/",
+						}),
 					}),
 				),
 			),
@@ -71,7 +84,9 @@ describe("delete request", () => {
 
 	test("reports an out-of-range value as invalid, not as a missing selector", async () => {
 		expect(await build({ ...flags, service: "a".repeat(513) })).toEqual({ error: "invalid delete flags" })
-		expect(await build({ ...flags, namespace: "pr-42", beforeMs: -1 })).toEqual({ error: "invalid delete flags" })
+		expect(await build({ ...flags, namespace: "pr-42", beforeMs: -1 })).toEqual({
+			error: "invalid delete flags",
+		})
 	})
 
 	test("accepts a namespace alone or with a service, env and cutoff", async () => {
@@ -83,8 +98,20 @@ describe("delete request", () => {
 })
 
 describe("token goes only to the store's own server", () => {
-	const status = { service: "maple-local", pid: 4242, version: "x", url: "", dataDir: "/s/data", lastIngestAtMs: null } as const
-	const discovery = JSON.stringify({ pid: 4242, url: "http://127.0.0.1:4318", dataDir: "/s/data", startedAt: "t" })
+	const status = {
+		service: "maple-local",
+		pid: 4242,
+		version: "x",
+		url: "",
+		dataDir: "/s/data",
+		lastIngestAtMs: null,
+	} as const
+	const discovery = JSON.stringify({
+		pid: 4242,
+		url: "http://127.0.0.1:4318",
+		dataDir: "/s/data",
+		startedAt: "t",
+	})
 	const verify = (baseUrl: string, text: string | undefined, alive = true) =>
 		Effect.runPromise(
 			Effect.match(
@@ -105,12 +132,16 @@ describe("token goes only to the store's own server", () => {
 	})
 
 	test("refuses a non-loopback target", async () => {
-		expect(await verify("http://maple.home.arpa:4318", discovery)).toContain("only talks to a loopback server")
+		expect(await verify("http://maple.home.arpa:4318", discovery)).toContain(
+			"only talks to a loopback server",
+		)
 	})
 
 	test("refuses a server that merely claims the store", async () => {
 		expect(await verify("http://127.0.0.1:9999", discovery)).toContain("is not the live server")
-		expect(await verify("http://127.0.0.1:4318", discovery.replace("4242", "1"))).toContain("is not the live server")
+		expect(await verify("http://127.0.0.1:4318", discovery.replace("4242", "1"))).toContain(
+			"is not the live server",
+		)
 		expect(await verify("http://127.0.0.1:4318", undefined)).toContain("is not the live server")
 		expect(await verify("http://127.0.0.1:4318", discovery, false)).toContain("is not the live server")
 	})

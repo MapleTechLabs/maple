@@ -10,16 +10,16 @@ The governing rule is consumer intent, not transport convenience:
 
 ## Where each v1 group went
 
-| v1 group | Destination |
-| --- | --- |
-| `apiKeys`, `ingestKeys`, `ingestAttributeMappings`, `recommendationIssues`, `scrapeTargets`, `investigations`, `anomalies`, `dashboards`, PlanetScale | `/v2`; v1 deleted 2026-08-14 |
-| `observability`, `onboarding`, `warehouse` | Deleted outright (no callers) |
-| `queryEngine`, `billing`, `demo`, `digest`, `aiTriage`, `chat` (apply) | `/internal`, August 2026 |
-| `sessionReplays` | `/v2/session_replays`; v1 deleted 2026-10-08 after 30 quiet days. Facets and trace summaries are `/internal/session-replays`. |
-| `errors` | `/internal/errors`, 2026-10-08. Ten operations without a caller were deleted. Reads are `/v2/error_issues`. |
-| `integrations` (Hazel, Cloudflare, Railway, GitHub, VCS lookups), `codeReview` | `/internal/integrations`, `/internal/code-review`, 2026-10-08. `githubListPrReviews` was deleted (no caller). |
-| `orgClickHouseSettings`, `organizations`, `organizationCreation`, `organizationRegion` | `/internal/org-clickhouse-settings`, `/internal/organizations`, 2026-10-08 |
-| `auth`, `authPublic`, `billingPublic`, `emailPublic` | Stay on `MapleApi` at their `/api` URLs (version-neutral, see above) |
+| v1 group                                                                                                                                              | Destination                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `apiKeys`, `ingestKeys`, `ingestAttributeMappings`, `recommendationIssues`, `scrapeTargets`, `investigations`, `anomalies`, `dashboards`, PlanetScale | `/v2`; v1 deleted 2026-08-14                                                                                                  |
+| `observability`, `onboarding`, `warehouse`                                                                                                            | Deleted outright (no callers)                                                                                                 |
+| `queryEngine`, `billing`, `demo`, `digest`, `aiTriage`, `chat` (apply)                                                                                | `/internal`, August 2026                                                                                                      |
+| `sessionReplays`                                                                                                                                      | `/v2/session_replays`; v1 deleted 2026-10-08 after 30 quiet days. Facets and trace summaries are `/internal/session-replays`. |
+| `errors`                                                                                                                                              | `/internal/errors`, 2026-10-08. Ten operations without a caller were deleted. Reads are `/v2/error_issues`.                   |
+| `integrations` (Hazel, Cloudflare, Railway, GitHub, VCS lookups), `codeReview`                                                                        | `/internal/integrations`, `/internal/code-review`, 2026-10-08. `githubListPrReviews` was deleted (no caller).                 |
+| `orgClickHouseSettings`, `organizations`, `organizationCreation`, `organizationRegion`                                                                | `/internal/org-clickhouse-settings`, `/internal/organizations`, 2026-10-08                                                    |
+| `auth`, `authPublic`, `billingPublic`, `emailPublic`                                                                                                  | Stay on `MapleApi` at their `/api` URLs (version-neutral, see above)                                                          |
 
 Moving a group to `/internal` swaps `Authorization` for `SessionAuthorization`, which refuses API-key-shaped bearers. Production traffic for the 2026-10-08 moves was dashboard traffic, and the break for any API-key caller was accepted. One documented manual flow is affected: `GET /internal/org-clickhouse-settings/collector-config` now needs a dashboard session (see `self-hosted-clickhouse.md`).
 

@@ -48,34 +48,57 @@ const settleRefresh = (model: Model): Model =>
 
 export const update = (model: Model, message: Message, context: PageContext): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
-		CompletedReadClock: ({ nowMs }) => load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context),
-		CompletedReadStored: ({ stored }) => syncMap({ model: { ...model, maybeStored: Option.some(stored) } }, context),
+		CompletedReadClock: ({ nowMs }) =>
+			load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context),
+		CompletedReadStored: ({ stored }) =>
+			syncMap({ model: { ...model, maybeStored: Option.some(stored) } }, context),
 		SucceededFetchServiceMap: ({ key, data, fetchedAtMs }) => {
 			if (model.data.key !== key) return { model }
-			const next = { ...model, data: accept(model.data, key, Result.succeed(data), fetchedAtMs), dataUpdatedAtMs: fetchedAtMs }
+			const next = {
+				...model,
+				data: accept(model.data, key, Result.succeed(data), fetchedAtMs),
+				dataUpdatedAtMs: fetchedAtMs,
+			}
 			return syncMap({ model: settleRefresh(next) }, context)
 		},
 		FoundCachedServiceMap: ({ key, cached }) => {
 			if (model.data.key !== key) return { model }
-			const next = { ...model, data: acceptCached(model.data, key, cached, cached.isFresh), dataUpdatedAtMs: cached.updatedAtMs }
+			const next = {
+				...model,
+				data: acceptCached(model.data, key, cached, cached.isFresh),
+				dataUpdatedAtMs: cached.updatedAtMs,
+			}
 			const shown = syncMap({ model: cached.isFresh ? settleRefresh(next) : next }, context)
 			if (cached.isFresh) return shown
 			// Shown while the window's own rows load (an older window, or a stale exact one).
 			const again = load(shown.model, context, true)
-			return { ...shown, model: again.model, commands: [...(shown.commands ?? []), ...(again.commands ?? [])] }
+			return {
+				...shown,
+				model: again.model,
+				commands: [...(shown.commands ?? []), ...(again.commands ?? [])],
+			}
 		},
 		FailedFetchServiceMap: ({ key, failure }) => ({
 			model: settleRefresh({ ...model, data: accept(model.data, key, Result.fail(failure)) }),
 		}),
 		ClickedRefresh: () =>
-			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
+			model.isRefreshing
+				? { model }
+				: { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
 		CompletedReadRefreshClock: ({ nowMs }) => {
 			const next = snapToMinute(nowMs)
 			// `advance()`: a new minute re-anchors the window (a new key); else refetch in place.
 			if (Option.getOrNull(model.maybeAnchorMs) !== next)
-				return load({ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false }, context)
+				return load(
+					{ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false },
+					context,
+				)
 			const refetch = load({ ...model, nowMs }, context, true)
-			return { model: settleRefresh(refetch.model), commands: refetch.commands, outMessage: PageOutMessage.RefetchedInPlace() }
+			return {
+				model: settleRefresh(refetch.model),
+				commands: refetch.commands,
+				outMessage: PageOutMessage.RefetchedInPlace(),
+			}
 		},
 		ClickedRetry: () => load(model, context, true),
 		ChangedRange: ({ range }) => setRange(model, context, range),

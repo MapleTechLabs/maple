@@ -1,4 +1,7 @@
-import { pickDashboardControlParams, variableValuesFromSearch } from "../../../lib/dashboard-controls/search-params"
+import {
+	pickDashboardControlParams,
+	variableValuesFromSearch,
+} from "../../../lib/dashboard-controls/search-params"
 import { behindToast } from "../kit/store"
 import { DashboardRefreshIntervalSeconds } from "@maple/domain/http"
 import { Option, Result, Schema } from "effect"
@@ -119,7 +122,8 @@ export const init = (route: Route, _context: PageContext): Return => ({
 })
 
 const sameValues = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>): boolean =>
-	Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([key, value]) => b[key] === value)
+	Object.keys(a).length === Object.keys(b).length &&
+	Object.entries(a).every(([key, value]) => b[key] === value)
 
 /** A `var-*` change re-plans the tiles that read the variable (their request keys move). */
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
@@ -165,7 +169,9 @@ const closePicker = (model: Model): Return => {
 	const closed = Dialog.close(model.pickerDialog)
 	return {
 		model: { ...model, pickerDialog: closed.model, pickerTarget: null },
-		commands: Command.mapMessages(closed.commands ?? [], (dialog) => Message.GotPickerDialogMessage({ message: dialog })),
+		commands: Command.mapMessages(closed.commands ?? [], (dialog) =>
+			Message.GotPickerDialogMessage({ message: dialog }),
+		),
 	}
 }
 
@@ -196,7 +202,12 @@ const addPicked = (
 		...Command.mapMessages(closed.commands ?? [], (dialog) =>
 			Message.GotPickerDialogMessage({ message: dialog }),
 		),
-		AddWidget({ orgId: context.orgId, dashboardId: model.dashboardId, ...pick, target: model.pickerTarget }),
+		AddWidget({
+			orgId: context.orgId,
+			dashboardId: model.dashboardId,
+			...pick,
+			target: model.pickerTarget,
+		}),
 	]
 	const updated = { ...model, pickerDialog: closed.model, pickerTarget: null }
 	return isEditing(model)
@@ -307,7 +318,9 @@ const receiveDocument = (
 			const shares = isFirstRead ? [FetchShares({ dashboardId: model.dashboardId, seq })] : []
 			return {
 				...planned,
-				model: isFirstRead ? { ...planned.model, sharing: { ...planned.model.sharing, fetchSeq: seq } } : planned.model,
+				model: isFirstRead
+					? { ...planned.model, sharing: { ...planned.model.sharing, fetchSeq: seq } }
+					: planned.model,
 				commands: [...(planned.commands ?? []), ...shares, ...refocus],
 			}
 		},
@@ -496,7 +509,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const slot = slotOf(model, widgetId)
 			return slot.isNarrowed === true
 				? { model }
-				: withReplan({ ...model, widgets: { ...model.widgets, [widgetId]: { ...slot, isNarrowed: true } } }, context, "Load")
+				: withReplan(
+						{
+							...model,
+							widgets: { ...model.widgets, [widgetId]: { ...slot, isNarrowed: true } },
+						},
+						context,
+						"Load",
+					)
 		},
 		RevealedWidget: ({ widgetId }) => {
 			const slot = slotOf(model, widgetId)
@@ -516,7 +536,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			if (slot === undefined) return { model }
 			// The options settle the variables, which may unblock tiles waiting on them.
 			return withReplan(
-				{ ...model, variableOptions: { ...model.variableOptions, [name]: Keyed.accept(slot, key, result) } },
+				{
+					...model,
+					variableOptions: { ...model.variableOptions, [name]: Keyed.accept(slot, key, result) },
+				},
 				context,
 				"Load",
 			)
@@ -613,7 +636,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotPickerDialogMessage: ({ message: inner }) => {
 			const next = Dialog.update(model.pickerDialog, inner)
 			return {
-				model: { ...model, pickerDialog: next.model, pickerTarget: next.model.isOpen ? model.pickerTarget : null },
+				model: {
+					...model,
+					pickerDialog: next.model,
+					pickerTarget: next.model.isOpen ? model.pickerTarget : null,
+				},
 				commands: Command.mapMessages(next.commands ?? [], (dialog) =>
 					Message.GotPickerDialogMessage({ message: dialog }),
 				),
@@ -661,11 +688,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Result.match(result, {
 				onFailure: (error) => closePicker({ ...model, persistenceError: error }),
 				onSuccess: (sync) =>
-					sync === "Behind" ? { model, outMessage: behindToast() } : { model: { ...model, persistenceError: null } },
+					sync === "Behind"
+						? { model, outMessage: behindToast() }
+						: { model: { ...model, persistenceError: null } },
 			}),
 		CompletedExport: () => ({ model }),
 		GotErrorDetailsMessage: ({ widgetId, message: inner }) => {
-			const next = Popover.update(model.errorDetails[widgetId] ?? Popover.init(errorDetailsIdOf(widgetId)), inner)
+			const next = Popover.update(
+				model.errorDetails[widgetId] ?? Popover.init(errorDetailsIdOf(widgetId)),
+				inner,
+			)
 			return {
 				model: { ...model, errorDetails: { ...model.errorDetails, [widgetId]: next.model } },
 				commands: Command.mapMessages(next.commands ?? [], (popover) =>

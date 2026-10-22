@@ -15,8 +15,10 @@ import { type LimitsDraft, Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 
-const settle = <A, B>(toMessage: (result: Result.Result<A, ReturnType<typeof toLoadFailure>>) => B) =>
-	<E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
+const settle =
+	<A, B>(toMessage: (result: Result.Result<A, ReturnType<typeof toLoadFailure>>) => B) =>
+	<E, R>(effect: Effect.Effect<A, E, R>) =>
+		effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
 
 export const FetchOpenRouterKey = Command.define("FetchOpenRouterKey", {
 	messages: [Message.CompletedFetchKey],
@@ -54,7 +56,9 @@ const AttachAddOn = Command.define("AttachOpenRouterAddOn", {
 	execute: Effect.gen(function* () {
 		const client = yield* MapleInternalApiClient
 		const successUrl = yield* Effect.sync(() => buildCheckoutSuccessUrl(window.location.href))
-		return yield* client.billing.attach({ payload: new AttachRequest({ planId: OPENROUTER_BYOK_ADDON_ID, successUrl }) })
+		return yield* client.billing.attach({
+			payload: new AttachRequest({ planId: OPENROUTER_BYOK_ADDON_ID, successUrl }),
+		})
 	}).pipe(settle((result) => Message.CompletedAttachAddOn({ result }))),
 })
 
@@ -125,20 +129,28 @@ const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
 /** `reactivityKeys`: a write refetches the document behind it, keeping it on screen. */
-const refresh = <A, E>(data: AsyncData.AsyncData<A, E>) => Option.getOrElse(AsyncData.revalidate(data), () => data)
+const refresh = <A, E>(data: AsyncData.AsyncData<A, E>) =>
+	Option.getOrElse(AsyncData.revalidate(data), () => data)
 
 const liftRemoveDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, removeDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRemoveDialogMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotRemoveDialogMessage({ message }),
+	),
 })
 
 const liftAddOnDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, addOnDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAddOnDialogMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotAddOnDialogMessage({ message }),
+	),
 })
 
 const isKeyInUse = (model: Model): boolean =>
-	AsyncData.getOrElse(AsyncData.map(model.key, (key) => key.entitled && key.configured), () => false)
+	AsyncData.getOrElse(
+		AsyncData.map(model.key, (key) => key.entitled && key.configured),
+		() => false,
+	)
 
 /** The draft the form shows: the edits, else the saved ceilings. */
 export const limitsDraftOf = (model: Model) =>
@@ -189,30 +201,49 @@ const saveLimits = (model: Model): Return =>
 /** Back on the tab: the key and triage settings stay up while they load again. */
 export const revisit = (model: Model): Return => {
 	const key = revisitData(model.key, FetchOpenRouterKey)
-	const triage = model.isTriageAvailable ? revisitData(model.triage, FetchTriageSettings) : { data: model.triage, commands: [] }
-	return { model: { ...model, key: key.data, triage: triage.data }, commands: [...key.commands, ...triage.commands] }
+	const triage = model.isTriageAvailable
+		? revisitData(model.triage, FetchTriageSettings)
+		: { data: model.triage, commands: [] }
+	return {
+		model: { ...model, key: key.data, triage: triage.data },
+		commands: [...key.commands, ...triage.commands],
+	}
 }
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
-		CompletedFetchKey: ({ result }) => ({ model: { ...model, key: AsyncData.settle(model.key, result) } }),
+		CompletedFetchKey: ({ result }) => ({
+			model: { ...model, key: AsyncData.settle(model.key, result) },
+		}),
 		CompletedFetchTriage: ({ result }) => {
 			const triage = AsyncData.settle(model.triage, result)
 			const fetched = AsyncData.getOrElse(
-				AsyncData.map(triage, (doc) => ({ maxRunsPerDay: String(doc.maxRunsPerDay), maxPassesPerDay: String(doc.maxPassesPerDay) })),
+				AsyncData.map(triage, (doc) => ({
+					maxRunsPerDay: String(doc.maxRunsPerDay),
+					maxPassesPerDay: String(doc.maxPassesPerDay),
+				})),
 				() => null,
 			)
 			// `isSaveSettled`: the committed edits go once the saved value moved off its base or reached them.
 			const isSettled =
 				model.committedOver !== null &&
 				fetched !== null &&
-				(!sameLimits(fetched, model.committedOver) || (model.limits !== null && sameLimits(fetched, model.limits)))
+				(!sameLimits(fetched, model.committedOver) ||
+					(model.limits !== null && sameLimits(fetched, model.limits)))
 			return {
-				model: isSettled ? { ...model, triage, limits: null, committedOver: null } : { ...model, triage },
+				model: isSettled
+					? { ...model, triage, limits: null, committedOver: null }
+					: { ...model, triage },
 			}
 		},
-		ClickedRetryKey: () => ({ model: { ...model, key: AsyncData.Loading() }, commands: [FetchOpenRouterKey()] }),
-		ClickedRetryTriage: () => ({ model: { ...model, triage: AsyncData.Loading() }, commands: [FetchTriageSettings()] }),
+		ClickedRetryKey: () => ({
+			model: { ...model, key: AsyncData.Loading() },
+			commands: [FetchOpenRouterKey()],
+		}),
+		ClickedRetryTriage: () => ({
+			model: { ...model, triage: AsyncData.Loading() },
+			commands: [FetchTriageSettings()],
+		}),
 		PickedProvider: ({ provider }) =>
 			provider === "managed" && isKeyInUse(model)
 				? liftRemoveDialog(model, Dialog.open(model.removeDialog))
@@ -220,7 +251,9 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedFocusProvider: () => ({ model }),
 		ClickedReplace: () => ({ model: { ...model, isReplacing: true } }),
 		ClickedCancelReplace: () => ({ model: { ...model, isReplacing: false, keyDraft: Field.init() } }),
-		GotKeyDraftMessage: ({ message: child }) => ({ model: { ...model, keyDraft: Field.update(model.keyDraft, child).model } }),
+		GotKeyDraftMessage: ({ message: child }) => ({
+			model: { ...model, keyDraft: Field.update(model.keyDraft, child).model },
+		}),
 		SubmittedKey: () => {
 			const apiKey = model.keyDraft.value.trim()
 			return apiKey === "" || model.isSavingKey
@@ -230,7 +263,13 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedSaveKey: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => ({
-					model: { ...model, isSavingKey: false, isReplacing: false, keyDraft: Field.init(), key: refresh(model.key) },
+					model: {
+						...model,
+						isSavingKey: false,
+						isReplacing: false,
+						keyDraft: Field.init(),
+						key: refresh(model.key),
+					},
 					commands: [FetchOpenRouterKey()],
 					outMessage: toast("success", "OpenRouter key saved"),
 				}),
@@ -243,7 +282,9 @@ export const update = (model: Model, message: Message): Return =>
 		GotRemoveDialogMessage: ({ message: child }) =>
 			model.isRemoving ? { model } : liftRemoveDialog(model, Dialog.update(model.removeDialog, child)),
 		ClickedConfirmRemove: () =>
-			model.isRemoving ? { model } : { model: { ...model, isRemoving: true }, commands: [RemoveOpenRouterKey()] },
+			model.isRemoving
+				? { model }
+				: { model: { ...model, isRemoving: true }, commands: [RemoveOpenRouterKey()] },
 		CompletedRemoveKey: ({ result }) => {
 			const closed = liftRemoveDialog({ ...model, isRemoving: false }, Dialog.close(model.removeDialog))
 			return Result.match(result, {
@@ -252,21 +293,38 @@ export const update = (model: Model, message: Message): Return =>
 					commands: [...(closed.commands ?? []), FetchOpenRouterKey()],
 					outMessage: toast("success", "Switched to Maple managed"),
 				}),
-				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Failed to remove the key", error.message) }),
+				onFailure: (error) => ({
+					...closed,
+					outMessage: toast("error", "Failed to remove the key", error.message),
+				}),
 			})
 		},
-		ClickedAddOn: () => (model.isAttachingAddOn ? { model } : liftAddOnDialog(model, Dialog.open(model.addOnDialog))),
+		ClickedAddOn: () =>
+			model.isAttachingAddOn ? { model } : liftAddOnDialog(model, Dialog.open(model.addOnDialog)),
 		GotAddOnDialogMessage: ({ message: child }) =>
-			model.isAttachingAddOn ? { model } : liftAddOnDialog(model, Dialog.update(model.addOnDialog, child)),
+			model.isAttachingAddOn
+				? { model }
+				: liftAddOnDialog(model, Dialog.update(model.addOnDialog, child)),
 		ClickedConfirmAddOn: () =>
-			model.isAttachingAddOn ? { model } : { model: { ...model, isAttachingAddOn: true }, commands: [AttachAddOn()] },
+			model.isAttachingAddOn
+				? { model }
+				: { model: { ...model, isAttachingAddOn: true }, commands: [AttachAddOn()] },
 		// With a card on file the attach charges at once; otherwise checkout follows.
 		CompletedAttachAddOn: ({ result }) => {
-			const closed = liftAddOnDialog({ ...model, isAttachingAddOn: false }, Dialog.close(model.addOnDialog))
+			const closed = liftAddOnDialog(
+				{ ...model, isAttachingAddOn: false },
+				Dialog.close(model.addOnDialog),
+			)
 			return Result.match(result, {
 				onSuccess: ({ paymentUrl }) =>
 					paymentUrl !== undefined && paymentUrl !== null && paymentUrl !== ""
-						? { ...closed, commands: [...(closed.commands ?? []), OpenAddOnCheckout({ url: paymentUrl })] }
+						? {
+								...closed,
+								commands: [
+									...(closed.commands ?? []),
+									OpenAddOnCheckout({ url: paymentUrl }),
+								],
+							}
 						: {
 								model: { ...closed.model, key: refresh(closed.model.key) },
 								commands: [...(closed.commands ?? []), FetchOpenRouterKey()],
@@ -275,7 +333,10 @@ export const update = (model: Model, message: Message): Return =>
 									toast: { type: "success", title: "Add-on added", description: "" },
 								}),
 							},
-				onFailure: (error) => ({ ...closed, outMessage: toast("error", "Failed to add the add-on", error.message) }),
+				onFailure: (error) => ({
+					...closed,
+					outMessage: toast("error", "Failed to add the add-on", error.message),
+				}),
 			})
 		},
 		CompletedOpenAddOnCheckout: () => ({ model }),
@@ -295,7 +356,10 @@ export const update = (model: Model, message: Message): Return =>
 				onSuccess: () => ({
 					model: { ...model, isToggling: false, triage: refresh(model.triage) },
 					commands: [FetchTriageSettings()],
-					outMessage: toast("success", isEnabled ? "Auto-triage turned on" : "Auto-triage turned off"),
+					outMessage: toast(
+						"success",
+						isEnabled ? "Auto-triage turned on" : "Auto-triage turned off",
+					),
 				}),
 				onFailure: (error) => ({
 					model: { ...model, isToggling: false },

@@ -150,7 +150,9 @@ describe("traces list", () => {
 		expect(names(filtered.commands)).toEqual([FetchFirstPage.name])
 		expect(filtered.model.window).toEqual(window)
 		const moved = routeChanged(filtered.model, { search: { hasError: true, timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveTracesWindow", "Refresh"]])
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveTracesWindow", "Refresh"],
+		])
 	})
 
 	test("a short first page has no next page, and a failed next page stops pagination", () => {

@@ -40,7 +40,10 @@ const inventory: DatabaseList = {
 const LOCAL = { startMs: 1_790_000_000_000, endMs: 1_790_003_600_000 }
 
 const windowed = () =>
-	pageUpdate(init(route, context).model, Message.CompletedResolveWindow({ window, localWindow: LOCAL, nowMs: 0, mode: "Load" }))
+	pageUpdate(
+		init(route, context).model,
+		Message.CompletedResolveWindow({ window, localWindow: LOCAL, nowMs: 0, mode: "Load" }),
+	)
 
 describe("planetscale database", () => {
 	test("after a Reload a branch change reads under the kept window; only a new preset re-resolves", () => {
@@ -48,8 +51,15 @@ describe("planetscale database", () => {
 		const scoped = routeChanged(reloaded, { ...route, search: { branch: "dev" } }, context)
 		expect(names(scoped.commands)).not.toContain("ResolvePlanetscaleDatabaseWindow")
 		expect(scoped.model.window).toEqual(window)
-		const moved = routeChanged(scoped.model, { ...route, search: { branch: "dev", timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])?.[0]).toEqual(["ResolvePlanetscaleDatabaseWindow", "Refresh"])
+		const moved = routeChanged(
+			scoped.model,
+			{ ...route, search: { branch: "dev", timePreset: "1h" } },
+			context,
+		)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])?.[0]).toEqual([
+			"ResolvePlanetscaleDatabaseWindow",
+			"Refresh",
+		])
 	})
 
 	test("entry asks for status and inventory; the window brings the branch stats and the scoped reads", () => {

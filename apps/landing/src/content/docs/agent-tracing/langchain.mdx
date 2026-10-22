@@ -145,7 +145,9 @@ function text(content: unknown): string {
 function toGenAiMessage(message: any) {
 	const fields = message?.lc ? message.kwargs : (message ?? {})
 	const type = message?.lc
-		? String(message.id.at(-1)).replace(/Message(Chunk)?$/, "").toLowerCase()
+		? String(message.id.at(-1))
+				.replace(/Message(Chunk)?$/, "")
+				.toLowerCase()
 		: String(fields.role ?? fields.type)
 	const role = ROLES[type] ?? type
 	const parts: object[] = []
@@ -169,7 +171,10 @@ export class GenAiSpans implements SpanProcessor {
 		const attrs = span.attributes
 		const set = (key: string, value: unknown) => {
 			if (value === undefined || value === null || value === "") return
-			span.setAttribute(key, typeof value === "object" ? JSON.stringify(value) : (value as string | number))
+			span.setAttribute(
+				key,
+				typeof value === "object" ? JSON.stringify(value) : (value as string | number),
+			)
 		}
 		const metadata = parse(attrs["metadata"]) ?? {}
 		const input = parse(attrs["input.value"])
@@ -179,7 +184,8 @@ export class GenAiSpans implements SpanProcessor {
 		if (kind === "LLM") {
 			const generations = output?.generations?.[0] ?? []
 			const reply = generations[0]?.message?.kwargs ?? {}
-			const finish = generations[0]?.generationInfo?.finish_reason ?? reply.response_metadata?.finish_reason
+			const finish =
+				generations[0]?.generationInfo?.finish_reason ?? reply.response_metadata?.finish_reason
 			if (this.toolArgs.size > 1000) this.toolArgs.clear() // calls whose tool never ran
 			for (const call of reply.tool_calls ?? []) this.toolArgs.set(call.id, call.args)
 			set("gen_ai.operation.name", "chat")
@@ -193,7 +199,10 @@ export class GenAiSpans implements SpanProcessor {
 			set("gen_ai.input.messages", (input?.messages?.[0] ?? []).map(toGenAiMessage))
 			set(
 				"gen_ai.output.messages",
-				generations.map((g: any) => ({ ...toGenAiMessage(g.message ?? { role: "assistant", content: g.text }), finish_reason: finish ?? "stop" })),
+				generations.map((g: any) => ({
+					...toGenAiMessage(g.message ?? { role: "assistant", content: g.text }),
+					finish_reason: finish ?? "stop",
+				})),
 			)
 		} else if (kind === "TOOL") {
 			// A tool called by the model returns a serialized ToolMessage
@@ -205,7 +214,11 @@ export class GenAiSpans implements SpanProcessor {
 			set("gen_ai.tool.call.id", message?.tool_call_id)
 			set("gen_ai.tool.call.arguments", this.toolArgs.get(message?.tool_call_id))
 			this.toolArgs.delete(message?.tool_call_id)
-			if (content !== undefined) set("gen_ai.tool.call.result", typeof result === "object" && result !== null ? result : content)
+			if (content !== undefined)
+				set(
+					"gen_ai.tool.call.result",
+					typeof result === "object" && result !== null ? result : content,
+				)
 		} else if (span.name === metadata.lc_agent_name || AGENT_NAMES.has(span.name)) {
 			const messages = output?.messages ?? []
 			set("gen_ai.operation.name", "invoke_agent")

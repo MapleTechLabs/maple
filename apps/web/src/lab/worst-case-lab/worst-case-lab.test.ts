@@ -11,7 +11,6 @@ const step = (model: Model, ...messages: ReadonlyArray<Message>): Model =>
 	messages.reduce((current, message) => update(current, message).model, model)
 
 describe("worst-case lab", () => {
-
 	test("the mode toggle swaps in the demo twins and writes ?data= to the URL", () => {
 		const opened = init(FLAGS).model
 		const toggled = update(opened, Message.ClickedMode({ mode: "demo" }))

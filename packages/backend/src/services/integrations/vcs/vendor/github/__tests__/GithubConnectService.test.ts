@@ -68,11 +68,7 @@ const connectResponders = (...rest: Array<() => Response>) => [
 
 // Wire GithubConnectService over an in-memory PGlite (real repo + state repo), a
 // real GithubAppClient backed by the stubbed HttpClient, and a recording queue.
-const connectLayer = (
-	testDb: TestDb,
-	http: Layer.Layer<HttpClient.HttpClient>,
-	sent: Array<VcsSyncJob>,
-) => {
+const connectLayer = (testDb: TestDb, http: Layer.Layer<HttpClient.HttpClient>, sent: Array<VcsSyncJob>) => {
 	const env = testEnv(GITHUB_APP_CONFIG)
 	const data = Layer.mergeAll(
 		VcsRepository.layer,

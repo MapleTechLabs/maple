@@ -32,7 +32,9 @@ export const taxIdValue = <M>(h: HtmlBuilder<M>, taxId: BillingTaxId): Html => {
 		[
 			h.span([h.Class("font-mono tabular-nums")], [taxId.value]),
 			h.span([h.Class("truncate text-muted-foreground")], [taxIdLabel(taxId.type)]),
-			...(verification === null ? [] : [badge(h, { size: "sm", variant: verification.variant }, [verification.label])]),
+			...(verification === null
+				? []
+				: [badge(h, { size: "sm", variant: verification.variant }, [verification.label])]),
 		],
 	)
 }
@@ -40,7 +42,18 @@ export const taxIdValue = <M>(h: HtmlBuilder<M>, taxId: BillingTaxId): Html => {
 const countryField = (h: H, model: Model): Html => {
 	const state = stateFor(model.country ?? "")
 	return field(h, { state }, [
-		fieldLabel(h, { ids: { control: "billing-country-input", label: "billing-country-label", error: "billing-country-error" }, state }, "Country"),
+		fieldLabel(
+			h,
+			{
+				ids: {
+					control: "billing-country-input",
+					label: "billing-country-label",
+					error: "billing-country-error",
+				},
+				state,
+			},
+			"Country",
+		),
 		h.submodel({
 			slotId: "billing-country",
 			model: model.countryBox,
@@ -112,7 +125,12 @@ const taxIdsEditor = (h: H, model: Model, profile: BillingProfile): Html =>
 	field(h, { state: IDLE, className: "gap-2" }, [
 		fieldLabel(h, { ids: fieldIds("billing-tax-ids"), state: IDLE }, "Tax IDs"),
 		...(!profile.linked
-			? [h.p([h.Class("text-xs text-muted-foreground")], ["Available once your organization has a plan."])]
+			? [
+					h.p(
+						[h.Class("text-xs text-muted-foreground")],
+						["Available once your organization has a plan."],
+					),
+				]
 			: [
 					...(profile.taxIds.length === 0
 						? []
@@ -131,7 +149,9 @@ const taxIdsEditor = (h: H, model: Model, profile: BillingProfile): Html =>
 														label: `Remove ${taxIdLabel(taxId.type)} ${taxId.value}`,
 														className: "ml-auto text-muted-foreground",
 														isDisabled: model.removingTaxIds.includes(taxId.id),
-														attributes: [h.OnClick(Message.ClickedRemoveTax({ taxId }))],
+														attributes: [
+															h.OnClick(Message.ClickedRemoveTax({ taxId })),
+														],
 													},
 													[icon(h, "XmarkIcon")],
 												),
@@ -236,12 +256,14 @@ export const detailsDialog = (h: H, model: Model, profile: BillingProfile): Html
 			),
 			h.p(
 				[h.Class("text-2xs leading-4 text-muted-foreground")],
-				["Name and address are stored on your Stripe customer and printed on every invoice from the next one on."],
+				[
+					"Name and address are stored on your Stripe customer and printed on every invoice from the next one on.",
+				],
 			),
 			taxIdsEditor(h, model, profile),
 		],
 	})
 
-export const view = Submodel.defineView<Model, Message, Readonly<{ profile: BillingProfile }>>((model, inputs, h) =>
-	detailsDialog(h, model, inputs.profile),
+export const view = Submodel.defineView<Model, Message, Readonly<{ profile: BillingProfile }>>(
+	(model, inputs, h) => detailsDialog(h, model, inputs.profile),
 )

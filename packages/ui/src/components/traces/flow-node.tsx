@@ -170,7 +170,11 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 					<div className="flex items-center gap-1.5 min-w-0 text-2xs">
 						<span className="font-semibold text-muted-foreground">Missing span</span>
 						<span className="flex-1" />
-						<TruncatedId value={span.spanId} kind="span" className="text-muted-foreground/60 truncate" />
+						<TruncatedId
+							value={span.spanId}
+							kind="span"
+							className="text-muted-foreground/60 truncate"
+						/>
 					</div>
 					<div className="text-3xs italic text-muted-foreground/50">Not ingested or dropped</div>
 				</div>

@@ -50,7 +50,13 @@ export type NumberFieldOptions = Readonly<{
 export const wasNote = (h: H, children: ReadonlyArray<string>): Html =>
 	h.p(
 		[h.Class("text-xs text-severity-warn")],
-		["Was ", h.span([h.Class("font-mono")], children.filter((child) => child !== ""))],
+		[
+			"Was ",
+			h.span(
+				[h.Class("font-mono")],
+				children.filter((child) => child !== ""),
+			),
+		],
 	)
 
 export const numberField = (h: H, options: NumberFieldOptions): Html => {

@@ -59,7 +59,9 @@ const header = (h: H, model: SqlView, sql: string): Html => {
 						cn(
 							badgeVariants({
 								variant: "outline",
-								className: cn("font-mono text-2xs text-white border-0 shrink-0 bg-primary/80"),
+								className: cn(
+									"font-mono text-2xs text-white border-0 shrink-0 bg-primary/80",
+								),
 							}),
 						),
 					),
@@ -97,7 +99,9 @@ const editor = (h: H, sql: string): Html =>
 						[h.Class("font-mono")],
 						[
 							...tokenizeSql(sql).map((token) =>
-								h.span(token.className === undefined ? [] : [h.Class(token.className)], [token.text]),
+								h.span(token.className === undefined ? [] : [h.Class(token.className)], [
+									token.text,
+								]),
 							),
 							"\n",
 						],
@@ -156,7 +160,12 @@ export const rawQueryEditor = (h: H, model: SqlView, form: RuleForm): Html => {
 							header(h, model, form.rawQuerySql),
 							...(model.isSqlCollapsed
 								? []
-								: [h.div([h.Class("p-3 space-y-3")], [editor(h, form.rawQuerySql), macros(h)])]),
+								: [
+										h.div(
+											[h.Class("p-3 space-y-3")],
+											[editor(h, form.rawQuerySql), macros(h)],
+										),
+									]),
 						],
 					),
 					h.div(
@@ -197,7 +206,9 @@ export const rawQueryEditor = (h: H, model: SqlView, form: RuleForm): Html => {
 						],
 					),
 			}),
-			...(sampleWarning === null ? [] : [h.p([h.Class("text-xs text-severity-warn")], [sampleWarning])]),
+			...(sampleWarning === null
+				? []
+				: [h.p([h.Class("text-xs text-severity-warn")], [sampleWarning])]),
 		],
 	)
 }

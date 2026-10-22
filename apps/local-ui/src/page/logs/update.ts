@@ -14,7 +14,10 @@ import { Message } from "./message"
 import { initChipJsonTooltip, type Model } from "./model"
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PageOutMessage, Resources>
-export type InitReturn = Readonly<{ model: Model; commands: ReadonlyArray<Command.Command<Message, never, Resources>> }>
+export type InitReturn = Readonly<{
+	model: Model
+	commands: ReadonlyArray<Command.Command<Message, never, Resources>>
+}>
 
 export const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
@@ -43,7 +46,13 @@ export const init = (context: PageContext): InitReturn => {
 			maybeDetail: Option.none(),
 			isRefreshing: false,
 			copies: {},
-			chipCard: { visible: Option.none(), pendingOpen: Option.none(), pendingClose: Option.none(), generation: 0, isJsonExpanded: false },
+			chipCard: {
+				visible: Option.none(),
+				pendingOpen: Option.none(),
+				pendingClose: Option.none(),
+				generation: 0,
+				isJsonExpanded: false,
+			},
 			chipJsonTooltip: initChipJsonTooltip(),
 		},
 		commands: [ReadClock(), Command.mapMessage(FilterSections.ReadRemembered(), toSections)],
@@ -60,7 +69,11 @@ export const locationChanged = (model: Model, context: PageContext): UpdateRetur
 	return load({ ...model, search, maybeDetail }, context)
 }
 
-export const navigate = (model: Model, context: PageContext, updates: Record<string, string | null>): UpdateReturn => ({
+export const navigate = (
+	model: Model,
+	context: PageContext,
+	updates: Record<string, string | null>,
+): UpdateReturn => ({
 	model,
 	outMessage: replaceParams(context.location, updates),
 })
@@ -80,6 +93,8 @@ export const selectPattern = (model: Model, context: PageContext, template: stri
 export const settleRefresh = (model: Model): Model => {
 	const isLoading = (data: AsyncData.AsyncData<unknown, unknown>) =>
 		AsyncData.isLoading(data) || AsyncData.isRefreshing(data)
-	const busy = [model.logs.data, model.patterns.data, model.services.data, model.severities.data].some(isLoading)
+	const busy = [model.logs.data, model.patterns.data, model.services.data, model.severities.data].some(
+		isLoading,
+	)
 	return model.isRefreshing && !busy ? { ...model, isRefreshing: false } : model
 }

@@ -67,7 +67,7 @@ claude mcp add --transport http maple https://api.maple.dev/mcp
 
 | Path                        | What lives there                                                         |
 | --------------------------- | ------------------------------------------------------------------------ |
-| `apps/web`          | Dashboard (Foldkit, Vite)                                                |
+| `apps/web`                  | Dashboard (Foldkit, Vite)                                                |
 | `apps/api`                  | Effect HTTP API, auth and OAuth                                          |
 | `apps/ai`                   | MCP server, chat agent and investigations                                |
 | `apps/ingest`               | OTLP ingest gateway: key auth, org enrichment, forwarding                |

@@ -68,18 +68,31 @@ const entityRef = <M>(h: HtmlBuilder<M>, href: string, text: string, className: 
 const cellValue = <M>(h: HtmlBuilder<M>, value: Exclude<CellValue, { kind: "plain" }>): Html => {
 	switch (value.kind) {
 		case "trace":
-			return entityRef(h, `/traces/${encodeURIComponent(value.traceId)}`, value.traceId, "font-mono text-foreground")
+			return entityRef(
+				h,
+				`/traces/${encodeURIComponent(value.traceId)}`,
+				value.traceId,
+				"font-mono text-foreground",
+			)
 		case "service":
 			return entityRef(h, `/services/${encodeURIComponent(value.name)}`, value.name, "text-foreground")
 		case "duration":
 			return h.span(
 				[h.Class(cn("font-mono", LATENCY_TEXT_TONE[latencyLevel(value.ms, value.scale)]))],
-				[value.value, ...(value.note === null ? [] : [h.span([h.Class("ml-1 text-muted-foreground")], [value.note])])],
+				[
+					value.value,
+					...(value.note === null
+						? []
+						: [h.span([h.Class("ml-1 text-muted-foreground")], [value.note])]),
+				],
 			)
 		case "severity":
 			return h.span([h.Style({ color: SEVERITY_COLORS[value.label] ?? "" })], [value.label])
 		case "flag":
-			return h.span([h.Class(value.severe ? "text-severity-error" : "text-muted-foreground")], [value.text])
+			return h.span(
+				[h.Class(value.severe ? "text-severity-error" : "text-muted-foreground")],
+				[value.text],
+			)
 		case "status":
 			return h.span([h.Class(cn("font-mono", TONE_TEXT[httpStatusTone(value.code)]))], [value.text])
 	}
@@ -90,17 +103,31 @@ const tableView =
 	<M>(h: HtmlBuilder<M>, knownServices: ReadonlySet<string>) =>
 	(views: Markdown.Views) =>
 	(node: Markdown.Table): Html => {
-		const headers = node.headerRow.cells.map((cell) => Option.getOrElse(inlineText(cell.content), () => ""))
+		const headers = node.headerRow.cells.map((cell) =>
+			Option.getOrElse(inlineText(cell.content), () => ""),
+		)
 		const content = (cell: Markdown.TableCell): ReadonlyArray<Html | string> =>
 			Markdown.viewBlocks(
 				{ blocks: [{ _tag: "Paragraph", content: cell.content }] },
-				{ views: { ...views, Paragraph: (_paragraph, inline) => h.span([h.Class("contents")], inline) } },
+				{
+					views: {
+						...views,
+						Paragraph: (_paragraph, inline) => h.span([h.Class("contents")], inline),
+					},
+				},
 			)
 		return panel(h, { className: "my-3" }, [
 			table(h, { className: "text-xs" }, [
 				tableHeader(
 					h,
-					[tableRow(h, node.headerRow.cells.map((cell) => tableHead(h, content(cell), "h-8 px-3 text-xs")))],
+					[
+						tableRow(
+							h,
+							node.headerRow.cells.map((cell) =>
+								tableHead(h, content(cell), "h-8 px-3 text-xs"),
+							),
+						),
+					],
 					{ className: "bg-muted/40" },
 				),
 				tableBody(
@@ -112,12 +139,20 @@ const tableView =
 								const header = headers[column] ?? ""
 								const value = Option.match(inlineText(cell.content), {
 									onNone: (): CellValue => ({ kind: "plain" }),
-									onSome: (text) => classifyCell(text, { role: columnRole(header), header, knownServices }),
+									onSome: (text) =>
+										classifyCell(text, {
+											role: columnRole(header),
+											header,
+											knownServices,
+										}),
 								})
 								return tableCell(
 									h,
 									value.kind === "plain" ? content(cell) : [cellValue(h, value)],
-									cn("px-3 py-2 text-xs text-foreground tabular-nums", "[&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs"),
+									cn(
+										"px-3 py-2 text-xs text-foreground tabular-nums",
+										"[&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs",
+									),
 								)
 							}),
 						),
@@ -137,12 +172,25 @@ const panelClass = (tone: "default" | "muted", className: string): string =>
 
 const chartFrame = <M>(h: HtmlBuilder<M>, title: string | null, children: ReadonlyArray<Html>): Html =>
 	h.figure(
-		[h.Class(panelClass("default", "my-3 block space-y-2 overflow-visible")), h.DataAttribute("slot", "panel")],
-		[...(title === null ? [] : [h.figcaption([h.Class("text-2xs font-medium text-muted-foreground")], [title])]), ...children],
+		[
+			h.Class(panelClass("default", "my-3 block space-y-2 overflow-visible")),
+			h.DataAttribute("slot", "panel"),
+		],
+		[
+			...(title === null
+				? []
+				: [h.figcaption([h.Class("text-2xs font-medium text-muted-foreground")], [title])]),
+			...children,
+		],
 	)
 
-const timeseriesRows = (spec: Extract<ChartSpec, { readonly data: ReadonlyArray<{ readonly bucket: string }> }>) =>
-	spec.data.map((point): Readonly<Record<string, string | number>> => ({ bucket: point.bucket, ...point.series }))
+const timeseriesRows = (
+	spec: Extract<ChartSpec, { readonly data: ReadonlyArray<{ readonly bucket: string }> }>,
+) =>
+	spec.data.map((point): Readonly<Record<string, string | number>> => ({
+		bucket: point.bucket,
+		...point.series,
+	}))
 
 const plot = <M>(h: HtmlBuilder<M>, host: ChartHost<M>, id: string, spec: ChartSpec): Html => {
 	const unit = normalizeUnit(spec.unit)
@@ -202,25 +250,41 @@ const chartView = <M>(h: HtmlBuilder<M>, host: ChartHost<M>, code: string): Html
 	Option.match(Option.fromNullishOr(parseChartSpec(code)), {
 		onNone: () =>
 			h.pre(
-				[h.Class(panelClass("muted", "my-3 block overflow-auto text-xs text-muted-foreground")), h.DataAttribute("slot", "panel")],
+				[
+					h.Class(panelClass("muted", "my-3 block overflow-auto text-xs text-muted-foreground")),
+					h.DataAttribute("slot", "panel"),
+				],
 				[h.code([], [code])],
 			),
 		onSome: (spec) => chartFrame(h, spec.title ?? null, [plot(h, host, code, spec)]),
 	})
 
 export const chatMarkdownOverrides =
-	<M>(h: HtmlBuilder<M>, knownServices: ReadonlySet<string>, charts: ChartHost<M>, code: CodeHost<M>): ViewOverrides =>
+	<M>(
+		h: HtmlBuilder<M>,
+		knownServices: ReadonlySet<string>,
+		charts: ChartHost<M>,
+		code: CodeHost<M>,
+	): ViewOverrides =>
 	(views) => ({
 		Table: (node) => tableView(h, knownServices)(views)(node),
 		// KaTeX draws into an unstyled span carrying the `.katex` / `.katex-display` classes.
 		InlineCode: (node) =>
 			node.value.startsWith(MATH_MARK)
-				? h.keyed("span")(`math:${node.value}`, [h.OnMount(code.mathMount(node.value.slice(MATH_MARK.length), false))], [])
+				? h.keyed("span")(
+						`math:${node.value}`,
+						[h.OnMount(code.mathMount(node.value.slice(MATH_MARK.length), false))],
+						[],
+					)
 				: views.InlineCode(node),
 		CodeBlock: (block) => {
 			const language = Option.getOrElse(block.maybeLanguage, () => "")
 			if (language === "math")
-				return h.keyed("span")(`math-display:${block.value}`, [h.OnMount(code.mathMount(block.value, true))], [])
+				return h.keyed("span")(
+					`math-display:${block.value}`,
+					[h.OnMount(code.mathMount(block.value, true))],
+					[],
+				)
 			if (language === "chart") return chartView(h, charts, block.value)
 			if (language === "mermaid") return mermaidBlock(h, code, block.value.replace(/\n+$/, ""))
 			return codeBlock(h, code, block.value, language)

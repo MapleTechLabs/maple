@@ -44,7 +44,10 @@ describe("dashboard variables", () => {
 		const combo = (message: Combobox.Message) => Message.GotVariableComboMessage({ name: "env", message })
 		const picked = pageUpdate(ready([ENV]), combo(Combobox.Message.ClickedItem({ value: "staging" })))
 		expect(picked.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/dashboards/dash_vars?mode=edit&var-env=staging", isReplace: true }),
+			PageOutMessage.RequestedNavigation({
+				url: "/dashboards/dash_vars?mode=edit&var-env=staging",
+				isReplace: true,
+			}),
 		)
 	})
 
@@ -52,14 +55,21 @@ describe("dashboard variables", () => {
 		const opened = pageUpdate(ready([]), Message.ClickedManageVariables()).model
 		expect(opened.variablesManager.startedEmpty).toBe(true)
 		expect(opened.variablesManager.editingIndex).toBe(0)
-		expect(names(pageUpdate(opened, manager(Manager.Message.SubmittedForm())).commands)).not.toContain(SaveVariables.name)
+		expect(names(pageUpdate(opened, manager(Manager.Message.SubmittedForm())).commands)).not.toContain(
+			SaveVariables.name,
+		)
 	})
 
 	test("a named draft saves the board's variables in one write", () => {
 		const opened = pageUpdate(ready([]), Message.ClickedManageVariables()).model
 		const typed = pageUpdate(
 			opened,
-			manager(Manager.Message.GotFieldMessage({ field: "name", message: Field.Message.ChangedValue({ value: "service" }) })),
+			manager(
+				Manager.Message.GotFieldMessage({
+					field: "name",
+					message: Field.Message.ChangedValue({ value: "service" }),
+				}),
+			),
 		).model
 		expect(typed.variablesManager.drafts[0]?.name).toBe("service")
 		const saved = pageUpdate(typed, manager(Manager.Message.SubmittedForm()))

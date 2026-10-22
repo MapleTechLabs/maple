@@ -181,7 +181,9 @@ export const TrackConnected = Command.define("TrackIntegrationConnected", {
 	args: { provider: Schema.String },
 	messages: [Message.CompletedTrackConnected],
 	execute: ({ provider }) =>
-		trackProduct("integration_connected", { provider }).pipe(Effect.as(Message.CompletedTrackConnected())),
+		trackProduct("integration_connected", { provider }).pipe(
+			Effect.as(Message.CompletedTrackConnected()),
+		),
 })
 
 /** `useIsOrgAdmin()`: the session the shell already read (`SessionTenant`), for the settings rail. */

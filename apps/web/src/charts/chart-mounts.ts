@@ -69,19 +69,22 @@ export const MountChart = Mount.defineStream("MountChart", {
 							// A chart without a time x scale (a pie) reports its rect with an empty domain.
 							const NO_AXIS = { domainStartMs: 0, domainEndMs: 0, rangeStart: 0, rangeEnd: 0 }
 							const reportPlotOnce = (bounds: ChartBounds, timeAxis: Option.Option<TimeAxis>) =>
-								Option.map(Option.orElseSome(timeAxis, () => NO_AXIS), (axis) => {
-									const plot = {
-										x: bounds.x,
-										y: bounds.y,
-										width: bounds.width,
-										height: bounds.height,
-										...axis,
-									}
-									const key = JSON.stringify(plot)
-									if (key === sent.key) return
-									sent.key = key
-									Queue.offerUnsafe(queue, Message.RenderedPlot({ plot }))
-								})
+								Option.map(
+									Option.orElseSome(timeAxis, () => NO_AXIS),
+									(axis) => {
+										const plot = {
+											x: bounds.x,
+											y: bounds.y,
+											width: bounds.width,
+											height: bounds.height,
+											...axis,
+										}
+										const key = JSON.stringify(plot)
+										if (key === sent.key) return
+										sent.key = key
+										Queue.offerUnsafe(queue, Message.RenderedPlot({ plot }))
+									},
+								)
 							const create = (spec: typeof initialSpec.value, height: number): ChartHost =>
 								createChartHost(surface, spec, height, {
 									ariaLabel: () => element.getAttribute(CHART_LABEL_ATTRIBUTE) ?? ariaLabel,
@@ -96,7 +99,10 @@ export const MountChart = Mount.defineStream("MountChart", {
 												Message.ChangedChartTooltip({ maybeTooltip }),
 											),
 										onLegendToggle: (key, keys) =>
-											Queue.offerUnsafe(queue, Message.ToggledLegendSeries({ key, keys })),
+											Queue.offerUnsafe(
+												queue,
+												Message.ToggledLegendSeries({ key, keys }),
+											),
 										onRender: (bounds, timeAxis) => {
 											if (reportPlot) reportPlotOnce(bounds, timeAxis)
 											if (!anchor) return

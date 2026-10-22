@@ -162,7 +162,10 @@ export const buildQueryBuilderBar = (spec: BarSpec): BuiltChart<BarCell, ChartVa
 
 	const definition = defineChart({
 		marks: [
-			...thresholdMarks(axis?.thresholds ?? [], bucketBandDomain(plotRows, axisContext.bucketSeconds)?.[1] ?? plotRows.at(-1)?.date),
+			...thresholdMarks(
+				axis?.thresholds ?? [],
+				bucketBandDomain(plotRows, axisContext.bucketSeconds)?.[1] ?? plotRows.at(-1)?.date,
+			),
 			lane(false),
 			lane(true),
 		],

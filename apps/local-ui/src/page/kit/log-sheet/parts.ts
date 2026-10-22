@@ -62,7 +62,10 @@ const BODY_LINE_THRESHOLD = 280
 export const traceHrefOf = (log: LocalLog): Option.Option<string> =>
 	log.traceId
 		? Option.some(
-				hrefFor(`/traces/${encodeURIComponent(log.traceId)}`, new URLSearchParams(log.spanId ? { spanId: log.spanId } : {})),
+				hrefFor(
+					`/traces/${encodeURIComponent(log.traceId)}`,
+					new URLSearchParams(log.spanId ? { spanId: log.spanId } : {}),
+				),
 			)
 		: Option.none()
 
@@ -104,9 +107,15 @@ export const copyableValue = (
 					status === "error" && "bg-severity-error/20",
 				),
 			),
-			h.OnClick(Message.GotCopyMessage({ id: options.id, message: CopyButton.Message.ClickedCopy({ text: options.value }) }), {
-				propagation: "Stop",
-			}),
+			h.OnClick(
+				Message.GotCopyMessage({
+					id: options.id,
+					message: CopyButton.Message.ClickedCopy({ text: options.value }),
+				}),
+				{
+					propagation: "Stop",
+				},
+			),
 			h.Title("Click to copy"),
 		],
 		children,

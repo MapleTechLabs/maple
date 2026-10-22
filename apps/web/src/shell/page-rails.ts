@@ -21,10 +21,9 @@ export type SplitPage = Readonly<{
 }>
 
 const railOf = (children: ReadonlyArray<Child>, slot: string): Option.Option<LiftedRail> =>
-	Option.map(
-		Option.fromNullishOr(children.find((child) => slotOf(child) === slot)),
-		(rail) => ({ children: typeof rail === "string" ? [] : (rail.children ?? []).filter(isNode) }),
-	)
+	Option.map(Option.fromNullishOr(children.find((child) => slotOf(child) === slot)), (rail) => ({
+		children: typeof rail === "string" ? [] : (rail.children ?? []).filter(isNode),
+	}))
 
 const isNode = (child: Child): child is VNode => typeof child !== "string"
 
@@ -51,7 +50,10 @@ const liftFrom = (node: VNode, depth: number): Option.Option<Lifted> => {
 				? Option.none()
 				: Option.map(liftFrom(child, depth - 1), (split) => ({
 						...split,
-						body: { ...node, children: children.map((other, at) => (at === index ? split.body : other)) },
+						body: {
+							...node,
+							children: children.map((other, at) => (at === index ? split.body : other)),
+						},
 					})),
 		),
 	)

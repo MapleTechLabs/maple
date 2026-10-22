@@ -33,8 +33,14 @@ export const FetchCatalog = Command.define("FetchLocalServiceCatalog", {
 		Effect.gen(function* () {
 			const cacheKey = ["local", "services", "catalog", env, ns, `${startTime}/${endTime}`]
 			const maybeCached = readsCache ? yield* readCached(cacheKey, cachedAs(Catalog)) : Option.none()
-			if (Option.isSome(maybeCached)) return Message.FoundCachedCatalog({ key, cached: maybeCached.value })
-			const catalog = yield* fetchCatalog(env ?? undefined, ns ?? undefined, { startTime, endTime }, apiBase)
+			if (Option.isSome(maybeCached))
+				return Message.FoundCachedCatalog({ key, cached: maybeCached.value })
+			const catalog = yield* fetchCatalog(
+				env ?? undefined,
+				ns ?? undefined,
+				{ startTime, endTime },
+				apiBase,
+			)
 			const fetchedAtMs = yield* Clock.currentTimeMillis
 			yield* recordCached(cacheKey, catalog, fetchedAtMs)
 			return Message.SucceededFetchCatalog({ key, catalog, fetchedAtMs })

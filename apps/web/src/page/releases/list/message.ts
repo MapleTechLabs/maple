@@ -16,7 +16,10 @@ export type RequestMode = typeof RequestMode.Type
 export const FilterParam = Schema.Literals(["environments", "excludedEnvironments", "services", "impact"])
 export type FilterParam = typeof FilterParam.Type
 
-const result = <A extends Schema.Top>(schema: A) => ({ key: Schema.String, result: Schema.Result(schema, LoadFailure) })
+const result = <A extends Schema.Top>(schema: A) => ({
+	key: Schema.String,
+	result: Schema.Result(schema, LoadFailure),
+})
 
 export const Message = defineMessageUnion({
 	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },

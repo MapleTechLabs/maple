@@ -86,8 +86,17 @@ describe("dashboard version history", () => {
 		const confirmed = pageUpdate(previewed, Message.ConfirmedRestore()).model
 		const done = pageUpdate(confirmed, Message.CompletedRestore({ versionNumber: 2, error: null })).model
 		const restoredRow = { ...version, id: "ver_restored", versionNumber: 3, isRestore: true }
-		const fresh = pageUpdate(done, Message.CompletedFetchVersions({ generation: 2, result: Result.succeed([restoredRow, version]) })).model
-		const late = pageUpdate(fresh, Message.CompletedFetchVersions({ generation: 1, result: Result.succeed([version]) })).model
-		expect(AsyncData.getOrElse(late.history.versions, () => []).map((row) => row.id)).toEqual(["ver_restored", version.id])
+		const fresh = pageUpdate(
+			done,
+			Message.CompletedFetchVersions({ generation: 2, result: Result.succeed([restoredRow, version]) }),
+		).model
+		const late = pageUpdate(
+			fresh,
+			Message.CompletedFetchVersions({ generation: 1, result: Result.succeed([version]) }),
+		).model
+		expect(AsyncData.getOrElse(late.history.versions, () => []).map((row) => row.id)).toEqual([
+			"ver_restored",
+			version.id,
+		])
 	})
 })

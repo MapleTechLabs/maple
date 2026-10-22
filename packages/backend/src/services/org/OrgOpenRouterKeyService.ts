@@ -50,7 +50,9 @@ const toKeyError =
 					message: region === "eu" ? EU_PLAN_MESSAGE : "OpenRouter rejected this key.",
 				})
 			case "@maple/backend/openrouter/PaymentRequired":
-				return new OpenRouterKeyValidationError({ message: "This OpenRouter key has no credits left." })
+				return new OpenRouterKeyValidationError({
+					message: "This OpenRouter key has no credits left.",
+				})
 			// Only the EU check makes a chat call: OpenRouter could not route Maple's EU model on this
 			// key's account. Its message names the routing step at fault, so it is passed on.
 			case "@maple/backend/openrouter/BadRequest":

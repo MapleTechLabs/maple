@@ -13,7 +13,14 @@ import { hashOf, locationOf, routeOf, trackVisit } from "./navigation"
 import { updateCopy } from "./page/kit/copies"
 import { pageKeyOf } from "./page/registry"
 import { nextProbeDelayMs, nextServerState } from "./server/derive"
-import { enterLocation, filterDrawerStep, probe, retryStaleData, type RootReturn, updatePageMessage } from "./update-page"
+import {
+	enterLocation,
+	filterDrawerStep,
+	probe,
+	retryStaleData,
+	type RootReturn,
+	updatePageMessage,
+} from "./update-page"
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
 
@@ -51,7 +58,9 @@ const changeUrl = (model: Model, url: Parameters<typeof locationOf>[0]): RootRet
 	return enterLocation(next, previousKey)
 }
 
-const presenceSettled = (model: Model, presence: Model["presence"]): RootReturn => ({ model: { ...model, presence } })
+const presenceSettled = (model: Model, presence: Model["presence"]): RootReturn => ({
+	model: { ...model, presence },
+})
 
 export const update = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
@@ -80,39 +89,56 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		CompletedSaveSidebarState: () => ({ model }),
 		ChangedViewport: ({ isMobile }) => ({ model: { ...model, isMobile, isSidebarOpenMobile: false } }),
 		DismissedMobileNav: () => ({ model: { ...model, isSidebarOpenMobile: false } }),
-		GotFilterDrawerMessage: ({ message: child }) => filterDrawerStep(model, Dialog.update(model.filterDrawer, child)),
+		GotFilterDrawerMessage: ({ message: child }) =>
+			filterDrawerStep(model, Dialog.update(model.filterDrawer, child)),
 		GotInstallTabsMessage: ({ message: child }) => {
 			const next = Tabs.update(model.installTabs, child)
 			return {
 				model: { ...model, installTabs: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (tabs) => Message.GotInstallTabsMessage({ message: tabs })),
+				commands: Command.mapMessages(next.commands ?? [], (tabs) =>
+					Message.GotInstallTabsMessage({ message: tabs }),
+				),
 			}
 		},
 		GotConnectMessage: ({ message: child }) => {
 			const next = Popover.update(model.connect, child)
 			return {
 				model: { ...model, connect: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (popover) => Message.GotConnectMessage({ message: popover })),
+				commands: Command.mapMessages(next.commands ?? [], (popover) =>
+					Message.GotConnectMessage({ message: popover }),
+				),
 			}
 		},
-		ChangedColorScheme: ({ theme }) => ({ model: { ...model, theme }, commands: [ApplyTheme({ theme })] }),
+		ChangedColorScheme: ({ theme }) => ({
+			model: { ...model, theme },
+			commands: [ApplyTheme({ theme })],
+		}),
 		CompletedApplyTheme: () => ({ model }),
-		SucceededFetchSignalPresence: ({ result }) => presenceSettled(model, AsyncData.Success({ data: result })),
-		FailedFetchSignalPresence: ({ failure }) => presenceSettled(model, AsyncData.settle(model.presence, Result.fail(failure))),
+		SucceededFetchSignalPresence: ({ result }) =>
+			presenceSettled(model, AsyncData.Success({ data: result })),
+		FailedFetchSignalPresence: ({ failure }) =>
+			presenceSettled(model, AsyncData.settle(model.presence, Result.fail(failure))),
 		ReusedSignalPresence: () =>
 			presenceSettled(
 				model,
-				Option.match(AsyncData.getData(model.presence), { onNone: () => model.presence, onSome: (data) => AsyncData.Success({ data }) }),
+				Option.match(AsyncData.getData(model.presence), {
+					onNone: () => model.presence,
+					onSome: (data) => AsyncData.Success({ data }),
+				}),
 			),
 		GotCopyMessage: ({ id, message: child }) => {
-			const next = updateCopy(model.copies, id, child, (copyId, copyMessage) => Message.GotCopyMessage({ id: copyId, message: copyMessage }))
+			const next = updateCopy(model.copies, id, child, (copyId, copyMessage) =>
+				Message.GotCopyMessage({ id: copyId, message: copyMessage }),
+			)
 			return { model: { ...model, copies: next.copies }, commands: next.commands }
 		},
 		GotToastMessage: ({ message: child }) => {
 			const next = Toast.update(model.toasts, child)
 			return {
 				model: { ...model, toasts: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (toast) => Message.GotToastMessage({ message: toast })),
+				commands: Command.mapMessages(next.commands ?? [], (toast) =>
+					Message.GotToastMessage({ message: toast }),
+				),
 			}
 		},
 		GotPageMessage: ({ message: child }) => updatePageMessage(model, child),

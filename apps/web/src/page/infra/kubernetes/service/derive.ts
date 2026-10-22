@@ -51,7 +51,9 @@ export const worstPerBucket = (
 		...rows
 			.reduce((byBucket, row) => {
 				const current = byBucket.get(row.bucket)
-				return current === undefined || row.value > current ? byBucket.set(row.bucket, row.value) : byBucket
+				return current === undefined || row.value > current
+					? byBucket.set(row.bucket, row.value)
+					: byBucket
 			}, new Map<string, number>())
 			.entries(),
 	]

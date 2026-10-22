@@ -58,7 +58,9 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message>()
 				isLive
 					? pollTicks(LIVE_REFRESH_INTERVAL).pipe(
 							Stream.mapEffect(() =>
-								Effect.map(Clock.currentTimeMillis, (nowMs) => Message.TickedLiveRefresh({ nowMs })),
+								Effect.map(Clock.currentTimeMillis, (nowMs) =>
+									Message.TickedLiveRefresh({ nowMs }),
+								),
 							),
 						)
 					: Stream.empty,

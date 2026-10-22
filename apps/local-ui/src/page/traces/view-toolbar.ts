@@ -3,7 +3,14 @@ import { badge } from "@maple/web/ui/display"
 import { button } from "@maple/web/ui/button"
 import { serviceDot } from "@maple/web/ui/values"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { refreshButton, timeRangeSelect, toolbar, toolbarSearch, toolbarStat, toolbarStats } from "../kit/toolbar"
+import {
+	refreshButton,
+	timeRangeSelect,
+	toolbar,
+	toolbarSearch,
+	toolbarStat,
+	toolbarStats,
+} from "../kit/toolbar"
 import type { TraceFilters } from "./filters"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -27,12 +34,22 @@ const spanScopeBanner = (h: HtmlBuilder<Message>, filters: TraceFilters): Html =
 			...(filters.span
 				? [
 						h.span([h.Class("text-muted-foreground")], ["named"]),
-						badge(h, { variant: "outline", className: "max-w-64 truncate font-mono text-xs", attributes: [h.Title(filters.span)] }, [
-							filters.span,
-						]),
+						badge(
+							h,
+							{
+								variant: "outline",
+								className: "max-w-64 truncate font-mono text-xs",
+								attributes: [h.Title(filters.span)],
+							},
+							[filters.span],
+						),
 					]
 				: []),
-			button(h, { variant: "ghost", size: "xs", attributes: [h.OnClick(Message.ClickedExitSpanScope())] }, ["Root spans only"]),
+			button(
+				h,
+				{ variant: "ghost", size: "xs", attributes: [h.OnClick(Message.ClickedExitSpanScope())] },
+				["Root spans only"],
+			),
 		],
 	)
 
@@ -58,8 +75,15 @@ export const tracesToolbar = (
 		toolbarStats(
 			h,
 			[
-				toolbarStat(h, { value: options.rowCount, label: options.hasNextPage ? "traces+" : "traces" }),
-				refreshButton(h, { isSpinning: model.isRefreshing, hasNewData: options.hasNewData, onRefresh: Message.ClickedRefresh() }),
+				toolbarStat(h, {
+					value: options.rowCount,
+					label: options.hasNextPage ? "traces+" : "traces",
+				}),
+				refreshButton(h, {
+					isSpinning: model.isRefreshing,
+					hasNewData: options.hasNewData,
+					onRefresh: Message.ClickedRefresh(),
+				}),
 				timeRangeSelect(h, options.range, (range) => Message.ChangedRange({ range })),
 			],
 			cn("shrink-0"),

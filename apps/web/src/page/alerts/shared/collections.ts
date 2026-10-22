@@ -5,13 +5,18 @@ import type {
 	AlertRuleStateRow,
 } from "@maple/web-data/collections/alerts"
 import type { Stream } from "effect"
-import { type OrgCollectionSet, type OrgCollections, orgLive } from "../../../data/collections/org-collections"
+import {
+	type OrgCollectionSet,
+	type OrgCollections,
+	orgLive,
+} from "../../../data/collections/org-collections"
 import { liveQueryStream } from "../../../data/live-query"
 
 // The four alert shapes as live streams (`useAlertRulesList`, `useAlertIncidentsList`,
 // `useAlertDestinationsList` and the overview model's collection stores).
 
-const fromSet = <A>(build: (set: OrgCollectionSet) => Stream.Stream<A>) =>
+const fromSet =
+	<A>(build: (set: OrgCollectionSet) => Stream.Stream<A>) =>
 	(orgId: string): Stream.Stream<A, never, OrgCollections> =>
 		orgLive(orgId, build)
 
@@ -25,7 +30,12 @@ export const ruleRows = <M>(orgId: string, toMessage: (rows: ReadonlyArray<Alert
 	)(orgId)
 
 export const ruleStateRows = <M>(orgId: string, toMessage: (rows: ReadonlyArray<AlertRuleStateRow>) => M) =>
-	fromSet((set) => liveQueryStream((q) => q.from({ s: set.alertRuleStates }), (rows) => toMessage(rows)))(orgId)
+	fromSet((set) =>
+		liveQueryStream(
+			(q) => q.from({ s: set.alertRuleStates }),
+			(rows) => toMessage(rows),
+		),
+	)(orgId)
 
 /** `alert_incidents`, latest trigger first. */
 export const incidentRows = <M>(orgId: string, toMessage: (rows: ReadonlyArray<AlertIncidentRow>) => M) =>
@@ -37,11 +47,13 @@ export const incidentRows = <M>(orgId: string, toMessage: (rows: ReadonlyArray<A
 	)(orgId)
 
 /** `alert_destinations_v2`, newest edit first. */
-export const destinationRows = <M>(orgId: string, toMessage: (rows: ReadonlyArray<AlertDestinationRow>) => M) =>
+export const destinationRows = <M>(
+	orgId: string,
+	toMessage: (rows: ReadonlyArray<AlertDestinationRow>) => M,
+) =>
 	fromSet((set) =>
 		liveQueryStream(
 			(q) => q.from({ d: set.alertDestinations }).orderBy(({ d }) => d.updated_at, "desc"),
 			(rows) => toMessage(rows),
 		),
 	)(orgId)
-

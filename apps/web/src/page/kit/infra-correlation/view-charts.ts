@@ -33,7 +33,13 @@ const SERIES_LABELS = new Map([
 const toChart = (chartId: string) => (message: Chart.Message) => Message.GotChartMessage({ chartId, message })
 
 /** `ContainerDetailChart`, `PodDetailChart`, `NodeDetailChart`: `K8sMetricChartView` cards. */
-const k8sCard = (h: H, model: Model, chartId: string, showThreshold: boolean | undefined, timeZone: string): Html =>
+const k8sCard = (
+	h: H,
+	model: Model,
+	chartId: string,
+	showThreshold: boolean | undefined,
+	timeZone: string,
+): Html =>
 	k8sChart(h, {
 		slot: model.series[chartId],
 		chart: model.charts[chartId],
@@ -83,20 +89,39 @@ const hostChart = (h: H, model: Model, chartId: string, isStacked: boolean, time
 	])
 }
 
-export const correlationCharts = (h: H, model: Model, correlation: InfraCorrelation, timeZone: string): Html => {
+export const correlationCharts = (
+	h: H,
+	model: Model,
+	correlation: InfraCorrelation,
+	timeZone: string,
+): Html => {
 	const idOf = (metric: string) => chartIdOf(correlation, metric)
 	const charts = (): ReadonlyArray<Html> => {
 		switch (correlation.kind) {
 			case "container":
 				return correlation.charts.map(({ metric }) =>
-					k8sCard(h, model, idOf(metric), metric === "cpu" || metric === "memory_percent", timeZone),
+					k8sCard(
+						h,
+						model,
+						idOf(metric),
+						metric === "cpu" || metric === "memory_percent",
+						timeZone,
+					),
 				)
 			case "pod":
 				return correlation.charts.map(({ metric }) =>
-					k8sCard(h, model, idOf(metric), metric.startsWith("cpu_") || metric.startsWith("memory_"), timeZone),
+					k8sCard(
+						h,
+						model,
+						idOf(metric),
+						metric.startsWith("cpu_") || metric.startsWith("memory_"),
+						timeZone,
+					),
 				)
 			case "node":
-				return correlation.charts.map(({ metric }) => k8sCard(h, model, idOf(metric), undefined, timeZone))
+				return correlation.charts.map(({ metric }) =>
+					k8sCard(h, model, idOf(metric), undefined, timeZone),
+				)
 			case "host":
 				return correlation.charts.map(({ metric, label }) =>
 					panel(h, { padded: true, attributes: [h.Key(idOf(metric))] }, [

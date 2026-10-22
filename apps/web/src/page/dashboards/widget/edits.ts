@@ -110,7 +110,8 @@ export const reconcileFunnelSource = (state: EditorState): EditorState => {
 			funnel: {
 				...state.funnel,
 				source: "product_events",
-				steps: state.funnel.steps.length > 0 ? state.funnel.steps : [{ kind: "event", eventName: "" }],
+				steps:
+					state.funnel.steps.length > 0 ? state.funnel.steps : [{ kind: "event", eventName: "" }],
 			},
 		}
 	}

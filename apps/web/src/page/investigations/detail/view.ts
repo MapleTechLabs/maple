@@ -3,7 +3,10 @@ import type { V2Investigation } from "@maple/domain/http/v2"
 import { pageScrollAreaStyles } from "@maple/ui/styles/ui/page-layout"
 import { investigationHeadline, investigationScope } from "@maple/web-data/investigations/display"
 import { Mount, Submodel } from "foldkit"
-import { Message as ConversationMessageUnion, type Message as ConversationMessage } from "../../chat/conversation/message"
+import {
+	Message as ConversationMessageUnion,
+	type Message as ConversationMessage,
+} from "../../chat/conversation/message"
 import { conversationView, emptyNotice } from "../../chat/conversation/view"
 import { MountMessageScroller } from "../../chat/kit/scroller"
 import { findDiagnosisMessageId } from "../../chat/kit/transcript-rows"
@@ -31,7 +34,14 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { actionSheet } from "./view-action-sheet"
 import { provenanceCanvas, provenanceLoading } from "./view-canvas"
-import { evidenceTab, followUpComposer, impactStrip, investigationMeta, signalsCard, type TipTrigger } from "./view-sections"
+import {
+	evidenceTab,
+	followUpComposer,
+	impactStrip,
+	investigationMeta,
+	signalsCard,
+	type TipTrigger,
+} from "./view-sections"
 import { verdictCard } from "./view-verdict"
 
 // The investigation page: `InvestigationView`, `InvestigationHeader`, `InvestigationTabs`.
@@ -51,7 +61,17 @@ const titleContent = (h: H, investigation: V2Investigation): Html => {
 		meta: [
 			statusBadge(h, investigation.status),
 			...(severity === null ? [] : [severityBadge(h, severity)]),
-			...(scope ? [h.span([h.Title(scope), h.Class("min-w-0 max-w-[28rem] truncate text-sm text-muted-foreground")], [scope])] : []),
+			...(scope
+				? [
+						h.span(
+							[
+								h.Title(scope),
+								h.Class("min-w-0 max-w-[28rem] truncate text-sm text-muted-foreground"),
+							],
+							[scope],
+						),
+					]
+				: []),
 		],
 	})
 }
@@ -70,7 +90,9 @@ const headerActions = (h: H, model: Model, investigation: V2Investigation): Html
 					: { label: "Resolve", variant: "default" as const }
 	const entries: ReadonlyArray<MenuView.MenuEntry> = [
 		{ _tag: "Item", value: "restart", label: "Run again", icon: "ArrowPathIcon", isDisabled: isBusy },
-		...(status === "resolved" ? [] : [{ _tag: "Item" as const, value: "resolve", label: "Mark resolved", isDisabled: isBusy }]),
+		...(status === "resolved"
+			? []
+			: [{ _tag: "Item" as const, value: "resolve", label: "Mark resolved", isDisabled: isBusy }]),
 	]
 	return detailActions(h, [
 		h.div(
@@ -78,7 +100,12 @@ const headerActions = (h: H, model: Model, investigation: V2Investigation): Html
 			[
 				button(
 					h,
-					{ size: "sm", variant: primary.variant, isDisabled: isBusy, attributes: [h.OnClick(Message.ClickedPrimary())] },
+					{
+						size: "sm",
+						variant: primary.variant,
+						isDisabled: isBusy,
+						attributes: [h.OnClick(Message.ClickedPrimary())],
+					},
 					[primary.label],
 				),
 				h.submodel({
@@ -97,7 +124,10 @@ const headerActions = (h: H, model: Model, investigation: V2Investigation): Html
 										{
 											variant: "outline",
 											size: "icon-sm",
-											attributes: [h.AriaLabel("More investigation actions"), ...trigger],
+											attributes: [
+												h.AriaLabel("More investigation actions"),
+												...trigger,
+											],
 										},
 										[icon(h, "DotsVerticalIcon")],
 									),
@@ -126,7 +156,12 @@ const tabs = (h: H, investigation: V2Investigation, active: Tab): Html => {
 		{ label: "Investigation sections" },
 		TABS.filter((tab) => tab.value !== "evidence" || evidenceCount > 0).map((tab) => {
 			const isActive = tab.value === active
-			const href = hrefOf(AppRoute.Investigation({ id: investigation.id, search: tab.value === "overview" ? {} : { tab: tab.value } }))
+			const href = hrefOf(
+				AppRoute.Investigation({
+					id: investigation.id,
+					search: tab.value === "overview" ? {} : { tab: tab.value },
+				}),
+			)
 			return h.keyed("a")(
 				tab.value,
 				[
@@ -138,7 +173,14 @@ const tabs = (h: H, investigation: V2Investigation, active: Tab): Html => {
 				],
 				[
 					tab.label,
-					...(tab.value === "evidence" ? [h.span([h.Class("text-xs text-muted-foreground tabular-nums")], [String(evidenceCount)])] : []),
+					...(tab.value === "evidence"
+						? [
+								h.span(
+									[h.Class("text-xs text-muted-foreground tabular-nums")],
+									[String(evidenceCount)],
+								),
+							]
+						: []),
 				],
 			)
 		}),
@@ -168,7 +210,12 @@ const documentTab = (
 	return [
 		h.div(
 			[h.DataAttribute("slot", "page-scroll-area"), h.Class(pageScrollAreaStyles)],
-			[h.div([h.Class("flex flex-col gap-7")], [...sections, investigationMeta(h, model, investigation)])],
+			[
+				h.div(
+					[h.Class("flex flex-col gap-7")],
+					[...sections, investigationMeta(h, model, investigation)],
+				),
+			],
 		),
 		...(isResolved ? [] : [h.div([h.Class("shrink-0 px-4 pb-4")], [followUpComposer(h)])]),
 	]
@@ -215,11 +262,17 @@ const conversationTab = (
 			placeholder: placeholderOf(investigation),
 			emptyState: () => investigationLead(h, investigation),
 			chips: [],
-			scrollerMount: Mount.mapMessage(MountMessageScroller({ focusMessageId: null }), () => Message.CompletedMountScroller()),
+			scrollerMount: Mount.mapMessage(MountMessageScroller({ focusMessageId: null }), () =>
+				Message.CompletedMountScroller(),
+			),
 			knownServices: new Set(model.knownServices ?? []),
 			nowMs: model.nowMs,
-			fallback: report === null || hasDiagnosisTurn ? undefined : diagnosisReportCard(h, model, report, trigger),
-			diagnosisCard: (diagnosis) => diagnosisReportCard(h, model, reportOfDiagnosis(diagnosis), trigger),
+			fallback:
+				report === null || hasDiagnosisTurn
+					? undefined
+					: diagnosisReportCard(h, model, report, trigger),
+			diagnosisCard: (diagnosis) =>
+				diagnosisReportCard(h, model, reportOfDiagnosis(diagnosis), trigger),
 			suggestions: {
 				items: suggestionsOf(investigation),
 				onSelect: (text) => toMessage(ConversationMessageUnion.ClickedSuggestion({ text })),

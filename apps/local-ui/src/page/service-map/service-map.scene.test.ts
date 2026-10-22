@@ -56,12 +56,20 @@ const noServices = mapData([])
 /** Entered, anchored and the stored state read: the map request in flight. */
 const requested = (): Model => {
 	const anchored = pageUpdate(init(context).model, Message.CompletedReadClock({ nowMs: NOW })).model
-	return pageUpdate(anchored, Message.CompletedReadStored({ stored: { prefs: { minTrafficPct: 0, collapsedNamespaces: [] }, snapshots: [] } })).model
+	return pageUpdate(
+		anchored,
+		Message.CompletedReadStored({
+			stored: { prefs: { minTrafficPct: 0, collapsedNamespaces: [] }, snapshots: [] },
+		}),
+	).model
 }
 
 const answered = (data: LocalServiceMapData) => {
 	const base = requested()
-	return pageUpdate(base, Message.SucceededFetchServiceMap({ key: base.data.key ?? "", data, fetchedAtMs: NOW }))
+	return pageUpdate(
+		base,
+		Message.SucceededFetchServiceMap({ key: base.data.key ?? "", data, fetchedAtMs: NOW }),
+	)
 }
 
 const mapOf = (model: Model) => Option.getOrThrow(model.maybeMap)
@@ -75,7 +83,10 @@ describe("local service map", () => {
 
 	test("an answer for a superseded key is dropped and builds no map", () => {
 		const base = requested()
-		const stale = pageUpdate(base, Message.SucceededFetchServiceMap({ key: "stale", data: twoServices, fetchedAtMs: NOW }))
+		const stale = pageUpdate(
+			base,
+			Message.SucceededFetchServiceMap({ key: "stale", data: twoServices, fetchedAtMs: NOW }),
+		)
 		expect(stale.model.data).toEqual(base.data)
 		expect(Option.isNone(stale.model.maybeMap)).toBe(true)
 	})
@@ -109,17 +120,35 @@ describe("local service map", () => {
 	test("an empty map asks for signal presence and renders the on-ramp", () => {
 		const result = answered(noServices)
 		expect(result.outMessage).toEqual(PageOutMessage.RequestedSignalPresence())
-		scene({ update: pageUpdate, view }, given(result.model), expectView(text("No services yet")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(result.model),
+			expectView(text("No services yet")).toExist(),
+		)
 	})
 
 	test("focusing a selected service keeps the prefs; showing all traffic is saved", () => {
 		const loaded = answered(twoServices).model
-		const selected = pageUpdate(loaded, Message.GotMapMessage({ message: ServiceMap.Message.ClickedNode({ nodeId: "storefront" }) }))
-		const focused = pageUpdate(selected.model, Message.GotMapMessage({ message: ServiceMap.Message.ClickedFocusSelected() }))
-		expect(Option.map(mapOf(focused.model).focus, (focus) => focus.serviceId)).toEqual(Option.some("storefront"))
+		const selected = pageUpdate(
+			loaded,
+			Message.GotMapMessage({ message: ServiceMap.Message.ClickedNode({ nodeId: "storefront" }) }),
+		)
+		const focused = pageUpdate(
+			selected.model,
+			Message.GotMapMessage({ message: ServiceMap.Message.ClickedFocusSelected() }),
+		)
+		expect(Option.map(mapOf(focused.model).focus, (focus) => focus.serviceId)).toEqual(
+			Option.some("storefront"),
+		)
 		expect((focused.commands ?? []).map(({ name }) => name)).not.toContain(SaveViewPrefs.name)
-		const filtered = { ...focused.model, maybeMap: Option.some({ ...mapOf(focused.model), minTrafficPct: 5 }) }
-		const reset = pageUpdate(filtered, Message.GotMapMessage({ message: ServiceMap.Message.ClickedShowAllTraffic() }))
+		const filtered = {
+			...focused.model,
+			maybeMap: Option.some({ ...mapOf(focused.model), minTrafficPct: 5 }),
+		}
+		const reset = pageUpdate(
+			filtered,
+			Message.GotMapMessage({ message: ServiceMap.Message.ClickedShowAllTraffic() }),
+		)
 		expect(mapOf(reset.model).minTrafficPct).toBe(0)
 		expect((reset.commands ?? []).map(({ name }) => name)).toContain(SaveViewPrefs.name)
 	})

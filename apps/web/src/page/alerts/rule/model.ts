@@ -61,7 +61,11 @@ export type CheckStatusFilter = typeof CheckStatusFilter.Type
 export const SignalSource = Schema.Literals(["preview", "checks"])
 export type SignalSource = typeof SignalSource.Type
 
-export const SelectedBucket = Schema.Struct({ index: Schema.Number, start: Schema.Number, end: Schema.Number })
+export const SelectedBucket = Schema.Struct({
+	index: Schema.Number,
+	start: Schema.Number,
+	end: Schema.Number,
+})
 
 export const Model = Schema.Struct({
 	ruleId: AlertRuleId,

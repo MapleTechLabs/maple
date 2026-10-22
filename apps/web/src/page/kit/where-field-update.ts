@@ -10,7 +10,14 @@ import { AsyncData, type Command } from "foldkit"
 import * as Keyed from "../../data/keyed"
 import { requestKey } from "../../data/request-key"
 import type { Resources } from "../../platform/resources"
-import { applied, type CaretMessage, initWhereCaret, isOpenOf, syncedCaret, type WhereCaret } from "./where-autocomplete"
+import {
+	applied,
+	type CaretMessage,
+	initWhereCaret,
+	isOpenOf,
+	syncedCaret,
+	type WhereCaret,
+} from "./where-autocomplete"
 import type { WhereFieldMessage, WhereFields } from "./where-field"
 import { FetchWhereFieldValues, PlaceWhereFieldCaret, type WhereValuesRequest } from "./where-field-command"
 
@@ -51,7 +58,11 @@ const slotValues = (fields: WhereFields, slot: string): Array<string> => [
 	...Option.getOrElse(AsyncData.getData(fields.values[slot]?.data ?? AsyncData.Idle()), () => []),
 ]
 
-const valuesFor = (fields: WhereFields, fieldId: string, spec: WhereFieldSpec): WhereClauseAutocompleteValues => {
+const valuesFor = (
+	fields: WhereFields,
+	fieldId: string,
+	spec: WhereFieldSpec,
+): WhereClauseAutocompleteValues => {
 	const caret = caretOf(fields, fieldId, spec)
 	// A key's values exist only while the caret is in its value.
 	return {
@@ -63,7 +74,11 @@ const valuesFor = (fields: WhereFields, fieldId: string, spec: WhereFieldSpec): 
 }
 
 /** The field's suggestions at its caret. */
-export const autocompleteOf = (fields: WhereFields, fieldId: string, spec: WhereFieldSpec): WhereClauseAutocompleteResult =>
+export const autocompleteOf = (
+	fields: WhereFields,
+	fieldId: string,
+	spec: WhereFieldSpec,
+): WhereClauseAutocompleteResult =>
 	getWhereClauseAutocomplete({
 		expression: spec.expression,
 		cursor: caretOf(fields, fieldId, spec).cursor,
@@ -81,7 +96,12 @@ const withCaret = (fields: WhereFields, fieldId: string, caret: WhereCaret): Whe
 })
 
 /** Each active key asks for its values once (`onActiveAttributeKey`). */
-const planValues = (step: WhereFieldsReturn, fieldId: string, spec: WhereFieldSpec, orgId: string): WhereFieldsReturn => {
+const planValues = (
+	step: WhereFieldsReturn,
+	fieldId: string,
+	spec: WhereFieldSpec,
+	orgId: string,
+): WhereFieldsReturn => {
 	const caret = caretOf(step.fields, fieldId, spec)
 	const kinds = [
 		{ kind: "attr" as const, key: caret.activeAttributeKey },
@@ -104,19 +124,35 @@ const planValues = (step: WhereFieldsReturn, fieldId: string, spec: WhereFieldSp
 }
 
 /** The caret after applied text: the keys follow it, the active row stays. */
-const appliedCaret = (fields: WhereFields, fieldId: string, spec: WhereFieldSpec, expression: string, cursor: number) => {
+const appliedCaret = (
+	fields: WhereFields,
+	fieldId: string,
+	spec: WhereFieldSpec,
+	expression: string,
+	cursor: number,
+) => {
 	const current = caretOf(fields, fieldId, spec)
 	return { ...syncedCaret(current, expression, cursor, spec.dataSource), activeIndex: current.activeIndex }
 }
 
 /** `handleApplySuggestion`: the text changes like typing, the caret lands after the insert. */
-const appliedSuggestion = (fields: WhereFields, fieldId: string, spec: WhereFieldSpec, index: number, orgId: string) =>
+const appliedSuggestion = (
+	fields: WhereFields,
+	fieldId: string,
+	spec: WhereFieldSpec,
+	index: number,
+	orgId: string,
+) =>
 	Option.match(applied(autocompleteOf(fields, fieldId, spec), spec.expression, index), {
 		onNone: (): WhereFieldsReturn => ({ fields }),
 		onSome: ({ expression, cursor }) =>
 			planValues(
 				{
-					fields: withCaret(fields, fieldId, appliedCaret(fields, fieldId, spec, expression, cursor)),
+					fields: withCaret(
+						fields,
+						fieldId,
+						appliedCaret(fields, fieldId, spec, expression, cursor),
+					),
 					commands: [PlaceWhereFieldCaret({ id: spec.textareaId, value: expression, cursor })],
 					change: { fieldId, expression },
 				},
@@ -128,13 +164,37 @@ const appliedSuggestion = (fields: WhereFields, fieldId: string, spec: WhereFiel
 
 /** `onKeyIntent("accept")`: the hook's own apply; the caret and keys move, the text does not. */
 const pressedTab = (fields: WhereFields, fieldId: string, spec: WhereFieldSpec, orgId: string) =>
-	Option.match(applied(autocompleteOf(fields, fieldId, spec), spec.expression, caretOf(fields, fieldId, spec).activeIndex), {
-		onNone: (): WhereFieldsReturn => ({ fields }),
-		onSome: ({ expression, cursor }) =>
-			planValues({ fields: withCaret(fields, fieldId, appliedCaret(fields, fieldId, spec, expression, cursor)) }, fieldId, spec, orgId),
-	})
+	Option.match(
+		applied(
+			autocompleteOf(fields, fieldId, spec),
+			spec.expression,
+			caretOf(fields, fieldId, spec).activeIndex,
+		),
+		{
+			onNone: (): WhereFieldsReturn => ({ fields }),
+			onSome: ({ expression, cursor }) =>
+				planValues(
+					{
+						fields: withCaret(
+							fields,
+							fieldId,
+							appliedCaret(fields, fieldId, spec, expression, cursor),
+						),
+					},
+					fieldId,
+					spec,
+					orgId,
+				),
+		},
+	)
 
-const caretStep = (fields: WhereFields, fieldId: string, spec: WhereFieldSpec, message: CaretMessage, orgId: string) => {
+const caretStep = (
+	fields: WhereFields,
+	fieldId: string,
+	spec: WhereFieldSpec,
+	message: CaretMessage,
+	orgId: string,
+) => {
 	const caret = caretOf(fields, fieldId, spec)
 	switch (message._tag) {
 		case "FocusedEditor": {
@@ -150,7 +210,12 @@ const caretStep = (fields: WhereFields, fieldId: string, spec: WhereFieldSpec, m
 			// `onKeyUp`: arrows that moved through an open list leave the caret alone.
 			const isArrow = message.keyUp === "ArrowDown" || message.keyUp === "ArrowUp"
 			if (isArrow && isFieldOpen(fields, fieldId, spec)) return { fields }
-			const synced = syncedCaret({ ...caret, anchor: message.anchor }, spec.expression, message.cursor, spec.dataSource)
+			const synced = syncedCaret(
+				{ ...caret, anchor: message.anchor },
+				spec.expression,
+				message.cursor,
+				spec.dataSource,
+			)
 			return planValues({ fields: withCaret(fields, fieldId, synced) }, fieldId, spec, orgId)
 		}
 	}
@@ -169,7 +234,12 @@ export const updateWhereFields = (
 	if (message._tag === "CompletedFetchValues") {
 		const slot = fields.values[message.slot]
 		if (slot === undefined) return { fields }
-		return { fields: { ...fields, values: { ...fields.values, [message.slot]: Keyed.accept(slot, message.key, message.result) } } }
+		return {
+			fields: {
+				...fields,
+				values: { ...fields.values, [message.slot]: Keyed.accept(slot, message.key, message.result) },
+			},
+		}
 	}
 	const { fieldId } = message
 	const spec = inputs.specOf(fieldId)
@@ -181,7 +251,12 @@ export const updateWhereFields = (
 			return ifOpen(fields, fieldId, spec, () => {
 				const count = autocompleteOf(fields, fieldId, spec).suggestions.length
 				const caret = caretOf(fields, fieldId, spec)
-				return { fields: withCaret(fields, fieldId, { ...caret, activeIndex: (caret.activeIndex + message.step + count) % count }) }
+				return {
+					fields: withCaret(fields, fieldId, {
+						...caret,
+						activeIndex: (caret.activeIndex + message.step + count) % count,
+					}),
+				}
 			})
 		case "DismissedSuggestions":
 			return ifOpen(fields, fieldId, spec, () => ({
@@ -193,7 +268,13 @@ export const updateWhereFields = (
 			return ifOpen(fields, fieldId, spec, () => pressedTab(fields, fieldId, spec, inputs.orgId))
 		case "PressedEnter":
 			return ifOpen(fields, fieldId, spec, () =>
-				appliedSuggestion(fields, fieldId, spec, caretOf(fields, fieldId, spec).activeIndex, inputs.orgId),
+				appliedSuggestion(
+					fields,
+					fieldId,
+					spec,
+					caretOf(fields, fieldId, spec).activeIndex,
+					inputs.orgId,
+				),
 			)
 	}
 }

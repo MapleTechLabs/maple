@@ -28,7 +28,12 @@ import { Message } from "./message"
 
 type H = HtmlBuilder<Message>
 
-export type SidebarInput = Readonly<{ incident: AnomalyIncidentDocument; isBusy: boolean; nowMs: number; timeZone: string }>
+export type SidebarInput = Readonly<{
+	incident: AnomalyIncidentDocument
+	isBusy: boolean
+	nowMs: number
+	timeZone: string
+}>
 
 const row = (h: H, label: string, children: ReadonlyArray<Html | string>, title?: string): Html =>
 	detailRailRow(h, { label, title }, children)
@@ -95,11 +100,21 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 					h.span(
 						[h.Class("text-right text-sm text-foreground")],
 						isStale
-							? ["stale · ", relativeTime(h, { value: incident.lastTriggeredAt, nowMs: input.nowMs, timeZone: input.timeZone, prefix: "last seen" })]
+							? [
+									"stale · ",
+									relativeTime(h, {
+										value: incident.lastTriggeredAt,
+										nowMs: input.nowMs,
+										timeZone: input.timeZone,
+										prefix: "last seen",
+									}),
+								]
 							: [isOpen ? "open" : "resolved"],
 					),
 				]),
-				row(h, "Signal", [h.span([h.Class("text-sm text-foreground")], [SIGNAL_LABEL[incident.signalType]])]),
+				row(h, "Signal", [
+					h.span([h.Class("text-sm text-foreground")], [SIGNAL_LABEL[incident.signalType]]),
+				]),
 				row(h, "Severity", [
 					h.span(
 						[h.Class(cn("text-sm font-medium", live ? tone.text : "text-muted-foreground"))],
@@ -120,11 +135,18 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 					],
 					incident.serviceName,
 				),
-				row(h, "Environment", [h.span([h.Class("text-sm text-foreground")], [incident.deploymentEnv || EMPTY_VALUE])]),
+				row(h, "Environment", [
+					h.span([h.Class("text-sm text-foreground")], [incident.deploymentEnv || EMPTY_VALUE]),
+				]),
 				row(
 					h,
 					"Detector",
-					[h.code([h.Class("block max-w-full truncate font-mono text-xs text-muted-foreground")], [incident.detectorKey])],
+					[
+						h.code(
+							[h.Class("block max-w-full truncate font-mono text-xs text-muted-foreground")],
+							[incident.detectorKey],
+						),
+					],
 					incident.detectorKey,
 				),
 				...(incident.fingerprintHash === null
@@ -135,7 +157,11 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 								"Fingerprint",
 								[
 									h.code(
-										[h.Class("block max-w-full truncate font-mono text-xs text-muted-foreground")],
+										[
+											h.Class(
+												"block max-w-full truncate font-mono text-xs text-muted-foreground",
+											),
+										],
 										[incident.fingerprintHash],
 									),
 								],
@@ -144,7 +170,9 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 						]),
 			]),
 			detailRailGroup(h, "Values", [
-				row(h, "Observed", [mono(h, fmt(incident.lastObservedValue), live ? tone.text : "text-foreground")]),
+				row(h, "Observed", [
+					mono(h, fmt(incident.lastObservedValue), live ? tone.text : "text-foreground"),
+				]),
 				row(h, "At open", [mono(h, fmt(incident.openedValue), "text-muted-foreground")]),
 				row(h, "Baseline", [mono(h, fmt(incident.baselineMedian), "text-muted-foreground")]),
 				row(h, "Threshold", [mono(h, fmt(incident.thresholdValue), "text-muted-foreground")]),
@@ -160,7 +188,9 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 								h.div(
 									[
 										h.Key(fingerprint.fingerprintHash),
-										h.Class("grid min-h-7 grid-cols-[1fr_auto] items-center gap-x-2 py-0.5"),
+										h.Class(
+											"grid min-h-7 grid-cols-[1fr_auto] items-center gap-x-2 py-0.5",
+										),
 										h.Title(fingerprint.fingerprintHash),
 									],
 									[
@@ -178,21 +208,35 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 												fingerprint.errorIssueId !== null
 													? h.a(
 															[
-																h.Href(hrefOf(AppRoute.ErrorIssue({ issueId: fingerprint.errorIssueId, search: {} }))),
-																h.Class("truncate font-mono text-xs text-muted-foreground hover:text-foreground"),
+																h.Href(
+																	hrefOf(
+																		AppRoute.ErrorIssue({
+																			issueId: fingerprint.errorIssueId,
+																			search: {},
+																		}),
+																	),
+																),
+																h.Class(
+																	"truncate font-mono text-xs text-muted-foreground hover:text-foreground",
+																),
 															],
 															[shortIssueId(fingerprint.errorIssueId)],
 														)
 													: truncatedId(h, {
 															value: fingerprint.fingerprintHash,
 															length: 10,
-															className: "truncate text-xs text-muted-foreground",
+															className:
+																"truncate text-xs text-muted-foreground",
 														}),
 											],
 										),
 										h.span(
 											[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
-											[fingerprint.resolvedAt !== null ? "resolved" : fmt(fingerprint.lastValue)],
+											[
+												fingerprint.resolvedAt !== null
+													? "resolved"
+													: fmt(fingerprint.lastValue),
+											],
 										),
 									],
 								),
@@ -201,7 +245,9 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 					]
 				: []),
 			detailRailGroup(h, "Timing", [
-				row(h, "First triggered", [time(incident.firstTriggeredAt, "text-right text-sm tabular-nums text-foreground")]),
+				row(h, "First triggered", [
+					time(incident.firstTriggeredAt, "text-right text-sm tabular-nums text-foreground"),
+				]),
 				...(incident.reopenCount > 0 && incident.lastReopenedAt !== null
 					? [
 							row(h, "Reopened", [
@@ -215,24 +261,45 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 							]),
 						]
 					: []),
-				row(h, "Last triggered", [time(incident.lastTriggeredAt, "text-right text-sm tabular-nums text-foreground")]),
+				row(h, "Last triggered", [
+					time(incident.lastTriggeredAt, "text-right text-sm tabular-nums text-foreground"),
+				]),
 				...(incident.resolvedAt === null
 					? []
-					: [row(h, "Resolved", [time(incident.resolvedAt, "text-right text-sm tabular-nums text-muted-foreground")])]),
+					: [
+							row(h, "Resolved", [
+								time(
+									incident.resolvedAt,
+									"text-right text-sm tabular-nums text-muted-foreground",
+								),
+							]),
+						]),
 				...(incident.resolveReason === null
 					? []
 					: [
 							row(h, "Reason", [
-								h.span([h.Class("text-right text-sm text-muted-foreground")], [RESOLVE_REASON_LABEL[incident.resolveReason]]),
+								h.span(
+									[h.Class("text-right text-sm text-muted-foreground")],
+									[RESOLVE_REASON_LABEL[incident.resolveReason]],
+								),
 							]),
 						]),
 			]),
 			detailRailGroup(h, "Triage", [
 				triageChip === null
-					? h.p([h.Class("text-xs text-muted-foreground")], ["No AI triage has run for this incident."])
-					: badge(h, { pill: true, size: "sm", className: cn(META_CHIP_CLASS, "w-fit font-medium", triageChip.tone) }, [
-							triageChip.label,
-						]),
+					? h.p(
+							[h.Class("text-xs text-muted-foreground")],
+							["No AI triage has run for this incident."],
+						)
+					: badge(
+							h,
+							{
+								pill: true,
+								size: "sm",
+								className: cn(META_CHIP_CLASS, "w-fit font-medium", triageChip.tone),
+							},
+							[triageChip.label],
+						),
 			]),
 		],
 	)

@@ -22,17 +22,28 @@ export const detailHeader = (
 	return h.div(
 		[h.Class("flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2")],
 		[
-			button(h, { variant: "ghost", size: "sm", className: "gap-1.5", attributes: [h.OnClick(Message.ClickedBack())] }, [
-				icon(h, "ArrowLeftIcon"),
-				options.backLabel,
-			]),
+			button(
+				h,
+				{
+					variant: "ghost",
+					size: "sm",
+					className: "gap-1.5",
+					attributes: [h.OnClick(Message.ClickedBack())],
+				},
+				[icon(h, "ArrowLeftIcon"), options.backLabel],
+			),
 			truncatedText(h, { text: model.metricName, mono: true, className: "text-xs" }),
 			...(entry === null ? [] : [metricTypeBadge(h, entry.metricType)]),
 			...(unitLabel
 				? [
 						badge(
 							h,
-							{ variant: "outline", size: "xs", mono: true, attributes: entry === null ? [] : [h.Title(entry.metricUnit)] },
+							{
+								variant: "outline",
+								size: "xs",
+								mono: true,
+								attributes: entry === null ? [] : [h.Title(entry.metricUnit)],
+							},
 							[unitLabel],
 						),
 					]
@@ -40,7 +51,11 @@ export const detailHeader = (
 			h.div(
 				[h.Class("ml-auto flex items-center gap-2")],
 				[
-					refreshButton(h, { isSpinning: model.isRefreshing, hasNewData: options.hasNewData, onRefresh: Message.ClickedRefresh() }),
+					refreshButton(h, {
+						isSpinning: model.isRefreshing,
+						hasNewData: options.hasNewData,
+						onRefresh: Message.ClickedRefresh(),
+					}),
 					timeRangeSelect(h, options.range, (range) => Message.ChangedRange({ range })),
 				],
 			),

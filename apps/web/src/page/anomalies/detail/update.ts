@@ -58,10 +58,16 @@ const chain = (first: Return, next: (model: Model) => Return): Return => {
 	}
 }
 
-const loadIncident = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
-{
+const loadIncident = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
 	const key = requestKey(context.orgId, "anomalies.getIncident", { params: { id: model.incidentId } })
-	return slotStep(model, model.incident, (incident) => ({ incident }), key, mode, (key) => FetchIncident({ key, id: model.incidentId }))
+	return slotStep(
+		model,
+		model.incident,
+		(incident) => ({ incident }),
+		key,
+		mode,
+		(key) => FetchIncident({ key, id: model.incidentId }),
+	)
 }
 
 /** What mounts once the incident renders: its signal series and the linked issue's card. */
@@ -73,11 +79,27 @@ const followIncident = (model: Model, context: PageContext, mode: Keyed.RequestM
 				params: { id: model.incidentId },
 				query: {},
 			})
-			const series = slotStep(model, model.timeseries, (timeseries) => ({ timeseries }), seriesKey, mode, (key) => FetchTimeseries({ key, id: model.incidentId }))
+			const series = slotStep(
+				model,
+				model.timeseries,
+				(timeseries) => ({ timeseries }),
+				seriesKey,
+				mode,
+				(key) => FetchTimeseries({ key, id: model.incidentId }),
+			)
 			const issueId = incident.errorIssueId
 			if (issueId === null) return series
 			const issueKey = requestKey(context.orgId, "errorIssues.retrieve", { params: { id: issueId } })
-			return chain(series, (next) => slotStep(next, next.linkedIssue, (linkedIssue) => ({ linkedIssue }), issueKey, "Load", (key) => FetchLinkedIssue({ key, id: issueId })))
+			return chain(series, (next) =>
+				slotStep(
+					next,
+					next.linkedIssue,
+					(linkedIssue) => ({ linkedIssue }),
+					issueKey,
+					"Load",
+					(key) => FetchLinkedIssue({ key, id: issueId }),
+				),
+			)
 		},
 	})
 
@@ -87,7 +109,14 @@ const loadLinkIssues = (model: Model, context: PageContext): Return =>
 		onSome: (incident) => {
 			const serviceName = model.linkAllServices ? null : incident.serviceName
 			const key = requestKey(context.orgId, "errorIssues.list", { serviceName })
-			return slotStep(model, model.linkIssues, (linkIssues) => ({ linkIssues }), key, "Load", (key) => FetchLinkIssues({ key, serviceName }))
+			return slotStep(
+				model,
+				model.linkIssues,
+				(linkIssues) => ({ linkIssues }),
+				key,
+				"Load",
+				(key) => FetchLinkIssues({ key, serviceName }),
+			)
 		},
 	})
 
@@ -147,7 +176,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		CompletedFetchIncident: ({ key, result }) =>
-			followIncident({ ...model, incident: Keyed.accept(model.incident, key, result) }, context, "Load"),
+			followIncident(
+				{ ...model, incident: Keyed.accept(model.incident, key, result) },
+				context,
+				"Load",
+			),
 		CompletedFetchTimeseries: ({ key, result }) => ({
 			model: { ...model, timeseries: Keyed.accept(model.timeseries, key, result) },
 		}),
@@ -158,7 +191,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, linkIssues: Keyed.accept(model.linkIssues, key, result) },
 		}),
 		TickedLiveRefresh: ({ nowMs }) =>
-			chain(loadIncident({ ...model, nowMs }, context, "Refresh"), (next) => followIncident(next, context, "Refresh")),
+			chain(loadIncident({ ...model, nowMs }, context, "Refresh"), (next) =>
+				followIncident(next, context, "Refresh"),
+			),
 		ClickedRetry: () => loadIncident(model, context, "Refresh"),
 		ClickedInvestigate: () =>
 			model.busy !== null
@@ -184,43 +219,72 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					outMessage: failureToast("Failed to open investigation", failure),
 				}),
 			}),
-		ClickedResolve: () => dialogStep(model, "resolveDialog", Dialog.open(model.resolveDialog), wrapResolve),
+		ClickedResolve: () =>
+			dialogStep(model, "resolveDialog", Dialog.open(model.resolveDialog), wrapResolve),
 		ClickedConfirmResolve: () =>
 			model.busy !== null
 				? { model }
-				: { model: { ...model, busy: "resolve" }, commands: [ResolveIncident({ id: model.incidentId })] },
+				: {
+						model: { ...model, busy: "resolve" },
+						commands: [ResolveIncident({ id: model.incidentId })],
+					},
 		CompletedResolve: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => {
 					const refreshed = afterWrite(model, context)
-					const closed = dialogStep(refreshed.model, "resolveDialog", Dialog.close(refreshed.model.resolveDialog), wrapResolve)
+					const closed = dialogStep(
+						refreshed.model,
+						"resolveDialog",
+						Dialog.close(refreshed.model.resolveDialog),
+						wrapResolve,
+					)
 					return {
 						model: closed.model,
 						commands: [...(refreshed.commands ?? []), ...(closed.commands ?? [])],
 						outMessage: toast("success", "Anomaly resolved"),
 					}
 				},
-				onFailure: (failure) => ({ model: { ...model, busy: null }, outMessage: failureToast("Resolve failed", failure) }),
+				onFailure: (failure) => ({
+					model: { ...model, busy: null },
+					outMessage: failureToast("Resolve failed", failure),
+				}),
 			}),
 		ClickedLinkIssue: () =>
 			chain(dialogStep(model, "linkDialog", Dialog.open(model.linkDialog), wrapLink), (next) =>
-				loadLinkIssues({ ...next, linkCombobox: Combobox.init(LINK_COMBOBOX_ID, "autocomplete", { isOpen: true }) }, context),
+				loadLinkIssues(
+					{
+						...next,
+						linkCombobox: Combobox.init(LINK_COMBOBOX_ID, "autocomplete", { isOpen: true }),
+					},
+					context,
+				),
 			),
 		ClickedUnlink: () =>
 			model.busy !== null
 				? { model }
-				: { model: { ...model, busy: "unlink" }, commands: [SetIncidentIssue({ id: model.incidentId, issueId: null })] },
+				: {
+						model: { ...model, busy: "unlink" },
+						commands: [SetIncidentIssue({ id: model.incidentId, issueId: null })],
+					},
 		SelectedLinkIssue: ({ issueId }) =>
 			model.busy !== null
 				? { model }
-				: { model: { ...model, busy: "link" }, commands: [SetIncidentIssue({ id: model.incidentId, issueId })] },
+				: {
+						model: { ...model, busy: "link" },
+						commands: [SetIncidentIssue({ id: model.incidentId, issueId })],
+					},
 		CompletedSetIssue: ({ issueId, result }) =>
 			Result.match(result, {
 				onSuccess: () => {
 					const refreshed = afterWrite(model, context)
 					const message = toast("success", issueId === null ? "Issue unlinked" : "Linked to issue")
 					if (issueId === null) return { ...refreshed, outMessage: message }
-					const closed = dialogStep(refreshed.model, "linkDialog", Dialog.close(refreshed.model.linkDialog), wrapLink)
+					const closed = dialogStep(
+						refreshed.model,
+						"linkDialog",
+						Dialog.close(refreshed.model.linkDialog),
+						wrapLink,
+					)
 					return {
 						model: closed.model,
 						commands: [...(refreshed.commands ?? []), ...(closed.commands ?? [])],
@@ -234,31 +298,49 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}),
 		GotLinkComboboxMessage: ({ message: inner }) => {
 			// `onClick={() => onSelect(issue.id)}`: a picked item links; the rest is the input's own state.
-			if (inner._tag === "ClickedItem") return update(model, Message.SelectedLinkIssue({ issueId: ErrorIssueId.make(inner.value) }), context)
+			if (inner._tag === "ClickedItem")
+				return update(
+					model,
+					Message.SelectedLinkIssue({ issueId: ErrorIssueId.make(inner.value) }),
+					context,
+				)
 			const next = Combobox.update(model.linkCombobox, inner)
 			// Enter on the active item picks like a click; the input keeps the query, not the id.
 			if (next.outMessage?._tag === "ChangedValue")
-				return update(model, Message.SelectedLinkIssue({ issueId: ErrorIssueId.make(next.outMessage.value) }), context)
+				return update(
+					model,
+					Message.SelectedLinkIssue({ issueId: ErrorIssueId.make(next.outMessage.value) }),
+					context,
+				)
 			return {
 				model: { ...model, linkCombobox: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotLinkComboboxMessage({ message })),
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotLinkComboboxMessage({ message }),
+				),
 			}
 		},
-		ToggledLinkScope: () => loadLinkIssues({ ...model, linkAllServices: !model.linkAllServices }, context),
+		ToggledLinkScope: () =>
+			loadLinkIssues({ ...model, linkAllServices: !model.linkAllServices }, context),
 		GotResolveDialogMessage: ({ message: inner }) =>
-			model.busy !== null && inner._tag !== "GotAnimationMessage" && inner._tag !== "CompletedMountDialog"
+			model.busy !== null &&
+			inner._tag !== "GotAnimationMessage" &&
+			inner._tag !== "CompletedMountDialog"
 				? { model }
 				: dialogStep(model, "resolveDialog", Dialog.update(model.resolveDialog, inner), wrapResolve),
 		GotLinkDialogMessage: ({ message: inner }) =>
 			dialogStep(model, "linkDialog", Dialog.update(model.linkDialog, inner), wrapLink),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
+		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		GotChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.chart, inner)
 			return {
 				model: { ...model, chart: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotChartMessage({ message })),
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotChartMessage({ message }),
+				),
 			}
 		},
 	})

@@ -10,7 +10,14 @@ import { rangeOf } from "../contract"
 import type { PageViewInputs } from "../kit/inputs"
 import { pageShell } from "../kit/page-shell"
 import { signalEmptyState } from "../kit/signal-empty-state"
-import { refreshButton, timeRangeSelect, toolbar, toolbarSearch, toolbarStat, toolbarStats } from "../kit/toolbar"
+import {
+	refreshButton,
+	timeRangeSelect,
+	toolbar,
+	toolbarSearch,
+	toolbarStat,
+	toolbarStats,
+} from "../kit/toolbar"
 import { errorState, listSkeleton } from "../kit/view-states"
 import { metricsFilters } from "./load"
 import { Message } from "./message"
@@ -41,7 +48,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		if (isPending(model.list)) return listSkeleton(h, { variant: "grid", rows: 9 })
 		const failure = failureWithoutData(model.list)
 		if (Option.isSome(failure))
-			return errorState(h, { label: "metrics", failure: failure.value, onRetry: Message.ClickedRefresh() })
+			return errorState(h, {
+				label: "metrics",
+				failure: failure.value,
+				onRetry: Message.ClickedRefresh(),
+			})
 		if (entries.length === 0)
 			return signalEmptyState(h, {
 				signal: "metrics",
@@ -51,15 +62,24 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onWidenRange: Message.ClickedWidenRange(),
 				maybePresence: inputs.presenceOf("metrics"),
 				nowMs: inputs.presenceNowMs,
-				guide: { id: "metrics-empty", endpoint: context.env.otlpEndpoint, copies: model.copies, toCopyMessage: toCopy },
+				guide: {
+					id: "metrics-empty",
+					endpoint: context.env.otlpEndpoint,
+					copies: model.copies,
+					toCopyMessage: toCopy,
+				},
 			})
 		const theme = model.themeColors
-		if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return listSkeleton(h, { variant: "grid", rows: 9 })
+		if (theme === null || !isChartRuntimeReady(model.chartRuntime))
+			return listSkeleton(h, { variant: "grid", rows: 9 })
 		const sparklines = AsyncData.getData(model.sparklines.data)
 		return metricGrid(h, {
 			entries,
 			points: Option.getOrUndefined(
-				Option.map(sparklines, (list) => new Map(list.map((entry) => [entry.metricName, entry.points]))),
+				Option.map(
+					sparklines,
+					(list) => new Map(list.map((entry) => [entry.metricName, entry.points])),
+				),
 			),
 			isLoading: isPending(model.sparklines),
 			isFailed: Option.isSome(failureWithoutData(model.sparklines)),

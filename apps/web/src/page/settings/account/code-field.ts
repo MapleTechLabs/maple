@@ -13,7 +13,11 @@ export const isComplete = (model: OtpField.Model): boolean => OtpField.valueOf(m
 
 export const codeField = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ model: OtpField.Model; label: string; toParentMessage: (message: OtpField.Message) => M }>,
+	options: Readonly<{
+		model: OtpField.Model
+		label: string
+		toParentMessage: (message: OtpField.Message) => M
+	}>,
 ): Html => {
 	const config = { model: options.model, toParentMessage: options.toParentMessage, size: "lg" as const }
 	return h.div(
@@ -24,7 +28,13 @@ export const codeField = <M>(
 				h,
 				config,
 				SLOTS.map((slot) =>
-					OtpField.otpFieldInput(h, config, slot, undefined, slot === 0 ? [] : [h.AriaLabel(`Digit ${slot + 1} of 6`)]),
+					OtpField.otpFieldInput(
+						h,
+						config,
+						slot,
+						undefined,
+						slot === 0 ? [] : [h.AriaLabel(`Digit ${slot + 1} of 6`)],
+					),
 				),
 			),
 		],

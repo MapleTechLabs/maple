@@ -75,7 +75,11 @@ export const fetchPreview = (payload: V2AlertRulePreviewParams) =>
 		const client = yield* MapleApiV2Client
 		const response = yield* client.alertRules.preview({ payload })
 		return v2PreviewToResponse(response)
-	}).pipe(Effect.mapError((error): PreviewFailure => ({ message: mapBuilderChartFailure(displayError(error).message) })))
+	}).pipe(
+		Effect.mapError((error): PreviewFailure => ({
+			message: mapBuilderChartFailure(displayError(error).message),
+		})),
+	)
 
 export interface PreviewState {
 	readonly preview: AlertRulePreviewResponse | null

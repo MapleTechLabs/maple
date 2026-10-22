@@ -42,12 +42,14 @@ const sessionRow = (h: H, session: SessionRow, tool: string, nowMs: number, time
 			),
 			// `{ ...sessionLinkWindow(session), tool, view }` in that order.
 			h.Href(
-				`${hrefOf(AppRoute.AgentSession({ sessionId: session.sessionId, search: {} }))}${orderedSearch([
-					["t", sessionLinkWindow(session).t],
-					["end", sessionLinkWindow(session).end],
-					["tool", tool],
-					["view", "trace"],
-				])}`,
+				`${hrefOf(AppRoute.AgentSession({ sessionId: session.sessionId, search: {} }))}${orderedSearch(
+					[
+						["t", sessionLinkWindow(session).t],
+						["end", sessionLinkWindow(session).end],
+						["tool", tool],
+						["view", "trace"],
+					],
+				)}`,
 			),
 		],
 		[

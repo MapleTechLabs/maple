@@ -279,7 +279,11 @@ export const issueTimeline = (
 							[
 								button(
 									h,
-									{ variant: "ghost", size: "sm", attributes: [h.OnClick(Message.ClickedShowEarlier())] },
+									{
+										variant: "ghost",
+										size: "sm",
+										attributes: [h.OnClick(Message.ClickedShowEarlier())],
+									},
 									["Show ", countLabel(hiddenCount, "earlier event")],
 								),
 							],

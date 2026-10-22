@@ -183,8 +183,14 @@ describe("release detail", () => {
 		const picked = routeChanged(reloaded, { ...route(), search: { service: "payment-svc" } }, context)
 		expect(names(picked.commands)).not.toContain("ResolveReleaseWindow")
 		expect(names(picked.commands)).toContain("FetchReleaseDetail")
-		const moved = routeChanged(picked.model, { ...route(), search: { service: "payment-svc", timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveReleaseWindow", "Refresh"]])
+		const moved = routeChanged(
+			picked.model,
+			{ ...route(), search: { service: "payment-svc", timePreset: "1h" } },
+			context,
+		)
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveReleaseWindow", "Refresh"],
+		])
 	})
 
 	test("Reload re-resolves the window unsnapped and spins", () => {
@@ -198,7 +204,11 @@ describe("release detail", () => {
 	test("the deploy's releases read carries the namespace pin; a pin change re-resolves", () => {
 		const pinned: PageContext = { ...context, pinnedNamespace: "payments" }
 		const entered = init(route(), pinned).model
-		const resolved = update(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }), pinned)
+		const resolved = update(
+			entered,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+			pinned,
+		)
 		expect(resolved.commands?.[0]?.args).toMatchObject({ namespaces: ["payments"] })
 		expect(resolved.model.releases.key).not.toEqual(withReleases().model.releases.key)
 		expect(names(contextChanged(withReleases().model, pinned).commands)).toEqual(["ResolveReleaseWindow"])

@@ -221,7 +221,10 @@ export const MountCombobox = Mount.defineStream("MountCombobox", {
 			focus:
 				returnFocusId === undefined
 					? Option.none()
-					: Option.some({ returnFocusId: Option.some(returnFocusId), initialFocus: "first-tabbable" }),
+					: Option.some({
+							returnFocusId: Option.some(returnFocusId),
+							initialFocus: "first-tabbable",
+						}),
 		}).pipe(
 			Stream.map((event) => {
 				switch (event._tag) {

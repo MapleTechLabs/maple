@@ -1764,7 +1764,9 @@ const program = Effect.gen(function* () {
 				}),
 			)
 			yield* db.run(
-				PG.insertInto(VcsInstallations).values([{ ...world.installation, sourceId: DEMO_GITHUB_SOURCE }]),
+				PG.insertInto(VcsInstallations).values([
+					{ ...world.installation, sourceId: DEMO_GITHUB_SOURCE },
+				]),
 			)
 			yield* db.run(PG.insertInto(VcsRepositories).values(world.repositories))
 			yield* db.run(PG.insertInto(VcsRepositoryBranches).values(world.branches))

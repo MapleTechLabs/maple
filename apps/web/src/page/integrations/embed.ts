@@ -33,7 +33,10 @@ export type EmbedInputs = Readonly<{
 
 /** The integration's card: its connect empty state, or what it collects once connected. */
 export const cardEmbed = Submodel.defineView<Model, Message, EmbedInputs>((model, inputs, h) =>
-	h.div([h.Class("flex flex-col gap-4")], [...cardView(h, model, inputs.integration, inputs.timeZone, inputs.focusId ?? null)]),
+	h.div(
+		[h.Class("flex flex-col gap-4")],
+		[...cardView(h, model, inputs.integration, inputs.timeZone, inputs.focusId ?? null)],
+	),
 )
 
 /** The header's Docs link, the Connect button while available, Cloudflare's Reconnect and Disconnect. */

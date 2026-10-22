@@ -1,5 +1,9 @@
 import { narrowAlertSignal } from "../../../components/ai-triage/breach"
-import { type AlertContext, decodeAlertContextFromSearchParam, signalLabel } from "../../../components/chat/alert-context"
+import {
+	type AlertContext,
+	decodeAlertContextFromSearchParam,
+	signalLabel,
+} from "../../../components/chat/alert-context"
 import { Option, Schema } from "effect"
 
 // `/chat`'s explicit subjects: `?mode=alert&alert=` (an alert notification's investigation, see
@@ -56,7 +60,9 @@ const capitalize = (s: string): string => (s.length === 0 ? s : `${s.charAt(0).t
 /** `alertContextToInvestigation`: the alert link's context in the generic investigation shape. */
 export const alertContextToInvestigation = (alert: AlertContext): InvestigationContext => {
 	const { breach } = narrowAlertSignal(alert)
-	const observed = breach ? `${breach.observed} vs ${breach.threshold}` : `${alert.value ?? "n/a"} vs ${alert.threshold}`
+	const observed = breach
+		? `${breach.observed} vs ${breach.threshold}`
+		: `${alert.value ?? "n/a"} vs ${alert.threshold}`
 	return {
 		kind: "alert",
 		id: alert.incidentId ?? alert.ruleId,
@@ -100,7 +106,10 @@ export const subjectOfSearch = (search: {
 }): ChatSubject | null => {
 	if (search.mode === "widget-fix" && search.widget) {
 		const decoded = Option.flatMap(fromBase64Url(search.widget), decodeWidgetFix)
-		return Option.match(decoded, { onNone: () => null, onSome: (context) => ({ _tag: "WidgetFix", context }) })
+		return Option.match(decoded, {
+			onNone: () => null,
+			onSome: (context) => ({ _tag: "WidgetFix", context }),
+		})
 	}
 	if (search.mode !== "alert" || !search.alert) return null
 	const alert = decodeAlertContextFromSearchParam(search.alert)
@@ -109,15 +118,20 @@ export const subjectOfSearch = (search: {
 
 /** `investigationTabId` / `widgetFixTabId`: alerts keep their legacy `alert-…` id. */
 export const subjectTabId = (subject: ChatSubject): string => {
-	if (subject._tag === "WidgetFix") return `widget-fix-${subject.context.dashboardId}-${subject.context.widgetId}`
+	if (subject._tag === "WidgetFix")
+		return `widget-fix-${subject.context.dashboardId}-${subject.context.widgetId}`
 	const ctx = subject.context
-	return ctx.kind === "alert" ? `alert-${ctx.refs?.incidentId ?? ctx.refs?.ruleId ?? ctx.id}` : `${ctx.kind}-${ctx.id}`
+	return ctx.kind === "alert"
+		? `alert-${ctx.refs?.incidentId ?? ctx.refs?.ruleId ?? ctx.id}`
+		: `${ctx.kind}-${ctx.id}`
 }
 
 /** `investigationTabTitle` / `widgetFixTabTitle`. */
 export const subjectTabTitle = (subject: ChatSubject): string => {
 	if (subject._tag === "Investigation")
-		return subject.context.title.length > 28 ? `${subject.context.title.slice(0, 28)}…` : subject.context.title
+		return subject.context.title.length > 28
+			? `${subject.context.title.slice(0, 28)}…`
+			: subject.context.title
 	const base = subject.context.widgetTitle.trim().length === 0 ? "widget" : subject.context.widgetTitle
 	return `Fix: ${base.length > 24 ? `${base.slice(0, 24)}…` : base}`
 }

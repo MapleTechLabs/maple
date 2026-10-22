@@ -1,4 +1,8 @@
-import { type AlertIncidentDocument, AlertRulePreviewResponse, type AlertRuleDocument } from "@maple/domain/http"
+import {
+	type AlertIncidentDocument,
+	AlertRulePreviewResponse,
+	type AlertRuleDocument,
+} from "@maple/domain/http"
 import type { V2AlertRulePreviewParams } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { ruleToFormState } from "@maple/web-data/alerts/form-utils"

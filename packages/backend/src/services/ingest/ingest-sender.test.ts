@@ -25,7 +25,8 @@ const config = ConfigProvider.layer(
 )
 
 /** A gateway that records each request and answers with `status` and `body`. */
-const gateway = (sent: Array<Sent>, status: number, body = "{}"): typeof fetch =>
+const gateway =
+	(sent: Array<Sent>, status: number, body = "{}"): typeof fetch =>
 	async (input: string | URL | Request, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
 		sent.push({
@@ -74,7 +75,10 @@ describe("makeIngestSender", () => {
 		const sent: Array<Sent> = []
 		return Effect.gen(function* () {
 			const refused = yield* Effect.flip(send(gateway(sent, 402, "over plan limit")))
-			assert.deepStrictEqual([refused.status, refused.message], [402, "Test metrics ingest returned 402: over plan limit"])
+			assert.deepStrictEqual(
+				[refused.status, refused.message],
+				[402, "Test metrics ingest returned 402: over plan limit"],
+			)
 			assert.isTrue(isRefusal(refused))
 
 			const failed = yield* Effect.flip(send(gateway(sent, 503, "")))

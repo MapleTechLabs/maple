@@ -33,7 +33,10 @@ export const draftOf = (widget: Widget): RawSqlDraft => {
 	const rawSql = dataSourceRawSql(widget.dataSource)
 	return rawSql !== null && rawSql.sql.length > 0
 		? { sql: rawSql.sql, granularitySeconds: rawSql.granularitySeconds ?? null }
-		: { sql: RAW_SQL_TEMPLATES[rawSqlDisplayTypeFor(widget.visualization, widget.display.chartId)], granularitySeconds: null }
+		: {
+				sql: RAW_SQL_TEMPLATES[rawSqlDisplayTypeFor(widget.visualization, widget.display.chartId)],
+				granularitySeconds: null,
+			}
 }
 
 export const initRawSql = (widget: Widget): RawSqlState => {
@@ -51,7 +54,11 @@ export const reseedForType = (rawSql: RawSqlState, before: TypePair, after: Type
 }
 
 /** `buildRawSqlDataSource`: a stat or gauge without a reduction reads the first row's `value`. */
-export const rawSqlDataSourceOf = (widget: Widget, draft: RawSqlDraft, state: TypePair): Widget["dataSource"] => {
+export const rawSqlDataSourceOf = (
+	widget: Widget,
+	draft: RawSqlDraft,
+	state: TypePair,
+): Widget["dataSource"] => {
 	const existing = dataSourceTransform(widget.dataSource)
 	const needsScalar = widgetTypeByVisualization(state.visualization)?.isScalar === true
 	const transform =

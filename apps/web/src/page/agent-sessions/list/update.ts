@@ -45,7 +45,10 @@ import type { Model, RangeKey } from "./model"
 
 type Return = PageReturn<Model, Message>
 
-const withoutKey = (record: Readonly<Record<string, number>>, key: string): Readonly<Record<string, number>> =>
+const withoutKey = (
+	record: Readonly<Record<string, number>>,
+	key: string,
+): Readonly<Record<string, number>> =>
 	Object.fromEntries(Object.entries(record).filter(([entry]) => entry !== key))
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
@@ -572,7 +575,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					},
 				}),
 				SelectedHistogramRange: ({ min, max }) =>
-					applyRange({ ...model, histogramDrag: withoutKey(model.histogramDrag, range) }, range, min, max),
+					applyRange(
+						{ ...model, histogramDrag: withoutKey(model.histogramDrag, range) },
+						range,
+						min,
+						max,
+					),
 			}),
 		GotFilterSectionsMessage: ({ message: inner }) => {
 			const next = FilterSections.update(model.filterSections, inner)

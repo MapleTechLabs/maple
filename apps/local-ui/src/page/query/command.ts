@@ -10,7 +10,9 @@ import { LocalTable } from "./model"
 
 export const ReadPlatform = Command.define("ReadQueryConsolePlatform", {
 	messages: [Message.CompletedReadPlatform],
-	execute: Effect.sync(() => Message.CompletedReadPlatform({ isMac: /Mac|iPhone|iPad/.test(navigator.platform) })),
+	execute: Effect.sync(() =>
+		Message.CompletedReadPlatform({ isMac: /Mac|iPhone|iPad/.test(navigator.platform) }),
+	),
 })
 
 /** `QuerySidebar`'s `system.tables` read (`retry: false`), opened on its cached list first. */
@@ -24,12 +26,19 @@ export const FetchTables = Command.define("FetchQueryConsoleTables", {
 			readsCache,
 			fromCached: cachedAs(Schema.Array(LocalTable)),
 			toCached: (tables: ReadonlyArray<LocalTable>) => tables,
-			fetch: Effect.map(executeLocalQuery(TABLES_SQL, apiBase), (rows): ReadonlyArray<LocalTable> => parseTables(rows)),
+			fetch: Effect.map(executeLocalQuery(TABLES_SQL, apiBase), (rows): ReadonlyArray<LocalTable> =>
+				parseTables(rows),
+			),
 			found: (cached) => Message.FoundCachedTables({ key, cached }),
 			succeeded: (tables, fetchedAtMs) => Message.SucceededFetchTables({ key, tables, fetchedAtMs }),
 		}).pipe(
 			Effect.catch((error) =>
-				Effect.succeed(Message.FailedFetchTables({ key, failure: { message: describeQueryError(error).detail } })),
+				Effect.succeed(
+					Message.FailedFetchTables({
+						key,
+						failure: { message: describeQueryError(error).detail },
+					}),
+				),
 			),
 		),
 })
@@ -42,7 +51,9 @@ export const RunQuery = Command.define("RunQueryConsoleQuery", {
 	execute: ({ id, sql, apiBase }) =>
 		executeLocalQuery(sql, apiBase).pipe(
 			Effect.timed,
-			Effect.map(([elapsed, rows]) => Message.SucceededRunQuery({ id, rows, elapsedMs: Duration.toMillis(elapsed) })),
+			Effect.map(([elapsed, rows]) =>
+				Message.SucceededRunQuery({ id, rows, elapsedMs: Duration.toMillis(elapsed) }),
+			),
 			Effect.catch((error) => {
 				const { title, detail } = describeQueryError(error)
 				return Effect.succeed(Message.FailedRunQuery({ id, title, detail }))

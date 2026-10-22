@@ -152,14 +152,14 @@ export const radio = <ParentMessage>(
 			primitive !== undefined
 				? primitive.children
 				: checked
-				? [
-						h.span([
-							h.Class(radioIndicatorStyles),
-							stateAttribute,
-							h.DataAttribute("slot", "radio-indicator"),
-						]),
-					]
-				: [],
+					? [
+							h.span([
+								h.Class(radioIndicatorStyles),
+								stateAttribute,
+								h.DataAttribute("slot", "radio-indicator"),
+							]),
+						]
+					: [],
 		),
 		hiddenInput(h, {
 			id: item.inputId,

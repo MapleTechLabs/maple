@@ -33,9 +33,18 @@ const comboOf = (stored: Combobox.Model | undefined, id: string, value: string):
 const optionsWith = (query: MetricsQuery, value: string, options: ReadonlyArray<MetricOption>) =>
 	value === "" || options.some((option) => option.value === value)
 		? options
-		: [{ value, label: `${query.metricName} (${query.metricType})`, isMonotonic: query.isMonotonic }, ...options]
+		: [
+				{ value, label: `${query.metricName} (${query.metricType})`, isMonotonic: query.isMonotonic },
+				...options,
+			]
 
-const picker = (h: H, model: Model, query: MetricsQuery, options: ReadonlyArray<MetricOption>, searchTerm: string): Html => {
+const picker = (
+	h: H,
+	model: Model,
+	query: MetricsQuery,
+	options: ReadonlyArray<MetricOption>,
+	searchTerm: string,
+): Html => {
 	const value = query.metricName === "" ? "" : `${query.metricName}::${query.metricType}`
 	const listed = optionsWith(query, value, options)
 	const term = searchTerm.trim()
@@ -48,7 +57,12 @@ const picker = (h: H, model: Model, query: MetricsQuery, options: ReadonlyArray<
 			items: listed.map((option) => option.value),
 			placeholder: "Search metrics...",
 			// `MetricOptionsEmpty` replaces the list only when nothing is listed.
-			emptyText: listed.length > 0 ? "" : term === "" ? "No metrics found." : `No metric name contains "${term}".`,
+			emptyText:
+				listed.length > 0
+					? ""
+					: term === ""
+						? "No metrics found."
+						: `No metric name contains "${term}".`,
 			highlightsSelected: true,
 			// Measured: the positioner resolves the input (30 px), not the input group.
 			anchorsInput: true,
@@ -66,7 +80,9 @@ const picker = (h: H, model: Model, query: MetricsQuery, options: ReadonlyArray<
 
 const breakdown = (h: H, model: Model, query: MetricsQuery, keys: ReadonlyArray<string>): Html => {
 	const value =
-		!query.addOns.groupBy || query.groupBy.length === 0 || (query.groupBy.length === 1 && query.groupBy[0] === "none")
+		!query.addOns.groupBy ||
+		query.groupBy.length === 0 ||
+		(query.groupBy.length === 1 && query.groupBy[0] === "none")
 			? NONE
 			: (query.groupBy[0] ?? NONE)
 	return h.submodel({
@@ -97,15 +113,22 @@ const aggregationRow = (
 	label: string,
 	tail: ReadonlyArray<Html>,
 ): Html =>
-	panelSelect(h, model, `${field}:${query.id}`, query.aggregation, getMetricsAggregations(query.metricType, query.isMonotonic), {
-		size: "sm",
-		className: "w-24",
-		toView: (parts) =>
-			h.div(
-				[h.Class("flex items-center gap-2 flex-wrap")],
-				[eyebrow(h, { className: "shrink-0" }, [label]), ...parts, ...tail],
-			),
-	})
+	panelSelect(
+		h,
+		model,
+		`${field}:${query.id}`,
+		query.aggregation,
+		getMetricsAggregations(query.metricType, query.isMonotonic),
+		{
+			size: "sm",
+			className: "w-24",
+			toView: (parts) =>
+				h.div(
+					[h.Class("flex items-center gap-2 flex-wrap")],
+					[eyebrow(h, { className: "shrink-0" }, [label]), ...parts, ...tail],
+				),
+		},
+	)
 
 export const metricsBody = (
 	h: H,
@@ -120,11 +143,19 @@ export const metricsBody = (
 	}>,
 ): ReadonlyArray<Html> => [
 	picker(h, model, query, inputs.options, inputs.searchTerm),
-	whereClauseEditor(h, model, query, inputs.autocompleteValues, { placeholder: 'service.name = "my-service"', className: "relative" }),
+	whereClauseEditor(h, model, query, inputs.autocompleteValues, {
+		placeholder: 'service.name = "my-service"',
+		className: "relative",
+	}),
 	aggregationRow(h, model, query, "aggregation", "Aggregate within time series", [
 		h.span([h.Class("text-xs text-muted-foreground")], ["every"]),
-		textInput(h, `step-${query.id}`, query.stepInterval, inputs.intervalPlaceholder, "h-8 w-24 text-xs", (value) =>
-			Message.ChangedText({ queryId: query.id, field: "stepInterval", value }),
+		textInput(
+			h,
+			`step-${query.id}`,
+			query.stepInterval,
+			inputs.intervalPlaceholder,
+			"h-8 w-24 text-xs",
+			(value) => Message.ChangedText({ queryId: query.id, field: "stepInterval", value }),
 		),
 		h.span([h.Class("text-xs text-muted-foreground")], ["seconds"]),
 	]),

@@ -6,7 +6,10 @@ import * as Tabs from "../../../ui/tabs"
 import { SignalPresences } from "../../kit/signal-presence"
 import { InvestigationPage, TriageBudget } from "./model"
 
-const result = <A extends Schema.Top>(schema: A) => ({ key: Schema.String, result: Schema.Result(schema, LoadFailure) })
+const result = <A extends Schema.Top>(schema: A) => ({
+	key: Schema.String,
+	result: Schema.Result(schema, LoadFailure),
+})
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },

@@ -21,7 +21,16 @@ const operationRow = (h: HtmlBuilder<Message>, serviceName: string, range: strin
 	linkRow(h, undefined, [
 		tableCell(
 			h,
-			[rowLink(h, { href: tracesHref(serviceName, range, op.spanName), label: `Traces with ${op.spanName}` }, [op.spanName])],
+			[
+				rowLink(
+					h,
+					{
+						href: tracesHref(serviceName, range, op.spanName),
+						label: `Traces with ${op.spanName}`,
+					},
+					[op.spanName],
+				),
+			],
 			"max-w-96 truncate font-mono text-xs",
 		),
 		tableCell(h, [formatNumber(op.estimatedSpanCount || op.spanCount)], "text-right tabular-nums"),
@@ -41,19 +50,35 @@ const operationsBody = (h: HtmlBuilder<Message>, model: Model, range: string): H
 		return h.div([h.Class("flex h-24 items-center justify-center rounded-md border")], [spinner(h)])
 	const failure = failureWithoutData(model.operations)
 	if (Option.isSome(failure))
-		return errorState(h, { label: "operations", failure: failure.value, onRetry: Message.ClickedRetryOperations() })
+		return errorState(h, {
+			label: "operations",
+			failure: failure.value,
+			onRetry: Message.ClickedRetryOperations(),
+		})
 	const operations = Option.getOrElse(AsyncData.getData(model.operations.data), () => [])
 	if (operations.length === 0)
 		return h.div(
-			[h.Class("flex h-24 items-center justify-center rounded-md border text-sm text-muted-foreground")],
+			[
+				h.Class(
+					"flex h-24 items-center justify-center rounded-md border text-sm text-muted-foreground",
+				),
+			],
 			["No operations recorded in this range."],
 		)
 	return h.div(
 		[h.Class("rounded-md border")],
 		[
 			table(h, {}, [
-				tableHeader(h, [tableRow(h, [tableHead(h, ["Operation"]), ...HEADERS.map((header) => tableHead(h, [header], "text-right"))])]),
-				tableBody(h, operations.map((op) => operationRow(h, model.serviceName, range, op))),
+				tableHeader(h, [
+					tableRow(h, [
+						tableHead(h, ["Operation"]),
+						...HEADERS.map((header) => tableHead(h, [header], "text-right")),
+					]),
+				]),
+				tableBody(
+					h,
+					operations.map((op) => operationRow(h, model.serviceName, range, op)),
+				),
 			]),
 		],
 	)

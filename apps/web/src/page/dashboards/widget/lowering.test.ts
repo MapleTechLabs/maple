@@ -41,7 +41,10 @@ describe("widget editor lowering", () => {
 		const widget = widgetOf("gauge", { title: "Budget", gauge: { min: 10, max: 20 } })
 		const state = toInitialState(widget)
 		expect([state.gaugeMin, state.gaugeMax]).toEqual(["10", "20"])
-		expect(buildDisplay(widget, { ...state, gaugeMin: "", gaugeMax: "500" }).gauge).toEqual({ min: 0, max: 500 })
+		expect(buildDisplay(widget, { ...state, gaugeMin: "", gaugeMax: "500" }).gauge).toEqual({
+			min: 0,
+			max: 500,
+		})
 	})
 
 	test("a breakdown type without a group-by blocks Apply", () => {

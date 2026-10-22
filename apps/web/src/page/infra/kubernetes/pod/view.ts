@@ -12,7 +12,11 @@ import { heroChip } from "../../kit/hero-chip"
 import { k8sChart } from "../../kit/k8s-chart"
 import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
 import { noMetricsMessage, pageHero } from "../../kit/page-parts"
-import { metaRow, resourceAttributesCard, resourceAttributesCardSkeleton } from "../../kit/resource-attributes"
+import {
+	metaRow,
+	resourceAttributesCard,
+	resourceAttributesCardSkeleton,
+} from "../../kit/resource-attributes"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import { kubernetesViewTabs } from "../../kit/view-tabs"
 import { POD_METRIC_LABELS, type PodMetric, type PodSummary } from "../pod-data"
@@ -63,14 +67,22 @@ const stats = (h: H, model: Model, summary: Summary): Html =>
 			tone: severityLevel(summary.cpuLimitPct),
 			compact: true,
 		}),
-		statRailItem(h, { eyebrow: "CPU vs request", value: formatPercent(summary.cpuRequestPct), compact: true }),
+		statRailItem(h, {
+			eyebrow: "CPU vs request",
+			value: formatPercent(summary.cpuRequestPct),
+			compact: true,
+		}),
 		statRailItem(h, {
 			eyebrow: "Memory vs limit",
 			value: formatPercent(summary.memoryLimitPct),
 			tone: severityLevel(summary.memoryLimitPct),
 			compact: true,
 		}),
-		statRailItem(h, { eyebrow: "Memory vs request", value: formatPercent(summary.memoryRequestPct), compact: true }),
+		statRailItem(h, {
+			eyebrow: "Memory vs request",
+			value: formatPercent(summary.memoryRequestPct),
+			compact: true,
+		}),
 		podRestartsStat(h, model.restarts.data),
 	])
 
@@ -78,7 +90,11 @@ const summaryArea = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.summary.data, {
 		onEmpty: () => statRailLoading(h, 5, 5),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load pod metrics", onRetry: Message.ClickedRetrySummary() }),
+			errorState(h, {
+				failure,
+				title: "Failed to load pod metrics",
+				onRetry: Message.ClickedRetrySummary(),
+			}),
 		onData: (summary) => (summary === null ? noMetricsMessage(h, "pod") : stats(h, model, summary)),
 	})
 
@@ -94,7 +110,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
+					actions: Frame.controls(
+						h,
+						model.frame,
+						{ search: model.search, defaultPreset: DEFAULT_PRESET },
+						toFrame,
+					),
 					tabs: kubernetesViewTabs(h, "pods", model.search),
 					rightPanel: rightPanel(h, model),
 				},
@@ -129,7 +150,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 										toChart: (message) => Message.GotChartMessage({ metric, message }),
 										chartId: `pod-${metric}`,
 										seriesLabel: POD_METRIC_LABELS.get(metric) ?? metric,
-										showThreshold: metric.startsWith("cpu_") || metric.startsWith("memory_"),
+										showThreshold:
+											metric.startsWith("cpu_") || metric.startsWith("memory_"),
 										theme: model.themeColors,
 										runtime: model.chartRuntime,
 										timeZone: inputs.context.timeZone,

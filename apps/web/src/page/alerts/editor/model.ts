@@ -32,7 +32,10 @@ import { RuleForm } from "./form"
 
 const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
 
-export const Notice = Schema.Struct({ severity: Schema.Literals(["warning", "error"]), message: Schema.String })
+export const Notice = Schema.Struct({
+	severity: Schema.Literals(["warning", "error"]),
+	message: Schema.String,
+})
 export type Notice = typeof Notice.Type
 
 /** `RuleInitialization`: the draft exists only once ready; `Failed` is the rules sync that never answered. */

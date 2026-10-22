@@ -27,9 +27,16 @@ export const errorDetailsPopover = <M>(h: HtmlBuilder<M>, inputs: ErrorDetailsIn
 				h.div(
 					[h.Class("contents")],
 					withTrigger(
-						button(h, { variant: "ghost", size: "xs", className: "h-5 text-3xs", attributes: [...trigger] }, [
-							"Details",
-						]),
+						button(
+							h,
+							{
+								variant: "ghost",
+								size: "xs",
+								className: "h-5 text-3xs",
+								attributes: [...trigger],
+							},
+							["Details"],
+						),
 					),
 				),
 			toContent: () => [

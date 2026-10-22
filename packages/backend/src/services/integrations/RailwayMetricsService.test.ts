@@ -274,7 +274,9 @@ describe("RailwayMetricsService", () => {
 				assert.deepStrictEqual(yield* sourceIds(), first)
 
 				yield* railway.disconnect(orgId)
-				const left = yield* Effect.promise(() => testDb.pglite.query("SELECT id FROM sources WHERE kind = 'integration'"))
+				const left = yield* Effect.promise(() =>
+					testDb.pglite.query("SELECT id FROM sources WHERE kind = 'integration'"),
+				)
 				assert.deepStrictEqual(left.rows, [])
 			}),
 		)
@@ -300,10 +302,7 @@ describe("RailwayMetricsService", () => {
 
 				const summary = yield* railway.pollOrg(orgId)
 				assert.strictEqual(summary.skipped, "source paused")
-				assert.deepStrictEqual(
-					{ railway: calls.railway.length, ingest: calls.ingest.length },
-					before,
-				)
+				assert.deepStrictEqual({ railway: calls.railway.length, ingest: calls.ingest.length }, before)
 				const environment = yield* Effect.promise(() =>
 					queryFirstRow<{ watermark_at: Date }>(
 						testDb,
@@ -547,7 +546,9 @@ describe("RailwayMetricsService", () => {
 		).pipe(Effect.andThen(resetWatermarks(testDb)))
 		return Effect.gen(function* () {
 			const okStub = stubFetch(calls)
-			const connect = RailwayMetricsService.use((railway) => railway.connect(orgId, userId, "rw_token_123"))
+			const connect = RailwayMetricsService.use((railway) =>
+				railway.connect(orgId, userId, "rw_token_123"),
+			)
 			yield* run(testDb, okStub, connect)
 			const healthy = yield* readSource()
 			assert.isNotNull(healthy!.last_poll_ok_at)
@@ -555,10 +556,17 @@ describe("RailwayMetricsService", () => {
 
 			yield* behindAndUnleased
 			const refusedStub = stubFetch(calls, { ingestStatus: 403 })
-			yield* run(testDb, refusedStub, RailwayMetricsService.use((railway) => railway.pollOrg(orgId)))
+			yield* run(
+				testDb,
+				refusedStub,
+				RailwayMetricsService.use((railway) => railway.pollOrg(orgId)),
+			)
 			const failed = yield* readSource()
 			const connection = yield* Effect.promise(() =>
-				queryFirstRow<{ last_error: string | null }>(testDb, "SELECT last_error FROM railway_connections"),
+				queryFirstRow<{ last_error: string | null }>(
+					testDb,
+					"SELECT last_error FROM railway_connections",
+				),
 			)
 			assert.isNotNull(failed!.last_poll_error)
 			assert.strictEqual(failed!.last_poll_error, connection!.last_error)
@@ -566,7 +574,11 @@ describe("RailwayMetricsService", () => {
 
 			yield* behindAndUnleased
 			const revokedStub = stubFetch(calls, { railway: "unauthorized" })
-			yield* run(testDb, revokedStub, RailwayMetricsService.use((railway) => railway.pollOrg(orgId)))
+			yield* run(
+				testDb,
+				revokedStub,
+				RailwayMetricsService.use((railway) => railway.pollOrg(orgId)),
+			)
 			const rejected = yield* readSource()
 			assert.isNotNull(rejected!.disconnected_at)
 			assert.match(rejected!.last_poll_error ?? "", /Reconnect Railway/)

@@ -8,7 +8,11 @@ import { init, update } from "./update"
 import { view as panelView, type ViewInputs } from "./view"
 import { anchoredWindow, MountInfraCorrelation } from "./window"
 
-const POD = { "k8s.pod.name": "payment-svc-7f9c-p0", "k8s.namespace.name": "shop", "k8s.node.name": "ip-10-0-12-84" }
+const POD = {
+	"k8s.pod.name": "payment-svc-7f9c-p0",
+	"k8s.namespace.name": "shop",
+	"k8s.node.name": "ip-10-0-12-84",
+}
 const window = { startTime: "2026-10-01 11:45:00", endTime: "2026-10-01 12:15:00" }
 const inputs = (resourceAttributes: ViewInputs["resourceAttributes"]): ViewInputs => ({
 	resourceAttributes,
@@ -52,7 +56,11 @@ describe("infra correlation panel", () => {
 		const model = resolved().model
 		const late = update(
 			model,
-			Message.CompletedFetchSeries({ chartId: "pod-cpu_usage", key: "stale", result: Result.succeed({ rows: [], unit: "cores" }) }),
+			Message.CompletedFetchSeries({
+				chartId: "pod-cpu_usage",
+				key: "stale",
+				result: Result.succeed({ rows: [], unit: "cores" }),
+			}),
 		)
 		expect(late.model.series["pod-cpu_usage"]).toEqual(model.series["pod-cpu_usage"])
 	})

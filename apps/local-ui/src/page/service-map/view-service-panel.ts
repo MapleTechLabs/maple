@@ -14,7 +14,16 @@ import { icon } from "@maple/web/ui/icon"
 import { scrollArea } from "@maple/web/ui/scroll-area"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LocalServiceMapData } from "./data"
-import { metricTile, panelHeader, peerList, type PeerRow, rates, sectionTitle, serviceHref, serviceTracesHref } from "./view-panel-kit"
+import {
+	metricTile,
+	panelHeader,
+	peerList,
+	type PeerRow,
+	rates,
+	sectionTitle,
+	serviceHref,
+	serviceTracesHref,
+} from "./view-panel-kit"
 
 // The side panel for a selected service node.
 
@@ -55,7 +64,12 @@ export const servicePanel = <M>(
 		.filter((e) => e.sourceService === serviceName)
 		.map((e): PeerRow => {
 			const db = resolveDbNodeStyle(e.dbSystem, e.dbNamespace)
-			return { key: dbNodeId(e.dbSystem, e.dbNamespace), label: db.title, color: db.color, ...rates(e, durationSeconds) }
+			return {
+				key: dbNodeId(e.dbSystem, e.dbNamespace),
+				label: db.title,
+				color: db.color,
+				...rates(e, durationSeconds),
+			}
 		})
 	const calledBy = data.edges
 		.filter((e) => e.targetService === serviceName)
@@ -65,20 +79,34 @@ export const servicePanel = <M>(
 		[
 			panelHeader(
 				h,
-				{ accentColor, errorRate, title: serviceName, subtitle: overview?.serviceNamespace ? [overview.serviceNamespace] : undefined },
+				{
+					accentColor,
+					errorRate,
+					title: serviceName,
+					subtitle: overview?.serviceNamespace ? [overview.serviceNamespace] : undefined,
+				},
 				[
 					button(
 						h,
 						{
 							variant: "ghost",
 							size: "icon-xs",
-							attributes: [h.OnClick(options.actions.onFocus), h.Title("Focus the map on this service's neighborhood")],
+							attributes: [
+								h.OnClick(options.actions.onFocus),
+								h.Title("Focus the map on this service's neighborhood"),
+							],
 						},
 						[icon(h, "MagnifierIcon")],
 					),
-					button(h, { variant: "ghost", size: "icon-xs", attributes: [h.OnClick(options.actions.onClose), h.AriaLabel("Close panel")] }, [
-						icon(h, "XmarkIcon"),
-					]),
+					button(
+						h,
+						{
+							variant: "ghost",
+							size: "icon-xs",
+							attributes: [h.OnClick(options.actions.onClose), h.AriaLabel("Close panel")],
+						},
+						[icon(h, "XmarkIcon")],
+					),
 				],
 			),
 			scrollArea(h, { className: "min-h-0 flex-1", idPrefix: "service-map-panel" }, [
@@ -88,8 +116,20 @@ export const servicePanel = <M>(
 						h.div(
 							[h.Class("flex flex-wrap gap-2")],
 							[
-								linkButton(h, { variant: "outline", size: "sm", href: serviceHref(serviceName, range) }, ["View service"]),
-								linkButton(h, { variant: "outline", size: "sm", href: serviceTracesHref(serviceName, range) }, ["View traces"]),
+								linkButton(
+									h,
+									{ variant: "outline", size: "sm", href: serviceHref(serviceName, range) },
+									["View service"],
+								),
+								linkButton(
+									h,
+									{
+										variant: "outline",
+										size: "sm",
+										href: serviceTracesHref(serviceName, range),
+									},
+									["View traces"],
+								),
 							],
 						),
 						h.div(
@@ -99,11 +139,32 @@ export const servicePanel = <M>(
 								h.div(
 									[h.Class("grid grid-cols-2 gap-x-6 gap-y-4")],
 									[
-										metricTile(h, { label: "Throughput", value: `${overview?.hasSampling ? "~" : ""}${formatRate(overview?.throughput ?? 0)}`, unit: "req/s" }),
-										metricTile(h, { label: "Error rate", value: formatErrorRate(errorRate), className: errorRateClass(errorRate, { neutral: "text-foreground" }) }),
-										metricTile(h, { label: "P50 latency", value: formatLatency(p50), className: latencyToneClass(p50, "p50") }),
+										metricTile(h, {
+											label: "Throughput",
+											value: `${overview?.hasSampling ? "~" : ""}${formatRate(overview?.throughput ?? 0)}`,
+											unit: "req/s",
+										}),
+										metricTile(h, {
+											label: "Error rate",
+											value: formatErrorRate(errorRate),
+											className: errorRateClass(errorRate, {
+												neutral: "text-foreground",
+											}),
+										}),
+										metricTile(h, {
+											label: "P50 latency",
+											value: formatLatency(p50),
+											className: latencyToneClass(p50, "p50"),
+										}),
 										// A p95 far above the service's own p50 is a tail problem worth flagging.
-										metricTile(h, { label: "P95 latency", value: formatLatency(p95), className: p95 > p50 * 3 ? "text-severity-warn" : latencyToneClass(p95, "p95") }),
+										metricTile(h, {
+											label: "P95 latency",
+											value: formatLatency(p95),
+											className:
+												p95 > p50 * 3
+													? "text-severity-warn"
+													: latencyToneClass(p95, "p95"),
+										}),
 									],
 								),
 							],

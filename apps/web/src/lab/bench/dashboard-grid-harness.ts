@@ -68,7 +68,8 @@ const isPointerFollow = (record: MutationRecord): boolean =>
 	record.type === "attributes" &&
 	record.attributeName === "style" &&
 	record.target instanceof Element &&
-	(record.target.hasAttribute("data-grid-item") || record.target.matches('[aria-hidden="true"].border-dashed'))
+	(record.target.hasAttribute("data-grid-item") ||
+		record.target.matches('[aria-hidden="true"].border-dashed'))
 
 /** Counts DOM commits (mutation batches) under `root` until the returned stop is called. */
 const watchCommits = (root: Element) => {
@@ -148,7 +149,10 @@ const finish = (interaction: Interaction): InteractionMetrics => {
 		frameP95Ms: percentile(interaction.frames, 95),
 		droppedFrames: interaction.frames.filter((duration) => duration > FRAME_MS * 1.5).length,
 		longTasks: interaction.longTasks.length,
-		totalBlockingMs: interaction.longTasks.reduce((sum, entry) => sum + Math.max(0, entry.duration - 50), 0),
+		totalBlockingMs: interaction.longTasks.reduce(
+			(sum, entry) => sum + Math.max(0, entry.duration - 50),
+			0,
+		),
 		react: reactMetrics(commits),
 	}
 }
@@ -160,7 +164,11 @@ interface HarnessState {
 }
 
 /** Installs the harness on the bench root; `ready` flips once every tile's grip is on the page. */
-export const installDashboardGridBench = (root: Element, count: number, requestRemount: () => void): (() => void) => {
+export const installDashboardGridBench = (
+	root: Element,
+	count: number,
+	requestRemount: () => void,
+): (() => void) => {
 	const state: HarnessState = { interaction: null, handle: 0 }
 	const harness: DashboardGridBenchHarness = {
 		ready: false,

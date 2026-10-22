@@ -40,7 +40,10 @@ export const seriesChart = <M>(h: HtmlBuilder<M>, options: SeriesChartOptions<M>
 		return h.div(
 			[
 				h.Class(
-					cn("flex items-center justify-center rounded-md border text-sm text-muted-foreground", heightClassName),
+					cn(
+						"flex items-center justify-center rounded-md border text-sm text-muted-foreground",
+						heightClassName,
+					),
 				),
 			],
 			["No datapoints in this range yet."],
@@ -66,7 +69,15 @@ export const seriesChart = <M>(h: HtmlBuilder<M>, options: SeriesChartOptions<M>
 					curveType: "monotone",
 					...(options.fitYAxisToData === undefined
 						? undefined
-						: { axis: { thresholds: [], logScale: false, softMin: null, softMax: null, fitYAxisToData: options.fitYAxisToData } }),
+						: {
+								axis: {
+									thresholds: [],
+									logScale: false,
+									softMin: null,
+									softMax: null,
+									fitYAxisToData: options.fitYAxisToData,
+								},
+							}),
 				},
 			}),
 		],

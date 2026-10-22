@@ -229,7 +229,9 @@ export const FetchDashboardsFallback = Command.define("FetchDashboardsFallback",
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const dashboards = yield* listPages(client, null, 0, [])
-			const documents = yield* Effect.forEach(dashboards, (dashboard) => Effect.option(documentOf(dashboard)))
+			const documents = yield* Effect.forEach(dashboards, (dashboard) =>
+				Effect.option(documentOf(dashboard)),
+			)
 			return documents.flatMap((document) => Option.toArray(Option.map(document, toListDashboard)))
 		}).pipe(
 			Effect.mapError(errorMessageOf),

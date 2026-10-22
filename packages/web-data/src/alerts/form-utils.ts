@@ -1098,7 +1098,11 @@ export function groupDeliveryEventsByDay(
 		if (last && last.key === key) {
 			last.events.push(event)
 		} else {
-			groups.push({ key, label: formatAlertDayHeading(event.scheduledAt, timeZone, nowMs), events: [event] })
+			groups.push({
+				key,
+				label: formatAlertDayHeading(event.scheduledAt, timeZone, nowMs),
+				events: [event],
+			})
 		}
 	}
 	return groups

@@ -39,7 +39,14 @@ const EU_STARS = Array.from({ length: 12 }, (_, i) => {
 const usFlag = <M>(h: HtmlBuilder<M>): ReadonlyArray<Html> => {
 	const { primary, secondary } = REGION_FLAG_COLORS.us
 	return [
-		h.rect([h.Attribute("width", String(W)), h.Attribute("height", String(H)), h.Attribute("fill", "#FFFFFF")], []),
+		h.rect(
+			[
+				h.Attribute("width", String(W)),
+				h.Attribute("height", String(H)),
+				h.Attribute("fill", "#FFFFFF"),
+			],
+			[],
+		),
 		...Array.from({ length: 7 }, (_, i) =>
 			h.rect(
 				[
@@ -51,10 +58,22 @@ const usFlag = <M>(h: HtmlBuilder<M>): ReadonlyArray<Html> => {
 				[],
 			),
 		),
-		h.rect([h.Attribute("width", String(US_CANTON_W)), h.Attribute("height", String(US_CANTON_H)), h.Attribute("fill", secondary)], []),
+		h.rect(
+			[
+				h.Attribute("width", String(US_CANTON_W)),
+				h.Attribute("height", String(US_CANTON_H)),
+				h.Attribute("fill", secondary),
+			],
+			[],
+		),
 		...US_STARS.map((star) =>
 			h.circle(
-				[h.Attribute("cx", String(star.cx)), h.Attribute("cy", String(star.cy)), h.Attribute("r", "0.55"), h.Attribute("fill", "#FFFFFF")],
+				[
+					h.Attribute("cx", String(star.cx)),
+					h.Attribute("cy", String(star.cy)),
+					h.Attribute("r", "0.55"),
+					h.Attribute("fill", "#FFFFFF"),
+				],
 				[],
 			),
 		),
@@ -64,7 +83,10 @@ const usFlag = <M>(h: HtmlBuilder<M>): ReadonlyArray<Html> => {
 const euFlag = <M>(h: HtmlBuilder<M>): ReadonlyArray<Html> => {
 	const { primary, secondary } = REGION_FLAG_COLORS.eu
 	return [
-		h.rect([h.Attribute("width", String(W)), h.Attribute("height", String(H)), h.Attribute("fill", primary)], []),
+		h.rect(
+			[h.Attribute("width", String(W)), h.Attribute("height", String(H)), h.Attribute("fill", primary)],
+			[],
+		),
 		...EU_STARS.map((star) =>
 			h.polygon(
 				[
@@ -94,7 +116,16 @@ export const regionFlag = <M>(h: HtmlBuilder<M>, region: MapleRegion, className?
 				[
 					h.clipPath(
 						[h.Id(clipId)],
-						[h.rect([h.Attribute("width", String(W)), h.Attribute("height", String(H)), h.Attribute("rx", "4")], [])],
+						[
+							h.rect(
+								[
+									h.Attribute("width", String(W)),
+									h.Attribute("height", String(H)),
+									h.Attribute("rx", "4"),
+								],
+								[],
+							),
+						],
 					),
 				],
 			),

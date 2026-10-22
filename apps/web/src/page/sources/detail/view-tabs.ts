@@ -122,18 +122,26 @@ export const settingsTab = (h: H, model: Model, source: V2Source): Html => {
 		[
 			settingsSections(h, "standard", [
 				generalSection(h, form, source),
-				settingsSection(h, { id: "source-settings-rules", title: "Rules", description: [rulesDescription(source)] }, [
-					RulesView.view(h, {
-						model: form.rules,
-						toParentMessage: (message) => Message.GotRulesMessage({ message }),
-						idPrefix: "source-settings-rules",
-						nowMs: model.nowMs ?? 0,
-						isDisabled: !isToken,
-					}),
-				]),
+				settingsSection(
+					h,
+					{ id: "source-settings-rules", title: "Rules", description: [rulesDescription(source)] },
+					[
+						RulesView.view(h, {
+							model: form.rules,
+							toParentMessage: (message) => Message.GotRulesMessage({ message }),
+							idPrefix: "source-settings-rules",
+							nowMs: model.nowMs ?? 0,
+							isDisabled: !isToken,
+						}),
+					],
+				),
 				h.div(
 					[h.Class("flex justify-end")],
-					[button(h, { type: "submit", isDisabled: !isValid, isLoading: form.isSaving }, ["Save changes"])],
+					[
+						button(h, { type: "submit", isDisabled: !isValid, isLoading: form.isSaving }, [
+							"Save changes",
+						]),
+					],
 				),
 			]),
 		],

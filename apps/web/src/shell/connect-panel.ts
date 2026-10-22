@@ -79,7 +79,11 @@ export const Message = defineMessageUnion({
 	SucceededLoadKeys: { orgId: Schema.String, publicKey: Schema.String, privateKey: Schema.String },
 	FailedLoadKeys: { orgId: Schema.String },
 	ResolvedWindow: { orgId: Schema.String, window: TimeWindow },
-	SucceededLoadOverview: { orgId: Schema.String, request: Schema.Number, services: Schema.Array(ServiceRow) },
+	SucceededLoadOverview: {
+		orgId: Schema.String,
+		request: Schema.Number,
+		services: Schema.Array(ServiceRow),
+	},
 	FailedLoadOverview: { orgId: Schema.String, request: Schema.Number },
 	/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the panel is open and the tab shown. */
 	TickedPoll: {},
@@ -175,7 +179,15 @@ const popoverStep = (model: Model, message: Popover.Message, context: Context): 
 	// The retained keys answer a reopen in the same org; a failure or another org reads again.
 	const keys: Keys = isSameOrg ? model.keys : { _tag: "Loading" }
 	return {
-		model: { ...model, popover: next.model, orgId, keys, services: [], window: null, isOverviewInFlight: false },
+		model: {
+			...model,
+			popover: next.model,
+			orgId,
+			keys,
+			services: [],
+			window: null,
+			isOverviewInFlight: false,
+		},
 		commands: [
 			...commands,
 			...(keys._tag === "Ready" ? [] : [FetchKeys({ orgId })]),
@@ -210,7 +222,12 @@ export const update = (model: Model, message: Message, context: Context): Update
 		ResolvedWindow: ({ orgId, window }) =>
 			model.orgId === orgId && model.popover.isOpen
 				? {
-						model: { ...model, window, isOverviewInFlight: true, overviewRequest: model.overviewRequest + 1 },
+						model: {
+							...model,
+							window,
+							isOverviewInFlight: true,
+							overviewRequest: model.overviewRequest + 1,
+						},
 						commands: [
 							FetchOverview({
 								orgId,
@@ -249,4 +266,3 @@ export const isPolling = (model: Model): boolean => model.popover.isOpen && mode
 /** The org's own services: the seeded `demo-` ones do not count as a connection. */
 export const realServices = (model: Model): ReadonlyArray<typeof ServiceRow.Type> =>
 	model.services.filter((row) => !row.serviceName.startsWith("demo-"))
-

@@ -11,7 +11,10 @@ const entered = () => {
 	const open = update(init(ID), Message.ClickedTrigger()).model
 	return update(
 		open,
-		Message.GotItemTooltipMessage({ message: Tooltip.Message.EnteredTrigger({ triggerId }), side: "left" }),
+		Message.GotItemTooltipMessage({
+			message: Tooltip.Message.EnteredTrigger({ triggerId }),
+			side: "left",
+		}),
 	)
 }
 
@@ -22,7 +25,10 @@ describe("menu item tooltip", () => {
 		const generation = step.model.itemTooltip.hoverGeneration
 		const opened = update(
 			step.model,
-			Message.GotItemTooltipMessage({ message: Tooltip.Message.ElapsedOpenDelay({ generation }), side: "left" }),
+			Message.GotItemTooltipMessage({
+				message: Tooltip.Message.ElapsedOpenDelay({ generation }),
+				side: "left",
+			}),
 		).model
 		expect(opened.itemTooltip.isOpen).toBe(true)
 		expect(opened.itemTooltip.requestedSide).toBe("left")

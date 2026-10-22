@@ -58,7 +58,10 @@ export const listColumnRow = (
 	suggestions: ReadonlyArray<string> | null,
 ): Html =>
 	h.div(
-		[h.Class("relative flex items-center gap-2 rounded-md bg-background py-1"), h.DataAttribute(ROW_ATTRIBUTE, "")],
+		[
+			h.Class("relative flex items-center gap-2 rounded-md bg-background py-1"),
+			h.DataAttribute(ROW_ATTRIBUTE, ""),
+		],
 		[
 			h.button(
 				[

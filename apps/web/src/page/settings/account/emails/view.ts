@@ -28,9 +28,25 @@ const rowMenuEntries = (model: Model, user: AccountUser, address: AccountEmail):
 	return [
 		...(address.isVerified
 			? []
-			: [{ _tag: "Item", value: "verify", label: "Verify", icon: "EnvelopeIcon", isDisabled: model.isBusy } as const]),
+			: [
+					{
+						_tag: "Item",
+						value: "verify",
+						label: "Verify",
+						icon: "EnvelopeIcon",
+						isDisabled: model.isBusy,
+					} as const,
+				]),
 		...(!isPrimary && address.isVerified
-			? [{ _tag: "Item", value: "primary", label: "Set as primary", icon: "CircleCheckIcon", isDisabled: model.isBusy } as const]
+			? [
+					{
+						_tag: "Item",
+						value: "primary",
+						label: "Set as primary",
+						icon: "CircleCheckIcon",
+						isDisabled: model.isBusy,
+					} as const,
+				]
 			: []),
 		{
 			_tag: "Item",
@@ -49,15 +65,24 @@ const emailRow = (h: H, model: Model, user: AccountUser, address: AccountEmail):
 	return tableRow(
 		h,
 		[
-			tableCell(h, [truncatedText(h, { text: address.email })], cn(truncatedCellStyles, "font-medium text-xs")),
+			tableCell(
+				h,
+				[truncatedText(h, { text: address.email })],
+				cn(truncatedCellStyles, "font-medium text-xs"),
+			),
 			tableCell(h, [
 				h.div(
 					[h.Class("flex items-center gap-1.5")],
 					[
 						...(isPrimary ? [badge(h, { variant: "secondary" }, ["Primary"])] : []),
 						address.isVerified
-							? badge(h, { variant: "outline", className: "gap-1" }, [icon(h, "CircleCheckIcon", { size: 12 }), "Verified"])
-							: badge(h, { variant: "outline", className: "text-muted-foreground" }, ["Unverified"]),
+							? badge(h, { variant: "outline", className: "gap-1" }, [
+									icon(h, "CircleCheckIcon", { size: 12 }),
+									"Verified",
+								])
+							: badge(h, { variant: "outline", className: "text-muted-foreground" }, [
+									"Unverified",
+								]),
 					],
 				),
 			]),
@@ -126,7 +151,9 @@ const loaded = (h: H, model: Model, user: AccountUser): Html =>
 			{
 				id: "account-emails",
 				title: "Email addresses",
-				description: ["Your primary address receives sign-in codes, alerts and digests. Others can be used to sign in."],
+				description: [
+					"Your primary address receives sign-in codes, alerts and digests. Others can be used to sign in.",
+				],
 				padded: false,
 				actions: button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedAdd())] }, [
 					icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
@@ -136,9 +163,16 @@ const loaded = (h: H, model: Model, user: AccountUser): Html =>
 			[
 				table(h, {}, [
 					tableHeader(h, [
-						tableRow(h, [tableHead(h, ["Email"]), tableHead(h, ["Status"]), tableHead(h, [], "w-10")]),
+						tableRow(h, [
+							tableHead(h, ["Email"]),
+							tableHead(h, ["Status"]),
+							tableHead(h, [], "w-10"),
+						]),
 					]),
-					tableBody(h, user.emails.map((address) => emailRow(h, model, user, address))),
+					tableBody(
+						h,
+						user.emails.map((address) => emailRow(h, model, user, address)),
+					),
 				]),
 			],
 		),
@@ -155,6 +189,7 @@ const loaded = (h: H, model: Model, user: AccountUser): Html =>
 		}),
 	])
 
-export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>((model, _inputs, h) =>
-	!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model, model.user),
+export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>(
+	(model, _inputs, h) =>
+		!model.isLoaded || model.user === null ? accountSectionSkeleton(h) : loaded(h, model, model.user),
 )

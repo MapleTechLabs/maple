@@ -34,22 +34,41 @@ const breakdownContent = (h: H, model: Model, panelId: string): ReadonlyArray<Ht
 		? (dimension.viewsLabel?.toLowerCase() ?? "page views")
 		: (dimension.countLabel?.toLowerCase() ?? "sessions")
 	return [
-		dialogHeader(h, "dialog", [
-			h.div([h.Class("flex flex-col gap-1 pe-8")], [
-				dialogTitle(h, "dialog", id, dimension.tab, "text-base"),
-				dialogDescription(h, "dialog", id, [
-					"Ranked by",
-					" ",
-					ranking,
-					" ",
-					"over the selected window. Pick a row to filter the page.",
-				]),
-			]),
-			h.div([h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2")], [
-				dimensionTabs(h, card.id, card.dimensions, view.activeTab),
-				panelFilterInput(h, card.id, state.query, dimension.nounPlural, "w-56", "-dialog", true),
-			]),
-		], "gap-3 pb-3"),
+		dialogHeader(
+			h,
+			"dialog",
+			[
+				h.div(
+					[h.Class("flex flex-col gap-1 pe-8")],
+					[
+						dialogTitle(h, "dialog", id, dimension.tab, "text-base"),
+						dialogDescription(h, "dialog", id, [
+							"Ranked by",
+							" ",
+							ranking,
+							" ",
+							"over the selected window. Pick a row to filter the page.",
+						]),
+					],
+				),
+				h.div(
+					[h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2")],
+					[
+						dimensionTabs(h, card.id, card.dimensions, view.activeTab),
+						panelFilterInput(
+							h,
+							card.id,
+							state.query,
+							dimension.nounPlural,
+							"w-56",
+							"-dialog",
+							true,
+						),
+					],
+				),
+			],
+			"gap-3 pb-3",
+		),
 		breakdownTable(h, model, card.id, view, {
 			maxHeight: "min(62vh, 640px)",
 			surfaceClass: "bg-popover",
@@ -65,17 +84,30 @@ const aiContent = (h: H, model: Model, panelId: string, timeZone: string): Reado
 	if (table === null) return null
 	const id = model.expandDialog.id
 	return [
-		dialogHeader(h, "dialog", [
-			h.div([h.Class("flex flex-col gap-1 pe-8")], [
-				dialogTitle(h, "dialog", id, table.title, "text-base"),
-				dialogDescription(h, "dialog", id, table.hint),
-			]),
-		], "pb-3"),
+		dialogHeader(
+			h,
+			"dialog",
+			[
+				h.div(
+					[h.Class("flex flex-col gap-1 pe-8")],
+					[
+						dialogTitle(h, "dialog", id, table.title, "text-base"),
+						dialogDescription(h, "dialog", id, table.hint),
+					],
+				),
+			],
+			"pb-3",
+		),
 		h.div([h.Class("@container/panel")], [table.table]),
 	]
 }
 
-const contentOf = (h: H, model: Model, timeZone: string, _close: ReadonlyArray<ChildAttribute>): ReadonlyArray<Html> => {
+const contentOf = (
+	h: H,
+	model: Model,
+	timeZone: string,
+	_close: ReadonlyArray<ChildAttribute>,
+): ReadonlyArray<Html> => {
 	const panelId = model.expandedPanel
 	if (panelId === null) return []
 	return breakdownContent(h, model, panelId) ?? aiContent(h, model, panelId, timeZone) ?? []

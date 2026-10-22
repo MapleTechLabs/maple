@@ -167,7 +167,9 @@ export const tileContext = (
 		onSort: (field, isText) => Message.ClickedSortColumn({ widgetId: widget.id, field, isText }),
 		sparkline: sparklineState(model, widget),
 		narrowRange:
-			slotOf(model, widget.id).gate?._tag === "Range" ? Message.ClickedNarrowRange({ widgetId: widget.id }) : null,
+			slotOf(model, widget.id).gate?._tag === "Range"
+				? Message.ClickedNarrowRange({ widgetId: widget.id })
+				: null,
 		variables,
 		sparklineChart: model.charts[`${widget.id}:spark`] ?? Chart.init(),
 		onSparklineChart: (message) => Message.GotChartMessage({ widgetId: `${widget.id}:spark`, message }),
@@ -184,5 +186,10 @@ export const tileContext = (
 }
 
 /** A tile of the open dashboard. */
-export const viewTile = (h: H, model: Model, widget: Widget, timeZone: string, variables: VariableValues): Html =>
-	widgetTile(h, tileContext(h, model, widget, timeZone, variables), widget)
+export const viewTile = (
+	h: H,
+	model: Model,
+	widget: Widget,
+	timeZone: string,
+	variables: VariableValues,
+): Html => widgetTile(h, tileContext(h, model, widget, timeZone, variables), widget)

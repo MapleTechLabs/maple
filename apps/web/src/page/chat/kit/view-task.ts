@@ -39,7 +39,8 @@ const OUTCOME = new Map([
 const taskGlyph = <M>(h: HtmlBuilder<M>, status: TaskPart["status"]): Html => {
 	if (status === "running") return dotLoader(h)
 	if (status === "error") return icon(h, "CircleXmarkIcon", { className: "size-3.5 text-severity-error" })
-	if (status === "aborted") return icon(h, "CircleWarningIcon", { className: "size-3.5 text-muted-foreground" })
+	if (status === "aborted")
+		return icon(h, "CircleWarningIcon", { className: "size-3.5 text-muted-foreground" })
 	return icon(h, "CircleCheckIcon", { className: "size-3.5 text-severity-info" })
 }
 
@@ -54,18 +55,33 @@ const outcomeTag = <M>(h: HtmlBuilder<M>, part: TaskPart): ReadonlyArray<Html> =
 const taskLine = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Html => {
 	const running = part.status === "running"
 	const agent = agentPresentation(part.agent)
-	return traceLine(h, running ? { status: "running" } : part.status === "error" ? { status: "error" } : {}, [
-		traceIcon(h, [taskGlyph(h, part.status)], running ? "size-5" : undefined),
-		...(running ? [] : [traceIcon(h, [icon(h, agent.icon, { className: "size-3.5 text-muted-foreground/70" })])]),
-		h.span(
-			[h.Class("min-w-0 truncate motion-reduce:shimmer-none shrink-0 font-medium text-foreground"), h.DataAttribute("slot", "trace-title")],
-			[running ? `${agent.activity}…` : agent.label],
-		),
-		traceDescription(h, [h.span([h.Class("mr-1 text-muted-foreground/40")], ["·"]), part.prompt], "min-w-0 shrink truncate text-2xs"),
-		...outcomeTag(h, part),
-		...(running ? runningClock(h, host.clockMount) : []),
-		traceIcon(h, [icon(h, "ChevronRightIcon", { className: "size-3 text-muted-foreground/60" })]),
-	])
+	return traceLine(
+		h,
+		running ? { status: "running" } : part.status === "error" ? { status: "error" } : {},
+		[
+			traceIcon(h, [taskGlyph(h, part.status)], running ? "size-5" : undefined),
+			...(running
+				? []
+				: [traceIcon(h, [icon(h, agent.icon, { className: "size-3.5 text-muted-foreground/70" })])]),
+			h.span(
+				[
+					h.Class(
+						"min-w-0 truncate motion-reduce:shimmer-none shrink-0 font-medium text-foreground",
+					),
+					h.DataAttribute("slot", "trace-title"),
+				],
+				[running ? `${agent.activity}…` : agent.label],
+			),
+			traceDescription(
+				h,
+				[h.span([h.Class("mr-1 text-muted-foreground/40")], ["·"]), part.prompt],
+				"min-w-0 shrink truncate text-2xs",
+			),
+			...outcomeTag(h, part),
+			...(running ? runningClock(h, host.clockMount) : []),
+			traceIcon(h, [icon(h, "ChevronRightIcon", { className: "size-3 text-muted-foreground/60" })]),
+		],
+	)
 }
 
 /** The answer section: live, the error, the answer, or the note that none came back. */
@@ -73,16 +89,28 @@ const answer = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Html =
 	if (part.status === "running")
 		return h.div(
 			[h.Class("flex items-center gap-2 text-sm text-muted-foreground")],
-			[dotLoader(h), h.span([h.Class("shimmer")], [`${agentPresentation(part.agent).activity}…`]), ...runningClock(h, host.clockMount)],
+			[
+				dotLoader(h),
+				h.span([h.Class("shimmer")], [`${agentPresentation(part.agent).activity}…`]),
+				...runningClock(h, host.clockMount),
+			],
 		)
 	if (part.errorText !== undefined)
-		return h.pre([h.Class("max-h-60 overflow-auto whitespace-pre-wrap text-xs text-severity-error/80")], [part.errorText])
+		return h.pre(
+			[h.Class("max-h-60 overflow-auto whitespace-pre-wrap text-xs text-severity-error/80")],
+			[part.errorText],
+		)
 	if (part.answer !== undefined) return h.div([h.Class("text-sm")], [host.richText(part.answer)])
 	return h.p([h.Class("text-sm text-muted-foreground")], ["The run ended without returning an answer."])
 }
 
 /** `SheetDetailHeader` (not mono) over the `SheetPanel` of answer and steps. */
-const sheetContent = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart, id: string): ReadonlyArray<Html> => {
+const sheetContent = <M>(
+	h: HtmlBuilder<M>,
+	host: TaskHost<M>,
+	part: TaskPart,
+	id: string,
+): ReadonlyArray<Html> => {
 	const agent = agentPresentation(part.agent)
 	const kind = h.span(
 		[h.Class("inline-flex items-center gap-2")],
@@ -100,9 +128,19 @@ const sheetContent = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart, i
 			"sheet",
 			[
 				...Option.toArray(Option.fromNullishOr(detailEyebrow(h, [kind]))),
-				DialogView.dialogTitle(h, "sheet", id, [h.span([h.Class("min-w-0 break-words")], [part.prompt])], "flex flex-wrap items-center gap-2 text-title leading-tight"),
+				DialogView.dialogTitle(
+					h,
+					"sheet",
+					id,
+					[h.span([h.Class("min-w-0 break-words")], [part.prompt])],
+					"flex flex-wrap items-center gap-2 text-title leading-tight",
+				),
 				h.p(
-					[h.Class(cn(sheetDescriptionStyles, "sr-only")), h.DataAttribute("slot", "sheet-description"), h.Id(Dialog.descriptionId(id))],
+					[
+						h.Class(cn(sheetDescriptionStyles, "sr-only")),
+						h.DataAttribute("slot", "sheet-description"),
+						h.Id(Dialog.descriptionId(id)),
+					],
 					["What this sub-agent was asked, and what it came back with."],
 				),
 			],
@@ -116,13 +154,23 @@ const sheetContent = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart, i
 				...(part.budgetExhausted === true
 					? [
 							alert(h, { variant: "warn", size: "sm" }, [
-								alertDescription(h, ["Answered from what it had: the run spent its budget before it finished searching."]),
+								alertDescription(h, [
+									"Answered from what it had: the run spent its budget before it finished searching.",
+								]),
 							]),
 						]
 					: []),
 				h.section(
 					[h.Class("flex flex-col gap-2")],
-					[sectionHeading(h, { variant: "eyebrow", as: "h3", title: "Answer", className: "mb-0" }), answer(h, host, part)],
+					[
+						sectionHeading(h, {
+							variant: "eyebrow",
+							as: "h3",
+							title: "Answer",
+							className: "mb-0",
+						}),
+						answer(h, host, part),
+					],
 				),
 				...steps(h, host, part),
 			],
@@ -158,13 +206,22 @@ const steps = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Readonl
 				h.section(
 					[h.Class("flex flex-col gap-2")],
 					[
-						sectionHeading(h, { variant: "eyebrow", as: "h3", title: "Its own steps", className: "mb-0" }),
+						sectionHeading(h, {
+							variant: "eyebrow",
+							as: "h3",
+							title: "Its own steps",
+							className: "mb-0",
+						}),
 						...part.messages.map((message) =>
 							h.keyed("div")(
 								message.id,
 								[h.Class("flex flex-col gap-1.5")],
 								message.parts.flatMap((leaf) =>
-									leaf._tag === "text" ? [host.richText(leaf.text)] : leaf._tag === "dynamic-tool" ? [host.tool(leaf)] : [],
+									leaf._tag === "text"
+										? [host.richText(leaf.text)]
+										: leaf._tag === "dynamic-tool"
+											? [host.tool(leaf)]
+											: [],
 								),
 							),
 						),

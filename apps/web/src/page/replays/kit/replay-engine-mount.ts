@@ -64,9 +64,17 @@ export const runReplayEngine = <A>(
 					({ ENGINE_FACTORIES }) =>
 						Stream.callback<A>((queue) =>
 							Effect.acquireRelease(
-								Effect.sync(() => startEngine(element, args, handlers, ENGINE_FACTORIES[args.format], (message) => {
-									Queue.offerUnsafe(queue, message)
-								})),
+								Effect.sync(() =>
+									startEngine(
+										element,
+										args,
+										handlers,
+										ENGINE_FACTORIES[args.format],
+										(message) => {
+											Queue.offerUnsafe(queue, message)
+										},
+									),
+								),
 								(stop) => Effect.sync(stop),
 							).pipe(Effect.flatMap(() => Effect.never)),
 						),
@@ -168,14 +176,17 @@ const startEngine = <A>(
 		if (!isHeld && state.isPlaying) engine.play(engine.getCurrentTimeMs())
 	}
 	const attributes = new MutationObserver((records) => {
-		const changed = (attribute: string) => records.some((record) => record.attributeName === `data-${attribute}`)
+		const changed = (attribute: string) =>
+			records.some((record) => record.attributeName === `data-${attribute}`)
 		if (changed(IDLE_ATTRIBUTE)) state.idle = readIdle(mount)
 		if (changed(CONTROL_ATTRIBUTE)) applyControl()
 		if (changed(SPEED_ATTRIBUTE) || changed(HOLD_ATTRIBUTE)) applyOptions()
 	})
 	attributes.observe(mount, {
 		attributes: true,
-		attributeFilter: [CONTROL_ATTRIBUTE, SPEED_ATTRIBUTE, HOLD_ATTRIBUTE, IDLE_ATTRIBUTE].map((name) => `data-${name}`),
+		attributeFilter: [CONTROL_ATTRIBUTE, SPEED_ATTRIBUTE, HOLD_ATTRIBUTE, IDLE_ATTRIBUTE].map(
+			(name) => `data-${name}`,
+		),
 	})
 	const onEvents = (event: Event) => {
 		if (!(event instanceof CustomEvent) || !Array.isArray(event.detail)) return

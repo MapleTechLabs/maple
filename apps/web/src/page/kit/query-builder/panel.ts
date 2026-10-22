@@ -133,5 +133,6 @@ export const update = (model: Model, message: Message, inputs?: PanelInputs): Re
 		ToggledAddOn: ({ queryId, key }) => changed(model, queryId, QueryChange.ToggledAddOn({ key })),
 		ClickedClone: ({ queryId }) => ({ model, outMessage: OutMessage.ClickedClone({ queryId }) }),
 		ClickedRemove: ({ queryId }) => ({ model, outMessage: OutMessage.ClickedRemove({ queryId }) }),
-		GotWhereField: ({ message: inner }) => (inputs === undefined ? { model } : whereStep(model, inner, inputs)),
+		GotWhereField: ({ message: inner }) =>
+			inputs === undefined ? { model } : whereStep(model, inner, inputs),
 	})

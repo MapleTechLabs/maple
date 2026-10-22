@@ -58,7 +58,14 @@ const issueLine = (h: H, issue: Issue, clock: Clock): Html =>
 					[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
 					[formatNumber(issue.occurrenceCount), "×"],
 				),
-				relativeTime(h, { value: issue.lastSeenAt, ...clock, variant: "orDate", mono: true, tooltip: "title", className: "w-14 text-right text-xs text-muted-foreground/70" }),
+				relativeTime(h, {
+					value: issue.lastSeenAt,
+					...clock,
+					variant: "orDate",
+					mono: true,
+					tooltip: "title",
+					className: "w-14 text-right text-xs text-muted-foreground/70",
+				}),
 			],
 		),
 	})
@@ -153,7 +160,14 @@ const rowMeta = (
 ): ReadonlyArray<Html> => [
 	...prefix,
 	h.span([h.Class("shrink-0 tabular-nums")], [formatNumber(deploy.spanCount), " spans"]),
-	relativeTime(h, { value: deploy.firstSeen, ...clock, variant: "orDate", mono: true, tooltip: "title", className: "ml-auto shrink-0 cursor-default text-muted-foreground/70" }),
+	relativeTime(h, {
+		value: deploy.firstSeen,
+		...clock,
+		variant: "orDate",
+		mono: true,
+		tooltip: "title",
+		className: "ml-auto shrink-0 cursor-default text-muted-foreground/70",
+	}),
 ]
 
 const blankAvatar = (h: H): Html => h.span([h.Class("block size-5 rounded-full bg-muted")])

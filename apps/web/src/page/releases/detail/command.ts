@@ -47,7 +47,8 @@ export const FetchReleaseCommit = Command.define("FetchReleaseCommit", {
 /** `getReleasesResultAtom({ startTime, endTime, environments })` with the pin: the list's unfiltered read. */
 export const FetchDeployReleases = Command.define("FetchDeployReleases", {
 	args: {
-		key: Schema.String, refresh: Schema.Boolean,
+		key: Schema.String,
+		refresh: Schema.Boolean,
 		startTime: Schema.String,
 		endTime: Schema.String,
 		environments: Schema.optional(Schema.Array(Schema.String)),
@@ -106,7 +107,8 @@ export const FetchDeployIssues = Command.define("FetchDeployIssues", {
 /** `getReleaseDetailResultAtom`: this version on one service, and the version it replaced. */
 export const FetchReleaseDetail = Command.define("FetchReleaseDetail", {
 	args: {
-		key: Schema.String, refresh: Schema.Boolean,
+		key: Schema.String,
+		refresh: Schema.Boolean,
 		serviceName: Schema.String,
 		commitSha: Schema.String,
 		baselineCommitSha: Schema.UndefinedOr(Schema.String),

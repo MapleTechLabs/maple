@@ -106,7 +106,12 @@ const panelOf = (h: H, model: Model, log: LogRecord, timeZone: string) => (value
 					slotId: `${model.id}-infra-panel`,
 					model: model.infra,
 					view: InfraCorrelation.view,
-					viewInputs: { resourceAttributes: log.resourceAttributes, anchor: log.timestamp, spanDurationMs: 0, timeZone },
+					viewInputs: {
+						resourceAttributes: log.resourceAttributes,
+						anchor: log.timestamp,
+						spanDurationMs: 0,
+						timeZone,
+					},
 					toParentMessage: (message) => Message.GotInfraMessage({ message }),
 				}),
 			)

@@ -11,7 +11,11 @@ export const ListRequest = Schema.Struct({
 	search: Schema.optional(Schema.String),
 	...Window,
 })
-export const SummaryRequest = Schema.Struct({ key: Schema.String, service: Schema.optional(Schema.String), ...Window })
+export const SummaryRequest = Schema.Struct({
+	key: Schema.String,
+	service: Schema.optional(Schema.String),
+	...Window,
+})
 export const SparklinesRequest = Schema.Struct({
 	key: Schema.String,
 	groups: Schema.Array(SparklineGroup),

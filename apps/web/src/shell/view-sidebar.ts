@@ -150,22 +150,49 @@ const clerkOrgSwitcher = (h: HtmlBuilder<Message>, model: Model, clerk: ShellCle
 						withTrigger(
 							sidebarMenuButton(
 								h,
-								{ size: "lg", className: OPEN_STATE, slot: "dropdown-menu-trigger", attributes: trigger },
+								{
+									size: "lg",
+									className: OPEN_STATE,
+									slot: "dropdown-menu-trigger",
+									attributes: trigger,
+								},
 								[
-									orgAvatar(h, orgName, undefined, Option.match(clerk.maybeOrganization, { onNone: () => "", onSome: (org) => org.imageUrl })),
+									orgAvatar(
+										h,
+										orgName,
+										undefined,
+										Option.match(clerk.maybeOrganization, {
+											onNone: () => "",
+											onSome: (org) => org.imageUrl,
+										}),
+									),
 									h.div(
 										[h.Class("grid flex-1 text-left text-sm leading-tight")],
 										[
-											h.span([h.Class("truncate font-medium"), h.Title(orgName)], [orgName]),
+											h.span(
+												[h.Class("truncate font-medium"), h.Title(orgName)],
+												[orgName],
+											),
 											Option.match(pinned, {
 												onNone: () =>
-													h.span([h.Class("truncate text-xs text-muted-foreground")], regionSuffix === "" ? ["Organization"] : ["Organization", regionSuffix]),
+													h.span(
+														[h.Class("truncate text-xs text-muted-foreground")],
+														regionSuffix === ""
+															? ["Organization"]
+															: ["Organization", regionSuffix],
+													),
 												onSome: (namespace) =>
 													h.span(
 														[h.Class("truncate text-xs")],
 														[
-															h.span([h.Class("font-medium text-primary")], [namespace]),
-															h.span([h.Class("text-muted-foreground")], [regionSuffix]),
+															h.span(
+																[h.Class("font-medium text-primary")],
+																[namespace],
+															),
+															h.span(
+																[h.Class("text-muted-foreground")],
+																[regionSuffix],
+															),
 														],
 													),
 											}),
@@ -188,13 +215,21 @@ export const shellSidebarHeader = (
 	clerk: ShellClerk | null,
 	tip: RailTip = NO_TIP,
 ): Html =>
-	sidebarHeader(h, [clerk === null ? orgSwitcher(h, model) : clerkOrgSwitcher(h, model, clerk), searchRow(h, tip)])
+	sidebarHeader(h, [
+		clerk === null ? orgSwitcher(h, model) : clerkOrgSwitcher(h, model, clerk),
+		searchRow(h, tip),
+	])
 // FOOTER
 
 const footerNavRow = (
 	h: HtmlBuilder<Message>,
 	currentPath: string,
-	options: Readonly<{ href: string; title: string; icon: "ConnectionIcon" | "GearIcon"; alsoActive?: string }>,
+	options: Readonly<{
+		href: string
+		title: string
+		icon: "ConnectionIcon" | "GearIcon"
+		alsoActive?: string
+	}>,
 	tip: RailTip,
 ): Html =>
 	sidebarMenuItem(h, undefined, [
@@ -202,9 +237,10 @@ const footerNavRow = (
 			h,
 			{
 				className: ACTIVE_RAIL,
-				isActive: [options.href, ...(options.alsoActive === undefined ? [] : [options.alsoActive])].some(
-					(path) => currentPath === path || currentPath.startsWith(`${path}/`),
-				),
+				isActive: [
+					options.href,
+					...(options.alsoActive === undefined ? [] : [options.alsoActive]),
+				].some((path) => currentPath === path || currentPath.startsWith(`${path}/`)),
 				link: { href: options.href, currentPath },
 				hasTooltip: true,
 				attributes: tip(options.title),
@@ -241,7 +277,8 @@ export const userNameOf = (clerk: ShellClerk | null): string =>
 				onSome: (user) => user.fullName ?? user.email ?? "User",
 			})
 
-const initialsOf = (clerk: ShellClerk | null): string => (clerk === null ? "RT" : initialsFrom(userNameOf(clerk)))
+const initialsOf = (clerk: ShellClerk | null): string =>
+	clerk === null ? "RT" : initialsFrom(userNameOf(clerk))
 
 /** `user.imageUrl`, empty without a Clerk user. */
 export const userImageOf = (clerk: ShellClerk | null): string =>
@@ -306,7 +343,20 @@ export const shellSidebarFooter = (
 			),
 			footerNavRow(h, currentPath, { href: "/settings", title: "Settings", icon: "GearIcon" }, tip),
 		]),
-		h.div([h.Class("-mx-2 border-sidebar-border border-t px-2 pt-2")], [footerCluster(h, model, userAvatar(h, initialsOf(clerk), undefined, { url: userImageOf(clerk), label: userNameOf(clerk) }), userNameOf(clerk))]),
+		h.div(
+			[h.Class("-mx-2 border-sidebar-border border-t px-2 pt-2")],
+			[
+				footerCluster(
+					h,
+					model,
+					userAvatar(h, initialsOf(clerk), undefined, {
+						url: userImageOf(clerk),
+						label: userNameOf(clerk),
+					}),
+					userNameOf(clerk),
+				),
+			],
+		),
 	])
 
 /** `Code Review`'s "Beta" tag. */

@@ -28,10 +28,12 @@ const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 const RULE = Schema.decodeSync(AlertRuleId)(ruleId(2))
 const window = { startTime: "2026-09-30 12:00:00", endTime: "2026-10-01 12:00:00" }
-const themeResolved = () => Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
+const themeResolved = () =>
+	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
 const route = (search: Model["search"] = {}) => ({ _tag: "AlertRule" as const, ruleId: RULE, search })
 
@@ -53,7 +55,13 @@ const firstPage = (nextCursor: string) => ({
 	summary: { bucketSeconds: 60, totals, points: [] },
 })
 const withChecks = (model: Model, cursor: string) =>
-	pageUpdate(model, Message.CompletedFetchChecks({ key: model.checks.key ?? "", result: Result.succeed(firstPage(cursor)) })).model
+	pageUpdate(
+		model,
+		Message.CompletedFetchChecks({
+			key: model.checks.key ?? "",
+			result: Result.succeed(firstPage(cursor)),
+		}),
+	).model
 
 describe("alert rule", () => {
 	test("load more answers only its own window: a new window's panel starts over with its own cursor", () => {
@@ -62,14 +70,25 @@ describe("alert rule", () => {
 		expect(loading.commands?.[0]?.args).toMatchObject({ cursor: "cursor-a" })
 		expect(pageUpdate(loading.model, Message.ClickedLoadMoreChecks()).commands ?? []).toEqual([])
 		const nextWindow = { startTime: "2026-09-30 13:00:00", endTime: "2026-10-01 13:00:00" }
-		const moved = pageUpdate(loading.model, Message.CompletedResolveWindow({ window: nextWindow, nowMs: NOW, mode: "Load" })).model
+		const moved = pageUpdate(
+			loading.model,
+			Message.CompletedResolveWindow({ window: nextWindow, nowMs: NOW, mode: "Load" }),
+		).model
 		expect(pageUpdate(moved, Message.ClickedLoadMoreChecks()).commands ?? []).toEqual([])
-		const generation = loading.commands?.[0]?.args !== undefined && "generation" in loading.commands[0].args ? Number(loading.commands[0].args.generation) : 0
-		const late = Message.CompletedLoadMoreChecks({ generation, result: Result.succeed({ checks: [], nextCursor: "cursor-a2" }) })
+		const generation =
+			loading.commands?.[0]?.args !== undefined && "generation" in loading.commands[0].args
+				? Number(loading.commands[0].args.generation)
+				: 0
+		const late = Message.CompletedLoadMoreChecks({
+			generation,
+			result: Result.succeed({ checks: [], nextCursor: "cursor-a2" }),
+		})
 		const dropped = pageUpdate(moved, late).model
 		expect(dropped.nextCursorOverride).toBeUndefined()
 		const fresh = withChecks(dropped, "cursor-b")
-		expect(pageUpdate(fresh, Message.ClickedLoadMoreChecks()).commands?.[0]?.args).toMatchObject({ cursor: "cursor-b" })
+		expect(pageUpdate(fresh, Message.ClickedLoadMoreChecks()).commands?.[0]?.args).toMatchObject({
+			cursor: "cursor-b",
+		})
 	})
 
 	test("entry resolves the window; the checks and the preview follow the window and the rule", () => {
@@ -92,7 +111,10 @@ describe("alert rule", () => {
 		const model = loaded()
 		const failed = pageUpdate(
 			model,
-			Message.CompletedFetchChecks({ key: model.checks.key ?? "", result: Result.fail(toLoadFailure(new Error("x"))) }),
+			Message.CompletedFetchChecks({
+				key: model.checks.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("x"))),
+			}),
 		).model
 		expect(
 			names(pageUpdate(failed, Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2)] })).commands),
@@ -123,12 +145,22 @@ describe("alert rule", () => {
 		expect(tabbed.commands ?? []).toEqual([])
 		expect(tabbed.model.search).toEqual({ tab: "history" })
 		const moved = routeChanged(tabbed.model, route({ tab: "history", timePreset: "1h" }), context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([["ResolveAlertRuleWindow", "Refresh"]])
+		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+			["ResolveAlertRuleWindow", "Refresh"],
+		])
 	})
 
 	test("an unknown rule says so", () => {
-		const model = pageUpdate(init(route(), context).model, Message.UpdatedRules({ orgId: ORG, rows: [] })).model
-		scene({ update: pageUpdate, view }, given(model), themeResolved(), expectView(text("Rule not found")).toExist())
+		const model = pageUpdate(
+			init(route(), context).model,
+			Message.UpdatedRules({ orgId: ORG, rows: [] }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			themeResolved(),
+			expectView(text("Rule not found")).toExist(),
+		)
 	})
 
 	test("a disabled rule's diagnosis offers Enable, which PATCHes the rule once", () => {
@@ -138,7 +170,10 @@ describe("alert rule", () => {
 			given(model),
 			themeResolved(),
 			click(role("button", { name: "Enable rule" })),
-			Command.resolve(ToggleRuleEnabled, Message.CompletedToggleEnabled({ result: Result.succeed(undefined) })),
+			Command.resolve(
+				ToggleRuleEnabled,
+				Message.CompletedToggleEnabled({ result: Result.succeed(undefined) }),
+			),
 		)
 		const toggling = pageUpdate(model, Message.ClickedToggleEnabled())
 		expect(names(toggling.commands)).toEqual(["ToggleAlertRuleEnabled"])
@@ -150,13 +185,22 @@ describe("alert rule", () => {
 		const first = pageUpdate(model, Message.ClickedRailBucket({ index: 3 }))
 		expect(names(first.commands)).toEqual(["FetchAlertRuleBucketChecks"])
 		const second = pageUpdate(first.model, Message.ClickedRailBucket({ index: 4 })).model
-		const stale = pageUpdate(second, Message.CompletedFetchBucketChecks({ request: first.model.bucketRequest, result: Result.succeed([]) }))
+		const stale = pageUpdate(
+			second,
+			Message.CompletedFetchBucketChecks({
+				request: first.model.bucketRequest,
+				result: Result.succeed([]),
+			}),
+		)
 		expect(stale.model.isBucketLoading).toBe(true)
 		expect(pageUpdate(second, Message.ClickedClearBucket()).model.selectedBucket).toBeNull()
 	})
 
 	test("the History filter and the incident menu", () => {
-		const withIncident = pageUpdate(loaded({ tab: "history" }), Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] })).model
+		const withIncident = pageUpdate(
+			loaded({ tab: "history" }),
+			Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] }),
+		).model
 		scene(
 			{ update: pageUpdate, view },
 			given(withIncident),
@@ -165,10 +209,15 @@ describe("alert rule", () => {
 			click(role("button", { name: "Resolved" })),
 			expectView(text("No incidents")).toExist(),
 		)
-		const viewAll = pageUpdate(withIncident, Message.GotRowMenuMessage({
-			menuId: `incident:${incidentRow().id}`,
-			message: Menu.Message.ClickedItem({ index: 1, item: { kind: "Item", value: "all" } }),
-		}))
-		expect(viewAll.outMessage).toEqual(PageOutMessage.RequestedNavigation({ url: "/alerts?tab=overview", isReplace: false }))
+		const viewAll = pageUpdate(
+			withIncident,
+			Message.GotRowMenuMessage({
+				menuId: `incident:${incidentRow().id}`,
+				message: Menu.Message.ClickedItem({ index: 1, item: { kind: "Item", value: "all" } }),
+			}),
+		)
+		expect(viewAll.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/alerts?tab=overview", isReplace: false }),
+		)
 	})
 })

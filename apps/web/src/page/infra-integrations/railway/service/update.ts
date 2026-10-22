@@ -107,10 +107,14 @@ const searchHref = (model: Model, search: Search) =>
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	if (searchHref(model, model.search) === searchHref(model, route.search)) return { model }
 	const next = { ...model, search: route.search }
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	return routeWindowStep(model.search, route.search, {
 		resolve,
-		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+		requestAll: (mode) =>
+			next.window === null ? resolve() : requestAll(next, context, next.window, mode),
 	})
 }
 

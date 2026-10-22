@@ -326,6 +326,33 @@ describe("supabase card", () => {
 					name: "storefront already sends logs to Maple through the drain maple by hand",
 				}),
 			).toBeDisabled(),
+			// Polling that is already on can still be turned off.
+			expectView(role("switch", { name: "Collect logs for storefront" })).toBeEnabled(),
+		)
+	})
+
+	test("next to a hand-made Maple drain, polling cannot be turned on", () => {
+		const withManual = status({
+			projects: [
+				{
+					...status().projects[0],
+					logsEnabled: false,
+					logDrains: [
+						{
+							id: "drain-manual",
+							name: "maple by hand",
+							backendType: "otlp",
+							destination: "ingest.maple.dev",
+							toMaple: true,
+							managedByMaple: false,
+						},
+					],
+				},
+			],
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus(withManual)),
 			expectView(role("switch", { name: "Collect logs for storefront" })).toBeDisabled(),
 		)
 	})

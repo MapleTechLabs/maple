@@ -13,9 +13,12 @@ import { taskOf } from "./fold"
 // The chat transport: Maple's durable chat session at
 // `/api/chat/sessions/<orgId>:<tabId>`. Raw routes, so plain requests with the session bearer.
 
-export class ChatRequestError extends Schema.TaggedError<ChatRequestError>()("@maple/web/chat/ChatRequestError", {
-	message: Schema.String,
-}) {}
+export class ChatRequestError extends Schema.TaggedError<ChatRequestError>()(
+	"@maple/web/chat/ChatRequestError",
+	{
+		message: Schema.String,
+	},
+) {}
 
 /** A send the server refused because the conversation already has a turn in flight. */
 export const TURN_IN_FLIGHT_MESSAGE =
@@ -85,7 +88,8 @@ export type TailOutput =
 	| { readonly _tag: "Events"; readonly events: ReadonlyArray<ChatEvent> }
 	| { readonly _tag: "Failed"; readonly message: string }
 
-const isTopLevelTurnEnd = (event: ChatEvent): boolean => event.type === "turn-end" && taskOf(event) === undefined
+const isTopLevelTurnEnd = (event: ChatEvent): boolean =>
+	event.type === "turn-end" && taskOf(event) === undefined
 
 /**
  * `GET .../events?cursor=`, read as SSE frames until the top-level `turn-end`. A clean EOF without
@@ -93,20 +97,27 @@ const isTopLevelTurnEnd = (event: ChatEvent): boolean => event.type === "turn-en
  * delivered events. A dropped or empty connection retries with a 300 ms × n backoff,
  * `MAX_STREAM_RETRIES` times in a row.
  */
-export const tailEvents = (sessionId: string, cursor: number): Stream.Stream<TailOutput, never, MapleSyncHttpClient> =>
+export const tailEvents = (
+	sessionId: string,
+	cursor: number,
+): Stream.Stream<TailOutput, never, MapleSyncHttpClient> =>
 	Stream.unwrap(
 		Effect.gen(function* () {
 			const seq = yield* Ref.make(cursor)
 			const ended = yield* Ref.make(false)
-			const retry = (failures: number, message: string): Stream.Stream<TailOutput, never, MapleSyncHttpClient> =>
+			const retry = (
+				failures: number,
+				message: string,
+			): Stream.Stream<TailOutput, never, MapleSyncHttpClient> =>
 				failures + 1 > MAX_STREAM_RETRIES
 					? Stream.succeed<TailOutput>({ _tag: "Failed", message })
 					: Stream.unwrap(Effect.as(Effect.sleep(300 * (failures + 1)), connection(failures + 1)))
 			const connection = (failures: number): Stream.Stream<TailOutput, never, MapleSyncHttpClient> =>
 				Stream.unwrap(
 					// When the response arrived; a close before it counts as quick.
-					Effect.map(Effect.all([Ref.get(seq), Ref.make(Number.POSITIVE_INFINITY)]), ([from, openedAt]) =>
-						attempt(from, failures, openedAt),
+					Effect.map(
+						Effect.all([Ref.get(seq), Ref.make(Number.POSITIVE_INFINITY)]),
+						([from, openedAt]) => attempt(from, failures, openedAt),
 					),
 				)
 			const attempt = (
@@ -135,7 +146,11 @@ export const tailEvents = (sessionId: string, cursor: number): Stream.Stream<Tai
 							),
 							Stream.map((frames) =>
 								frames.flatMap((frame) =>
-									Option.toArray(Option.flatMap(frameData(frame), (data) => Option.fromNullishOr(decodeChatEvent(data)))),
+									Option.toArray(
+										Option.flatMap(frameData(frame), (data) =>
+											Option.fromNullishOr(decodeChatEvent(data)),
+										),
+									),
 								),
 							),
 							Stream.filter((events) => events.length > 0),
@@ -170,7 +185,10 @@ export const tailEvents = (sessionId: string, cursor: number): Stream.Stream<Tai
 						),
 					),
 					Stream.catch((error) =>
-						retry(failures, error instanceof ChatRequestError ? error.message : "Lost connection to chat."),
+						retry(
+							failures,
+							error instanceof ChatRequestError ? error.message : "Lost connection to chat.",
+						),
 					),
 				)
 			return connection(0)

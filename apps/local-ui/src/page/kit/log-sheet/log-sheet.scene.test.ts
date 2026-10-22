@@ -3,7 +3,17 @@ import { Option } from "effect"
 import * as Dialog from "@maple/web/ui/dialog"
 import * as Tabs from "@maple/web/ui/tabs"
 import * as Tooltip from "@maple/web/ui/tooltip"
-import { Command, expect as expectView, given, hover, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	Command,
+	expect as expectView,
+	given,
+	hover,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { Message } from "./message"
 import type { LocalLog } from "./model"
@@ -32,7 +42,10 @@ const view = withViewInputs(sheetView, { timeFormat: { locale: "en-US", timeZone
 
 describe("log detail sheet", () => {
 	test("an ERROR log shows the error banner with the exception message and type", () => {
-		const opened = openLog(Option.none(), log("ERROR", { "exception.message": "timeout after 30s", "exception.type": "PoolTimeout" }))
+		const opened = openLog(
+			Option.none(),
+			log("ERROR", { "exception.message": "timeout after 30s", "exception.type": "PoolTimeout" }),
+		)
 		expect(isOpen(opened.model)).toBe(true)
 		scene(
 			{ update, view },
@@ -45,7 +58,12 @@ describe("log detail sheet", () => {
 	})
 
 	test("an INFO log has no banner", () => {
-		scene({ update, view }, given(openLog(Option.none(), log("INFO")).model), ...mounted, expectView(role("button", { name: "Copy error message" })).not.toExist())
+		scene(
+			{ update, view },
+			given(openLog(Option.none(), log("INFO")).model),
+			...mounted,
+			expectView(role("button", { name: "Copy error message" })).not.toExist(),
+		)
 	})
 
 	test("resting on the Log JSON copy button opens its tooltip", () => {
@@ -56,8 +74,14 @@ describe("log detail sheet", () => {
 			hover(role("button", { name: "Copy Log JSON" })),
 			Command.resolve(Tooltip.WaitOpenDelay, Tooltip.Message.ElapsedOpenDelay({ generation: 1 })),
 			Mount.resolve(Tooltip.MountTooltip, Tooltip.Message.CompletedMountTooltip()),
-			Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })),
-			Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation: 1 })),
+			Command.resolve(
+				Animation.WaitForPaint,
+				Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+			),
+			Command.resolve(
+				Animation.WaitForAnimationSettled,
+				Animation.Message.EndedAnimation({ generation: 1 }),
+			),
 			expectView(text("Copy Log JSON")).toExist(),
 		)
 	})

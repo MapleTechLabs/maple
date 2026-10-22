@@ -150,7 +150,11 @@ const OLDEST_VERSION =
 	"This is the oldest version of the service in the window, so there is nothing to compare against. Widen the time range to include the version it replaced."
 
 /** `ReleaseComparison`: this version against the one it replaced on the same service. */
-export const releaseComparison = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceImpact, overlays: Overlays<M>): Html => {
+export const releaseComparison = <M>(
+	h: HtmlBuilder<M>,
+	impact: ReleaseServiceImpact,
+	overlays: Overlays<M>,
+): Html => {
 	const { baseline } = impact
 	const isComparable =
 		baseline !== undefined &&
@@ -159,10 +163,14 @@ export const releaseComparison = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceIm
 	const action =
 		baseline === undefined
 			? h.span([h.Class("text-2xs text-muted-foreground/70")], ["no previous version"])
-			: commitTrigger(h, overlays, "release-replaced", baseline.commitSha, "font-mono text-2xs text-muted-foreground", [
-					"replaced ",
-					shortReleaseLabel(baseline.commitSha),
-				])
+			: commitTrigger(
+					h,
+					overlays,
+					"release-replaced",
+					baseline.commitSha,
+					"font-mono text-2xs text-muted-foreground",
+					["replaced ", shortReleaseLabel(baseline.commitSha)],
+				)
 	return sectionCard(h, { title: "This version vs. the previous one", action }, [
 		baseline === undefined
 			? emptyMessage(h, {}, [OLDEST_VERSION])

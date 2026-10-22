@@ -148,9 +148,7 @@ export function TraceFlowView({
 	)
 
 	if (rootSpans.length === 0) {
-		return (
-			<EmptyMessage className="border p-8 text-sm">No spans found for this trace</EmptyMessage>
-		)
+		return <EmptyMessage className="border p-8 text-sm">No spans found for this trace</EmptyMessage>
 	}
 
 	if (nodeCount > MAX_FLOW_NODES) {

@@ -203,7 +203,7 @@ is one row per (visitor,user) pair.
 `web_events` references; the page-view queries move here unchanged):
 
 - `productEventsFunnelQuery({ steps, keyBy: "person" | "visitor" | "user" | "session",
-windowSeconds, filters })` → per-step `count`, `conversion_from_prev`, `conversion_from_first`.
+  windowSeconds, filters })` → per-step `count`, `conversion_from_prev`, `conversion_from_first`.
   Step = `{ eventName } | { pagePath, host? } | { referrerHost | utmSource | ... }`. A
   session-dimension step (referral) becomes step 0's condition through the person's first
   `session_replays` row; event steps are `EventName = …` conditions on `product_events`.

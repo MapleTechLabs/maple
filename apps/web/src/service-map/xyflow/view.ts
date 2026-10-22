@@ -145,12 +145,7 @@ export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Htm
 					h.Style(FILL),
 					h.Attribute(MEASURE_EPOCH_ATTRIBUTE, String(canvas.model.measureEpoch)),
 					h.Attribute(LIMITS_ATTRIBUTE, limitsAttribute(limitsOf(canvas))),
-					h.OnMount(
-						Mount.mapMessage(
-							AttachFlowCanvas(limitsOf(canvas)),
-							canvas.toMessage,
-						),
-					),
+					h.OnMount(Mount.mapMessage(AttachFlowCanvas(limitsOf(canvas)), canvas.toMessage)),
 				],
 				[
 					h.div(
@@ -167,7 +162,10 @@ export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Htm
 								],
 								[
 									canvas.edges,
-									h.div([h.Class("react-flow__edgelabel-renderer")], canvas.edgeLabels ?? []),
+									h.div(
+										[h.Class("react-flow__edgelabel-renderer")],
+										canvas.edgeLabels ?? [],
+									),
 									canvas.nodes,
 									h.div([
 										h.Class("react-flow__viewport-portal"),

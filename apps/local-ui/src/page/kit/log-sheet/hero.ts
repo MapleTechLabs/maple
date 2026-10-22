@@ -18,7 +18,9 @@ const severityBadge = (h: HtmlBuilder<Message>, label: string): Html => {
 		{
 			variant: "secondary",
 			className: "font-mono text-3xs uppercase",
-			attributes: [h.Style({ color, "background-color": `color-mix(in oklch, ${color} 10%, transparent)` })],
+			attributes: [
+				h.Style({ color, "background-color": `color-mix(in oklch, ${color} 10%, transparent)` }),
+			],
 		},
 		[label],
 	)
@@ -27,11 +29,25 @@ const severityBadge = (h: HtmlBuilder<Message>, label: string): Html => {
 const message = (h: HtmlBuilder<Message>, hero: ReturnType<typeof heroBody>, isClamped: boolean): Html =>
 	hero.isJson
 		? h.pre(
-				[h.Class(cn("font-mono text-ui leading-relaxed whitespace-pre-wrap break-words", isClamped && "line-clamp-6"))],
+				[
+					h.Class(
+						cn(
+							"font-mono text-ui leading-relaxed whitespace-pre-wrap break-words",
+							isClamped && "line-clamp-6",
+						),
+					),
+				],
 				[h.code([h.InnerHTML(highlightJson(hero.formatted))], [])],
 			)
 		: h.p(
-				[h.Class(cn("font-mono text-sm leading-relaxed whitespace-pre-wrap break-words", isClamped && "line-clamp-4"))],
+				[
+					h.Class(
+						cn(
+							"font-mono text-sm leading-relaxed whitespace-pre-wrap break-words",
+							isClamped && "line-clamp-4",
+						),
+					),
+				],
 				[hero.body],
 			)
 
@@ -50,7 +66,9 @@ export const heroHeader = (h: HtmlBuilder<Message>, model: Model): Html => {
 					severityBadge(h, severity),
 					badge(h, { variant: "outline", size: "xs", mono: true }, [
 						serviceDot(h, { serviceName: log.serviceName, size: "sm" }),
-						copyableValue(h, model.copies, { id: "detail-service", value: log.serviceName }, [log.serviceName]),
+						copyableValue(h, model.copies, { id: "detail-service", value: log.serviceName }, [
+							log.serviceName,
+						]),
 					]),
 					button(
 						h,
@@ -82,7 +100,9 @@ export const heroHeader = (h: HtmlBuilder<Message>, model: Model): Html => {
 									],
 									[
 										model.isBodyExpanded ? "Show less" : "Show full message",
-										icon(h, model.isBodyExpanded ? "ChevronUpIcon" : "ChevronDownIcon", { size: 10 }),
+										icon(h, model.isBodyExpanded ? "ChevronUpIcon" : "ChevronDownIcon", {
+											size: 10,
+										}),
 									],
 								),
 							]

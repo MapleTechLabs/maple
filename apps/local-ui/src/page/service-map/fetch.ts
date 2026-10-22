@@ -15,7 +15,11 @@ export const fetchServiceMap = (bounds: TimeBounds, durationSeconds: number, api
 		const [edgeRows, dbEdgeRows, overviewRows, platformRows] = yield* Effect.all(
 			[
 				queryRows(
-					CH.serviceMapEdgesRollupSQL({ orgId: LOCAL_ORG_ID, hourStart: bounds.startTime, hourEnd: bounds.endTime }),
+					CH.serviceMapEdgesRollupSQL({
+						orgId: LOCAL_ORG_ID,
+						hourStart: bounds.startTime,
+						hourEnd: bounds.endTime,
+					}),
 					apiBase,
 				),
 				queryRows(CH.serviceDbEdgesSQL({}, params), apiBase),
@@ -24,9 +28,13 @@ export const fetchServiceMap = (bounds: TimeBounds, durationSeconds: number, api
 			],
 			{ concurrency: "unbounded" },
 		)
-		const platforms = new Map(platformRows.map((row) => [row.serviceName, classifyPlatform(row)] as const))
+		const platforms = new Map(
+			platformRows.map((row) => [row.serviceName, classifyPlatform(row)] as const),
+		)
 		const runtimes = new Map(
-			platformRows.flatMap((row) => (row.processRuntimeName ? [[row.serviceName, row.processRuntimeName] as const] : [])),
+			platformRows.flatMap((row) =>
+				row.processRuntimeName ? [[row.serviceName, row.processRuntimeName] as const] : [],
+			),
 		)
 		const data: LocalServiceMapData = {
 			edges: aggregateEdges(edgeRows, durationSeconds),

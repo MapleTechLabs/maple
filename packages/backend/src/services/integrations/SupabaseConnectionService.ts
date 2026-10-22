@@ -945,11 +945,40 @@ export class SupabaseConnectionService extends Context.Service<
 							existing !== undefined && existing.supabaseOrganizationId !== organization.id
 						// The old organization's projects are no longer granted.
 						if (organizationChanged) {
+							// The new grant cannot reach the old organization's drains, so their token sources
+							// go instead: ingest then refuses whatever those drains still send.
+							const drained = yield* db.run(
+								PG.from(SupabaseProjects)
+									.select("logDrainSourceId")
+									.where(($) => [
+										$.connectionId.eq(existing.id),
+										$.logDrainSourceId.isNotNull(),
+									]),
+							)
 							yield* db.run(
 								PG.update(SupabaseProjects)
-									.set({ removedAt: now, updatedAt: now })
+									.set({
+										removedAt: now,
+										updatedAt: now,
+										logDrainEnabled: false,
+										logDrainId: null,
+										logDrainSourceId: null,
+										logDrainError: null,
+									})
 									.where(($) => [$.connectionId.eq(existing.id), $.removedAt.isNull()]),
 							)
+							const drainSourceIds = drained.flatMap((row) =>
+								row.logDrainSourceId === null ? [] : [row.logDrainSourceId],
+							)
+							if (drainSourceIds.length > 0) {
+								yield* db.run(
+									PG.deleteFrom(Sources).where(($) => [
+										$.orgId.eq(orgId),
+										PG.inList($.id, drainSourceIds),
+										$.kind.eq("token"),
+									]),
+								)
+							}
 						}
 						const rebind = { ...binding, lastDiscoveryError: null, updatedAt: now }
 						const connection = yield* upsertWithSource(

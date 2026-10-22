@@ -42,7 +42,13 @@ const opened = () =>
 		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
 	])
 
-const slotOf = (model: Model): PageSlot => ({ _tag: "DashboardWidget", key: "dash_leave/note", orgId, instance: 1, model })
+const slotOf = (model: Model): PageSlot => ({
+	_tag: "DashboardWidget",
+	key: "dash_leave/note",
+	orgId,
+	instance: 1,
+	model,
+})
 const away = AppRoute.Services({ search: {} })
 const isHeld = (model: Model, route: AppRoute = away) =>
 	Option.isSome(blockNavigation(slotOf(model), route, "/services", context))

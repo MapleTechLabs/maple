@@ -687,6 +687,29 @@ describe("SupabaseConnectionService log drains", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, fake)))
 	})
 
+	it.effect("reconnecting to another organization revokes the old projects' drain sources", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)] })
+		return Effect.gen(function* () {
+			const service = yield* SupabaseConnectionService
+			yield* connect(fake)
+			yield* service.updateProject(ORG, USER, asRef(REF_A), { logDrainEnabled: true })
+			assert.strictEqual(yield* tokenSourceCount(testDb), 1)
+
+			const other = { id: "otherorgidotherorgid", slug: "otherorg", name: "Other" }
+			fake.state.organizations = [other]
+			fake.state.projects = []
+			yield* TestClock.adjust("1 minute")
+			yield* finalize(fake)
+			assert.strictEqual(yield* tokenSourceCount(testDb), 0)
+			const row = yield* drainRow(testDb, REF_A)
+			assert.deepStrictEqual(
+				[row?.log_drain_enabled, row?.log_drain_id, row?.log_drain_source_id],
+				[false, null, null],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, fake)))
+	})
+
 	it.effect("asking for a drain and polling at once is refused", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fake = makeFakeSupabase({ projects: [fakeProject(REF_A)] })

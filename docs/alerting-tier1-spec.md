@@ -34,18 +34,21 @@ New struct in `packages/domain/src/http/alerts.ts`:
 
 ```ts
 export const AlertThreshold = Schema.Struct({
-  severity: AlertSeverity,                       // "warning" | "critical"
-  value: Schema.Number,
-  upper: Schema.optionalKey(Schema.NullOr(Schema.Number)),         // range comparators only
-  recoveryValue: Schema.optionalKey(Schema.NullOr(Schema.Number)), // null = recover when no longer breaching
-  destinationIds: Schema.Array(AlertDestinationId),
+	severity: AlertSeverity, // "warning" | "critical"
+	value: Schema.Number,
+	upper: Schema.optionalKey(Schema.NullOr(Schema.Number)), // range comparators only
+	recoveryValue: Schema.optionalKey(Schema.NullOr(Schema.Number)), // null = recover when no longer breaching
+	destinationIds: Schema.Array(AlertDestinationId),
 })
 
-export const AlertThresholds = Schema.Array(AlertThreshold).check(Schema.isMinLength(1), Schema.isMaxLength(2))
+export const AlertThresholds = Schema.Array(AlertThreshold).check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(2),
+)
 
 export const AlertCompareTo = Schema.Struct({
-  offsetMinutes: Schema.Literals([60, 1440, 10080]),   // 1h, 1d, 7d
-  mode: Schema.Literals(["percent", "absolute"]),
+	offsetMinutes: Schema.Literals([60, 1440, 10080]), // 1h, 1d, 7d
+	mode: Schema.Literals(["percent", "absolute"]),
 })
 ```
 
@@ -78,11 +81,11 @@ Validation (upsert boundary, as `AlertValidationError` so bad input is a 400):
 
 `alert_rules` (additive migration first, see Rollout):
 
-| column | type | notes |
-|---|---|---|
+| column            | type             | notes                                                           |
+| ----------------- | ---------------- | --------------------------------------------------------------- |
 | `thresholds_json` | `jsonb not null` | `AlertThresholds`, schema-typed via `PG.jsonb(AlertThresholds)` |
-| `breaches_out_of` | `int4 null` | M; null = N |
-| `compare_to_json` | `jsonb null` | `AlertCompareTo` |
+| `breaches_out_of` | `int4 null`      | M; null = N                                                     |
+| `compare_to_json` | `jsonb null`     | `AlertCompareTo`                                                |
 
 Backfill in the same migration:
 
@@ -98,10 +101,10 @@ deployed code reads them. To verify before writing it: whether `db:generate` kee
 
 `alert_rule_states` replaces the two counters with a short history:
 
-| column | type | notes |
-|---|---|---|
-| `active_severity` | `text null` | the tier currently active for this group, null when clear |
-| `history` | `int2[] not null default '{}'` | last M ticks, newest last, one code per tick (below) |
+| column            | type                           | notes                                                     |
+| ----------------- | ------------------------------ | --------------------------------------------------------- |
+| `active_severity` | `text null`                    | the tier currently active for this group, null when clear |
+| `history`         | `int2[] not null default '{}'` | last M ticks, newest last, one code per tick (below)      |
 
 Each tick code packs one 2-bit status per tier: `0 = clear`, `1 = hold` (between recovery and trigger),
 `2 = breach`. So `code = warning | critical << 2`. Skipped ticks are **not** appended: as today, they count
@@ -160,12 +163,12 @@ severity, ack and snooze state. Per tier, after appending the tick code and trim
 
 `activeSeverity` is the highest active tier. Transitions:
 
-| from | to | transition | event |
-|---|---|---|---|
-| none | warning/critical | `opened` | `trigger` to that tier's destinations |
-| warning | critical | `escalated` | `escalate` to critical destinations; also clears an ack (new information) |
-| critical | warning | `deescalated` | `deescalate` to the destinations that received critical |
-| any | none | `resolved` | `resolve` to every destination notified during the incident |
+| from     | to               | transition    | event                                                                     |
+| -------- | ---------------- | ------------- | ------------------------------------------------------------------------- |
+| none     | warning/critical | `opened`      | `trigger` to that tier's destinations                                     |
+| warning  | critical         | `escalated`   | `escalate` to critical destinations; also clears an ack (new information) |
+| critical | warning          | `deescalated` | `deescalate` to the destinations that received critical                   |
+| any      | none             | `resolved`    | `resolve` to every destination notified during the incident               |
 
 Everything else carries over unchanged: renotify cadence (sent to the current tier's destinations), flap
 suppression on re-open, the held-incident liveness gate for no-data recovery, and `allowNoDataResolution`.
@@ -252,16 +255,16 @@ Preview: query the range a second time shifted by the offset and align the two s
 
 ### Table `alert_silences` (Electric-published, low write rate)
 
-| column | type | notes |
-|---|---|---|
-| `id` | branded `AlertSilenceId` | |
-| `org_id` | `OrgId` | tenant column |
-| `name` | `text` | shown in UI and on suppressed deliveries |
-| `matchers_json` | `jsonb` | `{ ruleIds?, tags?, groupKeys?, severities? }` |
-| `schedule_json` | `jsonb` | tagged union, below |
-| `mute_resolve` | `bool default false` | also suppress resolve notifications |
-| `created_by`, `created_at`, `updated_at` | | |
-| `cancelled_at` | `timestamptzMillis null` | soft end; cancelled silences stay for audit |
+| column                                   | type                     | notes                                          |
+| ---------------------------------------- | ------------------------ | ---------------------------------------------- |
+| `id`                                     | branded `AlertSilenceId` |                                                |
+| `org_id`                                 | `OrgId`                  | tenant column                                  |
+| `name`                                   | `text`                   | shown in UI and on suppressed deliveries       |
+| `matchers_json`                          | `jsonb`                  | `{ ruleIds?, tags?, groupKeys?, severities? }` |
+| `schedule_json`                          | `jsonb`                  | tagged union, below                            |
+| `mute_resolve`                           | `bool default false`     | also suppress resolve notifications            |
+| `created_by`, `created_at`, `updated_at` |                          |                                                |
+| `cancelled_at`                           | `timestamptzMillis null` | soft end; cancelled silences stay for audit    |
 
 Matching: the fields inside a matcher are ANDed, and the values inside one field are ORed. An empty matcher
 is rejected, so nobody silences the whole org by accident. A whole-org silence must say so explicitly with
@@ -337,18 +340,18 @@ deliveries and holds. Each human action also goes to the org audit log.
 ### API, MCP, web
 
 - v2:
-  - `POST /alert-incidents/{id}/acknowledge`
-  - `/unacknowledge`
-  - `/snooze` `{ until }`
-  - `/unsnooze`
-  - `/resolve` `{ note? }`
-  - Typed errors for "already resolved" and "snooze in the past".
+    - `POST /alert-incidents/{id}/acknowledge`
+    - `/unacknowledge`
+    - `/snooze` `{ until }`
+    - `/unsnooze`
+    - `/resolve` `{ note? }`
+    - Typed errors for "already resolved" and "snooze in the past".
 - MCP:
-  - one `act_on_alert_incident` tool with `action: P.oneOf([...])`.
-  - `create_alert_silence`, `list_alert_silences`, `cancel_alert_silence`.
-  - `create_alert_rule` / `update_alert_rule` take `thresholds`, `compare_to`, `breaches_out_of`.
-  - Output schemas in `packages/domain/src/mcp-outputs/`.
-  - `registry.contract.test.ts` covers the new tools.
+    - one `act_on_alert_incident` tool with `action: P.oneOf([...])`.
+    - `create_alert_silence`, `list_alert_silences`, `cancel_alert_silence`.
+    - `create_alert_rule` / `update_alert_rule` take `thresholds`, `compare_to`, `breaches_out_of`.
+    - Output schemas in `packages/domain/src/mcp-outputs/`.
+    - `registry.contract.test.ts` covers the new tools.
 
 ## 7. Editor and UI
 
@@ -412,13 +415,13 @@ Compare to  [the value ▾ | change vs 1h / 1d / 7d ago]  [% | absolute]
 ## 9. Rollout (PR sequence)
 
 1. **Core + schema.**
-   - alerting-core: `evaluateTieredObservation`, `planTieredLifecycle`, `resolveSilence` (pure), with
-     table-driven tests.
-   - The additive Postgres migration with backfill.
-   - Domain schemas, the evaluator wired to tiers, history, recovery and N-of-M.
-   - `alert_checks` columns, and preview with levels.
-   - The API accepts both shapes. Behaviour for existing rules is identical, and a test pins that: one tier,
-     M = N, no recovery.
+    - alerting-core: `evaluateTieredObservation`, `planTieredLifecycle`, `resolveSilence` (pure), with
+      table-driven tests.
+    - The additive Postgres migration with backfill.
+    - Domain schemas, the evaluator wired to tiers, history, recovery and N-of-M.
+    - `alert_checks` columns, and preview with levels.
+    - The API accepts both shapes. Behaviour for existing rules is identical, and a test pins that: one tier,
+      M = N, no recovery.
 2. **Editor**: tier rows, draggable lines, N-of-M controls, per-tier destinations, MCP params.
 3. **Change conditions**: the second query with its cache, the `no_baseline` skip, preview baseline, the
    compare-to UI.
@@ -433,43 +436,43 @@ PRs 3, 4 and 5 are independent of each other once PR 1 lands.
 ## 10. Tests (behaviour, per test-slop rules)
 
 - alerting-core:
-  - N-of-M opens on the Nth breach inside M, and not on N spread over more than M.
-  - Hold neither resolves nor reopens.
-  - Escalation, de-escalation and resolve orders.
-  - Skipped ticks are not appended.
-  - Saturated history is byte-identical across steady ticks, which keeps the Electric gate.
+    - N-of-M opens on the Nth breach inside M, and not on N spread over more than M.
+    - Hold neither resolves nor reopens.
+    - Escalation, de-escalation and resolve orders.
+    - Skipped ticks are not appended.
+    - Saturated history is byte-identical across steady ticks, which keeps the Electric gate.
 - `AlertsService` with `createTestDb()`:
-  - Fan-out union per severity, sending once to a destination present in both tiers.
-  - Ack stops renotify, and escalation clears ack.
-  - Snooze expiry renotifies.
-  - Manual resolve then re-open is not flap-suppressed.
-  - A silence suppresses delivery and push, the incident is still created, and a trigger is sent when the
-    silence ends.
+    - Fan-out union per severity, sending once to a destination present in both tiers.
+    - Ack stops renotify, and escalation clears ack.
+    - Snooze expiry renotifies.
+    - Manual resolve then re-open is not flap-suppressed.
+    - A silence suppresses delivery and push, the incident is still created, and a trigger is sent when the
+      silence ends.
 - Change conditions:
-  - Grouped join.
-  - A new group skips with `no_baseline`.
-  - A zero baseline in percent mode skips.
-  - A baseline cache hit within a window.
+    - Grouped join.
+    - A new group skips with `no_baseline`.
+    - A zero baseline in percent mode skips.
+    - A baseline cache hit within a window.
 
 ## PR 1 as built (where it differs from the sections above)
 
 - **No new event types.** The iOS client decodes `AlertEventType` and `AlertIncidentTransition` as
   closed enums, so a new value would break it.
-  - Escalation is delivered as `trigger` at the new severity, and de-escalation as `renotify`, both
-    restarting the reminder clock.
-  - Check rows record a severity change as `continued`, and the new `Level` column says which tier
-    breached.
-  - Planner transitions (`escalated`, `deescalated`) stay internal.
+    - Escalation is delivered as `trigger` at the new severity, and de-escalation as `renotify`, both
+      restarting the reminder clock.
+    - Check rows record a severity change as `continued`, and the new `Level` column says which tier
+      breached.
+    - Planner transitions (`escalated`, `deescalated`) stay internal.
 - **No `active_severity` column.** The current severity is the open incident's `severity`, so the state
   row only adds `history_json` (jsonb `number[]`, not `int2[]`).
-  - A state row without a history is replayed from its counters inside `planAlertLifecycle`. A
-    property test proves the result matches the old consecutive-count machine.
+    - A state row without a history is replayed from its counters inside `planAlertLifecycle`. A
+      property test proves the result matches the old consecutive-count machine.
 - **Legacy columns stay authoritative for pre-tier rows only.** `thresholds_json` is nullable and not
   backfilled: a null reads as one tier from `severity`/`threshold`/`destination_ids_json`, so an old
   worker editing a rule mid-deploy cannot leave a stale tier list behind. Writes keep those columns in
   step, and the drop migration backfills first.
-  - `destination_ids_json` holds every tier's destinations, so the "destination in use" check is
-    unchanged.
+    - `destination_ids_json` holds every tier's destinations, so the "destination in use" check is
+      unchanged.
 - **`peak_severity` is not backfilled.** `alert_incidents` is synced with full-row WAL, so rewriting
   history is churn. Null reads as the current severity.
 - **v2 PATCH carries tiers forward.** Single-threshold fields edit a one-tier rule's tier in place,

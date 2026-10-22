@@ -28,7 +28,13 @@ import {
 } from "./gcp-configure"
 import { CAPABILITIES, SCOPE_TYPES } from "./gcp-configure-copy"
 import { chooseChanges, createRequest, isScopeReady } from "./gcp-configure-derive"
-import type { Capability, ConfigureModel, GcpFlags, LogFilterDraft, SetupMethod } from "./gcp-configure-schema"
+import type {
+	Capability,
+	ConfigureModel,
+	GcpFlags,
+	LogFilterDraft,
+	SetupMethod,
+} from "./gcp-configure-schema"
 import type { ConfigureTarget } from "./gcp-schema"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -104,7 +110,8 @@ const requestScripts = (model: Model, context: PageContext, mode: Keyed.RequestM
 	const connector = configure === null ? undefined : configureConnector(model, configure)
 	if (configure === null || connector === undefined || configure.opened === null) return { model }
 	// Without the script the sink is the one found when the step opened (`MethodApplyStage`).
-	const sinkExists = configure.method === "script" ? connector.applied_logs_enabled === true : configure.sinkExisted
+	const sinkExists =
+		configure.method === "script" ? connector.applied_logs_enabled === true : configure.sinkExisted
 	const { key, applicationLogs } = scriptsKey(context, connector, configure.filter, sinkExists)
 	return Option.match(Keyed.request(configure.scripts, key, mode), {
 		onNone: () => ({ model }),
@@ -243,7 +250,10 @@ export const submittedCreate = (model: Model): Return => {
 }
 
 /** The write settled; `true` when the wizard it was sent from is still the one open. */
-const settleWrite = (model: Model, opens: number): { readonly model: Model; readonly isCurrent: boolean } => ({
+const settleWrite = (
+	model: Model,
+	opens: number,
+): { readonly model: Model; readonly isCurrent: boolean } => ({
 	model: updateGcpCard(model, { pendingWrite: null }).model,
 	isCurrent: model.gcpCard.configure !== null && model.gcpCard.configureOpens === opens,
 })
@@ -372,8 +382,12 @@ const save = (model: Model): Return => {
 				? { logs_enabled: draft.logs_enabled }
 				: { metrics_enabled: draft.metrics_enabled }
 	return {
-		model: withConfigure(updateGcpCard(model, { pendingWrite: "update" }).model, () => ({ isSaving: true })),
-		commands: [UpdateConnector({ opens: model.gcpCard.configureOpens, id: connector.id, payload, flags: draft })],
+		model: withConfigure(updateGcpCard(model, { pendingWrite: "update" }).model, () => ({
+			isSaving: true,
+		})),
+		commands: [
+			UpdateConnector({ opens: model.gcpCard.configureOpens, id: connector.id, payload, flags: draft }),
+		],
 	}
 }
 
@@ -431,7 +445,11 @@ export const clickedRunEdit = (model: Model): Return => {
 	if (configure === null || connector === undefined) return { model }
 	if (configure.opened !== null)
 		return {
-			model: withConfigure(model, () => ({ opened: null, connectionStage: "method", scripts: Keyed.idle() })),
+			model: withConfigure(model, () => ({
+				opened: null,
+				connectionStage: "method",
+				scripts: Keyed.idle(),
+			})),
 		}
 	return {
 		model: withConfigure(model, () => ({

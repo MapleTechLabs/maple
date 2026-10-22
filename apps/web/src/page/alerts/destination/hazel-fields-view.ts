@@ -21,10 +21,25 @@ import {
 // `HazelOAuthFields`' view. TODO(destination-dialog): an org logo that fails to load keeps its
 // broken image; it should fall back to the Hazel mark.
 
-const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
-const idsOf = (id: string): FieldIds => ({ control: id, label: SelectView.selectLabelId(id), error: `${id}-error` })
+const IDLE: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
+const idsOf = (id: string): FieldIds => ({
+	control: id,
+	label: SelectView.selectLabelId(id),
+	error: `${id}-error`,
+})
 
-type Inputs<M> = Readonly<{ model: HazelModel; form: DestinationForm; isEditing: boolean; toMessage: (message: HazelMessage) => M }>
+type Inputs<M> = Readonly<{
+	model: HazelModel
+	form: DestinationForm
+	isEditing: boolean
+	toMessage: (message: HazelMessage) => M
+}>
 
 const orgAvatar = <M>(h: HtmlBuilder<M>, logoUrl: string | null, name: string, size = 16): Html =>
 	logoUrl !== null
@@ -41,12 +56,18 @@ const orgAvatar = <M>(h: HtmlBuilder<M>, logoUrl: string | null, name: string, s
 		: h.span(
 				[
 					h.Class("flex shrink-0 items-center justify-center rounded-sm"),
-					h.Style({ width: `${size}px`, height: `${size}px`, background: "rgba(244,111,15,0.16)", color: "#F46F0F" }),
+					h.Style({
+						width: `${size}px`,
+						height: `${size}px`,
+						background: "rgba(244,111,15,0.16)",
+						color: "#F46F0F",
+					}),
 				],
 				[icon(h, "HazelIcon", { size: Math.round(size * 0.7) })],
 			)
 
-const isFailed = <A, E>(data: AsyncData.AsyncData<A, E>) => AsyncData.isFailure(data) || AsyncData.isStale(data)
+const isFailed = <A, E>(data: AsyncData.AsyncData<A, E>) =>
+	AsyncData.isFailure(data) || AsyncData.isStale(data)
 
 const connectPanel = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 	const accent = providerOf("hazel-oauth")
@@ -57,7 +78,9 @@ const connectPanel = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 				? [
 						h.p(
 							[h.Class("text-xs text-severity-error")],
-							["Couldn't check your Hazel connection status. This may be a temporary issue — try connecting again."],
+							[
+								"Couldn't check your Hazel connection status. This may be a temporary issue — try connecting again.",
+							],
 						),
 					]
 				: []),
@@ -88,9 +111,14 @@ const connectPanel = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 	)
 }
 
-const note = <M>(h: HtmlBuilder<M>, text: string): Html => h.p([h.Class("text-2xs text-muted-foreground")], [text])
+const note = <M>(h: HtmlBuilder<M>, text: string): Html =>
+	h.p([h.Class("text-2xs text-muted-foreground")], [text])
 
-const organizationField = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, organizations: ReadonlyArray<HazelOrganization>): Html => {
+const organizationField = <M>(
+	h: HtmlBuilder<M>,
+	inputs: Inputs<M>,
+	organizations: ReadonlyArray<HazelOrganization>,
+): Html => {
 	const { form, model } = inputs
 	const ids = idsOf(ORGANIZATION_SELECT_ID)
 	const selected = organizations.find((org) => org.id === form.hazelOrganizationId)
@@ -102,31 +130,57 @@ const organizationField = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, organization
 			slotId: ORGANIZATION_SELECT_ID,
 			model: model.organizationSelect,
 			view: SelectView.view,
-			toParentMessage: (message) => inputs.toMessage(HazelMessage.GotOrganizationSelectMessage({ message })),
+			toParentMessage: (message) =>
+				inputs.toMessage(HazelMessage.GotOrganizationSelectMessage({ message })),
 			viewInputs: {
 				toView: (parts) => h.div([h.Class("contents")], parts),
-				entries: [{ _tag: "Group", label: "", items: organizations.map((org) => ({ value: org.id, label: org.name })) }],
+				entries: [
+					{
+						_tag: "Group",
+						label: "",
+						items: organizations.map((org) => ({ value: org.id, label: org.name })),
+					},
+				],
 				labelledBy: ids.label,
 				className: "w-full",
 				renderValue: () =>
 					name === ""
 						? [h.span([h.Class("text-muted-foreground")], ["Pick an organization"])]
-						: [h.span([h.Class("flex items-center gap-2")], [orgAvatar(h, logoUrl, name), h.span([h.Class("truncate")], [name])])],
+						: [
+								h.span(
+									[h.Class("flex items-center gap-2")],
+									[orgAvatar(h, logoUrl, name), h.span([h.Class("truncate")], [name])],
+								),
+							],
 				renderItem: (option) => {
 					const org = organizations.find((candidate) => candidate.id === option.value)
 					return [
 						h.span(
 							[h.Class("flex items-center gap-2")],
-							[orgAvatar(h, org?.logoUrl ?? null, option.label), h.span([h.Class("truncate")], [option.label])],
+							[
+								orgAvatar(h, org?.logoUrl ?? null, option.label),
+								h.span([h.Class("truncate")], [option.label]),
+							],
 						),
 					]
 				},
 			},
 		}),
 		...(isFailed(model.organizations.data)
-			? [fieldError(h, { ids, className: "text-2xs", state: IDLE }, "Couldn't load your Hazel organizations. Try reconnecting or refreshing.")]
+			? [
+					fieldError(
+						h,
+						{ ids, className: "text-2xs", state: IDLE },
+						"Couldn't load your Hazel organizations. Try reconnecting or refreshing.",
+					),
+				]
 			: organizations.length === 0
-				? [note(h, "No organizations returned. Make sure your Hazel account is a member of at least one organization.")]
+				? [
+						note(
+							h,
+							"No organizations returned. Make sure your Hazel account is a member of at least one organization.",
+						),
+					]
 				: []),
 	])
 }
@@ -136,7 +190,9 @@ const channelField = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 	const ids = idsOf(CHANNEL_SELECT_ID)
 	const organizationId = form.hazelOrganizationId.trim()
 	const channels = AsyncData.getOrElse(model.channels.data, () => [])
-	const isLoading = organizationId.length > 0 && (AsyncData.isLoading(model.channels.data) || AsyncData.isRefreshing(model.channels.data))
+	const isLoading =
+		organizationId.length > 0 &&
+		(AsyncData.isLoading(model.channels.data) || AsyncData.isRefreshing(model.channels.data))
 	const placeholder =
 		organizationId.length === 0
 			? "Pick an organization first"
@@ -145,7 +201,10 @@ const channelField = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 				: inputs.isEditing && form.hazelChannelName
 					? `#${form.hazelChannelName}`
 					: "Pick a channel"
-	const items = channels.map((channel) => ({ value: channel.id, label: channel.isPrivate ? `${channel.name} (private)` : channel.name }))
+	const items = channels.map((channel) => ({
+		value: channel.id,
+		label: channel.isPrivate ? `${channel.name} (private)` : channel.name,
+	}))
 	const label = items.find((item) => item.value === form.hazelChannelId)?.label
 	return field(h, { className: "items-stretch gap-1.5", state: IDLE }, [
 		fieldLabel(h, { ids, className: "text-xs", state: IDLE }, "Hazel channel"),
@@ -160,14 +219,28 @@ const channelField = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 				labelledBy: ids.label,
 				className: "w-full",
 				isDisabled: organizationId.length === 0 || isLoading,
-				renderValue: () => (label === undefined ? [h.span([h.Class("text-muted-foreground")], [placeholder])] : [label]),
+				renderValue: () =>
+					label === undefined
+						? [h.span([h.Class("text-muted-foreground")], [placeholder])]
+						: [label],
 				renderItem: (option) => [`#${option.label}`],
 			},
 		}),
 		...(organizationId.length > 0 && !isLoading && isFailed(model.channels.data)
-			? [fieldError(h, { ids, className: "text-2xs", state: IDLE }, "Couldn't load channels for this organization. Try reselecting the organization.")]
+			? [
+					fieldError(
+						h,
+						{ ids, className: "text-2xs", state: IDLE },
+						"Couldn't load channels for this organization. Try reselecting the organization.",
+					),
+				]
 			: organizationId.length > 0 && !isLoading && channels.length === 0
-				? [note(h, "No channels. Make sure your account is in at least one channel of this organization.")]
+				? [
+						note(
+							h,
+							"No channels. Make sure your account is in at least one channel of this organization.",
+						),
+					]
 				: []),
 	])
 }
@@ -183,7 +256,10 @@ export const hazelFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 			panel(h, { className: "flex-row items-center justify-between px-3 py-2 text-xs" }, [
 				h.div(
 					[h.Class("space-y-0.5")],
-					[h.div([h.Class("font-medium")], ["Connected to Hazel"]), h.div([h.Class("text-muted-foreground")], [status.account])],
+					[
+						h.div([h.Class("font-medium")], ["Connected to Hazel"]),
+						h.div([h.Class("text-muted-foreground")], [status.account]),
+					],
 				),
 				button(
 					h,
@@ -204,7 +280,8 @@ export const hazelFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 				model: model.confirmDisconnect,
 				toParentMessage: (message) => inputs.toMessage(HazelMessage.GotConfirmMessage({ message })),
 				title: "Disconnect Hazel",
-				description: "Maple loses access to your Hazel organizations and channels until you reconnect.",
+				description:
+					"Maple loses access to your Hazel organizations and channels until you reconnect.",
 				confirmLabel: "Disconnect Hazel",
 				onConfirm: inputs.toMessage(HazelMessage.ConfirmedDisconnect()),
 				isNested: true,

@@ -170,7 +170,10 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 		const scoped = requestScoped(next, context, "Load")
 		return {
 			model: scoped.model,
-			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion)), ...(scoped.commands ?? [])],
+			commands: [
+				resolveCommand(next, context, snapModeOf(model.refreshVersion)),
+				...(scoped.commands ?? []),
+			],
 		}
 	}
 	return routeWindowStep(model.search, route.search, {

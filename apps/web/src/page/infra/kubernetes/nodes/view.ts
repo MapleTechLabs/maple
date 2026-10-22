@@ -61,8 +61,13 @@ const toSections = (message: FilterSections.Message) => Message.GotFilterSection
 
 const loadedRail = (h: H, model: Model, facets: NodeFacets): Html => {
 	const hasFilters = Object.values(filtersOf(model.search)).some((values) => (values?.length ?? 0) > 0)
-	if (!hasFilters && Object.values(facets).every((options) => options.length === 0)) return filterSidebarEmpty(h)
-	const section = (title: string, facet: "nodeNames" | "clusters" | "environments", isSearchable: boolean) =>
+	if (!hasFilters && Object.values(facets).every((options) => options.length === 0))
+		return filterSidebarEmpty(h)
+	const section = (
+		title: string,
+		facet: "nodeNames" | "clusters" | "environments",
+		isSearchable: boolean,
+	) =>
 		filterSection(h, {
 			title,
 			options: facets[facet === "nodeNames" ? "nodes" : facet],
@@ -86,7 +91,9 @@ const toInstall = (message: InstallModal.Message) => Message.GotInstallMessage({
 
 const nodeList = (h: H, model: Model, nodes: ReadonlyArray<NodeRow>, inputs: PageViewInputs): Html => {
 	const isWaiting = AsyncData.isRefreshing(model.nodes.data)
-	const hasStructuredFilter = Object.values(filtersOf(model.search)).some((values) => (values?.length ?? 0) > 0)
+	const hasStructuredFilter = Object.values(filtersOf(model.search)).some(
+		(values) => (values?.length ?? 0) > 0,
+	)
 	if (nodes.length === 0 && !hasStructuredFilter)
 		return setupEmpty(h, {
 			icon: icon(h, "ServerIcon", { size: 16 }),
@@ -96,7 +103,12 @@ const nodeList = (h: H, model: Model, nodes: ReadonlyArray<NodeRow>, inputs: Pag
 			actionLabel: "Install the Helm chart",
 			onAction: toInstall(InstallModal.Message.ClickedOpen()),
 			docs: "kubernetes",
-			modal: h.submodel({ slotId: "install-modal", model: model.install, view: InstallModalView.mountedView, toParentMessage: toInstall }),
+			modal: h.submodel({
+				slotId: "install-modal",
+				model: model.install,
+				view: InstallModalView.mountedView,
+				toParentMessage: toInstall,
+			}),
 		})
 	const endTime = model.frame.window?.endTime ?? ""
 	const statusOf = (node: NodeRow) => deriveHostStatus(node.lastSeen, endTime)
@@ -104,7 +116,8 @@ const nodeList = (h: H, model: Model, nodes: ReadonlyArray<NodeRow>, inputs: Pag
 	const q = searchText.trim().toLowerCase()
 	const statusScope = model.search.status
 	const named = q === "" ? nodes : nodes.filter((node) => node.nodeName.toLowerCase().includes(q))
-	const filtered = statusScope === undefined ? named : named.filter((node) => statusOf(node) === statusScope)
+	const filtered =
+		statusScope === undefined ? named : named.filter((node) => statusOf(node) === statusScope)
 	const countOf = (status: HostStatus) => nodes.filter((node) => statusOf(node) === status).length
 	return h.div(
 		[h.Class(cn("space-y-5", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
@@ -172,7 +185,8 @@ const nodeList = (h: H, model: Model, nodes: ReadonlyArray<NodeRow>, inputs: Pag
 const nodesArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.nodes.data, {
 		onEmpty: () => nodeTableLoading(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load nodes", onRetry: Message.ClickedRetryNodes() }),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Failed to load nodes", onRetry: Message.ClickedRetryNodes() }),
 		onData: (nodes) => nodeList(h, model, nodes, inputs),
 	})
 
@@ -185,7 +199,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
+					actions: Frame.controls(
+						h,
+						model.frame,
+						{ search: model.search, defaultPreset: DEFAULT_PRESET },
+						toFrame,
+					),
 					tabs: kubernetesViewTabs(h, "nodes", model.search),
 					filters: filtersRail(h, model),
 				},

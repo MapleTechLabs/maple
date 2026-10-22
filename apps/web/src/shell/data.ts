@@ -27,7 +27,6 @@ export const LoadTenant = Command.define("LoadTenant", {
 	}).pipe(failed(Message.FailedLoadTenant())),
 })
 
-
 /** `infraPresenceResultAtom`: which OTel infrastructure surfaces reported in the last hour. */
 export const LoadInfraPresence = Command.define("LoadInfraPresence", {
 	args: { orgId: Schema.String },
@@ -51,7 +50,11 @@ export const LoadCloudflareStatus = Command.define("LoadCloudflareStatus", {
 	execute: ({ orgId }) =>
 		Effect.gen(function* () {
 			const status = yield* (yield* IntegrationStatuses).cloudflare({ orgId })
-			return Message.SucceededLoadIntegration({ orgId, integration: "cloudflare", isConnected: status.connected })
+			return Message.SucceededLoadIntegration({
+				orgId,
+				integration: "cloudflare",
+				isConnected: status.connected,
+			})
 		}).pipe(failed(Message.FailedLoadIntegration({ orgId, integration: "cloudflare" }))),
 })
 
@@ -61,7 +64,11 @@ export const LoadRailwayStatus = Command.define("LoadRailwayStatus", {
 	execute: ({ orgId }) =>
 		Effect.gen(function* () {
 			const status = yield* (yield* IntegrationStatuses).railway({ orgId })
-			return Message.SucceededLoadIntegration({ orgId, integration: "railway", isConnected: status.connected })
+			return Message.SucceededLoadIntegration({
+				orgId,
+				integration: "railway",
+				isConnected: status.connected,
+			})
 		}).pipe(failed(Message.FailedLoadIntegration({ orgId, integration: "railway" }))),
 })
 
@@ -71,7 +78,11 @@ export const LoadPlanetscaleStatus = Command.define("LoadPlanetscaleStatus", {
 	execute: ({ orgId }) =>
 		Effect.gen(function* () {
 			const status = yield* (yield* IntegrationStatuses).planetscale({ orgId })
-			return Message.SucceededLoadIntegration({ orgId, integration: "planetscale", isConnected: status.connected })
+			return Message.SucceededLoadIntegration({
+				orgId,
+				integration: "planetscale",
+				isConnected: status.connected,
+			})
 		}).pipe(failed(Message.FailedLoadIntegration({ orgId, integration: "planetscale" }))),
 })
 
@@ -94,7 +105,11 @@ export const LoadSupabaseStatus = Command.define("LoadSupabaseStatus", {
 	execute: ({ orgId }) =>
 		Effect.gen(function* () {
 			const status = yield* (yield* IntegrationStatuses).supabase({ orgId })
-			return Message.SucceededLoadIntegration({ orgId, integration: "supabase", isConnected: status.connected })
+			return Message.SucceededLoadIntegration({
+				orgId,
+				integration: "supabase",
+				isConnected: status.connected,
+			})
 		}).pipe(failed(Message.FailedLoadIntegration({ orgId, integration: "supabase" }))),
 })
 
@@ -115,7 +130,9 @@ export const LoadNamespaces = Command.define("LoadNamespaces", {
 				endTime: formatWarehouseDateTime(now),
 			})
 			const response = yield* loadServicesFacets(range, { orgId })
-			const namespaces = response.data.namespaces.map((facet) => facet.name).filter((name) => name !== "")
+			const namespaces = response.data.namespaces
+				.map((facet) => facet.name)
+				.filter((name) => name !== "")
 			return Message.SucceededLoadNamespaces({ orgId, namespaces })
 		}).pipe(failed(Message.FailedLoadNamespaces({ orgId }))),
 })

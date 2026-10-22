@@ -17,7 +17,10 @@ import * as Select from "../../../ui/select"
 export const ConfidenceChoice = Schema.Literals(["any", "low", "medium", "high"])
 export type ConfidenceChoice = typeof ConfidenceChoice.Type
 
-export const RuleDraft = Schema.Struct({ destinationIds: Schema.Array(Schema.String), minConfidence: ConfidenceChoice })
+export const RuleDraft = Schema.Struct({
+	destinationIds: Schema.Array(Schema.String),
+	minConfidence: ConfidenceChoice,
+})
 export type RuleDraft = typeof RuleDraft.Type
 export const PolicyDraft = Schema.Struct({
 	enabled: Schema.Boolean,
@@ -50,7 +53,9 @@ export const Model = Schema.Struct({
 	severitySelect: Select.Model,
 	source: DecisionSource,
 	confidence: EscalationConfidence,
-	evaluated: Schema.NullOr(Schema.Struct({ revision: Schema.Number, decision: EscalationPolicyEvaluationDocument })),
+	evaluated: Schema.NullOr(
+		Schema.Struct({ revision: Schema.Number, decision: EscalationPolicyEvaluationDocument }),
+	),
 	isEvaluating: Schema.Boolean,
 	attempts: AttemptsData.schema,
 })

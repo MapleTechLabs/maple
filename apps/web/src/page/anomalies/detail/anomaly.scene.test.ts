@@ -27,10 +27,15 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
-const context: PageContext = { orgId: Schema.decodeSync(OrgId)("org_parity"), pinnedNamespace: null, timeZone: "UTC" }
+const context: PageContext = {
+	orgId: Schema.decodeSync(OrgId)("org_parity"),
+	pinnedNamespace: null,
+	timeZone: "UTC",
+}
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 const ID = Schema.decodeSync(AnomalyIncidentId)("0199a060-0000-7000-8000-000000000001")
 const NOW = Date.UTC(2026, 9, 1, 12)
 const themed = () => Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
@@ -67,7 +72,10 @@ const route = { _tag: "Anomaly" as const, incidentId: ID }
 const loaded = () => {
 	const entered = init(route, context)
 	const clocked = pageUpdate(entered.model, Message.ReadClock({ nowMs: NOW })).model
-	return pageUpdate(clocked, Message.CompletedFetchIncident({ key: clocked.incident.key ?? "", result: Result.succeed(incident) }))
+	return pageUpdate(
+		clocked,
+		Message.CompletedFetchIncident({ key: clocked.incident.key ?? "", result: Result.succeed(incident) }),
+	)
 }
 
 describe("anomaly detail", () => {
@@ -83,11 +91,27 @@ describe("anomaly detail", () => {
 		const fail = (error: unknown) =>
 			pageUpdate(
 				entered,
-				Message.CompletedFetchIncident({ key: entered.incident.key ?? "", result: Result.fail(toLoadFailure(error)) }),
+				Message.CompletedFetchIncident({
+					key: entered.incident.key ?? "",
+					result: Result.fail(toLoadFailure(error)),
+				}),
 			).model
-		const notFound = new AnomalyIncidentNotFoundError({ message: "Anomaly incident not found", incidentId: ID })
-		scene({ update: pageUpdate, view }, given(fail(notFound)), themed(), expectView(text("Anomaly not found")).toExist())
-		scene({ update: pageUpdate, view }, given(fail(new Error("down"))), themed(), expectView(text("Failed to load anomaly")).toExist())
+		const notFound = new AnomalyIncidentNotFoundError({
+			message: "Anomaly incident not found",
+			incidentId: ID,
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(fail(notFound)),
+			themed(),
+			expectView(text("Anomaly not found")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(fail(new Error("down"))),
+			themed(),
+			expectView(text("Failed to load anomaly")).toExist(),
+		)
 	})
 
 	test("resolving sends one request, then toasts and re-reads the incident", () => {
@@ -97,7 +121,9 @@ describe("anomaly detail", () => {
 		expect(pageUpdate(started.model, Message.ClickedConfirmResolve()).commands ?? []).toHaveLength(0)
 		const done = pageUpdate(started.model, Message.CompletedResolve({ result: Result.succeed(incident) }))
 		expect(names(done.commands)).toContain("FetchAnomalyIncident")
-		expect(done.outMessage).toEqual(PageOutMessage.RequestedToast({ type: "success", title: "Anomaly resolved", description: "" }))
+		expect(done.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "Anomaly resolved", description: "" }),
+		)
 	})
 
 	test("a live-refresh read in flight when a resolve lands cannot put the open incident back", () => {
@@ -110,10 +136,16 @@ describe("anomaly detail", () => {
 		expect(names(ticked.commands)).toContain("FetchAnomalyIncident")
 		const preWriteKey = ticked.model.incident.key ?? ""
 		const busy: Model["busy"] = "resolve"
-		const done = pageUpdate({ ...ticked.model, busy }, Message.CompletedResolve({ result: Result.succeed(resolved) }))
+		const done = pageUpdate(
+			{ ...ticked.model, busy },
+			Message.CompletedResolve({ result: Result.succeed(resolved) }),
+		)
 		expect(names(done.commands)).toContain("FetchAnomalyIncident")
 		const final = [
-			Message.CompletedFetchIncident({ key: done.model.incident.key ?? "", result: Result.succeed(resolved) }),
+			Message.CompletedFetchIncident({
+				key: done.model.incident.key ?? "",
+				result: Result.succeed(resolved),
+			}),
 			Message.CompletedFetchIncident({ key: preWriteKey, result: Result.succeed(incident) }),
 		].reduce((current, message) => pageUpdate(current, message).model, done.model)
 		expect(Option.map(incidentOf(final), (current) => current.status)).toEqual(Option.some("resolved"))
@@ -122,8 +154,13 @@ describe("anomaly detail", () => {
 	test("Open investigation navigates to the new investigation", () => {
 		const started = pageUpdate(loaded().model, Message.ClickedInvestigate())
 		expect(names(started.commands)).toEqual(["CreateAnomalyInvestigation"])
-		const done = pageUpdate(started.model, Message.CompletedInvestigate({ result: Result.succeed("inv-1") }))
-		expect(done.outMessage).toEqual(PageOutMessage.RequestedNavigation({ url: "/investigations/inv-1", isReplace: false }))
+		const done = pageUpdate(
+			started.model,
+			Message.CompletedInvestigate({ result: Result.succeed("inv-1") }),
+		)
+		expect(done.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/investigations/inv-1", isReplace: false }),
+		)
 	})
 
 	test("the link dialog loads the service's issues", () => {
@@ -142,7 +179,12 @@ describe("anomaly detail", () => {
 			themed(),
 			// Resolving by instance asserts the args: no focus is handed back on close.
 			Mount.resolve(
-				Dialog.MountDialog({ id: "anomaly-link-issue", hasTrigger: false, isPopupFocused: false, isReturningFocus: false }),
+				Dialog.MountDialog({
+					id: "anomaly-link-issue",
+					hasTrigger: false,
+					isPopupFocused: false,
+					isReturningFocus: false,
+				}),
 				Dialog.Message.CompletedMountDialog(),
 			),
 			expectView(text(/^Scoped to/)).toExist(),
@@ -197,10 +239,16 @@ const issueRow = (id: string, exceptionType: string) =>
 describe("anomaly link dialog by keyboard", () => {
 	test("typing a query, ArrowDown and Enter link the matching issue", () => {
 		const opened = pageUpdate(loaded().model, Message.ClickedLinkIssue()).model
-		const issues = [issueRow("iss_YoxMYDoXSr3tsBZyBLmNMv", "NullPointer"), issueRow("iss_YoxMYDoXSr3tsBZyBLmNMw", "ConnectionTimeout")]
+		const issues = [
+			issueRow("iss_YoxMYDoXSr3tsBZyBLmNMv", "NullPointer"),
+			issueRow("iss_YoxMYDoXSr3tsBZyBLmNMw", "ConnectionTimeout"),
+		]
 		const model = pageUpdate(
 			opened,
-			Message.CompletedFetchLinkIssues({ key: opened.linkIssues.key ?? "", result: Result.succeed(issues) }),
+			Message.CompletedFetchLinkIssues({
+				key: opened.linkIssues.key ?? "",
+				result: Result.succeed(issues),
+			}),
 		).model
 		const timeout = errorIssueFromV2(issues[1] ?? issues[0]).id
 		const input = role("combobox")
@@ -216,7 +264,10 @@ describe("anomaly link dialog by keyboard", () => {
 			Command.expectHas(SetIncidentIssue({ id: ID, issueId: timeout })),
 			Command.resolve(
 				SetIncidentIssue,
-				Message.CompletedSetIssue({ issueId: timeout, result: Result.fail(toLoadFailure(new Error("down"))) }),
+				Message.CompletedSetIssue({
+					issueId: timeout,
+					result: Result.fail(toLoadFailure(new Error("down"))),
+				}),
 			),
 		)
 	})

@@ -23,7 +23,13 @@ import { ready, Team, TeamMessage, updateTeam } from "../../page/onboarding/quic
 // `/lab/onboarding`: click through onboarding with a
 // sample catalog; rename, invites and checkout are simulated, and Restart starts over.
 
-const meteredItem = (featureId: string, included: number, amount: number, billingUnits: number, secondaryText: string) =>
+const meteredItem = (
+	featureId: string,
+	included: number,
+	amount: number,
+	billingUnits: number,
+	secondaryText: string,
+) =>
 	new CatalogPlanItem({
 		featureId,
 		included,
@@ -88,8 +94,7 @@ const goTo = (model: Model, step: number): Model => ({
 	team: step === 3 ? ready(model.workspaceName, model.invitations, true, null) : model.team,
 })
 
-const restart = (model: Model): Model =>
-	goTo({ ...init(1), run: model.run + 1 }, 1)
+const restart = (model: Model): Model => goTo({ ...init(1), run: model.run + 1 }, 1)
 
 /** The team step's own logic, with the Clerk calls swapped for the simulated ones. */
 const teamStep = (model: Model, message: TeamMessage): Return => {
@@ -117,19 +122,31 @@ const teamStep = (model: Model, message: TeamMessage): Return => {
 
 const stepMessage = (model: Model, message: QuickStart.Message): Return => {
 	const answers = model.state.qualifyAnswers
-	const withAnswers = (qualifyAnswers: typeof answers): Return => ({ model: { ...model, state: { ...model.state, qualifyAnswers } } })
+	const withAnswers = (qualifyAnswers: typeof answers): Return => ({
+		model: { ...model, state: { ...model.state, qualifyAnswers } },
+	})
 	switch (message._tag) {
 		case "PickedRole":
-			return withAnswers(pickedRole(answers, message.role, message.role === "other" ? answers.roleDetail : ""))
+			return withAnswers(
+				pickedRole(answers, message.role, message.role === "other" ? answers.roleDetail : ""),
+			)
 		case "ChangedRoleDetail":
 			return withAnswers(pickedRole(answers, "other", message.value))
 		case "ToggledIntent":
 			return withAnswers(toggledIntent(answers, message.intent))
 		case "ClickedContinue": {
 			const isBlocked =
-				(message.step === "role" && (answers.role === null || QuickStart.roleNeedsDetail(model.state))) ||
+				(message.step === "role" &&
+					(answers.role === null || QuickStart.roleNeedsDetail(model.state))) ||
 				(message.step === "intent" && answers.intents.length === 0)
-			return isBlocked ? { model } : { model: goTo({ ...model, state: completeStep(model.state, message.step) }, STEP_OF[message.step] + 1) }
+			return isBlocked
+				? { model }
+				: {
+						model: goTo(
+							{ ...model, state: completeStep(model.state, message.step) },
+							STEP_OF[message.step] + 1,
+						),
+					}
 		}
 		case "ClickedBack":
 			return { model: goTo(model, STEP_OF[message.to]) }
@@ -137,7 +154,8 @@ const stepMessage = (model: Model, message: QuickStart.Message): Return => {
 			return teamStep(model, message.message)
 		// The sample catalog's checkout and the Enterprise contact both end the preview.
 		case "GotPricingMessage":
-			return message.message._tag === "ClickedPlan" || message.message._tag === "ClickedEnterpriseContact"
+			return message.message._tag === "ClickedPlan" ||
+				message.message._tag === "ClickedEnterpriseContact"
 				? { model: goTo(model, 5) }
 				: { model }
 		default:
@@ -178,7 +196,9 @@ const stepView = Submodel.defineView<Model, QuickStart.Message>((model, h) => {
 	}
 })
 
-const plansView = Submodel.defineView<null, PricingCards.Message>((_, h) => PricingCardsView.planCards(h, PLANS, null))
+const plansView = Submodel.defineView<null, PricingCards.Message>((_, h) =>
+	PricingCardsView.planCards(h, PLANS, null),
+)
 
 const complete = (h: HtmlBuilder<Message>): Html =>
 	h.div(
@@ -193,7 +213,9 @@ const complete = (h: HtmlBuilder<Message>): Html =>
 				],
 			),
 			button(h, { attributes: [h.OnClick(Message.ClickedRestart())] }, ["Try it again"]),
-			button(h, { variant: "ghost", attributes: [h.OnClick(Message.ClickedBackToPlans())] }, ["Back to plans"]),
+			button(h, { variant: "ghost", attributes: [h.OnClick(Message.ClickedBackToPlans())] }, [
+				"Back to plans",
+			]),
 		],
 	)
 
@@ -209,10 +231,18 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 			]),
 		[
 			h.div(
-				[h.Class("flex flex-wrap items-center justify-center gap-3 border-y px-4 py-2 text-xs text-muted-foreground")],
+				[
+					h.Class(
+						"flex flex-wrap items-center justify-center gap-3 border-y px-4 py-2 text-xs text-muted-foreground",
+					),
+				],
 				[
 					h.span([], ["Onboarding preview · sample pricing · invites and checkout simulated"]),
-					button(h, { variant: "ghost", size: "sm", attributes: [h.OnClick(Message.ClickedRestart())] }, ["Restart"]),
+					button(
+						h,
+						{ variant: "ghost", size: "sm", attributes: [h.OnClick(Message.ClickedRestart())] },
+						["Restart"],
+					),
 				],
 			),
 			QuickStartView.motionStep(
@@ -251,6 +281,8 @@ export const SimulateTeamOperation = Command.define("SimulateOnboardingTeamOpera
 	messages: [Message.SimulatedTeamOperation],
 	execute: ({ operation, value }) =>
 		Effect.succeed(
-			Message.SimulatedTeamOperation({ message: TeamMessage.SucceededTeamOperation({ operation, value }) }),
+			Message.SimulatedTeamOperation({
+				message: TeamMessage.SucceededTeamOperation({ operation, value }),
+			}),
 		),
 })

@@ -82,7 +82,13 @@ export const syncSheet = (
 	}
 	// A new `ReviewDetailBody` reads its own atom: the previous review is never shown while it loads.
 	const opened = liftDialog(
-		{ ...sheet, reviewId, detail: Keyed.idle(), ciRuns: Keyed.idle(), nowMs: Math.max(sheet.nowMs, nowMs) },
+		{
+			...sheet,
+			reviewId,
+			detail: Keyed.idle(),
+			ciRuns: Keyed.idle(),
+			nowMs: Math.max(sheet.nowMs, nowMs),
+		},
 		Dialog.open(sheet.dialog),
 	)
 	const read = readDetail(opened.sheet, reviewId, context, "Load")

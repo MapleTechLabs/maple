@@ -9,7 +9,8 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
 
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 
 const key = Schema.decodeUnknownSync(V2ApiKey)({
 	id: "key_aXwpxqBkqtYwtBtmsGbR41",
@@ -28,7 +29,8 @@ const key = Schema.decodeUnknownSync(V2ApiKey)({
 	created_by_email: "ada@acme.test",
 })
 
-const loaded = (): Model => update(init({ isAdmin: true, userId: null }).model, Message.UpdatedApiKeys({ rows: [key] })).model
+const loaded = (): Model =>
+	update(init({ isAdmin: true, userId: null }).model, Message.UpdatedApiKeys({ rows: [key] })).model
 const create = (message: CreateDialog.Message) => Message.GotCreateMessage({ message })
 const steps = (model: Model, messages: ReadonlyArray<Message>) =>
 	messages.reduce((current, message) => update(current, message).model, model)
@@ -43,7 +45,11 @@ describe("keys tab", () => {
 		const opened = update(loaded(), Message.ClickedCreateKey()).model
 		expect(update(opened, create(CreateDialog.Message.ClickedCreate())).commands ?? []).toEqual([])
 		const filled = steps(opened, [
-			create(CreateDialog.Message.GotNameMessage({ message: Field.Message.ChangedValue({ value: " Grafana " }) })),
+			create(
+				CreateDialog.Message.GotNameMessage({
+					message: Field.Message.ChangedValue({ value: " Grafana " }),
+				}),
+			),
 			create(CreateDialog.Message.ClickedAccessMode({ mode: "restricted" })),
 			create(CreateDialog.Message.ClickedScopeLevel({ family: "dashboards", level: "read" })),
 		])
@@ -57,27 +63,54 @@ describe("keys tab", () => {
 	test("Escape mid-create keeps the create in flight; reopening shows the one-time secret", () => {
 		const opened = update(loaded(), Message.ClickedCreateKey()).model
 		const named = steps(opened, [
-			create(CreateDialog.Message.GotNameMessage({ message: Field.Message.ChangedValue({ value: "Grafana" }) })),
+			create(
+				CreateDialog.Message.GotNameMessage({
+					message: Field.Message.ChangedValue({ value: "Grafana" }),
+				}),
+			),
 		])
 		const creating = update(named, create(CreateDialog.Message.ClickedCreate())).model
-		const dismissed = steps(creating, [create(CreateDialog.Message.GotDialogMessage({ message: Dialog.Message.PressedEscape() }))])
+		const dismissed = steps(creating, [
+			create(CreateDialog.Message.GotDialogMessage({ message: Dialog.Message.PressedEscape() })),
+		])
 		const reopened = update(dismissed, Message.ClickedCreateKey()).model
 		const refilled = steps(reopened, [
-			create(CreateDialog.Message.GotNameMessage({ message: Field.Message.ChangedValue({ value: "Again" }) })),
+			create(
+				CreateDialog.Message.GotNameMessage({
+					message: Field.Message.ChangedValue({ value: "Again" }),
+				}),
+			),
 		])
 		expect(names(update(refilled, create(CreateDialog.Message.ClickedCreate())).commands)).toEqual([])
-		const secret = Schema.decodeUnknownSync(V2ApiKeyWithSecret)({ ...Schema.encodeSync(V2ApiKey)(key), secret: "maple_ak_secret" })
-		const landed = steps(dismissed, [create(CreateDialog.Message.CompletedCreate({ kind: "standard", result: Result.succeed(secret) }))])
-		expect(update(landed, Message.ClickedCreateKey()).model.create.created?.secret).toBe("maple_ak_secret")
+		const secret = Schema.decodeUnknownSync(V2ApiKeyWithSecret)({
+			...Schema.encodeSync(V2ApiKey)(key),
+			secret: "maple_ak_secret",
+		})
+		const landed = steps(dismissed, [
+			create(
+				CreateDialog.Message.CompletedCreate({ kind: "standard", result: Result.succeed(secret) }),
+			),
+		])
+		expect(update(landed, Message.ClickedCreateKey()).model.create.created?.secret).toBe(
+			"maple_ak_secret",
+		)
 	})
 
 	test("revoking asks first, then toasts and closes", () => {
-		const asked = update(loaded(), Message.GotRowMenuMessage({ menuId: `keys-row-${key.id}`, message: { _tag: "ClickedTrigger" } })).model
+		const asked = update(
+			loaded(),
+			Message.GotRowMenuMessage({ menuId: `keys-row-${key.id}`, message: { _tag: "ClickedTrigger" } }),
+		).model
 		const opened = { ...asked, revoking: key }
 		const confirming = update(opened, Message.ClickedConfirmRevoke())
 		expect(names(confirming.commands)).toEqual(["RevokeApiKey"])
-		const done = update(confirming.model, Message.CompletedRevoke({ id: key.id, result: Result.succeed(undefined) }))
-		expect(done.outMessage).toEqual(PageOutMessage.RequestedToast({ type: "success", title: "Key revoked", description: "" }))
+		const done = update(
+			confirming.model,
+			Message.CompletedRevoke({ id: key.id, result: Result.succeed(undefined) }),
+		)
+		expect(done.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "Key revoked", description: "" }),
+		)
 		expect(done.model.isRevoking).toBe(false)
 	})
 })

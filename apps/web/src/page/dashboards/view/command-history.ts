@@ -83,7 +83,8 @@ export const RestoreVersion = Command.define("RestoreDashboardVersion", {
 			yield* client.dashboards.restoreVersion({ params: { id, version_id } })
 		}).pipe(
 			Effect.match({
-				onFailure: (error) => Message.CompletedRestore({ versionNumber, error: errorMessageOf(error) }),
+				onFailure: (error) =>
+					Message.CompletedRestore({ versionNumber, error: errorMessageOf(error) }),
 				onSuccess: () => Message.CompletedRestore({ versionNumber, error: null }),
 			}),
 		),

@@ -9,7 +9,11 @@ import type { Message } from "./index"
 type H = HtmlBuilder<Message>
 type Wrap = (message: ClerkSignInMessage) => Message
 
-const KEY_FIELD: FieldIds = { control: "preview-access-key", label: "preview-access-key-label", error: "preview-access-key-error" }
+const KEY_FIELD: FieldIds = {
+	control: "preview-access-key",
+	label: "preview-access-key-label",
+	error: "preview-access-key-error",
+}
 
 /** `PreviewAccessForm`: the shared reviewer's access key, traded for a Clerk sign-in ticket. */
 const previewAccessForm = (h: H, model: Model, wrap: Wrap): Html => {
@@ -21,7 +25,10 @@ const previewAccessForm = (h: H, model: Model, wrap: Wrap): Html => {
 		isTouched: model.isKeyTouched,
 	}
 	return h.form(
-		[h.Class("mt-8 space-y-4 border-t border-border pt-6"), h.OnSubmit(wrap(ClerkSignInMessage.SubmittedPreviewSignIn()))],
+		[
+			h.Class("mt-8 space-y-4 border-t border-border pt-6"),
+			h.OnSubmit(wrap(ClerkSignInMessage.SubmittedPreviewSignIn())),
+		],
 		[
 			h.div(
 				[h.Class("space-y-1")],
@@ -34,7 +41,11 @@ const previewAccessForm = (h: H, model: Model, wrap: Wrap): Html => {
 				],
 			),
 			field(h, { className: "items-stretch", state }, [
-				fieldLabel(h, { ids: KEY_FIELD, className: "font-mono text-xs sm:text-xs tracking-[0.02em]", state }, "Access key"),
+				fieldLabel(
+					h,
+					{ ids: KEY_FIELD, className: "font-mono text-xs sm:text-xs tracking-[0.02em]", state },
+					"Access key",
+				),
 				input(h, {
 					ids: KEY_FIELD,
 					state,
@@ -51,9 +62,24 @@ const previewAccessForm = (h: H, model: Model, wrap: Wrap): Html => {
 				}),
 				...(model.errorMessage === null
 					? []
-					: [fieldError(h, { ids: KEY_FIELD, className: "font-mono", state, attributes: [h.Role("alert")] }, model.errorMessage)]),
+					: [
+							fieldError(
+								h,
+								{
+									ids: KEY_FIELD,
+									className: "font-mono",
+									state,
+									attributes: [h.Role("alert")],
+								},
+								model.errorMessage,
+							),
+						]),
 			]),
-			button(h, { type: "submit", variant: "outline", className: "w-full", isLoading: model.isSubmitting }, ["Sign in to preview"]),
+			button(
+				h,
+				{ type: "submit", variant: "outline", className: "w-full", isLoading: model.isSubmitting },
+				["Sign in to preview"],
+			),
 		],
 	)
 }

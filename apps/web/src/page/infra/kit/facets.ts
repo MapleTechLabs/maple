@@ -14,8 +14,12 @@ export const toggledValue = (lists: FacetLists, name: string): FacetLists => {
 	const selected = lists.selected ?? []
 	const excluded = lists.excluded ?? []
 	return {
-		excluded: excluded.includes(name) ? listOrUndefined(excluded.filter((v) => v !== name)) : lists.excluded,
-		selected: listOrUndefined(selected.includes(name) ? selected.filter((v) => v !== name) : [...selected, name]),
+		excluded: excluded.includes(name)
+			? listOrUndefined(excluded.filter((v) => v !== name))
+			: lists.excluded,
+		selected: listOrUndefined(
+			selected.includes(name) ? selected.filter((v) => v !== name) : [...selected, name],
+		),
 	}
 }
 
@@ -27,8 +31,12 @@ export const excludedValue = (lists: FacetLists, name: string): FacetLists => {
 	const selected = lists.selected ?? []
 	const excluded = lists.excluded ?? []
 	return {
-		selected: selected.includes(name) ? listOrUndefined(selected.filter((v) => v !== name)) : lists.selected,
-		excluded: listOrUndefined(excluded.includes(name) ? excluded.filter((v) => v !== name) : [...excluded, name]),
+		selected: selected.includes(name)
+			? listOrUndefined(selected.filter((v) => v !== name))
+			: lists.selected,
+		excluded: listOrUndefined(
+			excluded.includes(name) ? excluded.filter((v) => v !== name) : [...excluded, name],
+		),
 	}
 }
 
@@ -36,7 +44,9 @@ export const excludedValue = (lists: FacetLists, name: string): FacetLists => {
 export const facetChips = <P extends string>(
 	facets: ReadonlyArray<Readonly<{ label: string; include: P; exclude: P }>>,
 	read: (param: P) => ReadonlyArray<string> | undefined,
-): ReadonlyArray<Readonly<{ param: P; label: string; values: ReadonlyArray<string>; isNegated: boolean }>> => {
+): ReadonlyArray<
+	Readonly<{ param: P; label: string; values: ReadonlyArray<string>; isNegated: boolean }>
+> => {
 	const chip = (param: P, label: string, isNegated: boolean) => {
 		const values = read(param)
 		return values === undefined || values.length === 0 ? [] : [{ param, label, values, isNegated }]

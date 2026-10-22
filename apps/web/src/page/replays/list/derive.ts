@@ -9,20 +9,25 @@ import type { Model, ReplaysFacets, Search } from "./model"
 /** `MAX_RETAINED_REPLAYS`. */
 export const MAX_RETAINED_REPLAYS = 500
 
-export const selectedTags = (search: Search): ReadonlyArray<SessionTag> => sessionTagsFromSearch(search.tags) ?? []
+export const selectedTags = (search: Search): ReadonlyArray<SessionTag> =>
+	sessionTagsFromSearch(search.tags) ?? []
 
 /** `allData`: the first page then every later one, capped. */
 export const allRows = (model: Model): ReadonlyArray<SessionRow> =>
 	Option.match(AsyncData.getData(model.firstPage.data), {
 		onNone: () => [],
 		onSome: (first) =>
-			[...first.rows, ...model.pagination.pages.flatMap((page) => page.rows)].slice(0, MAX_RETAINED_REPLAYS),
+			[...first.rows, ...model.pagination.pages.flatMap((page) => page.rows)].slice(
+				0,
+				MAX_RETAINED_REPLAYS,
+			),
 	})
 
 /** The cursor of the last page, while more remain and the cap has not been reached. */
 export const nextCursor = (model: Model): string | null => {
 	if (model.pagination.isStopped || allRows(model).length >= MAX_RETAINED_REPLAYS) return null
-	const last = model.pagination.pages.at(-1) ?? Option.getOrUndefined(AsyncData.getData(model.firstPage.data))
+	const last =
+		model.pagination.pages.at(-1) ?? Option.getOrUndefined(AsyncData.getData(model.firstPage.data))
 	return last?.hasMore === true ? last.nextCursor : null
 }
 

@@ -28,7 +28,10 @@ export const TriageBudget = Schema.Struct({
 export type TriageBudget = typeof TriageBudget.Type
 
 /** A page past the first, by the cursor that fetched it. */
-export const MorePage = Schema.Struct({ cursor: Schema.String, page: KeyedSchema(InvestigationPage, LoadFailure) })
+export const MorePage = Schema.Struct({
+	cursor: Schema.String,
+	page: KeyedSchema(InvestigationPage, LoadFailure),
+})
 
 export const Model = Schema.Struct({
 	search: InvestigationsSearch,

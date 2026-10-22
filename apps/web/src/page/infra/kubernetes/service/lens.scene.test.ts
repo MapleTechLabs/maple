@@ -14,7 +14,8 @@ const window = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 const resolved = Message.GotFrameMessage({
 	message: Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" }),
 })
@@ -44,7 +45,10 @@ describe("service lens", () => {
 		expect(names(entered.commands)).toContain("FetchLensPods")
 		const linked = pageUpdate(
 			entered.model,
-			Message.CompletedFetchLinked({ key: entered.model.linked.key ?? "", result: Result.succeed([workload]) }),
+			Message.CompletedFetchLinked({
+				key: entered.model.linked.key ?? "",
+				result: Result.succeed([workload]),
+			}),
 		)
 		expect(names(linked.commands)).toEqual(expect.arrayContaining(["FetchLensPods", "FetchLensCpu"]))
 	})
@@ -54,7 +58,10 @@ describe("service lens", () => {
 		const withNames = pageUpdate(
 			index,
 			Message.GotRailMessage({
-				message: Rail.Message.CompletedFetchNames({ key: index.rail.names.key ?? "", result: Result.succeed(["payment-svc"]) }),
+				message: Rail.Message.CompletedFetchNames({
+					key: index.rail.names.key ?? "",
+					result: Result.succeed(["payment-svc"]),
+				}),
 			}),
 		).model
 		const picked = routeChanged(withNames, { search: {}, serviceName: "payment-svc" }, context)

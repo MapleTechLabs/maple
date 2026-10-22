@@ -50,7 +50,9 @@ describe("maintenance lock recovery", () => {
 		await withDataDir(async (dataDir) => {
 			const lockPath = lockPathOf(dataDir)
 			mkdirSync(lockPath, { mode: 0o700 })
-			writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.ppid }), { mode: 0o000 })
+			writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.ppid }), {
+				mode: 0o000,
+			})
 			ageLock(lockPath, 10 * 60_000)
 			await expect(withMaintenanceLock(dataDir, randomUUID(), async () => "ran")).rejects.toThrow(
 				/ownership is uncertain/,

@@ -104,10 +104,12 @@ export const listedOf = (model: Model): ReadonlyArray<ListDashboard> | null =>
 	model.dashboards ?? (model.fallback._tag === "Ready" ? model.fallback.dashboards : null)
 
 /** `degraded`: reading the snapshot, so writes are off. */
-export const isDegraded = (model: Model): boolean => model.dashboards === null && model.fallback._tag === "Ready"
+export const isDegraded = (model: Model): boolean =>
+	model.dashboards === null && model.fallback._tag === "Ready"
 
 /** `isError`: neither the live list nor the snapshot could be read. */
-export const isLoadFailed = (model: Model): boolean => model.dashboards === null && model.fallback._tag === "Failed"
+export const isLoadFailed = (model: Model): boolean =>
+	model.dashboards === null && model.fallback._tag === "Failed"
 
 export const isReadOnly = (model: Model): boolean => model.persistenceError !== null || isDegraded(model)
 
@@ -335,7 +337,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					const out = navigation.outMessage
 					return created.warnings.length === 0 || out?._tag !== "RequestedNavigation"
 						? navigation
-						: { ...navigation, outMessage: { ...out, followUpToast: warningsToast(created.warnings) } }
+						: {
+								...navigation,
+								outMessage: { ...out, followUpToast: warningsToast(created.warnings) },
+							}
 				},
 			}),
 		ToggledFavorite: ({ id }) => {
@@ -377,7 +382,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Result.match(result, {
 				onFailure: (error) => failedWrite(model, error),
 				onSuccess: (sync) =>
-					sync === "Behind" ? { model, outMessage: behindToast() } : { model: { ...model, persistenceError: null } },
+					sync === "Behind"
+						? { model, outMessage: behindToast() }
+						: { model: { ...model, persistenceError: null } },
 			}),
 		GotTagEditorMessage: ({ message: inner }) => {
 			const next = TagEditor.update(model.tagEditor, inner)
@@ -400,19 +407,26 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Result.match(result, {
 				onFailure: (error) => failedWrite(model, error),
 				onSuccess: (sync) =>
-					sync === "Behind" ? { model, outMessage: behindToast() } : { model: { ...model, persistenceError: null } },
+					sync === "Behind"
+						? { model, outMessage: behindToast() }
+						: { model: { ...model, persistenceError: null } },
 			}),
 		GotTagFilterMessage: ({ message: inner }) => {
 			const next = Combobox.update(model.tagFilter, inner)
 			const commands = Command.mapMessages(next.commands ?? [], (message) =>
 				Message.GotTagFilterMessage({ message }),
 			)
-			if (next.outMessage?._tag !== "ChangedSelection") return { model: { ...model, tagFilter: next.model }, commands }
+			if (next.outMessage?._tag !== "ChangedSelection")
+				return { model: { ...model, tagFilter: next.model }, commands }
 			const tags = next.outMessage.selected
 			// The pick re-renders the list under the popup: nothing stays highlighted; the search keeps focus.
 			const updated = { ...model, tagFilter: { ...next.model, highlighted: null } }
-			const refocus = inner._tag === "ClickedItem" ? [FocusTagSearch({ id: Combobox.inputId(TAG_FILTER_ID) })] : []
-			return { ...navigateSearch(updated, { tags: tags.length === 0 ? undefined : tags }), commands: [...commands, ...refocus] }
+			const refocus =
+				inner._tag === "ClickedItem" ? [FocusTagSearch({ id: Combobox.inputId(TAG_FILTER_ID) })] : []
+			return {
+				...navigateSearch(updated, { tags: tags.length === 0 ? undefined : tags }),
+				commands: [...commands, ...refocus],
+			}
 		},
 		CompletedFocusTagSearch: () => ({ model }),
 	})

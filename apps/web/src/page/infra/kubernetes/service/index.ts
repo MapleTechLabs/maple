@@ -21,6 +21,10 @@ export const page = definePage(
 		contextChanged,
 		view,
 		breadcrumbs: (model) =>
-			kubernetesBreadcrumbs("services", model.search, model.serviceName === null ? [] : [{ label: model.serviceName }]),
+			kubernetesBreadcrumbs(
+				"services",
+				model.search,
+				model.serviceName === null ? [] : [{ label: model.serviceName }],
+			),
 	},
 )

@@ -103,7 +103,10 @@ export const routeChanged = (
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = { ...model, search: route.search }
 	return routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
+		resolve: (): Return => ({
+			model: next,
+			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+		}),
 		requestAll: (): Return => ({ model: next }),
 	})
 }
@@ -221,7 +224,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				context,
 				"Load",
 			),
-			outMessage: PageOutMessage.RequestedToast({ type: "success", ...connectedToastOf(status, "connect") }),
+			outMessage: PageOutMessage.RequestedToast({
+				type: "success",
+				...connectedToastOf(status, "connect"),
+			}),
 		}),
 		FailedConnect: ({ error }) => ({
 			model: { ...model, connect: { ...model.connect, isSubmitting: false, error } },

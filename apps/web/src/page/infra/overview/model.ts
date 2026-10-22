@@ -9,7 +9,16 @@ import * as InstallModal from "../kit/install-modal"
 
 // `/infra`: the overview, one summary per source.
 
-export const SOURCE_IDS = ["hosts", "containers", "kubernetes", "cloudflare", "railway", "supabase", "planetscale", "gcp"] as const
+export const SOURCE_IDS = [
+	"hosts",
+	"containers",
+	"kubernetes",
+	"cloudflare",
+	"railway",
+	"supabase",
+	"planetscale",
+	"gcp",
+] as const
 export const SourceId = Schema.Literals(SOURCE_IDS)
 export type SourceId = typeof SourceId.Type
 
@@ -21,9 +30,16 @@ export const FindingTarget = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("hosts"), scope: FleetScope }),
 	Schema.Struct({ kind: Schema.Literal("host"), hostName: Schema.String }),
 	Schema.Struct({ kind: Schema.Literal("containers"), scope: FleetScope }),
-	Schema.Struct({ kind: Schema.Literal("pods"), scope: Schema.Literals(["saturated", "elevated", "unbounded"]) }),
+	Schema.Struct({
+		kind: Schema.Literal("pods"),
+		scope: Schema.Literals(["saturated", "elevated", "unbounded"]),
+	}),
 	Schema.Struct({ kind: Schema.Literal("zone"), zoneName: Schema.String }),
-	Schema.Struct({ kind: Schema.Literal("railway"), serviceId: Schema.String, environmentId: Schema.String }),
+	Schema.Struct({
+		kind: Schema.Literal("railway"),
+		serviceId: Schema.String,
+		environmentId: Schema.String,
+	}),
 	Schema.Struct({ kind: Schema.Literal("supabase"), projectRef: Schema.String }),
 	Schema.Struct({ kind: Schema.Literal("planetscale"), database: Schema.String }),
 	Schema.Struct({ kind: Schema.Literal("gcp"), service: GcpService, keys: Schema.Array(Schema.String) }),

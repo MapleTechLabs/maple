@@ -291,7 +291,10 @@ export const routeChanged = (
 ): Return => {
 	const next = { ...model, search: route.search }
 	return routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({ model: next, commands: [resolveCommand(route.search, context, snapModeOf(model.refreshVersion))] }),
+		resolve: (): Return => ({
+			model: next,
+			commands: [resolveCommand(route.search, context, snapModeOf(model.refreshVersion))],
+		}),
 		requestAll: () => ({ model: next }),
 	})
 }
@@ -395,7 +398,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		MountedRightRail: () =>
 			model.isRightRailMounted
 				? { model }
-				: applySteps({ ...model, isRightRailMounted: true }, [loadedReads(context), vcsStep(context)]),
+				: applySteps({ ...model, isRightRailMounted: true }, [
+						loadedReads(context),
+						vcsStep(context),
+					]),
 		CompletedFetchEvents: ({ key, result }) => ({
 			model: { ...model, events: Keyed.accept(model.events, key, result) },
 		}),

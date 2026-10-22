@@ -213,7 +213,10 @@ describe("railway list", () => {
 	})
 
 	test("a status poll after a connect lands, and the pre-connect read still cannot", () => {
-		const connected = pageUpdate(withStatus(false), Message.SucceededConnect({ status: status(true) })).model
+		const connected = pageUpdate(
+			withStatus(false),
+			Message.SucceededConnect({ status: status(true) }),
+		).model
 		const polled = pageUpdate(connected, Message.TickedEmptyRefresh({ includeStatus: true }))
 		const [load] = polled.commands ?? []
 		expect(load?.name).toBe("LoadRailwayStatus")
@@ -221,7 +224,10 @@ describe("railway list", () => {
 		expect(load?.args).toMatchObject({ key: pollKey })
 		const late = pageUpdate(
 			polled.model,
-			Message.CompletedLoadStatus({ key: Keyed.baseKey(connected.status.key ?? ""), result: Result.succeed(status(false)) }),
+			Message.CompletedLoadStatus({
+				key: Keyed.baseKey(connected.status.key ?? ""),
+				result: Result.succeed(status(false)),
+			}),
 		).model
 		expect(late.status).toEqual(polled.model.status)
 		const landed = pageUpdate(

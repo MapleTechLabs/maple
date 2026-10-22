@@ -63,7 +63,13 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 				{
 					oauthConnections: db.run(
 						PG.from(OAuthConnections)
-							.select("provider", "externalAccountName", "externalUserEmail", "revokedAt", "createdAt")
+							.select(
+								"provider",
+								"externalAccountName",
+								"externalUserEmail",
+								"revokedAt",
+								"createdAt",
+							)
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
 					vcsInstallations: db.run(
@@ -160,7 +166,10 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 								"enabled",
 							)
 							// A user's switched-off target is still configured; a managed one waits on its connection.
-							.where(($) => [$.orgId.eq(orgId), PG.or($.enabled.eq(true), $.managedBy.isNull())]),
+							.where(($) => [
+								$.orgId.eq(orgId),
+								PG.or($.enabled.eq(true), $.managedBy.isNull()),
+							]),
 					),
 					chatWorkspaces: db.run(
 						PG.from(ChatWorkspaces)
@@ -190,7 +199,8 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 				railwayConnection: rows.railwayConnections[0] ?? null,
 				railwayEnvironments: rows.railwayEnvironments.map(({ servicesJson, ...env }) => ({
 					...env,
-					serviceCount: Object.keys(Option.getOrElse(decodeServices(servicesJson), () => ({}))).length,
+					serviceCount: Object.keys(Option.getOrElse(decodeServices(servicesJson), () => ({})))
+						.length,
 				})),
 				planetscaleConnection:
 					planetscale === undefined

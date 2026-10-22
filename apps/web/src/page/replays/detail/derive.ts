@@ -11,7 +11,8 @@ import type { Model, ReplayDetail } from "./model"
 
 export type PlayerStatus = "loading" | "error" | "empty" | "unrecorded" | "ready"
 
-export const windowOf = (model: Model): ReplayPartitionWindow | undefined => replayPartitionWindow(model.search.t)
+export const windowOf = (model: Model): ReplayPartitionWindow | undefined =>
+	replayPartitionWindow(model.search.t)
 
 export const detailOf = (model: Model): ReplayDetail | undefined =>
 	Option.getOrUndefined(Option.flatMap(AsyncData.getData(model.detail.data), Option.fromNullishOr))
@@ -23,7 +24,8 @@ const livenessOf = (session: ReplayDetail) => ({
 	durationMs: session.durationMs,
 })
 
-export const isActive = (model: Model, session: ReplayDetail): boolean => isSessionLive(livenessOf(session), model.nowMs)
+export const isActive = (model: Model, session: ReplayDetail): boolean =>
+	isSessionLive(livenessOf(session), model.nowMs)
 
 export const durationOf = (session: ReplayDetail): number | null => sessionDurationMs(livenessOf(session))
 
@@ -31,7 +33,10 @@ export const labelOf = (session: ReplayDetail): string =>
 	session.userName || session.userEmail || session.userId || "Anonymous session"
 
 /** The player's load status (`ReplayPlayerProvider`'s memo). */
-export const playerStatus = (model: Model, session: ReplayDetail): { status: PlayerStatus; failure: LoadFailure | null } => {
+export const playerStatus = (
+	model: Model,
+	session: ReplayDetail,
+): { status: PlayerStatus; failure: LoadFailure | null } => {
 	const recorded = recordedMarker(session.resourceAttributes)
 	const sessionActive = isActive(model, session)
 	const rangeFailure = AsyncData.isFailure(model.loader.range.data) && model.loader.queue.length > 0

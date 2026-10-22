@@ -16,7 +16,12 @@ const filtersFrom = (window: Window) => filtersOf(new URLSearchParams(window.sea
 export const logsKey = (window: Window): QueryKey => ["local", "logs", filtersFrom(window), windowOf(window)]
 
 /** `["local", "log-patterns", filters, boundsKey]`. */
-export const patternsKey = (window: Window): QueryKey => ["local", "log-patterns", filtersFrom(window), windowOf(window)]
+export const patternsKey = (window: Window): QueryKey => [
+	"local",
+	"log-patterns",
+	filtersFrom(window),
+	windowOf(window),
+]
 
 /** `["local", "logs", "services", severity, search, boundsKey]`. */
 export const servicesKey = (window: Window): QueryKey => {
@@ -44,12 +49,22 @@ export const pagesFromCached = (value: CacheValue): Option.Option<LogPages> =>
 		hasNextPage: nextCursor(pages[pages.length - 1] ?? []) !== undefined,
 	}))
 
-const CachedPatterns = Schema.Struct({ patterns: Schema.Array(LogPattern), totalSampled: Schema.Number, truncated: Schema.Boolean })
+const CachedPatterns = Schema.Struct({
+	patterns: Schema.Array(LogPattern),
+	totalSampled: Schema.Number,
+	truncated: Schema.Boolean,
+})
 
 /** Legacy's `truncated` is the Model's `isTruncated`. */
-export const patternsToCached = ({ isTruncated, ...rest }: LogPatterns) => ({ ...rest, truncated: isTruncated })
+export const patternsToCached = ({ isTruncated, ...rest }: LogPatterns) => ({
+	...rest,
+	truncated: isTruncated,
+})
 
 export const patternsFromCached = (value: CacheValue): Option.Option<LogPatterns> =>
-	Option.map(cachedAs(CachedPatterns)(value), ({ truncated, ...rest }) => ({ ...rest, isTruncated: truncated }))
+	Option.map(cachedAs(CachedPatterns)(value), ({ truncated, ...rest }) => ({
+		...rest,
+		isTruncated: truncated,
+	}))
 
 export const optionsFromCached = cachedAs(Schema.Array(FacetOption))

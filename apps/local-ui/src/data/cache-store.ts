@@ -36,7 +36,13 @@ const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown
 /** A key's hash: JSON with object keys sorted (undefined fields drop out). */
 export const hashKey = (key: QueryKey): string =>
 	JSON.stringify(key, (_, value: unknown) =>
-		isPlainObject(value) ? Object.fromEntries(Object.keys(value).sort().map((name) => [name, value[name]])) : value,
+		isPlainObject(value)
+			? Object.fromEntries(
+					Object.keys(value)
+						.sort()
+						.map((name) => [name, value[name]]),
+				)
+			: value,
 	)
 
 /** Epoch ms of a `boundsKey` ("start/end") window, or none for any other key part. */
@@ -64,7 +70,8 @@ export const newestOlderWindow = (entries: CacheEntries, key: QueryKey): Option.
 				hashKey(entry.key.slice(0, -1)) === prefix &&
 				Option.exists(
 					windowOf(entry.key.at(-1)),
-					(other) => other.end < window.end && other.end - other.start === window.end - window.start,
+					(other) =>
+						other.end < window.end && other.end - other.start === window.end - window.start,
 				),
 		)
 		return Array.head(Array.sort(older, byNewest))
@@ -72,7 +79,9 @@ export const newestOlderWindow = (entries: CacheEntries, key: QueryKey): Option.
 
 const SavedCache = Schema.Struct({
 	version: Schema.Literal(1),
-	entries: Schema.Array(Schema.Struct({ key: Schema.Array(Schema.Unknown), data: Schema.Unknown, updatedAt: Schema.Number })),
+	entries: Schema.Array(
+		Schema.Struct({ key: Schema.Array(Schema.Unknown), data: Schema.Unknown, updatedAt: Schema.Number }),
+	),
 })
 const decodeSaved = Schema.decodeUnknownOption(Schema.fromJsonString(SavedCache))
 
@@ -88,7 +97,10 @@ export const parseSaved = (text: string, nowMs: number): CacheEntries =>
 						.map((entry) =>
 							trySync((): readonly [string, CacheEntry] => {
 								const key = entry.key.map(decodeCacheValue)
-								return [hashKey(key), { key, data: decodeCacheValue(entry.data), updatedAtMs: entry.updatedAt }]
+								return [
+									hashKey(key),
+									{ key, data: decodeCacheValue(entry.data), updatedAtMs: entry.updatedAt },
+								]
 							}),
 						),
 				),
@@ -96,7 +108,8 @@ export const parseSaved = (text: string, nowMs: number): CacheEntries =>
 	)
 
 /** What `restore` would rebuild from `data`: none when the codec cannot encode it (`serialize` skips it). */
-export const asCacheValue = <A>(data: A): Option.Option<CacheValue> => Option.map(encodeCacheValue(data), decodeCacheValue)
+export const asCacheValue = <A>(data: A): Option.Option<CacheValue> =>
+	Option.map(encodeCacheValue(data), decodeCacheValue)
 
 /** `serializeQueryCache`: the newest results that fit the budget, in legacy's saved form. */
 export const serialize = (entries: CacheEntries): string => {
@@ -126,4 +139,6 @@ export const dropUnused = (
 	lastUsedAtMs: ReadonlyMap<string, number>,
 	nowMs: number,
 ): CacheEntries =>
-	new Map(Array.filter(Array.fromIterable(entries), ([hash]) => nowMs - (lastUsedAtMs.get(hash) ?? 0) < GC_MS))
+	new Map(
+		Array.filter(Array.fromIterable(entries), ([hash]) => nowMs - (lastUsedAtMs.get(hash) ?? 0) < GC_MS),
+	)

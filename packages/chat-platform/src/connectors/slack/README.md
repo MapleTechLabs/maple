@@ -105,7 +105,7 @@ The scopes deliberately **do not** include `users:read` — see "Who may approve
    Connect, which runs the install flow and writes the `chat_workspaces` row (Slack's own consent
    screen adds the bot at the same time).
 4. **Invite the bot to a channel** (`/invite @Maple`) and **mention it**: `@Maple why is checkout
-slow?`. It answers in a thread on that message and edits one message there as the answer streams.
+   slow?`. It answers in a thread on that message and edits one message there as the answer streams.
    A reply in that thread continues the same conversation; a mention in another channel starts a
    different one.
 

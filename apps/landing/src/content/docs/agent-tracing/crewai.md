@@ -33,13 +33,13 @@ pip install "crewai>=1.15" "openinference-instrumentation-crewai>=1.1.18" \
 
 Pick the model instrumentor by the model string you pass to `LLM(...)`:
 
-| Model string | Instrumentor |
-| --- | --- |
-| `openai/…`, `openrouter/…`, `deepseek/…`, `ollama/…`, `custom_openai=True`, or a bare name like `gpt-4.1-mini` | `openinference-instrumentation-openai` |
-| `anthropic/…` or a bare `claude-…` | `openinference-instrumentation-anthropic` |
-| `gemini/…` or a bare `gemini-…` | `openinference-instrumentation-google-genai` |
-| `bedrock/…` | `openinference-instrumentation-bedrock` |
-| Anything else (needs `crewai[litellm]`) | `openinference-instrumentation-litellm` |
+| Model string                                                                                                   | Instrumentor                                 |
+| -------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `openai/…`, `openrouter/…`, `deepseek/…`, `ollama/…`, `custom_openai=True`, or a bare name like `gpt-4.1-mini` | `openinference-instrumentation-openai`       |
+| `anthropic/…` or a bare `claude-…`                                                                             | `openinference-instrumentation-anthropic`    |
+| `gemini/…` or a bare `gemini-…`                                                                                | `openinference-instrumentation-google-genai` |
+| `bedrock/…`                                                                                                    | `openinference-instrumentation-bedrock`      |
+| Anything else (needs `crewai[litellm]`)                                                                        | `openinference-instrumentation-litellm`      |
 
 Install only the ones your crews use. The LiteLLM instrumentor records nothing for the first four rows.
 

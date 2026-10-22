@@ -223,7 +223,11 @@ export const renderGcpAlchemy = (plan: GcpSetupPlan, existing: GcpExisting): str
 					`const LOG_FILTER = ${ts(logs.logFilter)}`,
 				]),
 		...(reader === null ? [] : [`const MAPLE_SERVICE_ACCOUNT = ${ts(reader.mapleServiceAccountEmail)}`]),
-		...(scopeIam ? [`const SCOPE = ${ts(`${plan.scopeType === "folder" ? "folders" : "organizations"}/${plan.scopeId}`)}`] : []),
+		...(scopeIam
+			? [
+					`const SCOPE = ${ts(`${plan.scopeType === "folder" ? "folders" : "organizations"}/${plan.scopeId}`)}`,
+				]
+			: []),
 	]
 	return `// Maple connection for Google Cloud ${plan.scopeType} ${plan.scopeId}
 //   Log forwarding:        ${logs === null ? "off" : "on"}
@@ -265,7 +269,7 @@ ${scopeIam ? `${SCOPE_IAM_MEMBER}\n` : ""}export default Alchemy.Stack(
     state: Alchemy.localState(),
   }`
 			: "{ providers: GCP.providers(), state: Alchemy.localState() }"
-	},
+  },
   Effect.gen(function* () {${logs === null ? "" : logsSection(plan, logs)}${reader === null ? "" : readerSection(plan, reader)}  }),
 )
 `

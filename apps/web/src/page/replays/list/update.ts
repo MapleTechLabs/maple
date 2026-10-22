@@ -80,8 +80,12 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 					: freshPagination(listKey, model.pagination.generation + 1),
 		},
 		commands: [
-			...(Option.isSome(firstPage) ? [FetchFirstPage({ key: listKey, ...args, refresh: mode === "Refresh" })] : []),
-			...(Option.isSome(facets) ? [FetchFacets({ key: facetsKey, ...args, refresh: mode === "Refresh" })] : []),
+			...(Option.isSome(firstPage)
+				? [FetchFirstPage({ key: listKey, ...args, refresh: mode === "Refresh" })]
+				: []),
+			...(Option.isSome(facets)
+				? [FetchFacets({ key: facetsKey, ...args, refresh: mode === "Refresh" })]
+				: []),
 		],
 	}
 }
@@ -99,17 +103,34 @@ const fetchNext = (model: Model): Return => {
 	const { pagination, window } = model
 	// Page 2 follows the current key's settled first page, never the previous one still on screen.
 	const isFirstPageCurrent = pagination.pages.length > 0 || AsyncData.isSuccess(model.firstPage.data)
-	if (cursor === null || !isFirstPageCurrent || window === null || pagination.key === null || pagination.isFetching)
+	if (
+		cursor === null ||
+		!isFirstPageCurrent ||
+		window === null ||
+		pagination.key === null ||
+		pagination.isFetching
+	)
 		return { model }
 	return {
 		model: { ...model, pagination: { ...pagination, isFetching: true } },
-		commands: [FetchNextPage({ key: pagination.key, search: model.search, window, cursor, generation: pagination.generation })],
+		commands: [
+			FetchNextPage({
+				key: pagination.key,
+				search: model.search,
+				window,
+				cursor,
+				generation: pagination.generation,
+			}),
+		],
 	}
 }
 
 export const navigate = (model: Model, search: Search): Return => ({
 	model,
-	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOf(AppRoute.Replays({ search })), isReplace: false }),
+	outMessage: PageOutMessage.RequestedNavigation({
+		url: hrefOf(AppRoute.Replays({ search })),
+		isReplace: false,
+	}),
 })
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Replays({ search }))
@@ -170,7 +191,11 @@ export const preload = (route: { readonly search: Search }, context: PageContext
 	return pickCommands(requestAll(model, context, window, "Load"), [FetchFirstPage.name, FetchFacets.name])
 }
 
-export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => {
 	const { search } = route
 	if (searchHref(model.search) === searchHref(search)) return { model }
 	const previous = model.search
@@ -189,7 +214,10 @@ export const routeChanged = (model: Model, route: { readonly search: Search }, c
 				? model.activeDraft
 				: draftOf(search.activeMin, search.activeMax),
 	}
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	return routeWindowStep(previous, search, {
 		resolve,
 		requestAll: (mode) =>
@@ -207,7 +235,8 @@ const draftOfRange = (model: Model, range: Range) =>
 const commitDraft = (model: Model, range: Range, isRewrite = true): Return => {
 	const draft = draftOfRange(model, range)
 	const committed = withRange(model.search, range, parseRange(draft.min, "s"), parseRange(draft.max, "s"))
-	if (!isRewrite) return searchHref(committed) === searchHref(model.search) ? { model } : navigate(model, committed)
+	if (!isRewrite)
+		return searchHref(committed) === searchHref(model.search) ? { model } : navigate(model, committed)
 	const canonical = draftOf(
 		range === "duration" ? committed.durationMin : committed.activeMin,
 		range === "duration" ? committed.durationMax : committed.activeMax,
@@ -229,7 +258,10 @@ const lift = <A>(
 
 const changedQuery = (model: Model, value: string): Return => {
 	const queryGeneration = model.queryGeneration + 1
-	return { model: { ...model, query: value, queryGeneration }, commands: [DebounceQuery({ generation: queryGeneration })] }
+	return {
+		model: { ...model, query: value, queryGeneration },
+		commands: [DebounceQuery({ generation: queryGeneration })],
+	}
 }
 
 const pickedTime = (model: Model, message: TimeRangePicker.Message): Return => {
@@ -250,7 +282,8 @@ const pickedTime = (model: Model, message: TimeRangePicker.Message): Return => {
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		CompletedResolveWindow: ({ window, nowMs, mode }) => requestAll({ ...model, nowMs }, context, window, mode),
+		CompletedResolveWindow: ({ window, nowMs, mode }) =>
+			requestAll({ ...model, nowMs }, context, window, mode),
 		CompletedFetchFirstPage: ({ key, result }) => ({
 			model: { ...model, firstPage: Keyed.accept(model.firstPage, key, result) },
 		}),
@@ -271,7 +304,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 									isFetching: false,
 									isStopped: isRepeatedCursor(model, page),
 								}),
-								onFailure: () => ({ ...model.pagination, isFetching: false, isStopped: true }),
+								onFailure: () => ({
+									...model.pagination,
+									isFetching: false,
+									isStopped: true,
+								}),
 							}),
 						},
 					},
@@ -297,7 +334,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		ClickedResetTimeRange: () =>
-			navigate(model, { ...model.search, startTime: undefined, endTime: undefined, timePreset: DEFAULT_PRESET }),
+			navigate(model, {
+				...model.search,
+				startTime: undefined,
+				endTime: undefined,
+				timePreset: DEFAULT_PRESET,
+			}),
 		ClickedRetryList: () =>
 			model.window === null || model.firstPage.key === null
 				? { model }
@@ -310,7 +352,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return q === model.search.q ? { model } : navigate(model, { ...model.search, q })
 		},
 		ToggledErrorsOnly: () =>
-			navigate(model, { ...model.search, hasErrors: model.search.hasErrors === true ? undefined : true }),
+			navigate(model, {
+				...model.search,
+				hasErrors: model.search.hasErrors === true ? undefined : true,
+			}),
 		ToggledEngagedOnly: () => navigate(model, toggledEngaged(model.search)),
 		ToggledTag: ({ tag }) => navigate(model, toggledTag(model.search, tag)),
 		ToggledFacetOption: ({ facet, name }) => navigate(model, toggledFacet(model.search, facet, name)),
@@ -329,7 +374,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CommittedRangeDraft: ({ range }) => commitDraft(model, range),
 		AppliedRange: ({ range, min, max }) =>
-			navigate({ ...model, draftVersion: model.draftVersion + 1 }, withRange(model.search, range, min, max)),
+			navigate(
+				{ ...model, draftVersion: model.draftVersion + 1 },
+				withRange(model.search, range, min, max),
+			),
 		GotHistogramMessage: ({ range, message: inner }) =>
 			HistogramMessage.match<Return>(inner, {
 				PointedHistogramBar: ({ index }) => ({

@@ -108,7 +108,9 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: ({ isPolling }) =>
 					isPolling
 						? pollTicks("15 seconds").pipe(
-								Stream.map(() => Message.GotSetupMessage({ message: SetupMessage.TickedPoll() })),
+								Stream.map(() =>
+									Message.GotSetupMessage({ message: SetupMessage.TickedPoll() }),
+								),
 							)
 						: Stream.empty,
 			},

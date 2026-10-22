@@ -33,7 +33,8 @@ const ROLE_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = [
 	{ _tag: "Item", item: { value: "org:admin", label: "Admin" } },
 ]
 
-const roleText = (h: H, role: string): Html => h.span([h.Class("px-2.5 text-xs text-foreground")], [orgRoleLabel(role)])
+const roleText = (h: H, role: string): Html =>
+	h.span([h.Class("px-2.5 text-xs text-foreground")], [orgRoleLabel(role)])
 
 const truncatedCell = (h: H, children: ReadonlyArray<Html>, className?: string): Html =>
 	tableCell(h, children, cn(truncatedCellStyles, className))
@@ -41,24 +42,33 @@ const truncatedCell = (h: H, children: ReadonlyArray<Html>, className?: string):
 const loadMore = (h: H, isLoading: boolean, onClick: Message): Html =>
 	h.div(
 		[h.Class("flex justify-center border-t p-2")],
-		[button(h, { variant: "ghost", size: "sm", isLoading, attributes: [h.OnClick(onClick)] }, ["Load more"])],
+		[
+			button(h, { variant: "ghost", size: "sm", isLoading, attributes: [h.OnClick(onClick)] }, [
+				"Load more",
+			]),
+		],
 	)
 
 const skeletonRow = (h: H, isAdmin: boolean, index: number): Html =>
-	tableRow(h, [
-		tableCell(h, [
-			h.div(
-				[h.Class("flex items-center gap-3")],
-				[
-					skeleton(h, "size-6 rounded-full"),
-					h.div([h.Class("space-y-1.5")], [skeleton(h, "h-3 w-32"), skeleton(h, "h-3 w-48")]),
-				],
-			),
-		]),
-		tableCell(h, [skeleton(h, "h-3 w-16")]),
-		tableCell(h, [skeleton(h, "h-3 w-20")]),
-		...(isAdmin ? [tableCell(h, [])] : []),
-	], undefined, [h.Key(`skeleton-${index}`)])
+	tableRow(
+		h,
+		[
+			tableCell(h, [
+				h.div(
+					[h.Class("flex items-center gap-3")],
+					[
+						skeleton(h, "size-6 rounded-full"),
+						h.div([h.Class("space-y-1.5")], [skeleton(h, "h-3 w-32"), skeleton(h, "h-3 w-48")]),
+					],
+				),
+			]),
+			tableCell(h, [skeleton(h, "h-3 w-16")]),
+			tableCell(h, [skeleton(h, "h-3 w-20")]),
+			...(isAdmin ? [tableCell(h, [])] : []),
+		],
+		undefined,
+		[h.Key(`skeleton-${index}`)],
+	)
 
 const roleCell = (h: H, model: Model, member: MemberRow, canManage: boolean): Html => {
 	if (!canManage) return tableCell(h, [roleText(h, member.role)])
@@ -93,7 +103,11 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 				h.div(
 					[h.Class("flex items-center gap-3")],
 					[
-						avatarFallback(h, { className: "size-6 shrink-0", imageUrl: member.imageUrl }, initialsFrom(member.name)),
+						avatarFallback(
+							h,
+							{ className: "size-6 shrink-0", imageUrl: member.imageUrl },
+							initialsFrom(member.name),
+						),
 						h.div(
 							[h.Class("min-w-0")],
 							[
@@ -102,18 +116,30 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 									[
 										truncatedText(h, { text: member.name }),
 										...(member.isCurrentUser
-											? [h.span([h.Class("ml-1 shrink-0 text-muted-foreground")], ["(you)"])]
+											? [
+													h.span(
+														[h.Class("ml-1 shrink-0 text-muted-foreground")],
+														["(you)"],
+													),
+												]
 											: []),
 									],
 								),
-								truncatedText(h, { text: member.identifier, className: "text-xs text-muted-foreground" }),
+								truncatedText(h, {
+									text: member.identifier,
+									className: "text-xs text-muted-foreground",
+								}),
 							],
 						),
 					],
 				),
 			]),
 			roleCell(h, model, member, canManage),
-			tableCell(h, [formatDateInTimezone(member.createdAtMs, { timeZone: inputs.timeZone })], "text-xs text-muted-foreground"),
+			tableCell(
+				h,
+				[formatDateInTimezone(member.createdAtMs, { timeZone: inputs.timeZone })],
+				"text-xs text-muted-foreground",
+			),
 			...(model.isAdmin
 				? [
 						tableCell(
@@ -124,8 +150,17 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 											slotId: menuId,
 											model: model.rowMenus[menuId] ?? Menu.init(menuId),
 											label: `Actions for ${member.name}`,
-											entries: [{ _tag: "Item", value: "remove", label: "Remove", icon: "TrashIcon", variant: "destructive" }],
-											toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
+											entries: [
+												{
+													_tag: "Item",
+													value: "remove",
+													label: "Remove",
+													icon: "TrashIcon",
+													variant: "destructive",
+												},
+											],
+											toParentMessage: (message) =>
+												Message.GotRowMenuMessage({ menuId, message }),
 										}),
 									]
 								: [],
@@ -151,7 +186,12 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 							[
 								h.p(
 									[h.Class("flex items-center gap-2 text-xs text-foreground")],
-									[icon(h, "CircleInfoIcon", { className: "size-3.5 shrink-0 text-primary" }), prompt.question],
+									[
+										icon(h, "CircleInfoIcon", {
+											className: "size-3.5 shrink-0 text-primary",
+										}),
+										prompt.question,
+									],
 								),
 								h.div(
 									[h.Class("flex shrink-0 items-center gap-1.5")],
@@ -168,7 +208,11 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 										),
 										button(
 											h,
-											{ size: "sm", isLoading: model.isRoleSaving, attributes: [h.OnClick(Message.ClickedConfirmRole())] },
+											{
+												size: "sm",
+												isLoading: model.isRoleSaving,
+												attributes: [h.OnClick(Message.ClickedConfirmRole())],
+											},
 											[prompt.confirmLabel],
 										),
 									],
@@ -239,10 +283,20 @@ const invitationRow = (h: H, model: Model, invitation: InvitationRow, inputs: In
 					[h.Class("flex items-center gap-3")],
 					[
 						h.span(
-							[h.Class("inline-flex size-6 shrink-0 select-none items-center justify-center overflow-hidden rounded-full align-middle font-medium text-xs"), h.DataAttribute("slot", "avatar")],
+							[
+								h.Class(
+									"inline-flex size-6 shrink-0 select-none items-center justify-center overflow-hidden rounded-full align-middle font-medium text-xs",
+								),
+								h.DataAttribute("slot", "avatar"),
+							],
 							[
 								h.span(
-									[h.Class("flex size-full items-center justify-center rounded-full bg-muted"), h.DataAttribute("slot", "avatar-fallback")],
+									[
+										h.Class(
+											"flex size-full items-center justify-center rounded-full bg-muted",
+										),
+										h.DataAttribute("slot", "avatar-fallback"),
+									],
 									[icon(h, "EnvelopeIcon", { size: 12 })],
 								),
 							],
@@ -252,7 +306,11 @@ const invitationRow = (h: H, model: Model, invitation: InvitationRow, inputs: In
 				),
 			]),
 			tableCell(h, [roleText(h, invitation.role)]),
-			tableCell(h, [formatRelativeTime(invitation.createdAtMs, inputs.nowMs)], "text-xs text-muted-foreground"),
+			tableCell(
+				h,
+				[formatRelativeTime(invitation.createdAtMs, inputs.nowMs)],
+				"text-xs text-muted-foreground",
+			),
 			...(model.isAdmin
 				? [
 						tableCell(h, [
@@ -298,7 +356,9 @@ const invitationsSection = (h: H, model: Model, inputs: Inputs): ReadonlyArray<H
 				id: "settings-invitations",
 				width: "wide",
 				title: "Invitations",
-				description: ["Sent but not yet accepted. Resend issues a fresh invitation and revokes the old one."],
+				description: [
+					"Sent but not yet accepted. Resend issues a fresh invitation and revokes the old one.",
+				],
 				padded: false,
 			},
 			[
@@ -311,16 +371,31 @@ const invitationsSection = (h: H, model: Model, inputs: Inputs): ReadonlyArray<H
 							...(model.isAdmin ? [tableHead(h, [], "w-12")] : []),
 						]),
 					]),
-					tableBody(h, data.rows.map((invitation) => invitationRow(h, model, invitation, inputs))),
+					tableBody(
+						h,
+						data.rows.map((invitation) => invitationRow(h, model, invitation, inputs)),
+					),
 				]),
-				...(hasMore(data) ? [loadMore(h, data.isFetchingMore, Message.ClickedLoadMoreInvitations())] : []),
+				...(hasMore(data)
+					? [loadMore(h, data.isFetchingMore, Message.ClickedLoadMoreInvitations())]
+					: []),
 			],
 		),
 	]
 }
 
-const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
-const EMAIL_IDS: FieldIds = { control: "invite-email", label: "invite-email-label", error: "invite-email-error" }
+const IDLE: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
+const EMAIL_IDS: FieldIds = {
+	control: "invite-email",
+	label: "invite-email-label",
+	error: "invite-email-error",
+}
 
 const inviteDialog = (h: H, model: Model): Html => {
 	const emailState = Field.stateOf(model.inviteEmail, false)
@@ -344,7 +419,9 @@ const inviteDialog = (h: H, model: Model): Html => {
 					attributes: [
 						h.Type("email"),
 						h.Placeholder("colleague@example.com"),
-						...Field.controlAttributes(h, model.inviteEmail, (message) => Message.GotInviteEmailMessage({ message })),
+						...Field.controlAttributes(h, model.inviteEmail, (message) =>
+							Message.GotInviteEmailMessage({ message }),
+						),
 					],
 				}),
 			]),
@@ -362,7 +439,14 @@ const inviteDialog = (h: H, model: Model): Html => {
 						field(h, { state: roleState }, [
 							fieldLabel(
 								h,
-								{ ids: { control: "invite-role-trigger", label: "invite-role-label", error: "invite-role-error" }, state: roleState },
+								{
+									ids: {
+										control: "invite-role-trigger",
+										label: "invite-role-label",
+										error: "invite-role-error",
+									},
+									state: roleState,
+								},
 								"Role",
 							),
 							...parts,
@@ -415,7 +499,8 @@ const loadingSkeleton = (h: H): Html =>
 
 export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, h) => {
 	if (model.hasOrganization === null) return loadingSkeleton(h)
-	if (!model.hasOrganization) return noOrganization(h, "Select or create an organization to manage members.")
+	if (!model.hasOrganization)
+		return noOrganization(h, "Select or create an organization to manage members.")
 	return settingsSections(h, "wide", [
 		...adminOnlyNotice(h, { isAdmin: model.isAdmin, subject: "members", adminName: model.adminName }),
 		membersSection(h, model, inputs),

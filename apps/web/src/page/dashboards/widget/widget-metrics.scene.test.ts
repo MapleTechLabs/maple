@@ -35,7 +35,13 @@ const document = Schema.decodeUnknownSync(DashboardDocument)({
 						metricType: "gauge",
 						aggregation: "avg",
 						whereClause: "",
-						addOns: { groupBy: false, having: false, orderBy: false, limit: false, legend: false },
+						addOns: {
+							groupBy: false,
+							having: false,
+							orderBy: false,
+							limit: false,
+							legend: false,
+						},
 						groupBy: [],
 					},
 				],
@@ -66,10 +72,16 @@ const opened = () =>
 
 describe("widget editor metric reads", () => {
 	test("a failed metric list or key lookup is asked again on the next edit", () => {
-		const failedList = step(opened().model, Message.CompletedFetchMetricOptions({ search: "", result: Result.fail(toLoadFailure("down")) }))
+		const failedList = step(
+			opened().model,
+			Message.CompletedFetchMetricOptions({ search: "", result: Result.fail(toLoadFailure("down")) }),
+		)
 		const failed = step(
 			failedList.model,
-			Message.CompletedFetchMetricKeys({ metric: "process.cpu.utilization::gauge", result: Result.fail(toLoadFailure("down")) }),
+			Message.CompletedFetchMetricKeys({
+				metric: "process.cpu.utilization::gauge",
+				result: Result.fail(toLoadFailure("down")),
+			}),
 		)
 		const edited = step(failed.model, Message.ChangedTitle({ value: "CPU busy" }))
 		expect(edited.names).toEqual(expect.arrayContaining([FetchMetricOptions.name, FetchMetricKeys.name]))

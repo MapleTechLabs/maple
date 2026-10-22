@@ -30,7 +30,10 @@ const toolRow = (h: H, tool: McpToolCatalogEntry): Html =>
 		],
 		[
 			h.code([h.Class("truncate font-mono text-xs font-medium text-foreground")], [tool.name]),
-			h.p([h.Class("truncate text-xs text-muted-foreground max-sm:hidden"), h.Title(tool.description)], [tool.description]),
+			h.p(
+				[h.Class("truncate text-xs text-muted-foreground max-sm:hidden"), h.Title(tool.description)],
+				[tool.description],
+			),
 			tool.readOnly
 				? badge(h, { variant: "muted", size: "sm" }, ["Read only"])
 				: badge(h, { variant: "warn", size: "sm" }, ["Writes"]),
@@ -42,7 +45,11 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 	const rows = hidden === 0 ? group.tools : group.tools.slice(0, PREVIEW_ROWS)
 	const panelId = `mcp-tools-${group.id}-panel`
 	return h.div(
-		[h.Key(group.id), h.DataAttribute(isOpen ? "open" : "closed", ""), h.DataAttribute("slot", "collapsible")],
+		[
+			h.Key(group.id),
+			h.DataAttribute(isOpen ? "open" : "closed", ""),
+			h.DataAttribute("slot", "collapsible"),
+		],
 		[
 			h.button(
 				[
@@ -59,10 +66,16 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 				[
 					icon(h, "ChevronRightIcon", {
 						size: 14,
-						className: cn("shrink-0 text-muted-foreground transition-transform", isOpen && "rotate-90"),
+						className: cn(
+							"shrink-0 text-muted-foreground transition-transform",
+							isOpen && "rotate-90",
+						),
 					}),
 					h.span([h.Class("font-medium")], [group.label]),
-					h.span([h.Class("text-xs text-muted-foreground tabular-nums")], [String(group.tools.length)]),
+					h.span(
+						[h.Class("text-xs text-muted-foreground tabular-nums")],
+						[String(group.tools.length)],
+					),
 				],
 			),
 			...(isOpen
@@ -83,7 +96,10 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 								h.div(
 									[h.Class("px-4 pb-3 pl-10")],
 									[
-										h.ul([], rows.map((tool) => toolRow(h, tool))),
+										h.ul(
+											[],
+											rows.map((tool) => toolRow(h, tool)),
+										),
 										...(hidden > 0
 											? [
 													button(
@@ -92,7 +108,13 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 															variant: "ghost",
 															size: "xs",
 															className: "-ml-2 mt-1 text-muted-foreground",
-															attributes: [h.OnClick(Message.ClickedShowAllTools({ groupId: group.id }))],
+															attributes: [
+																h.OnClick(
+																	Message.ClickedShowAllTools({
+																		groupId: group.id,
+																	}),
+																),
+															],
 														},
 														["Show ", String(hidden), " more"],
 													),
@@ -126,7 +148,10 @@ const catalog = (h: H, model: Model, tools: ReadonlyArray<McpToolCatalogEntry>):
 			],
 		),
 		groups.length === 0
-			? h.p([h.Class("px-4 py-6 text-center text-sm text-muted-foreground")], ["No tools match “", model.toolSearch, "”."])
+			? h.p(
+					[h.Class("px-4 py-6 text-center text-sm text-muted-foreground")],
+					["No tools match “", model.toolSearch, "”."],
+				)
 			: h.div(
 					[h.Class("divide-y")],
 					groups.map((group, index) =>
@@ -142,7 +167,10 @@ const catalog = (h: H, model: Model, tools: ReadonlyArray<McpToolCatalogEntry>):
 }
 
 export const toolsSection = (h: H, model: Model): Html => {
-	const count = AsyncData.getOrElse(AsyncData.map(model.tools, (tools) => tools.length), () => null)
+	const count = AsyncData.getOrElse(
+		AsyncData.map(model.tools, (tools) => tools.length),
+		() => null,
+	)
 	return settingsSection(
 		h,
 		{

@@ -58,7 +58,11 @@ const followNavigation = (
 		onSome: (next) => {
 			if (next._tag !== "AgentSession") return { session, commands: [] }
 			const search = { ...session.search, view: next.search.view, span: next.search.span }
-			const changed = sessionRouteChanged(session, { sessionId: session.sessionId, search }, contextOf(timeZone))
+			const changed = sessionRouteChanged(
+				session,
+				{ sessionId: session.sessionId, search },
+				contextOf(timeZone),
+			)
 			return { session: changed.model, commands: withoutReads(changed.commands) }
 		},
 	})

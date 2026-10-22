@@ -41,7 +41,10 @@ describe("plan gate", () => {
 
 	test("an org that never held a plan is sent to onboarding with its destination", () => {
 		expect(gate(home, customerWith(null)).redirect).toEqual(
-			Option.some({ url: hrefOf(AppRoute.QuickStart({ search: { redirect_url: "/" } })), isReplace: true }),
+			Option.some({
+				url: hrefOf(AppRoute.QuickStart({ search: { redirect_url: "/" } })),
+				isReplace: true,
+			}),
 		)
 	})
 
@@ -49,9 +52,10 @@ describe("plan gate", () => {
 		expect(gate(AppRoute.QuickStart({ search: {} }), customerWith("active")).redirect).toEqual(
 			Option.some({ url: "/", isReplace: true }),
 		)
-		expect(gate(AppRoute.SelectPlan({ search: { redirect_url: "/traces" } }), customerWith("active")).redirect).toEqual(
-			Option.some({ url: "/traces", isReplace: true }),
-		)
+		expect(
+			gate(AppRoute.SelectPlan({ search: { redirect_url: "/traces" } }), customerWith("active"))
+				.redirect,
+		).toEqual(Option.some({ url: "/traces", isReplace: true }))
 	})
 
 	test("a failed customer read fails open", () => {
@@ -80,7 +84,10 @@ describe("plan gate", () => {
 		expect(at(elsewhere, AppRoute.CliLogin({ search: {} })).wrongRegion).toBe("eu")
 		const open: ClerkOrganization = { ...elsewhere, isRegionOpen: true }
 		expect(at(open, home).redirect).toEqual(
-			Option.some({ url: hrefOf(AppRoute.QuickStart({ search: { redirect_url: "/" } })), isReplace: true }),
+			Option.some({
+				url: hrefOf(AppRoute.QuickStart({ search: { redirect_url: "/" } })),
+				isReplace: true,
+			}),
 		)
 		expect(at(open, home).wrongRegion).toBeNull()
 	})

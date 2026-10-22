@@ -70,7 +70,11 @@ const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Retur
 	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDialogMessage({ message })),
 })
 
-const reset = (model: Model): Model => ({ ...init(model.dialog.id), apiKey: model.apiKey, dialog: model.dialog })
+const reset = (model: Model): Model => ({
+	...init(model.dialog.id),
+	apiKey: model.apiKey,
+	dialog: model.dialog,
+})
 
 export const open = (model: Model, apiKey: V2ApiKey): Return =>
 	liftDialog({ ...reset(model), apiKey }, Dialog.open(model.dialog))
@@ -83,7 +87,8 @@ export const update = (model: Model, message: Message): Return =>
 			const step = Dialog.update(model.dialog, child)
 			return liftDialog(step.outMessage?._tag === "Closed" ? reset(model) : model, step)
 		},
-		ClickedCancel: () => (model.isRolling ? { model } : liftDialog(reset(model), Dialog.close(model.dialog))),
+		ClickedCancel: () =>
+			model.isRolling ? { model } : liftDialog(reset(model), Dialog.close(model.dialog)),
 		ClickedRoll: () =>
 			model.isRolling || model.apiKey === null
 				? { model }
@@ -104,7 +109,9 @@ export const update = (model: Model, message: Message): Return =>
 			const step = CopyButton.update(model.secretCopy, child)
 			return {
 				model: { ...model, secretCopy: step.model },
-				commands: Command.mapMessages(step.commands, (inner) => Message.GotSecretCopyMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands, (inner) =>
+					Message.GotSecretCopyMessage({ message: inner }),
+				),
 			}
 		},
 		ToggledSecretVisible: () => ({ model: { ...model, isSecretVisible: !model.isSecretVisible } }),
@@ -127,19 +134,30 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 								DialogView.dialogDescription(h, "dialog", model.dialog.id, [
 									"A new secret will be issued for",
 									" ",
-									h.span([h.Class("text-foreground font-medium")], [model.apiKey?.name ?? ""]),
+									h.span(
+										[h.Class("text-foreground font-medium")],
+										[model.apiKey?.name ?? ""],
+									),
 									" and the current key will be revoked immediately. Any integrations using the old key will stop working until you update them with the new one.",
 								]),
 							]),
 							DialogView.dialogFooter(h, "dialog", [
 								button(
 									h,
-									{ variant: "outline", isDisabled: model.isRolling, attributes: [h.OnClick(Message.ClickedCancel())] },
+									{
+										variant: "outline",
+										isDisabled: model.isRolling,
+										attributes: [h.OnClick(Message.ClickedCancel())],
+									},
 									["Cancel"],
 								),
 								button(
 									h,
-									{ variant: "destructive", isLoading: model.isRolling, attributes: [h.OnClick(Message.ClickedRoll())] },
+									{
+										variant: "destructive",
+										isLoading: model.isRolling,
+										attributes: [h.OnClick(Message.ClickedRoll())],
+									},
 									["Roll key"],
 								),
 							]),
@@ -165,7 +183,11 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 								}),
 							]),
 							DialogView.dialogFooter(h, "dialog", [
-								button(h, { variant: "outline", attributes: [h.OnClick(Message.ClickedCancel())] }, ["Done"]),
+								button(
+									h,
+									{ variant: "outline", attributes: [h.OnClick(Message.ClickedCancel())] },
+									["Done"],
+								),
 							]),
 						],
 		},

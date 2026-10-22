@@ -21,7 +21,8 @@ const flags = {
 }
 const urlOf = (hash: string) => Option.getOrThrow(fromString(`http://localhost/#${hash}`))
 const mobile = (): Model => init(flags, urlOf("/traces")).model
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 
 describe("mobile sidebar", () => {
 	test("the trigger opens and closes the sheet without touching the saved rail state", () => {
@@ -45,14 +46,19 @@ describe("filters drawer", () => {
 	test("the page's Filters button opens it through the root", () => {
 		const step = update(
 			mobile(),
-			Message.GotPageMessage({ message: PageMessage.GotTracesMessage({ message: Traces.Message.ClickedOpenFilters() }) }),
+			Message.GotPageMessage({
+				message: PageMessage.GotTracesMessage({ message: Traces.Message.ClickedOpenFilters() }),
+			}),
 		)
 		expect(step.model.filterDrawer.isOpen).toBe(true)
 	})
 
 	test("a filter change on the same page keeps it open; another page starts it closed", () => {
 		const opened = foldPageOut(mobile(), PageOutMessage.RequestedFilterDrawer()).model
-		const refiltered = update(opened, Message.ChangedUrl({ url: urlOf("/traces?service=storefront") })).model
+		const refiltered = update(
+			opened,
+			Message.ChangedUrl({ url: urlOf("/traces?service=storefront") }),
+		).model
 		expect(refiltered.filterDrawer.isOpen).toBe(true)
 		const elsewhere = update(refiltered, Message.ChangedUrl({ url: urlOf("/logs") })).model
 		expect(elsewhere.filterDrawer.isOpen).toBe(false)

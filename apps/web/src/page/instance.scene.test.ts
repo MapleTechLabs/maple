@@ -32,7 +32,10 @@ const documentOf = (id: string) =>
 	})
 
 const routeOf = (id: string, isEdit: boolean) =>
-	AppRoute.Dashboard({ dashboardId: Schema.decodeSync(DashboardId)(id), search: isEdit ? { mode: "edit" } : {} })
+	AppRoute.Dashboard({
+		dashboardId: Schema.decodeSync(DashboardId)(id),
+		search: isEdit ? { mode: "edit" } : {},
+	})
 
 const stamp = (key: string, instance: number, message: Message, org: string = orgId): PageMessage => ({
 	_tag: "DashboardView",
@@ -46,9 +49,15 @@ const send = (slot: PageSlot | null, message: PageMessage) => updatePage(slot, m
 
 /** Dashboard `id` entered in edit mode as build `instance`, clocked and holding its document. */
 const opened = (current: PageSlot | null, id: string, instance: number): PageSlot | null =>
-	[Message.CompletedReadClock({ nowMs: NOW }), Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(documentOf(id)) })]
+	[
+		Message.CompletedReadClock({ nowMs: NOW }),
+		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(documentOf(id)) }),
+	]
 		.map((message) => stamp(id, instance, message))
-		.reduce((slot, message) => send(slot, message).slot, enterRoute(current, routeOf(id, true), context, instance).slot)
+		.reduce(
+			(slot, message) => send(slot, message).slot,
+			enterRoute(current, routeOf(id, true), context, instance).slot,
+		)
 
 const deleteTile = (slot: PageSlot | null, id: string, instance: number) =>
 	send(
@@ -86,13 +95,19 @@ describe("page instances", () => {
 
 	test("dashboard A's late failed write does not make B read-only", () => {
 		const onB = opened(opened(null, "dash_a", 1), "dash_b", 2)
-		const late = send(onB, stamp("dash_a", 1, Message.CompletedWrite({ result: Result.fail("Write failed") })))
+		const late = send(
+			onB,
+			stamp("dash_a", 1, Message.CompletedWrite({ result: Result.fail("Write failed") })),
+		)
 		expect(late.slot?._tag === "DashboardView" ? late.slot.model.persistenceError : "missing").toBeNull()
 	})
 
 	test("a Message stamped for another org's instance of the same dashboard is dropped", () => {
 		const onA = opened(null, "dash_a", 1)
-		const late = send(onA, stamp("dash_a", 1, Message.CompletedWrite({ result: Result.fail("Write failed") }), otherOrgId))
+		const late = send(
+			onA,
+			stamp("dash_a", 1, Message.CompletedWrite({ result: Result.fail("Write failed") }), otherOrgId),
+		)
 		expect(late.slot).toBe(onA)
 	})
 

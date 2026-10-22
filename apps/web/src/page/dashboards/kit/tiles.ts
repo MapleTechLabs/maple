@@ -143,7 +143,6 @@ const compareValues = (a: unknown, b: unknown, dir: "asc" | "desc"): number => {
 
 // TILES
 
-
 const sortableHeader = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, column: Column, isText: boolean): Html => {
 	const sort = ctx.tableSort
 	const isActive = sort.key === column.field
@@ -423,4 +422,3 @@ export const widgetTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Wi
 			return chartWidgetTile(h, ctx, widget, CHART_WIDGETS.chart)
 	}
 }
-

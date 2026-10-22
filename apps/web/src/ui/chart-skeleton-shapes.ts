@@ -39,7 +39,9 @@ export const hbarGhost = <M>(h: HtmlBuilder<M>): Html =>
 					h.Style({ "grid-template-columns": "minmax(0, 38%) 1fr 44px" }),
 				],
 				[
-					stub(h, "h-2.5 rounded-xs bg-foreground/10", { width: `${[72, 88, 60, 48, 66][i] ?? 0}%` }),
+					stub(h, "h-2.5 rounded-xs bg-foreground/10", {
+						width: `${[72, 88, 60, 48, 66][i] ?? 0}%`,
+					}),
 					h.div(
 						[h.Class("h-3 overflow-hidden rounded-[3px] bg-foreground/5")],
 						[
@@ -65,7 +67,9 @@ export const funnelGhost = <M>(h: HtmlBuilder<M>): Html =>
 					h.div(
 						[h.Class("flex items-center justify-between")],
 						[
-							stub(h, "h-2.5 rounded-xs bg-foreground/10", { width: `${[26, 34, 22, 30][i] ?? 0}%` }),
+							stub(h, "h-2.5 rounded-xs bg-foreground/10", {
+								width: `${[26, 34, 22, 30][i] ?? 0}%`,
+							}),
 							stub(h, "h-2.5 w-12 rounded-xs bg-foreground/10"),
 						],
 					),
@@ -134,7 +138,10 @@ export const pathsGhost = <M>(h: HtmlBuilder<M>): Html => {
 				PATH_COLUMNS.map(() => stub(h, "h-2 w-10 rounded-xs bg-foreground/10")),
 			),
 			h.svg(
-				[...attrs(h, { viewBox: "0 0 100 100", preserveAspectRatio: "none" }), h.Class("min-h-0 w-full flex-1")],
+				[
+					...attrs(h, { viewBox: "0 0 100 100", preserveAspectRatio: "none" }),
+					h.Class("min-h-0 w-full flex-1"),
+				],
 				[
 					...PATH_LINKS.map(([from, [sy0, sy1], [ty0, ty1]]) => {
 						const x0 = nodeX(from) + PATH_NODE_W
@@ -155,9 +162,21 @@ export const pathsGhost = <M>(h: HtmlBuilder<M>): Html => {
 						const x = nodeX(i)
 						return column.map(([y0, y1], j) =>
 							h.g(
-								[h.Class("animate-pulse"), h.Style({ "animation-delay": `${-(i + j) * 0.13}s` })],
 								[
-									h.rect(attrs(h, { x, y: y0, width: PATH_NODE_W, height: y1 - y0, fill: STROKE, "fill-opacity": 0.3 })),
+									h.Class("animate-pulse"),
+									h.Style({ "animation-delay": `${-(i + j) * 0.13}s` }),
+								],
+								[
+									h.rect(
+										attrs(h, {
+											x,
+											y: y0,
+											width: PATH_NODE_W,
+											height: y1 - y0,
+											fill: STROKE,
+											"fill-opacity": 0.3,
+										}),
+									),
 									h.rect(
 										attrs(h, {
 											x: last ? x - 1.2 - PATH_LABEL_W : x + PATH_NODE_W + 1.2,
@@ -180,10 +199,21 @@ export const pathsGhost = <M>(h: HtmlBuilder<M>): Html => {
 
 export const pieGhost = <M>(h: HtmlBuilder<M>): Html =>
 	h.svg(
-		[...attrs(h, { viewBox: "0 0 100 100", preserveAspectRatio: "xMidYMid meet" }), h.Class("h-full max-h-[88%] w-full")],
+		[
+			...attrs(h, { viewBox: "0 0 100 100", preserveAspectRatio: "xMidYMid meet" }),
+			h.Class("h-full max-h-[88%] w-full"),
+		],
 		[
 			h.circle(
-				attrs(h, { cx: 50, cy: 50, r: 30, fill: "none", stroke: STROKE, "stroke-opacity": 0.12, "stroke-width": 16 }),
+				attrs(h, {
+					cx: 50,
+					cy: 50,
+					r: 30,
+					fill: "none",
+					stroke: STROKE,
+					"stroke-opacity": 0.12,
+					"stroke-width": 16,
+				}),
 			),
 			h.g(
 				[h.Class("skeleton-spin")],
@@ -211,7 +241,10 @@ const GAUGE_ARC = "M 26 79 A 34 34 0 1 1 74 79"
 
 export const gaugeGhost = <M>(h: HtmlBuilder<M>): Html =>
 	h.svg(
-		[...attrs(h, { viewBox: "0 0 100 100", preserveAspectRatio: "xMidYMid meet" }), h.Class("h-full w-full")],
+		[
+			...attrs(h, { viewBox: "0 0 100 100", preserveAspectRatio: "xMidYMid meet" }),
+			h.Class("h-full w-full"),
+		],
 		[
 			h.path(
 				attrs(h, {
@@ -236,7 +269,15 @@ export const gaugeGhost = <M>(h: HtmlBuilder<M>): Html =>
 				h.Class("skeleton-draw"),
 			]),
 			h.rect([
-				...attrs(h, { x: 36, y: 47, width: 28, height: 13, rx: 3, fill: STROKE, "fill-opacity": 0.12 }),
+				...attrs(h, {
+					x: 36,
+					y: 47,
+					width: 28,
+					height: 13,
+					rx: 3,
+					fill: STROKE,
+					"fill-opacity": 0.12,
+				}),
 				h.Class("animate-pulse"),
 			]),
 		],
@@ -280,16 +321,24 @@ export const dropoffGhost = <M>(h: HtmlBuilder<M>): Html =>
 								[
 									...(i > 0
 										? [
-												stub(h, "absolute inset-x-0 rounded-sm bg-foreground/[0.04]", {
-													bottom: `${height}%`,
-													height: `${prev - height}%`,
-												}),
+												stub(
+													h,
+													"absolute inset-x-0 rounded-sm bg-foreground/[0.04]",
+													{
+														bottom: `${height}%`,
+														height: `${prev - height}%`,
+													},
+												),
 											]
 										: []),
-									stub(h, "absolute inset-x-0 bottom-0 rounded-sm bg-foreground/10 animate-pulse", {
-										height: `${height}%`,
-										"animation-delay": `${-i * 0.13}s`,
-									}),
+									stub(
+										h,
+										"absolute inset-x-0 bottom-0 rounded-sm bg-foreground/10 animate-pulse",
+										{
+											height: `${height}%`,
+											"animation-delay": `${-i * 0.13}s`,
+										},
+									),
 								],
 							),
 						],

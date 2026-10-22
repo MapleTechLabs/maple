@@ -75,7 +75,9 @@ const settledScript = (model: Model): string | null => {
 /** What the cleanup deletes: only the capabilities a run may have set up. */
 const deletesText = (connector: V2GcpConnector): string =>
 	`${[
-		connector.applied_logs_enabled === false ? null : "the log sink, subscription, topic and push service account",
+		connector.applied_logs_enabled === false
+			? null
+			: "the log sink, subscription, topic and push service account",
 		connector.applied_metrics_enabled === false ? null : "the read-only service account and its roles",
 	]
 		.filter((part) => part !== null)
@@ -155,9 +157,7 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 													h.dt([h.Class("text-foreground")], ["Deletes"]),
 													h.dd(
 														[h.Class("text-pretty text-muted-foreground")],
-														[
-															deletesText(connector),
-														],
+														[deletesText(connector)],
 													),
 													h.dt([h.Class("text-foreground")], ["Keeps"]),
 													h.dd(
@@ -180,10 +180,19 @@ const cleanupDisconnect = (h: H, model: Model, connector: V2GcpConnector, timeZo
 											h.details(
 												[h.Class("text-xs/5")],
 												[
-													h.summary([h.Class("cursor-pointer text-foreground")], ["Delete them in the console instead"]),
+													h.summary(
+														[h.Class("cursor-pointer text-foreground")],
+														["Delete them in the console instead"],
+													),
 													h.ol(
-														[h.Class("mt-2 flex list-decimal flex-col gap-2 pl-5")],
-														gcpRemovalList(connector, "all").map((item) => removalItem(h, model, item)),
+														[
+															h.Class(
+																"mt-2 flex list-decimal flex-col gap-2 pl-5",
+															),
+														],
+														gcpRemovalList(connector, "all").map((item) =>
+															removalItem(h, model, item),
+														),
 													),
 												],
 											),

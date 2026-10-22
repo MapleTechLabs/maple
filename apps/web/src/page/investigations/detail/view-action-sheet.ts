@@ -23,7 +23,8 @@ import { evidenceChips, type TipTrigger } from "./view-sections"
 type H = HtmlBuilder<Message>
 type Report = NonNullable<V2Investigation["report"]>
 
-const sectionEyebrow = (h: H, title: string): Html => eyebrow(h, { as: "h3", className: "block mb-0" }, [title])
+const sectionEyebrow = (h: H, title: string): Html =>
+	eyebrow(h, { as: "h3", className: "block mb-0" }, [title])
 
 export const actionSheetContent = (
 	h: H,
@@ -33,7 +34,9 @@ export const actionSheetContent = (
 	trigger: TipTrigger,
 ): ReadonlyArray<Html> => {
 	const glyph = ACTION_GLYPH[action.kind]
-	const evidence = (report?.evidence ?? []).filter((item) => item.note || item.traceIds.length > 0 || item.logPatterns.length > 0)
+	const evidence = (report?.evidence ?? []).filter(
+		(item) => item.note || item.traceIds.length > 0 || item.logPatterns.length > 0,
+	)
 	return [
 		DialogView.dialogHeader(
 			h,
@@ -53,14 +56,23 @@ export const actionSheetContent = (
 				]) ?? h.span([], []),
 				h.h2(
 					[
-						h.Class(cn(sheetTitleStyles, "flex flex-wrap items-center gap-2 text-title leading-tight")),
+						h.Class(
+							cn(
+								sheetTitleStyles,
+								"flex flex-wrap items-center gap-2 text-title leading-tight",
+							),
+						),
 						h.DataAttribute("slot", "sheet-title"),
 						h.Id(titleId(dialogId)),
 					],
 					[h.span([h.Class("min-w-0 break-words")], [action.text])],
 				),
 				h.p(
-					[h.Class(cn(sheetDescriptionStyles, "sr-only")), h.DataAttribute("slot", "sheet-description"), h.Id(descriptionId(dialogId))],
+					[
+						h.Class(cn(sheetDescriptionStyles, "sr-only")),
+						h.DataAttribute("slot", "sheet-description"),
+						h.Id(descriptionId(dialogId)),
+					],
 					["What this proposed action asks for, and the diagnosis behind it."],
 				),
 			],
@@ -77,13 +89,18 @@ export const actionSheetContent = (
 						...(action.target === null
 							? []
 							: [
-									linkButton(h, { size: "sm", href: action.target.href, className: "gap-1.5" }, [
-										action.target.label,
-										icon(h, "ArrowRightIcon"),
-									]),
+									linkButton(
+										h,
+										{ size: "sm", href: action.target.href, className: "gap-1.5" },
+										[action.target.label, icon(h, "ArrowRightIcon")],
+									),
 								]),
 						h.span(
-							[h.Class("rounded border border-dashed px-2 py-1 text-3xs tracking-[0.06em] text-muted-foreground/70")],
+							[
+								h.Class(
+									"rounded border border-dashed px-2 py-1 text-3xs tracking-[0.06em] text-muted-foreground/70",
+								),
+							],
 							[action.promise],
 						),
 					],
@@ -95,13 +112,33 @@ export const actionSheetContent = (
 								[h.Class("flex flex-col gap-2")],
 								[
 									sectionEyebrow(h, "From the diagnosis"),
-									h.p([h.Class("text-sm leading-relaxed text-foreground")], [report.suspectedCause]),
 									h.p(
-										[h.Class("flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground")],
+										[h.Class("text-sm leading-relaxed text-foreground")],
+										[report.suspectedCause],
+									),
+									h.p(
 										[
-											h.span([h.Class(cn("font-medium capitalize", CONFIDENCE_TONE[report.confidence]))], [report.confidence, " confidence"]),
+											h.Class(
+												"flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground",
+											),
+										],
+										[
+											h.span(
+												[
+													h.Class(
+														cn(
+															"font-medium capitalize",
+															CONFIDENCE_TONE[report.confidence],
+														),
+													),
+												],
+												[report.confidence, " confidence"],
+											),
 											...(report.affectedScope
-												? [h.span([h.Class("text-muted-foreground/40")], ["·"]), h.span([], [report.affectedScope])]
+												? [
+														h.span([h.Class("text-muted-foreground/40")], ["·"]),
+														h.span([], [report.affectedScope]),
+													]
 												: []),
 										],
 									),
@@ -117,10 +154,25 @@ export const actionSheetContent = (
 									sectionEyebrow(h, "Evidence behind the diagnosis"),
 									...evidence.map((item, index) => {
 										const chips = evidenceChips(h, item, "sheet", trigger)
-										return h.keyed("div")(String(index), [h.Class("flex flex-col gap-1.5 rounded-md bg-muted/40 p-3")], [
-											...(item.note ? [h.p([h.Class("text-sm leading-relaxed text-foreground")], [item.note])] : []),
-											...(chips === null ? [] : [chips]),
-										])
+										return h.keyed("div")(
+											String(index),
+											[h.Class("flex flex-col gap-1.5 rounded-md bg-muted/40 p-3")],
+											[
+												...(item.note
+													? [
+															h.p(
+																[
+																	h.Class(
+																		"text-sm leading-relaxed text-foreground",
+																	),
+																],
+																[item.note],
+															),
+														]
+													: []),
+												...(chips === null ? [] : [chips]),
+											],
+										)
 									}),
 								],
 							),
@@ -132,11 +184,18 @@ export const actionSheetContent = (
 }
 
 /** The open action's panel; a stale or mangled `?action=` finds nothing and renders closed. */
-export const actionSheet = (h: H, model: Model, investigation: V2Investigation, timeZone: string, trigger: TipTrigger): Html => {
+export const actionSheet = (
+	h: H,
+	model: Model,
+	investigation: V2Investigation,
+	timeZone: string,
+	trigger: TipTrigger,
+): Html => {
 	const index = openActionIndexOf(model)
 	const action =
-		graphOf(investigation, timeZone).nodes.flatMap((node) => (node.type === "action" && node.data.index === index ? [node.data] : []))[0] ??
-		null
+		graphOf(investigation, timeZone).nodes.flatMap((node) =>
+			node.type === "action" && node.data.index === index ? [node.data] : [],
+		)[0] ?? null
 	const dialogId = model.actionSheet.id
 	return h.submodel({
 		slotId: `${dialogId}-slot`,
@@ -153,7 +212,11 @@ export const actionSheet = (h: H, model: Model, investigation: V2Investigation, 
 					? [
 							DialogView.dialogHeader(h, "sheet", [
 								h.h2(
-									[h.Class(cn(sheetTitleStyles, "sr-only")), h.DataAttribute("slot", "sheet-title"), h.Id(titleId(dialogId))],
+									[
+										h.Class(cn(sheetTitleStyles, "sr-only")),
+										h.DataAttribute("slot", "sheet-title"),
+										h.Id(titleId(dialogId)),
+									],
 									["Proposed action"],
 								),
 							]),

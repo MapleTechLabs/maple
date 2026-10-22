@@ -6,7 +6,10 @@ import * as CopyButton from "../../ui/copy-button"
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
-	CompletedFetchList: { key: Schema.String, result: Schema.Result(Schema.Array(V2Recommendation), LoadFailure) },
+	CompletedFetchList: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(V2Recommendation), LoadFailure),
+	},
 	CompletedFetchMappings: {
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(V2AttributeMapping), LoadFailure),

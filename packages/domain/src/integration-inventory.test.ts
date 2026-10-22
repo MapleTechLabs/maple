@@ -310,7 +310,11 @@ describe("withSourceHealth", () => {
 		const failingZone = build({
 			oauthConnections: [cloudflareGrant],
 			cloudflareStates: [
-				zone("shop.example.com", { lastSuccessAt: null, lastErrorAt: NOW - MINUTE, lastError: "denied" }),
+				zone("shop.example.com", {
+					lastSuccessAt: null,
+					lastErrorAt: NOW - MINUTE,
+					lastError: "denied",
+				}),
 			],
 		})
 		const cloudflare = withSourceHealth(failingZone, [
@@ -323,4 +327,3 @@ describe("withSourceHealth", () => {
 		expect(withSourceHealth(inventory, [])).toEqual(inventory)
 	})
 })
-

@@ -138,4 +138,3 @@ export const update = (model: Model, message: Message): Return =>
 	})
 
 export const isEditMode = (model: Model): boolean => model.mode.values.includes("edit")
-

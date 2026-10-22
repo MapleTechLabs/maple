@@ -44,13 +44,14 @@ export const filtersRail = (
 			title,
 			options: options(entries),
 			selected: model.search[facet] ?? [],
-			excluded: (facet === "severity"
-				? model.search.excludedSeverity
-				: facet === "signals"
-					? model.search.excludedSignals
-					: facet === "services"
-						? model.search.excludedServices
-						: model.search.excludedEnvs) ?? [],
+			excluded:
+				(facet === "severity"
+					? model.search.excludedSeverity
+					: facet === "signals"
+						? model.search.excludedSignals
+						: facet === "services"
+							? model.search.excludedServices
+							: model.search.excludedEnvs) ?? [],
 			sections: model.filterSections,
 			toSectionsMessage: toSections,
 			onToggle: (name) => Message.ToggledFacetOption({ facet, name }),

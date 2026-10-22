@@ -17,7 +17,9 @@ import { dashboardSummary } from "./view-approval"
 
 const stringify = (input: unknown): string => JSON.stringify(input, null, 2) ?? String(input)
 
-type Formatted = { readonly kind: "scalar"; readonly text: string } | { readonly kind: "blob"; readonly chars: number }
+type Formatted =
+	| { readonly kind: "scalar"; readonly text: string }
+	| { readonly kind: "blob"; readonly chars: number }
 
 const formatValue = (value: unknown): Formatted => {
 	if (value === null || value === undefined) return { kind: "scalar", text: EMPTY_VALUE }
@@ -27,15 +29,19 @@ const formatValue = (value: unknown): Formatted => {
 	return text.length > 200 ? { kind: "blob", chars: text.length } : { kind: "scalar", text }
 }
 
-const RAW_CLASS = "max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-2xs leading-snug"
+const RAW_CLASS =
+	"max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-2xs leading-snug"
 
 /** `KeyValueFallback`: the proposal's arguments, one row each. */
 const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown): Html =>
 	Option.match(inputRecord(input), {
 		onNone: () => h.pre([h.Class(RAW_CLASS)], [stringify(input)]),
 		onSome: (record) => {
-			const entries = Object.entries(record).filter(([, value]) => value !== undefined && value !== null && value !== "")
-			if (entries.length === 0) return h.div([h.Class("text-xs text-muted-foreground")], ["No input fields"])
+			const entries = Object.entries(record).filter(
+				([, value]) => value !== undefined && value !== null && value !== "",
+			)
+			if (entries.length === 0)
+				return h.div([h.Class("text-xs text-muted-foreground")], ["No input fields"])
 			return keyValueList(
 				h,
 				{ layout: "grid", className: "gap-x-2 gap-y-1" },
@@ -44,7 +50,10 @@ const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown): Html =>
 					return keyValue(h, { label: humanize(key) }, [
 						formatted.kind === "scalar"
 							? h.span([h.Class("font-medium")], [formatted.text])
-							: h.span([h.Class("text-muted-foreground italic")], ["JSON · ", String(formatted.chars), " chars"]),
+							: h.span(
+									[h.Class("text-muted-foreground italic")],
+									["JSON · ", String(formatted.chars), " chars"],
+								),
 					])
 				}),
 			)
@@ -67,7 +76,9 @@ export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<
 		[h.Class("overflow-hidden rounded-lg border border-severity-warn/40 bg-severity-warn/5 text-xs")],
 		[
 			item(h, { size: "xs", variant: "flush", className: "gap-2 px-3" }, [
-				itemMedia(h, { variant: "icon" }, [icon(h, "CircleWarningIcon", { className: cn("size-3.5", TONE_TEXT.warn) })]),
+				itemMedia(h, { variant: "icon" }, [
+					icon(h, "CircleWarningIcon", { className: cn("size-3.5", TONE_TEXT.warn) }),
+				]),
 				itemContent(h, [itemTitle(h, ["Approval required: ", toolLabel(options.toolName)])]),
 			]),
 			h.div(
@@ -82,9 +93,14 @@ export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<
 							className: "mt-3 text-muted-foreground hover:text-foreground",
 							attributes: [h.OnClick(options.onToggleRaw)],
 						},
-						[icon(h, options.isRawOpen ? "ChevronDownIcon" : "ChevronRightIcon"), options.isRawOpen ? "Hide raw input" : "Show raw input"],
+						[
+							icon(h, options.isRawOpen ? "ChevronDownIcon" : "ChevronRightIcon"),
+							options.isRawOpen ? "Hide raw input" : "Show raw input",
+						],
 					),
-					...(options.isRawOpen ? [h.pre([h.Class(cn("mt-2", RAW_CLASS))], [stringify(options.input)])] : []),
+					...(options.isRawOpen
+						? [h.pre([h.Class(cn("mt-2", RAW_CLASS))], [stringify(options.input)])]
+						: []),
 					options.resolved === "applied"
 						? h.div(
 								[h.Class("mt-3 flex items-center gap-1.5 font-medium text-severity-info")],
@@ -92,16 +108,36 @@ export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<
 							)
 						: options.resolved === "denied"
 							? h.div(
-									[h.Class("mt-3 flex items-center gap-1.5 font-medium text-muted-foreground")],
-									[icon(h, "CircleXmarkIcon", { className: "size-3.5 shrink-0" }), "Denied"],
+									[
+										h.Class(
+											"mt-3 flex items-center gap-1.5 font-medium text-muted-foreground",
+										),
+									],
+									[
+										icon(h, "CircleXmarkIcon", { className: "size-3.5 shrink-0" }),
+										"Denied",
+									],
 								)
 							: h.div(
 									[h.Class("mt-3 flex gap-2")],
 									[
-										button(h, { size: "sm", isLoading: options.isDeciding, attributes: [h.OnClick(options.onApprove)] }, ["Approve"]),
 										button(
 											h,
-											{ size: "sm", variant: "ghost", isDisabled: options.isDeciding, attributes: [h.OnClick(options.onDeny)] },
+											{
+												size: "sm",
+												isLoading: options.isDeciding,
+												attributes: [h.OnClick(options.onApprove)],
+											},
+											["Approve"],
+										),
+										button(
+											h,
+											{
+												size: "sm",
+												variant: "ghost",
+												isDisabled: options.isDeciding,
+												attributes: [h.OnClick(options.onDeny)],
+											},
 											["Deny"],
 										),
 									],
@@ -127,4 +163,3 @@ export const agentPresentation = (agent: string): AgentPresentation =>
 	(agent.startsWith("hypothesis-")
 		? { label: "Hypothesis", activity: "Testing", icon: "CompassIcon" }
 		: { label: humanize(agent), activity: "Working", icon: "FaceRobotIcon" })
-

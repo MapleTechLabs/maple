@@ -8,7 +8,11 @@ export const localLockup = <M>(h: HtmlBuilder<M>): Html =>
 		[
 			icon(h, "MapleMark", { size: 16, className: "shrink-0 text-primary" }),
 			h.span(
-				[h.Class("font-display text-sm font-semibold tracking-[-0.01em] group-data-[collapsible=icon]:hidden")],
+				[
+					h.Class(
+						"font-display text-sm font-semibold tracking-[-0.01em] group-data-[collapsible=icon]:hidden",
+					),
+				],
 				["maple"],
 			),
 			h.span(

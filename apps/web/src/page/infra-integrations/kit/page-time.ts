@@ -36,9 +36,14 @@ export const stepTimePicker = <M>(
 }
 
 /** `applyTimeRangeSearch`: a preset clears the absolute bounds, a custom range the preset. */
-export const withPreset = <S extends TimeSearch>(search: S, picked: string | TimeRangePicker.TimeSearchPatch): S => ({
+export const withPreset = <S extends TimeSearch>(
+	search: S,
+	picked: string | TimeRangePicker.TimeSearchPatch,
+): S => ({
 	...search,
-	...(typeof picked === "string" ? { startTime: undefined, endTime: undefined, timePreset: picked } : picked),
+	...(typeof picked === "string"
+		? { startTime: undefined, endTime: undefined, timePreset: picked }
+		: picked),
 })
 
 export type PageTimeOptions<M> = Readonly<{

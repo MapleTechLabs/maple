@@ -19,7 +19,13 @@ import { statTile, statusBadge } from "./view-bits"
 
 export const SESSION_ID_COPY = "session-id"
 
-export const hero = (h: HtmlBuilder<Message>, model: Model, session: SessionDetail, label: string, timeFormat: TimeFormat): Html => {
+export const hero = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	session: SessionDetail,
+	label: string,
+	timeFormat: TimeFormat,
+): Html => {
 	const copy = copyOf(model.copies, SESSION_ID_COPY)
 	return h.div(
 		[h.Class("flex flex-wrap items-center gap-4 border-b pb-5")],
@@ -37,7 +43,10 @@ export const hero = (h: HtmlBuilder<Message>, model: Model, session: SessionDeta
 				[
 					h.div(
 						[h.Class("flex items-center gap-2")],
-						[h.h1([h.Class("truncate text-xl font-semibold tracking-tight")], [label]), statusBadge(h, isLocalSessionLive(session, model.nowMs))],
+						[
+							h.h1([h.Class("truncate text-xl font-semibold tracking-tight")], [label]),
+							statusBadge(h, isLocalSessionLive(session, model.nowMs)),
+						],
 					),
 					h.div(
 						[h.Class("mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground")],
@@ -49,13 +58,20 @@ export const hero = (h: HtmlBuilder<Message>, model: Model, session: SessionDeta
 								className: "text-xs",
 								copy: {
 									status: copy.status,
-									onClick: Message.GotCopyMessage({ id: SESSION_ID_COPY, message: CopyButton.Message.ClickedCopy({ text: model.sessionId }) }),
+									onClick: Message.GotCopyMessage({
+										id: SESSION_ID_COPY,
+										message: CopyButton.Message.ClickedCopy({ text: model.sessionId }),
+									}),
 								},
 							}),
 							h.span(
 								[h.Class("inline-flex items-center gap-1.5")],
 								[
-									icon(h, isMobileDevice(session.deviceType) ? "MobileIcon" : "ComputerIcon", { className: "size-3.5 opacity-60" }),
+									icon(
+										h,
+										isMobileDevice(session.deviceType) ? "MobileIcon" : "ComputerIcon",
+										{ className: "size-3.5 opacity-60" },
+									),
 									session.browserName || "Unknown",
 									...(session.osName ? [` · ${session.osName}`] : []),
 								],
@@ -63,12 +79,17 @@ export const hero = (h: HtmlBuilder<Message>, model: Model, session: SessionDeta
 							h.span(
 								[
 									h.Class("inline-flex items-center gap-1.5"),
-									h.Title(`${formatDateTime(timeFormat, session.startTime)} (${formatUtcTitle(session.startTime)})`),
+									h.Title(
+										`${formatDateTime(timeFormat, session.startTime)} (${formatUtcTitle(session.startTime)})`,
+									),
 								],
 								[
 									icon(h, "ClockIcon", { className: "size-3.5 opacity-60" }),
 									"started ",
-									formatRelativeFrom(DateTime.toEpochMillis(session.startTime), model.nowMs),
+									formatRelativeFrom(
+										DateTime.toEpochMillis(session.startTime),
+										model.nowMs,
+									),
 								],
 							),
 						],

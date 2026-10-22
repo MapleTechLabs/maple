@@ -53,7 +53,11 @@ export const mapleSpanProcessor: SpanOutputProcessor = {
 		const threadId = root.metadata?.threadId
 		if (threadId) span.metadata = { ...span.metadata, threadId }
 		// The model call span is created without its prompt: take the step's messages.
-		if (span.type === SpanType.MODEL_INFERENCE && span.input === undefined && span.parent?.input !== undefined) {
+		if (
+			span.type === SpanType.MODEL_INFERENCE &&
+			span.input === undefined &&
+			span.parent?.input !== undefined
+		) {
 			span.input = { messages: span.parent.input }
 		}
 		// Step spans carry the raw provider response (headers, cookies, full body) as metadata.

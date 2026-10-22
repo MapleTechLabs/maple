@@ -52,7 +52,12 @@ const RevokeSession = Command.define("RevokeClerkSession", {
 					Array.findFirst(sessions, (session) => session.id === id),
 					{
 						onNone: () =>
-							Promise.reject(new ClerkActionError({ message: "Failed to sign out that session", cause: undefined })),
+							Promise.reject(
+								new ClerkActionError({
+									message: "Failed to sign out that session",
+									cause: undefined,
+								}),
+							),
 						onSome: (session) => session.revoke(),
 					},
 				),
@@ -72,8 +77,14 @@ export const init = (): Return => ({
 })
 
 const liftRevoke = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
-	model: { ...model, revokeDialog: step.model, ...(step.outMessage?._tag === "Closed" && { revoking: null }) },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotRevokeDialogMessage({ message })),
+	model: {
+		...model,
+		revokeDialog: step.model,
+		...(step.outMessage?._tag === "Closed" && { revoking: null }),
+	},
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotRevokeDialogMessage({ message }),
+	),
 })
 
 export const update = (model: Model, message: Message): Return =>
@@ -89,26 +100,41 @@ export const update = (model: Model, message: Message): Return =>
 			},
 		}),
 		ClickedRetry: () => ({ model, commands: [LoadSessions()] }),
-		ClickedSignOut: ({ session }) => liftRevoke({ ...model, revoking: session }, Dialog.open(model.revokeDialog)),
+		ClickedSignOut: ({ session }) =>
+			liftRevoke({ ...model, revoking: session }, Dialog.open(model.revokeDialog)),
 		GotRevokeDialogMessage: ({ message: child }) =>
 			model.isRevoking ? { model } : liftRevoke(model, Dialog.update(model.revokeDialog, child)),
 		ClickedConfirmSignOut: () =>
 			model.revoking === null || model.isRevoking
 				? { model }
-				: { model: { ...model, isRevoking: true }, commands: [RevokeSession({ id: model.revoking.id })] },
+				: {
+						model: { ...model, isRevoking: true },
+						commands: [RevokeSession({ id: model.revoking.id })],
+					},
 		CompletedRevoke: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => {
-					const closed = liftRevoke({ ...model, isRevoking: false }, Dialog.close(model.revokeDialog))
+					const closed = liftRevoke(
+						{ ...model, isRevoking: false },
+						Dialog.close(model.revokeDialog),
+					)
 					return {
 						...closed,
 						commands: [...(closed.commands ?? []), LoadSessions()],
-						outMessage: PageOutMessage.RequestedToast({ type: "success", title: "Session signed out", description: "" }),
+						outMessage: PageOutMessage.RequestedToast({
+							type: "success",
+							title: "Session signed out",
+							description: "",
+						}),
 					}
 				},
 				onFailure: (error) => ({
 					model: { ...model, isRevoking: false },
-					outMessage: PageOutMessage.RequestedToast({ type: "error", title: error, description: "" }),
+					outMessage: PageOutMessage.RequestedToast({
+						type: "error",
+						title: error,
+						description: "",
+					}),
 				}),
 			}),
 	})

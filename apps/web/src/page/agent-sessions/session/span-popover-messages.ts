@@ -81,18 +81,29 @@ export const payloadCard = (
 					h.span([h.Class("shrink-0 font-medium font-mono text-chart-4 text-xs")], [options.label]),
 					...(options.name === undefined
 						? []
-						: [h.span([h.Class("min-w-0 truncate font-mono text-foreground text-xs")], [options.name])]),
+						: [
+								h.span(
+									[h.Class("min-w-0 truncate font-mono text-foreground text-xs")],
+									[options.name],
+								),
+							]),
 					...(options.meta === undefined
 						? []
 						: [
 								h.span(
-									[h.Class("ml-auto min-w-0 truncate font-mono text-2xs text-muted-foreground/80")],
+									[
+										h.Class(
+											"ml-auto min-w-0 truncate font-mono text-2xs text-muted-foreground/80",
+										),
+									],
 									[options.meta],
 								),
 							]),
 				],
 			),
-			...(options.body === undefined ? [] : [payloadBody(h, model, options.body, options.label, options.key)]),
+			...(options.body === undefined
+				? []
+				: [payloadBody(h, model, options.body, options.label, options.key)]),
 		],
 	)
 
@@ -114,7 +125,9 @@ const payloadBody = (h: H, model: Model, text: string, copyLabel: string, key: s
 					}),
 				],
 			),
-			...(isJson ? [viewSwitch(h, { rendered: "json", isRaw, rawKey: `${key}:raw`, className: "self-start" })] : []),
+			...(isJson
+				? [viewSwitch(h, { rendered: "json", isRaw, rawKey: `${key}:raw`, className: "self-start" })]
+				: []),
 			payloadCopyButton(h, model, {
 				key: `${key}:copy`,
 				value: isRaw ? text : formatted,
@@ -127,7 +140,12 @@ const payloadBody = (h: H, model: Model, text: string, copyLabel: string, key: s
 }
 
 /** Reasoning is the model thinking, set apart from the reply it precedes. */
-const reasoningPart = (h: H, model: Model, part: Extract<SpanMessagePart, { kind: "reasoning" }>, key: string) =>
+const reasoningPart = (
+	h: H,
+	model: Model,
+	part: Extract<SpanMessagePart, { kind: "reasoning" }>,
+	key: string,
+) =>
 	h.div(
 		[h.Class("min-w-0 border-chart-5/50 border-l-2 pl-2.5")],
 		[
@@ -152,7 +170,13 @@ const messagePart = (h: H, model: Model, part: SpanMessagePart, isRaw: boolean, 
 		case "reasoning":
 			return reasoningPart(h, model, part, key)
 		case "tool_call":
-			return payloadCard(h, model, { label: "tool_call", name: part.name, meta: part.id, body: part.argumentsText, key })
+			return payloadCard(h, model, {
+				label: "tool_call",
+				name: part.name,
+				meta: part.id,
+				body: part.argumentsText,
+				key,
+			})
 		default:
 			return payloadCard(h, model, { label: "tool_result", meta: part.id, body: part.resultText, key })
 	}
@@ -161,7 +185,9 @@ const messagePart = (h: H, model: Model, part: SpanMessagePart, isRaw: boolean, 
 const messageBlock = (h: H, model: Model, message: SpanMessage, span: AiSessionSpan, key: string): Html => {
 	const isRaw = disclosed(model.openRows, `${key}:raw`, false)
 	const hasText = message.parts.some((part) => part.kind === "text")
-	const rendered = message.parts.some((part) => part.kind === "text" && Option.isNone(tryParseJson(part.text)))
+	const rendered = message.parts.some(
+		(part) => part.kind === "text" && Option.isNone(tryParseJson(part.text)),
+	)
 		? "md"
 		: "json"
 	return h.div(
@@ -170,7 +196,9 @@ const messageBlock = (h: H, model: Model, message: SpanMessage, span: AiSessionS
 			h.div(
 				[h.Class("flex items-center gap-2.5")],
 				[
-					eyebrow(h, { variant: "mono", className: cn("shrink-0", roleColor(message.role)) }, [message.role]),
+					eyebrow(h, { variant: "mono", className: cn("shrink-0", roleColor(message.role)) }, [
+						message.role,
+					]),
 					...(message.origin === "output"
 						? [
 								h.span(
@@ -200,7 +228,9 @@ export const popoverMarkdown = (
 	messages.flatMap((message, index) => {
 		const key = `${keyPrefix}:msg${index}`
 		if (message.role.toLowerCase() === "system")
-			return disclosed(model.openRows, key, false) ? shownMarkdown(model, key, collapsedText(message.parts)) : []
+			return disclosed(model.openRows, key, false)
+				? shownMarkdown(model, key, collapsedText(message.parts))
+				: []
 		if (disclosed(model.openRows, `${key}:raw`, false)) return []
 		return message.parts.flatMap((part, partIndex) => {
 			if (part.kind !== "text" || messageBody(part.text).rendered !== "md") return []
@@ -251,7 +281,12 @@ const systemMessageRow = (h: H, model: Model, message: SpanMessage, key: string)
 				eyebrow(h, { variant: "mono", className: "shrink-0" }, [message.role]),
 				...(isOpen
 					? []
-					: [h.span([h.Class("min-w-0 truncate text-muted-foreground text-xs")], [firstLine(text)])]),
+					: [
+							h.span(
+								[h.Class("min-w-0 truncate text-muted-foreground text-xs")],
+								[firstLine(text)],
+							),
+						]),
 			],
 		),
 		...(isOpen

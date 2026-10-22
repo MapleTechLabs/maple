@@ -23,13 +23,23 @@ type BreakdownRow = ErrorDetail["breakdown"][number]
 
 const RAIL_TITLE = "font-mono text-xs font-medium text-foreground"
 
-const variantText = (h: H, message: string, difference: VariantDifference | undefined): ReadonlyArray<Html> =>
+const variantText = (
+	h: H,
+	message: string,
+	difference: VariantDifference | undefined,
+): ReadonlyArray<Html> =>
 	difference === undefined || difference.middle === ""
 		? [h.span([h.Class("truncate text-muted-foreground")], [unwrapToolErrorText(message).text])]
 		: [
-				h.span([h.Class("min-w-0 truncate whitespace-pre text-muted-foreground")], [difference.before]),
+				h.span(
+					[h.Class("min-w-0 truncate whitespace-pre text-muted-foreground")],
+					[difference.before],
+				),
 				h.span([h.Class("shrink-0 whitespace-pre font-medium text-foreground")], [difference.middle]),
-				h.span([h.Class("min-w-0 truncate whitespace-pre text-muted-foreground")], [difference.after]),
+				h.span(
+					[h.Class("min-w-0 truncate whitespace-pre text-muted-foreground")],
+					[difference.after],
+				),
 			]
 
 /** The raw texts a group folded, where there is more than one; one narrows the samples. */
@@ -73,11 +83,24 @@ const variantsSection = (
 					],
 					[
 						h.span(
-							[h.Class("flex w-0 min-w-0 flex-1 items-baseline overflow-hidden whitespace-pre")],
+							[
+								h.Class(
+									"flex w-0 min-w-0 flex-1 items-baseline overflow-hidden whitespace-pre",
+								),
+							],
 							variantText(h, row.message, differences.get(row.message)),
 						),
-						meter(h, { value: row.calls, max, minVisible: 4, tone: "crit", className: "w-12 shrink-0 rounded-xs bg-muted" }),
-						h.span([h.Class("w-7 shrink-0 text-right tabular-nums text-foreground")], [formatToolCount(row.calls)]),
+						meter(h, {
+							value: row.calls,
+							max,
+							minVisible: 4,
+							tone: "crit",
+							className: "w-12 shrink-0 rounded-xs bg-muted",
+						}),
+						h.span(
+							[h.Class("w-7 shrink-0 text-right tabular-nums text-foreground")],
+							[formatToolCount(row.calls)],
+						),
 					],
 				)
 			}),
@@ -101,10 +124,25 @@ const whereItHappens = (h: H, rows: ReadonlyArray<BreakdownRow>, isLoading: bool
 		[
 			h.span([h.Class(RAIL_TITLE)], ["Where it happens"]),
 			...(isLoading && rows.length === 0
-				? [h.div([h.Class("flex flex-col gap-2")], [skeleton(h, "h-3 w-3/4"), skeleton(h, "h-3 w-1/2")])]
+				? [
+						h.div(
+							[h.Class("flex flex-col gap-2")],
+							[skeleton(h, "h-3 w-3/4"), skeleton(h, "h-3 w-1/2")],
+						),
+					]
 				: [
-						breakdown(h, "Model", fold(rows, (row) => row.model), "unattributed"),
-						breakdown(h, "Service", fold(rows, (row) => row.service), "unknown"),
+						breakdown(
+							h,
+							"Model",
+							fold(rows, (row) => row.model),
+							"unattributed",
+						),
+						breakdown(
+							h,
+							"Service",
+							fold(rows, (row) => row.service),
+							"unknown",
+						),
 					]),
 		],
 	)
@@ -121,11 +159,13 @@ export const sessionLink = (
 		[
 			// `{ tool, view, span }` in that order.
 			h.Href(
-				`${hrefOf(AppRoute.AgentSession({ sessionId: options.sessionId, search: {} }))}${orderedSearch([
-					["tool", options.tool],
-					["view", "trace"],
-					["span", options.spanId],
-				])}`,
+				`${hrefOf(AppRoute.AgentSession({ sessionId: options.sessionId, search: {} }))}${orderedSearch(
+					[
+						["tool", options.tool],
+						["view", "trace"],
+						["span", options.spanId],
+					],
+				)}`,
 			),
 			h.Title(options.sessionId),
 			h.Class(
@@ -173,7 +213,11 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 			),
 			eyebrow(
 				h,
-				{ variant: "mono", as: "div", className: "flex h-[30px] shrink-0 items-center gap-3 border-y border-border px-4" },
+				{
+					variant: "mono",
+					as: "div",
+					className: "flex h-[30px] shrink-0 items-center gap-3 border-y border-border px-4",
+				},
 				[
 					h.span([h.Class("grow")], ["Session"]),
 					h.span([h.Class("w-10 shrink-0 text-right")], ["Hits"]),
@@ -193,11 +237,23 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 						[h.Class("w-10 shrink-0 text-right font-mono text-xs tabular-nums text-foreground")],
 						[formatToolCount(group.calls)],
 					),
-					relativeTime(h, { value: group.lastSeen, nowMs, timeZone, variant: "orDate", tooltip: "title", className: LAST_CLASS }),
+					relativeTime(h, {
+						value: group.lastSeen,
+						nowMs,
+						timeZone,
+						variant: "orDate",
+						tooltip: "title",
+						className: LAST_CLASS,
+					}),
 				],
 			),
 			...(isLoading && detail.sessions.length === 0
-				? [h.div([h.Class("flex flex-col gap-1.5 px-4 py-3")], [skeleton(h, "h-10"), skeleton(h, "h-10")])]
+				? [
+						h.div(
+							[h.Class("flex flex-col gap-1.5 px-4 py-3")],
+							[skeleton(h, "h-10"), skeleton(h, "h-10")],
+						),
+					]
 				: detail.sessions.map((row) => {
 						const isSelected = row.sessionId === selected
 						return h.div(
@@ -211,7 +267,11 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 											"absolute inset-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
 										),
 										h.Type("button"),
-										h.OnClick(Message.ClickedSession({ session: isSelected ? undefined : row.sessionId })),
+										h.OnClick(
+											Message.ClickedSession({
+												session: isSelected ? undefined : row.sessionId,
+											}),
+										),
 									],
 									[],
 								),
@@ -224,16 +284,37 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 											className: "max-w-full font-mono text-xs",
 										}),
 										h.span(
-											[h.Class("w-full truncate font-mono text-2xs leading-3.5 text-muted-foreground/70")],
-											[row.service === "" ? (row.agentName === "" ? row.vendorId : row.agentName) : row.service],
+											[
+												h.Class(
+													"w-full truncate font-mono text-2xs leading-3.5 text-muted-foreground/70",
+												),
+											],
+											[
+												row.service === ""
+													? row.agentName === ""
+														? row.vendorId
+														: row.agentName
+													: row.service,
+											],
 										),
 									],
 								),
 								h.span(
-									[h.Class("w-10 shrink-0 text-right font-mono text-xs tabular-nums text-foreground")],
+									[
+										h.Class(
+											"w-10 shrink-0 text-right font-mono text-xs tabular-nums text-foreground",
+										),
+									],
 									[formatToolCount(row.hits)],
 								),
-								relativeTime(h, { value: row.lastSeen, nowMs, timeZone, variant: "orDate", tooltip: "title", className: LAST_CLASS }),
+								relativeTime(h, {
+									value: row.lastSeen,
+									nowMs,
+									timeZone,
+									variant: "orDate",
+									tooltip: "title",
+									className: LAST_CLASS,
+								}),
 							],
 						)
 					})),
@@ -242,7 +323,12 @@ const sessionsSection = (h: H, model: Model, inputs: ModalInputs, detail: ErrorD
 				[
 					h.span(
 						[h.Class("text-muted-foreground")],
-						["Showing ", formatToolCount(detail.sessions.length), " of ", formatToolCount(group.sessions)],
+						[
+							"Showing ",
+							formatToolCount(detail.sessions.length),
+							" of ",
+							formatToolCount(group.sessions),
+						],
 					),
 					h.span([h.Class("text-muted-foreground/60")], ["by hits"]),
 				],
@@ -283,13 +369,21 @@ export const railView = (
 const fold = (rows: ReadonlyArray<BreakdownRow>, keyOf: (row: BreakdownRow) => string) =>
 	[
 		...rows
-			.reduce((totals, row) => totals.set(keyOf(row), (totals.get(keyOf(row)) ?? 0) + row.calls), new Map<string, number>())
+			.reduce(
+				(totals, row) => totals.set(keyOf(row), (totals.get(keyOf(row)) ?? 0) + row.calls),
+				new Map<string, number>(),
+			)
 			.entries(),
 	]
 		.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
 		.slice(0, 3)
 
-const breakdown = (h: H, label: string, rows: ReadonlyArray<readonly [string, number]>, blank: string): Html => {
+const breakdown = (
+	h: H,
+	label: string,
+	rows: ReadonlyArray<readonly [string, number]>,
+	blank: string,
+): Html => {
 	const max = rows[0]?.[1] ?? 1
 	return h.div(
 		[h.Class("flex flex-col gap-1.5")],

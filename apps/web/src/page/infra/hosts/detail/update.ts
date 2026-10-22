@@ -95,7 +95,9 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 	const href = (search: Search) => hrefOf(AppRoute.InfraHost({ hostName: model.hostName, search }))
 	if (href(model.search) === href(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
+	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) =>
+		requestAll(moved, context, mode),
+	)
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return =>

@@ -119,8 +119,11 @@ export const sidebarDesktop = <Message>(
 	)
 // SIDEBAR PARTS
 
-export const sidebarHeader = <Message>(h: HtmlBuilder<Message>, children: Children, className?: string): Html =>
-	h.div([h.Class(cn(sidebarHeaderStyles, className)), ...slot(h, "header")], children)
+export const sidebarHeader = <Message>(
+	h: HtmlBuilder<Message>,
+	children: Children,
+	className?: string,
+): Html => h.div([h.Class(cn(sidebarHeaderStyles, className)), ...slot(h, "header")], children)
 
 export const sidebarFooter = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
 	h.div([h.Class(cn(sidebarFooterStyles)), ...slot(h, "footer")], children)

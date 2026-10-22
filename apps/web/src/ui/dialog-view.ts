@@ -5,7 +5,13 @@ import * as DialogStyles from "@maple/ui/styles/ui/dialog"
 import * as SheetStyles from "@maple/ui/styles/ui/sheet"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
-import { type Attribute, type ChildAttribute, childAttributes, type Html, type HtmlBuilder } from "foldkit/html"
+import {
+	type Attribute,
+	type ChildAttribute,
+	childAttributes,
+	type Html,
+	type HtmlBuilder,
+} from "foldkit/html"
 import {
 	descriptionId,
 	type Kind,
@@ -347,10 +353,10 @@ export const dialogPanel = <M>(
 			hasMeasuredScrollbar: measured !== undefined,
 		},
 		[
-		h.div(
-			[h.Class(cn(contentStyles[kind].panel, className)), h.DataAttribute("slot", `${kind}-panel`)],
-			children,
-		),
+			h.div(
+				[h.Class(cn(contentStyles[kind].panel, className)), h.DataAttribute("slot", `${kind}-panel`)],
+				children,
+			),
 		],
 	)
 

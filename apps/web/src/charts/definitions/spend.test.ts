@@ -3,7 +3,12 @@ import { describe, expect, test } from "vitest"
 import { buildSpendCumulative } from "./spend"
 
 const DAY = 86_400_000
-const day = (index: number, bands: Record<string, number | null>, future: boolean, projected: number | null) => ({
+const day = (
+	index: number,
+	bands: Record<string, number | null>,
+	future: boolean,
+	projected: number | null,
+) => ({
 	date: new Date(Date.UTC(2026, 9, 1 + index)).toISOString().slice(0, 10),
 	dayMs: Date.UTC(2026, 9, 1) + index * DAY,
 	bands,

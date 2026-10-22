@@ -29,14 +29,31 @@ export interface PathsChartInputs {
 type H = HtmlBuilder<Message>
 
 const TWO_LINE_H = 26
-const HALO = { "paint-order": "stroke", stroke: "var(--card)", "stroke-width": "3", "stroke-linejoin": "round" }
+const HALO = {
+	"paint-order": "stroke",
+	stroke: "var(--card)",
+	"stroke-width": "3",
+	"stroke-linejoin": "round",
+}
 const CHAR_W = 6.6
 
 const attrs = (h: H, entries: Readonly<Record<string, string | number>>) =>
 	Object.entries(entries).map(([name, value]) => h.Attribute(name, String(value)))
 
 const fillOpacity = (kind: PlacedNode["kind"], lit: boolean, dim: boolean): number =>
-	dim ? 0.05 : kind === "event" ? (lit ? 0.65 : 0.2) : kind === "end" ? (lit ? 0.3 : 0.07) : lit ? 0.4 : 0.12
+	dim
+		? 0.05
+		: kind === "event"
+			? lit
+				? 0.65
+				: 0.2
+			: kind === "end"
+				? lit
+					? 0.3
+					: 0.07
+				: lit
+					? 0.4
+					: 0.12
 
 type Labels = Readonly<{ truncate: (label: string) => string; showCounts: boolean }>
 
@@ -49,7 +66,11 @@ const columnHeaders = (h: H, graph: PathsLayout, reverse: boolean): ReadonlyArra
 		const atRightEdge = reverse ? column === 0 : last
 		return h.text(
 			[
-				...attrs(h, { x: atRightEdge ? x + NODE_W : x, y: 10, "text-anchor": atRightEdge ? "end" : "start" }),
+				...attrs(h, {
+					x: atRightEdge ? x + NODE_W : x,
+					y: 10,
+					"text-anchor": atRightEdge ? "end" : "start",
+				}),
 				h.Class("fill-muted-foreground text-3xs font-medium uppercase tracking-wider"),
 			],
 			[label],
@@ -77,13 +98,7 @@ const ribbons = (h: H, graph: PathsLayout, isLit: (link: PathLink) => boolean, h
 		])
 	})
 
-const nodeGroup = (
-	h: H,
-	node: PlacedNode,
-	reverse: boolean,
-	dim: boolean,
-	labels: Labels,
-): Html => {
+const nodeGroup = (h: H, node: PlacedNode, reverse: boolean, dim: boolean, labels: Labels): Html => {
 	const labelLeft = reverse ? node.column !== 0 : node.column === 0
 	const textX = labelLeft ? node.x + NODE_W + 6 : node.x - 6
 	const showText = node.h >= 9 || node.kind !== "event"
@@ -143,7 +158,9 @@ const nodeGroup = (
 											h.tspan(
 												[
 													...attrs(h, twoLine ? { x: textX, dy: 13 } : {}),
-													h.Class("fill-muted-foreground text-3xs font-normal tabular-nums"),
+													h.Class(
+														"fill-muted-foreground text-3xs font-normal tabular-nums",
+													),
 												],
 												[formatNumber(node.count)],
 											),
@@ -169,7 +186,9 @@ export const view = Submodel.defineView<Model, Message, PathsChartInputs>((model
 			[h.span([h.Class("text-2xs text-muted-foreground")], ["No data"])],
 		)
 	const columnSpan =
-		graph !== undefined && graph.columns.length > 1 ? (width - NODE_W) / (graph.columns.length - 1) : width
+		graph !== undefined && graph.columns.length > 1
+			? (width - NODE_W) / (graph.columns.length - 1)
+			: width
 	const roomChars = Math.floor((columnSpan * 0.7 - 20) / CHAR_W)
 	const showCounts = roomChars >= 14
 	const maxChars = Math.max(6, showCounts ? roomChars - 6 : roomChars)
@@ -208,7 +227,8 @@ export const view = Submodel.defineView<Model, Message, PathsChartInputs>((model
 											hover !== node.id &&
 											!links.some(
 												(link) =>
-													isLit(link) && (link.source === node.id || link.target === node.id),
+													isLit(link) &&
+													(link.source === node.id || link.target === node.id),
 											),
 										labels,
 									),

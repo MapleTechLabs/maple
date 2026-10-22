@@ -39,9 +39,17 @@ export const load = (
 			const logs = isPatterns ? Option.none() : request(model.logs, logsKey, force)
 			const patternsKey = keyOf("log-patterns", { filters, window })
 			const patterns = isPatterns ? request(model.patterns, patternsKey, force) : Option.none()
-			const servicesKey = keyOf("log-services", { severity: filters.severity ?? null, search: filters.search ?? null, window })
+			const servicesKey = keyOf("log-services", {
+				severity: filters.severity ?? null,
+				search: filters.search ?? null,
+				window,
+			})
 			const services = request(model.services, servicesKey, force)
-			const severitiesKey = keyOf("log-severities", { service: filters.service ?? null, search: filters.search ?? null, window })
+			const severitiesKey = keyOf("log-severities", {
+				service: filters.service ?? null,
+				search: filters.search ?? null,
+				window,
+			})
 			const severities = request(model.severities, severitiesKey, force)
 			return {
 				model: {
@@ -54,10 +62,35 @@ export const load = (
 					pageGeneration: Option.isSome(logs) ? model.pageGeneration + 1 : model.pageGeneration,
 				},
 				commands: Array.getSomes([
-					Option.map(logs, () => FetchLogs({ key: logsKey, ...args, pageCount, readsCache: model.logs.key !== logsKey })),
-					Option.map(patterns, () => FetchPatterns({ key: patternsKey, ...args, readsCache: model.patterns.key !== patternsKey })),
-					Option.map(services, () => FetchServices({ key: servicesKey, ...args, readsCache: model.services.key !== servicesKey })),
-					Option.map(severities, () => FetchSeverities({ key: severitiesKey, ...args, readsCache: model.severities.key !== severitiesKey })),
+					Option.map(logs, () =>
+						FetchLogs({
+							key: logsKey,
+							...args,
+							pageCount,
+							readsCache: model.logs.key !== logsKey,
+						}),
+					),
+					Option.map(patterns, () =>
+						FetchPatterns({
+							key: patternsKey,
+							...args,
+							readsCache: model.patterns.key !== patternsKey,
+						}),
+					),
+					Option.map(services, () =>
+						FetchServices({
+							key: servicesKey,
+							...args,
+							readsCache: model.services.key !== servicesKey,
+						}),
+					),
+					Option.map(severities, () =>
+						FetchSeverities({
+							key: severitiesKey,
+							...args,
+							readsCache: model.severities.key !== severitiesKey,
+						}),
+					),
 				]),
 			}
 		},
@@ -77,7 +110,13 @@ export const fetchAfterCache = (
 		: Option.match(boundsOf(model, context), {
 				onNone: () => [],
 				onSome: (bounds) => {
-					const args = { key: model[which].key ?? "", search: context.location.search, ...bounds, apiBase: context.env.apiBase, readsCache: false }
+					const args = {
+						key: model[which].key ?? "",
+						search: context.location.search,
+						...bounds,
+						apiBase: context.env.apiBase,
+						readsCache: false,
+					}
 					if (which === "logs") return [FetchLogs({ ...args, pageCount: 1 })]
 					if (which === "patterns") return [FetchPatterns(args)]
 					return [which === "services" ? FetchServices(args) : FetchSeverities(args)]

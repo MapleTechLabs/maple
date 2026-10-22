@@ -137,7 +137,8 @@ export const vcsSyncBatchRoute = (
 	caches: VcsSyncIsolateCaches,
 ) =>
 	serveVcsSyncBatch(env, (messages, placement) =>
-		Effect.flatMap(Effect.all([vcsSyncModule, vcsSyncLayer(ports, caches)]), ([{ processPlacedBatch }, layer]) =>
-			runEvent(processPlacedBatch(messages, placement), layer),
+		Effect.flatMap(
+			Effect.all([vcsSyncModule, vcsSyncLayer(ports, caches)]),
+			([{ processPlacedBatch }, layer]) => runEvent(processPlacedBatch(messages, placement), layer),
 		),
 	)

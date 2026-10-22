@@ -45,16 +45,38 @@ const FILTER_LABELS = {
 } satisfies Record<EventFilter, string>
 
 const EVENT_KIND_VISUALS = {
-	navigation: { icon: "PixelWindowIcon", tone: "text-success-foreground", selected: "bg-success/15 text-success-foreground" },
-	click: { icon: "PixelCrosshairsIcon", tone: "text-warning-foreground", selected: "bg-warning/15 text-warning-foreground" },
-	network: { icon: "PixelNodesIcon", tone: "text-info-foreground", selected: "bg-info/15 text-info-foreground" },
+	navigation: {
+		icon: "PixelWindowIcon",
+		tone: "text-success-foreground",
+		selected: "bg-success/15 text-success-foreground",
+	},
+	click: {
+		icon: "PixelCrosshairsIcon",
+		tone: "text-warning-foreground",
+		selected: "bg-warning/15 text-warning-foreground",
+	},
+	network: {
+		icon: "PixelNodesIcon",
+		tone: "text-info-foreground",
+		selected: "bg-info/15 text-info-foreground",
+	},
 	custom: { icon: "PixelSparkleIcon", tone: "text-primary", selected: "bg-primary/15 text-primary" },
-	console: { icon: "PixelBracketsCurlyIcon", tone: "text-muted-foreground", selected: "bg-muted text-foreground" },
-	error: { icon: "PixelTriangleWarningIcon", tone: "text-severity-error", selected: "bg-severity-error/15 text-severity-error" },
+	console: {
+		icon: "PixelBracketsCurlyIcon",
+		tone: "text-muted-foreground",
+		selected: "bg-muted text-foreground",
+	},
+	error: {
+		icon: "PixelTriangleWarningIcon",
+		tone: "text-severity-error",
+		selected: "bg-severity-error/15 text-severity-error",
+	},
 } as const satisfies Record<string, { icon: IconName; tone: string; selected: string }>
 
 const splitUrl = (url: string): { lead: string; trail: string } =>
-	URL.canParse(url) ? (({ pathname, search, host }) => ({ lead: `${pathname}${search}`, trail: host }))(new URL(url)) : { lead: url, trail: "" }
+	URL.canParse(url)
+		? (({ pathname, search, host }) => ({ lead: `${pathname}${search}`, trail: host }))(new URL(url))
+		: { lead: url, trail: "" }
 
 const isFailedRequest = (ev: EventRow): boolean =>
 	ev.type === "network" && (httpStatusTone(ev.netStatus) === "crit" || ev.netStatus === 0)
@@ -117,7 +139,13 @@ const clockAt = (model: Model, timestamp: string): string => {
 
 const filterButton = (
 	h: H,
-	config: Readonly<{ filter: EventFilter; isActive: boolean; count: number; tone: string; selected: string }>,
+	config: Readonly<{
+		filter: EventFilter
+		isActive: boolean
+		count: number
+		tone: string
+		selected: string
+	}>,
 	children: ReadonlyArray<Html>,
 ): Html =>
 	h.button(
@@ -141,11 +169,21 @@ const filterBar = (h: H, model: Model, events: ReadonlyArray<EventRow>): Html =>
 	const countOf = (filter: EventFilter) =>
 		filter === "all" ? events.length : events.filter((ev) => ev.type === filter).length
 	return h.div(
-		[h.Class("sticky top-0 z-10 flex shrink-0 items-center gap-0.5 border-b border-border bg-card px-2 py-1")],
+		[
+			h.Class(
+				"sticky top-0 z-10 flex shrink-0 items-center gap-0.5 border-b border-border bg-card px-2 py-1",
+			),
+		],
 		[
 			filterButton(
 				h,
-				{ filter: "all", isActive: model.eventFilter === "all", count: countOf("all"), tone: "text-muted-foreground", selected: "bg-muted text-foreground" },
+				{
+					filter: "all",
+					isActive: model.eventFilter === "all",
+					count: countOf("all"),
+					tone: "text-muted-foreground",
+					selected: "bg-muted text-foreground",
+				},
 				[h.span([h.Class("text-2xs font-medium")], ["All"])],
 			),
 			...KIND_FILTERS.map((filter) =>
@@ -158,7 +196,12 @@ const filterBar = (h: H, model: Model, events: ReadonlyArray<EventRow>): Html =>
 						tone: EVENT_KIND_VISUALS[filter].tone,
 						selected: EVENT_KIND_VISUALS[filter].selected,
 					},
-					[icon(h, EVENT_KIND_VISUALS[filter].icon, { size: 13, attributes: [h.AriaHidden(true)] })],
+					[
+						icon(h, EVENT_KIND_VISUALS[filter].icon, {
+							size: 13,
+							attributes: [h.AriaHidden(true)],
+						}),
+					],
 				),
 			),
 			h.button(
@@ -180,99 +223,188 @@ const filterBar = (h: H, model: Model, events: ReadonlyArray<EventRow>): Html =>
 
 const eventDetail = (h: H, ev: EventRow): Html => {
 	const fullUrl = ev.type === "network" ? ev.netUrl : ev.url
-	const props =
-		ev.type === "custom" ? Object.entries(parseAttributes(ev.attributes)) : []
-	return h.div([h.Class("flex flex-col gap-1.5 px-3 pb-2.5 pl-[50px]")], [
-		...(fullUrl ? [h.span([h.Class("break-all text-2xs leading-4 text-muted-foreground")], [fullUrl])] : []),
-		...(ev.type === "click" && ev.targetText && ev.targetSelector
-			? [h.span([h.Class("break-all text-2xs leading-4 text-muted-foreground")], [ev.targetSelector])]
-			: []),
-		...(ev.type === "console"
-			? [h.span([h.Class("whitespace-pre-wrap break-words text-2xs leading-4 text-foreground/80")], [ev.message])]
-			: []),
-		...(ev.type === "error" && ev.errorStack
-			? [h.span([h.Class("whitespace-pre-wrap text-2xs leading-4 text-muted-foreground")], [ev.errorStack.split("\n").slice(0, 3).join("\n")])]
-			: []),
-		...(props.length > 0
-			? [
-					h.span(
-						[h.Class("flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-muted-foreground")],
-						props.map(([key, value]) => h.span([h.Key(key)], [key, "=", h.span([h.Class("text-foreground/80")], [value])])),
-					),
-				]
-			: []),
-		...(ev.traceId
-			? [
-					h.a(
-						[
-							h.Href(hrefOf(AppRoute.Trace({ traceId: ev.traceId, search: { t: ev.timestamp } }))),
-							h.Class("w-fit rounded-sm border border-input px-2 py-0.5 text-3xs text-muted-foreground hover:text-foreground"),
-						],
-						["Open trace"],
-					),
-				]
-			: []),
-	])
+	const props = ev.type === "custom" ? Object.entries(parseAttributes(ev.attributes)) : []
+	return h.div(
+		[h.Class("flex flex-col gap-1.5 px-3 pb-2.5 pl-[50px]")],
+		[
+			...(fullUrl
+				? [h.span([h.Class("break-all text-2xs leading-4 text-muted-foreground")], [fullUrl])]
+				: []),
+			...(ev.type === "click" && ev.targetText && ev.targetSelector
+				? [
+						h.span(
+							[h.Class("break-all text-2xs leading-4 text-muted-foreground")],
+							[ev.targetSelector],
+						),
+					]
+				: []),
+			...(ev.type === "console"
+				? [
+						h.span(
+							[
+								h.Class(
+									"whitespace-pre-wrap break-words text-2xs leading-4 text-foreground/80",
+								),
+							],
+							[ev.message],
+						),
+					]
+				: []),
+			...(ev.type === "error" && ev.errorStack
+				? [
+						h.span(
+							[h.Class("whitespace-pre-wrap text-2xs leading-4 text-muted-foreground")],
+							[ev.errorStack.split("\n").slice(0, 3).join("\n")],
+						),
+					]
+				: []),
+			...(props.length > 0
+				? [
+						h.span(
+							[h.Class("flex flex-wrap gap-x-2 gap-y-0.5 text-2xs text-muted-foreground")],
+							props.map(([key, value]) =>
+								h.span(
+									[h.Key(key)],
+									[key, "=", h.span([h.Class("text-foreground/80")], [value])],
+								),
+							),
+						),
+					]
+				: []),
+			...(ev.traceId
+				? [
+						h.a(
+							[
+								h.Href(
+									hrefOf(
+										AppRoute.Trace({ traceId: ev.traceId, search: { t: ev.timestamp } }),
+									),
+								),
+								h.Class(
+									"w-fit rounded-sm border border-input px-2 py-0.5 text-3xs text-muted-foreground hover:text-foreground",
+								),
+							],
+							["Open trace"],
+						),
+					]
+				: []),
+		],
+	)
 }
 
 const eventLine = (h: H, model: Model, ev: EventRow, index: number, showNetworkBar: boolean): Html => {
 	const visual = eventVisual(ev)
 	const isError = ev.type === "error" || isFailedRequest(ev)
 	const isOpen = model.openEventIndex === index
-	return h.li([h.Key(`${index}`), h.Class(cn("relative", isError && "bg-severity-error/5"))], [
-		...(isError ? [h.span([h.AriaHidden(true), h.Class("absolute inset-y-0 left-0 w-0.5 bg-severity-error")], [])] : []),
-		h.button(
-			[
-				h.Type("button"),
-				h.OnClick(Message.ClickedEvent({ index, timestamp: ev.timestamp })),
-				h.AriaExpanded(isOpen),
-				h.Class("flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/50"),
-				h.Title("Seek replay to this moment"),
-			],
-			[
-				h.span([h.Class("w-[30px] shrink-0 text-3xs tabular-nums text-muted-foreground")], [clockAt(model, ev.timestamp)]),
-				h.span([h.Class("grid size-4 shrink-0 place-items-center")], [icon(h, visual.icon, { size: 16, className: visual.tone })]),
-				h.span([h.Class("flex min-w-0 flex-1 items-baseline gap-1.5 truncate")], [
-					h.span([h.Class(cn("truncate", isError ? "text-severity-error" : "text-foreground"))], [visual.lead]),
-					...(visual.trail ? [h.span([h.Class("shrink-0 text-3xs text-muted-foreground")], [visual.trail])] : []),
-				]),
-				h.span([h.Class("flex w-[72px] shrink-0 items-center justify-end gap-1.5 text-3xs tabular-nums")], [
-					...(ev.type === "network"
-						? [
-								h.span([h.Class(cn("font-semibold", statusTone(ev.netStatus)))], [ev.netStatus ? String(ev.netStatus) : "ERR"]),
-								h.span(
-									[
-										h.Class(
-											cn(
-												isError || isSlowRequest(ev.netDurationMs) ? cn("font-semibold", TONE_TEXT.warn) : "text-muted-foreground",
-												isError && TONE_TEXT.crit,
-											),
+	return h.li(
+		[h.Key(`${index}`), h.Class(cn("relative", isError && "bg-severity-error/5"))],
+		[
+			...(isError
+				? [
+						h.span(
+							[
+								h.AriaHidden(true),
+								h.Class("absolute inset-y-0 left-0 w-0.5 bg-severity-error"),
+							],
+							[],
+						),
+					]
+				: []),
+			h.button(
+				[
+					h.Type("button"),
+					h.OnClick(Message.ClickedEvent({ index, timestamp: ev.timestamp })),
+					h.AriaExpanded(isOpen),
+					h.Class("flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/50"),
+					h.Title("Seek replay to this moment"),
+				],
+				[
+					h.span(
+						[h.Class("w-[30px] shrink-0 text-3xs tabular-nums text-muted-foreground")],
+						[clockAt(model, ev.timestamp)],
+					),
+					h.span(
+						[h.Class("grid size-4 shrink-0 place-items-center")],
+						[icon(h, visual.icon, { size: 16, className: visual.tone })],
+					),
+					h.span(
+						[h.Class("flex min-w-0 flex-1 items-baseline gap-1.5 truncate")],
+						[
+							h.span(
+								[
+									h.Class(
+										cn("truncate", isError ? "text-severity-error" : "text-foreground"),
+									),
+								],
+								[visual.lead],
+							),
+							...(visual.trail
+								? [
+										h.span(
+											[h.Class("shrink-0 text-3xs text-muted-foreground")],
+											[visual.trail],
 										),
-									],
-									[formatNetDuration(ev.netDurationMs)],
-								),
-							]
-						: ev.type === "console" && ev.level
-							? [h.span([h.Class(visual.tone)], [ev.level])]
-							: []),
-				]),
-			],
-		),
-		...(showNetworkBar && ev.type === "network"
-			? [
-					h.span([h.Class("block px-3 pb-1.5 pl-[50px]")], [
-						meter(h, {
-							value: ev.netDurationMs,
-							max: 3000,
-							minVisible: 2,
-							fillClassName: isError ? TONE_FILL.crit : isSlowRequest(ev.netDurationMs) ? TONE_FILL.warn : "bg-chart-1",
-							className: "h-[3px] w-full bg-muted",
-						}),
-					]),
-				]
-			: []),
-		...(isOpen ? [eventDetail(h, ev)] : []),
-	])
+									]
+								: []),
+						],
+					),
+					h.span(
+						[
+							h.Class(
+								"flex w-[72px] shrink-0 items-center justify-end gap-1.5 text-3xs tabular-nums",
+							),
+						],
+						[
+							...(ev.type === "network"
+								? [
+										h.span(
+											[h.Class(cn("font-semibold", statusTone(ev.netStatus)))],
+											[ev.netStatus ? String(ev.netStatus) : "ERR"],
+										),
+										h.span(
+											[
+												h.Class(
+													cn(
+														isError || isSlowRequest(ev.netDurationMs)
+															? cn("font-semibold", TONE_TEXT.warn)
+															: "text-muted-foreground",
+														isError && TONE_TEXT.crit,
+													),
+												),
+											],
+											[formatNetDuration(ev.netDurationMs)],
+										),
+									]
+								: ev.type === "console" && ev.level
+									? [h.span([h.Class(visual.tone)], [ev.level])]
+									: []),
+						],
+					),
+				],
+			),
+			...(showNetworkBar && ev.type === "network"
+				? [
+						h.span(
+							[h.Class("block px-3 pb-1.5 pl-[50px]")],
+							[
+								meter(h, {
+									value: ev.netDurationMs,
+									max: 3000,
+									minVisible: 2,
+									fillClassName: isError
+										? TONE_FILL.crit
+										: isSlowRequest(ev.netDurationMs)
+											? TONE_FILL.warn
+											: "bg-chart-1",
+									className: "h-[3px] w-full bg-muted",
+								}),
+							],
+						),
+					]
+				: []),
+			...(isOpen ? [eventDetail(h, ev)] : []),
+		],
+	)
 }
 
 const eventsTab = (h: H, model: Model): Html =>
@@ -283,80 +415,155 @@ const eventsTab = (h: H, model: Model): Html =>
 		onData: (events) => {
 			const filter = model.eventFilter
 			const rows = filter === "all" ? events : events.filter((ev) => ev.type === filter)
-			return h.div([h.Class("flex min-h-0 flex-1 flex-col")], [
-				filterBar(h, model, events),
-				rows.length === 0
-					? h.div([h.Class("grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground")], [
-							`No ${filter === "all" ? "events" : FILTER_LABELS[filter].toLowerCase()} in this session.`,
-						])
-					: h.div([h.Class("min-h-0 flex-1 overflow-y-auto")], [
-							h.ul(
-								[h.Class("relative divide-y divide-border font-mono text-xs")],
-								rows.map((ev, index) => eventLine(h, model, ev, index, filter === "network")),
+			return h.div(
+				[h.Class("flex min-h-0 flex-1 flex-col")],
+				[
+					filterBar(h, model, events),
+					rows.length === 0
+						? h.div(
+								[
+									h.Class(
+										"grid flex-1 place-items-center p-6 text-center text-sm text-muted-foreground",
+									),
+								],
+								[
+									`No ${filter === "all" ? "events" : FILTER_LABELS[filter].toLowerCase()} in this session.`,
+								],
+							)
+						: h.div(
+								[h.Class("min-h-0 flex-1 overflow-y-auto")],
+								[
+									h.ul(
+										[h.Class("relative divide-y divide-border font-mono text-xs")],
+										rows.map((ev, index) =>
+											eventLine(h, model, ev, index, filter === "network"),
+										),
+									),
+								],
 							),
-						]),
-			])
+				],
+			)
 		},
 	})
 
 const traceListRow = (h: H, model: Model, summary: TraceSummary): Html => {
 	const isError = summary.hasError > 0
 	return h.li(
-		[h.Key(summary.traceId), h.Class(cn("relative flex flex-col gap-0.5 px-3 py-2.5 hover:bg-muted/50", isError && "bg-severity-error/5"))],
 		[
-			...(isError ? [h.span([h.AriaHidden(true), h.Class("absolute inset-y-0 left-0 w-0.5 bg-severity-error")], [])] : []),
-			h.div([h.Class("flex items-center gap-2.5")], [
-				h.button(
-					[
-						h.Type("button"),
-						h.OnClick(Message.RequestedSeekToTimestamp({ timestamp: summary.startTime })),
-						h.Class("w-10 shrink-0 text-left font-mono text-xs tabular-nums text-muted-foreground hover:text-foreground"),
-					],
-					[clockAt(model, summary.startTime)],
+			h.Key(summary.traceId),
+			h.Class(
+				cn(
+					"relative flex flex-col gap-0.5 px-3 py-2.5 hover:bg-muted/50",
+					isError && "bg-severity-error/5",
 				),
-				httpSpanLabel(h, {
-					spanName: summary.rootSpanName || "trace",
-					spanAttributes: parseAttributes(summary.rootSpanAttributes),
-					spanKind: summary.rootSpanKind,
-					className: "min-w-0 flex-1",
-					textClassName: cn("truncate text-xs font-medium", isError ? "text-severity-error" : "text-foreground"),
-				}),
-				h.span(
-					[h.Class(cn("shrink-0 font-mono text-2xs tabular-nums", isError ? "font-semibold text-severity-error" : "text-muted-foreground"))],
-					[formatNetDuration(Math.round(summary.durationMs))],
-				),
-			]),
-			h.div([h.Class("flex items-center gap-2 pl-[3.125rem]")], [
-				h.span([h.Class("min-w-0 truncate text-2xs text-muted-foreground")], [
-					summary.rootServiceName,
-					" · ",
-					countLabel(summary.spanCount, "span"),
-					isError ? " · error" : "",
-				]),
-				h.a(
-					[
-						h.Href(hrefOf(AppRoute.Trace({ traceId: summary.traceId, search: { t: summary.startTime } }))),
-						h.Target("_blank"),
-						h.Rel("noreferrer"),
-						h.Class("inline-flex shrink-0 items-center gap-1 text-2xs text-info-foreground underline-offset-2 hover:underline"),
-					],
-					["open", icon(h, "ExternalLinkIcon", { className: "size-3" })],
-				),
-			]),
+			),
+		],
+		[
+			...(isError
+				? [
+						h.span(
+							[
+								h.AriaHidden(true),
+								h.Class("absolute inset-y-0 left-0 w-0.5 bg-severity-error"),
+							],
+							[],
+						),
+					]
+				: []),
+			h.div(
+				[h.Class("flex items-center gap-2.5")],
+				[
+					h.button(
+						[
+							h.Type("button"),
+							h.OnClick(Message.RequestedSeekToTimestamp({ timestamp: summary.startTime })),
+							h.Class(
+								"w-10 shrink-0 text-left font-mono text-xs tabular-nums text-muted-foreground hover:text-foreground",
+							),
+						],
+						[clockAt(model, summary.startTime)],
+					),
+					httpSpanLabel(h, {
+						spanName: summary.rootSpanName || "trace",
+						spanAttributes: parseAttributes(summary.rootSpanAttributes),
+						spanKind: summary.rootSpanKind,
+						className: "min-w-0 flex-1",
+						textClassName: cn(
+							"truncate text-xs font-medium",
+							isError ? "text-severity-error" : "text-foreground",
+						),
+					}),
+					h.span(
+						[
+							h.Class(
+								cn(
+									"shrink-0 font-mono text-2xs tabular-nums",
+									isError ? "font-semibold text-severity-error" : "text-muted-foreground",
+								),
+							),
+						],
+						[formatNetDuration(Math.round(summary.durationMs))],
+					),
+				],
+			),
+			h.div(
+				[h.Class("flex items-center gap-2 pl-[3.125rem]")],
+				[
+					h.span(
+						[h.Class("min-w-0 truncate text-2xs text-muted-foreground")],
+						[
+							summary.rootServiceName,
+							" · ",
+							countLabel(summary.spanCount, "span"),
+							isError ? " · error" : "",
+						],
+					),
+					h.a(
+						[
+							h.Href(
+								hrefOf(
+									AppRoute.Trace({
+										traceId: summary.traceId,
+										search: { t: summary.startTime },
+									}),
+								),
+							),
+							h.Target("_blank"),
+							h.Rel("noreferrer"),
+							h.Class(
+								"inline-flex shrink-0 items-center gap-1 text-2xs text-info-foreground underline-offset-2 hover:underline",
+							),
+						],
+						["open", icon(h, "ExternalLinkIcon", { className: "size-3" })],
+					),
+				],
+			),
 		],
 	)
 }
 
 const tracesTab = (h: H, model: Model, traceIds: ReadonlyArray<string>): Html =>
 	traceIds.length === 0
-		? emptyMessage(h, { className: "leading-relaxed" }, noLinkedTraces(inlineCode(h, {}, ["@maple-dev/browser"])))
+		? emptyMessage(
+				h,
+				{ className: "leading-relaxed" },
+				noLinkedTraces(inlineCode(h, {}, ["@maple-dev/browser"])),
+			)
 		: AsyncData.matchData(model.traceSummaries.data, {
-				onEmpty: () => h.div([h.Class("space-y-2 p-4")], [skeleton(h, "h-4 w-2/3"), skeleton(h, "h-4 w-1/2")]),
+				onEmpty: () =>
+					h.div([h.Class("space-y-2 p-4")], [skeleton(h, "h-4 w-2/3"), skeleton(h, "h-4 w-1/2")]),
 				onFailure: (failure) =>
-					errorState(h, { failure, variant: "inline", title: "Couldn't load correlated traces", className: "px-4" }),
+					errorState(h, {
+						failure,
+						variant: "inline",
+						title: "Couldn't load correlated traces",
+						className: "px-4",
+					}),
 				onData: (summaries) =>
 					summaries.length === 0
-						? emptyMessage(h, {}, ["Linked traces aren't available yet, they may still be ingesting."])
+						? emptyMessage(h, {}, [
+								"Linked traces aren't available yet, they may still be ingesting.",
+							])
 						: h.ul(
 								[h.Class("min-h-0 flex-1 divide-y divide-border overflow-y-auto")],
 								summaries.map((summary) => traceListRow(h, model, summary)),
@@ -374,9 +581,23 @@ const railTabItem = (h: H, model: Model, tab: RailTab, label: string, count?: nu
 				"h-7 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground data-pressed:bg-muted data-pressed:text-foreground sm:h-7 sm:text-xs",
 			),
 			slot: "toggle",
-			attributes: [h.AriaDisabled(false), h.DataAttribute("size", "sm"), h.DataAttribute("variant", "default")],
+			attributes: [
+				h.AriaDisabled(false),
+				h.DataAttribute("size", "sm"),
+				h.DataAttribute("variant", "default"),
+			],
 		},
-		[label, ...(count === undefined ? [] : [h.span([h.Class("font-mono text-3xs tabular-nums text-muted-foreground")], [String(count)])])],
+		[
+			label,
+			...(count === undefined
+				? []
+				: [
+						h.span(
+							[h.Class("font-mono text-3xs tabular-nums text-muted-foreground")],
+							[String(count)],
+						),
+					]),
+		],
 	)
 
 /** The right rail: Events / Traces / Session. */
@@ -391,24 +612,33 @@ export const sessionRail = (h: H, model: Model, session: ReplayDetail): Html =>
 			),
 		],
 		[
-			h.div([h.Class("flex shrink-0 items-center border-b border-border px-2 py-1.5")], [
-				h.div(
-					[
-						h.Role("group"),
-						h.AriaLabel("Rail section"),
-						h.Class(cn(toggleGroupStyles, toggleGroupHorizontalStyles, toggleGroupConnectedStyles)),
-						h.DataAttribute("orientation", "horizontal"),
-						h.DataAttribute("size", "sm"),
-						h.DataAttribute("slot", "toggle-group"),
-						h.DataAttribute("variant", "default"),
-					],
-					[
-						railTabItem(h, model, "events", "Events"),
-						railTabItem(h, model, "traces", "Traces", session.traceIds.length),
-						railTabItem(h, model, "session", "Session"),
-					],
-				),
-			]),
+			h.div(
+				[h.Class("flex shrink-0 items-center border-b border-border px-2 py-1.5")],
+				[
+					h.div(
+						[
+							h.Role("group"),
+							h.AriaLabel("Rail section"),
+							h.Class(
+								cn(
+									toggleGroupStyles,
+									toggleGroupHorizontalStyles,
+									toggleGroupConnectedStyles,
+								),
+							),
+							h.DataAttribute("orientation", "horizontal"),
+							h.DataAttribute("size", "sm"),
+							h.DataAttribute("slot", "toggle-group"),
+							h.DataAttribute("variant", "default"),
+						],
+						[
+							railTabItem(h, model, "events", "Events"),
+							railTabItem(h, model, "traces", "Traces", session.traceIds.length),
+							railTabItem(h, model, "session", "Session"),
+						],
+					),
+				],
+			),
 			model.railTab === "events"
 				? eventsTab(h, model)
 				: model.railTab === "traces"

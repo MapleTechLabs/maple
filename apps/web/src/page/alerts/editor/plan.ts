@@ -121,4 +121,3 @@ export const applyDefaultDestination = (model: Model): Model => {
 				: form,
 	}
 }
-

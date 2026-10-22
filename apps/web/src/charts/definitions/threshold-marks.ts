@@ -23,7 +23,9 @@ export const thresholdMarks = (thresholds: ReadonlyArray<Threshold>, labelX: Cha
 		strokeDasharray: "4 4",
 	})
 	const labelled =
-		labelX === undefined ? [] : valid.filter((threshold) => threshold.label !== null && threshold.label !== "")
+		labelX === undefined
+			? []
+			: valid.filter((threshold) => threshold.label !== null && threshold.label !== "")
 	if (labelX === undefined || labelled.length === 0) return [rules]
 	return [
 		rules,

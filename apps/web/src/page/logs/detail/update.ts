@@ -125,11 +125,26 @@ export type Scope = Readonly<{ orgId: string; pinnedNamespace: string | null }>
 
 /** Shows `log`, starting fresh on the Attributes tab with new panels. */
 export const open = (model: Model, log: LogRecord, scope: Scope): Return =>
-	withPanels(liftDialog(viewing({ ...model, orgId: scope.orgId, pinnedNamespace: scope.pinnedNamespace }, log, "attributes"), Dialog.open(model.dialog)))
+	withPanels(
+		liftDialog(
+			viewing(
+				{ ...model, orgId: scope.orgId, pinnedNamespace: scope.pinnedNamespace },
+				log,
+				"attributes",
+			),
+			Dialog.open(model.dialog),
+		),
+	)
 
 /** `/logs/$logId`: the page's log, every panel reading at once. */
 export const show = (model: Model, log: LogRecord, scope: Scope): Return =>
-	withPanels({ model: viewing({ ...model, orgId: scope.orgId, pinnedNamespace: scope.pinnedNamespace }, log, "attributes") })
+	withPanels({
+		model: viewing(
+			{ ...model, orgId: scope.orgId, pinnedNamespace: scope.pinnedNamespace },
+			log,
+			"attributes",
+		),
+	})
 
 const settled = (model: Model, generation: number, status: CopyStatus): Return =>
 	generation === model.copy.generation
@@ -207,7 +222,9 @@ export const update = (model: Model, message: Message): Return =>
 			const next = InfraCorrelation.update(model.infra, inner)
 			return {
 				model: { ...model, infra: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (m) => Message.GotInfraMessage({ message: m })),
+				commands: Command.mapMessages(next.commands ?? [], (m) =>
+					Message.GotInfraMessage({ message: m }),
+				),
 			}
 		},
 		ClickedShowFullMessage: () => ({ model: { ...model, isHeroExpanded: !model.isHeroExpanded } }),

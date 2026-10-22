@@ -88,7 +88,12 @@ export const heatmapLegend = <M>(h: HtmlBuilder<M>, inputs: HeatmapLegendInputs)
 								"line-height": "1",
 							}),
 						],
-						[formatScalar(roundTick(valueAtRampPosition(t, domain, scaleType), domain[0], span), inputs.unit)],
+						[
+							formatScalar(
+								roundTick(valueAtRampPosition(t, domain, scaleType), domain[0], span),
+								inputs.unit,
+							),
+						],
 					),
 				),
 			),

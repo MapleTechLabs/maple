@@ -30,7 +30,10 @@ export const init = (): Model => ({
 })
 
 export const Message = defineMessageUnion({
-	CompletedFetchChannels: { key: Schema.String, result: Schema.Result(Schema.Array(V2ChatDestination), LoadFailure) },
+	CompletedFetchChannels: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(V2ChatDestination), LoadFailure),
+	},
 	ClickedRefreshChannels: {},
 	GotComboboxMessage: { message: Combobox.Message },
 })
@@ -67,7 +70,10 @@ export const load = (model: Model, workspaceId: ChatWorkspaceId | null, mode: Ke
 	const key = keyOf(workspaceId)
 	return Option.match(Keyed.request(model.channels, key, mode), {
 		onNone: () => ({ model, commands: [] }),
-		onSome: (channels) => ({ model: { ...model, channels }, commands: [FetchChatChannels({ key, workspaceId })] }),
+		onSome: (channels) => ({
+			model: { ...model, channels },
+			commands: [FetchChatChannels({ key, workspaceId })],
+		}),
 	})
 }
 
@@ -88,7 +94,10 @@ const echoing = (combobox: Combobox.Model, label: string): Combobox.Model => ({
 /** Opening the fields: the input reads the stored channel, and its workspace's list loads. */
 export const reset = (model: Model, form: DestinationForm): Return =>
 	load(
-		{ ...model, combobox: echoing(Combobox.init(model.combobox.id, "single"), selectedLabel(model, form)) },
+		{
+			...model,
+			combobox: echoing(Combobox.init(model.combobox.id, "single"), selectedLabel(model, form)),
+		},
 		form.type === "chat" ? form.chatWorkspaceId : null,
 		"Load",
 	)
@@ -101,7 +110,9 @@ export const update = (model: Model, message: Message, form: DestinationForm): R
 			// The stored channel's label is known once its list answers (`itemToStringLabel`).
 			const isEchoing = model.combobox.inputValue === selectedLabel(model, form)
 			return {
-				model: isEchoing ? { ...next, combobox: echoing(next.combobox, selectedLabel(next, form)) } : next,
+				model: isEchoing
+					? { ...next, combobox: echoing(next.combobox, selectedLabel(next, form)) }
+					: next,
 				commands: [],
 			}
 		},
@@ -109,11 +120,15 @@ export const update = (model: Model, message: Message, form: DestinationForm): R
 		GotComboboxMessage: ({ message: inner }) => {
 			const step = Combobox.update(model.combobox, inner)
 			const next = { ...model, combobox: step.model }
-			const commands = Command.mapMessages(step.commands ?? [], (child) => Message.GotComboboxMessage({ message: child }))
+			const commands = Command.mapMessages(step.commands ?? [], (child) =>
+				Message.GotComboboxMessage({ message: child }),
+			)
 			const out = step.outMessage
 			const picked =
 				out?._tag === "ChangedValue"
-					? Option.fromNullishOr(channelsOf(model).find((channel) => labelOf(channel) === out.value))
+					? Option.fromNullishOr(
+							channelsOf(model).find((channel) => labelOf(channel) === out.value),
+						)
 					: Option.none()
 			return Option.match(picked, {
 				onNone: () => ({ model: next, commands }),
@@ -128,7 +143,10 @@ export const update = (model: Model, message: Message, form: DestinationForm): R
 
 /** The form's channel as the input shows it: its label, or `#name` / the id when not listed. */
 export const selectedLabel = (model: Model, form: DestinationForm): string =>
-	Option.match(Option.fromNullishOr(channelsOf(model).find((channel) => channel.id === form.chatChannelId)), {
-		onNone: () => (form.chatChannelId === "" ? "" : `#${form.chatChannelName || form.chatChannelId}`),
-		onSome: labelOf,
-	})
+	Option.match(
+		Option.fromNullishOr(channelsOf(model).find((channel) => channel.id === form.chatChannelId)),
+		{
+			onNone: () => (form.chatChannelId === "" ? "" : `#${form.chatChannelName || form.chatChannelId}`),
+			onSome: labelOf,
+		},
+	)

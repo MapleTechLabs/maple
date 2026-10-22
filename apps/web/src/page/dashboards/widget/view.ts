@@ -149,7 +149,8 @@ const preview = (h: H, model: Model, timeZone: string): Html => {
 									onSort: (field, isText) => Message.ClickedSortColumn({ field, isText }),
 									sparkline: sparklineState(model, widget),
 									sparklineChart: model.sparklineChart,
-									onSparklineChart: (message) => Message.GotSparklineChartMessage({ message }),
+									onSparklineChart: (message) =>
+										Message.GotSparklineChartMessage({ message }),
 								},
 								widget,
 							),

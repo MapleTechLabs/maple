@@ -62,10 +62,21 @@ export const ChartSpec = defineTaggedUnion({
 	 */
 	ToolSeries: {
 		rows: Schema.Array(FixedMetricRow),
-		series: Schema.Array(Schema.Struct({ key: Schema.String, label: Schema.String, color: Schema.String })),
+		series: Schema.Array(
+			Schema.Struct({ key: Schema.String, label: Schema.String, color: Schema.String }),
+		),
 		chrome: Schema.Struct({ border: Schema.String, background: Schema.String }),
 		/** The tick and tooltip format: a tool metric (overview), or one of the detail grid's formatters. */
-		format: Schema.Literals(["calls", "sessions", "error_rate", "duration", "number", "errorRate", "durationNs", "oneDecimal"]),
+		format: Schema.Literals([
+			"calls",
+			"sessions",
+			"error_rate",
+			"duration",
+			"number",
+			"errorRate",
+			"durationNs",
+			"oneDecimal",
+		]),
 		tickCount: Schema.NullOr(Schema.Number),
 		marginTop: Schema.Number,
 		timeZone: Schema.String,
@@ -314,7 +325,9 @@ export const ChartSpec = defineTaggedUnion({
 			}),
 		),
 		/** The metric keys behind `primary` and (when paired) `companion`, in paint order. */
-		series: Schema.Array(Schema.Struct({ key: Schema.Literals(["primary", "companion"]), metric: Schema.String })),
+		series: Schema.Array(
+			Schema.Struct({ key: Schema.Literals(["primary", "companion"]), metric: Schema.String }),
+		),
 		/** The metric whose format the y ticks use. */
 		tickMetric: Schema.String,
 		/** Resolved `primary` / `companion` colours plus `border` / `background` chrome. */
@@ -367,7 +380,9 @@ export const ChartSpec = defineTaggedUnion({
 				future: Schema.Boolean,
 			}),
 		),
-		bands: Schema.Array(Schema.Struct({ key: Schema.String, label: Schema.String, color: Schema.String })),
+		bands: Schema.Array(
+			Schema.Struct({ key: Schema.String, label: Schema.String, color: Schema.String }),
+		),
 		primary: Schema.String,
 		chrome: Schema.Struct({ border: Schema.String, background: Schema.String }),
 		projected: Schema.Number,
@@ -383,7 +398,12 @@ export const ChartSpec = defineTaggedUnion({
 		/** The y tick text per category, already shortened and truncated into the gutter. */
 		yLabels: Schema.Record(Schema.String, Schema.String),
 		margin: Nullable(
-			Schema.Struct({ top: Schema.Number, right: Schema.Number, bottom: Schema.Number, left: Schema.Number }),
+			Schema.Struct({
+				top: Schema.Number,
+				right: Schema.Number,
+				bottom: Schema.Number,
+				left: Schema.Number,
+			}),
 		),
 		paddingInnerX: Schema.Number,
 		paddingInnerY: Schema.Number,

@@ -31,7 +31,9 @@ export const ResolveWindow = Command.define("ResolvePlanetscaleDatabaseWindow", 
 	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
 		Effect.map(Clock.currentTimeMillis, (nowMs) =>
 			Message.CompletedResolveWindow({
-				...withLocal(resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs)),
+				...withLocal(
+					resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
+				),
 				nowMs,
 				mode,
 			}),

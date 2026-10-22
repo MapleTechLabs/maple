@@ -70,7 +70,8 @@ export const solveHeatmapLayout = (input: HeatmapLayoutInput): HeatmapLayout => 
 		}
 	const roughW = Math.min(availW / columns, MAX_CELL_W)
 	const roughH = Math.min(availH / rows, MAX_CELL_H)
-	const gap = roughW >= TIGHT_CELL_THRESHOLD && roughH >= TIGHT_CELL_THRESHOLD ? CELL_GAP_WIDE : CELL_GAP_TIGHT
+	const gap =
+		roughW >= TIGHT_CELL_THRESHOLD && roughH >= TIGHT_CELL_THRESHOLD ? CELL_GAP_WIDE : CELL_GAP_TIGHT
 	const gridW = Math.min(availW, cappedGridLength(columns, MAX_CELL_W, gap))
 	const gridH = Math.min(availH, cappedGridLength(rows, MAX_CELL_H, gap))
 	const cellW = (gridW - Math.max(0, columns - 1) * gap) / columns

@@ -22,4 +22,3 @@ export const MarkerColors = Schema.Struct({
 	label: Schema.String,
 })
 export type MarkerColors = typeof MarkerColors.Type
-

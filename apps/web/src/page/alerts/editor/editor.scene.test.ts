@@ -40,9 +40,11 @@ const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 const DRAFT_ID = "6f1c2e3a-0000-4000-8000-000000000001"
-const themeResolved = () => Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
+const themeResolved = () =>
+	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
 const route = (search: Model["search"] = {}) => ({ _tag: "AlertsCreate" as const, search })
 const run = (model: Model, messages: ReadonlyArray<Message>) =>
@@ -93,7 +95,9 @@ describe("alert rule editor", () => {
 		expect(drafted.model.templates.isOpen).toBe(true)
 		const clocked = pageUpdate(drafted.model, Message.CompletedReadClock({ nowMs: NOW }))
 		expect(names(clocked.commands)).toContain("FetchAlertEditorPreview")
-		expect(names(clocked.commands).filter((name) => name === "FetchAlertEditorAutocomplete")).toHaveLength(6)
+		expect(
+			names(clocked.commands).filter((name) => name === "FetchAlertEditorAutocomplete"),
+		).toHaveLength(6)
 		expect(names(clocked.commands)).toContain("FetchAlertEditorTraceFacets")
 	})
 
@@ -104,7 +108,12 @@ describe("alert rule editor", () => {
 		expect(ready.form?.name).toBe("Payment p95 latency")
 		expect(ready.savedForm).toEqual(ready.form)
 		expect(ready.editingRuleId).toBe(ruleId(2))
-		scene({ update: pageUpdate, view }, given(ready), themeResolved(), expectView(text("Save changes")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(ready),
+			themeResolved(),
+			expectView(text("Save changes")).toExist(),
+		)
 	})
 
 	test("the severity radios each keep their own hidden input, so the field label names neither", () => {
@@ -121,9 +130,20 @@ describe("alert rule editor", () => {
 	test("the window hint says how often the window is checked, beside the saved value while editing", () => {
 		const hint = (every: string) => text(`Each check looks at this much data, checked every ${every}.`)
 		const draft = withLists(entered({ template: "slow_p95" }))
-		const withWindow = (model: Model, value: string) => run(model, [Message.ChangedField({ field: "windowMinutes", value })])
-		scene({ update: pageUpdate, view }, given(withWindow(draft, "5")), themeResolved(), expectView(hint("minute")).toExist())
-		scene({ update: pageUpdate, view }, given(withWindow(draft, "15")), themeResolved(), expectView(hint("3 min")).toExist())
+		const withWindow = (model: Model, value: string) =>
+			run(model, [Message.ChangedField({ field: "windowMinutes", value })])
+		scene(
+			{ update: pageUpdate, view },
+			given(withWindow(draft, "5")),
+			themeResolved(),
+			expectView(hint("minute")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withWindow(draft, "15")),
+			themeResolved(),
+			expectView(hint("3 min")).toExist(),
+		)
 		const editing = withLists(entered({ ruleId: ruleId(2) }))
 		const saved = editing.savedForm?.windowMinutes ?? ""
 		expect(saved).not.toBe("60")
@@ -149,7 +169,11 @@ describe("alert rule editor", () => {
 		expect(edited.preview.key).not.toBe(staleKey)
 		const late = pageUpdate(
 			edited,
-			Message.CompletedFetchPreview({ key: staleKey, isSaved: false, result: Result.fail({ message: "late" }) }),
+			Message.CompletedFetchPreview({
+				key: staleKey,
+				isSaved: false,
+				result: Result.fail({ message: "late" }),
+			}),
 		).model
 		expect(late.preview).toEqual(edited.preview)
 	})
@@ -167,7 +191,10 @@ describe("alert rule editor", () => {
 		const saving = pageUpdate(withLists(entered({ template: "slow_p95" })), Message.ClickedSave()).model
 		const saved = pageUpdate(saving, Message.CompletedSave({ result: Result.succeed(undefined) }))
 		expect(names(saved.commands)).toEqual(["TrackAlertRuleCreated"])
-		const failed = pageUpdate(saving, Message.CompletedSave({ result: Result.fail({ title: "Bad", message: "nope" }) }))
+		const failed = pageUpdate(
+			saving,
+			Message.CompletedSave({ result: Result.fail({ title: "Bad", message: "nope" }) }),
+		)
 		expect(names(failed.commands)).toEqual([])
 	})
 
@@ -187,8 +214,14 @@ describe("alert rule editor", () => {
 			hover(details),
 			Command.resolve(Tooltip.WaitOpenDelay, Tooltip.Message.ElapsedOpenDelay({ generation: 1 })),
 			Mount.resolve(Tooltip.MountTooltip, Tooltip.Message.CompletedMountTooltip()),
-			Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })),
-			Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation: 1 })),
+			Command.resolve(
+				Animation.WaitForPaint,
+				Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+			),
+			Command.resolve(
+				Animation.WaitForAnimationSettled,
+				Animation.Message.EndedAnimation({ generation: 1 }),
+			),
 			expectView(text("• Checks to fire")).toExist(),
 		)
 	})
@@ -222,7 +255,10 @@ describe("alert rule editor", () => {
 		expect(found.notices.map((notice) => notice.message)).not.toContain(
 			"The source chart could not be found. Starting from a blank alert.",
 		)
-		const failed = pageUpdate(withLists(entered(search)), Message.FailedLoadDashboards({ orgId: ORG })).model
+		const failed = pageUpdate(
+			withLists(entered(search)),
+			Message.FailedLoadDashboards({ orgId: ORG }),
+		).model
 		expect(failed.notices).toEqual([
 			{ severity: "warning", message: "Dashboards could not be loaded. Starting from a blank alert." },
 		])
@@ -238,11 +274,20 @@ describe("alert rule editor", () => {
 				workspaces,
 				supports_identity: true,
 			})
-		const ready = pageUpdate(withLists(entered({ template: "slow_p95" })), Message.CompletedFetchConnectors({ connectors: [connector([])] })).model
+		const ready = pageUpdate(
+			withLists(entered({ template: "slow_p95" })),
+			Message.CompletedFetchConnectors({ connectors: [connector([])] }),
+		).model
 		const menuId = "alert-rule-add-destination-warning"
 		const picked = pageUpdate(
 			ready,
-			Message.GotMenuMessage({ id: menuId, message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value: "connect:slack" } }) }),
+			Message.GotMenuMessage({
+				id: menuId,
+				message: Menu.Message.ClickedItem({
+					index: 0,
+					item: { kind: "Item", value: "connect:slack" },
+				}),
+			}),
 		).model
 		expect(picked.chatConnect.active?.connector).toBe("slack")
 		const workspace = {
@@ -254,7 +299,10 @@ describe("alert rule editor", () => {
 			settings: {},
 			created_at: "2026-09-01T00:00:00.000Z",
 		}
-		const linked = pageUpdate(picked, Message.CompletedFetchConnectors({ connectors: [connector([workspace])] })).model
+		const linked = pageUpdate(
+			picked,
+			Message.CompletedFetchConnectors({ connectors: [connector([workspace])] }),
+		).model
 		expect(linked.chatConnect.active).toBeNull()
 		expect(linked.destinationDialog.dialog.isOpen).toBe(true)
 		expect(linked.destinationDialog.form.type).toBe("chat")
@@ -266,7 +314,10 @@ describe("alert rule editor", () => {
 	})
 
 	test("switching SQL to Built-in says what it dropped; a template lands in the query builder", () => {
-		const sql = pageUpdate(entered({ template: "slow_p95" }), Message.ClickedSignalKind({ kind: "raw_query" })).model
+		const sql = pageUpdate(
+			entered({ template: "slow_p95" }),
+			Message.ClickedSignalKind({ kind: "raw_query" }),
+		).model
 		const back = pageUpdate(sql, Message.ClickedSignalKind({ kind: "builtin" })).model
 		expect(back.kindNotice).toContain("SQL doesn't carry over")
 		const picked = pageUpdate(entered(), Message.ClickedTemplate({ id: "slow_p99" })).model

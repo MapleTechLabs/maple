@@ -16,9 +16,11 @@ import {
 const clickItem = (value: string) =>
 	Message.GotMenuMessage({ message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value } }) })
 
-const opened = () => update(init("switcher"), Message.GotMenuMessage({ message: Menu.Message.ClickedTrigger() })).model
+const opened = () =>
+	update(init("switcher"), Message.GotMenuMessage({ message: Menu.Message.ClickedTrigger() })).model
 
-const commandNames = (result: ReturnType<typeof update>) => (result.commands ?? []).map((command) => command.name)
+const commandNames = (result: ReturnType<typeof update>) =>
+	(result.commands ?? []).map((command) => command.name)
 
 describe("Clerk org switcher", () => {
 	test("picking an organization reports it to the screen", () => {
@@ -43,9 +45,9 @@ describe("Clerk org switcher", () => {
 
 	test("a created organization becomes the active one; a failure shows its message", () => {
 		const creating = { ...init("switcher"), name: "Orbit", isCreating: true }
-		expect(commandNames(update(creating, Message.SucceededCreateOrganization({ orgId: "org_new" })))).toEqual([
-			"SwitchOrganization",
-		])
+		expect(
+			commandNames(update(creating, Message.SucceededCreateOrganization({ orgId: "org_new" }))),
+		).toEqual(["SwitchOrganization"])
 		const failed = update(creating, Message.FailedCreateOrganization({ message: "Name taken" })).model
 		expect(failed).toMatchObject({ isCreating: false, errorMessage: "Name taken" })
 	})
@@ -60,17 +62,34 @@ describe("Clerk org switcher", () => {
 			Message.GotRegionMessage({ message: RadioGroup.Message.SelectedRadio({ value: "eu" }) }),
 		).model
 		const submitted = update(picked, Message.SubmittedCreateOrganization())
-		expect((submitted.commands ?? []).map((command) => command.args)).toEqual([{ name: "Orbit", region: "eu" }])
+		expect((submitted.commands ?? []).map((command) => command.args)).toEqual([
+			{ name: "Orbit", region: "eu" },
+		])
 		expect(createdTargetOf("eu", () => "https://eu.example")).toBe("https://eu.example")
 		expect(createdTargetOf("us", () => "https://us.example")).toBeNull()
-		const closed = update(picked, Message.GotCreateDialogMessage({ message: Dialog.Message.ClickedClose() })).model
+		const closed = update(
+			picked,
+			Message.GotCreateDialogMessage({ message: Dialog.Message.ClickedClose() }),
+		).model
 		expect(closed.region).toBe("us")
 	})
 
 	test("a namespace row pins it; All namespaces clears the pin", () => {
 		const pick = (value: string) =>
 			update(
-				{ ...opened(), menu: { ...opened().menu, submenu: { index: 3, value: "namespace", side: "right", align: "start", highlighted: null } } },
+				{
+					...opened(),
+					menu: {
+						...opened().menu,
+						submenu: {
+							index: 3,
+							value: "namespace",
+							side: "right",
+							align: "start",
+							highlighted: null,
+						},
+					},
+				},
 				Message.GotMenuMessage({ message: Menu.Message.ClickedSubmenuItem({ value }) }),
 			).outMessage
 		expect(pick(`${NAMESPACE_PREFIX}checkout`)).toEqual(

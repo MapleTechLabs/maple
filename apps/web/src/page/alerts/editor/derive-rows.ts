@@ -27,7 +27,9 @@ export const tagSuggestionsOf = (
 	previous: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {
 	const tags = [...new Set(rows.flatMap((row) => rowToAlertRuleDocument(row, NO_STATES).tags))].sort()
-	return tags.length === previous.length && tags.every((tag, index) => tag === previous[index]) ? previous : tags
+	return tags.length === previous.length && tags.every((tag, index) => tag === previous[index])
+		? previous
+		: tags
 }
 
 /** The edited rule's open incidents (`clearedIncidents` input). */
@@ -40,7 +42,13 @@ export const openIncidentsOf = (
 				.map(rowToAlertIncidentDocument)
 				.filter((incident) => incident.ruleId === model.editingRuleId && incident.status === "open")
 
-const NO_FACETS: TraceFacets = { services: [], environments: [], spanNames: [], httpMethods: [], httpStatusCodes: [] }
+const NO_FACETS: TraceFacets = {
+	services: [],
+	environments: [],
+	spanNames: [],
+	httpMethods: [],
+	httpStatusCodes: [],
+}
 
 /** The traces facets once answered (`autocompleteValues.traces`). */
 export const traceFacetsOf = (model: Pick<Model, "traceFacets">): TraceFacets =>
@@ -80,5 +88,7 @@ const hasPayload = (model: Pick<Model, "previewWindow">, form: RuleForm): boolea
 	model.previewWindow !== null && previewPayload(form, model.previewWindow)._tag === "Some"
 
 /** The draft's preview as `useAlertRulePreview` reads it. */
-export const draftPreviewOf = (model: Pick<Model, "preview" | "previewWindow">, form: RuleForm): PreviewState =>
-	previewStateOf(model.preview, hasPayload(model, form), previewIssue(form))
+export const draftPreviewOf = (
+	model: Pick<Model, "preview" | "previewWindow">,
+	form: RuleForm,
+): PreviewState => previewStateOf(model.preview, hasPayload(model, form), previewIssue(form))

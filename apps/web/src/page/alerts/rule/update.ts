@@ -27,7 +27,15 @@ import {
 	ResolveRuleWindow,
 	ToggleRuleEnabled,
 } from "./command"
-import { checksPageOf, DEFAULT_PRESET, isoOf, payloadOf, ruleIncidentsOf, ruleOf, timelineRangeOf } from "./derive"
+import {
+	checksPageOf,
+	DEFAULT_PRESET,
+	isoOf,
+	payloadOf,
+	ruleIncidentsOf,
+	ruleOf,
+	timelineRangeOf,
+} from "./derive"
 import { Message, type RequestMode } from "./message"
 import type { Model } from "./model"
 
@@ -58,9 +66,9 @@ const keyed = <A, E>(
 	mode === "Load" && slot.key === key
 		? []
 		: Option.match(Keyed.request(slot, key, mode), {
-		onNone: () => [],
-		onSome: (next) => [{ patch: write(next), commands: [fetch(key)] }],
-	})
+				onNone: () => [],
+				onSome: (next) => [{ patch: write(next), commands: [fetch(key)] }],
+			})
 
 const applySteps = (model: Model, steps: ReadonlyArray<Step>): Return => ({
 	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
@@ -72,21 +80,33 @@ const followData = (model: Model, context: PageContext, mode: Keyed.RequestMode)
 	const org = context.orgId
 	const window = model.window
 	const deliveriesKey = requestKey(org, "alertDeliveries.list", { query: { limit: 100 } })
-	const deliveries = keyed(model.deliveries, deliveriesKey, "Load", (next) => ({ deliveries: next }), (key) =>
-		FetchRuleDeliveries({ key }),
+	const deliveries = keyed(
+		model.deliveries,
+		deliveriesKey,
+		"Load",
+		(next) => ({ deliveries: next }),
+		(key) => FetchRuleDeliveries({ key }),
 	)
 	if (window === null) return applySteps(model, deliveries)
 	const since = isoOf(window.startTime)
 	const until = isoOf(window.endTime)
 	const checksKey = requestKey(org, "alertRules.checks", { ruleId: model.ruleId, since, until })
-	const checks = keyed(model.checks, checksKey, mode, (next) => ({ checks: next }), (key) =>
-		FetchRuleChecks({ key, ruleId: model.ruleId, since, until }),
+	const checks = keyed(
+		model.checks,
+		checksKey,
+		mode,
+		(next) => ({ checks: next }),
+		(key) => FetchRuleChecks({ key, ruleId: model.ruleId, since, until }),
 	)
 	const preview = Option.match(payloadOf(model, ruleOf(model)), {
 		onNone: (): ReadonlyArray<Step> => [],
 		onSome: (payload) =>
-			keyed(model.preview, requestKey(org, "alertRules.preview", payload), mode, (next) => ({ preview: next }), (key) =>
-				FetchRulePreview({ key, payload }),
+			keyed(
+				model.preview,
+				requestKey(org, "alertRules.preview", payload),
+				mode,
+				(next) => ({ preview: next }),
+				(key) => FetchRulePreview({ key, payload }),
 			),
 	})
 	return applySteps(model, [...deliveries, ...checks, ...preview])
@@ -151,7 +171,10 @@ export const init = (route: RuleRoute, context: PageContext): Return => {
 export const routeChanged = (model: Model, route: RuleRoute, context: PageContext): Return => {
 	const next = { ...model, search: route.search }
 	return routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
+		resolve: (): Return => ({
+			model: next,
+			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+		}),
 		requestAll: () => ({ model: next }),
 	})
 }
@@ -168,10 +191,18 @@ const errorToast = (title: string, message: string) =>
 	PageOutMessage.RequestedToast({ type: "error", title, description: message })
 
 /** `openInvestigation(incident)`: the incident's investigation, seeded with the rule. */
-const investigationPayload = (rule: AlertRuleDocument, incident: AlertIncidentDocument): V2InvestigationCreateParams => ({
+const investigationPayload = (
+	rule: AlertRuleDocument,
+	incident: AlertIncidentDocument,
+): V2InvestigationCreateParams => ({
 	subject:
 		incident.errorIssueId != null
-			? { type: "incident", incident_kind: "alert", incident_id: incident.id, issue_id: incident.errorIssueId }
+			? {
+					type: "incident",
+					incident_kind: "alert",
+					incident_id: incident.id,
+					issue_id: incident.errorIssueId,
+				}
 			: { type: "incident", incident_kind: "alert", incident_id: incident.id },
 	snapshot: {
 		title: rule.name,
@@ -183,7 +214,9 @@ const investigationPayload = (rule: AlertRuleDocument, incident: AlertIncidentDo
 			{ label: "Observed", value: formatSignalValue(rule.signalType, incident.lastObservedValue) },
 			{ label: "Threshold", value: formatSignalValue(rule.signalType, incident.threshold) },
 		],
-		references: incident.errorIssueId ? [{ label: "Issue", url: `/errors/issues/${incident.errorIssueId}` }] : [],
+		references: incident.errorIssueId
+			? [{ label: "Issue", url: `/errors/issues/${incident.errorIssueId}` }]
+			: [],
 		incidentStartedAt: incident.firstTriggeredAt,
 		incidentEndedAt: incident.resolvedAt,
 	},
@@ -206,7 +239,9 @@ export const incidentMenuId = (incidentId: string) => `incident:${incidentId}`
 const updateMenu = (model: Model, menuId: string, message: Menu.Message): Return => {
 	const result = Menu.update(model.menus[menuId] ?? Menu.init(menuId), message)
 	const next: Model = { ...model, menus: { ...model.menus, [menuId]: result.model } }
-	const commands = Command.mapMessages(result.commands ?? [], (child) => Message.GotRowMenuMessage({ menuId, message: child }))
+	const commands = Command.mapMessages(result.commands ?? [], (child) =>
+		Message.GotRowMenuMessage({ menuId, message: child }),
+	)
 	const picked = result.outMessage?._tag === "SelectedItem" ? result.outMessage.value : null
 	if (picked === "investigate") {
 		const opened = openInvestigation(next, menuId.slice("incident:".length))
@@ -216,7 +251,10 @@ const updateMenu = (model: Model, menuId: string, message: Menu.Message): Return
 		return {
 			model: next,
 			commands,
-			outMessage: PageOutMessage.RequestedNavigation({ url: alertsHref({ tab: "overview" }), isReplace: false }),
+			outMessage: PageOutMessage.RequestedNavigation({
+				url: alertsHref({ tab: "overview" }),
+				isReplace: false,
+			}),
 		}
 	return { model: next, commands }
 }
@@ -224,7 +262,15 @@ const updateMenu = (model: Model, menuId: string, message: Menu.Message): Return
 const selectBucket = (model: Model, index: number | null): Return => {
 	const request = model.bucketRequest + 1
 	if (index === null)
-		return { model: { ...model, bucketRequest: request, selectedBucket: null, bucketChecks: [], isBucketLoading: false } }
+		return {
+			model: {
+				...model,
+				bucketRequest: request,
+				selectedBucket: null,
+				bucketChecks: [],
+				isBucketLoading: false,
+			},
+		}
 	const domain = timelineRangeOf(model)
 	const range = Math.max(1, domain.max - domain.min)
 	const start = domain.min + (index / RAIL_CELLS) * range
@@ -250,10 +296,12 @@ const selectBucket = (model: Model, index: number | null): Return => {
 
 const loadMoreChecks = (model: Model): Return => {
 	const page = checksPageOf(model)
-	const cursor = model.nextCursorOverride === undefined ? (page?.nextCursor ?? null) : model.nextCursorOverride
+	const cursor =
+		model.nextCursorOverride === undefined ? (page?.nextCursor ?? null) : model.nextCursorOverride
 	// The first page must answer the current window: a previous window's page holds its cursor.
 	const isCurrentPage = AsyncData.isSuccess(model.checks.data)
-	if (cursor === null || !isCurrentPage || model.isLoadingMoreChecks || model.window === null) return { model }
+	if (cursor === null || !isCurrentPage || model.isLoadingMoreChecks || model.window === null)
+		return { model }
 	return {
 		model: { ...model, isLoadingMoreChecks: true },
 		commands: [
@@ -287,7 +335,11 @@ const resetChecksPanel = (model: Model): Model => ({
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, mode }) =>
-			followData(resetChecksPanel({ ...model, window }), context, mode === "Refresh" ? "Refresh" : "Load"),
+			followData(
+				resetChecksPanel({ ...model, window }),
+				context,
+				mode === "Refresh" ? "Refresh" : "Load",
+			),
 		UpdatedRules: ({ orgId, rows }) => withRows(model, context, orgId, { rules: rows }),
 		UpdatedIncidents: ({ orgId, rows }) => withRows(model, context, orgId, { incidents: rows }),
 		UpdatedRuleStates: ({ orgId, rows }) => withRows(model, context, orgId, { states: rows }),
@@ -306,7 +358,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, preview: Keyed.accept(model.preview, key, result) },
 		}),
 		ClickedStateFilter: ({ filter }) => ({ model: { ...model, stateFilter: filter } }),
-		ClickedCheckStatusFilter: ({ filter }) => ({ model: resetChecksPanel({ ...model, checkStatusFilter: filter }) }),
+		ClickedCheckStatusFilter: ({ filter }) => ({
+			model: resetChecksPanel({ ...model, checkStatusFilter: filter }),
+		}),
 		ClickedSignalSource: ({ source }) => ({ model: { ...model, signalSource: source } }),
 		ClickedRailBucket: ({ index }) => selectBucket(model, index),
 		ClickedClearBucket: () => selectBucket(model, null),
@@ -314,7 +368,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			request !== model.bucketRequest
 				? { model }
 				: Result.match(result, {
-						onSuccess: (checks) => ({ model: { ...model, bucketChecks: checks, isBucketLoading: false } }),
+						onSuccess: (checks) => ({
+							model: { ...model, bucketChecks: checks, isBucketLoading: false },
+						}),
 						onFailure: () => ({
 							model: { ...model, isBucketLoading: false },
 							outMessage: PageOutMessage.RequestedToast({
@@ -330,27 +386,29 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			generation !== model.checksGeneration
 				? { model }
 				: Result.match(result, {
-				onSuccess: ({ checks, nextCursor }) => ({
-					model: {
-						...model,
-						isLoadingMoreChecks: false,
-						extraChecks: [...model.extraChecks, ...checks],
-						nextCursorOverride: nextCursor,
-					},
-				}),
-				onFailure: () => ({
-					model: { ...model, isLoadingMoreChecks: false },
-					outMessage: PageOutMessage.RequestedToast({
-						type: "error",
-						title: "More alert checks could not be loaded",
-						description: "",
+						onSuccess: ({ checks, nextCursor }) => ({
+							model: {
+								...model,
+								isLoadingMoreChecks: false,
+								extraChecks: [...model.extraChecks, ...checks],
+								nextCursorOverride: nextCursor,
+							},
+						}),
+						onFailure: () => ({
+							model: { ...model, isLoadingMoreChecks: false },
+							outMessage: PageOutMessage.RequestedToast({
+								type: "error",
+								title: "More alert checks could not be loaded",
+								description: "",
+							}),
+						}),
 					}),
-				}),
-			}),
 		ClickedDiagnosisHeader: ({ isOpen }) => ({ model: { ...model, isDiagnosisExpanded: !isOpen } }),
 		ClickedShowAllStages: () => ({ model: { ...model, isShowingAllStages: !model.isShowingAllStages } }),
 		ClickedDiagnosisGroup: ({ groupKey }) => ({ model: { ...model, selectedGroup: groupKey } }),
-		ClickedStage: ({ stageId, isOpen }) => ({ model: { ...model, stageOpen: { ...model.stageOpen, [stageId]: isOpen } } }),
+		ClickedStage: ({ stageId, isOpen }) => ({
+			model: { ...model, stageOpen: { ...model.stageOpen, [stageId]: isOpen } },
+		}),
 		ClickedShowAllEvidence: ({ stageId }) => ({
 			model: { ...model, stageEvidenceExpanded: [...model.stageEvidenceExpanded, stageId] },
 		}),
@@ -391,18 +449,28 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
 				model: reloaded,
-				commands: [resolveCommand(reloaded, context, "Refresh"), CompleteRuleReloadSpin({ version: reloaded.refreshVersion })],
+				commands: [
+					resolveCommand(reloaded, context, "Refresh"),
+					CompleteRuleReloadSpin({ version: reloaded.refreshVersion }),
+				],
 			}
 		},
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		ClickedResetTimeRange: () =>
-			navigate(model, { ...model.search, startTime: undefined, endTime: undefined, timePreset: DEFAULT_PRESET }),
+			navigate(model, {
+				...model.search,
+				startTime: undefined,
+				endTime: undefined,
+				timePreset: DEFAULT_PRESET,
+			}),
 		GotTimePickerMessage: ({ message: inner }) => {
 			const next = TimeRangePicker.update(model.timePicker, inner)
 			const lifted: Return = {
 				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands, (picker) => Message.GotTimePickerMessage({ message: picker })),
+				commands: Command.mapMessages(next.commands, (picker) =>
+					Message.GotTimePickerMessage({ message: picker }),
+				),
 			}
 			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
 				? TimeRangePicker.unpicked(lifted, next.outMessage)
@@ -423,13 +491,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					}
 		},
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
+		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		GotChartMessage: ({ message: child }) => {
 			const next = Chart.update(model.chart, child)
 			return {
 				model: { ...model, chart: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotChartMessage({ message })),
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotChartMessage({ message }),
+				),
 			}
 		},
 	})

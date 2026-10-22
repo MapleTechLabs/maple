@@ -231,36 +231,34 @@ const resources = (h: H, model: Model, className: string): Html => {
 				)
 			: h.ul(
 					[h.Class("flex flex-col px-2 py-1.5")],
-					types
-						.slice(0, TYPES_SHOWN)
-						.map(({ assetType, count }) =>
-							h.li(
-								[],
-								[
-									h.a(
-										[
-											h.Href(
-												hrefOf(
-													AppRoute.InfraGcp({
-														search: { tab: GCP_RESOURCES_TAB, type: assetType },
-													}),
-												),
+					types.slice(0, TYPES_SHOWN).map(({ assetType, count }) =>
+						h.li(
+							[],
+							[
+								h.a(
+									[
+										h.Href(
+											hrefOf(
+												AppRoute.InfraGcp({
+													search: { tab: GCP_RESOURCES_TAB, type: assetType },
+												}),
 											),
-											h.Class(
-												"flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
-											),
-										],
-										[
-											truncatedText(h, { text: gcpAssetTypeLabel(assetType) }),
-											h.span(
-												[h.Class("shrink-0 tabular-nums text-muted-foreground")],
-												[formatNumber(count)],
-											),
-										],
-									),
-								],
-							),
+										),
+										h.Class(
+											"flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
+										),
+									],
+									[
+										truncatedText(h, { text: gcpAssetTypeLabel(assetType) }),
+										h.span(
+											[h.Class("shrink-0 tabular-nums text-muted-foreground")],
+											[formatNumber(count)],
+										),
+									],
+								),
+							],
 						),
+					),
 				),
 		...(inventory === "failed" || inventory.total === 0
 			? []

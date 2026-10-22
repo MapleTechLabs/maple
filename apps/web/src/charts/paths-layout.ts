@@ -59,7 +59,12 @@ export const toGraph = (
 	const touch = (column: number, name: string, count: number) => {
 		const id = nodeId(column, name)
 		const node = nodes.get(id)
-		nodes.set(id, node === undefined ? { id, column, name, count, kind: kindOf(name) } : { ...node, count: node.count + count })
+		nodes.set(
+			id,
+			node === undefined
+				? { id, column, name, count, kind: kindOf(name) }
+				: { ...node, count: node.count + count },
+		)
 	}
 	source.forEach((row) => {
 		const hop = asFiniteNumber(row.hop)
@@ -86,7 +91,9 @@ const placeNodes = (
 			.filter((node) => node.column === column)
 			.toSorted(
 				(a, b) =>
-					KIND_RANK[a.kind] - KIND_RANK[b.kind] || b.count - a.count || a.name.localeCompare(b.name),
+					KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
+					b.count - a.count ||
+					a.name.localeCompare(b.name),
 			)
 		ordered.reduce((y, node) => {
 			const h = Math.max(2, node.count * scale)
@@ -143,7 +150,7 @@ export const layoutPaths = (
 	return { nodes: placed, links: laid, columns }
 }
 
-export const ribbon =(x0: number, sy: number, x1: number, ty: number, h: number): string => {
+export const ribbon = (x0: number, sy: number, x1: number, ty: number, h: number): string => {
 	const cx = (x0 + x1) / 2
 	return `M${x0},${sy} C${cx},${sy} ${cx},${ty} ${x1},${ty} L${x1},${ty + h} C${cx},${ty + h} ${cx},${sy + h} ${x0},${sy + h} Z`
 }

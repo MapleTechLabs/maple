@@ -38,7 +38,8 @@ const rail = (h: H, model: Model, data: Parameters<typeof facetsOf>[0], isWaitin
 	const { search } = model
 	const facets = facetsOf(data)
 	const isFiltered = hasFilters(search)
-	if (!isFiltered && facets.services.length === 0 && facets.environments.length === 0) return filterSidebarEmpty(h)
+	if (!isFiltered && facets.services.length === 0 && facets.environments.length === 0)
+		return filterSidebarEmpty(h)
 	return filterSidebarFrame(h, { isWaiting }, [
 		filterSidebarHeader(h, isFiltered ? { onClear: Message.ClickedClearFilters() } : {}),
 		...filterSidebarBody(
@@ -53,10 +54,15 @@ const rail = (h: H, model: Model, data: Parameters<typeof facetsOf>[0], isWaitin
 					toSectionsMessage: toSections,
 					onToggle: (name) => Message.ToggledHealthOption({ name }),
 					getOptionLabel: (name) => (isReleaseHealth(name) ? RELEASE_HEALTH_LABEL[name] : name),
-					getOptionDescription: (name) => (isReleaseHealth(name) ? RELEASE_HEALTH_DESCRIPTION[name] : undefined),
+					getOptionDescription: (name) =>
+						isReleaseHealth(name) ? RELEASE_HEALTH_DESCRIPTION[name] : undefined,
 					renderOptionIcon: (name) =>
 						isReleaseHealth(name)
-							? statusDot(h, { tone: "custom", size: "lg", className: RELEASE_HEALTH_DOT_CLASS[name] })
+							? statusDot(h, {
+									tone: "custom",
+									size: "lg",
+									className: RELEASE_HEALTH_DOT_CLASS[name],
+								})
 							: undefined,
 				}),
 				filterSection(h, {

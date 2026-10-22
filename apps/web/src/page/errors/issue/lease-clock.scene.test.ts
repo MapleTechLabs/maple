@@ -75,8 +75,17 @@ const detailOf = (isHeld: boolean) =>
 	})
 
 const loaded = (isHeld: boolean): Model => {
-	const windowed = pageUpdate(init({ issueId, search: {} }, context).model, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
-	return pageUpdate(windowed, Message.CompletedFetchDetail({ key: windowed.detail.key ?? "", result: Result.succeed(detailOf(isHeld)) })).model
+	const windowed = pageUpdate(
+		init({ issueId, search: {} }, context).model,
+		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+	).model
+	return pageUpdate(
+		windowed,
+		Message.CompletedFetchDetail({
+			key: windowed.detail.key ?? "",
+			result: Result.succeed(detailOf(isHeld)),
+		}),
+	).model
 }
 
 describe("error issue lease countdown", () => {
@@ -88,8 +97,12 @@ describe("error issue lease countdown", () => {
 
 	test("each tick counts the ring down", () => {
 		const ticked = pageUpdate(loaded(true), Message.TickedLeaseClock({ nowMs: NOW + 61_000 }))
-		scene({ update: pageUpdate, view }, given({ ...ticked.model, isRightRailMounted: true }),
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...ticked.model, isRightRailMounted: true }),
 			Mount.resolve(MountRightRail, Message.MountedRightRail()),
-			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })), expectView(text("3:59")).toExist())
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			expectView(text("3:59")).toExist(),
+		)
 	})
 })

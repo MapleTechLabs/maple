@@ -14,7 +14,8 @@ export const isToolPart = (part: UIMessagePart): part is ToolPart => part._tag =
 
 /** A diagnosis report or an approval prompt: content with its own card, never in a tool group. */
 export const rendersOwnCard = (part: ToolPart): boolean =>
-	part.state === "proposed" || (part.state === "output-available" && parseDiagnosisMarker(part.output) !== null)
+	part.state === "proposed" ||
+	(part.state === "output-available" && parseDiagnosisMarker(part.output) !== null)
 
 export const isToolOnlyMessage = (message: UIMessage): boolean =>
 	message.role === "assistant" &&
@@ -70,7 +71,9 @@ export const findDiagnosisMessageId = (messages: ReadonlyArray<UIMessage>): stri
 	messages.find((message) =>
 		message.parts.some(
 			(part) =>
-				isToolPart(part) && part.state === "output-available" && parseDiagnosisMarker(part.output) !== null,
+				isToolPart(part) &&
+				part.state === "output-available" &&
+				parseDiagnosisMarker(part.output) !== null,
 		),
 	)?.id
 

@@ -8,7 +8,11 @@ import * as LogDetail from "../detail"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
 
-const context: PageContext = { orgId: Schema.decodeSync(OrgId)("org_acme"), pinnedNamespace: null, timeZone: "UTC" }
+const context: PageContext = {
+	orgId: Schema.decodeSync(OrgId)("org_acme"),
+	pinnedNamespace: null,
+	timeZone: "UTC",
+}
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 
 const log: LogRecord = {

@@ -28,7 +28,8 @@ const config = {
 	update,
 	view: withViewInputs(view, {
 		entries: ENTRIES,
-		toView: ({ trigger, withTrigger }) => ih.main([], withTrigger(ih.button([...trigger], ["Member actions"]))),
+		toView: ({ trigger, withTrigger }) =>
+			ih.main([], withTrigger(ih.button([...trigger], ["Member actions"]))),
 	})(),
 }
 const menu = role("menu", { name: "Member actions" })
@@ -50,7 +51,10 @@ describe("dropdown menu disabled items", () => {
 			focused(),
 			keydown(menu, "Enter"),
 			expectOutMessage(OutMessage.SelectedItem({ value: "resend" })),
-			Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })),
+			Command.resolve(
+				Animation.WaitForPaint,
+				Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+			),
 			Command.resolve(
 				WaitForMenuExit({ id: ID, generation: 1 }),
 				Animation.Message.EndedAnimation({ generation: 1 }),

@@ -23,7 +23,16 @@ export const errorsKey = (part: "summary" | "by-type" | "facets", window: Window
 /** `["local", "errors", "traces", fingerprintHash, rootOnly, service, env, boundsKey]`. */
 export const tracesKey = (fingerprintHash: string, window: Window): QueryKey => {
 	const filters = filtersFrom(window)
-	return ["local", "errors", "traces", fingerprintHash, filters.rootOnly, filters.service, filters.env, windowOf(window)]
+	return [
+		"local",
+		"errors",
+		"traces",
+		fingerprintHash,
+		filters.rootOnly,
+		filters.service,
+		filters.env,
+		windowOf(window),
+	]
 }
 
 export const summaryFromCached = cachedAs(Schema.NullOr(ErrorsSummary))

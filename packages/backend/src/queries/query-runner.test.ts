@@ -80,7 +80,9 @@ describe("makeQueryRunners", () => {
 				compiledQueryWithCapabilities: ((_tenant: unknown, compile: unknown) =>
 					Effect.gen(function* () {
 						// SAFETY: a capability-aware definition hands the stub its compile function.
-						const build = compile as (capabilities: WarehouseCapabilities) => Effect.Effect<CompiledQuery<unknown>>
+						const build = compile as (
+							capabilities: WarehouseCapabilities,
+						) => Effect.Effect<CompiledQuery<unknown>>
 						const query = yield* build(baselineWarehouseCapabilities())
 						return yield* query.decodeRows([
 							{

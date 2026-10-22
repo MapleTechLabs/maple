@@ -531,6 +531,9 @@ export const settingsNavVisibility = (
 	isClerk: boolean,
 ): Visibility => {
 	if (!isClerk) return { isClerk, isAdmin: true, canAccessDataPlatform: true }
-	const hasByoc = AsyncData.getOrElse(AsyncData.map(model.customer.data, hasBringYourOwnCloudAddOn), () => false)
+	const hasByoc = AsyncData.getOrElse(
+		AsyncData.map(model.customer.data, hasBringYourOwnCloudAddOn),
+		() => false,
+	)
 	return { isClerk, isAdmin: model.isAdmin, canAccessDataPlatform: model.isAdmin && hasByoc }
 }

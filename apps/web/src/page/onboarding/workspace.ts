@@ -19,4 +19,8 @@ export const workspaceCard = <M>(h: HtmlBuilder<M>, name: string, trailing: Read
 
 /** `WorkspaceChoice`: self-hosted names the session's org id. */
 export const selfHostedWorkspace = <M>(h: HtmlBuilder<M>, maybeOrgId: Option.Option<string>): Html =>
-	workspaceCard(h, Option.getOrElse(maybeOrgId, () => ""), [])
+	workspaceCard(
+		h,
+		Option.getOrElse(maybeOrgId, () => ""),
+		[],
+	)

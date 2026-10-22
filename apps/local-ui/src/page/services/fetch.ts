@@ -37,7 +37,11 @@ export const fetchCatalog = (
 			[
 				queryRows(
 					CH.compile(
-						CH.serviceCatalogQuery({ deploymentEnvironment: env, serviceNamespace: ns, limit: 200 }),
+						CH.serviceCatalogQuery({
+							deploymentEnvironment: env,
+							serviceNamespace: ns,
+							limit: 200,
+						}),
 						params,
 					),
 					apiBase,

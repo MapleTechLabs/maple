@@ -49,7 +49,9 @@ const healthBar = <M>(h: HtmlBuilder<M>, segments: ReadonlyArray<HealthSegment>)
 			}),
 			h.span(
 				[h.Class("flex gap-3 text-2xs text-muted-foreground tabular-nums")],
-				drawn.map((segment) => h.span([], [formatNumber(segment.count), " ", SEGMENT_LABEL[segment.key]])),
+				drawn.map((segment) =>
+					h.span([], [formatNumber(segment.count), " ", SEGMENT_LABEL[segment.key]]),
+				),
 			),
 		],
 	)
@@ -66,10 +68,19 @@ export const sourceRow = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState
 					h.span(
 						[h.Class("flex min-w-0 flex-col gap-0.5")],
 						[
-							h.span([h.Class("text-sm text-foreground group-hover:text-primary")], [SOURCE_TITLE[id]]),
+							h.span(
+								[h.Class("text-sm text-foreground group-hover:text-primary")],
+								[SOURCE_TITLE[id]],
+							),
 							h.span(
 								[h.Class("text-xs text-muted-foreground")],
-								[state.status === "ready" ? state.summary.resources : state.status === "error" ? "Couldn't load" : " "],
+								[
+									state.status === "ready"
+										? state.summary.resources
+										: state.status === "error"
+											? "Couldn't load"
+											: " ",
+								],
 							),
 						],
 					),
@@ -88,7 +99,9 @@ export const sourceRow = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState
 					h.Class(
 						cn(
 							"min-w-0 flex-1 truncate text-xs md:w-64 md:flex-none",
-							state.status === "ready" ? VALUE_TONE[state.summary.headlineTone] : "text-muted-foreground",
+							state.status === "ready"
+								? VALUE_TONE[state.summary.headlineTone]
+								: "text-muted-foreground",
 						),
 					),
 				],

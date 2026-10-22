@@ -31,7 +31,12 @@ const scopeOf = (model: Model, context: PageContext): Frame.Scope => ({
 	timeZone: context.timeZone,
 })
 
-type RequestStep = (model: Model, context: PageContext, window: TimeWindow, mode: Frame.RequestMode) => Step<Model, Message>
+type RequestStep = (
+	model: Model,
+	context: PageContext,
+	window: TimeWindow,
+	mode: Frame.RequestMode,
+) => Step<Model, Message>
 
 const overviewStep: RequestStep = (model, context, window, mode) => {
 	if (model.serviceName === null) return { patch: {}, commands: [] }
@@ -90,15 +95,21 @@ const cpuStep: RequestStep = (model, context, window, mode) => {
 }
 
 /** The requests that follow the workload and the overview's bucket width. */
-const follow = (context: PageContext) => (result: Return): Return => {
-	const window = result.model.frame.window
-	if (window === null) return result
-	const followed = applySteps<Model, Message>(result.model, [
-		podsStep(result.model, context, window, "Load"),
-		cpuStep(result.model, context, window, "Load"),
-	])
-	return { ...result, model: followed.model, commands: [...(result.commands ?? []), ...followed.commands] }
-}
+const follow =
+	(context: PageContext) =>
+	(result: Return): Return => {
+		const window = result.model.frame.window
+		if (window === null) return result
+		const followed = applySteps<Model, Message>(result.model, [
+			podsStep(result.model, context, window, "Load"),
+			cpuStep(result.model, context, window, "Load"),
+		])
+		return {
+			...result,
+			model: followed.model,
+			commands: [...(result.commands ?? []), ...followed.commands],
+		}
+	}
 
 const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
 	const window = model.frame.window
@@ -124,7 +135,9 @@ const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode)
 }
 
 const retry = (model: Model, context: PageContext, step: RequestStep): Return =>
-	model.frame.window === null ? { model } : applySteps<Model, Message>(model, [step(model, context, model.frame.window, "Refresh")])
+	model.frame.window === null
+		? { model }
+		: applySteps<Model, Message>(model, [step(model, context, model.frame.window, "Refresh")])
 
 export const init = (route: Route, context: PageContext): Return => {
 	const model: Model = {
@@ -176,10 +189,13 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 					pods: Keyed.idle(),
 					charts: {},
 				}
-	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
+	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) =>
+		requestAll(moved, context, mode),
+	)
 }
 
-export const contextChanged = (model: Model, context: PageContext): Return => requestAll(model, context, "Load")
+export const contextChanged = (model: Model, context: PageContext): Return =>
+	requestAll(model, context, "Load")
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -187,21 +203,32 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			follow(context)({ model: { ...model, linked: Keyed.accept(model.linked, key, result) } }),
 		CompletedFetchOverview: ({ key, result }) =>
 			follow(context)({ model: { ...model, overview: Keyed.accept(model.overview, key, result) } }),
-		CompletedFetchCpu: ({ key, result }) => ({ model: { ...model, cpu: Keyed.accept(model.cpu, key, result) } }),
-		CompletedFetchPods: ({ key, result }) => ({ model: { ...model, pods: Keyed.accept(model.pods, key, result) } }),
+		CompletedFetchCpu: ({ key, result }) => ({
+			model: { ...model, cpu: Keyed.accept(model.cpu, key, result) },
+		}),
+		CompletedFetchPods: ({ key, result }) => ({
+			model: { ...model, pods: Keyed.accept(model.pods, key, result) },
+		}),
 		ClickedRetryOverview: () => retry(model, context, overviewStep),
 		ClickedRetryPods: () => retry(model, context, podsStep),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
+		}),
 		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
 		CompletedMountLinkedCursor: () => ({ model }),
 		GotChartMessage: ({ id, message: inner }) => {
 			const chart = model.charts[id] ?? Chart.init()
-			return { model: { ...model, charts: { ...model.charts, [id]: Chart.update(chart, inner).model } } }
+			return {
+				model: { ...model, charts: { ...model.charts, [id]: Chart.update(chart, inner).model } },
+			}
 		},
 		GotRailMessage: ({ message: inner }) => {
 			const next = Rail.update(model.rail, inner, context, model.frame.window)
-			return { model: { ...model, rail: next.model }, commands: Command.mapMessages(next.commands, toRail) }
+			return {
+				model: { ...model, rail: next.model },
+				commands: Command.mapMessages(next.commands, toRail),
+			}
 		},
 		GotFrameMessage: ({ message: inner }) =>
 			liftFrame(model, inner, scopeOf(model, context), toFrame, {

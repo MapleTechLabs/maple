@@ -32,7 +32,10 @@ const issuesDetails = (h: H, model: BarView, issues: ReadonlyArray<string>): Htm
 		toParentMessage: (message: Tooltip.Message) => Message.GotIssuesTooltipMessage({ message }),
 		viewInputs: {
 			toContent: () => [
-				h.ul([h.Class("space-y-0.5 text-xs")], issues.map((issue) => h.li([h.Key(issue)], [`• ${issue}`]))),
+				h.ul(
+					[h.Class("space-y-0.5 text-xs")],
+					issues.map((issue) => h.li([h.Key(issue)], [`• ${issue}`])),
+				),
 			],
 			toView: ({ trigger, portal }) =>
 				h.span(
@@ -43,7 +46,8 @@ const issuesDetails = (h: H, model: BarView, issues: ReadonlyArray<string>): Htm
 							{
 								variant: "link",
 								size: "xs",
-								className: "text-muted-foreground underline decoration-dotted hover:text-foreground",
+								className:
+									"text-muted-foreground underline decoration-dotted hover:text-foreground",
 								attributes: trigger(),
 							},
 							["details"],
@@ -112,7 +116,10 @@ const bar = (h: H, model: BarView, form: RuleForm): Html => {
 							h.div(
 								[h.Class("flex min-w-0 flex-col gap-0.5")],
 								[
-									h.p([h.Class("truncate text-sm text-foreground"), h.Title(summary)], [summary]),
+									h.p(
+										[h.Class("truncate text-sm text-foreground"), h.Title(summary)],
+										[summary],
+									),
 									validationSummary(h, model, issues),
 								],
 							),

@@ -49,7 +49,11 @@ describe("DateTimeUtcFromWarehouse", () => {
 
 describe("DateTimeUtcFromWarehouse64", () => {
 	it("round-trips the DateTime64(3) wire string byte for byte", () => {
-		for (const wire of ["2026-10-07 10:00:00.000", "2026-10-07 10:00:00.041", "2026-10-07 10:00:00.900"]) {
+		for (const wire of [
+			"2026-10-07 10:00:00.000",
+			"2026-10-07 10:00:00.041",
+			"2026-10-07 10:00:00.900",
+		]) {
 			expect(encode64(decode64(wire))).toBe(wire)
 			expect(encode64(fromColumn64(wire))).toBe(wire)
 		}

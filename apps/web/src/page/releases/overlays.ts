@@ -44,7 +44,10 @@ export const Message = defineMessageUnion({
 	GotHealthTooltipMessage: { message: Tooltip.Message },
 	GotCommitCardMessage: { message: HoverCard.Message },
 	ElapsedCommitArm: { sha: Schema.String, generation: Schema.Number },
-	CompletedFetchCommitDetail: { sha: Schema.String, result: Schema.Result(CommitDetailSchema, CommitFailureSchema) },
+	CompletedFetchCommitDetail: {
+		sha: Schema.String,
+		result: Schema.Result(CommitDetailSchema, CommitFailureSchema),
+	},
 })
 export type Message = typeof Message.Type
 
@@ -61,7 +64,9 @@ export const FetchCommitDetail = Command.define("FetchReleasesCommitDetail", {
 	args: { key: Schema.String, sha: Schema.String },
 	messages: [Message.CompletedFetchCommitDetail],
 	execute: ({ key, sha }) =>
-		Effect.map(loadCommitDetail(key, sha), (result) => Message.CompletedFetchCommitDetail({ sha, result })),
+		Effect.map(loadCommitDetail(key, sha), (result) =>
+			Message.CompletedFetchCommitDetail({ sha, result }),
+		),
 })
 
 type Return = Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message, never, Resources>> }>
@@ -72,7 +77,9 @@ const shaOfTrigger = (triggerId: string): string => triggerId.slice(-40)
 
 const commitCardStep = (model: Model, message: HoverCard.Message): Return => {
 	const next = HoverCard.update(model.commitCard, message)
-	const lifted = Command.mapMessages(next.commands ?? [], (inner) => Message.GotCommitCardMessage({ message: inner }))
+	const lifted = Command.mapMessages(next.commands ?? [], (inner) =>
+		Message.GotCommitCardMessage({ message: inner }),
+	)
 	const arm = model.commitArm + 1
 	if (message._tag === "EnteredTrigger") {
 		const sha = shaOfTrigger(message.triggerId)
@@ -82,13 +89,17 @@ const commitCardStep = (model: Model, message: HoverCard.Message): Return => {
 			commands: [...lifted, ...(isArmed ? [] : [ArmCommitLookup({ sha, generation: arm })])],
 		}
 	}
-	if (message._tag === "LeftTrigger") return { model: { ...model, commitCard: next.model, commitArm: arm }, commands: lifted }
+	if (message._tag === "LeftTrigger")
+		return { model: { ...model, commitCard: next.model, commitArm: arm }, commands: lifted }
 	return { model: { ...model, commitCard: next.model }, commands: lifted }
 }
 
 const settled = (model: Model, sha: string, result: Result.Result<CommitDetail, CommitFailure>): Model => ({
 	...model,
-	commitDetails: { ...model.commitDetails, [sha]: AsyncData.settle(model.commitDetails[sha] ?? AsyncData.Loading(), result) },
+	commitDetails: {
+		...model.commitDetails,
+		[sha]: AsyncData.settle(model.commitDetails[sha] ?? AsyncData.Loading(), result),
+	},
 })
 
 export const update = (model: Model, message: Message, orgId: string): Return =>
@@ -97,7 +108,9 @@ export const update = (model: Model, message: Message, orgId: string): Return =>
 			const next = Tooltip.update(model.healthTooltip, inner)
 			return {
 				model: { ...model, healthTooltip: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (tooltip) => Message.GotHealthTooltipMessage({ message: tooltip })),
+				commands: Command.mapMessages(next.commands ?? [], (tooltip) =>
+					Message.GotHealthTooltipMessage({ message: tooltip }),
+				),
 			}
 		},
 		GotCommitCardMessage: ({ message: inner }) => commitCardStep(model, inner),
@@ -106,7 +119,10 @@ export const update = (model: Model, message: Message, orgId: string): Return =>
 			generation !== model.commitArm || model.commitDetails[sha] !== undefined
 				? { model }
 				: {
-						model: { ...model, commitDetails: { ...model.commitDetails, [sha]: AsyncData.Loading() } },
+						model: {
+							...model,
+							commitDetails: { ...model.commitDetails, [sha]: AsyncData.Loading() },
+						},
 						commands: [FetchCommitDetail({ key: commitDetailKey(orgId, sha), sha })],
 					},
 		CompletedFetchCommitDetail: ({ sha, result }) => ({ model: settled(model, sha, result) }),

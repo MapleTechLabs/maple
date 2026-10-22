@@ -46,7 +46,9 @@ const invitedBody = (h: H, invited: V2SupportChannel): ReadonlyArray<Html> => [
 			],
 		),
 	]),
-	...(invited.slack_url ? [DialogView.dialogFooter(h, "dialog", [openInSlackButton(h, invited.slack_url)])] : []),
+	...(invited.slack_url
+		? [DialogView.dialogFooter(h, "dialog", [openInSlackButton(h, invited.slack_url)])]
+		: []),
 ]
 
 /** `SupportChannelBody`: skeleton, the read's error, the invite outcome or the channel's offer. */
@@ -102,7 +104,12 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ email: Option
 		}),
 )
 
-const channelBody = (h: H, model: Model, channel: V2SupportChannel, email: Option.Option<string>): ReadonlyArray<Html> => {
+const channelBody = (
+	h: H,
+	model: Model,
+	channel: V2SupportChannel,
+	email: Option.Option<string>,
+): ReadonlyArray<Html> => {
 	if (channel.status === "unavailable")
 		return [
 			panel(h, [
@@ -111,7 +118,10 @@ const channelBody = (h: H, model: Model, channel: V2SupportChannel, email: Optio
 					[
 						"Shared Slack channels are not set up on this Maple instance. Email",
 						" ",
-						h.a([h.Class("underline"), h.Href("mailto:support@maple.dev")], ["support@maple.dev"]),
+						h.a(
+							[h.Class("underline"), h.Href("mailto:support@maple.dev")],
+							["support@maple.dev"],
+						),
 						" ",
 						"and we will get back to you.",
 					],
@@ -148,7 +158,14 @@ const channelBody = (h: H, model: Model, channel: V2SupportChannel, email: Optio
 						),
 				...(model.inviteError === null
 					? []
-					: [errorState(h, { failure: model.inviteError, title: "Couldn't send the invite", variant: "inline", className: "py-0" })]),
+					: [
+							errorState(h, {
+								failure: model.inviteError,
+								title: "Couldn't send the invite",
+								variant: "inline",
+								className: "py-0",
+							}),
+						]),
 			],
 			"space-y-3",
 		),

@@ -65,7 +65,8 @@ const BUNDLE: Bundle = {
 const loaded = (): Model => {
 	const entered = init({ search: { view: "3d" } }, context).model
 	const steps: ReadonlyArray<(model: Model) => Message> = [
-		() => Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: 0, mode: "Load" }),
+		() =>
+			Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: 0, mode: "Load" }),
 		() => Message.CompletedReadStored({ stored: STORED }),
 		(model) =>
 			Message.CompletedFetchBundle({

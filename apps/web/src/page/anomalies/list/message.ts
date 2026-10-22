@@ -28,7 +28,11 @@ export const Message = defineMessageUnion({
 	CompletedFetchFirstPage: { key: Schema.String, result: Schema.Result(IncidentPage, LoadFailure) },
 	ClickedLoadMore: {},
 	/** `cursor` is the page it continues; a refresh in between moves the cursor and drops it. */
-	CompletedLoadMore: { status: StatusTab, cursor: Schema.String, result: Schema.Result(IncidentPage, LoadFailure) },
+	CompletedLoadMore: {
+		status: StatusTab,
+		cursor: Schema.String,
+		result: Schema.Result(IncidentPage, LoadFailure),
+	},
 	ClickedRetry: {},
 	/** Each live tick reads the clock, so relative times age with the data. */
 	TickedLiveRefresh: { nowMs: Schema.Number },

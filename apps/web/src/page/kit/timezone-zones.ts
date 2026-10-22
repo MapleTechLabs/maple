@@ -30,7 +30,8 @@ const clockFormatter = Option.liftThrowable(
 export const formatUtcOffset = (timeZone: string, atMs: number): string => {
 	const part = Option.match(offsetFormatter(timeZone), {
 		onNone: () => "GMT",
-		onSome: (formatter) => formatter.formatToParts(atMs).find((entry) => entry.type === "timeZoneName")?.value ?? "GMT",
+		onSome: (formatter) =>
+			formatter.formatToParts(atMs).find((entry) => entry.type === "timeZoneName")?.value ?? "GMT",
 	})
 	const match = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/.exec(part)
 	if (match === null) return "UTC"
@@ -48,17 +49,27 @@ const offsetMinutes = (offset: string): number => {
 
 /** `formatClock`: `16:52`, what the clock reads in the zone at `atMs`. */
 const formatClock = (timeZone: string, atMs: number): string =>
-	Option.match(clockFormatter(timeZone), { onNone: () => "--:--", onSome: (formatter) => formatter.format(atMs) })
+	Option.match(clockFormatter(timeZone), {
+		onNone: () => "--:--",
+		onSome: (formatter) => formatter.format(atMs),
+	})
 
 /** `Europe/Berlin` → `Europe` + `Berlin`; `America/Argentina/San_Juan` → `America` + `Argentina / San Juan`. */
 const splitZone = (zone: string): { readonly region: string; readonly city: string } => {
 	const slash = zone.indexOf("/")
 	if (slash === -1) return { region: "Other", city: zone }
-	return { region: zone.slice(0, slash), city: zone.slice(slash + 1).replaceAll("_", " ").replaceAll("/", " / ") }
+	return {
+		region: zone.slice(0, slash),
+		city: zone
+			.slice(slash + 1)
+			.replaceAll("_", " ")
+			.replaceAll("/", " / "),
+	}
 }
 
 /** `itemLabel`: the option's text label. */
-export const zoneLabel = (row: ZoneRow): string => (row.value === SYSTEM_VALUE ? `System (${row.zone})` : row.value)
+export const zoneLabel = (row: ZoneRow): string =>
+	row.value === SYSTEM_VALUE ? `System (${row.zone})` : row.value
 
 /** `matchesQuery`: the zone id, its offset, or the time it is there right now. */
 export const matchesZoneQuery = (row: ZoneRow, query: string): boolean => {
@@ -67,7 +78,13 @@ export const matchesZoneQuery = (row: ZoneRow, query: string): boolean => {
 	return `${zoneLabel(row)} ${row.offset} ${row.clock}`.toLowerCase().replaceAll("_", " ").includes(needle)
 }
 
-const rowOf = (value: string, zone: string, atMs: number, isPinned: boolean, startsGroup: boolean): ZoneRow => ({
+const rowOf = (
+	value: string,
+	zone: string,
+	atMs: number,
+	isPinned: boolean,
+	startsGroup: boolean,
+): ZoneRow => ({
 	value,
 	zone,
 	...splitZone(zone),
@@ -78,13 +95,21 @@ const rowOf = (value: string, zone: string, atMs: number, isPinned: boolean, sta
 })
 
 /** `groupZones`: System and UTC pinned, then every other zone west to east, A-Z within an offset. */
-export const zoneRows = (zones: ReadonlyArray<string>, browser: string, atMs: number): ReadonlyArray<ZoneRow> => {
+export const zoneRows = (
+	zones: ReadonlyArray<string>,
+	browser: string,
+	atMs: number,
+): ReadonlyArray<ZoneRow> => {
 	const sorted = zones
 		.filter((zone) => zone !== "UTC")
 		.map((zone) => rowOf(zone, zone, atMs, false, false))
 		.sort((a, b) => offsetMinutes(a.offset) - offsetMinutes(b.offset) || a.zone.localeCompare(b.zone))
 		.map((row, index) => (index === 0 ? { ...row, startsGroup: true } : row))
-	return [rowOf(SYSTEM_VALUE, browser, atMs, true, false), rowOf("UTC", "UTC", atMs, true, false), ...sorted]
+	return [
+		rowOf(SYSTEM_VALUE, browser, atMs, true, false),
+		rowOf("UTC", "UTC", atMs, true, false),
+		...sorted,
+	]
 }
 
 /** The list as it opens: `now` frozen per open. */

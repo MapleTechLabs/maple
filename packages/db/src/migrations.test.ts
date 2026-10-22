@@ -562,7 +562,9 @@ describe("bundled migrations", () => {
 			VALUES ('src_old', 'org_2', 'Old', 'nodejs', false, 'old-hash', $1, $1)`,
 			[now],
 		)
-		expect((await pg.query("SELECT kind FROM sources WHERE id = 'src_old'")).rows).toEqual([{ kind: "token" }])
+		expect((await pg.query("SELECT kind FROM sources WHERE id = 'src_old'")).rows).toEqual([
+			{ kind: "token" },
+		])
 
 		// Deleting a source deletes the integration row that owns it.
 		await pg.query("DELETE FROM sources WHERE id = $1", [await owner("railway_connections", "r1")])
@@ -607,7 +609,12 @@ describe("bundled migrations", () => {
 
 		await pg.exec(readMigrationSql("source_ownership_contract"))
 
-		const owners = await pg.query<{ id: string; managed_by: string | null; platform: string; kind: string }>(
+		const owners = await pg.query<{
+			id: string
+			managed_by: string | null
+			platform: string
+			kind: string
+		}>(
 			`SELECT t.id, t.managed_by, s.platform, s.kind FROM scrape_targets t JOIN sources s ON s.id = t.source_id
 			UNION ALL SELECT r.id, NULL, s.platform, s.kind FROM railway_connections r JOIN sources s ON s.id = r.source_id
 			ORDER BY 1`,

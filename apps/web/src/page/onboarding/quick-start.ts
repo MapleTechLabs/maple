@@ -79,7 +79,8 @@ export type Message = typeof Message.Type
 export const LoadQuickStartState = Command.define("LoadQuickStartState", {
 	args: { key: Schema.String },
 	messages: [Message.LoadedQuickStartState],
-	execute: ({ key }) => Effect.map(readQuickStartState(key), (state) => Message.LoadedQuickStartState({ state })),
+	execute: ({ key }) =>
+		Effect.map(readQuickStartState(key), (state) => Message.LoadedQuickStartState({ state })),
 })
 
 /** `completeStep(id)`'s funnel event, sent once per Continue. */
@@ -87,7 +88,9 @@ export const TrackStepCompleted = Command.define("TrackOnboardingStepCompleted",
 	args: { step: Schema.String },
 	messages: [Message.CompletedTrackStepCompleted],
 	execute: ({ step }) =>
-		trackProduct("onboarding_step_completed", { step }).pipe(Effect.as(Message.CompletedTrackStepCompleted())),
+		trackProduct("onboarding_step_completed", { step }).pipe(
+			Effect.as(Message.CompletedTrackStepCompleted()),
+		),
 })
 
 export const SaveQuickStartState = Command.define("SaveQuickStartState", {
@@ -104,12 +107,18 @@ export const ChooseRegion = Command.define("ChooseOrganizationRegion", {
 	execute: ({ region }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
-			const result = yield* client.organizationRegion.choose({ payload: new ChooseOrganizationRegionRequest({ region }) })
+			const result = yield* client.organizationRegion.choose({
+				payload: new ChooseOrganizationRegionRequest({ region }),
+			})
 			return Message.SucceededChooseRegion({ region: result.region })
-		}).pipe(Effect.catch((error) => Effect.succeed(Message.FailedChooseRegion({ message: error.message })))),
+		}).pipe(
+			Effect.catch((error) => Effect.succeed(Message.FailedChooseRegion({ message: error.message }))),
+		),
 })
 
-type FollowedRegion = ReturnType<typeof Message.CompletedLeaveForRegion | typeof Message.CompletedReloadOrganization>
+type FollowedRegion = ReturnType<
+	typeof Message.CompletedLeaveForRegion | typeof Message.CompletedReloadOrganization
+>
 
 /**
  * Another region continues onboarding on its own dashboard (the save stays pending as the page
@@ -206,7 +215,10 @@ const step = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		GotTeamMessage: ({ message: child }) => {
 			const next = updateTeam(model.team, child)
-			return { model: { ...model, team: next.team }, commands: Command.mapMessages(next.commands, toTeam) }
+			return {
+				model: { ...model, team: next.team },
+				commands: Command.mapMessages(next.commands, toTeam),
+			}
 		},
 		GotPricingMessage: ({ message: child }) => {
 			const next = PricingCards.update(model.pricing, child)
@@ -227,9 +239,15 @@ const step = (model: Model, message: Message): UpdateReturn =>
 				),
 			})),
 		ChangedRoleDetail: ({ value }) =>
-			saved(model, (state) => ({ ...state, qualifyAnswers: pickedRole(state.qualifyAnswers, "other", value) })),
+			saved(model, (state) => ({
+				...state,
+				qualifyAnswers: pickedRole(state.qualifyAnswers, "other", value),
+			})),
 		ToggledIntent: ({ intent }) =>
-			saved(model, (state) => ({ ...state, qualifyAnswers: toggledIntent(state.qualifyAnswers, intent) })),
+			saved(model, (state) => ({
+				...state,
+				qualifyAnswers: toggledIntent(state.qualifyAnswers, intent),
+			})),
 		ClickedContinue: ({ step }) => {
 			if (model.state === null || !canContinue(model.state, step)) return { model }
 			const next = saved(model, (state) => completeStep(state, step))
@@ -239,21 +257,33 @@ const step = (model: Model, message: Message): UpdateReturn =>
 		CompletedSaveQuickStartState: () => ({ model }),
 		CompletedTrackStepCompleted: () => ({ model }),
 		PickedRegion: ({ region }) =>
-			model.region.isSaving ? { model } : { model: { ...model, region: { ...model.region, selected: region } } },
+			model.region.isSaving
+				? { model }
+				: { model: { ...model, region: { ...model.region, selected: region } } },
 		ClickedRegionContinue: () =>
 			model.region.isSaving
 				? { model }
 				: {
-						model: { ...model, isRegionStepShown: true, region: { ...model.region, isSaving: true, errorMessage: null } },
+						model: {
+							...model,
+							isRegionStepShown: true,
+							region: { ...model.region, isSaving: true, errorMessage: null },
+						},
 						commands: [ChooseRegion({ region: model.region.selected })],
 					},
 		SucceededChooseRegion: ({ region }) => ({ model, commands: [FollowChosenRegion({ region })] }),
 		FailedChooseRegion: ({ message: failure }) => ({
 			model: {
 				...model,
-				region: { ...model.region, isSaving: false, errorMessage: failure === "" ? "Could not save the data region" : failure },
+				region: {
+					...model.region,
+					isSaving: false,
+					errorMessage: failure === "" ? "Could not save the data region" : failure,
+				},
 			},
 		}),
-		CompletedReloadOrganization: () => ({ model: { ...model, region: { ...model.region, isSaving: false } } }),
+		CompletedReloadOrganization: () => ({
+			model: { ...model, region: { ...model.region, isSaving: false } },
+		}),
 		CompletedLeaveForRegion: () => ({ model }),
 	})

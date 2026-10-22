@@ -119,13 +119,25 @@ describe("ScrapeTargetsService", () => {
 			const other = yield* create("org_2", "node")
 			const sources = () =>
 				Effect.promise(() =>
-					testDb.pglite.query<{ org_id: string; kind: string; platform: string; name: string; target: string }>(
+					testDb.pglite.query<{
+						org_id: string
+						kind: string
+						platform: string
+						name: string
+						target: string
+					}>(
 						`SELECT s.org_id, s.kind, s.platform, s.name, t.id AS target
 						FROM sources s JOIN scrape_targets t ON t.source_id = s.id ORDER BY s.org_id`,
 					),
 				)
 			assert.deepStrictEqual(
-				(yield* sources()).rows.map((row) => [row.org_id, row.kind, row.platform, row.name, row.target]),
+				(yield* sources()).rows.map((row) => [
+					row.org_id,
+					row.kind,
+					row.platform,
+					row.name,
+					row.target,
+				]),
 				[
 					["org_1", "integration", "prometheus", "node", node.id],
 					["org_2", "integration", "prometheus", "node", other.id],
@@ -320,9 +332,10 @@ describe("ScrapeTargetsService", () => {
 
 			// A PlanetScale connection's target leaves its source to the connection's own poller.
 			yield* Effect.promise(() =>
-				testDb.pglite.query("UPDATE scrape_targets SET managed_by = 'planetscale:conn_1' WHERE id = $1", [
-					worker.id,
-				]),
+				testDb.pglite.query(
+					"UPDATE scrape_targets SET managed_by = 'planetscale:conn_1' WHERE id = $1",
+					[worker.id],
+				),
 			)
 			yield* service.recordScrapeResults([
 				{ targetId: worker.id, scrapedAt: 1750000200000, error: "HTTP 500" },
@@ -338,9 +351,7 @@ describe("ScrapeTargetsService", () => {
 			)
 			const before = yield* readSource()
 			yield* TestClock.adjust("2 minutes")
-			yield* service.recordScrapeResults([
-				{ targetId: api.id, scrapedAt: 1750000300000, error: null },
-			])
+			yield* service.recordScrapeResults([{ targetId: api.id, scrapedAt: 1750000300000, error: null }])
 			assert.deepStrictEqual(yield* readSource(), before)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
@@ -426,7 +437,14 @@ describe("ScrapeTargetsService", () => {
 				.pipe(Effect.withTracer(recorder.tracer))
 			// 6 targets of one source: 1 UPDATE, 1 SELECT (org and source ids), the source's targets and
 			// poll state, 1 UPDATE of the source, then 1 INSERT (check rows).
-			assert.deepStrictEqual(recorder.verbs(), ["UPDATE", "SELECT", "SELECT", "SELECT", "UPDATE", "INSERT"])
+			assert.deepStrictEqual(recorder.verbs(), [
+				"UPDATE",
+				"SELECT",
+				"SELECT",
+				"SELECT",
+				"UPDATE",
+				"INSERT",
+			])
 
 			const okRow = yield* service.get(orgId, ok.id)
 			assert.strictEqual(okRow.lastScrapeAt, new Date(scrapedAt).toISOString())

@@ -48,7 +48,8 @@ const touched = (entries: Map<RequestKey, Entry>, key: RequestKey, entry: Entry)
 }
 
 /** A settled entry idle past its TTL; an in-flight one never is. */
-const isExpired = (entry: Entry, nowMs: number) => entry.isSettled && nowMs - entry.touchedAtMs > entry.idleTtlMs
+const isExpired = (entry: Entry, nowMs: number) =>
+	entry.isSettled && nowMs - entry.touchedAtMs > entry.idleTtlMs
 
 /**
  * Past the bound, only the excess goes: idle-expired entries first, then the least recently read,
@@ -115,7 +116,12 @@ const makeRead =
 						Effect.onExit(load, (exit) => settle(entries, spec.key, result, exit)),
 						scope,
 					)
-					touched(next, spec.key, { result, idleTtlMs: spec.idleTtlMs, touchedAtMs: nowMs, isSettled: false })
+					touched(next, spec.key, {
+						result,
+						idleTtlMs: spec.idleTtlMs,
+						touchedAtMs: nowMs,
+						isSettled: false,
+					})
 					return step<S["Type"], E>({ _tag: "Owner", fiber }, capped(next, nowMs))
 				}),
 			),

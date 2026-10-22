@@ -43,18 +43,38 @@ const attachmentCard = <M>(
 		[h.Class("mx-auto w-full max-w-3xl px-4 pt-3")],
 		[
 			panel(h, { className: cn("relative bg-card/80 backdrop-blur-sm", options.tint) }, [
-				h.div([h.Class(cn("absolute inset-y-0 left-0 w-[3px]", options.stripe)), h.AriaHidden(true)], []),
+				h.div(
+					[h.Class(cn("absolute inset-y-0 left-0 w-[3px]", options.stripe)), h.AriaHidden(true)],
+					[],
+				),
 				h.div(
 					[h.Class("min-w-0 py-2.5 pr-3 pl-3.5")],
 					[
 						eyebrow(
 							h,
-							{ as: "div", className: "flex flex-wrap items-center gap-x-2 gap-y-0.5 font-normal" },
+							{
+								as: "div",
+								className: "flex flex-wrap items-center gap-x-2 gap-y-0.5 font-normal",
+							},
 							options.meta.flatMap((item, index) =>
-								index > 0 ? [h.span([h.Class("size-0.5 rounded-full bg-muted-foreground/40"), h.AriaHidden(true)], []), item] : [item],
+								index > 0
+									? [
+											h.span(
+												[
+													h.Class("size-0.5 rounded-full bg-muted-foreground/40"),
+													h.AriaHidden(true),
+												],
+												[],
+											),
+											item,
+										]
+									: [item],
 							),
 						),
-						h.div([h.Class("mt-1 truncate text-ui font-medium text-foreground")], [options.title]),
+						h.div(
+							[h.Class("mt-1 truncate text-ui font-medium text-foreground")],
+							[options.title],
+						),
 						...children,
 					],
 				),
@@ -78,7 +98,9 @@ export const investigationCard = <M>(h: HtmlBuilder<M>, ctx: InvestigationContex
 				h.span(
 					[h.Class(cn("inline-flex items-center gap-1 font-mono", statusTone))],
 					[
-						ctx.status === "Resolved" ? statusDot(h, { tone: "ok" }) : statusDot(h, { tone: "custom", className: accent.stripe }),
+						ctx.status === "Resolved"
+							? statusDot(h, { tone: "ok" })
+							: statusDot(h, { tone: "custom", className: accent.stripe }),
 						ctx.status,
 					],
 				),
@@ -95,7 +117,10 @@ export const investigationCard = <M>(h: HtmlBuilder<M>, ctx: InvestigationContex
 								[h.Class("flex min-w-0 flex-col leading-tight")],
 								[
 									eyebrow(h, {}, [fact.label]),
-									h.span([h.Class("truncate font-mono text-2xs text-foreground")], [fact.value]),
+									h.span(
+										[h.Class("truncate font-mono text-2xs text-foreground")],
+										[fact.value],
+									),
 								],
 							),
 						),
@@ -125,9 +150,21 @@ export const widgetFixCard = <M>(h: HtmlBuilder<M>, ctx: WidgetFixContext): Html
 					h.div(
 						[h.Class("mt-2 space-y-0.5")],
 						[
-							...(ctx.errorTitle ? [h.div([h.Class("text-2xs font-medium text-severity-error")], [ctx.errorTitle])] : []),
+							...(ctx.errorTitle
+								? [
+										h.div(
+											[h.Class("text-2xs font-medium text-severity-error")],
+											[ctx.errorTitle],
+										),
+									]
+								: []),
 							...(ctx.errorMessage
-								? [h.div([h.Class("text-2xs text-severity-error/80 line-clamp-2")], [ctx.errorMessage])]
+								? [
+										h.div(
+											[h.Class("text-2xs text-severity-error/80 line-clamp-2")],
+											[ctx.errorMessage],
+										),
+									]
 								: []),
 						],
 					),

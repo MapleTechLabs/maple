@@ -48,7 +48,11 @@ const cleanupPanels = (h: H, model: Model): ReadonlyArray<Html> =>
 				[
 					h.h3(
 						[h.Class(GCP_TITLE)],
-						[entry.label, " ", entry.reported ? "disconnected, may not be cleaned up" : "disconnected"],
+						[
+							entry.label,
+							" ",
+							entry.reported ? "disconnected, may not be cleaned up" : "disconnected",
+						],
 					),
 					h.p(
 						[h.Class("text-xs/5 text-pretty text-muted-foreground")],
@@ -96,7 +100,8 @@ const emptyState = (h: H): Html =>
 			{
 				label: "Access",
 				title: "Read-only, your choice of setup",
-				description: "A Cloud Shell script, the console, Terraform or Alchemy. No keys, no write access for Maple.",
+				description:
+					"A Cloud Shell script, the console, Terraform or Alchemy. No keys, no write access for Maple.",
 			},
 		]),
 		integrationEmptyCard(h, [
@@ -124,10 +129,15 @@ const byStatus = (
 ): Html => {
 	// A Google Cloud source stands for one connector: its Connection tab shows only that one.
 	const connectors =
-		focusId === null ? status.connectors : status.connectors.filter((connector) => connector.id === focusId)
+		focusId === null
+			? status.connectors
+			: status.connectors.filter((connector) => connector.id === focusId)
 	const dialogs = [...gcpDialogs(h, model, timeZone), ...gcpConfigure(h, model, timeZone)]
 	if (connectors.length === 0 && focusId !== null)
-		return h.p([h.Class("text-muted-foreground text-sm")], ["This Google Cloud connection no longer exists."])
+		return h.p(
+			[h.Class("text-muted-foreground text-sm")],
+			["This Google Cloud connection no longer exists."],
+		)
 	if (connectors.length === 0)
 		return h.div(
 			[h.Class("flex flex-col gap-4")],
@@ -152,9 +162,15 @@ const byStatus = (
 						count: connectors.length > 1 ? String(connectors.length) : undefined,
 						actions:
 							focusId === null
-								? button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(newConnection)] }, [
-										"Add connection",
-									])
+								? button(
+										h,
+										{
+											size: "sm",
+											variant: "outline",
+											attributes: [h.OnClick(newConnection)],
+										},
+										["Add connection"],
+									)
 								: undefined,
 					}),
 					...ordered.map((connector) => gcpConnection(h, model, connector, timeZone)),

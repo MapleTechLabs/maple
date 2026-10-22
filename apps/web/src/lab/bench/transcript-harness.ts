@@ -46,7 +46,9 @@ const percentile = (values: ReadonlyArray<number>, p: number): number => {
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
 const countDom = (): DomCounts => {
-	const sizes = Array.from(document.querySelectorAll(LIST_SELECTOR)).map((row) => row.querySelectorAll("*").length)
+	const sizes = Array.from(document.querySelectorAll(LIST_SELECTOR)).map(
+		(row) => row.querySelectorAll("*").length,
+	)
 	return {
 		mountedRows: sizes.length,
 		listNodes: sizes.reduce((sum, size) => sum + size, 0),

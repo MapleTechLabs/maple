@@ -1,4 +1,10 @@
-import { DISPLAY_ROW_LIMIT, formatCell, inferColumns, isNumericColumn, truncateCell } from "../../lib/query-console"
+import {
+	DISPLAY_ROW_LIMIT,
+	formatCell,
+	inferColumns,
+	isNumericColumn,
+	truncateCell,
+} from "../../lib/query-console"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { icon } from "@maple/web/ui/icon"
@@ -18,7 +24,10 @@ export const queryError = <M>(h: HtmlBuilder<M>, title: string, detail: string):
 						[h.Class("flex items-center gap-2 text-sm font-medium text-destructive")],
 						[icon(h, "CircleWarningIcon", { className: "size-4 shrink-0" }), title],
 					),
-					h.pre([h.Class("mt-2 font-mono text-xs whitespace-pre-wrap break-all text-foreground")], [detail]),
+					h.pre(
+						[h.Class("mt-2 font-mono text-xs whitespace-pre-wrap break-all text-foreground")],
+						[detail],
+					),
 				],
 			),
 		],
@@ -71,7 +80,8 @@ export const resultTable = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<ResultRow>
 												cn(
 													"border-b border-border/50 px-3 py-1.5 whitespace-nowrap",
 													numeric.has(column) && "text-right tabular-nums",
-													(row[column] === null || row[column] === undefined) && "text-muted-foreground/60",
+													(row[column] === null || row[column] === undefined) &&
+														"text-muted-foreground/60",
 												),
 											),
 										],

@@ -75,16 +75,28 @@ export const initialization = (model: Model, draftId: string): Initialization =>
 		const rule = editingRuleOf(model, search.ruleId)
 		if (rule !== null) {
 			const form = fromFormState(ruleToFormState(rule))
-			return ready(`rule:${rule.id}`, rule.queryBuilderDraft === null ? withDraftId(form, draftId) : form, [], rule)
+			return ready(
+				`rule:${rule.id}`,
+				rule.queryBuilderDraft === null ? withDraftId(form, draftId) : form,
+				[],
+				rule,
+			)
 		}
 		return ready(`missing-rule:${search.ruleId}`, base, [
-			{ severity: "warning", message: "The alert rule could not be found. Starting from a blank alert." },
+			{
+				severity: "warning",
+				message: "The alert rule could not be found. Starting from a blank alert.",
+			},
 		])
 	}
 	const chart = search.chart === undefined ? Option.none() : decodeChartParam(search.chart)
 	if (Option.isSome(chart)) {
 		const result = createWidgetAlertPrefill(chart.value.widget, base)
-		return ready(`chart:${chart.value.dashboardId}:${chart.value.widget.id}`, fromFormState(result.form), result.notices)
+		return ready(
+			`chart:${chart.value.dashboardId}:${chart.value.widget.id}`,
+			fromFormState(result.form),
+			result.notices,
+		)
 	}
 	if (search.dashboardId !== undefined || search.widgetId !== undefined) {
 		if (search.dashboardId === undefined || search.widgetId === undefined) {
@@ -108,7 +120,11 @@ export const initialization = (model: Model, draftId: string): Initialization =>
 				widgetId: search.widgetId,
 				base,
 			})
-			return ready(`dashboard:${search.dashboardId}:widget:${search.widgetId}`, fromFormState(result.form), result.notices)
+			return ready(
+				`dashboard:${search.dashboardId}:widget:${search.widgetId}`,
+				fromFormState(result.form),
+				result.notices,
+			)
 		}
 		if (!model.isDashboardsLoadFailed) return { _tag: "Loading" }
 		return ready(`dashboard-load-failed:${search.dashboardId}:${search.widgetId}`, base, [
@@ -116,6 +132,7 @@ export const initialization = (model: Model, draftId: string): Initialization =>
 		])
 	}
 	const template = ALERT_TEMPLATES.find((candidate) => candidate.id === search.template)
-	if (template !== undefined) return ready(`new:template:${template.id}`, fromFormState(template.apply(base)))
+	if (template !== undefined)
+		return ready(`new:template:${template.id}`, fromFormState(template.apply(base)))
 	return ready(`new:${search.serviceName ?? "blank"}`, base, [], null, search.serviceName === undefined)
 }

@@ -151,7 +151,8 @@ export const toolLabel = (toolName: string): string => {
 	return TOOL_LABELS.get(name) ?? humanize(name)
 }
 
-export const toolIcon = (toolName: string): IconName => TOOL_ICONS.get(normalizeToolName(toolName)) ?? "CodeIcon"
+export const toolIcon = (toolName: string): IconName =>
+	TOOL_ICONS.get(normalizeToolName(toolName)) ?? "CodeIcon"
 
 /** Verbs that survive being turned into a present participle. */
 const LABEL_VERBS = new Set([

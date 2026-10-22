@@ -38,7 +38,10 @@ const ready = (h: H, info: AuthorizationInfo, workspace: Html): Html =>
 				[
 					muted(h, "text-xs", ["Requesting client"]),
 					h.p(
-						[h.Class("line-clamp-2 font-medium [overflow-wrap:anywhere]"), h.Title(info.clientName)],
+						[
+							h.Class("line-clamp-2 font-medium [overflow-wrap:anywhere]"),
+							h.Title(info.clientName),
+						],
 						[info.clientName],
 					),
 					muted(h, "text-3xs", ["Name provided by the app"]),
@@ -80,7 +83,10 @@ const ready = (h: H, info: AuthorizationInfo, workspace: Html): Html =>
 					),
 					button(
 						h,
-						{ className: "flex-1", attributes: [h.OnClick(Message.ClickedDecision({ action: "approve" }))] },
+						{
+							className: "flex-1",
+							attributes: [h.OnClick(Message.ClickedDecision({ action: "approve" }))],
+						},
 						["Approve"],
 					),
 				],

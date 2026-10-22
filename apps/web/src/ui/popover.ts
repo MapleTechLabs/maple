@@ -120,7 +120,9 @@ const transition = makeTransition<Model, Message>(
 )
 /** Each opening is placed afresh from the requested side, as Base UI's positioner does. */
 export const open = (model: Model): Update.Return<Model, Message> =>
-	transition.open(model.isOpen ? model : { ...model, side: model.requestedSide, align: model.requestedAlign })
+	transition.open(
+		model.isOpen ? model : { ...model, side: model.requestedSide, align: model.requestedAlign },
+	)
 export const WaitForPopoverExit = transition.WaitForExit
 export const close = transition.close
 
@@ -171,7 +173,11 @@ export const MountPopover = Mount.defineStream("MountPopover", {
 			popupSelector: `#${CSS.escape(popupId(id))}`,
 			config: {
 				...positionDefaults,
-				anchor: { _tag: "Element", id: triggerId(id), fallbackSelector: fallbackAnchorSelector ?? undefined },
+				anchor: {
+					_tag: "Element",
+					id: triggerId(id),
+					fallbackSelector: fallbackAnchorSelector ?? undefined,
+				},
 				side,
 				align,
 				sideOffset,
@@ -273,7 +279,10 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			h.div(
 				[
 					h.Class(
-						cn(inputs.bare?.positionerClassName ?? popoverPositionerStyles, !model.isOpen && "pointer-events-none"),
+						cn(
+							inputs.bare?.positionerClassName ?? popoverPositionerStyles,
+							!model.isOpen && "pointer-events-none",
+						),
 					),
 					...placement,
 					...state,
@@ -359,9 +368,21 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 })
 
 export const popoverTitle = <M>(h: HtmlBuilder<M>, id: string, text: string, className?: string): Html =>
-	h.h2([h.Class(cn(popoverTitleStyles, className)), h.DataAttribute("slot", "popover-title"), h.Id(titleId(id))], [text])
+	h.h2(
+		[
+			h.Class(cn(popoverTitleStyles, className)),
+			h.DataAttribute("slot", "popover-title"),
+			h.Id(titleId(id)),
+		],
+		[text],
+	)
 
-export const popoverDescription = <M>(h: HtmlBuilder<M>, id: string, text: string, className?: string): Html =>
+export const popoverDescription = <M>(
+	h: HtmlBuilder<M>,
+	id: string,
+	text: string,
+	className?: string,
+): Html =>
 	h.p(
 		[
 			h.Class(cn(popoverDescriptionStyles, className)),

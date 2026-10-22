@@ -53,7 +53,9 @@ export const withCache = <A, B, Found, Succeeded, E, R>(
 	}>,
 ): Effect.Effect<Found | Succeeded, E, R | LocalQueryCache> =>
 	Effect.gen(function* () {
-		const maybeCached = options.readsCache ? yield* readCached(options.key, options.fromCached, options.staleMs) : Option.none()
+		const maybeCached = options.readsCache
+			? yield* readCached(options.key, options.fromCached, options.staleMs)
+			: Option.none()
 		if (Option.isSome(maybeCached)) return options.found(maybeCached.value)
 		const data = yield* options.fetch
 		const fetchedAtMs = yield* Clock.currentTimeMillis
@@ -61,7 +63,11 @@ export const withCache = <A, B, Found, Succeeded, E, R>(
 		return options.succeeded(data, fetchedAtMs)
 	})
 
-export const recordCached =<A>(key: QueryKey, data: A, updatedAtMs: number): Effect.Effect<void, never, LocalQueryCache> =>
+export const recordCached = <A>(
+	key: QueryKey,
+	data: A,
+	updatedAtMs: number,
+): Effect.Effect<void, never, LocalQueryCache> =>
 	Effect.gen(function* () {
 		yield* (yield* LocalQueryCache).record(key, data, updatedAtMs)
 	})

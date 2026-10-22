@@ -89,9 +89,11 @@ const listLoadError = (h: H): Html =>
 				]),
 			]),
 			emptyContent(h, [
-				button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedRetrySync())] }, [
-					"Try again",
-				]),
+				button(
+					h,
+					{ size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedRetrySync())] },
+					["Try again"],
+				),
 			]),
 		],
 		"py-12",
@@ -100,7 +102,11 @@ const listLoadError = (h: H): Html =>
 /** `SyncDegradedBanner`: the rows are a frozen HTTP snapshot and writes are off. */
 const degradedBanner = (h: H): Html =>
 	h.div(
-		[h.Class("mb-3 flex items-start gap-2 rounded-md border border-border bg-muted/40 p-2.5 text-xs text-muted-foreground")],
+		[
+			h.Class(
+				"mb-3 flex items-start gap-2 rounded-md border border-border bg-muted/40 p-2.5 text-xs text-muted-foreground",
+			),
+		],
 		[
 			icon(h, "CircleWarningIcon", { size: 14, className: "mt-0.5 shrink-0" }),
 			h.span(

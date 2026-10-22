@@ -18,11 +18,17 @@ type Restarts = AsyncData.AsyncData<ReadonlyArray<RestartRow>, LoadFailure>
 export const podRestartsStat = <M>(h: HtmlBuilder<M>, restarts: Restarts): Html =>
 	AsyncData.matchData(restarts, {
 		onEmpty: () => statRailItemSkeleton(h),
-		onFailure: () => statRailItem(h, { eyebrow: "Restarts", value: EMPTY_VALUE, hint: "unavailable", compact: true }),
+		onFailure: () =>
+			statRailItem(h, { eyebrow: "Restarts", value: EMPTY_VALUE, hint: "unavailable", compact: true }),
 		onData: (rows) => {
 			// No rows means the cluster collector isn't reporting this pod, not zero restarts.
 			if (rows.length === 0)
-				return statRailItem(h, { eyebrow: "Restarts", value: EMPTY_VALUE, hint: "not reported", compact: true })
+				return statRailItem(h, {
+					eyebrow: "Restarts",
+					value: EMPTY_VALUE,
+					hint: "not reported",
+					compact: true,
+				})
 			const summary = summarizePodRestarts(rows).values().next().value
 			const count = summary?.restarts ?? 0
 			const reason = summary?.lastTerminatedReason ?? ""
@@ -39,19 +45,34 @@ export const podRestartsStat = <M>(h: HtmlBuilder<M>, restarts: Restarts): Html 
 
 const containerRow = <M>(h: HtmlBuilder<M>, row: RestartRow): Html =>
 	h.div(
-		[h.Key(row.containerName), h.Class("flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0")],
 		[
-			h.span([h.Class("w-0 min-w-[200px] flex-1 truncate font-mono text-xs text-foreground")], [row.containerName || EMPTY_VALUE]),
+			h.Key(row.containerName),
+			h.Class("flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0"),
+		],
+		[
+			h.span(
+				[h.Class("w-0 min-w-[200px] flex-1 truncate font-mono text-xs text-foreground")],
+				[row.containerName || EMPTY_VALUE],
+			),
 			h.span(
 				[
 					h.Class(
-						cn("w-[96px] text-right font-mono text-xs tabular-nums", TONE_TEXT[restartTone(row.restarts, row.lastTerminatedReason)]),
+						cn(
+							"w-[96px] text-right font-mono text-xs tabular-nums",
+							TONE_TEXT[restartTone(row.restarts, row.lastTerminatedReason)],
+						),
 					),
 				],
 				[String(row.restarts)],
 			),
-			h.span([h.Class("w-[96px] text-right font-mono text-xs tabular-nums text-muted-foreground")], [String(row.totalRestarts)]),
-			h.span([h.Class("w-[160px] truncate text-right text-xs text-muted-foreground")], [row.lastTerminatedReason || EMPTY_VALUE]),
+			h.span(
+				[h.Class("w-[96px] text-right font-mono text-xs tabular-nums text-muted-foreground")],
+				[String(row.totalRestarts)],
+			),
+			h.span(
+				[h.Class("w-[160px] truncate text-right text-xs text-muted-foreground")],
+				[row.lastTerminatedReason || EMPTY_VALUE],
+			),
 		],
 	)
 

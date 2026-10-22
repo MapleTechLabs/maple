@@ -48,7 +48,10 @@ const summaryBand = (h: H, model: Model): Html =>
 		onEmpty: () => fleetBandLoading(h, 3, FLEET_BAND_BOXED),
 		onFailure: () => null,
 		onData: (counts: ContainerCounts) => {
-			const healthy = Math.max(counts.totalContainers - counts.saturatedContainers - counts.elevatedContainers, 0)
+			const healthy = Math.max(
+				counts.totalContainers - counts.saturatedContainers - counts.elevatedContainers,
+				0,
+			)
 			return fleetBand(h, {
 				total: counts.totalContainers,
 				noun: "container",
@@ -59,9 +62,27 @@ const summaryBand = (h: H, model: Model): Html =>
 					{ key: "saturated", count: counts.saturatedContainers, className: TONE_FILL.crit },
 				],
 				cells: [
-					{ scope: "saturated", label: "Saturated", hint: "≥90%", value: counts.saturatedContainers, tone: "crit" },
-					{ scope: "elevated", label: "Elevated", hint: "≥60%", value: counts.elevatedContainers, tone: "warn" },
-					{ scope: "stale", label: "Stale agent", hint: ">5m", value: counts.staleContainers, tone: "neutral" },
+					{
+						scope: "saturated",
+						label: "Saturated",
+						hint: "≥90%",
+						value: counts.saturatedContainers,
+						tone: "crit",
+					},
+					{
+						scope: "elevated",
+						label: "Elevated",
+						hint: "≥60%",
+						value: counts.elevatedContainers,
+						tone: "warn",
+					},
+					{
+						scope: "stale",
+						label: "Stale agent",
+						hint: ">5m",
+						value: counts.staleContainers,
+						tone: "neutral",
+					},
 				],
 				activeScope: model.search.scope,
 				onScopeChange: (scope) => Message.ChangedScope({ scope }),
@@ -78,8 +99,11 @@ const tableArea = (h: H, model: Model, page: ContainersPage, inputs: PageViewInp
 	const searchText = model.search.q ?? ""
 	const scope = model.search.scope
 	const offset = pageIndexOf(model) * PAGE_SIZE
-	const hasStructuredFilter = Object.values(filtersOf(model.search)).some((values) => (values?.length ?? 0) > 0)
-	const hasAnyNarrowing = hasStructuredFilter || searchText.trim() !== "" || scope !== undefined || offset > 0
+	const hasStructuredFilter = Object.values(filtersOf(model.search)).some(
+		(values) => (values?.length ?? 0) > 0,
+	)
+	const hasAnyNarrowing =
+		hasStructuredFilter || searchText.trim() !== "" || scope !== undefined || offset > 0
 	const containers = page.data
 	if (containers.length === 0 && !hasAnyNarrowing)
 		return setupEmpty(h, {
@@ -90,7 +114,12 @@ const tableArea = (h: H, model: Model, page: ContainersPage, inputs: PageViewInp
 			actionLabel: "Install the Docker agent",
 			onAction: toInstall(InstallModal.Message.ClickedOpen()),
 			docs: "docker",
-			modal: h.submodel({ slotId: "install-modal", model: model.install, view: InstallModalView.mountedView, toParentMessage: toInstall }),
+			modal: h.submodel({
+				slotId: "install-modal",
+				model: model.install,
+				view: InstallModalView.mountedView,
+				toParentMessage: toInstall,
+			}),
 		})
 	const { sortBy, sortDir } = sortOf(model.search)
 	return h.div(
@@ -143,7 +172,11 @@ const containersArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.containers.data, {
 		onEmpty: () => containerTableLoading(h),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load containers", onRetry: Message.ClickedRetryContainers() }),
+			errorState(h, {
+				failure,
+				title: "Failed to load containers",
+				onRetry: Message.ClickedRetryContainers(),
+			}),
 		onData: (page) => tableArea(h, model, page, inputs),
 	})
 
@@ -156,7 +189,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
+					actions: Frame.controls(
+						h,
+						model.frame,
+						{ search: model.search, defaultPreset: DEFAULT_PRESET },
+						toFrame,
+					),
 					tabs: hostsViewTabs(h, "containers", model.search),
 					filters: filtersRail(h, model),
 					scrollClassName: "gap-6",
@@ -164,7 +202,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				[
 					pageHero(h, {
 						title: "Containers",
-						description: "Sorted worst-first by peak utilization against each container's own limits.",
+						description:
+							"Sorted worst-first by peak utilization against each container's own limits.",
 					}),
 					activeFilterChips(h, {
 						chips: facetChips(FACETS, (param) => model.search[param]).map((chip) => ({

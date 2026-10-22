@@ -88,7 +88,11 @@ describe("list, funnel and paths panels", () => {
 	})
 
 	test("a column dragged past two centres lands two slots down", () => {
-		const list = run(opened(), Message.ClickedPanelType({ panel: "list" }), edit(ProductEdit.SetListSource({ source: "logs" })))
+		const list = run(
+			opened(),
+			Message.ClickedPanelType({ panel: "list" }),
+			edit(ProductEdit.SetListSource({ source: "logs" })),
+		)
 		// Rows 40 px apart: the first row's centre dragged 85 px down passes the next two.
 		const to = targetIndex([20, 60, 100, 140], 0, 20 + 85)
 		const dragged = run(list, edit(ProductEdit.MovedListColumn({ index: 0, delta: to })))

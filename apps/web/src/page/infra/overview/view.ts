@@ -49,7 +49,9 @@ const addSource = (h: H, missing: ReadonlyArray<SourceId>): Html =>
 							[
 								"Not reporting yet:",
 								" ",
-								...missing.flatMap((id, index) => missingMark(h, id, index === missing.length - 1)),
+								...missing.flatMap((id, index) =>
+									missingMark(h, id, index === missing.length - 1),
+								),
 							],
 						),
 					],
@@ -82,7 +84,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
+					actions: Frame.controls(
+						h,
+						model.frame,
+						{ search: model.search, defaultPreset: DEFAULT_PRESET },
+						toFrame,
+					),
 				},
 				[
 					h.div(
@@ -95,7 +102,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 										? `${countLabel(sources.length, "source")} reporting. What needs a look comes first.`
 										: "Nothing is reporting yet. Install a collector or connect a provider to get started.",
 							}),
-							...(sources.length > 0 ? [needsAttention(h, states, time), sourcesTable(h, states, time)] : []),
+							...(sources.length > 0
+								? [needsAttention(h, states, time), sourcesTable(h, states, time)]
+								: []),
 							...(missing.length > 0 ? [addSource(h, missing)] : []),
 						],
 					),

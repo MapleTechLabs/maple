@@ -19,7 +19,10 @@ export const readSessionTimeRange = (orgId: string): Effect.Effect<SessionTimeRa
 		const store = yield* KeyValueStore.KeyValueStore
 		const raw = yield* store.get(keyOf(orgId))
 		return Option.getOrElse(Option.flatMap(Option.fromNullishOr(raw), decode), () => ({}))
-	}).pipe(withSessionStorage, Effect.orElseSucceed(() => ({})))
+	}).pipe(
+		withSessionStorage,
+		Effect.orElseSucceed(() => ({})),
+	)
 
 /** Storage failures are ignored: the window simply does not carry over. */
 export const writeSessionTimeRange = (orgId: string, value: SessionTimeRange): Effect.Effect<void> =>

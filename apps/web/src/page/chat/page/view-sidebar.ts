@@ -34,7 +34,8 @@ export const groupTabs = (
 	const yesterday = today - DAY_MS
 	const week = today - 7 * DAY_MS
 	const byRecency = (a: ChatTab, b: ChatTab) => b.updatedAt - a.updatedAt
-	const within = (from: number, to: number) => tabs.filter((tab) => tab.updatedAt >= from && tab.updatedAt < to).toSorted(byRecency)
+	const within = (from: number, to: number) =>
+		tabs.filter((tab) => tab.updatedAt >= from && tab.updatedAt < to).toSorted(byRecency)
 	return [
 		{ label: "Today", tabs: within(today, Number.POSITIVE_INFINITY) },
 		{ label: "Yesterday", tabs: within(yesterday, today) },
@@ -44,15 +45,32 @@ export const groupTabs = (
 }
 
 const tabIcon = (tab: ChatTab) =>
-	tab.id.startsWith("alert-") ? Option.some("BellIcon" as const) : tab.id.startsWith("widget-fix-") ? Option.some("ChartLineIcon" as const) : Option.none()
+	tab.id.startsWith("alert-")
+		? Option.some("BellIcon" as const)
+		: tab.id.startsWith("widget-fix-")
+			? Option.some("ChartLineIcon" as const)
+			: Option.none()
 
 const menuEntries = (canDelete: boolean): ReadonlyArray<MenuView.MenuEntry> => [
 	{ _tag: "Item", value: "rename", label: "Rename", icon: "PencilIcon" },
 	{ _tag: "Item", value: "copy-link", label: "Copy link", icon: "LinkIcon" },
-	{ _tag: "Item", value: "delete", label: "Delete", icon: "TrashIcon", variant: "destructive", isDisabled: !canDelete },
+	{
+		_tag: "Item",
+		value: "delete",
+		label: "Delete",
+		icon: "TrashIcon",
+		variant: "destructive",
+		isDisabled: !canDelete,
+	},
 ]
 
-const rowActions = (h: HtmlBuilder<Message>, model: Model, tab: ChatTab, isActive: boolean, canDelete: boolean): Html =>
+const rowActions = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	tab: ChatTab,
+	isActive: boolean,
+	canDelete: boolean,
+): Html =>
 	h.submodel({
 		slotId: `chat-tab-menu-${tab.id}`,
 		model: model.menus[tab.id] ?? Menu.init(`chat-tab-menu-${tab.id}`),
@@ -104,10 +122,18 @@ const renameInput = (h: HtmlBuilder<Message>, model: Model): Html =>
 					: Option.none(),
 		),
 		h.OnMount(MountRenameInput()),
-		h.Class("min-w-0 flex-1 bg-transparent text-sm outline-none ring-1 ring-ring/50 rounded-sm px-1 -mx-1"),
+		h.Class(
+			"min-w-0 flex-1 bg-transparent text-sm outline-none ring-1 ring-ring/50 rounded-sm px-1 -mx-1",
+		),
 	])
 
-const tabRow = (h: HtmlBuilder<Message>, model: Model, tab: ChatTab, isActive: boolean, canDelete: boolean): Html => {
+const tabRow = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	tab: ChatTab,
+	isActive: boolean,
+	canDelete: boolean,
+): Html => {
 	const isRenaming = model.renamingId === tab.id
 	const conversation = model.conversations[tab.id]
 	const loading = conversation !== undefined && isLoading(conversation)
@@ -115,7 +141,9 @@ const tabRow = (h: HtmlBuilder<Message>, model: Model, tab: ChatTab, isActive: b
 		? [dotLoader(h, { label: "Working", color: "var(--primary)" })]
 		: Option.match(tabIcon(tab), {
 				onNone: () => [],
-				onSome: (name) => [icon(h, name, { size: 14, className: "shrink-0 text-muted-foreground/70" })],
+				onSome: (name) => [
+					icon(h, name, { size: 14, className: "shrink-0 text-muted-foreground/70" }),
+				],
 			})
 	return h.li(
 		[],
@@ -129,7 +157,9 @@ const tabRow = (h: HtmlBuilder<Message>, model: Model, tab: ChatTab, isActive: b
 								h.Tabindex(0),
 								h.OnDoubleClick(Message.DoubleClickedTab({ id: tab.id })),
 								h.OnKeyDownPreventDefault((key) =>
-									key === "Enter" || key === " " ? Option.some(Message.ClickedTab({ id: tab.id })) : Option.none(),
+									key === "Enter" || key === " "
+										? Option.some(Message.ClickedTab({ id: tab.id }))
+										: Option.none(),
 								),
 							]),
 					h.OnClick(Message.ClickedTab({ id: tab.id })),
@@ -160,12 +190,19 @@ export const chatSidebar = (h: HtmlBuilder<Message>, model: Model, className: st
 	const groups = groupTabs(tabs, model.nowMs)
 	const canDelete = tabs.length > 1
 	const pendingTitle = Option.match(
-		Option.flatMap(Option.fromNullishOr(model.confirmDeleteId), (id) => Option.fromNullishOr(tabs.find((tab) => tab.id === id))),
+		Option.flatMap(Option.fromNullishOr(model.confirmDeleteId), (id) =>
+			Option.fromNullishOr(tabs.find((tab) => tab.id === id)),
+		),
 		{ onNone: () => "", onSome: (tab) => tab.title },
 	)
 	return h.aside(
 		[
-			h.Class(cn("flex h-full shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground", className)),
+			h.Class(
+				cn(
+					"flex h-full shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground",
+					className,
+				),
+			),
 			h.AriaLabel("Chat conversations"),
 		],
 		[
@@ -177,7 +214,11 @@ export const chatSidebar = (h: HtmlBuilder<Message>, model: Model, className: st
 						[
 							button(
 								h,
-								{ size: "sm", className: "w-full justify-start gap-2 font-medium", attributes: [h.OnClick(Message.ClickedNewChat())] },
+								{
+									size: "sm",
+									className: "w-full justify-start gap-2 font-medium",
+									attributes: [h.OnClick(Message.ClickedNewChat())],
+								},
 								[icon(h, "PlusIcon"), "New chat"],
 							),
 						],
@@ -185,15 +226,34 @@ export const chatSidebar = (h: HtmlBuilder<Message>, model: Model, className: st
 					h.div(
 						[h.Class("min-h-0 flex-1 overflow-y-auto px-2 pb-3")],
 						groups.length === 0
-							? [emptyMessage(h, { className: "px-2 py-6 text-sidebar-foreground/60" }, ["No conversations yet"])]
+							? [
+									emptyMessage(h, { className: "px-2 py-6 text-sidebar-foreground/60" }, [
+										"No conversations yet",
+									]),
+								]
 							: groups.map((group) =>
 									h.div(
 										[h.Class("mb-3")],
 										[
-											eyebrow(h, { as: "div", className: "px-2 py-1 text-sidebar-foreground/60" }, [group.label]),
+											eyebrow(
+												h,
+												{
+													as: "div",
+													className: "px-2 py-1 text-sidebar-foreground/60",
+												},
+												[group.label],
+											),
 											h.ul(
 												[h.Class("flex flex-col gap-0.5")],
-												group.tabs.map((tab) => tabRow(h, model, tab, tab.id === model.tabs?.activeTabId, canDelete)),
+												group.tabs.map((tab) =>
+													tabRow(
+														h,
+														model,
+														tab,
+														tab.id === model.tabs?.activeTabId,
+														canDelete,
+													),
+												),
 											),
 										],
 									),

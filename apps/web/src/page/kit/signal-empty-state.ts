@@ -133,13 +133,16 @@ export const filteredEmpty = <M>(
 		h,
 		[
 			emptyHeader(h, [
-				options.icon === undefined ? iconMedia(h, "SlidersIcon") : emptyMedia(h, { variant: "icon" }, [options.icon]),
+				options.icon === undefined
+					? iconMedia(h, "SlidersIcon")
+					: emptyMedia(h, { variant: "icon" }, [options.icon]),
 				emptyTitle(h, [options.title ?? `No ${options.noun} match these filters`]),
 				...(options.description === ""
 					? []
 					: [
 							emptyDescription(h, [
-								options.description ?? "Everything in this time range was excluded by the current filters.",
+								options.description ??
+									"Everything in this time range was excluded by the current filters.",
 							]),
 						]),
 			]),
@@ -153,7 +156,11 @@ export const filteredEmpty = <M>(
 								: [
 										button(
 											h,
-											{ variant: "outline", size: "sm", attributes: [h.OnClick(options.onClear)] },
+											{
+												variant: "outline",
+												size: "sm",
+												attributes: [h.OnClick(options.onClear)],
+											},
 											[options.clearLabel ?? "Clear filters"],
 										),
 									]),

@@ -12,11 +12,21 @@ import type { Model } from "./model"
 // `AlertQueryPanel`'s `autocompleteValues` (the provider is not lazy here): the where editor's
 // suggestions per source, over the editor's 24h window.
 
-const field = (model: Pick<Model, "autocomplete">, lookup: AutocompleteLookup, name: string): Array<string> => [
-	...lookupField(Option.getOrUndefined(AsyncData.getData(model.autocomplete[lookup]?.data ?? AsyncData.Idle())), name),
+const field = (
+	model: Pick<Model, "autocomplete">,
+	lookup: AutocompleteLookup,
+	name: string,
+): Array<string> => [
+	...lookupField(
+		Option.getOrUndefined(AsyncData.getData(model.autocomplete[lookup]?.data ?? AsyncData.Idle())),
+		name,
+	),
 ]
 
-export const baseValuesOf = (model: Pick<Model, "traceFacets" | "autocomplete">, query: QueryDraft): WhereClauseAutocompleteValues => {
+export const baseValuesOf = (
+	model: Pick<Model, "traceFacets" | "autocomplete">,
+	query: QueryDraft,
+): WhereClauseAutocompleteValues => {
 	const facets = traceFacetsOf(model)
 	const spanKeys = field(model, "spanAttributeKeys", "keys")
 	const resourceKeys = field(model, "resourceAttributeKeys", "keys")
@@ -39,7 +49,10 @@ export const baseValuesOf = (model: Pick<Model, "traceFacets" | "autocomplete">,
 				resourceAttributeKeys: resourceKeys,
 			}
 		case "metrics":
-			return { metricTypes: [...QUERY_BUILDER_METRIC_TYPES], attributeKeys: field(model, "metricAttributeKeys", "keys") }
+			return {
+				metricTypes: [...QUERY_BUILDER_METRIC_TYPES],
+				attributeKeys: field(model, "metricAttributeKeys", "keys"),
+			}
 		case "product_events":
 			return {
 				eventNames: field(model, "productEventNames", "keys"),
@@ -49,7 +62,8 @@ export const baseValuesOf = (model: Pick<Model, "traceFacets" | "autocomplete">,
 }
 
 export const panelInputsOf = (model: Model, context: PageContext): PanelInputs => ({
-	queryOf: (queryId) => (model.form?.queryBuilderDraft.id === queryId ? model.form.queryBuilderDraft : undefined),
+	queryOf: (queryId) =>
+		model.form?.queryBuilderDraft.id === queryId ? model.form.queryBuilderDraft : undefined,
 	baseValuesOf: (query) => baseValuesOf(model, query),
 	orgId: context.orgId,
 	window: model.autocompleteWindow,

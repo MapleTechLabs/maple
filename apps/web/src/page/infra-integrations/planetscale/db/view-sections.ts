@@ -128,7 +128,7 @@ export const activitySection = (
 		[h.Class("space-y-2")],
 		[
 			sectionHeading(h, {
- title: "Activity",
+				title: "Activity",
 				actions: h.span(
 					[h.Class("font-mono text-2xs text-muted-foreground")],
 					[String(events.length)],

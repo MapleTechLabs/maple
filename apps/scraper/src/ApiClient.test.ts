@@ -163,7 +163,10 @@ describe("ApiClient", () => {
 					.pipe(
 						Effect.provideService(
 							FetchHttpClient.Fetch,
-							stubFetch(recorded, () => new Response("persistence unavailable", { status: 503 })),
+							stubFetch(
+								recorded,
+								() => new Response("persistence unavailable", { status: 503 }),
+							),
 						),
 						Effect.flip,
 					),

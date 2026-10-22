@@ -24,10 +24,18 @@ export const gcpValue = (h: H, model: Model, value: GcpStepField["value"], copy 
 		[h.Class("inline-flex max-w-full items-start gap-0.5")],
 		[
 			h.span(
-				[h.Class("min-w-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs/5 break-all text-foreground")],
+				[
+					h.Class(
+						"min-w-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs/5 break-all text-foreground",
+					),
+				],
 				[value],
 			),
-			copyOf(h, model, `value-${value}`, value, { label: "value", iconSize: 12, className: "size-6 shrink-0" }),
+			copyOf(h, model, `value-${value}`, value, {
+				label: "value",
+				iconSize: 12,
+				className: "size-6 shrink-0",
+			}),
 		],
 	)
 }
@@ -63,7 +71,9 @@ const manualStepBody = (h: H, model: Model, step: GcpManualStep): Html =>
 							h.Href(step.consoleUrl),
 							h.Target("_blank"),
 							h.Rel("noreferrer"),
-							h.Class("inline-flex items-center gap-1 font-medium text-foreground hover:underline"),
+							h.Class(
+								"inline-flex items-center gap-1 font-medium text-foreground hover:underline",
+							),
 						],
 						["Open in console", icon(h, "ExternalLinkIcon", { size: 12 })],
 					),
@@ -89,7 +99,11 @@ const manualStepBody = (h: H, model: Model, step: GcpManualStep): Html =>
 				? []
 				: [
 						h.ul(
-							[h.Class("flex list-disc flex-col gap-1 pl-4 text-xs/5 text-pretty text-muted-foreground")],
+							[
+								h.Class(
+									"flex list-disc flex-col gap-1 pl-4 text-xs/5 text-pretty text-muted-foreground",
+								),
+							],
 							step.notes.map((note) => h.li([h.Key(note)], [note])),
 						),
 					]),
@@ -101,7 +115,12 @@ export const manualSteps = (
 	h: H,
 	model: Model,
 	configure: ConfigureModel,
-	options: Readonly<{ heading: string; detail: string; steps: ReadonlyArray<GcpManualStep>; docsHref: string }>,
+	options: Readonly<{
+		heading: string
+		detail: string
+		steps: ReadonlyArray<GcpManualStep>
+		docsHref: string
+	}>,
 ): Html => {
 	const firstTitle = options.steps[0]?.title ?? null
 	const open = configure.isManualTouched ? configure.manualOpen : firstTitle
@@ -113,9 +132,15 @@ export const manualSteps = (
 				[
 					h.div(
 						[h.Class("flex flex-col gap-0.5")],
-						[h.h3([h.Class(GCP_TITLE)], [options.heading]), h.p([h.Class(SMALL)], [options.detail])],
+						[
+							h.h3([h.Class(GCP_TITLE)], [options.heading]),
+							h.p([h.Class(SMALL)], [options.detail]),
+						],
 					),
-					h.span([h.Class("text-xs/5")], [externalLink(h, options.docsHref, "Full guide in the docs")]),
+					h.span(
+						[h.Class("text-xs/5")],
+						[externalLink(h, options.docsHref, "Full guide in the docs")],
+					),
 				],
 			),
 			h.ol(
@@ -141,7 +166,12 @@ export const manualSteps = (
 										[
 											h.Type("button"),
 											h.AriaExpanded(expanded),
-											h.OnClick(Message.ClickedGcpManualStep({ title: step.title, firstTitle })),
+											h.OnClick(
+												Message.ClickedGcpManualStep({
+													title: step.title,
+													firstTitle,
+												}),
+											),
 											h.Class(
 												"flex min-w-0 flex-1 items-center gap-3 text-left text-sm font-medium outline-none focus-visible:underline",
 											),
@@ -162,7 +192,10 @@ export const manualSteps = (
 													]),
 											icon(h, "ChevronDownIcon", {
 												size: 14,
-												className: cn("shrink-0 text-muted-foreground transition-transform", expanded && "rotate-180"),
+												className: cn(
+													"shrink-0 text-muted-foreground transition-transform",
+													expanded && "rotate-180",
+												),
 											}),
 										],
 									),

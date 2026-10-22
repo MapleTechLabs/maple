@@ -133,7 +133,8 @@ describe("errors hub selection", () => {
 	})
 
 	test("a row still being written is written again: the newest pick is sent, not dropped", () => {
-		const press = (model: Model, key: string) => pageUpdate(model, Message.PressedListKey({ key, isShift: false })).model
+		const press = (model: Model, key: string) =>
+			pageUpdate(model, Message.PressedListKey({ key, isShift: false })).model
 		const selected = press(press(loaded(), "j"), "x")
 		const first = pageUpdate(selected, Message.ClickedBulkClaim()).model
 		const again = pageUpdate(press(first, "x"), Message.ClickedBulkClaim())
@@ -151,7 +152,8 @@ describe("errors hub selection", () => {
 	})
 
 	test("a single row's write keeps the selection: only the bulk bar clears it", () => {
-		const press = (model: Model, key: string) => pageUpdate(model, Message.PressedListKey({ key, isShift: false })).model
+		const press = (model: Model, key: string) =>
+			pageUpdate(model, Message.PressedListKey({ key, isShift: false })).model
 		const selected = press(press(press(press(loaded(), "j"), "x"), "j"), "x")
 		expect(selected.selectedIds).toHaveLength(2)
 		const done = pageUpdate(
@@ -183,7 +185,10 @@ describe("errors hub selection", () => {
 		expect(names(second.commands)).toContain("FetchErrorIssuesPage")
 		const firstKey = first.model.pages[0]?.page.key ?? ""
 		expect(second.model.pages[0]?.page.key).not.toBe(firstKey)
-		const late = pageUpdate(second.model, Message.CompletedFetchPage({ key: firstKey, result: Result.fail(toLoadFailure("old")) }))
+		const late = pageUpdate(
+			second.model,
+			Message.CompletedFetchPage({ key: firstKey, result: Result.fail(toLoadFailure("old")) }),
+		)
 		expect(late.model.pages).toEqual(second.model.pages)
 	})
 })

@@ -12,7 +12,11 @@ export const Step = Schema.Literals([1, -1])
 export type Step = typeof Step.Type
 
 export const Message = defineMessageUnion({
-	CompletedFetchSummary: { podKey: Schema.String, key: Schema.String, result: Schema.Result(PodSummary, LoadFailure) },
+	CompletedFetchSummary: {
+		podKey: Schema.String,
+		key: Schema.String,
+		result: Schema.Result(PodSummary, LoadFailure),
+	},
 	CompletedFetchSeries: { id: Schema.String, key: Schema.String, result: SeriesResult },
 	ClickedStep: { step: Step },
 	/** `MountPeekKeys`: ↓/J forward, ↑/K back. */
@@ -37,7 +41,9 @@ export const FetchPeekSummary = Command.define("FetchInfraPodPeekSummary", {
 	args: { podKey: Schema.String, key: Schema.String, input: PodSummaryInput },
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ podKey, key, input }) =>
-		Effect.map(fetchPodSummary(input), (result) => Message.CompletedFetchSummary({ podKey, key, result })),
+		Effect.map(fetchPodSummary(input), (result) =>
+			Message.CompletedFetchSummary({ podKey, key, result }),
+		),
 })
 
 export const FetchPeekSeries = Command.define("FetchInfraPodPeekSeries", {

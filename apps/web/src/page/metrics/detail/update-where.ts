@@ -71,7 +71,10 @@ const synced = (
 	summary: CatalogSummary | null,
 ): Return =>
 	withActiveKey(
-		{ ...model, whereEditor: { ...model.whereEditor, cursor, anchor, isDismissed: false, activeIndex: 0 } },
+		{
+			...model,
+			whereEditor: { ...model.whereEditor, cursor, anchor, isDismissed: false, activeIndex: 0 },
+		},
 		activeKeyAt(model.whereInput, cursor),
 		context,
 		summary,

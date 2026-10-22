@@ -31,7 +31,6 @@ type Search = typeof CodeReviewSearch.Type
 export const DEFAULT_PRESET = "30d"
 const FRAME_ID = "code-review-analytics"
 
-
 const searchHref = (search: Search) => hrefOf(AppRoute.CodeReview({ search }))
 
 const navigate = (model: Model, search: Search): Return => ({

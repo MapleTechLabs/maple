@@ -53,9 +53,16 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<LegendItem>): H
 					[h.Class("flex min-w-0 shrink items-center gap-1.5 text-3xs text-muted-foreground")],
 					[
 						h.span([
-							h.Class(cn("size-2 shrink-0 rounded-xs", item.dashed === true && "border border-dashed")),
+							h.Class(
+								cn(
+									"size-2 shrink-0 rounded-xs",
+									item.dashed === true && "border border-dashed",
+								),
+							),
 							h.Style(
-								item.dashed === true ? { "border-color": item.color } : { "background-color": item.color },
+								item.dashed === true
+									? { "border-color": item.color }
+									: { "background-color": item.color },
 							),
 						]),
 						h.span([h.Class("truncate")], [item.label]),
@@ -65,7 +72,10 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<LegendItem>): H
 			...(overflow > 0
 				? [
 						h.span(
-							[h.Class("shrink-0 text-3xs text-muted-foreground"), h.Title(items.map((i) => i.label).join(", "))],
+							[
+								h.Class("shrink-0 text-3xs text-muted-foreground"),
+								h.Title(items.map((i) => i.label).join(", ")),
+							],
 							[`+${overflow}`],
 						),
 					]
@@ -125,7 +135,9 @@ export const widgetShell = <M>(
 								},
 								[options.title],
 							),
-							...(options.timeRangeLabel === undefined ? [] : [timeRangeChip(h, options.timeRangeLabel)]),
+							...(options.timeRangeLabel === undefined
+								? []
+								: [timeRangeChip(h, options.timeRangeLabel)]),
 							...(options.legendItems !== undefined && options.legendItems.length >= 2
 								? [headerLegend(h, options.legendItems)]
 								: []),
@@ -257,7 +269,10 @@ const failedState = <M>(
 							[state.message],
 						),
 					]),
-			...(state.message === null || state.message === "" || options.errorDetails === undefined || options.errorDetails === null
+			...(state.message === null ||
+			state.message === "" ||
+			options.errorDetails === undefined ||
+			options.errorDetails === null
 				? []
 				: [options.errorDetails(state.message)]),
 			...(state.kind === "decode" && options.fix !== undefined && options.fix !== null

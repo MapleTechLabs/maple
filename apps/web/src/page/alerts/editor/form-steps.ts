@@ -7,9 +7,16 @@ import type { SignalKind, TextField, Tier } from "./message"
 
 // The form edits each control makes (the `onChange((c) => ...)` callbacks), as pure steps.
 
-export const setText = (form: RuleForm, field: TextField, value: string): RuleForm => ({ ...form, [field]: value })
+export const setText = (form: RuleForm, field: TextField, value: string): RuleForm => ({
+	...form,
+	[field]: value,
+})
 
-export const setEscalationField = (form: RuleForm, field: "threshold" | "recoveryValue", value: string): RuleForm =>
+export const setEscalationField = (
+	form: RuleForm,
+	field: "threshold" | "recoveryValue",
+	value: string,
+): RuleForm =>
 	form.escalation === null ? form : { ...form, escalation: { ...form.escalation, [field]: value } }
 
 /** `setKind`: the switch carries filters and the threshold's meaning, and may leave a notice. */
@@ -18,7 +25,10 @@ export const switchKind = (form: RuleForm, kind: SignalKind): { form: RuleForm; 
 	return { form: fromFormState(moved.form), notice: moved.notice }
 }
 
-export const setBuiltinSignal = (form: RuleForm, signalType: AlertSignalType): RuleForm => ({ ...form, signalType })
+export const setBuiltinSignal = (form: RuleForm, signalType: AlertSignalType): RuleForm => ({
+	...form,
+	signalType,
+})
 
 export const setSeverity = (form: RuleForm, severity: AlertSeverity): RuleForm => ({ ...form, severity })
 
@@ -62,9 +72,17 @@ export const updateTierIds = (
 		? { ...form, destinationIds: [...update(form.destinationIds)] }
 		: form.escalation === null
 			? form
-			: { ...form, escalation: { ...form.escalation, destinationIds: [...update(form.escalation.destinationIds)] } }
+			: {
+					...form,
+					escalation: {
+						...form.escalation,
+						destinationIds: [...update(form.escalation.destinationIds)],
+					},
+				}
 
-export const addId = (id: AlertDestinationId) => (ids: ReadonlyArray<AlertDestinationId>) => [...new Set([...ids, id])]
+export const addId = (id: AlertDestinationId) => (ids: ReadonlyArray<AlertDestinationId>) => [
+	...new Set([...ids, id]),
+]
 export const removeId = (id: AlertDestinationId) => (ids: ReadonlyArray<AlertDestinationId>) =>
 	ids.filter((existing) => existing !== id)
 

@@ -31,7 +31,13 @@ export const LoadHistory = Command.define("LoadChatHistory", {
 })
 
 export const PostMessage = Command.define("PostChatMessage", {
-	args: { sessionId: Schema.String, generation: Schema.Number, localId: Schema.String, text: Schema.String, raw: Schema.String },
+	args: {
+		sessionId: Schema.String,
+		generation: Schema.Number,
+		localId: Schema.String,
+		text: Schema.String,
+		raw: Schema.String,
+	},
 	messages: [Message.CompletedPostMessage],
 	execute: ({ sessionId, generation, localId, text, raw }) =>
 		postMessage(sessionId, text).pipe(
@@ -46,7 +52,8 @@ export const PostMessage = Command.define("PostChatMessage", {
 export const TrackMessageSent = Command.define("TrackChatMessageSent", {
 	args: { turn: Schema.Literals(["first", "followup"]) },
 	messages: [Message.CompletedTrackMessageSent],
-	execute: ({ turn }) => trackProduct("chat_message_sent", { turn }).pipe(Effect.as(Message.CompletedTrackMessageSent())),
+	execute: ({ turn }) =>
+		trackProduct("chat_message_sent", { turn }).pipe(Effect.as(Message.CompletedTrackMessageSent())),
 })
 
 export const AbortTurn = Command.define("AbortChatTurn", {
@@ -59,7 +66,9 @@ export const ParseMarkdown = Command.define("ParseChatMarkdown", {
 	args: { texts: Schema.Array(Schema.String) },
 	messages: [Message.CompletedParseMarkdown],
 	execute: ({ texts }) =>
-		Effect.map(parseMarkdownTexts(texts, prepareMath), (parsed) => Message.CompletedParseMarkdown({ parsed })),
+		Effect.map(parseMarkdownTexts(texts, prepareMath), (parsed) =>
+			Message.CompletedParseMarkdown({ parsed }),
+		),
 })
 
 /** One fence coloured by Shiki (loaded on first use); a failure leaves it plain. */
@@ -95,7 +104,9 @@ const EXTENSIONS = new Map([
 
 const saveFile = (name: string, contents: string | Blob, type: string) =>
 	Effect.sync(() => {
-		const url = URL.createObjectURL(typeof contents === "string" ? new Blob([contents], { type }) : contents)
+		const url = URL.createObjectURL(
+			typeof contents === "string" ? new Blob([contents], { type }) : contents,
+		)
 		const anchor = document.createElement("a")
 		anchor.href = url
 		anchor.download = name
@@ -120,7 +131,10 @@ export const DownloadCode = Command.define("DownloadChatCode", {
 	args: { code: Schema.String, language: Schema.String },
 	messages: [Message.CompletedCodeAction],
 	execute: ({ code, language }) =>
-		Effect.as(saveFile(`file.${EXTENSIONS.get(language.toLowerCase()) ?? "txt"}`, code, "text/plain"), Message.CompletedCodeAction()),
+		Effect.as(
+			saveFile(`file.${EXTENSIONS.get(language.toLowerCase()) ?? "txt"}`, code, "text/plain"),
+			Message.CompletedCodeAction(),
+		),
 })
 
 /** `nn`: the `<svg>` element of mermaid's markup, serialized as XML. */
@@ -139,7 +153,10 @@ const svgToPng = (svg: string) =>
 			canvas.width = image.width * 5
 			canvas.height = image.height * 5
 			canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height)
-			canvas.toBlob((blob) => resume(blob === null ? Effect.fail("unencodable") : Effect.succeed(blob)), "image/png")
+			canvas.toBlob(
+				(blob) => resume(blob === null ? Effect.fail("unencodable") : Effect.succeed(blob)),
+				"image/png",
+			)
 		}
 		image.onerror = () => resume(Effect.fail("unencodable"))
 		image.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
@@ -154,7 +171,11 @@ export const DownloadDiagram = Command.define("DownloadChatDiagram", {
 			? saveFile("diagram.mmd", code, "text/plain")
 			: Effect.map(renderMermaid(code), svgDocument).pipe(
 					Effect.flatMap((svg) =>
-						format === "svg" ? saveFile("diagram.svg", svg, "image/svg+xml") : Effect.flatMap(svgToPng(svg), (png) => saveFile("diagram.png", png, "image/png")),
+						format === "svg"
+							? saveFile("diagram.svg", svg, "image/svg+xml")
+							: Effect.flatMap(svgToPng(svg), (png) =>
+									saveFile("diagram.png", png, "image/png"),
+								),
 					),
 				)
 		).pipe(
@@ -181,7 +202,9 @@ export const DecideApproval = Command.define("DecideChatApproval", {
 			})
 			return { isError: response.isError === true, content: response.content }
 		}).pipe(
-			Effect.mapError((error) => ("message" in error && typeof error.message === "string" ? error.message : "Request failed")),
+			Effect.mapError((error) =>
+				"message" in error && typeof error.message === "string" ? error.message : "Request failed",
+			),
 			Effect.result,
 			Effect.map((result) => Message.CompletedDecideApproval({ toolCallId, tool, decision, result })),
 		),

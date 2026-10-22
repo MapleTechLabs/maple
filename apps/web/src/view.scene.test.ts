@@ -75,8 +75,14 @@ describe("root view", () => {
 			expectView(role("dialog")).not.toExist(),
 			click(role("button", { name: /Advanced filter/ })),
 			expectView(role("dialog")).toExist(),
-			Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })),
-			Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation: 1 })),
+			Command.resolve(
+				Animation.WaitForPaint,
+				Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+			),
+			Command.resolve(
+				Animation.WaitForAnimationSettled,
+				Animation.Message.EndedAnimation({ generation: 1 }),
+			),
 			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
 			Mount.resolve(MountWhereEditor, TracesMessage.FocusedAdvanced({ cursor: 0 })),
 			Mount.resolve(MountSuggestions, TracesMessage.CompletedPlaceAdvancedCursor()),

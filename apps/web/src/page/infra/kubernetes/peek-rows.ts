@@ -20,8 +20,13 @@ export const MountPodPeek = Mount.defineStream("MountPodPeek", {
 					const onClick = (event: Event) => {
 						if (!(event instanceof MouseEvent)) return
 						const isPlain =
-							event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
-						const row = event.target instanceof Element ? event.target.closest("a[data-peek-key]") : null
+							event.button === 0 &&
+							!event.metaKey &&
+							!event.ctrlKey &&
+							!event.shiftKey &&
+							!event.altKey
+						const row =
+							event.target instanceof Element ? event.target.closest("a[data-peek-key]") : null
 						const key = row?.getAttribute("data-peek-key")
 						if (!isPlain || key === null || key === undefined) return
 						event.preventDefault()

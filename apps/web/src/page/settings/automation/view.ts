@@ -26,7 +26,13 @@ import { Message, type Model, type PolicyDraft } from "./model"
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string }>
 
-const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
+const IDLE: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
 const CONFIDENCE_ITEMS = [
 	{ value: "any", label: "Any" },
 	{ value: "low", label: "Low" },
@@ -54,7 +60,13 @@ const destinationOptions = (h: H, model: Model, destinations: ReadonlyArray<Aler
 		),
 	}))
 
-const severityRule = (h: H, model: Model, draft: PolicyDraft, severity: IssueSeverity, destinations: ReadonlyArray<AlertDestinationDocument>): Html => {
+const severityRule = (
+	h: H,
+	model: Model,
+	draft: PolicyDraft,
+	severity: IssueSeverity,
+	destinations: ReadonlyArray<AlertDestinationDocument>,
+): Html => {
 	const isLocked = !model.isAdmin || model.isSaving
 	const select = model.confidenceSelects[severity]
 	return h.div(
@@ -74,9 +86,13 @@ const severityRule = (h: H, model: Model, draft: PolicyDraft, severity: IssueSev
 										slotId: `escalation-confidence-${severity}`,
 										model: { ...select, value: draft[severity].minConfidence },
 										view: SelectView.view,
-										toParentMessage: (message) => Message.GotConfidenceSelectMessage({ severity, message }),
+										toParentMessage: (message) =>
+											Message.GotConfidenceSelectMessage({ severity, message }),
 										viewInputs: {
-											entries: CONFIDENCE_ITEMS.map((item): SelectView.SelectEntry => ({ _tag: "Item", item })),
+											entries: CONFIDENCE_ITEMS.map((item): SelectView.SelectEntry => ({
+												_tag: "Item",
+												item,
+											})),
 											size: "sm",
 											className: "w-[100px]",
 											// `<SelectValue />` without a renderer prints the raw value.
@@ -109,13 +125,19 @@ const destinationsBlock = (h: H, model: Model, draft: PolicyDraft): Html => {
 			[
 				h.p(
 					[h.Class("text-muted-foreground text-sm")],
-					["Escalation sends triaged issues to a destination. Add a Slack, email or webhook destination first."],
+					[
+						"Escalation sends triaged issues to a destination. Add a Slack, email or webhook destination first.",
+					],
 				),
 				h.div(
 					[h.Class("flex flex-wrap items-center gap-x-4 gap-y-2")],
 					[
 						h.a(
-							[h.Href("/alerts?tab=routing"), h.Class(cn(buttonVariants({ size: "sm", variant: "outline" }))), h.DataAttribute("slot", "button")],
+							[
+								h.Href("/alerts?tab=routing"),
+								h.Class(cn(buttonVariants({ size: "sm", variant: "outline" }))),
+								h.DataAttribute("slot", "button"),
+							],
 							["Add a destination"],
 						),
 						docsLink(h, "destinations"),
@@ -123,7 +145,10 @@ const destinationsBlock = (h: H, model: Model, draft: PolicyDraft): Html => {
 				),
 			],
 		)
-	return h.div([h.Class("space-y-4")], SEVERITY_ORDER.map((severity) => severityRule(h, model, draft, severity, destinations)))
+	return h.div(
+		[h.Class("space-y-4")],
+		SEVERITY_ORDER.map((severity) => severityRule(h, model, draft, severity, destinations)),
+	)
 }
 
 const policyForm = (h: H, model: Model, draft: PolicyDraft): Html =>
@@ -132,7 +157,11 @@ const policyForm = (h: H, model: Model, draft: PolicyDraft): Html =>
 		[
 			panel(h, { padded: true, className: "gap-4" }, [
 				settingRow(h, {
-					ids: { control: "escalation-enabled-input", label: "escalation-enabled-label", description: "escalation-enabled-description" },
+					ids: {
+						control: "escalation-enabled-input",
+						label: "escalation-enabled-label",
+						description: "escalation-enabled-description",
+					},
 					label: "Severity escalation",
 					description:
 						"Route issues to destinations when AI triage or a teammate sets their severity. Fires once per issue and severity level, upward only.",
@@ -155,13 +184,20 @@ const policyForm = (h: H, model: Model, draft: PolicyDraft): Html =>
 					[
 						button(
 							h,
-							{ size: "sm", isLoading: model.isSaving, isDisabled: !model.isAdmin, attributes: [h.OnClick(Message.ClickedSavePolicy())] },
+							{
+								size: "sm",
+								isLoading: model.isSaving,
+								isDisabled: !model.isAdmin,
+								attributes: [h.OnClick(Message.ClickedSavePolicy())],
+							},
 							["Save policy"],
 						),
 					],
 				),
 			]),
-			...(model.isAdmin ? [] : [adminOnlyNote(h, ["Only org admins can change the escalation policy."])]),
+			...(model.isAdmin
+				? []
+				: [adminOnlyNote(h, ["Only org admins can change the escalation policy."])]),
 		],
 	)
 
@@ -200,16 +236,40 @@ const policySection = (h: H, model: Model): Html =>
 
 const simulatorField = (h: H, name: string, label: string, control: Html): Html =>
 	field(h, { state: IDLE }, [
-		fieldLabel(h, { ids: { control: `simulator-${name}`, label: `simulator-${name}-label`, error: `simulator-${name}-error` }, state: IDLE }, label),
+		fieldLabel(
+			h,
+			{
+				ids: {
+					control: `simulator-${name}`,
+					label: `simulator-${name}-label`,
+					error: `simulator-${name}-error`,
+				},
+				state: IDLE,
+			},
+			label,
+		),
 		control,
 	])
 
 const decisionText = (h: H, model: Model): ReadonlyArray<Html | string> => {
 	if (model.isDirty)
-		return [h.span([h.Class("text-sm text-muted-foreground")], ["Save the policy above to simulate it. The simulator evaluates the saved policy."])]
-	const evaluated = model.evaluated !== null && model.evaluated.revision === model.revision ? model.evaluated.decision : null
+		return [
+			h.span(
+				[h.Class("text-sm text-muted-foreground")],
+				["Save the policy above to simulate it. The simulator evaluates the saved policy."],
+			),
+		]
+	const evaluated =
+		model.evaluated !== null && model.evaluated.revision === model.revision
+			? model.evaluated.decision
+			: null
 	if (evaluated === null)
-		return [h.span([h.Class("text-sm text-muted-foreground")], ["Preview the worker's decision under the saved policy without sending a notification."])]
+		return [
+			h.span(
+				[h.Class("text-sm text-muted-foreground")],
+				["Preview the worker's decision under the saved policy without sending a notification."],
+			),
+		]
 	const destinations = model.destinations ?? []
 	return [
 		badge(h, { variant: "outline", className: "capitalize" }, [evaluated.outcome]),
@@ -217,7 +277,11 @@ const decisionText = (h: H, model: Model): ReadonlyArray<Html | string> => {
 			[h.Class("text-sm text-muted-foreground")],
 			[
 				evaluated.outcome === "route"
-					? evaluated.destinationIds.map((id) => destinations.find((destination) => destination.id === id)?.name ?? id).join(", ")
+					? evaluated.destinationIds
+							.map(
+								(id) => destinations.find((destination) => destination.id === id)?.name ?? id,
+							)
+							.join(", ")
 					: (evaluated.skipReason?.replaceAll("_", " ") ?? ""),
 			],
 		),
@@ -235,18 +299,35 @@ const simulator = (h: H, model: Model): Html =>
 					view: SelectView.view,
 					toParentMessage: (message) => Message.GotSeveritySelectMessage({ message }),
 					viewInputs: {
-						entries: SEVERITY_ORDER.map((severity): SelectView.SelectEntry => ({ _tag: "Item", item: { value: severity, label: SEVERITY_LABEL[severity] } })),
+						entries: SEVERITY_ORDER.map((severity): SelectView.SelectEntry => ({
+							_tag: "Item",
+							item: { value: severity, label: SEVERITY_LABEL[severity] },
+						})),
 						ariaLabel: "Severity",
 						className: "h-8 w-full",
 						renderValue: (value) => {
 							const severity = SEVERITY_ORDER.find((entry) => entry === value) ?? null
-							return [h.span([h.Class("flex items-center gap-2")], [severityDot(h, severity), severity === null ? "Not set" : SEVERITY_LABEL[severity]])]
+							return [
+								h.span(
+									[h.Class("flex items-center gap-2")],
+									[
+										severityDot(h, severity),
+										severity === null ? "Not set" : SEVERITY_LABEL[severity],
+									],
+								),
+							]
 						},
 						renderItem: (option) => {
 							const severity = SEVERITY_ORDER.find((entry) => entry === option.value) ?? null
-							return [h.span([h.Class("flex items-center gap-2")], [severityDot(h, severity), option.label])]
+							return [
+								h.span(
+									[h.Class("flex items-center gap-2")],
+									[severityDot(h, severity), option.label],
+								),
+							]
 						},
-						toView: (parts) => simulatorField(h, "severity", "Severity", h.div([h.Class("contents")], parts)),
+						toView: (parts) =>
+							simulatorField(h, "severity", "Severity", h.div([h.Class("contents")], parts)),
 					},
 				}),
 				simulatorField(
@@ -255,7 +336,11 @@ const simulator = (h: H, model: Model): Html =>
 					"Decision source",
 					nativeSelect(
 						h,
-						{ className: "w-full", defaultValue: model.source, attributes: [h.OnChange((value) => Message.ChangedSource({ value }))] },
+						{
+							className: "w-full",
+							defaultValue: model.source,
+							attributes: [h.OnChange((value) => Message.ChangedSource({ value }))],
+						},
 						[nativeOption("ai", "AI diagnosis"), nativeOption("manual", "Manual change")],
 					),
 				),
@@ -281,7 +366,12 @@ const simulator = (h: H, model: Model): Html =>
 			[
 				button(
 					h,
-					{ size: "sm", isLoading: model.isEvaluating, isDisabled: model.isDirty, attributes: [h.OnClick(Message.ClickedEvaluate())] },
+					{
+						size: "sm",
+						isLoading: model.isEvaluating,
+						isDisabled: model.isDirty,
+						attributes: [h.OnClick(Message.ClickedEvaluate())],
+					},
 					["Evaluate policy"],
 				),
 				...decisionText(h, model),
@@ -290,45 +380,65 @@ const simulator = (h: H, model: Model): Html =>
 	])
 
 const recentDeliveries = (h: H, model: Model, inputs: Inputs): Html =>
-	settingsSection(h, { id: "automation-recent-heading", title: "Recent escalation deliveries", padded: false }, [
-		AsyncData.matchData(model.attempts, {
-			onEmpty: () => skeletonList(h, { rows: 3, rowClassName: "h-10", gap: "2", className: "p-4" }),
-			onFailure: (failure) =>
-				errorState(h, { failure, title: "Recent escalation activity could not be loaded", variant: "inline", className: "px-4" }),
-			onData: (response) =>
-				response.attempts.length === 0
-					? emptyMessage(h, {}, ["No escalation attempts have been recorded."])
-					: h.div(
-							[],
-							response.attempts.map((attempt) =>
-								listRow(h, {
-									divided: true,
-									leading: h.span(
-										[h.Class("flex w-32 items-center gap-2")],
-										[severityBadge(h, attempt.severity), h.span([h.Class("capitalize")], [attempt.status])],
-									),
-									title: h.span(
-										[h.Class("font-normal text-muted-foreground")],
-										[
-											attempt.deliveries.length > 0
-												? attempt.deliveries
-														.map((delivery) => `${delivery.destinationName ?? delivery.destinationId}: ${delivery.status}`)
-														.join(", ")
-												: (attempt.skipReason?.replaceAll("_", " ") ?? "Awaiting delivery"),
-										],
-									),
-									trailing: relativeTime(h, {
-										value: attempt.createdAt,
-										nowMs: inputs.nowMs,
-										timeZone: inputs.timeZone,
-										className: "text-xs text-muted-foreground",
+	settingsSection(
+		h,
+		{ id: "automation-recent-heading", title: "Recent escalation deliveries", padded: false },
+		[
+			AsyncData.matchData(model.attempts, {
+				onEmpty: () => skeletonList(h, { rows: 3, rowClassName: "h-10", gap: "2", className: "p-4" }),
+				onFailure: (failure) =>
+					errorState(h, {
+						failure,
+						title: "Recent escalation activity could not be loaded",
+						variant: "inline",
+						className: "px-4",
+					}),
+				onData: (response) =>
+					response.attempts.length === 0
+						? emptyMessage(h, {}, ["No escalation attempts have been recorded."])
+						: h.div(
+								[],
+								response.attempts.map((attempt) =>
+									listRow(h, {
+										divided: true,
+										leading: h.span(
+											[h.Class("flex w-32 items-center gap-2")],
+											[
+												severityBadge(h, attempt.severity),
+												h.span([h.Class("capitalize")], [attempt.status]),
+											],
+										),
+										title: h.span(
+											[h.Class("font-normal text-muted-foreground")],
+											[
+												attempt.deliveries.length > 0
+													? attempt.deliveries
+															.map(
+																(delivery) =>
+																	`${delivery.destinationName ?? delivery.destinationId}: ${delivery.status}`,
+															)
+															.join(", ")
+													: (attempt.skipReason?.replaceAll("_", " ") ??
+														"Awaiting delivery"),
+											],
+										),
+										trailing: relativeTime(h, {
+											value: attempt.createdAt,
+											nowMs: inputs.nowMs,
+											timeZone: inputs.timeZone,
+											className: "text-xs text-muted-foreground",
+										}),
 									}),
-								}),
+								),
 							),
-						),
-		}),
-	])
+			}),
+		],
+	)
 
 export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, h) =>
-	settingsSections(h, "standard", [policySection(h, model), simulator(h, model), recentDeliveries(h, model, inputs)]),
+	settingsSections(h, "standard", [
+		policySection(h, model),
+		simulator(h, model),
+		recentDeliveries(h, model, inputs),
+	]),
 )

@@ -39,7 +39,10 @@ export const suggestionRequestOf = (lookup: SuggestionLookup, window: TimeWindow
 	}
 }
 
-const facet = (field: FunnelPopulationFilterField, rows: ReadonlyArray<{ readonly name: string }>): ReadonlyArray<Suggestion> =>
+const facet = (
+	field: FunnelPopulationFilterField,
+	rows: ReadonlyArray<{ readonly name: string }>,
+): ReadonlyArray<Suggestion> =>
 	rows.flatMap((row) => (row.name === "" ? [] : [{ name: row.name, count: null, field }]))
 
 export const fetchSuggestions = (lookup: SuggestionLookup, window: TimeWindow) => {

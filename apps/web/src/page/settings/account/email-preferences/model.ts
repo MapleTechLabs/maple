@@ -21,7 +21,10 @@ export type DigestDraft = typeof DigestDraft.Type
 /** `null`: never subscribed (the 404), so Maple's defaults apply. */
 export const SubscriptionData = AsyncData.Schema(Schema.NullOr(DigestSubscriptionResponse), LoadFailure)
 
-export const Facets = Schema.Struct({ namespaces: Schema.Array(Schema.String), environments: Schema.Array(Schema.String) })
+export const Facets = Schema.Struct({
+	namespaces: Schema.Array(Schema.String),
+	environments: Schema.Array(Schema.String),
+})
 
 export const Model = Schema.Struct({
 	isLoaded: Schema.Boolean,
@@ -56,7 +59,9 @@ export const Message = defineMessageUnion({
 		supportedZones: Schema.Array(Schema.String),
 		browserZone: Schema.NullOr(Schema.String),
 	},
-	CompletedFetchSubscription: { result: Schema.Result(Schema.NullOr(DigestSubscriptionResponse), LoadFailure) },
+	CompletedFetchSubscription: {
+		result: Schema.Result(Schema.NullOr(DigestSubscriptionResponse), LoadFailure),
+	},
 	CompletedFetchFacets: { facets: Facets },
 	ClickedRetry: {},
 	ToggledOps: {},

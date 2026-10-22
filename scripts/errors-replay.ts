@@ -50,9 +50,13 @@ const decodeEnvelope = Schema.decodeUnknownSync(Schema.Struct({ rows: Schema.Arr
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))
 
 const text = readFileSync(values.file ?? "", "utf8").trim()
-const raw = text.startsWith("{") && text.includes('"rows"')
-	? decodeEnvelope(decodeJson(text)).rows
-	: text.split("\n").filter((line) => line.trim() !== "").map((line) => decodeJson(line))
+const raw =
+	text.startsWith("{") && text.includes('"rows"')
+		? decodeEnvelope(decodeJson(text)).rows
+		: text
+				.split("\n")
+				.filter((line) => line.trim() !== "")
+				.map((line) => decodeJson(line))
 const rows = decodeRows(raw)
 
 const weight = (row: Row) => row.count ?? 1
@@ -83,7 +87,9 @@ const hashed = keyed.filter((k) => k.row.fingerprintHash !== undefined)
 if (hashed.length > 0) {
 	const hashes = distinct(hashed.map((k) => k.row.fingerprintHash ?? ""))
 	const mirrored = distinct(hashed.map((k) => k.current))
-	console.log(`  production hashes ${hashes}   (TS mirror: ${mirrored}${hashes === mirrored ? ", in parity" : ", NOT in parity"})`)
+	console.log(
+		`  production hashes ${hashes}   (TS mirror: ${mirrored}${hashes === mirrored ? ", in parity" : ", NOT in parity"})`,
+	)
 }
 
 const groupBy = <K>(items: ReadonlyArray<Keyed>, key: (k: Keyed) => K) => {
@@ -105,7 +111,9 @@ const byType = [...groupBy(keyed, (k) => `${k.row.serviceName} · ${k.row.except
 	.filter((entry) => entry.before !== entry.after)
 	.sort((a, b) => b.before - b.after - (a.before - a.after))
 for (const entry of byType.slice(0, top)) {
-	console.log(`  ${String(entry.before).padStart(4)} -> ${String(entry.after).padEnd(4)} ${clip(entry.label, 90)}`)
+	console.log(
+		`  ${String(entry.before).padStart(4)} -> ${String(entry.after).padEnd(4)} ${clip(entry.label, 90)}`,
+	)
 }
 if (byType.length === 0) console.log("  (no change)")
 

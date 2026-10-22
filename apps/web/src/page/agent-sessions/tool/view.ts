@@ -42,7 +42,13 @@ const failureOf = <A>(data: AsyncData.AsyncData<A, LoadFailure>): LoadFailure | 
 const isPendingFirst = <A>(data: AsyncData.AsyncData<A, LoadFailure>): boolean =>
 	!AsyncData.hasData(data) && failureOf(data) === undefined
 
-const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, controls: Html | undefined): Html => {
+const header = (
+	h: H,
+	model: Model,
+	totals: TotalsResult,
+	timeZone: string,
+	controls: Html | undefined,
+): Html => {
 	const { current } = totals
 	const subtitle = [
 		`${formatToolCount(current.calls)} ${pluralize(current.calls, "call")} in ${formatToolCount(current.sessions)} ${pluralize(current.sessions, "session")}`,
@@ -83,7 +89,9 @@ const header = (h: H, model: Model, totals: TotalsResult, timeZone: string, cont
 					h.p([h.Class("font-mono text-ui text-muted-foreground")], [subtitle.join(" · ")]),
 				],
 			),
-			...(controls === undefined ? [] : [h.div([h.Class("flex shrink-0 items-center gap-2 pt-1")], [controls])]),
+			...(controls === undefined
+				? []
+				: [h.div([h.Class("flex shrink-0 items-center gap-2 pt-1")], [controls])]),
 		],
 	)
 }
@@ -144,13 +152,7 @@ const timeActions = (h: H, model: Model): Html =>
 			}),
 	})
 
-const loadedView = (
-	h: H,
-	model: Model,
-	totals: TotalsResult,
-	timeZone: string,
-	isRoute: boolean,
-): Html => {
+const loadedView = (h: H, model: Model, totals: TotalsResult, timeZone: string, isRoute: boolean): Html => {
 	const { window, themeColors } = model
 	if (window === null || themeColors === null) return h.empty
 	const isWaiting = AsyncData.isRefreshing(model.totals.data)
@@ -160,7 +162,12 @@ const loadedView = (
 		// The route fills empty buckets; the lab hands the view its fixture's series as they are.
 		onSome: (value) =>
 			isRoute
-				? fillSeriesBuckets(value.data, range.startMs, range.endMs, chartBucketSeconds(range.startMs, range.endMs))
+				? fillSeriesBuckets(
+						value.data,
+						range.startMs,
+						range.endMs,
+						chartBucketSeconds(range.startMs, range.endMs),
+					)
 				: value.data,
 	})
 	const sessions = AsyncData.getOrElse(model.sessions.data, () => ({ data: [] })).data

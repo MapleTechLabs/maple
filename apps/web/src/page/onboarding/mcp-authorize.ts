@@ -75,7 +75,10 @@ export const InspectMcpAuthorization = Command.define("InspectMcpAuthorization",
 			Effect.catch((error) =>
 				Effect.succeed(
 					Message.FailedInspectMcpAuthorization({
-						message: endpointMessage(error, "This MCP authorization request is invalid or expired."),
+						message: endpointMessage(
+							error,
+							"This MCP authorization request is invalid or expired.",
+						),
 					}),
 				),
 			),

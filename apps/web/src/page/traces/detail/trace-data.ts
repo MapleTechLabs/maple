@@ -74,4 +74,3 @@ export const toSpanNode = (node: SpanNodeData): SpanNode => ({
 	resourceAttributes: { ...node.resourceAttributes },
 	children: node.children.map(toSpanNode),
 })
-

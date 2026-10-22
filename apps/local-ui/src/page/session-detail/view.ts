@@ -24,11 +24,17 @@ const transcriptBody = (h: HtmlBuilder<Message>, model: Model, session: SessionD
 	const failure = failureWithoutData(model.transcript)
 	if (Option.isSome(failure)) return errorState(h, { label: "transcript", failure: failure.value })
 	const events = Option.getOrElse(AsyncData.getData(model.transcript.data), () => [])
-	if (events.length === 0) return h.p([h.Class("text-sm text-muted-foreground")], ["No distilled events for this session."])
+	if (events.length === 0)
+		return h.p([h.Class("text-sm text-muted-foreground")], ["No distilled events for this session."])
 	return transcript(h, events, session.startTime)
 }
 
-const sessionBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDetail, timeFormat: TimeFormat): Html => {
+const sessionBody = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	session: SessionDetail,
+	timeFormat: TimeFormat,
+): Html => {
 	const label = session.userName || session.userEmail || session.userId || "Anonymous"
 	return h.div(
 		[h.Class("mx-auto max-w-5xl px-4 py-5")],
@@ -38,7 +44,10 @@ const sessionBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDeta
 			h.div(
 				[h.Class("mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]")],
 				[
-					h.div([h.Class("flex flex-col gap-5")], [clientCard(h, session, label), tracesCard(h, model, session.traceIds)]),
+					h.div(
+						[h.Class("flex flex-col gap-5")],
+						[clientCard(h, session, label), tracesCard(h, model, session.traceIds)],
+					),
 					card(h, "Event transcript", [transcriptBody(h, model, session)]),
 				],
 			),
@@ -47,12 +56,21 @@ const sessionBody = (h: HtmlBuilder<Message>, model: Model, session: SessionDeta
 }
 
 const content = (h: HtmlBuilder<Message>, model: Model, timeFormat: TimeFormat): Html => {
-	if (isPending(model.detail)) return h.div([h.Class("flex h-full items-center justify-center")], [spinner(h)])
+	if (isPending(model.detail))
+		return h.div([h.Class("flex h-full items-center justify-center")], [spinner(h)])
 	const failure = failureWithoutData(model.detail)
-	if (Option.isSome(failure)) return errorState(h, { label: "session", failure: failure.value, onRetry: Message.ClickedRetryDetail() })
+	if (Option.isSome(failure))
+		return errorState(h, {
+			label: "session",
+			failure: failure.value,
+			onRetry: Message.ClickedRetryDetail(),
+		})
 	const session = Option.getOrNull(AsyncData.getData(model.detail.data))
 	if (session === null)
-		return h.div([h.Class("flex h-full items-center justify-center text-sm text-muted-foreground")], ["Session not found."])
+		return h.div(
+			[h.Class("flex h-full items-center justify-center text-sm text-muted-foreground")],
+			["Session not found."],
+		)
 	return sessionBody(h, model, session, timeFormat)
 }
 
@@ -65,11 +83,21 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((opened,
 			h.div(
 				[h.Class("flex shrink-0 items-center gap-3 border-b px-4 py-2")],
 				[
-					button(h, { variant: "ghost", size: "sm", className: "gap-1.5", attributes: [h.OnClick(Message.ClickedBack())] }, [
-						icon(h, "ArrowLeftIcon"),
-						inputs.context.canGoBack ? "Back" : "Sessions",
-					]),
-					truncatedText(h, { text: model.sessionId, mono: true, className: "text-xs text-muted-foreground" }, [model.sessionId]),
+					button(
+						h,
+						{
+							variant: "ghost",
+							size: "sm",
+							className: "gap-1.5",
+							attributes: [h.OnClick(Message.ClickedBack())],
+						},
+						[icon(h, "ArrowLeftIcon"), inputs.context.canGoBack ? "Back" : "Sessions"],
+					),
+					truncatedText(
+						h,
+						{ text: model.sessionId, mono: true, className: "text-xs text-muted-foreground" },
+						[model.sessionId],
+					),
 					refreshButton(h, {
 						isSpinning: model.isRefreshing,
 						hasNewData: inputs.hasNewDataSince(model.detailUpdatedAtMs),

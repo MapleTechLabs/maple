@@ -16,18 +16,47 @@ const DIMENSIONS: ReadonlyArray<{
 	readonly isActive: (filters: TraceFilters) => boolean
 	readonly without: (opts: CH.TracesFacetsOpts, filters: TraceFilters) => CH.TracesFacetsOpts
 }> = [
-	{ dimension: "service", facetType: "service", isActive: (f) => !!f.service, without: (opts) => ({ ...opts, serviceName: undefined }) },
+	{
+		dimension: "service",
+		facetType: "service",
+		isActive: (f) => !!f.service,
+		without: (opts) => ({ ...opts, serviceName: undefined }),
+	},
 	{
 		dimension: "spanName",
 		facetType: "spanName",
 		isActive: (f) => !!f.span,
 		// Dropping the facet pick falls back to the toolbar search, if any.
-		without: (opts, f) => ({ ...opts, spanName: f.search, matchModes: f.search ? { spanName: "contains" } : undefined }),
+		without: (opts, f) => ({
+			...opts,
+			spanName: f.search,
+			matchModes: f.search ? { spanName: "contains" } : undefined,
+		}),
 	},
-	{ dimension: "httpMethod", facetType: "httpMethod", isActive: (f) => !!f.method, without: (opts) => ({ ...opts, httpMethod: undefined }) },
-	{ dimension: "httpStatus", facetType: "httpStatus", isActive: (f) => !!f.status, without: (opts) => ({ ...opts, httpStatusCode: undefined }) },
-	{ dimension: "deploymentEnv", facetType: "deploymentEnv", isActive: (f) => !!f.env, without: (opts) => ({ ...opts, deploymentEnv: undefined }) },
-	{ dimension: "serviceNamespace", facetType: "serviceNamespace", isActive: (f) => !!f.ns, without: (opts) => ({ ...opts, namespace: undefined }) },
+	{
+		dimension: "httpMethod",
+		facetType: "httpMethod",
+		isActive: (f) => !!f.method,
+		without: (opts) => ({ ...opts, httpMethod: undefined }),
+	},
+	{
+		dimension: "httpStatus",
+		facetType: "httpStatus",
+		isActive: (f) => !!f.status,
+		without: (opts) => ({ ...opts, httpStatusCode: undefined }),
+	},
+	{
+		dimension: "deploymentEnv",
+		facetType: "deploymentEnv",
+		isActive: (f) => !!f.env,
+		without: (opts) => ({ ...opts, deploymentEnv: undefined }),
+	},
+	{
+		dimension: "serviceNamespace",
+		facetType: "serviceNamespace",
+		isActive: (f) => !!f.ns,
+		without: (opts) => ({ ...opts, namespace: undefined }),
+	},
 ]
 
 const facetOpts = (filters: TraceFilters): CH.TracesFacetsOpts => ({
@@ -53,7 +82,9 @@ const toDurationStats = (row: CH.TracesDurationStatsOutput | undefined): Option.
 		p95DurationMs: row.p95DurationMs,
 	}
 	const values = Object.values(stats)
-	return values.some((v) => !Number.isFinite(v)) || stats.maxDurationMs <= 0 ? Option.none() : Option.some(stats)
+	return values.some((v) => !Number.isFinite(v)) || stats.maxDurationMs <= 0
+		? Option.none()
+		: Option.some(stats)
 }
 
 export const fetchTraceFacets = (filters: TraceFilters, bounds: TimeBounds, apiBase: string) =>
@@ -66,7 +97,11 @@ export const fetchTraceFacets = (filters: TraceFilters, bounds: TimeBounds, apiB
 				queryRows(CH.compileUnion(CH.tracesFacetsQuery(opts), params), apiBase),
 				queryRows(
 					CH.compile(
-						CH.tracesDurationStatsQuery({ ...opts, minDurationMs: undefined, maxDurationMs: undefined }),
+						CH.tracesDurationStatsQuery({
+							...opts,
+							minDurationMs: undefined,
+							maxDurationMs: undefined,
+						}),
 						params,
 					),
 					apiBase,
@@ -75,7 +110,10 @@ export const fetchTraceFacets = (filters: TraceFilters, bounds: TimeBounds, apiB
 					active,
 					(d) =>
 						queryRows(
-							CH.compileUnion(CH.tracesFacetsQuery({ ...d.without(opts, filters), facet: d.dimension }), params),
+							CH.compileUnion(
+								CH.tracesFacetsQuery({ ...d.without(opts, filters), facet: d.dimension }),
+								params,
+							),
 							apiBase,
 						),
 					{ concurrency: "unbounded" },

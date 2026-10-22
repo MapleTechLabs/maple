@@ -60,7 +60,11 @@ export const buildHeatmap = (spec: HeatmapSpec): BuiltChart<Slot, string, string
 					grid: false,
 					axis: {
 						line: false,
-						ticks: { size: 0, padding: 6, format: (value: string) => spec.yLabels[value] ?? value },
+						ticks: {
+							size: 0,
+							padding: 6,
+							format: (value: string) => spec.yLabels[value] ?? value,
+						},
 						tickLabels: { thin: { priority: "ends" } },
 					},
 				},
@@ -69,7 +73,13 @@ export const buildHeatmap = (spec: HeatmapSpec): BuiltChart<Slot, string, string
 			focus: "nearest",
 			focusRing: false,
 			tooltip: spec.showTooltip
-				? { use: tooltip, className: "maple-plot-tooltip", anchor: "point", placement: "top", offset: 6 }
+				? {
+						use: tooltip,
+						className: "maple-plot-tooltip",
+						anchor: "point",
+						placement: "top",
+						offset: 6,
+					}
 				: false,
 		}),
 		focusKeyOf: (point) => `${point.datum.x}\u0000${point.datum.y}`,

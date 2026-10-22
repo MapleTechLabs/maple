@@ -85,7 +85,11 @@ export const AddWidget = Command.define("AddMetricWidgetToDashboard", {
 			yield* readDocument(orgId, dashboardId)
 			yield* Effect.forkDetach(
 				mutateDashboard(orgId, dashboardId, (document, nowIso) =>
-					withAddedWidget(document, { id, ...widget, layout: defaultWidgetLayout("chart") }, nowIso),
+					withAddedWidget(
+						document,
+						{ id, ...widget, layout: defaultWidgetLayout("chart") },
+						nowIso,
+					),
 				),
 			)
 		}).pipe(
@@ -182,7 +186,11 @@ export const update = (model: Model, message: Message, context: Context): Return
 				: Result.match(result, {
 						onSuccess: () => closedTo({ ...model, addingTo: null }, dashboardId),
 						onFailure: (failure) => ({
-							model: { ...model, addingTo: null, error: { title: "Failed to add widget", failure } },
+							model: {
+								...model,
+								addingTo: null,
+								error: { title: "Failed to add widget", failure },
+							},
 						}),
 					}),
 		CompletedCreateDashboard: ({ result }) =>

@@ -38,7 +38,10 @@ export type Model = typeof Model.Type
 export const init = (): Model => ({ names: Keyed.idle(), workloads: Keyed.idle() })
 
 export const Message = defineMessageUnion({
-	CompletedFetchNames: { key: Schema.String, result: Schema.Result(Schema.Array(Schema.String), LoadFailure) },
+	CompletedFetchNames: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(Schema.String), LoadFailure),
+	},
 	CompletedFetchWorkloads: { key: Schema.String, result: Schema.Result(ServiceWorkloads, LoadFailure) },
 })
 export type Message = typeof Message.Type
@@ -64,7 +67,11 @@ export const FetchNames = Command.define("FetchLensServiceNames", {
 			data:
 				input.namespaces === undefined
 					? { startTime: input.startTime, endTime: input.endTime }
-					: { startTime: input.startTime, endTime: input.endTime, namespaces: [...input.namespaces] },
+					: {
+							startTime: input.startTime,
+							endTime: input.endTime,
+							namespaces: [...input.namespaces],
+						},
 		}).pipe(
 			Effect.map((response) => [...new Set(response.data.map((row) => row.serviceName))].sort()),
 			Effect.mapError(toLoadFailure),
@@ -92,10 +99,15 @@ export const FetchWorkloads = Command.define("FetchLensServiceWorkloads", {
 	args: { key: Schema.String, input: WorkloadsInput },
 	messages: [Message.CompletedFetchWorkloads],
 	execute: ({ key, input }) =>
-		Effect.map(fetchServiceWorkloads(input), (result) => Message.CompletedFetchWorkloads({ key, result })),
+		Effect.map(fetchServiceWorkloads(input), (result) =>
+			Message.CompletedFetchWorkloads({ key, result }),
+		),
 })
 
-export type Return = Readonly<{ model: Model; commands: ReadonlyArray<Command.Command<Message, never, Resources>> }>
+export type Return = Readonly<{
+	model: Model
+	commands: ReadonlyArray<Command.Command<Message, never, Resources>>
+}>
 
 const workloadsStep = (model: Model, context: PageContext, window: TimeWindow, mode: Keyed.RequestMode) => {
 	const input = { services: AsyncData.getOrElse(model.names.data, () => []), ...window }
@@ -109,7 +121,12 @@ const workloadsStep = (model: Model, context: PageContext, window: TimeWindow, m
 }
 
 /** The names for the window, and the join over whatever names are known (empty until they land). */
-export const request = (model: Model, context: PageContext, window: TimeWindow, mode: Keyed.RequestMode): Return => {
+export const request = (
+	model: Model,
+	context: PageContext,
+	window: TimeWindow,
+	mode: Keyed.RequestMode,
+): Return => {
 	const input = namesInput(window, context.pinnedNamespace)
 	return applySteps<Model, Message>(model, [
 		keyed(
@@ -123,11 +140,18 @@ export const request = (model: Model, context: PageContext, window: TimeWindow, 
 	])
 }
 
-export const update = (model: Model, message: Message, context: PageContext, window: TimeWindow | null): Return =>
+export const update = (
+	model: Model,
+	message: Message,
+	context: PageContext,
+	window: TimeWindow | null,
+): Return =>
 	Message.match<Return>(message, {
 		CompletedFetchNames: ({ key, result }) => {
 			const next = { ...model, names: Keyed.accept(model.names, key, result) }
-			return window === null ? { model: next, commands: [] } : applySteps<Model, Message>(next, [workloadsStep(next, context, window, "Load")])
+			return window === null
+				? { model: next, commands: [] }
+				: applySteps<Model, Message>(next, [workloadsStep(next, context, window, "Load")])
 		},
 		CompletedFetchWorkloads: ({ key, result }) => ({
 			model: { ...model, workloads: Keyed.accept(model.workloads, key, result) },

@@ -44,7 +44,10 @@ export const taskPromptOf = (input: unknown): string =>
 	Option.match(decodePrompt(input), {
 		onNone: () => "sub-agent",
 		onSome: (fields) =>
-			Option.getOrElse(Option.orElse(nonBlank(fields.prompt), () => nonBlank(fields.description)), () => "sub-agent"),
+			Option.getOrElse(
+				Option.orElse(nonBlank(fields.prompt), () => nonBlank(fields.description)),
+				() => "sub-agent",
+			),
 	})
 
 /** The answer a sub-agent returned, out of the delegation tool's result. */
@@ -86,7 +89,8 @@ const leafToolPart = (call: ChatSubToolCall | ChatToolCall): LeafPart => {
 }
 
 const taskStatusOf = (call: ChatToolCall): TaskPart["status"] =>
-	call.task?.status ?? (call.isError === true ? "error" : call.output === undefined ? "running" : "completed")
+	call.task?.status ??
+	(call.isError === true ? "error" : call.output === undefined ? "running" : "completed")
 
 /** `answer` on a settled run, `errorText` on a failed one; neither key otherwise. */
 const withAnswer = (call: ChatToolCall): Pick<TaskPart, "answer" | "errorText"> => {
@@ -106,13 +110,11 @@ const toolCallToPart = (call: ChatToolCall): UIMessagePart => {
 		status: taskStatusOf(call),
 		...withAnswer(call),
 		budgetExhausted: taskBudgetExhausted(call.output),
-		messages: (call.task?.messages ?? []).map(
-			(message): SubMessage => ({
-				id: message.id,
-				role: message.role,
-				parts: interleave(message.text, message.toolCalls, leafToolPart),
-			}),
-		),
+		messages: (call.task?.messages ?? []).map((message): SubMessage => ({
+			id: message.id,
+			role: message.role,
+			parts: interleave(message.text, message.toolCalls, leafToolPart),
+		})),
 	}
 }
 
@@ -132,22 +134,20 @@ const interleave = <Call extends { readonly textOffset?: number }, Part>(
 	toPart: (call: Call) => Part,
 ): Array<Part | ReturnType<typeof TextPart.make>> => {
 	const seed: Interleaved<Part> = { parts: [], cursor: 0 }
-	const { parts, cursor } = Array.reduce(
-		calls,
-		seed,
-		(acc, call) => {
-			const offset = Math.min(Math.max(call.textOffset ?? text.length, acc.cursor), text.length)
-			const chunk = text.slice(acc.cursor, offset)
-			const prose = chunk === "" ? [] : [TextPart.make({ text: chunk, state: "done" })]
-			return { parts: [...acc.parts, ...prose, toPart(call)], cursor: offset }
-		},
-	)
+	const { parts, cursor } = Array.reduce(calls, seed, (acc, call) => {
+		const offset = Math.min(Math.max(call.textOffset ?? text.length, acc.cursor), text.length)
+		const chunk = text.slice(acc.cursor, offset)
+		const prose = chunk === "" ? [] : [TextPart.make({ text: chunk, state: "done" })]
+		return { parts: [...acc.parts, ...prose, toPart(call)], cursor: offset }
+	})
 	const tail = text.slice(cursor)
 	return tail === "" ? parts : [...parts, TextPart.make({ text: tail, state: "done" })]
 }
 
-export const interleaveParts = (text: string, calls: ReadonlyArray<ChatToolCall>): ReadonlyArray<UIMessagePart> =>
-	interleave(text, calls, toolCallToPart)
+export const interleaveParts = (
+	text: string,
+	calls: ReadonlyArray<ChatToolCall>,
+): ReadonlyArray<UIMessagePart> => interleave(text, calls, toolCallToPart)
 
 /** A materialized history message, re-interleaved. */
 export const historyMessageToUIMessage = (message: ChatMessage): UIMessage => ({
@@ -248,7 +248,8 @@ const settleTaskResult = (messages: Messages, event: ToolResultEvent): Messages 
 		...message,
 		parts: message.parts.map((part): UIMessagePart => {
 			if (part._tag !== "task" || part.toolCallId !== event.callId) return part
-			if (event.isError === true) return { ...part, status: "error", errorText: errorTextOf(event.output) }
+			if (event.isError === true)
+				return { ...part, status: "error", errorText: errorTextOf(event.output) }
 			const answer = taskAnswerOf(event.output)
 			const settled: TaskPart = { ...part, budgetExhausted: taskBudgetExhausted(event.output) }
 			return answer === undefined ? settled : { ...settled, answer }
@@ -294,19 +295,25 @@ export const applyChatEvent = (messages: Messages, event: ChatEvent, nowMs: numb
 		case "turn-start":
 			return ensureAssistant(messages, event.messageId, nowMs)
 		case "text-delta":
-			return updateMessage(ensureAssistant(messages, event.messageId, nowMs), event.messageId, (message) =>
-				appendTextDelta(message, event.text),
+			return updateMessage(
+				ensureAssistant(messages, event.messageId, nowMs),
+				event.messageId,
+				(message) => appendTextDelta(message, event.text),
 			)
 		case "tool-call":
-			return updateMessage(ensureAssistant(messages, event.messageId, nowMs), event.messageId, (message) =>
-				addToolCall(message, event),
+			return updateMessage(
+				ensureAssistant(messages, event.messageId, nowMs),
+				event.messageId,
+				(message) => addToolCall(message, event),
 			)
 		case "tool-result":
 			return updateMessage(settleTaskResult(messages, event), event.messageId, (message) =>
 				settleToolCall(message, event),
 			)
 		case "turn-retry":
-			return updateMessage(messages, event.messageId, (message) => retractText(message, event.retractChars))
+			return updateMessage(messages, event.messageId, (message) =>
+				retractText(message, event.retractChars),
+			)
 		case "turn-end":
 			return updateMessage(messages, event.messageId, finalizeStreamingText)
 	}

@@ -39,7 +39,11 @@ describe("command palette", () => {
 		expect(shownEntries(typedStore, context, true).entries.map((entry) => entry.id)).not.toContain(
 			"service:storefront",
 		)
-		const loaded = update(typedStore, Message.SucceededLoadServices({ serviceNames: ["storefront"] }), context)
+		const loaded = update(
+			typedStore,
+			Message.SucceededLoadServices({ serviceNames: ["storefront"] }),
+			context,
+		)
 		expect(shownEntries(loaded.model, context, true).entries[0]?.id).toBe("service:storefront")
 	})
 

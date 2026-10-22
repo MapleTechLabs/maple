@@ -122,7 +122,11 @@ In the Console, open **Settings → OpenTelemetry**, click **Add destination** a
 - **Workspaces:** the workspaces whose traffic you want in Maple.
 
 <figure class="shot">
-  <img src="/screenshots/docs/claude-api-01-console-destination.webp" alt="The Claude Console's Add destination form filled in for Maple: provider Custom, endpoint https://ingest.maple.dev, an Authorization header and Full content selected." loading="lazy" />
+	<img
+		src="/screenshots/docs/claude-api-01-console-destination.webp"
+		alt="The Claude Console's Add destination form filled in for Maple: provider Custom, endpoint https://ingest.maple.dev, an Authorization header and Full content selected."
+		loading="lazy"
+	/>
 </figure>
 
 Save, then click **Test** in the destination's **More actions** menu. The API sends one `anthropic.test` span with the service `claude-platform`, which you can find in **Explore → Traces**.
@@ -144,7 +148,11 @@ support.answer                              your span           service: support
 Run a two-turn conversation with one tool call, then open **Agent Sessions**. You should see one session with one trace per turn, the model calls with their tokens, and the tool call by name. The framework shows as **Unidentified**.
 
 <figure class="shot">
-  <img src="/screenshots/docs/claude-api-02-traces.webp" alt="The Traces tab of a Maple Agent Session: two turns, each with anthropic.messages.tool_runner, two anthropic.messages.create calls with token counts, and a lookup_order tool span." loading="lazy" />
+	<img
+		src="/screenshots/docs/claude-api-02-traces.webp"
+		alt="The Traces tab of a Maple Agent Session: two turns, each with anthropic.messages.tool_runner, two anthropic.messages.create calls with token counts, and a lookup_order tool span."
+		loading="lazy"
+	/>
 </figure>
 
 Cost shows as unpriced, because Claude's spans carry token counts without a price. Anthropic's [Usage and Cost API](https://platform.claude.com/docs/en/manage-claude/usage-cost-api) has spend per API key.

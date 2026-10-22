@@ -36,7 +36,12 @@ export const inlineEditableText = (
 	}>,
 ): Html => {
 	const rename = model.rename
-	if (options.isEditable && rename !== null && rename.sectionId === options.sectionId && rename.tabId === options.tabId)
+	if (
+		options.isEditable &&
+		rename !== null &&
+		rename.sectionId === options.sectionId &&
+		rename.tabId === options.tabId
+	)
 		return h.input([
 			h.Value(rename.draft),
 			h.AriaLabel(options.ariaLabel),
@@ -104,13 +109,20 @@ const tabBar = (h: H, model: Model, section: Section, activeTabId: string, isEdi
 								h.Type("button"),
 								h.Role("tab"),
 								h.AriaSelected(isActive),
-								h.OnClick(Message.ClickedSectionTab({ sectionId: section.id, tabId: tab.id })),
+								h.OnClick(
+									Message.ClickedSectionTab({ sectionId: section.id, tabId: tab.id }),
+								),
 								...(isEditable
 									? [
 											h.AriaKeyshortcuts("F2"),
 											h.OnKeyDownPreventDefault((key) =>
 												key === "F2"
-													? Option.some(Message.StartedRename({ sectionId: section.id, tabId: tab.id }))
+													? Option.some(
+															Message.StartedRename({
+																sectionId: section.id,
+																tabId: tab.id,
+															}),
+														)
 													: Option.none(),
 											),
 										]
@@ -139,7 +151,12 @@ const tabBar = (h: H, model: Model, section: Section, activeTabId: string, isEdi
 											className:
 												"opacity-0 transition-opacity focus-visible:opacity-100 group-hover/tab:opacity-100 pointer-coarse:opacity-100",
 											attributes: [
-												h.OnClick(Message.ClickedDeleteTab({ sectionId: section.id, tabId: tab.id })),
+												h.OnClick(
+													Message.ClickedDeleteTab({
+														sectionId: section.id,
+														tabId: tab.id,
+													}),
+												),
 											],
 										},
 										[icon(h, "TrashIcon")],
@@ -227,17 +244,25 @@ export const sectionView = (h: H, model: Model, inputs: SectionViewInputs): Html
 								h,
 								{
 									size: "icon-xs",
-									label: isCollapsed ? `Expand ${section.title}` : `Collapse ${section.title}`,
+									label: isCollapsed
+										? `Expand ${section.title}`
+										: `Collapse ${section.title}`,
 									attributes: [
 										h.AriaExpanded(!isCollapsed),
 										h.OnClick(
-											Message.ClickedSectionChevron({ sectionId: section.id, collapsed: !isCollapsed }),
+											Message.ClickedSectionChevron({
+												sectionId: section.id,
+												collapsed: !isCollapsed,
+											}),
 										),
 									],
 								},
 								[
 									icon(h, "ChevronDownIcon", {
-										className: cn("transition-transform duration-150", isCollapsed && "-rotate-90"),
+										className: cn(
+											"transition-transform duration-150",
+											isCollapsed && "-rotate-90",
+										),
 									}),
 								],
 							)
@@ -252,7 +277,12 @@ export const sectionView = (h: H, model: Model, inputs: SectionViewInputs): Html
 						className: "min-w-0 truncate text-sm font-semibold",
 					}),
 					...(hasTabs && !isCollapsed
-						? [h.div([h.Class("ml-2 min-w-0 flex-1")], [tabBar(h, model, section, activeTabId, isEditable)])]
+						? [
+								h.div(
+									[h.Class("ml-2 min-w-0 flex-1")],
+									[tabBar(h, model, section, activeTabId, isEditable)],
+								),
+							]
 						: []),
 					h.div(
 						[h.Class(cn("flex items-center gap-1", !hasTabs && "ml-auto"))],
@@ -266,7 +296,10 @@ export const sectionView = (h: H, model: Model, inputs: SectionViewInputs): Html
 												label: `Add widget to ${section.title}`,
 												attributes: [
 													h.OnClick(
-														Message.ClickedAddSectionWidget({ sectionId: section.id, tabId: activeTabId }),
+														Message.ClickedAddSectionWidget({
+															sectionId: section.id,
+															tabId: activeTabId,
+														}),
 													),
 												],
 											},
@@ -282,10 +315,18 @@ export const sectionView = (h: H, model: Model, inputs: SectionViewInputs): Html
 												model.sectionMenuId === section.id
 													? model.sectionMenu
 													: Menu.init(sectionMenuIdOf(section.id)),
-											entries: optionEntries(h, section, inputs.index, inputs.sectionCount),
+											entries: optionEntries(
+												h,
+												section,
+												inputs.index,
+												inputs.sectionCount,
+											),
 											label: `${section.title} options`,
 											toParentMessage: (message) =>
-												Message.GotSectionMenuMessage({ sectionId: section.id, message }),
+												Message.GotSectionMenuMessage({
+													sectionId: section.id,
+													message,
+												}),
 										}),
 									]
 								: []),

@@ -8,7 +8,10 @@ import {
 import { Command } from "foldkit"
 import * as Dialog from "../../../ui/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { OutMessage as ConversationOut, type Message as ConversationMessage } from "../../chat/conversation/message"
+import {
+	OutMessage as ConversationOut,
+	type Message as ConversationMessage,
+} from "../../chat/conversation/message"
 import type { ReadOnly } from "../../chat/conversation/model"
 import * as Conversation from "../../chat/conversation/update"
 import { LoadKnownServices } from "./command"
@@ -26,13 +29,21 @@ const SEEDED_BY_SERVER: Conversation.SendContext = { preamble: "" }
 const factValue = (facts: V2Investigation["snapshot"]["facts"], label: string): string | undefined =>
 	facts.find((fact) => fact.label.toLowerCase() === label)?.value
 
-const factKey = (label: string): string => label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")
+const factKey = (label: string): string =>
+	label
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "_")
+		.replace(/^_|_$/g, "")
 
 /** `contextFromInvestigation`: the subject as the chat knows it. */
 export const contextOf = (investigation: V2Investigation): InvestigationContext => {
 	const { subject, snapshot } = investigation
 	const kind =
-		subject.type === "freeform" ? "freeform" : subject.type === "fix_verification" ? "error" : subject.incident_kind
+		subject.type === "freeform"
+			? "freeform"
+			: subject.type === "fix_verification"
+				? "error"
+				: subject.incident_kind
 	const signalType = factValue(snapshot.facts, "signal")
 	const id =
 		subject.type === "freeform"
@@ -48,7 +59,11 @@ export const contextOf = (investigation: V2Investigation): InvestigationContext 
 		status: investigation.status,
 		...(signalType ? { signalType } : undefined),
 		...(snapshot.scope ? { scope: snapshot.scope } : undefined),
-		facts: snapshot.facts.map((fact) => ({ key: factKey(fact.label), label: fact.label, value: fact.value })),
+		facts: snapshot.facts.map((fact) => ({
+			key: factKey(fact.label),
+			label: fact.label,
+			value: fact.value,
+		})),
 		refs:
 			subject.type === "incident"
 				? {
@@ -57,10 +72,16 @@ export const contextOf = (investigation: V2Investigation): InvestigationContext 
 						...(snapshot.scope ? { serviceName: snapshot.scope } : undefined),
 					}
 				: subject.type === "fix_verification"
-					? { issueId: subject.issue_id, ...(snapshot.scope ? { serviceName: snapshot.scope } : undefined) }
+					? {
+							issueId: subject.issue_id,
+							...(snapshot.scope ? { serviceName: snapshot.scope } : undefined),
+						}
 					: undefined,
 		...(investigation.report
-			? { aiSummary: investigation.report.summary, aiSuspectedCause: investigation.report.suspectedCause }
+			? {
+					aiSummary: investigation.report.summary,
+					aiSuspectedCause: investigation.report.suspectedCause,
+				}
 			: undefined),
 	}
 }
@@ -76,13 +97,16 @@ const readOnlyOf = (model: Model, investigation: V2Investigation): ReadOnly =>
 
 const liftConversation = (model: Model, step: Conversation.Return): Return => ({
 	model: { ...model, conversation: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotConversationMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotConversationMessage({ message }),
+	),
 	outMessage:
 		step.outMessage === undefined
 			? undefined
 			: ConversationOut.match(step.outMessage, {
 					SentFirstMessage: () => undefined,
-					RequestedToast: ({ type, title }) => PageOutMessage.RequestedToast({ type, title, description: "" }),
+					RequestedToast: ({ type, title }) =>
+						PageOutMessage.RequestedToast({ type, title, description: "" }),
 				}),
 })
 
@@ -125,7 +149,9 @@ const followKnownServices = (result: Return): Return => {
 export const stepConversation = (model: Model, message: ConversationMessage): Return =>
 	model.conversation === null
 		? { model }
-		: followKnownServices(liftConversation(model, Conversation.update(model.conversation, message, SEEDED_BY_SERVER)))
+		: followKnownServices(
+				liftConversation(model, Conversation.update(model.conversation, message, SEEDED_BY_SERVER)),
+			)
 
 const liftReportSheet = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
@@ -133,7 +159,9 @@ const liftReportSheet = (model: Model, step: ReturnType<typeof Dialog.update>): 
 		reportSheet: step.model,
 		reportActionIndex: step.outMessage?._tag === "Closed" ? null : model.reportActionIndex,
 	},
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotReportSheetMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotReportSheetMessage({ message }),
+	),
 })
 
 /** A report card's action row: the card's own sheet opens on it. */

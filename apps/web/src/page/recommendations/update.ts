@@ -79,7 +79,10 @@ const settle = <A>(
 	options: Readonly<{ error: string; withMappings: boolean; success?: (value: A) => string }>,
 ): Return =>
 	Result.match(result, {
-		onFailure: (failure) => ({ model: { ...model, busy: null }, outMessage: errorToast(options.error, failure) }),
+		onFailure: (failure) => ({
+			model: { ...model, busy: null },
+			outMessage: errorToast(options.error, failure),
+		}),
 		onSuccess: (value) => {
 			const refreshed = load({ ...model, busy: null }, context, "Supersede", options.withMappings)
 			if (options.success === undefined) return refreshed
@@ -92,7 +95,11 @@ const settle = <A>(
 		},
 	})
 
-const startWrite = (model: Model, busy: NonNullable<Model["busy"]>, command: (issue: V2Recommendation) => Option.Option<Commands[number]>): Return =>
+const startWrite = (
+	model: Model,
+	busy: NonNullable<Model["busy"]>,
+	command: (issue: V2Recommendation) => Option.Option<Commands[number]>,
+): Return =>
 	model.busy !== null
 		? { model }
 		: Option.match(Option.flatMap(selectedOf(model), command), {
@@ -103,7 +110,9 @@ const startWrite = (model: Model, busy: NonNullable<Model["busy"]>, command: (is
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedFetchList: ({ key, result }) => ({ model: { ...model, list: Keyed.accept(model.list, key, result) } }),
+		CompletedFetchList: ({ key, result }) => ({
+			model: { ...model, list: Keyed.accept(model.list, key, result) },
+		}),
 		CompletedFetchMappings: ({ key, result }) => ({
 			model: { ...model, mappings: Keyed.accept(model.mappings, key, result) },
 		}),
@@ -124,8 +133,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							}),
 						),
 			),
-		ClickedDismiss: () => startWrite(model, "dismiss", (issue) => Option.some(DismissRecommendation({ id: issue.id }))),
-		ClickedReopen: () => startWrite(model, "reopen", (issue) => Option.some(ReopenRecommendation({ id: issue.id }))),
+		ClickedDismiss: () =>
+			startWrite(model, "dismiss", (issue) => Option.some(DismissRecommendation({ id: issue.id }))),
+		ClickedReopen: () =>
+			startWrite(model, "reopen", (issue) => Option.some(ReopenRecommendation({ id: issue.id }))),
 		CompletedApply: ({ result }) =>
 			settle(model, context, result, {
 				error: "Failed to create mapping",
@@ -133,7 +144,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				success: (mapping) => `Mapping created: ${mapping.source_key} → ${mapping.target_key}`,
 			}),
 		CompletedDismiss: ({ result }) =>
-			settle(model, context, result, { error: "Failed to dismiss recommendation", withMappings: false }),
+			settle(model, context, result, {
+				error: "Failed to dismiss recommendation",
+				withMappings: false,
+			}),
 		CompletedReopen: ({ result }) =>
 			settle(model, context, result, { error: "Failed to reopen recommendation", withMappings: false }),
 		GotCopyMessage: ({ message: inner }) => {
@@ -142,13 +156,27 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const isCurrent = "generation" in inner && inner.generation === model.copy.generation
 			const toast =
 				isCurrent && inner._tag === "SucceededCopy"
-					? { outMessage: PageOutMessage.RequestedToast({ type: "success", title: "Mapping copied", description: "" }) }
+					? {
+							outMessage: PageOutMessage.RequestedToast({
+								type: "success",
+								title: "Mapping copied",
+								description: "",
+							}),
+						}
 					: isCurrent && inner._tag === "FailedCopy"
-						? { outMessage: PageOutMessage.RequestedToast({ type: "error", title: "Failed to copy mapping", description: "" }) }
+						? {
+								outMessage: PageOutMessage.RequestedToast({
+									type: "error",
+									title: "Failed to copy mapping",
+									description: "",
+								}),
+							}
 						: {}
 			return {
 				model: { ...model, copy: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotCopyMessage({ message })),
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotCopyMessage({ message }),
+				),
 				...toast,
 			}
 		},

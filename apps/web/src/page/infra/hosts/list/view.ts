@@ -29,12 +29,14 @@ import { hostTable, hostTableLoading } from "./view-table"
 type H = HtmlBuilder<Message>
 
 /** `HostRow` columns `useTableSort` reads by key. */
-export const HOST_SORT_ACCESSORS: SortAccessors<HostRow> = new Map<string, (row: HostRow) => string | number>([
-	["cpuPct", (row) => row.cpuPct],
-	["hostName", (row) => row.hostName],
-	["load15", (row) => row.load15],
-	["lastSeen", (row) => row.lastSeen],
-])
+export const HOST_SORT_ACCESSORS: SortAccessors<HostRow> = new Map<string, (row: HostRow) => string | number>(
+	[
+		["cpuPct", (row) => row.cpuPct],
+		["hostName", (row) => row.hostName],
+		["load15", (row) => row.load15],
+		["lastSeen", (row) => row.lastSeen],
+	],
+)
 
 const openInstall = Message.GotInstallMessage({ message: InstallModal.Message.ClickedOpen() })
 

@@ -29,7 +29,9 @@ const sectionQuery = (model: Model): URLSearchParams => {
 
 const pageView = (h: HtmlBuilder<Message>, model: Model): Html => {
 	const presence = AsyncData.getData(model.presence)
-	const lastIngest = Option.flatMap(model.maybeServer, (server) => Option.fromNullishOr(server.lastIngestAtMs))
+	const lastIngest = Option.flatMap(model.maybeServer, (server) =>
+		Option.fromNullishOr(server.lastIngestAtMs),
+	)
 	return viewPage(
 		h,
 		model.page,
@@ -37,7 +39,10 @@ const pageView = (h: HtmlBuilder<Message>, model: Model): Html => {
 			context: pageContextOf(model),
 			presenceOf: (signal) => presenceOf(presence, signal),
 			presenceNowMs: Option.match(presence, { onNone: () => 0, onSome: (result) => result.nowMs }),
-			clockMs: Option.match(model.maybeServer, { onNone: () => 0, onSome: (server) => server.checkedAtMs }),
+			clockMs: Option.match(model.maybeServer, {
+				onNone: () => 0,
+				onSome: (server) => server.checkedAtMs,
+			}),
 			hasNewDataSince: (sinceMs) => sinceMs > 0 && Option.exists(lastIngest, (last) => last > sinceMs),
 		},
 		(message) => Message.GotPageMessage({ message }),
@@ -52,7 +57,8 @@ const mainContent = (h: HtmlBuilder<Message>, model: Model, page: Html): Readonl
 	const connection = connectionOf(model.maybeServer)
 	const isDisconnected = connection.status === "disconnected"
 	if (isDisconnected && !model.hasCache) return [disconnectedState(h, model)]
-	if (connection.status === "rejected" && connection.rejection !== null) return [rejectedState(h, connection.rejection)]
+	if (connection.status === "rejected" && connection.rejection !== null)
+		return [rejectedState(h, connection.rejection)]
 	if (connection.status === "rejected") return [page]
 	const nowMs = Option.match(model.maybeServer, { onNone: () => 0, onSome: (server) => server.checkedAtMs })
 	const notice = describeNotice({
@@ -83,7 +89,11 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
 							h,
 							[
 								h.header(
-									[h.Class("flex h-12 shrink-0 items-center gap-2 border-b px-4 md:hidden")],
+									[
+										h.Class(
+											"flex h-12 shrink-0 items-center gap-2 border-b px-4 md:hidden",
+										),
+									],
 									[
 										sidebarTrigger(h, {
 											state: model.isSidebarOpen ? "expanded" : "collapsed",
@@ -103,7 +113,9 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
 					"min-h-dvh",
 				),
 				// Base UI's sheet portals, after the frame.
-				...(model.isMobile && model.isSidebarOpenMobile ? [mobileSidebar(h, model, sectionQuery(model))] : []),
+				...(model.isMobile && model.isSidebarOpenMobile
+					? [mobileSidebar(h, model, sectionQuery(model))]
+					: []),
 				filterDrawer(h, model, filterRailOf(model, page)),
 			],
 		),

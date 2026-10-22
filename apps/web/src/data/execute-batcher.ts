@@ -79,11 +79,15 @@ export const makeExecuteBatcher = <E>(
 							onNone: (): Effect.Effect<ExecuteFailure<E>> =>
 								Effect.as(
 									Effect.logError("Execute batch send ended without an answer", cause),
-									new MissingBatchResultError({ message: "The batch request ended without an answer." }),
+									new MissingBatchResultError({
+										message: "The batch request ended without an answer.",
+									}),
 								),
 						}).pipe(
 							Effect.flatMap((error) =>
-								Effect.forEach(batch, (entry) => Deferred.fail(entry.settled, error), { discard: true }),
+								Effect.forEach(batch, (entry) => Deferred.fail(entry.settled, error), {
+									discard: true,
+								}),
 							),
 						),
 					onSuccess: (outcomes) =>

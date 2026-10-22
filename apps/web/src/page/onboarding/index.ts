@@ -113,7 +113,9 @@ export const keyOf = (route: AppRoute, inputs: Inputs): Option.Option<string> =>
 		!isSignedOut && Option.isSome(inputs.maybeOrgId) ? Option.some(key) : Option.none()
 	// `WrongRegionScreen` replaces every org-scoped route; the auth pages redirect first.
 	const isWrongRegion =
-		isClerkAuthEnabled && Option.isSome(wrongRegionOf(inputs.maybeOrganization)) && Option.isSome(withOrg(""))
+		isClerkAuthEnabled &&
+		Option.isSome(wrongRegionOf(inputs.maybeOrganization)) &&
+		Option.isSome(withOrg(""))
 	if (isWrongRegion && !AppRoute.isAnyOf(["Unsubscribe", "SignIn", "SignUp", "OrgRequired"])(route))
 		return Option.some(`WrongRegion:${hrefOf(route)}`)
 	return AppRoute.matchOrElse<Option.Option<string>>(
@@ -140,43 +142,72 @@ const fresh = <ScreenModel extends Screen, ScreenMessage>(
 	result: ScreenResult<ScreenModel, ScreenMessage>,
 	wrap: (message: ScreenMessage) => Message,
 ): Option.Option<Step> =>
-	Option.some(withScreen({ key, screen: result.model, switcher: OrgSwitcher.init("onboarding-org-switcher"), userMenu: Menu.init("onboarding-user-menu") }, result, wrap))
+	Option.some(
+		withScreen(
+			{
+				key,
+				screen: result.model,
+				switcher: OrgSwitcher.init("onboarding-org-switcher"),
+				userMenu: Menu.init("onboarding-user-menu"),
+			},
+			result,
+			wrap,
+		),
+	)
 
 export const init = (route: AppRoute, key: string, inputs: Inputs): Option.Option<Step> =>
 	key.startsWith("WrongRegion:")
 		? Option.flatMap(wrongRegionOf(inputs.maybeOrganization), (region) =>
-				fresh(key, { model: ClerkScreens.WrongRegion.make({ region, href: hrefOf(route) }) }, toClerkSignIn),
-			)
-		: AppRoute.matchOrElse<Option.Option<Step>>(
-		route,
-		{
-			CliLogin: ({ search }) => fresh(key, CliLogin.init(search.user_code), toCliLogin),
-			McpAuthorize: ({ search }) => fresh(key, McpAuthorize.init(search.request_id), toMcpAuthorize),
-			QuickStart: ({ search }) =>
 				fresh(
 					key,
-					QuickStart.init(storageKeyOf(inputs.maybeOrgId), search.checkout === "complete", needsRegion(inputs.maybeOrganization)),
-					toQuickStart,
-				),
-			SelectPlan: ({ search }) => fresh(key, SelectPlan.init(search.checkout === "complete"), toSelectPlan),
-			Unsubscribe: ({ search }) => fresh(key, { model: Unsubscribe.init(search.token) }, toUnsubscribe),
-			SignIn: ({ search }) =>
-				fresh(key, ClerkSignIn.init(validateInternalRedirect(search.redirect_url ?? null)), toClerkSignIn),
-			// Without a redirect Clerk would send a fresh sign-up to "/"; new users belong in onboarding.
-			SignUp: ({ search }) =>
-				fresh(
-					key,
-					{
-						model: ClerkScreens.SignUp.make({
-							target: validateInternalRedirect(search.redirect_url ?? null) ?? "/quick-start",
-						}),
-					},
+					{ model: ClerkScreens.WrongRegion.make({ region, href: hrefOf(route) }) },
 					toClerkSignIn,
 				),
-			OrgRequired: () => fresh(key, { model: ClerkScreens.OrgRequired.make({}) }, toClerkSignIn),
-		},
-		() => Option.none(),
-	)
+			)
+		: AppRoute.matchOrElse<Option.Option<Step>>(
+				route,
+				{
+					CliLogin: ({ search }) => fresh(key, CliLogin.init(search.user_code), toCliLogin),
+					McpAuthorize: ({ search }) =>
+						fresh(key, McpAuthorize.init(search.request_id), toMcpAuthorize),
+					QuickStart: ({ search }) =>
+						fresh(
+							key,
+							QuickStart.init(
+								storageKeyOf(inputs.maybeOrgId),
+								search.checkout === "complete",
+								needsRegion(inputs.maybeOrganization),
+							),
+							toQuickStart,
+						),
+					SelectPlan: ({ search }) =>
+						fresh(key, SelectPlan.init(search.checkout === "complete"), toSelectPlan),
+					Unsubscribe: ({ search }) =>
+						fresh(key, { model: Unsubscribe.init(search.token) }, toUnsubscribe),
+					SignIn: ({ search }) =>
+						fresh(
+							key,
+							ClerkSignIn.init(validateInternalRedirect(search.redirect_url ?? null)),
+							toClerkSignIn,
+						),
+					// Without a redirect Clerk would send a fresh sign-up to "/"; new users belong in onboarding.
+					SignUp: ({ search }) =>
+						fresh(
+							key,
+							{
+								model: ClerkScreens.SignUp.make({
+									target:
+										validateInternalRedirect(search.redirect_url ?? null) ??
+										"/quick-start",
+								}),
+							},
+							toClerkSignIn,
+						),
+					OrgRequired: () =>
+						fresh(key, { model: ClerkScreens.OrgRequired.make({}) }, toClerkSignIn),
+				},
+				() => Option.none(),
+			)
 
 // UPDATE
 
@@ -205,7 +236,9 @@ const updateSwitcher = (model: Model, message: OrgSwitcher.Message, inputs: Inpu
 	const next = OrgSwitcher.update(model.switcher, message)
 	const out = next.outMessage
 	const picked =
-		out !== undefined && out._tag === "SelectedOrganization" && !Option.contains(inputs.maybeOrgId, out.orgId)
+		out !== undefined &&
+		out._tag === "SelectedOrganization" &&
+		!Option.contains(inputs.maybeOrgId, out.orgId)
 			? inputs.memberships.find((organization) => organization.id === out.orgId)
 			: undefined
 	return {
@@ -216,7 +249,10 @@ const updateSwitcher = (model: Model, message: OrgSwitcher.Message, inputs: Inpu
 				? []
 				: [
 						Command.mapMessage(toSwitcher)(
-							OrgSwitcher.SwitchOrganization({ orgId: picked.id, targetUrl: OrgSwitcher.switchTargetOf(picked) }),
+							OrgSwitcher.SwitchOrganization({
+								orgId: picked.id,
+								targetUrl: OrgSwitcher.switchTargetOf(picked),
+							}),
 						),
 					]),
 		],
@@ -227,7 +263,9 @@ export const update = (model: Model, message: Message, inputs: Inputs): Step => 
 	const { screen } = model
 	return Message.match<Step>(message, {
 		GotCliLoginMessage: ({ message: child }) =>
-			screen._tag === "CliLogin" ? withScreen(model, CliLogin.update(screen, child), toCliLogin) : unchanged(model),
+			screen._tag === "CliLogin"
+				? withScreen(model, CliLogin.update(screen, child), toCliLogin)
+				: unchanged(model),
 		GotMcpAuthorizeMessage: ({ message: child }) =>
 			screen._tag === "McpAuthorize"
 				? withScreen(model, McpAuthorize.update(screen, child), toMcpAuthorize)

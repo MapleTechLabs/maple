@@ -1,5 +1,14 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { GAUGE_CENTER, type GaugeOptions, gaugeGeometry, LABEL_FONT_SIZE, polar, R_TICK_INNER, R_TICK_OUTER, VALUE_Y } from "./gauge"
+import {
+	GAUGE_CENTER,
+	type GaugeOptions,
+	gaugeGeometry,
+	LABEL_FONT_SIZE,
+	polar,
+	R_TICK_INNER,
+	R_TICK_OUTER,
+	VALUE_Y,
+} from "./gauge"
 
 // The gauge widget's dial, as SVG.
 
@@ -7,7 +16,12 @@ const attrs = <M>(h: HtmlBuilder<M>, entries: Readonly<Record<string, string | n
 	Object.entries(entries).map(([name, value]) => h.Attribute(name, String(value)))
 
 /** `useId().replace(/:/g, "")` of the first gauge: Base UI ids are not compared, so any stable id does. */
-export const gaugeDial = <M>(h: HtmlBuilder<M>, glowId: string, value: unknown, options: GaugeOptions): Html => {
+export const gaugeDial = <M>(
+	h: HtmlBuilder<M>,
+	glowId: string,
+	value: unknown,
+	options: GaugeOptions,
+): Html => {
 	const g = gaugeGeometry(value, options)
 	const { x: cx, y: cy, holeRadius } = GAUGE_CENTER
 	return h.svg(
@@ -24,11 +38,20 @@ export const gaugeDial = <M>(h: HtmlBuilder<M>, glowId: string, value: unknown, 
 			h.defs(
 				[],
 				[
-					h.filter(attrs(h, { id: `glow-${glowId}`, x: "-40%", y: "-40%", width: "180%", height: "180%" }), [
-						h.feGaussianBlur(attrs(h, { stdDeviation: "3" })),
-					]),
+					h.filter(
+						attrs(h, {
+							id: `glow-${glowId}`,
+							x: "-40%",
+							y: "-40%",
+							width: "180%",
+							height: "180%",
+						}),
+						[h.feGaussianBlur(attrs(h, { stdDeviation: "3" }))],
+					),
 					h.radialGradient(attrs(h, { id: `hole-${glowId}`, cx: "0.5", cy: "0.46", r: "0.6" }), [
-						h.stop(attrs(h, { offset: "0%", "stop-color": "var(--muted)", "stop-opacity": 0.55 })),
+						h.stop(
+							attrs(h, { offset: "0%", "stop-color": "var(--muted)", "stop-opacity": 0.55 }),
+						),
 						h.stop(attrs(h, { offset: "100%", "stop-color": "var(--muted)", "stop-opacity": 0 })),
 					]),
 				],
@@ -37,7 +60,9 @@ export const gaugeDial = <M>(h: HtmlBuilder<M>, glowId: string, value: unknown, 
 			h.g(
 				attrs(h, { filter: `url(#glow-${glowId})`, opacity: 0.7 }),
 				g.segments.flatMap((segment) =>
-					segment.filled ? [h.polygon(attrs(h, { points: segment.points, fill: segment.color }))] : [],
+					segment.filled
+						? [h.polygon(attrs(h, { points: segment.points, fill: segment.color }))]
+						: [],
 				),
 			),
 			...g.segments.map((segment) =>
@@ -81,7 +106,12 @@ export const gaugeDial = <M>(h: HtmlBuilder<M>, glowId: string, value: unknown, 
 			...g.labels.map((label) =>
 				h.text(
 					[
-						...attrs(h, { x: label.x, y: label.y, "text-anchor": "middle", "dominant-baseline": "central" }),
+						...attrs(h, {
+							x: label.x,
+							y: label.y,
+							"text-anchor": "middle",
+							"dominant-baseline": "central",
+						}),
 						h.Class("fill-muted-foreground"),
 						h.Style({ "font-size": `${LABEL_FONT_SIZE}px` }),
 					],
@@ -90,9 +120,18 @@ export const gaugeDial = <M>(h: HtmlBuilder<M>, glowId: string, value: unknown, 
 			),
 			h.text(
 				[
-					...attrs(h, { x: cx, y: VALUE_Y, "text-anchor": "middle", "dominant-baseline": "central" }),
+					...attrs(h, {
+						x: cx,
+						y: VALUE_Y,
+						"text-anchor": "middle",
+						"dominant-baseline": "central",
+					}),
 					h.Class("fill-foreground"),
-					h.Style({ "font-size": `${g.valueFontSize}px`, "font-weight": "600", "letter-spacing": "-0.02em" }),
+					h.Style({
+						"font-size": `${g.valueFontSize}px`,
+						"font-weight": "600",
+						"letter-spacing": "-0.02em",
+					}),
 				],
 				[g.formattedValue],
 			),

@@ -20,7 +20,9 @@ const toSections = (message: FilterSections.Message) => Message.GotFilterSection
 
 const SIDEBAR_FILTERS = { service: null, browser: null, device: null, errors: null }
 
-export const init = (context: PageContext): Readonly<{ model: Model; commands: ReadonlyArray<Command.Command<Message, never, Resources>> }> => {
+export const init = (
+	context: PageContext,
+): Readonly<{ model: Model; commands: ReadonlyArray<Command.Command<Message, never, Resources>> }> => {
 	const q = queryOf(context.location).get("q") ?? ""
 	return {
 		model: {
@@ -50,13 +52,17 @@ export const locationChanged = (model: Model, context: PageContext): UpdateRetur
 
 const typed = (model: Model, text: string): UpdateReturn => {
 	const version = model.search.version + 1
-	return { model: { ...model, search: { ...model.search, text, version } }, commands: [WaitSearchDebounce({ version })] }
+	return {
+		model: { ...model, search: { ...model.search, text, version } },
+		commands: [WaitSearchDebounce({ version })],
+	}
 }
 
 export const update = (model: Model, message: Message, context: PageContext): UpdateReturn => {
 	const query = queryOf(context.location)
 	return Message.match<UpdateReturn>(message, {
-		CompletedReadClock: ({ nowMs }) => load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context),
+		CompletedReadClock: ({ nowMs }) =>
+			load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context),
 		SucceededFetchSessions: ({ key, data, fetchedAtMs }) => {
 			const isCurrent = model.sessions.key === key
 			const sessions = accept(model.sessions, key, Result.succeed(data), fetchedAtMs)
@@ -76,56 +82,95 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		FailedFetchNextPage: ({ key, generation, failure }) =>
 			generation !== model.pageGeneration
 				? { model }
-				: { model: { ...model, isFetchingNextPage: false, sessions: accept(model.sessions, key, Result.fail(failure)) } },
+				: {
+						model: {
+							...model,
+							isFetchingNextPage: false,
+							sessions: accept(model.sessions, key, Result.fail(failure)),
+						},
+					},
 		SucceededFetchFacets: ({ key, facets, fetchedAtMs }) => ({
-			model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.succeed(facets), fetchedAtMs) }),
+			model: settleRefresh({
+				...model,
+				facets: accept(model.facets, key, Result.succeed(facets), fetchedAtMs),
+			}),
 		}),
 		FoundCachedSessions: ({ key, cached }) => {
 			if (model.sessions.key !== key) return { model }
-			const next = { ...model, sessions: acceptCached(model.sessions, key, cached, cached.isFresh), sessionsUpdatedAtMs: cached.updatedAtMs }
-			const step = { model: settleRefresh(next), commands: fetchAfterCache(next, context, "sessions", cached.isFresh) }
+			const next = {
+				...model,
+				sessions: acceptCached(model.sessions, key, cached, cached.isFresh),
+				sessionsUpdatedAtMs: cached.updatedAtMs,
+			}
+			const step = {
+				model: settleRefresh(next),
+				commands: fetchAfterCache(next, context, "sessions", cached.isFresh),
+			}
 			// A cached empty list renders `SignalEmptyState` as a fetched one does.
-			const isEmpty = Option.exists(AsyncData.getData(next.sessions.data), (data) => data.pages.every((page) => page.length === 0))
+			const isEmpty = Option.exists(AsyncData.getData(next.sessions.data), (data) =>
+				data.pages.every((page) => page.length === 0),
+			)
 			return isEmpty ? { ...step, outMessage: PageOutMessage.RequestedSignalPresence() } : step
 		},
 		FoundCachedFacets: ({ key, cached }) => {
 			if (model.facets.key !== key) return { model }
 			const next = { ...model, facets: acceptCached(model.facets, key, cached, cached.isFresh) }
-			return { model: settleRefresh(next), commands: fetchAfterCache(next, context, "facets", cached.isFresh) }
+			return {
+				model: settleRefresh(next),
+				commands: fetchAfterCache(next, context, "facets", cached.isFresh),
+			}
 		},
 		FailedFetchFacets: ({ key, failure }) => ({
 			model: settleRefresh({ ...model, facets: accept(model.facets, key, Result.fail(failure)) }),
 		}),
 		ClickedOpenFilters: () => ({ model, outMessage: PageOutMessage.RequestedFilterDrawer() }),
 		ClickedRefresh: () =>
-			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
+			model.isRefreshing
+				? { model }
+				: { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
 		CompletedReadRefreshClock: ({ nowMs }) => {
 			const next = snapToMinute(nowMs)
 			// `advance()`: a new minute re-anchors the window (new keys); else refetch in place.
 			if (Option.getOrNull(model.maybeAnchorMs) !== next)
-				return load({ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false }, context)
+				return load(
+					{ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false },
+					context,
+				)
 			const refetch = load({ ...model, nowMs }, context, true)
-			return { model: settleRefresh(refetch.model), commands: refetch.commands, outMessage: PageOutMessage.RefetchedInPlace() }
+			return {
+				model: settleRefresh(refetch.model),
+				commands: refetch.commands,
+				outMessage: PageOutMessage.RefetchedInPlace(),
+			}
 		},
 		ChangedSearch: ({ text }) => typed(model, text),
 		ClickedClearSearch: () => typed(model, ""),
 		ElapsedSearchDebounce: ({ version }) => {
 			if (version !== model.search.version) return { model }
 			const trimmed = model.search.text.trim()
-			return navigate({ ...model, search: { ...model.search, sent: trimmed } }, context, { q: trimmed === "" ? null : trimmed })
+			return navigate({ ...model, search: { ...model.search, sent: trimmed } }, context, {
+				q: trimmed === "" ? null : trimmed,
+			})
 		},
-		ToggledErrorsOnly: () => navigate(model, context, { errors: filtersOf(query).errorsOnly === true ? null : "1" }),
-		ToggledFacetOption: ({ param, name }) => navigate(model, context, { [param]: query.get(param) === name ? null : name }),
+		ToggledErrorsOnly: () =>
+			navigate(model, context, { errors: filtersOf(query).errorsOnly === true ? null : "1" }),
+		ToggledFacetOption: ({ param, name }) =>
+			navigate(model, context, { [param]: query.get(param) === name ? null : name }),
 		ClickedClearFilters: () => navigate(model, context, SIDEBAR_FILTERS),
 		ClickedClearAllFilters: () => navigate(model, context, { ...SIDEBAR_FILTERS, q: null }),
 		ChangedRange: ({ range }) => setRange(model, context, range),
 		ClickedWidenRange: () => setRange(model, context, WIDEST_RANGE),
 		GotFilterSectionsMessage: ({ message: child }) => {
 			const next = FilterSections.update(model.sections, child)
-			return { model: { ...model, sections: next.model }, commands: Command.mapMessages(next.commands ?? [], toSections) }
+			return {
+				model: { ...model, sections: next.model },
+				commands: Command.mapMessages(next.commands ?? [], toSections),
+			}
 		},
 		GotCopyMessage: ({ id, message: child }) => {
-			const next = updateCopy(model.copies, id, child, (copyId, copyMessage) => Message.GotCopyMessage({ id: copyId, message: copyMessage }))
+			const next = updateCopy(model.copies, id, child, (copyId, copyMessage) =>
+				Message.GotCopyMessage({ id: copyId, message: copyMessage }),
+			)
 			return { model: { ...model, copies: next.copies }, commands: next.commands }
 		},
 	})

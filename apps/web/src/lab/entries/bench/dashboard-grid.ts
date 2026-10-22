@@ -40,7 +40,13 @@ const buildBoard = (count: number): ReadonlyArray<{ id: string; title: string; l
 		y: number,
 	): ReadonlyArray<{ id: string; title: string; layout: Layout }> => {
 		if (widgets.length >= count) return widgets
-		const row = (kind: "stat" | "chart", label: string, xs: ReadonlyArray<number>, w: number, h: number) =>
+		const row = (
+			kind: "stat" | "chart",
+			label: string,
+			xs: ReadonlyArray<number>,
+			w: number,
+			h: number,
+		) =>
 			xs.slice(0, count - widgets.length).map((x, index) => ({
 				id: `${kind}-${widgets.length + index}`,
 				title: `${label} ${widgets.length + index}`,
@@ -49,7 +55,14 @@ const buildBoard = (count: number): ReadonlyArray<{ id: string; title: string; l
 		if (band(y) === 0) return step([...widgets, ...row("stat", "Stat", [0, 3, 6, 9], 3, 2)], y + 2)
 		if (band(y) === 1) return step([...widgets, ...row("chart", "Chart", [0, 6], 6, 6)], y + 6)
 		return step(
-			[...widgets, { id: `table-${widgets.length}`, title: `Table ${widgets.length}`, layout: { x: 0, y, w: 12, h: 5 } }],
+			[
+				...widgets,
+				{
+					id: `table-${widgets.length}`,
+					title: `Table ${widgets.length}`,
+					layout: { x: 0, y, w: 12, h: 5 },
+				},
+			],
 			y + 5,
 		)
 	}
@@ -75,7 +88,15 @@ const boardOf = (count: number) =>
 	})
 
 const LayoutWrite = Schema.Struct({
-	layouts: Schema.Array(Schema.Struct({ i: Schema.String, x: Schema.Number, y: Schema.Number, w: Schema.Number, h: Schema.Number })),
+	layouts: Schema.Array(
+		Schema.Struct({
+			i: Schema.String,
+			x: Schema.Number,
+			y: Schema.Number,
+			w: Schema.Number,
+			h: Schema.Number,
+		}),
+	),
 })
 const decodeLayoutWrite = Schema.decodeUnknownOption(LayoutWrite)
 
@@ -94,8 +115,9 @@ const BenchMessage = defineMessageUnion({
 })
 type BenchMessage = typeof BenchMessage.Type
 
-type Box = typeof LayoutWrite.Type["layouts"][number]
-const isMoved = (layout: Layout, box: Box) => box.x !== layout.x || box.y !== layout.y || box.w !== layout.w || box.h !== layout.h
+type Box = (typeof LayoutWrite.Type)["layouts"][number]
+const isMoved = (layout: Layout, box: Box) =>
+	box.x !== layout.x || box.y !== layout.y || box.w !== layout.w || box.h !== layout.h
 
 /** `onLayoutCommit`: the moved boxes applied to the board; an unchanged widget keeps its object. */
 const withLayouts = (model: BenchModel, layouts: ReadonlyArray<Box>): BenchModel => {
@@ -131,8 +153,14 @@ const boardStep = (model: BenchModel, message: Message) => {
 		.filter((command) => command.name === "UpdateDashboardWidgetLayouts")
 		.flatMap((command) => Option.toArray(decodeLayoutWrite(command.args)))
 	return {
-		model: written.reduce((acc, write) => withLayouts(acc, write.layouts), { ...model, board: next.model }),
-		commands: Command.mapMessages(commands.filter((command) => !LOCAL_ONLY.has(command.name)), toBoard),
+		model: written.reduce((acc, write) => withLayouts(acc, write.layouts), {
+			...model,
+			board: next.model,
+		}),
+		commands: Command.mapMessages(
+			commands.filter((command) => !LOCAL_ONLY.has(command.name)),
+			toBoard,
+		),
 	}
 }
 
@@ -147,8 +175,14 @@ const Flags = Schema.Struct({ count: Schema.Number })
 const init = (flags: typeof Flags.Type) => {
 	const started = pageInit({ dashboardId: DASHBOARD_ID, search: { mode: "edit" } }, CONTEXT)
 	const empty: BenchModel = { board: started.model, mountKey: 0, layoutCommits: 0, lastCommitSize: 0 }
-	const loaded = boardStep(empty, Message.UpdatedDashboard({ orgId: CONTEXT.orgId, maybeDocument: Option.some(boardOf(flags.count)) }))
-	return { model: loaded.model, commands: [...Command.mapMessages(started.commands ?? [], toBoard), ...loaded.commands] }
+	const loaded = boardStep(
+		empty,
+		Message.UpdatedDashboard({ orgId: CONTEXT.orgId, maybeDocument: Option.some(boardOf(flags.count)) }),
+	)
+	return {
+		model: loaded.model,
+		commands: [...Command.mapMessages(started.commands ?? [], toBoard), ...loaded.commands],
+	}
 }
 
 const BARS = Array.from({ length: 140 }, (_, index) => index)
@@ -162,7 +196,10 @@ const benchTile = (h: HtmlBuilder<Message>, widget: Widget): Html => {
 	performance.mark(TILE_RENDER_MARK)
 	const title = widget.display.title ?? widget.id
 	return h.div(
-		[h.DataAttribute("bench-tile", widget.id), h.Class("flex h-full flex-col overflow-hidden rounded-lg border bg-card")],
+		[
+			h.DataAttribute("bench-tile", widget.id),
+			h.Class("flex h-full flex-col overflow-hidden rounded-lg border bg-card"),
+		],
 		[
 			h.div(
 				[h.Class("flex items-center gap-2 px-3 py-2 text-xs")],
@@ -202,7 +239,8 @@ const boardView = Submodel.defineView<Model, Message, { mountKey: number }>((mod
 					model,
 					timeZone: CONTEXT.timeZone,
 					variables: {},
-					renderTile: (widget) => lazyTile(`${inputs.mountKey}:${widget.id}`, benchTile, [h, widget]) ?? h.div([], []),
+					renderTile: (widget) =>
+						lazyTile(`${inputs.mountKey}:${widget.id}`, benchTile, [h, widget]) ?? h.div([], []),
 				},
 				model.document,
 			),
@@ -216,7 +254,9 @@ const InstallDashboardGridBench = Mount.defineStream("InstallDashboardGridBench"
 		Stream.callback<ReturnType<typeof BenchMessage.RequestedRemount>>((queue) =>
 			Effect.acquireRelease(
 				Effect.sync(() =>
-					installDashboardGridBench(element, count, () => Queue.offerUnsafe(queue, BenchMessage.RequestedRemount())),
+					installDashboardGridBench(element, count, () =>
+						Queue.offerUnsafe(queue, BenchMessage.RequestedRemount()),
+					),
 				),
 				(uninstall) => Effect.sync(uninstall),
 			).pipe(Effect.flatMap(() => Effect.never)),
@@ -266,7 +306,9 @@ const subscriptions = Subscription.make<BenchModel, BenchMessage, Resources>()((
 export const lab = defineLabWithFlags("Dashboard grid bench", {
 	Model: BenchModel,
 	Flags,
-	flags: Effect.sync(() => ({ count: Number(new URLSearchParams(window.location.search).get("n") ?? "50") || 50 })),
+	flags: Effect.sync(() => ({
+		count: Number(new URLSearchParams(window.location.search).get("n") ?? "50") || 50,
+	})),
 	init,
 	update,
 	view,

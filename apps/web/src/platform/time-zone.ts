@@ -46,16 +46,21 @@ export const TIME_ZONE_PREFERENCE_EVENT = "maple:timezone-preference"
  */
 export const writeSelectedTimeZone = (selected: Option.Option<string>): Effect.Effect<void> =>
 	Effect.sync(() => {
-		writeLocalStorage(TIMEZONE_STORAGE_KEY, JSON.stringify(Option.getOrElse(selected, () => SYSTEM_VALUE)))
+		writeLocalStorage(
+			TIMEZONE_STORAGE_KEY,
+			JSON.stringify(Option.getOrElse(selected, () => SYSTEM_VALUE)),
+		)
 		window.dispatchEvent(new Event(TIME_ZONE_PREFERENCE_EVENT))
 	})
 
 const supportedValues = Option.liftThrowable(() => Intl.supportedValuesOf("timeZone"))
 
 /** `listSupportedTimeZones`: every zone the runtime knows, else UTC and the browser's own. */
-export const readSupportedTimeZones: Effect.Effect<ReadonlyArray<string>> = Effect.map(browserZone, (browser) =>
-	Option.getOrElse(
-		Option.filter(supportedValues(), (values) => values.length > 0),
-		() => [...new Set(["UTC", browser])],
-	),
+export const readSupportedTimeZones: Effect.Effect<ReadonlyArray<string>> = Effect.map(
+	browserZone,
+	(browser) =>
+		Option.getOrElse(
+			Option.filter(supportedValues(), (values) => values.length > 0),
+			() => [...new Set(["UTC", browser])],
+		),
 )

@@ -153,5 +153,7 @@ export const CopyPrompt = Command.define("CopyGcpPrompt", {
 	args: { text: Schema.String },
 	messages: [Message.CompletedGcpPromptCopy],
 	execute: ({ text }) =>
-		Effect.map(CopyButton.writeClipboard(text), (isCopied) => Message.CompletedGcpPromptCopy({ isCopied })),
+		Effect.map(CopyButton.writeClipboard(text), (isCopied) =>
+			Message.CompletedGcpPromptCopy({ isCopied }),
+		),
 })

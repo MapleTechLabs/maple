@@ -23,11 +23,7 @@ const GLOW_STYLE = {
 		"radial-gradient(ellipse at center, oklch(0.714 0.154 59 / 0.12) 0%, oklch(0.714 0.154 59 / 0.04) 40%, transparent 70%)",
 }
 
-export const authLayout = <M>(
-	h: HtmlBuilder<M>,
-	maxWidth: string,
-	children: ReadonlyArray<Html>,
-): Html =>
+export const authLayout = <M>(h: HtmlBuilder<M>, maxWidth: string, children: ReadonlyArray<Html>): Html =>
 	h.main(
 		[
 			h.Class(
@@ -35,10 +31,16 @@ export const authLayout = <M>(
 			),
 		],
 		[
-			h.div([h.Class("pointer-events-none absolute inset-0 -z-10 hidden sm:block"), h.Style(GRID_STYLE)], []),
+			h.div(
+				[h.Class("pointer-events-none absolute inset-0 -z-10 hidden sm:block"), h.Style(GRID_STYLE)],
+				[],
+			),
 			h.div([h.Class("absolute -z-10 pointer-events-none"), h.Style(GLOW_STYLE)], []),
 			h.p([h.Class("mb-6 text-lg font-semibold tracking-tight text-foreground")], ["maple"]),
-			h.div([h.Class(`relative w-full ${maxWidth} sm:border sm:border-border sm:bg-card sm:p-6`)], children),
+			h.div(
+				[h.Class(`relative w-full ${maxWidth} sm:border sm:border-border sm:bg-card sm:p-6`)],
+				children,
+			),
 		],
 	)
 

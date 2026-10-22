@@ -40,7 +40,11 @@ const patternRow = (h: HtmlBuilder<Message>, pattern: LogPattern, share: number)
 								),
 							),
 							h.div(
-								[h.Class("flex min-w-0 items-center gap-3 text-[11px] text-muted-foreground")],
+								[
+									h.Class(
+										"flex min-w-0 items-center gap-3 text-[11px] text-muted-foreground",
+									),
+								],
 								[
 									h.span(
 										[h.Class("flex shrink-0 items-center gap-2")],
@@ -64,11 +68,16 @@ const patternRow = (h: HtmlBuilder<Message>, pattern: LogPattern, share: number)
 												.slice(0, VISIBLE_SERVICES)
 												.map((s) => s.name)
 												.join(", "),
-											services.length > VISIBLE_SERVICES ? ` +${services.length - VISIBLE_SERVICES}` : "",
+											services.length > VISIBLE_SERVICES
+												? ` +${services.length - VISIBLE_SERVICES}`
+												: "",
 										],
 									),
 									h.span(
-										[h.Class("min-w-0 truncate font-mono text-muted-foreground/70"), h.Title(pattern.sample)],
+										[
+											h.Class("min-w-0 truncate font-mono text-muted-foreground/70"),
+											h.Title(pattern.sample),
+										],
 										[pattern.sample],
 									),
 								],
@@ -92,7 +101,15 @@ const shareColumn = (h: HtmlBuilder<Message>, count: number, percent: number): H
 				[
 					h.div(
 						[h.Class("h-1 flex-1 overflow-hidden rounded-full bg-muted")],
-						[h.div([h.Class("h-full rounded-full bg-primary/70"), h.Style({ width: `${percent}%` })], [])],
+						[
+							h.div(
+								[
+									h.Class("h-full rounded-full bg-primary/70"),
+									h.Style({ width: `${percent}%` }),
+								],
+								[],
+							),
+						],
 					),
 					h.span(
 						[h.Class("w-9 text-right text-[10px] text-muted-foreground tabular-nums")],
@@ -108,7 +125,10 @@ export const patternsList = (
 	options: Readonly<{ patterns: ReadonlyArray<LogPattern>; totalSampled: number; isDimmed: boolean }>,
 ): Html =>
 	h.ul(
-		[h.AriaLabel("Log patterns"), h.Class(cn("h-full overflow-auto", options.isDimmed && "opacity-60 transition-opacity"))],
+		[
+			h.AriaLabel("Log patterns"),
+			h.Class(cn("h-full overflow-auto", options.isDimmed && "opacity-60 transition-opacity")),
+		],
 		options.patterns.map((pattern) =>
 			patternRow(h, pattern, options.totalSampled > 0 ? pattern.count / options.totalSampled : 0),
 		),

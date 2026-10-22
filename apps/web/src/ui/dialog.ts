@@ -152,7 +152,9 @@ export const MountDialog = Mount.defineStream("MountDialog", {
 				return Stream.concat(
 					mounted,
 					Stream.merge(
-						outsidePresses(popup, [nestedPopups(element)]).pipe(Stream.map(() => Message.PressedOutside())),
+						outsidePresses(popup, [nestedPopups(element)]).pipe(
+							Stream.map(() => Message.PressedOutside()),
+						),
 						strayEscapes(element).pipe(Stream.map(() => Message.PressedEscape())),
 					),
 				)

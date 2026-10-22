@@ -46,7 +46,9 @@ export const popoverSpan = (model: Model): AiSessionSpan | undefined => {
 
 export const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, spanDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotSpanDialogMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotSpanDialogMessage({ message }),
+	),
 })
 
 const notPopover = (key: string) => !key.startsWith(`${POPOVER_KEY}:`)
@@ -137,7 +139,9 @@ export const CheckCloseFocus = Command.define("CheckAgentSessionCloseFocus", {
 
 const liftTooltip = (model: Model, step: ReturnType<typeof Tooltip.update>): Return => ({
 	model: { ...model, closeTooltip: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotCloseTooltipMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotCloseTooltipMessage({ message }),
+	),
 })
 
 /** The Close button's tooltip; its focus opens it only once `:focus-visible` confirms it. */
@@ -148,7 +152,13 @@ export const stepCloseTooltip = (model: Model, message: Tooltip.Message): Return
 
 export const checkedCloseFocus = (model: Model, triggerId: string, isFocusVisible: boolean): Return =>
 	isFocusVisible
-		? liftTooltip(model, Tooltip.update(model.closeTooltip, Tooltip.Message.CheckedFocusVisible({ triggerId, isFocusVisible: true })))
+		? liftTooltip(
+				model,
+				Tooltip.update(
+					model.closeTooltip,
+					Tooltip.Message.CheckedFocusVisible({ triggerId, isFocusVisible: true }),
+				),
+			)
 		: { model }
 
 /** The Messages tab's markdown bodies, when that tab is the one open. */

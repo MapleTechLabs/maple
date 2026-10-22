@@ -42,7 +42,8 @@ export const init = (
 
 /** An empty list renders `SignalEmptyState`, which reads the shared signal presence. */
 const withPresence = (step: UpdateReturn, context: PageContext): UpdateReturn => {
-	const isLoaded = Option.isSome(AsyncData.getData(step.model.catalog.data)) && !step.model.catalog.isPlaceholder
+	const isLoaded =
+		Option.isSome(AsyncData.getData(step.model.catalog.data)) && !step.model.catalog.isPlaceholder
 	const isEmpty = visibleEntries(step.model, filtersOf(queryOf(context.location))).length === 0
 	return isLoaded && isEmpty && step.outMessage === undefined
 		? { ...step, outMessage: PageOutMessage.RequestedSignalPresence() }
@@ -56,7 +57,11 @@ export const locationChanged = (model: Model, context: PageContext): UpdateRetur
 	return withPresence(load({ ...model, search }, context), context)
 }
 
-const navigate = (model: Model, context: PageContext, updates: Record<string, string | null>): UpdateReturn => ({
+const navigate = (
+	model: Model,
+	context: PageContext,
+	updates: Record<string, string | null>,
+): UpdateReturn => ({
 	model,
 	outMessage: replaceParams(context.location, updates),
 })
@@ -76,14 +81,24 @@ const settleRefresh = (model: Model): Model => {
 }
 
 /** One fetch answers whichever slots hold its key (both, while no filter is set). */
-const settled = (model: Model, key: string, result: Result.Result<Catalog, LoadFailure>, atMs: number | null = null): Model => ({
+const settled = (
+	model: Model,
+	key: string,
+	result: Result.Result<Catalog, LoadFailure>,
+	atMs: number | null = null,
+): Model => ({
 	...model,
 	catalog: accept(model.catalog, key, result, atMs),
 	unfiltered: accept(model.unfiltered, key, result, atMs),
 })
 
 /** The cache answered a slice first: whichever slots hold its key show it, then the fetch runs. */
-const settledFromCache = (model: Model, context: PageContext, key: string, cached: Cached<Catalog>): UpdateReturn => {
+const settledFromCache = (
+	model: Model,
+	context: PageContext,
+	key: string,
+	cached: Cached<Catalog>,
+): UpdateReturn => {
 	const next = {
 		...model,
 		catalog: acceptCached(model.catalog, key, cached, cached.isFresh),
@@ -113,7 +128,10 @@ const settledFromCache = (model: Model, context: PageContext, key: string, cache
 
 const searchStep = (model: Model, text: string): UpdateReturn => {
 	const version = model.search.version + 1
-	return { model: { ...model, search: { ...model.search, text, version } }, commands: [WaitSearchDebounce({ version })] }
+	return {
+		model: { ...model, search: { ...model.search, text, version } },
+		commands: [WaitSearchDebounce({ version })],
+	}
 }
 
 export const update = (model: Model, message: Message, context: PageContext): UpdateReturn => {
@@ -123,40 +141,62 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 			load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context),
 		SucceededFetchCatalog: ({ key, catalog, fetchedAtMs }) => {
 			const catalogUpdatedAtMs = model.catalog.key === key ? fetchedAtMs : model.catalogUpdatedAtMs
-			const next = settleRefresh({ ...settled(model, key, Result.succeed(catalog), fetchedAtMs), catalogUpdatedAtMs })
+			const next = settleRefresh({
+				...settled(model, key, Result.succeed(catalog), fetchedAtMs),
+				catalogUpdatedAtMs,
+			})
 			return model.catalog.key === key ? withPresence({ model: next }, context) : { model: next }
 		},
 		FoundCachedCatalog: ({ key, cached }) => settledFromCache(model, context, key, cached),
-		FailedFetchCatalog: ({ key, failure }) => ({ model: settleRefresh(settled(model, key, Result.fail(failure))) }),
+		FailedFetchCatalog: ({ key, failure }) => ({
+			model: settleRefresh(settled(model, key, Result.fail(failure))),
+		}),
 		ClickedOpenFilters: () => ({ model, outMessage: PageOutMessage.RequestedFilterDrawer() }),
 		ClickedRefresh: () =>
-			model.isRefreshing ? { model } : { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
+			model.isRefreshing
+				? { model }
+				: { model: { ...model, isRefreshing: true }, commands: [ReadRefreshClock()] },
 		CompletedReadRefreshClock: ({ nowMs }) => {
 			const next = snapToMinute(nowMs)
 			// `advance()`: a new minute re-anchors the window (new keys); else refetch in place.
 			if (Option.getOrNull(model.maybeAnchorMs) !== next)
-				return load({ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false }, context)
+				return load(
+					{ ...model, nowMs, maybeAnchorMs: Option.some(next), isRefreshing: false },
+					context,
+				)
 			const refetch = load({ ...model, nowMs }, context, true)
-			return { model: settleRefresh(refetch.model), commands: refetch.commands, outMessage: PageOutMessage.RefetchedInPlace() }
+			return {
+				model: settleRefresh(refetch.model),
+				commands: refetch.commands,
+				outMessage: PageOutMessage.RefetchedInPlace(),
+			}
 		},
 		ChangedSearch: ({ text }) => searchStep(model, text),
 		ClickedClearSearch: () => searchStep(model, ""),
 		ElapsedSearchDebounce: ({ version }) => {
 			if (version !== model.search.version) return { model }
 			const trimmed = model.search.text.trim()
-			return navigate({ ...model, search: { ...model.search, sent: trimmed } }, context, { q: trimmed === "" ? null : trimmed })
+			return navigate({ ...model, search: { ...model.search, sent: trimmed } }, context, {
+				q: trimmed === "" ? null : trimmed,
+			})
 		},
-		ToggledFacetOption: ({ param, name }) => navigate(model, context, { [param]: query.get(param) === name ? null : name }),
+		ToggledFacetOption: ({ param, name }) =>
+			navigate(model, context, { [param]: query.get(param) === name ? null : name }),
 		ClickedClearFacets: () => navigate(model, context, { env: null, ns: null }),
 		ClickedClearFilters: () => navigate(model, context, { env: null, ns: null, q: null }),
 		ChangedRange: ({ range }) => setRange(model, context, range),
 		ClickedWidenRange: () => setRange(model, context, WIDEST_RANGE),
 		GotFilterSectionsMessage: ({ message: child }) => {
 			const next = FilterSections.update(model.sections, child)
-			return { model: { ...model, sections: next.model }, commands: Command.mapMessages(next.commands ?? [], toSections) }
+			return {
+				model: { ...model, sections: next.model },
+				commands: Command.mapMessages(next.commands ?? [], toSections),
+			}
 		},
 		GotCopyMessage: ({ id, message: child }) => {
-			const next = updateCopy(model.copies, id, child, (copyId, copyMessage) => Message.GotCopyMessage({ id: copyId, message: copyMessage }))
+			const next = updateCopy(model.copies, id, child, (copyId, copyMessage) =>
+				Message.GotCopyMessage({ id: copyId, message: copyMessage }),
+			)
 			return { model: { ...model, copies: next.copies }, commands: next.commands }
 		},
 	})

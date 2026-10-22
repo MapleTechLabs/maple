@@ -40,14 +40,19 @@ const notRecorded = (h: H, what: "arguments" | "result"): Html =>
 		[h.Class("flex flex-col gap-1 rounded-md border border-dashed border-input p-3.5 font-mono")],
 		[
 			h.span([h.Class("text-xs text-muted-foreground")], ["Not recorded"]),
-			h.span([h.Class("text-2xs leading-[15px] text-muted-foreground/70")], ["The span has no ", what, " attribute."]),
+			h.span(
+				[h.Class("text-2xs leading-[15px] text-muted-foreground/70")],
+				["The span has no ", what, " attribute."],
+			),
 		],
 	)
 
 const payloadLineView = (h: H, line: PayloadLine): Html =>
 	h.div(
 		[
-			h.Class(cn("pr-3.5", line.highlight && "border-l-2 border-l-severity-error bg-severity-error/10")),
+			h.Class(
+				cn("pr-3.5", line.highlight && "border-l-2 border-l-severity-error bg-severity-error/10"),
+			),
 			h.Style({ "padding-left": `${14 + line.depth * 16 - (line.highlight ? 2 : 0)}px` }),
 		],
 		[
@@ -77,7 +82,12 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 					),
 			...(line.folded === undefined
 				? []
-				: [h.span([h.Class("ml-2 rounded-[3px] bg-muted px-1 text-2xs text-muted-foreground")], [line.folded])]),
+				: [
+						h.span(
+							[h.Class("ml-2 rounded-[3px] bg-muted px-1 text-2xs text-muted-foreground")],
+							[line.folded],
+						),
+					]),
 			...(line.note === undefined
 				? []
 				: [
@@ -88,7 +98,11 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 								...(line.note.hiddenBytes > 0
 									? [
 											h.span(
-												[h.Class("rounded-[3px] bg-muted px-1 text-2xs text-muted-foreground")],
+												[
+													h.Class(
+														"rounded-[3px] bg-muted px-1 text-2xs text-muted-foreground",
+													),
+												],
 												["+", formatToolCount(line.note.hiddenBytes), " B not shown"],
 											),
 										]
@@ -102,7 +116,13 @@ const payloadLineView = (h: H, line: PayloadLine): Html =>
 const utf8Length = (text: string) => new TextEncoder().encode(text).length
 
 /** The arguments shortened around the error path; "Show full payload" is everything the read carries. */
-const argumentsBlock = (h: H, model: Model, row: ToolErrorOccurrenceRow, message: string, args: unknown): Html => {
+const argumentsBlock = (
+	h: H,
+	model: Model,
+	row: ToolErrorOccurrenceRow,
+	message: string,
+	args: unknown,
+): Html => {
 	if (row.arguments === "")
 		return h.div(
 			[h.Class("flex w-0 min-w-0 grow flex-col gap-2 max-lg:w-full")],
@@ -115,7 +135,11 @@ const argumentsBlock = (h: H, model: Model, row: ToolErrorOccurrenceRow, message
 	const isFull = model.isFullArguments
 	const isTruncatedByRead = row.argumentsBytes > utf8Length(row.arguments)
 	const copyLabel =
-		model.argumentsCopy === "failed" ? "Copy failed" : model.argumentsCopy === "copied" ? "Copied" : "Copy"
+		model.argumentsCopy === "failed"
+			? "Copy failed"
+			: model.argumentsCopy === "copied"
+				? "Copied"
+				: "Copy"
 	const note = isTruncatedByRead
 		? `The first ${formatToolCount(row.arguments.length)} characters of ${formatToolCount(row.argumentsBytes)} B`
 		: lines !== undefined && !isFull
@@ -130,7 +154,9 @@ const argumentsBlock = (h: H, model: Model, row: ToolErrorOccurrenceRow, message
 				bytes: row.argumentsBytes,
 				action: h.button(
 					[
-						h.Class("font-mono text-2xs text-muted-foreground transition-colors hover:text-foreground"),
+						h.Class(
+							"font-mono text-2xs text-muted-foreground transition-colors hover:text-foreground",
+						),
 						h.Type("button"),
 						h.OnClick(Message.ClickedCopyArguments({ text: row.arguments })),
 					],
@@ -147,11 +173,19 @@ const argumentsBlock = (h: H, model: Model, row: ToolErrorOccurrenceRow, message
 						[args === undefined ? row.arguments : JSON.stringify(args, null, 2)],
 					)
 				: h.div(
-						[h.Class("flex flex-col overflow-x-auto rounded-md border border-border bg-sidebar py-3 font-mono text-xs leading-[18px]")],
+						[
+							h.Class(
+								"flex flex-col overflow-x-auto rounded-md border border-border bg-sidebar py-3 font-mono text-xs leading-[18px]",
+							),
+						],
 						lines.map((line) => payloadLineView(h, line)),
 					),
 			h.div(
-				[h.Class("flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-muted-foreground/70")],
+				[
+					h.Class(
+						"flex items-center gap-2.5 font-mono text-2xs leading-3.5 text-muted-foreground/70",
+					),
+				],
 				[
 					h.span([], note === undefined ? [] : [note]),
 					h.span([h.Class("grow")], []),
@@ -194,7 +228,12 @@ const resultBlock = (h: H, row: ToolErrorOccurrenceRow): Html => {
 					),
 			...(source === undefined
 				? []
-				: [h.span([h.Class("font-mono text-2xs leading-3.5 text-muted-foreground/70")], ["Error message read from ", source])]),
+				: [
+						h.span(
+							[h.Class("font-mono text-2xs leading-3.5 text-muted-foreground/70")],
+							["Error message read from ", source],
+						),
+					]),
 		],
 	)
 }
@@ -217,10 +256,18 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 								),
 							],
 							[
-								eyebrow(h, { variant: "label", className: "shrink-0 leading-4 text-severity-error" }, ["What's wrong"]),
+								eyebrow(
+									h,
+									{ variant: "label", className: "shrink-0 leading-4 text-severity-error" },
+									["What's wrong"],
+								),
 								h.span(
 									[h.Class("text-xs leading-4 text-foreground/85")],
-									[h.span([h.Class("font-medium text-foreground")], [hint.subject]), " ", hint.text],
+									[
+										h.span([h.Class("font-medium text-foreground")], [hint.subject]),
+										" ",
+										hint.text,
+									],
 								),
 							],
 						),
@@ -228,13 +275,20 @@ export const sampleBody = (h: H, model: Model, row: ToolErrorOccurrenceRow): Htm
 			...(row.arguments === "" && row.result === ""
 				? [
 						h.div(
-							[h.Class("flex items-start gap-3 rounded-md border border-border bg-sidebar px-3.5 py-3 font-mono")],
+							[
+								h.Class(
+									"flex items-start gap-3 rounded-md border border-border bg-sidebar px-3.5 py-3 font-mono",
+								),
+							],
 							[
 								statusDot(h, { tone: "custom", className: "mt-[5px] bg-muted-foreground" }),
 								h.span(
 									[h.Class("flex flex-col gap-1")],
 									[
-										h.span([h.Class("text-xs leading-4 text-foreground")], ["The tool reported no error detail"]),
+										h.span(
+											[h.Class("text-xs leading-4 text-foreground")],
+											["The tool reported no error detail"],
+										),
 										h.span(
 											[h.Class("text-xs leading-[17px] text-muted-foreground")],
 											[

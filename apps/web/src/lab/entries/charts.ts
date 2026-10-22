@@ -62,7 +62,9 @@ const scalarRows = (rows: ReadonlyArray<Record<string, unknown>>): ReadonlyArray
 	rows.map((row) =>
 		Object.fromEntries(
 			Object.entries(row).flatMap(([key, value]) =>
-				typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? [[key, value]] : [],
+				typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+					? [[key, value]]
+					: [],
 			),
 		),
 	)
@@ -70,11 +72,22 @@ const scalarRows = (rows: ReadonlyArray<Record<string, unknown>>): ReadonlyArray
 /** The production timeseries arms: `QueryBuilderLineChart`, `QueryBuilderAreaChart`, stacked bars. */
 const PRODUCTION_TIMESERIES = {
 	"line-production": { kind: "line", rows: scalarRows(toLatencyProductionRows(TIMESERIES_SPIKE_ROWS)) },
-	"line-incomplete-production": { kind: "line", rows: scalarRows(toLatencyProductionRows(TIMESERIES_PARTIAL_ROWS)) },
+	"line-incomplete-production": {
+		kind: "line",
+		rows: scalarRows(toLatencyProductionRows(TIMESERIES_PARTIAL_ROWS)),
+	},
 	"area-production": { kind: "area", rows: scalarRows(toThroughputProductionRows(TIMESERIES_SPIKE_ROWS)) },
-	"area-incomplete-production": { kind: "area", rows: scalarRows(toThroughputProductionRows(TIMESERIES_PARTIAL_ROWS)) },
-	"stacked-bar-production": { kind: "bar", rows: scalarRows(toStackedBarProductionRows(STACKED_BAR_SPIKE_ROWS)) },
-} satisfies Partial<Record<ChartsLabArm, Readonly<{ kind: "line" | "area" | "bar"; rows: ReadonlyArray<ChartRow> }>>>
+	"area-incomplete-production": {
+		kind: "area",
+		rows: scalarRows(toThroughputProductionRows(TIMESERIES_PARTIAL_ROWS)),
+	},
+	"stacked-bar-production": {
+		kind: "bar",
+		rows: scalarRows(toStackedBarProductionRows(STACKED_BAR_SPIKE_ROWS)),
+	},
+} satisfies Partial<
+	Record<ChartsLabArm, Readonly<{ kind: "line" | "area" | "bar"; rows: ReadonlyArray<ChartRow> }>>
+>
 
 const productionTimeseriesOf = (arm: ChartsLabArm) => {
 	switch (arm) {
@@ -142,14 +155,18 @@ const init = (): Update.Return<Model, Message> => ({
 		charts: Object.fromEntries(
 			SECTIONS.flatMap((section, sectionIndex) =>
 				section.rows.flatMap((row, rowIndex) =>
-					row.filter(isPorted).map((arm) => [slotOf(`${sectionIndex}.${rowIndex}`, arm), Chart.init()]),
+					row
+						.filter(isPorted)
+						.map((arm) => [slotOf(`${sectionIndex}.${rowIndex}`, arm), Chart.init()]),
 				),
 			),
 		),
 		toasts: initLabToasts(),
 	},
 	commands: [
-		...Command.mapMessages([LoadChartRuntime()], (message) => Message.GotChartRuntimeMessage({ message })),
+		...Command.mapMessages([LoadChartRuntime()], (message) =>
+			Message.GotChartRuntimeMessage({ message }),
+		),
 		ReadClock(),
 	],
 })
@@ -250,18 +267,43 @@ const chartNode = (
 		return [h.submodel({ ...common, view: HistogramChart.view, viewInputs })]
 	}
 	if (arm === "heatmap-production") {
-		const viewInputs = { chartId, data: heatmapSampleData, theme, tooltip: "visible", className: PRODUCTION_CHART_CLASS } as const
+		const viewInputs = {
+			chartId,
+			data: heatmapSampleData,
+			theme,
+			tooltip: "visible",
+			className: PRODUCTION_CHART_CLASS,
+		} as const
 		return [h.submodel({ ...common, view: HeatmapChart.view, viewInputs })]
 	}
 	const timeseries = productionTimeseriesOf(arm)
 	if (timeseries !== undefined) {
-		const base = { chartId, data: timeseries.rows, theme, nowMs: model.nowMs, showTooltip: true, className: PRODUCTION_CHART_CLASS }
+		const base = {
+			chartId,
+			data: timeseries.rows,
+			theme,
+			nowMs: model.nowMs,
+			showTooltip: true,
+			className: PRODUCTION_CHART_CLASS,
+		}
 		return timeseries.kind === "bar"
 			? [h.submodel({ ...common, view: BarChart.view, viewInputs: { ...base, stacked: true } })]
-			: [h.submodel({ ...common, view: AreaChart.view, viewInputs: { ...base, mark: timeseries.kind } })]
+			: [
+					h.submodel({
+						...common,
+						view: AreaChart.view,
+						viewInputs: { ...base, mark: timeseries.kind },
+					}),
+				]
 	}
 	if (arm === "pie-legend-tanstack" || arm === "pie-solid-legend-tanstack") {
-		const viewInputs = { chartId, rows: pieRows, theme, donut: arm === "pie-legend-tanstack", className: "h-full w-full" }
+		const viewInputs = {
+			chartId,
+			rows: pieRows,
+			theme,
+			donut: arm === "pie-legend-tanstack",
+			className: "h-full w-full",
+		}
 		return [h.submodel({ ...common, view: pieLegendSpikeView, viewInputs })]
 	}
 	const spike = SPIKE_ARMS.get(arm)
@@ -275,7 +317,9 @@ const chartNode = (
 			ariaLabel: spike.ariaLabel,
 			className: "h-full w-full",
 			...(spike.footer === undefined ? undefined : { footer: spike.footer }),
-			...(legend === undefined ? undefined : { legend: { label: legend.label, series: legend.series(theme) } }),
+			...(legend === undefined
+				? undefined
+				: { legend: { label: legend.label, series: legend.series(theme) } }),
 		}
 		return [h.submodel({ ...common, view: spikeView, viewInputs })]
 	}
@@ -359,7 +403,15 @@ const emptyMetricsGrid = (h: HtmlBuilder<Message>): Html =>
 				[
 					widgetShell(
 						h,
-						{ widgetId: title, hasGrip: false, title, isEdit: false, menu: null, isMenuOpen: false, contentClassName: undefined },
+						{
+							widgetId: title,
+							hasGrip: false,
+							title,
+							isEdit: false,
+							menu: null,
+							isMenuOpen: false,
+							contentClassName: undefined,
+						},
 						[chartEmpty(h, { hint: "Try a wider time range" }, ["No data in this window"])],
 					),
 				],
@@ -388,10 +440,14 @@ const gallery = (model: Model, h: HtmlBuilder<Message>, theme: ThemeColors): Rea
 		section(
 			h,
 			entry.title,
-			entry.rows.map((arms, rowIndex) => sectionRow(model, h, theme, `${sectionIndex}.${rowIndex}`, arms)),
+			entry.rows.map((arms, rowIndex) =>
+				sectionRow(model, h, theme, `${sectionIndex}.${rowIndex}`, arms),
+			),
 		),
 	),
-	section(h, "Empty window — MetricsGrid", [h.div([h.DataAttribute("testid", "charts-lab-empty")], [emptyMetricsGrid(h)])]),
+	section(h, "Empty window — MetricsGrid", [
+		h.div([h.DataAttribute("testid", "charts-lab-empty")], [emptyMetricsGrid(h)]),
+	]),
 ]
 
 const readyTheme = (model: Model): Option.Option<ThemeColors> =>

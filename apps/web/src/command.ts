@@ -35,8 +35,12 @@ export const RestoreDashboardWidgets = Command.define("RestoreDashboardWidgets",
 	messages: [Message.CompletedRestoreDashboardWidgets],
 	execute: ({ orgId, dashboardId, widgets }) =>
 		mutateDashboard(orgId, dashboardId, (document, nowIso) => {
-			const missing = widgets.filter((widget) => !document.widgets.some((existing) => existing.id === widget.id))
-			return missing.length === 0 ? document : { ...document, widgets: [...document.widgets, ...missing], updatedAt: nowIso }
+			const missing = widgets.filter(
+				(widget) => !document.widgets.some((existing) => existing.id === widget.id),
+			)
+			return missing.length === 0
+				? document
+				: { ...document, widgets: [...document.widgets, ...missing], updatedAt: nowIso }
 		}).pipe(Effect.ignore, Effect.as(Message.CompletedRestoreDashboardWidgets())),
 })
 

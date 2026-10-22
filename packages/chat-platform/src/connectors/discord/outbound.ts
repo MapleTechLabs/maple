@@ -20,7 +20,18 @@
  * than read directly.
  */
 import { ChatConversationKey } from "@maple/primitives"
-import { Array as Arr, Clock, Duration, Effect, Option, Order, Redacted, Ref, Schema, Semaphore } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Duration,
+	Effect,
+	Option,
+	Order,
+	Redacted,
+	Ref,
+	Schema,
+	Semaphore,
+} from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import type { ConnectorConfig, InboundAction, InboundMessage } from "../../ingress"
 import {
@@ -313,9 +324,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 			Effect.flatMap(Semaphore.make(1), (fresh) =>
 				Ref.modify(lanes, (map) => {
 					const existing = map.get(key)
-					return existing === undefined
-						? [fresh, new Map(map).set(key, fresh)]
-						: [existing, map]
+					return existing === undefined ? [fresh, new Map(map).set(key, fresh)] : [existing, map]
 				}),
 			)
 

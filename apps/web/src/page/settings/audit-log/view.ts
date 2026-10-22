@@ -71,7 +71,9 @@ export const ACTOR_BADGES = {
 	api_key: { label: "API key", variant: "ok" },
 	agent: { label: "Agent", variant: "info" },
 	system: { label: "System", variant: "outline" },
-} as const satisfies { readonly [Actor in AuditActorType]: { label: string; variant: "secondary" | "ok" | "info" | "outline" } }
+} as const satisfies {
+	readonly [Actor in AuditActorType]: { label: string; variant: "secondary" | "ok" | "info" | "outline" }
+}
 
 const COL = {
 	time: "flex w-22 shrink-0 items-center gap-2",
@@ -95,9 +97,11 @@ const actorDisplayName = (entry: V2AuditLogEntry): string | null =>
 
 const rangeLabel = (range: AuditDateRange, timeZone: string): string => {
 	if (range.kind === "all") return "All time"
-	if (range.kind === "preset") return AUDIT_RANGE_PRESETS.find((preset) => preset.value === range.preset)?.label ?? "All time"
+	if (range.kind === "preset")
+		return AUDIT_RANGE_PRESETS.find((preset) => preset.value === range.preset)?.label ?? "All time"
 	const format = (value: string) => formatTimestampInTimezone(value, { timeZone })
-	if (range.since !== undefined && range.until !== undefined) return `${format(range.since)} to ${format(range.until)}`
+	if (range.since !== undefined && range.until !== undefined)
+		return `${format(range.since)} to ${format(range.until)}`
 	if (range.since !== undefined) return `Since ${format(range.since)}`
 	if (range.until !== undefined) return `Until ${format(range.until)}`
 	return "All time"
@@ -108,7 +112,10 @@ const rangeLabel = (range: AuditDateRange, timeZone: string): string => {
 const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string): Html => {
 	const label = rangeLabel(range, timeZone)
 	const activeKey = range.kind === "all" ? "all" : range.kind === "preset" ? range.preset : null
-	const options = [{ key: "all", label: "All time" }, ...AUDIT_RANGE_PRESETS.map((preset) => ({ key: preset.value, label: preset.label }))]
+	const options = [
+		{ key: "all", label: "All time" },
+		...AUDIT_RANGE_PRESETS.map((preset) => ({ key: preset.value, label: preset.label })),
+	]
 	return h.submodel({
 		slotId: "audit-date-range",
 		model: model.dateRange,
@@ -148,7 +155,9 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 									h.Class(
 										cn(
 											"flex h-7 items-center px-3 text-left text-xs transition-colors hover:bg-muted/50",
-											option.key === activeKey ? "font-medium text-foreground" : "text-foreground/80",
+											option.key === activeKey
+												? "font-medium text-foreground"
+												: "text-foreground/80",
 										),
 									),
 								],
@@ -162,7 +171,9 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 								h.Class(
 									cn(
 										"flex h-7 items-center px-3 text-left text-xs transition-colors hover:bg-muted/50 hover:text-foreground",
-										range.kind === "custom" ? "font-medium text-foreground" : "text-muted-foreground",
+										range.kind === "custom"
+											? "font-medium text-foreground"
+											: "text-muted-foreground",
 									),
 								),
 							],
@@ -175,12 +186,23 @@ const dateRange = (h: H, model: Model, range: AuditDateRange, timeZone: string):
 	})
 }
 
-const personFilter = (h: H, model: Model, actorId: string | undefined, apiKeys: ReadonlyArray<V2ApiKey>): Html => {
+const personFilter = (
+	h: H,
+	model: Model,
+	actorId: string | undefined,
+	apiKeys: ReadonlyArray<V2ApiKey>,
+): Html => {
 	// Audit rows name a key by its public `key_…` id; the synced rows carry the internal one.
-	const keyOptions = apiKeys.map((key) => ({ value: encodePublicId(PublicIdPrefixes.apiKey, key.id), label: key.name }))
+	const keyOptions = apiKeys.map((key) => ({
+		value: encodePublicId(PublicIdPrefixes.apiKey, key.id),
+		label: key.name,
+	}))
 	const selected = [...model.members, ...keyOptions].find((option) => option.value === actorId)
 	const label = actorId === undefined ? "Anyone" : (selected?.label ?? actorId)
-	const group = (groupLabel: string, items: ReadonlyArray<SelectView.SelectOption>): ReadonlyArray<SelectView.SelectEntry> =>
+	const group = (
+		groupLabel: string,
+		items: ReadonlyArray<SelectView.SelectOption>,
+	): ReadonlyArray<SelectView.SelectEntry> =>
 		items.length > 0 ? [{ _tag: "Group", label: groupLabel, items }] : []
 	const entries: ReadonlyArray<SelectView.SelectEntry> = [
 		{ _tag: "Item", item: { value: ANYONE, label: "Anyone" } },
@@ -212,7 +234,11 @@ const actorCell = (h: H, entry: V2AuditLogEntry): Html => {
 		[h.Class(cn(COL.actor, "flex items-center gap-1.5"))],
 		[
 			entry.actor_type === "user"
-				? avatarFallback(h, { className: "size-4 shrink-0 text-4xs" }, initialsOf(entry.actor_name ?? entry.actor_id ?? ""))
+				? avatarFallback(
+						h,
+						{ className: "size-4 shrink-0 text-4xs" },
+						initialsOf(entry.actor_name ?? entry.actor_id ?? ""),
+					)
 				: badge(h, { variant: actor.variant, size: "sm", className: "shrink-0" }, [actor.label]),
 			...(name === null
 				? []
@@ -224,7 +250,10 @@ const actorCell = (h: H, entry: V2AuditLogEntry): Html => {
 									entry.actor_name !== null && entry.actor_id !== null
 										? `${name} (${entry.actor_id})`
 										: (entry.actor_id ?? name),
-								className: cn("text-xs", entry.actor_name === null && "text-muted-foreground"),
+								className: cn(
+									"text-xs",
+									entry.actor_name === null && "text-muted-foreground",
+								),
 							},
 							[name],
 						),
@@ -293,9 +322,17 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 						[
 							icon(h, "ChevronRightIcon", {
 								size: 12,
-								className: cn("text-muted-foreground/60 shrink-0 transition-transform", isExpanded && "rotate-90"),
+								className: cn(
+									"text-muted-foreground/60 shrink-0 transition-transform",
+									isExpanded && "rotate-90",
+								),
 							}),
-							relativeTime(h, { value: entry.occurred_at, nowMs: inputs.nowMs, timeZone: inputs.timeZone, tooltip: "title" }),
+							relativeTime(h, {
+								value: entry.occurred_at,
+								nowMs: inputs.nowMs,
+								timeZone: inputs.timeZone,
+								tooltip: "title",
+							}),
 						],
 					),
 					actorCell(h, entry),
@@ -310,12 +347,20 @@ const auditRow = (h: H, model: Model, entry: V2AuditLogEntry, inputs: ViewInputs
 								],
 							),
 							...(isDenied && entry.denial_reason !== null
-								? [truncatedText(h, { text: entry.denial_reason, className: "text-muted-foreground text-2xs" })]
+								? [
+										truncatedText(h, {
+											text: entry.denial_reason,
+											className: "text-muted-foreground text-2xs",
+										}),
+									]
 								: []),
 						],
 					),
 					h.div([h.Class(COL.resource)], [resourceCell(h, entry)]),
-					h.span([h.Class(COL.source)], [badge(h, { variant: "outline", size: "sm" }, [SOURCE_LABELS[entry.source]])]),
+					h.span(
+						[h.Class(COL.source)],
+						[badge(h, { variant: "outline", size: "sm" }, [SOURCE_LABELS[entry.source]])],
+					),
 					h.span([h.Class(COL.outcome)], isDenied ? [deniedBadge(h)] : []),
 				],
 			),
@@ -328,7 +373,10 @@ const headerRow = (h: H): Html =>
 	h.div(
 		[h.Class("hidden items-center gap-3 px-4 py-2 @md:flex"), h.AriaHidden(true)],
 		[
-			eyebrow(h, { variant: "mono", className: COL.time }, [h.span([h.Class("w-3 shrink-0")], []), "Time"]),
+			eyebrow(h, { variant: "mono", className: COL.time }, [
+				h.span([h.Class("w-3 shrink-0")], []),
+				"Time",
+			]),
 			eyebrow(h, { variant: "mono", className: COL.actor }, ["Actor"]),
 			eyebrow(h, { variant: "mono", className: COL.action }, ["Action"]),
 			eyebrow(h, { variant: "mono", className: COL.resource }, ["Resource"]),
@@ -354,15 +402,42 @@ const emptyState = (h: H, title: string, description: string, action: ReadonlyAr
 const listBody = (h: H, model: Model, inputs: ViewInputs, isFiltered: boolean): Html => {
 	const view = model.view
 	if (view === null && model.failure !== null)
-		return errorState(h, { failure: model.failure, title: "Couldn't load the audit log", onRetry: Message.ClickedRetry(), className: "border-0" })
-	if (view === null) return skeletonList(h, { rows: 3, rowClassName: "h-[44px]", gap: "2", className: "p-4" })
+		return errorState(h, {
+			failure: model.failure,
+			title: "Couldn't load the audit log",
+			onRetry: Message.ClickedRetry(),
+			className: "border-0",
+		})
+	if (view === null)
+		return skeletonList(h, { rows: 3, rowClassName: "h-[44px]", gap: "2", className: "p-4" })
 	if (view.entries.length === 0 && isFiltered)
-		return emptyState(h, "No entries match these filters", "Nothing recorded for this range, person, actor type and outcome.", [
-			button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedClearFilters())] }, ["Clear filters"]),
-		])
+		return emptyState(
+			h,
+			"No entries match these filters",
+			"Nothing recorded for this range, person, actor type and outcome.",
+			[
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						attributes: [h.OnClick(Message.ClickedClearFilters())],
+					},
+					["Clear filters"],
+				),
+			],
+		)
 	if (view.entries.length === 0)
-		return emptyState(h, "No audit log entries", "Actions and data reads by users, API keys, and agents will appear here.", [])
-	return h.div([h.Class("divide-border divide-y")], [headerRow(h), ...view.entries.map((entry) => auditRow(h, model, entry, inputs))])
+		return emptyState(
+			h,
+			"No audit log entries",
+			"Actions and data reads by users, API keys, and agents will appear here.",
+			[],
+		)
+	return h.div(
+		[h.Class("divide-border divide-y")],
+		[headerRow(h), ...view.entries.map((entry) => auditRow(h, model, entry, inputs))],
+	)
 }
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
@@ -387,7 +462,10 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				[
 					h.div(
 						[h.Class("flex flex-wrap items-center gap-2")],
-						[dateRange(h, model, filters.range, inputs.timeZone), personFilter(h, model, filters.actorId, inputs.apiKeys)],
+						[
+							dateRange(h, model, filters.range, inputs.timeZone),
+							personFilter(h, model, filters.actorId, inputs.apiKeys),
+						],
 					),
 					h.div(
 						[h.Class("flex flex-wrap items-center gap-3")],
@@ -421,7 +499,14 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			h.section(
 				[
 					h.AriaBusy(isWaiting),
-					h.Class(cn(panelStyles, panelToneStyles.default, "@container", refreshingClass(isWaiting && view !== null))),
+					h.Class(
+						cn(
+							panelStyles,
+							panelToneStyles.default,
+							"@container",
+							refreshingClass(isWaiting && view !== null),
+						),
+					),
 					h.DataAttribute("slot", "panel"),
 				],
 				[listBody(h, model, inputs, hasAuditLogFilters(filters))],
@@ -431,7 +516,10 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						errorState(h, {
 							variant: "row",
 							failure: model.failure,
-							title: model.request.cursor === undefined ? "Couldn't refresh the audit log" : "Couldn't load more entries",
+							title:
+								model.request.cursor === undefined
+									? "Couldn't refresh the audit log"
+									: "Couldn't load more entries",
 							onRetry: Message.ClickedRetry(),
 						}),
 					]
@@ -452,4 +540,3 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		],
 	)
 })
-

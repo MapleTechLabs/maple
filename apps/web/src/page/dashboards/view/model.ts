@@ -150,7 +150,11 @@ export const Model = Schema.Struct({
 	sectionMenu: Menu.Model,
 	/** `InlineEditableText`: the group (or tab) title being renamed, and its draft. */
 	rename: Schema.NullOr(
-		Schema.Struct({ sectionId: Schema.String, tabId: Schema.NullOr(Schema.String), draft: Schema.String }),
+		Schema.Struct({
+			sectionId: Schema.String,
+			tabId: Schema.NullOr(Schema.String),
+			draft: Schema.String,
+		}),
 	),
 	/** `DeleteSectionDialog` and `DeleteTabDialog`, and what they would delete. */
 	sectionDialog: Dialog.Model,

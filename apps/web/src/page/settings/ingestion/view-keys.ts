@@ -62,11 +62,17 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 							),
 						],
 						[
-							h.span([h.Class(isHidden ? "truncate" : "min-w-0 break-all")], [isHidden ? maskKey(value) : value]),
+							h.span(
+								[h.Class(isHidden ? "truncate" : "min-w-0 break-all")],
+								[isHidden ? maskKey(value) : value],
+							),
 							CopyButton.copyIndicator(h, {
 								status,
 								iconSize: 12,
-								className: cn("shrink-0 transition-opacity group-hover/value:opacity-100", status === "idle" && "opacity-0"),
+								className: cn(
+									"shrink-0 transition-opacity group-hover/value:opacity-100",
+									status === "idle" && "opacity-0",
+								),
 							}),
 						],
 					)
@@ -74,13 +80,22 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 		[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 sm:flex-nowrap")],
 		[
 			h.span([h.Class("w-full shrink-0 text-sm sm:w-[120px]")], [label]),
-			eyebrow(h, { variant: "mono", className: cn("hidden w-14 shrink-0 sm:block", options.badgeClass) }, [options.badge]),
+			eyebrow(
+				h,
+				{ variant: "mono", className: cn("hidden w-14 shrink-0 sm:block", options.badgeClass) },
+				[options.badge],
+			),
 			h.div(
 				[h.Class("flex min-w-0 grow basis-0 flex-col items-start gap-0.5")],
 				[
 					valueCell,
 					...(options.description
-						? [h.span([h.Class("text-muted-foreground/70 text-2xs leading-3.5")], [options.description])]
+						? [
+								h.span(
+									[h.Class("text-muted-foreground/70 text-2xs leading-3.5")],
+									[options.description],
+								),
+							]
 						: []),
 				],
 			),
@@ -98,12 +113,25 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 										isDisabled,
 										attributes: [h.OnClick(options.onToggleVisibility)],
 									},
-									[icon(h, "EyeIcon", { className: isVisible ? "text-foreground" : "text-muted-foreground" })],
+									[
+										icon(h, "EyeIcon", {
+											className: isVisible
+												? "text-foreground"
+												: "text-muted-foreground",
+										}),
+									],
 								),
 							]),
-					iconButton(h, { variant: "outline", label: `Copy ${label}`, isDisabled, attributes: copyAttributes }, [
-						CopyButton.copyIndicator(h, { status, iconSize: 13 }),
-					]),
+					iconButton(
+						h,
+						{
+							variant: "outline",
+							label: `Copy ${label}`,
+							isDisabled,
+							attributes: copyAttributes,
+						},
+						[CopyButton.copyIndicator(h, { status, iconSize: 13 })],
+					),
 					...(options.onRegenerate === undefined
 						? []
 						: [
@@ -131,7 +159,13 @@ export const ingestKeyRows = (h: H, model: Model): ReadonlyArray<Html> => {
 	const keys = hasKeys ? AsyncData.getOrElse(model.ingest, () => null) : null
 	const isFailed = AsyncData.isFailure(model.ingest) || AsyncData.isStale(model.ingest)
 	const isBusy = !hasKeys || model.isRolling
-	const row = (kind: IngestKeyKind, label: string, badge: string, badgeClass: string, description: string) =>
+	const row = (
+		kind: IngestKeyKind,
+		label: string,
+		badge: string,
+		badgeClass: string,
+		description: string,
+	) =>
 		credentialRow(h, {
 			label,
 			badge,
@@ -143,12 +177,19 @@ export const ingestKeyRows = (h: H, model: Model): ReadonlyArray<Html> => {
 			isVisible: model.revealedKeys.includes(kind),
 			onToggleVisibility: Message.ToggledKeyReveal({ kind }),
 			copy: model.keyCopies[kind] ?? CopyButton.init(),
-			onCopy: (text) => Message.GotKeyCopyMessage({ kind, message: CopyButton.Message.ClickedCopy({ text }) }),
+			onCopy: (text) =>
+				Message.GotKeyCopyMessage({ kind, message: CopyButton.Message.ClickedCopy({ text }) }),
 			onRegenerate: Message.ClickedRegenerateKey({ kind }),
 			isDisabled: isBusy,
 		})
 	return [
 		row("public", "Public key", "Client", "text-info", "For browser and client-side telemetry SDKs"),
-		row("private", "Private key", "Server", "text-warning", "For server-side ingestion and backend services"),
+		row(
+			"private",
+			"Private key",
+			"Server",
+			"text-warning",
+			"For server-side ingestion and backend services",
+		),
 	]
 }

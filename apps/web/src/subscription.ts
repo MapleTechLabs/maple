@@ -34,7 +34,8 @@ const altClickExclude: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 
 const selfHostedAuthTarget: Dom.TypedEventTarget<{ [SELF_HOSTED_AUTH_EVENT]: Event }> = window
 
-const timeZoneTarget: Dom.TypedEventTarget<{ [TIME_ZONE_PREFERENCE_EVENT]: Event; storage: StorageEvent }> = window
+const timeZoneTarget: Dom.TypedEventTarget<{ [TIME_ZONE_PREFERENCE_EVENT]: Event; storage: StorageEvent }> =
+	window
 
 /** `useTimezonePreference`: this tab's pick, or another tab's `storage` write of the key. */
 export const timeZonePreferenceChanges: Stream.Stream<Message> = Stream.merge(
@@ -58,7 +59,9 @@ const pages = Subscription.lift(pageSubscriptions)<Model, Message>({
 
 /** The org whose `dashboards` the shell reads: once the sidebar or palette wants them. */
 const shellDashboardsOrgId = (model: Model): string | null =>
-	model.session._tag === "SignedIn" && rendersShell(model.route) && (model.shell.hasRequestedSidebarData || model.shell.palette !== null)
+	model.session._tag === "SignedIn" &&
+	rendersShell(model.route) &&
+	(model.shell.hasRequestedSidebarData || model.shell.palette !== null)
 		? Option.getOrNull(model.shell.maybeOrgId)
 		: null
 
@@ -193,7 +196,9 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				orgId === null
 					? Stream.empty
 					: collectionLoadFailed(`dashboards:${orgId}`, () =>
-							Message.GotShellMessage({ message: Shell.Message.FailedLoadDashboards({ orgId }) }),
+							Message.GotShellMessage({
+								message: Shell.Message.FailedLoadDashboards({ orgId }),
+							}),
 						),
 		},
 	),
@@ -286,7 +291,8 @@ const chatSheet = Subscription.lift(ChatSheet.subscriptions)<Model, Message>({
 			sheet: model.chatSheet,
 			isSignedIn: model.session._tag === "SignedIn" && rendersShell(model.route),
 			isTypeAnywhere:
-				model.route._tag === "Chat" && (model.route.search.shared === undefined || model.route.search.shared === ""),
+				model.route._tag === "Chat" &&
+				(model.route.search.shared === undefined || model.route.search.shared === ""),
 			pathname: hrefOf(model.route).split("?")[0] ?? "/",
 		}),
 	toParentMessage: (message) => Message.GotChatSheetMessage({ message }),

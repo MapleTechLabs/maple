@@ -20,7 +20,13 @@ import * as Details from "./details/model"
 // The Billing tab: this cycle's spend, usage and caps, the plan, invoices and billing details. The customer
 // is the settings page's (one `billingCustomerAtom`).
 
-export const SpendFeatureId = Schema.Literals(["logs", "traces", "metrics", "browser_sessions", "product_events"])
+export const SpendFeatureId = Schema.Literals([
+	"logs",
+	"traces",
+	"metrics",
+	"browser_sessions",
+	"product_events",
+])
 export type SpendFeatureId = typeof SpendFeatureId.Type
 
 /** The open cap editor's input (`autoFocus`). */

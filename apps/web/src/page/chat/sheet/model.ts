@@ -68,7 +68,11 @@ export const Message = defineMessageUnion({
 	/** The pointer moved over a header button (a sheet sliding in under a resting pointer is no hover). */
 	MovedOverTrigger: { triggerId: Schema.String },
 	ClickedNewChat: {},
-	CreatedSheetTab: { orgId: Schema.String, tabId: Schema.String, referrerPath: Schema.NullOr(Schema.String) },
+	CreatedSheetTab: {
+		orgId: Schema.String,
+		tabId: Schema.String,
+		referrerPath: Schema.NullOr(Schema.String),
+	},
 	DismissedContext: { id: Schema.String },
 	ClickedOpenFullPage: {},
 	CompletedEnsureStoredTab: { tabId: Schema.String },

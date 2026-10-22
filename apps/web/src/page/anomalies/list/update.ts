@@ -52,7 +52,10 @@ const loadFirstPage = (model: Model, context: PageContext, mode: Keyed.RequestMo
 	const base = mode === "Refresh" ? { ...model, loadedPages: null } : model
 	return Option.match(Keyed.request(model.firstPage, key, mode), {
 		onNone: () => ({ model: base }),
-		onSome: (firstPage) => ({ model: { ...base, firstPage }, commands: [FetchFirstPage({ key, status })] }),
+		onSome: (firstPage) => ({
+			model: { ...base, firstPage },
+			commands: [FetchFirstPage({ key, status })],
+		}),
 	})
 }
 
@@ -76,12 +79,18 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			LoadSignalPresence({ orgId: context.orgId }),
 			ReadAnomaliesClock(),
 			...(loaded.commands ?? []),
-			Command.mapMessage(FilterSections.ReadRemembered(), (message) => Message.GotFilterSectionsMessage({ message })),
+			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
+				Message.GotFilterSectionsMessage({ message }),
+			),
 		],
 	}
 }
 
-export const routeChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => {
 	const status = statusOf(route.search)
 	const next: Model = {
 		...model,
@@ -99,10 +108,17 @@ const toNavigation = (model: Model, search: Search): Return => ({ model, outMess
 const listOrUndefined = <A>(values: ReadonlyArray<A>) => (values.length === 0 ? undefined : values)
 
 /** Severity and signal keep the sidebar's order and drop values the tab has no rows for. */
-const inFacetOrder = <A extends string>(entries: ReadonlyArray<readonly [A, number]>, values: ReadonlyArray<string>) =>
-	listOrUndefined(entries.map(([name]) => name).filter((name) => values.includes(name)))
+const inFacetOrder = <A extends string>(
+	entries: ReadonlyArray<readonly [A, number]>,
+	values: ReadonlyArray<string>,
+) => listOrUndefined(entries.map(([name]) => name).filter((name) => values.includes(name)))
 
-const withFacet = (model: Model, facet: Facet, selected: ReadonlyArray<string>, excluded: ReadonlyArray<string>): Search => {
+const withFacet = (
+	model: Model,
+	facet: Facet,
+	selected: ReadonlyArray<string>,
+	excluded: ReadonlyArray<string>,
+): Search => {
 	const facets = facetsOf(allIncidentsOf(model))
 	switch (facet) {
 		case "severity":
@@ -118,9 +134,17 @@ const withFacet = (model: Model, facet: Facet, selected: ReadonlyArray<string>, 
 				excludedSignals: inFacetOrder(facets.signals, excluded),
 			}
 		case "services":
-			return { ...model.search, services: listOrUndefined(selected), excludedServices: listOrUndefined(excluded) }
+			return {
+				...model.search,
+				services: listOrUndefined(selected),
+				excludedServices: listOrUndefined(excluded),
+			}
 		case "envs":
-			return { ...model.search, envs: listOrUndefined(selected), excludedEnvs: listOrUndefined(excluded) }
+			return {
+				...model.search,
+				envs: listOrUndefined(selected),
+				excludedEnvs: listOrUndefined(excluded),
+			}
 	}
 }
 
@@ -153,7 +177,9 @@ const excludedFacet = (model: Model, facet: Facet, name: string): Search => {
 const tabsStep = (model: Model, message: Tabs.Message): Return => {
 	const next = Tabs.update(model.tabs, message)
 	const updated = { ...model, tabs: next.model }
-	const commands: Commands = Command.mapMessages(next.commands ?? [], (tabs) => Message.GotTabsMessage({ message: tabs }))
+	const commands: Commands = Command.mapMessages(next.commands ?? [], (tabs) =>
+		Message.GotTabsMessage({ message: tabs }),
+	)
 	if (message._tag !== "ClickedTab") return { model: updated, commands }
 	const value = model.tabs.values[message.index]
 	if (value === undefined || value === model.tabs.selected) return { model: updated, commands }
@@ -167,7 +193,8 @@ const rowsInOrder = (model: Model): ReadonlyArray<AnomalyIncidentDocument> =>
 
 /** `useListNavigation` over the incident rows. */
 const pressedListKey = (model: Model, key: "Next" | "Previous" | "Open" | "Escape"): Return => {
-	if (key === "Escape") return model.focusedId === null ? { model } : { model: { ...model, focusedId: null } }
+	if (key === "Escape")
+		return model.focusedId === null ? { model } : { model: { ...model, focusedId: null } }
 	const incidents = rowsInOrder(model)
 	if (key === "Open") {
 		const focused = incidents.find((incident) => incident.id === model.focusedId)
@@ -175,11 +202,15 @@ const pressedListKey = (model: Model, key: "Next" | "Previous" | "Open" | "Escap
 			? { model }
 			: {
 					model,
-					outMessage: PageOutMessage.RequestedNavigation({ url: anomalyHref(focused.id), isReplace: false }),
+					outMessage: PageOutMessage.RequestedNavigation({
+						url: anomalyHref(focused.id),
+						isReplace: false,
+					}),
 				}
 	}
 	if (incidents.length === 0) return { model }
-	const current = model.focusedId === null ? -1 : incidents.findIndex((incident) => incident.id === model.focusedId)
+	const current =
+		model.focusedId === null ? -1 : incidents.findIndex((incident) => incident.id === model.focusedId)
 	const next =
 		key === "Next"
 			? current < 0
@@ -229,7 +260,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 								isLoadingMore: false,
 								loadedPages: {
 									key: status,
-									rows: [...(model.loadedPages?.key === status ? model.loadedPages.rows : []), ...page.data],
+									rows: [
+										...(model.loadedPages?.key === status ? model.loadedPages.rows : []),
+										...page.data,
+									],
 									nextCursor: page.nextCursor,
 								},
 							},
@@ -245,9 +279,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		ToggledFacetOption: ({ facet, name }) => toNavigation(model, toggledFacet(model, facet, name)),
-		ClickedOnlyFacetOption: ({ facet, name }) =>
-			toNavigation(model, withFacet(model, facet, [name], [])),
-		ClickedExcludeFacetOption: ({ facet, name }) => toNavigation(model, excludedFacet(model, facet, name)),
+		ClickedOnlyFacetOption: ({ facet, name }) => toNavigation(model, withFacet(model, facet, [name], [])),
+		ClickedExcludeFacetOption: ({ facet, name }) =>
+			toNavigation(model, excludedFacet(model, facet, name)),
 		RemovedFilterChip: ({ param }) => toNavigation(model, { ...model.search, [param]: undefined }),
 		ClickedClearFilters: () =>
 			toNavigation(model, { status: model.search.status, live: model.search.live }),

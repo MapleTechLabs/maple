@@ -4,7 +4,11 @@ import { field, type FieldIds, fieldLabel, input, type FieldState } from "../../
 // `<Field><FieldLabel htmlFor><Input id /></Field>` with the value in the Model: Base UI marks the
 // field filled while it has text.
 
-export const fieldIds = (id: string): FieldIds => ({ control: id, label: `${id}-label`, error: `${id}-error` })
+export const fieldIds = (id: string): FieldIds => ({
+	control: id,
+	label: `${id}-label`,
+	error: `${id}-error`,
+})
 
 export const stateFor = (value: string, isInvalid = false): FieldState => ({
 	isInvalid,

@@ -30,7 +30,9 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				}),
 				dependenciesToStream: ({ isEmpty: empty, includeStatus }) =>
 					empty
-						? Stream.map(pollTicks(EMPTY_REFRESH), () => Message.TickedEmptyRefresh({ includeStatus }))
+						? Stream.map(pollTicks(EMPTY_REFRESH), () =>
+								Message.TickedEmptyRefresh({ includeStatus }),
+							)
 						: Stream.empty,
 			},
 		),

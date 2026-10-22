@@ -27,7 +27,11 @@ export type ViewInputs = Readonly<{
 
 /** Billing, spend-first: this cycle, its usage and caps, the plan, invoices and details. */
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
-	const notice = adminOnlyNotice(h, { isAdmin: model.isAdmin, subject: "billing", adminName: inputs.adminName })
+	const notice = adminOnlyNotice(h, {
+		isAdmin: model.isAdmin,
+		subject: "billing",
+		adminName: inputs.adminName,
+	})
 	// Every spend view derives from the customer; details and invoices load on their own.
 	if (AsyncData.isFailure(inputs.customer))
 		return settingsSections(h, "standard", [
@@ -50,7 +54,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		])
 	const customer = AsyncData.getOrElse(inputs.customer, () => null)
 	const plans = AsyncData.getOrElse(model.plans, () => undefined)
-	const isLoading = customer === null || AsyncData.isLoading(model.usage) || AsyncData.isLoading(model.plans)
+	const isLoading =
+		customer === null || AsyncData.isLoading(model.usage) || AsyncData.isLoading(model.plans)
 	const spend = spendModelOf(model, customer, inputs.nowMs)
 	const trial = getTrialStatus(customer ?? undefined)
 	const { isLegacy } = getLegacyPlanInfo(customer ?? undefined, plans)
@@ -69,7 +74,11 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				...(model.isAdmin && {
 					actions: button(
 						h,
-						{ variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedManageBilling())] },
+						{
+							variant: "outline",
+							size: "sm",
+							attributes: [h.OnClick(Message.ClickedManageBilling())],
+						},
 						["Manage billing"],
 					),
 				}),
@@ -100,11 +109,20 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						],
 						framed: false,
 					},
-					[isLoading || spend === null || customer === null ? usageTableSkeleton(h) : usageTable(h, model, spend, customer)],
+					[
+						isLoading || spend === null || customer === null
+							? usageTableSkeleton(h)
+							: usageTable(h, model, spend, customer),
+					],
 				),
 			],
 		),
-		planSection(h, model, { spend: isLoading ? null : spend, customer, isLegacy, canManage: model.isAdmin }),
+		planSection(h, model, {
+			spend: isLoading ? null : spend,
+			customer,
+			isLegacy,
+			canManage: model.isAdmin,
+		}),
 		invoicesSection(h, model, inputs.timeZone),
 		detailsSection(h, model),
 	])
@@ -121,7 +139,10 @@ const checkoutReturnPanel = (h: H, model: Model): ReadonlyArray<Html> => {
 			return [
 				panel(
 					h,
-					{ className: "flex-row items-center gap-3 px-4 py-3", attributes: [h.Role("status"), h.AriaLive("polite")] },
+					{
+						className: "flex-row items-center gap-3 px-4 py-3",
+						attributes: [h.Role("status"), h.AriaLive("polite")],
+					},
 					[
 						spinner(h, "size-4 shrink-0"),
 						h.p(
@@ -140,11 +161,19 @@ const checkoutReturnPanel = (h: H, model: Model): ReadonlyArray<Html> => {
 			]
 		case "TimedOut":
 			return [
-				panel(h, { tone: "muted", className: "px-4 py-3 text-sm text-muted-foreground", attributes: [h.Role("status")] }, [
-					"We haven't heard back from Stripe yet. If you completed checkout, your plan will appear here shortly; there's no need to subscribe again. If you left checkout, ",
-					"use Compare plans under Plan",
-					".",
-				]),
+				panel(
+					h,
+					{
+						tone: "muted",
+						className: "px-4 py-3 text-sm text-muted-foreground",
+						attributes: [h.Role("status")],
+					},
+					[
+						"We haven't heard back from Stripe yet. If you completed checkout, your plan will appear here shortly; there's no need to subscribe again. If you left checkout, ",
+						"use Compare plans under Plan",
+						".",
+					],
+				),
 			]
 	}
 }

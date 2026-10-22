@@ -34,10 +34,19 @@ export const deriveTurnMinimap = (
 	const items = rows.reduce<ReadonlyArray<TurnItem>>((acc, row) => {
 		if (row.kind !== "message") return acc
 		if (row.message.role === "user" && !isMachineTurn(row.message))
-			return [...acc, { id: row.id, userText: compactPreview(stripChatContext(messageText(row.message))), assistantText: null }]
+			return [
+				...acc,
+				{
+					id: row.id,
+					userText: compactPreview(stripChatContext(messageText(row.message))),
+					assistantText: null,
+				},
+			]
 		const current = acc[acc.length - 1]
 		const text = row.message.role === "assistant" ? compactPreview(messageText(row.message)) : null
-		return current !== undefined && text !== null ? [...acc.slice(0, -1), { ...current, assistantText: text }] : acc
+		return current !== undefined && text !== null
+			? [...acc.slice(0, -1), { ...current, assistantText: text }]
+			: acc
 	}, [])
 	const turnByRowId = new Map(
 		rows.flatMap((row, index) => {
@@ -49,29 +58,37 @@ export const deriveTurnMinimap = (
 }
 
 const deriveTurnCount = (rows: ReadonlyArray<TranscriptRow>): number =>
-	rows.filter((row) => row.kind === "message" && row.message.role === "user" && !isMachineTurn(row.message)).length
+	rows.filter((row) => row.kind === "message" && row.message.role === "user" && !isMachineTurn(row.message))
+		.length
 
-const resolveCurrentTurnIndex = (visibleIds: ReadonlyArray<string>, turnByRowId: ReadonlyMap<string, number>): number | null =>
+const resolveCurrentTurnIndex = (
+	visibleIds: ReadonlyArray<string>,
+	turnByRowId: ReadonlyMap<string, number>,
+): number | null =>
 	visibleIds.reduce<number | null>((current, id) => {
 		const index = turnByRowId.get(id)
 		return index === undefined ? current : current === null || index < current ? index : current
 	}, null)
 
-const minimapHeightStyle = (count: number): string => `min(${Math.max(1, (count - 1) * ITEM_SPACING_PX)}px, ${MAX_HEIGHT_CSS})`
+const minimapHeightStyle = (count: number): string =>
+	`min(${Math.max(1, (count - 1) * ITEM_SPACING_PX)}px, ${MAX_HEIGHT_CSS})`
 
 export const minimapTopPercent = (index: number, count: number): number =>
 	count <= 1 ? 0 : (Math.max(0, Math.min(index, count - 1)) / (count - 1)) * 100
 
-const sideGutterPx = (width: number): number => Math.max(0, (width - Math.min(width, CONTENT_MAX_WIDTH_PX)) / 2)
+const sideGutterPx = (width: number): number =>
+	Math.max(0, (width - Math.min(width, CONTENT_MAX_WIDTH_PX)) / 2)
 
-const hasPersistentGutter = (width: number): boolean => Number.isFinite(width) && width > 0 && sideGutterPx(width) >= PERSISTENT_GUTTER_PX
+const hasPersistentGutter = (width: number): boolean =>
+	Number.isFinite(width) && width > 0 && sideGutterPx(width) >= PERSISTENT_GUTTER_PX
 
 const hitStripWidth = (width: number): number =>
 	!Number.isFinite(width) || width <= 0
 		? 0
 		: Math.max(0, Math.min(HIT_STRIP_MAX_WIDTH_PX, Math.floor(sideGutterPx(width)) - HIT_STRIP_INSET_PX))
 
-const previewTranslate = (index: number, count: number): string => (index <= 0 ? "0%" : index >= count - 1 ? "-100%" : "-50%")
+const previewTranslate = (index: number, count: number): string =>
+	index <= 0 ? "0%" : index >= count - 1 ? "-100%" : "-50%"
 
 /** What the rail knows about the page: its width and the rows on screen. */
 export const MinimapState = Schema.Struct({
@@ -117,7 +134,10 @@ const step = <M>(h: HtmlBuilder<M>, direction: "previous" | "next", target: Opti
 					hasTooltip: false,
 					size: "icon-xs",
 					isDisabled: Option.isNone(target),
-					attributes: Option.match(target, { onNone: () => [], onSome: (id) => [h.DataAttribute("turn-target", id)] }),
+					attributes: Option.match(target, {
+						onNone: () => [],
+						onSome: (id) => [h.DataAttribute("turn-target", id)],
+					}),
 				},
 				[icon(h, previous ? "ChevronUpIcon" : "ChevronDownIcon", { className: "size-3.5" })],
 			),
@@ -138,12 +158,16 @@ export const turnMinimap = <M>(
 	const { items, turnByRowId } = deriveTurnMinimap(rows)
 	if (items.length < TURN_MINIMAP_MIN_ITEMS) return h.empty
 	const currentIndex = resolveCurrentTurnIndex(state.visibleIds, turnByRowId)
-	const visibleTurns = new Set(state.visibleIds.flatMap((id) => Option.toArray(Option.fromNullishOr(turnByRowId.get(id)))))
+	const visibleTurns = new Set(
+		state.visibleIds.flatMap((id) => Option.toArray(Option.fromNullishOr(turnByRowId.get(id)))),
+	)
 	const active = state.activeIndex !== null && state.activeIndex < items.length ? state.activeIndex : null
 	const activeItem = active === null ? undefined : items[active]
 	const strip = hitStripWidth(state.railWidth)
 	const neighbour = (offset: number) =>
-		currentIndex === null ? Option.none() : Option.map(Option.fromNullishOr(items[currentIndex + offset]), (item) => item.id)
+		currentIndex === null
+			? Option.none()
+			: Option.map(Option.fromNullishOr(items[currentIndex + offset]), (item) => item.id)
 	return h.div(
 		[
 			h.Class(
@@ -160,15 +184,27 @@ export const turnMinimap = <M>(
 		[
 			h.div(
 				[
-					h.Class(cn("absolute top-1/2 start-3 -translate-y-1/2 select-none", strip > 0 ? "pointer-events-auto" : "pointer-events-none")),
-					h.Style({ height: minimapHeightStyle(items.length), width: activeItem === undefined ? `${strip}px` : EXPANDED_HIT_STRIP_WIDTH }),
+					h.Class(
+						cn(
+							"absolute top-1/2 start-3 -translate-y-1/2 select-none",
+							strip > 0 ? "pointer-events-auto" : "pointer-events-none",
+						),
+					),
+					h.Style({
+						height: minimapHeightStyle(items.length),
+						width: activeItem === undefined ? `${strip}px` : EXPANDED_HIT_STRIP_WIDTH,
+					}),
 				],
 				[
 					step(h, "previous", neighbour(-1)),
 					h.button(
 						[
 							h.Type("button"),
-							h.AriaLabel(activeItem === undefined ? "Jump to a turn" : `Jump to turn: ${activeItem.userText ?? "user message"}`),
+							h.AriaLabel(
+								activeItem === undefined
+									? "Jump to a turn"
+									: `Jump to turn: ${activeItem.userText ?? "user message"}`,
+							),
 							h.Class(
 								"absolute inset-y-0 start-0 w-full cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70",
 							),
@@ -184,8 +220,12 @@ export const turnMinimap = <M>(
 										h.Class(
 											cn(
 												"pointer-events-none absolute start-0 h-0.5 -translate-y-1/2 rounded-full transition-[background-color,width] duration-150",
-												visibleTurns.has(index) ? "bg-foreground/80" : "bg-muted-foreground/35",
-												markerWidth(active === null ? null : Math.abs(index - active)),
+												visibleTurns.has(index)
+													? "bg-foreground/80"
+													: "bg-muted-foreground/35",
+												markerWidth(
+													active === null ? null : Math.abs(index - active),
+												),
 											),
 										),
 										h.DataAttribute("turn-id", item.id),
@@ -199,7 +239,9 @@ export const turnMinimap = <M>(
 								: [
 										h.span(
 											[
-												h.Class("pointer-events-auto absolute start-8 w-80 cursor-text select-text"),
+												h.Class(
+													"pointer-events-auto absolute start-8 w-80 cursor-text select-text",
+												),
 												h.DataAttribute("turn-minimap-preview", ""),
 												h.Style({
 													top: `${minimapTopPercent(active, items.length)}%`,
@@ -208,12 +250,32 @@ export const turnMinimap = <M>(
 											],
 											[
 												h.span(
-													[h.Class("block rounded-lg border border-border bg-popover p-3 text-start text-popover-foreground shadow-md")],
 													[
-														h.span([h.Class("block truncate text-sm font-medium leading-5")], [activeItem.userText ?? "User message"]),
+														h.Class(
+															"block rounded-lg border border-border bg-popover p-3 text-start text-popover-foreground shadow-md",
+														),
+													],
+													[
+														h.span(
+															[
+																h.Class(
+																	"block truncate text-sm font-medium leading-5",
+																),
+															],
+															[activeItem.userText ?? "User message"],
+														),
 														...(activeItem.assistantText === null
 															? []
-															: [h.span([h.Class("mt-1 line-clamp-3 block text-sm leading-5 text-muted-foreground")], [activeItem.assistantText])]),
+															: [
+																	h.span(
+																		[
+																			h.Class(
+																				"mt-1 line-clamp-3 block text-sm leading-5 text-muted-foreground",
+																			),
+																		],
+																		[activeItem.assistantText],
+																	),
+																]),
 													],
 												),
 											],

@@ -26,7 +26,13 @@ export const SlotSchema = <A, AI>(dataSchema: Schema.Codec<A, AI>) =>
 		isStandIn: Schema.Boolean,
 	})
 
-export const idle = <A>(): Slot<A> => ({ key: null, data: AsyncData.Idle(), isPlaceholder: false, updatedAtMs: null, isStandIn: false })
+export const idle = <A>(): Slot<A> => ({
+	key: null,
+	data: AsyncData.Idle(),
+	isPlaceholder: false,
+	updatedAtMs: null,
+	isStandIn: false,
+})
 
 /** A key for one query: its name and inputs, as the cache hashes it. */
 export const keyOf = (name: string, input: unknown): string => `${name}:${JSON.stringify(input)}`
@@ -56,7 +62,12 @@ export const request = <A>(slot: Slot<A>, key: string, force = false): Option.Op
  * Folds a result in only if it answers the slot's current key; a superseded answer is dropped.
  * A failed new key drops the placeholder rows (they were another key's); a failed refetch keeps them.
  */
-export const accept = <A>(slot: Slot<A>, key: string, result: Result.Result<A, LoadFailure>, atMs: number | null = null): Slot<A> => {
+export const accept = <A>(
+	slot: Slot<A>,
+	key: string,
+	result: Result.Result<A, LoadFailure>,
+	atMs: number | null = null,
+): Slot<A> => {
 	if (slot.key !== key) return slot
 	const data =
 		slot.isPlaceholder && Result.isFailure(result)
@@ -80,7 +91,9 @@ export const acceptCached = <A>(
 	if (slot.key !== key || (Option.isSome(AsyncData.getData(slot.data)) && !slot.isPlaceholder)) return slot
 	return {
 		key,
-		data: isFresh ? AsyncData.Success({ data: cached.data }) : AsyncData.Refreshing({ data: cached.data }),
+		data: isFresh
+			? AsyncData.Success({ data: cached.data })
+			: AsyncData.Refreshing({ data: cached.data }),
 		isPlaceholder: false,
 		updatedAtMs: cached.updatedAtMs,
 		isStandIn: cached.isStandIn,
@@ -92,7 +105,8 @@ export type Shown = Readonly<{ atMs: number; isStandIn: boolean; isRefreshing: b
 
 /** The slot's rows as the stale-data notice sees them: none for placeholders or untracked slots. */
 export const shownOf = <A>(slot: Slot<A>): Option.Option<Shown> => {
-	if (slot.isPlaceholder || slot.updatedAtMs === null || Option.isNone(AsyncData.getData(slot.data))) return Option.none()
+	if (slot.isPlaceholder || slot.updatedAtMs === null || Option.isNone(AsyncData.getData(slot.data)))
+		return Option.none()
 	return Option.some({
 		atMs: slot.updatedAtMs,
 		isStandIn: slot.isStandIn,
@@ -110,7 +124,8 @@ export const failureWithoutData = <A>(slot: Slot<A>): Option.Option<LoadFailure>
 	AsyncData.isFailure(slot.data) ? AsyncData.getError(slot.data) : Option.none()
 
 /** A fetch for the slot's key is in flight (a first load, a refetch or a new key). */
-export const isInFlight = <A>(slot: Slot<A>): boolean => AsyncData.isLoading(slot.data) || AsyncData.isRefreshing(slot.data)
+export const isInFlight = <A>(slot: Slot<A>): boolean =>
+	AsyncData.isLoading(slot.data) || AsyncData.isRefreshing(slot.data)
 
 /** `fetchNextPage` may extend the rows: they are this key's own and no fetch will replace them. */
 export const canExtend = <A>(slot: Slot<A>): boolean => !slot.isPlaceholder && !isInFlight(slot)

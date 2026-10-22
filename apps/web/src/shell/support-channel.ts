@@ -48,7 +48,9 @@ export const LoadChannel = Command.define("LoadSupportChannel", {
 		const client = yield* MapleApiV2Client
 		const channel = yield* client.supportChannel.retrieve()
 		return Message.SucceededLoadChannel({ channel })
-	}).pipe(Effect.catch((error) => Effect.succeed(Message.FailedLoadChannel({ failure: toLoadFailure(error) })))),
+	}).pipe(
+		Effect.catch((error) => Effect.succeed(Message.FailedLoadChannel({ failure: toLoadFailure(error) }))),
+	),
 })
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
@@ -59,7 +61,11 @@ const toDialog = (message: Dialog.Message) => Message.GotDialogMessage({ message
 const withDialog = (model: Model, step: ReturnType<typeof Dialog.update>): UpdateReturn => {
 	const commands = Command.mapMessages(step.commands ?? [], toDialog)
 	const out = step.outMessage
-	if (out !== undefined && out._tag === "Opened" && (AsyncData.isIdle(model.channel) || AsyncData.isFailure(model.channel)))
+	if (
+		out !== undefined &&
+		out._tag === "Opened" &&
+		(AsyncData.isIdle(model.channel) || AsyncData.isFailure(model.channel))
+	)
 		return {
 			model: { ...model, dialog: step.model, channel: ChannelData.Loading() },
 			commands: [...commands, LoadChannel()],
@@ -74,9 +80,16 @@ export const open = (model: Model): UpdateReturn => withDialog(model, Dialog.ope
 export const update = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		GotDialogMessage: ({ message: child }) => withDialog(model, Dialog.update(model.dialog, child)),
-		SucceededLoadChannel: ({ channel }) => ({ model: { ...model, channel: ChannelData.Success({ data: channel }) } }),
-		FailedLoadChannel: ({ failure }) => ({ model: { ...model, channel: ChannelData.Failure({ error: failure }) } }),
-		ClickedRetry: () => ({ model: { ...model, channel: ChannelData.Loading() }, commands: [LoadChannel()] }),
+		SucceededLoadChannel: ({ channel }) => ({
+			model: { ...model, channel: ChannelData.Success({ data: channel }) },
+		}),
+		FailedLoadChannel: ({ failure }) => ({
+			model: { ...model, channel: ChannelData.Failure({ error: failure }) },
+		}),
+		ClickedRetry: () => ({
+			model: { ...model, channel: ChannelData.Loading() },
+			commands: [LoadChannel()],
+		}),
 		ClickedInvite: () =>
 			model.isInviting
 				? { model }

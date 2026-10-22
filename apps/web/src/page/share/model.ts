@@ -43,7 +43,6 @@ export const SharedDashboard = Schema.Struct({
 })
 export type SharedDashboard = typeof SharedDashboard.Type
 
-
 /** `ShareResolveError`. */
 export const ShareError = Schema.Union([
 	Schema.TaggedStruct("NotFound", {}),

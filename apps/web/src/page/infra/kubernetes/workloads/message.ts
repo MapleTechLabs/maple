@@ -9,7 +9,13 @@ import { WorkloadFacets, WorkloadRows } from "./model"
 export const WorkloadKindSchema = Schema.Literals(["deployment", "statefulset", "daemonset", "job"])
 export const WorkloadScope = Schema.Literals(["saturated", "elevated", "stale"])
 export type WorkloadScope = typeof WorkloadScope.Type
-export const Facet = Schema.Literals(["workloadNames", "namespaces", "clusters", "environments", "computeTypes"])
+export const Facet = Schema.Literals([
+	"workloadNames",
+	"namespaces",
+	"clusters",
+	"environments",
+	"computeTypes",
+])
 export type Facet = typeof Facet.Type
 export const WorkloadSortKey = Schema.Literals([
 	"workloadName",

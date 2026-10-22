@@ -31,7 +31,11 @@ export const FetchWorkloads = Command.define("FetchInfraWorkloads", {
 		),
 })
 
-export const FacetsInput = Schema.Struct({ kind: WorkloadKindSchema, startTime: Schema.String, endTime: Schema.String })
+export const FacetsInput = Schema.Struct({
+	kind: WorkloadKindSchema,
+	startTime: Schema.String,
+	endTime: Schema.String,
+})
 export type FacetsInput = typeof FacetsInput.Type
 
 export const FetchFacets = Command.define("FetchInfraWorkloadFacets", {

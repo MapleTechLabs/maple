@@ -277,7 +277,12 @@ describe("buildSessionSummary — tokens and models", () => {
 				spanName: "agent.step",
 				startMs: 0,
 				durationMs: 2 * SECOND,
-				genAi: { operationName: "workflow", usageCost: 0.0004263, mapleLlmCall: 0, mapleCost: 0.0004263 },
+				genAi: {
+					operationName: "workflow",
+					usageCost: 0.0004263,
+					mapleLlmCall: 0,
+					mapleCost: 0.0004263,
+				},
 			}),
 			llmSpan({
 				spanId: "chat",
@@ -305,7 +310,12 @@ describe("buildSessionSummary — tokens and models", () => {
 				spanId,
 				startMs,
 				durationMs: SECOND,
-				genAi: { requestModel: "openai/gpt-4o-mini", responseModel, usageInputTokens: 10, usageOutputTokens: 1 },
+				genAi: {
+					requestModel: "openai/gpt-4o-mini",
+					responseModel,
+					usageInputTokens: 10,
+					usageOutputTokens: 1,
+				},
 			})
 		const summary = summarize([
 			call("a", 0, "gpt-4o-mini-2024-07-18"),

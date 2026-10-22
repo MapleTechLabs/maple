@@ -1,8 +1,21 @@
-import { byTypeFromCached, errorsKey, facetsFromCached, summaryFromCached, tracesFromCached, tracesKey } from "./cache"
+import {
+	byTypeFromCached,
+	errorsKey,
+	facetsFromCached,
+	summaryFromCached,
+	tracesFromCached,
+	tracesKey,
+} from "./cache"
 import { withCache } from "../../data/cached"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { type ErrorsFilters, fetchErrorsByType, fetchErrorsFacets, fetchErrorsSummary, fetchErrorTraces } from "./fetch"
+import {
+	type ErrorsFilters,
+	fetchErrorsByType,
+	fetchErrorsFacets,
+	fetchErrorsSummary,
+	fetchErrorTraces,
+} from "./fetch"
 import { Message } from "./message"
 
 /** The view's filters from the hash query (`ErrorsView`). */
@@ -95,6 +108,11 @@ export const FetchTraces = Command.define("FetchLocalErrorTraces", {
 			toCached: same,
 			fetch: fetchErrorTraces(fingerprintHash, filtersOf(search), { startTime, endTime }, apiBase),
 			found: (cached) => Message.FoundCachedTraces({ fingerprintHash, key, cached }),
-			succeeded: (traces, fetchedAtMs) => Message.SucceededFetchTraces({ fingerprintHash, key, traces, fetchedAtMs }),
-		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchTraces({ fingerprintHash, key, failure })))),
+			succeeded: (traces, fetchedAtMs) =>
+				Message.SucceededFetchTraces({ fingerprintHash, key, traces, fetchedAtMs }),
+		}).pipe(
+			Effect.catch((failure) =>
+				Effect.succeed(Message.FailedFetchTraces({ fingerprintHash, key, failure })),
+			),
+		),
 })

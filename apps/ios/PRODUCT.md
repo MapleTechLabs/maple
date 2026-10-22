@@ -26,7 +26,7 @@ Everything above the fold answers question 1.
 
 - **Status headline.** Derived on-device, no new endpoint:
   `All 14 services healthy` · `2 degraded, 1 critical alert` · `No data in
-the last hour` (liveness — an org that stopped sending is _not_ healthy).
+  the last hour` (liveness — an org that stopped sending is _not_ healthy).
   Colour follows the worst thing on screen; amber primary used here and only
   here.
 - **Open incidents**, critical first, each a card: rule name · service(s) ·

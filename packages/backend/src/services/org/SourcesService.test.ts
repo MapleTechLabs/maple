@@ -602,7 +602,10 @@ describe("SourcesService", () => {
 				),
 			)
 			const [off] = yield* ownSources(keys, orgA)
-			assert.deepStrictEqual([off?.health.status, off?.health.problem], ["paused", "Scraping is turned off"])
+			assert.deepStrictEqual(
+				[off?.health.status, off?.health.problem],
+				["paused", "Scraping is turned off"],
+			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

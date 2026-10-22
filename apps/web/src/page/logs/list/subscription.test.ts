@@ -49,7 +49,11 @@ describe("logs live tail", () => {
 	test("stays paused while the detail sheet is open, even after new rows arrive", () => {
 		const loaded = withRows(init({ search: { refresh: 5 } }, context).model, "first", "Load")
 		expect(interval(loaded)).toBe(5)
-		const opened = { ...loaded, detail: LogDetail.open(loaded.detail, log("first"), context).model, selectedIndex: 0 }
+		const opened = {
+			...loaded,
+			detail: LogDetail.open(loaded.detail, log("first"), context).model,
+			selectedIndex: 0,
+		}
 		const refreshed = withRows({ ...opened, refreshVersion: 1 }, "second", "Refresh")
 		expect(refreshed.selectedIndex).toBeNull()
 		expect(interval(refreshed)).toBe(0)
@@ -62,8 +66,9 @@ describe("logs live tail", () => {
 				vi.stubGlobal("document", hidden)
 				const ticks = yield* Ref.make(0)
 				const fiber = yield* Effect.forkChild(
-					Stream.runForEach(subscriptions.autoRefresh.dependenciesToStream({ intervalSeconds: 5 }), () =>
-						Ref.update(ticks, (n) => n + 1),
+					Stream.runForEach(
+						subscriptions.autoRefresh.dependenciesToStream({ intervalSeconds: 5 }),
+						() => Ref.update(ticks, (n) => n + 1),
 					),
 				)
 				yield* TestClock.adjust("30 seconds")

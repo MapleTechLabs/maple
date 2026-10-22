@@ -18,7 +18,12 @@ import type { LiftedRail } from "./page-rails"
 /** `<Button variant="outline" size="icon-sm" aria-label>` cloned with the sheet's `onClick`. */
 const railTrigger = (
 	h: HtmlBuilder<Message>,
-	options: Readonly<{ label: string; icon: "LayoutLeftIcon" | "LayoutRightIcon"; id: string; onClick: Message }>,
+	options: Readonly<{
+		label: string
+		icon: "LayoutLeftIcon" | "LayoutRightIcon"
+		id: string
+		onClick: Message
+	}>,
 ): Html =>
 	button(
 		h,

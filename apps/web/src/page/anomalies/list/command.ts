@@ -44,14 +44,18 @@ export const FetchFirstPage = Command.define("FetchAnomalyIncidents", {
 	args: { key: Schema.String, status: StatusTab },
 	messages: [Message.CompletedFetchFirstPage],
 	execute: ({ key, status }) =>
-		Effect.map(fetchPage(status, undefined), (result) => Message.CompletedFetchFirstPage({ key, result })),
+		Effect.map(fetchPage(status, undefined), (result) =>
+			Message.CompletedFetchFirstPage({ key, result }),
+		),
 })
 
 export const LoadMoreIncidents = Command.define("LoadMoreAnomalyIncidents", {
 	args: { status: StatusTab, cursor: Schema.String },
 	messages: [Message.CompletedLoadMore],
 	execute: ({ status, cursor }) =>
-		Effect.map(fetchPage(status, cursor), (result) => Message.CompletedLoadMore({ status, cursor, result })),
+		Effect.map(fetchPage(status, cursor), (result) =>
+			Message.CompletedLoadMore({ status, cursor, result }),
+		),
 })
 
 export const LoadSignalPresence = Command.define("LoadAnomaliesSignalPresence", {

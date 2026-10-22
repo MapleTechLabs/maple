@@ -71,8 +71,16 @@ const widgetRow = <M>(h: HtmlBuilder<M>, widget: Widget): Html =>
 		[
 			icon(h, vizIcon(widget.visualization), { className: "size-3.5 shrink-0 text-muted-foreground" }),
 			h.span([h.Class("truncate text-xs font-medium")], [widget.title]),
-			...(widget.source === undefined ? [] : [h.span([h.Class("truncate text-2xs text-muted-foreground")], [widget.source])]),
-			...(widget.groupBy === undefined ? [] : [badge(h, { variant: "outline", size: "xs", className: "ml-auto px-1.5" }, [widget.groupBy])]),
+			...(widget.source === undefined
+				? []
+				: [h.span([h.Class("truncate text-2xs text-muted-foreground")], [widget.source])]),
+			...(widget.groupBy === undefined
+				? []
+				: [
+						badge(h, { variant: "outline", size: "xs", className: "ml-auto px-1.5" }, [
+							widget.groupBy,
+						]),
+					]),
 		],
 	)
 
@@ -84,7 +92,14 @@ const widgetList = <M>(h: HtmlBuilder<M>, widgets: ReadonlyArray<Widget>, max = 
 			[h.Class("space-y-1")],
 			[
 				...widgets.slice(0, max).map((widget) => widgetRow(h, widget)),
-				...(overflow > 0 ? [h.div([h.Class("px-2 text-2xs text-muted-foreground")], ["+ ", String(overflow), " more"])] : []),
+				...(overflow > 0
+					? [
+							h.div(
+								[h.Class("px-2 text-2xs text-muted-foreground")],
+								["+ ", String(overflow), " more"],
+							),
+						]
+					: []),
 			],
 		),
 	]
@@ -99,13 +114,24 @@ const fieldChip = <M>(h: HtmlBuilder<M>, label: string, value: string): Html =>
 		h.span([h.Class("font-mono")], [value]),
 	])
 
-const heading = <M>(h: HtmlBuilder<M>, glyph: IconName, title: ReadonlyArray<string>, dashboardId: string | null): Html =>
+const heading = <M>(
+	h: HtmlBuilder<M>,
+	glyph: IconName,
+	title: ReadonlyArray<string>,
+	dashboardId: string | null,
+): Html =>
 	h.div(
 		[h.Class("flex items-center gap-2")],
 		[
 			icon(h, glyph, { className: "size-3.5 shrink-0 text-muted-foreground" }),
 			h.span([h.Class("text-sm font-semibold")], title),
-			...(dashboardId === null ? [] : [badge(h, { variant: "outline", size: "xs", mono: true, className: "ml-auto" }, [dashboardId])]),
+			...(dashboardId === null
+				? []
+				: [
+						badge(h, { variant: "outline", size: "xs", mono: true, className: "ml-auto" }, [
+							dashboardId,
+						]),
+					]),
 		],
 	)
 
@@ -139,17 +165,28 @@ const createDashboard = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 						[
 							h.div([h.Class("truncate text-sm font-semibold")], [name]),
 							...(innerName !== undefined && innerName !== name
-								? [h.div([h.Class("truncate text-2xs text-muted-foreground")], ["Inner title: ", innerName])]
+								? [
+										h.div(
+											[h.Class("truncate text-2xs text-muted-foreground")],
+											["Inner title: ", innerName],
+										),
+									]
 								: []),
 						],
 					),
 				],
 			),
-			...(description === undefined ? [] : [h.div([h.Class("text-xs text-muted-foreground")], [description])]),
+			...(description === undefined
+				? []
+				: [h.div([h.Class("text-xs text-muted-foreground")], [description])]),
 			h.div(
 				[h.Class("flex flex-wrap gap-1.5")],
 				[
-					fieldChip(h, "template", asString(obj.template) ?? (isCustom ? "Custom" : "service-health")),
+					fieldChip(
+						h,
+						"template",
+						asString(obj.template) ?? (isCustom ? "Custom" : "service-health"),
+					),
 					...(serviceName === undefined ? [] : [fieldChip(h, "service", serviceName)]),
 					fieldChip(h, "time", asString(obj.time_range) ?? "1h"),
 				],
@@ -159,7 +196,11 @@ const createDashboard = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 				: !isCustom
 					? [
 							h.div(
-								[h.Class("rounded-md border border-dashed border-border/60 px-2 py-1.5 text-2xs text-muted-foreground")],
+								[
+									h.Class(
+										"rounded-md border border-dashed border-border/60 px-2 py-1.5 text-2xs text-muted-foreground",
+									),
+								],
 								["Template will generate widgets automatically."],
 							),
 						]
@@ -168,9 +209,14 @@ const createDashboard = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 	)
 }
 
-
 const changeLine = <M>(h: HtmlBuilder<M>, label: string, value: string, valueClass?: string): Html =>
-	h.div([h.Class("text-xs")], [h.span([h.Class("text-muted-foreground")], [label]), h.span(valueClass === undefined ? [] : [h.Class(valueClass)], [value])])
+	h.div(
+		[h.Class("text-xs")],
+		[
+			h.span([h.Class("text-muted-foreground")], [label]),
+			h.span(valueClass === undefined ? [] : [h.Class(valueClass)], [value]),
+		],
+	)
 
 const updateDashboard = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 	const name = asString(obj.name)
@@ -187,18 +233,36 @@ const updateDashboard = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 				[
 					...(name === undefined ? [] : [changeLine(h, "New name: ", name, "font-medium")]),
 					...(description === undefined ? [] : [changeLine(h, "New description: ", description)]),
-					...(timeRange === undefined ? [] : [changeLine(h, "New time range: ", timeRange, "font-mono")]),
-					...(name === undefined && description === undefined && timeRange === undefined && !isReplacement
+					...(timeRange === undefined
+						? []
+						: [changeLine(h, "New time range: ", timeRange, "font-mono")]),
+					...(name === undefined &&
+					description === undefined &&
+					timeRange === undefined &&
+					!isReplacement
 						? [h.div([h.Class("text-xs text-muted-foreground")], ["No metadata changes"])]
 						: []),
 				],
 			),
 			...(isReplacement
 				? [
-						section(h, widgets.length > 0 ? `Full replacement · ${countLabel(widgets.length, "widget")}` : "Full replacement", [
-							h.div([h.Class("mb-1.5")], [badge(h, { variant: "destructive", size: "xs" }, ["Replaces entire dashboard"])]),
-							...widgetList(h, widgets),
-						]),
+						section(
+							h,
+							widgets.length > 0
+								? `Full replacement · ${countLabel(widgets.length, "widget")}`
+								: "Full replacement",
+							[
+								h.div(
+									[h.Class("mb-1.5")],
+									[
+										badge(h, { variant: "destructive", size: "xs" }, [
+											"Replaces entire dashboard",
+										]),
+									],
+								),
+								...widgetList(h, widgets),
+							],
+						),
 					]
 				: []),
 		],
@@ -228,12 +292,24 @@ const addWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 				h.div(
 					[h.Class("flex items-center gap-2")],
 					[
-						icon(h, vizIcon(visualization), { className: "size-4 shrink-0 text-muted-foreground" }),
+						icon(h, vizIcon(visualization), {
+							className: "size-4 shrink-0 text-muted-foreground",
+						}),
 						h.div(
 							[h.Class("min-w-0 flex-1")],
 							[
-								h.div([h.Class("truncate text-xs font-medium")], [asString(display?.title) ?? "Untitled widget"]),
-								...(endpoint === undefined ? [] : [h.div([h.Class("truncate text-2xs text-muted-foreground")], [endpoint])]),
+								h.div(
+									[h.Class("truncate text-xs font-medium")],
+									[asString(display?.title) ?? "Untitled widget"],
+								),
+								...(endpoint === undefined
+									? []
+									: [
+											h.div(
+												[h.Class("truncate text-2xs text-muted-foreground")],
+												[endpoint],
+											),
+										]),
 							],
 						),
 					],
@@ -260,8 +336,17 @@ const updateWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 	const endpoint = asString(dataSource?.endpoint)
 	const changes: ReadonlyArray<Readonly<{ label: string; detail: string | undefined }>> = [
 		...(visualization === undefined ? [] : [{ label: "Visualization", detail: visualization }]),
-		...(display === undefined ? [] : [{ label: "Display config", detail: title === undefined ? undefined : `title: ${title}` }]),
-		...(dataSource === undefined ? [] : [{ label: "Data source", detail: endpoint === undefined ? undefined : `endpoint: ${endpoint}` }]),
+		...(display === undefined
+			? []
+			: [{ label: "Display config", detail: title === undefined ? undefined : `title: ${title}` }]),
+		...(dataSource === undefined
+			? []
+			: [
+					{
+						label: "Data source",
+						detail: endpoint === undefined ? undefined : `endpoint: ${endpoint}`,
+					},
+				]),
 		...(layout === undefined ? [] : [{ label: "Layout", detail: undefined }]),
 	]
 	return h.div(
@@ -270,7 +355,10 @@ const updateWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 			heading(h, "PencilIcon", ["Update widget"], null),
 			h.div(
 				[h.Class("flex flex-wrap gap-1.5")],
-				[fieldChip(h, "dashboard", asString(obj.dashboard_id) ?? EMPTY_VALUE), fieldChip(h, "widget", asString(obj.widget_id) ?? EMPTY_VALUE)],
+				[
+					fieldChip(h, "dashboard", asString(obj.dashboard_id) ?? EMPTY_VALUE),
+					fieldChip(h, "widget", asString(obj.widget_id) ?? EMPTY_VALUE),
+				],
 			),
 			section(h, `Changes (${changes.length})`, [
 				changes.length === 0
@@ -282,7 +370,14 @@ const updateWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 									[h.Class("flex gap-2")],
 									[
 										h.span([h.Class("font-medium")], [label]),
-										...(detail === undefined ? [] : [h.span([h.Class("truncate text-muted-foreground")], [detail])]),
+										...(detail === undefined
+											? []
+											: [
+													h.span(
+														[h.Class("truncate text-muted-foreground")],
+														[detail],
+													),
+												]),
 									],
 								),
 							),
@@ -321,15 +416,33 @@ const reorderWidgets = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 	return h.div(
 		[h.Class("space-y-2")],
 		[
-			heading(h, "GridIcon", ["Reorder ", ids.length > 0 ? countLabel(ids.length, "widget") : "widgets"], asString(obj.dashboard_id) ?? EMPTY_VALUE),
+			heading(
+				h,
+				"GridIcon",
+				["Reorder ", ids.length > 0 ? countLabel(ids.length, "widget") : "widgets"],
+				asString(obj.dashboard_id) ?? EMPTY_VALUE,
+			),
 			...(preview.length === 0
 				? []
 				: [
 						h.div(
 							[h.Class("flex flex-wrap gap-1")],
 							[
-								...preview.map((id) => inlineCode(h, { className: "px-1.5 py-0.5 text-3xs text-muted-foreground" }, [id])),
-								...(overflow > 0 ? [h.span([h.Class("text-3xs text-muted-foreground")], ["+ ", String(overflow), " more"])] : []),
+								...preview.map((id) =>
+									inlineCode(
+										h,
+										{ className: "px-1.5 py-0.5 text-3xs text-muted-foreground" },
+										[id],
+									),
+								),
+								...(overflow > 0
+									? [
+											h.span(
+												[h.Class("text-3xs text-muted-foreground")],
+												["+ ", String(overflow), " more"],
+											),
+										]
+									: []),
 							],
 						),
 					]),

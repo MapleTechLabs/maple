@@ -78,11 +78,17 @@ export const FetchShares = Command.define("FetchDashboardShares", {
 			const client = yield* MapleApiV2Client
 			const id = yield* decodeDashboardId(dashboardId)
 			const shares = yield* client.dashboards.listShares({ params: { id } })
-			return shares.map((share) => ({ widgetId: share.widgetId ?? null, mode: share.mode, token: share.token }))
+			return shares.map((share) => ({
+				widgetId: share.widgetId ?? null,
+				mode: share.mode,
+				token: share.token,
+			}))
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
-			Effect.map((result) => Message.GotShareMessage({ message: ShareMessage.CompletedFetchShares({ seq, result }) })),
+			Effect.map((result) =>
+				Message.GotShareMessage({ message: ShareMessage.CompletedFetchShares({ seq, result }) }),
+			),
 		),
 })
 
@@ -431,7 +437,8 @@ export const AddWidget = Command.define("AddDashboardWidget", {
 	execute: ({ orgId, dashboardId, presetId, chartId, target }) =>
 		Effect.gen(function* () {
 			const picked = pickedWidget({ presetId, chartId })
-			if (picked === null) return Message.CompletedWrite({ result: Result.succeed("Synced" satisfies WriteSync) })
+			if (picked === null)
+				return Message.CompletedWrite({ result: Result.succeed("Synced" satisfies WriteSync) })
 			const id = generateWidgetId(yield* Clock.currentTimeMillis, yield* Random.next)
 			return yield* toWriteMessage(
 				mutateDashboard(orgId, dashboardId, (document, nowIso) =>
@@ -484,7 +491,11 @@ export const SaveVariables = Command.define("SaveDashboardVariables", {
 	messages: [Message.CompletedWrite],
 	execute: ({ orgId, dashboardId, variables }) =>
 		toWriteMessage(
-			mutateDashboard(orgId, dashboardId, (document, nowIso) => ({ ...document, variables, updatedAt: nowIso })),
+			mutateDashboard(orgId, dashboardId, (document, nowIso) => ({
+				...document,
+				variables,
+				updatedAt: nowIso,
+			})),
 		),
 })
 

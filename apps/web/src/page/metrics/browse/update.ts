@@ -218,7 +218,10 @@ export const routeChanged = (
 		typeSelect: { ...model.typeSelect, value: typeSelectValue(route.search) },
 	}
 	const next: Model = isOutsideQuery ? { ...base, searchInput: query, lastSentQuery: query } : base
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	// A filter or view change reads its new keys under the kept window; only a moved window re-resolves.
 	return routeWindowStep(model.search, route.search, {
 		resolve,

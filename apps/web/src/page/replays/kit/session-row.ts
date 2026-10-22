@@ -69,8 +69,17 @@ const runItems = (
 	const isExpanded = expanded.includes(first.sessionId)
 	const tiers = tiersOf(run)
 	return [
-		{ kind: "quiet", key: first.sessionId, count: run.length, summary: summarize(tiers), tiers, expanded: isExpanded },
-		...(isExpanded ? run.map((session): SessionListItem => ({ kind: "session", session, lowSignal: true })) : []),
+		{
+			kind: "quiet",
+			key: first.sessionId,
+			count: run.length,
+			summary: summarize(tiers),
+			tiers,
+			expanded: isExpanded,
+		},
+		...(isExpanded
+			? run.map((session): SessionListItem => ({ kind: "session", session, lowSignal: true }))
+			: []),
 	]
 }
 
@@ -84,7 +93,11 @@ export const sessionListItems = (
 			const lowSignal = isLowSignal(session, options.nowMs)
 			if (options.collapse && lowSignal) return { items: state.items, run: [...state.run, session] }
 			return {
-				items: [...state.items, ...runItems(state.run, options.expanded), { kind: "session", session, lowSignal }],
+				items: [
+					...state.items,
+					...runItems(state.run, options.expanded),
+					{ kind: "session", session, lowSignal },
+				],
 				run: [],
 			}
 		},

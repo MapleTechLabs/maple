@@ -52,20 +52,45 @@ export const buildChatLabMessages = (nowMs: number): ReadonlyArray<UIMessage> =>
 	// A fixed clock walked forward a minute per turn, so the footer's timestamp is exercised.
 	const at = (turn: number) => Date.UTC(2026, 8, 11, 14, 3) + turn * 60_000
 	return [
-		{ id: "m1", role: "user", createdAt: at(1), parts: [text("Which services are unhealthy right now?")] },
+		{
+			id: "m1",
+			role: "user",
+			createdAt: at(1),
+			parts: [text("Which services are unhealthy right now?")],
+		},
 		{
 			id: "m2",
 			role: "assistant",
 			createdAt: at(2),
-			parts: [tool("c1", "list_services", "output-available", { limit: 50 }, { output: { text: "18 services" } })],
+			parts: [
+				tool(
+					"c1",
+					"list_services",
+					"output-available",
+					{ limit: 50 },
+					{ output: { text: "18 services" } },
+				),
+			],
 		},
 		{
 			id: "m3",
 			role: "assistant",
 			createdAt: at(3),
 			parts: [
-				tool("c2", "find_errors", "output-available", { service: "web-paywall-worker" }, { output: { text: "4 fingerprints" } }),
-				tool("c3", "find_slow_traces", "output-available", { service: "subscriptions-api", limit: 5 }, { output: { text: "5 traces" } }),
+				tool(
+					"c2",
+					"find_errors",
+					"output-available",
+					{ service: "web-paywall-worker" },
+					{ output: { text: "4 fingerprints" } },
+				),
+				tool(
+					"c3",
+					"find_slow_traces",
+					"output-available",
+					{ service: "subscriptions-api", limit: 5 },
+					{ output: { text: "5 traces" } },
+				),
 			],
 		},
 		{
@@ -73,8 +98,16 @@ export const buildChatLabMessages = (nowMs: number): ReadonlyArray<UIMessage> =>
 			role: "assistant",
 			createdAt: at(4),
 			parts: [
-				text("The paywall worker looks worst — pulling its slowest traces before I say anything about the other two."),
-				tool("c3b", "inspect_trace", "output-available", { traceId: "9f2c7ae41b6d5c08f31a" }, { output: { text: "37 spans" } }),
+				text(
+					"The paywall worker looks worst — pulling its slowest traces before I say anything about the other two.",
+				),
+				tool(
+					"c3b",
+					"inspect_trace",
+					"output-available",
+					{ traceId: "9f2c7ae41b6d5c08f31a" },
+					{ output: { text: "37 spans" } },
+				),
 				text("That trace spends 6.1s of its 8.4s inside the entitlement lookup."),
 			],
 		},
@@ -88,7 +121,12 @@ export const buildChatLabMessages = (nowMs: number): ReadonlyArray<UIMessage> =>
 					[
 						"The failures start at 14:03 and hold — this is not a spike that recovered.",
 						"",
-						chartFence({ type: "area", title: "web-paywall-worker errors per minute", unit: "number", data: errorsPerMinute(nowMs) }),
+						chartFence({
+							type: "area",
+							title: "web-paywall-worker errors per minute",
+							unit: "number",
+							data: errorsPerMinute(nowMs),
+						}),
 					].join("\n"),
 				),
 			],
@@ -133,7 +171,12 @@ export const buildChatLabMessages = (nowMs: number): ReadonlyArray<UIMessage> =>
 			id: "m8",
 			role: "assistant",
 			createdAt: at(11),
-			parts: [tool("c4", "update_alert_rule", "proposed", { ruleId: "rule_9182", muteUntil: "2026-09-11T18:00:00Z" })],
+			parts: [
+				tool("c4", "update_alert_rule", "proposed", {
+					ruleId: "rule_9182",
+					muteUntil: "2026-09-11T18:00:00Z",
+				}),
+			],
 		},
 		{
 			id: "m9",
@@ -163,7 +206,13 @@ export const buildChatLabMessages = (nowMs: number): ReadonlyArray<UIMessage> =>
 							id: "t1-1",
 							role: "assistant",
 							parts: [
-								tool("t1-c1", "search_traces", "output-available", { service: "web-paywall-worker" }, { output: { text: "212 traces" } }),
+								tool(
+									"t1-c1",
+									"search_traces",
+									"output-available",
+									{ service: "web-paywall-worker" },
+									{ output: { text: "212 traces" } },
+								),
 							],
 						},
 					],
@@ -182,9 +231,24 @@ export const buildChatLabMessages = (nowMs: number): ReadonlyArray<UIMessage> =>
 			role: "assistant",
 			createdAt: at(12),
 			parts: [
-				tool("c6", "list_error_issues", "output-available", { service: "web-paywall-worker" }, { output: { text: "6 issues" } }),
-				tool("c7", "error_detail", "output-available", { issueId: "iss_41ba" }, { output: { text: "18422 events" } }),
-				tool("c8", "search_traces", "input-available", { service: "subscriptions-api", query: "entitlements" }),
+				tool(
+					"c6",
+					"list_error_issues",
+					"output-available",
+					{ service: "web-paywall-worker" },
+					{ output: { text: "6 issues" } },
+				),
+				tool(
+					"c7",
+					"error_detail",
+					"output-available",
+					{ issueId: "iss_41ba" },
+					{ output: { text: "18422 events" } },
+				),
+				tool("c8", "search_traces", "input-available", {
+					service: "subscriptions-api",
+					query: "entitlements",
+				}),
 			],
 		},
 	]

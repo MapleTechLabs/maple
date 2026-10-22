@@ -7,7 +7,11 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 // The span panel's attribute blocks: `AttributesSection` / `ResourceAttributesSection`, grouped by
 // namespace. Each block is its own view so they stay direct children of the Details body.
 
-export type SectionInputs = Readonly<{ attributes: Readonly<Record<string, string>>; title: string; section: string }>
+export type SectionInputs = Readonly<{
+	attributes: Readonly<Record<string, string>>
+	title: string
+	section: string
+}>
 
 export const sectionView = Submodel.defineView<Model, Message, SectionInputs>((model, inputs, h) =>
 	attributesSection(

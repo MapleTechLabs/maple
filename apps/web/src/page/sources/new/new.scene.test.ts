@@ -13,10 +13,15 @@ import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
-const context: PageContext = { orgId: Schema.decodeSync(OrgId)("org_parity"), pinnedNamespace: null, timeZone: "UTC" }
+const context: PageContext = {
+	orgId: Schema.decodeSync(OrgId)("org_parity"),
+	pinnedNamespace: null,
+	timeZone: "UTC",
+}
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 const route = (platform?: "nodejs" | "kubernetes") => ({
 	_tag: "SourcesNew" as const,
 	search: platform === undefined ? {} : { platform },
@@ -29,7 +34,9 @@ const STATUS_READS = ["LoadIntegrationsCloudflareStatus", "LoadIntegrationsScrap
 const indicatorMeasured = () =>
 	Mount.resolve<string, Tabs.Message>(
 		Tabs.MeasureTabIndicator,
-		Tabs.Message.MeasuredIndicator({ rect: { left: 0, right: 96, top: 0, bottom: 32, width: 96, height: 32 } }),
+		Tabs.Message.MeasuredIndicator({
+			rect: { left: 0, right: 96, top: 0, bottom: 32, width: 96, height: 32 },
+		}),
 	)
 
 const created = (lastUsedAt: string | null = null) =>
@@ -96,7 +103,9 @@ describe("connect a source", () => {
 		)
 		const back = routeChanged(entered.model, route(), context)
 		expect(back.model.platform).toBeNull()
-		expect(names(routeChanged(back.model, route("kubernetes"), context).commands)).toEqual(["FetchSourcesList"])
+		expect(names(routeChanged(back.model, route("kubernetes"), context).commands)).toEqual([
+			"FetchSourcesList",
+		])
 	})
 
 	test("an empty name disables Create; a failed create toasts and re-enables it", () => {
@@ -109,7 +118,11 @@ describe("connect a source", () => {
 		const failed = pageUpdate(started.model, Message.CompletedCreate({ result: Result.fail(failure) }))
 		expect(failed.model.isSaving).toBe(false)
 		expect(failed.outMessage).toEqual(
-			PageOutMessage.RequestedToast({ type: "error", title: "Failed to create source", description: failure.message }),
+			PageOutMessage.RequestedToast({
+				type: "error",
+				title: "Failed to create source",
+				description: failure.message,
+			}),
 		)
 	})
 
@@ -128,13 +141,29 @@ describe("connect a source", () => {
 			expectView(role("link", { name: "Skip for now" })).toExist(),
 		)
 		const key = done.model.firstData.key ?? ""
-		const pending = pageUpdate(done.model, Message.CompletedFetchSource({ key, result: Result.succeed(created()) }))
+		const pending = pageUpdate(
+			done.model,
+			Message.CompletedFetchSource({ key, result: Result.succeed(created()) }),
+		)
 		expect(names(pending.commands)).toEqual(["WaitFirstDataPoll"])
-		expect(names(pageUpdate(pending.model, Message.ElapsedPoll({ key })).commands)).toEqual(["FetchCreatedSource"])
-		const receiving = pageUpdate(done.model, Message.CompletedFetchSource({ key, result: Result.succeed(created("2026-10-01T00:01:00.000Z")) }))
+		expect(names(pageUpdate(pending.model, Message.ElapsedPoll({ key })).commands)).toEqual([
+			"FetchCreatedSource",
+		])
+		const receiving = pageUpdate(
+			done.model,
+			Message.CompletedFetchSource({
+				key,
+				result: Result.succeed(created("2026-10-01T00:01:00.000Z")),
+			}),
+		)
 		expect(receiving.commands ?? []).toHaveLength(0)
 		expect(pageUpdate(receiving.model, Message.ElapsedPoll({ key })).commands ?? []).toHaveLength(0)
-		scene({ update: pageUpdate, view }, given(receiving.model), indicatorMeasured(), expectView(role("link", { name: "Open source" })).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(receiving.model),
+			indicatorMeasured(),
+			expectView(role("link", { name: "Open source" })).toExist(),
+		)
 	})
 
 	test("an integration's step shows its own connect card; an unknown id falls back to the picker", () => {
@@ -197,13 +226,24 @@ describe("connect a source", () => {
 					}),
 				),
 			})
-		const waiting = pageUpdate(entered.model, Message.GotIntegrationsMessage({ message: status(false) })).model
+		const waiting = pageUpdate(
+			entered.model,
+			Message.GotIntegrationsMessage({ message: status(false) }),
+		).model
 		const connected = pageUpdate(waiting, Message.GotIntegrationsMessage({ message: status(true) }))
 		expect(names(connected.commands)).toContain("FetchSourcesList")
-		const row = { ...created(), platform: "cloudflare" as const, key_prefix: null, name: "Cloudflare Acme" }
+		const row = {
+			...created(),
+			platform: "cloudflare" as const,
+			key_prefix: null,
+			name: "Cloudflare Acme",
+		}
 		const listed = pageUpdate(
 			connected.model,
-			Message.CompletedFetchList({ key: connected.model.list.key ?? "", result: Result.succeed([row]) }),
+			Message.CompletedFetchList({
+				key: connected.model.list.key ?? "",
+				result: Result.succeed([row]),
+			}),
 		).model
 		scene(
 			{ update: pageUpdate, view },

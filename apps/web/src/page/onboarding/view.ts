@@ -22,7 +22,19 @@ import { bootSplash } from "../../layout/boot-splash"
 import * as MenuView from "../../ui/menu-view"
 import type * as CliLogin from "./cli-login"
 import * as CliLoginView from "./cli-login-view"
-import { type Message, type Model, type Screen, toClerkSignIn, toCliLogin, toMcpAuthorize, toQuickStart, toSelectPlan, toSwitcher, toUnsubscribe, toUserMenu } from "./index"
+import {
+	type Message,
+	type Model,
+	type Screen,
+	toClerkSignIn,
+	toCliLogin,
+	toMcpAuthorize,
+	toQuickStart,
+	toSelectPlan,
+	toSwitcher,
+	toUnsubscribe,
+	toUserMenu,
+} from "./index"
 import type { Inputs } from "./inputs"
 import type * as McpAuthorize from "./mcp-authorize"
 import * as McpAuthorizeView from "./mcp-authorize-view"
@@ -67,14 +79,20 @@ const clerkWorkspace = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs): 
 	switcher(h, model, inputs, "end", ({ trigger, withTrigger }) =>
 		workspaceCard(
 			h,
-			Option.match(inputs.maybeOrganization, { onNone: () => "Current workspace", onSome: (org) => org.name }),
+			Option.match(inputs.maybeOrganization, {
+				onNone: () => "Current workspace",
+				onSome: (org) => org.name,
+			}),
 			withTrigger(button(h, { variant: "outline", size: "sm", attributes: trigger }, ["Switch"])),
 		),
 	)
 
 /** `OnboardingOrgSwitcher` and `OnboardingUserMenu`: the header's account actions. */
 const accountCluster = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs, label: Html): Html => {
-	const orgName = Option.match(inputs.maybeOrganization, { onNone: () => "Select organization", onSome: (org) => org.name })
+	const orgName = Option.match(inputs.maybeOrganization, {
+		onNone: () => "Select organization",
+		onSome: (org) => org.name,
+	})
 	// Nested so both menus' triggers and guards land as siblings in the one cluster `div`.
 	const userMenu = (before: ReadonlyArray<Html>): Html =>
 		h.submodel({
@@ -94,7 +112,12 @@ const accountCluster = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs, l
 						...withTrigger(
 							button(
 								h,
-								{ variant: "outline", size: "sm", className: "pl-1 pr-2", attributes: [h.AriaLabel("Account menu"), ...trigger] },
+								{
+									variant: "outline",
+									size: "sm",
+									className: "pl-1 pr-2",
+									attributes: [h.AriaLabel("Account menu"), ...trigger],
+								},
 								AccountMenu.userTriggerChildren(h, inputs.maybeUser),
 							),
 						),
@@ -122,7 +145,8 @@ const quickStartView = Submodel.defineView<
 	QuickStart.Message,
 	ScreenInputs & Readonly<{ accountCluster: (label: Html) => Html }>
 >((model, inputs, h) =>
-	model.state === null || (!needsRegion(inputs.maybeOrganization) && accessOf(inputs.customer) === "loading")
+	model.state === null ||
+	(!needsRegion(inputs.maybeOrganization) && accessOf(inputs.customer) === "loading")
 		? bootSplash(h)
 		: QuickStartView.view(h, model, {
 				accountCluster: inputs.accountCluster,
@@ -142,8 +166,11 @@ const quickStartView = Submodel.defineView<
 )
 
 /** `SelectPlanPageInner`: the splash until the customer is known. */
-const selectPlanView = Submodel.defineView<SelectPlan.Model, SelectPlan.Message, ScreenInputs>((model, inputs, h) =>
-	accessOf(inputs.customer) === "loading" ? bootSplash(h) : SelectPlan.view(h, model, customerOf(inputs.customer)),
+const selectPlanView = Submodel.defineView<SelectPlan.Model, SelectPlan.Message, ScreenInputs>(
+	(model, inputs, h) =>
+		accessOf(inputs.customer) === "loading"
+			? bootSplash(h)
+			: SelectPlan.view(h, model, customerOf(inputs.customer)),
 )
 
 /** `OrgRequiredPageClerk`. */
@@ -154,14 +181,24 @@ const orgRequiredView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs):
 		switcher(h, model, inputs, "start", ({ trigger, withTrigger }) =>
 			h.div(
 				[h.Class("mt-4")],
-				withTrigger(button(h, { variant: "outline", attributes: trigger }, ["Select or create organization"])),
+				withTrigger(
+					button(h, { variant: "outline", attributes: trigger }, ["Select or create organization"]),
+				),
 			),
 		),
 	])
 
 /** `WrongRegionScreen`: this region has nothing to show for an org another region serves. */
-const wrongRegionView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs, screen: ClerkScreens.WrongRegion): Html => {
-	const orgName = Option.match(inputs.maybeOrganization, { onNone: () => "This organization", onSome: (org) => org.name })
+const wrongRegionView = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	inputs: Inputs,
+	screen: ClerkScreens.WrongRegion,
+): Html => {
+	const orgName = Option.match(inputs.maybeOrganization, {
+		onNone: () => "This organization",
+		onSome: (org) => org.name,
+	})
 	const target = MAPLE_REGION_LABELS[screen.region]
 	const here = MAPLE_REGION_LABELS[currentRegion]
 	const url = regionAppUrl(screen.region)
@@ -179,8 +216,12 @@ const wrongRegionView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs, 
 			h.div(
 				[h.Class("mt-6 flex flex-wrap items-center gap-2")],
 				[
-					...(url === undefined ? [] : [linkButton(h, { href: `${url}${screen.href}` }, [`Open in ${target.short}`])]),
-					...withTrigger(button(h, { variant: "outline", attributes: trigger }, ["Switch organization"])),
+					...(url === undefined
+						? []
+						: [linkButton(h, { href: `${url}${screen.href}` }, [`Open in ${target.short}`])]),
+					...withTrigger(
+						button(h, { variant: "outline", attributes: trigger }, ["Switch organization"]),
+					),
 				],
 			),
 		),
@@ -197,11 +238,28 @@ const screenView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs): Html
 	}
 	switch (screen._tag) {
 		case "CliLogin":
-			return h.submodel({ slotId, model: screen, view: cliLoginView, viewInputs, toParentMessage: toCliLogin })
+			return h.submodel({
+				slotId,
+				model: screen,
+				view: cliLoginView,
+				viewInputs,
+				toParentMessage: toCliLogin,
+			})
 		case "McpAuthorize":
-			return h.submodel({ slotId, model: screen, view: mcpAuthorizeView, viewInputs, toParentMessage: toMcpAuthorize })
+			return h.submodel({
+				slotId,
+				model: screen,
+				view: mcpAuthorizeView,
+				viewInputs,
+				toParentMessage: toMcpAuthorize,
+			})
 		case "Unsubscribe":
-			return h.submodel({ slotId, model: screen, view: unsubscribeView, toParentMessage: toUnsubscribe })
+			return h.submodel({
+				slotId,
+				model: screen,
+				view: unsubscribeView,
+				toParentMessage: toUnsubscribe,
+			})
 		case "ClerkSignIn":
 			return ClerkSignInView.view(h, screen, toClerkSignIn)
 		case "SignUp":
@@ -211,16 +269,27 @@ const screenView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs): Html
 		case "WrongRegion":
 			return wrongRegionView(h, model, inputs, screen)
 		case "SelectPlan":
-			return h.submodel({ slotId, model: screen, view: selectPlanView, viewInputs, toParentMessage: toSelectPlan })
+			return h.submodel({
+				slotId,
+				model: screen,
+				view: selectPlanView,
+				viewInputs,
+				toParentMessage: toSelectPlan,
+			})
 		case "QuickStart":
 			return h.submodel({
 				slotId,
 				model: screen,
 				view: quickStartView,
-				viewInputs: { ...viewInputs, accountCluster: (label) => accountCluster(h, model, inputs, label) },
+				viewInputs: {
+					...viewInputs,
+					accountCluster: (label) => accountCluster(h, model, inputs, label),
+				},
 				toParentMessage: toQuickStart,
 			})
 	}
 }
 
-export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, h) => screenView(h, model, inputs))
+export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, h) =>
+	screenView(h, model, inputs),
+)

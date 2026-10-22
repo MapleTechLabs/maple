@@ -87,7 +87,10 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 					cn(
 						badgeVariants({
 							variant: "outline",
-							className: cn("font-mono text-2xs text-white border-0 shrink-0", queryBadgeColor(index)),
+							className: cn(
+								"font-mono text-2xs text-white border-0 shrink-0",
+								queryBadgeColor(index),
+							),
 						}),
 					),
 				),
@@ -118,7 +121,10 @@ const header = (h: H, model: Model, inputs: QueryPanelInputs): Html => {
 			className: "w-36 border-none bg-transparent shadow-none px-1",
 			ariaLabel: "Query source",
 			toView: (parts) =>
-				h.div([h.Class("flex items-center gap-2 px-3 py-2 bg-muted/30")], [...leading, ...parts, ...trailing]),
+				h.div(
+					[h.Class("flex items-center gap-2 px-3 py-2 bg-muted/30")],
+					[...leading, ...parts, ...trailing],
+				),
 		},
 	)
 }
@@ -164,8 +170,14 @@ const body = (h: H, model: Model, inputs: QueryPanelInputs): ReadonlyArray<Html>
 					[
 						...parts,
 						h.span([h.Class("text-xs text-muted-foreground")], ["every"]),
-						textInput(h, `step-${query.id}`, query.stepInterval, intervalPlaceholder, "h-8 w-24 text-xs", (value) =>
-							Message.ChangedText({ queryId: query.id, field: "stepInterval", value }),
+						textInput(
+							h,
+							`step-${query.id}`,
+							query.stepInterval,
+							intervalPlaceholder,
+							"h-8 w-24 text-xs",
+							(value) =>
+								Message.ChangedText({ queryId: query.id, field: "stepInterval", value }),
 						),
 						h.span([h.Class("text-xs text-muted-foreground")], ["seconds"]),
 					],
@@ -183,7 +195,12 @@ const warningList = (h: H, warnings: ReadonlyArray<string>): ReadonlyArray<Html>
 					icon(h, "CircleWarningIcon", { size: 14 }),
 					alertDescription(
 						h,
-						[h.ul([h.Class("space-y-1")], warnings.map((warning) => h.li([], [warning])))],
+						[
+							h.ul(
+								[h.Class("space-y-1")],
+								warnings.map((warning) => h.li([], [warning])),
+							),
+						],
 						"text-severity-warn",
 					),
 				]),

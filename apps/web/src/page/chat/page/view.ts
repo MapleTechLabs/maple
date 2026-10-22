@@ -38,7 +38,10 @@ const conversation = (
 ): Html => {
 	const subject = subjectFor(model, tab.id)
 	const onSelect = (text: string) =>
-		Message.GotConversationMessage({ tabId: tab.id, message: ConversationMessage.ClickedSuggestion({ text }) })
+		Message.GotConversationMessage({
+			tabId: tab.id,
+			message: ConversationMessage.ClickedSuggestion({ text }),
+		})
 	const suggestions = suggestionsOf(model, tab.id)
 	return conversationView(h, state, {
 		toMessage: (message) => Message.GotConversationMessage({ tabId: tab.id, message }),
@@ -68,16 +71,25 @@ const conversation = (
 							"Diagnosing widget…",
 							"Maple AI is reading the broken widget config and the validation error. It will propose a corrected widget JSON for you to approve.",
 						),
-		chips: subject === null ? contextChips(h, activeContexts(model), (id) => Message.DismissedContext({ id })) : [],
+		chips:
+			subject === null
+				? contextChips(h, activeContexts(model), (id) => Message.DismissedContext({ id }))
+				: [],
 		permalinkFor: (messageId) => shareUrl(model.origin, tab, messageId),
-		scrollerMount: MountMessageScroller({ focusMessageId: tab.id === activeTabId(model) ? (model.search.m ?? null) : null }),
+		scrollerMount: MountMessageScroller({
+			focusMessageId: tab.id === activeTabId(model) ? (model.search.m ?? null) : null,
+		}),
 		knownServices: new Set(model.knownServices),
 		nowMs: model.nowMs,
 		...(subject === null
 			? undefined
 			: {
 					suggestions: { items: suggestions, onSelect },
-					header: [subject._tag === "Investigation" ? investigationCard(h, subject.context) : widgetFixCard(h, subject.context)],
+					header: [
+						subject._tag === "Investigation"
+							? investigationCard(h, subject.context)
+							: widgetFixCard(h, subject.context),
+					],
 				}),
 	})
 }
@@ -95,7 +107,11 @@ const conversations = (h: H, model: Model, timeZone: string): Html => {
 						: [
 								h.keyed("div")(
 									tab.id,
-									[h.Class(tab.id === tabs.activeTabId ? "flex h-full flex-col" : "hidden")],
+									[
+										h.Class(
+											tab.id === tabs.activeTabId ? "flex h-full flex-col" : "hidden",
+										),
+									],
 									[conversation(h, model, tab, state, timeZone)],
 								),
 							]
@@ -112,7 +128,11 @@ const sharedView = (h: H, model: Model, timeZone: string): Html => {
 		[h.Class("flex h-full min-h-0 flex-1 flex-col")],
 		[
 			h.header(
-				[h.Class("flex h-12 shrink-0 items-center gap-2 border-b bg-sidebar px-2 text-sidebar-foreground")],
+				[
+					h.Class(
+						"flex h-12 shrink-0 items-center gap-2 border-b bg-sidebar px-2 text-sidebar-foreground",
+					),
+				],
 				[
 					sidebarTrigger(h, {
 						state: "collapsed",
@@ -123,14 +143,21 @@ const sharedView = (h: H, model: Model, timeZone: string): Html => {
 					h.div(
 						[h.Class("flex min-w-0 flex-1 flex-col justify-center")],
 						[
-							truncatedText(h, { text: heading, className: "text-sm font-medium leading-tight" }, [heading]),
-							eyebrow(h, { className: "leading-tight text-sidebar-foreground/60" }, ["Read-only · shared"]),
+							truncatedText(
+								h,
+								{ text: heading, className: "text-sm font-medium leading-tight" },
+								[heading],
+							),
+							eyebrow(h, { className: "leading-tight text-sidebar-foreground/60" }, [
+								"Read-only · shared",
+							]),
 						],
 					),
-					linkButton(h, { href: "/chat", variant: "outline", size: "sm", className: "shrink-0 gap-1.5" }, [
-						icon(h, "PlusIcon"),
-						"New chat",
-					]),
+					linkButton(
+						h,
+						{ href: "/chat", variant: "outline", size: "sm", className: "shrink-0 gap-1.5" },
+						[icon(h, "PlusIcon"), "New chat"],
+					),
 				],
 			),
 			h.div(
@@ -142,17 +169,24 @@ const sharedView = (h: H, model: Model, timeZone: string): Html => {
 							? []
 							: [
 									conversationView(h, state, {
-										toMessage: (message) => Message.GotConversationMessage({ tabId: shared.tabId, message }),
+										toMessage: (message) =>
+											Message.GotConversationMessage({ tabId: shared.tabId, message }),
 										timeZone,
 										textareaId: composerId(shared.tabId),
 										placeholder: "Ask about your system…",
 										emptyState: () => h.empty,
 										chips: [],
-										scrollerMount: MountMessageScroller({ focusMessageId: shared.focusMessageId }),
+										scrollerMount: MountMessageScroller({
+											focusMessageId: shared.focusMessageId,
+										}),
 										knownServices: new Set(model.knownServices),
 										nowMs: model.nowMs,
 										permalinkFor: (messageId) =>
-											shareUrl(model.origin, { id: shared.tabId, title: shared.title ?? "" }, messageId),
+											shareUrl(
+												model.origin,
+												{ id: shared.tabId, title: shared.title ?? "" },
+												messageId,
+											),
 									}),
 								],
 					),
@@ -171,7 +205,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					[h.Class("flex h-full min-h-0 flex-1")],
 					[
 						chatSidebar(h, model, "w-[260px] border-r"),
-						h.div([h.Class("flex min-w-0 flex-1 flex-col")], [conversations(h, model, inputs.context.timeZone)]),
+						h.div(
+							[h.Class("flex min-w-0 flex-1 flex-col")],
+							[conversations(h, model, inputs.context.timeZone)],
+						),
 					],
 				),
 )

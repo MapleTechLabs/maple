@@ -176,7 +176,10 @@ const commitCard = <M>(
 			h.div(
 				[h.Class("flex flex-col gap-1.5 p-3.5")],
 				[
-					h.p([h.Class(cn("font-medium leading-snug text-foreground", "line-clamp-2 text-sm"))], [title]),
+					h.p(
+						[h.Class(cn("font-medium leading-snug text-foreground", "line-clamp-2 text-sm"))],
+						[title],
+					),
 					...(body === ""
 						? []
 						: [h.p([h.Class("line-clamp-4 whitespace-pre-line text-muted-foreground")], [body])]),
