@@ -135,7 +135,11 @@ describe("deriveRuleStatus", () => {
 	it("marks rules stale past 3x the state heartbeat", () => {
 		const rule = makeRule({
 			lastEvaluatedAt: iso(
-				staleThresholdMs({ windowMinutes: 5, evaluationIntervalMinutes: null }) + 60_000,
+				staleThresholdMs({
+					windowMinutes: 5,
+					evaluationIntervalMinutes: null,
+					slowedIntervalMinutes: null,
+				}) + 60_000,
 			),
 		})
 		const result = derive({
@@ -160,7 +164,12 @@ describe("deriveRuleStatus", () => {
 		// The scheduler checks a rule every 1-5 minutes whatever its window, so
 		// staleness does not scale with the window. Scaling
 		// staleness by it hid a dead scheduler for 72h on a 24h-window rule.
-		const gap = staleThresholdMs({ windowMinutes: 5, evaluationIntervalMinutes: null }) + 60_000
+		const gap =
+			staleThresholdMs({
+				windowMinutes: 5,
+				evaluationIntervalMinutes: null,
+				slowedIntervalMinutes: null,
+			}) + 60_000
 		for (const windowMinutes of [5, 60, 1440]) {
 			const rule = makeRule({ windowMinutes, lastEvaluatedAt: iso(gap) })
 			const result = derive({

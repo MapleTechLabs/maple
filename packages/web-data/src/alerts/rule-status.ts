@@ -30,7 +30,7 @@ export interface DerivedRuleStatus {
  * Shared with the diagnosis panel so both surfaces agree on "stale".
  */
 export const staleThresholdMs = (
-	rule: Pick<AlertRuleDocument, "windowMinutes" | "evaluationIntervalMinutes">,
+	rule: Pick<AlertRuleDocument, "windowMinutes" | "evaluationIntervalMinutes" | "slowedIntervalMinutes">,
 ): number => 3 * Math.max(ALERT_MAX_EVALUATION_INTERVAL_MINUTES, alertRuleIntervalMinutes(rule)) * 60_000
 
 const lastEvaluatedMs = (

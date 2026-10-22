@@ -11,10 +11,11 @@ const INVALID_QUERY_TAGS: ReadonlySet<string> = new Set([
 
 /** Why a check failed, from the error that failed it. */
 export const evaluationErrorKind = (error: unknown): AlertEvaluationErrorKind => {
+	// `max_threads` is fixed at every interval, so only time and memory count.
 	if (Predicate.isTagged(error, "@maple/http/errors/WarehouseQuotaExceededError")) {
-		return Predicate.hasProperty(error, "setting") && error.setting === "max_memory_usage"
-			? "query_too_much_memory"
-			: "query_too_slow"
+		const setting = Predicate.hasProperty(error, "setting") ? error.setting : undefined
+		if (setting === "max_execution_time") return "query_too_slow"
+		if (setting === "max_memory_usage") return "query_too_much_memory"
 	}
 	return Predicate.hasProperty(error, "_tag") &&
 		typeof error._tag === "string" &&

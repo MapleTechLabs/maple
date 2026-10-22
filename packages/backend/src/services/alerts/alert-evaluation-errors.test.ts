@@ -8,13 +8,17 @@ import {
 } from "@maple/domain/http"
 import { evaluationErrorKind, isQueryLimitFailure } from "./alert-evaluation-errors"
 
-const quota = (setting: "max_execution_time" | "max_memory_usage") =>
+const quota = (setting: "max_execution_time" | "max_memory_usage" | "max_threads") =>
 	new WarehouseQuotaExceededError({ message: "limit", pipeName: "alertEvaluation", setting })
 
 describe("evaluationErrorKind", () => {
 	it("tells a query that ran out of time from one that ran out of memory", () => {
 		expect(evaluationErrorKind(quota("max_execution_time"))).toBe("query_too_slow")
 		expect(evaluationErrorKind(quota("max_memory_usage"))).toBe("query_too_much_memory")
+	})
+
+	it("does not count a thread limit, which no interval raises", () => {
+		expect(evaluationErrorKind(quota("max_threads"))).toBe("other")
 	})
 
 	it("calls a query the author has to fix invalid", () => {
