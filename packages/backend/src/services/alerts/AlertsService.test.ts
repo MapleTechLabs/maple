@@ -4983,7 +4983,8 @@ describe("AlertsService.previewRule", () => {
 					probeLimitMs: 25_000,
 					intervalMinutes: 1,
 					limitMs: 5_000,
-					fitsIntervalMinutes: [5, 10, 15, 30, 60],
+					// 7.8 s fits 5 minutes and up; a 5-minute window allows no longer interval.
+					fitsIntervalMinutes: [5],
 				})
 			}).pipe(
 				Effect.provide(
