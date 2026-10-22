@@ -72,7 +72,10 @@ const connect = (fake: ReturnType<typeof makeFakeSupabase>) =>
 			returnTo: "/integrations/supabase",
 		})
 		fake.state.codeChallenge = new URL(redirectUrl).searchParams.get("code_challenge")
-		return yield* service.completeConnect("4a0c7b4e-code", state)
+		return yield* service.completeConnect("4a0c7b4e-code", state, {
+			orgId: ORG,
+			userId: asUserId("user_a"),
+		})
 	})
 
 describe("SupabaseOAuthService", () => {

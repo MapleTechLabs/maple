@@ -174,6 +174,11 @@ export class SandboxFetcher extends Context.Service<SandboxFetcher, Option.Optio
 	"@maple/api/platform/SandboxFetcher",
 ) {}
 
+/** The Worker Loader that runs the agents' `run_code` programs in Dynamic Workers. `None` where unbound. */
+export class CodeLoader extends Context.Service<CodeLoader, Option.Option<WorkerLoader>>()(
+	"@maple/api/platform/CodeLoader",
+) {}
+
 // ── Chat sessions (Durable Object) ───────────────────────────────────────────
 
 /** Addresses `ChatSession` Durable Objects, bound through alchemy (`chat-sessions.ts`). A host without the binding provides nothing. */

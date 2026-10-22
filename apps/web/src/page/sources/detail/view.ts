@@ -24,7 +24,7 @@ import { sourceStatusBadge } from "../kit/status"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { sourceOf } from "./update"
-import { pauseControl, sourceActions } from "./view-actions"
+import { integrationActions, sourceActions } from "./view-actions"
 import { overviewTab } from "./view-overview"
 import { settingsTab, setupTab } from "./view-tabs"
 
@@ -105,16 +105,14 @@ const connectionPart = (
 	})
 }
 
-/** Token sources take their own actions; an integration source pauses beside its integration's. */
+/** Token sources take their own actions; an integration source pauses and deletes beside its integration's. */
 const headerActions = (h: H, model: Model, source: V2Source, timeZone: string): Html | undefined => {
 	if (hasToken(source)) return detailActions(h, sourceActions(h, model, source))
-	const connection = connectionPart(h, model, source, timeZone, "actions")
-	const pausable = !source.is_default
-	const children = [
-		...(pausable ? [pauseControl(h, model, source)] : []),
-		...(connection === null ? [] : [connection]),
-	]
-	return children.length === 0 ? undefined : detailActions(h, children)
+	if (source.is_default) return undefined
+	return detailActions(
+		h,
+		integrationActions(h, model, source, connectionPart(h, model, source, timeZone, "actions")),
+	)
 }
 
 const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, nowMs: number): Html => {

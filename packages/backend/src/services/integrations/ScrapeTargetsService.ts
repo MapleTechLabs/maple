@@ -47,7 +47,7 @@ import {
 	buildScrapeAuthHeaders,
 	TokenCredentialsSchema,
 } from "@maple/backend/services/auth/scrape-auth"
-import { describeHttpClientError, guard, validateExternalUrl } from "@maple/safe-fetch"
+import { describeHttpClientError, guard, readTextPrefix, validateExternalUrl } from "@maple/safe-fetch"
 import { countSamples, parsePrometheusText } from "@maple/prometheus-otlp"
 import { DiscoveryConfigSchema } from "./planetscale/discovery-config"
 import { PlanetScaleDiscoveryService, planetScaleDiscoveryUrl } from "./PlanetScaleDiscoveryService"
@@ -263,6 +263,9 @@ export interface ScrapeTargetsServiceApi {
 		| SupabaseAccessTokenError
 	>
 }
+
+/** A probe parses at most this much of a target's body; the scraper itself reads up to 32 MiB. */
+const PROBE_MAX_BODY_BYTES = 4 * 1024 * 1024
 
 const toPersistenceError = (error: unknown) =>
 	new ScrapeTargetPersistenceError({
@@ -1160,7 +1163,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 									.select(($) => ({ ...$, labelsJson: PG.undecoded($.labelsJson) }))
 									.where(($) => [
 										$.enabled.eq(true),
-										interval === undefined ? undefined : $.scrapeIntervalSeconds.eq(interval),
+										interval === undefined
+											? undefined
+											: $.scrapeIntervalSeconds.eq(interval),
 									]),
 							),
 							// A paused source is not scraped. Paused sources are few, so they are read whole.
@@ -1187,7 +1192,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 			 */
 			const reportSources = Effect.fnUntraced(function* (
 				db: MapleDb,
-				batchTargets: ReadonlyArray<{ readonly id: ScrapeTargetId; readonly sourceId: SourceId | null }>,
+				batchTargets: ReadonlyArray<{
+					readonly id: ScrapeTargetId
+					readonly sourceId: SourceId | null
+				}>,
 			) {
 				const [first, ...rest] = Arr.dedupe(
 					batchTargets.flatMap((target) => (target.sourceId === null ? [] : [target.sourceId])),
@@ -1421,12 +1429,16 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							// A PlanetScale row's url is its discovery endpoint (JSON); anything else
 							// must parse the way the scraper will, so an HTML 200 doesn't pass.
 							if (row.targetType === "planetscale") return Effect.void
-							return response.text.pipe(
+							return readTextPrefix(response, PROBE_MAX_BODY_BYTES).pipe(
 								Effect.mapError(
 									() =>
 										new ScrapeTargetUpstreamError({
 											message: "Failed to read response body",
 										}),
+								),
+								// A cut body ends mid-line; judge the complete lines before it.
+								Effect.map(({ text, truncated }) =>
+									truncated ? text.slice(0, text.lastIndexOf("\n") + 1) : text,
 								),
 								Effect.flatMap((body) =>
 									countSamples(parsePrometheusText(body).families) > 0

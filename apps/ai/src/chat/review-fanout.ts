@@ -154,12 +154,15 @@ export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 	model: ResolvedModel,
 	/** When the parent's run is stopped, epoch millis; no group starts that could not finish by then. */
 	deadlineMs: number,
+	/** Appended to the worker's instructions, as to the parent's: how to use a tool only some runs have. */
+	guidance?: string,
 ) => {
 	const worker = Agent.make("pr-review-worker", {
 		input: Schema.String,
 		inputPrompt: (text: string) => text,
 		output: Output.text(Schema.String),
-		instructions: PR_REVIEW_WORKER_PROMPT,
+		instructions:
+			guidance === undefined ? PR_REVIEW_WORKER_PROMPT : `${PR_REVIEW_WORKER_PROMPT}\n\n${guidance}`,
 		description: "Reviews a group of a pull request's files and reports confirmed findings.",
 		toolkit,
 		policy: workerPolicy,

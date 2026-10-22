@@ -862,10 +862,15 @@ describe("timestamps", () => {
 
 describe("isScopeExemptRoute", () => {
 	it("exempts only sending and listing agent feedback", () => {
-		expect(isScopeExemptRoute("POST", "/v2/agent_feedback")).toBe(true)
-		expect(isScopeExemptRoute("POST", "/v2/agent_feedback/")).toBe(true)
-		expect(isScopeExemptRoute("GET", "/v2/agent_feedback")).toBe(true)
-		expect(isScopeExemptRoute("DELETE", "/v2/agent_feedback")).toBe(false)
-		expect(isScopeExemptRoute("POST", "/v2/api_keys")).toBe(false)
+		expect(isScopeExemptRoute("POST", "/v2/agent_feedback", "standard")).toBe(true)
+		expect(isScopeExemptRoute("POST", "/v2/agent_feedback/", "standard")).toBe(true)
+		expect(isScopeExemptRoute("GET", "/v2/agent_feedback", "standard")).toBe(true)
+		expect(isScopeExemptRoute("DELETE", "/v2/agent_feedback", "standard")).toBe(false)
+		expect(isScopeExemptRoute("POST", "/v2/api_keys", "standard")).toBe(false)
+	})
+
+	it("exempts nothing for a device credential", () => {
+		expect(isScopeExemptRoute("POST", "/v2/agent_feedback", "device")).toBe(false)
+		expect(isScopeExemptRoute("GET", "/v2/agent_feedback", "device")).toBe(false)
 	})
 })
