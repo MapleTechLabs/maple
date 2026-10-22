@@ -247,8 +247,8 @@ const deleteMetricsStackFunction = (stackName: string) => `delete_metrics_stack(
     if [ -n "$bucket" ] && [ "$bucket" != "None" ]; then
       aws s3 rm "s3://$bucket" --recursive --region "$1" >/dev/null 2>&1 || true
     fi
-    aws cloudformation delete-stack --region "$1" --stack-name ${stackName}
-    if aws cloudformation wait stack-delete-complete --region "$1" --stack-name ${stackName}; then
+    if aws cloudformation delete-stack --region "$1" --stack-name ${stackName} &&
+      aws cloudformation wait stack-delete-complete --region "$1" --stack-name ${stackName}; then
       return 0
     fi
     echo "Deleting the metric stream stack in $1 failed (attempt $attempt)." >&2

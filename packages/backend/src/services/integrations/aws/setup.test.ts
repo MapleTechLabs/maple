@@ -14,8 +14,8 @@ const target = {
 	metricsStackName: "maple-metrics-abc",
 }
 
-// A fake `aws` that logs every call. Metric stream stacks exist in $AWS_STACKS_IN; the first
-// wait for a deleted one fails when $AWS_WAIT_FAILS is set, as when Firehose wrote meanwhile.
+// A fake `aws` that logs every call. Metric stream stacks exist in $AWS_STACKS_IN. The first wait
+// fails with $AWS_WAIT_FAILS (Firehose wrote meanwhile); the first delete call with $AWS_DELETE_FAILS.
 const FAKE_AWS = `#!/usr/bin/env bash
 echo "$*" >> "$AWS_LOG"
 region=""
@@ -30,6 +30,8 @@ case "$1 $2" in
       *) echo CREATE_COMPLETE ;;
     esac ;;
   "cloudformation describe-stack-resource") echo "failed-deliveries-$region" ;;
+  "cloudformation delete-stack")
+    if [ -n "$AWS_DELETE_FAILS" ] && [ ! -e "$AWS_LOG.deleted" ]; then touch "$AWS_LOG.deleted"; exit 254; fi ;;
   "cloudformation wait")
     if [ -n "$AWS_WAIT_FAILS" ] && [ ! -e "$AWS_LOG.waited" ]; then touch "$AWS_LOG.waited"; exit 255; fi ;;
 esac
@@ -41,7 +43,14 @@ afterEach(() => {
 	for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-const run = (script: string, env: { readonly stacksIn: ReadonlyArray<string>; readonly waitFails?: boolean }) => {
+const run = (
+	script: string,
+	env: {
+		readonly stacksIn: ReadonlyArray<string>
+		readonly waitFails?: boolean
+		readonly deleteFails?: boolean
+	},
+) => {
 	const dir = mkdtempSync(join(tmpdir(), "maple-aws-script-"))
 	tempDirs.push(dir)
 	writeFileSync(join(dir, "aws"), FAKE_AWS)
@@ -57,6 +66,7 @@ const run = (script: string, env: { readonly stacksIn: ReadonlyArray<string>; re
 			AWS_LOG: log,
 			AWS_STACKS_IN: env.stacksIn.join(" "),
 			AWS_WAIT_FAILS: env.waitFails === true ? "1" : "",
+			AWS_DELETE_FAILS: env.deleteFails === true ? "1" : "",
 		},
 	})
 	return {
@@ -90,6 +100,13 @@ describe("AWS setup scripts", () => {
 		// Regions without the stack are left alone, and the role's stack goes last.
 		expect(metricsCalls(calls, "us-west-2")).toEqual([])
 		expect(calls.at(-1)).toContain(`stack-delete-complete --region us-east-1 --stack-name ${target.stackName}`)
+	})
+
+	it("retries a delete request AWS refused, instead of ending the script", () => {
+		const cleanup = Effect.runSync(renderAwsCleanupScript(target))
+		const { status, calls } = run(cleanup, { stacksIn: ["eu-central-1"], deleteFails: true })
+		expect(status).toBe(0)
+		expect(metricsCalls(calls, "eu-central-1")).toEqual(["empty bucket", "delete", "empty bucket", "delete", "wait"])
 	})
 
 	it("stops a cleanup that cannot delete a stream's stack, so the role that trusts Maple is not removed first", () => {
