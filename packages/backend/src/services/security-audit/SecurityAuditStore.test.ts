@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/primitives"
 import type { SecurityAuditTargetId } from "@maple/domain/security-audit"
-import type { CoverageUnit, Finding, RunMetadata } from "@maple/security-audit"
+import type { AuditEvent, CoverageUnit, Finding, RunMetadata } from "@maple/security-audit"
 import { Effect, Layer, Option, Schema } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { SecurityAuditStore, type SecurityAuditStoreApi } from "./SecurityAuditStore"
@@ -342,6 +342,68 @@ describe("SecurityAuditStore runs and events", () => {
 				assert.deepStrictEqual(
 					own.map((f) => f.fingerprint),
 					["f1"],
+				)
+			}),
+		),
+	)
+})
+
+describe("SecurityAuditStore replays", () => {
+	it.effect("a clean resave of a run removes its findings and only the lifecycle rows it opened", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const first = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveFindings(first.runId, [confirmed("earlier")])
+				const second = yield* seedRun(store, orgA, "sha-2", first.targetId)
+				yield* scoped.saveFindings(second.runId, [confirmed("earlier"), confirmed("new")])
+				yield* scoped.saveFindings(second.runId, [])
+				const db = trackedDbs[0]
+				assert.isDefined(db)
+				const perRun = yield* Effect.promise(() =>
+					db.pglite.query<{ run_id: string; fingerprint: string }>(
+						"SELECT run_id, fingerprint FROM security_audit_run_findings ORDER BY run_id, fingerprint",
+					),
+				)
+				const findings = yield* scoped.listFindings(first.targetId)
+				assert.deepStrictEqual(
+					perRun.rows.map((r) => [r.run_id, r.fingerprint]),
+					[[first.runId, "earlier"]],
+				)
+				assert.deepStrictEqual(
+					findings.map((f) => [f.fingerprint, f.firstSeenRunId]),
+					[["earlier", first.runId]],
+				)
+			}),
+		),
+	)
+
+	it.effect("recording the same event twice, as a replayed step does, stores it once", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { runId } = yield* seedRun(store, orgA, "sha-1")
+				const agent = (outcome: "ok" | "failed"): AuditEvent => ({
+					_tag: "Agent",
+					role: "critic",
+					agentId: "critic-w1",
+					outcome,
+					usage: { inputTokens: 10, outputTokens: 2 },
+				})
+				const note: AuditEvent = { _tag: "Note", message: "budget reserved" }
+				yield* scoped.recordEvent(runId, agent("ok"))
+				yield* scoped.recordEvent(runId, note)
+				yield* scoped.recordEvent(runId, agent("ok"))
+				yield* scoped.recordEvent(runId, note)
+				yield* scoped.recordEvent(runId, agent("failed"))
+				const events = yield* scoped.listEvents(runId)
+				assert.deepStrictEqual(
+					events.map((e) => [e.kind, e.agentId, e.outcome]),
+					[
+						["Agent", "critic-w1", "ok"],
+						["Note", null, null],
+						["Agent", "critic-w1", "failed"],
+					],
 				)
 			}),
 		),

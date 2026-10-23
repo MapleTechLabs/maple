@@ -3,7 +3,6 @@
  * `AuditStore` for one org plus the run lifecycle and readers the host and API need. Every query
  * filters by that org, so a store for one org cannot read or write another's runs.
  */
-import { randomUUID } from "node:crypto"
 import type { OrgId, UserId } from "@maple/domain/primitives"
 import type { VcsRepositoryId } from "@maple/domain/http/vcs"
 import {
@@ -26,7 +25,13 @@ import {
 	type SecurityAuditUnitRow,
 } from "@maple/db/tables"
 import type { MapleDb } from "@maple/db/client"
-import { AuditStore, AuditStoreError, type AuditStoreApi, type Finding } from "@maple/security-audit"
+import {
+	AuditStore,
+	AuditStoreError,
+	type AuditEvent,
+	type AuditStoreApi,
+	type Finding,
+} from "@maple/security-audit"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -103,8 +108,8 @@ export interface SecurityAuditStoreApi {
 
 const DEFAULT_RUN_LIST_LIMIT = 50
 
-const newTargetId = () => Schema.decodeSync(SecurityAuditTargetId)(randomUUID())
-const newRunId = () => Schema.decodeSync(SecurityAuditRunId)(randomUUID())
+const newTargetId = () => Schema.decodeSync(SecurityAuditTargetId)(crypto.randomUUID())
+const newRunId = () => Schema.decodeSync(SecurityAuditRunId)(crypto.randomUUID())
 
 const firstOrFail = <A>(rows: ReadonlyArray<A>, message: string) =>
 	rows[0] === undefined ? Effect.fail(new AuditStoreError({ message })) : Effect.succeed(rows[0])
@@ -117,6 +122,29 @@ const decodeRunId = (raw: string) =>
 			() => new AuditStoreError({ message: `Invalid security audit run id: ${JSON.stringify(raw)}` }),
 		),
 	)
+
+/** SHA-256 of `text` as lowercase hex, through Web Crypto so it runs in Workers and Node. */
+const sha256Hex = (text: string) =>
+	Effect.promise(() => crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))).pipe(
+		Effect.map((digest) =>
+			Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""),
+		),
+	)
+
+/**
+ * A replayed workflow step records the same event again; its id is derived from the run and the
+ * event's identity so the second insert is a no-op.
+ */
+const eventId = (runId: SecurityAuditRunId, event: AuditEvent) =>
+	Effect.gen(function* () {
+		const key =
+			event._tag === "Agent"
+				? `agent:${event.agentId}:${event.outcome}`
+				: event._tag === "Phase"
+					? `phase:${event.phase}`
+					: `note:${(yield* sha256Hex(event.message)).slice(0, 32)}`
+		return yield* sha256Hex(`${runId}:${key}`)
+	})
 
 const runNotFound = (runId: string) =>
 	new AuditStoreError({ message: `Security audit run ${runId} not found` })
@@ -278,7 +306,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 									PG.insertInto(SecurityAuditFindings)
 										.values(
 											Arr.map(unique, (finding) => ({
-												id: randomUUID(),
+												id: crypto.randomUUID(),
 												orgId,
 												targetId: run.targetId,
 												fingerprint: finding.fingerprint,
@@ -341,7 +369,8 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					function* (rawRunId, event) {
 						const runId = yield* decodeRunId(rawRunId)
 						const at = yield* Clock.currentTimeMillis
-						const base = { id: randomUUID(), runId, orgId, at, kind: event._tag }
+						const id = yield* eventId(runId, event)
+						const base = { id, runId, orgId, at, kind: event._tag }
 						const row: PG.InsertRowOf<typeof SecurityAuditEvents> =
 							event._tag === "Agent"
 								? {
@@ -384,7 +413,11 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 							db.transaction(
 								Effect.gen(function* () {
 									yield* requireRun(db, orgId, runId)
-									yield* db.run(PG.insertInto(SecurityAuditEvents).values(row))
+									yield* db.run(
+										PG.insertInto(SecurityAuditEvents)
+											.values(row)
+											.onConflictDoNothing({ target: ["id"] }),
+									)
 								}),
 							),
 						)
