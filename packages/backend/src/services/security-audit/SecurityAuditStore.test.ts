@@ -1,8 +1,10 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/primitives"
+import { VcsRepositoryId } from "@maple/domain/http/vcs"
 import type { SecurityAuditTargetId } from "@maple/domain/security-audit"
 import type { AuditEvent, CoverageUnit, Finding, RunMetadata } from "@maple/security-audit"
 import { Effect, Layer, Option, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { SecurityAuditStore, type SecurityAuditStoreApi } from "./SecurityAuditStore"
 
@@ -221,6 +223,7 @@ describe("SecurityAuditStore runs and events", () => {
 				const scoped = store.forOrg(orgA)
 				const { runId } = yield* seedRun(store, orgA, "sha-1")
 				yield* scoped.recordEvent(runId, { _tag: "Phase", phase: "recon", detail: "4 agents" })
+				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, {
 					_tag: "Agent",
 					role: "hunter",
@@ -228,6 +231,8 @@ describe("SecurityAuditStore runs and events", () => {
 					outcome: "ok",
 					usage: { inputTokens: 1200, outputTokens: 300, costUsd: 0.25 },
 				})
+				// Events in one millisecond order by id; these are sequential in time.
+				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, { _tag: "Note", message: "budget reserved" })
 				const events = yield* scoped.listEvents(runId)
 				assert.deepStrictEqual(
@@ -319,6 +324,25 @@ describe("SecurityAuditStore runs and events", () => {
 		),
 	)
 
+	it.effect("refuses a target that names another org's repository", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const repositoryId = Schema.decodeUnknownSync(VcsRepositoryId)(crypto.randomUUID())
+				const refused = yield* Effect.flip(
+					store
+						.forOrg(orgA)
+						.createTarget({
+							repository: "acme/api",
+							branch: "main",
+							createdBy: user,
+							vcsRepositoryId: repositoryId,
+						}),
+				)
+				assert.strictEqual(refused.message, "Repository is not connected to this org")
+			}),
+		),
+	)
+
 	it.effect("a store for one org cannot read or write another org's runs", () =>
 		withStore((store) =>
 			Effect.gen(function* () {
@@ -392,9 +416,17 @@ describe("SecurityAuditStore replays", () => {
 				})
 				const note: AuditEvent = { _tag: "Note", message: "budget reserved" }
 				yield* scoped.recordEvent(runId, agent("ok"))
+				// Events in one millisecond order by id; these are sequential in time.
+				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, note)
+				// Events in one millisecond order by id; these are sequential in time.
+				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, agent("ok"))
+				// Events in one millisecond order by id; these are sequential in time.
+				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, note)
+				// Events in one millisecond order by id; these are sequential in time.
+				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, agent("failed"))
 				const events = yield* scoped.listEvents(runId)
 				assert.deepStrictEqual(
