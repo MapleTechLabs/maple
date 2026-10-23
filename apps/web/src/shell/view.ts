@@ -22,6 +22,7 @@ import type { Model, ShellClerk } from "./model"
 import { MeasureSidebarOverflow, PositionMenu } from "./mounts"
 import { isMenuKey } from "./update"
 import { menuContent } from "./view-menus"
+import { navGroups } from "./nav"
 import { navGroupSections, pinnedGroup, shellNavGroups } from "./view-nav"
 import { NO_TIP, type RailTip, shellSidebarFooter, shellSidebarHeader } from "./view-sidebar"
 import { type BreadcrumbEntry, topbar } from "./view-topbar"
@@ -56,7 +57,8 @@ const RAIL_TIP_PREFIX = "shell-rail-tip-"
 /** Every row that can carry a rail tooltip: the nav items, Search and the footer links. */
 const RAIL_TIP_TITLES = [
 	"Search",
-	...shellNavGroups().flatMap((group) => group.items.map((item) => item.title)),
+	// Every row any org can show: the flags only hide rows, so a hidden row's tip is never reached.
+	...navGroups({ releases: true, securityAudit: true }).flatMap((group) => group.items.map((item) => item.title)),
 	"Sources",
 	"Settings",
 ]
