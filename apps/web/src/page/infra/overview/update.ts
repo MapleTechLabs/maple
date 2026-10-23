@@ -80,6 +80,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			supabase: Keyed.idle(),
 			planetscale: Keyed.idle(),
 			gcp: Keyed.idle(),
+			aws: Keyed.idle(),
 		},
 		install,
 	}
