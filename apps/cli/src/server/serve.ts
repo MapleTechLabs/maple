@@ -235,7 +235,8 @@ export const corsHeadersForAllowedOrigin = (
 				// `x-maple-sdk` is the SDK identity hint every browser SDK sends on
 				// every request; a listener that does not allow it fails preflight
 				// for the whole SDK.
-				"access-control-allow-headers": "content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key",
+				"access-control-allow-headers":
+					"content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key",
 				"access-control-allow-private-network": "true",
 				vary: "Origin",
 			}
@@ -1515,7 +1516,12 @@ const makeFetch =
 		if (url.pathname === LOGIN_ACTION_PATH)
 			return respond(
 				req.method === "POST"
-					? await runSpan(loginSpan(context.auth, context.loginThrottle, req, url))
+					? await runSpan(loginSpan(context.auth, context.loginThrottle, req, url)).then(
+							(response) => {
+								if (response.status === 401) context.countRejection("read")
+								return response
+							},
+						)
 					: // A reload of a failed sign-in lands here; show the form again.
 						new Response(null, { status: 303, headers: { location: LOGIN_PATH } }),
 			)

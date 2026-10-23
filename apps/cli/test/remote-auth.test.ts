@@ -316,6 +316,13 @@ describe("CLI access token", () => {
 		)
 	})
 
+	it("never sends it over http to an https target", () => {
+		strictEqual(
+			authorization(HttpClientRequest.get("http://maple.example.com:8080/local/status")),
+			undefined,
+		)
+	})
+
 	it("never reaches another host or route", () => {
 		strictEqual(authorization(HttpClientRequest.get("https://other.example/local/status")), undefined)
 		strictEqual(authorization(HttpClientRequest.get("https://maple.example.com/health")), undefined)
