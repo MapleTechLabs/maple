@@ -141,7 +141,7 @@ const tilesOf = (
 		}
 		case "sqs":
 			return [
-				plainTile("Visible messages", f("visible"), formatRate),
+				plainTile("Visible messages", f("visible"), (value) => formatRate(Math.round(value))),
 				plainTile("Oldest message", f("oldestAge"), formatUptime),
 				perMinuteTile("Sent / min", f("sent"), context),
 			]
