@@ -18,12 +18,15 @@ on:
 
 # Only runs that deploy or tear down share the PR's group (same test as deploy-pr-preview's
 # `if`). A run that skips both gets its own group, so a push to an unlabelled PR can't
-# cancel its teardown mid-destroy and leak the stack (#1564).
+# cancel its teardown mid-destroy and leak the stack (#1564). `opened` never deploys: a PR
+# opened with a preview label also sends `labeled`, and two runs would cancel each other.
+# `labeled` deploys only for a preview label, so tagging a preview PR `bug` doesn't redeploy.
 concurrency:
     group: >-
         ${{ ((github.event.action == 'unlabeled'
                 && (github.event.label.name == 'preview' || github.event.label.name == 'preview:web'))
-            || (github.event.action != 'unlabeled'
+            || (github.event.action != 'unlabeled' && github.event.action != 'opened'
+                && (github.event.action != 'labeled' || startsWith(github.event.label.name, 'preview'))
                 && (contains(github.event.pull_request.labels.*.name, 'preview')
                     || contains(github.event.pull_request.labels.*.name, 'preview:web'))))
         && format('pr-preview-{0}', github.event.pull_request.number)
@@ -42,7 +45,8 @@ jobs:
     ingest-binary:
         if: >-
             ${{ github.event.pull_request.head.repo.full_name == github.repository
-            && github.event.action != 'closed'
+            && github.event.action != 'closed' && github.event.action != 'opened'
+            && (github.event.action != 'labeled' || startsWith(github.event.label.name, 'preview'))
             && (github.event.action != 'unlabeled' || github.event.label.name == 'preview:web')
             && contains(github.event.pull_request.labels.*.name, 'preview') }}
         uses: ./.github/workflows/build-ingest-binary.yml
@@ -58,7 +62,8 @@ jobs:
             && github.event.pull_request.head.repo.full_name == github.repository
             && ((github.event.action == 'unlabeled'
                     && (github.event.label.name == 'preview' || github.event.label.name == 'preview:web'))
-                || (github.event.action != 'unlabeled'
+                || (github.event.action != 'unlabeled' && github.event.action != 'opened'
+                    && (github.event.action != 'labeled' || startsWith(github.event.label.name, 'preview'))
                     && (contains(github.event.pull_request.labels.*.name, 'preview')
                         || contains(github.event.pull_request.labels.*.name, 'preview:web')))) }}
         runs-on: ubuntu-latest
