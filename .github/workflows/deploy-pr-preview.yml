@@ -307,9 +307,13 @@ jobs:
             MAPLE_E2E_APP_URL: https://app-pr-${{ github.event.pull_request.number }}.maple.dev
             MAPLE_E2E_API_URL: https://api-pr-${{ github.event.pull_request.number }}.maple.dev
             E2E_TELEMETRY_DISABLED: "1"
-            SECRETS_FILE: /.e2e-secrets.env
+            # `preview:web` deploys no Electric sync; tests that read synced state skip.
+            MAPLE_E2E_NO_SYNC: ${{ !contains(github.event.pull_request.labels.*.name, 'preview') && '1' || '' }}
         steps:
+            # The suite runs PR code beside the sign-in key; no later step needs the token.
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  persist-credentials: false
 
             - uses: ./.github/actions/setup
               with:
@@ -333,31 +337,28 @@ jobs:
               if: steps.browser-cache.outputs.cache-hit != 'true'
               run: bunx e2e-web install chromium
 
-            # Exported to a file, not the env, so only the two keys the suite reads leave it.
-            - name: Load deployment secrets from Infisical
+            # By name, so no other preview secret reaches this job (setup above runs PR code).
+            - name: Load the preview sign-in key from Infisical
               uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
               with:
                   method: "oidc"
                   identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
                   project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
                   env-slug: ${{ vars.PREVIEW_INFISICAL_ENV_SLUG || 'dev' }}
-                  export-type: "file"
-                  file-output-path: ${{ env.SECRETS_FILE }}
-                  secret-path: "/"
+                  export-type: "env"
+                  secret-name: PREVIEW_SIGNIN_KEY
 
-            # The action writes `KEY='value'` lines under the workspace; agent.* tests register
-            # only when ANTHROPIC_API_KEY is set.
-            - name: Keep only the e2e secrets
-              working-directory: ${{ github.workspace }}
-              run: |
-                  file="$GITHUB_WORKSPACE$SECRETS_FILE"
-                  for key in PREVIEW_SIGNIN_KEY ANTHROPIC_API_KEY; do
-                    value=$(sed -n "s/^$key='\(.*\)'\$/\1/p" "$file")
-                    [ -n "$value" ] || continue
-                    echo "::add-mask::$value"
-                    echo "$key=$value" >> "$GITHUB_ENV"
-                  done
-                  rm -f "$file"
+            # Optional: agent.* tests register only when it is set, and a missing name throws.
+            - name: Load the agent test key from Infisical
+              continue-on-error: true
+              uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
+              with:
+                  method: "oidc"
+                  identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+                  project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+                  env-slug: ${{ vars.PREVIEW_INFISICAL_ENV_SLUG || 'dev' }}
+                  export-type: "env"
+                  secret-name: ANTHROPIC_API_KEY
 
             - name: Run the e2e suite
               run: bunx e2e run --reporter list,junit
