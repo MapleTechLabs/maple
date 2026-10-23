@@ -102,6 +102,54 @@ describe("scanDependencies, private dependencies", () => {
 		])
 	})
 
+	it("flags package.json git dependencies, not its homepage or registry ones", () => {
+		expect(
+			scan({
+				"package.json": JSON.stringify({
+					homepage: "https://acme.internal/docs",
+					repository: { url: "git+https://github.com/acme/web.git" },
+					dependencies: {
+						react: "^19.0.0",
+						"@acme/ui": "git+ssh://git@github.com/acme/ui.git#v2",
+						"@acme/auth": "github:acme/auth#main",
+						"@acme/flags": "git@gitlab.acme.dev:web/flags.git",
+					},
+				}),
+			}).privateDependencies,
+		).toEqual([
+			"package.json: git dependency @acme/ui (git+ssh://git@github.com/acme/ui.git#v2)",
+			"package.json: git dependency @acme/auth (github:acme/auth#main)",
+			"package.json: git dependency @acme/flags (git@gitlab.acme.dev:web/flags.git)",
+		])
+	})
+
+	it("flags GOPRIVATE and GONOSUMDB set in the repository's own config and CI", () => {
+		expect(
+			scan({
+				"go.mod": "module github.com/acme/api\n// replace github.com/acme/old => ../old\n",
+				".envrc": "export GOPRIVATE=github.com/acme/*",
+				".github/workflows/ci.yml": "env:\n  GONOSUMDB: go.acme.dev\n",
+			}).privateDependencies,
+		).toEqual([
+			".envrc: GOPRIVATE set to github.com/acme/*",
+			".github/workflows/ci.yml: GONOSUMDB set to go.acme.dev",
+		])
+	})
+
+	it("ignores commented requirements lines and the well-known public Python indexes", () => {
+		expect(
+			scan({
+				"requirements.txt": [
+					"# --index-url https://pypi.acme.internal/simple",
+					"--extra-index-url https://download.pytorch.org/whl/cu121",
+					"--index-url https://pypi.org/simple  # the default",
+					"torch==2.5.0",
+					"# acme-auth @ git+ssh://git@github.com/acme/auth.git",
+				].join("\n"),
+			}).privateDependencies,
+		).toEqual([])
+	})
+
 	it("reads the shallowest config files first and caps how many", () => {
 		const tree = Object.fromEntries(
 			Array.from({ length: MAX_CONFIG_READS + 10 }, (_, i) => [`packages/p${i}/.npmrc`, ""]),

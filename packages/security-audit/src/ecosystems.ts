@@ -63,6 +63,7 @@ const MANIFESTS: ReadonlyArray<readonly [Ecosystem, string | RegExp]> = [
 
 /** Files whose text can name a private registry, a private git source or a local module. */
 const CONFIGS: ReadonlyArray<string | RegExp> = [
+	"package.json",
 	".npmrc",
 	".yarnrc",
 	".yarnrc.yml",
@@ -83,21 +84,28 @@ const CONFIGS: ReadonlyArray<string | RegExp> = [
 	"Cargo.toml",
 	"config.toml",
 	"config",
+	// Where a Go toolchain is told which modules are private.
+	"go.env",
+	".envrc",
+	"Makefile",
+	"Dockerfile",
 ]
 
 /** Read at most this many config files; the shallowest first, where the repository-wide ones sit. */
-export const MAX_CONFIG_READS = 40
+export const MAX_CONFIG_READS = 60
 
 const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1)
 
 const matches = (name: string, pattern: string | RegExp) =>
 	typeof pattern === "string" ? name === pattern : pattern.test(name)
 
-/** Cargo's `config` files only count inside `.cargo/`. */
+const isWorkflow = (path: string) => /^\.github\/workflows\/[^/]+\.ya?ml$/u.test(path)
+
+/** Cargo's `config` files only count inside `.cargo/`; CI workflows can set GOPRIVATE too. */
 const isConfig = (path: string) => {
 	const name = basename(path)
 	if (name === "config" || name === "config.toml") return path.endsWith(`.cargo/${name}`)
-	return CONFIGS.some((pattern) => matches(name, pattern))
+	return isWorkflow(path) || CONFIGS.some((pattern) => matches(name, pattern))
 }
 
 /** The git pathspecs that list every manifest and config file this module reads. */
@@ -107,6 +115,8 @@ export const DEPENDENCY_PATHSPECS: ReadonlyArray<string> = [
 			typeof pattern === "string" ? `:(glob)**/${pattern}` : ":(glob)**/requirements*.txt",
 		),
 	),
+	":(glob).github/workflows/*.yml",
+	":(glob).github/workflows/*.yaml",
 ]
 
 /** The config files worth reading, shallowest first, at most {@link MAX_CONFIG_READS}. */
@@ -124,6 +134,7 @@ const PUBLIC_HOSTS = new Set([
 	"pypi.org",
 	"pypi.python.org",
 	"files.pythonhosted.org",
+	"download.pytorch.org",
 	"repo.maven.apache.org",
 	"repo1.maven.org",
 	"central.sonatype.com",
@@ -200,12 +211,36 @@ const sourceText = (name: string, text: string): string => {
 	}
 }
 
+/** A package.json dependency fetched from git: over SSH, as `git@host:`, or a `github:` shorthand. */
+const GIT_DEPENDENCY = /"([^"]+)"\s*:\s*"((?:git\+ssh:\/\/|git@|github:)[^"]+)"/gu
+
+/** The Go settings that mark modules as private, as a shell, Makefile or workflow sets them. */
+const GO_PRIVATE = /\b(GOPRIVATE|GONOSUMDB|GONOPROXY)\s*[=:]\s*["']?([^\s"']+)/gu
+
+const REQUIREMENTS = /^requirements[\w.-]*\.txt$/u
+
+/** requirements files without their comments: a commented-out index is not a source. */
+const uncommented = (text: string) =>
+	lines(text)
+		.filter((line) => !line.startsWith("#"))
+		.map((line) => line.replace(/\s+#.*$/u, ""))
+		.join("\n")
+
 /** The private-dependency signals one config file carries. */
 const signalsIn = (path: string, text: string): ReadonlyArray<string> => {
 	const name = basename(path)
 	const at = (what: string) => `${path}: ${what}`
 	const sources = privateUrls(sourceText(name, text)).map((url) => at(`private source ${hostOf(url)}`))
+	const goPrivate = [...text.matchAll(GO_PRIVATE)].map((m) => at(`${m[1]} set to ${m[2]}`))
+	if (isWorkflow(path)) return goPrivate
 	switch (name) {
+		case "package.json":
+			return [...text.matchAll(GIT_DEPENDENCY)].map((m) => at(`git dependency ${m[1]} (${m[2]})`))
+		case "go.env":
+		case ".envrc":
+		case "Makefile":
+		case "Dockerfile":
+			return goPrivate
 		case ".npmrc":
 			return [
 				...sources,
@@ -226,15 +261,17 @@ const signalsIn = (path: string, text: string): ReadonlyArray<string> => {
 				)
 		case "go.mod":
 			return lines(text)
+				.filter((line) => !line.startsWith("//"))
 				.filter((line) => line.includes("=>"))
 				.map((line) => line.slice(line.indexOf("=>") + 2).trim())
 				.filter((target) => target.startsWith(".") || target.startsWith("/"))
 				.map((target) => at(`replace directive to the local module ${target.split(/\s/u)[0]}`))
 		default:
+			if (!REQUIREMENTS.test(name)) return sources
 			// requirements*.txt also names dependencies fetched over SSH.
 			return [
-				...sources,
-				...lines(text)
+				...privateUrls(uncommented(text)).map((url) => at(`private source ${hostOf(url)}`)),
+				...lines(uncommented(text))
 					.filter((line) => line.includes("git+ssh://") || line.includes("git+git@"))
 					.map(() => at("git dependency over SSH")),
 			]
