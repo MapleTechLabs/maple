@@ -71,7 +71,7 @@ Point any OpenTelemetry exporter at the server and send the ingest key as a Bear
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT=https://maple.example.com
-export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <ingest key>"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20<ingest key>"
 ```
 
 Maple's own SDKs send their ingest key the same way, so an app already set up for Maple Cloud only needs its endpoint changed. The `x-maple-ingest-key` header works too.
@@ -98,7 +98,7 @@ The CLI sends the token only to the host in `MAPLE_LOCAL_URL` and to loopback.
 ## Data, upgrades and restarts
 
 - Everything lives on the `/data` volume: the store, its [restore points](/docs/local-mode/checkpoints-and-archives), and the CLI's config. Back up the volume to back up Maple.
-- Give the container time to stop cleanly (`--stop-timeout 30`, or `stop_grace_period`). If it is killed anyway (out of memory, a host crash), it starts again from its last restore point and keeps the damaged store beside it as `/data/.maple/data.quarantine-*`, which you can delete. Restore points are taken every 30 minutes while new data arrives, and on each start of a store that has data. A store killed before its first restore point starts empty, since there is nothing to restore.
+- Give the container time to stop cleanly (`--stop-timeout 30`, or `stop_grace_period`). If it is killed anyway (out of memory, a host crash), it starts again from its last restore point and keeps the damaged store beside it as `/data/.maple/data.quarantine-*`, which you can delete. Restore points are taken every 30 minutes while new data arrives, and on each start of a store that has data. A store killed before its first restore point starts empty, since there is nothing to restore. One case needs you: a container killed and then upgraded to an image with a different storage engine cannot read the old restore point and stops with an explanation. Run the previous image once to recover, or start fresh with `docker run --rm -v maple-data:/data ghcr.io/mapletechlabs/maple:latest reset --yes`.
 - Run commands that change the store as the server's user: `docker exec -u 10001 maple maple checkpoint`. Read-only commands such as `maple services` can run as any user.
 - To upgrade, pull the new tag and recreate the container on the same volume. Pin a version tag (`ghcr.io/mapletechlabs/maple:v0.0.30`) if you want to choose when that happens; `latest` follows each release.
 - The server runs as an unprivileged user (uid 10001). A volume mounted as root is handed to that user on start.

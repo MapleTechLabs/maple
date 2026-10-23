@@ -30,7 +30,9 @@ set -- /opt/maple/maple start --host 0.0.0.0 --port "${PORT:-4318}" --offline \
 
 if [ "$(id -u)" = 0 ]; then
 	# Platform volumes are often mounted root-owned: hand them to the server user, then drop root.
-	find /data \( ! -user "$MAPLE_UID" -o ! -group "$MAPLE_UID" \) -exec chown "$MAPLE_UID:$MAPLE_UID" {} +
-	exec setpriv --reuid="$MAPLE_UID" --regid="$MAPLE_UID" --clear-groups --inh-caps=-all "$@"
+	# -h and -xdev: never follow a link or another mount out of the volume.
+	find /data -xdev \( ! -user "$MAPLE_UID" -o ! -group "$MAPLE_UID" \) -exec chown -h "$MAPLE_UID:$MAPLE_UID" {} +
+	exec setpriv --reuid="$MAPLE_UID" --regid="$MAPLE_UID" --clear-groups --inh-caps=-all \
+		--bounding-set=-all --no-new-privs "$@"
 fi
 exec "$@"

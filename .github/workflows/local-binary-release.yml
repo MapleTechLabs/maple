@@ -237,13 +237,13 @@ jobs:
                   gh release upload "$TAG" "${verify_assets[@]}" --repo "$REPO" --clobber
                   gh release upload "$TAG" "$tarball" --repo "$REPO" --clobber
 
-    # The self-hosted image (apps/cli/docker) around the two Linux bundles above. It
-    # waits for every platform but uses only Linux; the tarballs are already
-    # published by then. A run without a tag builds and smokes the image, no push.
+    # The self-hosted image (apps/cli/docker) around the two Linux bundles above.
+    # Only a fully published release gets an image. A run without a tag builds and
+    # smokes the image, no push.
     image:
         name: Container image
         needs: build
-        if: ${{ !cancelled() && vars.MAPLE_RELEASE_ENABLED == 'true' }}
+        if: ${{ vars.MAPLE_RELEASE_ENABLED == 'true' }}
         runs-on: ubuntu-latest
         timeout-minutes: 30
         permissions:
@@ -271,8 +271,9 @@ jobs:
                     exit 0
                   fi
                   tags="$image:$tag"
-                  # A pre-release (v1.2.3-rc.1) never moves `latest`.
-                  if [[ "$tag" != *-* ]]; then tags="$tags,$image:latest"; fi
+                  # Only a pushed release tag moves `latest`: never a pre-release
+                  # (v1.2.3-rc.1), never a manual re-run of an older tag.
+                  if [[ "$ref" == refs/tags/* && "$tag" != *-* ]]; then tags="$tags,$image:latest"; fi
                   echo "publish=true" >> "$GITHUB_OUTPUT"
                   echo "tags=$tags" >> "$GITHUB_OUTPUT"
 

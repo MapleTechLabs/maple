@@ -736,7 +736,11 @@ MAPLE_TARGET=linux-arm64 scripts/build-local-binary.sh   # cross-compile (linux-
 - CI's `Local checkpoint native` job builds the amd64 image from its bundle and
   runs the smoke. The release workflow's `image` job smokes the amd64 image and,
   for a tag, pushes both platforms as `:<tag>` (and `:latest` unless it is a
-  pre-release) with a provenance attestation.
+  pre-release) with a provenance attestation. A new GHCR package starts
+  private: after the first push, set `ghcr.io/mapletechlabs/maple` to public in
+  the organization's package settings, or anonymous pulls fail.
+- The entrypoint's dirty-store check reads `$HOME/.maple/data`, so the image's
+  data dir is fixed at `/data/.maple/data`; don't pass `--data-dir`.
 
 ```bash
 apps/cli/docker/build-image.sh maple-local:dev && apps/cli/docker/image-smoke.sh maple-local:dev

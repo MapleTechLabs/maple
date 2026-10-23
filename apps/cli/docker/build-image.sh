@@ -38,4 +38,4 @@ if [[ "${#platform_list[@]}" == 1 && -z "${EXTRA_ARGS:-}" ]]; then
 	output=(--load)
 fi
 # shellcheck disable=SC2086 # EXTRA_ARGS is a list of flags
-docker buildx build --platform "$PLATFORMS" --tag "$TAG" "${output[@]}" ${EXTRA_ARGS:-} "$CONTEXT"
+docker buildx build --platform "$PLATFORMS" --tag "$TAG" ${output[@]+"${output[@]}"} ${EXTRA_ARGS:-} "$CONTEXT"
