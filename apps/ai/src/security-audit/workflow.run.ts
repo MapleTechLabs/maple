@@ -223,6 +223,8 @@ export const auditWithAgents = <E, R>(
 				result.status === "complete" &&
 				payload.scopePaths.length === 0 &&
 				prior !== null &&
+				// An unread or cut diff is evidence of nothing; claiming a fix needs the diff.
+				!changed.includes(EVERYTHING_CHANGED) &&
 				Option.isSome(row)
 			) {
 				const reported = new Set(result.findings.map((f) => f.fingerprint))
