@@ -51,9 +51,24 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i] ?? ""
 		if (arg.startsWith("--")) {
-			flags.set(arg.slice(2), [...(flags.get(arg.slice(2)) ?? []), argv[i + 1] ?? ""])
+			const value = argv[i + 1]
+			// Every option takes a value; a missing one, or another option in its place, is a usage error.
+			if (value === undefined || value.startsWith("--")) {
+				console.error(
+					`${arg} needs a value\n${"usage: bun run security:local <repo-dir> [--ref <commit>] [--scope <path>]... [--profile quick|standard|deep] [--budget <n>] [--concurrency <n>] [--out <dir>] [--prior <run dir>]"}`,
+				)
+				process.exit(2)
+			}
+			flags.set(arg.slice(2), [...(flags.get(arg.slice(2)) ?? []), value])
 			i++
 		} else positional.push(arg)
+	}
+	const positiveInt = (name: string, raw: string | undefined): number | undefined => {
+		if (raw === undefined) return undefined
+		const value = Number(raw)
+		if (Number.isSafeInteger(value) && value > 0) return value
+		console.error(`--${name} must be a positive integer, got ${JSON.stringify(raw)}`)
+		return process.exit(2)
 	}
 	const one = (name: string) => flags.get(name)?.at(-1)
 	const profile = one("profile") ?? "deep"
@@ -71,10 +86,10 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		ref: one("ref") ?? "HEAD",
 		scope: (flags.get("scope") ?? []).map((path) => path.replace(/\/+$/, "")),
 		profile,
-		budget: one("budget") === undefined ? null : Number(one("budget")),
+		budget: positiveInt("budget", one("budget")) ?? null,
 		out: one("out"),
 		prior: one("prior"),
-		concurrency: Number(one("concurrency") ?? 4),
+		concurrency: positiveInt("concurrency", one("concurrency")) ?? 4,
 		discoveryModel: one("discovery-model"),
 		validationModel: one("validation-model"),
 	}
@@ -316,6 +331,8 @@ const main = async () => {
 		const file = name === "validate-findings.cjs" ? "findings.json" : "coverage-ledger.json"
 		const check = spawnSync("node", [join(SKILL_DIR, name), join(out, file)], { encoding: "utf8" })
 		console.log(`${name}: ${(check.stdout || check.stderr).trim()}`)
+		// Output the skill's own validator rejects fails the run, not only its log.
+		if (check.status !== 0) process.exitCode = 1
 	}
 	console.log(`report: ${join(out, "REPORT.md")}`)
 }
