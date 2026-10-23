@@ -89,6 +89,7 @@
 		}
 	],
 	"ignorePatterns": [
+		"packages/security-audit/skill/**",
 		".agents/**",
 		".codex/**",
 		".context/**",
