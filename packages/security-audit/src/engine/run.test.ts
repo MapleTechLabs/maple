@@ -202,6 +202,35 @@ describe("runAudit, disclosed coverage", () => {
 	})
 })
 
+describe("runAudit, execution mode", () => {
+	it("labels a source-only run in its report and in both needs-validation documents", async () => {
+		const line =
+			"Source-only review: no execution sandbox for Go yet; private dependencies detected, which cannot be installed without credentials (go.mod: replace directive to the local module ../shared)"
+		const { result } = await runScripted(
+			baseInput({
+				executionProfile: {
+					mode: "source_only",
+					ecosystems: ["go"],
+					privateDependencies: ["go.mod: replace directive to the local module ../shared"],
+					reasons: [
+						"no execution sandbox for Go yet",
+						"private dependencies detected, which cannot be installed without credentials (go.mod: replace directive to the local module ../shared)",
+					],
+				},
+			}),
+			happy(),
+		)
+		const sections = result.reports.report.split("\n## ")
+		expect([
+			sections.find((s) => s.startsWith("Run"))?.includes(`- ${line}.`),
+			sections
+				.find((s) => s.startsWith("NEEDS VALIDATION"))
+				?.includes(`${line}. Leads whose deciding fact needs execution stay here.`),
+			result.reports.needsValidation.startsWith(`# Needs validation\n\n${line}.`),
+		]).toEqual([true, true, true])
+	})
+})
+
 describe("runAudit, record verification", () => {
 	it("applies a material replacement only after a fresh verifier agrees", async () => {
 		const { result, recorded } = await runScripted(

@@ -2,6 +2,7 @@
  * Phase 6: `REPORT.md`, `FINDINGS-DETAIL.md` and `NEEDS-VALIDATION.md`, derived only from the final
  * records and the ledger. Prose never changes a verdict, severity, blocker or impact.
  */
+import { executionModeLine } from "../ecosystems"
 import type { Finding } from "../schema"
 import type { LedgerUnit } from "./ledger"
 import type { AuditReports } from "./ports"
@@ -79,6 +80,13 @@ export const buildReports = (
 				SEVERITY_ORDER.indexOf(b.severity.overall_severity),
 		)
 	const pending = findings.filter((f): f is NeedsValidation => f.verdict === "needs_validation")
+	const modeLine =
+		input.executionProfile === undefined ? undefined : executionModeLine(input.executionProfile)
+	// Why execution-bound leads stay here: the run-level reason, beside each record's own blocker.
+	const executionNote =
+		modeLine === undefined || input.executionProfile?.mode !== "source_only"
+			? ""
+			: `${modeLine}. Leads whose deciding fact needs execution stay here.\n\n`
 	const counts = countBy(s.ledger)
 	const unvalidated = [
 		...new Set([...s.candidates.keys(), ...s.carried.map((c) => c.record.fingerprint)]),
@@ -98,6 +106,7 @@ export const buildReports = (
 		`- Profile: ${input.profile}. Scope: ${input.scopePaths.length === 0 ? "whole repository" : input.scopePaths.join(", ")}. Source ref: \`${input.sourceRef}\`.`,
 		`- Budget: ${input.budget === null ? "none set" : `${input.budget} agent invocations`}; spent ${s.spent}.`,
 		`- Execution: sandboxed source-and-local-only. ${input.execution._tag === "Available" ? `Bounded local checks were available (${input.execution.limits}).` : `No target code was executed: ${input.execution.blocker}.`}`,
+		...(modeLine === undefined ? [] : [`- ${modeLine}.`]),
 		`- Prior runs: ${input.prior === null ? "none; this run had no prior ledger" : `${input.prior.runId} at \`${input.prior.sourceRef}\`; ${carried} same-source confirmations carried for re-verification, ${revalidated} changed-source revalidations`}.`,
 		`- Status: **${status}**${s.incomplete.length === 0 ? "" : ` (${s.incomplete.join("; ")})`}.${partial ? " This is a partial pass." : ""}`,
 		...(unvalidated.length === 0
@@ -133,8 +142,8 @@ export const buildReports = (
 
 	const needsTable =
 		pending.length === 0
-			? "## NEEDS VALIDATION\n\nNone."
-			: `## NEEDS VALIDATION\n\n| Title | Entry | Blocker | Local next step | Owner check |\n| --- | --- | --- | --- | --- |\n${pending
+			? `## NEEDS VALIDATION\n\n${executionNote}None.`
+			: `## NEEDS VALIDATION\n\n${executionNote}| Title | Entry | Blocker | Local next step | Owner check |\n| --- | --- | --- | --- | --- |\n${pending
 					.map(
 						(f) =>
 							`| ${cell(f.title)} | \`${f.trace[0]?.file ?? ""}:${f.trace[0]?.line ?? ""}\` | ${cell(f.blockers.join("; "))} | ${cell(f.validation_plan.local ?? "-")} | ${cell(f.validation_plan.deployment ?? "-")} |`,
@@ -164,6 +173,6 @@ export const buildReports = (
 		["critical", "high", "medium"].includes(f.severity.overall_severity),
 	)
 	const findingsDetail = `# Findings detail\n\n${detailed.length === 0 ? "No confirmed medium, high or critical findings." : detailed.map(confirmedDetail).join("\n\n")}`
-	const needsValidation = `# Needs validation\n\n${pending.length === 0 ? "No unresolved leads." : pending.map(needsValidationDetail).join("\n\n")}`
+	const needsValidation = `# Needs validation\n\n${executionNote}${pending.length === 0 ? "No unresolved leads." : pending.map(needsValidationDetail).join("\n\n")}`
 	return { report, findingsDetail, needsValidation }
 }

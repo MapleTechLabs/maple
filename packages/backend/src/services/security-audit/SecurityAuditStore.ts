@@ -44,6 +44,7 @@ import {
 	RunMetadataRecord,
 	UnitStatus,
 } from "@maple/security-audit/schema"
+import { ExecutionProfile } from "@maple/security-audit/ecosystems"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -159,6 +160,11 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		fingerprints: ReadonlyArray<string>,
 		runId: string,
 	) => Effect.Effect<number, AuditStoreError>
+	/** Records how the run may execute target code; a finished run keeps what it had. */
+	readonly setExecutionProfile: (
+		runId: string,
+		profile: ExecutionProfile,
+	) => Effect.Effect<void, AuditStoreError>
 	/** Agent invocations the org's runs reserved in `period` (UTC `YYYY-MM`). */
 	readonly orgInvocationsSpent: (period: string) => Effect.Effect<number, AuditStoreError>
 	/**
@@ -262,6 +268,7 @@ const decodeUnitSummary = Schema.decodeUnknownOption(UnitSummaryFields)
 const decodeFinding = Schema.decodeUnknownOption(FindingSchema)
 const decodeRunMetadata = Schema.decodeUnknownOption(RunMetadataRecord)
 const decodeReports = Schema.decodeUnknownOption(AuditReportsRecord)
+const decodeExecutionProfile = Schema.decodeUnknownOption(ExecutionProfile)
 const decodeEventDetail = Schema.decodeUnknownOption(SecurityAuditEventDetail)
 
 /** A stored jsonb value under the current schema, or null when it was written under an older one. */
@@ -280,9 +287,10 @@ const warnStale = (what: string, stale: number, total: number) =>
 				Effect.annotateLogs({ stale, total }),
 			)
 
-type RawRunRow = Omit<SecurityAuditRunRow, "metadata" | "reports"> & {
+type RawRunRow = Omit<SecurityAuditRunRow, "metadata" | "reports" | "executionProfile"> & {
 	readonly metadata: unknown
 	readonly reports: unknown
+	readonly executionProfile: unknown
 }
 
 /** Runs with `metadata` and `reports` read leniently: an old shape becomes null, not a failure. */
@@ -294,9 +302,18 @@ const lenientRuns = (rows: ReadonlyArray<RawRunRow>) =>
 				decoded: decodeRunMetadata(row.metadata),
 			})
 			const reports = lenient({ isNull: row.reports === null, decoded: decodeReports(row.reports) })
+			const executionProfile = lenient({
+				isNull: row.executionProfile === null,
+				decoded: decodeExecutionProfile(row.executionProfile),
+			})
 			return {
-				row: { ...row, metadata: metadata.value, reports: reports.value },
-				stale: metadata.stale || reports.stale,
+				row: {
+					...row,
+					metadata: metadata.value,
+					reports: reports.value,
+					executionProfile: executionProfile.value,
+				},
+				stale: metadata.stale || reports.stale || executionProfile.stale,
 			}
 		})
 		yield* warnStale("run metadata or reports", decoded.filter((d) => d.stale).length, rows.length)
@@ -308,6 +325,7 @@ const selectRuns = () =>
 		...$,
 		metadata: PG.undecoded($.metadata),
 		reports: PG.undecoded($.reports),
+		executionProfile: PG.undecoded($.executionProfile),
 	}))
 
 /**
@@ -1301,6 +1319,13 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					return Option.some({ fingerprint, status, statusReason: reason, statusChangedAt: now })
 				})
 
+				const setExecutionProfile: SecurityAuditOrgStore["setExecutionProfile"] = Effect.fn(
+					"SecurityAuditStore.setExecutionProfile",
+				)(function* (rawRunId, profile) {
+					const runId = yield* decodeRunId(rawRunId)
+					yield* updateOpenRun(runId, { executionProfile: profile }, "execution profile")
+				})
+
 				const orgInvocationsSpent: SecurityAuditOrgStore["orgInvocationsSpent"] = Effect.fn(
 					"SecurityAuditStore.orgInvocationsSpent",
 				)(function* (period) {
@@ -1346,6 +1371,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					setFindingStatus,
 					orgInvocationsSpent,
 					reserveOrgInvocation,
+					setExecutionProfile,
 					findConnectedRepository,
 					latestPriorRun,
 					countUnits,

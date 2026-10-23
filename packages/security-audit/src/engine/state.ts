@@ -4,6 +4,7 @@
  * single permit, and the store sees each new snapshot before the next decision.
  */
 import { Effect, Ref, type Schema, Semaphore } from "effect"
+import type { ExecutionProfile } from "../ecosystems"
 import type { AgentContext, ExecutionPolicy } from "../prompts"
 import type { Candidate, UncoveredSurface } from "../results"
 import { decodeAgentJson } from "../results"
@@ -32,6 +33,8 @@ export interface AuditRunInput {
 	/** Maximum agent invocations across all phases, or null for none. */
 	readonly budget: number | null
 	readonly execution: ExecutionPolicy
+	/** The run-level label: which ecosystems and dependencies kept it from executing target code. */
+	readonly executionProfile?: ExecutionProfile
 	readonly toolGuidance: string
 	readonly prior: PriorRun | null
 	/** Whether any of these paths changed between the prior run's source and this one. */

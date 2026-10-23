@@ -33,6 +33,7 @@ import { Cause, type Context, Effect, Layer, Option, Predicate, Schedule, Schema
 import { HttpClient } from "effect/http"
 import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "../platform/Llm"
 import { makeAuditAgents } from "./agents"
+import { inspectDependencies } from "./dependencies"
 import {
 	AuditRepositoryRefusedError,
 	parseRepoSize,
@@ -228,6 +229,13 @@ export const auditWithAgents = <E, R>(
 			yield* store.finishRun(payload.runId, { status: "failed", error: reason })
 			return yield* new AuditRepositoryRefusedError({ message: reason, violations })
 		}
+		// Labelling only: which ecosystems it builds with, and what it could not install.
+		const executionProfile = yield* durableStep(
+			"execution-profile",
+			inspectDependencies(sandbox, orgId, pinned),
+			STEP_RETRY,
+		)
+		yield* store.setExecutionProfile(payload.runId, executionProfile)
 
 		// Prior records are read, not stepped: a finished run never changes, so a replay reads the same.
 		// Only a finished run of the same repository counts; anything else would make replays disagree.
@@ -302,6 +310,7 @@ export const auditWithAgents = <E, R>(
 				blocker:
 					"the repository sandbox does not yet provide per-agent scratch space, resource limits and artifact promotion",
 			},
+			executionProfile,
 			toolGuidance: AUDIT_TOOL_GUIDANCE,
 			prior,
 			changedSincePrior,

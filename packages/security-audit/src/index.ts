@@ -1,4 +1,5 @@
 export * from "./schema"
+export * from "./ecosystems"
 export * from "./validators"
 export * from "./results"
 export * from "./prompts"

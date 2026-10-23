@@ -19,6 +19,7 @@ import {
 	RunMetadataRecord,
 	UnitStatus,
 } from "@maple/security-audit/schema"
+import { ExecutionProfile } from "@maple/security-audit/ecosystems"
 import { Schema } from "effect"
 
 // Scheduled security audits. A target is one repository branch an org audits; each run writes
@@ -77,6 +78,8 @@ export const SecurityAuditRuns = PG.table("security_audit_runs", {
 		incompleteReason: PG.column(PG.nullable(PG.text), { name: "incomplete_reason" }),
 		architectureMd: PG.column(PG.nullable(PG.text), { name: "architecture_md" }),
 		reports: PG.nullable(PG.jsonb(AuditReportsRecord)),
+		/** How the run may execute target code and why not; null until prepare inspects the repository. */
+		executionProfile: PG.column(PG.nullable(PG.jsonb(ExecutionProfile)), { name: "execution_profile" }),
 		invocationsSpent: PG.column(PG.int4, { name: "invocations_spent", default: 0 }),
 		inputTokens: PG.column(PG.int8, { name: "input_tokens", default: 0 }),
 		outputTokens: PG.column(PG.int8, { name: "output_tokens", default: 0 }),

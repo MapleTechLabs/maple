@@ -92,7 +92,12 @@ const scriptedAgents = (calls: Array<string>): AuditAgentsApi => ({
 /** `<commits> <files> <bytes> <lfs files>`, as the size probe prints it: a small repository. */
 const SMALL_REPO = "120 40 81920 0\n"
 
-const sandbox = (commands: Array<string>, size: string = SMALL_REPO): RepoSandboxServiceApi => {
+const sandbox = (
+	commands: Array<string>,
+	size: string = SMALL_REPO,
+	/** The manifests and config files the checkout tracks, by path. */
+	tree: Record<string, string> = {},
+): RepoSandboxServiceApi => {
 	const ok = (stdout: string) =>
 		Effect.succeed({ exitCode: 0, stdout, stderr: "", wallTimeMs: 1, truncated: false })
 	return {
@@ -103,6 +108,12 @@ const sandbox = (commands: Array<string>, size: string = SMALL_REPO): RepoSandbo
 					commands.push("measure size")
 					return ok(size)
 				}
+				if (options.args.includes("ls-files")) {
+					commands.push("list manifests")
+					return ok(Object.keys(tree).join("\n"))
+				}
+				const shown = options.args.find((arg) => arg.startsWith("HEAD:"))?.slice("HEAD:".length)
+				if (shown !== undefined) return ok(tree[shown] ?? "")
 				commands.push([options.command, ...options.args].join(" "))
 				return ok(options.args[0] === "rev-parse" ? `${SHA}\n` : "src/routes/keys.ts\n")
 			}),
@@ -184,7 +195,7 @@ describe("auditWithAgents", () => {
 				// The row records the pinned commit, which the next run diffs against.
 				["complete", Option.some(["complete", SHA]), ["covered"]],
 			)
-			assert.deepStrictEqual(commands, ["git rev-parse HEAD", "measure size"])
+			assert.deepStrictEqual(commands, ["git rev-parse HEAD", "measure size", "list manifests"])
 		}).pipe(Effect.provide(testLayer())),
 	)
 
@@ -251,6 +262,41 @@ describe("auditWithAgents", () => {
 							0,
 						]),
 					},
+				)
+			}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect(
+		"labels the run source-only with its ecosystems and private dependencies, in row and report",
+		() =>
+			Effect.gen(function* () {
+				const { store, target } = yield* setup
+				const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+				const tree = {
+					"package.json": "{}",
+					".npmrc": "@acme:registry=https://npm.pkg.github.com",
+					"tools/go.mod": "module acme.dev/tools\n",
+				}
+				yield* auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([], SMALL_REPO, tree)),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+				)
+				const row = yield* store.getRun(run.id)
+				const line =
+					"Source-only review: no execution sandbox for Node.js, Go yet; private dependencies detected, which cannot be installed without credentials (.npmrc: private source npm.pkg.github.com)"
+				assert.deepStrictEqual(
+					Option.map(row, (r) => ({
+						mode: r.executionProfile?.mode ?? "none",
+						ecosystems: r.executionProfile?.ecosystems.join(",") ?? "none",
+						inReport: r.reports?.report.includes(`- ${line}.`) ?? false,
+						inNeedsValidation: r.reports?.needsValidation.includes(line) ?? false,
+					})),
+					Option.some({
+						mode: "source_only",
+						ecosystems: "node,go",
+						inReport: true,
+						inNeedsValidation: true,
+					}),
 				)
 			}).pipe(Effect.provide(testLayer())),
 	)
@@ -349,7 +395,12 @@ describe("auditWithAgents", () => {
 			assert.deepStrictEqual(
 				[commands, units.map((u) => u.unit.prior_status)],
 				[
-					["git rev-parse HEAD", "measure size", `git diff --name-only --no-renames ${SHA} HEAD`],
+					[
+						"git rev-parse HEAD",
+						"measure size",
+						"list manifests",
+						`git diff --name-only --no-renames ${SHA} HEAD`,
+					],
 					["prior_covered_changed_source"],
 				],
 			)
@@ -379,7 +430,7 @@ describe("auditWithAgents, prior runs", () => {
 			const units = yield* store.listUnits(run.id)
 			assert.deepStrictEqual(
 				[commands, units.map((u) => u.unit.prior_status)],
-				[["git rev-parse HEAD", "measure size"], ["none"]],
+				[["git rev-parse HEAD", "measure size", "list manifests"], ["none"]],
 			)
 		}).pipe(Effect.provide(testLayer())),
 	)

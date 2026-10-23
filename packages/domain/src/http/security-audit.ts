@@ -1,5 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
+import { ExecutionProfile } from "@maple/security-audit/ecosystems"
 import { AuditReportsRecord, Finding, UnitStatus } from "@maple/security-audit/schema"
 import { UserId } from "../primitives"
 import {
@@ -146,6 +147,8 @@ export const SecurityAuditRunDetail = Schema.Struct({
 	...runFields,
 	reports: Schema.NullOr(AuditReportsRecord),
 	architectureMd: Schema.NullOr(Schema.String),
+	/** How the run may execute target code and why not; null until prepare inspects the repository. */
+	executionProfile: Schema.NullOr(ExecutionProfile),
 	/** Ledger units per unit status. */
 	unitCounts: Schema.Record(Schema.String, Schema.Number),
 	unitTotal: Schema.Number,

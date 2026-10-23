@@ -385,6 +385,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						...toRun(run),
 						reports: run.reports,
 						architectureMd: run.architectureMd,
+						executionProfile: run.executionProfile,
 						unitCounts,
 						unitTotal: Object.values(unitCounts).reduce((sum, n) => sum + n, 0),
 					}

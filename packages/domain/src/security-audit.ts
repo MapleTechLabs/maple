@@ -4,6 +4,8 @@
  */
 import { Schema } from "effect"
 
+export { executionModeLine, type ExecutionProfile } from "@maple/security-audit/ecosystems"
+
 export const SecurityAuditTargetId = Schema.String.check(Schema.isUUID()).pipe(
 	Schema.brand("@maple/SecurityAuditTargetId"),
 	Schema.annotate({ identifier: "@maple/SecurityAuditTargetId", title: "Security Audit Target ID" }),
