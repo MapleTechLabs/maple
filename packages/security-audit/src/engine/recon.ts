@@ -6,7 +6,7 @@ import { Effect, Ref } from "effect"
 import { focusedReconPrompt, RECON_AGENTS, reconPrompt, synthesisPrompt } from "../prompts"
 import { SynthesisResult } from "../results"
 import type { CoverageUnit, Finding } from "../schema"
-import { admitUnits, type LedgerUnit, seedUnit, unitRefusal } from "./ledger"
+import { admitUnits, type LedgerUnit, scoped, seedUnit, unitRefusal } from "./ledger"
 import type { CarriedRecord, Engine, PriorRun } from "./state"
 
 /** The calls the skill reserves before any reconnaissance agent may launch. */
@@ -61,7 +61,11 @@ export const planFromPrior = (
 				: carry(pending, "prior_needs_validation")
 		}
 		const status: CoverageUnit["prior_status"] =
-			unit.status === "deferred" || unit.status === "planned" || unit.status === "in_progress"
+			unit.status === "deferred" ||
+			unit.status === "planned" ||
+			unit.status === "in_progress" ||
+			// A lead that never got an independent verdict is open work, not coverage.
+			(unit.status === "candidate" && unit.result_fingerprints.some((fp) => !byFingerprint.has(fp)))
 				? "prior_deferred"
 				: unit.status === "blocked"
 					? "prior_blocked"
@@ -208,22 +212,30 @@ export const runReconnaissance = (engine: Engine) =>
 					priority: seed.priority,
 				}),
 			)
-		// Prior units first: their identity is the stable one across runs.
-		const admitted = admitUnits(admitUnits([], prior?.units ?? []).ledger, seeds)
-		yield* Effect.forEach(
-			[...refusals, ...admitted.refused.map((r) => `${r.coverage_id}: ${r.reason}`)],
-			(message) => engine.event({ _tag: "Note", message: `seed unit refused: ${message}` }),
+		// Prior units first: their identity is the stable one across runs. They pass the same scope check.
+		const priorUnits = (prior?.units ?? []).map((unit) => scoped(unit, input.scopePaths))
+		const inScopeIds = new Set(
+			priorUnits.filter((u) => u.status !== "out_of_scope").map((u) => u.coverage_id),
 		)
+		const carried = (prior?.carried ?? []).filter((c) => inScopeIds.has(c.coverageId))
+		const admitted = admitUnits(admitUnits([], priorUnits).ledger, seeds)
+		const refused = [...refusals, ...admitted.refused.map((r) => `${r.coverage_id}: ${r.reason}`)]
+		yield* Effect.forEach(refused, (message) =>
+			engine.event({ _tag: "Note", message: `seed unit refused: ${message}` }),
+		)
+		if (refused.length > 0)
+			yield* engine.gap(`synthesis proposed ${refused.length} units the ledger refused`)
 		yield* engine.mutate((s) => [
 			undefined,
 			{
 				...s,
 				ledger: admitted.ledger,
 				architectureMd: synthesis.architecture_md,
-				carried: prior?.carried ?? [],
+				carried,
 				suppressed: prior?.suppressed ?? new Map(),
 			},
 		])
+		yield* engine.persist
 		yield* engine.store.saveArchitecture(input.runId, synthesis.architecture_md)
 		const seeded = yield* Ref.get(engine.state)
 		yield* engine.event({

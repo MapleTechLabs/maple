@@ -40,18 +40,36 @@ const validationBlocks = (units: ReadonlyArray<LedgerUnit>): ReadonlyArray<strin
 	),
 ]
 
-const items = (s: EngineState): ReadonlyArray<ValidationItem> =>
-	[
-		...[...s.candidates].flatMap(([fingerprint, entries]) => {
-			const best = strongest(entries)
-			return best === undefined ? [] : [{ fingerprint, claim: best.candidate }]
-		}),
-		...s.carried.map(({ record, coverageId }) => ({
-			fingerprint: record.fingerprint,
-			claim: record,
-			carriedUnit: coverageId,
-		})),
-	].sort((a, b) => (a.fingerprint < b.fingerprint ? -1 : a.fingerprint > b.fingerprint ? 1 : 0))
+/**
+ * One item per fingerprint. A carried record a hunter raised again is one item: the hunter's fresh
+ * claim is what the verifier checks, and the carried unit still takes the decision.
+ */
+const items = (s: EngineState): ReadonlyArray<ValidationItem> => {
+	const carried = new Map(s.carried.map((c) => [c.record.fingerprint, c] as const))
+	const raised = [...s.candidates].flatMap(([fingerprint, entries]): ReadonlyArray<ValidationItem> => {
+		const best = strongest(entries)
+		const unit = carried.get(fingerprint)?.coverageId
+		if (best === undefined) return []
+		return [
+			unit === undefined
+				? { fingerprint, claim: best.candidate }
+				: { fingerprint, claim: best.candidate, carriedUnit: unit },
+		]
+	})
+	const onlyCarried = [...carried.values()]
+		.filter((c) => !s.candidates.has(c.record.fingerprint))
+		.map((c) => ({ fingerprint: c.record.fingerprint, claim: c.record, carriedUnit: c.coverageId }))
+	return [...raised, ...onlyCarried].sort((a, b) =>
+		a.fingerprint < b.fingerprint ? -1 : a.fingerprint > b.fingerprint ? 1 : 0,
+	)
+}
+
+/**
+ * Concurrent verifiers only when nothing is rationed: under a finite budget, who gets the last
+ * invocation must not depend on completion order, or a replay would spend differently.
+ */
+const validationConcurrency = (engine: Engine) =>
+	engine.input.budget === null ? (engine.input.concurrency ?? 4) : 1
 
 /** Records a decision on every linked unit; a carried unit's re-check becomes its first check. */
 const recordDecision = (
@@ -92,7 +110,7 @@ const validateOne = (engine: Engine, item: ValidationItem, index: number) =>
 	Effect.gen(function* () {
 		const attempt = (suffix: string) =>
 			Effect.gen(function* () {
-				if ((yield* engine.remaining) < 1) return undefined
+				if ((yield* engine.remaining) < 1) return { _tag: "budget" } as const
 				const s = yield* Ref.get(engine.state)
 				const linked = linkedUnits(s.ledger, item.fingerprint)
 				const agentId = `verify-${index + 1}${suffix}`
@@ -105,24 +123,43 @@ const validateOne = (engine: Engine, item: ValidationItem, index: number) =>
 						priorRecords: (engine.input.prior?.findings ?? []).filter(
 							(r) => r.fingerprint === item.fingerprint,
 						),
+						includeRecordChecks: engine.input.profile === "quick",
 					},
 					engine.context(agentId),
 				)
 				const verdict = yield* engine.invoke("candidate-verifier", agentId, prompt, CandidateVerdict)
 				// A different fingerprint would be a new root cause needing its own validation: not taken here.
-				if (verdict === undefined || verdict.record.fingerprint !== item.fingerprint) return undefined
-				if (findingsErrors([verdict.record]).length > 0) return undefined
-				return { record: verdict.record, agentId }
+				if (verdict === undefined) return { _tag: "unusable" } as const
+				if (verdict.record.fingerprint !== item.fingerprint)
+					return { _tag: "other-root-cause" } as const
+				if (findingsErrors([verdict.record]).length > 0) return { _tag: "unusable" } as const
+				return { _tag: "decided", record: verdict.record, agentId } as const
 			})
 		// A malformed result is discarded and re-run once with a fresh verifier when the budget permits.
 		const first = yield* attempt("")
-		const decided = first ?? (yield* attempt("-r1"))
-		if (decided === undefined) {
-			yield* engine.fail("validation_budget_exhausted")
-			yield* engine.event({
-				_tag: "Note",
-				message: `candidate ${item.fingerprint} has no independent verdict`,
-			})
+		const decided = first._tag === "decided" || first._tag === "budget" ? first : yield* attempt("-r1")
+		if (decided._tag !== "decided") {
+			const reason =
+				decided._tag === "budget"
+					? "validation_budget_exhausted"
+					: decided._tag === "other-root-cause"
+						? "verifier_named_a_different_root_cause"
+						: "verifier_result_unusable"
+			yield* engine.fail(
+				reason === "validation_budget_exhausted" ? reason : "candidate_validation_failed",
+			)
+			// The skill: an unvalidated candidate stays a ledger candidate with its unresolved reason.
+			yield* engine.mutate((s) => [
+				undefined,
+				{
+					...s,
+					ledger: s.ledger.map((unit) =>
+						unit.result_fingerprints.includes(item.fingerprint)
+							? { ...unit, unresolved: [...unit.unresolved, `${item.fingerprint}: ${reason}`] }
+							: unit,
+					),
+				},
+			])
 			return
 		}
 		yield* engine.mutate((s) => [undefined, recordDecision(s, item, decided.record, decided.agentId)])
@@ -139,7 +176,7 @@ export const runCandidateValidation = (engine: Engine) =>
 			detail: `${work.length} unique candidates`,
 		})
 		yield* Effect.forEach(work, (item, index) => validateOne(engine, item, index), {
-			concurrency: engine.input.concurrency ?? 4,
+			concurrency: validationConcurrency(engine),
 			discard: true,
 		})
 		// A carried unit no verifier reached is still unassigned work, disclosed as such.
@@ -154,6 +191,7 @@ export const runCandidateValidation = (engine: Engine) =>
 				),
 			},
 		])
+		yield* engine.persist
 	})
 
 const VERDICT_RANK = { rejected: 0, needs_validation: 1, confirmed: 2 } as const
@@ -164,16 +202,24 @@ const stripLines = (record: Finding) => record.trace.map(({ line: _line, ...step
 export const isMaterial = (before: Finding, after: Finding): boolean => {
 	if (VERDICT_RANK[before.verdict] !== VERDICT_RANK[after.verdict]) return true
 	if (JSON.stringify(stripLines(before)) !== JSON.stringify(stripLines(after))) return true
+	const differs = (a: unknown, b: unknown) => JSON.stringify(a) !== JSON.stringify(b)
 	if (before.verdict === "confirmed" && after.verdict === "confirmed") {
 		return (
 			before.root_cause !== after.root_cause ||
-			JSON.stringify(before.execution.payloads) !== JSON.stringify(after.execution.payloads) ||
-			JSON.stringify(before.execution.instructions) !== JSON.stringify(after.execution.instructions) ||
-			before.execution.observed_result !== after.execution.observed_result ||
-			JSON.stringify(before.severity) !== JSON.stringify(after.severity)
+			differs(before.execution, after.execution) ||
+			differs(before.conditions, after.conditions) ||
+			differs(before.severity, after.severity) ||
+			differs(before.confidence, after.confidence)
 		)
 	}
-	if (before.verdict !== "confirmed" && after.verdict !== "confirmed") {
+	if (before.verdict === "needs_validation" && after.verdict === "needs_validation") {
+		return (
+			before.claimed_root_cause !== after.claimed_root_cause ||
+			differs(before.blockers, after.blockers) ||
+			differs(before.validation_plan, after.validation_plan)
+		)
+	}
+	if (before.verdict === "rejected" && after.verdict === "rejected") {
 		return before.claimed_root_cause !== after.claimed_root_cause
 	}
 	return true
@@ -258,8 +304,9 @@ export const runRecordVerification = (engine: Engine) =>
 						},
 					])
 				}),
-			{ concurrency: engine.input.concurrency ?? 4, discard: true },
+			{ concurrency: validationConcurrency(engine), discard: true },
 		)
+		yield* engine.persist
 	})
 
 /** Phase 4: the final document, sorted by fingerprint and passed through the upstream validator. */

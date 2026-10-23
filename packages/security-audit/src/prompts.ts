@@ -266,6 +266,8 @@ export interface CandidateVerifierInput {
 	readonly architectureFacts: string
 	readonly companionValidationBlocks: ReadonlyArray<string>
 	readonly priorRecords: ReadonlyArray<Finding>
+	/** `quick` merges Phases 3 and 5: this one verifier also performs the final record checks. */
+	readonly includeRecordChecks?: boolean
 }
 
 export const candidateVerifierPrompt = (input: CandidateVerifierInput, context: AgentContext): string =>
@@ -285,6 +287,11 @@ export const candidateVerifierPrompt = (input: CandidateVerifierInput, context: 
 		`## Linked coverage-unit checks\n\n${JSON.stringify(input.linkedChecks, null, 2)}`,
 		`## Prior records with this fingerprint\n\n${input.priorRecords.length === 0 ? "None." : JSON.stringify(input.priorRecords, null, 2)}`,
 		`## report-schema.json branches\n\n### confirmed\n\n${schemaBranch("confirmed")}\n\n### needs_validation\n\n${schemaBranch("needs_validation")}\n\n### rejected\n\n${schemaBranch("rejected")}`,
+		...(input.includeRecordChecks === true
+			? [
+					`## Final record checks (quick profile: you are also the final verifier)\n\n${VERBATIM.recordVerification}`,
+				]
+			: []),
 		`Your agent ID: ${context.agentId}`,
 		footer(context),
 	].join("\n\n")
