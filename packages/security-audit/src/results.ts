@@ -63,6 +63,7 @@ export type Candidate = typeof Candidate.Type
 /** A candidate as the finding record it proposes, so the upstream validator can check it. */
 export const candidateRecord = (candidate: Candidate): Finding => {
 	const { proposed_verdict, ...rest } = candidate
+	// SAFETY: each Candidate branch is its Finding branch minus `verdict`, restored from `proposed_verdict`.
 	return { verdict: proposed_verdict, ...rest } as Finding
 }
 

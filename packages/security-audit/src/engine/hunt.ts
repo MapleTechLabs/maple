@@ -62,6 +62,22 @@ const groupUnits = (
 	)
 }
 
+const filesOf = (claim: {
+	readonly trace: ReadonlyArray<{ readonly file: string }>
+	readonly evidence: ReadonlyArray<{ readonly file: string }>
+}) => new Set([...claim.trace.map((t) => t.file), ...claim.evidence.map((e) => e.file)])
+
+/**
+ * An unchanged prior rejection suppresses only its own claim: the same fingerprint over the same
+ * files. A trace that reaches new files is new evidence and goes to validation.
+ */
+const isSuppressed = (s: EngineState, candidate: Candidate): boolean => {
+	const prior = s.suppressed.get(candidate.fingerprint)
+	if (prior === undefined) return false
+	const priorFiles = filesOf(prior)
+	return [...filesOf(candidate)].every((file) => priorFiles.has(file))
+}
+
 /** Applies one hunter result to the units it owned; anything it got wrong goes back to `planned`. */
 const applyHunterResult = (
 	s: EngineState,
@@ -107,8 +123,14 @@ const applyHunterResult = (
 			? { ...unit, hardening: [...(unit.hardening ?? []), ...result.hardening] }
 			: unit,
 	)
+	// Only units that were applied link a candidate; a reverted unit's claims wait for its re-hunt.
+	const linked = new Set(
+		result.units
+			.filter((unit) => ok.has(unit.coverage_id))
+			.flatMap((unit) => unit.candidate_fingerprints),
+	)
 	const candidates = valid
-		.filter((c) => !s.suppressed.has(c.fingerprint))
+		.filter((c) => linked.has(c.fingerprint) && !isSuppressed(s, c))
 		.reduce(
 			(acc, candidate) =>
 				new Map(acc).set(candidate.fingerprint, [
@@ -175,16 +197,17 @@ const criticLedger = (ledger: ReadonlyArray<LedgerUnit>) =>
  */
 const runCritic = (
 	engine: Engine,
-	kind: "post-wave" | "final-clean",
+	kind: "post-wave" | "final-clean" | "gap",
 	wave: number,
 	deferReason: string | undefined,
 ) =>
 	Effect.gen(function* () {
 		const s = yield* Ref.get(engine.state)
-		const agentId = `critic-w${wave}-${kind === "post-wave" ? "post" : "final"}`
+		// A gap critic is the retained final-clean critic recording what the run cannot fund: its own id.
+		const agentId = `critic-w${wave}-${kind === "post-wave" ? "post" : kind === "gap" ? "gap" : "final"}`
 		const prompt = criticPrompt(
 			{
-				kind,
+				kind: kind === "post-wave" ? "post-wave" : "final-clean",
 				architectureMd: s.architectureMd,
 				ledger: criticLedger(s.ledger),
 				candidateStates: [...s.candidates.keys()].map((fingerprint) => ({
@@ -201,7 +224,11 @@ const runCritic = (
 		)
 		const result = yield* engine.invoke("critic", agentId, prompt, CriticResult)
 		if (result === undefined) return undefined
-		return yield* engine.mutate((current) => {
+		const refusals = result.missing_units.flatMap((unit) => {
+			const reason = unitRefusal(unit)
+			return reason === undefined ? [] : [`${unit.surface} / ${unit.attack_class}: ${reason}`]
+		})
+		const outcome = yield* engine.mutate((current) => {
 			const priorStatus = engine.input.prior === null ? "none" : "new"
 			const proposals = result.missing_units.filter((unit) => unitRefusal(unit) === undefined)
 			const seeded = proposals.map((unit) =>
@@ -238,8 +265,21 @@ const runCritic = (
 				),
 			)
 			const ledger = deferReason === undefined ? marked : defer(marked, planned, deferReason)
-			return [planned.size, { ...current, ledger, uncovered: [] }]
+			const refused = [...refusals, ...admitted.refused.map((r) => `${r.coverage_id}: ${r.reason}`)]
+			return [
+				{ accepted: planned.size, refused },
+				{ ...current, ledger, uncovered: [] },
+			]
 		})
+		yield* engine.persist
+		// A proposal the ledger cannot take is disclosed coverage, never silently dropped.
+		if (outcome.refused.length > 0) {
+			yield* engine.gap(`${agentId} proposed ${outcome.refused.length} units the ledger refused`)
+			yield* Effect.forEach(outcome.refused, (message) =>
+				engine.event({ _tag: "Note", message: `critic unit refused: ${message}` }),
+			)
+		}
+		return outcome.accepted
 	})
 
 /** Phase 2 to completion: waves, post-wave critics, and the final-clean critic. */
@@ -263,12 +303,18 @@ export const runHunting = (engine: Engine) =>
 				yield* engine.gap(reason)
 			})
 
-		/** The retained final-clean critic, spent to record a gap the run cannot fund. */
-		const recordGap = (wave: number, reason: string) =>
+		/**
+		 * Defers what the run cannot fund and, when the final-clean critic is still unspent and its
+		 * reserve is not the validation reserve, spends it to record the gap.
+		 */
+		const recordGap = (wave: number, reason: string, finalSpent: boolean) =>
 			Effect.gen(function* () {
 				yield* deferQueued(reason)
-				if ((yield* engine.remaining) >= 1 && !quick)
-					yield* runCritic(engine, "final-clean", wave, reason)
+				if (quick || finalSpent) return
+				const s = yield* Ref.get(engine.state)
+				const left = yield* engine.remaining
+				if (input.budget === null || left - validationReserve(s, perCandidate, left) >= 1)
+					yield* runCritic(engine, "gap", wave, reason)
 			})
 
 		const launchWave = (wave: number, planned: ReadonlyArray<LedgerUnit>) =>
@@ -326,6 +372,7 @@ export const runHunting = (engine: Engine) =>
 						),
 					{ concurrency: input.concurrency ?? 4, discard: true },
 				)
+				yield* engine.persist
 				return true
 			})
 
@@ -333,7 +380,7 @@ export const runHunting = (engine: Engine) =>
 			Effect.gen(function* () {
 				const planned = huntable((yield* Ref.get(engine.state)).ledger)
 				if (planned.length > 0 && !(yield* launchWave(wave, planned))) {
-					return yield* recordGap(wave, BUDGET_DEFER)
+					return yield* recordGap(wave, BUDGET_DEFER, false)
 				}
 				// The post-wave critic was reserved before the wave; for quick it is the one final critic.
 				const accepted = yield* runCritic(
@@ -344,19 +391,24 @@ export const runHunting = (engine: Engine) =>
 				)
 				if (accepted === undefined)
 					return yield* engine.fail(`critic_unavailable: post-wave critic after wave ${wave}`)
-				if (quick)
+				if (quick) {
+					// A unit whose hunter failed is not left planned in a finished run.
+					yield* deferQueued("quick_profile_final_critic")
 					return yield* engine.gap(
 						"quick profile: one hunter wave and one final critic, partial coverage",
 					)
+				}
 				if (accepted > 0 || huntable((yield* Ref.get(engine.state)).ledger).length > 0) {
 					return wave >= maxWaves
-						? yield* recordGap(wave, "max_waves_reached")
+						? yield* recordGap(wave, "max_waves_reached", false)
 						: yield* loop(wave + 1)
 				}
 				const clean = yield* runCritic(engine, "final-clean", wave, undefined)
 				if (clean === undefined) return yield* engine.fail("critic_unavailable: final-clean critic")
 				if (clean === 0) return yield* setClean(true)
-				return wave >= maxWaves ? yield* recordGap(wave, "max_waves_reached") : yield* loop(wave + 1)
+				return wave >= maxWaves
+					? yield* recordGap(wave, "max_waves_reached", true)
+					: yield* loop(wave + 1)
 			})
 
 		yield* loop(1)

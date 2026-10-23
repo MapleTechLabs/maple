@@ -10,16 +10,8 @@ import { unknownBlockRefs } from "../prompts"
 
 type PriorStatus = CoverageUnit["prior_status"]
 
-/** Parent bookkeeping beside the skill's semantic fields; the skill allows these. */
-export interface Bookkeeping {
-	readonly priority?: number
-	readonly hardening?: ReadonlyArray<string>
-	readonly failed_attempts?: number
-	readonly carried_fingerprint?: string
-	readonly decisions?: Readonly<Record<string, string>>
-	readonly resolved_prior_leads?: ReadonlyArray<string>
-}
-export type LedgerUnit = CoverageUnit & Bookkeeping
+/** The ledger unit, bookkeeping included (see `CoverageUnit`). */
+export type LedgerUnit = CoverageUnit
 export type Ledger = ReadonlyArray<LedgerUnit>
 
 export const sortLedger = (ledger: ReadonlyArray<LedgerUnit>): ReadonlyArray<LedgerUnit> =>
@@ -33,11 +25,23 @@ const emptyLive = {
 	unresolved: [],
 } as const
 
-const inScope = (paths: ReadonlyArray<string>, scope: ReadonlyArray<string>): boolean =>
+export const inScope = (paths: ReadonlyArray<string>, scope: ReadonlyArray<string>): boolean =>
 	scope.length === 0 ||
 	paths.some((path) =>
 		scope.some((root) => path === root || path.startsWith(root.endsWith("/") ? root : `${root}/`)),
 	)
+
+/** A unit outside the run's scope is recorded `out_of_scope`, never assigned and never covered. */
+export const scoped = (unit: LedgerUnit, scope: ReadonlyArray<string>): LedgerUnit => {
+	if (inScope(unit.starting_paths, scope)) return unit
+	const { carried_fingerprint: _carried, ...rest } = unit
+	return {
+		...rest,
+		...emptyLive,
+		status: "out_of_scope",
+		unresolved: [`outside this run's scope (${scope.join(", ")})`],
+	}
+}
 
 /** Why a proposed unit cannot enter the ledger, or undefined when it can. */
 export const unitRefusal = (seed: SeedUnit | MissingUnit): string | undefined => {
