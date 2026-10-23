@@ -19,7 +19,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { VcsRepositories } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import type { CompiledQueryInput } from "@maple/query-engine/execution"
-import { Array as Arr, Context, DateTime, Effect, Layer } from "effect"
+import { Array as Arr, Clock, Context, DateTime, Effect, Layer } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
@@ -40,8 +40,10 @@ export interface CiAnalyticsServiceApi {
 
 const HOUR = 3_600
 const DAY = 86_400
-/** Raw CI traces are scanned per read; past two weeks a big org's scan outlasts the query budget. */
-export const CI_MAX_SPAN_MS = 14 * DAY * 1000
+/** How far back `ci_runs` and `ci_jobs` keep runs. */
+const CI_RETENTION_MS = 365 * DAY * 1000
+/** The longest window read: the retention plus a day to absorb a DST change at either end. */
+export const CI_MAX_SPAN_MS = CI_RETENTION_MS + DAY * 1000
 /** Runs read per possibly red workflow to find where its streak began. */
 const STREAK_RUNS = 200
 /** How many possibly red workflows are read at once. */
@@ -52,8 +54,15 @@ const DEFAULT_PAGE = 50
 /** Failed jobs read per failed run: a matrix workflow can fail dozens at once. */
 const FAILED_JOBS_PER_RUN = 50
 
-/** Hourly up to two days, six-hourly beyond: a week reads as 28 bars. */
-export const ciBucketSeconds = (spanMs: number) => (spanMs <= 2 * DAY * 1000 ? HOUR : 6 * HOUR)
+/** Hourly up to two days, six-hourly to a month, daily to four months, weekly beyond. */
+export const ciBucketSeconds = (spanMs: number) =>
+	spanMs <= 2 * DAY * 1000
+		? HOUR
+		: spanMs <= 32 * DAY * 1000
+			? 6 * HOUR
+			: spanMs <= 120 * DAY * 1000
+				? DAY
+				: 7 * DAY
 
 /** The window actually read: the start is moved up to the newest `CI_MAX_SPAN_MS`. */
 export const ciWindow = (query: { readonly startTime: number; readonly endTime: number }) => {
@@ -72,14 +81,6 @@ const decodeCursor = (cursor: string) => {
 
 /** A quantile over no rows is NaN or null; the contract says null. */
 const finiteOrNull = (value: number | null) => (value !== null && Number.isFinite(value) ? value : null)
-const attemptOf = (attempt: string) => {
-	const parsed = Number(attempt)
-	return Number.isInteger(parsed) && parsed > 0 ? parsed : 1
-}
-const pullRequestOf = (value: string) => {
-	const parsed = Number(value)
-	return value !== "" && Number.isInteger(parsed) && parsed > 0 ? parsed : null
-}
 
 type CiSeriesRow = {
 	readonly bucket: DateTime.Utc
@@ -295,10 +296,15 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 					startTime: formatWarehouseDateTime(startTime),
 					endTime: formatWarehouseDateTime(endTime),
 				}
+				// A previous period the tables no longer hold whole would read as a drop: compare to nothing.
+				const nowMs = yield* Clock.currentTimeMillis
+				const previousKept = startTime - spanMs >= nowMs - CI_RETENTION_MS
 				const [current, previous, seriesRows, pipelineRows, jobRows] = yield* Effect.all(
 					[
 						totalsOf(tenant, scope, startTime, endTime),
-						totalsOf(tenant, scope, startTime - spanMs, startTime),
+						previousKept
+							? totalsOf(tenant, scope, startTime - spanMs, startTime)
+							: Effect.succeed(emptyTotals),
 						read(
 							tenant,
 							CH.compile(CH.ciRunSeriesQuery(scope), {
@@ -451,10 +457,11 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 								branch: run.branch,
 								revision: run.revision,
 								runId: run.runId,
-								attempt: attemptOf(run.attempt),
+								// 0 when the span carried none: an attempt counts from 1, and no run is pull request 0.
+								attempt: Math.max(run.attempt, 1),
 								trigger: run.trigger,
 								actor: run.actor,
-								pullRequest: pullRequestOf(run.pullRequest),
+								pullRequest: run.pullRequest === 0 ? null : run.pullRequest,
 								result: run.result,
 								durationMs: run.durationMs,
 								startedAt: DateTime.toEpochMillis(run.startedAt),
