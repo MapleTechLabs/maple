@@ -5,7 +5,7 @@
  */
 import type { HunterUnitResult, MissingUnit, SeedUnit } from "../results"
 import type { CoverageUnit } from "../schema"
-import { coverageId, isSafeRelativePath, ledgerErrors } from "../validators"
+import { coverageId, isSafeRelativePath, ledgerErrors, safeCoverageId } from "../validators"
 import { unknownBlockRefs } from "../prompts"
 
 type PriorStatus = CoverageUnit["prior_status"]
@@ -45,6 +45,7 @@ export const scoped = (unit: LedgerUnit, scope: ReadonlyArray<string>): LedgerUn
 
 /** Why a proposed unit cannot enter the ledger, or undefined when it can. */
 export const unitRefusal = (seed: SeedUnit | MissingUnit): string | undefined => {
+	if (safeCoverageId(seed.canonical_refs) === undefined) return "invalid canonical reference"
 	const unknown = unknownBlockRefs(seed)
 	if (unknown.length > 0) return `unknown skill block references: ${unknown.join(", ")}`
 	if (seed.starting_paths.length === 0) return "no starting paths"

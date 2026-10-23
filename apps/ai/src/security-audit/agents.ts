@@ -27,6 +27,10 @@ export interface AuditModels {
 
 const VALIDATION_ROLES: ReadonlySet<AuditRole> = new Set(["candidate-verifier", "record-verifier"])
 
+/** Verifiers run on the validation model, every other role on discovery: never the hunter's model. */
+export const modelFor = (role: AuditRole, models: AuditModels): ResolvedModel =>
+	VALIDATION_ROLES.has(role) ? models.validation : models.discovery
+
 /** Runaway guards per role. Depth comes from many invocations, so each one stays bounded. */
 const ROLE_LIMITS = {
 	recon: { maxToolCalls: 80, maxDuration: "15 minutes" },
@@ -82,7 +86,7 @@ export const makeAuditAgents = (models: AuditModels, source: SourceReaderApi) =>
 		const clients = yield* Effect.context<LlmClients>()
 		const tools = auditToolHandlers(source)
 		const run = (invocation: AgentInvocation) => {
-			const model = VALIDATION_ROLES.has(invocation.role) ? models.validation : models.discovery
+			const model = modelFor(invocation.role, models)
 			const fail = (message: string) =>
 				new AuditAgentError({ message, role: invocation.role, agentId: invocation.agentId })
 			return AgentRuntime.run(auditAgent(invocation.role, model), invocation.prompt, {

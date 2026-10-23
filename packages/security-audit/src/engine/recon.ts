@@ -44,21 +44,21 @@ export const planFromPrior = (
 			return record === undefined ? [] : [record]
 		})
 		const unitChanged = changed([...unit.starting_paths, ...unit.reviewed_paths])
-		const confirmed = linked.find((record) => record.verdict === "confirmed")
-		const pending = linked.find((record) => record.verdict === "needs_validation")
-		const carry = (record: Finding, status: CoverageUnit["prior_status"]): LedgerUnit => {
-			carried.push({ record, coverageId: unit.coverage_id })
-			return replan(unit, status, record.fingerprint)
-		}
-		if (confirmed !== undefined) {
-			return changed(recordFiles(confirmed))
-				? replan(unit, "prior_confirmed_changed_source")
-				: carry(confirmed, "prior_confirmed_same_source")
-		}
-		if (pending !== undefined) {
-			return changed(recordFiles(pending))
-				? replan(unit, "prior_needs_validation")
-				: carry(pending, "prior_needs_validation")
+		// Every open record the unit links is carried together, or none is: a unit is either re-verified
+		// (all its records unchanged) or re-hunted (any of them changed), never half of each.
+		const open = linked.filter((record) => record.verdict !== "rejected")
+		const strongest = open.find((record) => record.verdict === "confirmed") ?? open[0]
+		if (strongest !== undefined) {
+			const confirmed = strongest.verdict === "confirmed"
+			if (open.some((record) => changed(recordFiles(record)))) {
+				return replan(unit, confirmed ? "prior_confirmed_changed_source" : "prior_needs_validation")
+			}
+			carried.push(...open.map((record) => ({ record, coverageId: unit.coverage_id })))
+			return replan(
+				unit,
+				confirmed ? "prior_confirmed_same_source" : "prior_needs_validation",
+				strongest.fingerprint,
+			)
 		}
 		const status: CoverageUnit["prior_status"] =
 			unit.status === "deferred" ||
