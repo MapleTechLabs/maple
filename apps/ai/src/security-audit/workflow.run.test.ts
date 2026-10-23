@@ -13,7 +13,7 @@ import { UserId } from "@maple/domain/primitives"
 import type { SecurityAuditTargetId, SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { type AgentInvocation, type AuditAgentsApi, coverageId, type Finding } from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { auditWithAgents } from "./workflow.run"
 
@@ -386,18 +386,36 @@ describe("auditWithAgents", () => {
 			const recorded = new Map<string, unknown>()
 			const first: Array<string> = []
 			const second: Array<string> = []
-			const step = replayingStep(recorded)
+			const replaying = replayingStep(recorded)
+			// The first pass is evicted at settle, so the run is still open when it replays.
+			const evictions = { settle: 1 }
+			const step: Cloudflare.WorkflowStep["Service"] = {
+				...replaying,
+				do: (options) => {
+					if (options.name !== "settle" || evictions.settle === 0) return replaying.do(options)
+					evictions.settle -= 1
+					return Effect.interrupt
+				},
+			}
 			const once = (calls: Array<string>) =>
 				auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents(calls))).pipe(
 					Effect.provideService(RepoSandboxService, sandbox([])),
 					Effect.provideService(Cloudflare.WorkflowStep, step),
 				)
-			yield* once(first)
+			const evicted = yield* Effect.exit(once(first))
+			const spentBefore = yield* store.orgInvocationsSpent("2026-10")
 			const replay = yield* once(second)
+			assert.isTrue(Exit.hasInterrupts(evicted))
 			assert.isTrue(first.length >= 8)
 			assert.deepStrictEqual(
-				[second, replay.status, [...recorded.keys()].filter((k) => k.startsWith("agent:")).length],
-				[[], "complete", first.length],
+				[
+					second,
+					replay.status,
+					[...recorded.keys()].filter((k) => k.startsWith("agent:")).length,
+					spentBefore,
+					yield* store.orgInvocationsSpent("2026-10"),
+				],
+				[[], "complete", first.length, first.length, first.length],
 			)
 		}).pipe(Effect.provide(testLayer())),
 	)
