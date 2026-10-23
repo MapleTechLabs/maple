@@ -109,6 +109,11 @@ export const auditWithAgents = <E, R>(
 			"maple.org_id": orgId,
 		})
 		const store = (yield* SecurityAuditStore).forOrg(orgId)
+		// A run its starter already gave up on (a failed start that still created the instance) stays out.
+		const self = yield* store.getRun(payload.runId)
+		if (Option.isSome(self) && self.value.status === "failed") {
+			return { status: "incomplete" as const, invocations: 0, records: 0 }
+		}
 		const sandbox = yield* RepoSandboxService
 		const target = { repository: payload.repository, ref: payload.ref }
 
@@ -155,7 +160,8 @@ export const auditWithAgents = <E, R>(
 						sandbox
 							.exec(orgId, pinned, {
 								command: "git",
-								args: ["diff", "--name-only", prior.sourceRef, "HEAD"],
+								// A rename lists only its new path without --no-renames; the old path changed too.
+								args: ["diff", "--name-only", "--no-renames", prior.sourceRef, "HEAD"],
 							})
 							.pipe(
 								Effect.map((result) =>
@@ -203,18 +209,48 @@ export const auditWithAgents = <E, R>(
 				),
 			),
 		)
-		yield* store.addUsage(payload.runId, {
-			invocations: result.invocations,
-			inputTokens: result.usage.inputTokens,
-			outputTokens: result.usage.outputTokens,
-			costUsd: result.usage.costUsd,
+		// One durable, retried step: a replay neither double-counts usage nor re-settles the run.
+		const settle = Effect.gen(function* () {
+			yield* store.addUsage(payload.runId, {
+				invocations: result.invocations,
+				inputTokens: result.usage.inputTokens,
+				outputTokens: result.usage.outputTokens,
+				costUsd: result.usage.costUsd,
+			})
+			// A complete, unscoped run that no longer reports an open finding whose files changed fixed it.
+			const row = yield* store.getRun(payload.runId)
+			if (
+				result.status === "complete" &&
+				payload.scopePaths.length === 0 &&
+				prior !== null &&
+				Option.isSome(row)
+			) {
+				const reported = new Set(result.findings.map((f) => f.fingerprint))
+				const gone = (yield* store.listFindings(row.value.targetId)).filter(
+					(f) =>
+						f.status === "open" &&
+						f.verdict !== "rejected" &&
+						!reported.has(f.fingerprint) &&
+						changedSincePrior([
+							...f.record.trace.map((t) => t.file),
+							...f.record.evidence.map((e) => e.file),
+						]),
+				)
+				if (gone.length > 0)
+					yield* store.markFixed(
+						row.value.targetId,
+						gone.map((f) => f.fingerprint),
+						payload.runId,
+					)
+			}
+			yield* store.finishRun(
+				payload.runId,
+				result.status === "complete"
+					? { status: "complete" }
+					: { status: "incomplete", reason: result.incompleteReasons.join("; ") },
+			)
 		})
-		yield* store.finishRun(
-			payload.runId,
-			result.status === "complete"
-				? { status: "complete" }
-				: { status: "incomplete", reason: result.incompleteReasons.join("; ") },
-		)
+		yield* durableStep("settle", settle, STEP_RETRY)
 		return { status: result.status, invocations: result.invocations, records: result.findings.length }
 	}).pipe(
 		// A run that dies (no sandbox on this stage, a step past its retries) still leaves its row
