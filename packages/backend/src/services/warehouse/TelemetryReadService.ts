@@ -271,7 +271,7 @@ const make = Effect.gen(function* () {
 })
 
 export class TelemetryReadService extends Context.Service<TelemetryReadService>()(
-	"@maple/api/services/TelemetryReadService",
+	"@maple/backend/services/TelemetryReadService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(

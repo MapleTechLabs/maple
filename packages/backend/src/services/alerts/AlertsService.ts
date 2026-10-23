@@ -588,7 +588,7 @@ export interface AlertsServiceApi
 }
 
 export class AlertsService extends Context.Service<AlertsService, AlertsServiceApi>()(
-	"@maple/api/services/AlertsService",
+	"@maple/backend/services/AlertsService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
@@ -1666,7 +1666,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					// Within the window, since validation refuses a longer interval.
 					fitsIntervalMinutes:
 						failure === null
-							? alertIntervalsFitting(elapsedMs).filter((minutes) => minutes <= rule.windowMinutes)
+							? alertIntervalsFitting(elapsedMs).filter(
+									(minutes) => minutes <= rule.windowMinutes,
+								)
 							: [],
 				})
 			})

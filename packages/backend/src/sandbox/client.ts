@@ -35,7 +35,7 @@ const encodeRequest = Schema.encodeUnknownSync(SandboxExecRequest)
 const decodeResponse = Schema.decodeUnknownEffect(SandboxExecResponse)
 
 export class SandboxClient extends Context.Service<SandboxClient, SandboxClientApi>()(
-	"@maple/api/sandbox/SandboxClient",
+	"@maple/backend/sandbox/SandboxClient",
 	{
 		make: Effect.gen(function* () {
 			const binding = Option.flatten(yield* Effect.serviceOption(SandboxFetcher))

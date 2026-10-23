@@ -402,6 +402,6 @@ const make = Effect.gen(function* () {
 export class MembershipRevocationService extends Context.Service<
 	MembershipRevocationService,
 	MembershipRevocationServiceApi
->()("@maple/api/services/auth/MembershipRevocationService", { make }) {
+>()("@maple/backend/services/auth/MembershipRevocationService", { make }) {
 	static readonly layer = Layer.effect(this, this.make)
 }

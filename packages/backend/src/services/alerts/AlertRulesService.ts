@@ -431,7 +431,7 @@ export const makeAlertRulePersistence = (options: {
 }
 
 export class AlertRulesService extends Context.Service<AlertRulesService, AlertRulesServiceApi>()(
-	"@maple/api/services/alerts/AlertRulesService",
+	"@maple/backend/services/alerts/AlertRulesService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

@@ -206,309 +206,317 @@ const tokenSourceOnly = (row: SourceRow, action: string) =>
 const defaultSourceCannot = (action: string) =>
 	invalid(`The default source uses the organization's ingest keys and cannot ${action}`)
 
-export class SourcesService extends Context.Service<SourcesService>()("@maple/api/services/SourcesService", {
-	make: Effect.gen(function* () {
-		const database = yield* Database
-		const dbExecute = makeDbExecute(database, "SourcesService", toPersistenceError)
-		const env = yield* Env
-		const lookupHmacKey = yield* parseIngestKeyLookupHmacKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
-			(message) => new IngestKeyEncryptionError({ message }),
-		)
-
-		const notFound = (sourceId: SourceId) =>
-			new SourceNotFoundError({ sourceId, message: "Source not found" })
-
-		const requireRow = Effect.fnUntraced(function* (orgId: OrgId, sourceId: SourceId) {
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.from(Sources)
-						.select()
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(sourceId)])
-						.limit(1),
-				),
-			)
-			const row = rows[0]
-			if (row === undefined) return yield* notFound(sourceId)
-			return row
-		})
-
-		const updateRow = Effect.fnUntraced(function* (
-			orgId: OrgId,
-			sourceId: SourceId,
-			set: Partial<Omit<SourceRow, "id" | "orgId">>,
-		) {
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.update(Sources)
-						.set(set)
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(sourceId)])
-						.returning(),
-				),
-			)
-			const row = rows[0]
-			if (row === undefined) return yield* notFound(sourceId)
-			return row
-		})
-
-		// Orgs created before sources existed get their default source on first list.
-		const ensureDefault = (orgId: OrgId, now: number) =>
-			dbExecute((db) =>
-				db.run(PG.insertInto(Sources).values(defaultSourceRow(orgId, now)).onConflictDoNothing()),
+export class SourcesService extends Context.Service<SourcesService>()(
+	"@maple/backend/services/SourcesService",
+	{
+		make: Effect.gen(function* () {
+			const database = yield* Database
+			const dbExecute = makeDbExecute(database, "SourcesService", toPersistenceError)
+			const env = yield* Env
+			const lookupHmacKey = yield* parseIngestKeyLookupHmacKey(
+				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+				(message) => new IngestKeyEncryptionError({ message }),
 			)
 
-		const selectAll = (orgId: OrgId) =>
-			dbExecute((db) =>
-				db.run(
-					PG.from(Sources)
-						.select()
-						.where(($) => [$.orgId.eq(orgId)])
-						.orderBy(($) => [
-							[$.createdAt, "desc"],
-							[$.id, "desc"],
-						]),
-				),
-			)
+			const notFound = (sourceId: SourceId) =>
+				new SourceNotFoundError({ sourceId, message: "Source not found" })
 
-		// The default source first, then newest first as selected.
-		const ownerOf = (
-			owners: Effect.Success<ReturnType<typeof readSourceOwners>>,
-			id: SourceId,
-		): SourceOwner => ({
-			integrationId: owners.integrationIds.get(id) ?? null,
-			overrides: owners.overrides.get(id),
-		})
+			const requireRow = Effect.fnUntraced(function* (orgId: OrgId, sourceId: SourceId) {
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(Sources)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(sourceId)])
+							.limit(1),
+					),
+				)
+				const row = rows[0]
+				if (row === undefined) return yield* notFound(sourceId)
+				return row
+			})
 
-		const toSources = (
-			rows: ReadonlyArray<SourceRow>,
-			owners: Effect.Success<ReturnType<typeof readSourceOwners>>,
-			now: number,
-		) =>
-			Arr.map(
-				Arr.sortWith(rows, (row) => (row.kind === "default" ? 0 : 1), Order.Number),
-				(row) => rowToSource(row, now, ownerOf(owners, row.id)),
-			)
+			const updateRow = Effect.fnUntraced(function* (
+				orgId: OrgId,
+				sourceId: SourceId,
+				set: Partial<Omit<SourceRow, "id" | "orgId">>,
+			) {
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.update(Sources)
+							.set(set)
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(sourceId)])
+							.returning(),
+					),
+				)
+				const row = rows[0]
+				if (row === undefined) return yield* notFound(sourceId)
+				return row
+			})
 
-		// An integration source answers with its integration row and that row's switches.
-		const toSource = Effect.fnUntraced(function* (orgId: OrgId, row: SourceRow, now: number) {
-			if (row.kind !== "integration") return rowToSource(row, now)
-			const owners = yield* dbExecute((db) => readSourceOwners(db, orgId, now))
-			return rowToSource(row, now, ownerOf(owners, row.id))
-		})
+			// Orgs created before sources existed get their default source on first list.
+			const ensureDefault = (orgId: OrgId, now: number) =>
+				dbExecute((db) =>
+					db.run(PG.insertInto(Sources).values(defaultSourceRow(orgId, now)).onConflictDoNothing()),
+				)
 
-		const list = Effect.fn("SourcesService.list")(function* (orgId: OrgId) {
-			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			const now = yield* Clock.currentTimeMillis
-			const [before, owners] = yield* Effect.all(
-				[selectAll(orgId), dbExecute((db) => readSourceOwners(db, orgId, now))],
-				{ concurrency: "unbounded" },
-			)
-			const missingDefault = !before.some((row) => row.kind === "default")
-			if (missingDefault) yield* ensureDefault(orgId, now)
-			return toSources(missingDefault ? yield* selectAll(orgId) : before, owners, now)
-		})
+			const selectAll = (orgId: OrgId) =>
+				dbExecute((db) =>
+					db.run(
+						PG.from(Sources)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)])
+							.orderBy(($) => [
+								[$.createdAt, "desc"],
+								[$.id, "desc"],
+							]),
+					),
+				)
 
-		const get = Effect.fn("SourcesService.get")(function* (orgId: OrgId, sourceId: SourceId) {
-			yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
-			return yield* toSource(orgId, yield* requireRow(orgId, sourceId), yield* Clock.currentTimeMillis)
-		})
+			// The default source first, then newest first as selected.
+			const ownerOf = (
+				owners: Effect.Success<ReturnType<typeof readSourceOwners>>,
+				id: SourceId,
+			): SourceOwner => ({
+				integrationId: owners.integrationIds.get(id) ?? null,
+				overrides: owners.overrides.get(id),
+			})
 
-		const create = Effect.fn("SourcesService.create")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			request: CreateSourceInput,
-		) {
-			yield* Effect.annotateCurrentSpan({ orgId, "maple.source.platform": request.platform })
-			const now = yield* Clock.currentTimeMillis
-			const name = yield* normalizeName(request.name)
-			const description = yield* normalizeDescription(request.description ?? null)
-			const allowedSignals = yield* normalizeSignals(request.allowedSignals ?? null)
-			const rateLimitRps = yield* normalizeRateLimit(request.rateLimitRps ?? null)
-			const resourceAttributes = yield* normalizeAttributes(request.resourceAttributes ?? [])
-			const expiresAt = yield* normalizeExpiry(request.expiresAtMs ?? null, now)
+			const toSources = (
+				rows: ReadonlyArray<SourceRow>,
+				owners: Effect.Success<ReturnType<typeof readSourceOwners>>,
+				now: number,
+			) =>
+				Arr.map(
+					Arr.sortWith(rows, (row) => (row.kind === "default" ? 0 : 1), Order.Number),
+					(row) => rowToSource(row, now, ownerOf(owners, row.id)),
+				)
 
-			const id = newSourceId()
-			const secret = generateSecret()
-			yield* Effect.annotateCurrentSpan("maple.source.id", id)
-			// The per-org lock makes the source cap hold under concurrent creates.
-			const rows = yield* dbExecute((db) =>
-				db.transaction(
-					Effect.gen(function* () {
-						yield* db.execute(
-							Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext('sources'))`,
-						)
-						const existing = yield* db.run(
-							PG.from(Sources)
-								.select(($) => ({ id: $.id }))
-								.where(($) => [$.orgId.eq(orgId), $.kind.eq("token")])
-								.limit(MAX_SOURCES_PER_ORG),
-						)
-						if (existing.length >= MAX_SOURCES_PER_ORG) return null
-						return yield* db.run(
-							PG.insertInto(Sources)
-								.values({
-									id,
-									orgId,
-									name,
-									description,
-									platform: request.platform,
-									kind: "token",
-									keyHash: hashIngestKey(secret, lookupHmacKey),
-									keyPrefix: displayPrefix(secret),
-									allowedSignals,
-									rateLimitRps,
-									resourceAttributes,
-									expiresAt,
-									rolledAt: now,
-									createdAt: now,
-									updatedAt: now,
-									createdBy: userId,
-									updatedBy: userId,
-								})
-								.returning(),
-						)
-					}),
-				),
-			)
-			if (rows === null) {
-				return yield* invalid(`An organization can have at most ${MAX_SOURCES_PER_ORG} sources`)
-			}
-			const row = rows[0]
-			if (row === undefined) {
-				return yield* new SourcePersistenceError({ message: "Failed to create source" })
-			}
-			return new SourceWithSecret({ source: rowToSource(row, now), secret })
-		})
+			// An integration source answers with its integration row and that row's switches.
+			const toSource = Effect.fnUntraced(function* (orgId: OrgId, row: SourceRow, now: number) {
+				if (row.kind !== "integration") return rowToSource(row, now)
+				const owners = yield* dbExecute((db) => readSourceOwners(db, orgId, now))
+				return rowToSource(row, now, ownerOf(owners, row.id))
+			})
 
-		const update = Effect.fn("SourcesService.update")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			sourceId: SourceId,
-			request: UpdateSourceRequest,
-		) {
-			yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
-			const existing = yield* requireRow(orgId, sourceId)
-			if (existing.kind !== "token" && RULE_FIELDS.some((field) => request[field] !== undefined)) {
-				return yield* tokenSourceOnly(existing, "take ingest rules")
-			}
-			const now = yield* Clock.currentTimeMillis
-			const allowedSignals =
-				request.allowedSignals === undefined
-					? undefined
-					: yield* normalizeSignals(request.allowedSignals)
-			const rateLimitRps =
-				request.rateLimitRps === undefined
-					? undefined
-					: yield* normalizeRateLimit(request.rateLimitRps)
-			// Only a real change of signals or rate limit can lift a refusal.
-			const clearsRejection =
-				(allowedSignals !== undefined && !sameSignals(allowedSignals, existing.allowedSignals)) ||
-				(rateLimitRps !== undefined && rateLimitRps !== existing.rateLimitRps)
-			const row = yield* updateRow(orgId, sourceId, {
-				updatedAt: now,
-				updatedBy: userId,
-				name: request.name === undefined ? undefined : yield* normalizeName(request.name),
-				description:
-					request.description === undefined
+			const list = Effect.fn("SourcesService.list")(function* (orgId: OrgId) {
+				yield* Effect.annotateCurrentSpan("orgId", orgId)
+				const now = yield* Clock.currentTimeMillis
+				const [before, owners] = yield* Effect.all(
+					[selectAll(orgId), dbExecute((db) => readSourceOwners(db, orgId, now))],
+					{ concurrency: "unbounded" },
+				)
+				const missingDefault = !before.some((row) => row.kind === "default")
+				if (missingDefault) yield* ensureDefault(orgId, now)
+				return toSources(missingDefault ? yield* selectAll(orgId) : before, owners, now)
+			})
+
+			const get = Effect.fn("SourcesService.get")(function* (orgId: OrgId, sourceId: SourceId) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
+				return yield* toSource(
+					orgId,
+					yield* requireRow(orgId, sourceId),
+					yield* Clock.currentTimeMillis,
+				)
+			})
+
+			const create = Effect.fn("SourcesService.create")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				request: CreateSourceInput,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.source.platform": request.platform })
+				const now = yield* Clock.currentTimeMillis
+				const name = yield* normalizeName(request.name)
+				const description = yield* normalizeDescription(request.description ?? null)
+				const allowedSignals = yield* normalizeSignals(request.allowedSignals ?? null)
+				const rateLimitRps = yield* normalizeRateLimit(request.rateLimitRps ?? null)
+				const resourceAttributes = yield* normalizeAttributes(request.resourceAttributes ?? [])
+				const expiresAt = yield* normalizeExpiry(request.expiresAtMs ?? null, now)
+
+				const id = newSourceId()
+				const secret = generateSecret()
+				yield* Effect.annotateCurrentSpan("maple.source.id", id)
+				// The per-org lock makes the source cap hold under concurrent creates.
+				const rows = yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							yield* db.execute(
+								Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext('sources'))`,
+							)
+							const existing = yield* db.run(
+								PG.from(Sources)
+									.select(($) => ({ id: $.id }))
+									.where(($) => [$.orgId.eq(orgId), $.kind.eq("token")])
+									.limit(MAX_SOURCES_PER_ORG),
+							)
+							if (existing.length >= MAX_SOURCES_PER_ORG) return null
+							return yield* db.run(
+								PG.insertInto(Sources)
+									.values({
+										id,
+										orgId,
+										name,
+										description,
+										platform: request.platform,
+										kind: "token",
+										keyHash: hashIngestKey(secret, lookupHmacKey),
+										keyPrefix: displayPrefix(secret),
+										allowedSignals,
+										rateLimitRps,
+										resourceAttributes,
+										expiresAt,
+										rolledAt: now,
+										createdAt: now,
+										updatedAt: now,
+										createdBy: userId,
+										updatedBy: userId,
+									})
+									.returning(),
+							)
+						}),
+					),
+				)
+				if (rows === null) {
+					return yield* invalid(`An organization can have at most ${MAX_SOURCES_PER_ORG} sources`)
+				}
+				const row = rows[0]
+				if (row === undefined) {
+					return yield* new SourcePersistenceError({ message: "Failed to create source" })
+				}
+				return new SourceWithSecret({ source: rowToSource(row, now), secret })
+			})
+
+			const update = Effect.fn("SourcesService.update")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				sourceId: SourceId,
+				request: UpdateSourceRequest,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
+				const existing = yield* requireRow(orgId, sourceId)
+				if (existing.kind !== "token" && RULE_FIELDS.some((field) => request[field] !== undefined)) {
+					return yield* tokenSourceOnly(existing, "take ingest rules")
+				}
+				const now = yield* Clock.currentTimeMillis
+				const allowedSignals =
+					request.allowedSignals === undefined
 						? undefined
-						: yield* normalizeDescription(request.description),
-				allowedSignals,
-				rateLimitRps,
-				resourceAttributes:
-					request.resourceAttributes === undefined
+						: yield* normalizeSignals(request.allowedSignals)
+				const rateLimitRps =
+					request.rateLimitRps === undefined
 						? undefined
-						: yield* normalizeAttributes(request.resourceAttributes),
-				expiresAt:
-					request.expiresAtMs === undefined
-						? undefined
-						: yield* normalizeExpiry(request.expiresAtMs, now, existing.expiresAt),
-				lastRejectedAt: clearsRejection ? null : undefined,
-				lastRejection: clearsRejection ? null : undefined,
+						: yield* normalizeRateLimit(request.rateLimitRps)
+				// Only a real change of signals or rate limit can lift a refusal.
+				const clearsRejection =
+					(allowedSignals !== undefined && !sameSignals(allowedSignals, existing.allowedSignals)) ||
+					(rateLimitRps !== undefined && rateLimitRps !== existing.rateLimitRps)
+				const row = yield* updateRow(orgId, sourceId, {
+					updatedAt: now,
+					updatedBy: userId,
+					name: request.name === undefined ? undefined : yield* normalizeName(request.name),
+					description:
+						request.description === undefined
+							? undefined
+							: yield* normalizeDescription(request.description),
+					allowedSignals,
+					rateLimitRps,
+					resourceAttributes:
+						request.resourceAttributes === undefined
+							? undefined
+							: yield* normalizeAttributes(request.resourceAttributes),
+					expiresAt:
+						request.expiresAtMs === undefined
+							? undefined
+							: yield* normalizeExpiry(request.expiresAtMs, now, existing.expiresAt),
+					lastRejectedAt: clearsRejection ? null : undefined,
+					lastRejection: clearsRejection ? null : undefined,
+				})
+				// Integration sources take their health from the integration, as `get` reads it.
+				return yield* toSource(orgId, row, now)
 			})
-			// Integration sources take their health from the integration, as `get` reads it.
-			return yield* toSource(orgId, row, now)
-		})
 
-		// `untilMs` null pauses until resumed.
-		const pause = Effect.fn("SourcesService.pause")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			sourceId: SourceId,
-			untilMs: number | null,
-		) {
-			yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
-			const now = yield* Clock.currentTimeMillis
-			if (untilMs !== null && untilMs <= now) return yield* invalid("A pause must end in the future")
-			const existing = yield* requireRow(orgId, sourceId)
-			if (existing.kind === "default") return yield* defaultSourceCannot("be paused")
-			const row = yield* updateRow(orgId, sourceId, {
-				pausedAt: now,
-				pausedUntil: untilMs,
-				updatedAt: now,
-				updatedBy: userId,
+			// `untilMs` null pauses until resumed.
+			const pause = Effect.fn("SourcesService.pause")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				sourceId: SourceId,
+				untilMs: number | null,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
+				const now = yield* Clock.currentTimeMillis
+				if (untilMs !== null && untilMs <= now)
+					return yield* invalid("A pause must end in the future")
+				const existing = yield* requireRow(orgId, sourceId)
+				if (existing.kind === "default") return yield* defaultSourceCannot("be paused")
+				const row = yield* updateRow(orgId, sourceId, {
+					pausedAt: now,
+					pausedUntil: untilMs,
+					updatedAt: now,
+					updatedBy: userId,
+				})
+				return yield* toSource(orgId, row, now)
 			})
-			return yield* toSource(orgId, row, now)
-		})
 
-		const resume = Effect.fn("SourcesService.resume")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			sourceId: SourceId,
-		) {
-			yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
-			const existing = yield* requireRow(orgId, sourceId)
-			if (existing.kind === "default") return yield* defaultSourceCannot("be resumed")
-			const now = yield* Clock.currentTimeMillis
-			const row = yield* updateRow(orgId, sourceId, {
-				pausedAt: null,
-				pausedUntil: null,
-				updatedAt: now,
-				updatedBy: userId,
+			const resume = Effect.fn("SourcesService.resume")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				sourceId: SourceId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
+				const existing = yield* requireRow(orgId, sourceId)
+				if (existing.kind === "default") return yield* defaultSourceCannot("be resumed")
+				const now = yield* Clock.currentTimeMillis
+				const row = yield* updateRow(orgId, sourceId, {
+					pausedAt: null,
+					pausedUntil: null,
+					updatedAt: now,
+					updatedBy: userId,
+				})
+				return yield* toSource(orgId, row, now)
 			})
-			return yield* toSource(orgId, row, now)
-		})
 
-		const roll = Effect.fn("SourcesService.roll")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			sourceId: SourceId,
-		) {
-			yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
-			const existing = yield* requireRow(orgId, sourceId)
-			if (existing.kind !== "token") return yield* tokenSourceOnly(existing, "be rolled here")
-			const now = yield* Clock.currentTimeMillis
-			const secret = generateSecret()
-			const row = yield* updateRow(orgId, sourceId, {
-				keyHash: hashIngestKey(secret, lookupHmacKey),
-				keyPrefix: displayPrefix(secret),
-				rolledAt: now,
-				updatedAt: now,
-				updatedBy: userId,
-				// The old token's refusals say nothing about the new one.
-				lastRejectedAt: null,
-				lastRejection: null,
+			const roll = Effect.fn("SourcesService.roll")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				sourceId: SourceId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
+				const existing = yield* requireRow(orgId, sourceId)
+				if (existing.kind !== "token") return yield* tokenSourceOnly(existing, "be rolled here")
+				const now = yield* Clock.currentTimeMillis
+				const secret = generateSecret()
+				const row = yield* updateRow(orgId, sourceId, {
+					keyHash: hashIngestKey(secret, lookupHmacKey),
+					keyPrefix: displayPrefix(secret),
+					rolledAt: now,
+					updatedAt: now,
+					updatedBy: userId,
+					// The old token's refusals say nothing about the new one.
+					lastRejectedAt: null,
+					lastRejection: null,
+				})
+				return new SourceWithSecret({ source: rowToSource(row, now), secret })
 			})
-			return new SourceWithSecret({ source: rowToSource(row, now), secret })
-		})
 
-		const remove = Effect.fn("SourcesService.delete")(function* (orgId: OrgId, sourceId: SourceId) {
-			yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
-			const existing = yield* requireRow(orgId, sourceId)
-			if (existing.kind !== "token") return yield* tokenSourceOnly(existing, "be deleted here")
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.deleteFrom(Sources)
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(sourceId)])
-						.returning(),
-				),
-			)
-			const row = rows[0]
-			if (row === undefined) return yield* notFound(sourceId)
-			return rowToSource(row, yield* Clock.currentTimeMillis)
-		})
+			const remove = Effect.fn("SourcesService.delete")(function* (orgId: OrgId, sourceId: SourceId) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.source.id": sourceId })
+				const existing = yield* requireRow(orgId, sourceId)
+				if (existing.kind !== "token") return yield* tokenSourceOnly(existing, "be deleted here")
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(Sources)
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(sourceId)])
+							.returning(),
+					),
+				)
+				const row = rows[0]
+				if (row === undefined) return yield* notFound(sourceId)
+				return rowToSource(row, yield* Clock.currentTimeMillis)
+			})
 
-		return { list, get, create, update, pause, resume, roll, delete: remove }
-	}),
-}) {
+			return { list, get, create, update, pause, resume, roll, delete: remove }
+		}),
+	},
+) {
 	static readonly layer = Layer.effect(this, this.make)
 }

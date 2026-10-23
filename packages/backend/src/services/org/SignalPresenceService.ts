@@ -170,7 +170,7 @@ const make: Effect.Effect<SignalPresenceServiceApi, never, WarehouseQueryService
 })
 
 export class SignalPresenceService extends Context.Service<SignalPresenceService, SignalPresenceServiceApi>()(
-	"@maple/api/services/SignalPresenceService",
+	"@maple/backend/services/SignalPresenceService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
