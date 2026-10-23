@@ -101,16 +101,18 @@ const usageCell = (h: H, label: string, fraction: number | null): Html => {
 // A trend-only column passes no text; `null` is a figure that did not report.
 const sparkCell = (h: H, view: ResourceView, context: TableContext, text?: string | null): Html =>
 	h.div(
-		[h.Class("flex items-center gap-2")],
+		[h.Class("flex w-full items-center gap-2")],
 		[
 			h.div(
-				[h.Class("w-16 shrink-0 text-chart-2")],
+				[h.Class(cn("shrink-0 text-chart-2", text === undefined ? "w-full" : "w-16"))],
 				[
 					windowSparkline(h, {
 						points: sparkPoints(context.sparks, view),
 						window: context.window,
 						color: "currentColor",
 						className: "h-5",
+						// Every AWS sparkline metric is a share or a count.
+						floor: 0,
 					}),
 				],
 			),
