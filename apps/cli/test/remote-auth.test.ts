@@ -246,6 +246,7 @@ describe("sign-in", () => {
 		strictEqual(safeNextPath("/\t/evil.example"), "/")
 		strictEqual(safeNextPath("/\n/evil.example"), "/")
 		strictEqual(safeNextPath("/%5C/evil.example"), "/%5C/evil.example")
+		strictEqual(safeNextPath("/.//evil.example"), "/.//evil.example")
 		strictEqual(safeNextPath(null), "/")
 	})
 })
@@ -285,6 +286,13 @@ describe("CLI access token", () => {
 		)
 		strictEqual(
 			authorization(HttpClientRequest.get("http://127.0.0.1:4318/local/status")),
+			`Bearer ${ACCESS_TOKEN}`,
+		)
+	})
+
+	it("follows the target host to a discovered port", () => {
+		strictEqual(
+			authorization(HttpClientRequest.get("https://maple.example.com:4319/local/status")),
 			`Bearer ${ACCESS_TOKEN}`,
 		)
 	})

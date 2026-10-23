@@ -201,17 +201,10 @@ export class LoginThrottle {
 }
 
 /** Only same-site paths survive as a post-login destination. */
-export const safeNextPath = (value: string | null | undefined): string => {
-	// Control characters are stripped by browsers when they resolve `Location`
-	// (`/\t/evil` becomes `//evil`), so any value carrying one is refused.
-	if (value === null || value === undefined || !value.startsWith("/") || /[\x00-\x20\\]/.test(value))
-		return "/"
-	const base = "http://next.invalid"
-	const resolved = Result.try(() => new URL(value, base))
-	return Result.isSuccess(resolved) && resolved.success.origin === base
-		? `${resolved.success.pathname}${resolved.success.search}${resolved.success.hash}`
-		: "/"
-}
+export const safeNextPath = (value: string | null | undefined): string =>
+	// Browsers strip control characters from `Location` (`/\t/evil` becomes `//evil`),
+	// so any value carrying one, or a backslash, is refused along with `//`.
+	value !== null && value !== undefined && /^\/(?!\/)[^\x00-\x20\\]*$/.test(value) ? value : "/"
 
 const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`)
 
