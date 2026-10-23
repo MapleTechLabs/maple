@@ -22,10 +22,10 @@ import {
 } from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { type Context, Effect, Layer, Option, Schedule, Schema } from "effect"
-import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "@/platform/Llm"
+import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "../platform/Llm"
 import { makeAuditAgents } from "./agents"
 import { sandboxSource } from "./sandbox-source"
-import { AUDIT_TOOL_GUIDANCE } from "./source"
+import { AUDIT_TOOL_GUIDANCE, type SourceReaderApi } from "./source"
 
 /** Sandbox reads time out and fail transiently; the parent retries rather than losing a step. */
 const STEP_RETRY = { retries: { limit: 3, delay: "10 seconds", backoff: "exponential" } } as const
@@ -74,7 +74,14 @@ const durableAgents = (
 		),
 })
 
-export const runSecurityAuditWorkflow = (payload: SecurityAuditWorkflowPayload) =>
+/**
+ * The Workflow body over an agent factory: the deployed run passes real models, tests pass scripted
+ * agents. Everything else (pinning, prior run, durable steps, store) is the same code either way.
+ */
+export const auditWithAgents = <E, R>(
+	payload: SecurityAuditWorkflowPayload,
+	agentsFor: (source: SourceReaderApi) => Effect.Effect<AuditAgentsApi, E, R>,
+) =>
 	Effect.gen(function* () {
 		const orgId = Schema.decodeSync(OrgId)(payload.orgId)
 		const store = (yield* SecurityAuditStore).forOrg(orgId)
@@ -126,17 +133,7 @@ export const runSecurityAuditWorkflow = (payload: SecurityAuditWorkflowPayload) 
 					)
 		const changedSet = new Set(changed)
 
-		const settings = yield* loadLlmSettings
-		const tags = { surface: "chat" as const, orgId, sessionId: `audit-${payload.runId}` }
-		const models = {
-			discovery: resolveSecurityAuditModel(settings, "discovery", tags),
-			validation: resolveSecurityAuditModel(settings, "validation", tags),
-		}
-		const agents = yield* makeAuditAgents(models, sandboxSource(sandbox, orgId, pinned)).pipe(
-			// The Workflow run is the entry point that owns these clients.
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
-			Effect.provide(layerLlm(settings)),
-		)
+		const agents = yield* agentsFor(sandboxSource(sandbox, orgId, pinned))
 
 		const result = yield* runAudit({
 			runId: payload.runId,
@@ -177,5 +174,27 @@ export const runSecurityAuditWorkflow = (payload: SecurityAuditWorkflowPayload) 
 	}).pipe(
 		Effect.withSpan("SecurityAuditWorkflow.run", {
 			attributes: { "maple.security_audit.run_id": payload.runId, "maple.org_id": payload.orgId },
+		}),
+	)
+
+/** The deployed run: discovery and validation on their own models, priced by OpenRouter. */
+export const runSecurityAuditWorkflow = (payload: SecurityAuditWorkflowPayload) =>
+	auditWithAgents(payload, (source) =>
+		Effect.gen(function* () {
+			const settings = yield* loadLlmSettings
+			const tags = {
+				surface: "chat" as const,
+				orgId: payload.orgId,
+				sessionId: `audit-${payload.runId}`,
+			}
+			const models = {
+				discovery: resolveSecurityAuditModel(settings, "discovery", tags),
+				validation: resolveSecurityAuditModel(settings, "validation", tags),
+			}
+			return yield* makeAuditAgents(models, source).pipe(
+				// The Workflow run is the entry point that owns these clients.
+				// oxlint-disable-next-line effecttsgo/strict-effect-provide
+				Effect.provide(layerLlm(settings)),
+			)
 		}),
 	)
