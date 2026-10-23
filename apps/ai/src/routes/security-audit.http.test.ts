@@ -14,7 +14,11 @@ import { OrgId, RoleName, UserId } from "@maple/domain/primitives"
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import type { Finding } from "@maple/security-audit"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
-import { SecurityAuditWorkflowStarter, WorkflowStartError } from "@maple/backend/platform/bindings"
+import {
+	SecurityAuditWorkflowStarter,
+	WorkflowCancelError,
+	WorkflowStartError,
+} from "@maple/backend/platform/bindings"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
 import { WorkerPlatformLive } from "@maple/infra/worker-http"
@@ -66,15 +70,28 @@ const AuthorizationStubLayer = Layer.succeed(
 	}),
 )
 
-const makeHarness = (options: { readonly enabled?: boolean; readonly startFails?: boolean } = {}) => {
+const makeHarness = (
+	options: {
+		readonly enabled?: boolean
+		readonly startFails?: boolean
+		readonly cancelFails?: boolean
+	} = {},
+) => {
 	const db = createTestDb(trackedDbs)
 	const started: Array<SecurityAuditWorkflowPayload> = []
+	const cancelled: Array<string> = []
 	const starter = Layer.succeed(SecurityAuditWorkflowStarter, {
 		create: (payload) =>
 			options.startFails === true
 				? Effect.fail(new WorkflowStartError({ message: "instance limit reached", cause: null }))
 				: Effect.sync(() => {
 						started.push(payload)
+					}),
+		cancel: (runId) =>
+			options.cancelFails === true
+				? Effect.fail(new WorkflowCancelError({ message: "binding unavailable", cause: null }))
+				: Effect.sync(() => {
+						cancelled.push(runId)
 					}),
 	})
 	const auditLog = makeMemoryAuditLog()
@@ -142,7 +159,7 @@ const makeHarness = (options: { readonly enabled?: boolean; readonly startFails?
 
 	const sql = (statement: string, params: Array<unknown> = []) => executeSql(db, statement, params)
 
-	return { call, dispose, started, withStore, count, sql, auditLog }
+	return { call, dispose, started, cancelled, withStore, count, sql, auditLog }
 }
 
 const confirmed = (fingerprint: string): Finding => ({
@@ -481,6 +498,195 @@ describe("/api/security-audit findings", () => {
 						reason: "fixture data, not reachable",
 					},
 				],
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit run cancellation", () => {
+	it("terminates the workflow, marks the run cancelled, and records the event and audit entry", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const asMember = await harness.call("POST", `/runs/${run.body.id}/cancel`, {
+				as: `${ORG_A}|org:member`,
+			})
+			const cancel = await harness.call("POST", `/runs/${run.body.id}/cancel`)
+			const again = await harness.call("POST", `/runs/${run.body.id}/cancel`)
+			const events = await harness.call("GET", `/runs/${run.body.id}/events`)
+			const next = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const audit = await Effect.runPromise(
+				harness.auditLog.list(ORG_A, {
+					action: "security_audit_run.cancelled",
+					limit: 10,
+					offset: 0,
+				}),
+			)
+
+			expect([asMember.status, cancel.status, again.status, again.body._tag]).toEqual([
+				403,
+				200,
+				409,
+				tag("SecurityAuditRunNotInProgressError"),
+			])
+			expect([cancel.body.status, cancel.body.incompleteReason, cancel.body.finishedAt > 0]).toEqual([
+				"incomplete",
+				"cancelled",
+				true,
+			])
+			// Terminated once; the second call found the run finished and never reached the workflow.
+			expect(harness.cancelled).toEqual([run.body.id])
+			expect(
+				events.body.events.map((e: { kind: string; message: string }) => [e.kind, e.message]),
+			).toEqual([["Note", `Run cancelled by ${USER}`]])
+			// The cancelled run frees the target.
+			expect(next.status).toBe(200)
+			expect(audit.map((entry) => [entry.userId, entry.metadata])).toEqual([
+				[USER, { targetId: target.body.id, runId: run.body.id }],
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a run that already finished, and a run of another org, without touching the workflow", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const foreign = await harness.call("POST", `/runs/${run.body.id}/cancel`, {
+				as: `${ORG_B}|org:admin`,
+			})
+			await harness.withStore((store) =>
+				store.forOrg(ORG_A).finishRun(run.body.id, { status: "complete" }),
+			)
+			const finished = await harness.call("POST", `/runs/${run.body.id}/cancel`)
+			const detail = await harness.call("GET", `/runs/${run.body.id}`)
+
+			expect([foreign.status, foreign.body._tag, finished.status, finished.body._tag]).toEqual([
+				404,
+				tag("SecurityAuditRunNotFoundError"),
+				409,
+				tag("SecurityAuditRunNotInProgressError"),
+			])
+			expect([detail.body.status, detail.body.incompleteReason, harness.cancelled]).toEqual([
+				"complete",
+				null,
+				[],
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("leaves the run running when its workflow cannot be terminated", async () => {
+		const harness = makeHarness({ cancelFails: true })
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const cancel = await harness.call("POST", `/runs/${run.body.id}/cancel`)
+			const detail = await harness.call("GET", `/runs/${run.body.id}`)
+
+			expect([cancel.status, cancel.body._tag, detail.body.status]).toEqual([
+				503,
+				tag("SecurityAuditPersistenceError"),
+				"in_progress",
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit run units", () => {
+	it("lists the run's units leanly, keeps a malformed stored unit, and is admin and org scoped", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			await harness.sql(
+				`INSERT INTO security_audit_units (run_id, coverage_id, org_id, status, wave, agent_id, unit)
+				 VALUES ($1, 'u1', $2, 'candidate', 2, 'hunter-1', $3::jsonb),
+				        ($1, 'u2', $2, 'blocked', 1, null, '{"coverage_id":"u2"}'::jsonb)`,
+				[
+					run.body.id,
+					ORG_A,
+					JSON.stringify({
+						coverage_id: "u1",
+						canonical_refs: { surface: "s", boundary: "b", subsystem: "sub", attack_class: "ac" },
+						surface: "POST /keys",
+						boundary: "org scope",
+						subsystem: "src",
+						attack_class: "Access control",
+						starting_paths: ["src/routes/keys.ts"],
+						ordinary_attack_class_block: null,
+						selected_companion_blocks: [],
+						excluded_blocks: [],
+						prior_status: "none",
+						attempts: [],
+						wave: 2,
+						status: "candidate",
+						agent_id: "hunter-1",
+						reviewed_paths: [],
+						local_checks: [],
+						result_fingerprints: ["keys/roll"],
+						unresolved: ["x".repeat(500)],
+						priority: 1,
+					}),
+				],
+			)
+			const units = await harness.call("GET", `/runs/${run.body.id}/units`)
+			const member = await harness.call("GET", `/runs/${run.body.id}/units`, {
+				as: `${ORG_A}|org:member`,
+			})
+			const foreign = await harness.call("GET", `/runs/${run.body.id}/units`, {
+				as: `${ORG_B}|org:admin`,
+			})
+
+			expect(units.status).toBe(200)
+			expect(units.body.units).toEqual([
+				{
+					coverageId: "u1",
+					status: "candidate",
+					wave: 2,
+					agentId: "hunter-1",
+					stale: false,
+					subsystem: "src",
+					surface: "POST /keys",
+					boundary: "org scope",
+					attackClass: "Access control",
+					priorStatus: "none",
+					priority: 1,
+					failedAttempts: null,
+					resultFingerprints: ["keys/roll"],
+					carriedFingerprint: null,
+					unresolved: ["x".repeat(300)],
+				},
+				{
+					coverageId: "u2",
+					status: "blocked",
+					wave: 1,
+					agentId: null,
+					stale: true,
+					subsystem: null,
+					surface: null,
+					boundary: null,
+					attackClass: null,
+					priorStatus: null,
+					priority: null,
+					failedAttempts: null,
+					resultFingerprints: [],
+					carriedFingerprint: null,
+					unresolved: [],
+				},
+			])
+			expect([member.status, foreign.status, foreign.body._tag]).toEqual([
+				403,
+				404,
+				tag("SecurityAuditRunNotFoundError"),
 			])
 		} finally {
 			await harness.dispose()

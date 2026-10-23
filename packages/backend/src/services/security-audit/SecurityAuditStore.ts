@@ -112,7 +112,16 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 	readonly latestPriorRun: (
 		targetId: SecurityAuditTargetId,
 	) => Effect.Effect<Option.Option<SecurityAuditRunRow>, AuditStoreError>
+	/** Settles an unsettled run; a run that already finished (settled or cancelled) is left as it is. */
 	readonly finishRun: (runId: string, outcome: FinishRunOutcome) => Effect.Effect<void, AuditStoreError>
+	/**
+	 * Marks an in-progress run `incomplete` with reason `cancelled` and records who did it, in one
+	 * conditional write. None when the run is missing or already finished.
+	 */
+	readonly cancelRun: (
+		runId: string,
+		actor: UserId,
+	) => Effect.Effect<Option.Option<SecurityAuditRunRow>, AuditStoreError>
 	/** Sets the run's totals (absolute, so a retried or replayed write cannot double-count). */
 	readonly setUsage: (runId: string, usage: RunUsage) => Effect.Effect<void, AuditStoreError>
 	readonly getRun: (runId: string) => Effect.Effect<Option.Option<SecurityAuditRunRow>, AuditStoreError>
@@ -122,6 +131,10 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		readonly limit?: number
 	}) => Effect.Effect<ReadonlyArray<SecurityAuditRunRow>, AuditStoreError>
 	readonly listUnits: (runId: string) => Effect.Effect<ReadonlyArray<SecurityAuditUnitRow>, AuditStoreError>
+	/** Every ledger unit as a lean summary; a unit stored under an older shape keeps its columns. */
+	readonly listUnitSummaries: (
+		runId: string,
+	) => Effect.Effect<ReadonlyArray<SecurityAuditUnitSummary>, AuditStoreError>
 	/** Ledger units per status, counted in SQL. */
 	readonly countUnits: (runId: string) => Effect.Effect<Record<string, number>, AuditStoreError>
 	/** One run's final records, the input a later run carries forward. */
@@ -168,6 +181,30 @@ export interface ConnectedRepository {
 	readonly fullName: string
 }
 
+/** A ledger unit's columns plus its human fields; `fields` is null when the stored unit no longer decodes. */
+export interface SecurityAuditUnitSummary {
+	readonly coverageId: string
+	readonly status: UnitStatus
+	readonly wave: number
+	readonly agentId: string | null
+	readonly fields: UnitSummaryFields | null
+}
+
+/** The few fields of a stored unit a listing shows; other keys are ignored, so drift there is harmless. */
+const UnitSummaryFields = Schema.Struct({
+	subsystem: CoverageUnit.fields.subsystem,
+	surface: CoverageUnit.fields.surface,
+	boundary: CoverageUnit.fields.boundary,
+	attack_class: CoverageUnit.fields.attack_class,
+	prior_status: CoverageUnit.fields.prior_status,
+	priority: CoverageUnit.fields.priority,
+	failed_attempts: CoverageUnit.fields.failed_attempts,
+	result_fingerprints: CoverageUnit.fields.result_fingerprints,
+	carried_fingerprint: CoverageUnit.fields.carried_fingerprint,
+	unresolved: CoverageUnit.fields.unresolved,
+})
+export type UnitSummaryFields = typeof UnitSummaryFields.Type
+
 /** An event row whose `detail` is null when it was written under an older shape. */
 export type SecurityAuditEventRecord = Omit<SecurityAuditEventRow, "detail"> & {
 	readonly detail: SecurityAuditEventRow["detail"] | null
@@ -202,6 +239,7 @@ const LEDGER_INSERT_CHUNK = 500
 
 const decodeCoverageUnit = Schema.decodeUnknownOption(CoverageUnit)
 const decodeUnitStatus = Schema.decodeUnknownOption(UnitStatus)
+const decodeUnitSummary = Schema.decodeUnknownOption(UnitSummaryFields)
 const decodeFinding = Schema.decodeUnknownOption(FindingSchema)
 const decodeRunMetadata = Schema.decodeUnknownOption(RunMetadataRecord)
 const decodeReports = Schema.decodeUnknownOption(AuditReportsRecord)
@@ -317,6 +355,50 @@ const runNotFound = (runId: string) =>
 const overallSeverity = (finding: Finding) =>
 	finding.verdict === "confirmed" ? finding.severity.overall_severity : null
 
+/** The stored row for one engine event; its id makes a replayed insert a no-op. */
+const eventRow = (orgId: OrgId, runId: SecurityAuditRunId, event: AuditEvent) =>
+	Effect.gen(function* () {
+		const at = yield* Clock.currentTimeMillis
+		const id = yield* eventId(runId, event)
+		const base = { id, runId, orgId, at, kind: event._tag }
+		const row: PG.InsertRowOf<typeof SecurityAuditEvents> =
+			event._tag === "Agent"
+				? {
+						...base,
+						role: event.role,
+						agentId: event.agentId,
+						outcome: event.outcome,
+						detail: {
+							message: event.message ?? null,
+							phase: null,
+							detail: null,
+							costUsd: event.usage?.costUsd ?? null,
+						},
+						inputTokens: event.usage?.inputTokens ?? null,
+						outputTokens: event.usage?.outputTokens ?? null,
+					}
+				: {
+						...base,
+						role: null,
+						agentId: null,
+						outcome: null,
+						detail:
+							event._tag === "Phase"
+								? { message: null, phase: event.phase, detail: event.detail, costUsd: null }
+								: { message: event.message, phase: null, detail: null, costUsd: null },
+						inputTokens: null,
+						outputTokens: null,
+					}
+		return row
+	})
+
+const insertEvent = (db: MapleDb, row: PG.InsertRowOf<typeof SecurityAuditEvents>) =>
+	db.run(
+		PG.insertInto(SecurityAuditEvents)
+			.values(row)
+			.onConflictDoNothing({ target: ["id"] }),
+	)
+
 /** The run's own row, read inside the caller's transaction; absent for another org's run. */
 const requireRun = (db: MapleDb, orgId: OrgId, runId: SecurityAuditRunId) =>
 	db
@@ -395,9 +477,18 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 						profile: metadata.profile,
 						scopePaths: metadata.scope_paths,
 						budget: metadata.budget,
-						status: metadata.run_status,
-						incompleteReason: metadata.incomplete_reason ?? null,
 					})
+					// The engine's status only while unsettled: a late write must not reopen a cancelled run.
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(SecurityAuditRuns)
+								.set({
+									status: metadata.run_status,
+									incompleteReason: metadata.incomplete_reason ?? null,
+								})
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(runId), $.finishedAt.isNull()]),
+						),
+					)
 				})
 
 				const saveArchitecture: AuditStoreApi["saveArchitecture"] = Effect.fn(
@@ -564,56 +655,12 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 				const recordEvent: AuditStoreApi["recordEvent"] = Effect.fn("SecurityAuditStore.recordEvent")(
 					function* (rawRunId, event) {
 						const runId = yield* decodeRunId(rawRunId)
-						const at = yield* Clock.currentTimeMillis
-						const id = yield* eventId(runId, event)
-						const base = { id, runId, orgId, at, kind: event._tag }
-						const row: PG.InsertRowOf<typeof SecurityAuditEvents> =
-							event._tag === "Agent"
-								? {
-										...base,
-										role: event.role,
-										agentId: event.agentId,
-										outcome: event.outcome,
-										detail: {
-											message: event.message ?? null,
-											phase: null,
-											detail: null,
-											costUsd: event.usage?.costUsd ?? null,
-										},
-										inputTokens: event.usage?.inputTokens ?? null,
-										outputTokens: event.usage?.outputTokens ?? null,
-									}
-								: {
-										...base,
-										role: null,
-										agentId: null,
-										outcome: null,
-										detail:
-											event._tag === "Phase"
-												? {
-														message: null,
-														phase: event.phase,
-														detail: event.detail,
-														costUsd: null,
-													}
-												: {
-														message: event.message,
-														phase: null,
-														detail: null,
-														costUsd: null,
-													},
-										inputTokens: null,
-										outputTokens: null,
-									}
+						const row = yield* eventRow(orgId, runId, event)
 						yield* dbExecute((db) =>
 							db.transaction(
 								Effect.gen(function* () {
 									yield* requireRun(db, orgId, runId)
-									yield* db.run(
-										PG.insertInto(SecurityAuditEvents)
-											.values(row)
-											.onConflictDoNothing({ target: ["id"] }),
-									)
+									yield* insertEvent(db, row)
 								}),
 							),
 						)
@@ -830,12 +877,66 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 				)(function* (rawRunId, outcome) {
 					const runId = yield* decodeRunId(rawRunId)
 					const now = yield* Clock.currentTimeMillis
-					yield* updateRun(runId, {
-						status: outcome.status,
-						finishedAt: now,
-						incompleteReason: outcome.status === "incomplete" ? outcome.reason : null,
-						error: outcome.status === "failed" ? outcome.error : null,
+					const settled = yield* dbExecute((db) =>
+						db.run(
+							PG.update(SecurityAuditRuns)
+								.set({
+									status: outcome.status,
+									finishedAt: now,
+									incompleteReason: outcome.status === "incomplete" ? outcome.reason : null,
+									error: outcome.status === "failed" ? outcome.error : null,
+								})
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(runId), $.finishedAt.isNull()])
+								.returning("id"),
+						),
+					)
+					if (settled.length > 0) return
+					// Nothing settled: a missing run is an error, a finished one keeps its outcome.
+					const existing = yield* getRun(runId)
+					if (Option.isNone(existing)) return yield* runNotFound(runId)
+					yield* Effect.logInfo("Security audit run already finished; outcome kept").pipe(
+						Effect.annotateLogs({
+							runId,
+							kept: existing.value.status,
+							attempted: outcome.status,
+						}),
+					)
+				})
+
+				const cancelRun: SecurityAuditOrgStore["cancelRun"] = Effect.fn(
+					"SecurityAuditStore.cancelRun",
+				)(function* (rawRunId, actor) {
+					const runId = yield* decodeRunId(rawRunId)
+					const now = yield* Clock.currentTimeMillis
+					const event = yield* eventRow(orgId, runId, {
+						_tag: "Note",
+						message: `Run cancelled by ${actor}`,
 					})
+					const cancelled = yield* dbExecute((db) =>
+						db.transaction(
+							Effect.gen(function* () {
+								const rows = yield* db.run(
+									PG.update(SecurityAuditRuns)
+										.set({
+											status: "incomplete",
+											incompleteReason: "cancelled",
+											finishedAt: now,
+										})
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.id.eq(runId),
+											$.status.eq("in_progress"),
+											$.finishedAt.isNull(),
+										])
+										.returning("id"),
+								)
+								if (rows.length === 0) return false
+								yield* insertEvent(db, event)
+								return true
+							}),
+						),
+					)
+					return cancelled ? yield* getRun(runId) : Option.none()
 				})
 
 				const setUsage: SecurityAuditOrgStore["setUsage"] = Effect.fn("SecurityAuditStore.setUsage")(
@@ -916,6 +1017,47 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 								unit: decodeCoverageUnit(row.unit),
 							}).pipe(Option.map((decoded) => ({ ...row, ...decoded }))),
 						"ledger units",
+					)
+				})
+
+				const listUnitSummaries: SecurityAuditOrgStore["listUnitSummaries"] = Effect.fn(
+					"SecurityAuditStore.listUnitSummaries",
+				)(function* (rawRunId) {
+					const runId = yield* decodeRunId(rawRunId)
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.from(SecurityAuditUnits)
+								.select(($) => ({
+									coverageId: $.coverageId,
+									status: PG.undecoded($.status),
+									wave: $.wave,
+									agentId: $.agentId,
+									unit: PG.undecoded($.unit),
+								}))
+								.where(($) => [$.orgId.eq(orgId), $.runId.eq(runId)])
+								.orderBy(($) => [[$.coverageId, "asc"]]),
+						),
+					)
+					const summaries = rows.map((row) => ({
+						status: decodeUnitStatus(row.status),
+						summary: {
+							coverageId: row.coverageId,
+							wave: row.wave,
+							agentId: row.agentId,
+							fields: Option.getOrNull(decodeUnitSummary(row.unit)),
+						},
+					}))
+					yield* warnStale(
+						"ledger unit fields",
+						summaries.filter((s) => s.summary.fields === null).length,
+						rows.length,
+					)
+					// The status column is written from the typed ledger; a row without one cannot be shown.
+					return yield* keepDecodable(
+						summaries,
+						({ status, summary }): Option.Option<SecurityAuditUnitSummary> =>
+							Option.map(status, (decoded) => ({ ...summary, status: decoded })),
+						"ledger unit statuses",
 					)
 				})
 
@@ -1102,10 +1244,12 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					createTarget,
 					startRun,
 					finishRun,
+					cancelRun,
 					setUsage,
 					getRun,
 					listRuns,
 					listUnits,
+					listUnitSummaries,
 					listRunFindings,
 					listEvents,
 					listFindings,

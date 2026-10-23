@@ -13,6 +13,8 @@ import {
 	SecurityAuditPersistenceError,
 	SecurityAuditRepositoryNotConnectedError,
 	SecurityAuditRunInProgressError,
+	SecurityAuditRunNotInProgressError,
+	type SecurityAuditUnit,
 	SecurityAuditTargetDisabledError,
 	SecurityAuditTargetExistsError,
 	type SecurityAuditRun,
@@ -37,6 +39,7 @@ import {
 	type SecurityAuditEventRecord,
 	type SecurityAuditOrgStore,
 	SecurityAuditStore,
+	type SecurityAuditUnitSummary,
 } from "@maple/backend/services/security-audit/SecurityAuditStore"
 
 const toTarget = (row: SecurityAuditTargetRow): SecurityAuditTarget => ({
@@ -103,6 +106,30 @@ const toFinding = (row: SecurityAuditFindingRow): SecurityAuditFinding => ({
 	fixedRunId: row.fixedRunId,
 	createdAt: row.createdAt,
 	updatedAt: row.updatedAt,
+})
+
+/** Each unresolved note trimmed, and only the first few: the list stays lean for large ledgers. */
+const MAX_UNRESOLVED = 3
+const MAX_UNRESOLVED_CHARS = 300
+
+const toUnit = (row: SecurityAuditUnitSummary): SecurityAuditUnit => ({
+	coverageId: row.coverageId,
+	status: row.status,
+	wave: row.wave,
+	agentId: row.agentId,
+	stale: row.fields === null,
+	subsystem: row.fields?.subsystem ?? null,
+	surface: row.fields?.surface ?? null,
+	boundary: row.fields?.boundary ?? null,
+	attackClass: row.fields?.attack_class ?? null,
+	priorStatus: row.fields?.prior_status ?? null,
+	priority: row.fields?.priority ?? null,
+	failedAttempts: row.fields?.failed_attempts ?? null,
+	resultFingerprints: row.fields?.result_fingerprints ?? [],
+	carriedFingerprint: row.fields?.carried_fingerprint ?? null,
+	unresolved: (row.fields?.unresolved ?? [])
+		.slice(0, MAX_UNRESOLVED)
+		.map((note) => note.slice(0, MAX_UNRESOLVED_CHARS)),
 })
 
 /** A store failure is the database's, never the caller's: a 503 that names the operation. */
@@ -326,6 +353,43 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						unitTotal: Object.values(unitCounts).reduce((sum, n) => sum + n, 0),
 					}
 				}).pipe(Effect.withSpan("HttpSecurityAudit.getRun")),
+			)
+			.handle("cancelRun", ({ params }) =>
+				Effect.gen(function* () {
+					const { tenant, store } = yield* adminAccess
+					const run = yield* requireRun(store, params.runId)
+					const notInProgress = new SecurityAuditRunNotInProgressError({
+						message: "This audit run has already finished.",
+						runId: run.id,
+					})
+					if (run.status !== "in_progress" || run.finishedAt !== null) return yield* notInProgress
+					// Stop the agents first; the row is only marked once nothing can still settle it.
+					yield* workflow.cancel(run.id).pipe(
+						Effect.catchTag("@maple/backend/platform/WorkflowCancelError", (error) =>
+							Effect.fail(
+								new SecurityAuditPersistenceError({
+									message: "The audit could not be cancelled.",
+									cause: error.message,
+								}),
+							),
+						),
+					)
+					const cancelled = yield* orUnavailable(store.cancelRun(run.id, tenant.userId))
+					// Settled between the read and the write: its own outcome stands.
+					if (Option.isNone(cancelled)) return yield* notInProgress
+					yield* recordHttpAudit("security_audit_run.cancelled", {
+						metadata: { targetId: run.targetId, runId: run.id },
+					})
+					return toRun(cancelled.value)
+				}).pipe(Effect.withSpan("HttpSecurityAudit.cancelRun")),
+			)
+			.handle("listRunUnits", ({ params }) =>
+				Effect.gen(function* () {
+					const { store } = yield* adminAccess
+					const run = yield* requireRun(store, params.runId)
+					const rows = yield* orUnavailable(store.listUnitSummaries(run.id))
+					return { units: rows.map(toUnit) }
+				}).pipe(Effect.withSpan("HttpSecurityAudit.listRunUnits")),
 			)
 			.handle("listRunEvents", ({ params, query }) =>
 				Effect.gen(function* () {

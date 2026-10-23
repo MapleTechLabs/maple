@@ -246,7 +246,9 @@ export const auditWithAgents = <E, R>(
 				prior !== null &&
 				// An unread or cut diff is evidence of nothing; claiming a fix needs the diff.
 				!changed.includes(EVERYTHING_CHANGED) &&
-				Option.isSome(row)
+				Option.isSome(row) &&
+				// Cancelled (or otherwise finished) meanwhile: never mark fixed, and finishRun keeps its outcome.
+				row.value.finishedAt === null
 			) {
 				const reported = new Set(result.findings.map((f) => f.fingerprint))
 				const gone = (yield* store.listFindings(row.value.targetId)).filter(

@@ -441,6 +441,47 @@ describe("auditWithAgents, settling", () => {
 		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
 	)
 
+	it.effect("keeps a run cancelled mid-flight cancelled and marks nothing fixed when it settles", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const prior = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
+			yield* auditWithAgents(payloadFor(prior.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			yield* store.saveFindings(prior.id, [keysFinding])
+			const next = yield* store.startRun({
+				targetId: target.id,
+				kind: "revalidation",
+				sourceRef: "main",
+			})
+			const scripted = scriptedAgents([])
+			// An admin cancels while agents are in flight; the run still completes and settles after.
+			const cancelling: AuditAgentsApi = {
+				run: (invocation) =>
+					store
+						.cancelRun(next.id, Schema.decodeUnknownSync(UserId)("user_admin"))
+						.pipe(Effect.orDie, Effect.andThen(scripted.run(invocation))),
+			}
+			const result = yield* auditWithAgents(payloadFor(next.id, prior.id), () =>
+				Effect.succeed(cancelling),
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const row = yield* store.getRun(next.id)
+			const findings = yield* store.listFindings(target.id)
+			assert.deepStrictEqual(
+				[
+					result.status,
+					Option.map(row, (r) => [r.status, r.incompleteReason]),
+					findings.map((f) => f.status),
+				],
+				["complete", Option.some(["incomplete", "cancelled"]), ["open"]],
+			)
+		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+	)
+
 	it.effect(
 		"marks an open finding fixed when a complete run no longer reports it and its files changed",
 		() =>
