@@ -271,9 +271,10 @@ jobs:
                     exit 0
                   fi
                   tags="$image:$tag"
-                  # Only a pushed release tag moves `latest`: never a pre-release
-                  # (v1.2.3-rc.1), never a manual re-run of an older tag.
-                  if [[ "$ref" == refs/tags/* && "$tag" != *-* ]]; then tags="$tags,$image:latest"; fi
+                  # `latest` follows the newest stable release only: never a pre-release
+                  # (v1.2.3-rc.1), never a re-run of an older tag.
+                  newest="$(git ls-remote --tags --refs origin 'v*' | sed 's|.*refs/tags/||' | grep -ve '-' | sort -V | tail -1)"
+                  if [[ "$ref" == refs/tags/* && "$tag" == "$newest" ]]; then tags="$tags,$image:latest"; fi
                   echo "publish=true" >> "$GITHUB_OUTPUT"
                   echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
