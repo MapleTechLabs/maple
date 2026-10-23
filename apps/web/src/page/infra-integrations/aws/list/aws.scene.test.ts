@@ -99,6 +99,15 @@ describe("aws resource links", () => {
 			search: { region: "us-east-1", account: "123456789012" },
 		})
 	})
+	test("a load balancer's slashed name still routes after the edge decodes %2F", () => {
+		const url =
+			"https://app.maple.dev/infra/aws/loadBalancers/app/prod-alb/50dc6c495c0c9188?region=%22us-east-1%22"
+		expect(urlToAppRoute(Option.getOrThrow(fromString(url)))).toMatchObject({
+			_tag: "InfraAwsResource",
+			kind: "loadBalancers",
+			name: "app/prod-alb/50dc6c495c0c9188",
+		})
+	})
 })
 
 describe("aws list", () => {

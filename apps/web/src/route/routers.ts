@@ -4,7 +4,7 @@ import { Route } from "foldkit"
 import { query, schemaSegment, slash } from "foldkit/route"
 import { AppRoute } from "./app-route"
 import * as Search from "./search"
-import { path, segment } from "./segment"
+import { path, restSegments, segment } from "./segment"
 import { tanstackSearch } from "./tanstack-search"
 
 const search = <A, I>(schema: Schema.Codec<A, I>) => query(tanstackSearch(schema))
@@ -298,7 +298,7 @@ const routers = {
 	InfraAwsResource: pipe(
 		path("infra", "aws"),
 		slash(segment("kind")),
-		slash(segment("name")),
+		slash(restSegments("name")),
 		search(Search.InfraAwsResourceSearch),
 		Route.mapTo(AppRoute.InfraAwsResource),
 	),
