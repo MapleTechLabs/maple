@@ -15,6 +15,7 @@ export const NavSurface = Schema.Literals([
 	"railway",
 	"supabase",
 	"gcp",
+	"aws",
 ])
 export type NavSurface = typeof NavSurface.Type
 
@@ -24,7 +25,11 @@ export interface NavSubItem {
 	readonly icon?: IconName
 	readonly iconColor?: string
 	readonly surfaces?: ReadonlyArray<NavSurface>
-	readonly views?: ReadonlyArray<{ readonly title: string; readonly href: string; readonly paletteTitle?: string }>
+	readonly views?: ReadonlyArray<{
+		readonly title: string
+		readonly href: string
+		readonly paletteTitle?: string
+	}>
 	/** The command palette's title, when the row's own reads ambiguously there. */
 	readonly paletteTitle?: string
 }
@@ -84,6 +89,7 @@ const infrastructureItem: NavItem = {
 		{ title: "Railway", href: "/infra/railway", icon: "RailwayIcon", surfaces: ["railway"] },
 		{ title: "Supabase", href: "/infra/supabase", icon: "SupabaseIcon", surfaces: ["supabase"] },
 		{ title: "Google Cloud", href: "/infra/gcp", icon: "GoogleCloudIcon", surfaces: ["gcp"] },
+		{ title: "AWS", href: "/infra/aws", icon: "AwsIcon", surfaces: ["aws"] },
 	],
 }
 // GROUPS

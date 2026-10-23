@@ -40,7 +40,11 @@ const routers = {
 	ServiceMap: pipe(path("service-map"), search(Search.ServiceMapSearch), Route.mapTo(AppRoute.ServiceMap)),
 	Settings: pipe(path("settings"), search(Search.SettingsSearch), Route.mapTo(AppRoute.Settings)),
 	Sources: pipe(path("sources"), Route.mapTo(AppRoute.Sources)),
-	SourcesNew: pipe(path("sources", "new"), search(Search.SourcesNewSearch), Route.mapTo(AppRoute.SourcesNew)),
+	SourcesNew: pipe(
+		path("sources", "new"),
+		search(Search.SourcesNewSearch),
+		Route.mapTo(AppRoute.SourcesNew),
+	),
 	Source: pipe(
 		path("sources"),
 		slash(segment("sourceId")),
@@ -250,6 +254,7 @@ const routers = {
 		search(Search.InfraContainersSearch),
 		Route.mapTo(AppRoute.InfraContainers),
 	),
+	InfraAws: pipe(path("infra", "aws"), search(Search.InfraAwsSearch), Route.mapTo(AppRoute.InfraAws)),
 	InfraGcp: pipe(path("infra", "gcp"), search(Search.InfraGcpSearch), Route.mapTo(AppRoute.InfraGcp)),
 	InfraHosts: pipe(
 		path("infra", "hosts"),
@@ -289,6 +294,13 @@ const routers = {
 		slash(segment("scriptName")),
 		search(Search.InfraCloudflareWorkerSearch),
 		Route.mapTo(AppRoute.InfraCloudflareWorker),
+	),
+	InfraAwsResource: pipe(
+		path("infra", "aws"),
+		slash(segment("kind")),
+		slash(segment("name")),
+		search(Search.InfraAwsResourceSearch),
+		Route.mapTo(AppRoute.InfraAwsResource),
 	),
 	InfraGcpResource: pipe(
 		path("infra", "gcp"),
@@ -353,6 +365,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.InfraDiscover,
 		routers.InfraCloudflare,
 		routers.InfraContainers,
+		routers.InfraAws,
 		routers.InfraGcp,
 		routers.InfraHosts,
 		routers.InfraKubernetes,
