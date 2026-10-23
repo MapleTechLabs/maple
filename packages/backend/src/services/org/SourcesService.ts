@@ -292,7 +292,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 		// An integration source answers with its integration row and that row's switches.
 		const toSource = Effect.fnUntraced(function* (orgId: OrgId, row: SourceRow, now: number) {
 			if (row.kind !== "integration") return rowToSource(row, now)
-			const owners = yield* dbExecute((db) => readSourceOwners(db, orgId))
+			const owners = yield* dbExecute((db) => readSourceOwners(db, orgId, now))
 			return rowToSource(row, now, ownerOf(owners, row.id))
 		})
 
@@ -300,7 +300,7 @@ export class SourcesService extends Context.Service<SourcesService>()("@maple/ap
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			const now = yield* Clock.currentTimeMillis
 			const [before, owners] = yield* Effect.all(
-				[selectAll(orgId), dbExecute((db) => readSourceOwners(db, orgId))],
+				[selectAll(orgId), dbExecute((db) => readSourceOwners(db, orgId, now))],
 				{ concurrency: "unbounded" },
 			)
 			const missingDefault = !before.some((row) => row.kind === "default")

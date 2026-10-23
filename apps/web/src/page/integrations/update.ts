@@ -228,6 +228,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadAws: ({ key, result }) =>
 			Aws.statusArrived(
 				accepted(model, { ...s, aws: Keyed.accept(s.aws, key, result) }).model,
+				context,
 				Aws.connectionsOf(model),
 			),
 		CompletedLoadSupabase: ({ key, result }) => {
@@ -339,9 +340,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAwsSetup: ({ id }) => Aws.openSetup(model, context, id),
 		ClickedAwsSetupClose: () => Aws.closeSetup(model),
 		CompletedLoadAwsSetup: ({ key, result }) => Aws.completedLoadSetup(model, key, result),
+		CompletedLoadAwsIngest: ({ id, key, result }) => Aws.completedIngest(model, id, key, result),
 		ClickedAwsSetupMethod: ({ method }) => Aws.setMethod(model, method),
 		ClickedAwsCheck: ({ id }) => Aws.clickedCheck(model, id),
 		TickedAwsPending: () => Aws.tickedPending(model),
+		TickedAwsWatch: () => Aws.tickedWatch(model, context),
 		CompletedAwsCheck: ({ id, quiet, connection, failure }) =>
 			Aws.completedCheck(model, context, id, quiet, connection, failure),
 		GotAwsCopyMessage: ({ id, message: child }) => Aws.gotCopy(model, id, child),

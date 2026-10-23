@@ -688,6 +688,15 @@ export {
 	type OperationTrafficOutput,
 } from "./queries/pr-review"
 
+// Queries: AWS ingest (one connection's metric stream by namespace and region)
+export {
+	AWS_INGEST_RESOURCE_SAMPLE,
+	AWS_METRIC_STREAM_SCOPE,
+	awsIngestQuery,
+	awsIngestRowSchema,
+	type AwsIngestOutput,
+} from "./queries/aws-ingest"
+
 // Queries: source usage (hourly volume and estimated bytes per source)
 export {
 	sourceUsageHourlyQuery,

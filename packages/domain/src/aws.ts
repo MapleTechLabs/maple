@@ -254,3 +254,49 @@ export const awsSetupPlan = (input: AwsSetupPlanInput): AwsSetupPlan => {
 		],
 	}
 }
+
+/** A stream delivers about every minute: this long without one, it has stopped. */
+export const AWS_STREAM_STALE_MS = 30 * 60_000
+/** A stream's first delivery comes minutes after its stack; past this after the role, it is not deployed. */
+export const AWS_FIRST_DELIVERY_MS = 30 * 60_000
+
+/**
+ * Where a connection's metric stream stands. `off`: none asked for. `waiting`: no delivery yet,
+ * within reason. `undelivered`: none long after the role and the stream were set up. `refused`:
+ * the last delivery was refused. `silent`: deliveries stopped. `delivering`: they arrive.
+ */
+export type AwsStreamState =
+	| { readonly _tag: "off" }
+	| { readonly _tag: "waiting" }
+	| { readonly _tag: "undelivered"; readonly since: number }
+	| { readonly _tag: "refused"; readonly error: string; readonly receivedAt: number | null }
+	| { readonly _tag: "silent"; readonly receivedAt: number }
+	| { readonly _tag: "delivering"; readonly receivedAt: number }
+
+export interface AwsStreamFacts {
+	readonly verifiedAt: number | null
+	readonly metricStream: AwsMetricStream | null
+	/** When the stream was last turned on or changed; null for one set before this was kept. */
+	readonly metricStreamChangedAt: number | null
+	readonly metricsLastReceivedAt: number | null
+	readonly metricsLastError: string | null
+}
+
+export const awsStreamState = (facts: AwsStreamFacts, now: number): AwsStreamState => {
+	if (facts.metricStream === null) return { _tag: "off" }
+	const receivedAt = facts.metricsLastReceivedAt
+	if (facts.metricsLastError !== null) return { _tag: "refused", error: facts.metricsLastError, receivedAt }
+	if (receivedAt === null) {
+		// Due once both the role and the stream asked for are past the window.
+		if (facts.verifiedAt === null) return { _tag: "waiting" }
+		const since = Math.max(facts.verifiedAt, facts.metricStreamChangedAt ?? 0)
+		return now - since > AWS_FIRST_DELIVERY_MS ? { _tag: "undelivered", since } : { _tag: "waiting" }
+	}
+	return now - receivedAt > AWS_STREAM_STALE_MS
+		? { _tag: "silent", receivedAt }
+		: { _tag: "delivering", receivedAt }
+}
+
+export const AWS_METRICS_OFF = "No metric stream: Maple receives nothing from this account"
+export const AWS_NO_DELIVERY =
+	"No metrics have arrived. Run the setup script again to deploy the metric stream"

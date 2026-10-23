@@ -29,7 +29,7 @@ export const integrationHeader = (
 	slots: HeaderSlots,
 ): Html => {
 	const entry = catalogEntry(integration)
-	const status = cardStatusOf(model.statuses, integration)
+	const status = cardStatusOf(model.statuses, integration, model.nowMs)
 	const overview = overviewOf(model.statuses, model.nowMs, integration)
 	const connected = overview?.kind === "connected" ? overview : null
 	const statusLine =
