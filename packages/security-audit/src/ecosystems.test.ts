@@ -3,7 +3,7 @@ import {
 	configFilesToRead,
 	executionModeLine,
 	executionProfile,
-	MAX_CONFIG_READS,
+	MAX_REGISTRY_CONFIG_READS,
 	scanDependencies,
 } from "./ecosystems"
 
@@ -102,7 +102,7 @@ describe("scanDependencies, private dependencies", () => {
 		])
 	})
 
-	it("flags package.json git dependencies, not its homepage or registry ones", () => {
+	it("flags package.json git dependencies over SSH, not a github: shorthand or its homepage", () => {
 		expect(
 			scan({
 				"package.json": JSON.stringify({
@@ -118,7 +118,6 @@ describe("scanDependencies, private dependencies", () => {
 			}).privateDependencies,
 		).toEqual([
 			"package.json: git dependency @acme/ui (git+ssh://git@github.com/acme/ui.git#v2)",
-			"package.json: git dependency @acme/auth (github:acme/auth#main)",
 			"package.json: git dependency @acme/flags (git@gitlab.acme.dev:web/flags.git)",
 		])
 	})
@@ -150,12 +149,25 @@ describe("scanDependencies, private dependencies", () => {
 		).toEqual([])
 	})
 
-	it("reads the shallowest config files first and caps how many", () => {
+	it("reads the shallowest registry configs first and caps how many", () => {
 		const tree = Object.fromEntries(
-			Array.from({ length: MAX_CONFIG_READS + 10 }, (_, i) => [`packages/p${i}/.npmrc`, ""]),
+			Array.from({ length: MAX_REGISTRY_CONFIG_READS + 10 }, (_, i) => [`packages/p${i}/.npmrc`, ""]),
 		)
 		const toRead = configFilesToRead([...Object.keys(tree), ".npmrc"])
-		expect([toRead.length, toRead[0]]).toEqual([MAX_CONFIG_READS, ".npmrc"])
+		expect([toRead.length, toRead[0]]).toEqual([MAX_REGISTRY_CONFIG_READS, ".npmrc"])
+	})
+
+	it("never lets a monorepo's package.json files crowd out a nested .npmrc", () => {
+		const tree: Record<string, string> = Object.fromEntries(
+			Array.from({ length: 80 }, (_, i) => [`apps/a${i}/package.json`, "{}"]),
+		)
+		const nested = "packages/deep/billing/client/.npmrc"
+		const signals = scan({
+			...tree,
+			"package.json": "{}",
+			[nested]: "@acme:registry=https://npm.pkg.github.com",
+		}).privateDependencies
+		expect(signals).toEqual([`${nested}: private source npm.pkg.github.com`])
 	})
 })
 

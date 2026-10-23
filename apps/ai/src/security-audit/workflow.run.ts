@@ -281,7 +281,8 @@ export const auditWithAgents = <E, R>(
 		/**
 		 * One invocation from the org's cycle, billed once it is granted. Known gap: the Autumn track
 		 * is fire-and-forget, so a charge is lost while Autumn is down; reconcile it later from
-		 * `security_audit_org_reservations`, which stays the ledger of record.
+		 * `security_audit_org_reservations`, which stays the ledger of record. A run that crosses a
+		 * billing-cycle boundary keeps reserving against its payload's period; the run budget bounds that.
 		 */
 		const admit = (agentId: string) =>
 			store

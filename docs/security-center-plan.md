@@ -284,7 +284,9 @@ The method is language-neutral; the platform around it is not. Before a customer
   Reports name every unit a run did not audit. The budget period is the subscription's own
   billing cycle (the UTC month only when billing gives none), and a start is also capped by
   Autumn's own remaining balance. Known gap: the Autumn track is fire-and-forget, so charges are
-  lost while Autumn is down; reconcile them later from `security_audit_org_reservations`. Slice
+  lost while Autumn is down; reconcile them later from `security_audit_org_reservations`. A run
+  that crosses a billing-cycle boundary keeps reserving against the period it started in, so it
+  can spend past the new cycle's start; that overspend is bounded by the run's own budget. Slice
   size and cadence per plan wait on phase 3.
 - **Size limits.** Target creation and run start refuse a repository GitHub reports as over
   `SECURITY_AUDIT_MAX_REPOSITORY_BYTES`, before any clone. After the clone, prepare measures

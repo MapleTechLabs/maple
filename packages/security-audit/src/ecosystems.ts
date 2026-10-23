@@ -63,7 +63,6 @@ const MANIFESTS: ReadonlyArray<readonly [Ecosystem, string | RegExp]> = [
 
 /** Files whose text can name a private registry, a private git source or a local module. */
 const CONFIGS: ReadonlyArray<string | RegExp> = [
-	"package.json",
 	".npmrc",
 	".yarnrc",
 	".yarnrc.yml",
@@ -84,15 +83,18 @@ const CONFIGS: ReadonlyArray<string | RegExp> = [
 	"Cargo.toml",
 	"config.toml",
 	"config",
-	// Where a Go toolchain is told which modules are private.
-	"go.env",
-	".envrc",
-	"Makefile",
-	"Dockerfile",
 ]
 
-/** Read at most this many config files; the shallowest first, where the repository-wide ones sit. */
-export const MAX_CONFIG_READS = 60
+/**
+ * Broad files that only sometimes carry a signal (git dependencies, GOPRIVATE). A monorepo has
+ * hundreds, so they are read in their own tier and never crowd out a registry config.
+ */
+const BROAD_CONFIGS: ReadonlyArray<string> = ["package.json", "go.env", ".envrc", "Makefile", "Dockerfile"]
+
+/** Registry and credential configs read, the shallowest first, where the repository-wide ones sit. */
+export const MAX_REGISTRY_CONFIG_READS = 60
+/** Broad files read after them, also shallowest first. */
+export const MAX_BROAD_CONFIG_READS = 40
 
 const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1)
 
@@ -101,17 +103,22 @@ const matches = (name: string, pattern: string | RegExp) =>
 
 const isWorkflow = (path: string) => /^\.github\/workflows\/[^/]+\.ya?ml$/u.test(path)
 
-/** Cargo's `config` files only count inside `.cargo/`; CI workflows can set GOPRIVATE too. */
-const isConfig = (path: string) => {
+/** Cargo's `config` files only count inside `.cargo/`. */
+const isRegistryConfig = (path: string) => {
 	const name = basename(path)
 	if (name === "config" || name === "config.toml") return path.endsWith(`.cargo/${name}`)
-	return isWorkflow(path) || CONFIGS.some((pattern) => matches(name, pattern))
+	return CONFIGS.some((pattern) => matches(name, pattern))
 }
+
+/** CI workflows can set GOPRIVATE too. */
+const isBroadConfig = (path: string) => isWorkflow(path) || BROAD_CONFIGS.includes(basename(path))
+
+const isConfig = (path: string) => isRegistryConfig(path) || isBroadConfig(path)
 
 /** The git pathspecs that list every manifest and config file this module reads. */
 export const DEPENDENCY_PATHSPECS: ReadonlyArray<string> = [
 	...new Set(
-		[...MANIFESTS.map(([, pattern]) => pattern), ...CONFIGS].map((pattern) =>
+		[...MANIFESTS.map(([, pattern]) => pattern), ...CONFIGS, ...BROAD_CONFIGS].map((pattern) =>
 			typeof pattern === "string" ? `:(glob)**/${pattern}` : ":(glob)**/requirements*.txt",
 		),
 	),
@@ -119,12 +126,17 @@ export const DEPENDENCY_PATHSPECS: ReadonlyArray<string> = [
 	":(glob).github/workflows/*.yaml",
 ]
 
-/** The config files worth reading, shallowest first, at most {@link MAX_CONFIG_READS}. */
-export const configFilesToRead = (paths: ReadonlyArray<string>): ReadonlyArray<string> =>
-	paths
-		.filter(isConfig)
-		.sort((a, b) => a.split("/").length - b.split("/").length || (a < b ? -1 : 1))
-		.slice(0, MAX_CONFIG_READS)
+const shallowestFirst = (a: string, b: string) =>
+	a.split("/").length - b.split("/").length || (a < b ? -1 : 1)
+
+/** The config files worth reading: registry configs first, then broad files, each tier capped. */
+export const configFilesToRead = (paths: ReadonlyArray<string>): ReadonlyArray<string> => [
+	...paths.filter(isRegistryConfig).sort(shallowestFirst).slice(0, MAX_REGISTRY_CONFIG_READS),
+	...paths
+		.filter((path) => !isRegistryConfig(path) && isBroadConfig(path))
+		.sort(shallowestFirst)
+		.slice(0, MAX_BROAD_CONFIG_READS),
+]
 
 /** Registries and hosts anyone can fetch from without credentials. */
 const PUBLIC_HOSTS = new Set([
@@ -211,8 +223,11 @@ const sourceText = (name: string, text: string): string => {
 	}
 }
 
-/** A package.json dependency fetched from git: over SSH, as `git@host:`, or a `github:` shorthand. */
-const GIT_DEPENDENCY = /"([^"]+)"\s*:\s*"((?:git\+ssh:\/\/|git@|github:)[^"]+)"/gu
+/**
+ * A package.json dependency fetched from git over SSH (`git+ssh://`, `git@host:`). A plain
+ * `github:owner/repo` shorthand is usually public, so it is not a signal.
+ */
+const GIT_DEPENDENCY = /"([^"]+)"\s*:\s*"((?:git\+ssh:\/\/|git@)[^"]+)"/gu
 
 /** The Go settings that mark modules as private, as a shell, Makefile or workflow sets them. */
 const GO_PRIVATE = /\b(GOPRIVATE|GONOSUMDB|GONOPROXY)\s*[=:]\s*["']?([^\s"']+)/gu
