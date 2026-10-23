@@ -8,7 +8,7 @@ import { SecurityAuditStore } from "@maple/backend/services/security-audit/Secur
 import { OrgId as OrgIdSchema } from "@maple/domain/http"
 import { UserId } from "@maple/domain/primitives"
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
-import { type AgentInvocation, type AuditAgentsApi, coverageId } from "@maple/security-audit"
+import { type AgentInvocation, type AuditAgentsApi, coverageId, type Finding } from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Option, Schema } from "effect"
 import { auditWithAgents } from "./workflow.run"
@@ -238,7 +238,7 @@ describe("auditWithAgents", () => {
 			assert.deepStrictEqual(
 				[commands, units.map((u) => u.unit.prior_status)],
 				[
-					["git rev-parse HEAD", `git diff --name-only ${SHA} HEAD`],
+					["git rev-parse HEAD", `git diff --name-only --no-renames ${SHA} HEAD`],
 					["prior_covered_changed_source"],
 				],
 			)
@@ -307,5 +307,92 @@ describe("auditWithAgents, prior runs", () => {
 				["prior_covered_changed_source"],
 			)
 		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+	)
+})
+
+const keysFinding: Finding = {
+	verdict: "confirmed",
+	fingerprint: "keys/roll-missing-org-scope",
+	title: "Any org member can roll another org's API key",
+	description: "rollKey looks the key up by id alone.",
+	root_cause: "rollKey omits the org_id predicate.",
+	intended_behavior: "A key is only rolled within the caller's org.",
+	trace: [
+		{
+			kind: "entrypoint",
+			file: "src/routes/keys.ts",
+			line: 12,
+			scope: "POST /keys",
+			description: "takes a key id",
+		},
+		{ kind: "sink", file: "src/routes/keys.ts", line: 40, scope: "rollKey", description: "no org check" },
+	],
+	evidence: [{ file: "src/routes/keys.ts", line: 40, description: "lookup by id only" }],
+	conditions: [{ kind: "authentication_level", description: "any org member" }],
+	execution: {
+		attacker_perspective: "member of org A",
+		payloads: ["POST /keys/<org B key>/roll"],
+		instructions: ["call the route"],
+		observed_result: "source trace reaches rollKey",
+	},
+	remediation: { strategy: "filter by org" },
+	severity: {
+		likelihood: { score: "medium", reason: "needs an id" },
+		impact: { score: "high", reason: "cross-tenant write" },
+		overall_severity: "high",
+	},
+	confidence: { score: "medium", reason: "source trace complete" },
+}
+
+describe("auditWithAgents, settling", () => {
+	it.effect("does nothing for a run its starter already marked failed", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			yield* store.finishRun(run.id, { status: "failed", error: "workflow create failed" })
+			const calls: Array<string> = []
+			const commands: Array<string> = []
+			yield* auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents(calls))).pipe(
+				Effect.provideService(RepoSandboxService, sandbox(commands)),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				[calls, commands, Option.map(row, (r) => r.status)],
+				[[], [], Option.some("failed")],
+			)
+		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+	)
+
+	it.effect(
+		"marks an open finding fixed when a complete run no longer reports it and its files changed",
+		() =>
+			Effect.gen(function* () {
+				const { store, target } = yield* setup
+				const prior = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
+				yield* auditWithAgents(payloadFor(prior.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([])),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+				)
+				yield* store.saveFindings(prior.id, [keysFinding])
+				const next = yield* store.startRun({
+					targetId: target.id,
+					kind: "revalidation",
+					sourceRef: "main",
+				})
+				yield* auditWithAgents(payloadFor(next.id, prior.id), () =>
+					Effect.succeed(scriptedAgents([])),
+				).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([])),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+				)
+				const findings = yield* store.listFindings(target.id)
+				assert.deepStrictEqual(
+					findings.map((f) => [f.fingerprint, f.status]),
+					[["keys/roll-missing-org-scope", "fixed"]],
+				)
+			}).pipe(
+				Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer))),
+			),
 	)
 })

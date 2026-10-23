@@ -249,7 +249,10 @@ const main = async () => {
 	mkdirSync(out, { recursive: true })
 	const prior = args.prior === undefined ? null : loadPrior(resolve(args.prior))
 	// A failed diff (a prior commit this clone lacks) counts as everything changed.
-	const diff = prior === null ? undefined : git(args.repoDir, ["diff", "--name-only", prior.sourceRef, sha])
+	const diff =
+		prior === null
+			? undefined
+			: git(args.repoDir, ["diff", "--name-only", "--no-renames", prior.sourceRef, sha])
 	const changedSincePrior = changedMatcher(
 		diff === undefined
 			? []
