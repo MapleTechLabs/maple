@@ -89,13 +89,20 @@ const scriptedAgents = (calls: Array<string>): AuditAgentsApi => ({
 		}),
 })
 
-const sandbox = (commands: Array<string>): RepoSandboxServiceApi => {
+/** `<commits> <files> <bytes> <lfs files>`, as the size probe prints it: a small repository. */
+const SMALL_REPO = "120 40 81920 0\n"
+
+const sandbox = (commands: Array<string>, size: string = SMALL_REPO): RepoSandboxServiceApi => {
 	const ok = (stdout: string) =>
 		Effect.succeed({ exitCode: 0, stdout, stderr: "", wallTimeMs: 1, truncated: false })
 	return {
 		prepare: () => Effect.void,
 		exec: (_org, _target, options) =>
 			Effect.suspend(() => {
+				if (options.command === "bash") {
+					commands.push("measure size")
+					return ok(size)
+				}
 				commands.push([options.command, ...options.args].join(" "))
 				return ok(options.args[0] === "rev-parse" ? `${SHA}\n` : "src/routes/keys.ts\n")
 			}),
@@ -177,7 +184,7 @@ describe("auditWithAgents", () => {
 				// The row records the pinned commit, which the next run diffs against.
 				["complete", Option.some(["complete", SHA]), ["covered"]],
 			)
-			assert.deepStrictEqual(commands, ["git rev-parse HEAD"])
+			assert.deepStrictEqual(commands, ["git rev-parse HEAD", "measure size"])
 		}).pipe(Effect.provide(testLayer())),
 	)
 
@@ -208,6 +215,64 @@ describe("auditWithAgents", () => {
 					]),
 				},
 				{ status: "incomplete", agents: 6, orgSpent: 9, row: Option.some(["incomplete", 6, true]) },
+			)
+		}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect(
+		"refuses a repository over a size limit before any agent, marking the run failed with why",
+		() =>
+			Effect.gen(function* () {
+				const { store, target } = yield* setup
+				const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+				const calls: Array<string> = []
+				// 250,000 tracked files, 3 of them in Git LFS.
+				const exit = yield* Effect.exit(
+					auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents(calls))).pipe(
+						Effect.provideService(RepoSandboxService, sandbox([], "5000 250000 524288000 3\n")),
+						Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+					),
+				)
+				const row = yield* store.getRun(run.id)
+				assert.deepStrictEqual(
+					{
+						exit: exit._tag,
+						agents: calls.length,
+						orgSpent: yield* store.orgInvocationsSpent("2026-10"),
+						row: Option.map(row, (r) => [r.status, r.error, r.invocationsSpent]),
+					},
+					{
+						exit: "Failure",
+						agents: 0,
+						orgSpent: 0,
+						row: Option.some([
+							"failed",
+							"repository_refused: the repository was not audited because it tracks 250000 files, over the 100000 limit; it stores 3 files in Git LFS, whose content the checkout does not hold (limit 0).",
+							0,
+						]),
+					},
+				)
+			}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect("refuses a repository whose size cannot be measured", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const calls: Array<string> = []
+			yield* Effect.exit(
+				auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents(calls))).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([], "")),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+				),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				[
+					calls.length,
+					Option.map(row, (r) => [r.status, r.error?.includes("could not be measured")]),
+				],
+				[0, Option.some(["failed", true])],
 			)
 		}).pipe(Effect.provide(testLayer())),
 	)
@@ -284,7 +349,7 @@ describe("auditWithAgents", () => {
 			assert.deepStrictEqual(
 				[commands, units.map((u) => u.unit.prior_status)],
 				[
-					["git rev-parse HEAD", `git diff --name-only --no-renames ${SHA} HEAD`],
+					["git rev-parse HEAD", "measure size", `git diff --name-only --no-renames ${SHA} HEAD`],
 					["prior_covered_changed_source"],
 				],
 			)
@@ -314,7 +379,7 @@ describe("auditWithAgents, prior runs", () => {
 			const units = yield* store.listUnits(run.id)
 			assert.deepStrictEqual(
 				[commands, units.map((u) => u.unit.prior_status)],
-				[["git rev-parse HEAD"], ["none"]],
+				[["git rev-parse HEAD", "measure size"], ["none"]],
 			)
 		}).pipe(Effect.provide(testLayer())),
 	)
@@ -334,18 +399,26 @@ describe("auditWithAgents, prior runs", () => {
 			})
 			const unreachable: RepoSandboxServiceApi = {
 				...sandbox([]),
-				exec: (_org, _target, options) =>
-					Effect.succeed(
-						options.args[0] === "rev-parse"
-							? { exitCode: 0, stdout: `${SHA}\n`, stderr: "", wallTimeMs: 1, truncated: false }
-							: {
-									exitCode: 128,
-									stdout: "",
-									stderr: "fatal: bad object",
-									wallTimeMs: 1,
-									truncated: false,
-								},
-					),
+				exec: (org, target, options) =>
+					options.command === "bash"
+						? sandbox([]).exec(org, target, options)
+						: Effect.succeed(
+								options.args[0] === "rev-parse"
+									? {
+											exitCode: 0,
+											stdout: `${SHA}\n`,
+											stderr: "",
+											wallTimeMs: 1,
+											truncated: false,
+										}
+									: {
+											exitCode: 128,
+											stdout: "",
+											stderr: "fatal: bad object",
+											wallTimeMs: 1,
+											truncated: false,
+										},
+							),
 			}
 			yield* auditWithAgents(payloadFor(next.id, prior.id), () =>
 				Effect.succeed(scriptedAgents([])),
@@ -421,18 +494,26 @@ describe("auditWithAgents, settling", () => {
 			})
 			const unreadable: RepoSandboxServiceApi = {
 				...sandbox([]),
-				exec: (_org, _target, options) =>
-					Effect.succeed(
-						options.args[0] === "rev-parse"
-							? { exitCode: 0, stdout: `${SHA}\n`, stderr: "", wallTimeMs: 1, truncated: false }
-							: {
-									exitCode: 0,
-									stdout: "src/a.ts\n",
-									stderr: "",
-									wallTimeMs: 1,
-									truncated: true,
-								},
-					),
+				exec: (org, target, options) =>
+					options.command === "bash"
+						? sandbox([]).exec(org, target, options)
+						: Effect.succeed(
+								options.args[0] === "rev-parse"
+									? {
+											exitCode: 0,
+											stdout: `${SHA}\n`,
+											stderr: "",
+											wallTimeMs: 1,
+											truncated: false,
+										}
+									: {
+											exitCode: 0,
+											stdout: "src/a.ts\n",
+											stderr: "",
+											wallTimeMs: 1,
+											truncated: true,
+										},
+							),
 			}
 			yield* auditWithAgents(payloadFor(next.id, prior.id), () =>
 				Effect.succeed(scriptedAgents([])),

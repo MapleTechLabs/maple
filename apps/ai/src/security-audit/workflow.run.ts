@@ -11,6 +11,7 @@ import { ORG_BUDGET_EXHAUSTED, type SecurityAuditWorkflowPayload } from "@maple/
 import { durableStep } from "@maple/backend/platform/durable-step"
 import { trackSecurityAuditInvocations } from "@maple/backend/services/billing/autumn-tracker"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
+import { securityAuditLimits } from "@maple/backend/services/security-audit/limits"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import {
 	type AgentAnswer,
@@ -32,6 +33,13 @@ import { Cause, type Context, Effect, Layer, Option, Predicate, Schedule, Schema
 import { HttpClient } from "effect/http"
 import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "../platform/Llm"
 import { makeAuditAgents } from "./agents"
+import {
+	AuditRepositoryRefusedError,
+	parseRepoSize,
+	REPO_SIZE_COMMAND,
+	refusalReason,
+	repoLimitViolations,
+} from "./repo-size"
 import { sandboxSource } from "./sandbox-source"
 import { AUDIT_TOOL_GUIDANCE, type SourceReaderApi } from "./source"
 
@@ -50,6 +58,9 @@ const AGENT_STEP = {
 } as const
 
 const MAX_CHANGED_PATHS = 20_000
+
+/** Counting a very large tree takes a while; the sandbox's own ceiling is 120 seconds. */
+const REPO_SIZE_TIMEOUT_SECONDS = 120
 
 /** Store writes retried on transient database errors; every write is a replacement or idempotent. */
 const retried = (store: AuditStoreApi): AuditStoreApi => {
@@ -184,6 +195,39 @@ export const auditWithAgents = <E, R>(
 			STEP_RETRY,
 		)
 		const pinned = { repository: payload.repository, ref: sha }
+
+		// Measured before any agent: a repository over a limit is refused whole, never partly audited.
+		const measured = yield* durableStep(
+			"repo-size",
+			sandbox
+				.exec(orgId, pinned, { ...REPO_SIZE_COMMAND, timeoutSeconds: REPO_SIZE_TIMEOUT_SECONDS })
+				.pipe(
+					Effect.map((result) =>
+						Option.match(
+							result.exitCode === 0 && !result.truncated
+								? parseRepoSize(result.stdout)
+								: Option.none(),
+							{
+								onNone: () => ({
+									unreadable: `exit ${result.exitCode}: ${result.stderr.trim().slice(0, 300)}`,
+								}),
+								onSome: (size) => ({ size }),
+							},
+						),
+					),
+				),
+			STEP_RETRY,
+		)
+		const violations =
+			"size" in measured
+				? repoLimitViolations(measured.size, yield* securityAuditLimits)
+				: [`its size could not be measured (${measured.unreadable})`]
+		if (violations.length > 0) {
+			const reason = refusalReason(violations)
+			yield* store.recordEvent(payload.runId, { _tag: "Note", message: reason })
+			yield* store.finishRun(payload.runId, { status: "failed", error: reason })
+			return yield* new AuditRepositoryRefusedError({ message: reason, violations })
+		}
 
 		// Prior records are read, not stepped: a finished run never changes, so a replay reads the same.
 		// Only a finished run of the same repository counts; anything else would make replays disagree.
