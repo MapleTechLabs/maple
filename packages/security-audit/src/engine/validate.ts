@@ -5,7 +5,7 @@
  * material replacement only applies after yet another fresh verifier agrees.
  */
 import { Effect, Ref } from "effect"
-import { candidateVerifierPrompt, recordVerifierPrompt } from "../prompts"
+import { candidateVerifierPrompt, companionFileOf, recordVerifierPrompt } from "../prompts"
 import { type Candidate, CandidateVerdict, RecordVerdict } from "../results"
 import type { Finding } from "../schema"
 import { findingsErrors } from "../validators"
@@ -35,7 +35,7 @@ const linkedUnits = (ledger: ReadonlyArray<LedgerUnit>, fingerprint: string) =>
 const validationBlocks = (units: ReadonlyArray<LedgerUnit>): ReadonlyArray<string> => [
 	...new Set(
 		units.flatMap((unit) =>
-			unit.selected_companion_blocks.map((ref) => `${ref.slice(0, ref.indexOf("#"))}#Validation rules`),
+			unit.selected_companion_blocks.map((ref) => `${companionFileOf(ref)}#Validation rules`),
 		),
 	),
 ]
@@ -79,6 +79,24 @@ const recordDecision = (
 	verifierId: string,
 ): EngineState => {
 	const ledger = s.ledger.map((unit): LedgerUnit => {
+		if (unit.coverage_id === item.carriedUnit && unit.status === "candidate" && unit.agent_id !== null) {
+			// A unit carrying several records: each later decision adds its own check and fingerprint.
+			const check = {
+				agent_id: verifierId,
+				reviewed_paths: [...files(record)].sort(),
+				invariant: record.title,
+				method: "source" as const,
+				result: `re-verified the carried record against current source: ${record.verdict}`,
+				artifact: null,
+			}
+			return {
+				...unit,
+				reviewed_paths: [...new Set([...unit.reviewed_paths, ...check.reviewed_paths])].sort(),
+				local_checks: [...unit.local_checks, check],
+				result_fingerprints: [...new Set([...unit.result_fingerprints, record.fingerprint])],
+				decisions: { ...unit.decisions, [record.fingerprint]: record.verdict },
+			}
+		}
 		if (unit.coverage_id === item.carriedUnit) {
 			return {
 				...unit,
