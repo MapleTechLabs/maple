@@ -355,7 +355,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 })
 
 export class ErrorActorsService extends Context.Service<ErrorActorsService, ErrorActorsServiceApi>()(
-	"@maple/api/services/errors/ErrorActorsService",
+	"@maple/backend/services/errors/ErrorActorsService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make)

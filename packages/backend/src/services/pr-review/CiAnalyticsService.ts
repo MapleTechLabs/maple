@@ -158,7 +158,7 @@ const emptyTotals = new CodeReviewCiTotals({
 })
 
 export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAnalyticsServiceApi>()(
-	"@maple/api/services/pr-review/CiAnalyticsService",
+	"@maple/backend/services/pr-review/CiAnalyticsService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

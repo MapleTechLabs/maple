@@ -340,7 +340,7 @@ const make: Effect.Effect<
 export class NotificationDispatcher extends Context.Service<
 	NotificationDispatcher,
 	NotificationDispatcherApi
->()("@maple/api/services/NotificationDispatcher", { make }) {
+>()("@maple/backend/services/NotificationDispatcher", { make }) {
 	// The chat poster is self-provided (it needs only what every caller already
 	// supplies) so wiring stays unchanged in app.ts and the alerting worker.
 	static readonly layer = Layer.effect(this, this.make).pipe(

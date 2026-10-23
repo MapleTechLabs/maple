@@ -233,7 +233,7 @@ const make = Effect.gen(function* () {
 })
 
 export class SessionReplayReadService extends Context.Service<SessionReplayReadService>()(
-	"@maple/api/services/SessionReplayReadService",
+	"@maple/backend/services/SessionReplayReadService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(

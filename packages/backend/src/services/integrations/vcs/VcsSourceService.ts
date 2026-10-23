@@ -150,7 +150,7 @@ const asUpstream = <A, E extends { readonly message: string; readonly status?: n
 	)
 
 export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourceServiceApi>()(
-	"@maple/api/services/vcs/VcsSourceService",
+	"@maple/backend/services/vcs/VcsSourceService",
 	{
 		make: Effect.gen(function* () {
 			const repoStore = yield* VcsRepository

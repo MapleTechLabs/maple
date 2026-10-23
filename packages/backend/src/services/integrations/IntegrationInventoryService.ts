@@ -236,6 +236,6 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 export class IntegrationInventoryService extends Context.Service<
 	IntegrationInventoryService,
 	IntegrationInventoryServiceApi
->()("@maple/api/services/IntegrationInventoryService", { make }) {
+>()("@maple/backend/services/IntegrationInventoryService", { make }) {
 	static readonly layer = Layer.effect(this, this.make)
 }

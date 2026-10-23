@@ -90,7 +90,7 @@ export interface QueryEngineServiceApi {
 	) => Effect.Effect<A, E | QueryEngineTimeoutError>
 }
 export class QueryEngineService extends Context.Service<QueryEngineService, QueryEngineServiceApi>()(
-	"@maple/api/services/QueryEngineService",
+	"@maple/backend/services/QueryEngineService",
 	{
 		make: Effect.gen(function* () {
 			const warehouse = yield* WarehouseQueryService

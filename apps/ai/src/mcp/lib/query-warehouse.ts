@@ -10,7 +10,7 @@ import { WarehouseExecutor } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 export class CurrentMcpTenant extends Context.Service<CurrentMcpTenant, TenantContext>()(
-	"@maple/api/mcp/CurrentMcpTenant",
+	"@maple/ai/mcp/CurrentMcpTenant",
 ) {}
 
 /**
@@ -23,7 +23,7 @@ export class CurrentMcpTenant extends Context.Service<CurrentMcpTenant, TenantCo
  * and the public MCP adapter passes the value to the closed executor explicitly.
  */
 export class CurrentMcpRequestTenant extends Context.Reference<TenantContext | undefined>(
-	"@maple/api/mcp/CurrentMcpRequestTenant",
+	"@maple/ai/mcp/CurrentMcpRequestTenant",
 	{ defaultValue: () => undefined },
 ) {}
 
