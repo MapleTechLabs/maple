@@ -3,7 +3,6 @@ import { SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { readIsAdmin } from "../../alerts/shared/commands"
-import { writeClipboard } from "../../kit/clipboard"
 import { listFindings, listTargets, updateFindingStatus } from "../kit/api"
 import { Message } from "./model"
 
@@ -44,11 +43,4 @@ export const UpdateFindingStatus = Command.define("SecurityApiUpdateFindingStatu
 		Effect.map(updateFindingStatus(targetId, fingerprint, status, reason), (result) =>
 			Message.CompletedTriage({ result }),
 		),
-})
-
-export const CopyFingerprint = Command.define("CopySecurityFingerprint", {
-	args: { fingerprint: Schema.String },
-	messages: [Message.CompletedCopy],
-	execute: ({ fingerprint }) =>
-		Effect.map(writeClipboard(fingerprint), (isOk) => Message.CompletedCopy({ isOk })),
 })

@@ -20,6 +20,7 @@ import type { Resources } from "../../platform/resources"
 import { AppRoute } from "../../route"
 import * as Field from "../../ui/field"
 import * as Select from "../../ui/select"
+import * as ToggleGroup from "../../ui/toggle-group"
 import {
 	eventsOf,
 	findingsOf,
@@ -248,7 +249,13 @@ const finding = (
 					result: Result.succeed(targetsOf(nowMs)),
 				}),
 			...(options.triage === true
-				? [() => F.PickedTriageStatus({ status: "dismissed" }), () => F.SubmittedTriage()]
+				? [
+						() =>
+							F.GotTriageMessage({
+								message: ToggleGroup.Message.ClickedItem({ value: "dismissed", index: 1 }),
+							}),
+						() => F.SubmittedTriage(),
+					]
 				: []),
 		],
 	)

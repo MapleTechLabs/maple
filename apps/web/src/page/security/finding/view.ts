@@ -3,7 +3,6 @@ import type {
 	SecurityAuditFindingTriageStatus,
 	SecurityAuditTarget,
 } from "@maple/domain/http"
-import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { SecurityAuditRunId } from "@maple/domain/security-audit"
 import { AsyncData, Submodel } from "foldkit"
@@ -11,16 +10,18 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { BreadcrumbEntry } from "../../../shell"
 import { button } from "../../../ui/button"
+import * as CopyButton from "../../../ui/copy-button"
+import { copyButton } from "../../../ui/copy-button"
 import { detailRailGroup, detailRailRow } from "../../../ui/detail-rail"
 import { badge } from "../../../ui/display"
 import * as Field from "../../../ui/field"
 import { errorState } from "../../../ui/error-state"
-import { icon } from "../../../ui/icon"
-import { segmentedSelect } from "../../../ui/segmented-select"
+import * as ToggleGroup from "../../../ui/toggle-group"
 import { textarea } from "../../../ui/textarea"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
+import { relativeTime } from "../../kit/relative-time"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { SEVERITY_TONE } from "../../errors/kit/severity"
 import {
@@ -78,7 +79,13 @@ const headerBadges = (h: H, finding: SecurityAuditFinding): ReadonlyArray<Html> 
 	]
 }
 
-const title = (h: H, model: Model, finding: SecurityAuditFinding, target: SecurityAuditTarget | null): Html =>
+const title = (
+	h: H,
+	model: Model,
+	finding: SecurityAuditFinding,
+	target: SecurityAuditTarget | null,
+	timeZone: string,
+): Html =>
 	detailTitle(h, {
 		kind: [
 			h.span(
@@ -108,7 +115,15 @@ const title = (h: H, model: Model, finding: SecurityAuditFinding, target: Securi
 					h.span(
 						[],
 						[
-							`last seen ${formatRelativeShortFrom(finding.updatedAt, model.nowMs)} ago at `,
+							"last seen ",
+							relativeTime(h, {
+								value: finding.updatedAt,
+								nowMs: model.nowMs,
+								timeZone,
+								variant: "short",
+								tooltip: "title",
+							}),
+							" ago at ",
 							h.span(
 								[h.Class("font-mono")],
 								[`${target?.branch ?? "branch"} @ ${refLabel(finding.lastSeenRef)}`],
@@ -142,13 +157,14 @@ const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html =>
 		h.form(
 			[h.Class("flex flex-col gap-3"), h.OnSubmit(Message.SubmittedTriage())],
 			[
-				segmentedSelect(h, {
-					options: TRIAGE_OPTIONS,
-					value: picked,
-					onChange: (status) => Message.PickedTriageStatus({ status }),
+				ToggleGroup.view(h, {
+					model: model.triage,
+					toParentMessage: (message) => Message.GotTriageMessage({ message }),
+					items: TRIAGE_OPTIONS,
+					variant: "outline",
 					size: "sm",
-					ariaLabel: "Status",
 					className: "w-full",
+					itemClassName: "flex-1",
 				}),
 				h.p(
 					[h.Class("text-xs text-muted-foreground")],
@@ -206,6 +222,7 @@ const railValue = (h: H, text: string): Html => h.span([h.Class("truncate text-s
 
 const detailsPanel = (
 	h: H,
+	model: Model,
 	finding: SecurityAuditFinding,
 	target: SecurityAuditTarget | null,
 	timeZone: string,
@@ -254,15 +271,14 @@ const detailsPanel = (
 		]),
 		detailRailRow(h, { label: "Fingerprint", title: finding.fingerprint }, [
 			h.span([h.Class("truncate font-mono text-xs")], [finding.fingerprint]),
-			h.button(
-				[
-					h.Type("button"),
-					h.AriaLabel("Copy fingerprint"),
-					h.Class("ml-1 shrink-0 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"),
-					h.OnClick(Message.ClickedCopyFingerprint()),
-				],
-				[icon(h, "CopyIcon", { size: 12 })],
-			),
+			copyButton(h, {
+				label: "fingerprint",
+				status: model.copy.status,
+				onClick: Message.GotCopyMessage({
+					message: CopyButton.Message.ClickedCopy({ text: finding.fingerprint }),
+				}),
+				className: "ml-1 shrink-0",
+			}),
 		]),
 	]
 	return h.div(
@@ -320,10 +336,10 @@ const loaded = (h: H, model: Model, finding: SecurityAuditFinding, timeZone: str
 	return dashboardPage(
 		h,
 		{
-			titleContent: title(h, model, finding, target),
+			titleContent: title(h, model, finding, target, timeZone),
 			rightPanel: h.div(
 				[h.Class("flex flex-col")],
-				[triagePanel(h, model, finding), detailsPanel(h, finding, target, timeZone)],
+				[triagePanel(h, model, finding), detailsPanel(h, model, finding, target, timeZone)],
 			),
 			scrollClassName: "pb-8",
 		},
@@ -347,7 +363,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							title: "Failed to load the finding",
 							onRetry: Message.ClickedRetry(),
 						})
-					: gateState(h, gate),
+					: stack(h, [gateState(h, gate)]),
 			])
 		},
 		onData: () => {

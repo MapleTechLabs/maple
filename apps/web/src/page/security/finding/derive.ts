@@ -26,9 +26,16 @@ export const currentTriageOf = (finding: SecurityAuditFinding): SecurityAuditFin
 export const pickedTriageOf = (
 	model: Model,
 	finding: SecurityAuditFinding,
-): SecurityAuditFindingTriageStatus => model.triageStatus ?? currentTriageOf(finding)
+): SecurityAuditFindingTriageStatus =>
+	TRIAGE_STATUSES.find((status) => status === model.triage.values[0]) ?? currentTriageOf(finding)
 
-export const REASON_MAX = 2000
+export const TRIAGE_STATUSES: ReadonlyArray<SecurityAuditFindingTriageStatus> = [
+	"open",
+	"dismissed",
+	"accepted_risk",
+]
+
+const REASON_MAX = 2000
 
 export const reasonErrorOf = (reason: string): string | null =>
 	reason.trim() === ""

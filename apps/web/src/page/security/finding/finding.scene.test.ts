@@ -2,12 +2,23 @@ import { OrgId } from "@maple/domain"
 import { SecurityAuditForbiddenError } from "@maple/domain/http"
 import { SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Result, Schema } from "effect"
-import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	Command,
+	expect as expectView,
+	given,
+	keydown,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import { findingsOf, TARGET_IDS, targetsOf } from "../../../lab/security-fixture"
 import { AppRoute } from "../../../route"
 import * as Field from "../../../ui/field"
+import * as ToggleGroup from "../../../ui/toggle-group"
 import type { PageContext } from "../../contract"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
@@ -56,7 +67,12 @@ describe("security finding", () => {
 	})
 
 	test("dismissing needs a reason before anything is sent", () => {
-		const picked = pageUpdate(loaded(), Message.PickedTriageStatus({ status: "dismissed" })).model
+		const picked = pageUpdate(
+			loaded(),
+			Message.GotTriageMessage({
+				message: ToggleGroup.Message.ClickedItem({ value: "dismissed", index: 1 }),
+			}),
+		).model
 		const empty = pageUpdate(picked, Message.SubmittedTriage())
 		expect(names(empty.commands)).toEqual([])
 		scene(
@@ -74,6 +90,28 @@ describe("security finding", () => {
 		).model
 		const sent = pageUpdate(reasoned, Message.SubmittedTriage())
 		expect(names(sent.commands)).toEqual(["SecurityApiUpdateFindingStatus"])
+	})
+
+	test("every triage option is reachable from the keyboard and selectable", () => {
+		const nth = (index: number) =>
+			ToggleGroup.FocusItem({
+				selector: `[data-slot="toggle-group"][aria-label="Status"] > :nth-child(${index})`,
+			})
+		const focused = () => Command.resolve(ToggleGroup.FocusItem, ToggleGroup.Message.CompletedFocusItem())
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded()),
+			expectView(role("button", { name: "Open" })).toHaveAttr("aria-pressed", "true"),
+			keydown(role("button", { name: "Open" }), "ArrowRight"),
+			Command.expectHas(nth(2)),
+			focused(),
+			keydown(role("button", { name: "Dismiss" }), "ArrowRight"),
+			Command.expectHas(nth(3)),
+			focused(),
+			click(role("button", { name: "Accept risk" })),
+			expectView(role("button", { name: "Accept risk" })).toHaveAttr("aria-pressed", "true"),
+			expectView(role("button", { name: "Open" })).toHaveAttr("aria-pressed", "false"),
+		)
 	})
 
 	test("the status the finding already has is not written again", () => {

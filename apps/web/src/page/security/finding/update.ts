@@ -1,14 +1,16 @@
-import { Option, Result } from "effect"
+import { Result } from "effect"
+import { Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import type { AppRoute } from "../../../route"
+import * as CopyButton from "../../../ui/copy-button"
 import * as Field from "../../../ui/field"
+import * as ToggleGroup from "../../../ui/toggle-group"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { copyToast } from "../../kit/clipboard"
+import { chainAll, slotStep } from "../../kit/keyed-step"
 import { FINDING_STATUS_LABEL } from "../kit/format"
 import {
-	CopyFingerprint,
 	FetchFindingTargets,
 	FetchTargetFindings,
 	ReadFindingClock,
@@ -26,20 +28,26 @@ const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
 const readFindings = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
-	Option.match(
-		Keyed.requestFor(
-			model.findings,
-			requestKey(context.orgId, "securityAudit.listFindings", { targetId: model.targetId }),
-			mode,
-		),
-		{
-			onNone: () => ({ model }),
-			onSome: (findings) => ({
-				model: { ...model, findings },
-				commands: [FetchTargetFindings({ key: findings.key, targetId: model.targetId })],
-			}),
-		},
+	slotStep(
+		model,
+		model.findings,
+		(findings) => ({ findings }),
+		requestKey(context.orgId, "securityAudit.listFindings", { targetId: model.targetId }),
+		mode,
+		(key) => FetchTargetFindings({ key, targetId: model.targetId }),
 	)
+
+const readTargets = (model: Model, context: PageContext): Return =>
+	slotStep(
+		model,
+		model.targets,
+		(targets) => ({ targets }),
+		requestKey(context.orgId, "securityAudit.listTargets", {}),
+		"Load",
+		(key) => FetchFindingTargets({ key }),
+	)
+
+const initTriage = (): ToggleGroup.Model => ToggleGroup.init({ label: "Status", values: [] })
 
 export const init = (route: SecurityFindingRoute, context: PageContext): Return => {
 	const model: Model = {
@@ -49,29 +57,46 @@ export const init = (route: SecurityFindingRoute, context: PageContext): Return 
 		isAdmin: !isClerkAuthEnabled,
 		findings: Keyed.idle(),
 		targets: Keyed.idle(),
-		triageStatus: null,
+		triage: initTriage(),
+		copy: CopyButton.init(),
 		reason: Field.init(),
 		isTriageSubmitted: false,
 		isSaving: false,
 	}
-	const findingsKey = requestKey(context.orgId, "securityAudit.listFindings", { targetId: route.targetId })
-	const targetsKey = requestKey(context.orgId, "securityAudit.listTargets", {})
+	const loaded = chainAll(model, [
+		(next) => readFindings(next, context, "Load"),
+		(next) => readTargets(next, context),
+	])
 	return {
-		model: {
-			...model,
-			findings: Option.getOrElse(
-				Keyed.request(model.findings, findingsKey, "Load"),
-				() => model.findings,
-			),
-			targets: Option.getOrElse(Keyed.request(model.targets, targetsKey, "Load"), () => model.targets),
-		},
+		...loaded,
 		commands: [
 			ReadFindingClock(),
 			...(isClerkAuthEnabled ? [ReadFindingIsAdmin()] : []),
-			FetchTargetFindings({ key: findingsKey, targetId: route.targetId }),
-			FetchFindingTargets({ key: targetsKey }),
+			...(loaded.commands ?? []),
 		],
 	}
+}
+
+/** The control shows the finding's status until someone picks another; a second click keeps it. */
+const triageStep = (model: Model, message: ToggleGroup.Message): Return => {
+	const step = ToggleGroup.update(model.triage, message)
+	const finding = findingOf(model)
+	const current = finding === null ? "open" : pickedTriageOf(model, finding)
+	const values = step.model.values.length === 0 ? [current] : step.model.values
+	return {
+		model: { ...model, triage: { ...step.model, values }, isTriageSubmitted: false },
+		commands: Command.mapMessages(step.commands ?? [], (inner) =>
+			Message.GotTriageMessage({ message: inner }),
+		),
+	}
+}
+
+/** Once the finding is in, the control starts on its status. */
+const withTriage = (model: Model): Model => {
+	const finding = findingOf(model)
+	return finding === null || model.triage.values.length > 0
+		? model
+		: { ...model, triage: { ...model.triage, values: [currentTriageOf(finding)] } }
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
@@ -79,15 +104,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		CompletedReadIsAdmin: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
 		CompletedFetchFindings: ({ key, result }) => ({
-			model: { ...model, findings: Keyed.accept(model.findings, key, result) },
+			model: withTriage({ ...model, findings: Keyed.accept(model.findings, key, result) }),
 		}),
 		CompletedFetchTargets: ({ key, result }) => ({
 			model: { ...model, targets: Keyed.accept(model.targets, key, result) },
 		}),
 		ClickedRetry: () => readFindings(model, context, "Refresh"),
-		PickedTriageStatus: ({ status }) => ({
-			model: { ...model, triageStatus: status, isTriageSubmitted: false },
-		}),
+		GotTriageMessage: ({ message: inner }) => triageStep(model, inner),
 		GotReasonMessage: ({ message: inner }) => ({
 			model: { ...model, reason: Field.update(model.reason, inner).model },
 		}),
@@ -118,7 +141,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							...model,
 							isSaving: false,
 							isTriageSubmitted: false,
-							triageStatus: null,
+							triage: initTriage(),
 							reason: Field.init(),
 						},
 						context,
@@ -137,9 +160,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					outMessage: toast("error", failure.title, failure.message),
 				}),
 			}),
-		ClickedCopyFingerprint: () => ({
-			model,
-			commands: [CopyFingerprint({ fingerprint: model.fingerprint })],
-		}),
-		CompletedCopy: ({ isOk }) => ({ model, outMessage: copyToast("Fingerprint", isOk) }),
+		GotCopyMessage: ({ message: inner }) => {
+			const step = CopyButton.update(model.copy, inner)
+			return {
+				model: { ...model, copy: step.model },
+				commands: Command.mapMessages(step.commands ?? [], (next) =>
+					Message.GotCopyMessage({ message: next }),
+				),
+			}
+		},
 	})

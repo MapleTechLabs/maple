@@ -1,7 +1,6 @@
 import {
 	SecurityAuditFindingsResponse,
 	SecurityAuditFindingTriageResult,
-	SecurityAuditFindingTriageStatus,
 	SecurityAuditTargetsResponse,
 } from "@maple/domain/http"
 import { SecurityAuditTargetId } from "@maple/domain/security-audit"
@@ -9,7 +8,9 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
+import * as CopyButton from "../../../ui/copy-button"
 import * as Field from "../../../ui/field"
+import * as ToggleGroup from "../../../ui/toggle-group"
 
 // `/security/findings/$targetId/$fingerprint`: one finding with its triage.
 
@@ -21,8 +22,9 @@ export const Model = Schema.Struct({
 	/** The target's findings; the page picks its own by fingerprint. */
 	findings: KeyedSchema(SecurityAuditFindingsResponse, LoadFailure),
 	targets: KeyedSchema(SecurityAuditTargetsResponse, LoadFailure),
-	/** The status the triage control shows; the finding's own until someone picks another. */
-	triageStatus: Schema.NullOr(SecurityAuditFindingTriageStatus),
+	/** The triage control: the finding's own status until someone picks another. */
+	triage: ToggleGroup.Model,
+	copy: CopyButton.Model,
 	reason: Field.Model,
 	isTriageSubmitted: Schema.Boolean,
 	isSaving: Schema.Boolean,
@@ -40,11 +42,10 @@ export const Message = defineMessageUnion({
 	CompletedFetchFindings: result(SecurityAuditFindingsResponse),
 	CompletedFetchTargets: result(SecurityAuditTargetsResponse),
 	ClickedRetry: {},
-	PickedTriageStatus: { status: SecurityAuditFindingTriageStatus },
+	GotTriageMessage: { message: ToggleGroup.Message },
 	GotReasonMessage: { message: Field.Message },
 	SubmittedTriage: {},
 	CompletedTriage: { result: Schema.Result(SecurityAuditFindingTriageResult, LoadFailure) },
-	ClickedCopyFingerprint: {},
-	CompletedCopy: { isOk: Schema.Boolean },
+	GotCopyMessage: { message: CopyButton.Message },
 })
 export type Message = typeof Message.Type
