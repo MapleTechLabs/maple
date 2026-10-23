@@ -47,6 +47,10 @@ export const Model = Schema.Struct({
 	 * from its end until they meet this, the newest event held before it.
 	 */
 	gapUntil: Schema.NullOr(SecurityAuditEvent),
+	/** Gaps found while an older page was in flight, each read once that one settles. */
+	queuedGaps: Schema.Array(Schema.Struct({ cursor: SecurityAuditEvent, until: SecurityAuditEvent })),
+	/** The event the older page in flight was asked to start before. */
+	olderCursor: Schema.NullOr(SecurityAuditEvent),
 	/** The last older page came back short: nothing is left before it. */
 	hasMoreOlder: Schema.Boolean,
 	units: KeyedSchema(SecurityAuditUnitsResponse, LoadFailure),

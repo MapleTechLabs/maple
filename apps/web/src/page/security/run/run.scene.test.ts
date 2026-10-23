@@ -54,6 +54,21 @@ const loaded = (runId: string): Model => {
 	).model
 }
 
+const note = (index: number): SecurityAuditEvent => ({
+	id: `n${String(index).padStart(5, "0")}`,
+	at: NOW + index * 1000,
+	kind: "Note",
+	role: null,
+	agentId: null,
+	outcome: null,
+	message: `event ${index}`,
+	phase: null,
+	detail: null,
+	costUsd: null,
+	inputTokens: null,
+	outputTokens: null,
+})
+
 describe("security run", () => {
 	test("entry reads the run, its events, its ledger and the targets; the findings follow the run", () => {
 		expect(names(init(routeOf(RUN_IDS.dashboard), context).commands)).toEqual(
@@ -251,6 +266,65 @@ describe("security run", () => {
 		)
 		expect(names(closed.commands)).toEqual([])
 		expect(eventLogOf(closed.model)).toHaveLength(610)
+	})
+
+	test("a gap found while an older page is loading is read once that page settles", () => {
+		const pageOf = (from: number, to: number) =>
+			Array.from({ length: to - from + 1 }, (_, offset) => note(to - offset))
+		const entered = init(routeOf(RUN_IDS.dashboard), context).model
+		const first = pageUpdate(
+			entered,
+			Message.CompletedFetchEvents({
+				key: entered.events.key ?? "",
+				result: Result.succeed({ events: pageOf(1000, 1009) }),
+			}),
+		).model
+		const loadingOlder = pageUpdate(first, Message.ClickedLoadOlder()).model
+		const polled = pageUpdate(loadingOlder, Message.TickedPoll({ nowMs: NOW })).model
+		// 600 newer events: a gap, found while the older page is still in flight.
+		const gapped = pageUpdate(
+			polled,
+			Message.CompletedFetchEvents({
+				key: polled.events.key ?? "",
+				result: Result.succeed({ events: pageOf(1410, 1609) }),
+			}),
+		)
+		expect(names(gapped.commands)).toEqual([])
+		const settled = pageUpdate(
+			gapped.model,
+			Message.CompletedFetchOlderEvents({ result: Result.succeed({ events: pageOf(990, 999) }) }),
+		)
+		expect(settled.commands?.[0]?.name).toBe("SecurityApiListOlderRunEvents")
+		expect(settled.commands?.[0]?.args).toMatchObject({ beforeId: note(1410).id })
+	})
+
+	test("the backfill stops when the API returns a page that adds nothing", () => {
+		const pageOf = (from: number, to: number) =>
+			Array.from({ length: to - from + 1 }, (_, offset) => note(to - offset))
+		const entered = init(routeOf(RUN_IDS.dashboard), context).model
+		const first = pageUpdate(
+			entered,
+			Message.CompletedFetchEvents({
+				key: entered.events.key ?? "",
+				result: Result.succeed({ events: pageOf(0, 9) }),
+			}),
+		).model
+		const polled = pageUpdate(first, Message.TickedPoll({ nowMs: NOW })).model
+		const gapped = pageUpdate(
+			polled,
+			Message.CompletedFetchEvents({
+				key: polled.events.key ?? "",
+				result: Result.succeed({ events: pageOf(410, 609) }),
+			}),
+		)
+		expect(names(gapped.commands)).toEqual(["SecurityApiListOlderRunEvents"])
+		// A misbehaving API answers with the same page again.
+		const repeated = pageUpdate(
+			gapped.model,
+			Message.CompletedFetchOlderEvents({ result: Result.succeed({ events: pageOf(410, 609) }) }),
+		)
+		expect(names(repeated.commands)).toEqual([])
+		expect(repeated.model.isLoadingOlder).toBe(false)
 	})
 
 	test("a run that finishes reads its events and ledger once more", () => {

@@ -1,3 +1,4 @@
+import type { SecurityAuditEvent } from "@maple/domain/http"
 import { Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
@@ -100,6 +101,8 @@ export const init = (route: SecurityRunRoute, context: PageContext): Return => {
 		eventLog: [],
 		isLoadingOlder: false,
 		gapUntil: null,
+		queuedGaps: [],
+		olderCursor: null,
 		hasMoreOlder: true,
 		units: Keyed.idle(),
 		targets: Keyed.idle(),
@@ -149,6 +152,20 @@ const afterWrite = (model: Model, context: PageContext): Return =>
 		(next) => readUnits(next, context, "Supersede"),
 	])
 
+/** Reads the page of events before `cursor`; one older read is in flight at a time. */
+const fetchOlder = (model: Model, cursor: SecurityAuditEvent): Return => ({
+	model: { ...model, isLoadingOlder: true, olderCursor: cursor },
+	commands: [FetchOlderEvents({ runId: model.runId, beforeAt: cursor.at, beforeId: cursor.id })],
+})
+
+/** The next gap that waited for the last older read, if any. */
+const startQueuedGap = (model: Model): Return => {
+	const [head, ...rest] = model.queuedGaps
+	return head === undefined
+		? { model }
+		: fetchOlder({ ...model, queuedGaps: rest, gapUntil: head.until }, head.cursor)
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
@@ -188,53 +205,50 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				page.length >= EVENTS_PAGE &&
 				!page.some((event) => event.id === newestHeld.id) &&
 				oldest.at >= newestHeld.at
-			return isGap && !model.isLoadingOlder
-				? {
-						model: { ...merged, gapUntil: newestHeld, isLoadingOlder: true },
-						commands: [
-							FetchOlderEvents({
-								runId: model.runId,
-								beforeAt: oldest.at,
-								beforeId: oldest.id,
-							}),
-						],
-					}
-				: { model: merged }
+			if (!isGap) return { model: merged }
+			const gap = { cursor: oldest, until: newestHeld }
+			// One older read at a time: a gap found meanwhile waits for it to settle.
+			return model.isLoadingOlder
+				? { model: { ...merged, queuedGaps: [...merged.queuedGaps, gap] } }
+				: fetchOlder({ ...merged, gapUntil: gap.until }, gap.cursor)
 		},
 		CompletedFetchOlderEvents: ({ result }) =>
 			Result.match(result, {
 				onSuccess: ({ events }) => {
-					const merged: Model = {
-						...model,
-						eventLog: mergeEvents(model.eventLog, events),
-						isLoadingOlder: false,
-					}
+					const eventLog = mergeEvents(model.eventLog, events)
+					const oldest = events.at(-1)
+					// A page that adds nothing, or starts where it was asked to, cannot move the cursor.
+					const isStuck =
+						eventLog.length === model.eventLog.length || oldest?.id === model.olderCursor?.id
+					const merged: Model = { ...model, eventLog, isLoadingOlder: false, olderCursor: null }
 					const gap = model.gapUntil
 					if (gap === null)
-						return { model: { ...merged, hasMoreOlder: events.length >= EVENTS_PAGE } }
-					const oldest = events.at(-1)
+						return startQueuedGap({
+							...merged,
+							hasMoreOlder: events.length >= EVENTS_PAGE && !isStuck,
+						})
 					const isClosed =
 						oldest === undefined ||
+						isStuck ||
 						events.length < EVENTS_PAGE ||
 						events.some((event) => event.id === gap.id) ||
 						oldest.at < gap.at
 					return isClosed
-						? { model: { ...merged, gapUntil: null } }
-						: {
-								model: { ...merged, isLoadingOlder: true },
-								commands: [
-									FetchOlderEvents({
-										runId: model.runId,
-										beforeAt: oldest.at,
-										beforeId: oldest.id,
-									}),
-								],
-							}
+						? startQueuedGap({ ...merged, gapUntil: null })
+						: fetchOlder(merged, oldest)
 				},
-				onFailure: (failure) => ({
-					model: { ...model, isLoadingOlder: false, gapUntil: null },
-					outMessage: toast("error", "Failed to load older events", failure.message),
-				}),
+				onFailure: (failure) => {
+					const next = startQueuedGap({
+						...model,
+						isLoadingOlder: false,
+						olderCursor: null,
+						gapUntil: null,
+					})
+					return {
+						...next,
+						outMessage: toast("error", "Failed to load older events", failure.message),
+					}
+				},
 			}),
 		CompletedFetchUnits: ({ key, result }) => ({
 			model: { ...model, units: Keyed.accept(model.units, key, result) },
@@ -260,12 +274,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedLoadOlder: () => {
 			const oldest = eventsOf(model).at(-1)
 			if (model.isLoadingOlder || oldest === undefined) return { model }
-			return {
-				model: { ...model, isLoadingOlder: true },
-				commands: [
-					FetchOlderEvents({ runId: model.runId, beforeAt: oldest.at, beforeId: oldest.id }),
-				],
-			}
+			return fetchOlder(model, oldest)
 		},
 		PickedUnitFilter: ({ filter }) => ({ model: { ...model, unitFilter: filter } }),
 		ToggledLedger: () => ({ model: { ...model, isLedgerOpen: !model.isLedgerOpen } }),
