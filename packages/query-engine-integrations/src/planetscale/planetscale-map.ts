@@ -28,6 +28,7 @@ import { MetricsGauge, orgIdParam } from "@maple/query-engine/ch/tables"
 export const CONNECTION_METRIC_NAMES = [
 	"planetscale_edge_active_connections", // Vitess/MySQL
 	"planetscale_edge_postgres_active_connections", // Postgres (includes PgBouncer)
+	"planetscale_api_connections", // Polled from the metrics API (backend planetscale/api-metrics.ts)
 ] as const
 
 /** Pod CPU utilization percentage (gauge, both products). */

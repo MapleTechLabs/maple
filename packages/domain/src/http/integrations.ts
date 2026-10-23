@@ -360,6 +360,14 @@ export class PlanetScaleScrapeTargetSummary extends Schema.Class<PlanetScaleScra
 	lastScrapeError: Schema.NullOr(Schema.String),
 }) {}
 
+export class PlanetScaleApiMetricsStatus extends Schema.Class<PlanetScaleApiMetricsStatus>(
+	"PlanetScaleApiMetricsStatus",
+)({
+	/** Epoch ms of the last poll that landed its window; null before the first. */
+	lastPolledAt: Schema.NullOr(Schema.Number),
+	lastError: Schema.NullOr(Schema.String),
+}) {}
+
 /** The webhooks Maple registers on the bound organization's databases. */
 export class PlanetScaleWebhookStatus extends Schema.Class<PlanetScaleWebhookStatus>(
 	"PlanetScaleWebhookStatus",
@@ -390,13 +398,13 @@ export class PlanetScaleIntegrationStatus extends Schema.Class<PlanetScaleIntegr
 	/** API permissions probed at org-binding time (e.g. readMetricsEndpoints). */
 	detectedPermissions: Schema.NullOr(Schema.Record(Schema.String, Schema.Boolean)),
 	/**
-	 * How branch-metrics scraping authenticates. PlanetScale's metrics endpoints
-	 * only document service-token auth, so "oauth" applies only when the bearer
-	 * probe succeeded; "missing" means scraping is paused until a service token
-	 * with the read_metrics_endpoints permission is added (the one manual step —
-	 * inventory, insights, and webhooks run on the OAuth grant regardless).
+	 * Where branch metrics come from: `api` polls PlanetScale's metrics API on the
+	 * OAuth grant; `service_token` scrapes Prometheus with a token stored on the
+	 * managed target (connections set up before the API existed).
 	 */
-	metricsAuth: Schema.Literals(["oauth", "service_token", "missing"]),
+	metricsAuth: Schema.Literals(["api", "service_token"]),
+	/** The metrics API poller's progress; null for `service_token` and before binding. */
+	apiMetrics: Schema.NullOr(PlanetScaleApiMetricsStatus),
 	scrapeTarget: Schema.NullOr(PlanetScaleScrapeTargetSummary),
 	/** Null until an organization is bound. */
 	webhooks: Schema.NullOr(PlanetScaleWebhookStatus),

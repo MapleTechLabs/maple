@@ -49,13 +49,33 @@ import { ScrapeTargetPublicId } from "./scrape-targets"
 // the first path segment under `/v2`, so the split across two contract files is
 // purely about file size.
 
-export const V2PlanetScaleMetricsAuth = Schema.Literals(["oauth", "service_token", "missing"]).annotate({
+export const V2PlanetScaleMetricsAuth = Schema.Literals([
+	"api",
+	"service_token",
+	"oauth",
+	"missing",
+]).annotate({
 	identifier: "PlanetScaleMetricsAuth",
 	title: "PlanetScale metrics auth",
 	description:
-		"How branch-metrics scraping authenticates. `service_token` is the normal state: PlanetScale's metrics endpoints only document service-token auth. `oauth` applies only where the OAuth bearer probe succeeded. `missing` means scraping is paused until a service token with the `read_metrics_endpoints` permission is attached via `POST /v2/integrations/planetscale/metrics_token` — inventory, query insights, and webhooks keep working on the OAuth grant regardless.",
-	examples: ["service_token"],
+		"Where branch metrics come from. `api`: Maple polls PlanetScale's metrics API on the OAuth grant every 5 minutes, see `api_metrics`. `service_token`: Maple scrapes PlanetScale's Prometheus endpoints with a service token attached to the managed scrape target. `oauth` and `missing` are no longer returned.",
+	examples: ["api"],
 })
+
+export const V2PlanetScaleApiMetrics = Schema.Struct({
+	last_polled_at: Schema.NullOr(Timestamp).annotate({
+		description: "When the last poll's window reached the warehouse, or `null` before the first.",
+	}),
+	last_error: Schema.NullOr(Schema.String).annotate({
+		description: "Why the most recent poll failed, or `null`.",
+		examples: [null],
+	}),
+}).annotate({
+	identifier: "PlanetScaleApiMetrics",
+	title: "PlanetScale metrics API polling",
+	description: "Progress of the branch-metrics poller for connections whose `metrics_auth` is `api`.",
+})
+export type V2PlanetScaleApiMetrics = Schema.Schema.Type<typeof V2PlanetScaleApiMetrics>
 export type V2PlanetScaleMetricsAuth = Schema.Schema.Type<typeof V2PlanetScaleMetricsAuth>
 
 export const V2PlanetScaleScrapeTarget = Schema.Struct({
@@ -164,6 +184,12 @@ export const V2PlanetScaleIntegration = Schema.Struct({
 		examples: [{ readMetricsEndpoints: true }],
 	}),
 	metrics_auth: V2PlanetScaleMetricsAuth,
+	api_metrics: Schema.optionalKey(
+		Schema.NullOr(V2PlanetScaleApiMetrics).annotate({
+			description:
+				"The metrics API poller's progress, or `null` when metrics come from a service token.",
+		}),
+	),
 	scrape_target: Schema.NullOr(V2PlanetScaleScrapeTarget).annotate({
 		description: "The managed scrape target, or `null` before one is provisioned.",
 	}),
@@ -200,7 +226,8 @@ export const V2PlanetScaleIntegration = Schema.Struct({
 			organization: "acme",
 			connected_by_user_id: "user_2abcDEF",
 			detected_permissions: { readMetricsEndpoints: true },
-			metrics_auth: "service_token",
+			metrics_auth: "api",
+			api_metrics: { last_polled_at: "2026-08-05T12:00:00.000Z", last_error: null },
 			scrape_target: {
 				id: "scrp_4CzLmR",
 				object: "planetscale_integration.scrape_target",
@@ -922,7 +949,7 @@ export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planet
 				identifier: "setPlanetScaleMetricsToken",
 				summary: "Attach a PlanetScale metrics service token",
 				description:
-					"Attaches a service token carrying the single `read_metrics_endpoints` permission to the managed scrape target, enabling branch-metrics scraping. Maple validates the token against PlanetScale's metrics discovery endpoint before storing it: an invalid or under-permissioned token is rejected with `invalid_request_error` and nothing is written. Re-submitting rotates the token in place. Returns the refreshed integration status, whose `metrics_auth` becomes `service_token` on success. Requires an org-admin role and the `integrations:write` scope.",
+					"Optional: branch metrics arrive without a token, polled from PlanetScale's metrics API on the OAuth grant. Attaches a service token carrying the single `read_metrics_endpoints` permission to the managed scrape target, switching the connection to Prometheus scraping instead. Maple validates the token against PlanetScale's metrics discovery endpoint before storing it: an invalid or under-permissioned token is rejected with `invalid_request_error` and nothing is written. Re-submitting rotates the token in place. Returns the refreshed integration status, whose `metrics_auth` becomes `service_token` on success. Requires an org-admin role and the `integrations:write` scope.",
 			}),
 		),
 	)

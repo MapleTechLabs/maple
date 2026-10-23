@@ -10,11 +10,9 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import {
 	FetchOrganizations,
-	normalizeTokenPaste,
 	parsePatternList,
 	type PlanetscaleCardModel,
 	SelectOrganization,
-	SetMetricsToken,
 } from "./planetscale"
 import { chain, requestStatus } from "./update-status"
 
@@ -145,56 +143,6 @@ export const completedSelect = (
 				? dialogStep(next, Dialog.close(next.planetscaleCard.pickerDialog))
 				: { model: next },
 	])
-}
-
-export const gotTokenField = (model: Model, field: "id" | "secret", message: Field.Message): Return => {
-	const current = field === "id" ? model.planetscaleCard.tokenId : model.planetscaleCard.tokenSecret
-	const step = Field.update(current, message)
-	return {
-		model: withCard(model, field === "id" ? { tokenId: step.model } : { tokenSecret: step.model }),
-		commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
-			Message.GotMetricsTokenMessage({ field, message: inner }),
-		),
-	}
-}
-
-export const pastedToken = (model: Model, field: "id" | "secret", text: string): Return => {
-	const card = model.planetscaleCard
-	const next = normalizeTokenPaste(field, text, { id: card.tokenId.value, secret: card.tokenSecret.value })
-	return {
-		model: withCard(model, {
-			tokenId: { ...card.tokenId, value: next.id },
-			tokenSecret: { ...card.tokenSecret, value: next.secret },
-		}),
-	}
-}
-
-export const submittedToken = (model: Model): Return => {
-	const card = model.planetscaleCard
-	if (card.isSavingToken || card.tokenId.value.trim() === "" || card.tokenSecret.value === "")
-		return { model }
-	return {
-		model: withCard(model, { isSavingToken: true, tokenError: null }),
-		commands: [
-			SetMetricsToken({ tokenId: card.tokenId.value.trim(), tokenSecret: card.tokenSecret.value }),
-		],
-	}
-}
-
-export const completedToken = (model: Model, context: PageContext, error: string | null): Return => {
-	if (error !== null) return { model: withCard(model, { isSavingToken: false, tokenError: error }) }
-	return chain(
-		withCard(model, {
-			isSavingToken: false,
-			tokenId: Field.init(),
-			tokenSecret: Field.init(),
-			isRotating: false,
-		}),
-		[
-			(next) => toast(next, "success", "Branch metrics enabled"),
-			(next) => refreshAfterWrite(next, context),
-		],
-	)
 }
 
 export const updateCard = (model: Model, card: Partial<PlanetscaleCardModel>): Return => ({

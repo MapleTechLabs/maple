@@ -4410,7 +4410,7 @@ SELECT
           sum(points.availableSamples) AS storageSamples
         FROM (SELECT
           metrics_gauge.TimeUnix AS t,
-          sumIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections')) AS totalConnections,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections')) AS totalConnections,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages')) AS cpuMax,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages')) AS memMax,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')) AS lagMax,
@@ -4419,7 +4419,7 @@ SELECT
           countIf(metrics_gauge.MetricName IN ('planetscale_volume_available_bytes')) AS availableSamples
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_pods_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds', 'planetscale_volume_capacity_bytes', 'planetscale_volume_available_bytes')
+          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections', 'planetscale_pods_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds', 'planetscale_volume_capacity_bytes', 'planetscale_volume_available_bytes')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'maple-prd'
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_branch_name'], ''), metrics_gauge.Attributes['planetscale_branch']) = 'main'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
@@ -4441,7 +4441,7 @@ SELECT
           sum(points.availableSamples) AS storageSamples
         FROM (SELECT
           metrics_gauge.TimeUnix AS t,
-          sumIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections')) AS totalConnections,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections')) AS totalConnections,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages')) AS cpuMax,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages')) AS memMax,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')) AS lagMax,
@@ -4450,7 +4450,7 @@ SELECT
           countIf(metrics_gauge.MetricName IN ('planetscale_volume_available_bytes')) AS availableSamples
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_pods_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds', 'planetscale_volume_capacity_bytes', 'planetscale_volume_available_bytes')
+          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections', 'planetscale_pods_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds', 'planetscale_volume_capacity_bytes', 'planetscale_volume_available_bytes')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'maple-prd'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
@@ -4473,7 +4473,7 @@ SELECT
           sum(metrics_gauge.Value) AS totalConnections
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections')
+          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'maple-prd'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
@@ -4534,7 +4534,7 @@ SELECT
           sum(metrics_gauge.Value) AS totalConnections
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections')
+          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) != ''
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'

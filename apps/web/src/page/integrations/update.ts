@@ -390,12 +390,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		SubmittedOrganization: () => Planetscale.submittedOrganization(model),
 		CompletedSelectOrganization: ({ organization, failure }) =>
 			Planetscale.completedSelect(model, context, organization, failure),
-		ClickedRotateToken: () => Planetscale.updateCard(model, { isRotating: true }),
-		ClickedRotateCancel: () => Planetscale.updateCard(model, { isRotating: false }),
-		GotMetricsTokenMessage: ({ field, message: child }) => Planetscale.gotTokenField(model, field, child),
-		PastedMetricsToken: ({ field, text }) => Planetscale.pastedToken(model, field, text),
-		SubmittedMetricsToken: () => Planetscale.submittedToken(model),
-		CompletedSetMetricsToken: ({ error }) => Planetscale.completedToken(model, context, error),
 		ClickedMetricsDetails: () =>
 			Planetscale.updateCard(model, { isDetailsOpen: !model.planetscaleCard.isDetailsOpen }),
 		TickedPlanetscaleWatch: () => {

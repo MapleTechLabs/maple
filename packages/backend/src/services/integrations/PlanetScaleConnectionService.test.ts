@@ -204,12 +204,12 @@ describe("PlanetScaleConnectionService", () => {
 			assert.strictEqual(status.connectedByUserId, "user_1")
 			assert.deepStrictEqual(status.detectedPermissions, {
 				readOrganization: true,
-				readMetricsEndpoints: true,
 				readDatabases: true,
 			})
+			// Metrics come from the metrics API; the target only holds the branch filters.
 			assert.isNotNull(status.scrapeTarget)
-			assert.isTrue(status.scrapeTarget!.enabled)
-			assert.strictEqual(status.metricsAuth, "oauth")
+			assert.isFalse(status.scrapeTarget!.enabled)
+			assert.strictEqual(status.metricsAuth, "api")
 
 			// The probes hit the management API with the OAuth Bearer header.
 			const probeCalls = calls.filter((call) => call.url.includes("/v1/organizations/acme"))
@@ -309,74 +309,70 @@ describe("PlanetScaleConnectionService", () => {
 		)
 	})
 
-	it.effect("binds with paused metrics when the bearer probe fails, until a service token arrives", () => {
-		const testDb = createTestDb(trackedDbs)
-		const calls: Array<{ url: string; authorization: string | null }> = []
-		// PlanetScale's metrics endpoints only accept service tokens: the bearer
-		// probe 403s, the `token id:secret` scheme succeeds.
-		const stub = stubPlanetScaleApi({ calls, denyBearerMetrics: true })
+	it.effect(
+		"binds on the metrics API and still switches to Prometheus when a service token arrives",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const calls: Array<{ url: string; authorization: string | null }> = []
+			// PlanetScale's metrics endpoints only accept service tokens: the bearer
+			// probe 403s, the `token id:secret` scheme succeeds.
+			const stub = stubPlanetScaleApi({ calls, denyBearerMetrics: true })
 
-		return Effect.gen(function* () {
-			const service = yield* PlanetScaleConnectionService
-			const orgId = asOrgId("org_1")
+			return Effect.gen(function* () {
+				const service = yield* PlanetScaleConnectionService
+				const orgId = asOrgId("org_1")
 
-			yield* storeGrant(orgId)
-			// The binding still succeeds — inventory/insights/webhooks run on the
-			// grant; only scraping is paused.
-			const bound = yield* service.finalizeOrgSelection(orgId, { organization: "acme" })
-			assert.isTrue(bound.connected)
-			assert.strictEqual(bound.metricsAuth, "missing")
-			assert.isFalse(bound.scrapeTarget!.enabled)
-			assert.deepStrictEqual(bound.detectedPermissions, {
-				readOrganization: true,
-				readMetricsEndpoints: false,
-				readDatabases: true,
-			})
+				yield* storeGrant(orgId)
+				const bound = yield* service.finalizeOrgSelection(orgId, { organization: "acme" })
+				assert.isTrue(bound.connected)
+				assert.strictEqual(bound.metricsAuth, "api")
+				assert.isFalse(bound.scrapeTarget!.enabled)
 
-			// A bad token is rejected by the discovery probe and nothing changes.
-			const error = yield* service
-				.setMetricsToken(
+				// A bad token is rejected by the discovery probe and nothing changes.
+				const error = yield* service
+					.setMetricsToken(
+						orgId,
+						new PlanetScaleMetricsTokenRequest({ tokenId: "tok_bad", tokenSecret: "bad" }),
+					)
+					.pipe(Effect.flip)
+				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+				assert.include(error.message, "read_metrics_endpoints")
+
+				// The valid token flips scraping on with stored credentials.
+				const enabled = yield* service.setMetricsToken(
 					orgId,
-					new PlanetScaleMetricsTokenRequest({ tokenId: "tok_bad", tokenSecret: "bad" }),
+					new PlanetScaleMetricsTokenRequest({ tokenId: "tok_good", tokenSecret: "s3cret" }),
 				)
-				.pipe(Effect.flip)
-			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
-			assert.include(error.message, "read_metrics_endpoints")
-
-			// The valid token flips scraping on with stored credentials.
-			const enabled = yield* service.setMetricsToken(
-				orgId,
-				new PlanetScaleMetricsTokenRequest({ tokenId: "tok_good", tokenSecret: "s3cret" }),
+				assert.strictEqual(enabled.metricsAuth, "service_token")
+				assert.isTrue(enabled.scrapeTarget!.enabled)
+				// The validation probe used the service-token scheme, not the bearer.
+				assert.isTrue(
+					calls.some(
+						(call) =>
+							call.url.includes("/v1/organizations/acme/metrics") &&
+							call.authorization === "token tok_good:s3cret",
+					),
+				)
+				const row = yield* Effect.promise(() =>
+					queryFirstRow<{
+						auth_type: string
+						auth_credentials_ciphertext: string | null
+						enabled: boolean
+					}>(
+						testDb,
+						"SELECT auth_type, auth_credentials_ciphertext, enabled FROM scrape_targets WHERE id = $1",
+						[enabled.scrapeTarget!.id],
+					),
+				)
+				assert.strictEqual(row?.auth_type, "token")
+				assert.isNotNull(row?.auth_credentials_ciphertext)
+				assert.isTrue(row?.enabled)
+			}).pipe(
+				Effect.provideService(FetchHttpClient.Fetch, stub),
+				Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
 			)
-			assert.strictEqual(enabled.metricsAuth, "service_token")
-			assert.isTrue(enabled.scrapeTarget!.enabled)
-			// The validation probe used the service-token scheme, not the bearer.
-			assert.isTrue(
-				calls.some(
-					(call) =>
-						call.url.includes("/v1/organizations/acme/metrics") &&
-						call.authorization === "token tok_good:s3cret",
-				),
-			)
-			const row = yield* Effect.promise(() =>
-				queryFirstRow<{
-					auth_type: string
-					auth_credentials_ciphertext: string | null
-					enabled: boolean
-				}>(
-					testDb,
-					"SELECT auth_type, auth_credentials_ciphertext, enabled FROM scrape_targets WHERE id = $1",
-					[enabled.scrapeTarget!.id],
-				),
-			)
-			assert.strictEqual(row?.auth_type, "token")
-			assert.isNotNull(row?.auth_credentials_ciphertext)
-			assert.isTrue(row?.enabled)
-		}).pipe(
-			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
-		)
-	})
+		},
+	)
 
 	it.effect("reports the exact missing managed target when attaching a metrics token", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -410,83 +406,6 @@ describe("PlanetScaleConnectionService", () => {
 		)
 	})
 
-	it.effect("pauses metrics when the data plane rejects the bearer despite a passing SD probe", () => {
-		const testDb = createTestDb(trackedDbs)
-		const calls: Array<{ url: string; authorization: string | null }> = []
-		// The prod bug: api.planetscale.com's SD endpoint 2xx'd the OAuth bearer,
-		// so the target auto-enabled — but the discovered metrics.psdb.cloud hosts
-		// only accept service tokens and 403'd every actual scrape.
-		const stub = stubPlanetScaleApi({
-			calls,
-			denyDataPlaneBearer: true,
-			sdGroups: [
-				{
-					targets: ["branch-1.metrics.psdb.cloud:443"],
-					labels: { __metrics_path__: "/metrics", planetscale_database_branch_id: "branch-1" },
-				},
-			],
-		})
-
-		return Effect.gen(function* () {
-			const service = yield* PlanetScaleConnectionService
-			const orgId = asOrgId("org_1")
-
-			yield* storeGrant(orgId)
-			const bound = yield* service.finalizeOrgSelection(orgId, { organization: "acme" })
-
-			// Binding succeeds, but scraping is paused until a service token arrives.
-			assert.isTrue(bound.connected)
-			assert.strictEqual(bound.metricsAuth, "missing")
-			assert.isFalse(bound.scrapeTarget!.enabled)
-			assert.isFalse(bound.detectedPermissions?.readMetricsEndpoints)
-
-			// The verdict came from an actual data-plane scrape probe with the
-			// bearer. (Match on the host: fetch normalizes away the :443 port.)
-			assert.isTrue(
-				calls.some(
-					(call) =>
-						call.url.includes("branch-1.metrics.psdb.cloud") &&
-						call.authorization === "Bearer ps-access-token",
-				),
-			)
-		}).pipe(
-			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
-		)
-	})
-
-	it.effect("keeps oauth metrics enabled when the data-plane scrape accepts the bearer", () => {
-		const testDb = createTestDb(trackedDbs)
-		const calls: Array<{ url: string; authorization: string | null }> = []
-		// Data-plane host answers 200 to the bearer (the stub's default) — the
-		// probe must not pause a working OAuth-auth'd target.
-		const stub = stubPlanetScaleApi({
-			calls,
-			sdGroups: [
-				{
-					targets: ["branch-1.metrics.psdb.cloud:443"],
-					labels: { __metrics_path__: "/metrics", planetscale_database_branch_id: "branch-1" },
-				},
-			],
-		})
-
-		return Effect.gen(function* () {
-			const service = yield* PlanetScaleConnectionService
-			const orgId = asOrgId("org_1")
-
-			yield* storeGrant(orgId)
-			const bound = yield* service.finalizeOrgSelection(orgId, { organization: "acme" })
-
-			assert.strictEqual(bound.metricsAuth, "oauth")
-			assert.isTrue(bound.scrapeTarget!.enabled)
-			assert.isTrue(bound.detectedPermissions?.readMetricsEndpoints)
-			assert.isTrue(calls.some((call) => call.url.includes("branch-1.metrics.psdb.cloud")))
-		}).pipe(
-			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide(Layer.mergeAll(makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub))),
-		)
-	})
-
 	it.effect("classifies transient metrics probe failures as upstream errors", () => {
 		const testDb = createTestDb(trackedDbs)
 		const stub = stubPlanetScaleApi({ deny: { "/metrics": 503 } })
@@ -497,7 +416,7 @@ describe("PlanetScaleConnectionService", () => {
 
 			yield* storeGrant(orgId)
 			const bound = yield* service.finalizeOrgSelection(orgId, { organization: "acme" })
-			assert.strictEqual(bound.metricsAuth, "missing")
+			assert.strictEqual(bound.metricsAuth, "api")
 
 			const error = yield* service
 				.setMetricsToken(

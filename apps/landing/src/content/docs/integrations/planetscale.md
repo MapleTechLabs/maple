@@ -1,17 +1,15 @@
 ---
 title: "PlanetScale"
-description: "Connect a PlanetScale organization to Maple. Maple discovers every database branch's metrics endpoint, scrapes connections, WAL size, and pod CPU, and adds your databases to the service map."
+description: "Connect a PlanetScale organization to Maple with one authorization. Maple collects every branch's CPU, memory, storage, connections, and replica lag, registers webhooks, and adds your databases to the service map."
 group: "Integrations"
 order: 3
 ---
 
-PlanetScale publishes Prometheus metrics per database branch behind a [service-discovery API](https://planetscale.com/docs/vitess/integrations/prometheus). One organization endpoint returns the current list of branch metrics targets, and that list changes as branches are created and deleted. You connect the organization once. Maple runs the discovery call, scrapes every branch it returns, and refreshes the branch list every 10 minutes.
-
-Setup has two parts. An OAuth authorization covers the management plane: database inventory, query insights, and the webhooks Maple registers for you. PlanetScale serves branch metrics only to service tokens, so you add a service token to turn on metrics.
+You connect a PlanetScale organization once, with an OAuth authorization. It covers everything Maple reads: the database inventory, query insights, branch metrics from PlanetScale's [metrics API](https://planetscale.com/docs/api/reference/get_branch_metrics), and the webhooks Maple registers for you. Maple reads every branch's metrics every 5 minutes, and picks up new branches and databases on its own.
 
 ## Prerequisites
 
-- Permission in the PlanetScale organization to authorize an OAuth application, manage database webhooks, and create a service token.
+- Permission in the PlanetScale organization to authorize an OAuth application and manage database webhooks.
 
 ## 1. Authorize Maple
 
@@ -24,17 +22,13 @@ To switch organizations later, click **Change organization**.
 
 The OAuth application needs `read_databases` for the database inventory, the service map, and query insights. If it is missing, the **Permissions** step shows **Reauthorize with read_databases**.
 
-## 2. Add a service token for branch metrics
+## 2. Branch metrics
 
-After authorization the card shows a four-step checklist: **Authorization**, **Permissions**, **Branch metrics access**, and **Metrics arriving**. The **Branch metrics access** step asks for a service token. If the OAuth authorization already covers the metrics endpoints, this step completes without one.
+After authorization the card shows a checklist: **Authorization**, **Permissions**, and **Metrics arriving**. Nothing else is asked of you. Within 5 minutes Maple reads each branch's last minutes from the metrics API and the last step completes.
 
-1. Click **Create a token in PlanetScale**. Create a service token with the `read_metrics_endpoints` organization permission. No other permission is needed.
-2. Paste the **Service token ID** and **Service token secret** into Maple.
-3. Click **Enable metrics**.
+Maple reads every ready branch that passes your branch filters. For Postgres branches that is pod CPU and memory, disk usage and free space, PgBouncer connections, WAL size, and replica lag. For Vitess branches it is connections and router (vtgate) CPU and memory per zone; the metrics API serves no pod or disk metrics for Vitess.
 
-The secret is encrypted at rest. Maple derives the discovery URL (`https://api.planetscale.com/v1/organizations/{org}/metrics`), authenticates discovery and every scrape with the token, and scrapes each branch as its own target. New branches are picked up on the next discovery refresh. Deleted branches stop being scraped.
-
-To replace the token later, click **Rotate token**.
+Connections set up with a service token before the metrics API existed keep scraping PlanetScale's Prometheus endpoints with it, and the card shows **Streaming branch metrics** as before.
 
 ## 3. Webhooks
 
@@ -44,36 +38,37 @@ Registering webhooks needs the `write_databases` access. If you connected before
 
 ## Verify
 
-1. The **Metrics arriving** step changes from **Waiting for the first scrape.** to done, and the checklist collapses to a single health row reading **Streaming branch metrics from** your organization. The card polls while it waits, so you do not need to reload.
+1. The **Metrics arriving** step changes from **Waiting for the first poll.** to done, and the checklist collapses to a single health row reading **Streaming branch metrics from** your organization. The card polls while it waits, so you do not need to reload.
 2. Open **Infrastructure → PlanetScale** to see your databases and branches.
 3. In the [metrics explorer](/docs/explore/metrics), search for `planetscale_` to see branch series.
 
 ## What you get
 
-Each branch series carries PlanetScale's discovery labels. The most useful is `planetscale_database_branch_id`, which keys every series to a branch. Highlights from the metric set ([Postgres](https://planetscale.com/docs/postgres/monitoring/prometheus-postgres), [Vitess](https://planetscale.com/docs/vitess/integrations/prometheus)):
+Each branch series carries `planetscale_organization_name`, `planetscale_database_name`, `planetscale_branch_name`, and `planetscale_database_branch_id`, which keys every series to a branch. Series read from the metrics API also carry `planetscale_source="api"`. The main metrics:
 
-| Metric                                         | What it tells you                                          |
-| ---------------------------------------------- | ---------------------------------------------------------- |
-| `planetscale_postgres_connection_state`        | Connections by state (active, idle, idle in transaction).  |
-| `planetscale_edge_postgres_active_connections` | Active connections at the edge.                            |
-| `planetscale_postgres_wal_size_bytes`          | WAL size. An early warning for replication and disk usage. |
-| `planetscale_pgbouncer_current_connections`    | PgBouncer pool utilization.                                |
-| `planetscale_pods_cpu_util_percentages`        | CPU per pod backing the branch.                            |
-| `planetscale_vtgate_total_pods`                | (Vitess) vtgate pods per availability zone.                |
+| Metric                                     | What it tells you                                                     |
+| ------------------------------------------ | --------------------------------------------------------------------- |
+| `planetscale_pods_cpu_util_percentages`    | (Postgres) CPU of the pods backing the branch.                        |
+| `planetscale_pods_mem_util_percentages`    | (Postgres) Memory of the pods backing the branch.                     |
+| `planetscale_volume_available_bytes`       | (Postgres) Free disk space, with `planetscale_volume_capacity_bytes`. |
+| `planetscale_postgres_wal_size_bytes`      | (Postgres) WAL size. An early warning for replication and disk usage. |
+| `planetscale_postgres_replica_lag_seconds` | (Postgres) Replica lag, one series per replica.                       |
+| `planetscale_api_connections`              | Connections (PgBouncer on Postgres, the router on Vitess).            |
+| `planetscale_vtgate_cpu_util_percentages`  | (Vitess) Router CPU per availability zone.                            |
+
+Connections that scrape with a service token get PlanetScale's full [Prometheus metric set](https://planetscale.com/docs/vitess/integrations/prometheus) instead.
 
 Group dashboards and [alert rules](/docs/alerting/alert-rules) by `planetscale_database_branch_id`. For example, alert when WAL size passes a threshold or active connections approach your pool limit.
 
 ## Troubleshooting
 
-- **Metrics arriving shows "The last scrape failed."** The health row shows the error. A failure for one branch is prefixed with `[branch:<id>]`.
-- **401 or 403 on discovery or scrapes.** The service token was deleted or lacks `read_metrics_endpoints`. Click **Rotate token** and paste a new one.
+- **Metrics arriving shows an error.** The health row shows what the last poll hit. A failing branch costs only its own window; the others keep arriving.
 - **Authorization shows as revoked.** Click **Reconnect** to authorize again.
-- **Metrics stopped arriving.** The **Metrics arriving** step reports a stall after three scrape intervals without data. Check the error on the health row.
-- **A discovery call fails.** Maple keeps scraping the last known branch list and shows the discovery error on the target, so branch metrics do not drop out during a PlanetScale API outage.
-- **Branch filters did not apply.** Changes take effect on the next scrape because the cached branch list is cleared on save.
+- **Metrics stopped arriving.** The **Metrics arriving** step reports a stall after 20 minutes without a poll. Check the error on the health row.
+- **A new branch has no metrics yet.** Maple reads the branch list from the hourly inventory, so a new branch starts reporting within the hour.
+- **Branch filters did not apply.** Changes take effect on the next poll.
 
 ## Next steps
 
 - [Service map](/docs/explore/service-map): PlanetScale databases linked to the services that query them.
-- [Prometheus scraping](/docs/integrations/prometheus): how scraped samples become OpenTelemetry metrics.
 - [Alert rules](/docs/alerting/alert-rules): alert on branch metrics.
