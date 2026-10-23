@@ -52,6 +52,20 @@ import {
 	READ_ONLY_REJECTION_PREFIX,
 	ReadOnlyQueryRejected,
 } from "./query-guard"
+import {
+	accessDenied,
+	issueSession,
+	LOGIN_ACTION_PATH,
+	LOGIN_PATH,
+	LoginThrottle,
+	loginPage,
+	hasValidSession,
+	NO_REMOTE_AUTH,
+	type RemoteAuth,
+	safeNextPath,
+	secretMatches,
+	sessionCookie,
+} from "./remote-auth"
 import { localServiceMapRollupLoop } from "./service-map-rollup"
 import { ensureStoreMarkerDurable, storeHasData } from "./store-version"
 import {
@@ -84,6 +98,8 @@ export interface ServerOptions {
 	readonly minimumRawTelemetryRetentionDays?: number
 	/** Serves the bundled SPA; omit to disable the UI (API-only). */
 	readonly assets?: AssetResolver
+	/** Ingest key and access token; omit for an open loopback server. */
+	readonly auth?: RemoteAuth
 }
 
 export class ServerBindError extends Schema.TaggedError<ServerBindError>()("@maple/cli/ServerBindError", {
@@ -113,6 +129,9 @@ export interface BrowserOriginPolicy {
 	readonly trustedOrigins: ReadonlySet<string>
 	/** Origins only honoured when the request itself targets loopback. */
 	readonly loopbackDevOrigins: ReadonlySet<string>
+	/** Accept same-origin from any Host. Only with an access token: a rebinding
+	 * page can then reach the listener but never holds its session cookie. */
+	readonly anySameOriginHost: boolean
 }
 
 const parseOrigin = (value: string): string | undefined => {
@@ -126,6 +145,7 @@ export const makeBrowserOriginPolicy = (options: {
 	readonly browserHosts: readonly string[]
 	readonly hostedOrigin?: string | undefined
 	readonly extraOrigins?: string | undefined
+	readonly anySameOriginHost?: boolean
 }): Result.Result<BrowserOriginPolicy, LocalServerConfigError> => {
 	const trusted = new Set<string>()
 	const hosted = options.hostedOrigin?.trim()
@@ -157,6 +177,7 @@ export const makeBrowserOriginPolicy = (options: {
 		browserHosts: options.browserHosts,
 		trustedOrigins: trusted,
 		loopbackDevOrigins: new Set(LOCAL_UI_DEV_ORIGINS),
+		anySameOriginHost: options.anySameOriginHost ?? false,
 	})
 }
 
@@ -187,7 +208,9 @@ export const isBrowserOriginAllowed = (
 	// a loopback name, so loopback aliases of this listener count as same-origin.
 	return (
 		originUrl.host === requestUrl.host &&
-		(policy.browserHosts.includes(originUrl.hostname) || isLoopbackHostname(originUrl.hostname))
+		(policy.anySameOriginHost ||
+			policy.browserHosts.includes(originUrl.hostname) ||
+			isLoopbackHostname(originUrl.hostname))
 	)
 }
 
@@ -1373,6 +1396,61 @@ const handleEventingRead = (
 	})
 }
 
+const MAX_LOGIN_BODY_BYTES = 4 * 1024
+
+/** `GET /login`: the sign-in page, or home for a browser already signed in. */
+const signInPage = (auth: RemoteAuth, req: Request, url: URL): Response => {
+	if (auth.accessToken === undefined || hasValidSession(auth, req, Date.now()))
+		return new Response(null, { status: 303, headers: { location: "/" } })
+	return loginPage({ next: safeNextPath(url.searchParams.get("next")) })
+}
+
+/** `POST /local/auth/login`: exchange the access token for a session cookie. */
+const loginSpan = (
+	auth: RemoteAuth,
+	throttle: LoginThrottle,
+	req: Request,
+	url: URL,
+): Effect.Effect<Response> =>
+	Effect.gen(function* () {
+		const accessToken = auth.accessToken
+		if (accessToken === undefined) return text("not found", 404)
+		const nowMs = yield* Clock.currentTimeMillis
+		const retryAfterMs = throttle.retryAfterMs(nowMs)
+		if (retryAfterMs > 0) {
+			yield* Effect.annotateCurrentSpan({ "maple.auth.outcome": "throttled" })
+			const response = loginPage({
+				error: "Too many failed attempts. Try again in a minute.",
+				next: "/",
+				status: 429,
+			})
+			response.headers.set("retry-after", String(Math.ceil(retryAfterMs / 1000)))
+			return response
+		}
+		const body = yield* Effect.promise(() => readBoundedBytes(req, MAX_LOGIN_BODY_BYTES))
+		if (Result.isFailure(body)) return bodyFailureResponse(body.failure)
+		const form = new URLSearchParams(new TextDecoder().decode(body.success))
+		const next = safeNextPath(form.get("next"))
+		if (!secretMatches(accessToken, form.get("token"))) {
+			throttle.recordFailure(nowMs)
+			yield* Effect.annotateCurrentSpan({ "maple.auth.outcome": "invalid" })
+			return loginPage({ error: "That access token is not valid.", next, status: 401 })
+		}
+		yield* Effect.annotateCurrentSpan({ "maple.auth.outcome": "ok" })
+		return new Response(null, {
+			status: 303,
+			headers: {
+				location: next,
+				"set-cookie": sessionCookie(req, url, issueSession(accessToken, nowMs)),
+			},
+		})
+	}).pipe(
+		Effect.withSpan(`POST ${LOGIN_ACTION_PATH}`, {
+			kind: "server",
+			attributes: { "http.request.method": "POST", "http.route": LOGIN_ACTION_PATH },
+		}),
+	)
+
 interface ServerContext {
 	readonly db: Chdb
 	readonly options: ServerOptions
@@ -1384,6 +1462,8 @@ interface ServerContext {
 	readonly consumerToken: string
 	readonly readiness: ReadinessRetry
 	readonly status: ServerStatus
+	readonly auth: RemoteAuth
+	readonly loginThrottle: LoginThrottle
 }
 
 /** `GET /local/status`: identity and liveness for the CLI probe and the UI. */
@@ -1413,7 +1493,18 @@ const makeFetch =
 		const corsHeaders = corsHeadersForAllowedOrigin(origin)
 		const respond = (response: Response): Response => withCors(response, corsHeaders)
 		if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders })
+		const denied = accessDenied(context.auth, { maintenanceToken, consumerToken }, req, url, Date.now())
+		if (denied !== null) return respond(denied)
 		if (url.pathname === "/health") return respond(text("OK"))
+		if (url.pathname === LOGIN_PATH && req.method === "GET")
+			return respond(signInPage(context.auth, req, url))
+		if (url.pathname === LOGIN_ACTION_PATH)
+			return respond(
+				req.method === "POST"
+					? await runSpan(loginSpan(context.auth, context.loginThrottle, req, url))
+					: // A reload of a failed sign-in lands here; show the form again.
+						new Response(null, { status: 303, headers: { location: LOGIN_PATH } }),
+			)
 		if (req.method === "GET" && url.pathname === "/local/status")
 			return respond(statusResponse(context.status))
 		if (req.method === "POST") {
@@ -1505,6 +1596,7 @@ export const startServer = (
 				browserHosts: options.browserHosts,
 				hostedOrigin: options.corsOrigin,
 				extraOrigins: process.env[ALLOWED_ORIGINS_ENV],
+				anySameOriginHost: options.auth?.accessToken !== undefined,
 			}),
 		)
 		const existingRetention = yield* Effect.try({
@@ -1677,6 +1769,8 @@ export const startServer = (
 							consumerToken,
 							readiness,
 							status,
+							auth: options.auth ?? NO_REMOTE_AUTH,
+							loginThrottle: new LoginThrottle(),
 						}),
 					}),
 				catch: (error) =>
@@ -1724,6 +1818,7 @@ export const __testables = {
 	handleScopedDelete,
 	handleProjectionActivation,
 	ingest,
+	loginSpan,
 	readBoundedJson,
 	recordServerResponse,
 	RequestQuiescenceGate,

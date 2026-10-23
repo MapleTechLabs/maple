@@ -165,6 +165,7 @@ jobs:
                   apps/cli/test/native-archive-gc-probe.sh
                   apps/cli/test/native-archive-merge-probe.sh
                   apps/cli/test/native-retention-probe.sh
+                  apps/cli/test/native-remote-auth-smoke.sh
 
             # The installers claim POSIX /bin/sh; check them against it.
             - name: sh -n
@@ -485,6 +486,17 @@ jobs:
                         mkdir -p "$TMPDIR"
                         apps/cli/test/native-local-store-migration.sh "$GITHUB_WORKSPACE/dist"
 
+                  # Ingest key, access token, sign-in and the CLI against a server off loopback.
+                  - name: Run native remote auth smoke
+                    timeout-minutes: 3
+                    env:
+                        KEEP_ROOT: "1"
+                        TMPDIR: ${{ runner.temp }}/maple-native-remote-auth
+                        MAPLE_TELEMETRY: off
+                    run: |
+                        mkdir -p "$TMPDIR"
+                        apps/cli/test/native-remote-auth-smoke.sh "$GITHUB_WORKSPACE/dist"
+
             # cancelled() too: a timeout or concurrency cancel mid-hang is the evidence that matters.
             - name: Upload checkpoint failure evidence
               if: ${{ failure() || cancelled() }}
@@ -495,6 +507,7 @@ jobs:
                       ${{ runner.temp }}/maple-native-checkpoint
                       ${{ runner.temp }}/maple-native-cp-refresh
                       ${{ runner.temp }}/maple-native-migration
+                      ${{ runner.temp }}/maple-native-remote-auth
                   if-no-files-found: ignore
 
     # Each leg rebuilds the ~400 MB bundle (~10s); uploading it once and downloading
