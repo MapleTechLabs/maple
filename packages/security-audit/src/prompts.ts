@@ -128,7 +128,7 @@ export const synthesisPrompt = (input: SynthesisInput, context: AgentContext): s
 			"## Your result",
 			"Return exactly one JSON object, with no surrounding prose:",
 			'{"architecture_md": "<the architecture summary, about 1,000 words at most>", "units": [<seed unit>, ...]}',
-			"Each seed unit carries the semantic fields of a ledger unit and nothing else: canonical_refs (surface, boundary, subsystem, attack_class, and lifecycle only when material), surface, boundary, subsystem, attack_class, lifecycle (with canonical_refs.lifecycle), starting_paths, ordinary_attack_class_block, selected_companion_blocks, excluded_blocks. The parent derives coverage_id and every state field.",
+			"Each seed unit carries the semantic fields of a ledger unit and nothing else: canonical_refs (surface, boundary, subsystem, attack_class, and lifecycle only when material), surface, boundary, subsystem, attack_class, lifecycle (with canonical_refs.lifecycle), starting_paths, ordinary_attack_class_block, selected_companion_blocks, excluded_blocks. Add priority (an integer, 1 is hunted first) ranking unauthenticated or lowest-trust entry surfaces first, then boundaries protecting the most valuable resources (credentials, cross-tenant data, code execution, release authority). The parent derives coverage_id and every state field.",
 			`Block references must be exact: an ordinary block is one of the list above; a companion block is FILE.md# plus the heading text before any parenthetical qualifier. Seed only in-scope surfaces as assignable units.${input.profile === "deep" ? " This is a deep run: split units per subsystem and per material lifecycle mode." : ""}`,
 		].join("\n\n"),
 		footer(context),
@@ -235,7 +235,8 @@ export const hunterPrompt = (input: HunterInput, context: AgentContext): string 
 export interface CriticInput {
 	readonly kind: "post-wave" | "final-clean"
 	readonly architectureMd: string
-	readonly ledger: ReadonlyArray<CoverageUnit>
+	/** The ledger, or a compact view of it that keeps every unit and block map. */
+	readonly ledger: ReadonlyArray<object>
 	readonly candidateStates: ReadonlyArray<{ readonly fingerprint: string; readonly state: string }>
 	readonly priorGapSummary: string
 	/** Surfaces hunters returned as `uncovered`, for the critic to accept as units or dismiss. */
