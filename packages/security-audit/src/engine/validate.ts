@@ -172,7 +172,8 @@ const validateOne = (engine: Engine, item: ValidationItem, index: number) =>
 				{
 					...s,
 					ledger: s.ledger.map((unit) =>
-						unit.result_fingerprints.includes(item.fingerprint)
+						unit.result_fingerprints.includes(item.fingerprint) ||
+						unit.coverage_id === item.carriedUnit
 							? { ...unit, unresolved: [...unit.unresolved, `${item.fingerprint}: ${reason}`] }
 							: unit,
 					),

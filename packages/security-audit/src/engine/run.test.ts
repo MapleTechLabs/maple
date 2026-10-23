@@ -475,3 +475,34 @@ describe("runAudit, carrying several records on one unit", () => {
 		expect(ledgerErrors(result.ledger)).toEqual([])
 	})
 })
+
+describe("runAudit, third review regressions", () => {
+	it("hunts a unit carried last run once its record's source changes", async () => {
+		const { result: first } = await runScripted(baseInput(), happy())
+		const second = await runScripted(
+			baseInput({
+				runId: "run-2",
+				prior: { runId: "run-1", sourceRef: "a", ledger: first.ledger, findings: first.findings },
+			}),
+			happy(),
+		)
+		const third = await runScripted(
+			baseInput({
+				runId: "run-3",
+				prior: {
+					runId: "run-2",
+					sourceRef: "b",
+					ledger: second.result.ledger,
+					findings: second.result.findings,
+				},
+				changedSincePrior: (paths) => paths.some((p) => p.includes("keys")),
+			}),
+			happy(),
+		)
+		expect(
+			third.recorded.invocations.some(
+				(i) => i.role === "hunter" && i.prompt.includes(`"coverage_id": "${idOf(KEYS)}"`),
+			),
+		).toBe(true)
+	})
+})
