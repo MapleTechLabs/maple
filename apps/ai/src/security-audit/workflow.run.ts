@@ -284,18 +284,25 @@ export const auditWithAgents = <E, R>(
 		const httpClient = yield* HttpClient.HttpClient
 		/** One invocation from the org's month, billed once it is granted. */
 		const admit = (agentId: string) =>
-			store.reserveOrgInvocation(payload.runId, payload.orgBudget.period, payload.orgBudget.limit).pipe(
-				Effect.tap((granted) =>
-					granted
-						? trackSecurityAuditInvocations({
-								orgId,
-								runId: payload.runId,
-								agentId,
-								invocations: 1,
-							}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
-						: Effect.void,
-				),
-			)
+			store
+				.reserveOrgInvocation(
+					payload.runId,
+					agentId,
+					payload.orgBudget.period,
+					payload.orgBudget.limit,
+				)
+				.pipe(
+					Effect.tap((granted) =>
+						granted
+							? trackSecurityAuditInvocations({
+									orgId,
+									runId: payload.runId,
+									agentId,
+									invocations: 1,
+								}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
+							: Effect.void,
+					),
+				)
 
 		const result = yield* runAudit({
 			runId: payload.runId,

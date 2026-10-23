@@ -17,6 +17,7 @@ import {
 	SecurityAuditEventDetail,
 	SecurityAuditEvents,
 	SecurityAuditFindings,
+	SecurityAuditOrgReservations,
 	SecurityAuditOrgUsage,
 	SecurityAuditRunFindings,
 	SecurityAuditRuns,
@@ -168,12 +169,14 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 	/** Agent invocations the org's runs reserved in `period` (UTC `YYYY-MM`). */
 	readonly orgInvocationsSpent: (period: string) => Effect.Effect<number, AuditStoreError>
 	/**
-	 * Reserves one invocation of `runId` against the org's `period` in one conditional write: true
-	 * while the org has spent fewer than `limit`, so concurrent runs never overspend. False once it
-	 * has, and for a run that already finished (finished runs take no writes).
+	 * Reserves the invocation of `agentId` in `runId` against the org's `period`: true while the org
+	 * has spent fewer than `limit`, so concurrent runs never overspend. Idempotent per (run, agent):
+	 * a retry finds its earlier grant and counts nothing. False once the limit is reached, and for a
+	 * run that already finished (finished runs take no writes).
 	 */
 	readonly reserveOrgInvocation: (
 		runId: string,
+		agentId: string,
 		period: string,
 		limit: number,
 	) => Effect.Effect<boolean, AuditStoreError>
@@ -1349,18 +1352,30 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 
 				const reserveOrgInvocation: SecurityAuditOrgStore["reserveOrgInvocation"] = Effect.fn(
 					"SecurityAuditStore.reserveOrgInvocation",
-				)(function* (rawRunId, period, limit) {
+				)(function* (rawRunId, agentId, period, limit) {
 					yield* Effect.annotateCurrentSpan({ "maple.security_audit.org_limit": limit })
 					const runId = yield* decodeRunId(rawRunId)
-					// The insert path writes 1, so a limit below 1 must refuse before it.
-					if (limit < 1) return false
 					const now = yield* Clock.currentTimeMillis
 					return yield* dbExecute((db) =>
 						db.transaction(
 							Effect.gen(function* () {
 								// A cancel or settle waits on this lock, and a finished run reserves nothing.
+								// It also serialises two tries of one agent, so the check below is race-free.
 								const open = yield* lockOpenRun(db, orgId, runId, "org invocation")
 								if (Option.isNone(open)) return false
+								const granted = yield* db.run(
+									PG.from(SecurityAuditOrgReservations)
+										.select("agentId")
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.runId.eq(runId),
+											$.agentId.eq(agentId),
+										])
+										.limit(1),
+								)
+								if (granted.length > 0) return true
+								// The insert path writes 1, so a limit below 1 must refuse before it.
+								if (limit < 1) return false
 								const rows = yield* db.run(
 									PG.insertInto(SecurityAuditOrgUsage)
 										.values({ orgId, period, invocationsSpent: 1, updatedAt: now })
@@ -1374,7 +1389,13 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										})
 										.returning("invocationsSpent"),
 								)
-								return rows.length > 0
+								if (rows.length === 0) return false
+								yield* db.run(
+									PG.insertInto(SecurityAuditOrgReservations)
+										.values({ runId, agentId, orgId, period, createdAt: now })
+										.onConflictDoNothing({ target: ["runId", "agentId"] }),
+								)
+								return true
 							}),
 						),
 					)

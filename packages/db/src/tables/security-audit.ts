@@ -215,6 +215,23 @@ export const SecurityAuditOrgUsage = PG.table("security_audit_org_usage", {
 	tenantColumn: "orgId",
 })
 
+/**
+ * One granted invocation per (run, agent): a retried or replayed reservation finds its grant here
+ * instead of counting it again in `security_audit_org_usage`.
+ */
+export const SecurityAuditOrgReservations = PG.table("security_audit_org_reservations", {
+	columns: {
+		runId: PG.column(PG.brand(PG.text, SecurityAuditRunId), { name: "run_id" }),
+		agentId: PG.column(PG.text, { name: "agent_id" }),
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		period: PG.text,
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	},
+	primaryKey: ["runId", "agentId"],
+	indexes: [PG.index("security_audit_org_reservations_org_idx", ["orgId", "period"])],
+	tenantColumn: "orgId",
+})
+
 export type SecurityAuditTargetRow = PG.SelectRowOf<typeof SecurityAuditTargets>
 export type SecurityAuditRunRow = PG.SelectRowOf<typeof SecurityAuditRuns>
 export type SecurityAuditUnitRow = PG.SelectRowOf<typeof SecurityAuditUnits>

@@ -204,7 +204,9 @@ describe("auditWithAgents", () => {
 			const { store, target } = yield* setup
 			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
 			// Other runs of the org spent 3 of its 9 after this one started with a budget of 400.
-			yield* Effect.forEach([1, 2, 3], () => store.reserveOrgInvocation(run.id, "2026-10", 9))
+			yield* Effect.forEach([1, 2, 3], (i) =>
+				store.reserveOrgInvocation(run.id, `other-${i}`, "2026-10", 9),
+			)
 			const calls: Array<string> = []
 			const result = yield* auditWithAgents(
 				{ ...payloadFor(run.id), orgBudget: { period: "2026-10", limit: 9 } },
