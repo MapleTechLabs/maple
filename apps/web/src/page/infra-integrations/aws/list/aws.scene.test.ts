@@ -43,6 +43,7 @@ const connection = (metricStream: V2AwsConnection["metric_stream"]): V2AwsConnec
 	last_checked_at: null,
 	last_check_error: null,
 	metric_stream: metricStream,
+	metric_stream_changed_at: null,
 	metrics_last_received_at: null,
 	metrics_last_error: null,
 	created_at: Schema.decodeSync(Timestamp)("2026-10-23T10:00:00.000Z"),
