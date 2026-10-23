@@ -146,6 +146,10 @@ export const SecurityAuditFindings = PG.table("security_audit_findings", {
 		lastSeenRef: PG.column(PG.text, { name: "last_seen_ref" }),
 		/** The revalidation that no longer found it; cleared when it regresses. */
 		fixedRunId: PG.column(PG.nullable(PG.brand(PG.text, SecurityAuditRunId)), { name: "fixed_run_id" }),
+		/** Why a person last set `status` (dismissed, accepted risk, reopened); null until one does. */
+		statusReason: PG.column(PG.nullable(PG.text), { name: "status_reason" }),
+		statusChangedBy: PG.column(PG.nullable(PG.brand(PG.text, UserId)), { name: "status_changed_by" }),
+		statusChangedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "status_changed_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},

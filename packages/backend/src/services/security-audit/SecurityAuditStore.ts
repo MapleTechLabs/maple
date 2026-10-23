@@ -8,7 +8,9 @@ import type { VcsRepositoryId } from "@maple/domain/http/vcs"
 import {
 	SecurityAuditRunId,
 	type SecurityAuditProfile,
+	type SecurityAuditFindingStatus,
 	type SecurityAuditRunKind,
+	type SecurityAuditRunStatus,
 	SecurityAuditTargetId,
 } from "@maple/domain/security-audit"
 import {
@@ -79,12 +81,17 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 	readonly createTarget: (
 		input: CreateTargetInput,
 	) => Effect.Effect<SecurityAuditTargetRow, AuditStoreError>
+	readonly listTargets: () => Effect.Effect<ReadonlyArray<SecurityAuditTargetRow>, AuditStoreError>
+	readonly getTarget: (
+		targetId: SecurityAuditTargetId,
+	) => Effect.Effect<Option.Option<SecurityAuditTargetRow>, AuditStoreError>
 	readonly startRun: (input: StartRunInput) => Effect.Effect<SecurityAuditRunRow, AuditStoreError>
 	readonly finishRun: (runId: string, outcome: FinishRunOutcome) => Effect.Effect<void, AuditStoreError>
 	readonly addUsage: (runId: string, usage: RunUsage) => Effect.Effect<void, AuditStoreError>
 	readonly getRun: (runId: string) => Effect.Effect<Option.Option<SecurityAuditRunRow>, AuditStoreError>
 	readonly listRuns: (options?: {
 		readonly targetId?: SecurityAuditTargetId
+		readonly statuses?: Arr.NonEmptyReadonlyArray<SecurityAuditRunStatus>
 		readonly limit?: number
 	}) => Effect.Effect<ReadonlyArray<SecurityAuditRunRow>, AuditStoreError>
 	readonly listUnits: (runId: string) => Effect.Effect<ReadonlyArray<SecurityAuditUnitRow>, AuditStoreError>
@@ -102,6 +109,14 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		fingerprints: ReadonlyArray<string>,
 		runId: string,
 	) => Effect.Effect<number, AuditStoreError>
+	/** A person's triage of one finding, with why; None when the target has no such finding. */
+	readonly setFindingStatus: (
+		targetId: SecurityAuditTargetId,
+		fingerprint: string,
+		status: Exclude<SecurityAuditFindingStatus, "fixed">,
+		reason: string,
+		actor: UserId,
+	) => Effect.Effect<Option.Option<SecurityAuditFindingRow>, AuditStoreError>
 }
 
 export interface SecurityAuditStoreApi {
@@ -566,6 +581,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 				const listRuns: SecurityAuditOrgStore["listRuns"] = Effect.fn("SecurityAuditStore.listRuns")(
 					function* (options) {
 						const targetId = options?.targetId
+						const statuses = options?.statuses
 						return yield* dbExecute((db) =>
 							db.run(
 								PG.from(SecurityAuditRuns)
@@ -573,6 +589,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 									.where(($) => [
 										$.orgId.eq(orgId),
 										targetId === undefined ? undefined : $.targetId.eq(targetId),
+										statuses === undefined ? undefined : $.status.in_(...statuses),
 									])
 									.orderBy(($) => [[$.startedAt, "desc"]])
 									.limit(options?.limit ?? DEFAULT_RUN_LIST_LIMIT),
@@ -659,7 +676,62 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					return rows.length
 				})
 
+				const listTargets: SecurityAuditOrgStore["listTargets"] = Effect.fn(
+					"SecurityAuditStore.listTargets",
+				)(function* () {
+					return yield* dbExecute((db) =>
+						db.run(
+							PG.from(SecurityAuditTargets)
+								.select()
+								.where(($) => [$.orgId.eq(orgId)])
+								.orderBy(($) => [[$.createdAt, "asc"]]),
+						),
+					)
+				})
+
+				const getTarget: SecurityAuditOrgStore["getTarget"] = Effect.fn(
+					"SecurityAuditStore.getTarget",
+				)(function* (targetId) {
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.from(SecurityAuditTargets)
+								.select()
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(targetId)])
+								.limit(1),
+						),
+					)
+					return Option.fromUndefinedOr(rows[0])
+				})
+
+				const setFindingStatus: SecurityAuditOrgStore["setFindingStatus"] = Effect.fn(
+					"SecurityAuditStore.setFindingStatus",
+				)(function* (targetId, fingerprint, status, reason, actor) {
+					const now = yield* Clock.currentTimeMillis
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.update(SecurityAuditFindings)
+								.set({
+									status,
+									statusReason: reason,
+									statusChangedBy: actor,
+									statusChangedAt: now,
+									updatedAt: now,
+								})
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.targetId.eq(targetId),
+									$.fingerprint.eq(fingerprint),
+								])
+								.returning(),
+						),
+					)
+					return Option.fromUndefinedOr(rows[0])
+				})
+
 				return {
+					listTargets,
+					getTarget,
+					setFindingStatus,
 					saveMetadata,
 					saveArchitecture,
 					saveLedger,

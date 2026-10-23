@@ -409,3 +409,69 @@ describe("SecurityAuditStore replays", () => {
 		),
 	)
 })
+
+describe("SecurityAuditStore triage", () => {
+	it.effect("a dismissal keeps its reason and actor, survives the next run, and is org-scoped", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const first = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveFindings(first.runId, [confirmed("f1"), confirmed("f2")])
+
+				const foreign = yield* store
+					.forOrg(orgB)
+					.setFindingStatus(first.targetId, "f1", "accepted_risk", "not ours", user)
+				const dismissed = yield* scoped.setFindingStatus(
+					first.targetId,
+					"f1",
+					"dismissed",
+					"test fixture only",
+					user,
+				)
+				const missing = yield* scoped.setFindingStatus(first.targetId, "nope", "dismissed", "x", user)
+
+				const next = yield* seedRun(store, orgA, "sha-2", first.targetId)
+				yield* scoped.saveFindings(next.runId, [confirmed("f1"), confirmed("f2")])
+				const findings = yield* scoped.listFindings(first.targetId)
+
+				assert.deepStrictEqual(
+					[Option.isNone(foreign), Option.isNone(missing), Option.map(dismissed, (f) => f.status)],
+					[true, true, Option.some("dismissed")],
+				)
+				assert.deepStrictEqual(
+					findings.map((f) => [f.fingerprint, f.status, f.statusReason, f.statusChangedBy]),
+					[
+						["f1", "dismissed", "test fixture only", user],
+						["f2", "open", null, null],
+					],
+				)
+			}),
+		),
+	)
+
+	it.effect("lists the org's targets and runs by status, never another org's", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const done = yield* seedRun(store, orgA, "sha-1")
+				const failed = yield* seedRun(store, orgA, "sha-2", done.targetId)
+				yield* seedRun(store, orgA, "sha-3", done.targetId)
+				const other = yield* seedRun(store, orgB, "sha-1")
+				yield* scoped.finishRun(done.runId, { status: "complete" })
+				yield* scoped.finishRun(failed.runId, { status: "failed", error: "boom" })
+
+				const finished = yield* scoped.listRuns({
+					targetId: done.targetId,
+					statuses: ["complete", "incomplete"],
+				})
+				const targets = yield* scoped.listTargets()
+				const foreignTarget = yield* scoped.getTarget(other.targetId)
+
+				assert.deepStrictEqual(
+					[finished.map((r) => r.id), targets.map((t) => t.id), Option.isNone(foreignTarget)],
+					[[done.runId], [done.targetId], true],
+				)
+			}),
+		),
+	)
+})
