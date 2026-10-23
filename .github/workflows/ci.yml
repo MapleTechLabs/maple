@@ -461,6 +461,16 @@ jobs:
                         mkdir -p "$TMPDIR"
                         apps/cli/test/native-checkpoint-refresh-probe.sh "$GITHUB_WORKSPACE/dist"
 
+                  - name: Run native external projector module probe
+                    timeout-minutes: 4
+                    env:
+                        KEEP_ROOT: "1"
+                        TMPDIR: ${{ runner.temp }}/maple-native-projectors
+                        MAPLE_TELEMETRY: off
+                    run: |
+                        mkdir -p "$TMPDIR"
+                        bun run apps/cli/test/native-projector-modules.ts "$GITHUB_WORKSPACE/dist"
+
                   - name: Run native local-store migration and reopen probe
                     timeout-minutes: 4
                     env:
@@ -481,6 +491,7 @@ jobs:
                       ${{ runner.temp }}/maple-native-checkpoint
                       ${{ runner.temp }}/maple-native-cp-refresh
                       ${{ runner.temp }}/maple-native-migration
+                      ${{ runner.temp }}/maple-native-projectors
                   if-no-files-found: ignore
 
     # Each leg rebuilds the ~400 MB bundle (~10s); uploading it once and downloading

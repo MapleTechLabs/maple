@@ -1,3 +1,4 @@
+import type { ProjectorRegistry } from "@maple/eventing-core"
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 // The local Maple server: OTLP/HTTP ingest + a raw SQL query API + the bundled
 // SPA, all on one port, backed by an embedded chDB. Replaces the Rust
@@ -30,7 +31,12 @@ import {
 	writeControlSnapshot,
 } from "./eventing/control-store"
 import { ensureEventConsumerToken, eventConsumerTokenMatches } from "./eventing/consumer-auth"
-import { LocalEventingRuntime, type LocalEventingRuntimeApi } from "./eventing/runtime"
+import {
+	LocalEventingProjectors,
+	LocalEventingRuntime,
+	type LocalEventingRuntimeApi,
+} from "./eventing/runtime"
+import { loadProjectorModules, type ProjectorModuleError } from "./eventing/projector-modules"
 import { encodeLogs, encodeMetrics, encodeTraces, type EncodedBatch, OtlpFieldError } from "./otlp/encode"
 import {
 	decodeLogsRequest,
@@ -82,6 +88,8 @@ export interface ServerOptions {
 	readonly dataDir: string
 	readonly configFile?: string
 	readonly minimumRawTelemetryRetentionDays?: number
+	/** Explicit trusted ESM modules, registered before opening chDB or accepting traffic. */
+	readonly projectorModules?: readonly string[]
 	/** Serves the bundled SPA; omit to disable the UI (API-only). */
 	readonly assets?: AssetResolver
 }
@@ -1494,12 +1502,15 @@ const settleWithin = (work: Promise<unknown>, ms: number): Promise<void> => {
  *  port once listening. */
 export const startServer = (
 	options: ServerOptions,
+	/** Already loaded under the CLI PID claim before destructive store preparation. */
+	preparedProjectors?: ProjectorRegistry,
 ): Effect.Effect<
 	{ readonly port: number },
-	ChdbError | EventingStartupError | ServerBindError | LocalServerConfigError,
+	ChdbError | EventingStartupError | ServerBindError | LocalServerConfigError | ProjectorModuleError,
 	Scope.Scope
 > =>
 	Effect.gen(function* () {
+		const projectors = preparedProjectors ?? (yield* loadProjectorModules(options.projectorModules ?? []))
 		const policy = yield* Effect.fromResult(
 			makeBrowserOriginPolicy({
 				browserHosts: options.browserHosts,
@@ -1563,7 +1574,10 @@ export const startServer = (
 		const eventingLayer = Layer.mergeAll(
 			LocalEventingRuntime.layer,
 			LocalEventingControlStore.layer,
-		).pipe(Layer.provide(Layer.succeed(LocalEventingControlConfig, { dataDir: options.dataDir })))
+		).pipe(
+			Layer.provide(Layer.succeed(LocalEventingControlConfig, { dataDir: options.dataDir })),
+			Layer.provide(Layer.succeed(LocalEventingProjectors, projectors)),
+		)
 		const runtime = yield* Effect.acquireRelease(
 			Effect.sync(() => ManagedRuntime.make(Layer.mergeAll(TelemetryLayer, eventingLayer))),
 			(rt) => Effect.promise(() => rt.dispose()),
