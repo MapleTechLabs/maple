@@ -17,15 +17,22 @@ import {
 	type AuditAgentsApi,
 	AuditStore,
 	type AuditStoreApi,
+	changedMatcher,
+	EVERYTHING_CHANGED,
 	type PriorRun,
 	runAudit,
 } from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Cause, type Context, Effect, Layer, Option, Schedule, Schema } from "effect"
+import { Cause, type Context, Effect, Layer, Option, Predicate, Schedule, Schema } from "effect"
 import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "../platform/Llm"
 import { makeAuditAgents } from "./agents"
 import { sandboxSource } from "./sandbox-source"
 import { AUDIT_TOOL_GUIDANCE, type SourceReaderApi } from "./source"
+
+export class AuditCommitUnresolvedError extends Schema.TaggedError<AuditCommitUnresolvedError>()(
+	"@maple/ai/security-audit/CommitUnresolvedError",
+	{ message: Schema.String },
+) {}
 
 /** Sandbox reads time out and fail transiently; the parent retries rather than losing a step. */
 const STEP_RETRY = { retries: { limit: 3, delay: "10 seconds", backoff: "exponential" } } as const
@@ -62,14 +69,27 @@ const durableAgents = (
 	run: (invocation) =>
 		durableStep(`agent:${invocation.agentId}`, agents.run(invocation), AGENT_STEP).pipe(
 			Effect.provide(step),
-			// A step's failure keeps its tag but not its class, so it is rebuilt here.
+			// A replayed failure keeps its fields but not its class, so it is rebuilt from them.
 			Effect.mapError(
 				(error) =>
 					new AuditAgentError({
-						message: Schema.is(AuditAgentError)(error) ? error.message : String(error),
+						message:
+							Predicate.hasProperty(error, "message") && Predicate.isString(error.message)
+								? error.message
+								: String(error),
 						role: invocation.role,
 						agentId: invocation.agentId,
 					}),
+			),
+			// A step that dies (its timeout, an isolate past its CPU limit) costs that agent, not the run.
+			Effect.catchDefect((defect) =>
+				Effect.fail(
+					new AuditAgentError({
+						message: `agent step died: ${Cause.pretty(Cause.die(defect)).slice(0, 600)}`,
+						role: invocation.role,
+						agentId: invocation.agentId,
+					}),
+				),
 			),
 		),
 })
@@ -83,7 +103,11 @@ export const auditWithAgents = <E, R>(
 	agentsFor: (source: SourceReaderApi) => Effect.Effect<AuditAgentsApi, E, R>,
 ) =>
 	Effect.gen(function* () {
-		const orgId = Schema.decodeSync(OrgId)(payload.orgId)
+		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId)
+		yield* Effect.annotateCurrentSpan({
+			"maple.security_audit.run_id": payload.runId,
+			"maple.org_id": orgId,
+		})
 		const store = (yield* SecurityAuditStore).forOrg(orgId)
 		const sandbox = yield* RepoSandboxService
 		const target = { repository: payload.repository, ref: payload.ref }
@@ -92,14 +116,29 @@ export const auditWithAgents = <E, R>(
 			"resolve-commit",
 			sandbox.prepare(orgId, target).pipe(
 				Effect.andThen(sandbox.exec(orgId, target, { command: "git", args: ["rev-parse", "HEAD"] })),
-				Effect.map((result) => result.stdout.trim()),
+				Effect.flatMap((result) =>
+					result.exitCode === 0 && /^[0-9a-f]{40}$/.test(result.stdout.trim())
+						? Effect.succeed(result.stdout.trim())
+						: Effect.fail(
+								new AuditCommitUnresolvedError({
+									message: `cannot pin ${payload.ref}: ${result.stderr.trim().slice(0, 300)}`,
+								}),
+							),
+				),
 			),
 			STEP_RETRY,
 		)
 		const pinned = { repository: payload.repository, ref: sha }
 
 		// Prior records are read, not stepped: a finished run never changes, so a replay reads the same.
-		const priorRow = payload.priorRunId === null ? Option.none() : yield* store.getRun(payload.priorRunId)
+		// Only a finished run of the same repository counts; anything else would make replays disagree.
+		const priorRow = Option.filter(
+			payload.priorRunId === null ? Option.none() : yield* store.getRun(payload.priorRunId),
+			(row) =>
+				(row.status === "complete" || row.status === "incomplete") &&
+				row.metadata !== null &&
+				row.metadata.repo === payload.repository,
+		)
 		const prior: PriorRun | null = Option.isNone(priorRow)
 			? null
 			: {
@@ -120,9 +159,9 @@ export const auditWithAgents = <E, R>(
 							})
 							.pipe(
 								Effect.map((result) =>
-									// A cut diff is treated as everything changed: never claim unchanged source we did not see.
-									result.truncated
-										? ["*"]
+									// A cut or failed diff (an unreachable prior commit) counts as everything changed.
+									result.truncated || result.exitCode !== 0
+										? [EVERYTHING_CHANGED]
 										: result.stdout
 												.split("\n")
 												.filter(Boolean)
@@ -131,7 +170,7 @@ export const auditWithAgents = <E, R>(
 							),
 						STEP_RETRY,
 					)
-		const changedSet = new Set(changed)
+		const changedSincePrior = changedMatcher(changed)
 
 		const agents = yield* agentsFor(sandboxSource(sandbox, orgId, pinned))
 
@@ -150,7 +189,7 @@ export const auditWithAgents = <E, R>(
 			},
 			toolGuidance: AUDIT_TOOL_GUIDANCE,
 			prior,
-			changedSincePrior: (paths) => changedSet.has("*") || paths.some((path) => changedSet.has(path)),
+			changedSincePrior,
 		}).pipe(
 			// The run composes the engine with its host here.
 			// oxlint-disable-next-line effecttsgo/strict-effect-provide
@@ -164,6 +203,12 @@ export const auditWithAgents = <E, R>(
 				),
 			),
 		)
+		yield* store.addUsage(payload.runId, {
+			invocations: result.invocations,
+			inputTokens: result.usage.inputTokens,
+			outputTokens: result.usage.outputTokens,
+			costUsd: result.usage.costUsd,
+		})
 		yield* store.finishRun(
 			payload.runId,
 			result.status === "complete"
@@ -178,18 +223,14 @@ export const auditWithAgents = <E, R>(
 			Cause.hasInterruptsOnly(cause)
 				? Effect.void
 				: Effect.gen(function* () {
-						const store = (yield* SecurityAuditStore).forOrg(
-							Schema.decodeSync(OrgId)(payload.orgId),
-						)
+						const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId)
+						const store = (yield* SecurityAuditStore).forOrg(orgId)
 						yield* store.finishRun(payload.runId, {
 							status: "failed",
 							error: Cause.pretty(cause).slice(0, 2_000),
 						})
 					}).pipe(Effect.ignore),
 		),
-		Effect.withSpan("SecurityAuditWorkflow.run", {
-			attributes: { "maple.security_audit.run_id": payload.runId, "maple.org_id": payload.orgId },
-		}),
 	)
 
 /** The deployed run: discovery and validation on their own models, priced by OpenRouter. */

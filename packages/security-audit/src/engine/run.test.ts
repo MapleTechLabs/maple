@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest"
+import { Schema } from "effect"
+import { Findings, Ledger } from "../schema"
 import { ledgerErrors } from "../validators"
 import {
 	baseInput,
@@ -77,6 +79,19 @@ describe("runAudit, deep profile", () => {
 		})
 		expect(ledgerErrors(recorded.ledger)).toEqual([])
 		expect(recorded.reports?.report).toContain("| high | Any org member can roll another org's API key |")
+	})
+
+	it("produces a ledger and findings that encode through the stored schemas", async () => {
+		const { result } = await runScripted(baseInput(), happy())
+		const encoded = Schema.encodeUnknownSync(Ledger)(result.ledger)
+		expect(Object.fromEntries(encoded.map((u) => [u.surface, u.priority ?? null]))).toEqual({
+			"POST /keys": 1,
+			"POST /search": 2,
+			"POST /export": null,
+		})
+		expect(Schema.encodeUnknownSync(Findings)(result.findings).map((f) => f.fingerprint)).toEqual([
+			FINGERPRINT,
+		])
 	})
 
 	it("hunts the highest-priority unit first", async () => {

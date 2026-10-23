@@ -245,3 +245,67 @@ describe("auditWithAgents", () => {
 		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
 	)
 })
+
+describe("auditWithAgents, prior runs", () => {
+	it.effect("ignores a prior run that has not finished", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const unfinished = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const commands: Array<string> = []
+			yield* auditWithAgents(payloadFor(run.id, unfinished.id), () =>
+				Effect.succeed(scriptedAgents([])),
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox(commands)),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const units = yield* store.listUnits(run.id)
+			assert.deepStrictEqual(
+				[commands, units.map((u) => u.unit.prior_status)],
+				[["git rev-parse HEAD"], ["none"]],
+			)
+		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+	)
+
+	it.effect("treats a failed diff against the prior commit as everything changed", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const prior = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
+			yield* auditWithAgents(payloadFor(prior.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const next = yield* store.startRun({
+				targetId: target.id,
+				kind: "revalidation",
+				sourceRef: "main",
+			})
+			const unreachable: RepoSandboxServiceApi = {
+				...sandbox([]),
+				exec: (_org, _target, options) =>
+					Effect.succeed(
+						options.args[0] === "rev-parse"
+							? { exitCode: 0, stdout: `${SHA}\n`, stderr: "", wallTimeMs: 1, truncated: false }
+							: {
+									exitCode: 128,
+									stdout: "",
+									stderr: "fatal: bad object",
+									wallTimeMs: 1,
+									truncated: false,
+								},
+					),
+			}
+			yield* auditWithAgents(payloadFor(next.id, prior.id), () =>
+				Effect.succeed(scriptedAgents([])),
+			).pipe(
+				Effect.provideService(RepoSandboxService, unreachable),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const units = yield* store.listUnits(next.id)
+			assert.deepStrictEqual(
+				units.map((u) => u.unit.prior_status),
+				["prior_covered_changed_source"],
+			)
+		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+	)
+})

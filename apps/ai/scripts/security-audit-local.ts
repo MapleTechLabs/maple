@@ -17,6 +17,8 @@ import {
 	AuditAgents,
 	type AuditRunInput,
 	AuditStore,
+	changedMatcher,
+	EVERYTHING_CHANGED,
 	type AuditStoreApi,
 	Findings,
 	isSafeRelativePath,
@@ -246,14 +248,15 @@ const main = async () => {
 	const out = resolve(args.out ?? nextRunDir(repo))
 	mkdirSync(out, { recursive: true })
 	const prior = args.prior === undefined ? null : loadPrior(resolve(args.prior))
-	const changed =
-		prior === null
-			? new Set<string>()
-			: new Set(
-					git(args.repoDir, ["diff", "--name-only", prior.sourceRef, sha])
-						.stdout.split("\n")
-						.filter(Boolean),
-				)
+	// A failed diff (a prior commit this clone lacks) counts as everything changed.
+	const diff = prior === null ? undefined : git(args.repoDir, ["diff", "--name-only", prior.sourceRef, sha])
+	const changedSincePrior = changedMatcher(
+		diff === undefined
+			? []
+			: diff.status === 0
+				? diff.stdout.split("\n").filter(Boolean)
+				: [EVERYTHING_CHANGED],
+	)
 
 	const env = { ...process.env }
 	if (args.discoveryModel !== undefined) env.MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER = args.discoveryModel
@@ -289,7 +292,7 @@ const main = async () => {
 			},
 			toolGuidance: AUDIT_TOOL_GUIDANCE,
 			prior,
-			changedSincePrior: (paths) => paths.some((path) => changed.has(path)),
+			changedSincePrior,
 			concurrency: args.concurrency,
 		}
 		return yield* runAudit(input).pipe(

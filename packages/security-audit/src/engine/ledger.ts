@@ -81,9 +81,11 @@ export const seedUnit = (
 		wave: 1,
 		...emptyLive,
 		status: "planned",
-		priority: options.priority,
 	}
-	const withLifecycle = seed.lifecycle === undefined ? base : { ...base, lifecycle: seed.lifecycle }
+	// Optional keys are left out, never set to undefined: the stored schema rejects an undefined value.
+	const prioritized = options.priority === undefined ? base : { ...base, priority: options.priority }
+	const withLifecycle =
+		seed.lifecycle === undefined ? prioritized : { ...prioritized, lifecycle: seed.lifecycle }
 	return inScope(seed.starting_paths, options.scope)
 		? withLifecycle
 		: {
