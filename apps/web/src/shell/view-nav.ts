@@ -37,12 +37,12 @@ import { ACTIVE_RAIL, GROUP_LABEL, NO_TIP, navBadge, type RailTip, triggerFor } 
  * `useOrganizationFeatureFlags`: self-hosted turns every rollout on; a Clerk org reads its public
  * metadata, and fails closed (no flagged rows) until Clerk has an org.
  */
-export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<NavGroup> =>
-	navGroups({
-		releases:
-			!isClerkAuthEnabled ||
-			(clerk !== null && Option.exists(clerk.maybeOrganization, (organization) => organization.flags.releases)),
-	})
+export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<NavGroup> => {
+	const flag = (name: "releases" | "securityAudit") =>
+		!isClerkAuthEnabled ||
+		(clerk !== null && Option.exists(clerk.maybeOrganization, (organization) => organization.flags[name]))
+	return navGroups({ releases: flag("releases"), securityAudit: flag("securityAudit") })
+}
 
 /** The last-hour probe's answer; `null` while it is in flight or after it failed. */
 export const presenceOf = (model: Model): ReadonlyArray<InfraSurfaceLiteral> | null =>

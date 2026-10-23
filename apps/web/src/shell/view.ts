@@ -27,6 +27,7 @@ import { NO_TIP, type RailTip, shellSidebarFooter, shellSidebarHeader } from "./
 import { type BreadcrumbEntry, topbar } from "./view-topbar"
 import { splitPageRails } from "./page-rails"
 import { filterSheet, filterSheetTrigger, rightSheet, rightSheetTrigger } from "./view-page-sheets"
+import { FLAGGED_HREFS } from "./palette/entries"
 import { paletteView } from "./palette/view"
 import { shortcutsDialogView } from "./palette/shortcuts-view"
 import { paletteContextOf } from "./update-palette"
@@ -280,8 +281,8 @@ export const paletteLayerView = Submodel.defineView<Model, Message, OverlayInput
 				model.palette,
 				{
 					context: paletteContextOf(model),
-					isReleasesVisible: shellNavGroups(inputs.clerk ?? null).some((group) =>
-						group.items.some((item) => item.href === "/releases"),
+					visibleFlagged: shellNavGroups(inputs.clerk ?? null).flatMap((group) =>
+						group.items.flatMap((item) => (FLAGGED_HREFS.has(item.href) ? [item.href] : [])),
 					),
 				},
 				(message) => Message.GotPaletteMessage({ message }),

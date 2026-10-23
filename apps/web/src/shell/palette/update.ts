@@ -41,9 +41,17 @@ const rankedIds = (entries: ReadonlyArray<PaletteEntry>, query: string): Readonl
 	new Fuse(searchEntriesOf(entries), FUSE_OPTIONS).search(query).map(({ item }) => item.id)
 
 /** Browse mode for an empty query; otherwise fuse's top matches, ranked in render as cmdk does. */
-export const shownEntries = (model: Model, context: Context, isReleasesVisible: boolean): Shown => {
+export const shownEntries = (
+	model: Model,
+	context: Context,
+	visibleFlagged: ReadonlyArray<string>,
+): Shown => {
 	const all = entriesOf(model, context)
-	const entries = all.filter((entry) => entry.isFlagged !== true || isReleasesVisible)
+	const entries = all.filter(
+		(entry) =>
+			entry.isFlagged !== true ||
+			(entry.target._tag === "Href" && visibleFlagged.includes(entry.target.href)),
+	)
 	const query = model.list.inputValue.trim()
 	if (query === "") return { entries: browseEntries(entries), isSearch: false }
 	const byId = new Map(entries.map((entry) => [entry.id, entry]))
@@ -52,10 +60,8 @@ export const shownEntries = (model: Model, context: Context, isReleasesVisible: 
 }
 
 /** The entries in list order (grouped), what the highlight indexes. */
-const listedEntries = (model: Model, context: Context, isReleasesVisible: boolean) =>
-	groupEntries(shownEntries(model, context, isReleasesVisible).entries).flatMap(
-		(section) => section.entries,
-	)
+const listedEntries = (model: Model, context: Context, visibleFlagged: ReadonlyArray<string>) =>
+	groupEntries(shownEntries(model, context, visibleFlagged).entries).flatMap((section) => section.entries)
 
 /** Opening mounts the palette, whose services read goes out with it. */
 export const open = (): UpdateReturn => ({ model: init(), commands: [LoadPaletteServices()] })
@@ -79,8 +85,8 @@ const toList = Command.mapMessage((message: Combobox.Message) => Message.GotList
 const toDialog = Command.mapMessage((message: Dialog.Message) => Message.GotDialogMessage({ message }))
 
 /** Base UI's Enter: the highlighted entry is picked. */
-const enter = (model: Model, context: Context, isReleasesVisible: boolean): UpdateReturn =>
-	picked(model, listedEntries(model, context, isReleasesVisible)[model.list.highlighted ?? -1])
+const enter = (model: Model, context: Context, visibleFlagged: ReadonlyArray<string>): UpdateReturn =>
+	picked(model, listedEntries(model, context, visibleFlagged)[model.list.highlighted ?? -1])
 
 /** The inline autocomplete: typing searches, arrows move the highlight into view, Enter picks. */
 const listStep = (model: Model, child: Combobox.Message, context: Context): UpdateReturn => {
@@ -112,7 +118,7 @@ export const update = (model: Model, message: Message, context: Context): Update
 			}
 		},
 		GotListMessage: ({ message: child }) => listStep(model, child, context),
-		PressedEnter: ({ isReleasesVisible }) => enter(model, context, isReleasesVisible),
+		PressedEnter: ({ visibleFlagged }) => enter(model, context, visibleFlagged),
 		ClickedEntry: ({ id }) => {
 			const entry = findEntry(model, context, id)
 			// A link's own click navigates (the root routes it), so only the palette closes.
