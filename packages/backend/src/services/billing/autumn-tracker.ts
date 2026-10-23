@@ -12,6 +12,7 @@
  */
 import { Config, Duration, Effect, Option, Redacted } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
+import { SECURITY_AUDIT_INVOCATIONS_FEATURE_ID } from "@maple/domain/billing"
 import {
 	AUTUMN_API_VERSION,
 	AUTUMN_TRACK_PATH,
@@ -34,6 +35,9 @@ export const AI_CREDITS_FEATURE_ID = "ai_credits"
 const TRACK_TIMEOUT = Duration.seconds(5)
 
 export type AiUsageSource = "triage" | "review" | "chat" | "bot"
+
+/** Every billing usage source: the AI surfaces, and the security audit's agent invocations. */
+export type BillingUsageSource = AiUsageSource | "security_audit"
 
 export interface TrackTokenUsageOptions {
 	readonly orgId: string
@@ -231,3 +235,34 @@ export const trackAiCredits = Effect.fn("AutumnTracker.trackAiCredits")(function
 			})),
 	)
 })
+
+export interface TrackSecurityAuditInvocationsOptions {
+	readonly orgId: string
+	readonly runId: string
+	/** The invocation's agent id: one charge per agent, however often its step is retried. */
+	readonly agentId: string
+	readonly invocations: number
+}
+
+/** Charge the agent invocations a security-audit run reserved to the org's plan allotment. */
+export const trackSecurityAuditInvocations = Effect.fn("AutumnTracker.trackSecurityAuditInvocations")(
+	function* ({ orgId, runId, agentId, invocations }: TrackSecurityAuditInvocationsOptions) {
+		if (invocations <= 0) return
+		const source: BillingUsageSource = "security_audit"
+		const idempotencyKey = `${runId}:${agentId}:${source}`
+		yield* postAll(orgId, [
+			{
+				path: AUTUMN_TRACK_PATH,
+				label: SECURITY_AUDIT_INVOCATIONS_FEATURE_ID,
+				idempotencyKey,
+				body: {
+					customer_id: orgId,
+					feature_id: SECURITY_AUDIT_INVOCATIONS_FEATURE_ID,
+					value: invocations,
+					idempotency_key: idempotencyKey,
+					properties: { source, run_id: runId },
+				},
+			},
+		])
+	},
+)

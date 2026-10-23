@@ -17,6 +17,7 @@ import {
 	SecurityAuditEventDetail,
 	SecurityAuditEvents,
 	SecurityAuditFindings,
+	SecurityAuditOrgUsage,
 	SecurityAuditRunFindings,
 	SecurityAuditRuns,
 	SecurityAuditTargets,
@@ -158,6 +159,13 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		fingerprints: ReadonlyArray<string>,
 		runId: string,
 	) => Effect.Effect<number, AuditStoreError>
+	/** Agent invocations the org's runs reserved in `period` (UTC `YYYY-MM`). */
+	readonly orgInvocationsSpent: (period: string) => Effect.Effect<number, AuditStoreError>
+	/**
+	 * Reserves one invocation for `period` in one conditional write: true while the org has spent
+	 * fewer than `limit`, false once it has not, so concurrent runs can never overspend.
+	 */
+	readonly reserveOrgInvocation: (period: string, limit: number) => Effect.Effect<boolean, AuditStoreError>
 	/** A person's triage of one finding, with why; None when the target has no such finding. */
 	readonly setFindingStatus: (
 		targetId: SecurityAuditTargetId,
@@ -1293,10 +1301,51 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					return Option.some({ fingerprint, status, statusReason: reason, statusChangedAt: now })
 				})
 
+				const orgInvocationsSpent: SecurityAuditOrgStore["orgInvocationsSpent"] = Effect.fn(
+					"SecurityAuditStore.orgInvocationsSpent",
+				)(function* (period) {
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.from(SecurityAuditOrgUsage)
+								.select("invocationsSpent")
+								.where(($) => [$.orgId.eq(orgId), $.period.eq(period)])
+								.limit(1),
+						),
+					)
+					return rows[0]?.invocationsSpent ?? 0
+				})
+
+				const reserveOrgInvocation: SecurityAuditOrgStore["reserveOrgInvocation"] = Effect.fn(
+					"SecurityAuditStore.reserveOrgInvocation",
+				)(function* (period, limit) {
+					yield* Effect.annotateCurrentSpan({ "maple.security_audit.org_limit": limit })
+					// The insert path writes 1, so a limit below 1 must refuse before it.
+					if (limit < 1) return false
+					const now = yield* Clock.currentTimeMillis
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.insertInto(SecurityAuditOrgUsage)
+								.values({ orgId, period, invocationsSpent: 1, updatedAt: now })
+								.onConflictDoUpdate({
+									target: ["orgId", "period"],
+									set: ($) => ({
+										invocationsSpent: $.invocationsSpent.add(1),
+										updatedAt: now,
+									}),
+									where: ($) => $.invocationsSpent.lt(limit),
+								})
+								.returning("invocationsSpent"),
+						),
+					)
+					return rows.length > 0
+				})
+
 				return {
 					listTargets,
 					getTarget,
 					setFindingStatus,
+					orgInvocationsSpent,
+					reserveOrgInvocation,
 					findConnectedRepository,
 					latestPriorRun,
 					countUnits,

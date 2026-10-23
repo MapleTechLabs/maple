@@ -186,6 +186,22 @@ describe("runAudit, budget", () => {
 	})
 })
 
+describe("runAudit, disclosed coverage", () => {
+	it("names every unit a budget-cut run did not audit in its report", async () => {
+		const { result } = await runScripted(baseInput({ budget: 9 }), happy())
+		const unaudited = result.ledger.filter((u) => u.status !== "covered" && u.status !== "candidate")
+		expect(unaudited.length).toBeGreaterThan(0)
+		expect(result.reports.report).toContain(
+			`Not covered by this run (${unaudited.length} ${unaudited.length === 1 ? "unit" : "units"}):`,
+		)
+		const unnamed = unaudited.filter(
+			(unit) =>
+				!result.reports.report.includes(`- ${unit.status}: ${unit.surface} / ${unit.attack_class}`),
+		)
+		expect(unnamed).toEqual([])
+	})
+})
+
 describe("runAudit, record verification", () => {
 	it("applies a material replacement only after a fresh verifier agrees", async () => {
 		const { result, recorded } = await runScripted(

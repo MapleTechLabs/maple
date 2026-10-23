@@ -4,6 +4,7 @@ import {
 	MapleAiApi,
 	DEFAULT_RUN_BUDGET,
 	SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT,
+	SecurityAuditBudgetExhaustedError,
 	SECURITY_AUDIT_MAX_BUDGET,
 	SecurityAuditDisabledError,
 	type SecurityAuditEvent,
@@ -24,17 +25,19 @@ import {
 	SecurityAuditTargetNotFoundError,
 } from "@maple/domain/http"
 import {
+	securityAuditBudgetPeriod,
 	SecurityAuditRunId,
 	type SecurityAuditTargetId,
 	type SecurityAuditWorkflowPayload,
 } from "@maple/domain/security-audit"
 import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
-import { AuditStoreError } from "@maple/security-audit"
-import { Effect, Option, Schema } from "effect"
+import { AuditStoreError, minimumInvocations } from "@maple/security-audit"
+import { Clock, Effect, Option, Schema } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { SecurityAuditPlanBudget } from "@maple/backend/services/security-audit/SecurityAuditPlanBudget"
 import {
 	type SecurityAuditEventRecord,
 	type SecurityAuditOrgStore,
@@ -148,9 +151,12 @@ const orUnavailable = <A, E, R>(effect: Effect.Effect<A, E | AuditStoreError, R>
 		),
 	)
 
-/** The request's budget, else the target's, else the default; never above the hard cap. */
-const resolveBudget = (requested: number | undefined, targetBudget: number | null) =>
-	Math.min(requested ?? targetBudget ?? DEFAULT_RUN_BUDGET, SECURITY_AUDIT_MAX_BUDGET)
+/**
+ * The request's budget, else the target's, else the default; never above the hard cap or what the
+ * org has left this month.
+ */
+const resolveBudget = (requested: number | undefined, targetBudget: number | null, orgRemaining: number) =>
+	Math.min(requested ?? targetBudget ?? DEFAULT_RUN_BUDGET, SECURITY_AUDIT_MAX_BUDGET, orgRemaining)
 
 const newRunId = () => Schema.decodeSync(SecurityAuditRunId)(crypto.randomUUID())
 
@@ -160,6 +166,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 		const stores = yield* SecurityAuditStore
 		const featureFlags = yield* OrganizationFeatureFlagsService
 		const workflow = yield* SecurityAuditWorkflowStarter
+		const planBudget = yield* SecurityAuditPlanBudget
 
 		/** The caller's org store, once the org is in the rollout. The org is the tenant's, never the request's. */
 		const orgAccess = Effect.gen(function* () {
@@ -286,7 +293,34 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					const target = yield* requireTarget(store, params.targetId)
 					const prior = yield* orUnavailable(store.latestPriorRun(target.id))
 					const runId = newRunId()
-					const budget = resolveBudget(payload.budget, target.budgetPerRun)
+					// The org's month: its plan's limit less what its runs already reserved.
+					const period = securityAuditBudgetPeriod(yield* Clock.currentTimeMillis)
+					const orgLimit = yield* planBudget.monthlyLimit(tenant.orgId).pipe(
+						Effect.catchTag("@maple/backend/security-audit/PlanUnavailable", (error) =>
+							Effect.fail(
+								new SecurityAuditPersistenceError({
+									message: "Could not confirm the organization's plan with billing.",
+									cause: error.message,
+								}),
+							),
+						),
+					)
+					const orgRemaining = Math.max(
+						0,
+						orgLimit - (yield* orUnavailable(store.orgInvocationsSpent(period))),
+					)
+					const required = minimumInvocations(target.profile)
+					if (orgRemaining < required) {
+						return yield* new SecurityAuditBudgetExhaustedError({
+							message:
+								orgLimit === 0
+									? "This organization's plan does not include security audit invocations."
+									: `This organization has ${orgRemaining} security audit invocations left this month; a ${target.profile} run needs at least ${required}.`,
+							remaining: orgRemaining,
+							required,
+						})
+					}
+					const budget = resolveBudget(payload.budget, target.budgetPerRun, orgRemaining)
 					// The branch for now; the Workflow pins the commit it resolves to before any agent runs.
 					const run = yield* orUnavailable(
 						store.startRun({
@@ -325,6 +359,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						scopePaths: run.scopePaths,
 						budget,
 						priorRunId: Option.match(prior, { onNone: () => null, onSome: (r) => r.id }),
+						orgBudget: { period, limit: orgLimit },
 					}
 					yield* workflow
 						.create(workflowPayload)

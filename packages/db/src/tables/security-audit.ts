@@ -196,9 +196,26 @@ export const SecurityAuditEvents = PG.table("security_audit_events", {
 	tenantColumn: "orgId",
 })
 
+/**
+ * An org's security-audit agent invocations per UTC month. The Workflow reserves one row unit
+ * before every agent step, conditionally on the org's plan limit, so concurrent runs never overspend.
+ */
+export const SecurityAuditOrgUsage = PG.table("security_audit_org_usage", {
+	columns: {
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		/** UTC month, `YYYY-MM`. */
+		period: PG.text,
+		invocationsSpent: PG.column(PG.int4, { name: "invocations_spent", default: 0 }),
+		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+	},
+	primaryKey: ["orgId", "period"],
+	tenantColumn: "orgId",
+})
+
 export type SecurityAuditTargetRow = PG.SelectRowOf<typeof SecurityAuditTargets>
 export type SecurityAuditRunRow = PG.SelectRowOf<typeof SecurityAuditRuns>
 export type SecurityAuditUnitRow = PG.SelectRowOf<typeof SecurityAuditUnits>
 export type SecurityAuditRunFindingRow = PG.SelectRowOf<typeof SecurityAuditRunFindings>
 export type SecurityAuditFindingRow = PG.SelectRowOf<typeof SecurityAuditFindings>
 export type SecurityAuditEventRow = PG.SelectRowOf<typeof SecurityAuditEvents>
+export type SecurityAuditOrgUsageRow = PG.SelectRowOf<typeof SecurityAuditOrgUsage>

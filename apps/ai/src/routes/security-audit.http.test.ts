@@ -30,6 +30,7 @@ import {
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { SecurityAuditPlanBudget } from "@maple/backend/services/security-audit/SecurityAuditPlanBudget"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { Context, Effect, Layer, Schema } from "effect"
 import { HttpRouter, HttpServerRequest } from "effect/http"
@@ -75,6 +76,8 @@ const makeHarness = (
 		readonly enabled?: boolean
 		readonly startFails?: boolean
 		readonly cancelFails?: boolean
+		/** The org's monthly invocation limit from its plan. */
+		readonly orgLimit?: number
 	} = {},
 ) => {
 	const db = createTestDb(trackedDbs)
@@ -115,6 +118,7 @@ const makeHarness = (
 				storeLayer,
 				starter,
 				Layer.succeed(AuditLogService, auditLog),
+				SecurityAuditPlanBudget.fixed(options.orgLimit ?? 20_000),
 				OrganizationFeatureFlagsService.fixed(
 					options.enabled === false
 						? DISABLED_ORGANIZATION_FEATURE_FLAGS
@@ -371,6 +375,62 @@ describe("/api/security-audit runs", () => {
 				[next.body.id, "main", [], 300, whole.body.id],
 				[expect.any(String), "next", [], 400, null],
 			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a run the org's monthly invocations cannot fund, and starts none", async () => {
+		const noPlan = makeHarness({ orgLimit: 0 })
+		const spent = makeHarness({ orgLimit: 20 })
+		try {
+			const refusedTarget = await noPlan.call("POST", "/targets", { body: TARGET })
+			const refused = await noPlan.call("POST", `/targets/${refusedTarget.body.id}/runs`, { body: {} })
+
+			const target = await spent.call("POST", "/targets", { body: TARGET })
+			const period = new Date().toISOString().slice(0, 7)
+			// Other runs this month reserved 14 of 20: a deep run needs 8 to fund recon and its reserves.
+			await spent.withStore((store) =>
+				Effect.forEach(
+					Array.from({ length: 14 }, (_, i) => i),
+					() => store.forOrg(ORG_A).reserveOrgInvocation(period, 20),
+				),
+			)
+			const short = await spent.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+
+			expect([
+				refused.status,
+				refused.body._tag,
+				refused.body.remaining,
+				refused.body.required,
+			]).toEqual([402, tag("SecurityAuditBudgetExhaustedError"), 0, 8])
+			expect([short.status, short.body.remaining, short.body.required]).toEqual([402, 6, 8])
+			expect([noPlan.started, spent.started]).toEqual([[], []])
+			expect([
+				await noPlan.count("security_audit_runs"),
+				await spent.count("security_audit_runs"),
+			]).toEqual([0, 0])
+		} finally {
+			await noPlan.dispose()
+			await spent.dispose()
+		}
+	})
+
+	it("caps a run's budget at what the org has left this month and passes the org limit on", async () => {
+		const harness = makeHarness({ orgLimit: 50 })
+		try {
+			const target = await harness.call("POST", "/targets", { body: { ...TARGET, budgetPerRun: 300 } })
+			const period = new Date().toISOString().slice(0, 7)
+			await harness.withStore((store) =>
+				Effect.forEach(
+					Array.from({ length: 20 }, (_, i) => i),
+					() => store.forOrg(ORG_A).reserveOrgInvocation(period, 50),
+				),
+			)
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+
+			expect([run.status, run.body.budget]).toEqual([200, 30])
+			expect(harness.started.map((p) => [p.budget, p.orgBudget])).toEqual([[30, { period, limit: 50 }]])
 		} finally {
 			await harness.dispose()
 		}

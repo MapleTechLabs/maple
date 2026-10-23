@@ -14,6 +14,7 @@ import type { SecurityAuditTargetId, SecurityAuditWorkflowPayload } from "@maple
 import { type AgentInvocation, type AuditAgentsApi, coverageId, type Finding } from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Option, Schema } from "effect"
+import { HttpClient } from "effect/http"
 import { auditWithAgents } from "./workflow.run"
 
 const trackedDbs: TestDb[] = []
@@ -120,6 +121,16 @@ const replayingStep = (recorded: Map<string, unknown>): Cloudflare.WorkflowStep[
 	waitForEvent: () => Effect.die("unused"),
 })
 
+/** The store over a fresh database, and an HTTP client no test reaches: billing is unconfigured. */
+const testLayer = () =>
+	Layer.mergeAll(
+		SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+		Layer.succeed(
+			HttpClient.HttpClient,
+			HttpClient.make(() => Effect.die("no network in tests")),
+		),
+	)
+
 const setup = Effect.gen(function* () {
 	const store = (yield* SecurityAuditStore).forOrg(Schema.decodeUnknownSync(OrgIdSchema)("org_a"))
 	const target = yield* store.createTarget({
@@ -139,6 +150,7 @@ const payloadFor = (runId: string, priorRunId: string | null = null): SecurityAu
 	scopePaths: [],
 	budget: 400,
 	priorRunId,
+	orgBudget: { period: "2026-10", limit: 20_000 },
 })
 
 describe("auditWithAgents", () => {
@@ -166,7 +178,38 @@ describe("auditWithAgents", () => {
 				["complete", Option.some(["complete", SHA]), ["covered"]],
 			)
 			assert.deepStrictEqual(commands, ["git rev-parse HEAD"])
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect("stops launching agents once the org's month is spent, ending incomplete within it", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			// Another run of the org reserved 3 of its 9 after this one started with a budget of 400.
+			yield* Effect.forEach([1, 2, 3], () => store.reserveOrgInvocation("2026-10", 9))
+			const calls: Array<string> = []
+			const result = yield* auditWithAgents(
+				{ ...payloadFor(run.id), orgBudget: { period: "2026-10", limit: 9 } },
+				() => Effect.succeed(scriptedAgents(calls)),
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				{
+					status: result.status,
+					agents: calls.length,
+					orgSpent: yield* store.orgInvocationsSpent("2026-10"),
+					row: Option.map(row, (r) => [
+						r.status,
+						r.invocationsSpent,
+						r.incompleteReason?.split("; ").includes("org_budget_exhausted"),
+					]),
+				},
+				{ status: "incomplete", agents: 6, orgSpent: 9, row: Option.some(["incomplete", 6, true]) },
+			)
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect("marks the run failed when the sandbox cannot pin the commit", () =>
@@ -191,7 +234,7 @@ describe("auditWithAgents", () => {
 				],
 				["Failure", Option.some(["failed", true])],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect("replays recorded agent steps instead of running those agents again", () =>
@@ -214,7 +257,7 @@ describe("auditWithAgents", () => {
 				[second, replay.status, [...recorded.keys()].filter((k) => k.startsWith("agent:")).length],
 				[[], "complete", first.length],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect("diffs against the prior run's commit and hands the engine its ledger", () =>
@@ -245,7 +288,7 @@ describe("auditWithAgents", () => {
 					["prior_covered_changed_source"],
 				],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 })
 
@@ -273,7 +316,7 @@ describe("auditWithAgents, prior runs", () => {
 				[commands, units.map((u) => u.unit.prior_status)],
 				[["git rev-parse HEAD"], ["none"]],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect("treats a failed diff against the prior commit as everything changed", () =>
@@ -315,7 +358,7 @@ describe("auditWithAgents, prior runs", () => {
 				units.map((u) => u.unit.prior_status),
 				["prior_covered_changed_source"],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 })
 
@@ -402,7 +445,7 @@ describe("auditWithAgents, settling", () => {
 				findings.map((f) => f.status),
 				["open"],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect("leaves a finding open when the run that missed it was only a quick pass", () =>
@@ -430,7 +473,7 @@ describe("auditWithAgents, settling", () => {
 				findings.map((f) => f.status),
 				["open"],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect("does nothing for a run its starter already marked failed", () =>
@@ -449,7 +492,7 @@ describe("auditWithAgents, settling", () => {
 				[calls, commands, Option.map(row, (r) => r.status)],
 				[[], [], Option.some("failed")],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect("keeps a run cancelled mid-flight cancelled and marks nothing fixed when it settles", () =>
@@ -490,7 +533,7 @@ describe("auditWithAgents, settling", () => {
 				],
 				["complete", Option.some(["incomplete", "cancelled"]), ["open"]],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect(
@@ -520,8 +563,6 @@ describe("auditWithAgents, settling", () => {
 					findings.map((f) => [f.fingerprint, f.status]),
 					[["keys/roll-missing-org-scope", "fixed"]],
 				)
-			}).pipe(
-				Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer))),
-			),
+			}).pipe(Effect.provide(testLayer())),
 	)
 })

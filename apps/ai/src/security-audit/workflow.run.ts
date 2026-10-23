@@ -7,16 +7,21 @@
  * Clocks are read inside steps or the store only: the body replays.
  */
 import { OrgId } from "@maple/domain/http"
-import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
+import { ORG_BUDGET_EXHAUSTED, type SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { durableStep } from "@maple/backend/platform/durable-step"
+import { trackSecurityAuditInvocations } from "@maple/backend/services/billing/autumn-tracker"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import {
+	type AgentAnswer,
+	type AgentInvocation,
 	AuditAgents,
 	AuditAgentError,
 	type AuditAgentsApi,
+	AuditBudgetExhaustedError,
 	AuditStore,
 	type AuditStoreApi,
+	type AuditStoreError,
 	changedMatcher,
 	EVERYTHING_CHANGED,
 	type PriorRun,
@@ -24,6 +29,7 @@ import {
 } from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, type Context, Effect, Layer, Option, Predicate, Schedule, Schema } from "effect"
+import { HttpClient } from "effect/http"
 import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "../platform/Llm"
 import { makeAuditAgents } from "./agents"
 import { sandboxSource } from "./sandbox-source"
@@ -58,41 +64,80 @@ const retried = (store: AuditStoreApi): AuditStoreApi => {
 	}
 }
 
+const messageOf = (error: unknown): string =>
+	Predicate.hasProperty(error, "message") && Predicate.isString(error.message)
+		? error.message
+		: String(error)
+
 /**
  * Each invocation a durable step: a replay returns its recorded answer instead of running it again.
- * The run's step context is captured once, so `run` itself has no requirements.
+ * Before it, `admit` reserves the invocation from the org's monthly budget in its own durable step,
+ * so a replay neither reserves nor bills it twice. The run's step context is captured once.
  */
 const durableAgents = (
 	agents: AuditAgentsApi,
 	step: Context.Context<Cloudflare.WorkflowStep>,
+	admit: (agentId: string) => Effect.Effect<boolean, AuditStoreError>,
 ): AuditAgentsApi => ({
-	run: (invocation) =>
-		durableStep(`agent:${invocation.agentId}`, agents.run(invocation), AGENT_STEP).pipe(
+	run: (invocation) => {
+		const refused = (message: string, reason: string) =>
+			new AuditBudgetExhaustedError({ message, agentId: invocation.agentId, reason })
+		const admitted: Effect.Effect<boolean, AuditBudgetExhaustedError> = durableStep(
+			`org-budget:${invocation.agentId}`,
+			admit(invocation.agentId),
+			STEP_RETRY,
+		).pipe(
 			Effect.provide(step),
-			// A replayed failure keeps its fields but not its class, so it is rebuilt from them.
-			Effect.mapError(
-				(error) =>
-					new AuditAgentError({
-						message:
-							Predicate.hasProperty(error, "message") && Predicate.isString(error.message)
-								? error.message
-								: String(error),
-						role: invocation.role,
-						agentId: invocation.agentId,
-					}),
-			),
-			// A step that dies (its timeout, an isolate past its CPU limit) costs that agent, not the run.
-			Effect.catchDefect((defect) =>
-				Effect.fail(
-					new AuditAgentError({
-						message: `agent step died: ${Cause.pretty(Cause.die(defect)).slice(0, 600)}`,
-						role: invocation.role,
-						agentId: invocation.agentId,
-					}),
+			// A budget that cannot be read is not a budget with room: the run stops rather than overspend.
+			Effect.mapError((error) =>
+				refused(
+					`the organization's invocation budget could not be read: ${messageOf(error)}`,
+					"org_budget_unavailable",
 				),
 			),
-		),
+		)
+		return Effect.flatMap(
+			admitted,
+			(granted): Effect.Effect<AgentAnswer, AuditAgentError | AuditBudgetExhaustedError> =>
+				granted
+					? runAgentStep(agents, step, invocation)
+					: Effect.fail(
+							refused(
+								"the organization's monthly invocation budget is spent",
+								ORG_BUDGET_EXHAUSTED,
+							),
+						),
+		)
+	},
 })
+
+const runAgentStep = (
+	agents: AuditAgentsApi,
+	step: Context.Context<Cloudflare.WorkflowStep>,
+	invocation: AgentInvocation,
+) =>
+	durableStep(`agent:${invocation.agentId}`, agents.run(invocation), AGENT_STEP).pipe(
+		Effect.provide(step),
+		// A replayed failure keeps its fields but not its class, so it is rebuilt from them.
+		Effect.mapError(
+			(error) =>
+				new AuditAgentError({
+					message: messageOf(error),
+					role: invocation.role,
+					agentId: invocation.agentId,
+				}),
+		),
+		// A step that dies (its timeout, an isolate past its CPU limit) costs that agent, not the run.
+		Effect.catchDefect((defect) =>
+			Effect.fail(
+				new AuditAgentError({
+					message: `agent step died: ${Cause.pretty(Cause.die(defect)).slice(0, 600)}`,
+					role: invocation.role,
+					agentId: invocation.agentId,
+				}),
+			),
+		),
+	)
 
 /**
  * The Workflow body over an agent factory: the deployed run passes real models, tests pass scripted
@@ -184,6 +229,21 @@ export const auditWithAgents = <E, R>(
 		const changedSincePrior = changedMatcher(changed)
 
 		const agents = yield* agentsFor(sandboxSource(sandbox, orgId, pinned))
+		const httpClient = yield* HttpClient.HttpClient
+		/** One invocation from the org's month, billed once it is granted. */
+		const admit = (agentId: string) =>
+			store.reserveOrgInvocation(payload.orgBudget.period, payload.orgBudget.limit).pipe(
+				Effect.tap((granted) =>
+					granted
+						? trackSecurityAuditInvocations({
+								orgId,
+								runId: payload.runId,
+								agentId,
+								invocations: 1,
+							}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
+						: Effect.void,
+				),
+			)
 
 		const result = yield* runAudit({
 			runId: payload.runId,
@@ -208,7 +268,7 @@ export const auditWithAgents = <E, R>(
 				Layer.mergeAll(
 					Layer.succeed(
 						AuditAgents,
-						durableAgents(agents, yield* Effect.context<Cloudflare.WorkflowStep>()),
+						durableAgents(agents, yield* Effect.context<Cloudflare.WorkflowStep>(), admit),
 					),
 					Layer.succeed(AuditStore, retried(store)),
 				),

@@ -64,6 +64,7 @@ import { ScrapeTargets, ScrapeTargetChecks } from "./scrape-targets"
 import {
 	SecurityAuditEvents,
 	SecurityAuditFindings,
+	SecurityAuditOrgUsage,
 	SecurityAuditRunFindings,
 	SecurityAuditRuns,
 	SecurityAuditTargets,
@@ -201,6 +202,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	SecurityAuditRunFindings,
 	SecurityAuditFindings,
 	SecurityAuditEvents,
+	SecurityAuditOrgUsage,
 	SupabaseConnections,
 	SupabaseProjects,
 	SupabaseProjectInsights,

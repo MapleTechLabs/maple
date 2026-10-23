@@ -1003,3 +1003,32 @@ describe("SecurityAuditStore writes after a run finished", () => {
 		),
 	)
 })
+
+describe("SecurityAuditStore org invocation budget", () => {
+	it.effect("reserves concurrent invocations up to the limit and never past it, per org and month", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const a = store.forOrg(orgA)
+				const grants = yield* Effect.forEach(
+					Array.from({ length: 10 }, (_, i) => i),
+					() => a.reserveOrgInvocation("2026-10", 3),
+					{ concurrency: "unbounded" },
+				)
+				const otherMonth = yield* a.reserveOrgInvocation("2026-11", 3)
+				const otherOrg = yield* store.forOrg(orgB).reserveOrgInvocation("2026-10", 3)
+				const noPlan = yield* store.forOrg(orgB).reserveOrgInvocation("2026-12", 0)
+				assert.deepStrictEqual(
+					{
+						granted: grants.filter(Boolean).length,
+						spent: yield* a.orgInvocationsSpent("2026-10"),
+						otherMonth,
+						otherOrg,
+						noPlan,
+						noPlanSpent: yield* store.forOrg(orgB).orgInvocationsSpent("2026-12"),
+					},
+					{ granted: 3, spent: 3, otherMonth: true, otherOrg: true, noPlan: false, noPlanSpent: 0 },
+				)
+			}),
+		),
+	)
+})

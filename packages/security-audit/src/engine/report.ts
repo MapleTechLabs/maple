@@ -12,6 +12,15 @@ type NeedsValidation = Extract<Finding, { readonly verdict: "needs_validation" }
 
 const SEVERITY_ORDER = ["critical", "high", "medium", "low", "informational"] as const
 
+/** Unit statuses that mean the run did not audit the unit. */
+const UNFINISHED: ReadonlySet<string> = new Set([
+	"planned",
+	"in_progress",
+	"blocked",
+	"deferred",
+	"out_of_scope",
+])
+
 const cell = (text: string) => text.replaceAll("|", "\\|").replaceAll("\n", " ")
 
 const traceLines = (record: Finding) =>
@@ -79,8 +88,7 @@ export const buildReports = (
 		input.scopePaths.length > 0 ||
 		s.gaps.length > 0 ||
 		status === "incomplete"
-	const deferred = s.ledger.filter((u) => u.status === "deferred")
-	const outOfScope = s.ledger.filter((u) => u.status === "out_of_scope")
+	const unfinished = s.ledger.filter((u) => UNFINISHED.has(u.status))
 	const carried = s.ledger.filter((u) => u.prior_status === "prior_confirmed_same_source").length
 	const revalidated = s.ledger.filter((u) => u.prior_status === "prior_confirmed_changed_source").length
 	const hardening = [...new Set(s.ledger.flatMap((u) => u.hardening ?? []))]
@@ -141,14 +149,12 @@ export const buildReports = (
 			.sort(([a], [b]) => (a < b ? -1 : 1))
 			.map(([status, n]) => `- ${status}: ${n}`)
 			.join("\n"),
-		...(deferred.length === 0
+		// Never a silent cut: every unit this run did not finish is named, however many there are.
+		...(unfinished.length === 0
 			? []
 			: [
-					`Deferred units:\n${deferred.map((u) => `- ${u.surface} / ${u.attack_class}: ${u.unresolved.join("; ")}`).join("\n")}`,
+					`Not covered by this run (${unfinished.length} ${unfinished.length === 1 ? "unit" : "units"}):\n${unfinished.map((u) => `- ${u.status}: ${u.surface} / ${u.attack_class}${u.unresolved.length === 0 ? "" : ` (${u.unresolved.join("; ")})`}`).join("\n")}`,
 				]),
-		...(outOfScope.length === 0
-			? []
-			: [`Out of scope: ${outOfScope.length} units recorded for later runs.`]),
 	].join("\n\n")
 
 	const report = [`# Security audit: ${input.repo}`, run, posture, table, needsTable, notes, coverage].join(

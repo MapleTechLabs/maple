@@ -381,6 +381,26 @@ export class SecurityAuditTargetExistsError extends HttpTaggedError<SecurityAudi
 	},
 ) {}
 
+/** The org's monthly audit invocations, from its plan, cannot fund a run of this profile. */
+export class SecurityAuditBudgetExhaustedError extends HttpTaggedError<SecurityAuditBudgetExhaustedError>()(
+	"@maple/http/security-audit/SecurityAuditBudgetExhaustedError",
+	{
+		message: Schema.String,
+		/** Invocations the org has left this month. */
+		remaining: Schema.Number,
+		/** The fewest invocations a run of the target's profile needs to start. */
+		required: Schema.Number,
+	},
+	{
+		status: 402,
+		code: "security_audit_budget_exhausted",
+		title: "Security audit budget used up",
+		retry: "never",
+		recovery: "contact_support",
+		exposure: "public_message",
+	},
+) {}
+
 /** The org has no connected repository by that name. */
 export class SecurityAuditRepositoryNotConnectedError extends HttpTaggedError<SecurityAuditRepositoryNotConnectedError>()(
 	"@maple/http/security-audit/SecurityAuditRepositoryNotConnectedError",
@@ -426,6 +446,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 				SecurityAuditTargetNotFoundError,
 				SecurityAuditTargetDisabledError,
 				SecurityAuditRunInProgressError,
+				SecurityAuditBudgetExhaustedError,
 				SecurityAuditStartError,
 			],
 		}),
