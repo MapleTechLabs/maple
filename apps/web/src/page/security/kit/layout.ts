@@ -88,6 +88,10 @@ export const securityTitle = <M>(h: HtmlBuilder<M>, description: string = DESCRI
 		],
 	)
 
+/** The page's blocks at their own height: the scroll area scrolls them, never squeezes them. */
+export const stack = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
+	h.div([h.Class("flex shrink-0 flex-col gap-6")], children)
+
 export type SecurityLayoutOptions = Readonly<{
 	active: SecurityTab
 	actions?: Html
@@ -107,8 +111,7 @@ export const securityLayout = <M>(
 			titleContent: securityTitle(h, options.description),
 			actions: options.actions,
 			tabs: tabs(h, options.active),
-			gap: "lg",
 			scrollClassName: "pb-8",
 		},
-		[...children, ...(options.overlay ?? [])],
+		[stack(h, children), ...(options.overlay ?? [])],
 	)

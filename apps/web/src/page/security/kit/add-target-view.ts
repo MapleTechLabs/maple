@@ -267,6 +267,7 @@ const scopeField = (h: H, model: Model, error?: string): Html =>
 							]),
 					Field.input(h, {
 						ids,
+						className: "w-full",
 						state: Field.stateOf(model.scopeDraft, error !== undefined),
 						attributes: [
 							h.Placeholder(

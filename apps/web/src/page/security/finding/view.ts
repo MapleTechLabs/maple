@@ -32,6 +32,7 @@ import {
 	shortSha,
 	VERDICT_LABEL,
 } from "../kit/format"
+import { stack } from "../kit/layout"
 import { gateState, metaItem, placeholder } from "../kit/parts"
 import { currentTriageOf, findingOf, pickedTriageOf, reasonErrorOf, targetOf } from "./derive"
 import { Message, type Model } from "./model"
@@ -201,6 +202,8 @@ const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html =>
 	])
 }
 
+const railValue = (h: H, text: string): Html => h.span([h.Class("truncate text-sm capitalize")], [text])
+
 const detailsPanel = (
 	h: H,
 	finding: SecurityAuditFinding,
@@ -211,12 +214,18 @@ const detailsPanel = (
 	const rows: ReadonlyArray<Html> = [
 		...(finding.overallSeverity === null
 			? []
-			: [detailRailRow(h, { label: "Severity" }, [SECURITY_SEVERITY_LABEL[finding.overallSeverity]])]),
+			: [
+					detailRailRow(h, { label: "Severity" }, [
+						railValue(h, SECURITY_SEVERITY_LABEL[finding.overallSeverity]),
+					]),
+				]),
 		...(record.verdict === "confirmed"
 			? [
-					detailRailRow(h, { label: "Likelihood" }, [record.severity.likelihood.score]),
-					detailRailRow(h, { label: "Impact" }, [record.severity.impact.score]),
-					detailRailRow(h, { label: "Confidence" }, [record.confidence.score]),
+					detailRailRow(h, { label: "Likelihood" }, [
+						railValue(h, record.severity.likelihood.score),
+					]),
+					detailRailRow(h, { label: "Impact" }, [railValue(h, record.severity.impact.score)]),
+					detailRailRow(h, { label: "Confidence" }, [railValue(h, record.confidence.score)]),
 				]
 			: []),
 		detailRailRow(h, { label: "Target" }, [
@@ -229,7 +238,7 @@ const detailsPanel = (
 			h.a(
 				[
 					h.Href(runHref(finding.firstSeenRunId)),
-					h.Class("font-mono underline-offset-2 hover:underline"),
+					h.Class("font-mono text-sm underline-offset-2 hover:underline"),
 				],
 				[`run ${shortId(finding.firstSeenRunId)}`],
 			),
@@ -238,7 +247,7 @@ const detailsPanel = (
 			h.a(
 				[
 					h.Href(runHref(finding.lastSeenRunId)),
-					h.Class("font-mono underline-offset-2 hover:underline"),
+					h.Class("font-mono text-sm underline-offset-2 hover:underline"),
 				],
 				[`run ${shortId(finding.lastSeenRunId)}`],
 			),
@@ -316,10 +325,9 @@ const loaded = (h: H, model: Model, finding: SecurityAuditFinding, timeZone: str
 				[h.Class("flex flex-col")],
 				[triagePanel(h, model, finding), detailsPanel(h, finding, target, timeZone)],
 			),
-			gap: "lg",
 			scrollClassName: "pb-8",
 		},
-		findingBody(h, finding),
+		[stack(h, findingBody(h, finding))],
 	)
 }
 

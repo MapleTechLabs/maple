@@ -33,7 +33,6 @@ import {
 	UNIT_TONE,
 	unitPath,
 	unitTitle,
-	unitsOf,
 } from "./derive"
 import { Message, type Model, type UnitFilter } from "./model"
 
@@ -59,30 +58,34 @@ const unitRow = (h: H, unit: SecurityAuditUnit): Html =>
 	tableRow(
 		h,
 		[
-			tableCell(h, [
-				h.span(
-					[h.Class("flex min-w-0 flex-col"), h.Title(unit.coverageId)],
-					[
-						h.span(
-							[h.Class(cn("truncate text-sm", unit.stale && "font-mono text-xs"))],
-							[unitTitle(unit)],
-						),
-						...(unit.stale || unitPath(unit) === ""
-							? []
-							: [
-									h.span(
-										[h.Class("truncate text-xs text-muted-foreground")],
-										[unitPath(unit)],
-									),
-								]),
-					],
-				),
-			]),
+			tableCell(
+				h,
+				[
+					h.span(
+						[h.Class("flex min-w-0 flex-col"), h.Title(unit.coverageId)],
+						[
+							h.span(
+								[h.Class(cn("truncate text-sm", unit.stale && "font-mono text-xs"))],
+								[unitTitle(unit)],
+							),
+							...(unit.stale || unitPath(unit) === ""
+								? []
+								: [
+										h.span(
+											[h.Class("truncate text-xs text-muted-foreground")],
+											[unitPath(unit)],
+										),
+									]),
+						],
+					),
+				],
+				"w-full max-w-0",
+			),
 			tableCell(h, [unitBadge(h, unit.status)]),
 			tableCell(h, [unit.wave > 0 ? String(unit.wave) : ""], "text-right font-mono tabular-nums"),
 			tableCell(
 				h,
-				[h.span([h.Class("block max-w-56 truncate"), h.Title(resultText(unit))], [resultText(unit)])],
+				[h.span([h.Class("block max-w-40 truncate"), h.Title(resultText(unit))], [resultText(unit)])],
 				"text-right text-xs text-muted-foreground",
 			),
 		],
@@ -155,7 +158,7 @@ const filterChip = (h: H, model: Model, run: SecurityAuditRunDetail, filter: Uni
 }
 
 export const ledgerPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html =>
-	panel(h, { className: "overflow-hidden" }, [
+	panel(h, { className: "min-w-0 overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Coverage ledger",
 			action: h.span([h.Class("text-xs text-muted-foreground")], [`${run.unitTotal} units`]),
@@ -176,8 +179,7 @@ const GAP_SUMMARY = [
 ] as const
 
 export const gapsPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html => {
-	const gaps = gapUnits(unitsOf(model))
-	return panel(h, { className: "overflow-hidden" }, [
+	return panel(h, { className: "min-w-0 overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Gaps",
 			action: h.span(
@@ -200,9 +202,7 @@ export const gapsPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html
 				),
 			),
 		),
-		model.isLedgerOpen
-			? unitsBody(h, model, (units) => filteredUnits(units, model.unitFilter))
-			: unitsBody(h, model, () => gaps.slice(0, 5)),
+		unitsBody(h, model, (units) => gapUnits(units).slice(0, 5)),
 		h.div(
 			[h.Class("border-t px-4 py-2.5")],
 			[
@@ -214,11 +214,7 @@ export const gapsPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html
 						),
 						h.OnClick(Message.ToggledLedger()),
 					],
-					[
-						model.isLedgerOpen
-							? "Show only the gaps"
-							: `Show all ${gaps.length} gaps and the full ledger`,
-					],
+					[`Show all ${gapCount(run)} gaps and the full ledger`],
 				),
 			],
 		),
@@ -242,7 +238,7 @@ export const resultsPanel = (
 	results: ReadonlyArray<SecurityAuditFinding>,
 	run: SecurityAuditRunDetail,
 ): Html =>
-	panel(h, { className: "overflow-hidden" }, [
+	panel(h, { className: "min-w-0 overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Results of this run",
 			action: h.span(
@@ -386,7 +382,7 @@ export const eventsPanel = (
 	run: SecurityAuditRunDetail,
 	timeZone: string,
 ): Html =>
-	panel(h, { className: "overflow-hidden" }, [
+	panel(h, { className: "min-w-0 overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Events",
 			action: h.span(

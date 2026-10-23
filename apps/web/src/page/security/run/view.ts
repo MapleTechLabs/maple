@@ -11,6 +11,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { detailTitleSkeleton } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { gateOf, isLive, shortId } from "../kit/format"
+import { stack } from "../kit/layout"
 import { gateState, placeholder } from "../kit/parts"
 import { eventsOf, gapCount, phasesOf, resultsOf, runOf, targetOf, verdictsOf } from "./derive"
 import { Message, type Model, type ReportDoc } from "./model"
@@ -85,15 +86,17 @@ const loaded = (h: H, model: Model, run: SecurityAuditRunDetail, timeZone: strin
 					[h.Class("grid items-start gap-6 xl:grid-cols-[3fr_2fr]")],
 					[ledgerPanel(h, model, run), eventsPanel(h, model, events, run, timeZone)],
 				)
-			: h.div(
-					[h.Class("grid items-start gap-6 xl:grid-cols-[3fr_2fr]")],
-					[
-						gapCount(run) > 0 && !model.isLedgerOpen
-							? gapsPanel(h, model, run)
-							: ledgerPanel(h, model, run),
-						resultsPanel(h, model, results, run),
-					],
-				),
+			: run.unitTotal === 0
+				? resultsPanel(h, model, results, run)
+				: h.div(
+						[h.Class("grid items-start gap-6 xl:grid-cols-[3fr_2fr]")],
+						[
+							gapCount(run) > 0 && !model.isLedgerOpen
+								? gapsPanel(h, model, run)
+								: ledgerPanel(h, model, run),
+							resultsPanel(h, model, results, run),
+						],
+					),
 		...(live ? [] : [eventsPanel(h, model, events, run, timeZone)]),
 	]
 	return dashboardPage(
@@ -101,10 +104,9 @@ const loaded = (h: H, model: Model, run: SecurityAuditRunDetail, timeZone: strin
 		{
 			titleContent: runTitle(h, run, targetOf(model, run), model.nowMs, timeZone),
 			actions: runActions(h, model, run),
-			gap: "lg",
 			scrollClassName: "pb-8",
 		},
-		[...body, cancelDialog(h, model), reportSheet(h, model, run)],
+		[stack(h, body), cancelDialog(h, model), reportSheet(h, model, run)],
 	)
 }
 
