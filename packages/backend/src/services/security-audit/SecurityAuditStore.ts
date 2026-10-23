@@ -88,6 +88,8 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		readonly limit?: number
 	}) => Effect.Effect<ReadonlyArray<SecurityAuditRunRow>, AuditStoreError>
 	readonly listUnits: (runId: string) => Effect.Effect<ReadonlyArray<SecurityAuditUnitRow>, AuditStoreError>
+	/** One run's final records, the input a later run carries forward. */
+	readonly listRunFindings: (runId: string) => Effect.Effect<ReadonlyArray<Finding>, AuditStoreError>
 	readonly listEvents: (
 		runId: string,
 	) => Effect.Effect<ReadonlyArray<SecurityAuditEventRow>, AuditStoreError>
@@ -593,6 +595,21 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					)
 				})
 
+				const listRunFindings: SecurityAuditOrgStore["listRunFindings"] = Effect.fn(
+					"SecurityAuditStore.listRunFindings",
+				)(function* (rawRunId) {
+					const runId = yield* decodeRunId(rawRunId)
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.from(SecurityAuditRunFindings)
+								.select()
+								.where(($) => [$.orgId.eq(orgId), $.runId.eq(runId)])
+								.orderBy(($) => [[$.fingerprint, "asc"]]),
+						),
+					)
+					return rows.map((row) => row.record)
+				})
+
 				const listEvents: SecurityAuditOrgStore["listEvents"] = Effect.fn(
 					"SecurityAuditStore.listEvents",
 				)(function* (rawRunId) {
@@ -656,6 +673,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					getRun,
 					listRuns,
 					listUnits,
+					listRunFindings,
 					listEvents,
 					listFindings,
 					markFixed,

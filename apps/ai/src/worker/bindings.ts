@@ -15,7 +15,15 @@ import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Stage } from "alchemy/Stage"
 import { Effect, Layer, Option } from "effect"
 import { isWorkersAiBinding, viaGateway, WorkersAiGateway } from "../platform/WorkersAiHttpClient"
-import { McpToolsRateLimit, RateLimitBindingError, type RateLimiter } from "@maple/backend/platform/bindings"
+import {
+	McpToolsRateLimit,
+	RateLimitBindingError,
+	type RateLimiter,
+	SecurityAuditWorkflowStarter,
+	WorkflowStartError,
+	type WorkflowStarter,
+} from "@maple/backend/platform/bindings"
+import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { type ChatSessionNamespace, layerChatSessions } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
@@ -102,6 +110,25 @@ const limiter = (client: Cloudflare.Workers.RateLimitClient): RateLimiter => ({
 		),
 })
 
+/** Starts one audit run; the run id is the instance id, so a repeated start is refused, not doubled. */
+const auditStarter = (
+	handle: Cloudflare.WorkflowHandle<SecurityAuditWorkflowPayload>,
+): WorkflowStarter<SecurityAuditWorkflowPayload> => ({
+	create: (params) =>
+		handle.create({ id: params.runId, params }).pipe(
+			Effect.asVoid,
+			Effect.catchDefect((cause) =>
+				Effect.fail(
+					new WorkflowStartError({
+						message:
+							cause instanceof Error ? cause.message : "security audit workflow create failed",
+						cause,
+					}),
+				),
+			),
+		),
+})
+
 /**
  * The ports the service graph depends on, plus the env-backed ports
  * (`envPorts`: the env itself, the `ConfigProvider`, the sandbox service binding) and the
@@ -113,9 +140,11 @@ export const aiPorts = (
 	env: Record<string, unknown>,
 	workersAi: typeof WorkersAiGateway.Service,
 	chatSessions: ChatSessionNamespace,
+	audits: Cloudflare.WorkflowHandle<SecurityAuditWorkflowPayload>,
 ) =>
 	Layer.mergeAll(
 		Layer.succeed(WorkersAiGateway, workersAi),
+		Layer.succeed(SecurityAuditWorkflowStarter, auditStarter(audits)),
 		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit)),
 		layerMapleDbConnection(env),
 		envPorts(env),

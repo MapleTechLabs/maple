@@ -38,3 +38,17 @@ export type SecurityAuditFindingStatus = typeof SecurityAuditFindingStatus.Type
 
 export const SecurityAuditEventKind = Schema.Literals(["Agent", "Phase", "Note"])
 export type SecurityAuditEventKind = typeof SecurityAuditEventKind.Type
+
+/** What starts one audit run in the ai Worker's Workflow. The run row exists before it starts. */
+export const SecurityAuditWorkflowPayload = Schema.Struct({
+	orgId: Schema.String,
+	runId: Schema.String,
+	repository: Schema.String,
+	/** Branch or commit; the run pins the commit it resolves to before any agent starts. */
+	ref: Schema.String,
+	profile: SecurityAuditProfile,
+	scopePaths: Schema.Array(Schema.String),
+	budget: Schema.NullOr(Schema.Int),
+	priorRunId: Schema.NullOr(Schema.String),
+})
+export type SecurityAuditWorkflowPayload = typeof SecurityAuditWorkflowPayload.Type
