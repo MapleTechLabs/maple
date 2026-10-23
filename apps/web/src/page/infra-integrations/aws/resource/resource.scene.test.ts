@@ -3,6 +3,7 @@ import { Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { ResolveThemeColors, ThemeMessage } from "../../../../charts/theme-colors"
 import { describe, expect, test } from "vitest"
+import { toLoadFailure } from "../../../../data/load-failure"
 import type { PageContext } from "../../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -104,6 +105,37 @@ describe("aws resource", () => {
 			given(model),
 			themeResolved(),
 			expectView(role("link", { name: /Open in AWS console/ })).toBeAbsent(),
+		)
+	})
+
+	test("a failed traced read says so instead of loading forever", () => {
+		const { model } = entered("lambda", "notifications-sender", { region: "us-east-1", account: "1" })
+		const series = pageUpdate(
+			model,
+			Message.CompletedFetchTimeseries({
+				key: model.timeseries.key ?? "",
+				result: Result.succeed([
+					{
+						bucket: "2026-10-23T11:00:00.000Z",
+						metric: "aws.lambda.invocations.sum",
+						total: 10,
+						samples: 1,
+					},
+				]),
+			}),
+		).model
+		const failed = pageUpdate(
+			series,
+			Message.CompletedFetchTraced({
+				key: model.traced.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("boom"))),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			themeResolved(),
+			expectView(text("Failed to load the traced service")).toExist(),
 		)
 	})
 

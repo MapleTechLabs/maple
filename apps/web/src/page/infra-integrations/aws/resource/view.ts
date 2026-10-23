@@ -16,7 +16,7 @@ import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
 import { ResolveThemeColors } from "../../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
 import { linkButton } from "../../../../ui/button"
-import { chartLoading } from "../../../../ui/chart-state"
+import { chartError, chartLoading } from "../../../../ui/chart-state"
 import { badge } from "../../../../ui/display"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
@@ -276,7 +276,6 @@ const body = (
 	const window = model.window
 	const windowMs = window === null ? 0 : toEpochMs(window.endTime) - toEpochMs(window.startTime)
 	const tiles = tilesOf(kind, rows, { windowMs })
-	const traced = AsyncData.isSuccess(model.traced.data) ? model.traced.data.data : null
 	const theme = model.themeColors
 	return h.div(
 		[h.Class("space-y-4")],
@@ -309,9 +308,18 @@ const body = (
 					}),
 			...(kind === "ecs" || kind === "lambda"
 				? [
-						traced === null
-							? chartLoading(h, { variant: "line", height: 64 })
-							: tracedPanel(h, tracedAs(traced, { kind, name: model.name }), kind, model.name),
+						AsyncData.matchData(model.traced.data, {
+							onEmpty: () => chartLoading(h, { variant: "line", height: 64 }),
+							onFailure: () =>
+								chartError(h, { height: 64 }, ["Failed to load the traced service"]),
+							onData: (traced) =>
+								tracedPanel(
+									h,
+									tracedAs(traced, { kind, name: model.name }),
+									kind,
+									model.name,
+								),
+						}),
 					]
 				: []),
 		],
