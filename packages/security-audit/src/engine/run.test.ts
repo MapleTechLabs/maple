@@ -1,0 +1,293 @@
+import { describe, expect, it } from "vitest"
+import { ledgerErrors } from "../validators"
+import {
+	baseInput,
+	confirmed,
+	emptyCritic,
+	EXPORT,
+	FINGERPRINT,
+	hunterAnswer,
+	idOf,
+	json,
+	KEYS,
+	lowered,
+	rejectedRecord,
+	runScripted,
+	SEARCH,
+} from "./__fixtures__/harness"
+import type { AgentInvocation } from "./ports"
+
+const ALL = [KEYS, SEARCH, EXPORT].map(idOf)
+
+/** A deep run where the first post-wave critic finds one missing unit and later critics find none. */
+const happy =
+	(overrides: { readonly record?: (i: AgentInvocation) => string } = {}) =>
+	(i: AgentInvocation) => {
+		switch (i.role) {
+			case "recon":
+				return `facts from ${i.agentId}`
+			case "synthesis":
+				return json({ architecture_md: "An API with org-scoped keys.", units: [KEYS, SEARCH] })
+			case "hunter":
+				return json(hunterAnswer(i, ALL))
+			case "critic":
+				return json(
+					i.agentId === "critic-w1-post"
+						? {
+								...emptyCritic,
+								missing_units: [{ ...EXPORT, reason: "export route unmapped" }],
+								stop: false,
+							}
+						: emptyCritic,
+				)
+			case "candidate-verifier":
+				return json({ decision: "confirmed", record: confirmed() })
+			case "record-verifier":
+				return overrides.record?.(i) ?? json({ decision: "verified", fingerprint: FINGERPRINT })
+		}
+	}
+
+const roles = (invocations: ReadonlyArray<AgentInvocation>) => invocations.map((i) => i.agentId)
+
+describe("runAudit, deep profile", () => {
+	it("runs every phase in order and completes with a validated ledger and findings", async () => {
+		const { result, recorded } = await runScripted(baseInput(), happy())
+		expect(roles(recorded.invocations)).toEqual([
+			"recon-1a",
+			"recon-1b",
+			"recon-1c",
+			"recon-1d",
+			"synthesis-1",
+			"hunter-w1-1",
+			"hunter-w1-2",
+			"critic-w1-post",
+			"hunter-w2-1",
+			"critic-w2-post",
+			"critic-w2-final",
+			"verify-1",
+			"record-1-0",
+		])
+		expect(result.status).toBe("complete")
+		expect(result.findings.map((f) => [f.fingerprint, f.verdict])).toEqual([[FINGERPRINT, "confirmed"]])
+		expect(Object.fromEntries(result.ledger.map((u) => [u.surface, u.status]))).toEqual({
+			"POST /keys": "candidate",
+			"POST /search": "covered",
+			"POST /export": "covered",
+		})
+		expect(ledgerErrors(recorded.ledger)).toEqual([])
+		expect(recorded.reports?.report).toContain("| high | Any org member can roll another org's API key |")
+	})
+
+	it("hunts the highest-priority unit first", async () => {
+		const { recorded } = await runScripted(baseInput(), happy())
+		const first = recorded.invocations.find((i) => i.agentId === "hunter-w1-1")
+		expect(first?.prompt).toContain(`"coverage_id": "${idOf(KEYS)}"`)
+	})
+
+	it("discards a prose-wrapped hunter result and re-hunts its unit with a fresh hunter", async () => {
+		const { result, recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId === "hunter-w1-2" ? `Done! ${json(hunterAnswer(i, ALL))}` : happy()(i),
+		)
+		expect(recorded.events).toContainEqual(
+			expect.objectContaining({ _tag: "Agent", agentId: "hunter-w1-2", outcome: "discarded" }),
+		)
+		const rehunt = recorded.invocations.filter(
+			(i) => i.role === "hunter" && i.prompt.includes(`"coverage_id": "${idOf(SEARCH)}"`),
+		)
+		expect(rehunt.map((i) => i.agentId)).toEqual(["hunter-w1-2", "hunter-w2-1"])
+		expect(result.ledger.find((u) => u.surface === "POST /search")?.status).toBe("covered")
+	})
+
+	it("archives a reassigned unit's attempt and gives it to a fresh hunter", async () => {
+		const { result, recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId === "critic-w1-post"
+				? json({ ...emptyCritic, reassign_ids: [idOf(SEARCH)], stop: false })
+				: happy()(i),
+		)
+		const search = result.ledger.find((u) => u.coverage_id === idOf(SEARCH))
+		expect(search?.attempts.map((a) => [a.agent_id, a.status, a.wave])).toEqual([
+			["hunter-w1-2", "covered", 1],
+		])
+		expect([search?.agent_id, search?.wave]).toEqual(["hunter-w2-1", 2])
+		expect(ledgerErrors(recorded.ledger)).toEqual([])
+	})
+
+	it("refuses a critic's missing unit that names a block the skill does not define", async () => {
+		const bogus = {
+			...EXPORT,
+			ordinary_attack_class_block: "ATTACK-CLASSES.md#Export abuse",
+			reason: "unmapped",
+		}
+		const { result } = await runScripted(baseInput(), (i) =>
+			i.agentId === "critic-w1-post"
+				? json({ ...emptyCritic, missing_units: [bogus], stop: false })
+				: happy()(i),
+		)
+		expect(result.ledger.map((u) => u.surface)).toEqual(expect.not.arrayContaining(["POST /export"]))
+	})
+
+	it("refuses a local check without a promoted artifact and returns the unit to planned", async () => {
+		const { recorded } = await runScripted(baseInput({ maxWaves: 1 }), (i) => {
+			if (i.agentId !== "hunter-w1-2") return happy()(i)
+			const answer = hunterAnswer(i, ALL)
+			return json({
+				...answer,
+				units: answer.units.map((u) => ({
+					...u,
+					checks: u.checks.map((c) => ({
+						...c,
+						method: "local",
+						artifact: "agents/hunter-w1-2/artifacts/x.txt",
+					})),
+				})),
+			})
+		})
+		expect(recorded.ledger.find((u) => u.surface === "POST /search")?.status).toBe("deferred")
+	})
+})
+
+describe("runAudit, budget", () => {
+	it("launches no agent when the budget cannot fund reconnaissance and its reserves", async () => {
+		const { result, recorded } = await runScripted(baseInput({ budget: 7 }), happy())
+		expect(recorded.invocations).toEqual([])
+		expect(result.status).toBe("incomplete")
+		expect(result.incompleteReasons).toEqual(["budget_cannot_fund_reconnaissance_and_reserves"])
+	})
+
+	it("defers what the allowance cannot reach, never exceeds the budget, and drops records it cannot review twice", async () => {
+		const { result, recorded } = await runScripted(baseInput({ budget: 9 }), happy())
+		expect(recorded.invocations.filter((i) => i.role === "hunter").map((i) => i.agentId)).toEqual([
+			"hunter-w1-1",
+		])
+		expect(result.ledger.find((u) => u.surface === "POST /search")?.unresolved).toEqual([
+			"budget_cannot_reserve_critics_and_validation",
+		])
+		expect(recorded.invocations).toHaveLength(9)
+		// The candidate got its Phase 3 verifier; no budget was left for the Phase 5 review it must have.
+		expect(roles(recorded.invocations).slice(-2)).toEqual(["critic-w2-final", "verify-1"])
+		expect(result.findings).toEqual([])
+		expect(result.incompleteReasons).toEqual(["record_verification_incomplete"])
+	})
+})
+
+describe("runAudit, record verification", () => {
+	it("applies a material replacement only after a fresh verifier agrees", async () => {
+		const { result, recorded } = await runScripted(
+			baseInput(),
+			happy({
+				record: (i) =>
+					i.agentId === "record-1-0"
+						? json({ decision: "replace", reason: "impact overstated", record: lowered() })
+						: json({ decision: "verified", fingerprint: FINGERPRINT }),
+			}),
+		)
+		expect(roles(recorded.invocations).filter((id) => id.startsWith("record-"))).toEqual([
+			"record-1-0",
+			"record-1-1",
+		])
+		const finding = result.findings[0]
+		expect(finding?.verdict === "confirmed" ? finding.severity.overall_severity : undefined).toBe(
+			"medium",
+		)
+	})
+
+	it("drops a record whose material replacement cannot be independently verified", async () => {
+		const { result } = await runScripted(
+			baseInput(),
+			happy({
+				record: (i) =>
+					json({
+						decision: "replace",
+						reason: "keeps changing",
+						record: i.prompt.includes('"overall_severity": "high"') ? lowered() : confirmed(),
+					}),
+			}),
+		)
+		// Every fresh verifier materially replaces the last one's record; past the cap nothing is reported.
+		expect(result.findings).toEqual([])
+		expect(result.status).toBe("incomplete")
+		expect(result.incompleteReasons).toContain("record_verification_incomplete")
+	})
+
+	it("keeps a rejected candidate as a rejected record without a second review", async () => {
+		const { result, recorded } = await runScripted(baseInput(), (i) =>
+			i.role === "candidate-verifier"
+				? json({ decision: "rejected", record: rejectedRecord })
+				: happy()(i),
+		)
+		expect(result.findings.map((f) => f.verdict)).toEqual(["rejected"])
+		expect(recorded.invocations.some((i) => i.role === "record-verifier")).toBe(false)
+	})
+})
+
+describe("runAudit, prior runs", () => {
+	const priorRun = async () => (await runScripted(baseInput(), happy())).result
+
+	it("carries an unchanged confirmed record to a verifier instead of a hunter", async () => {
+		const prior = await priorRun()
+		const { result, recorded } = await runScripted(
+			baseInput({
+				runId: "run-2",
+				prior: {
+					runId: "run-1",
+					sourceRef: "abc123",
+					ledger: prior.ledger,
+					findings: prior.findings,
+				},
+			}),
+			happy(),
+		)
+		const keysId = idOf(KEYS)
+		expect(
+			recorded.invocations.filter(
+				(i) => i.role === "hunter" && i.prompt.includes(`"coverage_id": "${keysId}"`),
+			),
+		).toEqual([])
+		const keys = result.ledger.find((u) => u.coverage_id === keysId)
+		expect([keys?.prior_status, keys?.status, keys?.agent_id]).toEqual([
+			"prior_confirmed_same_source",
+			"candidate",
+			"verify-1",
+		])
+		expect(result.findings.map((f) => f.verdict)).toEqual(["confirmed"])
+	})
+
+	it("hunts a confirmed record's unit again when its source changed", async () => {
+		const prior = await priorRun()
+		const { result, recorded } = await runScripted(
+			baseInput({
+				runId: "run-2",
+				prior: {
+					runId: "run-1",
+					sourceRef: "abc123",
+					ledger: prior.ledger,
+					findings: prior.findings,
+				},
+				changedSincePrior: (paths) => paths.some((p) => p.includes("keys")),
+			}),
+			happy(),
+		)
+		expect(
+			recorded.invocations.some(
+				(i) => i.role === "hunter" && i.prompt.includes(`"coverage_id": "${idOf(KEYS)}"`),
+			),
+		).toBe(true)
+		expect(result.ledger.find((u) => u.coverage_id === idOf(KEYS))?.prior_status).toBe(
+			"prior_confirmed_changed_source",
+		)
+	})
+})
+
+describe("runAudit, quick profile", () => {
+	it("runs one wave and one final critic, defers what the critic accepts, and skips Phase 5", async () => {
+		const { result, recorded } = await runScripted(baseInput({ profile: "quick" }), happy())
+		expect(recorded.invocations.filter((i) => i.role === "critic").map((i) => i.agentId)).toEqual([
+			"critic-w1-post",
+		])
+		expect(recorded.invocations.some((i) => i.role === "record-verifier")).toBe(false)
+		expect(result.ledger.find((u) => u.surface === "POST /export")?.unresolved).toEqual([
+			"quick_profile_final_critic",
+		])
+		expect(recorded.reports?.report).toContain("This is a partial pass.")
+	})
+})

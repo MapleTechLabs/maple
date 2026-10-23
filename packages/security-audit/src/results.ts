@@ -143,6 +143,8 @@ export const SeedUnit = Schema.Struct({
 	ordinary_attack_class_block: Schema.NullOr(Schema.String),
 	selected_companion_blocks: Schema.Array(Schema.String),
 	excluded_blocks: Schema.Array(ExcludedBlock),
+	/** 1 is hunted first: lowest-trust surfaces, then the most valuable boundaries (skill ranking 1 and 2). */
+	priority: Schema.optionalKey(Schema.Int),
 })
 export type SeedUnit = typeof SeedUnit.Type
 
