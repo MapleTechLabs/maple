@@ -15,9 +15,9 @@ import * as AgentRuntime from "@yielded/agent/agent-runtime"
 import * as InMemory from "@yielded/agent/in-memory"
 import * as Output from "@yielded/agent/output"
 import { Cause, type Duration, Effect, Layer, Schema } from "effect"
-import { liveContextLimit, MODEL_RETRIES, REPEATED_TOOL_CALLS, TOOL_CONCURRENCY } from "@/chat/budgets"
-import { reportedCostOf } from "@/platform/genai-spans"
-import type { LlmClients, ResolvedModel } from "@/platform/Llm"
+import { liveContextLimit, MODEL_RETRIES, REPEATED_TOOL_CALLS, TOOL_CONCURRENCY } from "../chat/budgets"
+import { reportedCostOf } from "../platform/genai-spans"
+import type { LlmClients, ResolvedModel } from "../platform/Llm"
 import { AUDIT_TOOLKIT, auditToolHandlers, type SourceReaderApi } from "./source"
 
 export interface AuditModels {

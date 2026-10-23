@@ -152,6 +152,13 @@ export const Attempt = Schema.Struct({ ...attemptFields, reassignment_reason: Sc
 
 /** One coverage-ledger unit. The skill's state table is enforced by the upstream validator. */
 export const CoverageUnit = Schema.Struct({
+	// Parent bookkeeping beside the semantic fields (the skill allows it), kept so it survives storage.
+	priority: Schema.optionalKey(Schema.Int),
+	hardening: Schema.optionalKey(Schema.Array(Schema.String)),
+	failed_attempts: Schema.optionalKey(Schema.Int),
+	carried_fingerprint: Schema.optionalKey(Schema.String),
+	decisions: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+	resolved_prior_leads: Schema.optionalKey(Schema.Array(Schema.String)),
 	coverage_id: Schema.String,
 	canonical_refs: CanonicalRefs,
 	surface: Schema.String,

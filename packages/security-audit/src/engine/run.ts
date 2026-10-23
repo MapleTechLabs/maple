@@ -22,6 +22,7 @@ export interface AuditRunResult {
 	readonly findings: ReadonlyArray<Finding>
 	readonly reports: AuditReports
 	readonly invocations: number
+	readonly usage: { readonly inputTokens: number; readonly outputTokens: number; readonly costUsd: number }
 }
 
 const metadata = (input: AuditRunInput, status: RunStatus, reasons: ReadonlyArray<string>): RunMetadata => {
@@ -71,6 +72,7 @@ export const runAudit = (input: AuditRunInput) =>
 		if (ledgerProblems.length > 0)
 			yield* engine.fail(`ledger_failed_validation: ${ledgerProblems.slice(0, 3).join("; ")}`)
 
+		yield* engine.persist
 		const final = yield* Ref.get(engine.state)
 		const status = final.incomplete.length === 0 ? "complete" : "incomplete"
 		const reports = buildReports(input, final, findings, status)
@@ -90,5 +92,6 @@ export const runAudit = (input: AuditRunInput) =>
 			findings,
 			reports,
 			invocations: final.spent,
+			usage: final.usage,
 		} satisfies AuditRunResult
 	})

@@ -71,6 +71,9 @@ export interface EngineState {
 	/** The skill's incomplete-run reasons; any one makes `run_status` incomplete. */
 	readonly incomplete: ReadonlyArray<string>
 	readonly criticClean: boolean
+	/** Every agent id this run spent, so none is ever reused. */
+	readonly usedIds: ReadonlySet<string>
+	readonly usage: { readonly inputTokens: number; readonly outputTokens: number; readonly costUsd: number }
 }
 
 export const initialState: EngineState = {
@@ -85,6 +88,8 @@ export const initialState: EngineState = {
 	gaps: [],
 	incomplete: [],
 	criticClean: false,
+	usedIds: new Set(),
+	usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
 }
 
 export const makeEngine = (input: AuditRunInput) =>
@@ -96,18 +101,14 @@ export const makeEngine = (input: AuditRunInput) =>
 
 		const event = (e: AuditEvent) => store.recordEvent(input.runId, e)
 
-		/** Applies `f` under the single parent permit and persists the ledger it produced. */
+		/** Applies `f` under the single parent permit. Persisting is `persist`, at phase boundaries. */
 		const mutate = <A>(f: (s: EngineState) => readonly [A, EngineState]) =>
-			permit.withPermits(1)(
-				Effect.gen(function* () {
-					const [result, next] = yield* Ref.modify(state, (s) => {
-						const [a, n] = f(s)
-						return [[a, n] as const, n]
-					})
-					yield* store.saveLedger(input.runId, next.ledger)
-					return result
-				}),
-			)
+			permit.withPermits(1)(Ref.modify(state, f))
+
+		/** Writes the current ledger: after seeding, after each wave and critic, and at the end. */
+		const persist = permit.withPermits(1)(
+			Effect.flatMap(Ref.get(state), (s) => store.saveLedger(input.runId, s.ledger)),
+		)
 
 		const remaining = Effect.map(Ref.get(state), (s) =>
 			input.budget === null ? Number.POSITIVE_INFINITY : input.budget - s.spent,
@@ -120,64 +121,97 @@ export const makeEngine = (input: AuditRunInput) =>
 		})
 
 		/**
-		 * One fresh agent. Its result is decoded against `schema`; a failed call or a result that breaks
-		 * its contract is recorded and answered with `undefined`, never repaired.
+		 * Spends one invocation atomically, or refuses: past a strict budget, or for an id this run
+		 * already used (an id is a durable step's name, so a repeat would replay another agent's answer).
+		 */
+		const reserve = (agentId: string) =>
+			Ref.modify(state, (s): readonly ["ok" | "budget" | "duplicate", EngineState] =>
+				s.usedIds.has(agentId)
+					? ["duplicate", s]
+					: input.budget !== null && s.spent >= input.budget
+						? ["budget", s]
+						: ["ok", { ...s, spent: s.spent + 1, usedIds: new Set(s.usedIds).add(agentId) }],
+			)
+
+		/** One fresh agent's final text, or undefined when it was refused or failed (recorded either way). */
+		const call = (role: AuditRole, agentId: string, prompt: string) =>
+			Effect.gen(function* () {
+				const reserved = yield* reserve(agentId)
+				if (reserved !== "ok") {
+					yield* event({
+						_tag: "Note",
+						message: `${agentId} not run: ${reserved === "budget" ? "budget exhausted" : "duplicate agent id"}`,
+					})
+					return undefined
+				}
+				const answer = yield* Effect.result(agents.run({ role, agentId, prompt }))
+				if (answer._tag === "Failure") {
+					yield* event({
+						_tag: "Agent",
+						role,
+						agentId,
+						outcome: "failed",
+						message: answer.failure.message,
+					})
+					return undefined
+				}
+				const usage = answer.success.usage
+				if (usage !== undefined) {
+					yield* Ref.update(state, (s) => ({
+						...s,
+						usage: {
+							inputTokens: s.usage.inputTokens + usage.inputTokens,
+							outputTokens: s.usage.outputTokens + usage.outputTokens,
+							costUsd: s.usage.costUsd + (usage.costUsd ?? 0),
+						},
+					}))
+				}
+				return answer.success
+			})
+
+		/**
+		 * One fresh agent whose result is decoded against `schema`. A failed call or a result that breaks
+		 * its contract is recorded and answered with `undefined`, never repaired. Store errors propagate.
 		 */
 		const invoke = <S extends Schema.Top>(role: AuditRole, agentId: string, prompt: string, schema: S) =>
 			Effect.gen(function* () {
-				yield* Ref.update(state, (s) => ({ ...s, spent: s.spent + 1 }))
-				const answer = yield* agents.run({ role, agentId, prompt }).pipe(
-					Effect.tapError((error) =>
-						event({ _tag: "Agent", role, agentId, outcome: "failed", message: error.message }),
-					),
-					Effect.option,
-				)
-				if (answer._tag === "None") return undefined
-				const usage = answer.value.usage
-				const decoded = yield* decodeAgentJson(role, schema, answer.value.text).pipe(
-					Effect.tapError((error) =>
-						event({
-							_tag: "Agent",
-							role,
-							agentId,
-							outcome: "discarded",
-							message: error.message,
-							usage,
-						}),
-					),
-					Effect.option,
-				)
-				if (decoded._tag === "None") return undefined
-				yield* event({
-					_tag: "Agent",
-					role,
-					agentId,
-					outcome: "ok",
-					usage,
-				})
-				return decoded.value
+				const answer = yield* call(role, agentId, prompt)
+				if (answer === undefined) return undefined
+				const usage = answer.usage
+				const decoded = yield* Effect.result(decodeAgentJson(role, schema, answer.text))
+				if (decoded._tag === "Failure") {
+					yield* event({
+						_tag: "Agent",
+						role,
+						agentId,
+						outcome: "discarded",
+						message: decoded.failure.message,
+						usage,
+					})
+					return undefined
+				}
+				yield* event({ _tag: "Agent", role, agentId, outcome: "ok", usage })
+				return decoded.success
 			})
 
 		/** Free text, for reconnaissance facts. */
 		const invokeText = (role: AuditRole, agentId: string, prompt: string) =>
 			Effect.gen(function* () {
-				yield* Ref.update(state, (s) => ({ ...s, spent: s.spent + 1 }))
-				const answer = yield* agents.run({ role, agentId, prompt }).pipe(
-					Effect.tapError((error) =>
-						event({ _tag: "Agent", role, agentId, outcome: "failed", message: error.message }),
-					),
-					Effect.option,
-				)
-				if (answer._tag === "None" || answer.value.text.trim() === "") return undefined
-				const usage = answer.value.usage
-				yield* event({
-					_tag: "Agent",
-					role,
-					agentId,
-					outcome: "ok",
-					usage,
-				})
-				return answer.value.text
+				const answer = yield* call(role, agentId, prompt)
+				if (answer === undefined) return undefined
+				if (answer.text.trim() === "") {
+					yield* event({
+						_tag: "Agent",
+						role,
+						agentId,
+						outcome: "discarded",
+						message: "empty answer",
+						usage: answer.usage,
+					})
+					return undefined
+				}
+				yield* event({ _tag: "Agent", role, agentId, outcome: "ok", usage: answer.usage })
+				return answer.text
 			})
 
 		const gap = (reason: string) =>
@@ -200,6 +234,7 @@ export const makeEngine = (input: AuditRunInput) =>
 			store,
 			event,
 			mutate,
+			persist,
 			remaining,
 			context,
 			invoke,

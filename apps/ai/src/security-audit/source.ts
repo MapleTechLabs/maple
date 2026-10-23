@@ -5,7 +5,7 @@
  */
 import { Context, Effect, Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
-import { toolHandlersWithContent } from "@/platform/genai-spans"
+import { toolHandlersWithContent } from "../platform/genai-spans"
 
 /** What the model sees from one read: the text, cut at the bound, and whether it was cut. */
 export interface SourceOutput {
