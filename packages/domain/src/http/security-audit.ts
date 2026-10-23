@@ -38,12 +38,17 @@ export const SecurityAuditBranch = Schema.String.check(
 	Schema.isPattern(/^(?![-/.])(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/+-]{1,255}$/u),
 	Schema.makeFilter((value: string) => !value.endsWith("/") && !value.endsWith(".lock"), {
 		description: "a branch name",
+		message: "Expected a branch name that does not end in '/' or '.lock'",
 	}),
 )
 
 const ScopePath = Schema.String.check(
 	Schema.isMaxLength(512),
-	Schema.makeFilter(isSafeScopePath, { description: "a safe repository-relative path" }),
+	Schema.makeFilter(isSafeScopePath, {
+		description: "a safe repository-relative path",
+		message:
+			"Expected a repository-relative path like src/api: no '..', '~', ':', backslashes, leading '/', empty segments or surrounding spaces",
+	}),
 )
 const ScopePaths = Schema.Array(ScopePath).check(Schema.isMaxLength(MAX_SCOPE_PATHS))
 
