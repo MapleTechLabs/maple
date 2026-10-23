@@ -52,7 +52,8 @@ export const summarizeAws = (reads: ReadonlyArray<FleetRead>): SourceSummary | n
 	return {
 		resources: countLabel(summary.total, "resource"),
 		segments: [
-			{ key: "ok", count: summary.counts.ok + summary.counts.idle },
+			{ key: "ok", count: summary.counts.ok },
+			{ key: "idle", count: summary.counts.idle },
 			{ key: "elevated", count: summary.counts.warn },
 			{ key: "saturated", count: summary.counts.crit },
 		],

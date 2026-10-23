@@ -38,6 +38,7 @@ describe("summarizeAws", () => {
 		])
 		expect(summary?.segments).toEqual([
 			{ key: "ok", count: 1 },
+			{ key: "idle", count: 0 },
 			{ key: "elevated", count: 1 },
 			{ key: "saturated", count: 1 },
 		])

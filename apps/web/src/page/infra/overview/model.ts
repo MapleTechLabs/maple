@@ -52,7 +52,7 @@ export const Finding = Schema.Struct({
 export type Finding = typeof Finding.Type
 
 export const HealthSegment = Schema.Struct({
-	key: Schema.Literals(["ok", "elevated", "saturated", "unbounded"]),
+	key: Schema.Literals(["ok", "elevated", "saturated", "unbounded", "idle"]),
 	count: Schema.Number,
 })
 export type HealthSegment = typeof HealthSegment.Type
