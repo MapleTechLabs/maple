@@ -18,7 +18,7 @@ import * as Dialog from "../../../ui/dialog"
 import * as Field from "../../../ui/field"
 import * as RadioGroup from "../../../ui/radio-group"
 import * as Select from "../../../ui/select"
-import { createTarget, startRun } from "./api"
+import { createTarget, INVALID_REQUEST_CODE, startRun } from "./api"
 
 // The Add target dialog: repository, branch, profile, scope and budget, then the first run.
 // The parent holds the GitHub status; this module owns the form and its two writes.
@@ -182,24 +182,42 @@ export const requestOf = (model: Model): SecurityAuditCreateTargetRequest | null
 	return scopePaths.length === 0 ? request : { ...request, scopePaths }
 }
 
+type FormField = "repository" | "branch" | "scope" | "budget"
+
+/** Which form field a request path such as `scopePaths[0]` names. */
+const fieldOfParam = (param: string): FormField | null =>
+	param.startsWith("scopePaths")
+		? "scope"
+		: param.startsWith("branch")
+			? "branch"
+			: param.startsWith("repository")
+				? "repository"
+				: param.startsWith("budgetPerRun")
+					? "budget"
+					: null
+
 /** A server answer that belongs next to a field rather than above the form. */
 export const fieldFailure = (
 	failure: LoadFailure | null,
-): Readonly<{ field: "repository" | "branch"; message: string }> | null =>
-	failure === null
-		? null
-		: failure.code === "security_audit_repository_not_connected"
-			? {
-					field: "repository",
-					message:
-						"Maple's GitHub App cannot read this repository. Grant it access in GitHub, then try again.",
-				}
-			: failure.code === "security_audit_target_exists"
-				? {
-						field: "branch",
-						message: "This branch is already a target. Open it from the targets table.",
-					}
-				: null
+): Readonly<{ field: FormField; message: string }> | null => {
+	if (failure === null) return null
+	if (failure.code === "security_audit_repository_not_connected")
+		return {
+			field: "repository",
+			message:
+				"Maple's GitHub App cannot read this repository. Grant it access in GitHub, then try again.",
+		}
+	if (failure.code === "security_audit_target_exists")
+		return {
+			field: "branch",
+			message: "This branch is already a target. Open it from the targets table.",
+		}
+	const field =
+		failure.code === INVALID_REQUEST_CODE && failure.param !== undefined
+			? fieldOfParam(failure.param)
+			: null
+	return field === null ? null : { field, message: failure.message }
+}
 
 // UPDATE
 

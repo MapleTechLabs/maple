@@ -392,8 +392,16 @@ const addTargetDialog = (
 						errors.branch ?? (server?.field === "branch" ? server.message : undefined),
 					),
 					profileField(h, model),
-					scopeField(h, model, errors.scope),
-					budgetField(h, model, errors.budget),
+					scopeField(
+						h,
+						model,
+						errors.scope ?? (server?.field === "scope" ? server.message : undefined),
+					),
+					budgetField(
+						h,
+						model,
+						errors.budget ?? (server?.field === "budget" ? server.message : undefined),
+					),
 				]
 			: [notConnected(h)],
 	})

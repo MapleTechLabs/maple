@@ -1,12 +1,14 @@
 import { OrgId } from "@maple/domain"
 import {
+	ApiRequestValidationError,
+	SecurityAuditCreateTargetRequest,
 	SecurityAuditDisabledError,
 	SecurityAuditForbiddenError,
 	SecurityAuditRepositoryNotConnectedError,
 	SecurityAuditTargetExistsError,
 } from "@maple/domain/http"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Result, Schema } from "effect"
+import { Cause, Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
@@ -25,6 +27,7 @@ import * as Field from "../../../ui/field"
 import * as Select from "../../../ui/select"
 import type { PageContext } from "../../contract"
 import * as AddTarget from "../kit/add-target"
+import { toCreateFailure } from "../kit/api"
 import {
 	filteredFindings,
 	findingsStateOf,
@@ -529,6 +532,46 @@ describe("add target", () => {
 			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
 			expectView(text(/^Maple's GitHub App cannot read this repository/)).toExist(),
 		)
+	})
+
+	test("a scope path the server refuses is reported under the scope field in the server's words", () => {
+		const created = send(pick(opened(), "acme/api-gateway"), AddTarget.Message.Submitted()).model
+		const refused = send(
+			created,
+			AddTarget.Message.CompletedCreate({
+				attempt: created.addTarget.attempt,
+				result: Result.fail(
+					toCreateFailure(
+						new ApiRequestValidationError({
+							message: "Request payload is invalid (1 problem).",
+							param: "scopePaths[0]",
+							details: [
+								"scopePaths[0]: Expected a repository-relative path like src/api: no '..'",
+							],
+						}),
+					),
+				),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(refused),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("Expected a repository-relative path like src/api: no '..'")).toExist(),
+			expectView(text(/^The request was refused/)).not.toExist(),
+		)
+	})
+
+	test("a payload the client's own schema refuses names its field too", () => {
+		const exit = Schema.decodeExit(SecurityAuditCreateTargetRequest)({
+			repository: "acme/api",
+			branch: "main",
+			scopePaths: ["../etc"],
+		})
+		const error = exit._tag === "Failure" ? Cause.squash(exit.cause) : null
+		const failure = toCreateFailure(error)
+		expect(AddTarget.fieldFailure(failure)?.field).toBe("scope")
+		expect(failure.message).toMatch(/^Expected a repository-relative path like src\/api/)
 	})
 
 	test("the dialog stays open while a create is pending, and an answer for an earlier opening is dropped", () => {
