@@ -4,6 +4,7 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { chartBucketSeconds } from "../../../../charts/infra-metric-series"
 import { AppRoute, hrefOf } from "../../../../route"
 import { button, linkButton } from "../../../../ui/button"
 import { badge } from "../../../../ui/display"
@@ -120,7 +121,11 @@ const tableContext = (model: Model): TableContext => {
 	return {
 		sparks: AsyncData.isSuccess(model.sparks.data) ? model.sparks.data.data : [],
 		traced: AsyncData.isSuccess(model.traced.data) ? model.traced.data.data : null,
-		window: { startMs, endMs, bucketMs: Math.max(60_000, (endMs - startMs) / 60) },
+		window: {
+			startMs,
+			endMs,
+			bucketMs: window === null ? 0 : chartBucketSeconds(window.startTime, window.endTime) * 1000,
+		},
 		windowMs: endMs - startMs,
 	}
 }

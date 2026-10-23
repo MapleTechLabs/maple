@@ -67,6 +67,12 @@ describe("awsInfraTimeseriesSQL", () => {
 		expect(sql).toContain("metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'")
 		expect(sql).toContain("metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'")
 	})
+
+	it("keeps a quote in a resource name inside the value", () => {
+		const keys = ["q' OR 1=1 --", "us-east-1", "1"]
+		const { sql } = compileUnsafe(awsInfraTimeseriesSQL("sqs", keys), { ...params, bucketSeconds: 60 })
+		expect(sql).toContain("Attributes['aws.dimension.queue_name'] = 'q\\' OR 1=1 --'")
+	})
 })
 
 describe("awsInfraPresenceSQL", () => {
