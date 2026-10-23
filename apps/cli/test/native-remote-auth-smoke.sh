@@ -182,8 +182,17 @@ fi
 pass "CLI queries succeed with the token and fail without it"
 
 # --- Maintenance through the server's own token still works.
-"$MAPLE" checkpoint --port "$PORT" --data-dir "$DATA" >"$ROOT/checkpoint.out" 2>&1 ||
-	fail "maple checkpoint failed against an authenticated server: $(cat "$ROOT/checkpoint.out")"
+# The server may still hold the maintenance lock for its own start-up work; wait it out.
+checkpointed=0
+for _ in $(seq 1 60); do
+	if "$MAPLE" checkpoint --port "$PORT" --data-dir "$DATA" >"$ROOT/checkpoint.out" 2>&1; then
+		checkpointed=1
+		break
+	fi
+	grep -q "maintenance operation is active" "$ROOT/checkpoint.out" || break
+	sleep 0.5
+done
+[[ "$checkpointed" == 1 ]] || fail "maple checkpoint failed against an authenticated server: $(cat "$ROOT/checkpoint.out")"
 pass "maple checkpoint works with auth on"
 
 stop_server
