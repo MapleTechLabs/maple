@@ -6,13 +6,12 @@ import * as Overlays from "../overlays"
 import * as Chart from "../../../charts/chart"
 import { ChartRuntime } from "../../../charts/chart-runtime"
 import * as Keyed from "../../../data/keyed"
-import type { LoadFailure } from "../../../data/load-failure"
 import { requestKey } from "../../../data/request-key"
 import { commitDetailKey } from "../../kit/commit-card"
 import type { TimeWindow } from "../../../data/time-range"
-import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { chain, slotStep } from "../../kit/keyed-step"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { commitRangesKey, isResolvableSha } from "../kit"
@@ -32,7 +31,6 @@ import type { Model } from "./model"
 import { followLoaded, followService } from "./service"
 
 type Return = PageReturn<Model, Message>
-type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 type ReleaseRoute = Extract<AppRoute, { readonly _tag: "Release" }>
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
@@ -43,24 +41,6 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 		preset: model.search.timePreset ?? DEFAULT_PRESET,
 		timeZone: context.timeZone,
 	})
-
-const slotStep = <A>(
-	model: Model,
-	slot: Keyed.Keyed<A, LoadFailure>,
-	write: (next: Keyed.Keyed<A, LoadFailure>) => Partial<Model>,
-	key: string,
-	mode: RequestMode,
-	command: Commands[number],
-): Return =>
-	Option.match(Keyed.request(slot, key, mode), {
-		onNone: () => ({ model }),
-		onSome: (next) => ({ model: { ...model, ...write(next) }, commands: [command] }),
-	})
-
-const chain = (first: Return, next: (model: Model) => Return): Return => {
-	const second = next(first.model)
-	return { model: second.model, commands: [...(first.commands ?? []), ...(second.commands ?? [])] }
-}
 
 const requestReleases = (
 	model: Model,
@@ -80,14 +60,15 @@ const requestReleases = (
 		(releases) => ({ releases }),
 		key,
 		mode,
-		FetchDeployReleases({
-			key,
-			refresh: mode === "Refresh",
-			startTime: window.startTime,
-			endTime: window.endTime,
-			environments,
-			namespaces,
-		}),
+		() =>
+			FetchDeployReleases({
+				key,
+				refresh: mode === "Refresh",
+				startTime: window.startTime,
+				endTime: window.endTime,
+				environments,
+				namespaces,
+			}),
 	)
 }
 
@@ -118,7 +99,7 @@ const followOverview = (model: Model, context: PageContext, mode: RequestMode): 
 							(changeset) => ({ changeset }),
 							changesetKey,
 							mode,
-							FetchChangeset({ key: changesetKey, ranges }),
+							() => FetchChangeset({ key: changesetKey, ranges }),
 						),
 				(next) =>
 					slotStep(
@@ -127,7 +108,7 @@ const followOverview = (model: Model, context: PageContext, mode: RequestMode): 
 						(issues) => ({ issues }),
 						issuesKey,
 						mode,
-						FetchDeployIssues({ key: issuesKey, introducedAfter }),
+						() => FetchDeployIssues({ key: issuesKey, introducedAfter }),
 					),
 			)
 		},
@@ -142,7 +123,7 @@ const loadCommit = (model: Model, context: PageContext): Return => {
 		(commit) => ({ commit }),
 		key,
 		"Load",
-		FetchReleaseCommit({ key, sha: model.commitSha }),
+		() => FetchReleaseCommit({ key, sha: model.commitSha }),
 	)
 }
 
@@ -186,10 +167,14 @@ export const routeChanged = (model: Model, route: ReleaseRoute, context: PageCon
 	if (searchHref(model.commitSha, model.search) === searchHref(route.commitSha, route.search))
 		return { model }
 	const next = { ...model, search: route.search }
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	return routeWindowStep(model.search, route.search, {
 		resolve,
-		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+		requestAll: (mode) =>
+			next.window === null ? resolve() : requestAll(next, context, next.window, mode),
 	})
 }
 
@@ -213,10 +198,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = Overlays.update(model.overlays, inner, context.orgId)
 			return {
 				model: { ...model, overlays: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (overlay) => Message.GotOverlaysMessage({ message: overlay })),
+				commands: Command.mapMessages(next.commands ?? [], (overlay) =>
+					Message.GotOverlaysMessage({ message: overlay }),
+				),
 			}
 		},
-		CompletedResolveWindow: ({ window, nowMs, mode }) => requestAll({ ...model, nowMs }, context, window, mode),
+		CompletedResolveWindow: ({ window, nowMs, mode }) =>
+			requestAll({ ...model, nowMs }, context, window, mode),
 		CompletedFetchCommit: ({ key, result }) => ({
 			model: { ...model, commit: Keyed.accept(model.commit, key, result) },
 		}),

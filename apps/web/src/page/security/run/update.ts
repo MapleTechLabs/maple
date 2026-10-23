@@ -1,13 +1,12 @@
 import { Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
-import type { LoadFailure } from "../../../data/load-failure"
 import { requestKey } from "../../../data/request-key"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
-import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import * as Dialog from "../../../ui/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { chainAll, slotStep } from "../../kit/keyed-step"
 import { isLive } from "../kit/format"
 import {
 	CancelRun,
@@ -26,38 +25,11 @@ import { eventsOf, runOf } from "./derive"
 import { Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
-type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
 export type SecurityRunRoute = Extract<AppRoute, { readonly _tag: "SecurityRun" }>
 
 const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
-
-const slotStep = <A>(
-	model: Model,
-	slot: Keyed.Keyed<A, LoadFailure>,
-	write: (next: Keyed.Keyed<A, LoadFailure>) => Partial<Model>,
-	key: string,
-	mode: Keyed.ReadMode,
-	command: (key: string) => Commands[number],
-): Return =>
-	Option.match(Keyed.requestFor(slot, key, mode), {
-		onNone: () => ({ model }),
-		onSome: (next) => ({ model: { ...model, ...write(next) }, commands: [command(next.key)] }),
-	})
-
-const chainAll = (model: Model, steps: ReadonlyArray<(model: Model) => Return>): Return =>
-	steps.reduce<Return>(
-		(acc, step) => {
-			const next = step(acc.model)
-			return {
-				...next,
-				commands: [...(acc.commands ?? []), ...(next.commands ?? [])],
-				outMessage: next.outMessage ?? acc.outMessage,
-			}
-		},
-		{ model },
-	)
 
 const keyOf = (context: PageContext, operation: string, input: unknown) =>
 	requestKey(context.orgId, `securityAudit.${operation}`, input)

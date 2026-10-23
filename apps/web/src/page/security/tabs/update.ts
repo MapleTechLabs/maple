@@ -3,14 +3,13 @@ import type { SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
-import type { LoadFailure } from "../../../data/load-failure"
 import { requestKey } from "../../../data/request-key"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
-import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import type { SecurityFindingsSearch, SecurityRunsSearch } from "../../../route/search"
 import * as Select from "../../../ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
+import { chain, chainAll, slotStep } from "../../kit/keyed-step"
 import * as AddTarget from "../kit/add-target"
 import { isLive, SECURITY_SEVERITY_ORDER } from "../kit/format"
 import {
@@ -27,7 +26,6 @@ import { latestRunOf, runsOf, targetsOf } from "./derive"
 import { Message, type Model, type Tab } from "./model"
 
 type Return = PageReturn<Model, Message>
-type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
 export type SecurityTabsRoute = Extract<
 	AppRoute,
@@ -64,31 +62,6 @@ const withSelectValues = (model: Model): Model => ({
 const keyOf = (context: PageContext, operation: string, input: unknown = {}) =>
 	requestKey(context.orgId, `securityAudit.${operation}`, input)
 
-const slotStep = <A>(
-	model: Model,
-	slot: Keyed.Keyed<A, LoadFailure>,
-	write: (next: Keyed.Keyed<A, LoadFailure>) => Partial<Model>,
-	key: string,
-	mode: Keyed.ReadMode,
-	command: (key: string) => Commands[number],
-): Return =>
-	Option.match(Keyed.requestFor(slot, key, mode), {
-		onNone: () => ({ model }),
-		onSome: (next) => ({ model: { ...model, ...write(next) }, commands: [command(next.key)] }),
-	})
-
-const chain = (first: Return, next: (model: Model) => Return): Return => {
-	const second = next(first.model)
-	return {
-		...second,
-		commands: [...(first.commands ?? []), ...(second.commands ?? [])],
-		outMessage: second.outMessage ?? first.outMessage,
-	}
-}
-
-const chainAll = (model: Model, steps: ReadonlyArray<(model: Model) => Return>): Return =>
-	steps.reduce<Return>((acc, step) => chain(acc, step), { model })
-
 const readTargets = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
 	slotStep(
 		model,
@@ -124,7 +97,7 @@ const readFindings = (
 	context: PageContext,
 	targetId: SecurityAuditTargetId,
 	mode: Keyed.ReadMode,
-) =>
+): Return =>
 	slotStep(
 		model,
 		model.findings[targetId] ?? Keyed.idle(),
@@ -134,7 +107,12 @@ const readFindings = (
 		(key) => FetchFindings({ key, targetId }),
 	)
 
-const readLatestRun = (model: Model, context: PageContext, run: SecurityAuditRun, mode: Keyed.ReadMode) =>
+const readLatestRun = (
+	model: Model,
+	context: PageContext,
+	run: SecurityAuditRun,
+	mode: Keyed.ReadMode,
+): Return =>
 	slotStep(
 		model,
 		model.latestRuns[run.id] ?? Keyed.idle(),
