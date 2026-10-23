@@ -10,7 +10,7 @@ import { searchInput } from "../../../ui/search-input"
 import * as SelectView from "../../../ui/select-view"
 import { switchControl } from "../../../ui/switch"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { nothingInWindow } from "../../code-review/kit/layout"
+import { nothingInWindow } from "../../kit/nothing-in-window"
 import {
 	FINDING_STATUS_LABEL,
 	locationOf,

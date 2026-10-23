@@ -2,6 +2,7 @@ import type { SecurityAuditFinding, SecurityAuditRun, SecurityAuditTarget } from
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
+import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
@@ -15,7 +16,6 @@ import { statRail, statRailItem } from "../../kit/stat-rail"
 import { SEVERITY_FILL } from "../../errors/kit/severity"
 import {
 	formatElapsed,
-	formatTokens,
 	formatUsd,
 	type Gate,
 	gateOf,
@@ -26,7 +26,7 @@ import {
 	runLabelOf,
 	runToneOf,
 	SECURITY_SEVERITY_LABEL,
-	shortSha,
+	refLabel,
 	targetLine,
 } from "../kit/format"
 import {
@@ -119,7 +119,7 @@ const kpis = (h: H, model: Model): Html => {
 			eyebrow: "Spend this month",
 			value: formatUsd(spend.costUsd),
 			compact: true,
-			subline: `${spend.invocations.toLocaleString("en-US")} invocations · ${formatTokens(spend.tokens)} tokens`,
+			subline: `${spend.invocations.toLocaleString("en-US")} invocations · ${formatNumber(spend.tokens)} tokens`,
 		}),
 	])
 }
@@ -154,7 +154,7 @@ const lastRunCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Htm
 			? (run.error ?? "the audit could not start")
 			: run.status === "incomplete"
 				? (run.incompleteReason ?? "stopped early")
-				: `${formatElapsed((run.finishedAt ?? run.startedAt) - run.startedAt)} · ${shortSha(run.sourceRef)}`
+				: `${formatElapsed((run.finishedAt ?? run.startedAt) - run.startedAt)} · ${refLabel(run.sourceRef)}`
 	return h.div(
 		[h.Class("flex min-w-0 flex-col items-start gap-1")],
 		[
@@ -410,10 +410,10 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 							"Removed target"
 						const tone = runToneOf(run)
 						const note = isLive(run)
-							? `${formatTokens(run.inputTokens + run.outputTokens)} tokens so far`
+							? `${formatNumber(run.inputTokens + run.outputTokens)} tokens so far`
 							: run.status === "failed"
 								? "could not finish"
-								: `${formatElapsed((run.finishedAt ?? run.startedAt) - run.startedAt)} · ${formatTokens(run.inputTokens + run.outputTokens)} tokens`
+								: `${formatElapsed((run.finishedAt ?? run.startedAt) - run.startedAt)} · ${formatNumber(run.inputTokens + run.outputTokens)} tokens`
 						return listLink(
 							h,
 							runHref(run),

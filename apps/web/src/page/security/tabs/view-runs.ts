@@ -1,6 +1,7 @@
 import type { SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
 import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
 import { AsyncData } from "foldkit"
+import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button } from "../../../ui/button"
@@ -8,10 +9,9 @@ import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import * as SelectView from "../../../ui/select-view"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { nothingInWindow } from "../../code-review/kit/layout"
+import { nothingInWindow } from "../../kit/nothing-in-window"
 import {
 	formatElapsed,
-	formatTokens,
 	formatUsd,
 	isLive,
 	PROFILE_LABEL,
@@ -19,7 +19,7 @@ import {
 	runElapsed,
 	scopeLabel,
 	shortId,
-	shortSha,
+	refLabel,
 	isoOf,
 } from "../kit/format"
 import { placeholderRows, repositoryName, runStatusBadge } from "../kit/parts"
@@ -66,7 +66,7 @@ const runRow = (
 						repositoryName(h, repository, "text-sm"),
 						h.span(
 							[h.Class("truncate font-mono text-xs text-muted-foreground")],
-							[shortSha(run.sourceRef)],
+							[refLabel(run.sourceRef)],
 						),
 					],
 				),
@@ -81,7 +81,7 @@ const runRow = (
 			),
 			tableCell(
 				h,
-				[formatTokens(run.inputTokens + run.outputTokens)],
+				[formatNumber(run.inputTokens + run.outputTokens)],
 				"text-right font-mono tabular-nums",
 			),
 			tableCell(h, [formatUsd(run.costUsd)], "text-right font-mono tabular-nums"),

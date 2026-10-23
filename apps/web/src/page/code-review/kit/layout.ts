@@ -1,13 +1,10 @@
 import { resolveRelativeRangeToWarehouse } from "@maple/query-engine"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
-import { icon, type IconName } from "../../../ui/icon"
+import type { IconName } from "../../../ui/icon"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
+import { linkTabStrip } from "../../kit/underline-tabs"
 import type { WindowSearch } from "./frame"
 
 // `CodeReviewLayout`, `CodeReviewTabs` and `NothingInWindow`.
@@ -106,38 +103,19 @@ const tabs = <M>(options: LayoutOptions<M>): Html => {
 		? carried
 		: { repo: search.repo, author: search.author }
 	const currentPath = TABS.find((entry) => entry.tab === active)?.path ?? "/code-review"
-	return underlineTabStrip(
+	return linkTabStrip(
 		h,
-		{
-			navigation: true,
-			label: "Code review views",
-			bleed: false,
-			divided: false,
-			className: "gap-0 overflow-visible border-b border-border",
-		},
+		"Code review views",
 		TABS.map((entry) => {
 			const linkSearch = defined(entry.tab === "settings" ? {} : entry.tab === "ci" ? toCi : carried)
-			const isCurrent = entry.tab === active
-			const isRouteActive = isLinkActive(entry.path, linkSearch, currentPath, search)
-			return h.a(
-				[
-					h.Key(entry.tab),
-					...(isRouteActive ? [h.AriaCurrent("page")] : []),
-					h.Class(
-						cn(
-							cn(
-								underlineTabClass(isCurrent),
-								"h-9 gap-[7px] px-3 first:pl-0.5",
-								isCurrent ? "[&_svg]:text-primary" : "[&_svg]:text-muted-foreground",
-							),
-							isRouteActive && "active",
-						),
-					),
-					...(isRouteActive ? [h.DataAttribute("status", "active")] : []),
-					h.Href(hrefFor(entry.tab, linkSearch)),
-				],
-				[icon(h, entry.icon, { size: 14 }), entry.label],
-			)
+			return {
+				key: entry.tab,
+				href: hrefFor(entry.tab, linkSearch),
+				label: entry.label,
+				icon: entry.icon,
+				isCurrent: entry.tab === active,
+				isRouteActive: isLinkActive(entry.path, linkSearch, currentPath, search),
+			}
 		}),
 	)
 }
@@ -157,25 +135,3 @@ export const codeReviewLayout = <M>(options: LayoutOptions<M>, children: Readonl
 		? page
 		: options.h.div([options.h.Class("contents")], [page, options.overlay])
 }
-
-/** The empty state of a tab whose filters left nothing: one way back to everything. */
-export const nothingInWindow = <M>(
-	h: HtmlBuilder<M>,
-	options: Readonly<{ title: string; description: string; onClear?: M | undefined }>,
-): Html =>
-	empty(
-		h,
-		[
-			emptyHeader(h, [emptyTitle(h, [options.title]), emptyDescription(h, [options.description])]),
-			...(options.onClear === undefined
-				? []
-				: [
-						button(
-							h,
-							{ variant: "outline", size: "sm", attributes: [h.OnClick(options.onClear)] },
-							["Clear filters"],
-						),
-					]),
-		],
-		"rounded-md border border-dashed md:py-14",
-	)

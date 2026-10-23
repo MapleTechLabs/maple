@@ -9,7 +9,7 @@ import type {
 	SecurityAuditVerdict,
 } from "@maple/domain/security-audit"
 import type { Tone } from "@maple/ui/lib/tone"
-import { formatNumber } from "@maple/ui/lib/format"
+import { shortId as shortDisplayId } from "@maple/ui/lib/ids"
 import { DateTime } from "effect"
 import type { LoadFailure } from "../../../data/load-failure"
 
@@ -27,7 +27,7 @@ export const gateOf = (failure: LoadFailure): Gate | null =>
 			? "forbidden"
 			: null
 
-export const RUN_STATUS_LABEL = {
+const RUN_STATUS_LABEL = {
 	in_progress: "Running",
 	complete: "Complete",
 	incomplete: "Incomplete",
@@ -38,12 +38,12 @@ export const RUN_STATUS_LABEL = {
 export const isLive = (run: Pick<SecurityAuditRun, "finishedAt">): boolean => run.finishedAt === null
 
 /** A cancelled run is stored as `incomplete` with this reason. */
-export const CANCELLED_REASON = "cancelled"
+const CANCELLED_REASON = "cancelled"
 
 export const isCancelled = (run: Pick<SecurityAuditRun, "status" | "incompleteReason">): boolean =>
 	run.status === "incomplete" && run.incompleteReason === CANCELLED_REASON
 
-export const RUN_STATUS_TONE = {
+const RUN_STATUS_TONE = {
 	in_progress: "done",
 	complete: "ok",
 	incomplete: "warn",
@@ -77,6 +77,16 @@ export const FINDING_STATUS_LABEL = {
 	accepted_risk: "Accepted risk",
 } satisfies Record<SecurityAuditFindingStatus, string>
 
+/** The Findings tab's status filter: the four statuses and "All". */
+export const STATUS_TAB_LABEL = { ...FINDING_STATUS_LABEL, all: "All" } as const
+
+export const REPORT_TITLE = {
+	report: "REPORT.md",
+	findingsDetail: "FINDINGS-DETAIL.md",
+	needsValidation: "NEEDS-VALIDATION.md",
+} as const
+export type ReportDoc = keyof typeof REPORT_TITLE
+
 export const VERDICT_LABEL = {
 	confirmed: "Confirmed",
 	needs_validation: "Needs validation",
@@ -109,12 +119,12 @@ export const issueSeverityOf = (severity: SecurityAuditSeverity | null) =>
 
 export const formatUsd = (usd: number | null): string => (usd === null ? "not reported" : formatCost(usd))
 
-export const formatTokens = (count: number): string => formatNumber(count)
-
 /** The engine's run id is long; the first block is what people say out loud. */
 export const shortId = (id: string): string => id.replace(/^run[_-]/u, "").slice(0, 8)
 
-export const shortSha = (ref: string): string => (/^[0-9a-f]{12,40}$/u.test(ref) ? ref.slice(0, 7) : ref)
+/** A commit as its short SHA; a branch name the run resolved nothing for stays as written. */
+export const refLabel = (ref: string): string =>
+	/^[0-9a-f]{12,40}$/u.test(ref) ? shortDisplayId(ref, "sha") : ref
 
 export const scopeLabel = (scopePaths: ReadonlyArray<string>): string =>
 	scopePaths.length === 0
@@ -144,10 +154,6 @@ export const locationOf = (record: FindingRecord): string | null => {
 	const step = record.trace[0] ?? record.evidence[0]
 	return step === undefined ? null : `${step.file}:${step.line}`
 }
-
-/** A confirmed record's root cause, or the claim a finding still makes. */
-export const rootCauseOf = (record: FindingRecord): string =>
-	record.verdict === "confirmed" ? record.root_cause : record.claimed_root_cause
 
 /** The month a run started in, for "spend this month". */
 export const isSameMonth = (epochMs: number, nowMs: number): boolean => {

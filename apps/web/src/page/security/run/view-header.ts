@@ -4,6 +4,7 @@ import {
 	SECURITY_AUDIT_MAX_BUDGET,
 } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
+import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { alert, alertAction, alertDescription, alertTitle } from "../../../ui/alert"
@@ -14,7 +15,6 @@ import { statRail, statRailItem } from "../../kit/stat-rail"
 import { detailTitle } from "../../kit/detail-header"
 import {
 	formatElapsed,
-	formatTokens,
 	formatUsd,
 	isCancelled,
 	isLive,
@@ -22,7 +22,7 @@ import {
 	RUN_KIND_LABEL,
 	runElapsed,
 	scopeLabel,
-	shortSha,
+	refLabel,
 } from "../kit/format"
 import { iconTile, metaItem, runStatusBadge } from "../kit/parts"
 import { countOf, gapCount, type Phase, type PhaseState, raisedBudget, type Verdicts } from "./derive"
@@ -61,7 +61,7 @@ export const runTitle = (
 				[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground")],
 				[
 					metaItem(h, "BranchForkIcon", [
-						`${target?.branch ?? "branch"} @ ${shortSha(run.sourceRef)}`,
+						`${target?.branch ?? "branch"} @ ${refLabel(run.sourceRef)}`,
 					]),
 					metaItem(h, run.scopePaths.length === 0 ? null : "FolderIcon", [
 						h.span([h.Title(run.scopePaths.join("\n"))], [scopeLabel(run.scopePaths)]),
@@ -323,9 +323,9 @@ export const runStats = (h: H, run: SecurityAuditRunDetail, verdicts: Verdicts |
 		}),
 		statRailItem(h, {
 			eyebrow: "Tokens",
-			value: formatTokens(tokens),
+			value: formatNumber(tokens),
 			compact: true,
-			subline: `${formatTokens(run.inputTokens)} input · ${formatTokens(run.outputTokens)} output`,
+			subline: `${formatNumber(run.inputTokens)} input · ${formatNumber(run.outputTokens)} output`,
 		}),
 		statRailItem(h, {
 			eyebrow: live ? "Cost so far" : "Cost",

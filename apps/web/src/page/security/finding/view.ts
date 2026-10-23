@@ -29,7 +29,7 @@ import {
 	issueSeverityOf,
 	SECURITY_SEVERITY_LABEL,
 	shortId,
-	shortSha,
+	refLabel,
 	VERDICT_LABEL,
 } from "../kit/format"
 import { stack } from "../kit/layout"
@@ -111,7 +111,7 @@ const title = (h: H, model: Model, finding: SecurityAuditFinding, target: Securi
 							`last seen ${formatRelativeShortFrom(finding.updatedAt, model.nowMs)} ago at `,
 							h.span(
 								[h.Class("font-mono")],
-								[`${target?.branch ?? "branch"} @ ${shortSha(finding.lastSeenRef)}`],
+								[`${target?.branch ?? "branch"} @ ${refLabel(finding.lastSeenRef)}`],
 							),
 						],
 					),

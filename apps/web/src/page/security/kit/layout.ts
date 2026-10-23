@@ -1,19 +1,17 @@
-import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { BreadcrumbEntry } from "../../../shell"
-import { icon, type IconName } from "../../../ui/icon"
+import type { IconName } from "../../../ui/icon"
 import { pageDescription } from "../../../ui/page-layout"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailTitle } from "../../kit/detail-header"
-import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
+import { linkTabStrip } from "../../kit/underline-tabs"
+import type { Tab } from "../tabs/model"
 import { iconTile } from "./parts"
 
 // The frame of the three Security tabs: title block, Overview / Findings / Runs, content.
 
-export type SecurityTab = "overview" | "findings" | "runs"
-
-const TABS: ReadonlyArray<{ tab: SecurityTab; label: string; icon: IconName; href: string }> = [
+const TABS: ReadonlyArray<{ tab: Tab; label: string; icon: IconName; href: string }> = [
 	{ tab: "overview", label: "Overview", icon: "ShieldCheckIcon", href: hrefOf(AppRoute.Security()) },
 	{
 		tab: "findings",
@@ -29,48 +27,32 @@ const TABS: ReadonlyArray<{ tab: SecurityTab; label: string; icon: IconName; hre
 	},
 ]
 
-export const tabLabel = (tab: SecurityTab): string => TABS.find((entry) => entry.tab === tab)?.label ?? ""
-
-export const breadcrumbsOf = (tab: SecurityTab): ReadonlyArray<BreadcrumbEntry> =>
-	tab === "overview"
+export const breadcrumbsOf = (tab: Tab): ReadonlyArray<BreadcrumbEntry> => {
+	const label = TABS.find((entry) => entry.tab === tab)?.label ?? ""
+	return tab === "overview"
 		? [{ label: "Security" }]
-		: [{ label: "Security", href: hrefOf(AppRoute.Security()) }, { label: tabLabel(tab) }]
+		: [{ label: "Security", href: hrefOf(AppRoute.Security()) }, { label }]
+}
 
-const tabs = <M>(h: HtmlBuilder<M>, active: SecurityTab): Html =>
-	underlineTabStrip(
+const tabs = <M>(h: HtmlBuilder<M>, active: Tab): Html =>
+	linkTabStrip(
 		h,
-		{
-			navigation: true,
-			label: "Security views",
-			bleed: false,
-			divided: false,
-			className: "gap-0 border-b border-border",
-		},
-		TABS.map((entry) => {
-			const isCurrent = entry.tab === active
-			return h.a(
-				[
-					h.Key(entry.tab),
-					...(isCurrent ? [h.AriaCurrent("page")] : []),
-					h.Class(
-						cn(
-							underlineTabClass(isCurrent),
-							"h-9 gap-[7px] px-3 first:pl-0.5",
-							isCurrent ? "[&_svg]:text-primary" : "[&_svg]:text-muted-foreground",
-						),
-					),
-					h.Href(entry.href),
-				],
-				[icon(h, entry.icon, { size: 14 }), entry.label],
-			)
-		}),
+		"Security views",
+		TABS.map((entry) => ({
+			key: entry.tab,
+			href: entry.href,
+			label: entry.label,
+			icon: entry.icon,
+			isCurrent: entry.tab === active,
+			isRouteActive: entry.tab === active,
+		})),
 	)
 
 const DESCRIPTION =
 	"Deep code audits of your connected repositories. Findings are visible to org admins only."
 
 /** The title block: Triage overline, the shield tile, the page's one line of context. */
-export const securityTitle = <M>(h: HtmlBuilder<M>, description: string = DESCRIPTION): Html =>
+const securityTitle = <M>(h: HtmlBuilder<M>, description: string = DESCRIPTION): Html =>
 	h.div(
 		[h.Class("min-w-0 space-y-1.5")],
 		[
@@ -92,8 +74,8 @@ export const securityTitle = <M>(h: HtmlBuilder<M>, description: string = DESCRI
 export const stack = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Class("flex shrink-0 flex-col gap-6")], children)
 
-export type SecurityLayoutOptions = Readonly<{
-	active: SecurityTab
+type SecurityLayoutOptions = Readonly<{
+	active: Tab
 	actions?: Html
 	description?: string
 	/** Dialogs the tab owns, rendered after the content. */
