@@ -97,6 +97,16 @@ describe("aws resource", () => {
 		)
 	})
 
+	test("a region that is not an AWS region gets no console link", () => {
+		const { model } = entered("sqs", "orders", { region: "evil.example/#", account: "123456789012" })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			themeResolved(),
+			expectView(role("link", { name: /Open in AWS console/ })).toBeAbsent(),
+		)
+	})
+
 	test("a kind Maple does not read asks nothing and says so", () => {
 		const { model, commands } = entered("dynamodb", "orders", {})
 		expect(commands ?? []).toEqual([])

@@ -161,6 +161,10 @@ const judgementOf = (kind: AwsInfraKindId, rows: ReadonlyArray<BucketRow>): Judg
 
 const BADGE = { crit: "crit", warn: "warn", idle: "muted", ok: "ok" } as const
 
+// The region becomes the console's hostname and comes from the URL, so only a real region links.
+const AWS_REGION = /^[a-z]{2}(-[a-z]+)+-\d+$/
+const AWS_ACCOUNT = /^\d{12}$/
+
 /** The resource in the AWS console, where the page cannot follow. */
 const consoleHref = (
 	kind: AwsInfraKindId,
@@ -372,7 +376,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							...(model.search.account === undefined ? [] : [model.search.account]),
 						].join(" · "),
 						actions:
-							kind === null || region === ""
+							kind === null || !AWS_REGION.test(region)
 								? []
 								: [
 										linkButton(
@@ -385,7 +389,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 													model.name,
 													region,
 													cluster,
-													model.search.account,
+													AWS_ACCOUNT.test(model.search.account ?? "")
+														? model.search.account
+														: undefined,
 												),
 												attributes: [
 													h.Target("_blank"),
