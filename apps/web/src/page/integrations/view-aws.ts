@@ -1,4 +1,5 @@
-import type { V2AwsConnection, V2AwsIntegration, V2AwsSetup } from "@maple/domain/http/v2"
+import type { V2AwsConnection, V2AwsIngest, V2AwsIntegration, V2AwsSetup } from "@maple/domain/http/v2"
+import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
@@ -10,6 +11,7 @@ import { badge } from "../../ui/display"
 import { errorState } from "../../ui/error-state"
 import * as Field from "../../ui/field"
 import { icon } from "../../ui/icon"
+import type { IconName } from "../../ui/icons.generated"
 import { input } from "../../ui/input"
 import { item, itemContent, itemMedia } from "../../ui/item"
 import { skeleton } from "../../ui/skeleton"
@@ -34,6 +36,7 @@ import { codeBlock } from "../settings/kit/code-block"
 import { segmentedSelect } from "../../ui/segmented-select"
 import { externalLink } from "./view-gcp-configure-parts"
 import { AWS_ACCENT } from "./catalog"
+import { AWS_CONDITION_LABEL, type AwsConnectionCondition, awsConditionOf, awsStreamOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -218,15 +221,16 @@ const connectCard = (h: H, model: Model, status: V2AwsIntegration): Html =>
 		),
 	])
 
-type Health = Readonly<{ label: string; variant: "ok" | "warn" | "crit" | "muted" }>
-
-const healthOf = (connection: V2AwsConnection): Health => {
-	if (connection.verified_at === null) return { label: "Waiting for setup", variant: "muted" }
-	if (connection.last_check_error !== null) return { label: "Needs attention", variant: "crit" }
-	if (connection.setup_outdated) return { label: "Update the stack", variant: "warn" }
-	if (connection.metric_stream === null) return { label: "Metrics off", variant: "warn" }
-	return { label: "Connected", variant: "ok" }
-}
+const CONDITION_VARIANT = {
+	setup: "muted",
+	failing: "crit",
+	"not-receiving": "crit",
+	outdated: "warn",
+	"metrics-off": "warn",
+	stopped: "warn",
+	waiting: "muted",
+	receiving: "ok",
+} satisfies Record<AwsConnectionCondition, "ok" | "warn" | "crit" | "muted">
 
 const METRICS_IDS: Field.FieldIds = {
 	control: "aws-stream-regions",
@@ -273,54 +277,420 @@ const metricsForm = (h: H, model: Model): Html => {
 	)
 }
 
-/** What the metric stream sends, or that nothing is streamed and how to start. */
-const metricsLine = (
+const roleName = (connection: V2AwsConnection) => connection.role_arn.split("/").at(-1) ?? connection.role_arn
+
+type StepState = "done" | "current" | "warn" | "crit" | "todo"
+
+interface Step {
+	readonly title: string
+	readonly state: StepState
+	readonly detail: ReadonlyArray<Html | string>
+	readonly extra?: ReadonlyArray<Html>
+}
+
+const STEP_GLYPH = {
+	done: { icon: "CircleCheckIcon", className: "text-success-foreground" },
+	current: { icon: "ClockIcon", className: "text-muted-foreground" },
+	warn: { icon: "CircleWarningIcon", className: "text-severity-warn" },
+	crit: { icon: "CircleXmarkIcon", className: "text-severity-error" },
+} satisfies Record<Exclude<StepState, "todo">, { icon: IconName; className: string }>
+
+const STEP_LABEL = {
+	done: "Done",
+	current: "In progress",
+	warn: "Needs a look",
+	crit: "Failing",
+	todo: "Not yet",
+} satisfies Record<StepState, string>
+
+const stepGlyph = (h: H, state: StepState, index: number): Html =>
+	state === "todo"
+		? h.span(
+				[
+					h.Class(
+						"flex size-4 shrink-0 items-center justify-center rounded-full border text-[10px] tabular-nums text-muted-foreground",
+					),
+				],
+				[String(index + 1)],
+			)
+		: icon(h, STEP_GLYPH[state].icon, {
+				size: 16,
+				className: cn("shrink-0", STEP_GLYPH[state].className),
+			})
+
+const stepList = (h: H, steps: ReadonlyArray<Step>): Html =>
+	h.ol(
+		[h.Class("flex w-full flex-col gap-2.5"), h.AriaLabel("Connection status")],
+		steps.map((step, index) =>
+			h.li(
+				[h.Class("flex gap-2.5"), h.DataAttribute("step-state", step.state)],
+				[
+					h.span([h.Class("mt-0.5")], [stepGlyph(h, step.state, index)]),
+					h.div(
+						[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
+						[
+							h.p(
+								[
+									h.Class(
+										cn(
+											"text-sm",
+											step.state === "todo" ? "text-muted-foreground" : "font-medium",
+										),
+									),
+								],
+								[step.title, h.span([h.Class("sr-only")], [`: ${STEP_LABEL[step.state]}`])],
+							),
+							...(step.detail.length === 0
+								? []
+								: [
+										h.p(
+											[
+												h.Class(
+													cn(
+														"text-xs [overflow-wrap:anywhere]",
+														step.state === "crit"
+															? "text-severity-error"
+															: "text-muted-foreground",
+													),
+												),
+												...(step.state === "crit" ? [h.Role("alert")] : []),
+											],
+											step.detail,
+										),
+									]),
+							...(step.extra ?? []),
+						],
+					),
+				],
+			),
+		),
+	)
+
+const roleStep = (h: H, model: Model, connection: V2AwsConnection, timeZone: string): Step => {
+	const checked =
+		connection.last_checked_at === null
+			? []
+			: [
+					" · ",
+					relativeTime(h, {
+						value: connection.last_checked_at,
+						nowMs: model.nowMs,
+						timeZone,
+						prefix: "checked",
+					}),
+				]
+	if (connection.verified_at === null) {
+		return {
+			title: "Deploy the role",
+			state: "current",
+			detail: [
+				connection.last_check_error ??
+					`Run the setup script in AWS CloudShell, signed in to account ${connection.account_id}.`,
+				...checked,
+			],
+		}
+	}
+	if (connection.last_check_error !== null) {
+		return { title: "Role", state: "crit", detail: [connection.last_check_error, ...checked] }
+	}
+	if (connection.setup_outdated) {
+		return {
+			title: "Role",
+			state: "warn",
+			detail: [
+				"The deployed stack is older than this connection's setup. Deploy it again.",
+				...checked,
+			],
+		}
+	}
+	return { title: "Role", state: "done", detail: [`Maple assumes ${roleName(connection)}`, ...checked] }
+}
+
+const streamStep = (h: H, model: Model, connection: V2AwsConnection): Step => {
+	const stream = connection.metric_stream
+	if (stream !== null) {
+		return {
+			title: "Metric stream",
+			state: "done",
+			detail: [
+				`${stream.regions.join(", ")} · ${countLabel(stream.namespaces.length, "namespace")}. Each region has its own stack.`,
+			],
+		}
+	}
+	const isOpen = model.awsCard.metricsId === connection.id
+	return {
+		title: "Metric stream",
+		state: connection.verified_at === null ? "todo" : "warn",
+		detail: ["Off: Maple receives no metrics from this account."],
+		extra: isOpen
+			? [metricsForm(h, model)]
+			: [
+					h.div(
+						[],
+						[
+							button(
+								h,
+								{
+									size: "sm",
+									attributes: [h.OnClick(Message.ClickedAwsMetrics({ id: connection.id }))],
+								},
+								["Stream metrics"],
+							),
+						],
+					),
+				],
+	}
+}
+
+const deliverySteps = (
+	h: H,
+	model: Model,
+	connection: V2AwsConnection,
+	timeZone: string,
+): ReadonlyArray<Step> => {
+	const at = (value: string, prefix: string) =>
+		relativeTime(h, { value, nowMs: model.nowMs, timeZone, prefix })
+	const received = connection.metrics_last_received_at
+	const error = connection.metrics_last_error
+	const first = "First delivery"
+	const latest = "Latest delivery"
+	switch (awsStreamOf(connection, model.nowMs)) {
+		case "off":
+			return [
+				{ title: first, state: "todo", detail: [] },
+				{ title: latest, state: "todo", detail: [] },
+			]
+		case "waiting":
+			return [
+				connection.verified_at === null
+					? {
+							title: first,
+							state: "todo",
+							detail: ["Arrives a few minutes after the stack is deployed."],
+						}
+					: {
+							title: first,
+							state: "current",
+							detail: [
+								"Waiting. Metrics arrive a few minutes after the setup script deploys the stream. Run it again if you have not since turning the stream on.",
+							],
+						},
+				{ title: latest, state: "todo", detail: [] },
+			]
+		case "undelivered":
+			return [
+				{
+					title: first,
+					state: "crit",
+					detail: [
+						"Nothing has arrived since the role was deployed ",
+						...(connection.verified_at === null ? [] : [at(connection.verified_at, "")]),
+						". Run the setup script again: it deploys the stream in each region.",
+					],
+				},
+				{ title: latest, state: "todo", detail: [] },
+			]
+		case "refused":
+			return received === null
+				? [
+						{ title: first, state: "crit", detail: [error ?? ""] },
+						{ title: latest, state: "todo", detail: [] },
+					]
+				: [
+						{ title: first, state: "done", detail: [] },
+						{
+							title: latest,
+							state: "crit",
+							detail: [error ?? "", " · ", at(received, "last accepted")],
+						},
+					]
+		case "silent":
+			return [
+				{ title: first, state: "done", detail: [] },
+				{
+					title: latest,
+					state: "warn",
+					detail: [
+						...(received === null ? [] : [at(received, "")]),
+						". CloudWatch stopped sending: check that each region's stack still exists, or run the setup script again.",
+					],
+				},
+			]
+		case "delivering":
+			return [
+				{ title: first, state: "done", detail: [] },
+				{ title: latest, state: "done", detail: received === null ? [] : [at(received, "")] },
+			]
+	}
+}
+
+const INGEST_COLUMNS = ["Namespace", "Region", "Metrics", "Data points", "Resources", "Newest"] as const
+
+/** What the stream stored in the last hour, by namespace and region; regions with nothing are named. */
+const ingestBody = (
+	h: H,
+	model: Model,
+	connection: V2AwsConnection,
+	ingest: V2AwsIngest,
+	timeZone: string,
+): ReadonlyArray<Html> => {
+	if (ingest.groups.length === 0) {
+		return [h.p([h.Class(SMALL)], ["Nothing stored in the last hour."])]
+	}
+	const namespaces = new Set(ingest.groups.map((group) => group.namespace)).size
+	const silentRegions = (connection.metric_stream?.regions ?? []).filter(
+		(region) => !ingest.groups.some((group) => group.region === region),
+	)
+	return [
+		h.p(
+			[h.Class(SMALL)],
+			[
+				`${formatNumber(ingest.data_points)} data points from ${countLabel(namespaces, "namespace")} in the last hour`,
+				...(ingest.last_point_at === null
+					? []
+					: [
+							" · ",
+							relativeTime(h, {
+								value: ingest.last_point_at,
+								nowMs: model.nowMs,
+								timeZone,
+								prefix: "newest",
+							}),
+						]),
+			],
+		),
+		h.div(
+			[h.Class("w-full overflow-x-auto rounded-md border")],
+			[
+				h.table(
+					[h.Class("w-full text-xs")],
+					[
+						h.thead(
+							[h.Class("bg-muted/30 text-left text-muted-foreground")],
+							[
+								h.tr(
+									[],
+									INGEST_COLUMNS.map((column) =>
+										h.th(
+											[
+												h.Class(
+													cn(
+														"px-2.5 py-1.5 font-medium",
+														(column === "Metrics" || column === "Data points") &&
+															"text-right",
+													),
+												),
+												h.Scope("col"),
+											],
+											[column],
+										),
+									),
+								),
+							],
+						),
+						h.tbody(
+							[],
+							ingest.groups.map((group) =>
+								h.tr(
+									[h.Class("border-t align-top")],
+									[
+										h.td([h.Class("px-2.5 py-1.5 font-mono")], [group.namespace]),
+										h.td(
+											[h.Class("px-2.5 py-1.5 font-mono text-muted-foreground")],
+											[group.region ?? "unknown"],
+										),
+										h.td(
+											[h.Class("px-2.5 py-1.5 text-right tabular-nums")],
+											[formatNumber(group.metrics)],
+										),
+										h.td(
+											[h.Class("px-2.5 py-1.5 text-right tabular-nums")],
+											[formatNumber(group.data_points)],
+										),
+										h.td(
+											[h.Class("px-2.5 py-1.5 [overflow-wrap:anywhere]")],
+											[
+												h.span(
+													[h.Class("tabular-nums")],
+													[formatNumber(group.resources)],
+												),
+												h.span(
+													[h.Class("text-muted-foreground")],
+													[
+														` · ${group.sample_resources.join(", ")}${group.resources > group.sample_resources.length ? ", ..." : ""}`,
+													],
+												),
+											],
+										),
+										h.td(
+											[
+												h.Class(
+													"whitespace-nowrap px-2.5 py-1.5 text-muted-foreground",
+												),
+											],
+											[
+												relativeTime(h, {
+													value: group.last_point_at,
+													nowMs: model.nowMs,
+													timeZone,
+													variant: "short",
+												}),
+											],
+										),
+									],
+								),
+							),
+						),
+					],
+				),
+			],
+		),
+		...silentRegions.map((region) =>
+			h.p(
+				[h.Class("text-xs text-severity-warn")],
+				[
+					`Nothing from ${region} in the last hour. If its resources publish metrics, its stack may not be deployed: run the setup script again.`,
+				],
+			),
+		),
+	]
+}
+
+const ingestPanel = (
 	h: H,
 	model: Model,
 	connection: V2AwsConnection,
 	timeZone: string,
 ): ReadonlyArray<Html> => {
-	const stream = connection.metric_stream
-	if (stream === null) {
-		return model.awsCard.metricsId === connection.id
-			? [metricsForm(h, model)]
-			: [
-					h.p(
-						[h.Class(SMALL)],
-						["No metric stream: Maple receives no metrics from this account until you add one."],
-					),
-				]
-	}
+	const slot = model.awsCard.ingest[connection.id]
+	if (connection.metric_stream === null || connection.verified_at === null || slot === undefined) return []
+	const body = (data: V2AwsIngest) => ingestBody(h, model, connection, data, timeZone)
 	return [
-		h.p(
-			[h.Class(cn(SMALL, "[overflow-wrap:anywhere]"))],
+		h.section(
+			[h.Class("flex w-full flex-col gap-2 border-t pt-3"), h.AriaLabel("What Maple receives")],
 			[
-				`Metrics from ${stream.regions.join(", ")} · `,
-				connection.metrics_last_received_at === null
-					? "waiting for the first delivery. Deploy the stack again if you have not since adding the stream."
-					: relativeTime(h, {
-							value: connection.metrics_last_received_at,
-							nowMs: model.nowMs,
-							timeZone,
-							prefix: "received",
+				h.h4([h.Class("text-sm font-medium")], ["What Maple receives"]),
+				...AsyncData.match(slot.data, {
+					onIdle: () => [skeleton(h, "h-16 w-full rounded-md")],
+					onLoading: () => [skeleton(h, "h-16 w-full rounded-md")],
+					onFailure: (failure) => [
+						errorState(h, {
+							failure,
+							title: "Failed to read what this account sends",
+							onRetry: Message.ClickedRetryStatus({ name: "aws" }),
 						}),
+					],
+					onStale: ({ data }) => body(data),
+					onRefreshing: body,
+					onSuccess: body,
+				}),
 			],
 		),
-		...(connection.metrics_last_error === null
-			? []
-			: [
-					h.p(
-						[h.Class("text-xs text-severity-error [overflow-wrap:anywhere]"), h.Role("alert")],
-						[connection.metrics_last_error],
-					),
-				]),
 	]
 }
 
-const roleName = (connection: V2AwsConnection) => connection.role_arn.split("/").at(-1) ?? connection.role_arn
-
 const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone: string): Html => {
-	const health = healthOf(connection)
+	const condition = awsConditionOf(connection, model.nowMs)
 	const isChecking = model.awsCard.checking.some((entry) => entry.id === connection.id)
 	const isOpen = model.awsCard.setupId === connection.id
 	return item(h, { variant: "card", className: "items-start gap-4 p-4" }, [
@@ -335,62 +705,18 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 							[h.Class("font-mono text-sm font-semibold tabular-nums")],
 							[connection.account_id],
 						),
-						badge(h, { variant: health.variant }, [health.label]),
+						badge(h, { variant: CONDITION_VARIANT[condition] }, [AWS_CONDITION_LABEL[condition]]),
 					],
 				),
-				h.p(
-					[h.Class(cn(SMALL, "[overflow-wrap:anywhere]"))],
-					[
-						roleName(connection),
-						...(connection.last_checked_at === null
-							? []
-							: [
-									" · ",
-									relativeTime(h, {
-										value: connection.last_checked_at,
-										nowMs: model.nowMs,
-										timeZone,
-										prefix: "checked",
-									}),
-								]),
-					],
-				),
-				...(connection.last_check_error === null
-					? []
-					: [
-							h.p(
-								[
-									h.Class(
-										cn(
-											"text-xs [overflow-wrap:anywhere]",
-											connection.verified_at === null
-												? "text-muted-foreground"
-												: "text-severity-error",
-										),
-									),
-									h.Role(connection.verified_at === null ? "status" : "alert"),
-								],
-								[connection.last_check_error],
-							),
-						]),
-				...metricsLine(h, model, connection, timeZone),
+				stepList(h, [
+					roleStep(h, model, connection, timeZone),
+					streamStep(h, model, connection),
+					...deliverySteps(h, model, connection, timeZone),
+				]),
+				...ingestPanel(h, model, connection, timeZone),
 				h.div(
-					[h.Class("flex flex-wrap gap-2")],
+					[h.Class("flex flex-wrap gap-2 pt-1")],
 					[
-						...(connection.metric_stream === null && model.awsCard.metricsId !== connection.id
-							? [
-									button(
-										h,
-										{
-											size: "sm",
-											attributes: [
-												h.OnClick(Message.ClickedAwsMetrics({ id: connection.id })),
-											],
-										},
-										["Stream metrics"],
-									),
-								]
-							: []),
 						button(
 							h,
 							{
@@ -430,7 +756,7 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 				),
 				...(isOpen ? [setupPanel(h, model, connection)] : []),
 			],
-			"gap-2",
+			"gap-3",
 		),
 	])
 }

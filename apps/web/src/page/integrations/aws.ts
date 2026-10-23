@@ -2,6 +2,7 @@ import { AwsMetricStream } from "@maple/domain/aws"
 import {
 	V2AwsConnection,
 	V2AwsCreateConnectionRequest,
+	V2AwsIngest,
 	type V2AwsIntegration,
 	V2AwsSetup,
 } from "@maple/domain/http/v2"
@@ -47,6 +48,8 @@ export const AwsCardModel = Schema.Struct({
 	metricsRegions: Field.Model,
 	isSavingMetrics: Schema.Boolean,
 	metricsError: Schema.NullOr(Schema.String),
+	/** What each streaming connection stored in the last hour, by connection id. */
+	ingest: Schema.Record(Schema.String, KeyedSchema(V2AwsIngest, LoadFailure)),
 })
 export type AwsCardModel = typeof AwsCardModel.Type
 
@@ -71,6 +74,7 @@ export const initAwsCard = (): AwsCardModel => ({
 	metricsRegions: Field.init(DEFAULT_METRIC_REGIONS),
 	isSavingMetrics: false,
 	metricsError: null,
+	ingest: {},
 })
 
 export const decodeCreateRequest = Schema.decodeUnknownOption(V2AwsCreateConnectionRequest)
@@ -155,6 +159,20 @@ export const LoadAwsSetup = Command.define("LoadAwsSetup", {
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedLoadAwsSetup({ key, result })),
+		),
+})
+
+export const LoadAwsIngest = Command.define("LoadAwsIngest", {
+	args: { key: Schema.String, id: AwsConnectionId },
+	messages: [Message.CompletedLoadAwsIngest],
+	execute: ({ key, id }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			return yield* client.awsIntegration.ingest({ params: { id } })
+		}).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedLoadAwsIngest({ id, key, result })),
 		),
 })
 

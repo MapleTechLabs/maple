@@ -1,4 +1,4 @@
-import type { V2AwsConnection, V2AwsSetup } from "@maple/domain/http/v2"
+import type { V2AwsConnection, V2AwsIngest, V2AwsSetup } from "@maple/domain/http/v2"
 import type { AwsConnectionId } from "@maple/domain/primitives"
 import { Option, type Result } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
@@ -18,6 +18,7 @@ import {
 	DEFAULT_METRIC_REGIONS,
 	DeleteAwsConnection,
 	decodeCreateRequest,
+	LoadAwsIngest,
 	LoadAwsSetup,
 	METRIC_REGIONS_HINT,
 	metricStreamOf,
@@ -303,21 +304,76 @@ export const completedReadRemoved = (model: Model, removed: ReadonlyArray<AwsRem
 	model: withCard(model, { removed }),
 })
 
+const ingestKey = (context: PageContext, id: AwsConnectionId) =>
+	requestKey(context.orgId, "awsIntegration.ingest", { id })
+
+/** Each streaming connection's ingest, read again with every status: deliveries move both. */
+const requestIngest = (model: Model, context: PageContext): Return =>
+	chain(
+		model,
+		connectionsOf(model)
+			.filter((connection) => connection.metric_stream !== null)
+			.map((connection) => (next: Model) => {
+				const slot = next.awsCard.ingest[connection.id] ?? Keyed.idle()
+				return Option.match(Keyed.requestFor(slot, ingestKey(context, connection.id), "Refresh"), {
+					onNone: () => ({ model: next }),
+					onSome: (requested) => ({
+						model: withCard(next, {
+							ingest: { ...next.awsCard.ingest, [connection.id]: requested },
+						}),
+						commands: [LoadAwsIngest({ key: requested.key, id: connection.id })],
+					}),
+				})
+			}),
+	)
+
+/** The status is read again, and with it each stream's ingest; the clock moves "last delivery" along. */
+export const tickedWatch = (model: Model, context: PageContext): Return =>
+	chain(model, [
+		(next) => ({ model: next, commands: [ReadClock()] }),
+		(next) => requestStatus(next, context, "aws", "Refresh"),
+	])
+
+export const completedIngest = (
+	model: Model,
+	id: AwsConnectionId,
+	key: string,
+	result: Result.Result<V2AwsIngest, LoadFailure>,
+): Return => {
+	const slot = model.awsCard.ingest[id]
+	if (slot === undefined) return { model }
+	return {
+		model: withCard(model, {
+			ingest: { ...model.awsCard.ingest, [id]: Keyed.accept(slot, key, result) },
+		}),
+	}
+}
+
 /**
  * A status read can verify the open setup before any check of this page does (the hourly check,
  * another tab): the setup closes then too.
  */
-export const statusArrived = (model: Model, before: ReadonlyArray<V2AwsConnection>): Return => {
+export const statusArrived = (
+	model: Model,
+	context: PageContext,
+	before: ReadonlyArray<V2AwsConnection>,
+): Return => {
 	const setupId = model.awsCard.setupId
 	const was = before.find((entry) => entry.id === setupId)
 	const now = connectionsOf(model).find((entry) => entry.id === setupId)
-	if (was?.verified_at !== null || now === undefined || now.verified_at === null) return { model }
-	return toast(
-		withCard(model, { setupId: null }),
-		"success",
-		"AWS connected",
-		`Maple can read account ${now.account_id}.`,
-	)
+	const justVerified = was?.verified_at === null && now !== undefined && now.verified_at !== null
+	return chain(model, [
+		(next) => requestIngest(next, context),
+		(next) =>
+			justVerified
+				? toast(
+						withCard(next, { setupId: null }),
+						"success",
+						"AWS connected",
+						`Maple can read account ${now.account_id}.`,
+					)
+				: { model: next },
+	])
 }
 
 /** A connection without a metric stream: its form opens with the default region. */

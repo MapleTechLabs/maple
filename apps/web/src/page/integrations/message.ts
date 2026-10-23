@@ -13,6 +13,7 @@ import {
 import {
 	V2AwsConnection,
 	V2AwsIntegration,
+	V2AwsIngest,
 	V2AwsSetup,
 	V2ChatConnectorList,
 	V2GcpConnector,
@@ -206,10 +207,13 @@ export const Message = defineMessageUnion({
 	ClickedAwsSetup: { id: AwsConnectionId },
 	ClickedAwsSetupClose: {},
 	CompletedLoadAwsSetup: result(V2AwsSetup),
+	CompletedLoadAwsIngest: { id: AwsConnectionId, ...result(V2AwsIngest) },
 	ClickedAwsSetupMethod: { method: AwsSetupMethod },
 	ClickedAwsCheck: { id: AwsConnectionId },
 	/** The background re-check of connections still waiting for their stack. */
 	TickedAwsPending: {},
+	/** A streaming connection's status and ingest are read again. */
+	TickedAwsWatch: {},
 	CompletedAwsCheck: {
 		id: AwsConnectionId,
 		quiet: Schema.Boolean,
