@@ -11,10 +11,13 @@ Point any OpenTelemetry exporter at the server and send the ingest key as a Bear
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT=https://maple.example.com
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20<ingest key>"
 ```
 
-Maple's own SDKs send their ingest key the same way, so an app already set up for Maple Cloud only needs its endpoint changed. The `x-maple-ingest-key` header works too.
+The server takes OTLP over HTTP, as protobuf or JSON. It does not take gRPC, which some SDKs (Java, .NET) use by default, so set the protocol explicitly.
+
+Maple's own SDKs send their ingest key the same way, so an app already set up for Maple Cloud only needs two changes: the endpoint, and the ingest key, which becomes the server's `MAPLE_LOCAL_INGEST_KEY`. The `x-maple-ingest-key` header works too.
 
 ## Sign in
 
@@ -30,6 +33,8 @@ Inside the container, the CLI already has the access token and finds the server:
 docker exec maple maple services
 docker exec maple maple traces -s checkout --errors
 ```
+
+With Docker Compose, use `docker compose exec maple maple services`.
 
 From your own machine, point the CLI at the server:
 

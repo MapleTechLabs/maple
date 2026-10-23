@@ -89,7 +89,7 @@ jobs:
                   INPUT_TAG: ${{ github.event.inputs.tag }}
               run: |
                   set -euo pipefail
-                  ref="${{ github.ref }}"
+                  ref="$GITHUB_REF"
                   input_tag="${INPUT_TAG:-}"
                   if [ -n "$input_tag" ]; then
                     version="$input_tag"
@@ -197,7 +197,7 @@ jobs:
                   INPUT_TAG: ${{ github.event.inputs.tag }}
               run: |
                   set -euo pipefail
-                  ref="${{ github.ref }}"
+                  ref="$GITHUB_REF"
                   input_tag="${INPUT_TAG:-}"
                   if [ -n "$input_tag" ]; then
                     TAG="$input_tag"
@@ -261,7 +261,7 @@ jobs:
                   REPO: ${{ github.repository }}
               run: |
                   set -euo pipefail
-                  ref="${{ github.ref }}"
+                  ref="$GITHUB_REF"
                   tag="${INPUT_TAG:-}"
                   if [ -z "$tag" ] && [[ "$ref" == refs/tags/* ]]; then tag="${ref#refs/tags/}"; fi
                   image="ghcr.io/${REPO,,}"
@@ -273,7 +273,7 @@ jobs:
                   tags="$image:$tag"
                   # `latest` follows the newest stable release only: never a pre-release
                   # (v1.2.3-rc.1), never a re-run of an older tag.
-                  newest="$(git ls-remote --tags --refs origin 'v*' | sed 's|.*refs/tags/||' | grep -ve '-' | sort -V | tail -1)"
+                  newest="$(git ls-remote --tags --refs origin 'v*' | sed 's|.*refs/tags/||' | { grep -ve '-' || true; } | sort -V | tail -1)"
                   if [[ "$ref" == refs/tags/* && "$tag" == "$newest" ]]; then tags="$tags,$image:latest"; fi
                   echo "publish=true" >> "$GITHUB_OUTPUT"
                   echo "tags=$tags" >> "$GITHUB_OUTPUT"
@@ -309,10 +309,11 @@ jobs:
               if: ${{ steps.tags.outputs.publish == 'true' }}
               env:
                   GH_TOKEN: ${{ github.token }}
+                  ACTOR: ${{ github.actor }}
                   TAGS: ${{ steps.tags.outputs.tags }}
               run: |
                   set -euo pipefail
-                  echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+                  echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
                   docker buildx create --use --name maple-release >/dev/null
                   tag_args=""
                   for tag in ${TAGS//,/ }; do tag_args="$tag_args --tag $tag"; done

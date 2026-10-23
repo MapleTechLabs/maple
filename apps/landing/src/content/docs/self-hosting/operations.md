@@ -10,7 +10,7 @@ order: 4
 Everything lives on the `/data` volume: the store, its [restore points](/docs/local-mode/checkpoints-and-archives), and the CLI's config. Back up the volume to back up Maple.
 
 - Give the container time to stop cleanly: `--stop-timeout 30`, or `stop_grace_period` in Compose.
-- Run commands that change the store as the server's user: `docker exec -u 10001 maple maple checkpoint`. Read-only commands such as `maple services` can run as any user.
+- Run commands that change the store as the server's user: `docker exec -u 10001 maple maple checkpoint` (with Compose, `docker compose exec -u 10001 maple maple checkpoint`). Read-only commands such as `maple services` can run as any user.
 - The server runs as an unprivileged user (uid 10001). A volume mounted as root is handed to that user on start.
 
 ## Upgrades
@@ -28,6 +28,14 @@ One case needs you: a container killed and then upgraded to an image with a diff
 ```bash
 docker run --rm -v maple-data:/data \
   ghcr.io/mapletechlabs/maple:latest reset --yes
+```
+
+With Docker Compose, which names the volume after the project, run this from the directory with `compose.yaml`:
+
+```bash
+docker compose down
+docker compose run --rm maple reset --yes
+docker compose up -d
 ```
 
 ## Rotating secrets

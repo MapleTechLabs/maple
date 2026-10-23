@@ -51,6 +51,8 @@ docker run -d --name maple \
 
 Open `http://<host>:4318` and sign in with the access token.
 
+This serves plain HTTP on every interface, which is fine on a private network. On a machine reachable from the internet, publish the port on loopback only (`-p 127.0.0.1:4318:4318`) and put [a TLS proxy](/docs/self-hosting/deploy#behind-a-reverse-proxy) in front, so the access token and ingest key never cross the internet unencrypted.
+
 ## Next steps
 
 - [Deploy](/docs/self-hosting/deploy): Docker Compose, container platforms, and TLS with a reverse proxy.

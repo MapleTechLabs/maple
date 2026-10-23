@@ -36,7 +36,7 @@ volumes:
     maple-data:
 ```
 
-Then run `docker compose up -d`.
+Then run `docker compose up -d`. On a machine reachable from the internet, change the port to `"127.0.0.1:4318:4318"` and put [a reverse proxy](#behind-a-reverse-proxy) in front. Where the docs show `docker exec maple ...`, use `docker compose exec maple ...` instead.
 
 ## On a platform
 
