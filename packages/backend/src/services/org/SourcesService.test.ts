@@ -619,6 +619,7 @@ describe("SourcesService", () => {
 			connection: {
 				readonly verifiedAt: number
 				readonly stream: boolean
+				readonly streamChangedAt?: number
 				readonly receivedAt?: number
 				readonly error?: string
 			},
@@ -636,8 +637,9 @@ describe("SourcesService", () => {
 					executeSql(
 						testDb,
 						`INSERT INTO aws_connections (id, org_id, source_id, account_id, modules, verified_at,
-							metric_stream, stream_last_received_at, stream_last_error, created_by, created_at, updated_at)
-						 VALUES ($1, $2, $1, $3, '[]', $4, $5, $6, $7, 'user_a', now(), now())`,
+							metric_stream, metric_stream_changed_at, stream_last_received_at, stream_last_error, created_by,
+							created_at, updated_at)
+						 VALUES ($1, $2, $1, $3, '[]', $4, $5, $6, $7, $8, 'user_a', now(), now())`,
 						[
 							id,
 							orgA,
@@ -646,6 +648,7 @@ describe("SourcesService", () => {
 							connection.stream
 								? JSON.stringify({ regions: ["us-east-1"], namespaces: ["AWS/ECS"] })
 								: null,
+							iso(connection.streamChangedAt ?? null),
 							iso(connection.receivedAt ?? null),
 							connection.error ?? null,
 						],
@@ -667,6 +670,12 @@ describe("SourcesService", () => {
 			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000003", "never delivered", {
 				verifiedAt: now - 3_600_000,
 				stream: true,
+			})
+			// A stream turned on long after the role is due its first delivery from then, not from the role.
+			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000007", "stream just added", {
+				verifiedAt: now - 3_600_000,
+				stream: true,
+				streamChangedAt: now - 5 * 60_000,
 			})
 			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000004", "refused", {
 				verifiedAt: now - 3_600_000,
@@ -698,6 +707,7 @@ describe("SourcesService", () => {
 					["off", "paused", "No metric stream: Maple receives nothing from this account"],
 					["refused", "failing", "This Maple organization is over its plan limit"],
 					["stopped", "stale", "No data in the last 30 minutes"],
+					["stream just added", "pending", null],
 					["streaming", "healthy", null],
 				],
 			)

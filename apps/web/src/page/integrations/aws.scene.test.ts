@@ -40,6 +40,7 @@ const connection = (overrides: Partial<V2AwsConnection> = {}): V2AwsConnection =
 	last_checked_at: null,
 	last_check_error: null,
 	metric_stream: null,
+	metric_stream_changed_at: null,
 	metrics_last_received_at: null,
 	metrics_last_error: null,
 	created_at: Schema.decodeSync(Timestamp)("2026-10-21T12:00:00.000Z"),
@@ -327,7 +328,7 @@ describe("aws card", () => {
 			expectView(
 				text("Maple assumes MapleIntegration-018f2b3c4d5e4f708192a3b4", { exact: false }),
 			).toExist(),
-			expectView(text("Nothing has arrived since the role was deployed", { exact: false })).toExist(),
+			expectView(text("Nothing has arrived since the stream was set up", { exact: false })).toExist(),
 		)
 	})
 
@@ -360,6 +361,12 @@ describe("aws card", () => {
 			).model,
 			Message.CompletedLoadAws({ key: statusKey(context, "aws"), result: Result.succeed(status) }),
 		)
+		// Pages that do not show the AWS card never ask the warehouse.
+		const elsewhere = pageUpdate(
+			init({ search: {} }, context).model,
+			Message.CompletedLoadAws({ key: statusKey(context, "aws"), result: Result.succeed(status) }),
+		)
+		expect(names(elsewhere.commands)).not.toContain("LoadAwsIngest")
 		const loads = (arrived.commands ?? []).filter((command) => command.name === "LoadAwsIngest")
 		expect(loads.map((command) => command.args)).toEqual([{ key: expect.any(String), id: connectionId }])
 		const key = arrived.model.awsCard.ingest[connectionId]?.key ?? ""

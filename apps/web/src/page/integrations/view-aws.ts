@@ -1,3 +1,4 @@
+import { AWS_METRICS_OFF, AWS_NO_DELIVERY } from "@maple/domain/aws"
 import type { V2AwsConnection, V2AwsIngest, V2AwsIntegration, V2AwsSetup } from "@maple/domain/http/v2"
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -423,7 +424,7 @@ const streamStep = (h: H, model: Model, connection: V2AwsConnection): Step => {
 	return {
 		title: "Metric stream",
 		state: connection.verified_at === null ? "todo" : "warn",
-		detail: ["Off: Maple receives no metrics from this account."],
+		detail: [`${AWS_METRICS_OFF}.`],
 		extra: isOpen
 			? [metricsForm(h, model)]
 			: [
@@ -450,18 +451,15 @@ const deliverySteps = (
 	connection: V2AwsConnection,
 	timeZone: string,
 ): ReadonlyArray<Step> => {
-	const at = (value: string, prefix: string) =>
+	const at = (value: number, prefix: string) =>
 		relativeTime(h, { value, nowMs: model.nowMs, timeZone, prefix })
-	const received = connection.metrics_last_received_at
-	const error = connection.metrics_last_error
 	const first = "First delivery"
 	const latest = "Latest delivery"
-	switch (awsStreamOf(connection, model.nowMs)) {
+	const notYet: Step = { title: latest, state: "todo", detail: [] }
+	const stream = awsStreamOf(connection, model.nowMs)
+	switch (stream._tag) {
 		case "off":
-			return [
-				{ title: first, state: "todo", detail: [] },
-				{ title: latest, state: "todo", detail: [] },
-			]
+			return [{ title: first, state: "todo", detail: [] }, notYet]
 		case "waiting":
 			return [
 				connection.verified_at === null
@@ -477,7 +475,7 @@ const deliverySteps = (
 								"Waiting. Metrics arrive a few minutes after the setup script deploys the stream. Run it again if you have not since turning the stream on.",
 							],
 						},
-				{ title: latest, state: "todo", detail: [] },
+				notYet,
 			]
 		case "undelivered":
 			return [
@@ -485,25 +483,22 @@ const deliverySteps = (
 					title: first,
 					state: "crit",
 					detail: [
-						"Nothing has arrived since the role was deployed ",
-						...(connection.verified_at === null ? [] : [at(connection.verified_at, "")]),
-						". Run the setup script again: it deploys the stream in each region.",
+						"Nothing has arrived since the stream was set up ",
+						at(stream.since, ""),
+						`. ${AWS_NO_DELIVERY}.`,
 					],
 				},
-				{ title: latest, state: "todo", detail: [] },
+				notYet,
 			]
 		case "refused":
-			return received === null
-				? [
-						{ title: first, state: "crit", detail: [error ?? ""] },
-						{ title: latest, state: "todo", detail: [] },
-					]
+			return stream.receivedAt === null
+				? [{ title: first, state: "crit", detail: [stream.error] }, notYet]
 				: [
 						{ title: first, state: "done", detail: [] },
 						{
 							title: latest,
 							state: "crit",
-							detail: [error ?? "", " · ", at(received, "last accepted")],
+							detail: [stream.error, " · ", at(stream.receivedAt, "last accepted")],
 						},
 					]
 		case "silent":
@@ -513,7 +508,7 @@ const deliverySteps = (
 					title: latest,
 					state: "warn",
 					detail: [
-						...(received === null ? [] : [at(received, "")]),
+						at(stream.receivedAt, ""),
 						". CloudWatch stopped sending: check that each region's stack still exists, or run the setup script again.",
 					],
 				},
@@ -521,7 +516,7 @@ const deliverySteps = (
 		case "delivering":
 			return [
 				{ title: first, state: "done", detail: [] },
-				{ title: latest, state: "done", detail: received === null ? [] : [at(received, "")] },
+				{ title: latest, state: "done", detail: [at(stream.receivedAt, "")] },
 			]
 	}
 }

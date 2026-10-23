@@ -41,6 +41,7 @@ export const awsStreamOf = (connection: V2AwsConnection, nowMs: number): AwsStre
 		{
 			verifiedAt: isoMs(connection.verified_at),
 			metricStream: connection.metric_stream,
+			metricStreamChangedAt: isoMs(connection.metric_stream_changed_at),
 			metricsLastReceivedAt: isoMs(connection.metrics_last_received_at),
 			metricsLastError: connection.metrics_last_error,
 		},
@@ -58,24 +59,7 @@ export type AwsConnectionCondition =
 	| "waiting"
 	| "receiving"
 
-export const awsConditionOf = (connection: V2AwsConnection, nowMs: number): AwsConnectionCondition => {
-	if (connection.verified_at === null) return "setup"
-	if (connection.last_check_error !== null) return "failing"
-	const stream = awsStreamOf(connection, nowMs)
-	if (stream === "refused" || stream === "undelivered") return "not-receiving"
-	if (connection.setup_outdated) return "outdated"
-	switch (stream) {
-		case "off":
-			return "metrics-off"
-		case "silent":
-			return "stopped"
-		case "waiting":
-			return "waiting"
-		case "delivering":
-			return "receiving"
-	}
-}
-
+/** Worst first: a connection's own condition and the integration's worst follow this order. */
 const AWS_CONDITION_RANK: ReadonlyArray<AwsConnectionCondition> = [
 	"failing",
 	"not-receiving",
@@ -86,6 +70,23 @@ const AWS_CONDITION_RANK: ReadonlyArray<AwsConnectionCondition> = [
 	"waiting",
 	"receiving",
 ]
+
+export const awsConditionOf = (connection: V2AwsConnection, nowMs: number): AwsConnectionCondition => {
+	if (connection.verified_at === null) return "setup"
+	if (connection.last_check_error !== null) return "failing"
+	const stream = awsStreamOf(connection, nowMs)
+	if (stream._tag === "refused" || stream._tag === "undelivered") return "not-receiving"
+	if (stream._tag === "silent") return "stopped"
+	if (connection.setup_outdated) return "outdated"
+	switch (stream._tag) {
+		case "off":
+			return "metrics-off"
+		case "waiting":
+			return "waiting"
+		case "delivering":
+			return "receiving"
+	}
+}
 
 export const AWS_CONDITION_LABEL = {
 	setup: "Finish setup",
@@ -357,11 +358,12 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 					? { health: "pending", stateLabel: AWS_CONDITION_LABEL[worst] }
 					: attentionOr(issue)
 			const receiving = conditions.filter((condition) => condition === "receiving").length
+			const accounts = countLabel(status.connections.length, "account")
 			return {
 				kind: "connected",
 				...health,
 				context: status.connections.length === 1 ? (status.connections[0]?.account_id ?? null) : null,
-				stat: `${receiving} of ${countLabel(status.connections.length, "account")} sending metrics`,
+				stat: conditions.includes("setup") ? accounts : `${receiving} of ${accounts} sending metrics`,
 				lastSyncLabel: syncedLabel(
 					maxMs(status.connections.map((connection) => isoMs(connection.metrics_last_received_at))),
 					nowMs,

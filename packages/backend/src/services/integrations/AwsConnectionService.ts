@@ -65,6 +65,8 @@ export interface AwsConnection {
 	readonly lastCheckError: string | null
 	/** Null: no metric stream asked for. */
 	readonly metricStream: AwsMetricStream | null
+	/** When the stream was last turned on or changed; null for one set before this was kept. */
+	readonly metricStreamChangedAt: number | null
 	/** The last metric delivery the receiver accepted, and why the last one failed. */
 	readonly metricsLastReceivedAt: number | null
 	readonly metricsLastError: string | null
@@ -212,6 +214,7 @@ const toConnection = (issuer: string, row: AwsConnectionRow): AwsConnection => {
 		lastCheckedAt: row.lastCheckedAt,
 		lastCheckError: row.lastCheckError,
 		metricStream: row.metricStream,
+		metricStreamChangedAt: row.metricStreamChangedAt,
 		metricsLastReceivedAt: row.streamLastReceivedAt,
 		metricsLastError: row.streamLastError,
 		createdAt: row.createdAt,
@@ -445,6 +448,8 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 										accountId: input.accountId,
 										modules,
 										metricStream: input.metricStream ?? null,
+										metricStreamChangedAt:
+											(input.metricStream ?? null) === null ? null : now,
 										...streamSecret,
 										createdBy: userId,
 										createdAt: now,
@@ -479,9 +484,14 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.aws.connection_id": connectionId })
 				const modules =
 					patch.modules === undefined ? undefined : yield* validateModules(patch.modules)
+				const updatedAt = yield* Clock.currentTimeMillis
 				const changes = {
 					...(modules !== undefined && { modules }),
-					...(patch.metricStream !== undefined && { metricStream: patch.metricStream }),
+					...(patch.metricStream !== undefined && {
+						metricStream: patch.metricStream,
+						// A stream turned on or changed is due its first delivery from the next deploy.
+						metricStreamChangedAt: patch.metricStream === null ? null : updatedAt,
+					}),
 					// A stream turned off stops authenticating at once, though its Firehose may still be
 					// deployed; turning it back on mints a new secret for the next setup.
 					...(patch.metricStream === null && {
@@ -493,7 +503,6 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				}
 				if (Object.keys(changes).length === 0)
 					return connectionOf(yield* selectRow(orgId, connectionId))
-				const updatedAt = yield* Clock.currentTimeMillis
 				const [row] = yield* dbExecute((db) =>
 					db.run(
 						PG.update(AwsConnections)

@@ -227,7 +227,12 @@ const overridesBySource = (
 
 type AwsHealthRow = Pick<
 	AwsConnectionRow,
-	"sourceId" | "verifiedAt" | "metricStream" | "streamLastReceivedAt" | "streamLastError"
+	| "sourceId"
+	| "verifiedAt"
+	| "metricStream"
+	| "metricStreamChangedAt"
+	| "streamLastReceivedAt"
+	| "streamLastError"
 >
 
 /**
@@ -239,17 +244,18 @@ export const awsHealthOverrides = (connection: AwsHealthRow, now: number): Sourc
 		{
 			verifiedAt: connection.verifiedAt,
 			metricStream: connection.metricStream,
+			metricStreamChangedAt: connection.metricStreamChangedAt,
 			metricsLastReceivedAt: connection.streamLastReceivedAt,
 			metricsLastError: connection.streamLastError,
 		},
 		now,
 	)
-	switch (state) {
+	switch (state._tag) {
 		// Before the role is deployed the setup is still being done: the source stays pending.
 		case "off":
 			return connection.verifiedAt === null ? {} : { turnedOff: AWS_METRICS_OFF }
 		case "refused":
-			return { failing: connection.streamLastError ?? AWS_NO_DELIVERY }
+			return { failing: state.error }
 		case "undelivered":
 			return { failing: AWS_NO_DELIVERY }
 		case "waiting":
@@ -264,6 +270,7 @@ const AWS_HEALTH_COLUMNS = [
 	"sourceId",
 	"verifiedAt",
 	"metricStream",
+	"metricStreamChangedAt",
 	"streamLastReceivedAt",
 	"streamLastError",
 ] as const

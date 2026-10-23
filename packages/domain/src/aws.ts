@@ -262,27 +262,39 @@ export const AWS_FIRST_DELIVERY_MS = 30 * 60_000
 
 /**
  * Where a connection's metric stream stands. `off`: none asked for. `waiting`: no delivery yet,
- * within reason. `undelivered`: no delivery long after the role was deployed. `refused`: the last
- * delivery was refused. `silent`: deliveries stopped. `delivering`: they arrive.
+ * within reason. `undelivered`: none long after the role and the stream were set up. `refused`:
+ * the last delivery was refused. `silent`: deliveries stopped. `delivering`: they arrive.
  */
-export type AwsStreamState = "off" | "waiting" | "undelivered" | "refused" | "silent" | "delivering"
+export type AwsStreamState =
+	| { readonly _tag: "off" }
+	| { readonly _tag: "waiting" }
+	| { readonly _tag: "undelivered"; readonly since: number }
+	| { readonly _tag: "refused"; readonly error: string; readonly receivedAt: number | null }
+	| { readonly _tag: "silent"; readonly receivedAt: number }
+	| { readonly _tag: "delivering"; readonly receivedAt: number }
 
 export interface AwsStreamFacts {
 	readonly verifiedAt: number | null
 	readonly metricStream: AwsMetricStream | null
+	/** When the stream was last turned on or changed; null for one set before this was kept. */
+	readonly metricStreamChangedAt: number | null
 	readonly metricsLastReceivedAt: number | null
 	readonly metricsLastError: string | null
 }
 
 export const awsStreamState = (facts: AwsStreamFacts, now: number): AwsStreamState => {
-	if (facts.metricStream === null) return "off"
-	if (facts.metricsLastError !== null) return "refused"
-	if (facts.metricsLastReceivedAt === null) {
-		return facts.verifiedAt !== null && now - facts.verifiedAt > AWS_FIRST_DELIVERY_MS
-			? "undelivered"
-			: "waiting"
+	if (facts.metricStream === null) return { _tag: "off" }
+	const receivedAt = facts.metricsLastReceivedAt
+	if (facts.metricsLastError !== null) return { _tag: "refused", error: facts.metricsLastError, receivedAt }
+	if (receivedAt === null) {
+		// Due once both the role and the stream asked for are past the window.
+		if (facts.verifiedAt === null) return { _tag: "waiting" }
+		const since = Math.max(facts.verifiedAt, facts.metricStreamChangedAt ?? 0)
+		return now - since > AWS_FIRST_DELIVERY_MS ? { _tag: "undelivered", since } : { _tag: "waiting" }
 	}
-	return now - facts.metricsLastReceivedAt > AWS_STREAM_STALE_MS ? "silent" : "delivering"
+	return now - receivedAt > AWS_STREAM_STALE_MS
+		? { _tag: "silent", receivedAt }
+		: { _tag: "delivering", receivedAt }
 }
 
 export const AWS_METRICS_OFF = "No metric stream: Maple receives nothing from this account"

@@ -35,6 +35,7 @@ const toV2Connection = (connection: AwsConnection): V2AwsConnection => ({
 	last_checked_at: isoTimestampOrNull(connection.lastCheckedAt),
 	last_check_error: connection.lastCheckError,
 	metric_stream: connection.metricStream,
+	metric_stream_changed_at: isoTimestampOrNull(connection.metricStreamChangedAt),
 	metrics_last_received_at: isoTimestampOrNull(connection.metricsLastReceivedAt),
 	metrics_last_error: connection.metricsLastError,
 	created_at: isoTimestamp(connection.createdAt),

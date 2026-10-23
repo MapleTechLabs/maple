@@ -28,6 +28,7 @@ import {
 	UpdateAwsMetricStream,
 	WriteAwsRemoved,
 } from "./aws"
+import { integrationOfSearch } from "./catalog"
 import { ReadClock } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -307,15 +308,18 @@ export const completedReadRemoved = (model: Model, removed: ReadonlyArray<AwsRem
 const ingestKey = (context: PageContext, id: AwsConnectionId) =>
 	requestKey(context.orgId, "awsIntegration.ingest", { id })
 
-/** Each streaming connection's ingest, read again with every status: deliveries move both. */
-const requestIngest = (model: Model, context: PageContext): Return =>
+/**
+ * The ingest of each verified streaming connection, only where the AWS card shows it: a status
+ * read loads what is missing, the card's watch refreshes it.
+ */
+const requestIngest = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
 	chain(
 		model,
-		connectionsOf(model)
-			.filter((connection) => connection.metric_stream !== null)
+		(integrationOfSearch(model.search.integration) === "aws" ? connectionsOf(model) : [])
+			.filter((connection) => connection.verified_at !== null && connection.metric_stream !== null)
 			.map((connection) => (next: Model) => {
 				const slot = next.awsCard.ingest[connection.id] ?? Keyed.idle()
-				return Option.match(Keyed.requestFor(slot, ingestKey(context, connection.id), "Refresh"), {
+				return Option.match(Keyed.requestFor(slot, ingestKey(context, connection.id), mode), {
 					onNone: () => ({ model: next }),
 					onSome: (requested) => ({
 						model: withCard(next, {
@@ -332,6 +336,7 @@ export const tickedWatch = (model: Model, context: PageContext): Return =>
 	chain(model, [
 		(next) => ({ model: next, commands: [ReadClock()] }),
 		(next) => requestStatus(next, context, "aws", "Refresh"),
+		(next) => requestIngest(next, context, "Refresh"),
 	])
 
 export const completedIngest = (
@@ -363,7 +368,7 @@ export const statusArrived = (
 	const now = connectionsOf(model).find((entry) => entry.id === setupId)
 	const justVerified = was?.verified_at === null && now !== undefined && now.verified_at !== null
 	return chain(model, [
-		(next) => requestIngest(next, context),
+		(next) => requestIngest(next, context, "Load"),
 		(next) =>
 			justVerified
 				? toast(

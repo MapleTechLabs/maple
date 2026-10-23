@@ -39,20 +39,28 @@ const connectedNotice = (h: H, model: Model, integration: DataIntegration): Html
 	// A WarpStream target is one Prometheus source among others: the list, not a guess at which.
 	const sources = integration === "warpstream" ? [] : sourcesOfIntegration(model, integration)
 	const only = sources.length === 1 ? sources[0] : undefined
-	// Added is not collecting: until the integration reads healthy, the notice says what is left.
+	// Connected is not collecting: until the overview is healthy, the notice says what is left.
 	const overview =
 		integration === "warpstream"
 			? null
 			: overviewOf(model.integrations.statuses, model.integrations.nowMs, integration)
-	const pending = overview?.kind === "connected" && overview.health !== "healthy" ? overview : null
+	const open = overview?.kind === "connected" && overview.health !== "healthy" ? overview : null
 	const label = integrationMeta(integration).label
-	return alert(h, { variant: pending === null ? "ok" : "warn" }, [
-		icon(h, pending === null ? "CircleCheckIcon" : "CircleWarningIcon"),
-		alertTitle(h, pending === null ? [label, " is connected"] : [label, " is added, not collecting yet"]),
+	const what = open?.issue ?? open?.stateLabel
+	return alert(h, { variant: open === null ? "ok" : "warn" }, [
+		icon(h, open === null ? "CircleCheckIcon" : "CircleWarningIcon"),
+		alertTitle(
+			h,
+			open === null
+				? [label, " is connected"]
+				: open.health === "pending"
+					? [label, " is added, not collecting yet"]
+					: [label, " needs attention"],
+		),
 		alertDescription(h, [
-			pending === null
+			open === null
 				? "Each account or target it collects from shows up as its own source."
-				: `${pending.issue ?? pending.stateLabel}. Finish the steps below; until then it sends nothing.`,
+				: `${what}. See the steps below.`,
 		]),
 		alertAction(h, [
 			only === undefined

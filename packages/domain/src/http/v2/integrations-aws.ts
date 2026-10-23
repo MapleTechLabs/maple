@@ -39,6 +39,7 @@ const connectionExample = {
 	last_checked_at: "2026-10-21T13:00:00.000Z",
 	last_check_error: null,
 	metric_stream: { regions: ["us-east-1"], namespaces: ["AWS/ECS", "AWS/ApplicationELB"] },
+	metric_stream_changed_at: "2026-10-21T12:00:00.000Z",
 	metrics_last_received_at: "2026-10-21T13:04:00.000Z",
 	metrics_last_error: null,
 	created_at: "2026-10-21T12:00:00.000Z",
@@ -101,6 +102,10 @@ export const V2AwsConnection = Schema.Struct({
 		examples: [null],
 	}),
 	metric_stream: Schema.NullOr(metricStreamField),
+	metric_stream_changed_at: Schema.NullOr(Timestamp).annotate({
+		description:
+			"When the metric stream was last turned on or changed, or `null` without one. Its first delivery follows the next deploy of `setup`.",
+	}),
 	metrics_last_received_at: Schema.NullOr(Timestamp).annotate({
 		description: "When Maple last accepted metrics from the stream, or `null` before the first delivery.",
 	}),
@@ -256,7 +261,7 @@ export const V2AwsIngestGroup = Schema.Struct({
 			"Distinct resources, by `service.name`: the metric's most specific dimension (an instance, a service, a queue).",
 	}),
 	sample_resources: Schema.Array(Schema.String).annotate({
-		description: "Up to eight of those resources, in alphabetical order.",
+		description: "Up to eight of those resources, sorted by name.",
 	}),
 	last_point_at: Timestamp.annotate({ description: "The newest data point." }),
 }).annotate({ identifier: "AwsIngestGroup", title: "AWS ingest by namespace and region" })

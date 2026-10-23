@@ -253,7 +253,7 @@ describe("connect a source", () => {
 		)
 	})
 
-	test("an integration that is added but sends nothing yet says so instead of connected", () => {
+	test("an integration that sends nothing says what is left instead of connected", () => {
 		const entered = init(integrationRoute("aws"), context)
 		const status = (metrics_last_received_at: string | null) =>
 			IntegrationMessage.CompletedLoadAws({
@@ -283,6 +283,7 @@ describe("connect a source", () => {
 								last_checked_at: "2026-10-23T08:58:00.000Z",
 								last_check_error: null,
 								metric_stream: { regions: ["us-east-1"], namespaces: ["AWS/ECS"] },
+								metric_stream_changed_at: "2026-10-23T07:55:00.000Z",
 								metrics_last_received_at,
 								metrics_last_error: null,
 								created_at: "2026-10-23T07:55:00.000Z",
@@ -304,8 +305,8 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(at(status(null))),
-			expectView(text("AWS is added, not collecting yet")).toExist(),
-			expectView(text("No metrics arriving", { exact: false })).toExist(),
+			expectView(text("AWS needs attention")).toExist(),
+			expectView(text("No metrics arriving. See the steps below.")).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
