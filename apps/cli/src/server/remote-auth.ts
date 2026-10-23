@@ -121,6 +121,8 @@ export const hasValidSession = (auth: RemoteAuth, req: Request, nowMs: number): 
 	auth.accessToken !== undefined && sessionValid(auth.accessToken, readCookie(req, SESSION_COOKIE), nowMs)
 
 const OTLP_PATHS = new Set(["/v1/traces", "/v1/logs", "/v1/metrics"])
+/** The only routes an event consumer's token opens. */
+const CONSUMER_PATHS = new Set(["/local/eventing/claims", "/local/eventing/acks"])
 
 /** Machine credentials the server already issues to local tooling (`maple checkpoint`,
  * event consumers). Routes that take them keep checking them themselves. */
@@ -156,8 +158,10 @@ export const accessDenied = (
 	if (
 		hasValidSession(auth, req, nowMs) ||
 		secretMatches(auth.accessToken, bearerToken(req)) ||
-		secretMatches(credentials.maintenanceToken, req.headers.get("x-maple-maintenance-token")) ||
-		secretMatches(credentials.consumerToken, req.headers.get("x-maple-event-consumer-token"))
+		(url.pathname.startsWith("/local/") &&
+			secretMatches(credentials.maintenanceToken, req.headers.get("x-maple-maintenance-token"))) ||
+		(CONSUMER_PATHS.has(url.pathname) &&
+			secretMatches(credentials.consumerToken, req.headers.get("x-maple-event-consumer-token")))
 	)
 		return null
 	// A page load goes to the sign-in page; API calls get a 401 their client can act on.
@@ -197,8 +201,17 @@ export class LoginThrottle {
 }
 
 /** Only same-site paths survive as a post-login destination. */
-export const safeNextPath = (value: string | null | undefined): string =>
-	value !== null && value !== undefined && /^\/(?![/\\])/.test(value) ? value : "/"
+export const safeNextPath = (value: string | null | undefined): string => {
+	// Control characters are stripped by browsers when they resolve `Location`
+	// (`/\t/evil` becomes `//evil`), so any value carrying one is refused.
+	if (value === null || value === undefined || !value.startsWith("/") || /[\x00-\x20\\]/.test(value))
+		return "/"
+	const base = "http://next.invalid"
+	const resolved = Result.try(() => new URL(value, base))
+	return Result.isSuccess(resolved) && resolved.success.origin === base
+		? `${resolved.success.pathname}${resolved.success.search}${resolved.success.hash}`
+		: "/"
+}
 
 const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`)
 

@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { ok, strictEqual } from "node:assert"
+import { deepStrictEqual, ok, strictEqual } from "node:assert"
 import { Effect, Result } from "effect"
 import { HttpClientRequest } from "effect/http"
 import { withLocalAccessToken } from "../src/core/local-access"
@@ -133,6 +133,13 @@ describe("access token", () => {
 		)
 	})
 
+	it("lets an event consumer's token open only the claim and ack routes", () => {
+		const headers = { "x-maple-event-consumer-token": CREDENTIALS.consumerToken }
+		strictEqual(decide(BOTH, "/local/eventing/acks", { method: "POST", headers }), null)
+		strictEqual(decide(BOTH, "/local/query", { method: "POST", headers })?.status, 401)
+		strictEqual(decide(BOTH, "/", { headers })?.status, 303)
+	})
+
 	it("leaves reads open when no access token is configured", () => {
 		strictEqual(
 			decide({ ingestKey: INGEST_KEY, accessToken: undefined }, "/local/query", { method: "POST" }),
@@ -190,14 +197,36 @@ describe("sign-in", () => {
 	it.effect("answers a wrong token with 401 and throttles after repeated failures", () =>
 		Effect.gen(function* () {
 			const throttle = new LoginThrottle(2, 60_000)
-			for (const _ of [1, 2]) {
+			const wrong = yield* Effect.forEach([1, 2], () => {
 				const { req, url } = form("wrong-token-0123456789abcdef")
-				strictEqual((yield* __testables.loginSpan(BOTH, throttle, req, url)).status, 401)
-			}
+				return __testables.loginSpan(BOTH, throttle, req, url)
+			})
+			deepStrictEqual(
+				wrong.map((response) => response.status),
+				[401, 401],
+			)
 			const { req, url } = form(ACCESS_TOKEN)
 			const throttled = yield* __testables.loginSpan(BOTH, throttle, req, url)
 			strictEqual(throttled.status, 429)
 			ok(Number(throttled.headers.get("retry-after")) > 0)
+		}),
+	)
+
+	it.effect("holds the limit when failed attempts arrive in parallel", () =>
+		Effect.gen(function* () {
+			const throttle = new LoginThrottle(2, 60_000)
+			const responses = yield* Effect.forEach(
+				[1, 2, 3, 4, 5, 6, 7],
+				() => {
+					const { req, url } = form("wrong-token-0123456789abcdef")
+					return __testables.loginSpan(BOTH, throttle, req, url)
+				},
+				{ concurrency: "unbounded" },
+			)
+			deepStrictEqual(
+				responses.map((response) => response.status).sort(),
+				[401, 401, 429, 429, 429, 429, 429],
+			)
 		}),
 	)
 
@@ -214,6 +243,9 @@ describe("sign-in", () => {
 		strictEqual(safeNextPath("//evil.example"), "/")
 		strictEqual(safeNextPath("/\\evil.example"), "/")
 		strictEqual(safeNextPath("https://evil.example"), "/")
+		strictEqual(safeNextPath("/\t/evil.example"), "/")
+		strictEqual(safeNextPath("/\n/evil.example"), "/")
+		strictEqual(safeNextPath("/%5C/evil.example"), "/%5C/evil.example")
 		strictEqual(safeNextPath(null), "/")
 	})
 })
@@ -234,17 +266,34 @@ describe("browser origins with an access token", () => {
 	it("still refuses other origins", () => {
 		ok(!isBrowserOriginAllowed(url, "http://evil.example", policy(true)))
 	})
+
+	it("keeps OTLP ingest to advertised hosts, which the access token does not guard", () => {
+		const ingest = new URL("http://rebound.example/v1/traces")
+		ok(!isBrowserOriginAllowed(ingest, "http://rebound.example", policy(true)))
+	})
 })
 
 describe("CLI access token", () => {
-	it("is sent to /local/* routes only", () => {
-		const sign = withLocalAccessToken(ACCESS_TOKEN)
+	const sign = withLocalAccessToken(ACCESS_TOKEN, "https://maple.example.com")
+	const authorization = (request: HttpClientRequest.HttpClientRequest) =>
+		sign(request).headers.authorization
+
+	it("is sent to /local/* on the MAPLE_LOCAL_URL origin and on loopback", () => {
 		strictEqual(
-			sign(HttpClientRequest.post("https://maple.example.com/local/query")).headers.authorization,
+			authorization(HttpClientRequest.post("https://maple.example.com/local/query")),
 			`Bearer ${ACCESS_TOKEN}`,
 		)
 		strictEqual(
-			sign(HttpClientRequest.get("https://api.github.com/repos/x/releases")).headers.authorization,
+			authorization(HttpClientRequest.get("http://127.0.0.1:4318/local/status")),
+			`Bearer ${ACCESS_TOKEN}`,
+		)
+	})
+
+	it("never reaches another host or route", () => {
+		strictEqual(authorization(HttpClientRequest.get("https://other.example/local/status")), undefined)
+		strictEqual(authorization(HttpClientRequest.get("https://maple.example.com/health")), undefined)
+		strictEqual(
+			authorization(HttpClientRequest.get("https://api.github.com/repos/x/releases")),
 			undefined,
 		)
 	})

@@ -129,8 +129,8 @@ export interface BrowserOriginPolicy {
 	readonly trustedOrigins: ReadonlySet<string>
 	/** Origins only honoured when the request itself targets loopback. */
 	readonly loopbackDevOrigins: ReadonlySet<string>
-	/** Accept same-origin from any Host. Only with an access token: a rebinding
-	 * page can then reach the listener but never holds its session cookie. */
+	/** Accept same-origin from any Host on routes the access token guards: a
+	 * rebinding page can reach them but never holds the session cookie. */
 	readonly anySameOriginHost: boolean
 }
 
@@ -208,7 +208,7 @@ export const isBrowserOriginAllowed = (
 	// a loopback name, so loopback aliases of this listener count as same-origin.
 	return (
 		originUrl.host === requestUrl.host &&
-		(policy.anySameOriginHost ||
+		((policy.anySameOriginHost && !requestUrl.pathname.startsWith("/v1/")) ||
 			policy.browserHosts.includes(originUrl.hostname) ||
 			isLoopbackHostname(originUrl.hostname))
 	)
@@ -1415,28 +1415,31 @@ const loginSpan = (
 	Effect.gen(function* () {
 		const accessToken = auth.accessToken
 		if (accessToken === undefined) return text("not found", 404)
-		const nowMs = yield* Clock.currentTimeMillis
-		const retryAfterMs = throttle.retryAfterMs(nowMs)
-		if (retryAfterMs > 0) {
-			yield* Effect.annotateCurrentSpan({ "maple.auth.outcome": "throttled" })
-			const response = loginPage({
-				error: "Too many failed attempts. Try again in a minute.",
-				next: "/",
-				status: 429,
-			})
-			response.headers.set("retry-after", String(Math.ceil(retryAfterMs / 1000)))
-			return response
-		}
 		const body = yield* Effect.promise(() => readBoundedBytes(req, MAX_LOGIN_BODY_BYTES))
 		if (Result.isFailure(body)) return bodyFailureResponse(body.failure)
 		const form = new URLSearchParams(new TextDecoder().decode(body.success))
 		const next = safeNextPath(form.get("next"))
-		if (!secretMatches(accessToken, form.get("token"))) {
+		const nowMs = yield* Clock.currentTimeMillis
+		// Check, compare and record in one synchronous step, so parallel attempts cannot pass together.
+		const attempt = yield* Effect.sync(() => {
+			const retryAfterMs = throttle.retryAfterMs(nowMs)
+			if (retryAfterMs > 0) return { outcome: "throttled" as const, retryAfterMs }
+			if (secretMatches(accessToken, form.get("token"))) return { outcome: "ok" as const }
 			throttle.recordFailure(nowMs)
-			yield* Effect.annotateCurrentSpan({ "maple.auth.outcome": "invalid" })
-			return loginPage({ error: "That access token is not valid.", next, status: 401 })
+			return { outcome: "invalid" as const }
+		})
+		yield* Effect.annotateCurrentSpan({ "maple.auth.outcome": attempt.outcome })
+		if (attempt.outcome === "throttled") {
+			const response = loginPage({
+				error: "Too many failed attempts. Try again in a minute.",
+				next,
+				status: 429,
+			})
+			response.headers.set("retry-after", String(Math.ceil(attempt.retryAfterMs / 1000)))
+			return response
 		}
-		yield* Effect.annotateCurrentSpan({ "maple.auth.outcome": "ok" })
+		if (attempt.outcome === "invalid")
+			return loginPage({ error: "That access token is not valid.", next, status: 401 })
 		return new Response(null, {
 			status: 303,
 			headers: {
