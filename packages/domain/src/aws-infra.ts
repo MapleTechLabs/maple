@@ -19,6 +19,8 @@ export interface AwsInfraKind {
 	readonly title: string
 	/** One resource, in the tab's count and copy. */
 	readonly noun: string
+	/** One resource, as a page names what it shows: "ECS service". */
+	readonly label: string
 	/**
 	 * What identifies a row, as column label and dimension. CloudWatch reports a metric once per
 	 * dimension set, so a row reads only points that carry these and none of `excluded`.
@@ -37,6 +39,7 @@ export const AWS_INFRA_KINDS = {
 	ecs: {
 		title: "ECS",
 		noun: "service",
+		label: "ECS service",
 		identity: [
 			["Service", "service_name"],
 			["Cluster", "cluster_name"],
@@ -48,6 +51,7 @@ export const AWS_INFRA_KINDS = {
 	ec2: {
 		title: "EC2",
 		noun: "instance",
+		label: "EC2 instance",
 		identity: [["Instance", "instance_id"]],
 		excluded: [],
 		metrics: [
@@ -61,6 +65,7 @@ export const AWS_INFRA_KINDS = {
 	loadBalancers: {
 		title: "Load balancers",
 		noun: "load balancer",
+		label: "Load balancer",
 		identity: [["Load balancer", "load_balancer"]],
 		excluded: ["target_group", "availability_zone"],
 		metrics: [
@@ -74,6 +79,7 @@ export const AWS_INFRA_KINDS = {
 	rds: {
 		title: "RDS",
 		noun: "database",
+		label: "RDS database",
 		identity: [["Instance", "db_instance_identifier"]],
 		excluded: [],
 		metrics: [
@@ -87,6 +93,7 @@ export const AWS_INFRA_KINDS = {
 	lambda: {
 		title: "Lambda",
 		noun: "function",
+		label: "Lambda function",
 		identity: [["Function", "function_name"]],
 		excluded: ["resource", "executed_version"],
 		metrics: [
@@ -100,6 +107,7 @@ export const AWS_INFRA_KINDS = {
 	sqs: {
 		title: "SQS",
 		noun: "queue",
+		label: "SQS queue",
 		identity: [["Queue", "queue_name"]],
 		excluded: [],
 		metrics: [

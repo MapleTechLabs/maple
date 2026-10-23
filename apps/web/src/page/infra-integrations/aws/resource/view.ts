@@ -354,9 +354,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 										]),
 									],
 						description: [
-							kind === null
-								? "Unknown resource"
-								: `${AWS_INFRA_KINDS[kind].title} ${AWS_INFRA_KINDS[kind].noun}`,
+							kind === null ? "Unknown resource" : AWS_INFRA_KINDS[kind].label,
 							...(cluster === "" ? [] : [`${cluster} cluster`]),
 							...(region === "" ? [] : [region]),
 							...(model.search.account === undefined ? [] : [model.search.account]),
