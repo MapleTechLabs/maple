@@ -1,5 +1,5 @@
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { readIsAdmin } from "../../alerts/shared/commands"
 import { getRun, githubStatus, listFindings, listRuns, listTargets, startRun } from "../kit/api"
@@ -27,6 +27,23 @@ export const FetchRuns = Command.define("SecurityApiListRuns", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchRuns],
 	execute: ({ key }) => Effect.map(listRuns(), (result) => Message.CompletedFetchRuns({ key, result })),
+})
+
+export const FetchTargetRuns = Command.define("SecurityApiListTargetRuns", {
+	args: { key: Schema.String, targetId: SecurityAuditTargetId },
+	messages: [Message.CompletedFetchTargetRuns],
+	execute: ({ key, targetId }) =>
+		Effect.map(listRuns(targetId), (result) =>
+			Message.CompletedFetchTargetRuns({ key, targetId, result }),
+		),
+})
+
+/** The search box's 300 ms debounce, as the errors hub's; a newer keystroke bumps the generation. */
+export const WaitSecuritySearchDebounce = Command.define("WaitSecuritySearchDebounce", {
+	args: { generation: Schema.Finite },
+	messages: [Message.ElapsedSearchDebounce],
+	execute: ({ generation }) =>
+		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ generation })),
 })
 
 export const FetchFindings = Command.define("SecurityApiListFindings", {

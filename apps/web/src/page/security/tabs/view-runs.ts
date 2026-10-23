@@ -1,5 +1,4 @@
 import type { SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
-import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
 import { AsyncData } from "foldkit"
 import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -10,6 +9,7 @@ import { icon } from "../../../ui/icon"
 import * as SelectView from "../../../ui/select-view"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { nothingInWindow } from "../../kit/nothing-in-window"
+import { relativeTime } from "../../kit/relative-time"
 import {
 	formatElapsed,
 	formatUsd,
@@ -20,10 +20,9 @@ import {
 	scopeLabel,
 	shortId,
 	refLabel,
-	isoOf,
 } from "../kit/format"
 import { placeholderRows, repositoryName, runStatusBadge } from "../kit/parts"
-import { runsOf, targetsOf } from "./derive"
+import { RUN_LIST_CAP, runsForTab, runsOf, targetsOf } from "./derive"
 import { Message, type Model } from "./model"
 
 // The Runs tab: every run, newest first, narrowed to one target from the select.
@@ -35,6 +34,7 @@ const runRow = (
 	run: SecurityAuditRun,
 	targets: ReadonlyArray<SecurityAuditTarget>,
 	nowMs: number,
+	timeZone: string,
 ): Html => {
 	const href = hrefOf(AppRoute.SecurityRun({ runId: run.id }))
 	const repository = targets.find((target) => target.id === run.targetId)?.repository ?? "Removed target"
@@ -87,7 +87,15 @@ const runRow = (
 			tableCell(h, [formatUsd(run.costUsd)], "text-right font-mono tabular-nums"),
 			tableCell(
 				h,
-				[h.time([h.Title(isoOf(run.startedAt))], [formatRelativeShortFrom(run.startedAt, nowMs)])],
+				[
+					relativeTime(h, {
+						value: run.startedAt,
+						nowMs,
+						timeZone,
+						variant: "short",
+						tooltip: "title",
+					}),
+				],
 				"text-right font-mono text-xs text-muted-foreground",
 			),
 			tableCell(
@@ -101,7 +109,13 @@ const runRow = (
 	)
 }
 
-const toolbar = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTarget>, count: number): Html =>
+const toolbar = (
+	h: H,
+	model: Model,
+	targets: ReadonlyArray<SecurityAuditTarget>,
+	count: number,
+	isCapped: boolean,
+): Html =>
 	h.div(
 		[h.Class("flex flex-wrap items-center gap-2 border-b border-border/60 px-2 py-1.5")],
 		[
@@ -132,7 +146,11 @@ const toolbar = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTarget>
 			}),
 			h.span(
 				[h.Class("ml-auto text-xs tabular-nums text-muted-foreground")],
-				[`${count} ${count === 1 ? "run" : "runs"}`],
+				[
+					isCapped
+						? `showing the ${RUN_LIST_CAP} newest`
+						: `${count} ${count === 1 ? "run" : "runs"}`,
+				],
 			),
 		],
 	)
@@ -157,11 +175,9 @@ export const startRunAction = (h: H, model: Model): Html | undefined => {
 	)
 }
 
-export const runsBody = (h: H, model: Model): ReadonlyArray<Html> => {
+export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
 	const targets = targetsOf(model)
-	const runs = runsOf(model).filter(
-		(run) => model.runsSearch.target === undefined || run.targetId === model.runsSearch.target,
-	)
+	const { runs, isCapped } = runsForTab(model)
 	const content = AsyncData.matchData(model.runs.data, {
 		onEmpty: () => placeholderRows(h, 6),
 		onFailure: (failure) =>
@@ -200,14 +216,14 @@ export const runsBody = (h: H, model: Model): ReadonlyArray<Html> => {
 						]),
 						tableBody(
 							h,
-							runs.map((run) => runRow(h, run, targets, model.nowMs)),
+							runs.map((run) => runRow(h, run, targets, model.nowMs, timeZone)),
 						),
 					]),
 	})
 	return [
 		h.section(
 			[h.AriaLabel("Runs"), h.Class("overflow-hidden rounded-md border bg-card")],
-			[toolbar(h, model, targets, runs.length), content],
+			[toolbar(h, model, targets, runs.length, isCapped), content],
 		),
 	]
 }

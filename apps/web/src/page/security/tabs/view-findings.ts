@@ -1,6 +1,5 @@
 import type { SecurityAuditFinding, SecurityAuditTarget } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { SecurityFindingsSearch } from "../../../route/search"
@@ -8,16 +7,19 @@ import { badge } from "../../../ui/display"
 import { errorState } from "../../../ui/error-state"
 import { searchInput } from "../../../ui/search-input"
 import * as SelectView from "../../../ui/select-view"
+import * as Select from "../../../ui/select"
 import { switchControl } from "../../../ui/switch"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { nothingInWindow } from "../../kit/nothing-in-window"
+import { relativeTime } from "../../kit/relative-time"
 import {
 	FINDING_STATUS_LABEL,
 	locationOf,
 	SECURITY_SEVERITY_LABEL,
 	SECURITY_SEVERITY_ORDER,
 	shortId,
-	isoOf,
+	STATUS_TAB_LABEL,
+	VERDICT_LABEL,
 } from "../kit/format"
 import { gateState, placeholderRows, repositoryName, severityMark } from "../kit/parts"
 import {
@@ -29,7 +31,6 @@ import {
 	isNewFinding,
 	isReopened,
 	STATUS_TABS,
-	type StatusTab,
 	statusTabOf,
 	targetsOf,
 } from "./derive"
@@ -38,20 +39,7 @@ import { type FindingGroup, Message, type Model } from "./model"
 // The Findings tab: status tabs, the errors hub's toolbar, findings grouped by verdict.
 
 type H = HtmlBuilder<Message>
-
-const STATUS_TAB_LABEL = {
-	open: "Open",
-	fixed: "Fixed",
-	dismissed: "Dismissed",
-	accepted_risk: "Accepted risk",
-	all: "All",
-} satisfies Record<StatusTab, string>
-
-const GROUP_LABEL = {
-	confirmed: "Confirmed",
-	needs_validation: "Needs validation",
-	rejected: "Rejected",
-} satisfies Record<FindingGroup, string>
+type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
 const GROUP_HINT = {
 	confirmed: "Sorted by severity, then last seen",
@@ -95,11 +83,11 @@ const statusTabs = (h: H, model: Model, findings: ReadonlyArray<SecurityAuditFin
 
 const selectSubmodel = (
 	h: H,
-	select: Model["severitySelect"],
+	select: Select.Model,
 	entries: ReadonlyArray<SelectView.SelectEntry>,
 	label: string,
 	renderValue: (value: string) => string,
-	wrap: (message: Parameters<typeof Message.GotSeveritySelectMessage>[0]["message"]) => Message,
+	wrap: (message: Select.Message) => Message,
 ): Html =>
 	h.submodel({
 		slotId: select.id,
@@ -232,7 +220,7 @@ export const findingRow = (
 	h: H,
 	finding: SecurityAuditFinding,
 	targets: ReadonlyArray<SecurityAuditTarget>,
-	nowMs: number,
+	clock: Clock,
 ): Html => {
 	const href = hrefOf(
 		AppRoute.SecurityFinding({ targetId: finding.targetId, fingerprint: finding.fingerprint }),
@@ -268,7 +256,7 @@ export const findingRow = (
 				),
 			]),
 			tableCell(h, [repositoryName(h, repository, "text-sm")]),
-			tableCell(h, [statusCell(h, finding, nowMs)]),
+			tableCell(h, [statusCell(h, finding, clock.nowMs)]),
 			tableCell(
 				h,
 				[`run ${shortId(finding.firstSeenRunId)}`],
@@ -277,16 +265,19 @@ export const findingRow = (
 			tableCell(
 				h,
 				[
-					h.time(
-						[h.Title(isoOf(finding.updatedAt))],
-						[formatRelativeShortFrom(finding.updatedAt, nowMs)],
-					),
+					relativeTime(h, {
+						value: finding.updatedAt,
+						nowMs: clock.nowMs,
+						timeZone: clock.timeZone,
+						variant: "short",
+						tooltip: "title",
+					}),
 				],
 				"text-right font-mono text-xs text-muted-foreground",
 			),
 		],
 		undefined,
-		[h.Key(finding.fingerprint)],
+		[h.Key(`${finding.targetId}/${finding.fingerprint}`)],
 	)
 }
 
@@ -296,6 +287,7 @@ const groupBlock = (
 	group: FindingGroup,
 	rows: ReadonlyArray<SecurityAuditFinding>,
 	targets: ReadonlyArray<SecurityAuditTarget>,
+	clock: Clock,
 ): ReadonlyArray<Html> => {
 	const isExpanded = model.expanded.includes(group)
 	const shown = isExpanded ? rows : rows.slice(0, GROUP_PAGE)
@@ -313,7 +305,7 @@ const groupBlock = (
 								h.span(
 									[h.Class("text-sm font-medium")],
 									[
-										GROUP_LABEL[group],
+										VERDICT_LABEL[group],
 										h.span(
 											[h.Class("ml-2 font-mono text-xs text-muted-foreground")],
 											[String(rows.length)],
@@ -331,7 +323,7 @@ const groupBlock = (
 			undefined,
 			[h.Key(`group-${group}`)],
 		),
-		...shown.map((finding) => findingRow(h, finding, targets, model.nowMs)),
+		...shown.map((finding) => findingRow(h, finding, targets, clock)),
 		...(hidden === 0
 			? []
 			: [
@@ -366,7 +358,8 @@ const groupBlock = (
 	]
 }
 
-export const findingsBody = (h: H, model: Model): ReadonlyArray<Html> => {
+export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
+	const clock: Clock = { nowMs: model.nowMs, timeZone }
 	const state = findingsStateOf(model)
 	if (state._tag === "Gated") return [gateState(h, state.gate)]
 	if (state._tag === "Failed")
@@ -379,7 +372,7 @@ export const findingsBody = (h: H, model: Model): ReadonlyArray<Html> => {
 		]
 	const targets = targetsOf(model)
 	const all = state._tag === "Ready" ? state.findings : []
-	const rows = filteredFindings(all, model.findingsSearch, model.searchDraft)
+	const rows = filteredFindings(all, model.findingsSearch, model.findingsSearch.q ?? "")
 	const groups = groupFindings(rows)
 	const content =
 		state._tag === "Loading"
@@ -401,7 +394,7 @@ export const findingsBody = (h: H, model: Model): ReadonlyArray<Html> => {
 											: "Nothing in this status matches the filters.",
 									onClear:
 										Object.keys(model.findingsSearch).length > 0 ||
-										model.searchDraft !== ""
+										model.findingsSearch.q !== undefined
 											? Message.ClickedClearFilters()
 											: undefined,
 								}),
@@ -421,7 +414,7 @@ export const findingsBody = (h: H, model: Model): ReadonlyArray<Html> => {
 							tableBody(
 								h,
 								groups.flatMap(({ group, rows: groupRows }) =>
-									groupBlock(h, model, group, groupRows, targets),
+									groupBlock(h, model, group, groupRows, targets, clock),
 								),
 							),
 						])

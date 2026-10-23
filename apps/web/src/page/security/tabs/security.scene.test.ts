@@ -2,11 +2,12 @@ import { OrgId } from "@maple/domain"
 import {
 	SecurityAuditDisabledError,
 	SecurityAuditForbiddenError,
+	SecurityAuditRepositoryNotConnectedError,
 	SecurityAuditTargetExistsError,
 } from "@maple/domain/http"
 import { SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Result, Schema } from "effect"
-import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import {
@@ -19,11 +20,12 @@ import {
 	targetsOf,
 } from "../../../lab/security-fixture"
 import { AppRoute } from "../../../route"
+import * as Dialog from "../../../ui/dialog"
 import * as Field from "../../../ui/field"
 import * as Select from "../../../ui/select"
 import type { PageContext } from "../../contract"
 import * as AddTarget from "../kit/add-target"
-import { filteredFindings, findingsStateOf, groupFindings } from "./derive"
+import { filteredFindings, findingsStateOf, groupFindings, spendThisMonth } from "./derive"
 import { Message, type Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
@@ -83,7 +85,7 @@ describe("security tabs", () => {
 		)
 	})
 
-	test("the targets answer reads each target's findings and its latest run", () => {
+	test("the targets answer reads each target's findings, its own runs and its latest run", () => {
 		const entered = init(overview, context).model
 		const runs = pageUpdate(
 			entered,
@@ -98,6 +100,7 @@ describe("security tabs", () => {
 		)
 		const sent = names(targets.commands)
 		expect(sent.filter((name) => name === "SecurityApiListFindings")).toHaveLength(4)
+		expect(sent.filter((name) => name === "SecurityApiListTargetRuns")).toHaveLength(4)
 		expect(sent.filter((name) => name === "SecurityApiGetLatestRun")).toHaveLength(4)
 	})
 
@@ -205,58 +208,219 @@ describe("security tabs", () => {
 		).model
 		scene({ update: pageUpdate, view }, given(answered), expectView(text("212 / 212")).toExist())
 	})
+
+	test("targets that fail to load show the error with a retry on the Findings tab, not a skeleton", () => {
+		const entered = init(AppRoute.SecurityFindings({ search: {} }), context).model
+		const failed = pageUpdate(
+			entered,
+			Message.CompletedFetchTargets({
+				key: entered.targets.key ?? "",
+				// A response that did not decode: no automatic retry, so the button is the way back.
+				result: Result.fail(toLoadFailure(new Error("unexpected body"))),
+			}),
+		).model
+		expect(findingsStateOf(failed)._tag).toBe("Failed")
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("Failed to load findings")).toExist(),
+			expectView(role("button", { name: "Try again" })).toExist(),
+		)
+		expect(names(pageUpdate(failed, Message.ClickedRetry()).commands)).toContain("SecurityApiListTargets")
+	})
+
+	test("this month's spend says which runs it leaves out", () => {
+		const withTargetRuns = Object.values(TARGET_IDS).reduce((model, targetId) => {
+			const own = runsOf(NOW).runs.filter((run) => run.targetId === targetId)
+			const capped =
+				targetId === TARGET_IDS.gateway
+					? Array.from({ length: 50 }, () => own[0]).filter((run) => run !== undefined)
+					: own
+			return pageUpdate(
+				model,
+				Message.CompletedFetchTargetRuns({
+					targetId: Schema.decodeSync(SecurityAuditTargetId)(targetId),
+					key: model.targetRuns[targetId]?.key ?? "",
+					result: Result.succeed({
+						runs: capped.map((run) =>
+							run.targetId === TARGET_IDS.terraform ? { ...run, costUsd: null } : run,
+						),
+					}),
+				}),
+			).model
+		}, loaded())
+		const spend = spendThisMonth(withTargetRuns)
+		expect(spend.isPartial).toBe(true)
+		expect(spend.unpriced).toBe(1)
+		scene(
+			{ update: pageUpdate, view },
+			given(withTargetRuns),
+			expectView(text(/excludes 1 unpriced run · newest 50 runs per target only$/)).toExist(),
+		)
+	})
+
+	test("a member sees no Add target or Start run control", () => {
+		const member = pageUpdate(loaded(), Message.CompletedReadIsAdmin({ isAdmin: false })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(member),
+			expectView(role("button", { name: "Add target" })).not.toExist(),
+		)
+		const runsTab = routeChanged(
+			member,
+			AppRoute.SecurityRuns({ search: { target: TARGET_IDS.gateway } }),
+			context,
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(runsTab),
+			expectView(role("button", { name: "Start run" })).not.toExist(),
+			expectView(role("link", { name: "Runs" })).toExist(),
+		)
+	})
+
+	test("the search box commits to the URL after the debounce, and only the last keystroke does", () => {
+		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
+		const first = pageUpdate(findings, Message.ChangedSearchDraft({ value: "expo" }))
+		const second = pageUpdate(first.model, Message.ChangedSearchDraft({ value: "exports" }))
+		expect(names(second.commands)).toEqual(["WaitSecuritySearchDebounce"])
+		expect(
+			pageUpdate(second.model, Message.ElapsedSearchDebounce({ generation: 1 })).outMessage,
+		).toBeUndefined()
+		expect(
+			pageUpdate(second.model, Message.ElapsedSearchDebounce({ generation: 2 })).outMessage,
+		).toMatchObject({
+			_tag: "RequestedNavigation",
+			url: expect.stringContaining("q="),
+		})
+	})
 })
 
 describe("add target", () => {
 	const opened = () => pageUpdate(loaded(), Message.ClickedAddTarget()).model
 	const send = (model: Model, message: AddTarget.Message) =>
 		pageUpdate(model, Message.GotAddTargetMessage({ message }))
+	const pick = (model: Model, value: string) =>
+		send(
+			model,
+			AddTarget.Message.GotRepositoryMessage({
+				message: Select.Message.SelectedItem({ index: 1, value }),
+			}),
+		).model
+	const typed = (field: "GotScopeMessage" | "GotBudgetMessage", value: string) =>
+		AddTarget.Message[field]({ message: Field.Message.ChangedValue({ value }) })
 
 	test("an empty form says what is missing and sends nothing", () => {
 		const submitted = send(opened(), AddTarget.Message.Submitted())
 		expect(names(submitted.commands)).toEqual([])
-		expect(AddTarget.errorsOf(submitted.model.addTarget).repository).toBe("Pick a repository.")
+		scene(
+			{ update: pageUpdate, view },
+			given(submitted.model),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("Pick a repository.")).toExist(),
+		)
 	})
 
-	test("a picked repository fills its branch and the form creates the target, then starts its first run", () => {
-		const form = AddTarget.update(
-			AddTarget.open(AddTarget.init()).model,
-			AddTarget.Message.GotRepositoryMessage({
-				message: Select.Message.SelectedItem({ index: 1, value: "acme/api-gateway" }),
-			}),
-			githubStatusOf().repositories,
-		).model
-		expect(form.branch.value).toBe("main")
-		const created = AddTarget.update(form, AddTarget.Message.Submitted(), [])
-		expect(names(created.commands)).toEqual(["SecurityApiCreateTarget"])
-		expect(AddTarget.requestOf(form)).toEqual({
-			repository: "acme/api-gateway",
-			branch: "main",
-			profile: "deep",
-			budgetPerRun: 400,
+	test("the picked repository's branch and a custom budget are what the create sends", () => {
+		const form = send(pick(opened(), "acme/api-gateway"), typed("GotBudgetMessage", "1500")).model
+		expect(form.addTarget.branch.value).toBe("main")
+		const created = send(form, AddTarget.Message.Submitted())
+		expect(
+			created.commands?.find((command) => command.name === "SecurityApiCreateTarget")?.args,
+		).toMatchObject({
+			payload: { repository: "acme/api-gateway", branch: "main", profile: "deep", budgetPerRun: 1500 },
 		})
-		const target = targetsOf(NOW).targets[0]
-		if (target === undefined) throw new Error("fixture has no target")
-		const started = AddTarget.update(
-			created.model,
-			AddTarget.Message.CompletedCreate({ result: Result.succeed(target) }),
-			[],
+	})
+
+	test("a created target starts its first run", () => {
+		const created = send(pick(opened(), "acme/api-gateway"), AddTarget.Message.Submitted()).model
+		const target = targetsOf(NOW).targets.find((candidate) => candidate.repository === "acme/api-gateway")
+		expect(target).toBeDefined()
+		if (target === undefined) return
+		const started = send(
+			created,
+			AddTarget.Message.CompletedCreate({
+				attempt: created.addTarget.attempt,
+				result: Result.succeed(target),
+			}),
 		)
 		expect(names(started.commands)).toEqual(["SecurityApiStartFirstRun"])
 	})
 
-	test("a target that exists is reported next to the branch", () => {
-		const failure = toLoadFailure(new SecurityAuditTargetExistsError({ message: "exists" }))
-		expect(AddTarget.fieldFailure(failure)?.field).toBe("branch")
+	test("a target that exists is reported under the branch", () => {
+		const created = send(pick(opened(), "acme/api-gateway"), AddTarget.Message.Submitted()).model
+		const refused = send(
+			created,
+			AddTarget.Message.CompletedCreate({
+				attempt: created.addTarget.attempt,
+				result: Result.fail(toLoadFailure(new SecurityAuditTargetExistsError({ message: "exists" }))),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(refused),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("This branch is already a target. Open it from the targets table.")).toExist(),
+		)
 	})
 
-	test("an unsafe scope path is refused", () => {
-		const form = AddTarget.update(
-			AddTarget.init(),
-			AddTarget.Message.GotScopeMessage({ message: Field.Message.ChangedValue({ value: "../etc" }) }),
-			[],
+	test("a repository the GitHub App cannot read is reported under the repository", () => {
+		const created = send(pick(opened(), "acme/api-gateway"), AddTarget.Message.Submitted()).model
+		const refused = send(
+			created,
+			AddTarget.Message.CompletedCreate({
+				attempt: created.addTarget.attempt,
+				result: Result.fail(
+					toLoadFailure(
+						new SecurityAuditRepositoryNotConnectedError({
+							message: "no",
+							repository: "acme/api-gateway",
+						}),
+					),
+				),
+			}),
 		).model
-		expect(AddTarget.errorsOf(form).scope).toBeDefined()
-		expect(AddTarget.update(form, AddTarget.Message.AddedScopePath(), []).model.scopePaths).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(refused),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text(/^Maple's GitHub App cannot read this repository/)).toExist(),
+		)
+	})
+
+	test("the dialog stays open while a create is pending, and an answer for an earlier opening is dropped", () => {
+		const pending = send(pick(opened(), "acme/api-gateway"), AddTarget.Message.Submitted()).model
+		const escaped = send(
+			pending,
+			AddTarget.Message.GotDialogMessage({ message: Dialog.Message.PressedEscape() }),
+		)
+		expect(escaped.model.addTarget).toEqual(pending.addTarget)
+		const late = send(
+			pending,
+			AddTarget.Message.CompletedCreate({
+				attempt: pending.addTarget.attempt - 1,
+				result: Result.fail(toLoadFailure(new SecurityAuditTargetExistsError({ message: "exists" }))),
+			}),
+		)
+		expect(late.model.addTarget).toEqual(pending.addTarget)
+	})
+
+	test("an unsafe or overlong scope path is refused", () => {
+		const unsafe = AddTarget.update(AddTarget.init(), typed("GotScopeMessage", "../etc"), []).model
+		expect(AddTarget.errorsOf(unsafe).scope).toBeDefined()
+		expect(AddTarget.update(unsafe, AddTarget.Message.AddedScopePath(), []).model.scopePaths).toEqual([])
+		const long = AddTarget.update(AddTarget.init(), typed("GotScopeMessage", "a".repeat(513)), []).model
+		expect(AddTarget.errorsOf(long).scope).toBe("Keep each path under 512 characters.")
+	})
+
+	test("the draft path counts toward the 100-path cap", () => {
+		const full: AddTarget.Model = {
+			...AddTarget.init(),
+			scopePaths: Array.from({ length: 100 }, (_, index) => `src/module-${index}`),
+		}
+		expect(AddTarget.errorsOf(full).scope).toBeUndefined()
+		const withDraft = AddTarget.update(full, typed("GotScopeMessage", "src/module-100"), []).model
+		expect(AddTarget.errorsOf(withDraft).scope).toBe("At most 100 scope paths.")
+		expect(AddTarget.requestOf(withDraft)).toBeNull()
 	})
 })

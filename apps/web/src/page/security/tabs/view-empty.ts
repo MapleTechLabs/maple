@@ -1,11 +1,10 @@
-import { Option } from "effect"
-import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
 import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { icon } from "../../../ui/icon"
 import { panel, panelHeader } from "../../../ui/panel"
+import { activeRepositoriesOf } from "./derive"
 import { Message, type Model } from "./model"
 
 // No target yet: the on-ramp. Without a GitHub installation it points at GitHub; with one, at Add target.
@@ -48,10 +47,7 @@ export const auditSteps = (h: H): Html =>
 	])
 
 export const emptyOnRamp = (h: H, model: Model): Html => {
-	const isConnected = Option.match(AsyncData.getData(model.githubStatus.data), {
-		onNone: () => false,
-		onSome: (status) => status.connected && status.repositories.some((repo) => repo.status === "active"),
-	})
+	const isConnected = activeRepositoriesOf(model).length > 0
 	const integrations = hrefOf(AppRoute.Integrations({ search: {} }))
 	return empty(
 		h,

@@ -323,13 +323,15 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 						}),
 					),
 					addTarget(AddTarget.Message.Submitted()),
-					addTarget(
-						AddTarget.Message.CompletedCreate({
-							result: Result.fail(
-								toLoadFailure(new SecurityAuditTargetExistsError({ message: "exists" })),
-							),
+					(model) =>
+						M.GotAddTargetMessage({
+							message: AddTarget.Message.CompletedCreate({
+								attempt: model.addTarget.attempt,
+								result: Result.fail(
+									toLoadFailure(new SecurityAuditTargetExistsError({ message: "exists" })),
+								),
+							}),
 						}),
-					),
 				]),
 			}
 		case "findings":

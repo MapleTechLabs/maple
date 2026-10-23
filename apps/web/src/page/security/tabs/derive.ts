@@ -1,4 +1,5 @@
 import type {
+	GithubRepoSummary,
 	SecurityAuditFinding,
 	SecurityAuditRun,
 	SecurityAuditRunDetail,
@@ -13,6 +14,14 @@ import { type Gate, gateOf, isLive, isSameMonth, locationOf, severityRank } from
 import type { FindingGroup, Model } from "./model"
 
 // Pure readings of the tabs' Model: what each panel shows.
+
+/** The repositories Add target offers: the connected installation's active ones. */
+export const activeRepositoriesOf = (model: Model): ReadonlyArray<GithubRepoSummary> =>
+	Option.match(AsyncData.getData(model.githubStatus.data), {
+		onNone: () => [],
+		onSome: (status) =>
+			status.connected ? status.repositories.filter((repo) => repo.status === "active") : [],
+	})
 
 export const targetsOf = (model: Model): ReadonlyArray<SecurityAuditTarget> =>
 	Option.match(AsyncData.getData(model.targets.data), {
@@ -43,7 +52,7 @@ export const latestDetailOf = (model: Model, runId: string): SecurityAuditRunDet
 export const pageGateOf = (model: Model): Gate | null =>
 	AsyncData.isFailure(model.targets.data) ? gateOf(model.targets.data.error) : null
 
-export type FindingsState =
+type FindingsState =
 	| Readonly<{ _tag: "Loading" }>
 	| Readonly<{ _tag: "Gated"; gate: Gate }>
 	| Readonly<{ _tag: "Failed"; failure: LoadFailure }>
@@ -51,6 +60,11 @@ export type FindingsState =
 
 /** Every target's findings as one list; a 403 on any of them gates the whole list. */
 export const findingsStateOf = (model: Model): FindingsState => {
+	// Findings are read per target: without the targets there is nothing to wait for.
+	if (AsyncData.isFailure(model.targets.data)) {
+		const gate = gateOf(model.targets.data.error)
+		return gate === null ? { _tag: "Failed", failure: model.targets.data.error } : { _tag: "Gated", gate }
+	}
 	const targets = targetsOf(model)
 	const slots = targets.map((target) => model.findings[target.id])
 	const failures = slots.flatMap((slot) =>
@@ -93,32 +107,72 @@ export const bySeverity = (a: SecurityAuditFinding, b: SecurityAuditFinding): nu
 	severityRank(a.overallSeverity) - severityRank(b.overallSeverity) || b.updatedAt - a.updatedAt
 
 /** Closed units out of the ledger: what the run got to, whatever it found. */
-export const CLOSED_UNIT_STATUSES: ReadonlyArray<string> = [
-	"covered",
-	"candidate",
-	"not_applicable",
-	"out_of_scope",
-]
+const CLOSED_UNIT_STATUSES: ReadonlyArray<string> = ["covered", "candidate", "not_applicable", "out_of_scope"]
 
 export const coverageOf = (detail: SecurityAuditRunDetail): Readonly<{ closed: number; total: number }> => ({
 	closed: CLOSED_UNIT_STATUSES.reduce((sum, status) => sum + (detail.unitCounts[status] ?? 0), 0),
 	total: detail.unitTotal,
 })
 
-export type Spend = Readonly<{ costUsd: number; invocations: number; tokens: number; hasUnpriced: boolean }>
+/** The API lists at most this many runs per request, newest first. */
+export const RUN_LIST_CAP = 50
 
-export const spendThisMonth = (runs: ReadonlyArray<SecurityAuditRun>, nowMs: number): Spend =>
-	runs
-		.filter((run) => isSameMonth(run.startedAt, nowMs))
+const targetRunsOf = (model: Model, targetId: string): ReadonlyArray<SecurityAuditRun> | null =>
+	Option.getOrNull(
+		Option.flatMap(Option.fromNullishOr(model.targetRuns[targetId]), (slot) =>
+			AsyncData.getData(slot.data),
+		),
+	)?.runs ?? null
+
+/** A target's newest run, from its own list once read, else from the global one. */
+export const latestRunFor = (model: Model, targetId: string): SecurityAuditRun | undefined => {
+	const own = targetRunsOf(model, targetId)
+	const runs = own === null ? runsOf(model) : [...own].sort((a, b) => b.startedAt - a.startedAt)
+	return latestRunOf(runs, targetId)
+}
+
+/** The Runs tab's rows: one target's own list when narrowed to it, else the global one. */
+export const runsForTab = (
+	model: Model,
+): Readonly<{ runs: ReadonlyArray<SecurityAuditRun>; isCapped: boolean }> => {
+	const targetId = model.runsSearch.target
+	const own = targetId === undefined ? null : targetRunsOf(model, targetId)
+	const runs =
+		own === null
+			? runsOf(model).filter((run) => targetId === undefined || run.targetId === targetId)
+			: [...own].sort((a, b) => b.startedAt - a.startedAt)
+	const listed = own ?? Option.getOrNull(AsyncData.getData(model.runs.data))?.runs ?? []
+	return { runs, isCapped: listed.length >= RUN_LIST_CAP }
+}
+
+export type Spend = Readonly<{
+	costUsd: number
+	invocations: number
+	tokens: number
+	/** Runs this month with no cost recorded: their spend is not in `costUsd`. */
+	unpriced: number
+	/** A target's list hit the cap, so older runs of this month may be missing. */
+	isPartial: boolean
+}>
+
+/** This month's runs across every target's own list (the global list stops at the cap). */
+export const spendThisMonth = (model: Model): Spend => {
+	const lists = targetsOf(model).map((target) => targetRunsOf(model, target.id))
+	const isPartial = lists.some((runs) => runs === null || runs.length >= RUN_LIST_CAP)
+	const runs = lists.every((list) => list === null) ? runsOf(model) : lists.flatMap((list) => list ?? [])
+	return runs
+		.filter((run) => isSameMonth(run.startedAt, model.nowMs))
 		.reduce<Spend>(
 			(sum, run) => ({
 				costUsd: sum.costUsd + (run.costUsd ?? 0),
 				invocations: sum.invocations + run.invocationsSpent,
 				tokens: sum.tokens + run.inputTokens + run.outputTokens,
-				hasUnpriced: sum.hasUnpriced || (run.costUsd === null && run.invocationsSpent > 0),
+				unpriced: sum.unpriced + (run.costUsd === null ? 1 : 0),
+				isPartial: sum.isPartial,
 			}),
-			{ costUsd: 0, invocations: 0, tokens: 0, hasUnpriced: false },
+			{ costUsd: 0, invocations: 0, tokens: 0, unpriced: 0, isPartial },
 		)
+}
 
 // FINDINGS LIST
 

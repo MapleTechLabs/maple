@@ -1,7 +1,7 @@
-import type { GithubRepoSummary, SecurityAuditRun } from "@maple/domain/http"
+import type { SecurityAuditRun } from "@maple/domain/http"
 import type { SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Option, Result } from "effect"
-import { AsyncData, Command } from "foldkit"
+import { Result } from "effect"
+import { Command } from "foldkit"
 import * as Keyed from "../../../data/keyed"
 import { requestKey } from "../../../data/request-key"
 import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
@@ -17,12 +17,14 @@ import {
 	FetchGithubStatus,
 	FetchLatestRun,
 	FetchRuns,
+	FetchTargetRuns,
 	FetchTargets,
+	WaitSecuritySearchDebounce,
 	ReadSecurityClock,
 	ReadSecurityIsAdmin,
 	StartRun,
 } from "./command"
-import { latestRunOf, runsOf, targetsOf } from "./derive"
+import { activeRepositoriesOf, latestRunFor, runsOf, targetsOf } from "./derive"
 import { Message, type Model, type Tab } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -40,8 +42,8 @@ const tabOfRoute = (route: SecurityTabsRoute): Tab =>
 
 // SELECTS
 
-export const SEVERITY_VALUES: ReadonlyArray<string> = ["all", ...SECURITY_SEVERITY_ORDER]
-export const VERDICT_VALUES: ReadonlyArray<string> = ["all", "confirmed", "needs_validation"]
+const SEVERITY_VALUES: ReadonlyArray<string> = ["all", ...SECURITY_SEVERITY_ORDER]
+const VERDICT_VALUES: ReadonlyArray<string> = ["all", "confirmed", "needs_validation"]
 
 const selectFor = (id: string, values: ReadonlyArray<string>, value: string): Select.Model => {
 	const index = values.indexOf(value)
@@ -107,6 +109,21 @@ const readFindings = (
 		(key) => FetchFindings({ key, targetId }),
 	)
 
+const readTargetRuns = (
+	model: Model,
+	context: PageContext,
+	targetId: SecurityAuditTargetId,
+	mode: Keyed.ReadMode,
+): Return =>
+	slotStep(
+		model,
+		model.targetRuns[targetId] ?? Keyed.idle(),
+		(slot) => ({ targetRuns: { ...model.targetRuns, [targetId]: slot } }),
+		keyOf(context, "listRuns", { targetId }),
+		mode,
+		(key) => FetchTargetRuns({ key, targetId }),
+	)
+
 const readLatestRun = (
 	model: Model,
 	context: PageContext,
@@ -122,18 +139,20 @@ const readLatestRun = (
 		(key) => FetchLatestRun({ key, runId: run.id }),
 	)
 
-/** Every target's findings, read once the targets are in. */
+/** Every target's findings and own runs, read once the targets are in. */
 const followTargets = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
 	chainAll(
 		model,
-		targetsOf(model).map((target) => (next: Model) => readFindings(next, context, target.id, mode)),
+		targetsOf(model).flatMap((target) => [
+			(next: Model) => readFindings(next, context, target.id, mode),
+			(next: Model) => readTargetRuns(next, context, target.id, mode),
+		]),
 	)
 
 /** Each target's latest run, for its coverage. */
 const followRuns = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
-	const runs = runsOf(model)
 	const latest = targetsOf(model).flatMap((target) => {
-		const run = latestRunOf(runs, target.id)
+		const run = latestRunFor(model, target.id)
 		return run === undefined ? [] : [run]
 	})
 	return chainAll(
@@ -171,12 +190,14 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		isAdmin: !isClerkAuthEnabled,
 		targets: Keyed.idle(),
 		runs: Keyed.idle(),
+		targetRuns: {},
 		findings: {},
 		latestRuns: {},
 		githubStatus: Keyed.idle(),
 		addTarget: AddTarget.init(),
 		startingTargetId: null,
 		searchDraft: searches.findingsSearch.q ?? "",
+		searchGeneration: 0,
 		severitySelect: selectFor("security-severity", SEVERITY_VALUES, "all"),
 		verdictSelect: selectFor("security-verdict", VERDICT_VALUES, "all"),
 		targetSelect: Select.init("security-target", { value: "all", selectedIndex: 0 }),
@@ -206,13 +227,18 @@ export const routeChanged = (model: Model, route: SecurityTabsRoute, _context: P
 			...model,
 			tab: tabOfRoute(route),
 			...searches,
+			// The draft follows the URL unless it already says the same thing (trailing spaces).
 			searchDraft:
-				route._tag === "SecurityFindings" ? (route.search.q ?? model.searchDraft) : model.searchDraft,
+				route._tag === "SecurityFindings" && draftQuery(model.searchDraft) !== route.search.q
+					? (route.search.q ?? "")
+					: model.searchDraft,
 		}),
 	}
 }
 
 // NAVIGATION
+
+const draftQuery = (draft: string): string | undefined => draft.trim() || undefined
 
 const navigate = (model: Model, url: string, isReplace = false): Return => ({
 	model,
@@ -277,14 +303,8 @@ const runsTargetChanged = (model: Model, value: string): Return => {
 
 // ADD TARGET
 
-const repositoriesOf = (model: Model): ReadonlyArray<GithubRepoSummary> =>
-	Option.match(AsyncData.getData(model.githubStatus.data), {
-		onNone: () => [],
-		onSome: (status) => status.repositories.filter((repo) => repo.status === "active"),
-	})
-
 const addTargetStep = (model: Model, message: AddTarget.Message, context: PageContext): Return => {
-	const step = AddTarget.update(model.addTarget, message, repositoriesOf(model))
+	const step = AddTarget.update(model.addTarget, message, activeRepositoriesOf(model))
 	const next: Return = {
 		model: { ...model, addTarget: step.model },
 		commands: Command.mapMessages(step.commands ?? [], (inner) =>
@@ -355,6 +375,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			])
 		},
+		CompletedFetchTargetRuns: ({ targetId, key, result }) => {
+			const slot = model.targetRuns[targetId]
+			if (slot === undefined) return { model }
+			const next: Model = {
+				...model,
+				targetRuns: { ...model.targetRuns, [targetId]: Keyed.accept(slot, key, result) },
+			}
+			return followRuns(next, context, "Load")
+		},
 		CompletedFetchFindings: ({ targetId, key, result }) => {
 			const slot = model.findings[targetId]
 			return slot === undefined
@@ -414,7 +443,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					outMessage: toast("error", failure.title, failure.message),
 				}),
 			}),
-		ChangedSearchDraft: ({ value }) => ({ model: { ...model, searchDraft: value } }),
+		ChangedSearchDraft: ({ value }) => {
+			const searchGeneration = model.searchGeneration + 1
+			return {
+				model: { ...model, searchDraft: value, searchGeneration },
+				commands: [WaitSecuritySearchDebounce({ generation: searchGeneration })],
+			}
+		},
+		ElapsedSearchDebounce: ({ generation }) => {
+			const q = draftQuery(model.searchDraft)
+			if (generation !== model.searchGeneration || q === model.findingsSearch.q) return { model }
+			const { q: _q, ...rest } = model.findingsSearch
+			return navigate(model, findingsUrl(q === undefined ? rest : { ...rest, q }), true)
+		},
 		GotSeveritySelectMessage: ({ message: inner }) =>
 			selectStep(
 				model,

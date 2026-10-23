@@ -5,7 +5,7 @@ import { AsyncData } from "foldkit"
 import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button, linkButton } from "../../../ui/button"
+import { button } from "../../../ui/button"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { meter } from "../../../ui/meter"
@@ -43,7 +43,9 @@ import {
 	coverageOf,
 	findingsStateOf,
 	latestDetailOf,
-	latestRunOf,
+	latestRunFor,
+	RUN_LIST_CAP,
+	type Spend,
 	openConfirmed,
 	openNeedsValidation,
 	runningRuns,
@@ -76,15 +78,26 @@ const findingsOfTarget = (
 
 // KPIs
 
+/** What the spend covers, and plainly when it is not all of it. */
+const spendNote = (spend: Spend): string =>
+	[
+		`${spend.invocations.toLocaleString("en-US")} invocations · ${formatNumber(spend.tokens)} tokens`,
+		...(spend.unpriced === 0
+			? []
+			: [`excludes ${spend.unpriced} unpriced ${spend.unpriced === 1 ? "run" : "runs"}`]),
+		...(spend.isPartial ? [`newest ${RUN_LIST_CAP} runs per target only`] : []),
+	].join(" · ")
+
 const kpis = (h: H, model: Model): Html => {
 	const state = findingsStateOf(model)
 	const findings = state._tag === "Ready" ? state.findings : []
 	const confirmed = openConfirmed(findings)
 	const counts = countBySeverity(confirmed)
-	const isGated = state._tag === "Gated"
-	const unknown = isGated ? "Admins only" : state._tag === "Ready" ? null : "..."
+	// Gated reads as words; still loading is the same still block as every other placeholder.
+	const unknown: Html | string | null =
+		state._tag === "Ready" ? null : state._tag === "Gated" ? "Admins only" : placeholder(h, "h-7 w-10")
 	const running = runningRuns(model).length
-	const spend = spendThisMonth(runsOf(model), model.nowMs)
+	const spend = spendThisMonth(model)
 	return statRail(h, { columns: 4 }, [
 		statRailItem(h, {
 			eyebrow: "Open findings",
@@ -119,7 +132,7 @@ const kpis = (h: H, model: Model): Html => {
 			eyebrow: "Spend this month",
 			value: formatUsd(spend.costUsd),
 			compact: true,
-			subline: `${spend.invocations.toLocaleString("en-US")} invocations · ${formatNumber(spend.tokens)} tokens`,
+			subline: spendNote(spend),
 		}),
 	])
 }
@@ -188,7 +201,7 @@ const coverageCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Ht
 }
 
 const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
-	const run = latestRunOf(runsOf(model), target.id)
+	const run = latestRunFor(model, target.id)
 	const findings = findingsOfTarget(model, target.id)
 	const href = run === undefined ? targetRunsHref(target) : runHref(run)
 	const isFindingsKnown = typeof findings === "object" && findings !== null
@@ -304,10 +317,56 @@ const listLink = <M>(h: HtmlBuilder<M>, href: string, children: ReadonlyArray<Ht
 		],
 	)
 
-const newFindingsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTarget>): Html => {
+const findingItem = (h: H, finding: SecurityAuditFinding, repository: string): Html =>
+	listLink(
+		h,
+		findingHref(finding),
+		[
+			h.span(
+				[h.Class("w-16 shrink-0 text-xs uppercase")],
+				[finding.overallSeverity === null ? "" : severityLabel(h, finding.overallSeverity)],
+			),
+			h.span(
+				[h.Class("flex min-w-0 flex-col")],
+				[
+					h.span([h.Class("truncate text-sm")], [finding.record.title]),
+					h.span(
+						[h.Class("truncate text-xs text-muted-foreground")],
+						[
+							[repository, locationOf(finding.record) ?? ""]
+								.filter((part) => part !== "")
+								.join(" · "),
+						],
+					),
+				],
+			),
+		],
+		`${finding.targetId}/${finding.fingerprint}`,
+	)
+
+const topFindingsList = (
+	h: H,
+	findings: ReadonlyArray<SecurityAuditFinding>,
+	targets: ReadonlyArray<SecurityAuditTarget>,
+): Html => {
+	const rows = [...openConfirmed(findings)].sort(bySeverity).slice(0, 4)
+	return rows.length === 0
+		? h.p([h.Class("px-4 py-6 text-sm text-muted-foreground")], ["No open confirmed findings."])
+		: h.ul(
+				[h.Class("divide-y")],
+				rows.map((finding) =>
+					findingItem(
+						h,
+						finding,
+						targets.find((target) => target.id === finding.targetId)?.repository ?? "",
+					),
+				),
+			)
+}
+
+/** The worst open confirmed findings: severity first, then the most recently seen. */
+const topFindingsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTarget>): Html => {
 	const state = findingsStateOf(model)
-	const repoOf = (finding: SecurityAuditFinding) =>
-		targets.find((target) => target.id === finding.targetId)?.repository ?? ""
 	const body =
 		state._tag === "Gated"
 			? gateState(h, state.gate, "m-4")
@@ -320,64 +379,10 @@ const newFindingsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAud
 					})
 				: state._tag === "Loading"
 					? placeholderRows(h, 4)
-					: (() => {
-							const rows = [...openConfirmed(state.findings)].sort(bySeverity).slice(0, 4)
-							return rows.length === 0
-								? h.p(
-										[h.Class("px-4 py-6 text-sm text-muted-foreground")],
-										["No open confirmed findings."],
-									)
-								: h.ul(
-										[h.Class("divide-y")],
-										rows.map((finding) =>
-											listLink(
-												h,
-												findingHref(finding),
-												[
-													h.span(
-														[h.Class("w-16 shrink-0 text-xs uppercase")],
-														[
-															finding.overallSeverity === null
-																? ""
-																: severityLabel(h, finding.overallSeverity),
-														],
-													),
-													h.span(
-														[h.Class("flex min-w-0 flex-col")],
-														[
-															h.span(
-																[h.Class("truncate text-sm")],
-																[finding.record.title],
-															),
-															h.span(
-																[
-																	h.Class(
-																		"truncate text-xs text-muted-foreground",
-																	),
-																],
-																[
-																	[
-																		repoOf(finding),
-																		locationOf(finding.record),
-																	]
-																		.filter(
-																			(part) =>
-																				part !== null && part !== "",
-																		)
-																		.join(" · "),
-																],
-															),
-														],
-													),
-												],
-												finding.fingerprint,
-											),
-										),
-									)
-						})()
+					: topFindingsList(h, state.findings, targets)
 	return panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
-			title: "New confirmed findings",
+			title: "Most severe open findings",
 			action: h.a(
 				[
 					h.Href(hrefOf(AppRoute.SecurityFindings({ search: {} }))),
@@ -447,7 +452,7 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 	])
 }
 
-export const overviewLoading = (h: H): ReadonlyArray<Html> => [
+const overviewLoading = (h: H): ReadonlyArray<Html> => [
 	h.div(
 		[h.Class("grid grid-cols-2 gap-px md:grid-cols-4")],
 		Array.from({ length: 4 }, () => placeholder(h, "h-24")),
@@ -473,19 +478,16 @@ export const overviewBody = (h: H, model: Model): ReadonlyArray<Html> =>
 						targetsPanel(h, model, targets),
 						h.div(
 							[h.Class("grid gap-6 lg:grid-cols-2")],
-							[newFindingsPanel(h, model, targets), recentRunsPanel(h, model, targets)],
+							[topFindingsPanel(h, model, targets), recentRunsPanel(h, model, targets)],
 						),
 					],
 	})
 
-export const addTargetButton = (h: H, model: Model): Html =>
+/** Admins add targets; a member gets no control they would be refused. */
+export const addTargetButton = (h: H, model: Model): Html | undefined =>
 	model.isAdmin
 		? button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedAddTarget())] }, [
 				icon(h, "PlusIcon"),
 				"Add target",
 			])
-		: linkButton(
-				h,
-				{ size: "sm", variant: "outline", href: hrefOf(AppRoute.SecurityRuns({ search: {} })) },
-				["Runs"],
-			)
+		: undefined

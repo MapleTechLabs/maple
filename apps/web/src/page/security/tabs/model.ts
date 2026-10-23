@@ -33,6 +33,8 @@ export const Model = Schema.Struct({
 	isAdmin: Schema.Boolean,
 	targets: KeyedSchema(SecurityAuditTargetsResponse, LoadFailure),
 	runs: KeyedSchema(SecurityAuditRunsResponse, LoadFailure),
+	/** Each target's own runs: its latest run and this month's spend, past the global list's cap. */
+	targetRuns: Schema.Record(Schema.String, KeyedSchema(SecurityAuditRunsResponse, LoadFailure)),
 	/** One read per target; findings are listed per target. */
 	findings: Schema.Record(Schema.String, KeyedSchema(SecurityAuditFindingsResponse, LoadFailure)),
 	/** Each target's latest run with its coverage counts. */
@@ -41,6 +43,8 @@ export const Model = Schema.Struct({
 	addTarget: AddTarget.Model,
 	startingTargetId: Schema.NullOr(SecurityAuditTargetId),
 	searchDraft: Schema.String,
+	/** Bumped per keystroke; only the last one's debounce commits the search to the URL. */
+	searchGeneration: Schema.Finite,
 	severitySelect: Select.Model,
 	verdictSelect: Select.Model,
 	targetSelect: Select.Model,
@@ -60,6 +64,7 @@ export const Message = defineMessageUnion({
 	CompletedReadIsAdmin: { isAdmin: Schema.Boolean },
 	CompletedFetchTargets: result(SecurityAuditTargetsResponse),
 	CompletedFetchRuns: result(SecurityAuditRunsResponse),
+	CompletedFetchTargetRuns: { targetId: SecurityAuditTargetId, ...result(SecurityAuditRunsResponse) },
 	CompletedFetchFindings: { targetId: SecurityAuditTargetId, ...result(SecurityAuditFindingsResponse) },
 	CompletedFetchLatestRun: { runId: SecurityAuditRunId, ...result(SecurityAuditRunDetail) },
 	CompletedFetchGithubStatus: result(GithubIntegrationStatus),
@@ -73,6 +78,7 @@ export const Message = defineMessageUnion({
 		result: Schema.Result(SecurityAuditRun, LoadFailure),
 	},
 	ChangedSearchDraft: { value: Schema.String },
+	ElapsedSearchDebounce: { generation: Schema.Finite },
 	GotSeveritySelectMessage: { message: Select.Message },
 	GotVerdictSelectMessage: { message: Select.Message },
 	GotTargetSelectMessage: { message: Select.Message },

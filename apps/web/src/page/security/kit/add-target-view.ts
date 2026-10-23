@@ -1,4 +1,4 @@
-import { type GithubIntegrationStatus, SECURITY_AUDIT_MAX_BUDGET } from "@maple/domain/http"
+import { type GithubRepoSummary, SECURITY_AUDIT_MAX_BUDGET } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
@@ -13,7 +13,6 @@ import { icon } from "../../../ui/icon"
 import { inputGroup, inputGroupAddon, inputGroupInput } from "../../../ui/input-group"
 import * as RadioGroup from "../../../ui/radio-group"
 import * as SelectView from "../../../ui/select-view"
-import { switchControl } from "../../../ui/switch"
 import {
 	DIALOG_ID,
 	errorsOf,
@@ -85,10 +84,9 @@ const optionalHint = (h: H, label: string): ReadonlyArray<Html | string> => [
 const repositoryField = (
 	h: H,
 	model: Model,
-	status: GithubIntegrationStatus | null,
+	repositories: ReadonlyArray<GithubRepoSummary>,
 	error?: string,
 ): Html => {
-	const repositories = status?.repositories.filter((repo) => repo.status === "active") ?? []
 	const entries: ReadonlyArray<SelectView.SelectEntry> = repositories.map((repo) => ({
 		_tag: "Item",
 		item: { value: repo.fullName, label: repo.fullName },
@@ -255,7 +253,7 @@ const scopeField = (h: H, model: Model, error?: string): Html =>
 		},
 		(ids) =>
 			h.div(
-				[h.Class("flex flex-col gap-2")],
+				[h.Class("flex w-full flex-col gap-2")],
 				[
 					...(model.scopePaths.length === 0
 						? []
@@ -267,7 +265,6 @@ const scopeField = (h: H, model: Model, error?: string): Html =>
 							]),
 					Field.input(h, {
 						ids,
-						className: "w-full",
 						state: Field.stateOf(model.scopeDraft, error !== undefined),
 						attributes: [
 							h.Placeholder(
@@ -319,35 +316,6 @@ const budgetField = (h: H, model: Model, error?: string): Html =>
 			]),
 	)
 
-/** Scheduling is not built yet: the row says so and cannot be switched on. */
-const scheduledRow = (h: H): Html =>
-	h.div(
-		[h.Class("flex items-center justify-between gap-4 rounded-md border border-dashed px-3 py-2.5")],
-		[
-			h.div(
-				[h.Class("flex flex-col gap-0.5")],
-				[
-					h.span(
-						[h.Id(`${DIALOG_ID}-schedule-label`), h.Class("text-sm font-medium")],
-						["Scheduled runs"],
-					),
-					h.span(
-						[h.Id(`${DIALOG_ID}-schedule-description`), h.Class("text-xs text-muted-foreground")],
-						["Not available yet. Runs start manually for now."],
-					),
-				],
-			),
-			...switchControl(h, {
-				id: `${DIALOG_ID}-schedule`,
-				inputId: `${DIALOG_ID}-schedule-input`,
-				isChecked: false,
-				isDisabled: true,
-				labelledBy: `${DIALOG_ID}-schedule-label`,
-				describedBy: `${DIALOG_ID}-schedule-description`,
-			}),
-		],
-	)
-
 const startNowToggle = (h: H, model: Model): Html => {
 	const inputId = `${DIALOG_ID}-start-now`
 	return h.label(
@@ -390,15 +358,14 @@ const failureAlert = (h: H, model: Model): ReadonlyArray<Html> =>
 				]),
 			]
 
-export const addTargetDialog = (
+const addTargetDialog = (
 	h: HtmlBuilder<Message>,
 	model: Model,
-	status: GithubIntegrationStatus | null,
+	repositories: ReadonlyArray<GithubRepoSummary>,
 ): Html => {
 	const errors = model.isSubmitted ? errorsOf(model) : NO_ERRORS
 	const server = fieldFailure(model.failure)
-	const hasRepositories =
-		(status?.repositories.some((repo) => repo.status === "active") ?? false) && status?.connected === true
+	const hasRepositories = repositories.length > 0
 	return formDialog(h, {
 		slotId: DIALOG_ID,
 		model: model.dialog,
@@ -416,7 +383,7 @@ export const addTargetDialog = (
 					repositoryField(
 						h,
 						model,
-						status,
+						repositories,
 						errors.repository ?? (server?.field === "repository" ? server.message : undefined),
 					),
 					branchField(
@@ -427,7 +394,6 @@ export const addTargetDialog = (
 					profileField(h, model),
 					scopeField(h, model, errors.scope),
 					budgetField(h, model, errors.budget),
-					scheduledRow(h),
 				]
 			: [notConnected(h)],
 	})
@@ -437,5 +403,6 @@ export const addTargetDialog = (
 export const addTargetView = Submodel.defineView<
 	Model,
 	Message,
-	Readonly<{ status: GithubIntegrationStatus | null }>
->((model, inputs, h) => addTargetDialog(h, model, inputs.status))
+	/** The installation's active repositories; none means GitHub is not connected yet. */
+	Readonly<{ repositories: ReadonlyArray<GithubRepoSummary> }>
+>((model, inputs, h) => addTargetDialog(h, model, inputs.repositories))

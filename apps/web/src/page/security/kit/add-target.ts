@@ -23,10 +23,11 @@ import { createTarget, startRun } from "./api"
 // The Add target dialog: repository, branch, profile, scope and budget, then the first run.
 // The parent holds the GitHub status; this module owns the form and its two writes.
 
-export const ProfileChoice = Schema.Literals(["deep", "quick"])
-export type ProfileChoice = typeof ProfileChoice.Type
+type ProfileChoice = "deep" | "quick"
 
 export const MAX_SCOPE_PATHS = 100
+/** The API refuses a longer scope path. */
+const MAX_SCOPE_PATH_LENGTH = 512
 export const DIALOG_ID = "security-add-target"
 
 export const Model = Schema.Struct({
@@ -41,6 +42,8 @@ export const Model = Schema.Struct({
 	/** Errors show once the form was submitted, so an untouched field is not red. */
 	isSubmitted: Schema.Boolean,
 	isPending: Schema.Boolean,
+	/** Bumped each time the form opens: an answer for an earlier attempt is dropped. */
+	attempt: Schema.Finite,
 	failure: Schema.NullOr(LoadFailure),
 	/** The target the form created, while its first run is starting. */
 	created: Schema.NullOr(SecurityAuditTarget),
@@ -58,6 +61,7 @@ export const init = (): Model => ({
 	startNow: true,
 	isSubmitted: false,
 	isPending: false,
+	attempt: 0,
 	failure: null,
 	created: null,
 })
@@ -73,10 +77,8 @@ export const Message = defineMessageUnion({
 	GotBudgetMessage: { message: Field.Message },
 	ToggledStartNow: {},
 	Submitted: {},
-	CompletedCreate: { result: Schema.Result(SecurityAuditTarget, LoadFailure) },
-	CompletedStartFirstRun: {
-		result: Schema.Result(SecurityAuditRun, LoadFailure),
-	},
+	CompletedCreate: { attempt: Schema.Finite, result: Schema.Result(SecurityAuditTarget, LoadFailure) },
+	CompletedStartFirstRun: { attempt: Schema.Finite, result: Schema.Result(SecurityAuditRun, LoadFailure) },
 })
 export type Message = typeof Message.Type
 
@@ -89,17 +91,17 @@ export const OutMessage = defineMessageUnion({
 export type OutMessage = typeof OutMessage.Type
 
 export const CreateSecurityTarget = Command.define("SecurityApiCreateTarget", {
-	args: { payload: SecurityAuditCreateTargetRequest },
+	args: { attempt: Schema.Finite, payload: SecurityAuditCreateTargetRequest },
 	messages: [Message.CompletedCreate],
-	execute: ({ payload }) =>
-		Effect.map(createTarget(payload), (result) => Message.CompletedCreate({ result })),
+	execute: ({ attempt, payload }) =>
+		Effect.map(createTarget(payload), (result) => Message.CompletedCreate({ attempt, result })),
 })
 
 export const StartFirstRun = Command.define("SecurityApiStartFirstRun", {
-	args: { targetId: SecurityAuditTargetId },
+	args: { attempt: Schema.Finite, targetId: SecurityAuditTargetId },
 	messages: [Message.CompletedStartFirstRun],
-	execute: ({ targetId }) =>
-		Effect.map(startRun(targetId), (result) => Message.CompletedStartFirstRun({ result })),
+	execute: ({ attempt, targetId }) =>
+		Effect.map(startRun(targetId), (result) => Message.CompletedStartFirstRun({ attempt, result })),
 })
 
 // VALIDATION
@@ -122,12 +124,25 @@ const parseBudget = (value: string): number | null => {
 }
 
 /** The draft path is a scope path once added; a bad one is reported on the draft. */
-const scopeError = (model: Model): string | undefined => {
+/** The paths the request would send: the added ones and the draft, once. */
+const pathsOf = (model: Model): ReadonlyArray<string> => {
 	const draft = model.scopeDraft.value.trim()
-	if (draft !== "" && !isSafeScopePath(draft))
-		return "Use a path inside the repository, like services/payments/src, without .. or a leading slash."
-	return model.scopePaths.length > MAX_SCOPE_PATHS ? `At most ${MAX_SCOPE_PATHS} scope paths.` : undefined
+	return draft === "" || model.scopePaths.includes(draft) ? model.scopePaths : [...model.scopePaths, draft]
 }
+
+const draftError = (draft: string): string | undefined =>
+	draft === ""
+		? undefined
+		: draft.length > MAX_SCOPE_PATH_LENGTH
+			? `Keep each path under ${MAX_SCOPE_PATH_LENGTH} characters.`
+			: isSafeScopePath(draft)
+				? undefined
+				: "Use a path inside the repository, like services/payments/src, without .. or a leading slash."
+
+/** The draft is checked as it would be sent, and it counts toward the cap like an added path. */
+const scopeError = (model: Model): string | undefined =>
+	draftError(model.scopeDraft.value.trim()) ??
+	(pathsOf(model).length > MAX_SCOPE_PATHS ? `At most ${MAX_SCOPE_PATHS} scope paths.` : undefined)
 
 export const errorsOf = (model: Model): Errors => ({
 	repository: isRepository(model.repository.value) ? undefined : "Pick a repository.",
@@ -190,25 +205,17 @@ export const fieldFailure = (
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
-/** Field steps carry no Commands, so only the Model moves. */
-const lift = <Inner>(
-	model: Model,
-	step: Readonly<{ model: Inner }>,
-	write: (inner: Inner) => Partial<Model>,
-): Model => ({
-	...model,
-	...write(step.model),
-})
-
 const defaultBranch = (repo: GithubRepoSummary): string =>
 	repo.trackedBranch ?? repo.branches.find((branch) => branch.isDefault)?.name ?? ""
+
+const DISMISSALS: ReadonlySet<string> = new Set(["ClickedClose", "PressedEscape", "PressedOutside"])
 
 /** Opening resets the form, so the dialog never shows a previous attempt. */
 export const open = (model: Model): Return => {
 	const fresh = init()
 	const step = Dialog.open(model.dialog)
 	return {
-		model: { ...fresh, dialog: step.model },
+		model: { ...fresh, dialog: step.model, attempt: model.attempt + 1 },
 		commands: Command.mapMessages(step.commands ?? [], (message) =>
 			Message.GotDialogMessage({ message }),
 		),
@@ -227,7 +234,8 @@ const close = (model: Model): Return => {
 
 const addDraft = (model: Model): Model => {
 	const draft = model.scopeDraft.value.trim()
-	if (draft === "" || !isSafeScopePath(draft) || model.scopePaths.length >= MAX_SCOPE_PATHS) return model
+	if (draft === "" || draftError(draft) !== undefined || model.scopePaths.length >= MAX_SCOPE_PATHS)
+		return model
 	return {
 		...model,
 		scopeDraft: Field.init(),
@@ -242,6 +250,8 @@ export const update = (
 ): Return =>
 	Message.match<Return>(message, {
 		GotDialogMessage: ({ message: inner }) => {
+			// A create in flight keeps the dialog: the answer has a form to land in.
+			if (model.isPending && DISMISSALS.has(inner._tag)) return { model }
 			const step = Dialog.update(model.dialog, inner)
 			return {
 				model: { ...model, dialog: step.model },
@@ -269,10 +279,11 @@ export const update = (
 			}
 		},
 		GotBranchMessage: ({ message: inner }) => ({
-			model: lift(model, Field.update(model.branch, inner), (branch) => ({
-				branch,
+			model: {
+				...model,
+				branch: Field.update(model.branch, inner).model,
 				failure: inner._tag === "ChangedValue" ? null : model.failure,
-			})),
+			},
 		}),
 		GotProfileMessage: ({ message: inner }) => {
 			const step = RadioGroup.update(model.profile, inner)
@@ -284,14 +295,14 @@ export const update = (
 			}
 		},
 		GotScopeMessage: ({ message: inner }) => ({
-			model: lift(model, Field.update(model.scopeDraft, inner), (scopeDraft) => ({ scopeDraft })),
+			model: { ...model, scopeDraft: Field.update(model.scopeDraft, inner).model },
 		}),
 		AddedScopePath: () => ({ model: addDraft(model) }),
 		RemovedScopePath: ({ path }) => ({
 			model: { ...model, scopePaths: model.scopePaths.filter((candidate) => candidate !== path) },
 		}),
 		GotBudgetMessage: ({ message: inner }) => ({
-			model: lift(model, Field.update(model.budget, inner), (budget) => ({ budget })),
+			model: { ...model, budget: Field.update(model.budget, inner).model },
 		}),
 		ToggledStartNow: () => ({ model: { ...model, startNow: !model.startNow } }),
 		Submitted: () => {
@@ -300,23 +311,27 @@ export const update = (
 			if (request === null) return { model: { ...model, isSubmitted: true } }
 			return {
 				model: { ...addDraft(model), isSubmitted: true, isPending: true, failure: null },
-				commands: [CreateSecurityTarget({ payload: request })],
+				commands: [CreateSecurityTarget({ attempt: model.attempt, payload: request })],
 			}
 		},
-		CompletedCreate: ({ result }) =>
-			Result.match(result, {
-				onFailure: (failure) => ({ model: { ...model, isPending: false, failure } }),
-				onSuccess: (target) =>
-					model.startNow
-						? {
-								model: { ...model, created: target },
-								commands: [StartFirstRun({ targetId: target.id })],
-							}
-						: { ...close(model), outMessage: OutMessage.Added({ target, run: null }) },
-			}),
-		CompletedStartFirstRun: ({ result }) => {
+		CompletedCreate: ({ attempt, result }) =>
+			attempt !== model.attempt || !model.isPending
+				? { model }
+				: Result.match(result, {
+						onFailure: (failure) => ({ model: { ...model, isPending: false, failure } }),
+						onSuccess: (target) =>
+							model.startNow
+								? {
+										model: { ...model, created: target },
+										commands: [
+											StartFirstRun({ attempt: model.attempt, targetId: target.id }),
+										],
+									}
+								: { ...close(model), outMessage: OutMessage.Added({ target, run: null }) },
+					}),
+		CompletedStartFirstRun: ({ attempt, result }) => {
 			const target = model.created
-			if (target === null) return { model }
+			if (target === null || attempt !== model.attempt) return { model }
 			const closed = close({ ...model, created: null })
 			return Result.match(result, {
 				onSuccess: (run) => ({ ...closed, outMessage: OutMessage.Added({ target, run }) }),
