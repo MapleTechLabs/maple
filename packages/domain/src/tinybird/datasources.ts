@@ -1315,6 +1315,85 @@ export const aiCrawlerRequests = defineDatasource("ai_crawler_requests", {
 export type AiCrawlerRequestsRow = InferRow<typeof aiCrawlerRequests>
 
 /**
+ * CI workflow runs: the root span of each `github-actions` trace (CiTraceService), with its
+ * `cicd.*` attributes as columns. Skipped runs are kept; the reads leave them out.
+ * Tiny (one row per run) so it keeps a year, past the raw trace a run links to.
+ */
+export const ciRuns = defineDatasource("ci_runs", {
+	tenantColumn: "OrgId",
+	description:
+		"One row per CI workflow run attempt (the root span of a github-actions trace) with repository, workflow, result, branch, revision and pull request pre-extracted. Populated by materialized view.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Timestamp: utcDateTime64(9),
+		TraceId: t.string(),
+		SpanId: t.string(),
+		Owner: t.string().lowCardinality(),
+		Repository: t.string().lowCardinality(),
+		Pipeline: t.string().lowCardinality(),
+		RunId: t.string(),
+		RunNumber: t.uint64(),
+		Attempt: t.uint16(),
+		Result: t.string().lowCardinality(),
+		Duration: t.uint64(),
+		Url: t.string(),
+		Branch: t.string(),
+		Revision: t.string(),
+		TriggerEvent: t.string().lowCardinality(),
+		Actor: t.string().lowCardinality(),
+		/** 0 when the run has no pull request. */
+		PullRequest: t.uint32(),
+		WorkflowPath: t.string().lowCardinality(),
+	},
+	engine: engine.mergeTree({
+		partitionKey: "toYYYYMM(Timestamp)",
+		sortingKey: ["OrgId", "Timestamp", "TraceId"],
+		ttl: "toDate(Timestamp) + INTERVAL 365 DAY",
+	}),
+})
+
+export type CiRunsRow = InferRow<typeof ciRuns>
+
+/**
+ * CI jobs: the run span's children that name a task but not a step. Steps and runner waits are
+ * left out; a job carries its own queue time. Skipped jobs are kept; the reads leave them out.
+ */
+export const ciJobs = defineDatasource("ci_jobs", {
+	tenantColumn: "OrgId",
+	description:
+		"One row per CI job (a child of a github-actions run span) with workflow, job name, result, queue time, runner and failure reason pre-extracted. Populated by materialized view.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Timestamp: utcDateTime64(9),
+		TraceId: t.string(),
+		SpanId: t.string(),
+		Owner: t.string().lowCardinality(),
+		Repository: t.string().lowCardinality(),
+		Pipeline: t.string().lowCardinality(),
+		RunId: t.string(),
+		Attempt: t.uint16(),
+		Job: t.string().lowCardinality(),
+		Result: t.string().lowCardinality(),
+		StatusCode: t.string().lowCardinality(),
+		Duration: t.uint64(),
+		QueueMs: t.uint32(),
+		Url: t.string(),
+		FailureReason: t.string(),
+		RunnerName: t.string().lowCardinality(),
+		RunnerLabels: t.string().lowCardinality(),
+	},
+	engine: engine.mergeTree({
+		partitionKey: "toYYYYMM(Timestamp)",
+		sortingKey: ["OrgId", "Timestamp", "TraceId"],
+		ttl: "toDate(Timestamp) + INTERVAL 365 DAY",
+	}),
+})
+
+export type CiJobsRow = InferRow<typeof ciJobs>
+
+/**
  * OpenTelemetry sum/counter metrics datasource
  */
 export const metricsSum = defineDatasource("metrics_sum", {

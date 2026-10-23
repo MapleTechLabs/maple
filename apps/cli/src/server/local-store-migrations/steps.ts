@@ -1452,5 +1452,41 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		// Purely additive and filled forward only: CI traces come from the GitHub App's
+		// webhooks, which never reach a local store, so there is nothing to backfill.
+		id: "local-0037-to-0038-ci-runs-jobs",
+		from: 37,
+		to: 38,
+		description: "ci_runs + ci_jobs and their views: CI runs and jobs off github-actions traces",
+		clonedBefore: "additive DDL runs",
+		plan: [
+			[
+				"install-ci-runs-jobs",
+				"Install the ci_runs and ci_jobs projections and their materialized views via the v38 bootstrap",
+			],
+		],
+		verifies: "Verify the v38 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "ci_runs",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee: "Filled forward from github-actions root spans written after the migration.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 365,
+			},
+			{
+				name: "ci_jobs",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee: "Filled forward from github-actions job spans written after the migration.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 365,
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

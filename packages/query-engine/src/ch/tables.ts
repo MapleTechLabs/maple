@@ -152,6 +152,12 @@ export const AiTraceIndex = Datasources.aiTraceIndex
  */
 export const AiCrawlerRequests = Datasources.aiCrawlerRequests
 
+/** CI workflow runs (migration 0047): the root span of each `github-actions` trace. */
+export const CiRuns = Datasources.ciRuns
+
+/** CI jobs (migration 0047): a run's children that name a task but not a step. */
+export const CiJobs = Datasources.ciJobs
+
 export const TraceListMv = Datasources.traceListMv
 
 export const TraceFacetsHourly = Datasources.traceFacetsHourly
