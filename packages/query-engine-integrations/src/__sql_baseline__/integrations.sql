@@ -2242,7 +2242,7 @@ SELECT
 ) AS points
         GROUP BY keys, metric
         ORDER BY keys ASC, metric ASC
-        LIMIT 10000
+        LIMIT 5000
         FORMAT JSON
 
 -- builder:aws-infra:awsInfraMetricsSQL:lambda
@@ -2402,7 +2402,7 @@ SELECT
 ) AS points
         GROUP BY keys, metric
         ORDER BY keys ASC, metric ASC
-        LIMIT 10000
+        LIMIT 7500
         FORMAT JSON
 
 -- builder:aws-infra:awsInfraPresenceSQL:default
@@ -2450,7 +2450,7 @@ SELECT
 ) AS points
         GROUP BY keys, bucket, metric
         ORDER BY keys ASC, bucket ASC, metric ASC
-        LIMIT 10000
+        LIMIT 1555000
         FORMAT JSON
 
 -- builder:aws-infra:awsInfraSparklinesSQL:ecs
@@ -2489,7 +2489,7 @@ SELECT
 ) AS points
         GROUP BY keys, bucket, metric
         ORDER BY keys ASC, bucket ASC, metric ASC
-        LIMIT 10000
+        LIMIT 1555000
         FORMAT JSON
 
 -- builder:aws-infra:awsInfraSparklinesSQL:lambda
@@ -2530,7 +2530,7 @@ SELECT
 ) AS points
         GROUP BY keys, bucket, metric
         ORDER BY keys ASC, bucket ASC, metric ASC
-        LIMIT 10000
+        LIMIT 1555000
         FORMAT JSON
 
 -- builder:aws-infra:awsInfraSparklinesSQL:loadBalancers
@@ -2571,7 +2571,7 @@ SELECT
 ) AS points
         GROUP BY keys, bucket, metric
         ORDER BY keys ASC, bucket ASC, metric ASC
-        LIMIT 10000
+        LIMIT 1555000
         FORMAT JSON
 
 -- builder:aws-infra:awsInfraSparklinesSQL:rds
@@ -2608,7 +2608,7 @@ SELECT
 ) AS points
         GROUP BY keys, bucket, metric
         ORDER BY keys ASC, bucket ASC, metric ASC
-        LIMIT 10000
+        LIMIT 1555000
         FORMAT JSON
 
 -- builder:aws-infra:awsInfraSparklinesSQL:sqs
@@ -2645,7 +2645,7 @@ SELECT
 ) AS points
         GROUP BY keys, bucket, metric
         ORDER BY keys ASC, bucket ASC, metric ASC
-        LIMIT 10000
+        LIMIT 1555000
         FORMAT JSON
 
 -- builder:aws-infra:awsInfraTimeseriesSQL:ec2

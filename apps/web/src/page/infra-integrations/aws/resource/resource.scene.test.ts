@@ -71,6 +71,32 @@ describe("aws resource", () => {
 		)
 	})
 
+	test("a load balancer and a queue open on themselves in the AWS console", () => {
+		const balancer = entered("loadBalancers", "app/prod-alb/50dc6c495c0c9188", {
+			region: "us-east-1",
+			account: "123456789012",
+		}).model
+		scene(
+			{ update: pageUpdate, view },
+			given(balancer),
+			themeResolved(),
+			expectView(role("link", { name: /Open in AWS console/ })).toHaveAttr(
+				"href",
+				"https://us-east-1.console.aws.amazon.com/ec2/home?region=us-east-1#LoadBalancer:loadBalancerArn=arn%3Aaws%3Aelasticloadbalancing%3Aus-east-1%3A123456789012%3Aloadbalancer%2Fapp%2Fprod-alb%2F50dc6c495c0c9188",
+			),
+		)
+		const queue = entered("sqs", "orders", { region: "eu-central-1", account: "123456789012" }).model
+		scene(
+			{ update: pageUpdate, view },
+			given(queue),
+			themeResolved(),
+			expectView(role("link", { name: /Open in AWS console/ })).toHaveAttr(
+				"href",
+				"https://eu-central-1.console.aws.amazon.com/sqs/v3/home?region=eu-central-1#/queues/https%3A%2F%2Fsqs.eu-central-1.amazonaws.com%2F123456789012%2Forders",
+			),
+		)
+	})
+
 	test("a kind Maple does not read asks nothing and says so", () => {
 		const { model, commands } = entered("dynamodb", "orders", {})
 		expect(commands ?? []).toEqual([])

@@ -15,7 +15,7 @@ import { meter } from "../../../../ui/meter"
 import { skeleton } from "../../../../ui/skeleton"
 import { columnHead, dataTable, ROW_LINK_CLASS, skeletonRows } from "../../../infra/kit/data-table"
 import { type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
-import type { SparkRead, TracedService } from "../data"
+import type { TracedService } from "../data"
 import {
 	cpuShare,
 	type Health,
@@ -26,6 +26,7 @@ import {
 	perMinute,
 	type ResourceView,
 	resourceSearch,
+	type SparkIndex,
 	sparkPoints,
 	tracedAs,
 } from "../derive"
@@ -36,7 +37,7 @@ import type { Message } from "./message"
 type H = HtmlBuilder<Message>
 
 export type TableContext = Readonly<{
-	sparks: ReadonlyArray<SparkRead>
+	sparks: SparkIndex
 	traced: ReadonlyArray<TracedService> | null
 	window: SparkWindow
 	windowMs: number

@@ -10,6 +10,7 @@ import {
 	AWS_INFRA_KIND_IDS,
 	AWS_INFRA_KINDS,
 	AWS_INFRA_RESOURCE_KEYS,
+	AWS_INFRA_RESOURCE_LIMIT,
 	AWS_INFRA_ROW_LIMIT,
 	awsDimensionAttribute,
 	type AwsInfraKindId,
@@ -91,12 +92,22 @@ export function awsInfraMetricsSQL(kind: AwsInfraKindId) {
 		}))
 		.groupBy("keys", "metric")
 		.orderBy(["keys", "asc"], ["metric", "asc"])
-		.limit(AWS_INFRA_ROW_LIMIT)
+		.limit(AWS_INFRA_RESOURCE_LIMIT * metrics.length)
 		.format("JSON")
 }
 
-/** Each resource's sparkline metric over time: one row per resource, bucket and metric. */
-export function awsInfraSparklinesSQL(kind: AwsInfraKindId) {
+/** How many buckets a window spans, counting the partial ones at either end. */
+export const awsInfraBucketCount = (startTime: string, endTime: string, bucketSeconds: number) => {
+	const seconds =
+		(Date.parse(`${endTime.replace(" ", "T")}Z`) - Date.parse(`${startTime.replace(" ", "T")}Z`)) / 1000
+	return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds / bucketSeconds) + 1 : 1
+}
+
+/**
+ * Each resource's sparkline metric over time: one row per resource, bucket and metric. The limit
+ * covers `buckets` rows for every resource `awsInfraMetricsSQL` reads, so no row loses its line.
+ */
+export function awsInfraSparklinesSQL(kind: AwsInfraKindId, buckets: number) {
 	const definition = AWS_INFRA_KINDS[kind]
 	const metrics = definition.metrics.filter((metric) => metric.key === definition.sparkline)
 	const point = ($: MetricsAccessor) => ({
@@ -125,7 +136,7 @@ export function awsInfraSparklinesSQL(kind: AwsInfraKindId) {
 		}))
 		.groupBy("keys", "bucket", "metric")
 		.orderBy(["keys", "asc"], ["bucket", "asc"], ["metric", "asc"])
-		.limit(AWS_INFRA_ROW_LIMIT)
+		.limit(AWS_INFRA_RESOURCE_LIMIT * Math.max(1, buckets))
 		.format("JSON")
 }
 

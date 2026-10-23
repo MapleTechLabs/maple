@@ -162,7 +162,13 @@ const judgementOf = (kind: AwsInfraKindId, rows: ReadonlyArray<BucketRow>): Judg
 const BADGE = { crit: "crit", warn: "warn", idle: "muted", ok: "ok" } as const
 
 /** The resource in the AWS console, where the page cannot follow. */
-const consoleHref = (kind: AwsInfraKindId, name: string, region: string, cluster: string) => {
+const consoleHref = (
+	kind: AwsInfraKindId,
+	name: string,
+	region: string,
+	cluster: string,
+	account: string | undefined,
+) => {
 	const base = `https://${region}.console.aws.amazon.com`
 	const q = `region=${encodeURIComponent(region)}`
 	const id = encodeURIComponent(name)
@@ -171,14 +177,20 @@ const consoleHref = (kind: AwsInfraKindId, name: string, region: string, cluster
 			return `${base}/ecs/v2/clusters/${encodeURIComponent(cluster)}/services/${id}/health?${q}`
 		case "ec2":
 			return `${base}/ec2/home?${q}#InstanceDetails:instanceId=${id}`
+		// A load balancer opens by its ARN, which its name and account make; without one, a search.
 		case "loadBalancers":
-			return `${base}/ec2/home?${q}#LoadBalancers:`
+			return account === undefined
+				? `${base}/ec2/home?${q}#LoadBalancers:search=${encodeURIComponent(name.split("/")[1] ?? name)}`
+				: `${base}/ec2/home?${q}#LoadBalancer:loadBalancerArn=${encodeURIComponent(`arn:aws:elasticloadbalancing:${region}:${account}:loadbalancer/${name}`)}`
 		case "rds":
 			return `${base}/rds/home?${q}#database:id=${id}`
 		case "lambda":
 			return `${base}/lambda/home?${q}#/functions/${id}`
+		// A queue opens by its URL, which needs the account.
 		case "sqs":
-			return `${base}/sqs/v3/home?${q}#/queues`
+			return account === undefined
+				? `${base}/sqs/v3/home?${q}#/queues`
+				: `${base}/sqs/v3/home?${q}#/queues/${encodeURIComponent(`https://sqs.${region}.amazonaws.com/${account}/${name}`)}`
 	}
 }
 
@@ -368,7 +380,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 											{
 												size: "sm",
 												variant: "outline",
-												href: consoleHref(kind, model.name, region, cluster),
+												href: consoleHref(
+													kind,
+													model.name,
+													region,
+													cluster,
+													model.search.account,
+												),
 												attributes: [
 													h.Target("_blank"),
 													h.Rel("noopener noreferrer"),

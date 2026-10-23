@@ -4,7 +4,7 @@ import { Timestamp, type V2AwsConnection, type V2AwsIntegration } from "@maple/d
 import { AwsAccountId, AwsConnectionId } from "@maple/domain/primitives"
 import { Option, Result, Schema } from "effect"
 import { fromString } from "foldkit/url"
-import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, role, scene, selector, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { AppRoute, hrefOf, urlToAppRoute } from "../../../../route"
 import type { PageContext } from "../../../contract"
@@ -69,9 +69,12 @@ const loaded = (
 	search: Model["search"],
 	connections: ReadonlyArray<V2AwsConnection>,
 	fleet: ReadonlyArray<FleetRead>,
+	range = window,
 ) => {
 	const entered = init({ search }, context).model
-	const windowed = steps(entered, [Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })])
+	const windowed = steps(entered, [
+		Message.CompletedResolveWindow({ window: range, nowMs: NOW, mode: "Load" }),
+	])
 	return pageUpdate(
 		steps(windowed, [
 			Message.CompletedLoadStatus({
@@ -164,6 +167,34 @@ describe("aws list", () => {
 			given(answered.model),
 			expectView(role("link", { name: /payments-api/ })).toExist(),
 			expectView(text(/CPU or memory above 80%/)).toExist(),
+		)
+	})
+
+	test("an hour's sparkline joins points read 5 minutes apart into one line", () => {
+		const hour = { startTime: "2026-10-23 11:00:00", endTime: "2026-10-23 12:00:00" }
+		const fleet: ReadonlyArray<FleetRead> = [
+			{ kind: "ecs", failed: false, points: [cpu("payments-api", 40)] },
+		]
+		const { model } = loaded({}, [connection(stream)], fleet, hour)
+		const points = Array.from({ length: 12 }, (_, index) => ({
+			keys: ["payments-api", "prod", "us-east-1", "123456789012"],
+			bucket: new Date(Date.parse("2026-10-23T11:00:00Z") + index * 300_000).toISOString(),
+			metric: "aws.ecs.cpu_utilization",
+			total: 40,
+			samples: 1,
+		}))
+		const drawn = pageUpdate(
+			model,
+			Message.CompletedFetchSparks({
+				key: model.sparks.key ?? "",
+				result: Result.succeed([{ kind: "ecs", points }]),
+			}),
+		).model
+		// A flat line sits mid-height; a broken one would draw each point as a lone dot (`h0.01`).
+		scene(
+			{ update: pageUpdate, view },
+			given(drawn),
+			expectView(selector('path[d^="M0 14 L"]')).toExist(),
 		)
 	})
 

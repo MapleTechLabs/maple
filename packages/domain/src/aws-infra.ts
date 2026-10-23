@@ -128,4 +128,8 @@ export const AWS_INFRA_RESOURCE_KEYS = ["cloud.region", "cloud.account.id"] as c
 export const awsInfraMetric = (kind: AwsInfraKindId, key: string) =>
 	AWS_INFRA_KINDS[kind].metrics.find((metric) => metric.key === key)
 
+/** The most resources of one kind a table reads. Its queries size their row limits from it. */
+export const AWS_INFRA_RESOURCE_LIMIT = 2_500
+
+/** One resource's timeseries rows: buckets times metrics. */
 export const AWS_INFRA_ROW_LIMIT = 10_000

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
-import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
+import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS, AWS_INFRA_RESOURCE_LIMIT } from "@maple/domain/aws-infra"
 import {
+	awsInfraBucketCount,
 	awsInfraMetricsSQL,
 	awsInfraPresenceSQL,
 	awsInfraSparklinesSQL,
@@ -52,9 +53,19 @@ describe("awsInfraMetricsSQL", () => {
 
 describe("awsInfraSparklinesSQL", () => {
 	it("reads only the sparkline metric, bucketed", () => {
-		const { sql } = compileUnsafe(awsInfraSparklinesSQL("lambda"), { ...params, bucketSeconds: 300 })
+		const { sql } = compileUnsafe(awsInfraSparklinesSQL("lambda", 1), { ...params, bucketSeconds: 300 })
 		expect(metricNames(sql)).toEqual(["aws.lambda.invocations.sum"])
 		expect(sql).toContain("GROUP BY keys, bucket, metric")
+	})
+
+	it("keeps every bucket of every resource the table reads", () => {
+		const buckets = awsInfraBucketCount(params.startTime, params.endTime, 300)
+		expect(buckets).toBe(145)
+		const { sql } = compileUnsafe(awsInfraSparklinesSQL("ecs", buckets), {
+			...params,
+			bucketSeconds: 300,
+		})
+		expect(sql).toContain(`LIMIT ${AWS_INFRA_RESOURCE_LIMIT * 145}`)
 	})
 })
 

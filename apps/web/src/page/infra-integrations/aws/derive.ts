@@ -218,20 +218,40 @@ export const regionsOf = (views: ReadonlyArray<ResourceView>) =>
 	[...new Set(views.map((view) => view.region).filter((region) => region !== ""))].toSorted()
 
 /** A row's sparkline: its metric's mean per bucket for a gauge, its sum for a counter. */
-export const sparkPoints = (sparks: ReadonlyArray<SparkRead>, view: ResourceView) => {
-	const definition = AWS_INFRA_KINDS[view.kind]
-	const metric = definition.metrics.find((entry) => entry.key === definition.sparkline)
-	const read = sparks.find((entry) => entry.kind === view.kind)
-	if (metric === undefined || read === undefined) return []
-	const id = JSON.stringify(view.keys)
-	return read.points
-		.filter((point) => point.metric === metric.name && JSON.stringify(point.keys) === id)
-		.map((point) => ({
-			bucket: point.bucket,
-			value:
-				metric.table === "sum" ? point.total : point.samples > 0 ? point.total / point.samples : null,
-		}))
-}
+type SparkPoint = { readonly bucket: string; readonly value: number | null }
+
+const sparkId = (kind: AwsInfraKindId, keys: ReadonlyArray<string>) => `${kind}:${JSON.stringify(keys)}`
+
+/** Every row's sparkline points, read once per render and looked up by `sparkPoints`. */
+export type SparkIndex = ReadonlyMap<string, ReadonlyArray<SparkPoint>>
+
+export const sparkIndex = (sparks: ReadonlyArray<SparkRead>): SparkIndex =>
+	new Map(
+		sparks.flatMap((read) => {
+			const definition = AWS_INFRA_KINDS[read.kind]
+			const metric = definition.metrics.find((entry) => entry.key === definition.sparkline)
+			if (metric === undefined) return []
+			const points = read.points.filter((point) => point.metric === metric.name)
+			return Object.entries(Arr.groupBy(points, (point) => sparkId(read.kind, point.keys))).map(
+				([id, group]) =>
+					[
+						id,
+						group.map((point): SparkPoint => ({
+							bucket: point.bucket,
+							value:
+								metric.table === "sum"
+									? point.total
+									: point.samples > 0
+										? point.total / point.samples
+										: null,
+						})),
+					] as const,
+			)
+		}),
+	)
+
+export const sparkPoints = (index: SparkIndex, view: ResourceView) =>
+	index.get(sparkId(view.kind, view.keys)) ?? []
 
 /** The traced service an ECS service or Lambda function runs as: the same name, case aside. */
 export const tracedAs = (traced: ReadonlyArray<TracedService>, view: Pick<ResourceView, "kind" | "name">) => {

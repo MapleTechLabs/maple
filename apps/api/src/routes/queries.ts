@@ -465,14 +465,17 @@ const awsInfraSparklines = defineQuery({
 	id: "awsInfraSparklines",
 	profile: "aggregation",
 	cache: 15,
-	compile: (payload: AwsInfraSparklinesRequest, orgId: OrgId) =>
-		CH.compile(Integrations.awsInfraSparklinesSQL(payload.kind), {
+	compile: (payload: AwsInfraSparklinesRequest, orgId: OrgId) => {
+		// The stream sends one point per minute.
+		const bucketSeconds = Math.max(60, payload.bucketSeconds)
+		const buckets = Integrations.awsInfraBucketCount(payload.startTime, payload.endTime, bucketSeconds)
+		return CH.compile(Integrations.awsInfraSparklinesSQL(payload.kind, buckets), {
 			orgId,
 			startTime: payload.startTime,
 			endTime: payload.endTime,
-			// The stream sends one point per minute.
-			bucketSeconds: Math.max(60, payload.bucketSeconds),
-		}),
+			bucketSeconds,
+		})
+	},
 })
 
 const awsInfraTimeseries = defineQuery({

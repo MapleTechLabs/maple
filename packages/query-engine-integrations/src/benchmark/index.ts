@@ -929,7 +929,14 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		module: "aws-infra",
 		name: "awsInfraSparklinesSQL",
 		label: kind,
-		compile: () => compileUnsafe(CH.awsInfraSparklinesSQL(kind), bucketed),
+		compile: () =>
+			compileUnsafe(
+				CH.awsInfraSparklinesSQL(
+					kind,
+					CH.awsInfraBucketCount(START_TIME, END_TIME, bucketed.bucketSeconds),
+				),
+				bucketed,
+			),
 	})),
 	...AWS_INFRA_KIND_IDS.map((kind): IntegrationFixture => ({
 		module: "aws-infra",

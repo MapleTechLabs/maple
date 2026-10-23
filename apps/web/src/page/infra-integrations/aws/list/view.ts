@@ -26,6 +26,7 @@ import {
 	regionsOf,
 	type ResourceView,
 	resourceViews,
+	sparkIndex,
 	summaryOf,
 } from "../derive"
 import { Message } from "./message"
@@ -119,7 +120,7 @@ const tableContext = (model: Model): TableContext => {
 	const startMs = window === null ? 0 : toEpochMs(window.startTime)
 	const endMs = window === null ? 0 : toEpochMs(window.endTime)
 	return {
-		sparks: AsyncData.isSuccess(model.sparks.data) ? model.sparks.data.data : [],
+		sparks: sparkIndex(AsyncData.isSuccess(model.sparks.data) ? model.sparks.data.data : []),
 		traced: AsyncData.isSuccess(model.traced.data) ? model.traced.data.data : null,
 		window: {
 			startMs,
