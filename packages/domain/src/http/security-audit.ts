@@ -2,7 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { ExecutionProfile } from "@maple/security-audit/ecosystems"
 import { AuditReportsRecord, Finding, UnitStatus } from "@maple/security-audit/schema"
-import { UserId } from "../primitives"
+import { IsoDateTimeString, UserId } from "../primitives"
 import {
 	isSafeScopePath,
 	SecurityAuditEventKind,
@@ -407,13 +407,16 @@ export class SecurityAuditBudgetExhaustedError extends HttpTaggedError<SecurityA
 		remaining: Schema.Number,
 		/** The fewest invocations a run of the target's profile needs to start. */
 		required: Schema.Number,
+		/** When the org's budget resets: the end of its billing cycle. */
+		resetsAt: IsoDateTimeString,
 	},
 	{
 		status: 402,
 		code: "security_audit_budget_exhausted",
 		title: "Security audit budget used up",
 		retry: "never",
-		recovery: "contact_support",
+		retryAt: (error) => error.resetsAt,
+		recovery: "fix_request",
 		exposure: "public_message",
 	},
 ) {}

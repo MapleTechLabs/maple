@@ -25,8 +25,8 @@ import {
 	type SecurityAuditTarget,
 	SecurityAuditTargetNotFoundError,
 } from "@maple/domain/http"
+import { IsoDateTimeString } from "@maple/domain/primitives"
 import {
-	securityAuditBudgetPeriod,
 	SecurityAuditRunId,
 	type SecurityAuditTargetId,
 	type SecurityAuditWorkflowPayload,
@@ -163,6 +163,7 @@ const resolveBudget = (requested: number | undefined, targetBudget: number | nul
 	Math.min(requested ?? targetBudget ?? DEFAULT_RUN_BUDGET, SECURITY_AUDIT_MAX_BUDGET, orgRemaining)
 
 const newRunId = () => Schema.decodeSync(SecurityAuditRunId)(crypto.randomUUID())
+const decodeIso = Schema.decodeSync(IsoDateTimeString)
 
 /** `/api/security-audit/*`: targets, runs and findings for the caller's org, behind `securityAudit`. */
 export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityAudit", (handlers) =>
@@ -314,31 +315,38 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					yield* refuseOversized(tenant.orgId, target.repository)
 					const prior = yield* orUnavailable(store.latestPriorRun(target.id))
 					const runId = newRunId()
-					// The org's month: its plan's limit less what its runs already reserved.
-					const period = securityAuditBudgetPeriod(yield* Clock.currentTimeMillis)
-					const orgLimit = yield* planBudget.monthlyLimit(tenant.orgId).pipe(
-						Effect.catchTag("@maple/backend/security-audit/PlanUnavailable", (error) =>
-							Effect.fail(
-								new SecurityAuditPersistenceError({
-									message: "Could not confirm the organization's plan with billing.",
-									cause: error.message,
-								}),
+					// The org's cycle: its plan's limit less what its runs reserved, never more than
+					// Autumn itself says is left.
+					const orgBudget = yield* planBudget
+						.budget(tenant.orgId, yield* Clock.currentTimeMillis)
+						.pipe(
+							Effect.catchTag("@maple/backend/security-audit/PlanUnavailable", (error) =>
+								Effect.fail(
+									new SecurityAuditPersistenceError({
+										message: "Could not confirm the organization's plan with billing.",
+										cause: error.message,
+									}),
+								),
 							),
-						),
-					)
+						)
+					const spent = yield* orUnavailable(store.orgInvocationsSpent(orgBudget.period))
 					const orgRemaining = Math.max(
 						0,
-						orgLimit - (yield* orUnavailable(store.orgInvocationsSpent(period))),
+						Math.min(
+							orgBudget.limit - spent,
+							orgBudget.autumnRemaining ?? Number.POSITIVE_INFINITY,
+						),
 					)
 					const required = minimumInvocations(target.profile)
 					if (orgRemaining < required) {
 						return yield* new SecurityAuditBudgetExhaustedError({
 							message:
-								orgLimit === 0
+								orgBudget.limit === 0
 									? "This organization's plan does not include security audit invocations."
-									: `This organization has ${orgRemaining} security audit invocations left this month; a ${target.profile} run needs at least ${required}.`,
+									: `This organization has ${orgRemaining} security audit invocations left this billing cycle; a ${target.profile} run needs at least ${required}.`,
 							remaining: orgRemaining,
 							required,
+							resetsAt: decodeIso(new Date(orgBudget.resetsAt).toISOString()),
 						})
 					}
 					const budget = resolveBudget(payload.budget, target.budgetPerRun, orgRemaining)
@@ -380,7 +388,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						scopePaths: run.scopePaths,
 						budget,
 						priorRunId: Option.match(prior, { onNone: () => null, onSome: (r) => r.id }),
-						orgBudget: { period, limit: orgLimit },
+						orgBudget: { period: orgBudget.period, limit: orgBudget.limit },
 					}
 					yield* workflow
 						.create(workflowPayload)

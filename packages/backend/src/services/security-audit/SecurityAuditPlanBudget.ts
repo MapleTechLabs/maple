@@ -6,6 +6,7 @@
 import { SECURITY_AUDIT_INVOCATIONS_FEATURE_ID } from "@maple/domain/billing"
 import { BillingCustomer } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
+import { securityAuditBudgetPeriod } from "@maple/domain/security-audit"
 import { EdgeCacheService } from "@maple/cache"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
@@ -33,9 +34,68 @@ export const planMonthlyInvocations = (customer: BillingCustomer, unmetered: num
 	return Math.min(MAX_LIMIT, Math.max(0, Math.floor(balance.granted ?? 0)))
 }
 
+/** What the org may spend in its current billing cycle, and when that cycle resets. */
+export interface OrgAuditBudget {
+	/** Invocations the plan grants per cycle. */
+	readonly limit: number
+	/**
+	 * The key the org's counter uses: `cycle:<ISO start>` from the subscription's own period, so
+	 * it resets when Autumn's balance does; the UTC month `YYYY-MM` when billing gives no period.
+	 */
+	readonly period: string
+	/** When the budget resets, epoch ms. */
+	readonly resetsAt: number
+	/** What Autumn itself says is left this cycle, when it says. */
+	readonly autumnRemaining: number | null
+}
+
+const utcMonth = (nowMs: number) => {
+	const now = new Date(nowMs)
+	return {
+		period: securityAuditBudgetPeriod(nowMs),
+		resetsAt: Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
+	}
+}
+
+/** The org's budget for the cycle containing `nowMs`; `customer` is null for an unmetered org. */
+export const orgAuditBudget = (
+	customer: BillingCustomer | null,
+	unmetered: number,
+	nowMs: number,
+): OrgAuditBudget => {
+	if (customer === null) return { limit: unmetered, ...utcMonth(nowMs), autumnRemaining: null }
+	// The base plan's own period, which is when Autumn resets the feature's balance.
+	const cycle = customer.subscriptions.find(
+		(sub) =>
+			sub.status === "active" &&
+			sub.addOn !== true &&
+			sub.currentPeriodStart != null &&
+			sub.currentPeriodEnd != null &&
+			sub.currentPeriodStart <= nowMs &&
+			nowMs < sub.currentPeriodEnd,
+	)
+	const window =
+		cycle?.currentPeriodStart == null || cycle.currentPeriodEnd == null
+			? utcMonth(nowMs)
+			: {
+					period: `cycle:${new Date(cycle.currentPeriodStart).toISOString()}`,
+					resetsAt: cycle.currentPeriodEnd,
+				}
+	const balance = customer.balances?.[SECURITY_AUDIT_INVOCATIONS_FEATURE_ID]
+	const remaining = balance?.unlimited === true ? null : (balance?.remaining ?? null)
+	return {
+		limit: planMonthlyInvocations(customer, unmetered),
+		...window,
+		autumnRemaining: remaining === null ? null : Math.max(0, Math.floor(remaining)),
+	}
+}
+
 export interface SecurityAuditPlanBudgetApi {
-	/** The org's monthly invocation limit. Fails only when billing cannot answer. */
-	readonly monthlyLimit: (orgId: OrgId) => Effect.Effect<number, SecurityAuditPlanUnavailable>
+	/** The org's budget for the cycle containing `nowMs`. Fails only when billing cannot answer. */
+	readonly budget: (
+		orgId: OrgId,
+		nowMs: number,
+	) => Effect.Effect<OrgAuditBudget, SecurityAuditPlanUnavailable>
 }
 
 export class SecurityAuditPlanBudget extends Context.Service<
@@ -47,40 +107,45 @@ export class SecurityAuditPlanBudget extends Context.Service<
 		const edgeCache = yield* EdgeCacheService
 		const autumn = yield* AutumnClient
 
-		const monthlyLimit: SecurityAuditPlanBudgetApi["monthlyLimit"] = Effect.fn(
-			"SecurityAuditPlanBudget.monthlyLimit",
-		)(function* (orgId) {
-			const limits = yield* securityAuditLimits
-			// Maple's own org is never metered, as with AI usage.
-			if (orgId === env.MAPLE_DEFAULT_ORG_ID) return limits.unmeteredMonthlyInvocations
-			const limit = yield* readCustomerCached(
-				edgeCache,
-				orgId,
-				autumn.getOrCreateCustomer(orgId, { expand: ["subscriptions.plan"] }),
-			).pipe(
-				Effect.flatMap(({ result }) => ensureOk(result)),
-				Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
-				Effect.map((customer) =>
-					planMonthlyInvocations(customer, limits.unmeteredMonthlyInvocations),
-				),
-				Effect.catchTags({
-					// Billing that is not configured (self-hosted, local dev) meters nothing.
-					"@maple/http/errors/BillingNotConfiguredError": () =>
-						Effect.succeed(limits.unmeteredMonthlyInvocations),
-					"@maple/http/errors/BillingUpstreamError": (error) =>
-						Effect.fail(new SecurityAuditPlanUnavailable({ message: error.message })),
-				}),
-			)
-			yield* Effect.annotateCurrentSpan({ "maple.security_audit.monthly_limit": limit })
-			return limit
-		})
+		const budget: SecurityAuditPlanBudgetApi["budget"] = Effect.fn("SecurityAuditPlanBudget.budget")(
+			function* (orgId, nowMs) {
+				const limits = yield* securityAuditLimits
+				const unmetered = limits.unmeteredMonthlyInvocations
+				// Maple's own org is never metered, as with AI usage.
+				if (orgId === env.MAPLE_DEFAULT_ORG_ID) return orgAuditBudget(null, unmetered, nowMs)
+				const result = yield* readCustomerCached(
+					edgeCache,
+					orgId,
+					autumn.getOrCreateCustomer(orgId, { expand: ["subscriptions.plan"] }),
+				).pipe(
+					Effect.flatMap(({ result }) => ensureOk(result)),
+					Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
+					Effect.map((customer) => orgAuditBudget(customer, unmetered, nowMs)),
+					Effect.catchTags({
+						// Billing that is not configured (self-hosted, local dev) meters nothing.
+						"@maple/http/errors/BillingNotConfiguredError": () =>
+							Effect.succeed(orgAuditBudget(null, unmetered, nowMs)),
+						"@maple/http/errors/BillingUpstreamError": (error) =>
+							Effect.fail(new SecurityAuditPlanUnavailable({ message: error.message })),
+					}),
+				)
+				yield* Effect.annotateCurrentSpan({
+					"maple.security_audit.monthly_limit": result.limit,
+					"maple.security_audit.budget_period": result.period,
+				})
+				return result
+			},
+		)
 
-		return { monthlyLimit } satisfies SecurityAuditPlanBudgetApi
+		return { budget } satisfies SecurityAuditPlanBudgetApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(AutumnClient.layer))
 
-	/** A fixed limit for every org, for tests and harnesses. */
-	static readonly fixed = (limit: number) =>
-		Layer.succeed(this, { monthlyLimit: () => Effect.succeed(limit) })
+	/** A fixed budget for every org (the UTC month, unless given), for tests and harnesses. */
+	static readonly fixed = (fixed: Partial<OrgAuditBudget> & { readonly limit: number }) =>
+		Layer.succeed(this, {
+			budget: (_orgId, nowMs) =>
+				Effect.succeed({ ...orgAuditBudget(null, fixed.limit, nowMs), ...fixed }),
+		})
 }

@@ -55,7 +55,7 @@ export const SecurityAuditWorkflowPayload = Schema.Struct({
 	priorRunId: Schema.NullOr(Schema.String),
 	/** The org's monthly invocation limit, resolved from its plan at start; checked before every agent. */
 	orgBudget: Schema.Struct({
-		/** UTC month the run's invocations count against, `YYYY-MM`; fixed at start so replays agree. */
+		/** The billing cycle the run's invocations count against; fixed at start so replays agree. */
 		period: Schema.String,
 		limit: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	}),
