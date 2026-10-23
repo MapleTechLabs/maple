@@ -364,6 +364,22 @@ describe("security tabs", () => {
 		)
 	})
 
+	test("a filter picked within the search debounce keeps what was typed", () => {
+		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
+		const typed = pageUpdate(findings, Message.ChangedSearchDraft({ value: "exports" })).model
+		const picked = pageUpdate(
+			typed,
+			Message.GotSeveritySelectMessage({
+				message: Select.Message.SelectedItem({ index: 1, value: "critical" }),
+			}),
+		)
+		expect(picked.outMessage).toMatchObject({
+			_tag: "RequestedNavigation",
+			url: expect.stringContaining("q="),
+		})
+		expect(picked.outMessage).toMatchObject({ url: expect.stringContaining("severity=") })
+	})
+
 	test("the search box commits to the URL after the debounce, and only the last keystroke does", () => {
 		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
 		const first = pageUpdate(findings, Message.ChangedSearchDraft({ value: "expo" }))

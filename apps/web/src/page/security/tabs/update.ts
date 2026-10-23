@@ -258,6 +258,13 @@ const navigate = (model: Model, url: string, isReplace = false): Return => ({
 
 const findingsUrl = (search: SecurityFindingsSearch) => hrefOf(AppRoute.SecurityFindings({ search }))
 
+/** The URL's filters with the search box as typed: a filter change does not wait out the debounce. */
+const searchWithDraft = (model: Model): SecurityFindingsSearch => {
+	const { q: _q, ...rest } = model.findingsSearch
+	const q = draftQuery(model.searchDraft)
+	return q === undefined ? rest : { ...rest, q }
+}
+
 /** `all` clears the param, so the URL only carries what narrows the list. */
 const withParam = <K extends "severity" | "verdict" | "target">(
 	search: SecurityFindingsSearch,
@@ -292,8 +299,8 @@ const severityChanged = (model: Model, value: string): Return =>
 		model,
 		findingsUrl(
 			value === "all" || !isSeverity(value)
-				? withParam(model.findingsSearch, "severity", "all")
-				: { ...model.findingsSearch, severity: value },
+				? withParam(searchWithDraft(model), "severity", "all")
+				: { ...searchWithDraft(model), severity: value },
 		),
 	)
 
@@ -302,8 +309,8 @@ const verdictChanged = (model: Model, value: string): Return =>
 		model,
 		findingsUrl(
 			value === "confirmed" || value === "needs_validation"
-				? { ...model.findingsSearch, verdict: value }
-				: withParam(model.findingsSearch, "verdict", "all"),
+				? { ...searchWithDraft(model), verdict: value }
+				: withParam(searchWithDraft(model), "verdict", "all"),
 		),
 	)
 
@@ -507,7 +514,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(targetSelect) => ({ targetSelect }),
 				(next) => Message.GotTargetSelectMessage({ message: next }),
 				(updated, value) =>
-					navigate(updated, findingsUrl(withParam(updated.findingsSearch, "target", value))),
+					navigate(updated, findingsUrl(withParam(searchWithDraft(updated), "target", value))),
 			),
 		GotRunsTargetSelectMessage: ({ message: inner }) =>
 			selectStep(
@@ -519,7 +526,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				runsTargetChanged,
 			),
 		ToggledShowRejected: () => {
-			const { rejected: _rejected, ...rest } = model.findingsSearch
+			const { rejected: _rejected, ...rest } = searchWithDraft(model)
 			return navigate(
 				model,
 				findingsUrl(model.findingsSearch.rejected === true ? rest : { ...rest, rejected: true }),
