@@ -97,3 +97,6 @@ export const securityLayout = <M>(
 		},
 		[stack(h, children), ...(options.overlay ?? [])],
 	)
+
+/** A four-tile stat rail keeps two columns until the page is wide enough for four. */
+export const NARROW_TWO_COLUMNS = "md:grid-cols-2 xl:grid-cols-4 md:divide-y xl:divide-y-0"

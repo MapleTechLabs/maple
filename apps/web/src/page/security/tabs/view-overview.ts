@@ -1,3 +1,4 @@
+import { NARROW_TWO_COLUMNS } from "../kit/layout"
 import type { SecurityAuditFinding, SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -98,7 +99,7 @@ const kpis = (h: H, model: Model): Html => {
 		state._tag === "Ready" ? null : state._tag === "Gated" ? "Admins only" : placeholder(h, "h-7 w-10")
 	const running = runningRuns(model).length
 	const spend = spendThisMonth(model)
-	return statRail(h, { columns: 4 }, [
+	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
 		statRailItem(h, {
 			eyebrow: "Open findings",
 			value: unknown ?? String(confirmed.length),

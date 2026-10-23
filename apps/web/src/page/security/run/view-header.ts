@@ -1,3 +1,4 @@
+import { NARROW_TWO_COLUMNS } from "../kit/layout"
 import {
 	type SecurityAuditRunDetail,
 	type SecurityAuditTarget,
@@ -284,7 +285,7 @@ export const runStats = (h: H, run: SecurityAuditRunDetail, verdicts: Verdicts |
 	const perInvocation =
 		run.costUsd !== null && run.invocationsSpent > 0 ? run.costUsd / run.invocationsSpent : null
 	const live = isLive(run)
-	return statRail(h, { columns: 4 }, [
+	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
 		statRailItem(h, {
 			eyebrow: "Invocations",
 			value: h.span(
