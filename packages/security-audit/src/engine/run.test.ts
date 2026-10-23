@@ -379,6 +379,12 @@ describe("runAudit, review regressions", () => {
 		expect(result.ledger.filter((u) => u.status === "planned")).toEqual([])
 	})
 
+	it("does not count synthesis re-proposing a prior unit as lost coverage", async () => {
+		const prior = await priorOf()
+		const { result } = await runScripted(baseInput({ runId: "run-2", prior }), happy())
+		expect(result.gaps).toEqual([])
+	})
+
 	it("treats a prior candidate that never got a verdict as open work", async () => {
 		const prior = await priorOf()
 		const { result } = await runScripted(
