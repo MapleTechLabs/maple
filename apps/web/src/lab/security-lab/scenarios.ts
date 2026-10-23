@@ -174,7 +174,7 @@ const withDialog = (
 type RunStep = Step<RunPage.Model, RunPage.Message>
 const R = RunPage.Message
 
-const run = (id: string, nowMs: number, finished: boolean): RunStep => {
+const run = (id: string, nowMs: number): RunStep => {
 	const entered = RunUpdate.init(AppRoute.SecurityRun({ runId: runId(id) }), context)
 	const detail = runDetailOf(nowMs, id)
 	return fold<RunPage.Model, RunPage.Message>(
@@ -187,9 +187,7 @@ const run = (id: string, nowMs: number, finished: boolean): RunStep => {
 			(model) =>
 				R.CompletedFetchEvents({
 					key: model.events.key ?? "",
-					result: Result.succeed(
-						detail.status === "failed" ? { events: [] } : eventsOf(nowMs, finished),
-					),
+					result: Result.succeed(eventsOf(nowMs, id)),
 				}),
 			(model) =>
 				R.CompletedFetchUnits({
@@ -344,13 +342,13 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 		case "runs":
 			return { _tag: "Tabs", step: tabs(AppRoute.SecurityRuns({ search: {} }), nowMs) }
 		case "run-live":
-			return { _tag: "Run", step: run(RUN_IDS.dashboard, nowMs, false) }
+			return { _tag: "Run", step: run(RUN_IDS.dashboard, nowMs) }
 		case "run-incomplete":
-			return { _tag: "Run", step: run(RUN_IDS.billing, nowMs, true) }
+			return { _tag: "Run", step: run(RUN_IDS.billing, nowMs) }
 		case "run-failed":
-			return { _tag: "Run", step: run(RUN_IDS.terraform, nowMs, true) }
+			return { _tag: "Run", step: run(RUN_IDS.terraform, nowMs) }
 		case "run-cancelled":
-			return { _tag: "Run", step: run(RUN_IDS.billingCancelled, nowMs, true) }
+			return { _tag: "Run", step: run(RUN_IDS.billingCancelled, nowMs) }
 		case "finding":
 			return { _tag: "Finding", step: finding(nowMs) }
 		case "finding-triage":

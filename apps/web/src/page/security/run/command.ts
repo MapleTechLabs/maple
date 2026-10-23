@@ -3,6 +3,7 @@ import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/securit
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { readIsAdmin } from "../../alerts/shared/commands"
+import { parseMarkdownTexts } from "../../kit/markdown"
 import {
 	cancelRun,
 	getRun,
@@ -86,4 +87,12 @@ export const CancelRun = Command.define("SecurityApiCancelRun", {
 	args: { runId: SecurityAuditRunId },
 	messages: [Message.CompletedCancel],
 	execute: ({ runId }) => Effect.map(cancelRun(runId), (result) => Message.CompletedCancel({ result })),
+})
+
+/** The three reports through the chat's markdown parse; a text it rejects stays plain text. */
+export const ParseSecurityReports = Command.define("ParseSecurityReports", {
+	args: { texts: Schema.Array(Schema.String) },
+	messages: [Message.CompletedParseReports],
+	execute: ({ texts }) =>
+		Effect.map(parseMarkdownTexts(texts), (parsed) => Message.CompletedParseReports({ parsed })),
 })

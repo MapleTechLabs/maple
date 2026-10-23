@@ -9,12 +9,13 @@ import { errorState } from "../../../ui/error-state"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailTitleSkeleton } from "../../kit/detail-header"
+import { messageResponse } from "../../kit/message-response"
 import { resourceNotFound } from "../../kit/resource-not-found"
-import { gateOf, isLive, shortId } from "../kit/format"
+import { gateOf, isLive, REPORT_TITLE, type ReportDoc, shortId } from "../kit/format"
 import { stack } from "../kit/layout"
 import { gateState, placeholder } from "../kit/parts"
 import { eventsOf, gapCount, phasesOf, resultsOf, runOf, targetOf, verdictsOf } from "./derive"
-import { Message, type Model, type ReportDoc } from "./model"
+import { Message, type Model } from "./model"
 import { phaseStrip, runActions, runStats, runTitle, stopBanner } from "./view-header"
 import { eventsPanel, gapsPanel, ledgerPanel, resultsPanel } from "./view-panels"
 
@@ -23,13 +24,12 @@ import { eventsPanel, gapsPanel, ledgerPanel, resultsPanel } from "./view-panels
 
 type H = HtmlBuilder<Message>
 
-const REPORT_TITLE = {
-	report: "REPORT.md",
-	findingsDetail: "FINDINGS-DETAIL.md",
-	needsValidation: "NEEDS-VALIDATION.md",
-} satisfies Record<ReportDoc, string>
+/** The chosen report, laid out by the chat's markdown view; text it cannot parse stays plain text. */
+const REPORT_ORDER: ReadonlyArray<ReportDoc> = ["report", "findingsDetail", "needsValidation"]
 
-/** The generated document as written. TODO(markdown): render it once reports get the markdown view. */
+/** The parse of the chosen report, once it has landed. */
+const parsedReportOf = (model: Model) => model.parsedReports[REPORT_ORDER.indexOf(model.report)] ?? null
+
 const reportSheet = (h: H, model: Model, run: SecurityAuditRunDetail): Html => {
 	const text = run.reports === null ? "" : run.reports[model.report]
 	const id = model.reportDialog.id
@@ -47,10 +47,7 @@ const reportSheet = (h: H, model: Model, run: SecurityAuditRunDetail): Html => {
 					DialogView.dialogTitle(h, "sheet", id, REPORT_TITLE[model.report]),
 				]),
 				DialogView.dialogPanel(h, "sheet", id, [
-					h.pre(
-						[h.Class("whitespace-pre-wrap break-words font-mono text-xs leading-relaxed")],
-						[text],
-					),
+					messageResponse(h, parsedReportOf(model)?.document ?? null, text, "text-sm"),
 				]),
 			],
 		},

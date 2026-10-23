@@ -311,30 +311,60 @@ const EVENTS: ReadonlyArray<EventSeed> = [
 	},
 ]
 
-export const eventsOf = (now: number, finished = false) =>
-	Schema.decodeUnknownSync(SecurityAuditEventsResponse)({
-		events: [
-			...(finished
-				? ([
-						{
-							ago: -1,
-							kind: "Phase",
-							phase: "finished",
-							detail: "incomplete, 120 invocations",
-							message: "Run finished incomplete.",
-						},
-						{
-							ago: -0.5,
-							kind: "Phase",
-							phase: "candidate-validation",
-							detail: "5 candidates checked",
-							message: "Validation of 5 candidates.",
-						},
-					] satisfies ReadonlyArray<EventSeed>)
-				: []),
+const phase = (ago: number, name: string, detail: string, message: string): EventSeed => ({
+	ago,
+	kind: "Phase",
+	phase: name,
+	detail,
+	message,
+})
+
+const RECON: ReadonlyArray<EventSeed> = [
+	phase(
+		53,
+		"ledger-seeded",
+		"137 units mapped · 6 invocations",
+		"Recon complete. architecture.md written, 137 units in the ledger.",
+	),
+	phase(60, "reconnaissance", "No prior ledger exists.", "Reconnaissance started."),
+]
+
+/** Each run's own log, newest first: what its engine would have written. */
+const EVENTS_BY_RUN = new Map<string, ReadonlyArray<EventSeed>>([
+	[RUN_IDS.dashboard, EVENTS],
+	[
+		RUN_IDS.gateway,
+		[
+			phase(1, "finished", "complete, 352 invocations", "Run finished complete."),
+			phase(9, "record-verification", "12 records", "Fresh verifiers re-checked 12 records."),
+			phase(30, "candidate-validation", "14 unique candidates", "Validation of 14 candidates."),
+			phase(44, "wave-1", "196 hunters over 196 units", "Wave 1 started with 196 units."),
+			...RECON,
+		],
+	],
+	[
+		RUN_IDS.billing,
+		[
+			phase(-1, "finished", "incomplete, 120 invocations", "Run finished incomplete."),
+			phase(-0.5, "candidate-validation", "5 candidates checked", "Validation of 5 candidates."),
 			...EVENTS,
-		].map((event, index) => ({
-			id: `evt_${index}`,
+		],
+	],
+	[
+		RUN_IDS.billingCancelled,
+		[
+			{ ago: 2, kind: "Note", message: "Cancelled by an admin. The units in flight were released." },
+			phase(38, "wave-1", "10 hunters over 10 units", "Wave 1 started with 10 units."),
+			...RECON,
+		],
+	],
+	[RUN_IDS.terraform, []],
+])
+
+export const eventsOf = (now: number, runId: string) =>
+	Schema.decodeUnknownSync(SecurityAuditEventsResponse)({
+		events: (EVENTS_BY_RUN.get(runId) ?? []).map((event, index) => ({
+			id: `${runId}_evt_${index}`,
 			at: now - event.ago * MINUTE,
 			kind: event.kind,
 			role: event.role ?? null,

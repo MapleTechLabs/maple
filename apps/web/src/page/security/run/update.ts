@@ -19,9 +19,10 @@ import {
 	FetchUnits,
 	ReadRunClock,
 	ReadRunIsAdmin,
+	ParseSecurityReports,
 	StartAnotherRun,
 } from "./command"
-import { eventsOf, runOf } from "./derive"
+import { eventsOf, mergeEvents, runOf } from "./derive"
 import { Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -96,8 +97,9 @@ export const init = (route: SecurityRunRoute, context: PageContext): Return => {
 		isAdmin: !isClerkAuthEnabled,
 		run: Keyed.idle(),
 		events: Keyed.idle(),
-		olderEvents: [],
+		eventLog: [],
 		isLoadingOlder: false,
+		gapUntil: null,
 		hasMoreOlder: true,
 		units: Keyed.idle(),
 		targets: Keyed.idle(),
@@ -108,6 +110,7 @@ export const init = (route: SecurityRunRoute, context: PageContext): Return => {
 		cancelDialog: Dialog.init("security-cancel-run", "alert-dialog"),
 		reportDialog: Dialog.init("security-run-report", "sheet"),
 		report: "report",
+		parsedReports: [],
 	}
 	const loaded = chainAll(model, [
 		(next) => readRun(next, context, "Load"),
@@ -157,28 +160,79 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 			const next: Model = { ...model, run: Keyed.accept(model.run, key, result) }
 			const run = runOf(next)
-			// The run just finished: its findings changed, so read them past the cached answer.
-			const mode: Keyed.ReadMode =
-				run !== null && wasLive && !isLive(run) && AsyncData.hasData(model.findings.data)
-					? "Refresh"
-					: "Load"
-			return readFindings(next, context, mode)
+			const justFinished = run !== null && wasLive && !isLive(run) && AsyncData.hasData(model.run.data)
+			if (!justFinished) return readFindings(next, context, "Load")
+			// The last poll may have missed the final phase event and ledger: read everything once more.
+			return chainAll(next, [
+				(updated) =>
+					readFindings(
+						updated,
+						context,
+						AsyncData.hasData(model.findings.data) ? "Supersede" : "Load",
+					),
+				(updated) => readEvents(updated, context, "Supersede"),
+				(updated) => readUnits(updated, context, "Supersede"),
+			])
 		},
-		CompletedFetchEvents: ({ key, result }) => ({
-			model: { ...model, events: Keyed.accept(model.events, key, result) },
-		}),
+		CompletedFetchEvents: ({ key, result }) => {
+			const next: Model = { ...model, events: Keyed.accept(model.events, key, result) }
+			if (next.events === model.events || Result.isFailure(result)) return { model: next }
+			const page = result.success.events
+			const newestHeld = model.eventLog[0]
+			const merged: Model = { ...next, eventLog: mergeEvents(model.eventLog, page) }
+			const oldest = page.at(-1)
+			// A full page that never reached what we hold: more happened between polls than one page.
+			const isGap =
+				newestHeld !== undefined &&
+				oldest !== undefined &&
+				page.length >= EVENTS_PAGE &&
+				!page.some((event) => event.id === newestHeld.id) &&
+				oldest.at >= newestHeld.at
+			return isGap && !model.isLoadingOlder
+				? {
+						model: { ...merged, gapUntil: newestHeld, isLoadingOlder: true },
+						commands: [
+							FetchOlderEvents({
+								runId: model.runId,
+								beforeAt: oldest.at,
+								beforeId: oldest.id,
+							}),
+						],
+					}
+				: { model: merged }
+		},
 		CompletedFetchOlderEvents: ({ result }) =>
 			Result.match(result, {
-				onSuccess: ({ events }) => ({
-					model: {
+				onSuccess: ({ events }) => {
+					const merged: Model = {
 						...model,
-						olderEvents: [...model.olderEvents, ...events],
+						eventLog: mergeEvents(model.eventLog, events),
 						isLoadingOlder: false,
-						hasMoreOlder: events.length >= EVENTS_PAGE,
-					},
-				}),
+					}
+					const gap = model.gapUntil
+					if (gap === null)
+						return { model: { ...merged, hasMoreOlder: events.length >= EVENTS_PAGE } }
+					const oldest = events.at(-1)
+					const isClosed =
+						oldest === undefined ||
+						events.length < EVENTS_PAGE ||
+						events.some((event) => event.id === gap.id) ||
+						oldest.at < gap.at
+					return isClosed
+						? { model: { ...merged, gapUntil: null } }
+						: {
+								model: { ...merged, isLoadingOlder: true },
+								commands: [
+									FetchOlderEvents({
+										runId: model.runId,
+										beforeAt: oldest.at,
+										beforeId: oldest.id,
+									}),
+								],
+							}
+				},
 				onFailure: (failure) => ({
-					model: { ...model, isLoadingOlder: false },
+					model: { ...model, isLoadingOlder: false, gapUntil: null },
 					outMessage: toast("error", "Failed to load older events", failure.message),
 				}),
 			}),
@@ -275,8 +329,22 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			inner._tag !== "CompletedMountDialog"
 				? { model }
 				: dialogStep(model, "cancelDialog", Dialog.update(model.cancelDialog, inner)),
-		ClickedReport: ({ report }) =>
-			dialogStep({ ...model, report }, "reportDialog", Dialog.open(model.reportDialog)),
+		CompletedParseReports: ({ parsed }) => ({ model: { ...model, parsedReports: parsed } }),
+		ClickedReport: ({ report }) => {
+			const opened = dialogStep({ ...model, report }, "reportDialog", Dialog.open(model.reportDialog))
+			const reports = runOf(model)?.reports ?? null
+			return reports === null || model.parsedReports.length > 0
+				? opened
+				: {
+						...opened,
+						commands: [
+							...(opened.commands ?? []),
+							ParseSecurityReports({
+								texts: [reports.report, reports.findingsDetail, reports.needsValidation],
+							}),
+						],
+					}
+		},
 		GotReportDialogMessage: ({ message: inner }) =>
 			dialogStep(model, "reportDialog", Dialog.update(model.reportDialog, inner)),
 	})

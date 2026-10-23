@@ -13,6 +13,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
 import * as Dialog from "../../../ui/dialog"
+import { ParsedMarkdown } from "../../kit/markdown"
 
 // `/security/runs/$runId`: one audit run, live while it is in progress.
 
@@ -29,8 +30,7 @@ export const UnitFilter = Schema.Literals([
 ])
 export type UnitFilter = typeof UnitFilter.Type
 
-export const ReportDoc = Schema.Literals(["report", "findingsDetail", "needsValidation"])
-export type ReportDoc = typeof ReportDoc.Type
+const ReportDoc = Schema.Literals(["report", "findingsDetail", "needsValidation"])
 
 export const Model = Schema.Struct({
 	runId: SecurityAuditRunId,
@@ -39,9 +39,14 @@ export const Model = Schema.Struct({
 	run: KeyedSchema(SecurityAuditRunDetail, LoadFailure),
 	/** The newest page, re-read while the run is live. */
 	events: KeyedSchema(SecurityAuditEventsResponse, LoadFailure),
-	/** Pages before the newest one, oldest last; `Load older` appends. */
-	olderEvents: Schema.Array(SecurityAuditEvent),
+	/** Every event read so far, newest first and once each: polled pages and older pages merge in. */
+	eventLog: Schema.Array(SecurityAuditEvent),
 	isLoadingOlder: Schema.Boolean,
+	/**
+	 * A polled page that did not reach the events already held leaves a gap: older pages are read
+	 * from its end until they meet this, the newest event held before it.
+	 */
+	gapUntil: Schema.NullOr(SecurityAuditEvent),
 	/** The last older page came back short: nothing is left before it. */
 	hasMoreOlder: Schema.Boolean,
 	units: KeyedSchema(SecurityAuditUnitsResponse, LoadFailure),
@@ -53,6 +58,8 @@ export const Model = Schema.Struct({
 	cancelDialog: Dialog.Model,
 	reportDialog: Dialog.Model,
 	report: ReportDoc,
+	/** Each report parsed once, as the chat parses replies: rejected markup renders as text. */
+	parsedReports: Schema.Array(ParsedMarkdown),
 })
 export type Model = typeof Model.Type
 
@@ -82,6 +89,7 @@ export const Message = defineMessageUnion({
 	CompletedCancel: { result: Schema.Result(SecurityAuditRun, LoadFailure) },
 	GotCancelDialogMessage: { message: Dialog.Message },
 	ClickedReport: { report: ReportDoc },
+	CompletedParseReports: { parsed: Schema.Array(ParsedMarkdown) },
 	GotReportDialogMessage: { message: Dialog.Message },
 })
 export type Message = typeof Message.Type

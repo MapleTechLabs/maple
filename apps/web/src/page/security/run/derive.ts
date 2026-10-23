@@ -8,7 +8,7 @@ import type {
 import type { Tone } from "@maple/ui/lib/tone"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import { isCancelled, isLive } from "../kit/format"
+import { isLive } from "../kit/format"
 import type { Model, UnitFilter } from "./model"
 
 // Pure readings of the run page: the phase strip, the ledger, the gaps and the run's results.
@@ -21,14 +21,19 @@ export const targetOf = (model: Model, run: SecurityAuditRunDetail): SecurityAud
 		(target) => target.id === run.targetId,
 	) ?? null
 
-/** The newest page, then the older pages, without a row twice. */
-export const eventsOf = (model: Model): ReadonlyArray<SecurityAuditEvent> => {
-	const newest = Option.match(AsyncData.getData(model.events.data), {
-		onNone: () => [],
-		onSome: (page) => page.events,
-	})
-	const seen = new Set(newest.map((event) => event.id))
-	return [...newest, ...model.olderEvents.filter((event) => !seen.has(event.id))]
+export const eventsOf = (model: Model): ReadonlyArray<SecurityAuditEvent> => model.eventLog
+
+/** Newest first; the id breaks a tie in the same millisecond, as the API pages them. */
+const byNewest = (a: SecurityAuditEvent, b: SecurityAuditEvent): number =>
+	b.at - a.at || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
+
+/** `page` merged into `log`: each event once, newest first. */
+export const mergeEvents = (
+	log: ReadonlyArray<SecurityAuditEvent>,
+	page: ReadonlyArray<SecurityAuditEvent>,
+): ReadonlyArray<SecurityAuditEvent> => {
+	const ids = new Set(log.map((event) => event.id))
+	return [...log, ...page.filter((event) => !ids.has(event.id))].sort(byNewest)
 }
 
 export const unitsOf = (model: Model): ReadonlyArray<SecurityAuditUnit> =>
@@ -74,7 +79,7 @@ export const UNIT_FILTERS: ReadonlyArray<UnitFilter> = [
 ]
 
 /** Units the run did not get to: what the next run starts with. */
-export const GAP_STATUSES: ReadonlyArray<string> = ["deferred", "blocked", "planned", "in_progress"]
+const GAP_STATUSES: ReadonlyArray<string> = ["deferred", "blocked", "planned", "in_progress"]
 
 export const countOf = (run: SecurityAuditRunDetail, status: string): number => run.unitCounts[status] ?? 0
 
@@ -146,16 +151,14 @@ export const phasesOf = (
 	const gaps = gapCount(run)
 	const closed = run.unitTotal - gaps
 	const isQuick = run.profile === "quick"
+	// A finished run with units left over did not hunt everything, whether it ran out or was cancelled.
+	const huntState = (finished: boolean): PhaseState => (finished && gaps > 0 ? "warn" : "done")
 	const stateAt = (index: number): PhaseState => {
-		if (reached === 5)
-			return index === 1 && gaps > 0 && !isCancelled(run)
-				? "warn"
-				: index === 3 && isQuick
-					? "skipped"
-					: "done"
-		if (index < reached) return index === 3 && isQuick ? "skipped" : "done"
+		const skipped = index === 3 && isQuick
+		if (reached === 5) return index === 1 ? huntState(!live) : skipped ? "skipped" : "done"
+		if (index < reached) return index === 1 ? huntState(!live) : skipped ? "skipped" : "done"
 		if (index === reached) return live ? "active" : "stopped"
-		return index === 3 && isQuick ? "skipped" : "pending"
+		return skipped ? "skipped" : "pending"
 	}
 	return [
 		{

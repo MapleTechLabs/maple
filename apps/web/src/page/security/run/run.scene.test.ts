@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { SecurityAuditRunNotInProgressError } from "@maple/domain/http"
+import { type SecurityAuditEvent, SecurityAuditRunNotInProgressError } from "@maple/domain/http"
 import { SecurityAuditRunId } from "@maple/domain/security-audit"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
@@ -8,7 +8,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { eventsOf, findingsOf, RUN_IDS, runDetailOf, targetsOf, unitsOf } from "../../../lab/security-fixture"
 import { AppRoute } from "../../../route"
 import type { PageContext } from "../../contract"
-import { phasesOf } from "./derive"
+import { eventsOf as eventLogOf, phasesOf } from "./derive"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
@@ -26,7 +26,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 const routeOf = (runId: string) =>
 	AppRoute.SecurityRun({ runId: Schema.decodeSync(SecurityAuditRunId)(runId) })
 
-const loaded = (runId: string, finished = false): Model => {
+const loaded = (runId: string): Model => {
 	const entered = init(routeOf(runId), context).model
 	const withRun = [
 		Message.ReadClock({ nowMs: NOW }),
@@ -36,7 +36,7 @@ const loaded = (runId: string, finished = false): Model => {
 		}),
 		Message.CompletedFetchEvents({
 			key: entered.events.key ?? "",
-			result: Result.succeed(eventsOf(NOW, finished)),
+			result: Result.succeed(eventsOf(NOW, runId)),
 		}),
 		Message.CompletedFetchUnits({ key: entered.units.key ?? "", result: Result.succeed(unitsOf()) }),
 		Message.CompletedFetchTargets({
@@ -77,7 +77,7 @@ describe("security run", () => {
 
 	test("a live run shows hunting as the active phase", () => {
 		const model = loaded(RUN_IDS.dashboard)
-		const phases = phasesOf(runDetailOf(NOW, RUN_IDS.dashboard), eventsOf(NOW).events)
+		const phases = phasesOf(runDetailOf(NOW, RUN_IDS.dashboard), eventsOf(NOW, RUN_IDS.dashboard).events)
 		expect(phases.map((phase) => phase.state)).toEqual([
 			"done",
 			"active",
@@ -94,11 +94,11 @@ describe("security run", () => {
 	})
 
 	test("a quick run that ran out of budget marks hunting with gaps and skips verification", () => {
-		const phases = phasesOf(runDetailOf(NOW, RUN_IDS.billing), eventsOf(NOW, true).events)
+		const phases = phasesOf(runDetailOf(NOW, RUN_IDS.billing), eventsOf(NOW, RUN_IDS.billing).events)
 		expect(phases.map((phase) => phase.state)).toEqual(["done", "warn", "done", "skipped", "done"])
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(RUN_IDS.billing, true)),
+			given(loaded(RUN_IDS.billing)),
 			expectView(text("Stopped at its budget of 120 invocations")).toExist(),
 			expectView(text("Gaps")).toExist(),
 		)
@@ -107,7 +107,7 @@ describe("security run", () => {
 	test("a cancelled run reads as cancelled, not as a budget gap", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(RUN_IDS.billingCancelled, true)),
+			given(loaded(RUN_IDS.billingCancelled)),
 			expectView(text("Cancelled")).toExist(),
 			expectView(text(/^Stopped at its budget/)).not.toExist(),
 		)
@@ -141,6 +141,137 @@ describe("security run", () => {
 			title: "The run had already finished",
 		})
 		expect(names(refused.commands)).toEqual(expect.arrayContaining(["SecurityApiGetRun"]))
+	})
+
+	test("a cancelled run with units never assigned does not show hunting as done", () => {
+		const phases = phasesOf(
+			runDetailOf(NOW, RUN_IDS.billingCancelled),
+			eventsOf(NOW, RUN_IDS.billingCancelled).events,
+		)
+		expect(phases[1]?.state).toBe("stopped")
+		const finishedWithGaps = phasesOf(runDetailOf(NOW, RUN_IDS.billingCancelled), [
+			...eventsOf(NOW, RUN_IDS.billing).events,
+		])
+		expect(finishedWithGaps[1]?.state).toBe("warn")
+	})
+
+	test("events polled after Load older are kept: a newer page that pushes old ones off leaves no gap", () => {
+		const event = (index: number): SecurityAuditEvent => ({
+			id: `e${String(index).padStart(4, "0")}`,
+			at: NOW + index * 1000,
+			kind: "Agent",
+			role: "hunter",
+			agentId: null,
+			outcome: "ok",
+			message: `event ${index}`,
+			phase: null,
+			detail: null,
+			costUsd: null,
+			inputTokens: null,
+			outputTokens: null,
+		})
+		const pageOf = (from: number, to: number) =>
+			Array.from({ length: to - from + 1 }, (_, offset) => event(to - offset))
+		const entered = init(routeOf(RUN_IDS.dashboard), context).model
+		// First poll: events 200..399. Load older: 0..199.
+		const first = pageUpdate(
+			entered,
+			Message.CompletedFetchEvents({
+				key: entered.events.key ?? "",
+				result: Result.succeed({ events: pageOf(200, 399) }),
+			}),
+		).model
+		const older = pageUpdate(
+			pageUpdate(first, Message.ClickedLoadOlder()).model,
+			Message.CompletedFetchOlderEvents({ result: Result.succeed({ events: pageOf(0, 199) }) }),
+		).model
+		// Next poll: 300..499, which pushes 200..299 off the newest page.
+		const polled = pageUpdate(older, Message.TickedPoll({ nowMs: NOW })).model
+		const next = pageUpdate(
+			polled,
+			Message.CompletedFetchEvents({
+				key: polled.events.key ?? "",
+				result: Result.succeed({ events: pageOf(300, 499) }),
+			}),
+		).model
+		const ids = eventLogOf(next).map((logged) => logged.id)
+		expect(ids).toHaveLength(500)
+		expect(ids[0]).toBe("e0499")
+		expect(ids.at(-1)).toBe("e0000")
+	})
+
+	test("a full newer page that does not reach the held events reads older pages until it does", () => {
+		const event = (index: number): SecurityAuditEvent => ({
+			id: `g${String(index).padStart(4, "0")}`,
+			at: NOW + index * 1000,
+			kind: "Note",
+			role: null,
+			agentId: null,
+			outcome: null,
+			message: `event ${index}`,
+			phase: null,
+			detail: null,
+			costUsd: null,
+			inputTokens: null,
+			outputTokens: null,
+		})
+		const pageOf = (from: number, to: number) =>
+			Array.from({ length: to - from + 1 }, (_, offset) => event(to - offset))
+		const entered = init(routeOf(RUN_IDS.dashboard), context).model
+		const first = pageUpdate(
+			entered,
+			Message.CompletedFetchEvents({
+				key: entered.events.key ?? "",
+				result: Result.succeed({ events: pageOf(0, 9) }),
+			}),
+		).model
+		const polled = pageUpdate(first, Message.TickedPoll({ nowMs: NOW })).model
+		// 600 more happened: the newest page is 410..609 and does not reach event 9.
+		const gapped = pageUpdate(
+			polled,
+			Message.CompletedFetchEvents({
+				key: polled.events.key ?? "",
+				result: Result.succeed({ events: pageOf(410, 609) }),
+			}),
+		)
+		expect(names(gapped.commands)).toEqual(["SecurityApiListOlderRunEvents"])
+		const filled = pageUpdate(
+			gapped.model,
+			Message.CompletedFetchOlderEvents({ result: Result.succeed({ events: pageOf(210, 409) }) }),
+		)
+		expect(names(filled.commands)).toEqual(["SecurityApiListOlderRunEvents"])
+		// The page right above the held events cannot tell it is adjacent; the next one overlaps.
+		const adjacent = pageUpdate(
+			filled.model,
+			Message.CompletedFetchOlderEvents({ result: Result.succeed({ events: pageOf(10, 209) }) }),
+		)
+		const closed = pageUpdate(
+			adjacent.model,
+			Message.CompletedFetchOlderEvents({ result: Result.succeed({ events: pageOf(0, 9) }) }),
+		)
+		expect(names(closed.commands)).toEqual([])
+		expect(eventLogOf(closed.model)).toHaveLength(610)
+	})
+
+	test("a run that finishes reads its events and ledger once more", () => {
+		const live = loaded(RUN_IDS.dashboard)
+		const polled = pageUpdate(live, Message.TickedPoll({ nowMs: NOW })).model
+		const finished = {
+			...runDetailOf(NOW, RUN_IDS.dashboard),
+			status: "complete" as const,
+			finishedAt: NOW,
+		}
+		const answered = pageUpdate(
+			polled,
+			Message.CompletedFetchRun({ key: polled.run.key ?? "", result: Result.succeed(finished) }),
+		)
+		expect(names(answered.commands)).toEqual(
+			expect.arrayContaining([
+				"SecurityApiListRunEvents",
+				"SecurityApiListRunUnits",
+				"SecurityApiListRunFindings",
+			]),
+		)
 	})
 
 	test("load older asks for events before the oldest one on screen", () => {

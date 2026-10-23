@@ -9,6 +9,7 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { badge } from "../../../ui/display"
+import { filterChip } from "../../../ui/filter-chip"
 import { errorState } from "../../../ui/error-state"
 import { panel, panelHeader } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
@@ -34,6 +35,7 @@ import {
 	unitPath,
 	unitTitle,
 } from "./derive"
+import { EVENTS_PAGE } from "./command"
 import { Message, type Model, type UnitFilter } from "./model"
 
 // The run's coverage ledger, its gaps, what it reported, and the event log.
@@ -132,30 +134,20 @@ const unitsBody = (
 		},
 	})
 
-const filterChip = (h: H, model: Model, run: SecurityAuditRunDetail, filter: UnitFilter): Html => {
-	const count = filter === "all" ? run.unitTotal : countOf(run, filter)
-	const isActive = model.unitFilter === filter
-	return h.button(
-		[
-			h.Key(filter),
-			h.Type("button"),
-			h.AriaPressed(String(isActive)),
-			h.OnClick(Message.PickedUnitFilter({ filter })),
-			h.Class(
-				cn(
-					"inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
-					isActive
-						? "border-foreground/30 bg-muted text-foreground"
-						: "text-muted-foreground hover:text-foreground",
-				),
-			),
-		],
-		[
-			filter === "all" ? "All" : UNIT_LABEL[filter],
-			h.span([h.Class("font-mono tabular-nums text-muted-foreground")], [String(count)]),
-		],
+const unitChip = (h: H, model: Model, run: SecurityAuditRunDetail, filter: UnitFilter): Html =>
+	filterChip(
+		h,
+		{
+			isPressed: model.unitFilter === filter,
+			onClick: Message.PickedUnitFilter({ filter }),
+			size: "sm",
+			hasDot: filter !== "all",
+			tone: filter === "all" ? "neutral" : UNIT_TONE[filter],
+			count: String(filter === "all" ? run.unitTotal : countOf(run, filter)),
+			attributes: [h.Key(filter)],
+		},
+		[filter === "all" ? "All" : UNIT_LABEL[filter]],
 	)
-}
 
 export const ledgerPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html =>
 	panel(h, { className: "min-w-0 overflow-hidden" }, [
@@ -166,16 +158,35 @@ export const ledgerPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Ht
 		h.div(
 			[h.Class("flex flex-wrap gap-1.5 border-b px-4 py-3")],
 			UNIT_FILTERS.filter((filter) => filter === "all" || countOf(run, filter) > 0).map((filter) =>
-				filterChip(h, model, run, filter),
+				unitChip(h, model, run, filter),
 			),
 		),
 		unitsBody(h, model, (units) => filteredUnits(units, model.unitFilter)),
+		...(model.isLedgerOpen ? [ledgerToggle(h, "Show only the gaps")] : []),
 	])
 
+const ledgerToggle = (h: H, label: string): Html =>
+	h.div(
+		[h.Class("border-t px-4 py-2.5")],
+		[
+			h.button(
+				[
+					h.Type("button"),
+					h.Class(
+						"text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground",
+					),
+					h.OnClick(Message.ToggledLedger()),
+				],
+				[label],
+			),
+		],
+	)
+
+/** Every gap status, as `gapCount` adds them up, so the header and the cells agree. */
 const GAP_SUMMARY = [
-	{ status: "deferred", label: "deferred, budget reached" },
-	{ status: "blocked", label: "blocked, missing context" },
-	{ status: "planned", label: "planned, never assigned" },
+	{ statuses: ["deferred"], label: "deferred, budget reached" },
+	{ statuses: ["blocked"], label: "blocked, missing context" },
+	{ statuses: ["planned", "in_progress"], label: "planned or unfinished, not closed" },
 ] as const
 
 export const gapsPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html => {
@@ -191,11 +202,11 @@ export const gapsPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html
 			[h.Class("grid grid-cols-3 divide-x border-b")],
 			GAP_SUMMARY.map((entry) =>
 				h.div(
-					[h.Key(entry.status), h.Class("flex flex-col gap-0.5 px-4 py-3")],
+					[h.Key(entry.label), h.Class("flex flex-col gap-0.5 px-4 py-3")],
 					[
 						h.span(
 							[h.Class("font-mono text-lg tabular-nums")],
-							[String(countOf(run, entry.status))],
+							[String(entry.statuses.reduce((sum, status) => sum + countOf(run, status), 0))],
 						),
 						h.span([h.Class("text-xs text-muted-foreground")], [entry.label]),
 					],
@@ -203,21 +214,7 @@ export const gapsPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html
 			),
 		),
 		unitsBody(h, model, (units) => gapUnits(units).slice(0, 5)),
-		h.div(
-			[h.Class("border-t px-4 py-2.5")],
-			[
-				h.button(
-					[
-						h.Type("button"),
-						h.Class(
-							"text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground",
-						),
-						h.OnClick(Message.ToggledLedger()),
-					],
-					[`Show all ${gapCount(run)} gaps and the full ledger`],
-				),
-			],
-		),
+		ledgerToggle(h, `Show all ${gapCount(run)} gaps and the full ledger`),
 	])
 }
 
@@ -411,7 +408,7 @@ export const eventsPanel = (
 							events.map((event) => eventRow(h, event, timeZone)),
 						),
 		}),
-		...(AsyncData.hasData(model.events.data) && model.hasMoreOlder && events.length >= 200
+		...(AsyncData.hasData(model.events.data) && model.hasMoreOlder && events.length >= EVENTS_PAGE
 			? [
 					h.div(
 						[h.Class("border-t px-4 py-2.5")],
