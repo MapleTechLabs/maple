@@ -435,11 +435,9 @@ describe("/api/security-audit runs", () => {
 			const target = await spent.call("POST", "/targets", { body: TARGET })
 			const period = new Date().toISOString().slice(0, 7)
 			// Other runs this month reserved 14 of 20: a deep run needs 8 to fund recon and its reserves.
-			await spent.withStore((store) =>
-				Effect.forEach(
-					Array.from({ length: 14 }, (_, i) => i),
-					() => store.forOrg(ORG_A).reserveOrgInvocation(period, 20),
-				),
+			await spent.sql(
+				`INSERT INTO security_audit_org_usage (org_id, period, invocations_spent, updated_at) VALUES ($1, $2, 14, now())`,
+				[ORG_A, period],
 			)
 			const short = await spent.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
 
@@ -466,11 +464,9 @@ describe("/api/security-audit runs", () => {
 		try {
 			const target = await harness.call("POST", "/targets", { body: { ...TARGET, budgetPerRun: 300 } })
 			const period = new Date().toISOString().slice(0, 7)
-			await harness.withStore((store) =>
-				Effect.forEach(
-					Array.from({ length: 20 }, (_, i) => i),
-					() => store.forOrg(ORG_A).reserveOrgInvocation(period, 50),
-				),
+			await harness.sql(
+				`INSERT INTO security_audit_org_usage (org_id, period, invocations_spent, updated_at) VALUES ($1, $2, 20, now())`,
+				[ORG_A, period],
 			)
 			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
 

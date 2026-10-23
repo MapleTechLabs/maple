@@ -284,7 +284,7 @@ export const auditWithAgents = <E, R>(
 		const httpClient = yield* HttpClient.HttpClient
 		/** One invocation from the org's month, billed once it is granted. */
 		const admit = (agentId: string) =>
-			store.reserveOrgInvocation(payload.orgBudget.period, payload.orgBudget.limit).pipe(
+			store.reserveOrgInvocation(payload.runId, payload.orgBudget.period, payload.orgBudget.limit).pipe(
 				Effect.tap((granted) =>
 					granted
 						? trackSecurityAuditInvocations({

@@ -203,8 +203,8 @@ describe("auditWithAgents", () => {
 		Effect.gen(function* () {
 			const { store, target } = yield* setup
 			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
-			// Another run of the org reserved 3 of its 9 after this one started with a budget of 400.
-			yield* Effect.forEach([1, 2, 3], () => store.reserveOrgInvocation("2026-10", 9))
+			// Other runs of the org spent 3 of its 9 after this one started with a budget of 400.
+			yield* Effect.forEach([1, 2, 3], () => store.reserveOrgInvocation(run.id, "2026-10", 9))
 			const calls: Array<string> = []
 			const result = yield* auditWithAgents(
 				{ ...payloadFor(run.id), orgBudget: { period: "2026-10", limit: 9 } },
@@ -627,45 +627,50 @@ describe("auditWithAgents, settling", () => {
 		}).pipe(Effect.provide(testLayer())),
 	)
 
-	it.effect("keeps a run cancelled mid-flight cancelled and marks nothing fixed when it settles", () =>
-		Effect.gen(function* () {
-			const { store, target } = yield* setup
-			yield* seedOpenFinding(store, target.id)
-			const prior = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
-			yield* auditWithAgents(payloadFor(prior.id), () => Effect.succeed(scriptedAgents([]))).pipe(
-				Effect.provideService(RepoSandboxService, sandbox([])),
-				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
-			)
-			const next = yield* store.startRun({
-				targetId: target.id,
-				kind: "revalidation",
-				sourceRef: "main",
-			})
-			const scripted = scriptedAgents([])
-			// An admin cancels while agents are in flight; the run still completes and settles after.
-			const cancelling: AuditAgentsApi = {
-				run: (invocation) =>
-					store
-						.cancelRun(next.id, Schema.decodeUnknownSync(UserId)("user_admin"))
-						.pipe(Effect.orDie, Effect.andThen(scripted.run(invocation))),
-			}
-			const result = yield* auditWithAgents(payloadFor(next.id, prior.id), () =>
-				Effect.succeed(cancelling),
-			).pipe(
-				Effect.provideService(RepoSandboxService, sandbox([])),
-				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
-			)
-			const row = yield* store.getRun(next.id)
-			const findings = yield* store.listFindings(target.id)
-			assert.deepStrictEqual(
-				[
-					result.status,
-					Option.map(row, (r) => [r.status, r.incompleteReason]),
-					findings.map((f) => f.status),
-				],
-				["complete", Option.some(["incomplete", "cancelled"]), ["open"]],
-			)
-		}).pipe(Effect.provide(testLayer())),
+	it.effect(
+		"keeps a run cancelled mid-flight cancelled, admits no agent after it, and marks nothing fixed",
+		() =>
+			Effect.gen(function* () {
+				const { store, target } = yield* setup
+				yield* seedOpenFinding(store, target.id)
+				const prior = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
+				yield* auditWithAgents(payloadFor(prior.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([])),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+				)
+				const next = yield* store.startRun({
+					targetId: target.id,
+					kind: "revalidation",
+					sourceRef: "main",
+				})
+				const calls: Array<string> = []
+				const scripted = scriptedAgents(calls)
+				// An admin cancels while the first agent is in flight; the run still settles after.
+				const cancelling: AuditAgentsApi = {
+					run: (invocation) =>
+						store
+							.cancelRun(next.id, Schema.decodeUnknownSync(UserId)("user_admin"))
+							.pipe(Effect.orDie, Effect.andThen(scripted.run(invocation))),
+				}
+				const result = yield* auditWithAgents(payloadFor(next.id, prior.id), () =>
+					Effect.succeed(cancelling),
+				).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([])),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+				)
+				const row = yield* store.getRun(next.id)
+				const findings = yield* store.listFindings(target.id)
+				assert.deepStrictEqual(
+					[
+						result.status,
+						calls.every((id) => id.startsWith("recon-")),
+						Option.map(row, (r) => [r.status, r.incompleteReason]),
+						findings.map((f) => f.status),
+					],
+					// Only the reconnaissance already admitted alongside the first agent ran; nothing after.
+					["incomplete", true, Option.some(["incomplete", "cancelled"]), ["open"]],
+				)
+			}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect(
