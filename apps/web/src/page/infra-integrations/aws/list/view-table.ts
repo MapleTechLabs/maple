@@ -97,7 +97,8 @@ const usageCell = (h: H, label: string, fraction: number | null): Html => {
 	)
 }
 
-const sparkCell = (h: H, view: ResourceView, context: TableContext, text: string | null): Html =>
+// A trend-only column passes no text; `null` is a figure that did not report.
+const sparkCell = (h: H, view: ResourceView, context: TableContext, text?: string | null): Html =>
 	h.div(
 		[h.Class("flex items-center gap-2")],
 		[
@@ -112,7 +113,7 @@ const sparkCell = (h: H, view: ResourceView, context: TableContext, text: string
 					}),
 				],
 			),
-			numberCell(h, text),
+			...(text === undefined ? [] : [numberCell(h, text)]),
 		],
 	)
 
@@ -147,7 +148,7 @@ const COLUMNS = {
 			label: "CPU trend",
 			width: "w-28",
 			hidden: "hidden md:flex",
-			cell: (h, view, context) => sparkCell(h, view, context, null),
+			cell: (h, view, context) => sparkCell(h, view, context),
 		},
 		{ label: "Traced as", width: "w-36", hidden: "hidden lg:flex", cell: tracedCell },
 	],
@@ -157,7 +158,7 @@ const COLUMNS = {
 			label: "CPU trend",
 			width: "w-28",
 			hidden: "hidden md:flex",
-			cell: (h, view, context) => sparkCell(h, view, context, null),
+			cell: (h, view, context) => sparkCell(h, view, context),
 		},
 		{
 			label: "Network in",
