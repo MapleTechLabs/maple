@@ -21,7 +21,7 @@ import {
 	runAudit,
 } from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { type Context, Effect, Layer, Option, Schedule, Schema } from "effect"
+import { Cause, type Context, Effect, Layer, Option, Schedule, Schema } from "effect"
 import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "../platform/Llm"
 import { makeAuditAgents } from "./agents"
 import { sandboxSource } from "./sandbox-source"
@@ -172,6 +172,21 @@ export const auditWithAgents = <E, R>(
 		)
 		return { status: result.status, invocations: result.invocations, records: result.findings.length }
 	}).pipe(
+		// A run that dies (no sandbox on this stage, a step past its retries) still leaves its row
+		// settled, never `in_progress` forever. An interrupt is an eviction: the replay finishes it.
+		Effect.tapCause((cause) =>
+			Cause.hasInterruptsOnly(cause)
+				? Effect.void
+				: Effect.gen(function* () {
+						const store = (yield* SecurityAuditStore).forOrg(
+							Schema.decodeSync(OrgId)(payload.orgId),
+						)
+						yield* store.finishRun(payload.runId, {
+							status: "failed",
+							error: Cause.pretty(cause).slice(0, 2_000),
+						})
+					}).pipe(Effect.ignore),
+		),
 		Effect.withSpan("SecurityAuditWorkflow.run", {
 			attributes: { "maple.security_audit.run_id": payload.runId, "maple.org_id": payload.orgId },
 		}),

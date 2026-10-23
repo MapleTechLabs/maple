@@ -166,6 +166,31 @@ describe("auditWithAgents", () => {
 		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
 	)
 
+	it.effect("marks the run failed when the sandbox cannot pin the commit", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const broken: RepoSandboxServiceApi = {
+				...sandbox([]),
+				prepare: () => Effect.die("repository sandbox is not available on this stage"),
+			}
+			const exit = yield* Effect.exit(
+				auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+					Effect.provideService(RepoSandboxService, broken),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+				),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				[
+					exit._tag,
+					Option.map(row, (r) => [r.status, r.error?.includes("not available on this stage")]),
+				],
+				["Failure", Option.some(["failed", true])],
+			)
+		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+	)
+
 	it.effect("replays recorded agent steps instead of running those agents again", () =>
 		Effect.gen(function* () {
 			const { store, target } = yield* setup
