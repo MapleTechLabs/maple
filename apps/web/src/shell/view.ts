@@ -55,7 +55,7 @@ const sidebarRegions = (
 const RAIL_TIP_PREFIX = "shell-rail-tip-"
 
 /** Every row that can carry a rail tooltip: the nav items, Search and the footer links. */
-const RAIL_TIP_TITLES = [
+export const RAIL_TIP_TITLES: ReadonlyArray<string> = [
 	"Search",
 	// Every row any org can show: the flags only hide rows, so a hidden row's tip is never reached.
 	...navGroups({ releases: true, securityAudit: true }).flatMap((group) => group.items.map((item) => item.title)),
