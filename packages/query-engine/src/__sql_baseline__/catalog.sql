@@ -386,6 +386,27 @@ SELECT
         OFFSET 50
         FORMAT JSON
 
+-- builder:aws-ingest:awsIngestQuery:default  [c5891e34]
+SELECT
+          metrics_sum.Attributes['aws.namespace'] AS namespace,
+          metrics_sum.ResourceAttributes['cloud.region'] AS region,
+          uniq(metrics_sum.Attributes['aws.metric_name']) AS metrics,
+          count() AS dataPoints,
+          uniq(metrics_sum.ServiceName) AS resources,
+          arraySort(groupUniqArray(8)(ServiceName)) AS sampleResources,
+          toString(max(metrics_sum.TimeUnix)) AS lastPointAt
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ScopeName = 'aws.cloudwatch.metric_stream'
+          AND metrics_sum.MetricName LIKE 'aws.%.count'
+          AND metrics_sum.ResourceAttributes['maple_aws_connection_id'] = '018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8'
+        GROUP BY namespace, region
+        ORDER BY dataPoints DESC
+        LIMIT 200
+        FORMAT JSON
+
 -- builder:ci-runs:ciFailedJobsQuery:default  [fc2d17c0]
 SELECT
           ci_jobs.TraceId AS traceId,
