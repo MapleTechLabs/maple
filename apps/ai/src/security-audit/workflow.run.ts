@@ -198,31 +198,27 @@ export const auditWithAgents = <E, R>(
 		const pinned = { repository: payload.repository, ref: sha }
 
 		// Measured before any agent: a repository over a limit is refused whole, never partly audited.
-		const measured = yield* durableStep(
+		// The limits are read inside the step, so a deploy that changes them cannot flip a replay.
+		const { violations } = yield* durableStep(
 			"repo-size",
-			sandbox
-				.exec(orgId, pinned, { ...REPO_SIZE_COMMAND, timeoutSeconds: REPO_SIZE_TIMEOUT_SECONDS })
-				.pipe(
-					Effect.map((result) =>
-						Option.match(
-							result.exitCode === 0 && !result.truncated
-								? parseRepoSize(result.stdout)
-								: Option.none(),
-							{
-								onNone: () => ({
-									unreadable: `exit ${result.exitCode}: ${result.stderr.trim().slice(0, 300)}`,
-								}),
-								onSome: (size) => ({ size }),
-							},
-						),
-					),
-				),
+			Effect.gen(function* () {
+				const result = yield* sandbox.exec(orgId, pinned, {
+					...REPO_SIZE_COMMAND,
+					timeoutSeconds: REPO_SIZE_TIMEOUT_SECONDS,
+				})
+				const size =
+					result.exitCode === 0 && !result.truncated ? parseRepoSize(result.stdout) : Option.none()
+				if (Option.isNone(size)) {
+					return {
+						violations: [
+							`its size could not be measured (exit ${result.exitCode}: ${result.stderr.trim().slice(0, 300)})`,
+						],
+					}
+				}
+				return { violations: repoLimitViolations(size.value, yield* securityAuditLimits) }
+			}),
 			STEP_RETRY,
 		)
-		const violations =
-			"size" in measured
-				? repoLimitViolations(measured.size, yield* securityAuditLimits)
-				: [`its size could not be measured (${measured.unreadable})`]
 		if (violations.length > 0) {
 			const reason = refusalReason(violations)
 			yield* store.recordEvent(payload.runId, { _tag: "Note", message: reason })

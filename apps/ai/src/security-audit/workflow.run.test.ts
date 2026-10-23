@@ -13,7 +13,7 @@ import { UserId } from "@maple/domain/primitives"
 import type { SecurityAuditTargetId, SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { type AgentInvocation, type AuditAgentsApi, coverageId, type Finding } from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { auditWithAgents } from "./workflow.run"
 
@@ -301,6 +301,35 @@ describe("auditWithAgents", () => {
 					}),
 				)
 			}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect("keeps a recorded size verdict on replay when the limits changed since", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			// A deploy lowered the file limit below this repository's 40 files after the step recorded.
+			const lowered = ConfigProvider.layer(
+				ConfigProvider.fromUnknown({ SECURITY_AUDIT_MAX_FILES: "10" }),
+			)
+			const replayed = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const recorded = new Map<string, unknown>([["repo-size", { violations: [] }]])
+			const replay = yield* auditWithAgents(payloadFor(replayed.id), () =>
+				Effect.succeed(scriptedAgents([])),
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(recorded)),
+				Effect.provide(lowered),
+			)
+			// A fresh run under the new limit is refused, so the limit itself is in force.
+			const fresh = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const freshExit = yield* Effect.exit(
+				auditWithAgents(payloadFor(fresh.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([])),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+					Effect.provide(lowered),
+				),
+			)
+			assert.deepStrictEqual([replay.status, freshExit._tag], ["complete", "Failure"])
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect("refuses a repository whose size cannot be measured", () =>

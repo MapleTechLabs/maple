@@ -28,7 +28,8 @@ export const REPO_SIZE_COMMAND = {
 	args: [
 		"-c",
 		[
-			"set -eu",
+			// The sandbox runs this with bash: pipefail makes a failing git fail the probe, not read as 0.
+			"set -euo pipefail",
 			"commits=$(git --no-optional-locks rev-list --count HEAD)",
 			`tree=$(git --no-optional-locks ls-tree -r -l HEAD | awk '$2 == "blob" { n++; s += $4 } END { printf "%d %.0f", n, s }')`,
 			"lfs=$(git --no-optional-locks ls-files -- ':(attr:filter=lfs)' | wc -l)",
@@ -53,6 +54,10 @@ const mib = (bytes: number) => `${Math.ceil(bytes / (1024 * 1024))} MiB`
 
 /** Each limit the repository is over, as a sentence the run's failure reason carries. */
 export const repoLimitViolations = (size: RepoSize, limits: SecurityAuditLimits): ReadonlyArray<string> => [
+	// History but no files is a probe that read nothing, never an empty repository to pass.
+	...(size.commits > 0 && size.files === 0
+		? ["its pinned commit listed no files although it has history, so its size could not be trusted"]
+		: []),
 	...(size.bytes > limits.maxCheckoutBytes
 		? [`its tracked files are ${mib(size.bytes)}, over the ${mib(limits.maxCheckoutBytes)} limit`]
 		: []),
