@@ -22,10 +22,10 @@ const isF = variant === "featured";
     class:list={[
         "group flex flex-col overflow-hidden rounded-lg border border-border bg-card transition-[border-color,transform] duration-200",
         "hover:-translate-y-0.5 hover:border-primary/45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring motion-reduce:transition-none motion-reduce:hover:translate-y-0",
-        isF && "md:grid md:grid-cols-[minmax(0,48fr)_minmax(0,52fr)] md:items-stretch",
+        isF && "lg:grid lg:grid-cols-[minmax(0,58fr)_minmax(0,42fr)] lg:items-stretch",
     ]}
 >
-    <div class:list={["min-w-0 border-b border-border", isF && "md:border-b-0 md:border-r"]}>
+    <div class:list={["min-w-0 border-b border-border", isF && "lg:border-b-0 lg:border-r"]}>
         <PostCover
             title={title}
             category={category}
@@ -35,7 +35,7 @@ const isF = variant === "featured";
         />
     </div>
 
-    <div class:list={["flex min-w-0 flex-1 flex-col gap-2.5 p-[18px] pb-5 [overflow-wrap:anywhere]", isF && "md:justify-center md:gap-3.5 md:p-9"]}>
+    <div class:list={["flex min-w-0 flex-1 flex-col gap-2.5 p-[18px] pb-5 [overflow-wrap:anywhere]", isF && "md:gap-3.5 md:p-8 lg:justify-center lg:p-9"]}>
         <div class="flex flex-wrap items-center gap-[7px] font-mono text-[11px] tabular-nums tracking-[0.02em] text-fg-muted">
             {isF && (
                 <span class="border border-primary/40 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.16em] text-primary">
@@ -58,7 +58,7 @@ const isF = variant === "featured";
                 "font-display font-semibold leading-[1.25] tracking-[-0.015em] text-balance text-foreground transition-colors group-hover:text-primary",
                 "text-[17px]",
                 !isF && "line-clamp-2",
-                isF && "md:text-[clamp(24px,2.6vw,34px)] md:leading-[1.1]",
+                isF && "md:text-[clamp(24px,2.4vw,32px)] md:leading-[1.1]",
             ]}
         >{title}</h3>
 
