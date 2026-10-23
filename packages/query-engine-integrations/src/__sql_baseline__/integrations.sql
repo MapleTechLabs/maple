@@ -2167,6 +2167,739 @@ SELECT
         HAVING countIf((((ai_trace_index.SessionId != '' OR ai_trace_index.IsLlmCall = 1) OR ai_trace_index.IsToolCall = 1) OR ai_trace_index.AgentName != '')) > 0) AS window_traces
 FORMAT JSON
 
+-- builder:aws-infra:awsInfraMetricsSQL:ec2
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.instance_id'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.ec2.network_in.sum', 'aws.ec2.network_out.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.instance_id'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.instance_id'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ec2.cpu_utilization', 'aws.ec2.status_check_failed')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.instance_id'] != ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:ecs
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.service_name'], metrics_sum.Attributes['aws.dimension.cluster_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.cluster_name'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.service_name'], metrics_gauge.Attributes['aws.dimension.cluster_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ecs.cpu_utilization', 'aws.ecs.memory_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.cluster_name'] != ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:lambda
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.function_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.lambda.invocations.sum', 'aws.lambda.errors.sum', 'aws.lambda.throttles.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.resource'] = ''
+          AND metrics_sum.Attributes['aws.dimension.executed_version'] = ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.function_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.lambda.duration')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.resource'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.executed_version'] = ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:loadBalancers
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.load_balancer'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.application_elb.request_count.sum', 'aws.application_elb.http_code_target_5xx_count.sum', 'aws.application_elb.http_code_elb_5xx_count.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_sum.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_sum.Attributes['aws.dimension.availability_zone'] = ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.load_balancer'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.application_elb.target_response_time')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.availability_zone'] = ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:rds
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.db_instance_identifier'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.db_instance_identifier'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.rds.cpu_utilization', 'aws.rds.database_connections', 'aws.rds.free_storage_space', 'aws.rds.freeable_memory')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] != ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:sqs
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.queue_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.sqs.number_of_messages_sent.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.queue_name'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.queue_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.sqs.approximate_number_of_messages_visible', 'aws.sqs.approximate_age_of_oldest_message')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.queue_name'] != ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraPresenceSQL:default
+SELECT
+          metric_catalog.MetricName AS metric
+        FROM metric_catalog
+        WHERE metric_catalog.OrgId = 'org_sql_catalog'
+          AND metric_catalog.MetricName IN ('aws.ecs.cpu_utilization', 'aws.ecs.memory_utilization', 'aws.ec2.cpu_utilization', 'aws.ec2.network_in.sum', 'aws.ec2.network_out.sum', 'aws.ec2.status_check_failed', 'aws.application_elb.request_count.sum', 'aws.application_elb.http_code_target_5xx_count.sum', 'aws.application_elb.http_code_elb_5xx_count.sum', 'aws.application_elb.target_response_time', 'aws.rds.cpu_utilization', 'aws.rds.database_connections', 'aws.rds.free_storage_space', 'aws.rds.freeable_memory', 'aws.lambda.invocations.sum', 'aws.lambda.errors.sum', 'aws.lambda.throttles.sum', 'aws.lambda.duration', 'aws.sqs.approximate_number_of_messages_visible', 'aws.sqs.approximate_age_of_oldest_message', 'aws.sqs.number_of_messages_sent.sum')
+          AND metric_catalog.Hour >= toStartOfInterval(toDateTime('2026-01-01 10:30:00'), INTERVAL 3600 SECOND)
+          AND metric_catalog.Hour <= '2026-01-03 14:15:00'
+        GROUP BY metric
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:ec2
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.instance_id'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.instance_id'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.instance_id'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ec2.cpu_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.instance_id'] != ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:ecs
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.service_name'], metrics_sum.Attributes['aws.dimension.cluster_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.cluster_name'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.service_name'], metrics_gauge.Attributes['aws.dimension.cluster_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ecs.cpu_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.cluster_name'] != ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:lambda
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.function_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.lambda.invocations.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.resource'] = ''
+          AND metrics_sum.Attributes['aws.dimension.executed_version'] = ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.function_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.resource'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.executed_version'] = ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:loadBalancers
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.load_balancer'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.application_elb.request_count.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_sum.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_sum.Attributes['aws.dimension.availability_zone'] = ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.load_balancer'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.availability_zone'] = ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:rds
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.db_instance_identifier'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.db_instance_identifier'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.rds.cpu_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] != ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:sqs
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.queue_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.queue_name'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.queue_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.sqs.approximate_number_of_messages_visible')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.queue_name'] != ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:ec2
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.ec2.network_in.sum', 'aws.ec2.network_out.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.instance_id'] != ''
+          AND metrics_sum.Attributes['aws.dimension.instance_id'] = 'acme-instance_id'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ec2.cpu_utilization', 'aws.ec2.status_check_failed')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.instance_id'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.instance_id'] = 'acme-instance_id'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:ecs
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.cluster_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.service_name'] = 'acme-service_name'
+          AND metrics_sum.Attributes['aws.dimension.cluster_name'] = 'acme-cluster_name'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ecs.cpu_utilization', 'aws.ecs.memory_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.cluster_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.service_name'] = 'acme-service_name'
+          AND metrics_gauge.Attributes['aws.dimension.cluster_name'] = 'acme-cluster_name'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:lambda
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.lambda.invocations.sum', 'aws.lambda.errors.sum', 'aws.lambda.throttles.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.resource'] = ''
+          AND metrics_sum.Attributes['aws.dimension.executed_version'] = ''
+          AND metrics_sum.Attributes['aws.dimension.function_name'] = 'acme-function_name'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.lambda.duration')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.resource'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.executed_version'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.function_name'] = 'acme-function_name'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:loadBalancers
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.application_elb.request_count.sum', 'aws.application_elb.http_code_target_5xx_count.sum', 'aws.application_elb.http_code_elb_5xx_count.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_sum.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_sum.Attributes['aws.dimension.availability_zone'] = ''
+          AND metrics_sum.Attributes['aws.dimension.load_balancer'] = 'acme-load_balancer'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.application_elb.target_response_time')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.availability_zone'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.load_balancer'] = 'acme-load_balancer'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:rds
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] != ''
+          AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] = 'acme-db_instance_identifier'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.rds.cpu_utilization', 'aws.rds.database_connections', 'aws.rds.free_storage_space', 'aws.rds.freeable_memory')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] = 'acme-db_instance_identifier'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:sqs
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.sqs.number_of_messages_sent.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.queue_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.queue_name'] = 'acme-queue_name'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.sqs.approximate_number_of_messages_visible', 'aws.sqs.approximate_age_of_oldest_message')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.queue_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.queue_name'] = 'acme-queue_name'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
 -- builder:billing-usage:dailyProductEventCountQuery:default
 SELECT
           toStartOfInterval(product_events.Timestamp, INTERVAL 86400 SECOND) AS day,
