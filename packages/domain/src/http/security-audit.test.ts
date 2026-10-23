@@ -14,6 +14,14 @@ describe("SecurityAuditCreateTargetRequest", () => {
 		expect(message).not.toContain("<filter>")
 	})
 
+	it("names the expected shape of a repository and a branch instead of a regex", () => {
+		const repository = failureOf({ repository: "not a repo", branch: "main" })
+		const branch = failureOf({ repository: "acme/api", branch: "--upload-pack=x" })
+		expect(repository).toContain("Expected a GitHub repository as owner/name")
+		expect(branch).toContain("Expected a branch name of letters")
+		expect([repository, branch].some((message) => message.includes("RegExp"))).toBe(false)
+	})
+
 	it("says why a branch ending in .lock is refused", () => {
 		expect(failureOf({ repository: "acme/api", branch: "main.lock" })).toContain(
 			"Expected a branch name that does not end in '/' or '.lock'",

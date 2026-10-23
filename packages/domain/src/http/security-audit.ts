@@ -31,12 +31,17 @@ const MAX_SCOPE_PATHS = 100
 
 /** `owner/name`, as GitHub spells it. */
 export const SecurityAuditRepository = Schema.String.check(
-	Schema.isPattern(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?!\.\.?$)[A-Za-z0-9._-]{1,100}$/u),
+	Schema.isPattern(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?!\.\.?$)[A-Za-z0-9._-]{1,100}$/u, {
+		message: "Expected a GitHub repository as owner/name, like acme/api",
+	}),
 )
 
 /** A branch name git would accept, without the shapes a ref or an option could hide behind. */
 export const SecurityAuditBranch = Schema.String.check(
-	Schema.isPattern(/^(?![-/.])(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/+-]{1,255}$/u),
+	Schema.isPattern(/^(?![-/.])(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/+-]{1,255}$/u, {
+		message:
+			"Expected a branch name of letters, digits and . _ / + -, not starting with - / or . and without '..', '//' or '@{'",
+	}),
 	Schema.makeFilter((value: string) => !value.endsWith("/") && !value.endsWith(".lock"), {
 		description: "a branch name",
 		message: "Expected a branch name that does not end in '/' or '.lock'",
