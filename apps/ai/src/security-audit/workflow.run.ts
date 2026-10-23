@@ -278,7 +278,11 @@ export const auditWithAgents = <E, R>(
 
 		const agents = yield* agentsFor(sandboxSource(sandbox, orgId, pinned))
 		const httpClient = yield* HttpClient.HttpClient
-		/** One invocation from the org's month, billed once it is granted. */
+		/**
+		 * One invocation from the org's cycle, billed once it is granted. Known gap: the Autumn track
+		 * is fire-and-forget, so a charge is lost while Autumn is down; reconcile it later from
+		 * `security_audit_org_reservations`, which stays the ledger of record.
+		 */
 		const admit = (agentId: string) =>
 			store
 				.reserveOrgInvocation(

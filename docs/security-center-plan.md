@@ -281,11 +281,16 @@ The method is language-neutral; the platform around it is not. Before a customer
   budget at what the org has left. Before every agent step the Workflow reserves one invocation
   in `security_audit_org_usage` (conditional upsert, open runs only) and tracks it to Autumn with
   source `security_audit`; a refusal ends the run `incomplete` with `org_budget_exhausted`.
-  Reports name every unit a run did not audit. The month is the UTC calendar month, not the
-  Autumn billing cycle. Slice size and cadence per plan wait on phase 3.
-- **Size limits.** Prepare measures commits, tracked files and bytes, and Git LFS files; a
-  repository over a limit (`security-audit/limits.ts`, env-overridable) is refused and the run is
-  marked failed with the reason.
+  Reports name every unit a run did not audit. The budget period is the subscription's own
+  billing cycle (the UTC month only when billing gives none), and a start is also capped by
+  Autumn's own remaining balance. Known gap: the Autumn track is fire-and-forget, so charges are
+  lost while Autumn is down; reconcile them later from `security_audit_org_reservations`. Slice
+  size and cadence per plan wait on phase 3.
+- **Size limits.** Target creation and run start refuse a repository GitHub reports as over
+  `SECURITY_AUDIT_MAX_REPOSITORY_BYTES`, before any clone. After the clone, prepare measures
+  commits, tracked files and bytes, and Git LFS files; a repository over a limit
+  (`security-audit/limits.ts`, env-overridable) is refused and the run is marked failed with the
+  reason.
 - **Execution label.** Prepare detects ecosystems (node/bun, Python, Go, Rust, JVM) and private
   dependency signals (registries, credentials, submodules, local `replace`, SSH git deps) and
   stores an `executionProfile` on the run; every run is `source_only` with reasons, shown in the
