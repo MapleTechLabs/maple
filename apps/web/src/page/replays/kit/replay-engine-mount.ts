@@ -13,7 +13,12 @@ export const SPEED_ATTRIBUTE = "replay-speed"
 export const IDLE_ATTRIBUTE = "replay-idle"
 export const HOLD_ATTRIBUTE = "replay-hold"
 export const TOTAL_ATTRIBUTE = "replay-total"
-/** Dispatched on the surface by a feed Mount, `detail` the range's events. */
+/**
+ * Once every chunk is loaded, how many trailing ranges the engine is fed in all; empty until then.
+ * Until the engine has taken that many, running out of events is a stall, not the end.
+ */
+export const COMPLETE_ATTRIBUTE = "replay-complete"
+/** Dispatched on the surface by a feed Mount, `detail` the range's events; the engine acknowledges with `preventDefault`. */
 export const REPLAY_EVENTS = "maple:replay-events"
 
 export type TransportAction = "play" | "pause" | "resume" | "replay"
@@ -39,6 +44,7 @@ export type EngineHandlers<A> = Readonly<{
 	ready: (totalMs: number) => A
 	ticked: (currentMs: number) => A
 	finished: () => A
+	starved: (currentMs: number) => A
 }>
 
 const readNumber = (element: Element, attribute: string, fallback: number): number => {
@@ -92,6 +98,14 @@ const startEngine = <A>(
 		lastJumpedEnd: -1,
 		lastControl: mount.getAttribute(`data-${CONTROL_ATTRIBUTE}`),
 		idle: readIdle(mount),
+		/** Ran out of loaded events while playing, with more of the recording still to come. */
+		isStarved: false,
+		/** Trailing ranges taken so far. */
+		fed: 0,
+	}
+	const isComplete = () => {
+		const expected = mount.getAttribute(`data-${COMPLETE_ATTRIBUTE}`)
+		return expected !== null && expected !== "" && state.fed >= Number(expected)
 	}
 	mount.innerHTML = ""
 	// rrweb can report a resize while it is still being constructed, before `engine` is bound.
@@ -102,8 +116,16 @@ const startEngine = <A>(
 		events: args.events,
 		fallbackViewport: { width: meta.recordedWidth || 1280, height: meta.recordedHeight || 720 },
 		onFinish: () => {
-			state.isPlaying = false
+			// rrweb finishes at its last loaded event. Mid-recording that is a buffer underrun: stay
+			// "playing" and pick up again when the next range is fed. The tick loop keeps running, since
+			// its ticks are what ask the loader for that range.
+			if (!isComplete() && state.isPlaying) {
+				state.isStarved = true
+				emit(handlers.starved(now()))
+				return
+			}
 			cancelAnimationFrame(state.raf)
+			state.isPlaying = false
 			emit(handlers.finished())
 		},
 		onResize: () => fit(),
@@ -136,6 +158,7 @@ const startEngine = <A>(
 	}
 	const setPlaying = (isPlaying: boolean) => {
 		state.isPlaying = isPlaying
+		state.isStarved = false
 		cancelAnimationFrame(state.raf)
 		if (isPlaying) state.raf = requestAnimationFrame(tick)
 	}
@@ -165,7 +188,7 @@ const startEngine = <A>(
 		engine.setSpeed(readNumber(mount, SPEED_ATTRIBUTE, 1))
 		const isHeld = mount.getAttribute(`data-${HOLD_ATTRIBUTE}`) === "true"
 		if (isHeld && state.isPlaying) engine.pause()
-		if (!isHeld && state.isPlaying) engine.play(engine.getCurrentTimeMs())
+		if (!isHeld && state.isPlaying && !state.isStarved) engine.play(engine.getCurrentTimeMs())
 	}
 	const attributes = new MutationObserver((records) => {
 		const changed = (attribute: string) => records.some((record) => record.attributeName === `data-${attribute}`)
@@ -179,7 +202,16 @@ const startEngine = <A>(
 	})
 	const onEvents = (event: Event) => {
 		if (!(event instanceof CustomEvent) || !Array.isArray(event.detail)) return
+		event.preventDefault()
+		state.fed += 1
 		event.detail.forEach((item: unknown) => engine.addEvent(item))
+		if (!state.isStarved) return
+		// rrweb commits added events on a microtask; resume after they land.
+		setTimeout(() => {
+			if (!state.isStarved) return
+			engine.play(engine.getCurrentTimeMs())
+			setPlaying(true)
+		}, 0)
 	}
 	surface.addEventListener(REPLAY_EVENTS, onEvents)
 

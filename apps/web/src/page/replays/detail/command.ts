@@ -7,7 +7,7 @@ import {
 	getSessionTraceSummaries,
 } from "@maple/web-data/warehouse/replays"
 import { getSpanHierarchy } from "@maple/web-data/warehouse/traces"
-import { Clock, Effect, Option, Queue, Result, Schema, Stream } from "effect"
+import { Clock, Effect, Option, Queue, Result, Schedule, Schema, Stream } from "effect"
 import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
@@ -156,6 +156,7 @@ type EngineMessage =
 	| typeof Message.ReadiedEngine.Type
 	| typeof Message.TickedEngine.Type
 	| typeof Message.FinishedEngine.Type
+	| typeof Message.StarvedEngine.Type
 
 /** The engine for one seed; the element is keyed by `seedVersion`, so a new seed is a new engine. */
 export const MountEngine = Mount.defineStream("MountReplayEngine", {
@@ -166,7 +167,7 @@ export const MountEngine = Mount.defineStream("MountReplayEngine", {
 		startAtMs: Schema.NullOr(Schema.Number),
 		shiftMs: Schema.Number,
 	},
-	messages: [Message.ReadiedEngine, Message.TickedEngine, Message.FinishedEngine],
+	messages: [Message.ReadiedEngine, Message.TickedEngine, Message.FinishedEngine, Message.StarvedEngine],
 	execute: ({ element, seedVersion, events, format, startAtMs, shiftMs }) =>
 		runReplayEngine<EngineMessage>(
 			element,
@@ -175,20 +176,29 @@ export const MountEngine = Mount.defineStream("MountReplayEngine", {
 				ready: (totalMs) => Message.ReadiedEngine({ seedVersion, totalMs }),
 				ticked: (currentMs) => Message.TickedEngine({ seedVersion, currentMs }),
 				finished: () => Message.FinishedEngine({ seedVersion }),
+				starved: (currentMs) => Message.StarvedEngine({ seedVersion, currentMs }),
 			},
 		),
 })
 
-/** A range loaded after the seed: handed to the live engine beside it, then done. */
+/** Hands one range to the engine; false while no engine has taken it yet (it is still starting). */
+const offerEvents = (element: Element, events: ReadonlyArray<unknown>): boolean =>
+	!element.isConnected ||
+	!element.dispatchEvent(new CustomEvent(REPLAY_EVENTS, { detail: events, bubbles: true, cancelable: true }))
+
+/**
+ * A range loaded after the seed: handed to the live engine beside it, then done. The engine listens
+ * only once rrweb has loaded, so the offer repeats until the engine takes it or the span goes away.
+ */
 export const FeedEvents = Mount.defineStream("FeedReplayEvents", {
 	args: { events: Schema.Array(Schema.Unknown) },
 	messages: [Message.FedTrailingEvents],
 	execute: ({ element, events }) =>
 		Stream.fromEffect(
-			Effect.sync(() => {
-				element.dispatchEvent(new CustomEvent(REPLAY_EVENTS, { detail: events, bubbles: true }))
-				return Message.FedTrailingEvents()
-			}),
+			Effect.sync(() => offerEvents(element, events)).pipe(
+				Effect.repeat({ until: (taken) => taken, schedule: Schedule.spaced("50 millis") }),
+				Effect.as(Message.FedTrailingEvents()),
+			),
 		),
 })
 

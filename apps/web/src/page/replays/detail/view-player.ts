@@ -15,6 +15,7 @@ import { docsLink } from "../../kit/signal-empty-state"
 import {
 	CONTROL_ATTRIBUTE,
 	HOLD_ATTRIBUTE,
+	COMPLETE_ATTRIBUTE,
 	IDLE_ATTRIBUTE,
 	SPEED_ATTRIBUTE,
 	TOTAL_ATTRIBUTE,
@@ -23,7 +24,7 @@ import { MARKER_STYLES } from "../kit/replay-meta"
 import { replayFormat } from "../kit/replay-window"
 import { FeedEvents, MountEngine } from "./command"
 import { type PlayerStatus, timelineOf } from "./derive"
-import { isBuffering, seedEvents, seedShiftMs, trailingRanges } from "./loader"
+import { hasMoreChunks, isBuffering, loadedFromMs, loadedUntilMs, seedEvents, seedShiftMs, trailingRanges } from "./loader"
 import { Message } from "./message"
 import type { Model, ReplayDetail } from "./model"
 import type { LoadFailure } from "../../../data/load-failure"
@@ -41,6 +42,8 @@ export type DisplayState = Readonly<{
 	totalMs: number
 	markers: ReadonlyArray<{ readonly ms: number; readonly kind: keyof typeof MARKER_STYLES }>
 	idleBands: ReadonlyArray<{ readonly start: number; readonly end: number }>
+	/** The downloaded, playable span, like a video's buffered range. */
+	buffered: { readonly start: number; readonly end: number } | null
 }>
 
 /** The playhead, markers and idle bands on the trimmed (display) timeline. */
@@ -54,7 +57,33 @@ export const displayState = (model: Model): DisplayState => {
 			start: timeline.toDisplay(interval.start),
 			end: timeline.toDisplay(interval.end),
 		})),
+		buffered:
+			model.loader.seedCount === 0
+				? null
+				: {
+						start: timeline.toDisplay(loadedFromMs(model)),
+						end: timeline.toDisplay(Math.min(loadedUntilMs(model), model.player.totalMs)),
+					},
 	}
+}
+
+/** The downloaded span, under the progress fill. */
+export const bufferedLayer = (h: H, display: DisplayState): ReadonlyArray<Html> => {
+	const { buffered, totalMs } = display
+	if (buffered === null || totalMs <= 0) return []
+	const leftPct = Math.max(0, Math.min(100, (buffered.start / totalMs) * 100))
+	const widthPct = Math.max(0, Math.min(100 - leftPct, ((buffered.end - buffered.start) / totalMs) * 100))
+	return [
+		h.span(
+			[
+				h.Key("buffered"),
+				h.Class("absolute inset-y-0 rounded-full bg-foreground/20"),
+				h.Style({ left: `${leftPct}%`, width: `${widthPct}%` }),
+				h.Title("Downloaded"),
+			],
+			[],
+		),
+	]
 }
 
 const IDLE_HATCH = "repeating-linear-gradient(45deg, transparent 0 2px, rgba(0,0,0,0.18) 2px 4px)"
@@ -172,6 +201,7 @@ const engineMount = (h: H, model: Model, session: ReplayDetail, status: PlayerSt
 		h.DataAttribute(IDLE_ATTRIBUTE, JSON.stringify(player.isSkippingIdle ? model.meta.inactiveIntervals : [])),
 		h.DataAttribute(HOLD_ATTRIBUTE, String(player.isPlaying && isBuffering(model))),
 		h.DataAttribute(TOTAL_ATTRIBUTE, String(player.totalMs)),
+		h.DataAttribute(COMPLETE_ATTRIBUTE, hasMoreChunks(model) ? "" : String(trailingRanges(loader).length)),
 	]
 	return status === "ready"
 		? h.div(
@@ -305,6 +335,7 @@ const scrubber = (h: H, display: DisplayState): Html => {
 			h.div(
 				[h.Class("absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted")],
 				[
+					...bufferedLayer(h, display),
 					...idleBandsLayer(h, display),
 					h.div([h.Class("relative h-full rounded-full bg-primary"), h.Style({ width: `${pct}%` })], []),
 				],
