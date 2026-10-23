@@ -64,16 +64,17 @@ export const orgAuditBudget = (
 	nowMs: number,
 ): OrgAuditBudget => {
 	if (customer === null) return { limit: unmetered, ...utcMonth(nowMs), autumnRemaining: null }
-	// The base plan's own period, which is when Autumn resets the feature's balance.
-	const cycle = customer.subscriptions.find(
+	// The base plan's own period, which is when Autumn resets the feature's balance. Any status
+	// counts: a past_due or trialing subscription still has its period, and the key must not flip.
+	const covering = customer.subscriptions.filter(
 		(sub) =>
-			sub.status === "active" &&
 			sub.addOn !== true &&
 			sub.currentPeriodStart != null &&
 			sub.currentPeriodEnd != null &&
 			sub.currentPeriodStart <= nowMs &&
 			nowMs < sub.currentPeriodEnd,
 	)
+	const cycle = covering.find((sub) => sub.status === "active") ?? covering[0]
 	const window =
 		cycle?.currentPeriodStart == null || cycle.currentPeriodEnd == null
 			? utcMonth(nowMs)

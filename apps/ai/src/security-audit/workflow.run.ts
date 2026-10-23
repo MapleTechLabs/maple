@@ -107,6 +107,16 @@ const durableAgents = (
 					"org_budget_unavailable",
 				),
 			),
+			// A step that dies (its timeout, an isolate past its CPU limit) refuses too, as an agent
+			// step's death costs that agent: the run settles incomplete instead of staying open.
+			Effect.catchDefect((defect) =>
+				Effect.fail(
+					refused(
+						`the organization's invocation budget step died: ${Cause.pretty(Cause.die(defect)).slice(0, 600)}`,
+						"org_budget_unavailable",
+					),
+				),
+			),
 		)
 		return Effect.flatMap(
 			admitted,

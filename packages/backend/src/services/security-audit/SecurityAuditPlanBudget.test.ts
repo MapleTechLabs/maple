@@ -63,6 +63,26 @@ describe("orgAuditBudget", () => {
 		})
 	})
 
+	it("keeps the cycle's key and reset when the subscription goes past_due mid-cycle", () => {
+		const active = billed({
+			planId: "startup",
+			status: "active",
+			currentPeriodStart: START,
+			currentPeriodEnd: END,
+		})
+		const pastDue = billed({
+			planId: "startup",
+			status: "past_due",
+			currentPeriodStart: START,
+			currentPeriodEnd: END,
+		})
+		const keyOf = (budget: ReturnType<typeof orgAuditBudget>) => [budget.period, budget.resetsAt]
+		assert.deepStrictEqual(
+			keyOf(orgAuditBudget(pastDue, 20_000, NOW)),
+			keyOf(orgAuditBudget(active, 20_000, NOW)),
+		)
+	})
+
 	it("falls back to the UTC month without a current billing period, and for an unmetered org", () => {
 		const withoutPeriod = billed({ planId: "startup", status: "active" })
 		const addOnOnly = billed({

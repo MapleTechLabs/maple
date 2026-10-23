@@ -354,6 +354,42 @@ describe("auditWithAgents", () => {
 		}).pipe(Effect.provide(testLayer())),
 	)
 
+	it.effect("settles the run incomplete when its org-budget step dies, launching no agent", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const replaying = replayingStep(new Map())
+			// The reservation step times out, which the step surfaces as a defect.
+			const step: Cloudflare.WorkflowStep["Service"] = {
+				...replaying,
+				do: (options) =>
+					options.name.startsWith("org-budget:")
+						? Effect.die(new Error("step timed out after 30 seconds"))
+						: replaying.do(options),
+			}
+			const calls: Array<string> = []
+			const result = yield* auditWithAgents(payloadFor(run.id), () =>
+				Effect.succeed(scriptedAgents(calls)),
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, step),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				{
+					status: result.status,
+					agents: calls.length,
+					row: Option.map(row, (r) => [
+						r.status,
+						r.finishedAt !== null,
+						r.incompleteReason?.split("; ").includes("org_budget_unavailable"),
+					]),
+				},
+				{ status: "incomplete", agents: 0, row: Option.some(["incomplete", true, true]) },
+			)
+		}).pipe(Effect.provide(testLayer())),
+	)
+
 	it.effect("marks the run failed when the sandbox cannot pin the commit", () =>
 		Effect.gen(function* () {
 			const { store, target } = yield* setup
