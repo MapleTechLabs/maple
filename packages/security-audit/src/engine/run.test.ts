@@ -427,3 +427,51 @@ describe("runAudit, review regressions", () => {
 		expect(recorded.invocations.some((i) => i.role === "candidate-verifier")).toBe(false)
 	})
 })
+
+describe("runAudit, carrying several records on one unit", () => {
+	it("carries every unchanged record a prior unit links and reports each of them", async () => {
+		const second = confirmed({
+			fingerprint: "keys/second-root-cause",
+			title: "Key list leaks other orgs' keys",
+		})
+		// Verifiers answer for the record their prompt carries.
+		const twoRecords = (i: AgentInvocation) => {
+			const isSecond = i.prompt.includes("keys/second-root-cause")
+			if (i.role === "candidate-verifier")
+				return json({ decision: "confirmed", record: isSecond ? second : confirmed() })
+			if (i.role === "record-verifier")
+				return json({
+					decision: "verified",
+					fingerprint: isSecond ? "keys/second-root-cause" : FINGERPRINT,
+				})
+			return happy()(i)
+		}
+		const { result: first } = await runScripted(baseInput(), (i) => {
+			if (i.role === "hunter") {
+				const answer = hunterAnswer(i, ALL)
+				const { verdict: _v, ...fields } =
+					second.verdict === "confirmed" ? second : (undefined as never)
+				return json({
+					...answer,
+					units: answer.units.map((u) =>
+						u.disposition === "candidate"
+							? { ...u, candidate_fingerprints: [FINGERPRINT, "keys/second-root-cause"] }
+							: u,
+					),
+					candidates:
+						answer.candidates.length === 0
+							? []
+							: [...answer.candidates, { proposed_verdict: "confirmed", ...fields }],
+				})
+			}
+			return twoRecords(i)
+		})
+		const prior = { runId: "run-1", sourceRef: "abc123", ledger: first.ledger, findings: first.findings }
+		const { result } = await runScripted(baseInput({ runId: "run-2", prior }), twoRecords)
+		expect(result.findings.map((f) => f.fingerprint)).toEqual([
+			"keys/roll-missing-org-scope",
+			"keys/second-root-cause",
+		])
+		expect(ledgerErrors(result.ledger)).toEqual([])
+	})
+})

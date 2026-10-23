@@ -35,6 +35,19 @@ const asWritten = (value: unknown): Json => JSON.parse(JSON.stringify(value))
 /** The skill's own `coverage_id`: RFC 3986-encoded canonical references joined with `::`. */
 export const coverageId = (refs: CanonicalRefs): string => LedgerValidator.canonicalCoverageId(refs)
 
+/**
+ * The `coverage_id`, or undefined when a reference breaks the skill's canonical-reference rules
+ * (surrounding whitespace, control characters, non-NFC text): the upstream helper throws on those.
+ */
+export const safeCoverageId = (refs: CanonicalRefs): string | undefined => {
+	const result = Effect.runSync(
+		Effect.result(
+			Effect.try({ try: () => LedgerValidator.canonicalCoverageId(refs), catch: () => undefined }),
+		),
+	)
+	return result._tag === "Success" ? result.success : undefined
+}
+
 export const isSafeAgentId = (value: string): boolean => LedgerValidator.isSafeAgentId(value)
 
 export const isSafeRelativePath = (value: string): boolean => LedgerValidator.isSafeRelativePath(value)
