@@ -24,3 +24,7 @@ export const segment = <K extends string>(name: K): Biparser<Record<K, string>> 
 /** `literal` segments joined by `slash`: `path("infra", "kubernetes")`. */
 export const path = (first: string, ...rest: ReadonlyArray<string>): Biparser<{}> =>
 	rest.reduce((parser, next) => pipe(parser, slash(literal(next))), literal(first))
+
+/** A decoded path param that must be non-empty and at most `maxLength` long; else the route does not match. */
+export const boundedSegment = <K extends string>(name: K, maxLength: number): Biparser<Record<K, string>> =>
+	schemaSegment(name, PercentEncoded.check(Schema.isNonEmpty(), Schema.isMaxLength(maxLength)))

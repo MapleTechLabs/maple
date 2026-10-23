@@ -24,11 +24,7 @@ export interface NavSubItem {
 	readonly icon?: IconName
 	readonly iconColor?: string
 	readonly surfaces?: ReadonlyArray<NavSurface>
-	readonly views?: ReadonlyArray<{
-		readonly title: string
-		readonly href: string
-		readonly paletteTitle?: string
-	}>
+	readonly views?: ReadonlyArray<{ readonly title: string; readonly href: string; readonly paletteTitle?: string }>
 	/** The command palette's title, when the row's own reads ambiguously there. */
 	readonly paletteTitle?: string
 }

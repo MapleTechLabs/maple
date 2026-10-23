@@ -5,7 +5,7 @@ import { Route } from "foldkit"
 import { query, schemaSegment, slash } from "foldkit/route"
 import { AppRoute } from "./app-route"
 import * as Search from "./search"
-import { path, segment } from "./segment"
+import { boundedSegment, path, segment } from "./segment"
 import { tanstackSearch } from "./tanstack-search"
 
 const search = <A, I>(schema: Schema.Codec<A, I>) => query(tanstackSearch(schema))
@@ -41,11 +41,7 @@ const routers = {
 	ServiceMap: pipe(path("service-map"), search(Search.ServiceMapSearch), Route.mapTo(AppRoute.ServiceMap)),
 	Settings: pipe(path("settings"), search(Search.SettingsSearch), Route.mapTo(AppRoute.Settings)),
 	Sources: pipe(path("sources"), Route.mapTo(AppRoute.Sources)),
-	SourcesNew: pipe(
-		path("sources", "new"),
-		search(Search.SourcesNewSearch),
-		Route.mapTo(AppRoute.SourcesNew),
-	),
+	SourcesNew: pipe(path("sources", "new"), search(Search.SourcesNewSearch), Route.mapTo(AppRoute.SourcesNew)),
 	Source: pipe(
 		path("sources"),
 		slash(segment("sourceId")),
@@ -116,7 +112,7 @@ const routers = {
 	SecurityFinding: pipe(
 		path("security", "findings"),
 		slash(schemaSegment("targetId", SecurityAuditTargetId)),
-		slash(segment("fingerprint")),
+		slash(boundedSegment("fingerprint", 1024)),
 		Route.mapTo(AppRoute.SecurityFinding),
 	),
 	Dashboard: pipe(
