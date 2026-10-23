@@ -23,84 +23,91 @@ interface Rule {
 const toRuleUuid = Schema.decodeSync(AlertRulePublicId)
 
 test.describe("alert rules", () => {
-	// A rule written by the API or MCP, then edited in the UI: the path that dropped tiers.
-	test(
-		"keeps an API-made tiered rule intact through UI edits",
-		{ session: "reviewer" },
-		async ({ app, browser, screen }) => {
-			const appUrl = app.baseUrl ?? ""
-			await app.open("/alerts")
-			const tag = runTag()
-			const destination = (name: string) =>
-				api<{ id: string }>(browser, appUrl, "/v2/alerts/destinations", {
+	// Editing loads the rule over Electric sync, which a `preview:web` preview does not deploy.
+	if (process.env.MAPLE_E2E_NO_SYNC !== "1") {
+		// A rule written by the API or MCP, then edited in the UI: the path that dropped tiers.
+		test(
+			"keeps an API-made tiered rule intact through UI edits",
+			{ session: "reviewer" },
+			async ({ app, browser, screen }) => {
+				const appUrl = app.baseUrl ?? ""
+				await app.open("/alerts")
+				const tag = runTag()
+				const destination = (name: string) =>
+					api<{ id: string }>(browser, appUrl, "/v2/alerts/destinations", {
+						method: "POST",
+						body: {
+							type: "webhook",
+							name: `e2e ${name} ${tag}`,
+							url: "https://example.com/maple-e2e",
+						},
+					})
+				const warn = await destination("warn")
+				const page = await destination("page")
+				const tiers: Tier[] = [
+					{
+						severity: "warning",
+						value: 0.007,
+						upper: null,
+						recovery_value: 0.005,
+						destination_ids: [warn.body.id],
+					},
+					{
+						severity: "critical",
+						value: 0.03,
+						upper: null,
+						recovery_value: null,
+						destination_ids: [page.body.id],
+					},
+				]
+				const created = await api<Rule>(browser, appUrl, "/v2/alerts/rules", {
 					method: "POST",
 					body: {
-						type: "webhook",
-						name: `e2e ${name} ${tag}`,
-						url: "https://example.com/maple-e2e",
+						name: `e2e tiers ${tag}`,
+						signal_type: "error_rate",
+						comparator: "gt",
+						window_minutes: 5,
+						consecutive_breaches_required: 2,
+						breaches_out_of: 4,
+						thresholds: tiers,
 					},
 				})
-			const warn = await destination("warn")
-			const page = await destination("page")
-			const tiers: Tier[] = [
-				{
-					severity: "warning",
-					value: 0.007,
-					upper: null,
-					recovery_value: 0.005,
-					destination_ids: [warn.body.id],
-				},
-				{
-					severity: "critical",
-					value: 0.03,
-					upper: null,
-					recovery_value: null,
-					destination_ids: [page.body.id],
-				},
-			]
-			const created = await api<Rule>(browser, appUrl, "/v2/alerts/rules", {
-				method: "POST",
-				body: {
-					name: `e2e tiers ${tag}`,
-					signal_type: "error_rate",
-					comparator: "gt",
-					window_minutes: 5,
-					consecutive_breaches_required: 2,
-					breaches_out_of: 4,
-					thresholds: tiers,
-				},
-			})
-			expect(created.status).toBe(200)
-			const editUrl = `/alerts/create?ruleId=${toRuleUuid(created.body.id)}`
-			const read = () => api<Rule>(browser, appUrl, `/v2/alerts/rules/${created.body.id}`)
+				expect(created.status).toBe(200)
+				const editUrl = `/alerts/create?ruleId=${toRuleUuid(created.body.id)}`
+				const read = () => api<Rule>(browser, appUrl, `/v2/alerts/rules/${created.body.id}`)
 
-			try {
-				await app.open(editUrl)
-				await expect(browser.locator("#rule-threshold")).toHaveValue("0.7")
-				await expect(screen.getByLabel("Critical threshold")).toHaveValue("3")
-				await expect(screen.getByLabel("Out of the last")).toHaveValue("4")
+				try {
+					await app.open(editUrl)
+					await expect(browser.locator("#rule-threshold")).toHaveValue("0.7")
+					await expect(screen.getByLabel("Critical threshold")).toHaveValue("3")
+					await expect(screen.getByLabel("Out of the last")).toHaveValue("4")
 
-				await screen.getByLabel("Rule name").fill(`e2e tiers renamed ${tag}`)
-				await screen.getByRole("button", "Save changes").tap()
-				await expect(browser).toHaveURL(/\/alerts$/)
-				const renamed = await read()
-				expect(renamed.body.name).toBe(`e2e tiers renamed ${tag}`)
-				expect(renamed.body.thresholds).toEqual(tiers)
-				expect(renamed.body.breaches_out_of).toBe(4)
+					await screen.getByLabel("Rule name").fill(`e2e tiers renamed ${tag}`)
+					await screen.getByRole("button", "Save changes").tap()
+					await expect(browser).toHaveURL(/\/alerts$/)
+					const renamed = await read()
+					expect(renamed.body.name).toBe(`e2e tiers renamed ${tag}`)
+					expect(renamed.body.thresholds).toEqual(tiers)
+					expect(renamed.body.breaches_out_of).toBe(4)
 
-				await app.open(editUrl)
-				await screen.getByLabel("Critical threshold").fill("4")
-				await screen.getByRole("button", "Save changes").tap()
-				await expect(browser).toHaveURL(/\/alerts$/)
-				const retuned = await read()
-				expect(retuned.body.thresholds.map((tier) => tier.value)).toEqual([0.007, 0.04])
-			} finally {
-				await api(browser, appUrl, `/v2/alerts/rules/${created.body.id}`, { method: "DELETE" })
-				await api(browser, appUrl, `/v2/alerts/destinations/${warn.body.id}`, { method: "DELETE" })
-				await api(browser, appUrl, `/v2/alerts/destinations/${page.body.id}`, { method: "DELETE" })
-			}
-		},
-	)
+					await app.open(editUrl)
+					await screen.getByLabel("Critical threshold").fill("4")
+					await screen.getByRole("button", "Save changes").tap()
+					await expect(browser).toHaveURL(/\/alerts$/)
+					const retuned = await read()
+					expect(retuned.body.thresholds.map((tier) => tier.value)).toEqual([0.007, 0.04])
+				} finally {
+					await api(browser, appUrl, `/v2/alerts/rules/${created.body.id}`, { method: "DELETE" })
+					await api(browser, appUrl, `/v2/alerts/destinations/${warn.body.id}`, {
+						method: "DELETE",
+					})
+					await api(browser, appUrl, `/v2/alerts/destinations/${page.body.id}`, {
+						method: "DELETE",
+					})
+				}
+			},
+		)
+	}
 
 	test("names an empty range bound before save", { session: "reviewer" }, async ({ app, screen }) => {
 		await app.open("/alerts/create")
