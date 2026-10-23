@@ -860,6 +860,18 @@
         "vitest": "catalog:",
       },
     },
+    "packages/security-audit": {
+      "name": "@maple/security-audit",
+      "version": "0.0.0",
+      "dependencies": {
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
     "packages/ui": {
       "name": "@maple/ui",
       "dependencies": {
@@ -1601,6 +1613,8 @@
     "@maple/scraper": ["@maple/scraper@workspace:apps/scraper"],
 
     "@maple/sdk-core": ["@maple/sdk-core@workspace:packages/sdk-core"],
+
+    "@maple/security-audit": ["@maple/security-audit@workspace:packages/security-audit"],
 
     "@maple/semconv": ["@maple/semconv@workspace:lib/semconv"],
 
