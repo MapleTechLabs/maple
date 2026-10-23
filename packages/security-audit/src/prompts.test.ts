@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { plannedUnit } from "./__fixtures__/records"
-import { type AgentContext, hunterPrompt, unknownBlockRefs, VERBATIM } from "./prompts"
+import { type AgentContext, companionFileOf, hunterPrompt, unknownBlockRefs, VERBATIM } from "./prompts"
 import {
 	COMPANION_FILES,
 	COMPANION_REQUIRED_SECTIONS,
@@ -99,6 +99,15 @@ describe("hunterPrompt", () => {
 		expect(prompt).toContain(
 			"No target-controlled execution is available in this run: no OS-enforced sandbox",
 		)
+	})
+})
+
+describe("companionFileOf", () => {
+	it("takes the file part of a reference and keeps a bare file name whole", () => {
+		expect([
+			companionFileOf("CLIENT-SIDE.md#Core discipline"),
+			companionFileOf("CLIENT-SIDE.md"),
+		]).toEqual(["CLIENT-SIDE.md", "CLIENT-SIDE.md"])
 	})
 })
 
