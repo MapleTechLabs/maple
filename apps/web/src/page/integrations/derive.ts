@@ -276,6 +276,10 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 			const outdated = status.connections.some(
 				(connection) => connection.verified_at !== null && connection.setup_outdated,
 			)
+			// Without a metric stream a connected account sends Maple nothing.
+			const metricsOff = status.connections.some(
+				(connection) => connection.verified_at !== null && connection.metric_stream === null,
+			)
 			const issue =
 				failing > 0
 					? `${countLabel(failing, "account")} failing`
@@ -283,7 +287,9 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 						? "Finish setup"
 						: outdated
 							? "Update the stack"
-							: null
+							: metricsOff
+								? "Metrics off"
+								: null
 			// A stack not deployed yet is setup in progress, not a failure.
 			const health: Pick<IntegrationOverview & { kind: "connected" }, "health" | "stateLabel"> =
 				failing === 0 && pending

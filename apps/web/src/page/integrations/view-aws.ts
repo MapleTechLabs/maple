@@ -23,7 +23,13 @@ import {
 	integrationEmptyMedia,
 	integrationIconPlate,
 } from "../infra-integrations/kit/integration-empty"
-import { type AwsSetupMethod, decodeCreateRequest, normalizeAccountId } from "./aws"
+import {
+	type AwsSetupMethod,
+	decodeCreateRequest,
+	METRIC_REGIONS_HINT,
+	metricStreamOf,
+	normalizeAccountId,
+} from "./aws"
 import { codeBlock } from "../settings/kit/code-block"
 import { segmentedSelect } from "../../ui/segmented-select"
 import { externalLink } from "./view-gcp-configure-parts"
@@ -66,10 +72,62 @@ const ACCOUNT_IDS: Field.FieldIds = {
 	error: "aws-account-id-error",
 }
 
+const REGION_IDS: Field.FieldIds = {
+	control: "aws-metric-regions",
+	label: "aws-metric-regions-label",
+	error: "aws-metric-regions-error",
+	description: "aws-metric-regions-description",
+}
+
+/** The regions a metric stream reads, typed as codes; `actions` sit beside the input. */
+const regionsField = (
+	h: H,
+	options: Readonly<{
+		ids: Field.FieldIds
+		label: string
+		field: Field.Model
+		toMessage: (message: Field.Message) => Message
+		error: string | null
+		actions: ReadonlyArray<Html>
+	}>,
+): Html => {
+	const isInvalid =
+		options.error !== null ||
+		(options.field.isTouched && Option.isNone(metricStreamOf(options.field.value)))
+	const state = Field.stateOf(options.field, isInvalid)
+	return Field.field(h, { className: "items-stretch gap-2", state }, [
+		Field.fieldLabel(h, { ids: options.ids, state }, options.label),
+		h.div(
+			[h.Class("flex flex-wrap items-center gap-2")],
+			[
+				input(h, {
+					id: options.ids.control,
+					className: "min-w-48 flex-1",
+					controlClassName: "font-mono",
+					fieldState: state,
+					attributes: [
+						h.Autocomplete("off"),
+						h.Placeholder("us-east-1, eu-central-1"),
+						...Field.controlAttributes(h, options.field, options.toMessage),
+						h.AriaLabelledBy(options.ids.label),
+						...(isInvalid ? [h.AriaInvalid(true)] : []),
+					],
+				}),
+				...options.actions,
+			],
+		),
+		options.error === null
+			? Field.fieldDescription(h, { ids: options.ids, state }, METRIC_REGIONS_HINT)
+			: Field.fieldError(h, { ids: options.ids, state, attributes: [h.Role("alert")] }, options.error),
+	])
+}
+
 const accountForm = (h: H, model: Model, canCancel: boolean): Html => {
 	const card = model.awsCard
 	const typed = normalizeAccountId(card.accountId.value)
-	const isValid = Option.isSome(decodeCreateRequest({ account_id: typed }))
+	const isValid =
+		Option.isSome(decodeCreateRequest({ account_id: typed })) &&
+		Option.isSome(metricStreamOf(card.regions.value))
 	const state = Field.stateOf(card.accountId, card.createError !== null)
 	return h.form(
 		[h.Class("flex w-full flex-col gap-2 text-left"), h.OnSubmit(Message.SubmittedAwsAccount())],
@@ -124,6 +182,14 @@ const accountForm = (h: H, model: Model, canCancel: boolean): Html => {
 							),
 						]),
 			]),
+			regionsField(h, {
+				ids: REGION_IDS,
+				label: "Stream CloudWatch metrics from",
+				field: card.regions,
+				toMessage: (message) => Message.GotAwsRegionsMessage({ message }),
+				error: null,
+				actions: [],
+			}),
 		],
 	)
 }
@@ -158,7 +224,97 @@ const healthOf = (connection: V2AwsConnection): Health => {
 	if (connection.verified_at === null) return { label: "Waiting for setup", variant: "muted" }
 	if (connection.last_check_error !== null) return { label: "Needs attention", variant: "crit" }
 	if (connection.setup_outdated) return { label: "Update the stack", variant: "warn" }
+	if (connection.metric_stream === null) return { label: "Metrics off", variant: "warn" }
 	return { label: "Connected", variant: "ok" }
+}
+
+const METRICS_IDS: Field.FieldIds = {
+	control: "aws-stream-regions",
+	label: "aws-stream-regions-label",
+	error: "aws-stream-regions-error",
+	description: "aws-stream-regions-description",
+}
+
+const metricsForm = (h: H, model: Model): Html => {
+	const card = model.awsCard
+	return h.form(
+		[h.Class("flex w-full flex-col gap-2"), h.OnSubmit(Message.SubmittedAwsMetrics())],
+		[
+			regionsField(h, {
+				ids: METRICS_IDS,
+				label: "Stream CloudWatch metrics from",
+				field: card.metricsRegions,
+				toMessage: (message) => Message.GotAwsMetricsRegionsMessage({ message }),
+				error: card.metricsError,
+				actions: [
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							isDisabled: card.isSavingMetrics,
+							attributes: [h.OnClick(Message.ClickedAwsMetricsCancel())],
+						},
+						["Cancel"],
+					),
+					button(
+						h,
+						{
+							size: "sm",
+							type: "submit",
+							isDisabled: Option.isNone(metricStreamOf(card.metricsRegions.value)),
+							isLoading: card.isSavingMetrics,
+						},
+						["Stream metrics"],
+					),
+				],
+			}),
+		],
+	)
+}
+
+/** What the metric stream sends, or that nothing is streamed and how to start. */
+const metricsLine = (
+	h: H,
+	model: Model,
+	connection: V2AwsConnection,
+	timeZone: string,
+): ReadonlyArray<Html> => {
+	const stream = connection.metric_stream
+	if (stream === null) {
+		return model.awsCard.metricsId === connection.id
+			? [metricsForm(h, model)]
+			: [
+					h.p(
+						[h.Class(SMALL)],
+						["No metric stream: Maple receives no metrics from this account until you add one."],
+					),
+				]
+	}
+	return [
+		h.p(
+			[h.Class(cn(SMALL, "[overflow-wrap:anywhere]"))],
+			[
+				`Metrics from ${stream.regions.join(", ")} · `,
+				connection.metrics_last_received_at === null
+					? "waiting for the first delivery. Deploy the stack again if you have not since adding the stream."
+					: relativeTime(h, {
+							value: connection.metrics_last_received_at,
+							nowMs: model.nowMs,
+							timeZone,
+							prefix: "received",
+						}),
+			],
+		),
+		...(connection.metrics_last_error === null
+			? []
+			: [
+					h.p(
+						[h.Class("text-xs text-severity-error [overflow-wrap:anywhere]"), h.Role("alert")],
+						[connection.metrics_last_error],
+					),
+				]),
+	]
 }
 
 const roleName = (connection: V2AwsConnection) => connection.role_arn.split("/").at(-1) ?? connection.role_arn
@@ -217,9 +373,24 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 								[connection.last_check_error],
 							),
 						]),
+				...metricsLine(h, model, connection, timeZone),
 				h.div(
 					[h.Class("flex flex-wrap gap-2")],
 					[
+						...(connection.metric_stream === null && model.awsCard.metricsId !== connection.id
+							? [
+									button(
+										h,
+										{
+											size: "sm",
+											attributes: [
+												h.OnClick(Message.ClickedAwsMetrics({ id: connection.id })),
+											],
+										},
+										["Stream metrics"],
+									),
+								]
+							: []),
 						button(
 							h,
 							{

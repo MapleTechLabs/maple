@@ -15,12 +15,16 @@ import {
 	type AwsSetupMethod,
 	CheckAwsConnection,
 	CreateAwsConnection,
+	DEFAULT_METRIC_REGIONS,
 	DeleteAwsConnection,
 	decodeCreateRequest,
 	LoadAwsSetup,
+	METRIC_REGIONS_HINT,
+	metricStreamOf,
 	normalizeAccountId,
 	pendingConnections,
 	ReadAwsRemoved,
+	UpdateAwsMetricStream,
 	WriteAwsRemoved,
 } from "./aws"
 import { ReadClock } from "./command"
@@ -58,16 +62,37 @@ export const gotAccountId = (model: Model, message: Field.Message): Return => {
 	}
 }
 
+export const gotRegions = (model: Model, message: Field.Message): Return => {
+	const step = Field.update(model.awsCard.regions, message)
+	return {
+		model: withCard(model, { regions: step.model, createError: null }),
+		commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
+			Message.GotAwsRegionsMessage({ message: inner }),
+		),
+	}
+}
+
+/** A new connection streams metrics from the first deploy: without a stream Maple receives nothing. */
 export const submittedAccount = (model: Model): Return => {
 	const card = model.awsCard
 	if (card.isCreating) return { model }
-	return Option.match(decodeCreateRequest({ account_id: normalizeAccountId(card.accountId.value) }), {
-		onNone: () => ({ model: withCard(model, { createError: "An AWS account ID is 12 digits." }) }),
-		onSome: (request) => ({
-			model: withCard(model, { isCreating: true, createError: null }),
-			commands: [CreateAwsConnection({ request })],
+	const metricStream = metricStreamOf(card.regions.value)
+	if (Option.isNone(metricStream)) {
+		return { model: withCard(model, { createError: METRIC_REGIONS_HINT }) }
+	}
+	return Option.match(
+		decodeCreateRequest({
+			account_id: normalizeAccountId(card.accountId.value),
+			metric_stream: metricStream.value,
 		}),
-	})
+		{
+			onNone: () => ({ model: withCard(model, { createError: "An AWS account ID is 12 digits." }) }),
+			onSome: (request) => ({
+				model: withCard(model, { isCreating: true, createError: null }),
+				commands: [CreateAwsConnection({ request })],
+			}),
+		},
+	)
 }
 
 /** The new connection's setup opens right away: deploying the stack is the next step. */
@@ -293,4 +318,58 @@ export const statusArrived = (model: Model, before: ReadonlyArray<V2AwsConnectio
 		"AWS connected",
 		`Maple can read account ${now.account_id}.`,
 	)
+}
+
+/** A connection without a metric stream: its form opens with the default region. */
+export const clickedMetrics = (model: Model, id: AwsConnectionId): Return => ({
+	model: withCard(model, {
+		metricsId: id,
+		metricsRegions: Field.init(DEFAULT_METRIC_REGIONS),
+		metricsError: null,
+	}),
+})
+
+export const cancelledMetrics = (model: Model): Return => ({
+	model: withCard(model, { metricsId: null, metricsError: null }),
+})
+
+export const gotMetricsRegions = (model: Model, message: Field.Message): Return => {
+	const step = Field.update(model.awsCard.metricsRegions, message)
+	return {
+		model: withCard(model, { metricsRegions: step.model, metricsError: null }),
+		commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
+			Message.GotAwsMetricsRegionsMessage({ message: inner }),
+		),
+	}
+}
+
+export const submittedMetrics = (model: Model): Return => {
+	const card = model.awsCard
+	if (card.metricsId === null || card.isSavingMetrics) return { model }
+	const id = card.metricsId
+	return Option.match(metricStreamOf(card.metricsRegions.value), {
+		onNone: () => ({ model: withCard(model, { metricsError: METRIC_REGIONS_HINT }) }),
+		onSome: (metricStream) => ({
+			model: withCard(model, { isSavingMetrics: true, metricsError: null }),
+			commands: [UpdateAwsMetricStream({ id, metricStream })],
+		}),
+	})
+}
+
+/** AWS only streams once the stack is deployed again, so its setup opens right away. */
+export const completedMetricStream = (
+	model: Model,
+	context: PageContext,
+	connection: V2AwsConnection | null,
+	error: string | null,
+): Return => {
+	if (connection === null) {
+		return { model: withCard(model, { isSavingMetrics: false, metricsError: error }) }
+	}
+	return chain(withCard(model, { isSavingMetrics: false, metricsId: null }), [
+		(next) => openSetup(next, context, connection.id),
+		(next) => requestStatus(next, context, "aws", "Supersede"),
+		(next) =>
+			toast(next, "success", "Metric stream added", "Run the setup again in AWS to start streaming."),
+	])
 }

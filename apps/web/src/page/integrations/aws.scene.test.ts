@@ -1,6 +1,8 @@
 import { OrgId } from "@maple/domain"
 import { Timestamp, type V2AwsConnection, type V2AwsIntegration } from "@maple/domain/http/v2"
 import { AwsAccountId, AwsConnectionId } from "@maple/domain/primitives"
+import { AwsMetricStream } from "@maple/domain/aws"
+import { AWS_METRIC_NAMESPACES } from "@maple/domain/primitives"
 import { Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
@@ -41,6 +43,8 @@ const connection = (overrides: Partial<V2AwsConnection> = {}): V2AwsConnection =
 	...overrides,
 })
 
+const stream = Schema.decodeSync(AwsMetricStream)({ regions: ["us-east-1"], namespaces: ["AWS/ECS"] })
+
 const entered = (): Model => init({ search: { integration: "aws" } }, context).model
 
 const withStatus = (model: Model, connections: ReadonlyArray<V2AwsConnection>): Model => {
@@ -64,6 +68,78 @@ describe("aws card", () => {
 		const sent = pageUpdate(typed(" 1234-5678-9012 "), Message.SubmittedAwsAccount())
 		expect(names(sent.commands)).toEqual(["CreateAwsConnection"])
 		expect(names(pageUpdate(sent.model, Message.SubmittedAwsAccount()).commands)).toEqual([])
+	})
+
+	test("a new connection streams every namespace from the typed regions, and bad regions block it", () => {
+		const withRegions = (value: string) =>
+			pageUpdate(
+				typed("123456789012"),
+				Message.GotAwsRegionsMessage({ message: Field.Message.ChangedValue({ value }) }),
+			).model
+
+		const sent = pageUpdate(
+			withRegions("us-east-1, EU-central-1 us-east-1"),
+			Message.SubmittedAwsAccount(),
+		)
+		const [create] = sent.commands ?? []
+		expect(create?.name).toBe("CreateAwsConnection")
+		expect(create?.args).toMatchObject({
+			request: {
+				metric_stream: { regions: ["us-east-1", "eu-central-1"], namespaces: AWS_METRIC_NAMESPACES },
+			},
+		})
+
+		const bad = pageUpdate(withRegions("virginia"), Message.SubmittedAwsAccount())
+		expect(names(bad.commands)).toEqual([])
+		expect(bad.model.awsCard.createError).not.toBeNull()
+	})
+
+	test("a connected account without a stream gets one, then its setup opens to redeploy", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
+		const model = withStatus(entered(), [connection({ verified_at })])
+		expect(overviewOf(model.statuses, model.nowMs, "aws")).toMatchObject({ issue: "Metrics off" })
+
+		const opened = pageUpdate(model, Message.ClickedAwsMetrics({ id: connectionId })).model
+		const edited = pageUpdate(
+			opened,
+			Message.GotAwsMetricsRegionsMessage({
+				message: Field.Message.ChangedValue({ value: "eu-central-1" }),
+			}),
+		).model
+		const sent = pageUpdate(edited, Message.SubmittedAwsMetrics())
+		const [update] = sent.commands ?? []
+		expect(update?.name).toBe("UpdateAwsMetricStream")
+		expect(update?.args).toMatchObject({ id: connectionId, metricStream: { regions: ["eu-central-1"] } })
+		// A second submit while saving sends nothing.
+		expect(names(pageUpdate(sent.model, Message.SubmittedAwsMetrics()).commands)).toEqual([])
+
+		const saved = pageUpdate(
+			sent.model,
+			Message.CompletedAwsMetricStream({
+				connection: connection({ verified_at, metric_stream: stream }),
+				error: null,
+			}),
+		)
+		expect(saved.model.awsCard.metricsId).toBeNull()
+		expect(saved.model.awsCard.setupId).toBe(connectionId)
+		expect(names(saved.commands)).toContain("LoadAwsSetup")
+		expect(names(saved.commands)).toContain("LoadIntegrationsAwsStatus")
+	})
+
+	test("a refused metric stream keeps the form open with the reason", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
+		const opened = pageUpdate(
+			withStatus(entered(), [connection({ verified_at })]),
+			Message.ClickedAwsMetrics({ id: connectionId }),
+		).model
+		const sent = pageUpdate(opened, Message.SubmittedAwsMetrics()).model
+		const failed = pageUpdate(
+			sent,
+			Message.CompletedAwsMetricStream({ connection: null, error: "Not allowed." }),
+		).model
+		expect(failed.awsCard.metricsId).toBe(connectionId)
+		expect(failed.awsCard.metricsError).toBe("Not allowed.")
+		expect(failed.awsCard.isSavingMetrics).toBe(false)
 	})
 
 	test("a new connection opens its setup and re-reads the status", () => {
@@ -201,7 +277,7 @@ describe("aws card", () => {
 		const overview = overviewOf(model.statuses, model.nowMs, "aws")
 		expect(overview?.kind === "connected" && overview.health).toBe("attention")
 		expect(overview?.kind === "connected" && overview.issue).toBe("Update the stack")
-		const current = withStatus(entered(), [connection({ verified_at })])
+		const current = withStatus(entered(), [connection({ verified_at, metric_stream: stream })])
 		expect(overviewOf(current.statuses, current.nowMs, "aws")).toMatchObject({ issue: null })
 	})
 

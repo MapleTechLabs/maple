@@ -330,6 +330,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
 		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
 		GotAwsAccountIdMessage: ({ message: child }) => Aws.gotAccountId(model, child),
+		GotAwsRegionsMessage: ({ message: child }) => Aws.gotRegions(model, child),
 		SubmittedAwsAccount: () => Aws.submittedAccount(model),
 		SucceededAwsCreate: ({ connection }) => Aws.succeededCreate(model, context, connection),
 		FailedAwsCreate: ({ error }) => Aws.failedCreate(model, error),
@@ -352,6 +353,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		DismissedAwsRemoved: ({ connectionId }) => Aws.dismissedRemoved(model, context, connectionId),
 		CompletedReadAwsRemoved: ({ removed }) => Aws.completedReadRemoved(model, removed),
 		CompletedWriteAwsRemoved: () => ({ model }),
+		ClickedAwsMetrics: ({ id }) => Aws.clickedMetrics(model, id),
+		ClickedAwsMetricsCancel: () => Aws.cancelledMetrics(model),
+		GotAwsMetricsRegionsMessage: ({ message: child }) => Aws.gotMetricsRegions(model, child),
+		SubmittedAwsMetrics: () => Aws.submittedMetrics(model),
+		CompletedAwsMetricStream: ({ connection, error }) =>
+			Aws.completedMetricStream(model, context, connection, error),
 		// Advances the card's window and "Last data" ages; the fresh clock re-reads rows on a new key.
 		TickedSupabaseClock: () => ({ model, commands: [ReadClock()] }),
 		CompletedReadSupabaseClock: ({ nowMs }) => Supabase.completedReadClock(model, context, nowMs),
