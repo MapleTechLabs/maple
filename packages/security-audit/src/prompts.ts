@@ -134,6 +134,10 @@ export const synthesisPrompt = (input: SynthesisInput, context: AgentContext): s
 		footer(context),
 	].join("\n\n")
 
+/** The file part of a block reference; the whole reference when it names only a file. */
+export const companionFileOf = (ref: string): string =>
+	ref.includes("#") ? ref.slice(0, ref.indexOf("#")) : ref
+
 /** A selected block's text, plus the sections every selected companion must carry. */
 const selectedBlockTexts = (units: ReadonlyArray<CoverageUnit>): ReadonlyArray<string> => {
 	const refs: Array<string> = []
@@ -142,7 +146,7 @@ const selectedBlockTexts = (units: ReadonlyArray<CoverageUnit>): ReadonlyArray<s
 	}
 	for (const unit of units) {
 		if (unit.ordinary_attack_class_block !== null) add(unit.ordinary_attack_class_block)
-		const files = new Set(unit.selected_companion_blocks.map((ref) => ref.slice(0, ref.indexOf("#"))))
+		const files = new Set(unit.selected_companion_blocks.map(companionFileOf))
 		for (const file of files) add(`${file}#Core discipline`)
 		for (const ref of unit.selected_companion_blocks) add(ref)
 		for (const file of files) {

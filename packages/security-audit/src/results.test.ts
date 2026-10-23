@@ -41,6 +41,13 @@ describe("decodeAgentJson", () => {
 		expect(result.units).toHaveLength(1)
 	})
 
+	it("discards a fence that names another language", async () => {
+		const exit = await Effect.runPromiseExit(
+			decodeAgentJson("hunter", HunterResult, `\`\`\`yaml\n${hunterJson}\n\`\`\``),
+		)
+		expect(Exit.isFailure(exit)).toBe(true)
+	})
+
 	it("discards a prose-wrapped result instead of repairing it", async () => {
 		const exit = await Effect.runPromiseExit(
 			decodeAgentJson("hunter", HunterResult, `Here is my result:\n${hunterJson}`),

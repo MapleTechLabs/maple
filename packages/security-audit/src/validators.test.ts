@@ -1,7 +1,7 @@
 import { Effect, Exit } from "effect"
 import { describe, expect, it } from "vitest"
 import { confirmedRecord, needsValidationRecord, plannedUnit } from "./__fixtures__/records"
-import { coverageId, validateFindings, validateLedger } from "./validators"
+import { coverageId, safeCoverageId, validateFindings, validateLedger } from "./validators"
 
 describe("coverageId", () => {
 	it("percent-encodes each canonical reference and joins them with ::", () => {
@@ -24,6 +24,16 @@ describe("coverageId", () => {
 			lifecycle: "on delete",
 		})
 		expect(id.endsWith("::on%20delete")).toBe(true)
+	})
+})
+
+describe("safeCoverageId", () => {
+	it("answers undefined for a reference the skill's rules refuse, where the upstream helper throws", () => {
+		const refs = { surface: " src/a.ts", boundary: "b", subsystem: "s", attack_class: "c" }
+		expect([safeCoverageId(refs), safeCoverageId({ ...refs, surface: "src/a.ts" })]).toEqual([
+			undefined,
+			"src%2Fa.ts::b::s::c",
+		])
 	})
 })
 
