@@ -171,3 +171,33 @@ export type CoverageUnit = typeof CoverageUnit.Type
 
 export const Ledger = Schema.Array(CoverageUnit)
 export const Findings = Schema.Array(Finding)
+
+/** `ExecutionPolicy` (prompts) as a schema, so run metadata can be stored and decoded. */
+export const ExecutionPolicyRecord = Schema.Union([
+	Schema.TaggedStruct("Available", { limits: Schema.String }),
+	Schema.TaggedStruct("Unavailable", { blocker: Schema.String }),
+])
+
+/** The engine's `RunMetadata` (`run-metadata.json`) as a schema, for persistence. */
+export const RunMetadataRecord = Schema.Struct({
+	run_id: Schema.String,
+	repo: Schema.String,
+	target: Schema.String,
+	source_ref: Schema.String,
+	profile: Schema.Literals(["quick", "standard", "deep"]),
+	scope_paths: Schema.Array(Schema.String),
+	budget: Schema.NullOr(Schema.Number),
+	execution_policy: Schema.Literal("sandboxed-source-and-local-only"),
+	execution: ExecutionPolicyRecord,
+	prior_runs: Schema.Array(Schema.String),
+	run_status: Schema.Literals(["in_progress", "complete", "incomplete"]),
+	incomplete_reason: Schema.optionalKey(Schema.String),
+})
+export type RunMetadataRecord = typeof RunMetadataRecord.Type
+
+/** The engine's `AuditReports`, the three generated markdown documents. */
+export const AuditReportsRecord = Schema.Struct({
+	report: Schema.String,
+	findingsDetail: Schema.String,
+	needsValidation: Schema.String,
+})

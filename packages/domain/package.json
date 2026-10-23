@@ -36,6 +36,7 @@
 		"./raw-sql": "./src/raw-sql.ts",
 		"./recommendations": "./src/recommendations.ts",
 		"./sandbox": "./src/sandbox.ts",
+		"./security-audit": "./src/security-audit.ts",
 		"./onboarding-checklist": "./src/onboarding-checklist.ts",
 		"./setup-audit": "./src/setup-audit.ts",
 		"./support-channel": "./src/support-channel.ts",

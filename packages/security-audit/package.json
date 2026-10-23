@@ -4,7 +4,8 @@
 	"private": true,
 	"type": "module",
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./schema": "./src/schema.ts"
 	},
 	"scripts": {
 		"test": "bun scripts/vendor-skill.ts --check && node --test skill/validate-findings.test.cjs skill/validate-coverage-ledger.test.cjs && vitest run",
