@@ -92,7 +92,7 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 	readonly createTarget: (
 		input: CreateTargetInput,
 	) => Effect.Effect<SecurityAuditTargetRow, AuditStoreError | SecurityAuditTargetExists>
-	/** The org's active connected repository by `owner/name`, case-insensitively. */
+	/** The org's active GitHub-connected repository by `owner/name`, case-insensitively. */
 	readonly findConnectedRepository: (
 		repository: string,
 	) => Effect.Effect<Option.Option<ConnectedRepository>, AuditStoreError>
@@ -781,6 +781,8 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 								.select("id", "fullName")
 								.where(($) => [
 									$.orgId.eq(orgId),
+									// The sandbox clones through the GitHub App: no other provider can be audited.
+									$.provider.eq("github"),
 									$.status.eq("active"),
 									PG.lower($.fullName).eq(repository.toLowerCase()),
 								])

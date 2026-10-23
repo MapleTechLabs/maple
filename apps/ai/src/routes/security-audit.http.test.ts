@@ -339,6 +339,51 @@ describe("/api/security-audit targets", () => {
 	})
 })
 
+describe("/api/security-audit GitHub only", () => {
+	it("refuses a repository connected through anything but an active GitHub connection", async () => {
+		const harness = makeHarness()
+		try {
+			// The same org, connected through another provider, and a GitHub repository it disconnected.
+			await harness.sql(
+				`INSERT INTO vcs_repositories (id, org_id, provider, installation_id, external_repo_id, owner, name,
+					full_name, tracked_branch, html_url, created_at, updated_at)
+				 VALUES ($1, $2, 'gitlab', $3, '2002', 'acme', 'web', 'acme/web', 'main', 'https://gitlab.com/acme/web', now(), now())`,
+				[crypto.randomUUID(), ORG_A, crypto.randomUUID()],
+			)
+			await harness.sql(
+				`INSERT INTO vcs_repositories (id, org_id, provider, installation_id, external_repo_id, owner, name,
+					full_name, tracked_branch, html_url, status, created_at, updated_at)
+				 VALUES ($1, $2, 'github', $3, '3003', 'acme', 'old', 'acme/old', 'main', 'https://github.com/acme/old', 'removed', now(), now())`,
+				[crypto.randomUUID(), ORG_A, crypto.randomUUID()],
+			)
+			const gitlab = await harness.call("POST", "/targets", {
+				body: { ...TARGET, repository: "acme/web" },
+			})
+			const removed = await harness.call("POST", "/targets", {
+				body: { ...TARGET, repository: "acme/old" },
+			})
+			const github = await harness.call("POST", "/targets", { body: TARGET })
+
+			expect([
+				gitlab.status,
+				gitlab.body._tag,
+				gitlab.body.message,
+				removed.status,
+				github.status,
+			]).toEqual([
+				404,
+				tag("SecurityAuditRepositoryNotConnectedError"),
+				"Security audits read GitHub repositories only. Connect this repository through the GitHub integration first.",
+				404,
+				200,
+			])
+			expect(await harness.count("security_audit_targets")).toBe(1)
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
 describe("/api/security-audit runs", () => {
 	it("starts manual runs one at a time, with a finite budget and the best prior run", async () => {
 		const harness = makeHarness()

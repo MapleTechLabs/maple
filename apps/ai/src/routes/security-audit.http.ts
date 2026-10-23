@@ -257,7 +257,8 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					const repository = yield* orUnavailable(store.findConnectedRepository(payload.repository))
 					if (Option.isNone(repository)) {
 						return yield* new SecurityAuditRepositoryNotConnectedError({
-							message: "This organization has no connected repository by that name.",
+							message:
+								"Security audits read GitHub repositories only. Connect this repository through the GitHub integration first.",
 							repository: payload.repository,
 						})
 					}
