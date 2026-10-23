@@ -17,7 +17,8 @@ export const sourceState = (model: Model, id: SourceId): SourceState =>
 	AsyncData.matchData(model.sources[id].data, {
 		onEmpty: (): SourceState => ({ status: "loading" }),
 		onFailure: (): SourceState => ({ status: "error" }),
-		onData: ({ summary }): SourceState => (summary === null ? { status: "error" } : { status: "ready", summary }),
+		onData: ({ summary }): SourceState =>
+			summary === null ? { status: "error" } : { status: "ready", summary },
 	})
 
 const SOURCE_SURFACES = {
@@ -31,7 +32,14 @@ const SOURCE_SURFACES = {
 	gcp: ["gcp"],
 } satisfies Readonly<{ [K in SourceId]: ReadonlyArray<NavSurface> }>
 
-const NOT_CONNECTED = { cloudflare: false, railway: false, planetscale: false, gcp: false, supabase: false }
+const NOT_CONNECTED = {
+	cloudflare: false,
+	railway: false,
+	planetscale: false,
+	gcp: false,
+	supabase: false,
+	aws: false,
+}
 
 /** `useInfraSurfaces(window)`: the page's probe (the last answer while a new window loads) and the shell's statuses. */
 export const surfacesOf = (model: Model, context: PageContext): ReadonlySet<NavSurface> | null =>
