@@ -90,6 +90,8 @@ export const SecurityAuditListEventsQuery = Schema.Struct({
 	),
 	/** Epoch ms: only events strictly before it; the page's oldest `at` fetches the next page. */
 	beforeAt: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThan(0))),
+	/** The last event id of the previous page, so events in the same millisecond are not skipped. */
+	beforeId: Schema.optional(Schema.String.check(Schema.isMaxLength(128))),
 })
 
 export const SecurityAuditListFindingsQuery = Schema.Struct({

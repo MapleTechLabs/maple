@@ -3,6 +3,7 @@ import { OrgId, UserId } from "@maple/domain/primitives"
 import type { SecurityAuditTargetId } from "@maple/domain/security-audit"
 import type { AuditEvent, CoverageUnit, Finding, RunMetadata } from "@maple/security-audit"
 import { Effect, Layer, Option, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { SecurityAuditStore, type SecurityAuditStoreApi } from "./SecurityAuditStore"
 
@@ -226,6 +227,7 @@ describe("SecurityAuditStore runs and events", () => {
 				const scoped = store.forOrg(orgA)
 				const { runId } = yield* seedRun(store, orgA, "sha-1")
 				yield* scoped.recordEvent(runId, { _tag: "Phase", phase: "recon", detail: "4 agents" })
+				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, {
 					_tag: "Agent",
 					role: "hunter",
@@ -233,6 +235,8 @@ describe("SecurityAuditStore runs and events", () => {
 					outcome: "ok",
 					usage: { inputTokens: 1200, outputTokens: 300, costUsd: 0.25 },
 				})
+				// Events in one millisecond order by id; these are sequential in time.
+				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, { _tag: "Note", message: "budget reserved" })
 				const events = yield* scoped.listEvents(runId)
 				assert.deepStrictEqual(
@@ -299,13 +303,10 @@ describe("SecurityAuditStore runs and events", () => {
 				}
 				yield* scoped.saveMetadata(metadata)
 				yield* scoped.saveArchitecture(runId, "# Architecture")
-				yield* scoped.addUsage(runId, {
-					invocations: 2,
-					inputTokens: 100,
-					outputTokens: 10,
-					costUsd: 0.5,
-				})
-				yield* scoped.addUsage(runId, { invocations: 1, inputTokens: 50, outputTokens: 5 })
+				const usage = { invocations: 3, inputTokens: 150, outputTokens: 15, costUsd: 0.5 }
+				// Written twice, as a retried settle step would: totals are set, never added.
+				yield* scoped.setUsage(runId, usage)
+				yield* scoped.setUsage(runId, usage)
 				yield* scoped.finishRun(runId, { status: "incomplete", reason: "budget exhausted" })
 				const run = Option.getOrThrow(yield* scoped.getRun(runId))
 				assert.deepStrictEqual(
@@ -397,9 +398,17 @@ describe("SecurityAuditStore replays", () => {
 				})
 				const note: AuditEvent = { _tag: "Note", message: "budget reserved" }
 				yield* scoped.recordEvent(runId, agent("ok"))
+				// Events in one millisecond order by id; these are sequential in time.
+				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, note)
+				// Events in one millisecond order by id; these are sequential in time.
+				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, agent("ok"))
+				// Events in one millisecond order by id; these are sequential in time.
+				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, note)
+				// Events in one millisecond order by id; these are sequential in time.
+				yield* TestClock.adjust("1 millis")
 				yield* scoped.recordEvent(runId, agent("failed"))
 				const events = yield* scoped.listEvents(runId)
 				assert.deepStrictEqual(
@@ -578,6 +587,26 @@ describe("SecurityAuditStore run admission", () => {
 						"@maple/backend/security-audit/RunInProgress",
 						"@maple/backend/security-audit/TargetDisabled",
 					],
+				)
+			}),
+		),
+	)
+
+	it.effect("frees a target whose running run was abandoned for more than 48 hours", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { targetId, runId } = yield* seedRun(store, orgA, "sha-1")
+				yield* TestClock.adjust("47 hours")
+				const early = yield* Effect.flip(
+					scoped.startRun({ targetId, kind: "manual", sourceRef: "sha-2" }),
+				)
+				yield* TestClock.adjust("2 hours")
+				const next = yield* scoped.startRun({ targetId, kind: "manual", sourceRef: "sha-3" })
+				const abandoned = Option.getOrThrow(yield* scoped.getRun(runId))
+				assert.deepStrictEqual(
+					[early._tag, next.status, abandoned.status, abandoned.finishedAt === null],
+					["@maple/backend/security-audit/RunInProgress", "in_progress", "failed", false],
 				)
 			}),
 		),

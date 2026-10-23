@@ -351,6 +351,34 @@ const keysFinding: Finding = {
 }
 
 describe("auditWithAgents, settling", () => {
+	it.effect("leaves a finding open when the run that missed it was only a quick pass", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const prior = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
+			yield* auditWithAgents(payloadFor(prior.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			yield* store.saveFindings(prior.id, [keysFinding])
+			const next = yield* store.startRun({
+				targetId: target.id,
+				kind: "revalidation",
+				sourceRef: "main",
+			})
+			yield* auditWithAgents({ ...payloadFor(next.id, prior.id), profile: "quick" }, () =>
+				Effect.succeed(scriptedAgents([])),
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const findings = yield* store.listFindings(target.id)
+			assert.deepStrictEqual(
+				findings.map((f) => f.status),
+				["open"],
+			)
+		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+	)
+
 	it.effect("does nothing for a run its starter already marked failed", () =>
 		Effect.gen(function* () {
 			const { store, target } = yield* setup

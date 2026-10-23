@@ -111,8 +111,13 @@ export const auditWithAgents = <E, R>(
 		const store = (yield* SecurityAuditStore).forOrg(orgId)
 		// A run its starter already gave up on (a failed start that still created the instance) stays out.
 		const self = yield* store.getRun(payload.runId)
-		if (Option.isSome(self) && self.value.status === "failed") {
-			return { status: "incomplete" as const, invocations: 0, records: 0 }
+		// Settled already (by its own settle step, or failed by its starter): a replay must not redo it.
+		if (Option.isSome(self) && self.value.finishedAt !== null) {
+			return {
+				status: self.value.status === "complete" ? ("complete" as const) : ("incomplete" as const),
+				invocations: self.value.invocationsSpent,
+				records: 0,
+			}
 		}
 		const sandbox = yield* RepoSandboxService
 		const target = { repository: payload.repository, ref: payload.ref }
@@ -211,16 +216,32 @@ export const auditWithAgents = <E, R>(
 		)
 		// One durable, retried step: a replay neither double-counts usage nor re-settles the run.
 		const settle = Effect.gen(function* () {
-			yield* store.addUsage(payload.runId, {
+			yield* store.setUsage(payload.runId, {
 				invocations: result.invocations,
 				inputTokens: result.usage.inputTokens,
 				outputTokens: result.usage.outputTokens,
 				costUsd: result.usage.costUsd,
 			})
-			// A complete, unscoped run that no longer reports an open finding whose files changed fixed it.
+			// Only a full pass can say a finding is gone: no disclosed gaps, not quick, not scoped, and
+			// the finding is not tied to a unit this run left unaudited (deferred, blocked, out of scope).
 			const row = yield* store.getRun(payload.runId)
+			const unaudited = new Set(
+				result.ledger
+					.filter(
+						(u) =>
+							u.status !== "covered" &&
+							u.status !== "candidate" &&
+							u.status !== "not_applicable",
+					)
+					.flatMap((u) => [
+						...u.result_fingerprints,
+						...(u.carried_fingerprint === undefined ? [] : [u.carried_fingerprint]),
+					]),
+			)
 			if (
 				result.status === "complete" &&
+				result.gaps.length === 0 &&
+				payload.profile !== "quick" &&
 				payload.scopePaths.length === 0 &&
 				prior !== null &&
 				Option.isSome(row)
@@ -231,6 +252,7 @@ export const auditWithAgents = <E, R>(
 						f.status === "open" &&
 						f.verdict !== "rejected" &&
 						!reported.has(f.fingerprint) &&
+						!unaudited.has(f.fingerprint) &&
 						changedSincePrior([
 							...f.record.trace.map((t) => t.file),
 							...f.record.evidence.map((e) => e.file),

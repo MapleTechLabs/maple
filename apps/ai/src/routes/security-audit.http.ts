@@ -335,6 +335,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						store.listEvents(run.id, {
 							limit: query.limit ?? SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT,
 							beforeAt: query.beforeAt,
+							beforeId: query.beforeId,
 						}),
 					)
 					return { events: rows.map(toEvent) }

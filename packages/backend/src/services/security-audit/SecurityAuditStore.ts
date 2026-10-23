@@ -113,7 +113,8 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		targetId: SecurityAuditTargetId,
 	) => Effect.Effect<Option.Option<SecurityAuditRunRow>, AuditStoreError>
 	readonly finishRun: (runId: string, outcome: FinishRunOutcome) => Effect.Effect<void, AuditStoreError>
-	readonly addUsage: (runId: string, usage: RunUsage) => Effect.Effect<void, AuditStoreError>
+	/** Sets the run's totals (absolute, so a retried or replayed write cannot double-count). */
+	readonly setUsage: (runId: string, usage: RunUsage) => Effect.Effect<void, AuditStoreError>
 	readonly getRun: (runId: string) => Effect.Effect<Option.Option<SecurityAuditRunRow>, AuditStoreError>
 	readonly listRuns: (options?: {
 		readonly targetId?: SecurityAuditTargetId
@@ -128,7 +129,12 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 	/** Oldest first; with a `limit`, the newest page strictly before `beforeAt`. */
 	readonly listEvents: (
 		runId: string,
-		options?: { readonly limit?: number | undefined; readonly beforeAt?: number | undefined },
+		options?: {
+			readonly limit?: number | undefined
+			readonly beforeAt?: number | undefined
+			/** With `beforeAt`, the last event id of the previous page: events in the same millisecond. */
+			readonly beforeId?: string | undefined
+		},
 	) => Effect.Effect<ReadonlyArray<SecurityAuditEventRecord>, AuditStoreError>
 	readonly listFindings: (
 		targetId: SecurityAuditTargetId,
@@ -179,6 +185,9 @@ export interface SecurityAuditStoreApi {
 }
 
 const DEFAULT_RUN_LIST_LIMIT = 50
+
+/** Longer than any audit run lasts; an `in_progress` run older than this was abandoned. */
+const STALE_RUN_MS = 48 * 60 * 60 * 1000
 
 /** Ledger units per insert: 7 binds each keeps one statement far under Postgres's 65,535. */
 const LEDGER_INSERT_CHUNK = 500
@@ -695,6 +704,22 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 											targetId: input.targetId,
 										})
 									}
+									// A run with no settlement for longer than any run lasts is abandoned (an
+									// externally terminated instance, a lost settle): it must not block the target.
+									yield* db.run(
+										PG.update(SecurityAuditRuns)
+											.set({
+												status: "failed",
+												error: "abandoned: no settlement within 48 hours",
+												finishedAt: now,
+											})
+											.where(($) => [
+												$.orgId.eq(orgId),
+												$.targetId.eq(input.targetId),
+												$.status.eq("in_progress"),
+												$.startedAt.lt(now - STALE_RUN_MS),
+											]),
+									)
 									const running = yield* db.run(
 										PG.from(SecurityAuditRuns)
 											.select("id")
@@ -784,22 +809,19 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					})
 				})
 
-				const addUsage: SecurityAuditOrgStore["addUsage"] = Effect.fn("SecurityAuditStore.addUsage")(
+				const setUsage: SecurityAuditOrgStore["setUsage"] = Effect.fn("SecurityAuditStore.setUsage")(
 					function* (rawRunId, usage) {
 						const runId = yield* decodeRunId(rawRunId)
 						const cost = usage.costUsd
 						const rows = yield* dbExecute((db) =>
 							db.run(
 								PG.update(SecurityAuditRuns)
-									.set(($) => ({
-										invocationsSpent: $.invocationsSpent.add(usage.invocations),
-										inputTokens: $.inputTokens.add(usage.inputTokens),
-										outputTokens: $.outputTokens.add(usage.outputTokens),
-										costUsd:
-											cost === undefined
-												? undefined
-												: PG.coalesce($.costUsd, PG.lit(0)).add(cost),
-									}))
+									.set({
+										invocationsSpent: usage.invocations,
+										inputTokens: usage.inputTokens,
+										outputTokens: usage.outputTokens,
+										costUsd: cost === undefined ? undefined : cost,
+									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(runId)])
 									.returning("id"),
 							),
@@ -888,19 +910,36 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 				)(function* (rawRunId, options) {
 					const runId = yield* decodeRunId(rawRunId)
 					const beforeAt = options?.beforeAt
+					const beforeId = options?.beforeId
 					const query = PG.from(SecurityAuditEvents)
 						.select(($) => ({ ...$, detail: PG.undecoded($.detail) }))
 						.where(($) => [
 							$.orgId.eq(orgId),
 							$.runId.eq(runId),
-							beforeAt === undefined ? undefined : $.at.lt(beforeAt),
+							beforeAt === undefined
+								? undefined
+								: beforeId === undefined
+									? $.at.lt(beforeAt)
+									: PG.or($.at.lt(beforeAt), PG.and($.at.eq(beforeAt), $.id.lt(beforeId))),
 						])
 					const limit = options?.limit
 					const rows = yield* dbExecute((db) =>
 						limit === undefined
-							? db.run(query.orderBy(($) => [[$.at, "asc"]]))
+							? db.run(
+									query.orderBy(($) => [
+										[$.at, "asc"],
+										[$.id, "asc"],
+									]),
+								)
 							: db
-									.run(query.orderBy(($) => [[$.at, "desc"]]).limit(limit))
+									.run(
+										query
+											.orderBy(($) => [
+												[$.at, "desc"],
+												[$.id, "desc"],
+											])
+											.limit(limit),
+									)
 									.pipe(Effect.map((page) => page.toReversed())),
 					)
 					const decoded = rows.map((row) => ({
@@ -1033,7 +1072,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					createTarget,
 					startRun,
 					finishRun,
-					addUsage,
+					setUsage,
 					getRun,
 					listRuns,
 					listUnits,
