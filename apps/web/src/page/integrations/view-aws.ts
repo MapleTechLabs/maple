@@ -1,4 +1,4 @@
-import { AWS_METRICS_OFF, AWS_NO_DELIVERY } from "@maple/domain/aws"
+import { AWS_METRICS_OFF } from "@maple/domain/aws"
 import type { V2AwsConnection, V2AwsIngest, V2AwsIntegration, V2AwsSetup } from "@maple/domain/http/v2"
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -485,7 +485,7 @@ const deliverySteps = (
 					detail: [
 						"Nothing has arrived since the stream was set up ",
 						at(stream.since, ""),
-						`. ${AWS_NO_DELIVERY}.`,
+						". Run the setup script again: it deploys the stream in each region.",
 					],
 				},
 				notYet,
