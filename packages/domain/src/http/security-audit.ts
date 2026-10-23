@@ -163,6 +163,16 @@ export const SecurityAuditEvent = Schema.Struct({
 })
 export type SecurityAuditEvent = typeof SecurityAuditEvent.Type
 
+/** A triage write's result: what changed, independent of the stored record's shape. */
+export const SecurityAuditFindingTriageResult = Schema.Struct({
+	targetId: SecurityAuditTargetId,
+	fingerprint: Schema.String,
+	status: SecurityAuditFindingTriageStatus,
+	statusReason: Schema.String,
+	statusChangedAt: Schema.Number,
+})
+export type SecurityAuditFindingTriageResult = typeof SecurityAuditFindingTriageResult.Type
+
 export const SecurityAuditFinding = Schema.Struct({
 	fingerprint: Schema.String,
 	targetId: SecurityAuditTargetId,
@@ -408,7 +418,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 		HttpApiEndpoint.patch("updateFindingStatus", "/targets/:targetId/findings/:fingerprint", {
 			params: { targetId: SecurityAuditTargetId, fingerprint: Fingerprint },
 			payload: SecurityAuditUpdateFindingRequest,
-			success: SecurityAuditFinding,
+			success: SecurityAuditFindingTriageResult,
 			error: [...adminErrors, SecurityAuditFindingNotFoundError],
 		}),
 	)

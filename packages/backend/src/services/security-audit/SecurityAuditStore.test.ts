@@ -699,6 +699,31 @@ describe("SecurityAuditStore lenient run and event reads", () => {
 		),
 	)
 
+	it.effect("triages a finding whose stored record predates the current schema", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { targetId, runId } = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveFindings(runId, [confirmed("f1")])
+				yield* rawSql(
+					`UPDATE security_audit_findings SET record = '{"old":true}'::jsonb WHERE fingerprint = 'f1'`,
+				)
+				const triaged = yield* scoped.setFindingStatus(
+					targetId,
+					"f1",
+					"dismissed",
+					"duplicate of f0",
+					user,
+				)
+				const missing = yield* scoped.setFindingStatus(targetId, "nope", "dismissed", "x", user)
+				assert.deepStrictEqual(
+					[Option.map(triaged, (t) => [t.status, t.statusReason]), Option.isNone(missing)],
+					[Option.some(["dismissed", "duplicate of f0"]), true],
+				)
+			}),
+		),
+	)
+
 	it.effect("pages events newest first by `beforeAt` and counts units by status in SQL", () =>
 		withStore((store) =>
 			Effect.gen(function* () {

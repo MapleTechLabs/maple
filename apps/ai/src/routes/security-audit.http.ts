@@ -381,7 +381,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 							reason: payload.reason,
 						},
 					})
-					return toFinding(updated.value)
+					return { targetId: params.targetId, ...updated.value }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.updateFindingStatus")),
 			)
 	}),

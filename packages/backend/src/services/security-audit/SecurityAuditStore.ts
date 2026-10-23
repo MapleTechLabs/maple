@@ -152,7 +152,15 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		status: Exclude<SecurityAuditFindingStatus, "fixed">,
 		reason: string,
 		actor: UserId,
-	) => Effect.Effect<Option.Option<SecurityAuditFindingRow>, AuditStoreError>
+	) => Effect.Effect<Option.Option<SecurityAuditTriage>, AuditStoreError>
+}
+
+/** What a triage write changed; built from the write itself, so an old stored record cannot hide it. */
+export interface SecurityAuditTriage {
+	readonly fingerprint: string
+	readonly status: Exclude<SecurityAuditFindingStatus, "fixed">
+	readonly statusReason: string
+	readonly statusChangedAt: number
 }
 
 export interface ConnectedRepository {
@@ -1052,8 +1060,9 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 								.returning("id"),
 						),
 					)
+					// None only when no finding matched; the stored record is not read back.
 					if (rows.length === 0) return Option.none()
-					return Arr.head(yield* readFindings(targetId, fingerprint))
+					return Option.some({ fingerprint, status, statusReason: reason, statusChangedAt: now })
 				})
 
 				return {
