@@ -3,7 +3,7 @@
 // SPA, all on one port, backed by an embedded chDB. Replaces the Rust
 // `apps/ingest/src/bin/local.rs`. `maple start` calls `startServer`.
 
-import { Clock, Context, Effect, Exit, Layer, Result, Schema, type Scope } from "effect"
+import { Clock, Context, Effect, Exit, Layer, Metric, Result, Schema, type Scope } from "effect"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import { resolve } from "node:path"
 import { gunzipSync } from "node:zlib"
@@ -1398,6 +1398,11 @@ const handleEventingRead = (
 
 const MAX_LOGIN_BODY_BYTES = 4 * 1024
 
+const authRejections = Metric.counter("maple.local.auth_rejections_total", {
+	description: "Requests refused for a missing or wrong ingest key or access token",
+	incremental: true,
+})
+
 /** `GET /login`: the sign-in page, or home for a browser already signed in. */
 const signInPage = (auth: RemoteAuth, req: Request, url: URL): Response => {
 	if (auth.accessToken === undefined || hasValidSession(auth, req, Date.now()))
@@ -1448,7 +1453,7 @@ const loginSpan = (
 			},
 		})
 	}).pipe(
-		Effect.withSpan(`POST ${LOGIN_ACTION_PATH}`, {
+		Effect.withSpan("POST /local/auth/login", {
 			kind: "server",
 			attributes: { "http.request.method": "POST", "http.route": LOGIN_ACTION_PATH },
 		}),
@@ -1467,6 +1472,8 @@ interface ServerContext {
 	readonly status: ServerStatus
 	readonly auth: RemoteAuth
 	readonly loginThrottle: LoginThrottle
+	/** Counts a 401 without a span: refusals can come in floods. */
+	readonly countRejection: (route: "ingest" | "read") => void
 }
 
 /** `GET /local/status`: identity and liveness for the CLI probe and the UI. */
@@ -1497,7 +1504,11 @@ const makeFetch =
 		const respond = (response: Response): Response => withCors(response, corsHeaders)
 		if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders })
 		const denied = accessDenied(context.auth, { maintenanceToken, consumerToken }, req, url, Date.now())
-		if (denied !== null) return respond(denied)
+		if (denied !== null) {
+			if (denied.status === 401)
+				context.countRejection(url.pathname.startsWith("/v1/") ? "ingest" : "read")
+			return respond(denied)
+		}
 		if (url.pathname === "/health") return respond(text("OK"))
 		if (url.pathname === LOGIN_PATH && req.method === "GET")
 			return respond(signInPage(context.auth, req, url))
@@ -1774,6 +1785,14 @@ export const startServer = (
 							status,
 							auth: options.auth ?? NO_REMOTE_AUTH,
 							loginThrottle: new LoginThrottle(),
+							countRejection: (route) => {
+								runtime.runFork(
+									Metric.update(
+										Metric.withAttributes(authRejections, { "maple.auth.route": route }),
+										1,
+									),
+								)
+							},
 						}),
 					}),
 				catch: (error) =>

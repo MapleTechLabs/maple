@@ -291,6 +291,24 @@ describe("CLI access token", () => {
 		)
 	})
 
+	it("reaches a server bound to one of this machine's own addresses", () => {
+		const onThisMachine = withLocalAccessToken(
+			ACCESS_TOKEN,
+			"http://127.0.0.1:4318",
+			new Set(["192.168.1.5"]),
+		)
+		strictEqual(
+			onThisMachine(HttpClientRequest.get("http://192.168.1.5:4318/local/status")).headers
+				.authorization,
+			`Bearer ${ACCESS_TOKEN}`,
+		)
+		strictEqual(
+			onThisMachine(HttpClientRequest.get("http://192.168.1.6:4318/local/status")).headers
+				.authorization,
+			undefined,
+		)
+	})
+
 	it("follows the target host to a discovered port", () => {
 		strictEqual(
 			authorization(HttpClientRequest.get("https://maple.example.com:4319/local/status")),
