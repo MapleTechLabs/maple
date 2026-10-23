@@ -31,6 +31,8 @@ jobs:
             archive: ${{ steps.filter.outputs.archive == 'true' }}
             clickhouse: ${{ steps.filter.outputs.clickhouse == 'true' }}
             postgres: ${{ steps.filter.outputs.postgres == 'true' }}
+            ingest: ${{ steps.filter.outputs.ingest == 'true' }}
+            collector: ${{ steps.filter.outputs.collector == 'true' }}
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
@@ -119,6 +121,18 @@ jobs:
                         - *base
                         - 'scripts/*.sh'
                         - 'apps/cli/test/*.sh'
+                      # Not `*base`: the JS lockfile and tsconfigs cannot move a Rust or Go build.
+                      ingest:
+                        - '.github/workflows/ci.yml'
+                        - 'mise.toml'
+                        - 'apps/ingest/**'
+                        # Embedded by telemetry.rs's cross-language contract test.
+                        - 'apps/scraper/src/__fixtures__/otlp-export.json'
+                        - 'packages/db/drizzle/**'
+                        - 'packages/db/src/tables/**'
+                      collector:
+                        - '.github/workflows/ci.yml'
+                        - 'packages/otel-collector-maple-exporter/**'
 
             - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
               with:
@@ -561,6 +575,76 @@ jobs:
                   path: ${{ runner.temp }}/archive-${{ matrix.leg }}
                   if-no-files-found: ignore
 
+    # Here, not in its own workflow, so `CI passed` (and with it deploy-prd, which ships
+    # this binary) waits on it. The load benchmark is opt-in in ingest-bench.yml.
+    ingest-rust:
+        name: Ingest Rust tests
+        needs: changes
+        if: ${{ needs.changes.outputs.ingest == 'true' }}
+        runs-on: ubuntu-latest
+        # A cold cache (Cargo.lock change) compiles the crate graph twice, debug and release.
+        timeout-minutes: 30
+        env:
+            CARGO_TERM_COLOR: never
+        defaults:
+            run:
+                working-directory: apps/ingest
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  persist-credentials: false
+
+            - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+              with:
+                  install_args: rust
+
+            - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+              with:
+                  workspaces: apps/ingest
+
+            - name: Run ingest unit and fake Tinybird e2e tests
+              run: cargo test --locked
+
+            # The deploy builds release only; catch a release-only break before merge.
+            - name: Build the release binary
+              run: cargo build --locked --release --bin maple-ingest
+
+    otel-collector:
+        name: OTel collector exporter tests
+        needs: changes
+        if: ${{ needs.changes.outputs.collector == 'true' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        defaults:
+            run:
+                working-directory: packages/otel-collector-maple-exporter
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  persist-credentials: false
+
+            - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+              with:
+                  # Match `go 1.25.0` in packages/otel-collector-maple-exporter/go.mod.
+                  go-version-file: packages/otel-collector-maple-exporter/go.mod
+                  cache: true
+                  cache-dependency-path: packages/otel-collector-maple-exporter/go.sum
+
+            - name: gofmt -l
+              run: |
+                  diff=$(gofmt -l .)
+                  if [ -n "$diff" ]; then
+                    echo "::error::gofmt found unformatted files:"
+                    echo "$diff"
+                    exit 1
+                  fi
+
+            - name: go vet
+              run: go vet ./...
+
+            - name: go test
+              run: go test -race -count=1 ./...
+
     # The single required check, and branch protection must require only this one:
     # skipped path-filtered jobs never report, so requiring them would hang forever.
     ci:
@@ -576,6 +660,8 @@ jobs:
             - clickhouse-schema-e2e
             - local-checkpoint-native
             - local-archive-native
+            - ingest-rust
+            - otel-collector
         steps:
             - name: Fail if any job failed or was cancelled
               if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
