@@ -409,13 +409,15 @@ const roleStep = (h: H, model: Model, connection: V2AwsConnection, timeZone: str
 const streamStep = (h: H, model: Model, connection: V2AwsConnection): Step => {
 	const stream = connection.metric_stream
 	if (stream !== null) {
-		return {
-			title: "Metric stream",
-			state: "done",
-			detail: [
-				`${stream.regions.join(", ")} · ${countLabel(stream.namespaces.length, "namespace")}. Each region has its own stack.`,
-			],
-		}
+		const scope = `${stream.regions.join(", ")} · ${countLabel(stream.namespaces.length, "namespace")}`
+		// Asked for is not deployed: the setup script deploys each region's stack with the role.
+		return connection.verified_at === null
+			? {
+					title: "Metric stream",
+					state: "todo",
+					detail: [`${scope}. The setup script deploys it with the role.`],
+				}
+			: { title: "Metric stream", state: "done", detail: [`${scope}. Each region has its own stack.`] }
 	}
 	const isOpen = model.awsCard.metricsId === connection.id
 	return {
