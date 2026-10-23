@@ -36,12 +36,6 @@ export const mergeEvents = (
 	return [...log, ...page.filter((event) => !ids.has(event.id))].sort(byNewest)
 }
 
-export const unitsOf = (model: Model): ReadonlyArray<SecurityAuditUnit> =>
-	Option.match(AsyncData.getData(model.units.data), {
-		onNone: () => [],
-		onSome: (response) => response.units,
-	})
-
 // UNITS
 
 export const UNIT_LABEL = {
