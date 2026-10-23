@@ -52,7 +52,7 @@ const target = (
 })
 
 export const targetsOf = (now: number) =>
-	Schema.decodeUnknownSync(SecurityAuditTargetsResponse)({
+	Schema.decodeSync(SecurityAuditTargetsResponse)({
 		targets: [
 			target(TARGET_IDS.gateway, "acme/api-gateway", "main", "deep", [], now),
 			target(TARGET_IDS.dashboard, "acme/web-dashboard", "main", "deep", [], now),
@@ -362,7 +362,7 @@ const EVENTS_BY_RUN = new Map<string, ReadonlyArray<EventSeed>>([
 ])
 
 export const eventsOf = (now: number, runId: string) =>
-	Schema.decodeUnknownSync(SecurityAuditEventsResponse)({
+	Schema.decodeSync(SecurityAuditEventsResponse)({
 		events: (EVENTS_BY_RUN.get(runId) ?? []).map((event, index) => ({
 			id: `${runId}_evt_${index}`,
 			at: now - event.ago * MINUTE,
