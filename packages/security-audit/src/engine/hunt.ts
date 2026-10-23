@@ -231,9 +231,12 @@ const runCritic = (
 		const outcome = yield* engine.mutate((current) => {
 			const priorStatus = engine.input.prior === null ? "none" : "new"
 			const proposals = result.missing_units.filter((unit) => unitRefusal(unit) === undefined)
-			const seeded = proposals.map((unit) =>
-				seedUnit(unit, { scope: engine.input.scopePaths, priorStatus }),
-			)
+			// A proposal the ledger already holds is that unit (same canonical refs): neither new nor refused.
+			const seeded = proposals
+				.map((unit) => seedUnit(unit, { scope: engine.input.scopePaths, priorStatus }))
+				.filter(
+					(unit) => !current.ledger.some((existing) => existing.coverage_id === unit.coverage_id),
+				)
 			const admitted = admitUnits(current.ledger, seeded)
 			const newIds = new Set(
 				admitted.ledger
