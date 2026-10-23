@@ -247,6 +247,7 @@ describe("sign-in", () => {
 		strictEqual(safeNextPath("/\n/evil.example"), "/")
 		strictEqual(safeNextPath("/%5C/evil.example"), "/%5C/evil.example")
 		strictEqual(safeNextPath("/.//evil.example"), "/.//evil.example")
+		strictEqual(safeNextPath("/\u3000/x"), "/")
 		strictEqual(safeNextPath(null), "/")
 	})
 })

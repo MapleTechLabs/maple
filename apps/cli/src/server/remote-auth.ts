@@ -202,9 +202,9 @@ export class LoginThrottle {
 
 /** Only same-site paths survive as a post-login destination. */
 export const safeNextPath = (value: string | null | undefined): string =>
-	// Browsers strip control characters from `Location` (`/\t/evil` becomes `//evil`),
-	// so any value carrying one, or a backslash, is refused along with `//`.
-	value !== null && value !== undefined && /^\/(?!\/)[^\x00-\x20\\]*$/.test(value) ? value : "/"
+	// Printable ASCII only: browsers strip control characters from `Location` (`/\t/evil`
+	// becomes `//evil`) and the header refuses non-Latin-1. `//` and `\` are refused too.
+	value !== null && value !== undefined && /^\/(?!\/)[\x21-\x5b\x5d-\x7e]*$/.test(value) ? value : "/"
 
 const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`)
 
