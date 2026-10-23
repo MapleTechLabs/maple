@@ -65,15 +65,25 @@ MAPLE_LOCAL_ADVERTISE_HOST=maple.home.arpa \
 # Equivalent: maple start --host 0.0.0.0 --advertise-host maple.home.arpa --offline
 ```
 
-Binding outside loopback exposes the complete, unauthenticated local-mode
-listener: OTLP ingest, `/local/query` read-only SQL, `/local/status`, `/health`, and the bundled UI.
-Maple restricts browser requests to the advertised same-origin UI and the exact
-configured hosted UI origin, but non-browser clients on the network still need
-no credentials. Use it only on a trusted network or behind a TLS proxy with
-browser-compatible authentication (for example, a session cookie or HTTP
-authentication). The bundled UI does not inject a Bearer API key or propagate
-an entry-page query parameter to its API requests. Open the advertised URL from
-another machine. The default UI hosted at `local.maple.dev` always talks to the
+Off loopback, set two secrets (`apps/cli/src/server/remote-auth.ts`), each at
+least 16 characters:
+
+- `MAPLE_LOCAL_INGEST_KEY` guards `/v1/*` (`Authorization: Bearer` or
+  `x-maple-ingest-key`, as hosted ingest). Write-only: it never opens a read.
+- `MAPLE_LOCAL_ACCESS_TOKEN` guards every other route but `/health`. `/login`
+  exchanges it for a stateless HMAC session cookie (30 days, keyed by the
+  token, so rotating it signs everyone out); scripts and the CLI send it as a
+  Bearer token. The server's own maintenance token still opens `/local/*` and
+  the event-consumer token still opens claims and acks. Failed sign-ins are
+  throttled globally (10 a minute).
+
+With an access token, a browser request is same-origin when its `Origin` host
+matches the request's `Host`, so a platform hostname works without
+`--advertise-host`; a DNS-rebinding page reaches the listener but never holds
+the cookie. Ingest keeps the advertised-host rule. Without the secrets the
+listener is open as before and the startup banner says so; use that only on a
+trusted network. Open the advertised URL from another machine. The default UI
+hosted at `local.maple.dev` always talks to the
 browser machine's loopback address, so it cannot reach a remote local-mode server.
 
 By default `maple start` points you at the auto-updating dashboard hosted at

@@ -83,15 +83,20 @@ Both read the same local store. Pick `--offline` when you are on a plane, behind
 
 ### Reaching it from another machine
 
-Bind to all interfaces and print a hostname the other browser will actually use:
+Bind to all interfaces with two secrets: an ingest key for OTLP and an access token for the dashboard and queries.
 
 ```bash
-maple start --host 0.0.0.0 --advertise-host maple.home.arpa --offline
+export MAPLE_LOCAL_INGEST_KEY="$(openssl rand -hex 32)"
+export MAPLE_LOCAL_ACCESS_TOKEN="$(openssl rand -hex 32)"
+maple start --host 0.0.0.0 --offline
 ```
 
-Anyone who can reach the port can then use the UI, run raw SQL through `/local/query`, and send OTLP data. None of these routes check credentials. The maintenance routes (checkpoint, day retirement and the local event routes) require a token that `maple start` writes beside the data directory with mode `0600` (`<data-dir>.maintenance-token`, and `<data-dir>.event-consumer-token` for event consumers). They are only as safe as those files. `/local/retention/retire` deletes a day of live data. The full route list is in the [CLI reference](/docs/reference/cli#server-endpoints).
+- Exporters send the ingest key as `Authorization: Bearer <key>`, e.g. `OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <key>"`. It can write telemetry, never read it.
+- The dashboard asks for the access token once and keeps you signed in for 30 days. Scripts send it as `Authorization: Bearer <token>`; `maple` CLI commands send it when `MAPLE_LOCAL_ACCESS_TOKEN` is set.
 
-Use a non-loopback bind only on a network you trust, or behind TLS with browser-managed auth such as a session cookie. The bundled UI does not attach API keys to its requests.
+Without the secrets the server still starts and its banner warns you: anyone who can reach the port can use the UI, run raw SQL through `/local/query`, and send OTLP data. The maintenance routes (checkpoint, day retirement and the local event routes) require a token that `maple start` writes beside the data directory with mode `0600` (`<data-dir>.maintenance-token`, and `<data-dir>.event-consumer-token` for event consumers). They are only as safe as those files. `/local/retention/retire` deletes a day of live data. The full route list is in the [CLI reference](/docs/reference/cli#server-endpoints).
+
+Put a TLS-terminating proxy in front of anything reachable from the internet; the session cookie is marked `Secure` when the proxy forwards `X-Forwarded-Proto: https`.
 
 ## Query from the terminal
 
