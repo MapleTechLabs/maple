@@ -602,7 +602,111 @@ describe("SourcesService", () => {
 				),
 			)
 			const [off] = yield* ownSources(keys, orgA)
-			assert.deepStrictEqual([off?.health.status, off?.health.problem], ["paused", "Scraping is turned off"])
+			assert.deepStrictEqual(
+				[off?.health.status, off?.health.problem],
+				["paused", "Scraping is turned off"],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("reads an AWS source's health from its metric stream, not from the role check", () => {
+		const testDb = createTestDb(trackedDbs)
+		const now = 2 * 3_600_000
+		const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOString())
+		const insertAws = (
+			id: string,
+			name: string,
+			connection: {
+				readonly verifiedAt: number
+				readonly stream: boolean
+				readonly receivedAt?: number
+				readonly error?: string
+			},
+		) =>
+			Effect.gen(function* () {
+				// Every one of them passed its last role check a minute ago.
+				yield* insertSource(testDb, id, "aws", name, { okAt: now - 60_000 })
+				yield* Effect.promise(() =>
+					executeSql(testDb, `UPDATE sources SET last_used_at = $2 WHERE id = $1;`, [
+						id,
+						iso(connection.receivedAt ?? null),
+					]),
+				)
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`INSERT INTO aws_connections (id, org_id, source_id, account_id, modules, verified_at,
+							metric_stream, stream_last_received_at, stream_last_error, created_by, created_at, updated_at)
+						 VALUES ($1, $2, $1, $3, '[]', $4, $5, $6, $7, 'user_a', now(), now())`,
+						[
+							id,
+							orgA,
+							id.slice(-12),
+							iso(connection.verifiedAt),
+							connection.stream
+								? JSON.stringify({ regions: ["us-east-1"], namespaces: ["AWS/ECS"] })
+								: null,
+							iso(connection.receivedAt ?? null),
+							connection.error ?? null,
+						],
+					),
+				)
+			})
+
+		return Effect.gen(function* () {
+			const keys = yield* SourcesService
+			yield* TestClock.adjust("2 hours")
+			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000001", "off", {
+				verifiedAt: now - 3_600_000,
+				stream: false,
+			})
+			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000002", "just deployed", {
+				verifiedAt: now - 5 * 60_000,
+				stream: true,
+			})
+			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000003", "never delivered", {
+				verifiedAt: now - 3_600_000,
+				stream: true,
+			})
+			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000004", "refused", {
+				verifiedAt: now - 3_600_000,
+				stream: true,
+				receivedAt: now - 2 * 60_000,
+				error: "This Maple organization is over its plan limit",
+			})
+			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000005", "streaming", {
+				verifiedAt: now - 3_600_000,
+				stream: true,
+				receivedAt: now - 2 * 60_000,
+			})
+			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000006", "stopped", {
+				verifiedAt: now - 3_600_000,
+				stream: true,
+				receivedAt: now - 3_600_000,
+			})
+
+			const sources = yield* ownSources(keys, orgA)
+			assert.deepStrictEqual(
+				sources.map((source) => [source.name, source.health.status, source.health.problem]).sort(),
+				[
+					["just deployed", "pending", null],
+					[
+						"never delivered",
+						"failing",
+						"No metrics have arrived. Run the setup script again to deploy the metric stream",
+					],
+					["off", "paused", "No metric stream: Maple receives nothing from this account"],
+					["refused", "failing", "This Maple organization is over its plan limit"],
+					["stopped", "stale", "No data in the last 30 minutes"],
+					["streaming", "healthy", null],
+				],
+			)
+			// Last data is the last delivery: a passing role check is not data.
+			assert.strictEqual(
+				sources.find((source) => source.name === "streaming")?.health.lastDataAt,
+				new Date(now - 2 * 60_000).toISOString(),
+			)
+			assert.isNull(sources.find((source) => source.name === "never delivered")?.health.lastDataAt)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

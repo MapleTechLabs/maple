@@ -14,6 +14,7 @@ import {
 	AwsConnectionService,
 	type AwsConnection,
 } from "@maple/backend/services/integrations/AwsConnectionService"
+import { AwsIngestService } from "@maple/backend/services/integrations/AwsIngestService"
 
 // Reading the status is open to every member. Everything else is admin-only: a connection decides
 // what Maple may read in the org's AWS account.
@@ -48,6 +49,7 @@ const auditMetadata = (connection: AwsConnection) => ({
 export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIntegration", (handlers) =>
 	Effect.gen(function* () {
 		const aws = yield* AwsConnectionService
+		const awsIngest = yield* AwsIngestService
 
 		return handlers
 			.handle("status", () =>
@@ -116,6 +118,28 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 					const tenant = yield* CurrentTenant.Context
 					yield* requireAdmin(tenant.roles, adminOnly)
 					return toV2Connection(yield* aws.check(tenant.orgId, params.id))
+				}),
+			)
+			.handle("ingest", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const ingest = yield* awsIngest.read(tenant, params.id)
+					return {
+						object: "aws_connection.ingest" as const,
+						window_start: isoTimestamp(ingest.windowStart),
+						window_end: isoTimestamp(ingest.windowEnd),
+						data_points: ingest.dataPoints,
+						last_point_at: isoTimestampOrNull(ingest.lastPointAt),
+						groups: ingest.groups.map((group) => ({
+							namespace: group.namespace,
+							region: group.region,
+							metrics: group.metrics,
+							data_points: group.dataPoints,
+							resources: group.resources,
+							sample_resources: group.sampleResources,
+							last_point_at: isoTimestamp(group.lastPointAt),
+						})),
+					}
 				}),
 			)
 			.handle("deleteConnection", ({ params }) =>

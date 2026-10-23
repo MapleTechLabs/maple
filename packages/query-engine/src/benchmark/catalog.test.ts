@@ -27,6 +27,7 @@ import * as ciRunsQueries from "../ch/queries/ci-runs"
 import * as auditLogQueries from "../ch/queries/audit-log"
 import * as anomalyQueries from "../ch/queries/anomaly"
 import * as attributeKeyQueries from "../ch/queries/attribute-keys"
+import * as awsIngestQueries from "../ch/queries/aws-ingest"
 import * as containerQueries from "../ch/queries/containers"
 import * as errorQueries from "../ch/queries/errors"
 import * as infraQueries from "../ch/queries/infra"
@@ -282,6 +283,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	services: serviceQueries,
 	"signal-presence": signalPresenceQueries,
 	"source-usage": sourceUsageQueries,
+	"aws-ingest": awsIngestQueries,
 	releases: releaseQueries,
 	"session-events": sessionEventQueries,
 	"session-replays": sessionReplayQueries,

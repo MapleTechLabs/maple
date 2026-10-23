@@ -13,6 +13,7 @@ import { AuthorizationV2 } from "./auth"
 import { wireExample, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions } from "./errors"
 import { publicErrors } from "./public-error"
+import { V2WarehouseReadErrors } from "./query-errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 
 // AWS integration. No OAuth and no stored AWS secret: an org registers a connection for an account,
@@ -239,6 +240,48 @@ export const V2AwsSetup = Schema.Struct({
 })
 export type V2AwsSetup = Schema.Schema.Type<typeof V2AwsSetup>
 
+export const V2AwsIngestGroup = Schema.Struct({
+	namespace: Schema.String.annotate({
+		description: "The CloudWatch namespace, like `AWS/ECS`.",
+		examples: ["AWS/ECS"],
+	}),
+	region: Schema.NullOr(Schema.String).annotate({
+		description: "The region the stream sent it from, or `null` when the stream did not say.",
+		examples: ["us-east-1"],
+	}),
+	metrics: Schema.Number.annotate({ description: "Distinct CloudWatch metrics." }),
+	data_points: Schema.Number.annotate({ description: "CloudWatch data points received." }),
+	resources: Schema.Number.annotate({
+		description:
+			"Distinct resources, by `service.name`: the metric's most specific dimension (an instance, a service, a queue).",
+	}),
+	sample_resources: Schema.Array(Schema.String).annotate({
+		description: "Up to eight of those resources, in alphabetical order.",
+	}),
+	last_point_at: Timestamp.annotate({ description: "The newest data point." }),
+}).annotate({ identifier: "AwsIngestGroup", title: "AWS ingest by namespace and region" })
+export type V2AwsIngestGroup = Schema.Schema.Type<typeof V2AwsIngestGroup>
+
+export const V2AwsIngest = Schema.Struct({
+	object: Schema.Literal("aws_connection.ingest").annotate({
+		description: 'The object type, always `"aws_connection.ingest"`.',
+	}),
+	window_start: Timestamp,
+	window_end: Timestamp,
+	data_points: Schema.Number.annotate({ description: "Every data point received in the window." }),
+	last_point_at: Schema.NullOr(Timestamp).annotate({
+		description: "The newest data point in the window, or `null` when none arrived.",
+	}),
+	groups: Schema.Array(V2AwsIngestGroup).annotate({
+		description: "What arrived, by namespace and region, most data points first.",
+	}),
+}).annotate({
+	identifier: "AwsIngest",
+	title: "AWS connection ingest",
+	description: "The metrics one connection's stream delivered over the last hour, as Maple stored them.",
+})
+export type V2AwsIngest = Schema.Schema.Type<typeof V2AwsIngest>
+
 export const V2AwsConnectionDeleteResponse = Schema.Struct({
 	id: AwsConnectionPublicId,
 	object: Schema.Literal("aws_connection").annotate({
@@ -351,6 +394,20 @@ export class V2AwsIntegrationsApiGroup extends HttpApiGroup.make("awsIntegration
 				summary: "Check a connection now",
 				description:
 					"Assumes the role and reads what the setup granted, instead of waiting for the hourly check. A failed check is reported in `last_check_error`, not as an error response. Requires an org-admin role and the `integrations:write` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("ingest", "/connections/:id/ingest", {
+			params: connectionParams,
+			success: V2AwsIngest,
+			error: [connectionNotFound, integrationPersistence, ...V2WarehouseReadErrors],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "getAwsConnectionIngest",
+				summary: "See what a connection sends",
+				description:
+					"Returns the CloudWatch metrics the connection's stream delivered over the last hour, by namespace and region: how many metrics, data points and resources, and when the newest point arrived. Requires the `integrations:read` scope.",
 			}),
 		),
 	)

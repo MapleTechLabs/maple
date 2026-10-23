@@ -254,3 +254,37 @@ export const awsSetupPlan = (input: AwsSetupPlanInput): AwsSetupPlan => {
 		],
 	}
 }
+
+/** A stream delivers about every minute: this long without one, it has stopped. */
+export const AWS_STREAM_STALE_MS = 30 * 60_000
+/** A stream's first delivery comes minutes after its stack; past this after the role, it is not deployed. */
+export const AWS_FIRST_DELIVERY_MS = 30 * 60_000
+
+/**
+ * Where a connection's metric stream stands. `off`: none asked for. `waiting`: no delivery yet,
+ * within reason. `undelivered`: no delivery long after the role was deployed. `refused`: the last
+ * delivery was refused. `silent`: deliveries stopped. `delivering`: they arrive.
+ */
+export type AwsStreamState = "off" | "waiting" | "undelivered" | "refused" | "silent" | "delivering"
+
+export interface AwsStreamFacts {
+	readonly verifiedAt: number | null
+	readonly metricStream: AwsMetricStream | null
+	readonly metricsLastReceivedAt: number | null
+	readonly metricsLastError: string | null
+}
+
+export const awsStreamState = (facts: AwsStreamFacts, now: number): AwsStreamState => {
+	if (facts.metricStream === null) return "off"
+	if (facts.metricsLastError !== null) return "refused"
+	if (facts.metricsLastReceivedAt === null) {
+		return facts.verifiedAt !== null && now - facts.verifiedAt > AWS_FIRST_DELIVERY_MS
+			? "undelivered"
+			: "waiting"
+	}
+	return now - facts.metricsLastReceivedAt > AWS_STREAM_STALE_MS ? "silent" : "delivering"
+}
+
+export const AWS_METRICS_OFF = "No metric stream: Maple receives nothing from this account"
+export const AWS_NO_DELIVERY =
+	"No metrics have arrived. Run the setup script again to deploy the metric stream"
