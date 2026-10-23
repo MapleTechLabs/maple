@@ -134,6 +134,19 @@ const tabs = (
 			}),
 		...Object.values(TARGET_IDS).map(
 			(id) => (model: TabsPage.Model) =>
+				M.CompletedFetchTargetRuns({
+					targetId: targetId(id),
+					key: model.targetRuns[id]?.key ?? "",
+					result: Result.succeed({
+						runs:
+							options.empty === true
+								? []
+								: runsOf(nowMs).runs.filter((run) => run.targetId === id),
+					}),
+				}),
+		),
+		...Object.values(TARGET_IDS).map(
+			(id) => (model: TabsPage.Model) =>
 				M.CompletedFetchFindings({
 					targetId: targetId(id),
 					key: model.findings[id]?.key ?? "",

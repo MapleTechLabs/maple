@@ -162,9 +162,9 @@ const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html =>
 					toParentMessage: (message) => Message.GotTriageMessage({ message }),
 					items: TRIAGE_OPTIONS,
 					variant: "outline",
-					size: "sm",
+					size: "xs",
 					className: "w-full",
-					itemClassName: "flex-1",
+					itemClassName: "min-w-0 flex-1 px-1",
 				}),
 				h.p(
 					[h.Class("text-xs text-muted-foreground")],
