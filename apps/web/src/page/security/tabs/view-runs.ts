@@ -249,7 +249,8 @@ export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Ht
 	return [
 		h.section(
 			[h.AriaLabel("Runs"), h.Class("overflow-hidden rounded-md border bg-card")],
-			[toolbar(h, model, targets, runs.length, isCapped), content],
+			// Nothing to narrow until there is a target, as on the Findings tab.
+			[...(targets.length === 0 ? [] : [toolbar(h, model, targets, runs.length, isCapped)]), content],
 		),
 	]
 }

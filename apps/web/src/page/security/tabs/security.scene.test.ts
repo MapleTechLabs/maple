@@ -369,6 +369,7 @@ describe("security tabs", () => {
 			{ update: pageUpdate, view },
 			given(runsTab),
 			expectView(text("Add a target, then start its first run.")).toExist(),
+			expectView(role("combobox", { name: "Target" })).not.toExist(),
 		)
 		const opened = pageUpdate(runsTab, Message.ClickedAddTarget())
 		expect(opened.model.addTarget.dialog.isOpen).toBe(true)

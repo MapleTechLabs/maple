@@ -29,10 +29,11 @@ export const auditSteps = (h: H): Html =>
 			),
 		}),
 		h.ol(
-			[h.Class("grid divide-y md:grid-cols-5 md:divide-x md:divide-y-0")],
+			// Steps wrap onto more rows as the column narrows, like the run's phase strip.
+			[h.Class("flex flex-wrap gap-px bg-border")],
 			STEPS.map((step, index) =>
 				h.li(
-					[h.Key(step.title), h.Class("flex flex-col gap-1.5 px-4 py-4")],
+					[h.Key(step.title), h.Class("flex min-w-44 flex-1 flex-col gap-1.5 bg-card px-4 py-4")],
 					[
 						h.span(
 							[h.Class("font-mono text-xs text-muted-foreground tabular-nums")],
