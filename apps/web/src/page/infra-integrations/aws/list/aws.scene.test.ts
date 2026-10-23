@@ -190,12 +190,8 @@ describe("aws list", () => {
 				result: Result.succeed([{ kind: "ecs", points }]),
 			}),
 		).model
-		// A flat line sits mid-height; a broken one would draw each point as a lone dot (`h0.01`).
-		scene(
-			{ update: pageUpdate, view },
-			given(drawn),
-			expectView(selector('path[d^="M0 14 L"]')).toExist(),
-		)
+		// A flat line over a 0 floor sits at the top; a broken one would draw lone dots (`h0.01`).
+		scene({ update: pageUpdate, view }, given(drawn), expectView(selector('path[d^="M0 2 L"]')).toExist())
 	})
 
 	test("a band cell filters the table to its resources", () => {

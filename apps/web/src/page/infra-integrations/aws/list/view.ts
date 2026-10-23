@@ -67,6 +67,7 @@ const tabs = (h: H, model: Model, reads: ReadonlyArray<FleetRead>, active: AwsIn
 			href: searchHref({ ...model.search, tab: read.kind, scope: undefined }),
 		})),
 		active,
+		false,
 	)
 
 const band = (h: H, model: Model, kind: AwsInfraKindId, views: ReadonlyArray<ResourceView>): Html => {
