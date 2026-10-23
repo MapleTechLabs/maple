@@ -51,6 +51,17 @@ wait_health() {
 	fail "server did not become healthy; log follows: $(tail -80 "$ROOT/server.log" 2>/dev/null)"
 }
 
+# The banner is written just after the listener answers /health, so poll for it.
+wait_log() {
+	for _ in $(seq 1 100); do
+		if grep -q "$1" "$ROOT/server.log"; then
+			return
+		fi
+		sleep 0.1
+	done
+	fail "$2: $(cat "$ROOT/server.log")"
+}
+
 start_server() {
 	"$MAPLE" start --host 0.0.0.0 --port "$PORT" --data-dir "$DATA" --checkpoint-interval off --offline \
 		>"$ROOT/server.log" 2>&1 &
@@ -101,8 +112,7 @@ query_body() {
 
 # --- Open server off loopback: starts, but the banner says what is exposed.
 start_server
-grep -q "open to anyone who can reach this address" "$ROOT/server.log" ||
-	fail "an unauthenticated non-loopback start did not warn: $(cat "$ROOT/server.log")"
+wait_log "open to anyone who can reach this address" "an unauthenticated non-loopback start did not warn"
 pass "unauthenticated non-loopback start warns"
 stop_server
 
@@ -116,7 +126,7 @@ pass "short access token refused"
 
 export MAPLE_LOCAL_INGEST_KEY="$INGEST_KEY" MAPLE_LOCAL_ACCESS_TOKEN="$ACCESS_TOKEN"
 start_server
-grep -q "ingest key + access token" "$ROOT/server.log" || fail "banner did not report auth: $(cat "$ROOT/server.log")"
+wait_log "ingest key + access token" "banner did not report auth"
 pass "authenticated start reports both secrets"
 
 expect_status 200 "$BASE/health"
