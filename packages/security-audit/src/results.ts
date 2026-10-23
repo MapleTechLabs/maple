@@ -32,13 +32,20 @@ export class SecurityAuditResultError extends Schema.TaggedError<SecurityAuditRe
 	},
 ) {}
 
-const FENCED = /^```(?:json)?\s*\n([\s\S]*)\n```$/
+/** The object inside a lone markdown fence, by plain string operations (no backtracking regex). */
+const unfence = (text: string): string => {
+	if (!text.startsWith("```") || !text.endsWith("```") || text.length < 6) return text
+	const firstNewline = text.indexOf("\n")
+	if (firstNewline < 0) return text
+	const opener = text.slice(3, firstNewline).trim()
+	return opener === "" || opener === "json" ? text.slice(firstNewline + 1, -3).trim() : text
+}
 
 /** Exactly one JSON object, or a typed failure the parent answers by discarding the result. */
 export const decodeAgentJson = <S extends Schema.Top>(role: string, schema: S, text: string) =>
 	Effect.gen(function* () {
 		const trimmed = text.trim()
-		const body = FENCED.exec(trimmed)?.[1]?.trim() ?? trimmed
+		const body = unfence(trimmed)
 		const fail = (message: string) =>
 			new SecurityAuditResultError({ message, role, rawExcerpt: trimmed.slice(0, 400) })
 		if (!body.startsWith("{") || !body.endsWith("}")) {
