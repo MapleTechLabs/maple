@@ -235,7 +235,7 @@ export const corsHeadersForAllowedOrigin = (
 				// `x-maple-sdk` is the SDK identity hint every browser SDK sends on
 				// every request; a listener that does not allow it fails preflight
 				// for the whole SDK.
-				"access-control-allow-headers": "content-type, content-encoding, authorization, x-maple-sdk",
+				"access-control-allow-headers": "content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key",
 				"access-control-allow-private-network": "true",
 				vary: "Origin",
 			}
