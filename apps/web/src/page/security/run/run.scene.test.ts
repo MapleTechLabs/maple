@@ -1,5 +1,9 @@
 import { OrgId } from "@maple/domain"
-import { type SecurityAuditEvent, SecurityAuditRunNotInProgressError } from "@maple/domain/http"
+import {
+	type SecurityAuditEvent,
+	SecurityAuditPersistenceError,
+	SecurityAuditRunNotInProgressError,
+} from "@maple/domain/http"
 import { SecurityAuditRunId } from "@maple/domain/security-audit"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
@@ -133,6 +137,22 @@ describe("security run", () => {
 			{ update: pageUpdate, view },
 			given(loaded(RUN_IDS.dashboard)),
 			expectView(text("u-legacy-7f2a91")).toExist(),
+		)
+	})
+
+	test("Retry re-reads the findings when the Results panel failed to load them", () => {
+		const entered = loaded(RUN_IDS.dashboard)
+		const failed = pageUpdate(
+			entered,
+			Message.CompletedFetchFindings({
+				key: entered.findings.key ?? "",
+				result: Result.fail(
+					toLoadFailure(new SecurityAuditPersistenceError({ message: "unavailable" })),
+				),
+			}),
+		).model
+		expect(names(pageUpdate(failed, Message.ClickedRetry()).commands)).toContain(
+			"SecurityApiListRunFindings",
 		)
 	})
 

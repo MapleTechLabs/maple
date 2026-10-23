@@ -270,6 +270,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(next) => readRun(next, context, "Refresh"),
 				(next) => readEvents(next, context, "Refresh"),
 				(next) => readUnits(next, context, "Refresh"),
+				(next) => readFindings(next, context, "Refresh"),
 			]),
 		ClickedLoadOlder: () => {
 			const oldest = eventsOf(model).at(-1)
