@@ -6,9 +6,12 @@ import { ACCESS_TOKEN_ENV } from "../server/remote-auth"
 
 const bare = (hostname: string): string => hostname.replace(/^\[(.*)\]$/, "$1").toLowerCase()
 
-const hostnameOf = (value: string): string | undefined => {
+/** Scheme and host of the configured target; any port, since a discovered server may not use the default. */
+const targetOf = (value: string): { readonly protocol: string; readonly host: string } | undefined => {
 	const url = Result.try(() => new URL(value))
-	return Result.isSuccess(url) ? bare(url.success.hostname) : undefined
+	return Result.isSuccess(url)
+		? { protocol: url.success.protocol, host: bare(url.success.hostname) }
+		: undefined
 }
 
 /** This machine's own addresses: a server started with `--host <interface IP>` is found there. */
@@ -20,9 +23,9 @@ const ownAddresses = (): ReadonlySet<string> =>
 	)
 
 /**
- * Adds the access token to `/local/*` calls on the host the CLI targets, or on
- * this machine (loopback or one of its own addresses), at any port since a
- * discovered server may not use the default. Other hosts never see it.
+ * Adds the access token to `/local/*` calls on the host the CLI targets (same
+ * scheme, so an https target never gets it over http), or on this machine
+ * (loopback or one of its own addresses). Other hosts never see it.
  */
 export const withLocalAccessToken =
 	(token: string | undefined, localUrl: string, localHosts: ReadonlySet<string> = ownAddresses()) =>
@@ -32,7 +35,9 @@ export const withLocalAccessToken =
 		if (Result.isFailure(parsed) || !parsed.success.pathname.startsWith("/local/")) return request
 		const url = parsed.success
 		const host = bare(url.hostname)
-		return host === hostnameOf(localUrl) || isLoopbackHostname(url.hostname) || localHosts.has(host)
+		const target = targetOf(localUrl)
+		const isTarget = target !== undefined && host === target.host && url.protocol === target.protocol
+		return isTarget || isLoopbackHostname(url.hostname) || localHosts.has(host)
 			? HttpClientRequest.bearerToken(request, token)
 			: request
 	}
