@@ -111,6 +111,7 @@ const toFinding = (row: SecurityAuditFindingRow): SecurityAuditFinding => ({
 /** Each unresolved note trimmed, and only the first few: the list stays lean for large ledgers. */
 const MAX_UNRESOLVED = 3
 const MAX_UNRESOLVED_CHARS = 300
+const MAX_RESULT_FINGERPRINTS = 20
 
 const toUnit = (row: SecurityAuditUnitSummary): SecurityAuditUnit => ({
 	coverageId: row.coverageId,
@@ -125,7 +126,7 @@ const toUnit = (row: SecurityAuditUnitSummary): SecurityAuditUnit => ({
 	priorStatus: row.fields?.prior_status ?? null,
 	priority: row.fields?.priority ?? null,
 	failedAttempts: row.fields?.failed_attempts ?? null,
-	resultFingerprints: row.fields?.result_fingerprints ?? [],
+	resultFingerprints: (row.fields?.result_fingerprints ?? []).slice(0, MAX_RESULT_FINGERPRINTS),
 	carriedFingerprint: row.fields?.carried_fingerprint ?? null,
 	unresolved: (row.fields?.unresolved ?? [])
 		.slice(0, MAX_UNRESOLVED)
@@ -362,7 +363,8 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						message: "This audit run has already finished.",
 						runId: run.id,
 					})
-					if (run.status !== "in_progress" || run.finishedAt !== null) return yield* notInProgress
+					// Finished means settled: the engine may already say complete while settle has not run.
+					if (run.finishedAt !== null) return yield* notInProgress
 					// Stop the agents first; the row is only marked once nothing can still settle it.
 					yield* workflow.cancel(run.id).pipe(
 						Effect.catchTag("@maple/backend/platform/WorkflowCancelError", (error) =>

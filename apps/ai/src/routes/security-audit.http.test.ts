@@ -693,3 +693,79 @@ describe("/api/security-audit run units", () => {
 		}
 	})
 })
+
+describe("/api/security-audit cancellation of an unsettled run", () => {
+	it("cancels a run the engine already marked complete before settle, and reports its spend", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			await harness.withStore((store) =>
+				store.forOrg(ORG_A).recordEvent(run.body.id, {
+					_tag: "Agent",
+					role: "hunter",
+					agentId: "hunter-1",
+					outcome: "ok",
+					usage: { inputTokens: 120, outputTokens: 12, costUsd: 0.4 },
+				}),
+			)
+			// The engine's own status, written before its settle step runs.
+			await harness.sql(`UPDATE security_audit_runs SET status = 'complete' WHERE id = $1`, [
+				run.body.id,
+			])
+			const whileUnsettled = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const cancel = await harness.call("POST", `/runs/${run.body.id}/cancel`)
+
+			expect([whileUnsettled.status, whileUnsettled.body._tag]).toEqual([
+				409,
+				tag("SecurityAuditRunInProgressError"),
+			])
+			expect([
+				cancel.status,
+				cancel.body.incompleteReason,
+				cancel.body.invocationsSpent,
+				cancel.body.inputTokens,
+				cancel.body.outputTokens,
+				cancel.body.costUsd,
+			]).toEqual([200, "cancelled", 1, 120, 12, 0.4])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit unit payload", () => {
+	it("caps a unit's result fingerprints", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const fingerprints = Array.from({ length: 25 }, (_, i) => `f${i}`)
+			await harness.sql(
+				`INSERT INTO security_audit_units (run_id, coverage_id, org_id, status, wave, agent_id, unit)
+				 VALUES ($1, 'u1', $2, 'candidate', 1, null, $3::jsonb)`,
+				[
+					run.body.id,
+					ORG_A,
+					JSON.stringify({
+						subsystem: "src",
+						surface: "POST /keys",
+						boundary: "org scope",
+						attack_class: "Access control",
+						prior_status: "none",
+						result_fingerprints: fingerprints,
+						unresolved: [],
+					}),
+				],
+			)
+			const units = await harness.call("GET", `/runs/${run.body.id}/units`)
+
+			expect([units.body.units[0].stale, units.body.units[0].resultFingerprints]).toEqual([
+				false,
+				fingerprints.slice(0, 20),
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})

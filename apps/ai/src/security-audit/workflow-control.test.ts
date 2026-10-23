@@ -50,6 +50,25 @@ describe("securityAuditWorkflowControl.cancel", () => {
 		}),
 	)
 
+	it.effect("treats only the binding's instance.not_found code as gone, never any other not-found", () =>
+		Effect.gen(function* () {
+			const cancel = (message: string) =>
+				Effect.exit(securityAuditWorkflowControl(handle({ get: message })).cancel("run-1"))
+			const exits = yield* Effect.forEach(
+				[
+					"(instance.not_found) Instance does not exist",
+					"HTTP 404: Not Found",
+					"workflow not found: SecurityAuditWorkflow is not bound",
+				],
+				cancel,
+			)
+			assert.deepStrictEqual(
+				exits.map((exit) => exit._tag),
+				["Success", "Failure", "Failure"],
+			)
+		}),
+	)
+
 	it.effect("fails typed when a running instance cannot be terminated", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(

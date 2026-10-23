@@ -210,7 +210,7 @@ export const SecurityAuditUnit = Schema.Struct({
 	priorStatus: Schema.NullOr(Schema.String),
 	priority: Schema.NullOr(Schema.Number),
 	failedAttempts: Schema.NullOr(Schema.Number),
-	/** Fingerprints of the candidates or findings this unit produced. */
+	/** Fingerprints of the candidates or findings this unit produced, the first 20. */
 	resultFingerprints: Schema.Array(Schema.String),
 	/** The prior run's finding this unit re-checks, if any. */
 	carriedFingerprint: Schema.NullOr(Schema.String),

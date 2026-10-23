@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/primitives"
 import { VcsRepositoryId } from "@maple/domain/http/vcs"
 import type { SecurityAuditTargetId } from "@maple/domain/security-audit"
-import type { AuditEvent, CoverageUnit, Finding, RunMetadata } from "@maple/security-audit"
+import type { AgentUsage, AuditEvent, CoverageUnit, Finding, RunMetadata } from "@maple/security-audit"
 import { Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -844,8 +844,8 @@ describe("SecurityAuditStore cancellation", () => {
 
 				const run = Option.getOrThrow(yield* scoped.getRun(runId))
 				assert.deepStrictEqual(
-					[run.status, run.incompleteReason, run.error, run.metadata?.source_ref],
-					["incomplete", "cancelled", null, "sha-1"],
+					[run.status, run.incompleteReason, run.error, run.metadata],
+					["incomplete", "cancelled", null, null],
 				)
 				assert.include(missing.message, "not found")
 			}),
@@ -886,6 +886,118 @@ describe("SecurityAuditStore unit summaries", () => {
 				assert.deepStrictEqual(
 					[units[1]?.fields?.priority, units[1]?.fields?.result_fingerprints, foreign],
 					[3, ["f1"], []],
+				)
+			}),
+		),
+	)
+})
+
+describe("SecurityAuditStore writes after a run finished", () => {
+	it.effect("turns every engine write to a cancelled run into a no-op, never an error", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const prior = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveFindings(prior.runId, [confirmed("f1")])
+				yield* scoped.finishRun(prior.runId, { status: "complete" })
+				const { runId } = yield* seedRun(store, orgA, "sha-2", prior.targetId)
+				yield* scoped.cancelRun(runId, user)
+
+				// A replayed or still-running Workflow keeps writing after the cancel landed.
+				yield* scoped.saveLedger(runId, [unit("u1", "covered", 1)])
+				yield* scoped.saveFindings(runId, [confirmed("f1", "low"), confirmed("f2")])
+				yield* scoped.saveArchitecture(runId, "# late")
+				yield* scoped.saveReports(runId, { report: "late", findingsDetail: "", needsValidation: "" })
+				yield* scoped.setUsage(runId, {
+					invocations: 99,
+					inputTokens: 1,
+					outputTokens: 1,
+					costUsd: 9,
+				})
+				yield* scoped.recordEvent(runId, { _tag: "Phase", phase: "late", detail: "after cancel" })
+				const fixed = yield* scoped.markFixed(prior.targetId, ["f1"], runId)
+
+				const run = Option.getOrThrow(yield* scoped.getRun(runId))
+				const findings = yield* scoped.listFindings(prior.targetId)
+				assert.deepStrictEqual(
+					[
+						fixed,
+						run.architectureMd,
+						run.reports,
+						run.invocationsSpent,
+						(yield* scoped.listUnits(runId)).length,
+						(yield* scoped.listEvents(runId)).map((e) => e.kind),
+					],
+					[0, null, null, 0, 0, ["Note"]],
+				)
+				assert.deepStrictEqual(
+					findings.map((f) => [f.fingerprint, f.status, f.lastSeenRunId, f.overallSeverity]),
+					[["f1", "open", prior.runId, "high"]],
+				)
+			}),
+		),
+	)
+
+	it.effect("records a cancelled run's spend from its agents' events", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { runId } = yield* seedRun(store, orgA, "sha-1")
+				const agent = (agentId: string, usage: AgentUsage): AuditEvent => ({
+					_tag: "Agent",
+					role: "hunter",
+					agentId,
+					outcome: "ok",
+					usage,
+				})
+				const tokens = { inputTokens: 100, outputTokens: 10 }
+				yield* scoped.recordEvent(runId, agent("hunter-1", { ...tokens, costUsd: 0.25 }))
+				yield* scoped.recordEvent(runId, agent("hunter-2", { ...tokens, costUsd: 0.5 }))
+				// An agent whose price is unknown still counts its invocation and tokens.
+				yield* scoped.recordEvent(runId, agent("hunter-3", tokens))
+				yield* scoped.recordEvent(runId, { _tag: "Phase", phase: "wave", detail: "1" })
+
+				const cancelled = yield* scoped.cancelRun(runId, user)
+				assert.deepStrictEqual(
+					Option.map(cancelled, (r) => [
+						r.invocationsSpent,
+						r.inputTokens,
+						r.outputTokens,
+						r.costUsd,
+					]),
+					Option.some([3, 300, 30, 0.75]),
+				)
+			}),
+		),
+	)
+
+	it.effect("treats a run the engine marked complete but that has not settled as unfinished", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { targetId, runId } = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveMetadata({
+					run_id: runId,
+					repo: "acme/api",
+					target: "acme/api@main",
+					source_ref: "sha-1",
+					profile: "deep",
+					scope_paths: [],
+					budget: 40,
+					execution_policy: "sandboxed-source-and-local-only",
+					execution: { _tag: "Unavailable", blocker: "no sandbox" },
+					prior_runs: [],
+					run_status: "complete",
+				})
+				const second = yield* Effect.flip(
+					scoped.startRun({ targetId, kind: "manual", sourceRef: "main" }),
+				)
+				const prior = yield* scoped.latestPriorRun(targetId)
+				const cancelled = yield* scoped.cancelRun(runId, user)
+
+				assert.deepStrictEqual(
+					[second._tag, Option.isNone(prior), Option.map(cancelled, (r) => r.incompleteReason)],
+					["@maple/backend/security-audit/RunInProgress", true, Option.some("cancelled")],
 				)
 			}),
 		),

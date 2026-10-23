@@ -9,7 +9,7 @@ import {
 } from "@maple/backend/platform/bindings"
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import type * as Cloudflare from "alchemy/Cloudflare"
-import { Effect, Predicate } from "effect"
+import { Cause, Effect, Predicate } from "effect"
 
 /** Statuses after which an instance runs no more steps. */
 const FINISHED = new Set(["complete", "errored", "terminated"])
@@ -22,8 +22,18 @@ const defectMessage = (defect: unknown): string => {
 	return [own, inner].filter((m) => m.length > 0).join(": ")
 }
 
-/** `get` on an id with no instance (never created, or deleted) throws `instance.not_found`. */
-const isNotFound = (defect: unknown) => /not[._ ]?found/i.test(defectMessage(defect))
+/** The error the binding threw: alchemy's `tryPromise` wraps it in an `UnknownError`. */
+const bindingError = (defect: unknown) => (Cause.isUnknownError(defect) ? defect.cause : defect)
+
+/**
+ * `get` on an id with no instance throws the binding code `instance.not_found`, bare or as
+ * `(instance.not_found) <message>`. Any other error (a 404, a misbound binding) is not "gone".
+ */
+const isInstanceNotFound = (defect: unknown) => {
+	const error = bindingError(defect)
+	if (!Predicate.hasProperty(error, "message") || !Predicate.isString(error.message)) return false
+	return error.message === "instance.not_found" || error.message.startsWith("(instance.not_found)")
+}
 
 const cancelFailed = (runId: string, cause: unknown) =>
 	new WorkflowCancelError({
@@ -61,7 +71,7 @@ export const securityAuditWorkflowControl = (handle: AuditWorkflowHandle): Secur
 	cancel: (runId) =>
 		handle.get(runId).pipe(
 			Effect.catchDefect((cause) =>
-				isNotFound(cause) ? Effect.succeed(null) : Effect.fail(cancelFailed(runId, cause)),
+				isInstanceNotFound(cause) ? Effect.succeed(null) : Effect.fail(cancelFailed(runId, cause)),
 			),
 			Effect.flatMap((instance) =>
 				instance === null
