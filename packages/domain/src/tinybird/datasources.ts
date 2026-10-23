@@ -1314,6 +1314,9 @@ export const aiCrawlerRequests = defineDatasource("ai_crawler_requests", {
 
 export type AiCrawlerRequestsRow = InferRow<typeof aiCrawlerRequests>
 
+/** `service.name` of the CI traces the GitHub App's workflow webhooks become. */
+export const CI_SERVICE_NAME = "github-actions"
+
 /**
  * CI workflow runs: the root span of each `github-actions` trace (CiTraceService), with its
  * `cicd.*` attributes as columns. Skipped runs are kept; the reads leave them out.
