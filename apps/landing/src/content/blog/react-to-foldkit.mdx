@@ -42,7 +42,7 @@ Everything else in Maple is built on [Effect](https://effect.website), and more 
 
 ## Why Foldkit
 
-[Foldkit](https://foldkit.dev) applies The Elm Architecture on top of Effect. All app state lives in one Model, defined as an Effect Schema. Anything that happens is a Message, named in the past tense, like `ClickedRow` or `SucceededLoadLogs`. A pure `update` function takes the Model and a Message and returns the next Model plus any Commands to run, and a pure `view` turns the Model into HTML. Side effects only happen in Commands, which the runtime runs before feeding the result back in as another Message.
+In our React app, state lived all over the place: in hooks, in atoms, in components, and it changed whenever something happened to render. [Foldkit](https://foldkit.dev) is The Elm Architecture on top of Effect, and it works the other way around. All state sits in one Model, and only one function is allowed to change it. A click, a response or a timer shows up as a Message with a past-tense name like `ClickedRow` or `SucceededLoadLogs`. `update` takes the Model and a Message and hands back the next Model, plus any Commands it wants run. Commands are the only code that gets to talk to the network, and whatever they get back comes in as another Message. If you've written Elm or Redux, none of this is new. Honestly, that was the appeal. I love how explicit it is and how easy it is to reason about, and it fits the way I build software these days a lot better than React did.
 
 There are no hooks and no component state, so the org-switch question has one answer, and it's a single case in `update`. Foldkit's Scene tests run `update` in Node without a DOM, so we can test that case directly.
 
