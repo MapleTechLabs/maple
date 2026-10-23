@@ -1,5 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { OrgId, RoleName, UserId, VcsInstallationId, VcsRepositoryId } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { VcsRepositories } from "@maple/db/tables"
@@ -109,22 +110,82 @@ const withService = <A, E>(
 	})
 
 describe("CiAnalyticsService.analytics", () => {
-	it.effect("reads at most the newest two weeks and fills every bucket of it", () =>
+	it.effect("reads a month whole and fills every bucket of it", () =>
 		withService({}, (service) =>
 			Effect.gen(function* () {
 				const analytics = yield* service.analytics(tenant, {
 					startTime: END - 30 * 24 * HOUR,
 					endTime: END,
 				})
-				assert.strictEqual(analytics.startTime, END - CI_MAX_SPAN_MS)
+				assert.strictEqual(analytics.startTime, END - 30 * 24 * HOUR)
 				assert.strictEqual(analytics.bucketSeconds, 6 * 3600)
-				assert.strictEqual(analytics.series.length, 14 * 4)
+				assert.strictEqual(analytics.series.length, 30 * 4)
 				assert.deepStrictEqual(analytics.series[0]?.p50DurationMs, null)
 				assert.strictEqual(analytics.current.runs, 0)
 				assert.strictEqual(analytics.current.p50QueueMs, null)
 			}),
 		),
 	)
+
+	it.effect("reads two months in daily buckets", () =>
+		withService({}, (service) =>
+			Effect.gen(function* () {
+				const analytics = yield* service.analytics(tenant, {
+					startTime: END - 60 * 24 * HOUR,
+					endTime: END,
+				})
+				assert.strictEqual(analytics.bucketSeconds, 24 * 3600)
+				assert.strictEqual(analytics.series.length, 60)
+			}),
+		),
+	)
+
+	it.effect("compares with the previous period only while the tables still hold it", () =>
+		withService({}, (service, reads) =>
+			Effect.gen(function* () {
+				yield* TestClock.adjust(END)
+				const totalsRead = () => reads.filter((read) => read.context === "ciRunTotals").length
+				yield* service.analytics(tenant, { startTime: END - 90 * 24 * HOUR, endTime: END })
+				assert.strictEqual(totalsRead(), 2)
+				yield* service.analytics(tenant, { startTime: END - 365 * 24 * HOUR, endTime: END })
+				assert.strictEqual(totalsRead(), 3)
+			}),
+		),
+	)
+
+	it.effect("reads at most the newest year, in weekly buckets that cover it", () => {
+		const WEEK = 7 * 24 * HOUR
+		const week = (weeksAgo: number) => Math.floor((END - weeksAgo * WEEK) / WEEK) * WEEK
+		const seriesRow = (weeksAgo: number, failed: number) => ({
+			bucket: wire(week(weeksAgo)),
+			runs: String(failed + 1),
+			succeeded: "1",
+			failed: String(failed),
+			cancelled: "0",
+			p50DurationMs: 60_000,
+			p95DurationMs: 60_000,
+			totalDurationMs: 60_000,
+		})
+		return withService({ ciRunSeries: [seriesRow(40, 2), seriesRow(3, 5)] }, (service) =>
+			Effect.gen(function* () {
+				const analytics = yield* service.analytics(tenant, {
+					startTime: END - 2 * 365 * 24 * HOUR,
+					endTime: END,
+				})
+				assert.strictEqual(analytics.startTime, END - CI_MAX_SPAN_MS)
+				const bucketMs = analytics.bucketSeconds * 1000
+				assert.strictEqual(bucketMs, 7 * 24 * HOUR)
+				const buckets = analytics.series.map((bucket) => bucket.bucket)
+				assert.isAtMost(buckets[0]!, analytics.startTime)
+				assert.isAbove(buckets[buckets.length - 1]! + bucketMs, END - 1)
+				assert.isTrue(buckets.every((bucket, i) => i === 0 || bucket - buckets[i - 1]! === bucketMs))
+				// Each week's row lands in its own bar; the weeks around it stay empty.
+				const failedIn = (weeksAgo: number) =>
+					analytics.series.find((bucket) => bucket.bucket === week(weeksAgo))?.failed
+				assert.deepStrictEqual([failedIn(41), failedIn(40), failedIn(3), failedIn(2)], [0, 2, 5, 0])
+			}),
+		)
+	})
 
 	it.effect("scopes every read to the repository's owner and name", () =>
 		withService({}, (service, reads) =>

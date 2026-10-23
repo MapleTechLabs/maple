@@ -284,14 +284,12 @@ const content = (h: H, model: Model): Html =>
 			),
 	})
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
 	codeReviewLayout(
 		{
 			h,
 			active: "settings",
 			search: {},
-			nowMs: 0,
-			timeZone: inputs.context.timeZone,
 			overlay: repoDialog(h, model),
 		},
 		[content(h, model)],
