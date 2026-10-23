@@ -105,8 +105,17 @@ const replan = (
 	priorStatus: CoverageUnit["prior_status"],
 	carriedFingerprint?: string,
 ): LedgerUnit => {
+	// The prior run's bookkeeping does not carry over: a stale `carried_fingerprint` would keep a
+	// changed unit from being hunted, and stale decisions would describe another run.
+	const {
+		carried_fingerprint: _carried,
+		decisions: _decisions,
+		failed_attempts: _failed,
+		resolved_prior_leads: _resolved,
+		...rest
+	} = unit
 	const base: LedgerUnit = {
-		...unit,
+		...rest,
 		prior_status: priorStatus,
 		status: "planned",
 		agent_id: null,
@@ -168,7 +177,9 @@ export const runReconnaissance = (engine: Engine) =>
 					)
 					return { agent: `focused ${area.subsystem}`, facts }
 				}),
-			{ concurrency: input.concurrency ?? 4 },
+			// Sequential under a finite budget: which focused agent passes the gate must not depend on
+			// completion order, or a replay would spend differently.
+			{ concurrency: input.budget === null ? (input.concurrency ?? 4) : 1 },
 		)
 		const reconResults = [...baseline, ...focused].flatMap(({ agent, facts }) =>
 			facts === undefined ? [] : [{ agent, facts }],

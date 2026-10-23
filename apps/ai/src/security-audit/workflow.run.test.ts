@@ -351,6 +351,49 @@ const keysFinding: Finding = {
 }
 
 describe("auditWithAgents, settling", () => {
+	it.effect("never marks a finding fixed when the diff against the prior run could not be read", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const prior = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
+			yield* auditWithAgents(payloadFor(prior.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			yield* store.saveFindings(prior.id, [keysFinding])
+			const next = yield* store.startRun({
+				targetId: target.id,
+				kind: "revalidation",
+				sourceRef: "main",
+			})
+			const unreadable: RepoSandboxServiceApi = {
+				...sandbox([]),
+				exec: (_org, _target, options) =>
+					Effect.succeed(
+						options.args[0] === "rev-parse"
+							? { exitCode: 0, stdout: `${SHA}\n`, stderr: "", wallTimeMs: 1, truncated: false }
+							: {
+									exitCode: 0,
+									stdout: "src/a.ts\n",
+									stderr: "",
+									wallTimeMs: 1,
+									truncated: true,
+								},
+					),
+			}
+			yield* auditWithAgents(payloadFor(next.id, prior.id), () =>
+				Effect.succeed(scriptedAgents([])),
+			).pipe(
+				Effect.provideService(RepoSandboxService, unreadable),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const findings = yield* store.listFindings(target.id)
+			assert.deepStrictEqual(
+				findings.map((f) => f.status),
+				["open"],
+			)
+		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+	)
+
 	it.effect("leaves a finding open when the run that missed it was only a quick pass", () =>
 		Effect.gen(function* () {
 			const { store, target } = yield* setup

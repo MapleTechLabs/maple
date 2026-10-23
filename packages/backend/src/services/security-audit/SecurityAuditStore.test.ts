@@ -1,5 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/primitives"
+import { VcsRepositoryId } from "@maple/domain/http/vcs"
 import type { SecurityAuditTargetId } from "@maple/domain/security-audit"
 import type { AuditEvent, CoverageUnit, Finding, RunMetadata } from "@maple/security-audit"
 import { Effect, Layer, Option, Schema } from "effect"
@@ -321,6 +322,25 @@ describe("SecurityAuditStore runs and events", () => {
 					[run.status, run.incompleteReason, run.finishedAt === null],
 					["incomplete", "budget exhausted", false],
 				)
+			}),
+		),
+	)
+
+	it.effect("refuses a target that names another org's repository", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const repositoryId = Schema.decodeUnknownSync(VcsRepositoryId)(crypto.randomUUID())
+				const refused = yield* Effect.flip(
+					store
+						.forOrg(orgA)
+						.createTarget({
+							repository: "acme/api",
+							branch: "main",
+							createdBy: user,
+							vcsRepositoryId: repositoryId,
+						}),
+				)
+				assert.strictEqual(refused.message, "Repository is not connected to this org")
 			}),
 		),
 	)

@@ -369,7 +369,10 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 									$.targetId.eq(targetId),
 									fingerprint === undefined ? undefined : $.fingerprint.eq(fingerprint),
 								])
-								.orderBy(($) => [[$.createdAt, "asc"]]),
+								.orderBy(($) => [
+									[$.createdAt, "asc"],
+									[$.fingerprint, "asc"],
+								]),
 						),
 					).pipe(
 						Effect.flatMap((rows) =>
@@ -622,6 +625,23 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 				)(function* (input) {
 					const now = yield* Clock.currentTimeMillis
 					const id = newTargetId()
+					// A repository reference must be this org's: never another tenant's connected repository.
+					const repositoryId = input.vcsRepositoryId
+					if (repositoryId !== undefined) {
+						const owned = yield* dbExecute((db) =>
+							db.run(
+								PG.from(VcsRepositories)
+									.select("id")
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
+									.limit(1),
+							),
+						)
+						if (owned.length === 0) {
+							return yield* new AuditStoreError({
+								message: "Repository is not connected to this org",
+							})
+						}
+					}
 					const rows = yield* dbExecute((db) =>
 						db.run(
 							PG.insertInto(SecurityAuditTargets)
@@ -768,6 +788,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										PG.from(SecurityAuditRuns)
 											.select("id")
 											.where(($) => [
+												$.orgId.eq(orgId),
 												$.targetId.eq(input.targetId),
 												$.status.eq("in_progress"),
 											])
