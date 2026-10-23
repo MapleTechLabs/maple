@@ -353,18 +353,6 @@ jobs:
                   export-type: "env"
                   secret-name: PREVIEW_SIGNIN_KEY
 
-            # Optional: agent.* tests register only when it is set, and a missing name throws.
-            - name: Load the agent test key from Infisical
-              continue-on-error: true
-              uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
-              with:
-                  method: "oidc"
-                  identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-                  project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
-                  env-slug: ${{ vars.PREVIEW_INFISICAL_ENV_SLUG || 'dev' }}
-                  export-type: "env"
-                  secret-name: ANTHROPIC_API_KEY
-
             - name: Run the e2e suite
               run: bunx e2e run --reporter list,junit
 

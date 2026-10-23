@@ -16,8 +16,7 @@ E2E_TELEMETRY_DISABLED=1 MAPLE_E2E_APP_URL=https://app-pr-<n>.maple.dev \
   runner, so the key never reaches the page, a trace, or a model.
 - `tests/support.ts` `api()` calls the v2 API from the page with its Clerk session, for setup
   and for asserting what was saved.
-- Prefer locators and `expect`. `agent.assert` is for what selectors can't state (a chart's
-  lines); those tests register only when `ANTHROPIC_API_KEY` is set.
+- Assert with locators and `expect`. No model is configured, so `agent.*` steps are unavailable.
 - Tests create their own rules and destinations with a run-unique suffix and delete them after.
 
 CI runs this as the `e2e` job of `deploy-pr-preview.yml`, after the preview's seed and smoke test.

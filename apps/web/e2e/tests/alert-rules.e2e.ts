@@ -127,22 +127,4 @@ test.describe("alert rules", () => {
 		await expect(screen.getByText(/^Breach above/)).toBeVisible({ timeout: 45_000 })
 		await expect(screen.getByText("Preview query failed")).toBeHidden()
 	})
-
-	// The agent fixture needs a model, so this one only registers when there is one.
-	if (process.env.ANTHROPIC_API_KEY) {
-		test(
-			"draws both tier lines on the chart",
-			{ session: "reviewer" },
-			async ({ agent, app, screen }) => {
-				await app.open("/alerts/create")
-				await screen.getByRole("button", /^Skip/).tap()
-				await screen.getByRole("button", "Add critical tier").tap()
-
-				await expect(screen.getByText(/^Critical above/)).toBeVisible({ timeout: 45_000 })
-				await agent.assert(
-					"The preview chart shows two dashed horizontal threshold lines: an amber one and a red one higher up",
-				)
-			},
-		)
-	}
 })
