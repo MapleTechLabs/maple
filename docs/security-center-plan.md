@@ -53,6 +53,7 @@ The six phases, as the skill defines them:
 6. **Report.** Derived from the verified records and the ledger only.
 
 The rules that make it deep, all kept:
+
 - A finding needs a lower-trust principal, a crossed boundary, an affected resource and an
   observed result. Defense-in-depth gaps and checklist deviations are hardening notes.
 - The agent that checks a finding never found it. Severity only on `confirmed`, never above the
@@ -66,6 +67,7 @@ The rules that make it deep, all kept:
 ### What Cloudflare learned scaling it (from the post)
 
 Built into this plan, not rediscovered:
+
 - Use a different model for validation than for discovery. Keep the harness model-agnostic.
 - Persistence before parallelism: every stage result goes to the database as it arrives.
 - Keep live context under about 25% of the window; the ledger is the external memory.
@@ -87,7 +89,7 @@ Maple is about 840k lines of non-test source. One `deep` run over all of it is l
 of agent invocations and well over a day. So the cycle is a **rolling deep audit**:
 
 - **Baseline run** (once, then on demand): `deep` over the whole repo. Establishes the full ledger.
-- **Rolling slices** (on the cycle, e.g. nightly): a `deep` *scoped run* over the next slice of
+- **Rolling slices** (on the cycle, e.g. nightly): a `deep` _scoped run_ over the next slice of
   subsystems by priority. The skill records everything else `out_of_scope`, never `covered`, so
   every slice adds evidence to one growing ledger and a full rotation equals another full pass.
 - **Change revalidation** (on push to the default branch, or daily): the skill's prior-run rules
@@ -101,15 +103,15 @@ source.
 
 ## What already exists
 
-| Piece | Where | Role in the scan |
-| --- | --- | --- |
-| Repository sandbox | `apps/sandbox`, `@maple/backend/sandbox/contract` | Checkout at a sha, mirror + R2 seed, `env -i`, unprivileged, read-only tree |
-| GitHub App | `vcs_repositories`, `GithubAppClient.mintCloneUrl` | One-repo, read-only clone tokens, never in argv |
-| Agent engine | `apps/ai/src/chat/*`, `@yielded/agent` | Agent records, budgets, rulesets, close-out, Code Mode |
-| Durable runs | `durableStep`, `ClickHouseSchemaApplyWorkflow` | Workflow per run, per-step retries, survives deploys |
-| Findings plumbing | `FindingEmbedder`, PR review findings lifecycle | Similarity for dedup, dismissals |
-| Scheduling | `apps/alerting/src/scheduled.ts` tick dispatch | Cron tick that finds due work |
-| Traces | warehouse, `route_usage`, `service_map` | Production reachability (see below) |
+| Piece              | Where                                              | Role in the scan                                                            |
+| ------------------ | -------------------------------------------------- | --------------------------------------------------------------------------- |
+| Repository sandbox | `apps/sandbox`, `@maple/backend/sandbox/contract`  | Checkout at a sha, mirror + R2 seed, `env -i`, unprivileged, read-only tree |
+| GitHub App         | `vcs_repositories`, `GithubAppClient.mintCloneUrl` | One-repo, read-only clone tokens, never in argv                             |
+| Agent engine       | `apps/ai/src/chat/*`, `@yielded/agent`             | Agent records, budgets, rulesets, close-out, Code Mode                      |
+| Durable runs       | `durableStep`, `ClickHouseSchemaApplyWorkflow`     | Workflow per run, per-step retries, survives deploys                        |
+| Findings plumbing  | `FindingEmbedder`, PR review findings lifecycle    | Similarity for dedup, dismissals                                            |
+| Scheduling         | `apps/alerting/src/scheduled.ts` tick dispatch     | Cron tick that finds due work                                               |
+| Traces             | warehouse, `route_usage`, `service_map`            | Production reachability (see below)                                         |
 
 ## Architecture
 
@@ -136,6 +138,7 @@ cron / push ──► SecurityAuditService.dueRuns() ──► Workflow instance
 
 `packages/security-audit/` holds the upstream files unchanged under `skill/` with the pinned
 commit and license, plus our code:
+
 - **Prompt assembly**: builds hunter, critic and verifier prompts from the verbatim blocks the
   ledger unit names (`ordinary_attack_class_block`, `selected_companion_blocks`), as the skill's
   required prompt order specifies. A test fails if an assembled prompt is missing a selected block
@@ -171,15 +174,15 @@ promotion** (no-follow descriptor walk, regular file, link count one, size bound
 11-step procedure). Missing any of it, every candidate that needs execution stays
 `needs_validation`. This is the difference between deep and very deep, so it is a core workstream:
 
-| Control | Today | Needed |
-| --- | --- | --- |
-| No egress | `unshare -n`, fails closed, `CAP_SYS_ADMIN` on Cloudflare **unverified** | Verified on the real runtime, or platform egress deny |
-| Empty environment | `env -i` with an allowlist, verified in image | Keep; scratch-local `HOME`, `TMPDIR`, caches |
-| Read-only target | `chmod -R a+rX,go-w` + `runuser` | Keep; toolchain and `node_modules` read-only too |
-| Per-agent scratch | none | `/audit/<run>/agents/<id>/scratch`, owned by the agent uid, nothing else writable |
-| Resource limits | `timeout` only | `prlimit`/`ulimit`: CPU, address space, nproc, fsize, plus a disk quota |
-| Promotion | none | A small trusted helper in the image, run as root after the agent's processes exit, implementing the 11 steps verbatim |
-| Dependencies | none installed | Trusted prepare step: lockfile install with lifecycle scripts disabled, before any agent runs, then read-only |
+| Control           | Today                                                                    | Needed                                                                                                                |
+| ----------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| No egress         | `unshare -n`, fails closed, `CAP_SYS_ADMIN` on Cloudflare **unverified** | Verified on the real runtime, or platform egress deny                                                                 |
+| Empty environment | `env -i` with an allowlist, verified in image                            | Keep; scratch-local `HOME`, `TMPDIR`, caches                                                                          |
+| Read-only target  | `chmod -R a+rX,go-w` + `runuser`                                         | Keep; toolchain and `node_modules` read-only too                                                                      |
+| Per-agent scratch | none                                                                     | `/audit/<run>/agents/<id>/scratch`, owned by the agent uid, nothing else writable                                     |
+| Resource limits   | `timeout` only                                                           | `prlimit`/`ulimit`: CPU, address space, nproc, fsize, plus a disk quota                                               |
+| Promotion         | none                                                                     | A small trusted helper in the image, run as root after the agent's processes exit, implementing the 11 steps verbatim |
+| Dependencies      | none installed                                                           | Trusted prepare step: lockfile install with lifecycle scripts disabled, before any agent runs, then read-only         |
 
 `verify:image` grows a case for each control (an escape attempt per row), and the phase gate is
 that it passes on the deployed Cloudflare runtime, not only in local Docker.
