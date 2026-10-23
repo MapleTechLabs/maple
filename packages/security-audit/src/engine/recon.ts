@@ -218,7 +218,12 @@ export const runReconnaissance = (engine: Engine) =>
 			priorUnits.filter((u) => u.status !== "out_of_scope").map((u) => u.coverage_id),
 		)
 		const carried = (prior?.carried ?? []).filter((c) => inScopeIds.has(c.coverageId))
-		const admitted = admitUnits(admitUnits([], priorUnits).ledger, seeds)
+		// A seed the prior ledger already holds is that same unit (same canonical refs), not a refusal.
+		const priorIds = new Set(priorUnits.map((u) => u.coverage_id))
+		const admitted = admitUnits(
+			admitUnits([], priorUnits).ledger,
+			seeds.filter((seed) => !priorIds.has(seed.coverage_id)),
+		)
 		const refused = [...refusals, ...admitted.refused.map((r) => `${r.coverage_id}: ${r.reason}`)]
 		yield* Effect.forEach(refused, (message) =>
 			engine.event({ _tag: "Note", message: `seed unit refused: ${message}` }),
