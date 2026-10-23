@@ -717,7 +717,7 @@ MAPLE_TARGET=linux-arm64 scripts/build-local-binary.sh   # cross-compile (linux-
 ## Container image
 
 `apps/cli/docker/` packages the Linux bundle as the self-hosted image
-`ghcr.io/mapletechlabs/maple` (user docs: `apps/landing/src/content/docs/local-mode/self-hosting.md`).
+`ghcr.io/mapletechlabs/maple` (user docs: `apps/landing/src/content/docs/self-hosting.md`).
 
 - `Dockerfile` takes prebuilt bundles from its context
   (`linux-{amd64,arm64}/{maple,libchdb.so}`); the final stage only copies files,

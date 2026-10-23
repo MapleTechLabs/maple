@@ -4,8 +4,8 @@
 
 /**
  * The sidebar is split into sections so a reader sees one section's tree at a
- * time: product surfaces, the "get data in" guides, the local binary, and the
- * machine-facing references. Groups are listed in sidebar order; `icon` is a
+ * time: product surfaces, the "get data in" guides, the local binary, running
+ * it on your own server, and the machine-facing references. Groups are listed in sidebar order; `icon` is a
  * DocsCategoryIcon id, shared with the header strip.
  */
 export const SECTIONS = [
@@ -32,7 +32,13 @@ export const SECTIONS = [
 		icon: "Instrumentation",
 		label: "Instrumentation",
 		blurb: "Languages, frameworks, AI agents, hosts, clusters and IaC.",
-		groups: ["Instrumentation", "AI Frameworks", "AI Gateways", "Infrastructure", "Infrastructure as Code"],
+		groups: [
+			"Instrumentation",
+			"AI Frameworks",
+			"AI Gateways",
+			"Infrastructure",
+			"Infrastructure as Code",
+		],
 	},
 	{
 		id: "local",
@@ -40,6 +46,13 @@ export const SECTIONS = [
 		label: "Local Mode",
 		blurb: "The whole product as one binary.",
 		groups: ["Local Mode"],
+	},
+	{
+		id: "self-hosting",
+		icon: "Self-hosting",
+		label: "Self-hosting",
+		blurb: "Maple on your own server, as one container.",
+		groups: ["Self-hosting"],
 	},
 	{
 		id: "reference",
