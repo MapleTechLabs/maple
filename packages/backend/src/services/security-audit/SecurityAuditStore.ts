@@ -18,6 +18,7 @@ import {
 	SecurityAuditRuns,
 	SecurityAuditTargets,
 	SecurityAuditUnits,
+	VcsRepositories,
 	type SecurityAuditEventRow,
 	type SecurityAuditFindingRow,
 	type SecurityAuditRunRow,
@@ -431,6 +432,23 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 				)(function* (input) {
 					const now = yield* Clock.currentTimeMillis
 					const id = newTargetId()
+					// A repository reference must be this org's: never another tenant's connected repository.
+					const repositoryId = input.vcsRepositoryId
+					if (repositoryId !== undefined) {
+						const owned = yield* dbExecute((db) =>
+							db.run(
+								PG.from(VcsRepositories)
+									.select("id")
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(repositoryId)])
+									.limit(1),
+							),
+						)
+						if (owned.length === 0) {
+							return yield* new AuditStoreError({
+								message: "Repository is not connected to this org",
+							})
+						}
+					}
 					const rows = yield* dbExecute((db) =>
 						db.run(
 							PG.insertInto(SecurityAuditTargets)
@@ -619,7 +637,11 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 							PG.from(SecurityAuditEvents)
 								.select()
 								.where(($) => [$.orgId.eq(orgId), $.runId.eq(runId)])
-								.orderBy(($) => [[$.at, "asc"]]),
+								// Ties (one millisecond) break on the id, so a read's order is stable.
+								.orderBy(($) => [
+									[$.at, "asc"],
+									[$.id, "asc"],
+								]),
 						),
 					)
 				})
@@ -632,7 +654,10 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 							PG.from(SecurityAuditFindings)
 								.select()
 								.where(($) => [$.orgId.eq(orgId), $.targetId.eq(targetId)])
-								.orderBy(($) => [[$.createdAt, "asc"]]),
+								.orderBy(($) => [
+									[$.createdAt, "asc"],
+									[$.fingerprint, "asc"],
+								]),
 						),
 					)
 				})
