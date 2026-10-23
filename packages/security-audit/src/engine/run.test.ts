@@ -10,6 +10,7 @@ import {
 	idOf,
 	json,
 	KEYS,
+	keysCandidate,
 	lowered,
 	rejectedRecord,
 	runScripted,
@@ -154,7 +155,7 @@ describe("runAudit, budget", () => {
 		expect(result.incompleteReasons).toEqual(["budget_cannot_fund_reconnaissance_and_reserves"])
 	})
 
-	it("defers what the allowance cannot reach, never exceeds the budget, and drops records it cannot review twice", async () => {
+	it("defers what the allowance cannot reach and keeps the validation reserve for both reviews", async () => {
 		const { result, recorded } = await runScripted(baseInput({ budget: 9 }), happy())
 		expect(recorded.invocations.filter((i) => i.role === "hunter").map((i) => i.agentId)).toEqual([
 			"hunter-w1-1",
@@ -163,10 +164,10 @@ describe("runAudit, budget", () => {
 			"budget_cannot_reserve_critics_and_validation",
 		])
 		expect(recorded.invocations).toHaveLength(9)
-		// The candidate got its Phase 3 verifier; no budget was left for the Phase 5 review it must have.
-		expect(roles(recorded.invocations).slice(-2)).toEqual(["critic-w2-final", "verify-1"])
-		expect(result.findings).toEqual([])
-		expect(result.incompleteReasons).toEqual(["record_verification_incomplete"])
+		// No gap critic out of the validation reserve: the candidate gets its Phase 3 and Phase 5 reviews.
+		expect(roles(recorded.invocations).slice(-2)).toEqual(["verify-1", "record-1-0"])
+		expect([result.status, result.findings.map((f) => f.verdict)]).toEqual(["complete", ["confirmed"]])
+		expect(result.gaps).toContain("budget_cannot_reserve_critics_and_validation")
 	})
 })
 
@@ -289,5 +290,119 @@ describe("runAudit, quick profile", () => {
 			"quick_profile_final_critic",
 		])
 		expect(recorded.reports?.report).toContain("This is a partial pass.")
+	})
+})
+
+describe("runAudit, review regressions", () => {
+	const priorOf = async () => {
+		const { result } = await runScripted(baseInput(), happy())
+		return { runId: "run-1", sourceRef: "abc123", ledger: result.ledger, findings: result.findings }
+	}
+
+	it("hunts only in-scope prior units in a scoped run and records the rest out of scope", async () => {
+		const prior = await priorOf()
+		const { result, recorded } = await runScripted(
+			baseInput({
+				runId: "run-2",
+				prior,
+				scopePaths: ["src/routes/search.ts"],
+				changedSincePrior: () => true,
+			}),
+			happy(),
+		)
+		const hunted = recorded.invocations.filter((i) => i.role === "hunter")
+		expect(hunted.some((i) => i.prompt.includes(`"coverage_id": "${idOf(EXPORT)}"`))).toBe(false)
+		expect(result.ledger.find((u) => u.coverage_id === idOf(EXPORT))?.status).toBe("out_of_scope")
+	})
+
+	it("never reuses an agent id when the last wave's final-clean critic still finds work", async () => {
+		const { recorded } = await runScripted(baseInput({ maxWaves: 1 }), (i) =>
+			i.agentId === "critic-w1-post"
+				? json(emptyCritic)
+				: i.agentId === "critic-w1-final"
+					? json({
+							...emptyCritic,
+							missing_units: [{ ...EXPORT, reason: "unmapped" }],
+							stop: false,
+						})
+					: happy()(i),
+		)
+		const ids = roles(recorded.invocations)
+		expect(new Set(ids).size).toBe(ids.length)
+	})
+
+	it("validates a carried record a hunter raised again once, with the hunter's claim", async () => {
+		const prior = await priorOf()
+		const { recorded } = await runScripted(
+			baseInput({
+				runId: "run-2",
+				prior,
+				changedSincePrior: (paths) => paths.some((p) => p.includes("search")),
+			}),
+			(i) => {
+				if (i.role !== "hunter") return happy()(i)
+				// The re-hunted search unit raises the carried keys fingerprint again.
+				const answer = hunterAnswer(i, ALL)
+				return json({
+					...answer,
+					units: answer.units.map((u) => ({
+						...u,
+						disposition: "candidate",
+						candidate_fingerprints: [FINGERPRINT],
+					})),
+					candidates: [keysCandidate],
+				})
+			},
+		)
+		expect(recorded.invocations.filter((i) => i.role === "candidate-verifier")).toHaveLength(1)
+	})
+
+	it("defers a quick run's units whose hunter failed instead of leaving them planned", async () => {
+		const { result } = await runScripted(baseInput({ profile: "quick" }), (i) =>
+			i.agentId === "hunter-w1-2" ? "not json" : happy()(i),
+		)
+		expect(result.ledger.filter((u) => u.status === "planned")).toEqual([])
+	})
+
+	it("treats a prior candidate that never got a verdict as open work", async () => {
+		const prior = await priorOf()
+		const { result } = await runScripted(
+			baseInput({ runId: "run-2", prior: { ...prior, findings: [] } }),
+			happy(),
+		)
+		expect(result.ledger.find((u) => u.coverage_id === idOf(KEYS))?.prior_status).toBe("prior_deferred")
+	})
+
+	it("validates a rejected fingerprint again when its new trace reaches other files", async () => {
+		const prior = await priorOf()
+		const { recorded } = await runScripted(
+			baseInput({ runId: "run-2", prior: { ...prior, findings: [rejectedRecord] } }),
+			(i) => {
+				if (i.role !== "hunter") return happy()(i)
+				const answer = hunterAnswer(i, ALL)
+				const moved = {
+					...keysCandidate,
+					evidence: [{ file: "src/services/other.ts", line: 3, description: "new path" }],
+				}
+				return json({ ...answer, candidates: answer.candidates.length === 0 ? [] : [moved] })
+			},
+		)
+		expect(recorded.invocations.some((i) => i.role === "candidate-verifier")).toBe(true)
+	})
+
+	it("does not validate a candidate whose unit result was refused", async () => {
+		const { recorded } = await runScripted(baseInput({ maxWaves: 1 }), (i) => {
+			if (i.role !== "hunter") return happy()(i)
+			const answer = hunterAnswer(i, ALL)
+			// The keys unit's check claims another agent's ownership, so that unit result is refused.
+			return json({
+				...answer,
+				units: answer.units.map((u) => ({
+					...u,
+					checks: u.checks.map((c) => ({ ...c, agent_id: "someone-else" })),
+				})),
+			})
+		})
+		expect(recorded.invocations.some((i) => i.role === "candidate-verifier")).toBe(false)
 	})
 })
