@@ -48,6 +48,7 @@ import { SessionAuthorizationLive } from "@maple/backend/services/auth/SessionAu
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { SecurityAuditPlanBudget } from "@maple/backend/services/security-audit/SecurityAuditPlanBudget"
+import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import type { AiPortsLayer } from "../worker/bindings"
@@ -102,6 +103,7 @@ const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 					SecurityAuditPlanBudget.layer.pipe(
 						Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
 					),
+					SecurityAuditRepositorySize.layer,
 				),
 			),
 		),

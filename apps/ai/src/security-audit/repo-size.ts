@@ -74,6 +74,12 @@ export const repoLimitViolations = (size: RepoSize, limits: SecurityAuditLimits)
 		: []),
 ]
 
+/** The pre-clone check: the size GitHub reports, before the sandbox fetches any history. */
+export const hostedSizeViolations = (bytes: number, limits: SecurityAuditLimits): ReadonlyArray<string> =>
+	bytes > limits.maxRepositoryBytes
+		? [`GitHub reports it at ${mib(bytes)}, over the ${mib(limits.maxRepositoryBytes)} limit`]
+		: []
+
 /** The failure reason a refused run is marked with. */
 export const refusalReason = (violations: ReadonlyArray<string>): string =>
 	`repository_refused: the repository was not audited because ${violations.join("; ")}.`

@@ -7,6 +7,8 @@ import { Config, Effect, Option } from "effect"
 export interface SecurityAuditLimits {
 	/** Monthly invocations for an org billing does not meter (self-hosted, local, Maple's own org). */
 	readonly unmeteredMonthlyInvocations: number
+	/** Bytes GitHub reports for the repository (its packed history), checked before any clone. */
+	readonly maxRepositoryBytes: number
 	/** Bytes of tracked files at the pinned commit. */
 	readonly maxCheckoutBytes: number
 	/** Tracked files at the pinned commit. */
@@ -19,6 +21,7 @@ export interface SecurityAuditLimits {
 
 export const SECURITY_AUDIT_LIMIT_DEFAULTS: SecurityAuditLimits = {
 	unmeteredMonthlyInvocations: 20_000,
+	maxRepositoryBytes: 2 * 1024 * 1024 * 1024,
 	maxCheckoutBytes: 1024 * 1024 * 1024,
 	maxFiles: 100_000,
 	maxHistoryCommits: 1_000_000,
@@ -40,6 +43,10 @@ const limitsConfig = Config.all({
 	unmeteredMonthlyInvocations: limit(
 		"SECURITY_AUDIT_UNMETERED_MONTHLY_INVOCATIONS",
 		SECURITY_AUDIT_LIMIT_DEFAULTS.unmeteredMonthlyInvocations,
+	),
+	maxRepositoryBytes: limit(
+		"SECURITY_AUDIT_MAX_REPOSITORY_BYTES",
+		SECURITY_AUDIT_LIMIT_DEFAULTS.maxRepositoryBytes,
 	),
 	maxCheckoutBytes: limit(
 		"SECURITY_AUDIT_MAX_CHECKOUT_BYTES",

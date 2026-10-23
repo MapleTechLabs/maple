@@ -443,6 +443,15 @@ export interface VcsProviderClient {
 		| VcsRateLimitedError
 	>
 
+	/** The repository's size in bytes as the provider reports it, read without cloning. */
+	readonly repositorySizeBytes: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+	) => Effect.Effect<
+		number,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+	>
+
 	/** The commit a ref (branch, tag or SHA) names right now. `Option.none` is an unknown ref. */
 	readonly resolveRef: (
 		installation: VcsInstallation,

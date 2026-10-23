@@ -5,6 +5,7 @@ import {
 	DEFAULT_RUN_BUDGET,
 	SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT,
 	SecurityAuditBudgetExhaustedError,
+	SecurityAuditRepositoryTooLargeError,
 	SECURITY_AUDIT_MAX_BUDGET,
 	SecurityAuditDisabledError,
 	type SecurityAuditEvent,
@@ -37,7 +38,10 @@ import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { securityAuditLimits } from "@maple/backend/services/security-audit/limits"
 import { SecurityAuditPlanBudget } from "@maple/backend/services/security-audit/SecurityAuditPlanBudget"
+import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
+import { hostedSizeViolations, refusalReason } from "../security-audit/repo-size"
 import {
 	type SecurityAuditEventRecord,
 	type SecurityAuditOrgStore,
@@ -167,6 +171,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 		const featureFlags = yield* OrganizationFeatureFlagsService
 		const workflow = yield* SecurityAuditWorkflowStarter
 		const planBudget = yield* SecurityAuditPlanBudget
+		const repositorySize = yield* SecurityAuditRepositorySize
 
 		/** The caller's org store, once the org is in the rollout. The org is the tenant's, never the request's. */
 		const orgAccess = Effect.gen(function* () {
@@ -192,6 +197,19 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 				),
 			),
 		)
+
+		/** Refuses a repository GitHub already reports as over the limit, before anything is cloned. */
+		const refuseOversized = (orgId: SecurityAuditTargetRow["orgId"], repository: string) =>
+			Effect.gen(function* () {
+				const bytes = yield* repositorySize.bytes(orgId, repository)
+				if (Option.isNone(bytes)) return
+				const violations = hostedSizeViolations(bytes.value, yield* securityAuditLimits)
+				if (violations.length === 0) return
+				return yield* new SecurityAuditRepositoryTooLargeError({
+					message: refusalReason(violations),
+					repository,
+				})
+			})
 
 		const requireTarget = (store: SecurityAuditOrgStore, targetId: SecurityAuditTargetId) =>
 			orUnavailable(store.getTarget(targetId)).pipe(
@@ -262,6 +280,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 							repository: payload.repository,
 						})
 					}
+					yield* refuseOversized(tenant.orgId, repository.value.fullName)
 					const row = yield* orUnavailable(
 						store.createTarget({
 							...payload,
@@ -292,6 +311,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 				Effect.gen(function* () {
 					const { tenant, store } = yield* adminAccess
 					const target = yield* requireTarget(store, params.targetId)
+					yield* refuseOversized(tenant.orgId, target.repository)
 					const prior = yield* orUnavailable(store.latestPriorRun(target.id))
 					const runId = newRunId()
 					// The org's month: its plan's limit less what its runs already reserved.

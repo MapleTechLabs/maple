@@ -1245,6 +1245,13 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					Effect.mapError(toVcsCommitError),
 				)
 
+			// GitHub's `size` is KiB of the packed repository.
+			const repositorySizeBytes: VcsProviderClient["repositorySizeBytes"] = (installation, repo) =>
+				client.getRepositorySizeKib(installation.externalInstallationId, repo.owner, repo.name).pipe(
+					Effect.map((kib) => kib * 1024),
+					Effect.mapError(toVcsCommitError),
+				)
+
 			const normalizeFileStatus = (status: string): PullRequestFile["status"] => {
 				switch (status) {
 					case "added":
@@ -1782,6 +1789,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				searchCode,
 				fetchSourceFile,
 				resolveRef,
+				repositorySizeBytes,
 				fetchCloneCredentials,
 				fetchWorkflowJobAnnotations,
 				streamWorkflowJobLog,

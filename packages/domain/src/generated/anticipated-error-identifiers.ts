@@ -119,6 +119,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/security-audit/SecurityAuditFindingNotFoundError",
 	"@maple/http/security-audit/SecurityAuditForbiddenError",
 	"@maple/http/security-audit/SecurityAuditRepositoryNotConnectedError",
+	"@maple/http/security-audit/SecurityAuditRepositoryTooLargeError",
 	"@maple/http/security-audit/SecurityAuditRunInProgressError",
 	"@maple/http/security-audit/SecurityAuditRunNotFoundError",
 	"@maple/http/security-audit/SecurityAuditRunNotInProgressError",

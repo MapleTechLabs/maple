@@ -31,6 +31,7 @@ import {
 } from "@maple/backend/platform/test-pglite"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { SecurityAuditPlanBudget } from "@maple/backend/services/security-audit/SecurityAuditPlanBudget"
+import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { Context, Effect, Layer, Schema } from "effect"
 import { HttpRouter, HttpServerRequest } from "effect/http"
@@ -78,6 +79,8 @@ const makeHarness = (
 		readonly cancelFails?: boolean
 		/** The org's monthly invocation limit from its plan. */
 		readonly orgLimit?: number
+		/** Repository sizes GitHub reports, by `owner/name`; read on every call. */
+		readonly repositoryBytes?: Record<string, number>
 	} = {},
 ) => {
 	const db = createTestDb(trackedDbs)
@@ -119,6 +122,7 @@ const makeHarness = (
 				starter,
 				Layer.succeed(AuditLogService, auditLog),
 				SecurityAuditPlanBudget.fixed(options.orgLimit ?? 20_000),
+				SecurityAuditRepositorySize.fixed(options.repositoryBytes ?? {}),
 				OrganizationFeatureFlagsService.fixed(
 					options.enabled === false
 						? DISABLED_ORGANIZATION_FEATURE_FLAGS
@@ -333,6 +337,35 @@ describe("/api/security-audit targets", () => {
 				tag("SecurityAuditRepositoryNotConnectedError"),
 			])
 			expect(await harness.count("security_audit_targets")).toBe(1)
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit size before clone", () => {
+	it("refuses a repository GitHub reports as over the limit, at creation and at run start", async () => {
+		const huge = 3 * 1024 * 1024 * 1024
+		const sizes = { "acme/api": huge }
+		const harness = makeHarness({ repositoryBytes: sizes })
+		try {
+			const refused = await harness.call("POST", "/targets", { body: TARGET })
+			sizes["acme/api"] = 10 * 1024 * 1024
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			// The repository grew past the limit after its target was created.
+			sizes["acme/api"] = huge
+			const start = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+
+			const reason =
+				"repository_refused: the repository was not audited because GitHub reports it at 3072 MiB, over the 2048 MiB limit."
+			expect([refused.status, refused.body._tag, refused.body.message, target.status]).toEqual([
+				422,
+				tag("SecurityAuditRepositoryTooLargeError"),
+				reason,
+				200,
+			])
+			expect([start.status, start.body.message, harness.started]).toEqual([422, reason, []])
+			expect(await harness.count("security_audit_runs")).toBe(0)
 		} finally {
 			await harness.dispose()
 		}

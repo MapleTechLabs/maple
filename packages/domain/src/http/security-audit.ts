@@ -384,6 +384,20 @@ export class SecurityAuditTargetExistsError extends HttpTaggedError<SecurityAudi
 	},
 ) {}
 
+/** The repository is over a size limit, by what GitHub reports, before anything is cloned. */
+export class SecurityAuditRepositoryTooLargeError extends HttpTaggedError<SecurityAuditRepositoryTooLargeError>()(
+	"@maple/http/security-audit/SecurityAuditRepositoryTooLargeError",
+	{ message: Schema.String, repository: Schema.String },
+	{
+		status: 422,
+		code: "security_audit_repository_too_large",
+		title: "Repository too large to audit",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
 /** The org's monthly audit invocations, from its plan, cannot fund a run of this profile. */
 export class SecurityAuditBudgetExhaustedError extends HttpTaggedError<SecurityAuditBudgetExhaustedError>()(
 	"@maple/http/security-audit/SecurityAuditBudgetExhaustedError",
@@ -430,7 +444,12 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 		HttpApiEndpoint.post("createTarget", "/targets", {
 			payload: SecurityAuditCreateTargetRequest,
 			success: SecurityAuditTarget,
-			error: [...adminErrors, SecurityAuditRepositoryNotConnectedError, SecurityAuditTargetExistsError],
+			error: [
+				...adminErrors,
+				SecurityAuditRepositoryNotConnectedError,
+				SecurityAuditTargetExistsError,
+				SecurityAuditRepositoryTooLargeError,
+			],
 		}),
 	)
 	.add(
@@ -450,6 +469,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 				SecurityAuditTargetDisabledError,
 				SecurityAuditRunInProgressError,
 				SecurityAuditBudgetExhaustedError,
+				SecurityAuditRepositoryTooLargeError,
 				SecurityAuditStartError,
 			],
 		}),

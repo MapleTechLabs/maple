@@ -125,6 +125,11 @@ export interface VcsSourceServiceApi {
 		path: string,
 		ref?: string,
 	) => Effect.Effect<VcsSourceFile & { readonly ref: string }, VcsSourceError>
+	/** The connected repository's size in bytes as its provider reports it, before any clone. */
+	readonly repositorySizeBytes: (
+		orgId: OrgId,
+		repository: string,
+	) => Effect.Effect<number, VcsRepositoryScopedError>
 	/** Resolve `ref` (default: the tracked branch) to a commit and a pre-signed archive URL for it. */
 	readonly resolveCheckout: (
 		orgId: OrgId,
@@ -441,7 +446,23 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				}
 			})
 
+			const repositorySizeBytes: VcsSourceServiceApi["repositorySizeBytes"] = Effect.fn(
+				"VcsSourceService.repositorySizeBytes",
+			)(function* (orgId, repositoryName) {
+				const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
+				yield* Effect.annotateCurrentSpan({ orgId, "vcs.repository.full_name": repository.fullName })
+				const provider = yield* asUpstream(providers.resolve(repository.provider))
+				return yield* asUpstream(
+					provider.repositorySizeBytes(installation, {
+						externalRepoId: repository.externalRepoId,
+						owner: repository.owner,
+						name: repository.name,
+					}),
+				)
+			})
+
 			return {
+				repositorySizeBytes,
 				listRepositories,
 				listPullRequests,
 				fetchPullRequest,
