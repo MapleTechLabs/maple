@@ -1,13 +1,13 @@
 ---
 title: "Porting 287,000 lines of React in 3 days. The hard part was proving nothing changed."
 description: "How Claude ported every screen of Maple's React app to Foldkit, and the pixel, behavior and accessibility harness that decided when each screen was done."
-date: 2026-10-19
+date: 2026-10-23
 author: "David Granzin"
 authorRole: "Founder, Maple"
 category: "engineering"
 cover: "/blog/react-to-foldkit.png"
 coverAlt: "Two dithered amber strands drift apart on the left and merge into one bright band on the right, beside the title: 287,000 lines of React, ported in 3 days. Proven pixel for pixel."
-draft: true
+draft: false
 ---
 
 import BigStats from "../../components/blog/foldkit/BigStats.astro"
@@ -16,7 +16,7 @@ import PerfBars from "../../components/blog/foldkit/PerfBars.astro"
 import ParityBench from "../../components/blog/foldkit/ParityBench.astro"
 import TraceWaterfall from "../../components/blog/foldkit/TraceWaterfall.astro"
 
-In October we moved Maple's web app off React. It was 287,000 lines across 131 routes, and Claude did the port in three days. Writing the new code turned out to be the easy part. Most of our own work went into a tool that compared the two apps and told us whether the port was right. The whole migration, harness included, is in [PR #1539](https://github.com/MapleTechLabs/maple/pull/1539).
+In October we moved Maple's web app off React. It was 287,000 lines across 131 routes, and Claude did the port in three days. The review rounds and the fixes after our first deploy, both covered further down, came on top of that. Writing the new code turned out to be the easy part. Most of our own work went into a tool that compared the two apps and told us whether the port was right. The port and the harness are in [PR #1539](https://github.com/MapleTechLabs/maple/pull/1539), and the cutover that deleted the React app, and the harness with it, is in [PR #1589](https://github.com/MapleTechLabs/maple/pull/1589).
 
 <BigStats
 	items={[
@@ -38,11 +38,11 @@ The React app worked, but changing it had gotten expensive. Data on a page came 
 
 In August the errors page crashed in production with React error #301. A helper created a new wrapper atom on every render, a hook compared it by identity and set state during render, and the two kept triggering each other. We fixed that one in a day, but nothing stopped the next one from being written.
 
-Everything else in Maple is built on Effect, and more and more of the frontend is written by agents, which make the same hook mistakes we do.
+Everything else in Maple is built on [Effect](https://effect.website), and more and more of the frontend is written by agents, which make the same hook mistakes we do.
 
 ## Why Foldkit
 
-Foldkit applies The Elm Architecture on top of Effect. All app state lives in one Model, defined as an Effect Schema. Anything that happens is a Message, named in the past tense, like `ClickedRow` or `SucceededLoadLogs`. A pure `update` function takes the Model and a Message and returns the next Model plus any Commands to run, and a pure `view` turns the Model into HTML. Side effects only happen in Commands, which the runtime runs before feeding the result back in as another Message.
+[Foldkit](https://foldkit.dev) applies The Elm Architecture on top of Effect. All app state lives in one Model, defined as an Effect Schema. Anything that happens is a Message, named in the past tense, like `ClickedRow` or `SucceededLoadLogs`. A pure `update` function takes the Model and a Message and returns the next Model plus any Commands to run, and a pure `view` turns the Model into HTML. Side effects only happen in Commands, which the runtime runs before feeding the result back in as another Message.
 
 There are no hooks and no component state, so the org-switch question has one answer, and it's a single case in `update`. Foldkit's Scene tests run `update` in Node without a DOM, so we can test that case directly.
 

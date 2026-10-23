@@ -134,7 +134,7 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 					h.div([h.Class("truncate font-medium"), h.Title(run.pipeline)], [run.pipeline]),
 					runMeta(h, run, prUrl),
 					...failedJobs(h, run),
-					traceLink(h, run, "mt-1 -ml-2 sm:hidden"),
+					...traceLink(h, run, time.nowMs, "mt-1 -ml-2 sm:hidden"),
 				],
 				"px-3 py-2.5 leading-normal",
 			),
@@ -154,7 +154,7 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 					h.span(
 						[h.Class("inline-flex items-center justify-end gap-1")],
 						[
-							traceLink(h, run),
+							...traceLink(h, run, time.nowMs),
 							...(runUrl === null
 								? []
 								: [
