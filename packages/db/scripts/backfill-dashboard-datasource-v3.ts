@@ -494,7 +494,7 @@ if (import.meta.main) {
 	if (Option.isSome(url)) {
 		await run(url.value, args)
 	} else if (Option.isSome(branch)) {
-		await withBranchConnection(branch.value, (connectionUrl) => run(connectionUrl, args))
+		await withBranchConnection(branch.value, "readWrite", (connectionUrl) => run(connectionUrl, args))
 	} else {
 		fail("Pass --branch <name> (PlanetScale) or --url <dsn> (local rehearsal).")
 	}
