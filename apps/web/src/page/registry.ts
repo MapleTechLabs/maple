@@ -30,6 +30,9 @@ import * as DashboardView from "./dashboards/view"
 import * as DashboardWidget from "./dashboards/widget"
 import * as Chat from "./chat/page"
 import * as CodeReview from "./code-review"
+import * as SecurityFinding from "./security/finding"
+import * as SecurityRun from "./security/run"
+import * as SecurityTabs from "./security/tabs"
 import * as ErrorsHub from "./errors/hub"
 import * as ErrorIssue from "./errors/issue"
 import * as InfraContainer from "./infra/containers/detail"
@@ -131,6 +134,9 @@ export const pages = [
 	DashboardTemplates.page,
 	DashboardWidget.page,
 	CodeReview.page,
+	SecurityTabs.page,
+	SecurityRun.page,
+	SecurityFinding.page,
 	AgentSessionsList.page,
 	AgentSessionTools.page,
 	AgentSessionTool.page,
@@ -313,7 +319,9 @@ export const blockNavigation = (
 		(page) => page.id === current._tag && Option.contains(page.keyOf(route), current.key),
 	)
 	if (isSameInstance) return Option.none()
-	return Option.flatMap(pageById(current._tag), (page) => toHeld(page.blockedNavigation(current, url, context)))
+	return Option.flatMap(pageById(current._tag), (page) =>
+		toHeld(page.blockedNavigation(current, url, context)),
+	)
 }
 
 export const changeContext = (current: PageSlot | null, context: PageContext): PageTransition =>

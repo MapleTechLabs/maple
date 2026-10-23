@@ -24,7 +24,11 @@ export interface NavSubItem {
 	readonly icon?: IconName
 	readonly iconColor?: string
 	readonly surfaces?: ReadonlyArray<NavSurface>
-	readonly views?: ReadonlyArray<{ readonly title: string; readonly href: string; readonly paletteTitle?: string }>
+	readonly views?: ReadonlyArray<{
+		readonly title: string
+		readonly href: string
+		readonly paletteTitle?: string
+	}>
 	/** The command palette's title, when the row's own reads ambiguously there. */
 	readonly paletteTitle?: string
 }
@@ -132,6 +136,7 @@ export const navGroups = (flags: Readonly<{ releases: boolean }>): ReadonlyArray
 			{ title: "Errors", href: "/errors", icon: "CircleWarningIcon" },
 			{ title: "Alerts", href: "/alerts", icon: "BellIcon" },
 			{ title: "Code Review", href: "/code-review", icon: "CodeIcon", badge: "Beta" },
+			{ title: "Security", href: "/security", icon: "ShieldCheckIcon", badge: "Beta" },
 		],
 	},
 ]
