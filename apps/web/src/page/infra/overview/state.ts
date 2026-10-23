@@ -30,6 +30,7 @@ const SOURCE_SURFACES = {
 	supabase: ["supabase"],
 	planetscale: ["planetscale"],
 	gcp: ["gcp"],
+	aws: ["aws"],
 } satisfies Readonly<{ [K in SourceId]: ReadonlyArray<NavSurface> }>
 
 const NOT_CONNECTED = {

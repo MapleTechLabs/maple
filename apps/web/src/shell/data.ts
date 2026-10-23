@@ -138,14 +138,14 @@ export const LoadNamespaces = Command.define("LoadNamespaces", {
 		}).pipe(failed(Message.FailedLoadNamespaces({ orgId }))),
 })
 
-/** AWS counts once an account streams metrics: without a stream the page has nothing to show. */
+/** AWS counts once an account is connected, like every provider: a stream built outside Maple leaves `metric_stream` null. */
 export const LoadAwsStatus = Command.define("LoadAwsStatus", {
 	args: orgArgs,
 	messages: integrationMessages,
 	execute: ({ orgId }) =>
 		Effect.gen(function* () {
 			const status = yield* (yield* MapleApiV2Client).awsIntegration.status()
-			const isConnected = status.connections.some((connection) => connection.metric_stream !== null)
+			const isConnected = status.connections.length > 0
 			return Message.SucceededLoadIntegration({ orgId, integration: "aws", isConnected })
 		}).pipe(failed(Message.FailedLoadIntegration({ orgId, integration: "aws" }))),
 })

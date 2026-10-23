@@ -65,11 +65,11 @@ const reporting: SourceReading = {
 }
 
 describe("infra overview", () => {
-	test("entry probes the window's presence and, until it answers, reads all eight sources", () => {
+	test("entry probes the window's presence and, until it answers, reads all nine sources", () => {
 		expect(names(init({ search: {} }, context).commands)).toContain("FetchInstallIngestKey")
 		expect(names(entered().commands)).toContain("FetchInfraOverviewPresence")
-		expect(sourceReads(entered().commands)).toHaveLength(8)
-		expect(shown(entered().model)).toHaveLength(8)
+		expect(sourceReads(entered().commands)).toHaveLength(9)
+		expect(shown(entered().model)).toHaveLength(9)
 	})
 
 	test("once presence answers only the org's sources show, a connected provider with no data included", () => {

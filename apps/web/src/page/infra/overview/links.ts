@@ -1,4 +1,5 @@
 import { gcpWorkloadSearch } from "../../../components/infra/gcp/tabs"
+import { resourceSearch } from "../../infra-integrations/aws/derive"
 import { AppRoute, hrefOf } from "../../../route"
 import type { TimeSearch } from "../kit/view-tabs"
 import type { FindingTarget, SourceId } from "./model"
@@ -38,6 +39,14 @@ export const findingHref = (target: FindingTarget, time: TimeSearch): string => 
 					search: { ...time, ...gcpWorkloadSearch(target.service, target.keys) },
 				}),
 			)
+		case "aws":
+			return hrefOf(
+				AppRoute.InfraAwsResource({
+					kind: target.resourceKind,
+					name: target.name,
+					search: { ...time, ...resourceSearch({ ...target, kind: target.resourceKind }) },
+				}),
+			)
 	}
 }
 
@@ -59,5 +68,7 @@ export const sourceHref = (id: SourceId, time: TimeSearch): string => {
 			return hrefOf(AppRoute.InfraPlanetscale({ search: time }))
 		case "gcp":
 			return hrefOf(AppRoute.InfraGcp({ search: time }))
+		case "aws":
+			return hrefOf(AppRoute.InfraAws({ search: time }))
 	}
 }
