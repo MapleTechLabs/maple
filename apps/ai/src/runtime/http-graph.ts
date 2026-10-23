@@ -100,9 +100,7 @@ const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 				Layer.mergeAll(
 					SecurityAuditStore.layer,
 					OrganizationFeatureFlagsService.layer,
-					SecurityAuditPlanBudget.layer.pipe(
-						Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
-					),
+					SecurityAuditPlanBudget.layer,
 					SecurityAuditRepositorySize.layer,
 				),
 			),
