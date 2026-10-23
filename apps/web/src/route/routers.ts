@@ -1,4 +1,5 @@
 import { AlertRuleId, AnomalyIncidentId, DashboardId, ErrorIssueId } from "@maple/domain/http"
+import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { pipe, Schema } from "effect"
 import { Route } from "foldkit"
 import { query, schemaSegment, slash } from "foldkit/route"
@@ -40,7 +41,11 @@ const routers = {
 	ServiceMap: pipe(path("service-map"), search(Search.ServiceMapSearch), Route.mapTo(AppRoute.ServiceMap)),
 	Settings: pipe(path("settings"), search(Search.SettingsSearch), Route.mapTo(AppRoute.Settings)),
 	Sources: pipe(path("sources"), Route.mapTo(AppRoute.Sources)),
-	SourcesNew: pipe(path("sources", "new"), search(Search.SourcesNewSearch), Route.mapTo(AppRoute.SourcesNew)),
+	SourcesNew: pipe(
+		path("sources", "new"),
+		search(Search.SourcesNewSearch),
+		Route.mapTo(AppRoute.SourcesNew),
+	),
 	Source: pipe(
 		path("sources"),
 		slash(segment("sourceId")),
@@ -92,6 +97,28 @@ const routers = {
 		Route.mapTo(AppRoute.CodeReviewPullRequests),
 	),
 	CodeReviewSettings: pipe(path("code-review", "settings"), Route.mapTo(AppRoute.CodeReviewSettings)),
+	Security: pipe(path("security"), Route.mapTo(AppRoute.Security)),
+	SecurityFindings: pipe(
+		path("security", "findings"),
+		search(Search.SecurityFindingsSearch),
+		Route.mapTo(AppRoute.SecurityFindings),
+	),
+	SecurityRuns: pipe(
+		path("security", "runs"),
+		search(Search.SecurityRunsSearch),
+		Route.mapTo(AppRoute.SecurityRuns),
+	),
+	SecurityRun: pipe(
+		path("security", "runs"),
+		slash(schemaSegment("runId", SecurityAuditRunId)),
+		Route.mapTo(AppRoute.SecurityRun),
+	),
+	SecurityFinding: pipe(
+		path("security", "findings"),
+		slash(schemaSegment("targetId", SecurityAuditTargetId)),
+		slash(segment("fingerprint")),
+		Route.mapTo(AppRoute.SecurityFinding),
+	),
 	Dashboard: pipe(
 		path("dashboards"),
 		slash(schemaSegment("dashboardId", DashboardId)),

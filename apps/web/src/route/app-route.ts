@@ -1,4 +1,5 @@
 import { AlertRuleId, AnomalyIncidentId, DashboardId, ErrorIssueId } from "@maple/domain/http"
+import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Schema } from "effect"
 import { defineRouteUnion } from "foldkit/route"
 import * as Search from "./search"
@@ -35,6 +36,11 @@ export const AppRoute = defineRouteUnion({
 	CodeReviewIssues: { search: Search.CodeReviewIssuesSearch },
 	CodeReviewPullRequests: { search: Search.CodeReviewPullRequestsSearch },
 	CodeReviewSettings: {},
+	Security: {},
+	SecurityFindings: { search: Search.SecurityFindingsSearch },
+	SecurityRuns: { search: Search.SecurityRunsSearch },
+	SecurityRun: { runId: SecurityAuditRunId },
+	SecurityFinding: { targetId: SecurityAuditTargetId, fingerprint: Schema.String },
 	Dashboard: { dashboardId: DashboardId, search: Search.DashboardSearch },
 	DashboardsTemplates: { search: Search.DashboardsTemplatesSearch },
 	InfraLegacyHost: { hostName: Schema.String },

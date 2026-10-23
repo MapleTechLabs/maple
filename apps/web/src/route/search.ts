@@ -872,3 +872,19 @@ export const InfraKubernetesWorkloadParams = Schema.Struct({
 	kind: WorkloadKindLiteral,
 	workloadName: Schema.String,
 })
+
+// Security Center
+export const SecurityFindingsSearch = Schema.Struct({
+	status: Schema.optional(Schema.Literals(["open", "fixed", "dismissed", "accepted_risk", "all"])),
+	severity: Schema.optional(Schema.Literals(["critical", "high", "medium", "low", "informational"])),
+	verdict: Schema.optional(Schema.Literals(["confirmed", "needs_validation"])),
+	target: Schema.optional(Schema.String),
+	q: Schema.optional(Schema.String),
+	rejected: Schema.optional(Schema.Boolean),
+})
+
+export const SecurityRunsSearch = Schema.Struct({
+	target: Schema.optional(Schema.String),
+})
+export type SecurityFindingsSearch = typeof SecurityFindingsSearch.Type
+export type SecurityRunsSearch = typeof SecurityRunsSearch.Type
